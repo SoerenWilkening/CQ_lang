@@ -1,6 +1,6 @@
 # Quantum-C Transpiler
 
-A clang-libtooling source-to-source transpiler that rewrites C variables marked with a `quantum` attribute (and `+` expressions involving them) into calls against the stub runtime in [`qint.h`](../qint.h). See [PRD.md](../PRD.md) for the rewrite rules and [PLAN.md](../PLAN.md) for the module layout.
+A clang-libtooling source-to-source transpiler that rewrites C variables marked with a `quantum` attribute (and `+` expressions involving them) into calls against the stub runtime in [`qint.h`](../qint.h). See [PRD.md](../phases/v1/PRD.md) for the rewrite rules and [PLAN.md](../phases/v1/PLAN.md) for the module layout.
 
 ## Prerequisites
 

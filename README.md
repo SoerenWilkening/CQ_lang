@@ -5,8 +5,9 @@ with a `quantum` attribute (and `+` expressions involving them) into calls
 against a small runtime API. v1 is a proof-of-pipeline; the runtime is a
 stub (see [`qint.h`](qint.h)).
 
-See [`PRD.md`](PRD.md) for the spec and [`PLAN.md`](PLAN.md) for the
-phase-by-phase implementation plan.
+See [`ROADMAP.md`](ROADMAP.md) for the phase trajectory.
+v1 spec lives in [`phases/v1/PRD.md`](phases/v1/PRD.md) and its implementation
+plan in [`phases/v1/PLAN.md`](phases/v1/PLAN.md).
 
 ## How it works (one-screen tour)
 
@@ -182,14 +183,17 @@ ctest --output-on-failure -R acceptance
 
 ```
 CQ_lang/
-├── PRD.md                       spec (what v1 does)
-├── PLAN.md                      implementation plan (how, by phase)
+├── ROADMAP.md                   phase-by-phase trajectory
 ├── README.md                    this file
 ├── qint.h                       stub backend (qint_t, init_qint, add)
 ├── example_v1.c                 canonical input
 ├── example_v1.expected.c        golden rewritten output
 ├── example_v1.expected.log      golden runtime stdout
 ├── main.c                       unrelated sandbox (not touched)
+├── phases/
+│   └── v1/
+│       ├── PRD.md               spec (what v1 does)
+│       └── PLAN.md              implementation plan (how, by phase)
 └── transpiler/
     ├── CMakeLists.txt
     ├── README.md                transpiler-internal build notes
