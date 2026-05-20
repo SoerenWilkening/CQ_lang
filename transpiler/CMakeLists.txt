@@ -44,12 +44,14 @@ include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${CLANG_INCLUDE_DIRS})
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
 add_definitions(${LLVM_DEFINITIONS_LIST})
 
-# P0 only needs to build and print help, but link the libtooling
-# libraries we will rely on in later phases so misconfiguration of the
-# dev install shows up here instead of in P2+.
-add_executable(quantum_transpiler src/main.cpp)
-target_link_libraries(quantum_transpiler
-    PRIVATE
+# Library target — all reusable transpiler logic lives here so it can
+# be linked into both the driver executable and the unit-test binary.
+add_library(quantum_transpiler_lib STATIC
+    src/TypeMap.cpp
+)
+target_include_directories(quantum_transpiler_lib PUBLIC src)
+target_link_libraries(quantum_transpiler_lib
+    PUBLIC
         clangTooling
         clangFrontend
         clangAST
@@ -57,10 +59,25 @@ target_link_libraries(quantum_transpiler
         LLVMSupport
 )
 
+# Driver executable: just main, links the library for everything else.
+add_executable(quantum_transpiler src/main.cpp)
+target_link_libraries(quantum_transpiler PRIVATE quantum_transpiler_lib)
+
 enable_testing()
 
 # Smoke test: the help-printing binary exits 0.
 add_test(NAME smoke_help COMMAND quantum_transpiler --help)
+
+# Unit tests: GoogleTest binary linking the transpiler library.
+find_package(GTest REQUIRED)
+add_executable(quantum_transpiler_unit_tests tests/unit/test_type_map.cpp)
+target_link_libraries(quantum_transpiler_unit_tests
+    PRIVATE
+        quantum_transpiler_lib
+        GTest::gtest
+        GTest::gtest_main
+)
+add_test(NAME unit_tests COMMAND quantum_transpiler_unit_tests)
 
 # `cmake --build <build> --target check-quantum` runs the whole test
 # suite (today: smoke_help; later: unit + e2e).
