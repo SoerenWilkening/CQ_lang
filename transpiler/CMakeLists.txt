@@ -52,6 +52,8 @@ add_library(quantum_transpiler_lib STATIC
     src/SourceText.cpp
     src/OperandClass.cpp
     src/Codegen.cpp
+    src/DeclStmtRewrite.cpp
+    src/Matcher.cpp
 )
 target_include_directories(quantum_transpiler_lib PUBLIC src)
 target_link_libraries(quantum_transpiler_lib
@@ -59,7 +61,9 @@ target_link_libraries(quantum_transpiler_lib
         clangTooling
         clangFrontend
         clangAST
+        clangASTMatchers
         clangBasic
+        clangRewrite
         LLVMSupport
 )
 
@@ -69,8 +73,14 @@ target_link_libraries(quantum_transpiler PRIVATE quantum_transpiler_lib)
 
 enable_testing()
 
-# Smoke test: the help-printing binary exits 0.
+# Smoke test: invoking the driver with `--help` causes CommonOptionsParser
+# to print LLVM's libtooling USAGE banner. The exit code is not portable
+# across LLVM versions (some print + exit 0, others exit non-zero), so
+# we assert only on the banner text via PASS_REGULAR_EXPRESSION.
 add_test(NAME smoke_help COMMAND quantum_transpiler --help)
+set_tests_properties(smoke_help PROPERTIES
+    PASS_REGULAR_EXPRESSION "USAGE"
+)
 
 # Unit tests: GoogleTest binary linking the transpiler library.
 find_package(GTest REQUIRED)
@@ -79,6 +89,7 @@ add_executable(quantum_transpiler_unit_tests
     tests/unit/test_source_text.cpp
     tests/unit/test_operand_class.cpp
     tests/unit/test_codegen.cpp
+    tests/unit/test_decl_stmt_rewrite.cpp
 )
 target_link_libraries(quantum_transpiler_unit_tests
     PRIVATE
@@ -87,6 +98,15 @@ target_link_libraries(quantum_transpiler_unit_tests
         GTest::gtest_main
 )
 add_test(NAME unit_tests COMMAND quantum_transpiler_unit_tests)
+
+# End-to-end fixtures: invoke the transpiler on each input.c under
+# tests/e2e/fixtures and diff stdout against the matching expected.c.
+add_test(
+    NAME e2e_fixtures
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/run_e2e.sh
+            $<TARGET_FILE:quantum_transpiler>
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/fixtures
+)
 
 # `cmake --build <build> --target check-quantum` runs the whole test
 # suite (today: smoke_help; later: unit + e2e).

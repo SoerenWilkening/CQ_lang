@@ -1,17 +1,32 @@
-// P0 driver: print help and exit 0. Real argument parsing arrives in a
-// later phase together with clang::tooling::CommonOptionsParser.
-#include <cstdio>
+// P6 driver: libtooling entry point. Parses standard --/-- compile
+// args via CommonOptionsParser, instantiates ClangTool, and runs the
+// QuantumRewriteAction frontend action over every input file. The
+// rewritten source is written to stdout by the action itself; the
+// e2e test harness redirects/diffs against expected.c.
+//
+// `--help` (handled by CommonOptionsParser itself) prints LLVM's
+// libtooling usage and exits — preserving the smoke_help contract from
+// P0 by accepting any exit code that yields a usable USAGE message.
+#include "Matcher.h"
 
-static void printHelp() {
-    std::printf(
-        "quantum_transpiler v0 - usage: quantum_transpiler <file.c> -- "
-        "[clang args]\n"
-        "  --help, -h    show this message\n");
-}
+#include <clang/Tooling/CommonOptionsParser.h>
+#include <clang/Tooling/Tooling.h>
+#include <llvm/Support/CommandLine.h>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/raw_ostream.h>
 
-int main(int /*argc*/, char ** /*argv*/) {
-    // P0 is a smoke test only: every invocation (including --help / -h)
-    // prints the help text and exits successfully.
-    printHelp();
-    return 0;
+static llvm::cl::OptionCategory toolCategory("quantum_transpiler options");
+
+int main(int argc, const char **argv) {
+    auto parserOrErr = clang::tooling::CommonOptionsParser::create(
+        argc, argv, toolCategory);
+    if (!parserOrErr) {
+        llvm::errs() << llvm::toString(parserOrErr.takeError());
+        return 1;
+    }
+    clang::tooling::ClangTool tool(parserOrErr->getCompilations(),
+                                   parserOrErr->getSourcePathList());
+    return tool.run(
+        clang::tooling::newFrontendActionFactory<qct::QuantumRewriteAction>()
+            .get());
 }
