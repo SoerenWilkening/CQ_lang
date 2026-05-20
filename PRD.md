@@ -96,7 +96,7 @@ v1 is done when:
 - `example_v1.c` — input file exercising the four supported patterns.
 - `transpiler/transpiler.cpp` — the libtooling tool.
 - `transpiler/CMakeLists.txt` — its build config (separate target; does not interfere with the existing `test_C_libtooling` C target).
-- A short build/run note (can live in this PRD or a separate README).
+- `transpiler/README.md` — build/run note (prerequisites, configure command, build targets, how to run a single fixture).
 
 ## Note on file layout
 
