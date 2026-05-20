@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "test_C_libtooling",
+  "project_id": "b8c32e7f-ebd1-43f3-a45c-dec5fb423177"
+}
