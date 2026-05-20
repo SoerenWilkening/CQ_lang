@@ -4,19 +4,20 @@
 //     one VarDecl with an AnnotateAttr (filtered to "quantum" in the
 //     callback),
 //   - on each match, calls qct::buildRewrite and applies the result via
-//     Rewriter::ReplaceText,
-//   - at EndSourceFileAction, writes the rewritten main-file buffer (or
-//     the untouched original if nothing was rewritten) to llvm::outs().
+//     Rewriter::ReplaceText, recording the affected FileID,
+//   - at EndSourceFileAction, prepends a single `#include "qint.h"` to
+//     the main file if it received any rewrites, then writes the
+//     rewritten main-file buffer (or the untouched original if nothing
+//     was rewritten) to llvm::outs().
 //
 // The qct::QuantumRewriteAction is plugged into ClangTool by the
 // driver via newFrontendActionFactory<>.
-//
-// NOTE: P6 deliberately does NOT insert `#include "qint.h"` — that's
-// scheduled for PLAN phase P10.
 #pragma once
 
 #include <memory>
+#include <set>
 
+#include <clang/Basic/SourceLocation.h>
 #include <clang/Frontend/FrontendAction.h>
 #include <clang/Rewrite/Core/Rewriter.h>
 #include <llvm/ADT/StringRef.h>
@@ -39,6 +40,10 @@ protected:
 
 private:
     clang::Rewriter rewriter_;
+    // Set of FileIDs that received at least one rewrite, used to drive
+    // the once-per-TU `#include "qint.h"` insertion in
+    // EndSourceFileAction. Populated by DeclStmtCallback.
+    std::set<clang::FileID> rewrittenFiles_;
 };
 
 }  // namespace qct

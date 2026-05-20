@@ -108,6 +108,17 @@ add_test(
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/fixtures
 )
 
+# Acceptance test: full PRD criteria 2-4. Transpiles example_v1.c,
+# compiles the rewritten output with `cc`, runs the binary, and diffs
+# its stdout against example_v1.expected.log. ${CMAKE_CURRENT_SOURCE_DIR}/..
+# resolves to the repo root since CMakeLists.txt lives at transpiler/.
+add_test(
+    NAME acceptance
+    COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/acceptance.sh
+            $<TARGET_FILE:quantum_transpiler>
+            ${CMAKE_CURRENT_SOURCE_DIR}/..
+)
+
 # `cmake --build <build> --target check-quantum` runs the whole test
 # suite (today: smoke_help; later: unit + e2e).
 add_custom_target(check-quantum
