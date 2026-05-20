@@ -50,6 +50,7 @@ add_library(quantum_transpiler_lib STATIC
     src/TypeMap.cpp
     src/QuantumAttr.cpp
     src/SourceText.cpp
+    src/OperandClass.cpp
 )
 target_include_directories(quantum_transpiler_lib PUBLIC src)
 target_link_libraries(quantum_transpiler_lib
@@ -75,6 +76,7 @@ find_package(GTest REQUIRED)
 add_executable(quantum_transpiler_unit_tests
     tests/unit/test_type_map.cpp
     tests/unit/test_source_text.cpp
+    tests/unit/test_operand_class.cpp
 )
 target_link_libraries(quantum_transpiler_unit_tests
     PRIVATE
