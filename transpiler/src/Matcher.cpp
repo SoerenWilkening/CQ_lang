@@ -18,7 +18,7 @@
 #include <clang/Basic/SourceLocation.h>
 #include <clang/Basic/SourceManager.h>
 #include <clang/Frontend/CompilerInstance.h>
-#include <clang/Rewrite/Core/RewriteBuffer.h>
+#include <clang/Rewrite/Core/Rewriter.h>
 #include <llvm/Support/raw_ostream.h>
 
 namespace qct {
@@ -151,7 +151,7 @@ void QuantumRewriteAction::EndSourceFileAction() {
                              /*indentNewLines=*/false);
     }
 
-    const clang::RewriteBuffer *rb = rewriter_.getRewriteBufferFor(mainId);
+    const auto *rb = rewriter_.getRewriteBufferFor(mainId);
     if (rb != nullptr) {
         // We rewrote at least one DeclStmt (and/or inserted the
         // include): emit the modified buffer.
