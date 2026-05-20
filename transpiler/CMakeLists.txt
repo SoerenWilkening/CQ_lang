@@ -48,6 +48,8 @@ add_definitions(${LLVM_DEFINITIONS_LIST})
 # be linked into both the driver executable and the unit-test binary.
 add_library(quantum_transpiler_lib STATIC
     src/TypeMap.cpp
+    src/QuantumAttr.cpp
+    src/SourceText.cpp
 )
 target_include_directories(quantum_transpiler_lib PUBLIC src)
 target_link_libraries(quantum_transpiler_lib
@@ -70,7 +72,10 @@ add_test(NAME smoke_help COMMAND quantum_transpiler --help)
 
 # Unit tests: GoogleTest binary linking the transpiler library.
 find_package(GTest REQUIRED)
-add_executable(quantum_transpiler_unit_tests tests/unit/test_type_map.cpp)
+add_executable(quantum_transpiler_unit_tests
+    tests/unit/test_type_map.cpp
+    tests/unit/test_source_text.cpp
+)
 target_link_libraries(quantum_transpiler_unit_tests
     PRIVATE
         quantum_transpiler_lib
