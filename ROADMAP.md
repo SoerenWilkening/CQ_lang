@@ -95,6 +95,7 @@ Every primitive operation, in both qq and qc forms, with all four shapes (forwar
   - *Materialization rule.* A view is fine when its value is consumed in place (as an `if` condition, as a subexpression). The moment it is bound to a named qint declaration — `quantum int b = a & C;` — the transpiler must emit a real CNOT-copy of the aliased bits into freshly-allocated qubits for `b`, plus classical bookkeeping for classical-known bits. Without this, later modifications of `b` would corrupt `a`. C's rvalue/lvalue distinction provides the dispatch hook: rvalue use → view; binding site → materialize. In a controlled body (Phase 4), each CNOT of the materialization becomes a Toffoli per quantum bit copied; classical bits still fold and emit nothing. *Deferred:* whether `b = a & C;` (reassignment to an existing qint, not a fresh declaration) is well-formed at all is a Phase 5 / lifetime question.
   - *Forward reference — Phase 4 `if`:* condition lowering must recognize a view directly. Control on the aliased qubit if the bit is quantum; fold to a classical branch if the bit is classical-known. Do not emit a redundant comparator.
   - *Forward reference — Phase 8 (pointers/aliasing):* this is the first instance of qubit-level aliasing in the language. Phase 8's pointer/aliasing rules should be designed coherently with views introduced here.
+- **3.4 Mixed-width type promotion.** Operations on qints of different widths follow exact C standard integer promotion and usual arithmetic conversion rules. Wider operands sign/zero-extend; narrower results truncate per C semantics. The transpiler applies promotion before lowering to circuits, mirroring what a classical C compiler does.
 
 ---
 
@@ -117,11 +118,12 @@ Type-dispatched on the condition expression.
 
 ## Phase 5 — Auto uncomputation
 
-Compile-time, per-op adjoint emission for temps going out of scope.
+Compile-time, per-op adjoint emission for quantum variables and temps going out of scope.
 
 **Mechanism:**
 - Transpiler tracks per-qint provenance (use-def chains)
-- At scope exit for any temp that is no longer used, emit the recorded forward op-sequence in reverse, each op replaced by its adjoint
+- At scope exit (block end, inner-function return), emit the recorded forward op-sequence in reverse with each op replaced by its adjoint. Applies to **both** anonymous temps (subexpression results) **and** named locals (declared quantum variables in inner blocks)
+- **Exception: `main` exit.** Variables alive at `main` return do not auto-uncompute — execution is ending, uncomputation would be wasted work
 - Operands match the original forward call exactly
 
 **Function attributes (derived, not declared):**
@@ -129,7 +131,7 @@ Compile-time, per-op adjoint emission for temps going out of scope.
 - `is_controllable` — every op in the function body has a defined controlled form
 - External functions default to `false` for both; user may supply manual adjoint
 
-**Errors:** any use-site that requires uncomputation of a non-adjointable result → compile error. The transpiler does not enumerate "what it can't invert" — it fires the error at the use-site, O(1) per call-site check.
+**Errors and diagnostics.** The transpiler's diagnostic story begins here. Any use-site that requires uncomputation of a non-adjointable result fires a compile error at the use-site (O(1) per call-site; no enumeration of "what can't be inverted"). Later phases extend this scaffolding (Phase 4: missing controlled forms; Phase 7: function-adjoint derivation failures; Phase 8: aliasing violations). v1's "silent fail on unsupported constructs" posture ends with Phase 5.
 
 ---
 
@@ -143,14 +145,22 @@ Quantum data may appear in the loop body; loop variable and bounds are classical
 
 ---
 
-## Phase 7 — Function inversion
+## Phase 7 — User-defined quantum functions and inversion
 
-Structural adjoint derivation for user-defined functions (Q#-style).
+Function definition, call, and structural adjoint derivation.
 
-- For a function composed of adjointable primitive ops, derive its adjoint by reversing the op-sequence and adjointing each op
+**Function definition and call:**
+- Functions may take quantum and classical parameters and return quantum or classical values
+- **By-value passing of a qint** triggers a CNOT-copy at the call site onto fresh callee qubits — consistent with C value-passing semantics, with no-cloning forcing the "copy" to be XOR-copy rather than true duplication
+- **By-reference passing** is alias-passing — the callee operates directly on the caller's qubits; no copy
+- Calls inside a controlled body (Phase 4) emit controlled forms of the callee's body ops; if any op in the callee lacks a controlled form, compile error at the call site
+- Return-by-value of a qint: caller-side materialization (same model as Phase 3.3's view materialization)
+
+**Function inversion (structural adjoint):**
+- For a function composed of adjointable primitive ops, derive its adjoint by reversing the op-sequence and adjointing each op (Q#-style)
 - Relies on Phase 5 `is_adjointable` propagation through the call graph
 - External / foreign calls require user-supplied adjoint to participate
-- Surface syntax for invoking adjoint of a function: TBD (likely `adjoint foo(...)` or `foo.adj(...)`)
+- Surface syntax for invoking the adjoint of a function: uses the `invert` marker introduced in Phase 2 (CQ.h). Exact shape TBD — leaning keyword form (`invert foo(...)`) per the Phase 2 inclination
 
 ---
 
@@ -201,6 +211,6 @@ Optimizations on the emitted circuit / IR. Frontend-only; presumes the prior pha
 
 - Phases 2 → 5 are tightly coupled and form the "make CQ look like real C with quantum types" core. They should land in order; each builds on the previous.
 - Phase 4 (`if`) depends on Phase 3 controlled forms; Phase 5 (uncomputation) depends on Phase 3 adjoints. Both can be developed in parallel once Phase 3 lands.
-- Phase 7 (function inversion) depends on Phase 5 attribute machinery.
+- Phase 7 (user-defined functions and inversion) depends on Phase 5 attribute machinery.
 - Phase 8 (memory) is largely independent of Phases 4–7 and could be parallelized, but it introduces QRAM which is a fresh stub area.
 - Phase 11 (optimization) only makes sense once enough primitives exist to optimize over.
