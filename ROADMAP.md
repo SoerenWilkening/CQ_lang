@@ -14,6 +14,7 @@ Phase-by-phase trajectory from v1 to a feature-complete quantum-C transpiler. Co
 6. **No-cloning is physics, not policy.** `quantum int a = b;` cannot actually clone; it emits CNOT-based XOR-copy (which entangles). User is expected to understand this; document it, do not guard-rail it.
 7. **Measurement happens at cast.** `(int) q` is the only way to extract a classical value from a quantum variable.
 8. **Frontend/backend header separation.** `CQ.h` is the single user-facing entry point — intentionally lightweight, parse-only. It does *not* include backend headers (`qint.h` and successors); those are emitted into the *transpiled output* by the transpiler. The user never includes a backend header; the backend never sees CQ source. As features land, `CQ.h` gains markers but never backend types.
+9. **Per-bit qint attribution.** A qint tracks per-bit type — each bit is either a physical qubit or classical (value stored alongside; mask bit clear). v1 already encodes this via `qint_t.mask` + `qint_t.value`. All ops respect both: a mask, shift, arithmetic, or comparison may touch quantum bits, classical bits, or both. The transpiler dispatches per-bit; fully-classical operands collapse to compile-time classical results.
 
 ---
 
@@ -90,6 +91,10 @@ Every primitive operation, in both qq and qc forms, with all four shapes (forwar
 **Sub-items:**
 - **3.1 In-place semantics.** Out-of-place primitives that the language exposes as in-place are reconciled either by appended swap-back or by Fredkin substitution. Transpiler picks one strategy per op; later optimization may swap.
 - **3.2 Modular-arithmetic peephole.** Compiler flag enabling pattern `(a + b) % N → add_mod(a, b, N)` and the analogous mul/exp forms. Flag default: off.
+- **3.3 Classical-mask views (zero-cost bit inspection).** `qint & C` where `C` is a classical constant returns a *view* aliasing a subset of the qint's bits — no new register, no gates. For `C = (1 << k)`, the result is a single-bit view (`quantum bool`) of bit k. For general C: result bits are either aliases (where C has 1-bits) or known-|0⟩ ancillas (where C has 0-bits). C syntax makes `a & mask` an rvalue, so views are read-only by construction. Per-bit dispatch (principle 9): quantum bits become qbool aliases; classical bits collapse to compile-time `0`/`1`, potentially folding the whole expression to a constant at transpile time.
+  - *Materialization rule.* A view is fine when its value is consumed in place (as an `if` condition, as a subexpression). The moment it is bound to a named qint declaration — `quantum int b = a & C;` — the transpiler must emit a real CNOT-copy of the aliased bits into freshly-allocated qubits for `b`, plus classical bookkeeping for classical-known bits. Without this, later modifications of `b` would corrupt `a`. C's rvalue/lvalue distinction provides the dispatch hook: rvalue use → view; binding site → materialize. In a controlled body (Phase 4), each CNOT of the materialization becomes a Toffoli per quantum bit copied; classical bits still fold and emit nothing. *Deferred:* whether `b = a & C;` (reassignment to an existing qint, not a fresh declaration) is well-formed at all is a Phase 5 / lifetime question.
+  - *Forward reference — Phase 4 `if`:* condition lowering must recognize a view directly. Control on the aliased qubit if the bit is quantum; fold to a classical branch if the bit is classical-known. Do not emit a redundant comparator.
+  - *Forward reference — Phase 8 (pointers/aliasing):* this is the first instance of qubit-level aliasing in the language. Phase 8's pointer/aliasing rules should be designed coherently with views introduced here.
 
 ---
 
@@ -180,7 +185,9 @@ Likely transform-to-for or amplitude-amplification semantics. Design pinned down
 
 Optimizations on the emitted circuit / IR. Frontend-only; presumes the prior phases produce a faithful but unoptimized output.
 
-- Gate cancellation (X·X = I, CNOT·CNOT = I, adjacent inverse pairs)
+- focus on instruction level optimizations
+- a ^= b & c; and a ^= b | c; optimized into inplace AND/OR with a as direct target instead of ancilla
+- Gate cancellation (X·X = I, CNOT·CNOT = I, adjacent inverse pairs) doable on instruction level
 - Adjacent-gate fusion
 - Peephole patterns (generalization of Phase 3.2)
 - Constant folding for classical-known values feeding quantum ops
