@@ -91,9 +91,14 @@ cmake -S transpiler -B transpiler/build -G Ninja \
   -DCMAKE_C_COMPILER="$LLVM_PREFIX/bin/clang" \
   -DCMAKE_CXX_COMPILER="$LLVM_PREFIX/bin/clang++" \
   -DLLVM_DIR="$LLVM_PREFIX/lib/cmake/llvm" \
-  -DClang_DIR="$LLVM_PREFIX/lib/cmake/clang"
+  -DClang_DIR="$LLVM_PREFIX/lib/cmake/clang" \
+  -DCMAKE_OSX_SYSROOT="$(xcrun --show-sdk-path)"
 cmake --build transpiler/build -j
 ```
+
+`CMAKE_OSX_SYSROOT` is required so Homebrew clang++ finds the macOS SDK's C
+headers alongside libc++ — without it the build fails with errors like
+`<cwchar> tried including <wchar.h> but didn't find libc++'s <wchar.h> header`.
 
 ### Linux
 
@@ -230,3 +235,9 @@ fallback shim but the real package is cleaner.
 
 **Apple Clang vs libtooling Clang mismatch on link** — use Homebrew's
 `clang` for both `CMAKE_C_COMPILER` and `CMAKE_CXX_COMPILER`, not just CXX.
+
+**`<cwchar> tried including <wchar.h> but didn't find libc++'s <wchar.h>`**
+(or analogous `cstdio`/`cerrno` errors) on macOS — Homebrew clang++ isn't
+finding the macOS SDK. Pass `-DCMAKE_OSX_SYSROOT="$(xcrun --show-sdk-path)"`
+to the configure command, or `export SDKROOT=$(xcrun --show-sdk-path)`
+beforehand.
