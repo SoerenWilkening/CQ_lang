@@ -40,6 +40,7 @@ Extend qint to all integer widths; introduce qfloat/qdouble as stub structs; int
 
 **Scope (type system):**
 - Integer widths: `quantum char`, `quantum short`, `quantum int`, `quantum long`, `quantum long long`, both signed and unsigned
+- `quantum _Bool` / `quantum bool`: single-qubit type; structurally a 1-bit unsigned int, no new machinery required
 - `quantum float`, `quantum double`: stub structs only; internal representation deferred (decision between fixed-point / QFT-based / IEEE-mimic happens when backend lands)
 - Assignment semantics: `quantum T a = b;` emits XOR-copy (CNOT-based)
 - Measurement at cast: `(int) q`, `(float) q`, etc. lowered to a `measure` call
@@ -74,6 +75,8 @@ Every primitive operation, in both qq and qc forms, with all four shapes (forwar
 **Operations:**
 - Arithmetic: `+`, `-`, `*`, `/`, `%`, plus compound `+=`, `-=`, `*=`, `/=`, `%=`
 - Bitwise: `<<`, `>>`, `|`, `&`, `^`, plus compound `<<=`, `>>=`, `|=`, `&=`, `^=`
+- Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` — produce a flag ancilla; required by Phase 4 `if`-condition lowering
+- Unary: `-` (two's-complement negate), `~` (bitwise NOT, broadcast X), `!` (logical NOT, special-case `== 0` comparator), `++`/`--` (prefix and postfix; desugar to `+= 1` / `-= 1`)
 - Structural: copy (XOR-copy via CNOT), swap
 
 **Operand variants per op:**
@@ -160,6 +163,7 @@ Structural adjoint derivation for user-defined functions (Q#-style).
 - `struct` (including with quantum fields)
 - `union`, `typedef`, `enum`
 - Storage classes, qualifiers
+- `_Complex` / `_Imaginary`: surface-level handling only; quantum amplitudes are inherently complex at the backend layer, so `quantum _Complex` is not a planned user-facing type
 - Other C99/C11 features as they become relevant
 
 Most of these need only mechanical AST handling; no new quantum semantics introduced.
