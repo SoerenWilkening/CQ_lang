@@ -103,7 +103,6 @@ The relevant excerpt of `CQ.h`:
 typedef struct { int val; } qint_mid_t;
 
 qint_mid_t cq_init(int64_t value, unsigned num_bits);
-qint_mid_t cq_alloc(unsigned num_bits);
 int64_t    cq_measure(qint_mid_t);
 
 void cq_theta(qint_mid_t* q, double angle);
@@ -117,8 +116,9 @@ void cq_invert_end  (void);
 /* Plus the `quantum` keyword macro for Phase 2's CQ.h entry. */
 ```
 
-Seven functions plus the `quantum` keyword. That's the entire LLVM-level
-extension surface.
+Six functions plus the `quantum` keyword. That's the entire LLVM-level
+extension surface. (`cq_alloc` was removed 2026-05-21 — see
+`architecture.md` §6.1 Decision note.)
 
 ---
 

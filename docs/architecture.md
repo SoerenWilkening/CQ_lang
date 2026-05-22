@@ -68,8 +68,8 @@ Reversibilizability is not a user-declared property. The IR pass
 discovers it by:
 
 1. Identifying quantum SSA values (those produced, directly or
-   transitively, by `@cq_init` / `@cq_alloc` calls or coming in as
-   `qint_mid_t`-typed function parameters)
+   transitively, by `@cq_init` calls or coming in as `qint_mid_t`-typed
+   function parameters)
 2. Forward call-graph closure: any function called with a `qint_mid_t`
    argument is a quantum-specialization candidate
 3. Per-function classification (reversibilizable / not) by inspecting
@@ -101,7 +101,7 @@ intrinsics. The rewriter emits ordinary C arithmetic on the `.val` field
 of `qint_mid_t`; Clang lowers it to stock LLVM opcodes (`add`, `sub`,
 `mul`, `icmp`, …, the 38 primitives Bennett's mapper handles). The IR
 pass identifies which instructions are quantum by **forward taint
-propagation** from `@cq_init` / `@cq_alloc` results (see §7.1).
+propagation** from `@cq_init` results (see §7.1).
 
 This is the major correction over an earlier draft of this document
 that enumerated `cq_add_qq`, `cq_mul_qq`, etc., as separate intrinsics.
@@ -221,7 +221,7 @@ clang -emit-llvm  (with normal mem2reg/sroa cleanup)
    ▼
 LLVM IR
    • stock opcodes for both classical and quantum arithmetic
-   • @cq_init / @cq_alloc as taint sources
+   • @cq_init as taint source
    • @cq_measure as taint sink
    • @cq_theta / @cq_phi for rotations
    • @cq_when_* / @cq_invert_* region brackets
@@ -231,7 +231,7 @@ LLVM IR
    ▼
 ┌────────────────────────────────────────────────────────────────┐
 │ CQ IR pass                                                     │
-│   1. Forward taint propagation from @cq_init / @cq_alloc       │
+│   1. Forward taint propagation from @cq_init                   │
 │      results and qint_mid_t-typed parameters                   │
 │   2. Call-graph forward closure: any function called with      │
 │      qint_mid_t arg → quantum-specialization candidate         │
@@ -329,18 +329,29 @@ metadata after Clang lowering.
 
 ## 6. Intrinsic surface
 
-This is the complete LLVM-level extension surface. All ~7 functions are
+This is the complete LLVM-level extension surface. All ~6 functions are
 declared (not defined) in `CQ.h` so user source parses and so the IR
 pass can pattern-match on the calls.
 
-### 6.1 Construction (taint sources)
+### 6.1 Construction (taint source)
 
 ```c
 qint_mid_t cq_init(int64_t value, unsigned num_bits);    /* classical-seed quantum */
-qint_mid_t cq_alloc(unsigned num_bits);                  /* fresh |0…0> ancilla */
 ```
 
-Both return a `qint_mid_t`; both are taint sources in the §7.1 analysis.
+Returns a `qint_mid_t`; taint source in the §7.1 analysis. The rewriter
+emits `cq_init(0, W)` for uninitialized `quantum int x;` declarations and
+`cq_init(E, W)` for `quantum int x = E;` (see §5.1). The function-call
+form is load-bearing: its `qint_mid_t` return type preserves the taint
+signal across Clang's mem2reg/sroa optimization in a way a bare C struct
+literal would not (sroa would fold `qint_mid_t a = {3};` to a plain
+`i32 3` constant, losing the quantum signal at Stage 4).
+
+**Decision (2026-05-21): `cq_alloc` removed.** Originally proposed as a
+separate intrinsic for fresh-ancilla allocation, but it is functionally
+equivalent to `cq_init(0, num_bits)` — both produce |0…0⟩ on the
+backend. Explicit user-controlled ancilla allocation is deferred to a
+later-phase API design; for now, `cq_init(0, W)` covers all known cases.
 
 ### 6.2 Measurement (taint sink)
 
@@ -418,7 +429,7 @@ The first analysis the pass runs. Standard data-flow over SSA values.
 
 ```
 taint_sources = {
-    return value of @cq_init / @cq_alloc call sites,
+    return value of @cq_init call sites,
     qint_mid_t-typed function parameters,
     extractvalue results of any of the above,
 }
@@ -750,6 +761,31 @@ intrinsic-call mechanism described in §6.
 Until at least one of these triggers fires, the intrinsic-based design
 described in §3–§7 is the right point on the cost/value curve.
 
+**Decision (2026-05-21): Rejected for Phases 1–10.**
+
+A follow-up session re-evaluated MLIR adoption against the four triggers
+above. The key constraint surfaced was that under the project's
+minimal-surface preferences — no custom quantum type, no quantum-specific
+arithmetic ops (stock LLVM opcodes per P4), `qint_mid_t` struct as the
+quantum-int signal at fn boundaries, classical alloc for allocation —
+a custom MLIR dialect would collapse to roughly three quantum-specific
+ops (`theta`, `phi`, `measure`) plus a few region-bracket markers, i.e.,
+essentially the same intrinsic surface §6 already defines.
+
+For that surface, MLIR's substrate cost (~6–8 weeks of infrastructure
+work: dialect definition, libtooling-to-MLIR translation, lowering
+passes, build integration) does not pencil out against its benefits
+(richer location tracking, region-structured control flow, declarative
+rewrites via TableGen DRR). MLIR's *transformative* benefits — type-
+enforced quantum-ness replacing taint propagation, region-based ops
+replacing begin/end markers, multi-level lowering preserving optimization
+opportunities — only emerge when the dialect carries quantum semantics
+in custom types and custom ops. With minimal-surface as the project
+preference, those benefits do not apply.
+
+The four triggers above remain on the books; Phase 11 will re-evaluate
+against them.
+
 ---
 
 ## 12. Open design questions
@@ -811,8 +847,8 @@ These are the explicit decisions still owed:
 | `qint_mid_t` | Mid-level frontend struct type. Single integer field. Survives at function-signature boundaries; flattened within bodies by mem2reg. |
 | Frontend qint_t | Synonym for source-level / `quantum int` usage and `qint_mid_t` at IR boundaries. The user-visible quantum type. |
 | Backend qint_t | The runtime's actual qubit register / handle. Lives in `libcq_runtime`. Not our compilation concern. |
-| Taint propagation | Forward data-flow analysis that marks SSA values as quantum if they are produced (directly or transitively) by `@cq_init` / `@cq_alloc` / a `qint_mid_t`-typed parameter. The mechanism that lets stock LLVM opcodes carry quantum-ness without dedicated arithmetic intrinsics. (§7.1) |
-| Taint source | `@cq_init`, `@cq_alloc`, `qint_mid_t`-typed function parameters. |
+| Taint propagation | Forward data-flow analysis that marks SSA values as quantum if they are produced (directly or transitively) by `@cq_init` or a `qint_mid_t`-typed parameter. The mechanism that lets stock LLVM opcodes carry quantum-ness without dedicated arithmetic intrinsics. (§7.1) |
+| Taint source | `@cq_init` call returns, `qint_mid_t`-typed function parameters. |
 | Taint sink | `@cq_measure` (result is classical i64). |
 | Quantum operation | A stock LLVM instruction whose result is tainted, OR a `@cq_*` intrinsic call. Eligible for lowering to gates by the IR pass. |
 | Quantum specialization | An IR-pass-synthesized function body where every tainted instruction is replaced by its reversible-gate template. Generated on demand from a classical function's IR via §7.7. |
