@@ -902,6 +902,12 @@ Backend-specific decisions still owed:
 2. **Variant selection policy.** Per-opcode flag / cost-model /
    backend-hint-driven. Phase 11 territory; Phase 2/3 ships one
    canonical variant per opcode.
+
+   *Possible extension:* source-level pragma or attribute
+   (`#pragma cq adder cuccaro` / `[[cq::adder("cuccaro")]]`) for
+   per-region override on top of a global default. Would introduce
+   a frontend angle (rewriter emits a hint marker the IR pass
+   honors) — the only §10 question with cross-layer implications.
 3. **Specialization mangling scheme.** Concrete name format, ABI
    stability across compiler invocations for caching.
 4. **Runtime ABI versioning.** Symbol-versioning scheme, ABI
