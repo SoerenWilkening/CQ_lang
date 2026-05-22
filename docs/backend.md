@@ -419,6 +419,11 @@ Walk the candidate function's IR; reject on any of:
 Accept on a clean pass. Diagnostics report the offending instruction
 with source-location precision via `!dbg`.
 
+The rejection set above is the **default**, not a fundamental
+impossibility — see §10 q10 for relaxation paths (devirtualization,
+per-call-site variadic monomorphization, inline-asm escape hatch) worth
+admitting at later stages.
+
 ### 5.5 Per-op uncomputation
 
 Preserves ROADMAP §2; implementation moves from AST use-def to IR SSA
@@ -919,6 +924,23 @@ Backend-specific decisions still owed:
    (e.g., one supports density matrices and one doesn't), how does
    the IR-emitted code know which is linked? Capability-query
    functions vs. link-time selection.
+
+10. **Classifier rejection relaxations** (mirrors
+    [`architecture.md`](./architecture.md) §12 q10). The §5.4
+    default-reject set is the starting position, not a fundamental
+    impossibility. Three relaxation paths worth admitting
+    post-Phase-11:
+    - *Devirtualizable indirect calls.* LLVM devirtualization + LTO
+      resolves a useful subset statically; falls back to a runtime
+      jump table of pre-specialized targets or measurement bridge
+      for the genuinely-dynamic case.
+    - *Per-call-site variadic monomorphization.* Synthesize a
+      non-variadic specialization per call site, fixing the
+      `va_arg` shape at the call site.
+    - *Inline asm as escape hatch.* User-supplied gate-sequence
+      annotation (e.g., `__attribute__((cq_gate_sequence("...")))`)
+      treats the asm as a hand-crafted gate sequence with the
+      annotation as ground truth.
 
 ---
 

@@ -561,6 +561,11 @@ present:
 Accept on a clean pass. Diagnostics report the offending instruction with
 source-location precision via `!dbg`.
 
+The rejection set above is the **default**, not a fundamental
+impossibility — see §12 q10 for relaxation paths (devirtualization,
+per-call-site variadic monomorphization, inline-asm escape hatch) worth
+admitting at later stages.
+
 ### 7.4 Per-op uncomputation (auto)
 
 For each quantum-mode function being lowered:
@@ -884,6 +889,30 @@ These are the explicit decisions still owed:
    conditions in §11 against ROADMAP phases — when does the cost of
    intrinsic-pattern-matching become higher than the cost of MLIR
    adoption?
+
+10. **Classifier rejection relaxations.** The default-reject set in
+    §7.3 is the starting position, not a fundamental impossibility.
+    Three relaxation paths worth admitting later (post-Phase-11), each
+    on its own trigger:
+    - *Devirtualizable indirect calls.* LLVM devirtualization + LTO
+      can statically resolve a useful subset (when the fn-pointer
+      value is statically determinable); those become direct calls
+      and specialize normally. Genuinely-unknown indirect calls fall
+      back to a runtime jump table of pre-specialized targets or
+      measurement bridge.
+    - *Per-call-site variadic monomorphization.* The `va_arg` ABI is
+      platform-specific, but for a given call site the argument shape
+      is fixed. Synthesize a non-variadic specialization per call
+      site. Works for narrow patterns; impractical in general.
+    - *Inline asm as escape hatch.* Inline asm with a user-supplied
+      gate-sequence annotation (e.g.,
+      `__attribute__((cq_gate_sequence("...")))`) lets the IR pass
+      treat the annotation as ground truth for hand-crafted gate
+      sequences. Hardware-native gate injection use case; not
+      general support.
+
+    Each is post-Phase-11 territory, triggered by real-world needs
+    that emerge from actual use of the frozen frontend.
 
 ---
 
