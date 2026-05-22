@@ -53,6 +53,7 @@ add_library(quantum_transpiler_lib STATIC
     src/OperandClass.cpp
     src/Codegen.cpp
     src/DeclStmtRewrite.cpp
+    src/CastRewrite.cpp
     src/Matcher.cpp
 )
 target_include_directories(quantum_transpiler_lib PUBLIC src)
@@ -90,6 +91,7 @@ add_executable(quantum_transpiler_unit_tests
     tests/unit/test_operand_class.cpp
     tests/unit/test_codegen.cpp
     tests/unit/test_decl_stmt_rewrite.cpp
+    tests/unit/test_cast_rewrite.cpp
 )
 target_link_libraries(quantum_transpiler_unit_tests
     PRIVATE
