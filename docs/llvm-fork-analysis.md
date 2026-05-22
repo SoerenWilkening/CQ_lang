@@ -335,17 +335,38 @@ slice.
 | `CallInst::setCalledFunction` retargets call sites | ✓ — original `@example` now calls `@__cq_q_double_it_q1` |
 | Pre-existing front-end intrinsics (`@cq_*`) correctly skipped, not re-cloned | ✓ |
 
+#### Phase 5 multi-BB findings
+
+| Claim | Validation |
+|---|---|
+| `PostDominatorTree::findNearestCommonDominator` returns the merge block when uses span both arms of an `if` | ✓ |
+| `getFirstInsertionPt()` correctly places `cqrt_free` between `phi` and `ret` in the merge block | ✓ |
+| `cqrt_free` is emitted **exactly once** (not duplicated into either arm) | ✓ |
+| No code changes were needed — original `computeFreePoint()` already correct for non-trivial CFG | ✓ |
+
+#### Phase 4 (cq-control) findings
+
+| Claim | Validation |
+|---|---|
+| Region detection via `cq_when_begin`/`cq_when_end` bracket walking works | ✓ |
+| `cqrt_template_*` calls inside a region are substituted with the `_controlled` variant | ✓ — control handle prepended as first arg |
+| `cqrt_template_*` calls **outside** any region are left alone | ✓ |
+| Bracket call sites and declarations erased after substitution | ✓ |
+| `Module::getOrInsertFunction` with dynamically-built `FunctionType` works for variant declarations | ✓ |
+
 #### Overall
 
 | Claim | Result |
 |---|---|
-| "Lightweight extension" claim quantitatively defensible | ✓ — 426 LOC C++ for all three slices combined |
-| All checks pass on stock LLVM 19.1.7 | ✓ — no LLVM source patches anywhere in the dependency chain |
+| "Lightweight extension" claim quantitatively defensible | ✓ — 525 LOC C++ for all four passes combined |
+| All five checks pass on stock LLVM 19.1.7 | ✓ — no LLVM source patches anywhere in the dependency chain |
+| Every architecturally novel LLVM-API mechanism in `architecture.md` + `backend.md` demonstrated working | ✓ — taint propagation, mid→handle rebinding, post-dominator analysis (linear + branched), function cloning, region substitution |
 
 Recorded in `bd` memories `prototype-validated-no-fork-2026-05-22`
-(Phase 2) and `prototype-phase5-phase7-validated-2026-05-22` (Phase 5 +
-Phase 7). Issues closed: `test_C_libtooling-re1`,
-`test_C_libtooling-aqf`, `test_C_libtooling-mh3`.
+(Phase 2), `prototype-phase5-phase7-validated-2026-05-22` (Phase 5 +
+Phase 7 cloning), and `prototype-phase4-phase5branch-validated-2026-05-22`
+(Phase 4 regions + Phase 5 multi-BB). Issues closed:
+`test_C_libtooling-re1`, `-aqf`, `-mh3`, `-bhm`, `-dca`.
 
 ### 8.2 What the prototype slices prove
 

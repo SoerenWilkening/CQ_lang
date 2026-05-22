@@ -393,6 +393,101 @@ struct CQSpecializePass : PassInfoMixin<CQSpecializePass> {
   }
 };
 
+// === Phase 4: region handling pass ===
+//
+// For each cq_when_begin(ctrl) / cq_when_end() bracket pair, substitute each
+// cqrt_template_* call inside the region with its _controlled variant,
+// prepending the region's control handle as the first argument. Then erase
+// the bracket calls.
+//
+// Scope: linear-CFG regions only (begin and end in same BB). No nested
+// regions, no cross-BB regions. The input form expected is post-lowering
+// IR where cq_when_begin takes an i32 handle directly. Real integration
+// would extend cq-lowering to dissolve the qint_mid_t struct argument at
+// cq_when_begin sites; the prototype skips that wiring to isolate the
+// region-substitution mechanism.
+
+struct CQControlPass : PassInfoMixin<CQControlPass> {
+
+  struct Sub {
+    CallInst *Original;
+    Value *Ctrl;
+  };
+
+  PreservedAnalyses run(Module &M, ModuleAnalysisManager &) {
+    bool Changed = false;
+    for (Function &F : M) {
+      if (F.isDeclaration()) continue;
+      Changed |= runOnFunction(F);
+    }
+    if (Changed) {
+      for (const char *Name : {"cq_when_begin", "cq_when_end"}) {
+        if (Function *FE = M.getFunction(Name)) {
+          if (FE->use_empty()) FE->eraseFromParent();
+        }
+      }
+    }
+    return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
+  }
+
+  static bool runOnFunction(Function &F) {
+    Module &M = *F.getParent();
+    Type *Void = Type::getVoidTy(F.getContext());
+
+    std::vector<Sub> Subs;
+    std::vector<Instruction *> BracketsToErase;
+
+    for (BasicBlock &BB : F) {
+      Value *CurrentCtrl = nullptr;
+      Instruction *BeginInst = nullptr;
+
+      for (Instruction &I : BB) {
+        auto *CI = dyn_cast<CallInst>(&I);
+        if (!CI) continue;
+        Function *Callee = CI->getCalledFunction();
+        if (!Callee) continue;
+        StringRef N = Callee->getName();
+
+        if (N == "cq_when_begin") {
+          CurrentCtrl = CI->getArgOperand(0);
+          BeginInst = CI;
+        } else if (N == "cq_when_end") {
+          if (BeginInst) BracketsToErase.push_back(BeginInst);
+          BracketsToErase.push_back(CI);
+          CurrentCtrl = nullptr;
+          BeginInst = nullptr;
+        } else if (CurrentCtrl && N.starts_with("cqrt_template_")) {
+          Subs.push_back({CI, CurrentCtrl});
+        }
+      }
+    }
+
+    if (Subs.empty() && BracketsToErase.empty()) return false;
+
+    for (const Sub &S : Subs) {
+      Function *Orig = S.Original->getCalledFunction();
+      std::string CtrlName = (Orig->getName() + "_controlled").str();
+
+      SmallVector<Value *, 8> Args;
+      Args.push_back(S.Ctrl);
+      for (Value *A : S.Original->args()) Args.push_back(A);
+
+      SmallVector<Type *, 8> ArgTypes;
+      for (Value *A : Args) ArgTypes.push_back(A->getType());
+      FunctionType *FT = FunctionType::get(Void, ArgTypes, false);
+      FunctionCallee CtrlFn = M.getOrInsertFunction(CtrlName, FT);
+
+      IRBuilder<> Builder(S.Original);
+      CallInst *New = Builder.CreateCall(CtrlFn, Args);
+      if (DebugLoc DL = S.Original->getDebugLoc()) New->setDebugLoc(DL);
+      S.Original->eraseFromParent();
+    }
+
+    for (Instruction *I : BracketsToErase) I->eraseFromParent();
+    return true;
+  }
+};
+
 }  // namespace
 
 // === Pass plugin registration ===
@@ -413,6 +508,10 @@ llvm::PassPluginLibraryInfo getCQPluginInfo() {
                   }
                   if (Name == "cq-specialize") {
                     MPM.addPass(CQSpecializePass());
+                    return true;
+                  }
+                  if (Name == "cq-control") {
+                    MPM.addPass(CQControlPass());
                     return true;
                   }
                   return false;
