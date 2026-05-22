@@ -1,8 +1,8 @@
-#include "qint.h"
+#include <CQ.h>
 #define quantum __attribute__((annotate("quantum")))
 
 int main(void) {
     int classic = 7;
-    qint_t z = init_qint(classic, 16);
+    qint_mid_t z = cq_init_i32(classic);
     return 0;
 }

@@ -1,9 +1,9 @@
-#include "qint.h"
+#include <CQ.h>
 #define quantum __attribute__((annotate("quantum")))
 
 int main(void) {
-    qint_t a = init_qint(3, 16);
-    qint_t b = init_qint(2, 16);
-    qint_t c = add(a, b);
+    qint_mid_t a = cq_init_i32(3);
+    qint_mid_t b = cq_init_i32(2);
+    qint_mid_t c; c.val = a.val + b.val;
     return 0;
 }
