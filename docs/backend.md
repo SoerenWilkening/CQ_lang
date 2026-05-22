@@ -704,8 +704,10 @@ shadow alongside the quantum register. Maintained by the runtime:
   already classical and no measurement is needed.
 
 This is the ROADMAP's hybrid-data-representation principle, working
-transparently. Phase 11 optimization passes can leverage `.value` /
-`.mask` to elide gates when classical shadows make them no-ops.
+transparently at runtime. The compile-time analog — eliding or
+deferring `cqrt_alloc_*` calls based on backward reachability from
+superposition sinks — is a strictly stronger version of the same idea,
+tracked as an open design question at §10 q11.
 
 ### 6.6 Multiple runtime variants
 
@@ -947,6 +949,44 @@ Backend-specific decisions still owed:
       annotation (e.g., `__attribute__((cq_gate_sequence("...")))`)
       treats the asm as a hand-crafted gate sequence with the
       annotation as ground truth.
+
+11. **Compile-time qubit allocation deferral.** §6.5 describes
+    runtime-side hybrid tracking via `qreg_state_t.value` + `.mask`,
+    short-circuiting at `cqrt_measure` when `.mask == 0`. The same
+    decision can be made at compile time, and made stronger.
+
+    *Analysis:* backward "superposition reachability" from sinks
+    (`@cq_theta`, `@cq_phi`, mutation inside a `cq_when_*` region
+    whose control is reachable from a sink — fixed-point on the
+    region/CFG, XOR-copy from a source reachable from a sink),
+    complementing the forward taint of §5.1.
+
+    *Outcomes per tainted value:*
+    - *Unreachable from any sink* → **elide** `cq_init`; consumers
+      stay stock LLVM (no template substitution, no runtime `.mask`
+      check). Detainting V recursively detaints ops that consumed
+      only V.
+    - *Reachable* → **defer**: classical-compute up to the
+      PostDominator of all quantum uses, then insert
+      `cqrt_alloc_classical_<W>(computed_value)` and retarget
+      downstream quantum uses.
+
+    *Correctness obligations:* `cq_when_*` propagation; XOR-copy
+    entanglement; diamond control flow (allocate at common dominator
+    or use φ/select with consistent representation); loop sinking
+    (preheader vs body per dependency analysis). Machinery
+    (DominatorTree + PostDominatorTree) already used by the Phase 0
+    `cq-uncompute` prototype — no new LLVM extension surface.
+
+    *Net effect:* strictly fewer qubits allocated, strictly fewer
+    template substitutions; never pessimizes vs. the
+    runtime-`.mask`-only path.
+
+    *Open: timing.* Sits in "Beyond the frontend" optimization
+    passes by default, but a strong pre-Phase-11 candidate — the
+    frozen frontend benefits permanently and the analysis needs no
+    real templates. Decision at Phase 9/10 PRD time, based on
+    prototype cost estimate.
 
 ---
 

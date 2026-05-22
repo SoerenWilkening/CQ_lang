@@ -914,6 +914,18 @@ These are the explicit decisions still owed:
     Each is post-Phase-11 territory, triggered by real-world needs
     that emerge from actual use of the frozen frontend.
 
+11. **Compile-time qubit allocation deferral** (canonical reference:
+    [`backend.md`](./backend.md) §10 q11). Backward "superposition
+    reachability" from sinks (theta/phi/superposed-controlled
+    mutations/superposed XOR-copy) classifies each tainted value as
+    either **elide-able** (no sink ever reached — drop `cq_init`,
+    consumers stay stock LLVM) or **defer-able** (allocate at the
+    PostDominator of quantum uses, classical-compute up to that
+    point). Strictly stronger than the runtime-`.mask`-only short-
+    circuit at `backend.md §6.5`; uses existing DominatorTree +
+    PostDominatorTree machinery — no new LLVM extension surface.
+    Strong pre-Phase-11 candidate; decision at Phase 9/10 PRD time.
+
 ---
 
 ## 13. Glossary
