@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# tools/cqc — Phase 1 user-facing driver. Orchestrates the four-stage CQ
+# pipeline: rewriter → clang -O1 -emit-llvm → opt cq-lowering → link.
+#
+# Spec: phases/phase1/PLAN.md §4.6. LOC budget ≤ 100.
+#
+# Usage:
+#   cqc <input.c> -o <output> [--keep-intermediates]
+#                             [--cq-prefix=<dir>]
+#                             [--opt=<binary>] [--clang=<binary>]
+#
+# Defaults: --cq-prefix=$(dirname $0)/.. (repo / install root),
+#           --opt=opt-19, --clang=clang-19.
+#
+# Artifact lookup order under <prefix>:
+#   * Install layout: <prefix>/bin/<binary>, <prefix>/lib/<libname>,
+#     <prefix>/include/<header>.
+#   * In-tree build layout: <prefix>/build/transpiler, build/ir-pass,
+#     build/runtime, <prefix>/include — so the driver works directly in
+#     the dev tree without an install step.
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+usage: cqc <input.c> -o <output> [options]
+  --keep-intermediates    keep <output>.transpiled.c, .bc, .lowered.bc next to <output>
+  --cq-prefix=<dir>       install/source prefix (default: $(dirname "$0")/..)
+  --opt=<binary>          opt binary (default: opt-19)
+  --clang=<binary>        clang binary (default: clang-19)
+  -h, --help              this message
+EOF
+}
+
+input=""; output=""; keep=0
+prefix="$(cd "$(dirname "$0")/.." && pwd)"
+opt_bin="opt-19"; clang_bin="clang-19"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)              usage; exit 0 ;;
+        -o)                     output="$2"; shift 2 ;;
+        --keep-intermediates)   keep=1; shift ;;
+        --cq-prefix=*)          prefix="${1#*=}"; shift ;;
+        --cq-prefix)            prefix="$2"; shift 2 ;;
+        --opt=*)                opt_bin="${1#*=}"; shift ;;
+        --opt)                  opt_bin="$2"; shift 2 ;;
+        --clang=*)              clang_bin="${1#*=}"; shift ;;
+        --clang)                clang_bin="$2"; shift 2 ;;
+        -*) echo "cqc: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+        *)  if [[ -z "$input" ]]; then input="$1"; else
+                echo "cqc: unexpected positional arg: $1" >&2; exit 2; fi
+            shift ;;
+    esac
+done
+
+[[ -n "$input"  ]] || { echo "cqc: missing <input.c>" >&2; usage >&2; exit 2; }
+[[ -n "$output" ]] || { echo "cqc: missing -o <output>" >&2; usage >&2; exit 2; }
+[[ -f "$input"  ]] || { echo "cqc: input not found: $input" >&2; exit 2; }
+
+# Resolve an artifact: first try the install layout, then the in-tree build.
+find_artifact() {
+    local install_rel="$1" build_rel="$2" name="$3"
+    if [[ -e "$prefix/$install_rel" ]]; then printf '%s' "$prefix/$install_rel"
+    elif [[ -e "$prefix/$build_rel" ]]; then printf '%s' "$prefix/$build_rel"
+    else echo "cqc: cannot locate $name (looked under $prefix/$install_rel, $prefix/$build_rel)" >&2
+        return 1
+    fi
+}
+
+transpiler="$(find_artifact bin/quantum_transpiler  build/transpiler/quantum_transpiler quantum_transpiler)" || exit 3
+pass_so="$(find_artifact   lib/libCQPass.so         build/ir-pass/libCQPass.so          libCQPass.so)"        || exit 3
+rt_lib="$(find_artifact    lib/libcq_runtime.a      build/runtime/libcq_runtime.a       libcq_runtime.a)"     || exit 3
+tpl_lib="$(find_artifact   lib/libcq_templates.a    build/runtime/libcq_templates.a     libcq_templates.a)"   || exit 3
+[[ -d "$prefix/include" ]] || { echo "cqc: missing $prefix/include (CQ.h, cq_mid.h)" >&2; exit 3; }
+
+# Intermediate files: temp dir unless --keep-intermediates, in which case
+# they land next to <output> with predictable names for debugging.
+out_dir="$(dirname "$output")"
+out_base="$(basename "$output")"
+if [[ "$keep" == "1" ]]; then
+    work="$out_dir"; t_c="$work/$out_base.transpiled.c"
+    t_bc="$work/$out_base.bc"; l_bc="$work/$out_base.lowered.bc"
+else
+    work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
+    t_c="$work/transpiled.c"; t_bc="$work/transpiled.bc"; l_bc="$work/lowered.bc"
+fi
+
+run_stage() {
+    local label="$1"; shift
+    if ! "$@"; then echo "cqc: stage $label failed" >&2; exit 4; fi
+}
+
+# Stage 1: rewriter — quantum int → cq_init_i32 / qint_mid_t emission.
+run_stage transpile bash -c \
+    '"$1" "$2" -- -std=c11 -I"$3" > "$4"' _ "$transpiler" "$input" "$prefix/include" "$t_c"
+
+# Stage 2: clang -O1 -emit-llvm. -include cq_mid.h supplies the ABI decls
+# (qint_mid_t, cq_init_i32, cq_measure_i32) that the rewriter relies on;
+# see PLAN.md §4.2 — the driver, not the rewriter, injects them.
+run_stage compile "$clang_bin" -O1 -emit-llvm -c "$t_c" \
+    -include cq_mid.h -I"$prefix/include" -o "$t_bc"
+
+# Stage 3: opt cq-lowering — turn cq_init_i32 + tainted add into runtime calls.
+run_stage lower "$opt_bin" -load-pass-plugin "$pass_so" \
+    -passes=cq-lowering "$t_bc" -o "$l_bc"
+
+# Stage 4: link. Templates first (depend on runtime), then runtime.
+run_stage link "$clang_bin" "$l_bc" "$tpl_lib" "$rt_lib" -o "$output"

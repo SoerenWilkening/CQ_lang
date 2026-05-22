@@ -1,11 +1,24 @@
 # tests/e2e/CMakeLists.txt — Phase 1 end-to-end harness.
 #
-# Registers a single ctest named `e2e` that drives run_e2e.sh over every
-# fixture directory under fixtures/. The runner skips (PASS) when the cqc
-# shell driver is not yet built, so this test can land before tools/cqc
-# (bd issue -rm8) and still satisfy M0's "may fail, just must run" gate.
-#
-# Spec: phases/phase1/PLAN.md §4.7.
+# Two ctest entries:
+#   * cqc_smoke — drives tools/cqc against one fixture, asserts the output
+#     binary exists. Pinned to multi_decl/ because that path through the IR
+#     pass is known-good today (worked_example/ exercises measure-as-cast
+#     which the cq-lowering pass doesn't yet handle — separate bd issue).
+#     Spec: PLAN.md §4.6.
+#   * e2e — full run_e2e.sh sweep; skips (PASS) when cqc isn't built so it
+#     can land before tools/cqc and still satisfy M0's "must run" gate.
+#     Spec: PLAN.md §4.7.
+
+add_test(
+    NAME cqc_smoke
+    COMMAND bash -c
+        "rm -f \"${CMAKE_BINARY_DIR}/cqc_smoke.out\" && \
+         \"${CMAKE_SOURCE_DIR}/tools/cqc\" \
+            \"${CMAKE_CURRENT_SOURCE_DIR}/fixtures/multi_decl/input.c\" \
+            -o \"${CMAKE_BINARY_DIR}/cqc_smoke.out\" && \
+         test -x \"${CMAKE_BINARY_DIR}/cqc_smoke.out\""
+)
 
 add_test(
     NAME e2e
