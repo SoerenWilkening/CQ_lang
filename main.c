@@ -45,22 +45,30 @@ int ipow(int a, int b){
 
 int main(void) {
     
-    quantum int a = 3, b = 2;
-    quantum int c = a ^ b;
-    int N = 3;
+    double f = 0.1;
     
-    quantum double d = 3;
-    
-    ipow(a, 5);
-    pow(d, 5.);
-    
-    // qint d = pow_qint(a, 5);
-    // mod_qint(d, N);
-    
-    // -O3
-    // d = pow_mod(a, 5, N);
-    
-    if (c == 3) {
-        phi(a) + 3;
+    if (f){
+        f += 1.;
     }
+    
+    printf("%f\n", f);
+    
+//    quantum int a = 3, b = 2;
+//    quantum int c = a ^ b;
+//    int N = 3;
+//
+//    quantum double d = 3;
+//
+//    ipow(a, 5);
+//    pow(d, 5.);
+//
+//    // qint d = pow_qint(a, 5);
+//    // mod_qint(d, N);
+//
+//    // -O3
+//    // d = pow_mod(a, 5, N);
+//
+//    if (c == 3) {
+//        phi(a) + 3;
+//    }
 }
