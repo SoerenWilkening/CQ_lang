@@ -61,7 +61,7 @@ attributes.
 ```c
 /* example.transpiled.c */
 
-#include <CQ.h>      /* declares qint_mid_t and the per-width @cq_*_i32 surface */
+#include <cq_mid.h>  /* transpiled-C ABI: qint_mid_t + per-width @cq_*_i32 intrinsic decls */
 
 int main(void) {
     qint_mid_t a = cq_init_i32(3);
@@ -96,12 +96,21 @@ What changed (and what didn't):
   here is `main`, no inverses are emitted at all (ROADMAP §Phase 5
   rule).
 
-The relevant excerpt of `CQ.h`:
+The full contents of `CQ.h` — the user-facing surface:
 
 ```c
-/* CQ.h — user-facing declarations only; no implementations */
+/* CQ.h — user-facing only; this is the entire algorithm-author surface */
 
 #define quantum __attribute__((annotate("quantum")))
+```
+
+That's it. `qint_mid_t` and the per-width intrinsics are an
+implementation detail of the *transpiled* C, not something the
+algorithm author writes against. They live in a separate header
+that the rewriter emits into its output:
+
+```c
+/* cq_mid.h — transpiled-C ABI; algorithm authors never #include this */
 
 typedef struct { int32_t val; } qint_mid_t;
 
@@ -110,10 +119,10 @@ int32_t    cq_measure_i32(qint_mid_t q);
 ```
 
 Per-width intrinsic family: Phase 1 ships the 32-bit pair
-(`cq_init_i32`, `cq_measure_i32`) plus the `quantum` keyword macro.
-Other widths (i8/i16/i64) and other intrinsic families (rotations,
-conditioning, manual inversion) enter in later phases. (`cq_alloc` was
-removed 2026-05-21 — see `architecture.md` §6.1 Decision note.)
+(`cq_init_i32`, `cq_measure_i32`). Other widths (i8/i16/i64) and other
+intrinsic families (rotations, conditioning, manual inversion) enter
+in later phases. (`cq_alloc` was removed 2026-05-21 — see
+`architecture.md` §6.1 Decision note.)
 
 ---
 

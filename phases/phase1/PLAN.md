@@ -308,35 +308,60 @@ suites. No unit test needed; the smoke is "configure and build succeed".
 
 ---
 
-### 4.2 M1 — `include/CQ.h`
+### 4.2 M1 — `include/CQ.h` and `include/cq_mid.h`
 
-**File:** `include/CQ.h`. **LOC budget:** ≤ 60.
+**Files:** `include/CQ.h` (user-facing), `include/cq_mid.h`
+(transpiled-C ABI). **LOC budget:** ≤ 30 + ≤ 40.
 
-**Responsibility:** the user-facing header. Defines the `quantum`
-keyword macro, the `qint_mid_t` struct, and the Phase 1 intrinsic
-declarations.
+**Responsibility:** split the surface into the bare minimum a
+quantum-algorithm author needs (`CQ.h`) and the intermediate-level ABI
+that the rewriter emits into transpiled C (`cq_mid.h`). Authors
+`#include <CQ.h>`; they never see or `#include <cq_mid.h>` — the
+rewriter inserts it (or `cqc` passes `-include cq_mid.h` at stage 2;
+the choice is the rewriter/driver issue's, not this one's).
 
-**Content (complete):**
+**Content — `include/CQ.h` (complete):**
 
 ```c
 /* CQ.h — Phase 1 user-facing header.
  *
- * Declares the quantum keyword and the minimum intrinsic surface for
- * Phase 1: cq_init_i32 (taint source) and cq_measure_i32 (taint sink).
- * Other widths and intrinsic families enter in later phases.
- *
- * Architecture references: docs/architecture.md §3 (mid-type), §6.1
- * (init), §6.2 (measure). */
+ * The minimal surface a quantum-algorithm author needs to `#include`.
+ * Just the `quantum` annotation that marks variables for the rewriter
+ * to lower. Everything else (qint_mid_t, per-width intrinsics) is a
+ * detail of the transpiled C and lives in <cq_mid.h>, which the
+ * transpiler emits into its output — algorithm authors never see it.
+ */
 #ifndef CQ_H_
 #define CQ_H_
+
+#define quantum __attribute__((annotate("quantum")))
+
+#endif  /* CQ_H_ */
+```
+
+**Content — `include/cq_mid.h` (complete):**
+
+```c
+/* cq_mid.h — transpiled-C ABI for Phase 1.
+ *
+ * Emitted into transpiled output by the rewriter; not part of the
+ * user-facing surface in <CQ.h>. Declares the mid-level struct that
+ * carries quantum signal at C-source boundaries (`qint_mid_t`) and
+ * the per-width frontend intrinsics that clang -O1 -emit-llvm leaves
+ * for the cq-lowering IR pass to rewrite into cqrt_ and cq_template_
+ * runtime calls.
+ *
+ * Architecture references: docs/architecture.md §3 (mid-type), §6.1
+ * (init), §6.2 (measure).
+ */
+#ifndef CQ_MID_H_
+#define CQ_MID_H_
 
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#define quantum __attribute__((annotate("quantum")))
 
 typedef struct { int32_t val; } qint_mid_t;
 
@@ -347,28 +372,38 @@ int32_t    cq_measure_i32(qint_mid_t q);
 }
 #endif
 
-#endif  /* CQ_H_ */
+#endif  /* CQ_MID_H_ */
 ```
 
 **Tests:**
-- *L1 (covered by e2e)* — any fixture that `#include <CQ.h>` exercises it.
-- *Header self-compile smoke* — in `tests/e2e/CMakeLists.txt`, add a
-  `try_compile` of a one-line file that just includes the header. Fails
-  fast if the header has a syntax error before any fixture runs.
+- *L1 (covered by e2e)* — any fixture that `#include <CQ.h>` exercises
+  the user-facing header; the transpiled output exercises `cq_mid.h`.
+- *Header self-compile smoke* — in `tests/e2e/CMakeLists.txt`, a
+  `try_compile` of a one-line file `#include <CQ.h>` and another
+  `#include <cq_mid.h>` fails fast on syntax errors.
 
 **Acceptance:**
-- A trivial `int main(void){ quantum int x = 3; (void)x; return 0; }`
-  compiles with `clang -I include -std=c11 -fsyntax-only`.
+- A user source `int main(void){ quantum int x = 3; (void)x; return 0; }`
+  compiles with `clang -I include -std=c11 -fsyntax-only` against the
+  shipped `CQ.h`.
+- A transpiled-C source `int main(void){ qint_mid_t a = cq_init_i32(3);
+  (void) cq_measure_i32(a); return 0; }` compiles likewise against
+  `cq_mid.h`.
 
 **Decisions baked in (vs. PRD/architecture):**
+- The split (`CQ.h` user-only, `cq_mid.h` ABI). Algorithm authors should
+  see the minimum surface for writing quantum code — `qint_mid_t` and
+  the per-width intrinsics are pipeline plumbing, not author-facing
+  vocabulary. The rewriter (or the `cqc` driver) is responsible for
+  threading `cq_mid.h` into the transpiled C.
 - Field type is `int32_t`, not `int`. The PRD architecture §3 says
   `struct { int val; }`; using `int32_t` makes the i32-explicit name
   match (`cq_init_i32`) and removes the ABI ambiguity for cross-target
   builds. Phase 2's other-width siblings will use `int8_t`, `int16_t`,
   `int64_t`, etc.
 - Intrinsic decls only — `cq_theta`, `cq_phi`, `cq_when_*`,
-  `cq_invert_*` are *not* declared in Phase 1's `CQ.h` (PRD §"CQ.h" is
-  explicit: "deliberately minimal"). Phase 2 adds them. Forward
+  `cq_invert_*` are *not* declared in Phase 1's `cq_mid.h` (PRD §"CQ.h"
+  is explicit: "deliberately minimal"). Phase 2 adds them. Forward
   declarations now would be dead surface area.
 
 ---

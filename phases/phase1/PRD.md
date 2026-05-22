@@ -43,17 +43,24 @@ The table below supersedes v1's rewriter patterns. Multi-decl statements (`quant
 
 Pattern 4's classical operand `E` splices into stock `.val` arithmetic directly. The IR pass identifies quantum-ness via taint propagation; the rewriter does not maintain per-pattern QQ/QC branches as v1 did.
 
-## CQ.h (new file)
+## CQ.h and cq_mid.h (new files)
 
-A new user-facing header at `include/CQ.h`, declaring:
+Two new headers under `include/`, split by audience:
 
-- The `quantum` keyword macro (`#define quantum __attribute__((annotate("quantum")))`)
-- The `qint_mid_t` struct type (`struct { int val; }`, per architecture §3 / §6.1 decision 2026-05-22)
-- The Phase 1 intrinsic surface (taint sources, sinks):
-  - `qint_mid_t cq_init_i32(int32_t value);`
-  - `int32_t    cq_measure_i32(qint_mid_t);`
+- **`include/CQ.h`** — user-facing. The bare minimum a quantum-algorithm author needs to `#include`:
+  - The `quantum` keyword macro (`#define quantum __attribute__((annotate("quantum")))`)
 
-Other intrinsic families (`cq_theta`, `cq_phi`, `cq_when_*`, `cq_invert_*`, other-width init/measure) are declared in later phases as they are exercised. Phase 1's CQ.h is deliberately minimal.
+  That's the entire surface. `qint_mid_t` and the per-width intrinsics are pipeline plumbing, not author-facing vocabulary.
+
+- **`include/cq_mid.h`** — transpiled-C ABI; emitted into rewriter output, never `#include`d by authors:
+  - The `qint_mid_t` struct type (`struct { int32_t val; }`, per architecture §3 / §6.1 decision 2026-05-22)
+  - The Phase 1 intrinsic surface (taint sources, sinks):
+    - `qint_mid_t cq_init_i32(int32_t value);`
+    - `int32_t    cq_measure_i32(qint_mid_t);`
+
+  The rewriter (or `cqc` driver via `-include cq_mid.h`) is responsible for threading this header into the transpiled output before Stage 2 compilation.
+
+Other intrinsic families (`cq_theta`, `cq_phi`, `cq_when_*`, `cq_invert_*`, other-width init/measure) are declared in `cq_mid.h` in later phases as they are exercised. Phase 1's surface is deliberately minimal.
 
 ## Pipeline
 
@@ -213,7 +220,8 @@ When end-to-end goldens fail, Layers 2 and 3 are how we localize whether the rew
 
 ### New files
 
-- `include/CQ.h` — user-facing header (quantum macro + `qint_mid_t` + Phase 1 intrinsics)
+- `include/CQ.h` — user-facing header (quantum macro only; deliberately minimal)
+- `include/cq_mid.h` — transpiled-C ABI header (`qint_mid_t` + Phase 1 intrinsic decls); emitted into rewriter output, never `#include`d by authors
 - `runtime/libcq_runtime.c` + header — stub trace-only runtime (path TBD)
 - `runtime/cq_templates.c` + header — stub trace-only template library (just `cq_template_add_i32`)
 - `ir-pass/CQPass.cpp` (or similar; productionized `prototype/cq_pass.cpp`) — LLVM new-PM pass plugin
