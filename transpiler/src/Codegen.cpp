@@ -7,19 +7,36 @@ namespace qct {
 
 namespace {
 
-// Build the canonical "init_qint(<value>, <bits>)" call. `value` is
-// spliced verbatim — the caller is expected to pass either a literal
-// like "0" or the original source text of a classical expression.
-std::string initQintCall(const std::string &value, unsigned numBits) {
+// Build "cq_init_<W>(<value>)". `value` is spliced verbatim — the caller
+// is expected to pass either the literal "0" (Uninit) or the original
+// source text of a classical initializer (ClassicalInit).
+std::string cqInitCall(const std::string &widthSuffix,
+                       const std::string &value) {
     std::ostringstream os;
-    os << "init_qint(" << value << ", " << numBits << ")";
+    os << "cq_init_" << widthSuffix << "(" << value << ")";
     return os.str();
 }
 
-// Build "qint_t <name> = <rhs>;" — the common skeleton for every Form.
-std::string declWith(const std::string &name, const std::string &rhs) {
+// Build "qint_mid_t <name> = <rhs>;" — the common skeleton for Uninit
+// and ClassicalInit, which both yield a single initializing assignment.
+std::string declInitWith(const std::string &name, const std::string &rhs) {
     std::ostringstream os;
-    os << "qint_t " << name << " = " << rhs << ";";
+    os << "qint_mid_t " << name << " = " << rhs << ";";
+    return os.str();
+}
+
+// Build "qint_mid_t <name>; <name>.val = <lhsExpr> + <rhsExpr>;" — the
+// QuantumAdd form. Two statements joined by a single ASCII space so
+// the result is a flat one-line replacement that still parses as two
+// C statements (a declaration followed by an assignment). Operand
+// strings are spliced verbatim; the caller is responsible for
+// appending ".val" to quantum operands (see DeclStmtRewrite).
+std::string declThenAdd(const std::string &name,
+                        const std::string &lhsExpr,
+                        const std::string &rhsExpr) {
+    std::ostringstream os;
+    os << "qint_mid_t " << name << "; "
+       << name << ".val = " << lhsExpr << " + " << rhsExpr << ";";
     return os.str();
 }
 
@@ -29,40 +46,25 @@ std::string renderVar(const VarRewriteInput &in) {
     using Form = VarRewriteInput::Form;
     switch (in.form) {
     case Form::Uninit:
-        // Pattern 1: `quantum int x;` -> initialized to literal 0.
-        return declWith(in.name, initQintCall("0", in.numBits));
+        // `quantum int x;` -> initialized to literal 0 with the
+        // resolved width suffix.
+        return declInitWith(in.name, cqInitCall(in.widthSuffix, "0"));
     case Form::ClassicalInit:
-        // Pattern 2: `quantum int x = E;` -> splice E verbatim inside
-        // init_qint so the original source expression survives the
-        // transform (preserving precedence, spacing, calls, etc.).
-        return declWith(in.name, initQintCall(in.initText, in.numBits));
-    case Form::QuantumPlusQuantum: {
-        // Pattern 3: both operands are already qint_t — direct add().
-        std::ostringstream os;
-        os << "add(" << in.lhsName << ", " << in.rhsName << ")";
-        return declWith(in.name, os.str());
-    }
-    case Form::QuantumPlusClassical: {
-        // Pattern 4: quantum + classical -> wrap the classical operand
-        // in init_qint(...) so the runtime sees a uniform qint_t × qint_t.
-        std::ostringstream os;
-        os << "add(" << in.lhsName << ", "
-           << initQintCall(in.rhsText, in.numBits) << ")";
-        return declWith(in.name, os.str());
-    }
-    case Form::ClassicalPlusQuantum: {
-        // Pattern 4 commuted: classical + quantum — same rule, wrap the
-        // classical (lhs) operand.
-        std::ostringstream os;
-        os << "add(" << initQintCall(in.lhsText, in.numBits) << ", "
-           << in.rhsName << ")";
-        return declWith(in.name, os.str());
-    }
+        // `quantum int x = E;` -> splice E verbatim inside cq_init_<W>
+        // so the original source expression survives the transform
+        // (preserving precedence, spacing, calls, etc.).
+        return declInitWith(in.name, cqInitCall(in.widthSuffix, in.initText));
+    case Form::QuantumAdd:
+        // `quantum int z = X + Y;` -> decl + .val arithmetic. Operand
+        // strings already carry their decoration ("a.val" for quantum,
+        // raw text for classical) per DeclStmtRewrite's contract; both
+        // sides are spliced verbatim around a single " + ".
+        return declThenAdd(in.name, in.lhsExpr, in.rhsExpr);
     }
     // Unknown Form (e.g. a future enumerator that bypassed our switch):
     // fail safe by emitting an Uninit-style declaration so we still
     // produce parseable C rather than crashing the rewriter.
-    return declWith(in.name, initQintCall("0", in.numBits));
+    return declInitWith(in.name, cqInitCall(in.widthSuffix, "0"));
 }
 
 std::string renderDeclStmt(const std::vector<VarRewriteInput> &vars) {

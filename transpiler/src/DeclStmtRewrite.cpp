@@ -17,6 +17,7 @@
 #include <clang/AST/Stmt.h>
 #include <clang/Basic/LangOptions.h>
 #include <clang/Basic/SourceManager.h>
+#include <clang/Basic/TargetInfo.h>
 
 namespace qct {
 
@@ -40,9 +41,13 @@ std::string quantumOperandName(const clang::Expr *e) {
     return vd->getNameAsString();
 }
 
-// Populate `out` (assumed pre-filled with name + numBits) by analyzing
-// the VarDecl's initializer. `sm` and `lo` are needed only for the
-// getExprText fallback paths.
+// Populate `out` (assumed pre-filled with name + widthSuffix) by
+// analyzing the VarDecl's initializer. `sm` and `lo` are needed only
+// for the getExprText fallback paths. Under taint propagation the
+// QQ/QC/CQ distinction collapses (PLAN §4.4.2 / architecture §5.2): any
+// add with at least one quantum operand is a single QuantumAdd form;
+// the quantum operand is decorated with ".val" here so Codegen can stay
+// Clang-free.
 void populateFromInit(const clang::VarDecl *vd,
                       const clang::SourceManager &sm,
                       const clang::LangOptions &lo,
@@ -88,45 +93,51 @@ void populateFromInit(const clang::VarDecl *vd,
     const bool lhsQ = (lhs.kind == OperandKind::Quantum);
     const bool rhsQ = (rhs.kind == OperandKind::Quantum);
 
-    if (lhsQ && rhsQ) {
-        std::string lhsName = quantumOperandName(lhs.expr);
-        std::string rhsName = quantumOperandName(rhs.expr);
-        if (lhsName.empty() || rhsName.empty()) {
-            // Defensive: should not happen for v1 inputs.
+    if (!lhsQ && !rhsQ) {
+        // C + C: a "quantum int x = 1 + 2;" — both sides are
+        // classical, so the whole binop is a classical expression.
+        // Splice the entire binop verbatim into cq_init_<W>(...).
+        fallbackClassical();
+        return;
+    }
+
+    // At least one side is quantum: emit QuantumAdd. Each side is
+    // decorated here — quantum operands become "<name>.val", classical
+    // operands keep their raw source text — and Codegen splices both
+    // verbatim. If we cannot recover a quantum operand's VarDecl name
+    // (defensive — shouldn't happen for v1 inputs), fall back to the
+    // classical splice so we still produce parseable C.
+    auto decorateQuantum = [](const std::string &name) {
+        return name + ".val";
+    };
+
+    std::string lhsExpr;
+    if (lhsQ) {
+        std::string n = quantumOperandName(lhs.expr);
+        if (n.empty()) {
             fallbackClassical();
             return;
         }
-        out->form = VarRewriteInput::Form::QuantumPlusQuantum;
-        out->lhsName = std::move(lhsName);
-        out->rhsName = std::move(rhsName);
-        return;
+        lhsExpr = decorateQuantum(n);
+    } else {
+        lhsExpr = getExprText(lhs.expr, sm, lo);
     }
-    if (lhsQ && !rhsQ) {
-        std::string lhsName = quantumOperandName(lhs.expr);
-        if (lhsName.empty()) {
+
+    std::string rhsExpr;
+    if (rhsQ) {
+        std::string n = quantumOperandName(rhs.expr);
+        if (n.empty()) {
             fallbackClassical();
             return;
         }
-        out->form = VarRewriteInput::Form::QuantumPlusClassical;
-        out->lhsName = std::move(lhsName);
-        out->rhsText = getExprText(rhs.expr, sm, lo);
-        return;
+        rhsExpr = decorateQuantum(n);
+    } else {
+        rhsExpr = getExprText(rhs.expr, sm, lo);
     }
-    if (!lhsQ && rhsQ) {
-        std::string rhsName = quantumOperandName(rhs.expr);
-        if (rhsName.empty()) {
-            fallbackClassical();
-            return;
-        }
-        out->form = VarRewriteInput::Form::ClassicalPlusQuantum;
-        out->lhsText = getExprText(lhs.expr, sm, lo);
-        out->rhsName = std::move(rhsName);
-        return;
-    }
-    // C + C: a "quantum int x = 1 + 2;" — both sides are classical, so
-    // the whole binop is a classical expression. Splice the entire
-    // binop verbatim into init_qint(...).
-    fallbackClassical();
+
+    out->form = VarRewriteInput::Form::QuantumAdd;
+    out->lhsExpr = std::move(lhsExpr);
+    out->rhsExpr = std::move(rhsExpr);
 }
 
 }  // namespace
@@ -138,6 +149,7 @@ std::optional<StmtRewrite> buildRewrite(const clang::DeclStmt *ds,
     }
     const clang::SourceManager &sm = ctx.getSourceManager();
     const clang::LangOptions &lo = ctx.getLangOpts();
+    const clang::TargetInfo &ti = ctx.getTargetInfo();
 
     std::vector<VarRewriteInput> vars;
     vars.reserve(4);
@@ -155,7 +167,7 @@ std::optional<StmtRewrite> buildRewrite(const clang::DeclStmt *ds,
         }
         VarRewriteInput in{};
         in.name = vd->getNameAsString();
-        in.numBits = numBitsForType(vd->getType());
+        in.widthSuffix = irWidthSuffix(vd->getType(), ti);
         populateFromInit(vd, sm, lo, &in);
         vars.push_back(std::move(in));
     }

@@ -7,12 +7,22 @@
 // unit-testable without spinning up a CompilerInstance — which is the
 // whole point of PLAN section 3.5.
 //
-// Output shape (per PRD "Supported source patterns (v1)" table):
-//   Uninit                 -> qint_t <name> = init_qint(0, <bits>);
-//   ClassicalInit          -> qint_t <name> = init_qint(<initText>, <bits>);
-//   QuantumPlusQuantum     -> qint_t <name> = add(<lhsName>, <rhsName>);
-//   QuantumPlusClassical   -> qint_t <name> = add(<lhsName>, init_qint(<rhsText>, <bits>));
-//   ClassicalPlusQuantum   -> qint_t <name> = add(init_qint(<lhsText>, <bits>), <rhsName>);
+// Phase 1 emission targets (PLAN §4.4.2). The form enum collapses from
+// v1's five values to three: taint propagation in the IR pass makes the
+// QQ/QC/CQ distinctions go away, so both quantum-touching adds use the
+// same ".val arithmetic" pattern. The classify-and-decorate decision
+// (whether to append ".val" to a given operand) is made upstream in
+// DeclStmtRewrite via OperandClass; Codegen receives already-decorated
+// strings and stays Clang-free.
+//
+//   Uninit         -> qint_mid_t <name> = cq_init_<W>(0);
+//   ClassicalInit  -> qint_mid_t <name> = cq_init_<W>(<initText>);
+//   QuantumAdd     -> qint_mid_t <name>; <name>.val = <lhsExpr> + <rhsExpr>;
+//
+// Width-suffix is the LLVM IR-style intrinsic suffix string (e.g.
+// "i32") supplied by TypeMap::irWidthSuffix; it is spliced verbatim
+// into the cq_init_<W> symbol name. Phase 1's tests exercise i32 only,
+// but the renderer is width-agnostic.
 #pragma once
 
 #include <string>
@@ -21,20 +31,25 @@
 namespace qct {
 
 struct VarRewriteInput {
-    std::string name;        // e.g. "x"
-    unsigned numBits;        // from TypeMap
+    std::string name;           // e.g. "x"
+    std::string widthSuffix;    // e.g. "i32" — from TypeMap::irWidthSuffix
 
     enum class Form {
-        Uninit,                 // pattern 1
-        ClassicalInit,          // pattern 2 — initText is the expression text
-        QuantumPlusQuantum,     // pattern 3 — lhsName + rhsName
-        QuantumPlusClassical,   // pattern 4 — lhsName + rhsText
-        ClassicalPlusQuantum,   // pattern 4 commuted — lhsText + rhsName
+        Uninit,         // `quantum int x;`               → cq_init_<W>(0)
+        ClassicalInit,  // `quantum int x = E;`           → cq_init_<W>(E)
+        QuantumAdd,     // `quantum int z = X + Y;`       → .val arithmetic
     } form;
 
-    std::string initText;    // for ClassicalInit
-    std::string lhsName, rhsName;
-    std::string lhsText, rhsText;
+    // ClassicalInit: the original initializer's source text, spliced
+    // verbatim inside cq_init_<W>(...).
+    std::string initText;
+
+    // QuantumAdd: each side is already decorated by the caller —
+    // quantum operands arrive as "a.val", classical operands as their
+    // raw expression text ("5", "k", "1+2", ...). Codegen splices both
+    // sides verbatim around a single " + ".
+    std::string lhsExpr;
+    std::string rhsExpr;
 };
 
 // Render a single VarRewriteInput as one rewritten C statement
