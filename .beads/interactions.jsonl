@@ -37,3 +37,4 @@
 {"id":"int-f555660b","kind":"field_change","created_at":"2026-05-22T19:09:09.441835347Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-8ri","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-c7af7993","kind":"field_change","created_at":"2026-05-22T19:12:47.685891032Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-shs","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-3d5c2f7c","kind":"field_change","created_at":"2026-05-22T21:12:59.961881561Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-rum","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-19050e57","kind":"field_change","created_at":"2026-05-22T21:22:54.174648058Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-yah","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}

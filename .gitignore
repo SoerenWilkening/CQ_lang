@@ -5,6 +5,7 @@
 .beads-credential-key
 cmake-build-debug
 transpiler/build*
+/build/
 .claude
 .idea
 .DS_Store
