@@ -1,0 +1,2 @@
+cqrt_alloc_classical_i32(3) -> h0
+cq_template_add_i32(h0, 5) -> h1
