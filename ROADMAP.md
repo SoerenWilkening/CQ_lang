@@ -1,216 +1,545 @@
 # CQ Roadmap
 
-Phase-by-phase trajectory from v1 to a feature-complete quantum-C transpiler. Companion to the per-phase PRDs (v1: [PRD.md](phases/v1/PRD.md)).
+Phase-by-phase trajectory toward a feature-complete CQ **frontend**, under the
+pipeline architecture settled 2026-05-21 / 2026-05-22. Companion to:
+
+- [`docs/architecture.md`](docs/architecture.md) — front-end pipeline,
+  intrinsic surface, IR pass design (P1–P9)
+- [`docs/backend.md`](docs/backend.md) — Stage 4 → binary half of the
+  pipeline (handle ABI, template library, runtime ABI; B1–B6)
+- [`docs/example.md`](docs/example.md) — worked example through Stage 4
+- [`docs/quantum-classical-handling.md`](docs/quantum-classical-handling.md)
+- [`docs/bennett-jl-comparison.md`](docs/bennett-jl-comparison.md)
+- [`docs/llvm-fork-analysis.md`](docs/llvm-fork-analysis.md)
+- [`docs/pipeline-sketch.md`](docs/pipeline-sketch.md)
+
+This roadmap replaces the v1-era roadmap (preserved in git history). The v1-era
+plan assumed source-to-source rewriting was the end product; under the new
+pipeline, the rewriter emits transpiled C that Clang compiles to LLVM IR, which
+the CQ IR pass lowers to runtime-call IR, which links into a binary that
+(eventually) emits a circuit.
+
+**Document posture.** This file is a guideline for future discussion. Each
+phase carries enough detail to know what falls inside it and what's deferred;
+PRDs and implementation plans are designed at the start of each phase, not in
+advance.
 
 ---
 
-## Design principles (cross-cutting, apply to all phases)
+## Design principles (cross-cutting)
 
-1. **Frontend first.** Backend functions remain stubs throughout Phases 2–11. Stubs `printf` their name and return default-constructed values. A real backend implementation follows the frontend work as a separate effort.
-2. **Compile-time uncomputation.** Adjoints are emitted by the transpiler at compile time, op-by-op, using per-variable provenance (use-def chains). No runtime tracking, no Bennett-style wrap-the-whole-call. Every primitive ships with its adjoint defined.
-3. **Type-dispatched semantics.** Classical-typed expressions stay classical; quantum-typed expressions trigger quantum codegen. The condition of an `if`, the operand of an op, etc. determine which path is taken.
-4. **Four forms per primitive op.** Each primitive operation ships: forward, adjoint, controlled, controlled-adjoint. This is a hard structural requirement because `if` (Phase 4) needs controlled forms and uncomputation (Phase 5) needs adjoints.
-5. **C philosophy: no foot-gun protection.** The language does not prevent the user from writing nonsense. The only enforced errors are physics-imposed (no-cloning) or unavoidable (non-adjointable use-site when uncomputation is required).
-6. **No-cloning is physics, not policy.** `quantum int a = b;` cannot actually clone; it emits CNOT-based XOR-copy (which entangles). User is expected to understand this; document it, do not guard-rail it.
-7. **Measurement happens at cast.** `(int) q` is the only way to extract a classical value from a quantum variable.
-8. **Frontend/backend header separation.** `CQ.h` is the single user-facing entry point — intentionally lightweight, parse-only. It does *not* include backend headers (`qint.h` and successors); those are emitted into the *transpiled output* by the transpiler. The user never includes a backend header; the backend never sees CQ source. As features land, `CQ.h` gains markers but never backend types.
-9. **Per-bit qint attribution.** A qint tracks per-bit type — each bit is either a physical qubit or classical (value stored alongside; mask bit clear). v1 already encodes this via `qint_t.mask` + `qint_t.value`. All ops respect both: a mask, shift, arithmetic, or comparison may touch quantum bits, classical bits, or both. The transpiler dispatches per-bit; fully-classical operands collapse to compile-time classical results.
+1. **Frontend first; backend stays stubbed.** Phases 1–10 build out the
+   rewriter, the IR pass, and the *declarations* of the runtime / template
+   surface. Concrete `cqrt_*` runtime variants and concrete `cq_template_*`
+   gate-sequence bodies are `printf`-name stubs throughout. Real backend
+   implementation is a separate effort that begins after frontend freeze
+   (Phase 10).
+
+2. **Compile-time uncomputation, per-op.** Adjoints are emitted by the
+   compiler at compile time, per quantum value's SSA live-range end. No runtime
+   tracking, no Bennett-style wrap-the-whole-call (except internally at
+   function-boundary specialization, see architecture.md §7.7).
+
+3. **Type-dispatched semantics via taint propagation.** Whether an
+   instruction is "quantum" is decided per-instruction in the IR pass by
+   forward taint from `@cq_init` results and `q*_mid_t`-typed parameters.
+   The same `add i32` is quantum or classical depending only on whether its
+   operands are tainted — no function-level annotation, no per-operator
+   variants in the rewriter.
+
+4. **Forward + controlled templates per primitive; adjoints derived.**
+   Each primitive opcode ships forward + controlled-forward stubs. Adjoint
+   and controlled-adjoint are produced mechanically by `emit_inverse`
+   (architecture.md §7.6 / backend.md §5.8) — at template-call granularity
+   while bodies remain stubs; at gate-sequence granularity once bodies are
+   real.
+
+5. **C philosophy: no foot-gun protection.** The language does not stop the
+   user from writing nonsense. Enforced errors are physics-imposed
+   (no-cloning) or unavoidable (non-adjointable use-site when uncomputation
+   is required).
+
+6. **No-cloning is physics, not policy.** `quantum T a = b;` emits XOR-copy
+   (CNOT-based), which entangles. Documented, not guard-railed.
+
+7. **Measurement happens at cast.** `(int) q`, `(float) q`, etc. are the
+   only ways to extract a classical value.
+
+8. **CQ.h is the only user-facing header.** Lightweight; declares the
+   `quantum` keyword and the `@cq_*` intrinsic surface (architecture.md §6).
+   Backend headers from the v1 era (`qint.h`) are obsolete — compiled
+   binaries link against `libcq_runtime` instead.
+
+9. **No LLVM fork, no MLIR dialect.** The entire pipeline is implementable
+   as a libtooling rewriter + an out-of-tree LLVM pass plugin against stock
+   LLVM. Validated by the Phase 0 prototype. MLIR re-evaluation is
+   explicitly deferred to Phase 10 against the four triggers in
+   architecture.md §11.
 
 ---
 
-## Phase 1 — v1 (DONE)
+## Phase 0 — Architecture validation and v1 [DONE]
 
-Basic qint, single addition operation.
+The starting state of the new roadmap.
 
-- `quantum int x;` declarations
-- Initialization from literal, classical variable, or quantum + quantum
-- `quantum int x = a + b;` and `quantum int x = a + E;` (mixed quantum/classical)
-- Multi-variable declarations
-- Auto `#include "qint.h"` insertion
-- End-to-end fixtures 04–08
+**Architecture settled** (2026-05-21 / 2026-05-22):
+- Pipeline design fixed: AST rewriter → Clang → CQ IR pass → libcq_runtime
+- Intrinsic surface fixed: six families, per-width init / measure variants
+  (architecture.md §6)
+- Handle-based runtime ABI fixed (backend.md §B1 / §6)
+- Three-level `q*_mid_t` model fixed (architecture.md §3 / backend.md §4)
+- MLIR rejected for Phases 1–10 (architecture.md §11)
+- LLVM fork rejected (docs/llvm-fork-analysis.md)
 
-Backend: stubs for `init_qint` and `add`.
+**v1 rewriter** (basic `quantum int`, single `+`, transpiled-C output):
+- Operational; fixtures 04–08 green
+- Surface form: manual `#define quantum`, `init_qint` / `add` stub backend
+- Lives under `transpiler/` + `phases/v1/`; PRD frozen at
+  `phases/v1/PRD.md`
 
-See [PRD.md](phases/v1/PRD.md) for full v1 spec.
+**Prototype passes** (`prototype/`, 525 LOC C++ against stock LLVM 19.1.7):
+- `cq-lowering` — taint propagation, mid-struct → handle rebinding,
+  template-call lowering for the worked example (i32 add only)
+- `cq-uncompute` — PostDominatorTree-based last-use analysis (linear and
+  branched CFG); `cqrt_free` insertion at the post-dominating merge block
+- `cq-specialize` — `CloneFunction` + `ValueToValueMapTy` + mangled-name
+  retargeting at call sites
+- `cq-control` — `cq_when_begin`/`cq_when_end` region detection;
+  substitution of `cq_template_*` calls inside regions with `_ctrl`
+  variants (linear single-BB regions)
+
+The prototype validates every architecturally novel LLVM-API mechanism the
+architecture / backend documents call for. It is **not** the production
+implementation of any phase — production versions of these passes are
+reached incrementally through Phases 1–7. Its role going forward is as the
+starting point of the IR-pass code for Phase 1.
 
 ---
 
-## Phase 2 — Complete type system and `CQ.h` entry-point header
+## Phase 1 — First end-to-end vertical slice
 
-Extend qint to all integer widths; introduce qfloat/qdouble as stub structs; introduce `CQ.h` as the single user-facing entry point.
+**Goal.** A CQ source file of the worked-example shape (docs/example.md)
+compiles end-to-end and runs, producing a log of runtime calls via stub
+`libcq_runtime`. This is "v1 ported onto the new architecture" — the
+minimum viable end-to-end pipeline.
 
-**Scope (type system):**
-- Integer widths: `quantum char`, `quantum short`, `quantum int`, `quantum long`, `quantum long long`, both signed and unsigned
-- `quantum _Bool` / `quantum bool`: single-qubit type; structurally a 1-bit unsigned int, no new machinery required
-- `quantum float`, `quantum double`: stub structs only; internal representation deferred (decision between fixed-point / QFT-based / IEEE-mimic happens when backend lands)
-- Assignment semantics: `quantum T a = b;` emits XOR-copy (CNOT-based)
-- Measurement at cast: `(int) q`, `(float) q`, etc. lowered to a `measure` call
+**Scope.** Only the v1-equivalent feature subset, but flowing through the
+full new pipeline rather than stopping at transpiled C.
 
-**Scope (entry-point header `CQ.h`):**
-- User writes `#include <CQ.h>` (or `"CQ.h"`) at the top of their CQ source. The manual `#define quantum ...` of v1 goes away.
-- `CQ.h` is intentionally lightweight: it provides only what's needed for the user's input to parse. It does NOT include `qint.h` or any other backend header — backend headers are wired into the *transpiled output* by the transpiler (same mechanism v1 already uses to insert `#include "qint.h"`).
-- `CQ.h` exposes:
-  - `quantum` attribute (was: user-written `#define`)
-  - `theta(angle)` — R_y rotation marker (renamed from v1's `amplitude`)
-  - `phi(angle)` — R_z rotation marker (renamed from v1's `phase`)
-  - `invert(...)` — adjoint invocation marker. Full rewrite semantics land in Phase 7. Surface form is TBD — leaning keyword, possibly function-call shape; decision deferred.
-- `amplitude` and `phase` are removed; no compatibility shim (no external users yet — clean break).
-- v1 fixtures under `phases/v1/` remain frozen with their original `#define quantum ...` style. New Phase 2 fixtures use `#include <CQ.h>`.
+**Components touched:**
+- **Rewriter** (extends v1): emit the new `@cq_*` intrinsic surface for
+  the v1 feature subset:
+  - `quantum int x = N;` → `qint_mid_t x = cq_init_i32(N);`
+  - `quantum int z = a + b;` → `qint_mid_t z; z.val = a.val + b.val;`
+  - `(int) q` → `cq_measure_i32(q)`
+  - Replaces v1's `init_qint` / `add` stub calls with the new intrinsics
+- **IR pass** (productionizes prototype's `cq-lowering` slice for i32):
+  taint, mid→handle rebinding, lowering of `@cq_init_i32` / tainted
+  `add i32` / `@cq_measure_i32` to `cqrt_*` calls
+- **CQ.h** (replaces user `#define quantum`): declares `quantum` keyword
+  + the four intrinsics this phase needs (`cq_init_i32`, `cq_measure_i32`,
+  the `qint_mid_t` struct type — others added in Phase 2)
+- **Stub `libcq_runtime`** (new): printf-name impls of
+  `cqrt_alloc_classical_i32`, `cqrt_alloc_i32`, `cqrt_free`,
+  `cqrt_measure_i32`
+- **Stub template library** (new): printf-name impl of
+  `cq_template_add_i32`
+- **Build flow** (new): `.c` → rewriter → `clang -emit-llvm` → `opt`
+  (CQ pass plugin) → `clang` link against stub runtime → binary →
+  `./binary` prints call log
 
-**Out of scope:**
-- Any arithmetic on qfloat/qdouble beyond what's already in v1 for qint
-- Float representation decision
-- Full `invert(...)` rewrite semantics (Phase 7)
+**Done when:** the worked-example program (docs/example.md) builds and
+runs end-to-end, output matches the expected call-sequence log, and v1's
+fixture suite continues to pass.
 
-**Stub backend additions** (emitted into transpiled output, NOT in `CQ.h`):
-- `qfloat_t`, `qdouble_t` structs
-- `init_qfloat`, `init_qdouble` (stubs)
-- `measure_*` (stub family)
+**Open items (defer to Phase 1 PRD):** how the rewriter integrates with
+the existing v1 codebase (extend in place vs. parallel directory).
+Diagnostic location preservation (`!dbg`) baseline.
+
+---
+
+## Phase 2 — Type system breadth + entry-point `CQ.h`
+
+**Goal.** Every integer + floating-point width is first-class. CQ.h
+consolidates as the single user-facing header.
+
+**Scope.**
+- Integer widths: `quantum char`, `quantum short`, `quantum int`,
+  `quantum long`, `quantum long long`, signed + unsigned
+- `quantum _Bool` / `quantum bool` (single-qubit, structurally 1-bit
+  unsigned)
+- `quantum float`, `quantum double` (first-class per backend.md §3.3 —
+  *not* stubs; only the per-opcode gate templates are deferred)
+- Measurement-at-cast for all widths (`cq_measure_<W>` family per
+  architecture.md §6.2)
+- Assignment via XOR-copy (CNOT-based)
+- CQ.h: full intrinsic-surface declarations (six families per
+  architecture.md §6)
+
+**Components touched:**
+- Rewriter: width-keyword recognition; per-width `@cq_init_*` /
+  `@cq_measure_*` emission
+- IR pass: width-parametrized taint propagation, mid→handle rebinding,
+  init/measure lowering (i1 / i8 / i16 / i32 / i64 / f32 / f64)
+- Stub runtime: `cqrt_alloc_<W>` / `cqrt_alloc_classical_<W>` /
+  `cqrt_measure_<W>` per width
+- Stub templates: `cq_template_add_<W>` per width
+
+**Out of scope:** float-template Bennett-wrap internals (backend
+implementation); `_Float16` / `long double` (deferred per backend.md §3.3);
+`_Complex` (falls out from float — Clang lowers it to scalar pairs at IR,
+no new intrinsic surface).
+
+**Done when:** all width / type combinations of the Phase 1 worked-example
+shape compile and run end-to-end with correct stub-call logs.
 
 ---
 
 ## Phase 3 — Full operation set
 
-Every primitive operation, in both qq and qc forms, with all four shapes (forward / adjoint / controlled / controlled-adjoint).
+**Goal.** Every quantum-touching arithmetic / bitwise / comparison / unary /
+cast operation flows through the pipeline and is identified by taint
+propagation; each lowers to its template-call stub.
 
-**Operations:**
-- Arithmetic: `+`, `-`, `*`, `/`, `%`, plus compound `+=`, `-=`, `*=`, `/=`, `%=`
-- Bitwise: `<<`, `>>`, `|`, `&`, `^`, plus compound `<<=`, `>>=`, `|=`, `&=`, `^=`
-- Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` — produce a flag ancilla; required by Phase 4 `if`-condition lowering
-- Unary: `-` (two's-complement negate), `~` (bitwise NOT, broadcast X), `!` (logical NOT, special-case `== 0` comparator), `++`/`--` (prefix and postfix; desugar to `+= 1` / `-= 1`)
-- Structural: copy (XOR-copy via CNOT), swap
+**Scope (operators; full C surface):**
+- Arithmetic: `+`, `-`, `*`, `/`, `%`, plus compound forms
+- Bitwise: `<<`, `>>`, `|`, `&`, `^`, plus compound forms
+- Comparison: `==`, `!=`, `<`, `>`, `<=`, `>=` — produce a flag handle;
+  Phase 4 if-condition lowering depends on these
+- Unary: `-` (negate), `~` (bitwise NOT), `!` (logical NOT), `++` / `--`
+- Structural: XOR-copy (CNOT), swap
 
-**Operand variants per op:**
-- `op_qq` — both operands quantum
-- `op_qc` — one quantum, one classical constant (different efficient circuit)
+**Components touched:**
+- Rewriter: emits stock C arithmetic on `.val` fields — no per-operator
+  code path. The Phase 3 rewriter scope is small precisely because taint
+  propagation handles QQ / QC / mixed uniformly.
+- IR pass: taint extended over the full ~38 LLVM data opcodes (int +
+  fp arith, bitwise, compare, cast); template-call substitution per
+  tainted opcode
+- Stub templates: `cq_template_<op>_<W>` per (opcode, width); **forward
+  + controlled-forward variants** (Phase 4 needs the controlled ones).
+  Inverse stubs (`cq_template_<op>_<W>_inv`) declared here for Phase 5
+  consumption.
 
-**Per-op deliverables (stubs):**
-- Forward, adjoint, controlled, controlled-adjoint declared in `qint.h` family
-- Stubs `printf` their name
+**Sub-items kept from old roadmap:**
+- **3.3 Classical-mask views (`q & C`).** Zero-cost bit-view semantics
+  for `q & C` where `C` is classical. View on rvalue use; materialize on
+  binding to a fresh qint (CNOT-copy of aliased bits). IR-pass-level
+  responsibility; bind-site detection via SSA use position.
+- **3.4 Mixed-width type promotion.** Free under the new architecture —
+  Clang lowers C standard widening to `sext` / `zext` / `trunc`, taint
+  propagates through them, templates for those opcodes handle the rest.
 
-**Sub-items:**
-- **3.1 In-place semantics.** Out-of-place primitives that the language exposes as in-place are reconciled either by appended swap-back or by Fredkin substitution. Transpiler picks one strategy per op; later optimization may swap.
-- **3.2 Modular-arithmetic peephole.** Compiler flag enabling pattern `(a + b) % N → add_mod(a, b, N)` and the analogous mul/exp forms. Flag default: off.
-- **3.3 Classical-mask views (zero-cost bit inspection).** `qint & C` where `C` is a classical constant returns a *view* aliasing a subset of the qint's bits — no new register, no gates. For `C = (1 << k)`, the result is a single-bit view (`quantum bool`) of bit k. For general C: result bits are either aliases (where C has 1-bits) or known-|0⟩ ancillas (where C has 0-bits). C syntax makes `a & mask` an rvalue, so views are read-only by construction. Per-bit dispatch (principle 9): quantum bits become qbool aliases; classical bits collapse to compile-time `0`/`1`, potentially folding the whole expression to a constant at transpile time.
-  - *Materialization rule.* A view is fine when its value is consumed in place (as an `if` condition, as a subexpression). The moment it is bound to a named qint declaration — `quantum int b = a & C;` — the transpiler must emit a real CNOT-copy of the aliased bits into freshly-allocated qubits for `b`, plus classical bookkeeping for classical-known bits. Without this, later modifications of `b` would corrupt `a`. C's rvalue/lvalue distinction provides the dispatch hook: rvalue use → view; binding site → materialize. In a controlled body (Phase 4), each CNOT of the materialization becomes a Toffoli per quantum bit copied; classical bits still fold and emit nothing. *Deferred:* whether `b = a & C;` (reassignment to an existing qint, not a fresh declaration) is well-formed at all is a Phase 5 / lifetime question.
-  - *Forward reference — Phase 4 `if`:* condition lowering must recognize a view directly. Control on the aliased qubit if the bit is quantum; fold to a classical branch if the bit is classical-known. Do not emit a redundant comparator.
-  - *Forward reference — Phase 8 (pointers/aliasing):* this is the first instance of qubit-level aliasing in the language. Phase 8's pointer/aliasing rules should be designed coherently with views introduced here.
-- **3.4 Mixed-width type promotion.** Operations on qints of different widths follow exact C standard integer promotion and usual arithmetic conversion rules. Wider operands sign/zero-extend; narrower results truncate per C semantics. The transpiler applies promotion before lowering to circuits, mirroring what a classical C compiler does.
+**Done when:** programs using the full operator set across mixed quantum /
+classical operands produce expected template-call sequences.
 
 ---
 
 ## Phase 4 — Quantum control flow: `if`
 
-Type-dispatched on the condition expression.
+**Goal.** Type-dispatched `if`: classical condition → unchanged C;
+quantum condition → controlled-region semantics on all body ops.
 
-**Classical condition.** Emit normal C `if`. No quantum machinery.
+**Scope.**
+- Rewriter: `IfStmt` with quantum-typed condition →
+  `cq_when_begin(_cond); ...; cq_when_end()`. Mixed conditions
+  (any quantum subexpression → whole condition is quantum). Nested ifs:
+  rewriter emits nested regions; IR pass accumulates controls.
+- IR pass (productionizes prototype's `cq-control`): region detection
+  extended to multi-BB and nested regions; each `cq_template_*` call
+  within a region substituted with its `_ctrl` variant, control handle
+  prepended.
 
-**Quantum condition (or mixed: any quantum subexpression → whole condition is quantum):**
-1. Compute condition into a fresh flag ancilla via the appropriate comparator circuit (stub)
-2. Body ops are emitted in their *controlled* form, controlled on the flag
-3. At block exit, uncompute the flag (its provenance is known; same model as Phase 5)
+**Constraint:** every operation reachable inside an `if` body must have a
+controlled-form stub (Phase 3 deliverable).
 
-**Nested ifs.** At each new nesting level, AND the new flag with the current effective control into a fresh ancilla; body ops control on that single AND-ancilla. On block exit: uncompute the AND-ancilla, then uncompute the local flag. Rationale: body ops are always singly-controlled at runtime; no multi-control decomposition needed at backend.
+**Done when:** programs with quantum if-statements (including nested,
+including mixed-condition) produce expected controlled-template-call
+sequences.
 
-**Constraint:** every operation reachable inside an `if` body must have a controlled form (Phase 3 requirement).
+**Open items (defer to Phase 4 PRD):** Sturm-style distinct `when`
+keyword vs type-dispatched `if` (architecture.md §12 q1). Resolution
+depends on Phase 7 function-lifting interaction.
 
 ---
 
 ## Phase 5 — Auto uncomputation
 
-Compile-time, per-op adjoint emission for quantum variables and temps going out of scope.
+**Goal.** Per-op compile-time adjoint emission at SSA live-range ends of
+tainted handles. The transpiler's diagnostic story begins here.
 
-**Mechanism:**
-- Transpiler tracks per-qint provenance (use-def chains)
-- At scope exit (block end, inner-function return), emit the recorded forward op-sequence in reverse with each op replaced by its adjoint. Applies to **both** anonymous temps (subexpression results) **and** named locals (declared quantum variables in inner blocks)
-- **Exception: `main` exit.** Variables alive at `main` return do not auto-uncompute — execution is ending, uncomputation would be wasted work
-- Operands match the original forward call exactly
+**Scope.**
+- IR pass (productionizes prototype's `cq-uncompute` past the
+  `cqrt_free`-placeholder stage): for each tainted handle, find last use
+  via SSA def-use graph (or `@llvm.lifetime.end` for stack slots that
+  survive flattening); emit the inverse template-call sequence at the
+  post-dominating merge block; emit `cqrt_free` after.
+- Exceptions (no uncomp emitted):
+  - enclosing function is `main` (no caller to clean up before)
+  - handle escapes via return-by-value (callee preserves it)
+  - handle is explicitly handed off via a `cq_invert_*` region
+- Diagnostics: source-location-preserved error at use-site when
+  uncomputation is required of a non-adjointable result. v1's
+  silent-fail-on-unsupported posture ends here.
 
-**Function attributes (derived, not declared):**
-- `is_adjointable` — every op in the function body has a defined adjoint
-- `is_controllable` — every op in the function body has a defined controlled form
-- External functions default to `false` for both; user may supply manual adjoint
+**Note on `emit_inverse` granularity.** While templates are stubs (through
+Phase 10), `emit_inverse` walks the *template-call sequence* and emits
+inverse template-calls (`cq_template_<op>_<W>_inv`, declared in Phase 3).
+Once templates are real (post-Phase-10), the same `emit_inverse` walks the
+*gate sequence* inside templates. The IR-pass-level mechanism is
+identical at both granularities.
 
-**Errors and diagnostics.** The transpiler's diagnostic story begins here. Any use-site that requires uncomputation of a non-adjointable result fires a compile error at the use-site (O(1) per call-site; no enumeration of "what can't be inverted"). Later phases extend this scaffolding (Phase 4: missing controlled forms; Phase 7: function-adjoint derivation failures; Phase 8: aliasing violations). v1's "silent fail on unsupported constructs" posture ends with Phase 5.
+**Done when:** programs with non-`main` scopes (inner blocks, soon-to-come
+function calls) produce expected inverse-template-call sequences at scope
+exits.
+
+**Open items (defer to Phase 5 PRD):** behavior on non-reversibilizable
+use (hard error vs. implicit measurement bridge — architecture.md §12 q3
+/ backend.md §10 q1). Diagnostic-location fidelity baseline against the
+IR pipeline (architecture.md §12 q8).
 
 ---
 
 ## Phase 6 — For-loops (classical bounds)
 
-Quantum data may appear in the loop body; loop variable and bounds are classical.
+**Goal.** Quantum data in the loop body; classical loop variable and
+bounds.
 
-- **Compile-time constant bound:** unroll in the emitted source
-- **Non-const classical bound:** emit a host-side loop in the generated code that constructs the circuit at startup time. The runtime circuit is still flat
-- **Runtime-dynamic bound (measurement-derived):** deferred to dynamic-circuits work, out of scope for this phase
+Mostly "free" from the new architecture:
+- **Compile-time constant bound:** Clang may unroll, or leave intact — both
+  fine; runtime accumulates per iteration either way.
+- **Non-const classical bound:** Clang lowers to an IR loop; IR pass
+  leaves it intact; runtime accumulates per iteration → flat circuit at
+  program startup.
+- **Runtime-dynamic bound (measurement-derived):** dynamic circuits; out
+  of scope here.
+
+Largely a validation phase: tests covering loop shapes; no new IR-pass
+mechanism beyond confirmation that taint / uncomputation analyses
+compose correctly with loop structure.
+
+**Done when:** loop fixtures with all three bound styles produce expected
+call sequences.
 
 ---
 
-## Phase 7 — User-defined quantum functions and inversion
+## Phase 7 — User-defined quantum functions + inversion
 
-Function definition, call, and structural adjoint derivation.
+**Goal.** Function definition, call, structural adjoint derivation,
+manual `invert(...)` surface.
 
-**Function definition and call:**
-- Functions may take quantum and classical parameters and return quantum or classical values
-- **By-value passing of a qint** triggers a CNOT-copy at the call site onto fresh callee qubits — consistent with C value-passing semantics, with no-cloning forcing the "copy" to be XOR-copy rather than true duplication
-- **By-reference passing** is alias-passing — the callee operates directly on the caller's qubits; no copy
-- Calls inside a controlled body (Phase 4) emit controlled forms of the callee's body ops; if any op in the callee lacks a controlled form, compile error at the call site
-- Return-by-value of a qint: caller-side materialization (same model as Phase 3.3's view materialization)
+**Scope (function semantics).**
+- Quantum / classical parameters and return values
+- By-value qint passing: caller-side CNOT-copy onto fresh callee qubits
+- By-reference qint passing: alias passing (callee operates on caller's
+  qubits directly)
+- Return-by-value qint: caller-side materialization (same model as
+  Phase 3.3 view materialization)
+- Calls inside a controlled body: emit controlled forms of callee's
+  body ops; missing controlled form → compile error at call site
 
-**Function inversion (structural adjoint):**
-- For a function composed of adjointable primitive ops, derive its adjoint by reversing the op-sequence and adjointing each op (Q#-style)
-- Relies on Phase 5 `is_adjointable` propagation through the call graph
-- External / foreign calls require user-supplied adjoint to participate
-- Surface syntax for invoking the adjoint of a function: uses the `invert` marker introduced in Phase 2 (CQ.h). Exact shape TBD — leaning keyword form (`invert foo(...)`) per the Phase 2 inclination
+**Components touched:**
+- Rewriter: call sites with `qint_mid_t`-typed args → mangled
+  `__cq_q_<f>_<argmask>(...)` call; `invert(F)(args)` →
+  `__cq_invert_<F>(args)` mangled call (surface form chosen at PRD time
+  per architecture.md §12 q2)
+- IR pass (productionizes prototype's `cq-specialize` past
+  signature-preserving stage): worklist-driven specialization discovery;
+  full reversibilizability classifier (architecture.md §7.3); synthesis
+  of `__cq_q_<f>_<mask>` bodies via per-op template substitution +
+  Bennett wrap at function boundary (forward + CNOT-copy of return +
+  reverse); caching by `(function, argmask)`; `__cq_invert_<f>`
+  synthesis via `emit_inverse` on the forward
+- Stub `libm.bc`: declarations only initially — classifier rejects, user
+  sees diagnostic; first basic-math entries (e.g., `pow` integer-power
+  specializations) added incrementally
+
+**Done when:** programs with user-defined quantum-arg functions
+(including recursive specialization, including explicit `invert(...)`)
+produce expected mangled-call → specialization → template-call
+sequences. Reversibilizability classifier rejections produce
+source-location diagnostics.
+
+**Open items (defer to Phase 7 PRD):** failure mode on
+non-reversibilizable callee (architecture.md §12 q3). Auto-specialization
+scope: every reachable function, or opt-in only (§12 q4). Concrete
+mangling scheme (§12 q6).
 
 ---
 
 ## Phase 8 — Memory: arrays and pointers
 
-- **Classical-indexed quantum arrays:** straightforward register addressing
-- **Quantum-indexed access** (`arr[q]` where `q` is quantum): triggers QRAM call. QRAM functionality itself is a backend stub in this phase
-- **Pointer semantics for quantum data:** TBD — aliasing rules, lifetime, address-of behavior
-- **Array-of-quantum vs quantum-of-array:** clarify which constructions are supported
+**Goal.** Quantum arrays, classical and quantum indexing, pointer
+semantics for quantum data.
+
+**Scope.**
+- Classical-indexed quantum arrays: straightforward per-element handle
+  addressing
+- Quantum-indexed access (`arr[q]`): QRAM call. QRAM body is a stub
+  template; semantics designed here.
+- Pointer semantics for quantum data: aliasing rules, lifetime,
+  address-of behavior — designed coherently with Phase 3.3's view
+  aliasing (the first instance of qubit-level aliasing in the language)
+- Array-of-quantum vs quantum-of-array: scope clarified at PRD time
+
+**Components touched:**
+- Rewriter: array decl + indexing AST handling for quantum types;
+  pointer-to-quantum
+- IR pass: LLVM alias analysis; Bennett-style memory strategies (Shadow
+  / MUX / QROM) selectable per allocation site
+- Stub: `cqrt_qram_*` family; `cqrt_alloc_array_<W>`
+
+**Done when:** array programs with both classical and quantum indexing
+patterns produce expected (stubbed) memory-template-call sequences.
 
 ---
 
 ## Phase 9 — Remaining C language surface
 
-- `struct` (including with quantum fields)
+**Goal.** Mechanical AST handling for the rest of C; no new quantum
+semantics introduced.
+
+- `struct` (including with quantum-typed members)
 - `union`, `typedef`, `enum`
 - Storage classes, qualifiers
-- `_Complex` / `_Imaginary`: surface-level handling only; quantum amplitudes are inherently complex at the backend layer, so `quantum _Complex` is not a planned user-facing type
-- Other C99/C11 features as they become relevant
+- `_Complex` / `_Imaginary`: surface only; Clang lowers `_Complex T`
+  to `{T, T}` at IR, so it falls out from Phase 2's float support
+- Other C99 / C11 features as they surface
 
-Most of these need only mechanical AST handling; no new quantum semantics introduced.
+Most "just works" from Clang; rewriter needs only new AST-pattern
+recognition for quantum-typed members inside aggregates.
+
+**Done when:** the rewriter handles the full C99/C11 surface for any
+program where quantum types appear, and the existing IR-pass machinery
+needs no new mechanism to absorb the additional AST shapes.
 
 ---
 
-## Phase 10 — Quantum-conditioned while loops (deferred design)
+## Phase 10 — Quantum-conditioned while loops
 
-Likely transform-to-for or amplitude-amplification semantics. Design pinned down when we get here. Out of scope until prior phases are complete.
+**Goal.** Frontend handling for `while` with a quantum-typed condition.
+Design pinned down at PRD time — kept as its own phase because the
+semantic choice (amplitude amplification, transform-to-bounded-for,
+measure-and-classical-branch, or something else) is a real design problem
+with cross-cutting implications, not a mechanical add-on.
+
+**Scope (frontend only).**
+- Rewriter: `WhileStmt` with quantum-typed condition → region brackets
+  (likely `cq_while_begin` / `cq_while_end` by analogy with `cq_when_*`,
+  but exact surface decided at PRD)
+- IR pass: detect / lower the new region per the chosen semantic model
+- Stub: a placeholder runtime entry-point (naming + signature TBD at PRD)
+
+**Out of scope.**
+- Real amplitude-amplification template body, or whatever the chosen
+  semantics requires at the gate level (backend implementation; see
+  "Beyond the frontend")
+- Runtime-dynamic bounds derived from measurement (dynamic circuits;
+  post-backend)
+
+**Open items (the substance of Phase 10's PRD):**
+- *Surface*: expose raw `while(q_cond)` to the user, or require an
+  explicit `amplify(...)` / `oracle(...)` form?
+- *Semantics*: amplitude amplification vs. transform-to-bounded-for
+  vs. bounded-iteration vs. measure-and-classical-branch
+- *Cross-implications with Phase 7*: amplitude-amplification
+  implementations typically take an oracle as a function argument —
+  whether q-while bodies need to wrap as functions affects both surface
+  and IR-pass shape
+
+**Why separate from the freeze (Phase 11).** Either of two outcomes is
+plausible: q-while ships at frontend freeze on the strength of the
+chosen design, *or* q-while is judged too speculative to lock and is
+deferred past freeze with an explicit "not yet supported" diagnostic.
+Carving it as a distinct phase keeps that decision visible.
+
+**Done when:** the chosen surface + semantics is implemented in the
+rewriter + IR pass with stub-runtime hooks, and programs exercising
+quantum-while produce the expected (stubbed) call sequences. The
+verdict on whether to include q-while in the freeze is also reached
+here.
 
 ---
 
-## Phase 11 — Compiler optimization passes
+## Phase 11 — Frontend freeze + handoff to backend implementation
 
-Optimizations on the emitted circuit / IR. Frontend-only; presumes the prior phases produce a faithful but unoptimized output.
+**Goal.** Lock in the frontend surface and ABI; explicit gate before
+backend implementation begins.
 
-- focus on instruction level optimizations
-- a ^= b & c; and a ^= b | c; optimized into inplace AND/OR with a as direct target instead of ancilla
-- Gate cancellation (X·X = I, CNOT·CNOT = I, adjacent inverse pairs) doable on instruction level
-- Adjacent-gate fusion
-- Peephole patterns (generalization of Phase 3.2)
-- Constant folding for classical-known values feeding quantum ops
-- Ancilla reuse across non-overlapping lifetimes (qubit-count reduction)
-- Dead code elimination
-- T-count / depth-targeted passes (research-y, later)
+**Deliverables.**
+- **CQ.h intrinsic-surface freeze.** Semver pinned; future additions
+  versioned per the freeze policy.
+- **`libcq_runtime` ABI freeze.** Symbol versioning per backend.md §6.7;
+  `cqrt_abi_version()` query function; documented deprecation policy.
+- **Diagnostic-fidelity audit.** Which optimization passes the `!dbg`
+  metadata survives; baseline acceptable for the diagnostic story
+  established in Phases 5 / 7 (architecture.md §12 q8).
+- **MLIR re-evaluation gate.** Explicit decision against the four
+  trigger conditions in architecture.md §11. If at least one fires,
+  post-freeze scope expands to MLIR adoption; otherwise the intrinsic
+  approach is locked.
+- **Validation harness.** End-to-end CQ programs covering the full
+  Phases 1–10 feature surface (or Phases 1–9 if Phase 10 is deferred
+  past freeze per its own verdict), each producing the expected
+  stub-runtime call log. The harness becomes the regression suite for
+  backend implementation.
+
+**Done when:** all deliverables ship, the regression harness is
+green, and the architecture / backend / CQ.h / libcq_runtime documents
+carry a "v1.0 frozen" marker.
+
+---
+
+## Beyond the frontend (out of scope for this roadmap)
+
+Sketched here only as pointers; phasing for these is the subject of the
+post-Phase-10 roadmap revision.
+
+- **Backend implementation.** Real `cq_template_<op>_<W>` gate-sequence
+  bodies for the 38-opcode reversible template library (backend.md §7).
+  Real `libcq_runtime` variants: OpenQASM emitter, in-memory circuit
+  object, eager statevector simulator, density-matrix simulator, hardware
+  transport (backend.md §6.6). Float templates with internal
+  Bennett-wrap for rounding-induced information loss (backend.md §3.3 /
+  §7).
+- **Quantum-while backend.** The gate-level realization of whatever
+  Phase 10 settled on as the q-while semantics — likely an amplitude-
+  amplification template (with Grover-style iteration count derived from
+  the chosen surface), or the lowering for transform-to-bounded-for.
+  Cleanly separable from the frontend half precisely because Phase 10
+  freezes the surface + the runtime hook.
+- **Optimization passes** (old roadmap §11). Gate cancellation,
+  adjacent-gate fusion, ancilla reuse across non-overlapping lifetimes,
+  T-count / depth targeting. Some pieces feasible at template-call
+  granularity under stubs (e.g., adjacent inverse cancellation:
+  `cq_template_X` immediately followed by `cq_template_X_inv` collapses);
+  the full set requires real backend.
+- **Cross-language input.** `clang -emit-llvm`'d Rust, Fortran, etc.
+  participate in auto-specialization (architecture.md §P9). LTO
+  discipline, canonical `libm.bc` distribution.
+- **Dynamic circuits.** Measurement-derived loop bounds; mid-circuit
+  measurement feedback. Out of scope until post-backend.
 
 ---
 
 ## Sequencing notes
 
-- Phases 2 → 5 are tightly coupled and form the "make CQ look like real C with quantum types" core. They should land in order; each builds on the previous.
-- Phase 4 (`if`) depends on Phase 3 controlled forms; Phase 5 (uncomputation) depends on Phase 3 adjoints. Both can be developed in parallel once Phase 3 lands.
-- Phase 7 (user-defined functions and inversion) depends on Phase 5 attribute machinery.
-- Phase 8 (memory) is largely independent of Phases 4–7 and could be parallelized, but it introduces QRAM which is a fresh stub area.
-- Phase 11 (optimization) only makes sense once enough primitives exist to optimize over.
+- Phases 1 → 5 are tightly coupled and form the "make CQ look like real C
+  with quantum types" core. Type system (2) extends Phase 1's i32-only
+  slice; operation breadth (3) needs all widths; quantum `if` (4) needs
+  Phase 3's controlled-template stubs; uncomputation (5) needs Phase 3's
+  inverse-template stubs.
+- Phases 4 and 5 can be developed in parallel after Phase 3 lands.
+- Phase 6 (for-loops) is largely free of new IR-pass mechanism and can
+  slot in any time after Phase 1.
+- Phase 7 (user-defined functions + inversion) is the second major
+  IR-pass workstream after uncomputation; consumes the Phase 0 prototype
+  `cq-specialize` slice.
+- Phase 8 (memory) introduces QRAM as a new stub surface but is
+  independent of Phases 4 / 5 / 7 and can be parallelized.
+- Phase 9 (remaining C) is mostly mechanical and parallelizable.
+- Phase 10 (quantum-while) is the last design-heavy phase before the
+  freeze; its outcome (ship at freeze vs. defer past freeze) is itself
+  one of Phase 10's deliverables.
+- Phase 11 is a freeze + gate; nothing else lands before it.
+  Post-Phase-11 work is designed under a future roadmap revision.

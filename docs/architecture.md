@@ -163,7 +163,7 @@ origin is invisible at that layer.
 
 | Layer | Representation | Where it lives | Created by | Purpose |
 |---|---|---|---|---|
-| **Source `qint_t`** | `quantum int` keyword (and `quantum char`, `quantum long`, etc.) | User's CQ source | User | Surface syntax — declares intent to use quantum data |
+| **Source `qint_t`** | `quantum int` keyword (and `quantum char`, `quantum long`, `quantum float`, `quantum double`, etc.) | User's CQ source | User | Surface syntax — declares intent to use quantum data |
 | **Mid `qint_mid_t`** | `struct { int val; }` (or analogous for other widths) | Rewritten C / LLVM IR | Rewriter | Type signal that survives at function-signature boundaries; flattened by mem2reg/sroa inside bodies; taint propagation tracks quantum-ness post-flattening |
 | **Backend `qint_t`** | Actual qubit register (allocation in the gate-emission runtime / simulator) | Runtime | Runtime, when an IR-pass-emitted allocation call fires | The "real" qint — qubits, gates, simulator state |
 
@@ -281,8 +281,8 @@ unchanged.
 
 | AST pattern | Emit |
 |---|---|
-| `VarDecl` carrying `AnnotateAttr("quantum")`, uninitialized | `qint_mid_t x = cq_init(0, W);` |
-| `VarDecl` `quantum int x = E;` where E is classical | `qint_mid_t x = cq_init(E, W);` |
+| `VarDecl` carrying `AnnotateAttr("quantum")`, uninitialized | `q<T>_mid_t x = cq_init_<W>(0);` (e.g. `cq_init_i32(0)`, `cq_init_f64(0.0)`) |
+| `VarDecl` `quantum <T> x = E;` where E is classical | `q<T>_mid_t x = cq_init_<W>(E);` (per-IR-width variant chosen from `<T>`) |
 | `BinaryOperator` / `UnaryOperator` / `CompoundAssignOperator` whose result type is quantum | **Stock C arithmetic on the `.val` field of operands.** Example: `c.val = a.val + b.val;` |
 | `CStyleCastExpr` from quantum to classical | `cq_measure(q)` |
 | `IfStmt` with a quantum-typed condition | `cq_when_begin(_cond); …body…; cq_when_end();` (`_cond` is a fresh `qint_mid_t` holding the condition's `.val`) |
@@ -329,39 +329,82 @@ metadata after Clang lowering.
 
 ## 6. Intrinsic surface
 
-This is the complete LLVM-level extension surface. All ~6 functions are
-declared (not defined) in `CQ.h` so user source parses and so the IR
-pass can pattern-match on the calls.
+This is the complete LLVM-level extension surface. Six intrinsic
+families — construction, measurement, rotation θ, rotation φ,
+when-region, invert-region — plus specialization-mangling declarations.
+The family count is six; the declaration count expands to roughly twenty
+once per-IR-width variants are listed. All are declared (not defined)
+in `CQ.h` so user source parses and so the IR pass can pattern-match on
+the calls.
 
 ### 6.1 Construction (taint source)
 
 ```c
-qint_mid_t cq_init(int64_t value, unsigned num_bits);    /* classical-seed quantum */
+qbool_mid_t   cq_init_i1 (int8_t  value);
+qchar_mid_t   cq_init_i8 (int8_t  value);
+qshort_mid_t  cq_init_i16(int16_t value);
+qint_mid_t    cq_init_i32(int32_t value);
+qlong_mid_t   cq_init_i64(int64_t value);
+qfloat_mid_t  cq_init_f32(float   value);
+qdouble_mid_t cq_init_f64(double  value);
 ```
 
-Returns a `qint_mid_t`; taint source in the §7.1 analysis. The rewriter
-emits `cq_init(0, W)` for uninitialized `quantum int x;` declarations and
-`cq_init(E, W)` for `quantum int x = E;` (see §5.1). The function-call
-form is load-bearing: its `qint_mid_t` return type preserves the taint
-signal across Clang's mem2reg/sroa optimization in a way a bare C struct
-literal would not (sroa would fold `qint_mid_t a = {3};` to a plain
-`i32 3` constant, losing the quantum signal at Stage 4).
+Per-width family; each returns a `q*_mid_t` struct holding a single
+scalar of the corresponding LLVM IR width. Taint source in the §7.1
+analysis. The rewriter emits `cq_init_<W>(0)` for uninitialized
+`quantum <T> x;` declarations and `cq_init_<W>(E)` for
+`quantum <T> x = E;` (see §5.1). The function-call form is load-bearing:
+the `q*_mid_t` return type preserves the taint signal across Clang's
+mem2reg/sroa optimization in a way a bare C struct literal would not
+(sroa would fold `qint_mid_t a = {3};` to a plain `i32 3` constant,
+losing the quantum signal at Stage 4).
 
-**Decision (2026-05-21): `cq_alloc` removed.** Originally proposed as a
-separate intrinsic for fresh-ancilla allocation, but it is functionally
-equivalent to `cq_init(0, num_bits)` — both produce |0…0⟩ on the
-backend. Explicit user-controlled ancilla allocation is deferred to a
-later-phase API design; for now, `cq_init(0, W)` covers all known cases.
+**Decisions:**
+
+- **2026-05-21: `cq_alloc` removed.** Originally proposed as a separate
+  intrinsic for fresh-ancilla allocation, but it is functionally
+  equivalent to `cq_init_<W>(0)` — both produce |0…0⟩ on the backend.
+  Explicit user-controlled ancilla allocation is deferred to a later-
+  phase API design; for now, `cq_init_*(0)` covers all known cases.
+- **2026-05-22: per-width init intrinsics.** `num_bits` parameter
+  dropped; width is implicit in the intrinsic name. Aligns IR's
+  natural width (`add i8` vs `add i32`) with user intent.
+- **2026-05-22: floating-point widths first-class.** `qfloat_mid_t` /
+  `qdouble_mid_t` are mechanical extensions of the integer width
+  family; the pipeline is type-agnostic. Only the per-opcode gate
+  templates differ (fp templates internally Bennett-wrap to make
+  rounding-induced information loss locally reversible —
+  template-internal concern, no impact on the IR-pass interface; see
+  [`backend.md`](./backend.md) §3.3 / §7). Half precision (`_Float16`,
+  C23): front-end keyword + intrinsic-decl surface may be added cheaply
+  with template implementation deferred. `long double` deferred
+  (platform-dependent width). `_Complex` requires no new intrinsic
+  surface — Clang lowers `_Complex float` / `_Complex double` to pairs
+  of scalar fp values at the LLVM IR level, so complex arithmetic falls
+  out of fp support automatically.
 
 ### 6.2 Measurement (taint sink)
 
 ```c
-int64_t cq_measure(qint_mid_t);                          /* cast → classical, lossy */
+int8_t  cq_measure_i1 (qbool_mid_t);     /* {0,1} measurement */
+int8_t  cq_measure_i8 (qchar_mid_t);
+int16_t cq_measure_i16(qshort_mid_t);
+int32_t cq_measure_i32(qint_mid_t);
+int64_t cq_measure_i64(qlong_mid_t);
+float   cq_measure_f32(qfloat_mid_t);
+double  cq_measure_f64(qdouble_mid_t);
 ```
 
-The `i64` result is classical; taint stops here. Type-narrower casts
-(e.g., `(int) q` when `q` is a `quantum short`) compose `cq_measure` with
-a stock `trunc`.
+Per-type family. Result is classical; taint stops here. Type-narrower
+casts (e.g., `(int) q` when `q` is a `quantum short`) compose the
+matching `cq_measure_<W>` with a stock `trunc`. Floating-point
+measurement returns the corresponding C scalar type; the runtime
+supplies the classical value (or collapses superposition first).
+
+**2026-05-22:** the per-type family supersedes the single
+`cq_measure → i64` form. Forced by fp support (fp values cannot be
+carried through an `i64` return); applied uniformly to int widths for
+symmetry.
 
 ### 6.3 Quantum-specific primitives (no classical opcode equivalent)
 
@@ -399,11 +442,15 @@ User source never writes these mangled names; the rewriter emits them.
 
 ### 6.6 What is *deliberately* not in the intrinsic surface
 
-- **Arithmetic operators** (`add`, `sub`, `mul`, `div`, `mod`, shifts,
-  bitwise, comparisons, unary): stock LLVM opcodes. Taint propagation
-  identifies the quantum ones.
-- **Type-width casts**: stock `sext` / `zext` / `trunc`. Taint
-  propagates through them.
+- **Integer arithmetic** (`add`, `sub`, `mul`, `udiv`/`sdiv`,
+  `urem`/`srem`, shifts, bitwise, `icmp`, unary): stock LLVM opcodes.
+  Taint propagation identifies the quantum ones.
+- **Floating-point arithmetic** (`fadd`, `fsub`, `fmul`, `fdiv`,
+  `frem`, `fcmp`, `fneg`): stock LLVM opcodes. Same taint mechanism.
+- **Type-width casts**: stock `sext` / `zext` / `trunc` for ints,
+  `fptrunc` / `fpext` for fp widths, `sitofp` / `uitofp` / `fptosi` /
+  `fptoui` for int↔fp conversions. Taint propagates through all of
+  them.
 - **Per-op inverses** (`cq_add_inv`, `cq_mul_inv`, …): generated
   mechanically by `emit_inverse` (§7.6); not declared as intrinsics.
 - **Per-op controlled variants**: similarly, generated by the IR pass
@@ -667,7 +714,7 @@ How each ROADMAP phase lands under this architecture. Items marked
 | Phase | Description | Architecture impact |
 |---|---|---|
 | **1 — v1** | Basic qint, `+` only | **[done as-is]** — proof-of-pipeline at the AST/rewriter layer |
-| **2 — type system + `CQ.h`** | All widths + qfloat/qdouble stubs + `theta`/`phi`/`invert` markers | **[changed]** `CQ.h` becomes the declaration site for the tiny §6 intrinsic surface (~7 functions, no arithmetic intrinsics). Backend headers no longer ship with rewritten output; the binary links against `libcq_runtime` instead |
+| **2 — type system + `CQ.h`** | All integer + floating-point widths first-class + `theta`/`phi`/`invert` markers | **[changed]** `CQ.h` becomes the declaration site for the six §6 intrinsic families (no arithmetic intrinsics). Per the 2026-05-22 decision, `qfloat_mid_t` / `qdouble_mid_t` are full members of the width family — not stubs. Backend headers no longer ship with rewritten output; the binary links against `libcq_runtime` instead |
 | **3 — full op set** | Every primitive in QQ / QC forms, 4 shapes per op | **[changed substantially]** No QQ/QC variants — taint propagation handles both. 4 → 2 shapes per primitive (forward + controlled-forward); adjoints derived per §7.6. The "primitive op" surface is now the 38 LLVM opcodes (template per opcode in the opcode-template library), not language-level operators |
 | **3.3 — classical-mask views** | `q & C` as zero-cost bit view | **[same in principle]** view materialization is an IR-pass operation triggered at binding sites |
 | **3.4 — mixed-width type promotion** | C-standard widening rules | **[easier]** Clang lowers to explicit `sext` / `zext` / `trunc`; taint propagates through them; the reversibilization templates for those opcodes handle the rest |

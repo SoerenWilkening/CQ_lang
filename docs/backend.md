@@ -139,9 +139,10 @@ What the backend receives from the front-end (rewriter + Clang codegen
 - Stock LLVM IR — no custom opcodes, no MLIR dialect, no LLVM fork
 - Standard SSA form, post-mem2reg / post-sroa
 - `qbool_mid_t`, `qchar_mid_t`, `qshort_mid_t`, `qint_mid_t`,
-  `qlong_mid_t` struct types preserved at function-signature
-  boundaries (inside bodies, mem2reg/sroa has likely flattened them to
-  scalar `i1`/`i8`/`i16`/`i32`/`i64` SSA values)
+  `qlong_mid_t`, `qfloat_mid_t`, `qdouble_mid_t` struct types preserved
+  at function-signature boundaries (inside bodies, mem2reg/sroa has
+  likely flattened them to scalar `i1`/`i8`/`i16`/`i32`/`i64`/`float`/
+  `double` SSA values)
 - `@cq_*` intrinsic declarations preserved as external calls — see
   [`architecture.md`](./architecture.md) §6 for the surface
 - Source-location debug info via `!dbg` metadata, for backend
@@ -151,16 +152,24 @@ What the backend receives from the front-end (rewriter + Clang codegen
 
 Per-width construction (taint sources):
 ```c
-qbool_mid_t  cq_init_i1 (int8_t  value);
-qchar_mid_t  cq_init_i8 (int8_t  value);
-qshort_mid_t cq_init_i16(int16_t value);
-qint_mid_t   cq_init_i32(int32_t value);
-qlong_mid_t  cq_init_i64(int64_t value);
+qbool_mid_t   cq_init_i1 (int8_t  value);
+qchar_mid_t   cq_init_i8 (int8_t  value);
+qshort_mid_t  cq_init_i16(int16_t value);
+qint_mid_t    cq_init_i32(int32_t value);
+qlong_mid_t   cq_init_i64(int64_t value);
+qfloat_mid_t  cq_init_f32(float   value);
+qdouble_mid_t cq_init_f64(double  value);
 ```
 
-Measurement (taint sink):
+Measurement (taint sinks, per-type family):
 ```c
-int64_t cq_measure(/* q*_mid_t */);   // per-width family; see §10 q6
+int8_t  cq_measure_i1 (qbool_mid_t);     /* {0,1} measurement */
+int8_t  cq_measure_i8 (qchar_mid_t);
+int16_t cq_measure_i16(qshort_mid_t);
+int32_t cq_measure_i32(qint_mid_t);
+int64_t cq_measure_i64(qlong_mid_t);
+float   cq_measure_f32(qfloat_mid_t);
+double  cq_measure_f64(qdouble_mid_t);
 ```
 
 Quantum-specific primitives:
@@ -192,8 +201,31 @@ __cq_invert_<f>(...)              // inverse specialization
   widths"* is now concrete.
 - **`num_bits` dropped from `cq_init`**. Per-width init intrinsics
   (`cq_init_i1`, `cq_init_i8`, `cq_init_i16`, `cq_init_i32`,
-  `cq_init_i64`) take only the initial value. Width is implicit in
-  the intrinsic name.
+  `cq_init_i64`, `cq_init_f32`, `cq_init_f64`) take only the initial
+  value. Width is implicit in the intrinsic name.
+- **Floating-point widths first-class.** `qfloat_mid_t` /
+  `qdouble_mid_t` join the integer family as first-class width
+  members, not Phase 2 "stubs" as the ROADMAP previously hinted. The
+  IR-pass surface is type-agnostic — same taint propagation (extended
+  over `fadd`/`fsub`/`fmul`/`fdiv`/`frem`/`fcmp`/`fneg`/`sitofp`/
+  `uitofp`/`fptosi`/`fptoui`/`fptrunc`/`fpext`), same specialization,
+  same region handling, same uncomputation. Only the per-opcode
+  templates differ: fp templates internally Bennett-wrap (forward →
+  rounding-ancilla + CNOT-copy → reverse) to make rounding-induced
+  information loss locally reversible. Template-internal: doesn't
+  change the IR-pass interface (§5.8 `emit_inverse` still operates on
+  the wrapped template's visible boundary; per-op uncomputation
+  remains per-op). Half precision (`_Float16`, C23): front-end keyword
+  + intrinsic-decl surface optional, template implementation deferred.
+  `long double` deferred (platform-dependent width). `_Complex` falls
+  out automatically — Clang lowers `_Complex float`/`_Complex double`
+  to `{float, float}` / `{double, double}` structs at the LLVM IR
+  level with pair-of-scalar fp arithmetic, so it requires no new
+  intrinsic surface.
+- **Per-type measurement intrinsics.** `cq_measure → i64` replaced by
+  the per-type family in §3.2. Resolves §10 q6. Forced by fp (fp
+  values can't be carried through an `i64` return); applied uniformly
+  to int widths for symmetry.
 - **Bitfield / sub-natural-width allocations** deferred — not needed
   through Phase 9. If reintroduced (e.g., for resource-constrained
   hardware), a separate `cq_init_iN_bits(value, n)` per-width variant
@@ -212,7 +244,7 @@ establishes the contract.
 | Layer | Representation | Owned by | Created at | Purpose |
 |---|---|---|---|---|
 | **Source** | `quantum int x;` (keyword + C type) | User | Source authoring | Surface intent |
-| **Mid** | `qint_mid_t = struct { i32 val; }`, etc. (per width) | Rewriter | Stage 2 (rewriter) | Signal-bearing struct that survives mem2reg/sroa at fn boundaries |
+| **Mid** | `qint_mid_t = struct { i32 val; }`, `qfloat_mid_t = struct { float val; }`, etc. (per IR width — int and fp) | Rewriter | Stage 2 (rewriter) | Signal-bearing struct that survives mem2reg/sroa at fn boundaries |
 | **Backend** | `i32` handle, indexing `g_circuit.registers` | IR pass + runtime | Stage 5 (IR pass emits `cqrt_alloc_*`) | Opaque reference to a runtime-owned rich qubit-register record |
 
 The mid struct dissolves entirely during the IR pass. After lowering
@@ -446,13 +478,20 @@ Lowering map (per-width variants implied):
 | Tainted opcode / intrinsic | Lowered |
 |---|---|
 | `call @cq_init_i<W>(value)` | `cqrt_alloc_classical_i<W>(value)` → handle |
+| `call @cq_init_f<W>(value)` | `cqrt_alloc_classical_f<W>(value)` → handle |
 | tainted `add i<W> %a, %b` | template call (§5.6), expands to `cqrt_cnot` / `cqrt_toffoli` sequence on handle qubits |
+| tainted `fadd f<W> %a, %b` | fp template call — internally Bennett-wrapped (forward + rounding-ancilla + reverse); see §7 |
 | tainted `mul i<W> %a, %b` | template call, similar |
+| tainted `fmul f<W> %a, %b` | fp template call, internally Bennett-wrapped |
 | tainted `icmp <pred> i<W> %a, %b` | comparator template, produces a flag handle |
+| tainted `fcmp <pred> f<W> %a, %b` | fp comparator template, produces a flag handle |
 | tainted `sext` / `zext` / `trunc` | width-conversion template (often free for `zext` to wider widths) |
+| tainted `fptrunc` / `fpext` | fp width-conversion template (rounding-ancilla on narrowing) |
+| tainted `sitofp` / `uitofp` / `fptosi` / `fptoui` | int↔fp conversion template (rounding-ancilla on `fp→int`) |
 | `call @cq_theta(q, θ)` | `cqrt_ry(handle(q), θ)` |
 | `call @cq_phi(q, θ)` | `cqrt_rz(handle(q), θ)` |
-| `call @cq_measure(q) → i64` | `cqrt_measure(handle(q)) → i64` |
+| `call @cq_measure_i<W>(q) → i<W>` | `cqrt_measure_i<W>(handle(q)) → i<W>` |
+| `call @cq_measure_f<W>(q) → f<W>` | `cqrt_measure_f<W>(handle(q)) → f<W>` |
 | `cq_when_begin(q) … cq_when_end()` | each inner gate replaced by its controlled variant on `handle(q)` |
 | `cq_invert_begin() … cq_invert_end()` | inner gate sequence reversed + adjointed per §5.8 |
 
@@ -589,19 +628,23 @@ down at program exit (or on explicit `cqrt_finalize()`).
 
 The public ABI `libcq_runtime` exposes to IR-emitted code:
 
-**Allocation** (per-width variants):
+**Allocation** (per-width variants, int + fp):
 ```c
 int cqrt_alloc_i1 (void);
 int cqrt_alloc_i8 (void);
 int cqrt_alloc_i16(void);
 int cqrt_alloc_i32(void);
 int cqrt_alloc_i64(void);
+int cqrt_alloc_f32(void);
+int cqrt_alloc_f64(void);
 
 int cqrt_alloc_classical_i1 (int8_t  value);   // |value⟩, classical seed
 int cqrt_alloc_classical_i8 (int8_t  value);
 int cqrt_alloc_classical_i16(int16_t value);
 int cqrt_alloc_classical_i32(int32_t value);
 int cqrt_alloc_classical_i64(int64_t value);
+int cqrt_alloc_classical_f32(float  value);
+int cqrt_alloc_classical_f64(double value);
 
 void cqrt_free(int handle);
 ```
@@ -618,9 +661,15 @@ void cqrt_rz(int q, double angle);
 void cqrt_controlled_<gate>(int ctrl, ...);     // controlled variants per primitive
 ```
 
-**Measurement** (taint sink):
+**Measurement** (taint sink, per-type family):
 ```c
-int64_t cqrt_measure(int handle);
+int8_t  cqrt_measure_i1 (int handle);
+int8_t  cqrt_measure_i8 (int handle);
+int16_t cqrt_measure_i16(int handle);
+int32_t cqrt_measure_i32(int handle);
+int64_t cqrt_measure_i64(int handle);
+float   cqrt_measure_f32(int handle);
+double  cqrt_measure_f64(int handle);
 ```
 
 **Lifecycle** (optional):
@@ -696,22 +745,28 @@ tainted LLVM opcodes.
 
 ### 7.1 Coverage
 
-The 38 data-carrying LLVM IR opcodes (Bennett's analysis), each at
-every supported width:
+The 38 data-carrying LLVM IR opcodes (Bennett's analysis covers both
+integer and floating-point), each at every applicable width:
 
 ```
-arithmetic:  add, sub, mul, sdiv, udiv, srem, urem
-bitwise:     and, or, xor, shl, lshr, ashr
-comparison:  icmp (eq, ne, slt, sgt, sle, sge, ult, ugt, ule, uge)
-cast:        sext, zext, trunc, bitcast, ptrtoint, inttoptr
+int arith:   add, sub, mul, sdiv, udiv, srem, urem
+int bitwise: and, or, xor, shl, lshr, ashr
+int compare: icmp (eq, ne, slt, sgt, sle, sge, ult, ugt, ule, uge)
+fp arith:    fadd, fsub, fmul, fdiv, frem, fneg
+fp compare:  fcmp (oeq, one, olt, ogt, ole, oge, ueq, une, ult, ugt,
+                   ule, uge, ord, uno)
+cast:        sext, zext, trunc, bitcast, ptrtoint, inttoptr,
+             fptrunc, fpext, sitofp, uitofp, fptosi, fptoui
 memory:      load, store, gep         (Phase 8 — memory model)
 control:     phi, select              (when in tainted regions)
 intrinsic:   llvm.memcpy, llvm.memset, llvm.ctpop, ...   (subset)
 ```
 
-Each at widths `i1, i8, i16, i32, i64` ⇒ roughly `38 × 5 ≈ 190` base
-templates. Variants (ripple-carry vs. Cuccaro vs. …) multiply this by
-a small factor.
+Each at applicable widths: int opcodes at `i1, i8, i16, i32, i64`; fp
+opcodes at `f32, f64`. Cross-domain casts (`sitofp` / `uitofp` /
+`fptosi` / `fptoui`) span int×fp width pairs. Variants (ripple-carry
+vs. Cuccaro adder, Bennett-internal rounding strategy for fp, etc.)
+multiply the count by a small factor.
 
 ### 7.2 Distribution shapes
 
@@ -817,7 +872,7 @@ architecture.md; **[shared]** = spans both.
 | Phase | Description | Layer |
 |---|---|---|
 | **1 — v1** | Basic qint, `+` only | [front-end] proof-of-pipeline at the rewriter layer |
-| **2 — type system + `CQ.h`** | Per-width quantum types, theta/phi/invert markers | [shared] front-end emits intrinsics; backend declares the runtime template stubs |
+| **2 — type system + `CQ.h`** | Per-width quantum types (int + fp first-class), theta/phi/invert markers | [shared] front-end emits intrinsics; backend declares the runtime template stubs (fp templates are stubbed until implementations land — front-end surface is complete) |
 | **3 — full op set** | 38 opcodes × widths | [backend] template library expansion |
 | **3.3 — classical-mask views** | `q & C` as zero-cost bit view | [backend] view materialization is an IR-pass operation |
 | **3.4 — mixed-width promotion** | C-standard widening rules | [backend] templates for `sext`/`zext`/`trunc` per width pair |
@@ -850,10 +905,10 @@ Backend-specific decisions still owed:
    matches §6.4's sketch; `ptr` would let the runtime use real
    pointers behind the handle and gives LLVM's type system stronger
    guarantees (won't be confused with an ordinary integer).
-6. **Per-width measurement intrinsics?** Currently `cqrt_measure`
-   returns `i64` for all widths; a per-width family
-   (`cqrt_measure_i32` → `i32`, etc.) would be cleaner but expands
-   the runtime surface.
+6. **Per-type measurement intrinsics — RESOLVED 2026-05-22.** Per-type
+   family adopted (`cqrt_measure_i<W> → i<W>`, `cqrt_measure_f<W> →
+   f<W>`). Forced by fp support; applied uniformly to int widths for
+   symmetry. See §3.2 / §6.4.
 7. **Diagnostics location preservation.** `!dbg` survives most opt
    passes but not all. Minimum-acceptable fidelity for Phase 5+
    user-source error reporting.
