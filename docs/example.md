@@ -61,16 +61,16 @@ attributes.
 ```c
 /* example.transpiled.c */
 
-#include "CQ.h"     /* declares qint_mid_t and the ~7-function @cq_* surface */
+#include <CQ.h>      /* declares qint_mid_t and the per-width @cq_*_i32 surface */
 
 int main(void) {
-    qint_mid_t a = cq_init(3, 16);
-    qint_mid_t b = cq_init(5, 16);
+    qint_mid_t a = cq_init_i32(3);
+    qint_mid_t b = cq_init_i32(5);
 
     qint_mid_t c;
     c.val = a.val + b.val;        /* stock C arithmetic on .val */
 
-    int64_t measured = cq_measure(c);
+    int32_t measured = cq_measure_i32(c);
 
     return (int) measured;
 }
@@ -78,18 +78,19 @@ int main(void) {
 
 What changed (and what didn't):
 
-- `quantum int a = 3;` → `qint_mid_t a = cq_init(3, 16);`. The
-  `cq_init` call is a **taint source** in the IR (§7.1 of the
-  architecture doc). The width argument `16` corresponds to `int`'s
-  bit-width in the project's type table.
+- `quantum int a = 3;` → `qint_mid_t a = cq_init_i32(3);`. The
+  `cq_init_i32` call is a **taint source** in the IR (§7.1 of the
+  architecture doc). Width is encoded in the intrinsic name (`_i32`) —
+  Phase 1 ships only the 32-bit family; other widths arrive in later
+  phases (architecture §6.1 decision 2026-05-22).
 - `quantum int c = a + b;` → `qint_mid_t c; c.val = a.val + b.val;`.
   **Notice:** no `cq_add_qq` intrinsic. The arithmetic stays as ordinary
   C, performed on the `.val` field of the mid-level struct. Clang will
   lower it to a stock LLVM `add` instruction; taint propagation will
   identify it as quantum.
-- `(int) c` → `cq_measure(c)`. Measurement is the **taint sink**.
-  Returns `i64`; the explicit `(int)` cast back to `int` becomes a
-  `trunc i64 → i32` in IR.
+- `(int) c` → `cq_measure_i32(c)`. Measurement is the **taint sink**.
+  Returns `i32`; the explicit `(int)` cast back to `int` is a no-op at
+  the IR level (both are `i32`).
 - No `cq_add_inv` anywhere. Inverses are emitted by the IR pass at the
   last use of each tainted value — and since the only enclosing function
   here is `main`, no inverses are emitted at all (ROADMAP §Phase 5
@@ -100,25 +101,19 @@ The relevant excerpt of `CQ.h`:
 ```c
 /* CQ.h — user-facing declarations only; no implementations */
 
-typedef struct { int val; } qint_mid_t;
+#define quantum __attribute__((annotate("quantum")))
 
-qint_mid_t cq_init(int64_t value, unsigned num_bits);
-int64_t    cq_measure(qint_mid_t);
+typedef struct { int32_t val; } qint_mid_t;
 
-void cq_theta(qint_mid_t* q, double angle);
-void cq_phi  (qint_mid_t* q, double angle);
-
-void cq_when_begin(qint_mid_t cond);
-void cq_when_end  (void);
-void cq_invert_begin(void);
-void cq_invert_end  (void);
-
-/* Plus the `quantum` keyword macro for Phase 2's CQ.h entry. */
+qint_mid_t cq_init_i32(int32_t value);
+int32_t    cq_measure_i32(qint_mid_t q);
 ```
 
-Six functions plus the `quantum` keyword. That's the entire LLVM-level
-extension surface. (`cq_alloc` was removed 2026-05-21 — see
-`architecture.md` §6.1 Decision note.)
+Per-width intrinsic family: Phase 1 ships the 32-bit pair
+(`cq_init_i32`, `cq_measure_i32`) plus the `quantum` keyword macro.
+Other widths (i8/i16/i64) and other intrinsic families (rotations,
+conditioning, manual inversion) enter in later phases. (`cq_alloc` was
+removed 2026-05-21 — see `architecture.md` §6.1 Decision note.)
 
 ---
 
@@ -130,26 +125,26 @@ optimization:
 ```llvm
 %struct.qint_mid_t = type { i32 }
 
-declare %struct.qint_mid_t @cq_init(i64, i32)
-declare i64 @cq_measure(%struct.qint_mid_t)
+declare %struct.qint_mid_t @cq_init_i32(i32)
+declare i32 @cq_measure_i32(%struct.qint_mid_t)
 
 define i32 @main() {
 entry:
   %a        = alloca %struct.qint_mid_t
   %b        = alloca %struct.qint_mid_t
   %c        = alloca %struct.qint_mid_t
-  %measured = alloca i64
+  %measured = alloca i32
 
   ; quantum int a = 3;
   %a_cast = bitcast %struct.qint_mid_t* %a to i8*
   call void @llvm.lifetime.start.p0i8(i64 4, i8* %a_cast)
-  %a_init = call %struct.qint_mid_t @cq_init(i64 3, i32 16)
+  %a_init = call %struct.qint_mid_t @cq_init_i32(i32 3)
   store %struct.qint_mid_t %a_init, %struct.qint_mid_t* %a
 
   ; quantum int b = 5;
   %b_cast = bitcast %struct.qint_mid_t* %b to i8*
   call void @llvm.lifetime.start.p0i8(i64 4, i8* %b_cast)
-  %b_init = call %struct.qint_mid_t @cq_init(i64 5, i32 16)
+  %b_init = call %struct.qint_mid_t @cq_init_i32(i32 5)
   store %struct.qint_mid_t %b_init, %struct.qint_mid_t* %b
 
   ; quantum int c; c.val = a.val + b.val;
@@ -166,16 +161,15 @@ entry:
 
   ; int measured = (int) c;
   %c_load   = load %struct.qint_mid_t, %struct.qint_mid_t* %c
-  %m        = call i64 @cq_measure(%struct.qint_mid_t %c_load)
-  store i64 %m, i64* %measured
+  %m        = call i32 @cq_measure_i32(%struct.qint_mid_t %c_load)
+  store i32 %m, i32* %measured
 
   ; --- scope ends; Clang inserts lifetime.ends ---
   call void @llvm.lifetime.end.p0i8(i64 4, i8* %c_cast)
   call void @llvm.lifetime.end.p0i8(i64 4, i8* %b_cast)
   call void @llvm.lifetime.end.p0i8(i64 4, i8* %a_cast)
 
-  %m_load = load i64, i64* %measured
-  %retval = trunc i64 %m_load to i32
+  %retval = load i32, i32* %measured
   ret i32 %retval
 }
 ```
@@ -201,22 +195,21 @@ This is what the **CQ IR pass actually receives** as input. After
 ```llvm
 %struct.qint_mid_t = type { i32 }
 
-declare %struct.qint_mid_t @cq_init(i64, i32)
-declare i64 @cq_measure(%struct.qint_mid_t)
+declare %struct.qint_mid_t @cq_init_i32(i32)
+declare i32 @cq_measure_i32(%struct.qint_mid_t)
 
 define i32 @main() {
-  %a_struct = call %struct.qint_mid_t @cq_init(i64 3, i32 16)
+  %a_struct = call %struct.qint_mid_t @cq_init_i32(i32 3)
   %a        = extractvalue %struct.qint_mid_t %a_struct, 0
 
-  %b_struct = call %struct.qint_mid_t @cq_init(i64 5, i32 16)
+  %b_struct = call %struct.qint_mid_t @cq_init_i32(i32 5)
   %b        = extractvalue %struct.qint_mid_t %b_struct, 0
 
   %c        = add i32 %a, %b                                  ; ← STOCK LLVM PRIMITIVE
   %c_struct = insertvalue %struct.qint_mid_t poison, i32 %c, 0
 
-  %m        = call i64 @cq_measure(%struct.qint_mid_t %c_struct)
-  %r        = trunc i64 %m to i32
-  ret i32 %r
+  %m        = call i32 @cq_measure_i32(%struct.qint_mid_t %c_struct)
+  ret i32 %m
 }
 ```
 
@@ -225,10 +218,10 @@ The `alloca`s, `load`s, `store`s, and lifetime markers have collapsed —
 is a clean SSA chain:
 
 ```
-@cq_init(3,16) ─▶ %a_struct ─▶ %a ──┐
-                                    ├─▶ %c ─▶ %c_struct ─▶ %m ─▶ %r ─▶ ret
-@cq_init(5,16) ─▶ %b_struct ─▶ %b ──┘
-                                          @cq_measure
+@cq_init_i32(3) ─▶ %a_struct ─▶ %a ──┐
+                                     ├─▶ %c ─▶ %c_struct ─▶ %m ─▶ ret
+@cq_init_i32(5) ─▶ %b_struct ─▶ %b ──┘
+                                           @cq_measure_i32
 ```
 
 ---
@@ -240,16 +233,17 @@ doc). Trace through the values:
 
 | SSA value | Tainted? | Why |
 |---|---|---|
-| `%a_struct` | **yes** | return of `@cq_init` (taint source) |
+| `%a_struct` | **yes** | return of `@cq_init_i32` (taint source) |
 | `%a` | **yes** | `extractvalue` of a tainted aggregate |
-| `%b_struct` | **yes** | return of `@cq_init` |
+| `%b_struct` | **yes** | return of `@cq_init_i32` |
 | `%b` | **yes** | `extractvalue` of a tainted aggregate |
 | `%c` | **yes** | `add i32` with at least one tainted operand |
 | `%c_struct` | **yes** | `insertvalue` carrying a tainted scalar |
-| `%m` | **classical** | `@cq_measure` is a taint sink; its `i64` is classical |
-| `%r` | **classical** | `trunc` of a classical value |
+| `%m` | **classical** | `@cq_measure_i32` is a taint sink; its `i32` is classical |
 
 So the IR pass classifies `%c = add i32 %a, %b` as a **quantum add**.
+(`%m` is also the return value — no `trunc` is needed since
+`cq_measure_i32` already returns `i32`.)
 The instruction itself is plain stock LLVM IR — what's special is the
 taint state of its operands.
 
@@ -265,13 +259,13 @@ purely operand-driven analysis.
 To finish the lowering, the IR pass would (still working at LLVM IR
 level, just adding lower-level calls):
 
-1. Replace `@cq_init(3, 16)` with `cqrt_alloc_classical(handle, 3, 16)`
-   — allocate a qubit register handle and initialize with the classical
-   value 3.
+1. Replace `@cq_init_i32(3)` with `cqrt_alloc_classical_i32(3)` —
+   allocate a 32-qubit register handle and initialize with the
+   classical value 3.
 2. Replace the tainted `add i32 %a, %b` with the chosen reversible-adder
    template: a sequence of `cqrt_cnot` and `cqrt_toffoli` calls
    threading through ancilla and result qubit handles.
-3. Replace `@cq_measure(...)` with `cqrt_measure(handle)`.
+3. Replace `@cq_measure_i32(...)` with `cqrt_measure_i32(handle)`.
 4. Skip uncomputation entirely (the enclosing function is `main` —
    ROADMAP §Phase 5).
 
