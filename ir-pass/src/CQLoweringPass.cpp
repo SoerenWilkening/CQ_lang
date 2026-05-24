@@ -106,6 +106,17 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     return M.getOrInsertFunction("cq_template_add_i32",
                                  FunctionType::get(I32, {I32, I32}, false));
   };
+  // Q+C mixed-operand variant — chosen when one operand of a tainted add
+  // is an LLVM ConstantInt (classical literal, or a classical-var read
+  // folded by clang -O1's constprop). Distinct C symbol because C lacks
+  // overloading; user-facing trace prints "cq_template_add_i32" for both
+  // variants and lets the bare-int vs `h%d` format disambiguate. Never
+  // promote the literal operand to a handle: that would conflict with
+  // the planned cq_alloc optimization (PLAN.md §6.3 update).
+  auto getTemplateAddHL = [&]() {
+    return M.getOrInsertFunction("cq_template_add_i32_hl",
+                                 FunctionType::get(I32, {I32, I32}, false));
+  };
   auto getMeasureRT = [&]() {
     return M.getOrInsertFunction("cqrt_measure_i32",
                                  FunctionType::get(I32, {I32}, false));
@@ -221,12 +232,29 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   }
 
   if (!TaintedAdds.empty()) {
-    FunctionCallee TemplateAdd = getTemplateAdd();
     for (BinaryOperator *Add : TaintedAdds) {
       Builder.SetInsertPoint(Add);
       Value *A = Add->getOperand(0);
       Value *B = Add->getOperand(1);
-      CallInst *T = Builder.CreateCall(TemplateAdd, {A, B}, "h_sum");
+      // Dispatch on operand kinds:
+      //   * Q+Q (both SSA): symmetric cq_template_add_i32(h, h).
+      //   * Q+C: cq_template_add_i32_hl(h, literal); swap operands if
+      //     the constant landed on the lhs so the handle is always the
+      //     first arg (matches the _hl signature: lhs_handle, rhs_literal).
+      //   * C+C: impossible — a non-tainted add wouldn't be in this list
+      //     (taint flows only from handle sources via step 4).
+      Value *Lhs = A;
+      Value *Rhs = B;
+      FunctionCallee Callee;
+      if (isa<ConstantInt>(Rhs)) {
+        Callee = getTemplateAddHL();
+      } else if (isa<ConstantInt>(Lhs)) {
+        std::swap(Lhs, Rhs);
+        Callee = getTemplateAddHL();
+      } else {
+        Callee = getTemplateAdd();
+      }
+      CallInst *T = Builder.CreateCall(Callee, {Lhs, Rhs}, "h_sum");
       if (DebugLoc DL = Add->getDebugLoc())
         T->setDebugLoc(DL);
       Add->replaceAllUsesWith(T);

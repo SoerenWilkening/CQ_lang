@@ -14,3 +14,11 @@ int32_t cq_template_add_i32(int32_t lhs, int32_t rhs) {
     fflush(stdout);
     return h;
 }
+
+int32_t cq_template_add_i32_hl(int32_t lhs_handle, int32_t rhs_literal) {
+    int32_t h = cqrt_alloc_handle();
+    printf("cq_template_add_i32(h%d, %d) -> h%d\n", lhs_handle, rhs_literal,
+           h);
+    fflush(stdout);
+    return h;
+}

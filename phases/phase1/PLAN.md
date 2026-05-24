@@ -917,19 +917,29 @@ cqrt_alloc_classical_i32(3) -> h0
 cq_template_add_i32(h0, 5) -> h1
 ```
 
-Wait — the rewriter emits `d.val = a.val + 5`. After Clang -O1 + the
-IR pass, the tainted `add i32 %a_handle, 5` becomes
-`cq_template_add_i32(%a_handle, i32 5)`. The second argument is the
-**constant 5**, not a handle. The trace printer for
-`cq_template_add_i32` therefore needs to know its second arg might be
-a handle *or* a literal. For Phase 1 simplicity, treat both args as
-"int values" in the trace — the line above is correct as-is.
+The rewriter emits `d.val = a.val + 5`. After Clang -O1 + the IR pass,
+the tainted `add i32 %a_handle, 5` becomes a call to a **dedicated
+runtime entry point** `cq_template_add_i32_hl(%a_handle, i32 5)` whose
+trace prints the second arg as a bare integer (no `h` prefix), so the
+log line reads `cq_template_add_i32(h0, 5) -> h1`. The Q+Q variant
+remains `cq_template_add_i32(h_lhs, h_rhs)` with both args formatted
+as handles.
 
-This is an open subtlety that the plan resolves: **`cq_template_add_i32`
-treats its two i32 args symmetrically**, with no distinction between
-"handle" and "literal classical operand" in the trace format. The IR
-pass passes whatever the LLVM IR has for the operand: SSA value or
-constant. Both render as their integer value.
+**Resolution of the operand-shape subtlety:** the IR pass dispatches at
+lowering time based on LLVM operand kind. If either operand of a tainted
+`add i32` is a `ConstantInt` (classical literal, or a classical-var
+read folded by Clang's constprop), it calls `cq_template_add_i32_hl`
+with operands swapped so the handle is always lhs. Otherwise (both
+operands are tainted SSA values, i.e. Q+Q add), it calls the symmetric
+`cq_template_add_i32`. The trace-line function name in both cases is
+`cq_template_add_i32`; the `_hl` suffix on the C symbol is an
+implementation detail (C lacks overloading) and the bare-int vs `h%d`
+rendering disambiguates for log readers.
+
+**Never promote a classical operand to a handle** (e.g. by inserting
+`cq_init_i32(5)` ahead of the add). A planned future `cq_alloc`
+optimization depends on classical operands NOT being materialized as
+quantum handles at the IR level — promotion would conflict with it.
 
 #### Multi-decl expected.log (for `quantum int a = 3, b = 2;`)
 
@@ -1094,23 +1104,37 @@ at top level; `include/CQ.h` at top level.
 PRD: "single template call per `add`; argument shape — handles only?
 handles + width? — TBD".
 
-**Decision:**
+**Decision:** two C symbols, IR-pass dispatch on operand kind.
 
 ```c
+/* Q+Q (both operands are tainted SSA handles). */
 int32_t cq_template_add_i32(int32_t lhs_handle, int32_t rhs_handle);
+
+/* Q+C (rhs is an LLVM ConstantInt — classical literal or
+ * const-propagated classical var). */
+int32_t cq_template_add_i32_hl(int32_t lhs_handle, int32_t rhs_literal);
 ```
 
 **Rationale:**
 - **Returns a handle.** Avoids inventing a fresh-ancilla intrinsic
-  (`cqrt_alloc_i32`) that PRD explicitly excludes from Phase 1. The
-  template owns its own allocation and exposes only the resulting handle
-  to the IR pass.
-- **Two arguments, both `int32_t`.** Operands can be SSA handles
-  (from `cqrt_alloc_classical_i32`) *or* constant integers (in mixed-
-  operand patterns where one side is a literal). Both render as
-  integers in the trace. No type-discriminated dispatch needed.
+  (`cqrt_alloc_i32`) that PRD explicitly excludes from Phase 1. Both
+  template entry points own their own allocation and expose only the
+  resulting handle to the IR pass.
+- **Two C symbols, not one.** A single symbol cannot distinguish
+  "rhs is a handle" from "rhs is a literal" at runtime, but the
+  trace must — log readers need `(h0, h1)` for Q+Q and `(h0, 5)` for
+  Q+C. C has no overloading, so the IR pass picks the symbol at
+  lowering time based on whether the LLVM operand `isa<ConstantInt>`.
+  The trace-line function name is `cq_template_add_i32` in both cases;
+  the `_hl` suffix is C-symbol-name only.
+- **Never promote literal → handle.** The dispatch keeps the classical
+  operand as a bare integer through the runtime ABI. A planned future
+  `cq_alloc` optimization depends on classical operands NOT being
+  silently materialized as quantum handles at the IR level — promotion
+  would conflict with it.
 - **No width parameter.** Width is in the symbol name (`_i32`). Phase 2
-  introduces sibling `cq_template_add_i8`, `cq_template_add_i64`, etc.
+  introduces sibling `cq_template_add_i8`, `cq_template_add_i64`, etc.,
+  each with its own `_hl` variant for mixed operands.
 
 **Trade-off acknowledged:** in-place vs. out-of-place add semantics is
 *explicitly deferred* per PRD. This signature is consistent with either
