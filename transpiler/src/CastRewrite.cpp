@@ -16,6 +16,15 @@ std::optional<CastRewrite> buildCastRewrite(const clang::CStyleCastExpr *ce,
     if (ce == nullptr) {
         return std::nullopt;
     }
+    // `(void) q;` is the standard C idiom for suppressing unused-variable
+    // warnings — it deliberately evaluates and discards without producing
+    // a value. Treat it as a no-op (do not rewrite to cq_measure_i32),
+    // matching the existing e2e fixtures' expected.log and the C
+    // programmer's reading of the idiom. Explicit measurement still
+    // requires a non-void target (`(int) q`).
+    if (ce->getType()->isVoidType()) {
+        return std::nullopt;
+    }
     const clang::Expr *sub = ce->getSubExpr();
     if (sub == nullptr) {
         return std::nullopt;

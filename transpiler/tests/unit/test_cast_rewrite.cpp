@@ -166,6 +166,19 @@ TEST(CastRewriteTest, CastInsideExpressionContextRewritesOnlyTheCast) {
 }
 
 // ---------------------------------------------------------------------------
+// `(void) q;` is the unused-warning C idiom — it must NOT be rewritten
+// to cq_measure_i32(q). The e2e fixtures rely on this so `(void) q;`
+// stays a no-op in the lowered trace.
+// ---------------------------------------------------------------------------
+
+TEST(CastRewriteTest, VoidCastOfQuantumVarReturnsNullopt) {
+    auto r = firstCastRewrite(
+        "    quantum int q = 3;\n"
+        "    (void) q;");
+    EXPECT_FALSE(r.has_value());
+}
+
+// ---------------------------------------------------------------------------
 // Defensive: null CStyleCastExpr* must report nullopt rather than crash.
 // ---------------------------------------------------------------------------
 
