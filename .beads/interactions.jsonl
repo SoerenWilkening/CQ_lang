@@ -51,3 +51,4 @@
 {"id":"int-d7787516","kind":"field_change","created_at":"2026-05-24T12:33:08.347211739Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-2fl","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-62e00e54","kind":"field_change","created_at":"2026-05-24T12:39:19.57526006Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-hci","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
 {"id":"int-9e2c6109","kind":"field_change","created_at":"2026-05-24T13:12:54.075780916Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-xsg","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-38962953","kind":"field_change","created_at":"2026-05-24T13:18:12.382650613Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-c2o","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
