@@ -116,7 +116,43 @@ starting point of the IR-pass code for Phase 1.
 
 ---
 
-## Phase 1 — First end-to-end vertical slice
+## Phase 1 — First end-to-end vertical slice [DONE]
+
+**Landed 2026-05-24.** The worked-example program compiles end-to-end
+through the new pipeline and runs, producing the golden call-trace log
+under `tests/e2e/`. Specifically:
+
+- **Rewriter** (`transpiler/`): emits the new intrinsic surface
+  (`qint_mid_t`, `cq_init_i32`, `cq_measure_i32`); collapsed v1's
+  per-operand `Form` enum to `Uninit` / `ClassicalInit` / `QuantumAdd`;
+  new `CastRewrite` module for measurement-as-cast.
+- **IR pass** (`ir-pass/libCQPass.so`): productionized `cq-lowering`
+  slice of the prototype — forward taint propagation, mid-struct →
+  handle rebinding, lowering of `cq_init_i32` / tainted `add i32` /
+  `cq_measure_i32`. Q+Q vs Q+C add dispatch via `cq_template_add_i32_hl`
+  (mixed-operand) keeps classical literals as bare integers through the
+  ABI — classical operands are never promoted to handles.
+- **Headers** (`include/`): user-facing `CQ.h` (just the `quantum`
+  macro); transpiled-C ABI in `cq_mid.h` (`qint_mid_t` +
+  `cq_init_i32` + `cq_measure_i32`).
+- **Stub runtime** (`runtime/libcq_runtime.a` + `libcq_templates.a`):
+  trace-only `cqrt_alloc_classical_i32`, `cqrt_measure_i32`,
+  `cqrt_free`, `cq_template_add_i32`, `cq_template_add_i32_hl`.
+- **`cqc` driver** (`tools/cqc`): orchestrates the four pipeline stages
+  (rewriter → `clang -O1 -emit-llvm` → `opt -passes=cq-lowering` →
+  link). `--emit-ll` exposes text LLVM IR intermediates; honors
+  `LLVM_PREFIX` for Homebrew layouts.
+- **Tests**: four e2e fixtures (`worked_example`, `mixed_operand`,
+  `multi_decl`, `full_example`) under `tests/e2e/`, all green; v1's
+  rewriter fixtures (01–07) repointed to the Phase 1 emission and
+  still green; rewriter unit tests (GTest) and IR-pass LIT/FileCheck
+  tests green.
+
+The Phase 1 contract follows below; preserved as written for the
+historical record. PRD + implementation plan: `phases/phase1/PRD.md`,
+`phases/phase1/PLAN.md`.
+
+---
 
 **Goal.** A CQ source file of the worked-example shape (docs/example.md)
 compiles end-to-end and runs, producing a log of runtime calls via stub
