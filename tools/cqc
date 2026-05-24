@@ -34,7 +34,23 @@ EOF
 
 input=""; output=""; keep=0
 prefix="$(cd "$(dirname "$0")/.." && pwd)"
-opt_bin="opt-19"; clang_bin="clang-19"
+
+# Pick LLVM tool binaries by probing versioned then unversioned names.
+# Debian/Ubuntu's llvm-19 package installs as opt-19 / clang-19;
+# Homebrew's llvm@19 installs as opt / clang. Probe `<name>-19` first
+# to bias toward an explicit-19 install when both exist, then fall back
+# to `<name>` (relying on the user's PATH / Homebrew prefix to point at
+# the right LLVM). Either default can be overridden with --opt= /
+# --clang= for unusual layouts.
+pick_bin() {
+    local versioned="$1" unversioned="$2"
+    if command -v "$versioned" >/dev/null 2>&1; then printf '%s' "$versioned"
+    elif command -v "$unversioned" >/dev/null 2>&1; then printf '%s' "$unversioned"
+    else printf '%s' "$versioned"  # let the stage error surface the missing tool
+    fi
+}
+opt_bin="$(pick_bin opt-19 opt)"
+clang_bin="$(pick_bin clang-19 clang)"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
