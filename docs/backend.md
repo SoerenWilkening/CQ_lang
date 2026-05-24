@@ -792,17 +792,23 @@ per-program.
 ### 7.3 Naming convention
 
 ```
-cq_template_<opcode>_<width>[_<variant>]
+cq_template_<opcode>_<width>[_<variant>][_<operand-shape>]
 
 Examples:
-  cq_template_add_i32                       // default variant
+  cq_template_add_i32                       // default Q+Q variant
+  cq_template_add_i32_hl                    // mixed Q+C (handle + literal)
   cq_template_add_i32_cuccaro               // explicit Cuccaro
   cq_template_mul_i16_karatsuba
   cq_template_icmp_slt_i64_parallelprefix
 ```
 
 Each takes handle arguments (per §6.1) plus any necessary scalar
-parameters (e.g., shift amount as a classical constant).
+parameters (e.g., shift amount as a classical constant). The
+operand-shape suffix (`_hl`, etc.) selects a different C symbol when
+operand kinds differ — C lacks overloading, so the IR pass dispatches
+at lowering time based on taint-set membership. Phase 1 ships
+`cq_template_add_i32` (Q+Q) and `cq_template_add_i32_hl` (Q+C); see
+`phases/phase1/PLAN.md §6.3` for the dispatch rationale.
 
 ### 7.4 Variant selection
 

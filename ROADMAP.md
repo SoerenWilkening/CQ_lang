@@ -142,8 +142,9 @@ full new pipeline rather than stopping at transpiled C.
 - **Stub `libcq_runtime`** (new): printf-name impls of
   `cqrt_alloc_classical_i32`, `cqrt_alloc_i32`, `cqrt_free`,
   `cqrt_measure_i32`
-- **Stub template library** (new): printf-name impl of
-  `cq_template_add_i32`
+- **Stub template library** (new): printf-name impls of
+  `cq_template_add_i32` (Q+Q) and `cq_template_add_i32_hl` (Q+C
+  mixed-operand; IR pass dispatches on taint-set membership)
 - **Build flow** (new): `.c` → rewriter → `clang -emit-llvm` → `opt`
   (CQ pass plugin) → `clang` link against stub runtime → binary →
   `./binary` prints call log
