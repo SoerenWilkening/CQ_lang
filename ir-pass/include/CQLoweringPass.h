@@ -5,10 +5,14 @@
 // propagates taint forward from init returns, and rewrites:
 //
 //   * `cq_init_i32(value)`                -> `cqrt_alloc_classical_i32(value)`
-//   * tainted `add i32 %a, %b` (both SSA) -> `cq_template_add_i32(%a, %b)`
-//   * tainted `add i32 %a, K` (K const)   -> `cq_template_add_i32_hl(%a, K)`
-//     (Q+C mixed-operand dispatch; operands are swapped if K landed on
-//     the lhs so the handle stays first)
+//   * tainted `add i32 %a, %b` where both are tainted (Q+Q)
+//                                          -> `cq_template_add_i32(%a, %b)`
+//   * tainted `add i32 %a, %c` where one operand is classical (Q+C)
+//                                          -> `cq_template_add_i32_hl(%a, %c)`
+//     (the dispatch uses taint-set membership rather than `isa<ConstantInt>`,
+//     so non-constant classical operands — function args, runtime-loaded
+//     values, globals — are also routed to `_hl`. Operands are swapped if
+//     the classical side landed on the lhs so the handle stays first.)
 //   * `cq_measure_i32(insertvalue ..)`    -> `cqrt_measure_i32(handle)`
 //   * `cq_measure_i32(i32 %tainted)`      -> `cqrt_measure_i32(handle)`
 //     (post -O1 flattened-struct shape, including the cast-rewriter

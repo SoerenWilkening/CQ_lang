@@ -236,23 +236,37 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       Builder.SetInsertPoint(Add);
       Value *A = Add->getOperand(0);
       Value *B = Add->getOperand(1);
-      // Dispatch on operand kinds:
-      //   * Q+Q (both SSA): symmetric cq_template_add_i32(h, h).
-      //   * Q+C: cq_template_add_i32_hl(h, literal); swap operands if
-      //     the constant landed on the lhs so the handle is always the
-      //     first arg (matches the _hl signature: lhs_handle, rhs_literal).
-      //   * C+C: impossible — a non-tainted add wouldn't be in this list
-      //     (taint flows only from handle sources via step 4).
-      Value *Lhs = A;
-      Value *Rhs = B;
+      // Dispatch on whether each operand carries a quantum handle.
+      // The Tainted set (built in step 4 + step 5 self-updates) is the
+      // authoritative classifier: members carry handles, non-members are
+      // classical (constant literals, function args, runtime-loaded
+      // classical values, globals — any of them can show up as an add
+      // operand once one side is tainted). isa<ConstantInt> would miss
+      // the non-constant classical cases.
+      //
+      //   * Q+Q (both tainted): symmetric cq_template_add_i32.
+      //   * Q+C / C+Q: cq_template_add_i32_hl(h, c) — swap so the
+      //     handle is always the lhs (matches the _hl signature).
+      //   * C+C: unreachable for a tainted add. Step 4 propagates
+      //     taint only from handle sources; a non-tainted add never
+      //     enters this list.
+      bool ATainted = Tainted.count(A);
+      bool BTainted = Tainted.count(B);
+      Value *Lhs;
+      Value *Rhs;
       FunctionCallee Callee;
-      if (isa<ConstantInt>(Rhs)) {
-        Callee = getTemplateAddHL();
-      } else if (isa<ConstantInt>(Lhs)) {
-        std::swap(Lhs, Rhs);
-        Callee = getTemplateAddHL();
-      } else {
+      if (ATainted && BTainted) {
+        Lhs = A;
+        Rhs = B;
         Callee = getTemplateAdd();
+      } else if (ATainted) {
+        Lhs = A;
+        Rhs = B;
+        Callee = getTemplateAddHL();
+      } else {  // BTainted (C+C is unreachable)
+        Lhs = B;
+        Rhs = A;
+        Callee = getTemplateAddHL();
       }
       CallInst *T = Builder.CreateCall(Callee, {Lhs, Rhs}, "h_sum");
       if (DebugLoc DL = Add->getDebugLoc())
