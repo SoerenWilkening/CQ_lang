@@ -6,6 +6,7 @@
 cmake-build-debug
 transpiler/build*
 /build/
+/Testing/
 .claude
 .idea
 .DS_Store
