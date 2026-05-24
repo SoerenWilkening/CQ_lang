@@ -25,6 +25,8 @@ usage() {
     cat <<EOF
 usage: cqc <input.c> -o <output> [options]
   --keep-intermediates    keep <output>.transpiled.c, .bc, .lowered.bc next to <output>
+  --emit-ll               emit stage 2/3 IR as .ll text instead of .bc bitcode
+                          (implies --keep-intermediates)
   --cq-prefix=<dir>       install/source prefix (default: $(dirname "$0")/..)
   --opt=<binary>          opt binary (default: opt-19)
   --clang=<binary>        clang binary (default: clang-19)
@@ -32,7 +34,7 @@ usage: cqc <input.c> -o <output> [options]
 EOF
 }
 
-input=""; output=""; keep=0
+input=""; output=""; keep=0; emit_ll=0
 prefix="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Pick LLVM tool binaries with a priority chain that handles common
@@ -64,6 +66,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)              usage; exit 0 ;;
         -o)                     output="$2"; shift 2 ;;
         --keep-intermediates)   keep=1; shift ;;
+        --emit-ll)              keep=1; emit_ll=1; shift ;;
         --cq-prefix=*)          prefix="${1#*=}"; shift ;;
         --cq-prefix)            prefix="$2"; shift 2 ;;
         --opt=*)                opt_bin="${1#*=}"; shift ;;
@@ -99,14 +102,27 @@ tpl_lib="$(find_artifact   lib/libcq_templates.a    build/runtime/libcq_template
 
 # Intermediate files: temp dir unless --keep-intermediates, in which case
 # they land next to <output> with predictable names for debugging.
+# --emit-ll swaps the IR file extension and toggles -S on clang stage 2
+# and opt stage 3 so the intermediates are text LLVM IR (.ll) rather
+# than bitcode (.bc); clang stage 4 accepts either transparently.
+ir_ext="bc"
+clang_emit_flag="-c"   # -c -emit-llvm -> .bc
+opt_emit_flag=()       # opt default -> .bc
+if [[ "$emit_ll" == "1" ]]; then
+    ir_ext="ll"
+    clang_emit_flag="-S"  # -S -emit-llvm -> .ll
+    opt_emit_flag=(-S)
+fi
+
 out_dir="$(dirname "$output")"
 out_base="$(basename "$output")"
 if [[ "$keep" == "1" ]]; then
     work="$out_dir"; t_c="$work/$out_base.transpiled.c"
-    t_bc="$work/$out_base.bc"; l_bc="$work/$out_base.lowered.bc"
+    t_bc="$work/$out_base.$ir_ext"; l_bc="$work/$out_base.lowered.$ir_ext"
 else
     work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
-    t_c="$work/transpiled.c"; t_bc="$work/transpiled.bc"; l_bc="$work/lowered.bc"
+    t_c="$work/transpiled.c"
+    t_bc="$work/transpiled.$ir_ext"; l_bc="$work/lowered.$ir_ext"
 fi
 
 run_stage() {
@@ -121,12 +137,14 @@ run_stage transpile bash -c \
 # Stage 2: clang -O1 -emit-llvm. -include cq_mid.h supplies the ABI decls
 # (qint_mid_t, cq_init_i32, cq_measure_i32) that the rewriter relies on;
 # see PLAN.md §4.2 — the driver, not the rewriter, injects them.
-run_stage compile "$clang_bin" -O1 -emit-llvm -c "$t_c" \
+# $clang_emit_flag is -c (default, emit .bc) or -S (--emit-ll, emit .ll).
+run_stage compile "$clang_bin" -O1 -emit-llvm "$clang_emit_flag" "$t_c" \
     -include cq_mid.h -I"$prefix/include" -o "$t_bc"
 
 # Stage 3: opt cq-lowering — turn cq_init_i32 + tainted add into runtime calls.
+# $opt_emit_flag[@] is empty (default, emit .bc) or (-S) for --emit-ll.
 run_stage lower "$opt_bin" -load-pass-plugin "$pass_so" \
-    -passes=cq-lowering "$t_bc" -o "$l_bc"
+    -passes=cq-lowering "${opt_emit_flag[@]}" "$t_bc" -o "$l_bc"
 
 # Stage 4: link. Templates first (depend on runtime), then runtime.
 run_stage link "$clang_bin" "$l_bc" "$tpl_lib" "$rt_lib" -o "$output"
