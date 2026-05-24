@@ -35,16 +35,23 @@ EOF
 input=""; output=""; keep=0
 prefix="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Pick LLVM tool binaries by probing versioned then unversioned names.
-# Debian/Ubuntu's llvm-19 package installs as opt-19 / clang-19;
-# Homebrew's llvm@19 installs as opt / clang. Probe `<name>-19` first
-# to bias toward an explicit-19 install when both exist, then fall back
-# to `<name>` (relying on the user's PATH / Homebrew prefix to point at
-# the right LLVM). Either default can be overridden with --opt= /
-# --clang= for unusual layouts.
+# Pick LLVM tool binaries with a priority chain that handles common
+# install layouts without flags:
+#   1. $LLVM_PREFIX/bin/<tool> — the README's recommended setup for
+#      macOS (`export LLVM_PREFIX=$(brew --prefix llvm@19)`). Homebrew's
+#      llvm@19 is keg-only, so the user typically has LLVM_PREFIX set
+#      but no PATH entry for it. Honoring this env var avoids forcing
+#      a PATH dance.
+#   2. `<name>-19` on PATH — Debian/Ubuntu's llvm-19 package layout.
+#   3. `<name>` on PATH — Homebrew (when on PATH), generic LLVM.
+#   4. Fall back to `<name>-19` so the missing-tool error mentions a
+#      concrete expected name.
+# --opt= / --clang= overrides bypass this chain entirely.
 pick_bin() {
     local versioned="$1" unversioned="$2"
-    if command -v "$versioned" >/dev/null 2>&1; then printf '%s' "$versioned"
+    if [[ -n "${LLVM_PREFIX:-}" && -x "$LLVM_PREFIX/bin/$unversioned" ]]; then
+        printf '%s' "$LLVM_PREFIX/bin/$unversioned"
+    elif command -v "$versioned" >/dev/null 2>&1; then printf '%s' "$versioned"
     elif command -v "$unversioned" >/dev/null 2>&1; then printf '%s' "$unversioned"
     else printf '%s' "$versioned"  # let the stage error surface the missing tool
     fi
