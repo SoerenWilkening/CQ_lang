@@ -112,9 +112,14 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   };
 
   // --- Step 2: replace each @cq_init_i32(value) with
-  // @cqrt_alloc_classical_i32(value). The init call returns a %qint_mid_t
-  // struct; the alloc call returns an i32 handle. Track the mapping so the
-  // extractvalue cleanup in step 3 can rewire users to the handle. ---
+  // @cqrt_alloc_classical_i32(value). The init call canonically returns a
+  // %qint_mid_t struct, but clang -O1 SROAs the single-field struct down
+  // to a bare i32 (visible in the post-Clang IR for the e2e fixtures).
+  // Track the mapping so the extractvalue cleanup in step 3 can rewire
+  // users to the handle. In the i32-flattened shape there is no
+  // extractvalue to rewire, so we additionally RAUW the init to the alloc
+  // directly (types match, so this is sound) — that gives step 4's taint
+  // worklist real users to walk through. ---
 
   DenseMap<Value *, Value *> StructToHandle;
   if (!InitCalls.empty()) {
@@ -126,6 +131,15 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       if (DebugLoc DL = Init->getDebugLoc())
         Alloc->setDebugLoc(DL);
       StructToHandle[Init] = Alloc;
+      // Flattened-struct shape (post clang -O1): Init returns i32 and
+      // its direct users (e.g. `add i32 %2, %1` and
+      // `cq_measure_i32(i32 %1)`) point straight at the Init result. We
+      // rewire those uses to the Alloc so taint propagation in step 4 has
+      // edges to follow and the measure operand-match in step 6 sees the
+      // tainted handle. The non-flattened (struct) shape is handled by
+      // the extractvalue cleanup in step 3 instead.
+      if (Init->getType() == I32)
+        Init->replaceAllUsesWith(Alloc);
     }
   }
 
@@ -227,7 +241,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
 
   // --- Step 6: lower @cq_measure_i32 to @cqrt_measure_i32. ---
   //
-  // Two operand patterns are recognized:
+  // Three operand patterns are recognized:
   //
   //  (a) The struct arg is a direct @cq_init_i32 call that step 2 already
   //      mapped to a handle (the canonical -O0-shaped measure_only
@@ -238,6 +252,18 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   //      (the post-O1, post-add-lowering shape from lowering_basic). Pull
   //      the handle out of the insertvalue and erase the insertvalue if
   //      it's only used by this measure.
+  //
+  //  (c) The struct arg is already an i32 SSA value carrying a tainted
+  //      handle. This is the post-clang-O1 shape, where SROA/IPSCCP
+  //      flattens the single-field `qint_mid_t` struct so both
+  //      `cq_init_i32` and `cq_measure_i32` operate on `i32` directly,
+  //      and the measure's argument is e.g. the result of a now-lowered
+  //      `cq_template_add_i32` call (or, in the cast-rewriter path, a
+  //      handle SSA value that has flowed through plain i32 IR). The
+  //      taint set computed in step 4 (+ updates from step 5) tells us
+  //      which i32 SSA values carry quantum handles. The CastRewrite
+  //      module (transpiler/src/CastRewrite.cpp) pins this case via the
+  //      worked_example / mixed_operand / full_example e2e fixtures.
 
   if (!MeasureCalls.empty()) {
     FunctionCallee MeasureRT = getMeasureRT();
@@ -257,13 +283,18 @@ bool CQLoweringPass::runOnFunction(Function &F) {
           if (IV->hasOneUse())
             IVToErase = IV;
         }
+      } else if (StructArg->getType() == I32 && Tainted.count(StructArg)) {
+        // Pattern (c): flattened-struct shape — the arg is already an
+        // i32 SSA value carrying a tainted handle (init result, or
+        // cq_template_add_i32 result from step 5). Use it as-is.
+        Handle = StructArg;
       }
 
       if (!Handle) {
         F.getContext().diagnose(DiagnosticInfoUnsupported(
             F, "cq_measure_i32 operand pattern not recognized; expected "
-               "direct cq_init_i32 result or insertvalue %struct poison, "
-               "i32 %h, 0"));
+               "direct cq_init_i32 result, insertvalue %struct poison, "
+               "i32 %h, 0, or tainted i32 handle"));
         continue;
       }
 

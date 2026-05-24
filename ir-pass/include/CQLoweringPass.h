@@ -7,6 +7,9 @@
 //   * `cq_init_i32(value)`                -> `cqrt_alloc_classical_i32(value)`
 //   * tainted `add i32 %a, %b`            -> `cq_template_add_i32(%a, %b)`
 //   * `cq_measure_i32(insertvalue ..)`    -> `cqrt_measure_i32(handle)`
+//   * `cq_measure_i32(i32 %tainted)`      -> `cqrt_measure_i32(handle)`
+//     (post -O1 flattened-struct shape, including the cast-rewriter
+//     `(int)q` -> `cq_measure_i32(q)` lowering path)
 //
 // extractvalue/insertvalue traffic on the `%qint_mid_t` struct is removed
 // so the post-pass IR contains only i32 handles. After lowering, the pass
