@@ -146,32 +146,22 @@ Apple Clang or GCC both work — the rewritten output is plain C. Expected
 stdout (for `example_v1.c`) is in
 [`example_v1.expected.log`](example_v1.expected.log).
 
-### One-shot acceptance check
-
-[`transpiler/tests/e2e/acceptance.sh`](transpiler/tests/e2e/acceptance.sh)
-does transpile + diff against the golden `.c` + compile + run + diff against
-the golden log:
-
-```bash
-./transpiler/tests/e2e/acceptance.sh ./transpiler/build/quantum_transpiler .
-```
-
-Prints `ACCEPTANCE OK` on success.
-
 ### Run all tests
 
 ```bash
 cd transpiler/build && ctest --output-on-failure
 ```
 
-Four ctests: `smoke_help`, `unit_tests`, `e2e_fixtures` (8 fixtures),
-`acceptance`. Filter with `-R`:
+Three ctests: `smoke_help`, `unit_tests`, `e2e_fixtures`. Filter with `-R`:
 
 ```bash
 ctest --output-on-failure -R unit_tests
 ctest --output-on-failure -R e2e_fixtures
-ctest --output-on-failure -R acceptance
 ```
+
+Phase 1's full-pipeline coverage (transpile + lower + compile + run)
+lives in the top-level `tests/e2e/` harness — `cqc_smoke` and `e2e`
+ctests registered from the repo-root build.
 
 ### Try one specific e2e fixture
 
@@ -209,8 +199,7 @@ CQ_lang/
         ├── unit/                GoogleTest, one file per module
         └── e2e/
             ├── run_e2e.sh       fixture-diff runner
-            ├── acceptance.sh    PRD acceptance criteria 2-4
-            └── fixtures/        8 fixtures (input.c + expected.c each)
+            └── fixtures/        7 fixtures (input.c + expected.c each)
 ```
 
 ---

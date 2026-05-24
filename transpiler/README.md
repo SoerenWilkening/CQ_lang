@@ -56,10 +56,10 @@ ctest --output-on-failure -R unit_tests
 
 # Just end-to-end fixtures
 ctest --output-on-failure -R e2e_fixtures
-
-# Just the PRD acceptance script (transpile + compile + run example_v1.c)
-ctest --output-on-failure -R acceptance
 ```
+
+Full-pipeline acceptance (transpile + lower + compile + run) is owned
+by the top-level `tests/e2e/` harness rather than this subproject.
 
 ## Running a single fixture
 
@@ -98,6 +98,5 @@ transpiler/
     unit/                GoogleTest module tests
     e2e/
       run_e2e.sh         iterates fixtures, diffs against expected.c
-      acceptance.sh      PRD criteria 2-4 (transpile + compile + run)
-      fixtures/          one directory per PRD pattern + multi-decl + full example
+      fixtures/          one directory per PRD pattern + multi-decl
 ```
