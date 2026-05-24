@@ -1,4 +1,4 @@
 cqrt_alloc_classical_i32(3) -> h0
 cqrt_alloc_classical_i32(5) -> h1
-cq_template_add_i32(h1, h0) -> h2
+cq_template_add_i32(h0, h1) -> h2
 cqrt_measure_i32(h2) -> 0

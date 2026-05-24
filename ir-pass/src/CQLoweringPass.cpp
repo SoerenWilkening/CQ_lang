@@ -106,13 +106,14 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     return M.getOrInsertFunction("cq_template_add_i32",
                                  FunctionType::get(I32, {I32, I32}, false));
   };
-  // Q+C mixed-operand variant — chosen when one operand of a tainted add
-  // is an LLVM ConstantInt (classical literal, or a classical-var read
-  // folded by clang -O1's constprop). Distinct C symbol because C lacks
-  // overloading; user-facing trace prints "cq_template_add_i32" for both
-  // variants and lets the bare-int vs `h%d` format disambiguate. Never
-  // promote the literal operand to a handle: that would conflict with
-  // the planned cq_alloc optimization (PLAN.md §6.3 update).
+  // Q+C mixed-operand variant — chosen when exactly one operand of a
+  // tainted add is in the Tainted set (the other is classical: a
+  // literal, function arg, runtime-loaded value, global, etc.).
+  // Distinct C symbol because C lacks overloading; user-facing trace
+  // prints "cq_template_add_i32" for both variants and lets the bare-
+  // int vs `h%d` format disambiguate. Never promote the classical
+  // operand to a handle: that would conflict with the planned
+  // cq_alloc optimization (PLAN.md §6.3).
   auto getTemplateAddHL = [&]() {
     return M.getOrInsertFunction("cq_template_add_i32_hl",
                                  FunctionType::get(I32, {I32, I32}, false));
@@ -132,6 +133,19 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // directly (types match, so this is sound) — that gives step 4's taint
   // worklist real users to walk through. ---
 
+  // BirthOrder records the order in which each tainted i32 SSA value
+  // came into being — Allocs from step 2 (initial creation order) and
+  // cq_template_add_i32 results from step 5 (assigned as each tainted
+  // add lowers). Step 5 uses it to canonicalize the operand order for
+  // Q+Q adds, so the runtime trace's `(h<lhs>, h<rhs>)` ordering is
+  // stable across clang versions (clang -O1 may reorder commutative
+  // adds by SSA index; canonicalizing here pins the trace to
+  // handle-creation order regardless). The lower BirthOrder wins lhs.
+  // 0 means "not assigned" — only the canonicalized values have non-
+  // zero entries.
+  DenseMap<Value *, unsigned> BirthOrder;
+  unsigned NextBirth = 1;
+
   DenseMap<Value *, Value *> StructToHandle;
   if (!InitCalls.empty()) {
     FunctionCallee AllocClassical = getAllocClassical();
@@ -142,6 +156,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       if (DebugLoc DL = Init->getDebugLoc())
         Alloc->setDebugLoc(DL);
       StructToHandle[Init] = Alloc;
+      BirthOrder[Alloc] = NextBirth++;
       // Flattened-struct shape (post clang -O1): Init returns i32 and
       // its direct users (e.g. `add i32 %2, %1` and
       // `cq_measure_i32(i32 %1)`) point straight at the Init result. We
@@ -256,8 +271,20 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       Value *Rhs;
       FunctionCallee Callee;
       if (ATainted && BTainted) {
-        Lhs = A;
-        Rhs = B;
+        // Canonicalize Q+Q operand order by BirthOrder so the trace
+        // `(h<lhs>, h<rhs>)` is stable across clang versions. If
+        // either side lacks a BirthOrder (taint reached it through a
+        // path other than step 2 / step 5 — not expected for Phase 1
+        // shapes but defensible), preserve LLVM's order.
+        unsigned BA = BirthOrder.lookup(A);
+        unsigned BB = BirthOrder.lookup(B);
+        if (BA != 0 && BB != 0 && BB < BA) {
+          Lhs = B;
+          Rhs = A;
+        } else {
+          Lhs = A;
+          Rhs = B;
+        }
         Callee = getTemplateAdd();
       } else if (ATainted) {
         Lhs = A;
@@ -274,6 +301,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       Add->replaceAllUsesWith(T);
       Tainted.insert(T);
       Tainted.erase(Add);
+      BirthOrder[T] = NextBirth++;
       ToErase.push_back(Add);
     }
   }
