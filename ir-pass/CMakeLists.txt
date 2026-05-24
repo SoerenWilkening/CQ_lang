@@ -53,6 +53,15 @@ target_include_directories(CQPass PUBLIC
 target_compile_features(CQPass PRIVATE cxx_std_17)
 set_target_properties(CQPass PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# macOS: ld is strict about undefined symbols even for MODULE libraries.
+# The pass plugin gets its LLVM symbols from the host process (opt /
+# clang) at dlopen time, so allow dynamic lookup. Linux's ld silently
+# permits this by default, so no flag needed there. Same idiom as
+# Polly, Enzyme, and the LLVM sanitizers.
+if(APPLE)
+  target_link_options(CQPass PRIVATE "LINKER:-undefined,dynamic_lookup")
+endif()
+
 # LIT/FileCheck harness for the pass. Lives in test/ alongside the *.ll
 # fixtures from issue -345; gated on the CQPass target existing (which it
 # now does), so the harness will switch from shell fallback to real LIT
