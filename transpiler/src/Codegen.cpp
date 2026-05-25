@@ -40,6 +40,24 @@ std::string declThenAdd(const std::string &name,
     return os.str();
 }
 
+// Build "<midStructName> <name>; <name>.val = <sourceName>.val;" — the
+// QuantumCopy (Pattern 6) form. Like declThenAdd this is one flat line
+// containing two C statements (declaration + assignment), but with no
+// intrinsic call: SROA collapses this into SSA aliasing in Phase 2's
+// scope, so emitting an intermediate `cq_copy_<sfx>` would be both
+// wasted work and trace-noise (PRD §"On assignment and surviving
+// operations"). The mid-struct name is supplied by the caller from
+// `TypeMap::midStructName` rather than hardcoded, so this code path
+// works uniformly for all 14 Phase 2 mid-struct types.
+std::string declThenCopy(const std::string &midStructName,
+                         const std::string &name,
+                         const std::string &sourceName) {
+    std::ostringstream os;
+    os << midStructName << " " << name << "; "
+       << name << ".val = " << sourceName << ".val;";
+    return os.str();
+}
+
 }  // namespace
 
 std::string renderVar(const VarRewriteInput &in) {
@@ -60,6 +78,14 @@ std::string renderVar(const VarRewriteInput &in) {
         // raw text for classical) per DeclStmtRewrite's contract; both
         // sides are spliced verbatim around a single " + ".
         return declThenAdd(in.name, in.lhsExpr, in.rhsExpr);
+    case Form::QuantumCopy:
+        // `quantum T b = a;` (a a quantum VarDecl of the same canonical
+        // type) -> decl + .val pass-through. No intrinsic; the IR pass
+        // never sees the assignment because SROA collapses it to SSA
+        // aliasing in Phase 2's scope. Mid-struct name comes from
+        // TypeMap (per-type, not hardcoded) so the same case handles
+        // all 14 Phase 2 mid-struct types.
+        return declThenCopy(in.midStructName, in.name, in.sourceName);
     }
     // Unknown Form (e.g. a future enumerator that bypassed our switch):
     // fail safe by emitting an Uninit-style declaration so we still

@@ -6,6 +6,7 @@
 #include "SourceText.h"
 #include "TypeMap.h"
 
+#include <string>
 #include <vector>
 
 #include <clang/AST/ASTContext.h>
@@ -15,9 +16,9 @@
 #include <clang/AST/ExprCXX.h>
 #include <clang/AST/OperationKinds.h>
 #include <clang/AST/Stmt.h>
+#include <clang/AST/Type.h>
 #include <clang/Basic/LangOptions.h>
 #include <clang/Basic/SourceManager.h>
-#include <clang/Basic/TargetInfo.h>
 
 namespace qct {
 
@@ -39,6 +40,37 @@ std::string quantumOperandName(const clang::Expr *e) {
         return {};
     }
     return vd->getNameAsString();
+}
+
+// If `init` (already paren/cast-stripped) is a DeclRefExpr to a quantum
+// VarDecl whose canonical type matches `targetType`'s canonical type,
+// return that VarDecl; otherwise nullptr. This is the Pattern 6 gate:
+// `quantum T b = a;` where `a` is a `quantum T` of the same canonical
+// type (PRD §"Rewriter patterns" row 6). Cross-type assignments —
+// `quantum int b = q_long;` etc. — fall through to ClassicalInit, where
+// they'll splice the implicit-conversion's source text into a
+// cq_init_<sfx>() call (a documented soft-failure mode; see PRD
+// §"Diagnostics baseline").
+const clang::VarDecl *patternSixSource(const clang::Expr *init,
+                                       clang::QualType targetType) {
+    const auto *dre = clang::dyn_cast_or_null<clang::DeclRefExpr>(init);
+    if (dre == nullptr) {
+        return nullptr;
+    }
+    const auto *vd = clang::dyn_cast<clang::VarDecl>(dre->getDecl());
+    if (vd == nullptr || !hasQuantumAttr(vd)) {
+        return nullptr;
+    }
+    // Same-canonical-type check. `getCanonicalType()` peels typedefs +
+    // cv-qualifiers, so `quantum int b = a;` matches Pattern 6 even
+    // when `a` was declared `quantum int8_t` and `b` as plain
+    // `quantum signed char` — both canonicalise to the same builtin.
+    // Different-width assignments (`quantum int b = q_long;`) don't
+    // match and route to ClassicalInit.
+    if (vd->getType().getCanonicalType() != targetType.getCanonicalType()) {
+        return nullptr;
+    }
+    return vd;
 }
 
 // Populate `out` (assumed pre-filled with name + widthSuffix) by
@@ -65,10 +97,11 @@ void populateFromInit(const clang::VarDecl *vd,
         out->initText = getExprText(init, sm, lo);
     };
 
-    // The BinaryOperator we care about may be wrapped in implicit
-    // casts (e.g. `quantum int x = a + 5;` where `+` returns int and
-    // there's no extra cast — usually no wrapper, but defensively we
-    // walk through paren/cast layers before dispatching).
+    // The initializer we care about may be wrapped in implicit casts /
+    // parens — `quantum int x = a + 5;` where `+` returns int and
+    // there's no extra cast usually has no wrapper, but `quantum int b
+    // = a;` where `a` is itself a quantum-typed value typically does
+    // (LValueToRValue). Strip those layers before pattern dispatch.
     const clang::Expr *probe = init;
     for (;;) {
         if (const auto *pe = clang::dyn_cast<clang::ParenExpr>(probe)) {
@@ -80,6 +113,21 @@ void populateFromInit(const clang::VarDecl *vd,
             continue;
         }
         break;
+    }
+
+    // Pattern 6 (M9): `quantum T b = a;` where `a` is a quantum VarDecl
+    // of the same canonical type. Tried before the binop dispatch so a
+    // bare DeclRefExpr doesn't fall through to ClassicalInit's
+    // verbatim-splice path. If the canonical types don't match, this
+    // returns null and we proceed to the binop/classical dispatch
+    // below — letting cross-type cases route through ClassicalInit (a
+    // documented soft-failure mode for Phase 2; see PRD
+    // §"Diagnostics baseline").
+    if (const clang::VarDecl *src =
+            patternSixSource(probe, vd->getType())) {
+        out->form = VarRewriteInput::Form::QuantumCopy;
+        out->sourceName = src->getNameAsString();
+        return;
     }
 
     const auto *bo = clang::dyn_cast<clang::BinaryOperator>(probe);
@@ -149,7 +197,9 @@ std::optional<StmtRewrite> buildRewrite(const clang::DeclStmt *ds,
     }
     const clang::SourceManager &sm = ctx.getSourceManager();
     const clang::LangOptions &lo = ctx.getLangOpts();
-    const clang::TargetInfo &ti = ctx.getTargetInfo();
+    // ctx.getTargetInfo() was needed only for the Phase-1 v1 `irWidthSuffix`
+    // splice; M9 routes through `intrinsicSuffix` which is target-stable
+    // for all 14 PRD types, so the TargetInfo handle is no longer used.
 
     std::vector<VarRewriteInput> vars;
     vars.reserve(4);
@@ -165,15 +215,23 @@ std::optional<StmtRewrite> buildRewrite(const clang::DeclStmt *ds,
             // it rather than rewriting a non-quantum decl by accident.
             continue;
         }
+        // Phase 2 M9: keyword recognition runs entirely through
+        // TypeMap. `intrinsicSuffix` returns "" for any type that
+        // isn't one of the 14 PRD §"Type map" entries (long double,
+        // wide chars, void, pointers, ...), and we treat that as
+        // "skip — Phase 2 doesn't support this type". Typedef'd
+        // integers from <stdint.h> fall out for free because
+        // TypeMap peels typedefs via `getCanonicalType()` before
+        // matching, so `quantum int8_t` routes to the same entry
+        // as `quantum signed char`.
+        llvm::StringRef sfx = intrinsicSuffix(vd->getType());
+        if (sfx.empty()) {
+            continue;
+        }
         VarRewriteInput in{};
         in.name = vd->getNameAsString();
-        // Phase 2 M3: prefix `s` to give the signedness-bearing
-        // intrinsic suffix (e.g. "si32") the mid-level surface expects
-        // (`cq_init_si32`, `cq_measure_si32`). Phase 1 only supports
-        // signed `int`, so a literal `"s"` is sufficient here. M8 will
-        // replace this with a proper `TypeMap::intrinsicSuffix(QualType)`
-        // accessor that knows about unsigned and floating-point types.
-        in.widthSuffix = "s" + irWidthSuffix(vd->getType(), ti);
+        in.widthSuffix = sfx.str();
+        in.midStructName = midStructName(vd->getType()).str();
         populateFromInit(vd, sm, lo, &in);
         vars.push_back(std::move(in));
     }

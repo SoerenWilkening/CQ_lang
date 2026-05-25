@@ -8,7 +8,9 @@
 // whole point of PLAN section 3.5.
 //
 // Phase 1 emission targets (PLAN §4.4.2). The form enum collapses from
-// v1's five values to three: taint propagation in the IR pass makes the
+// v1's five values to three; Phase 2 (M9) adds a fourth: `QuantumCopy`
+// for Pattern 6 (`quantum T b = a;` where `a` is a quantum VarDecl of
+// the same canonical type). Taint propagation in the IR pass makes the
 // QQ/QC/CQ distinctions go away, so both quantum-touching adds use the
 // same ".val arithmetic" pattern. The classify-and-decorate decision
 // (whether to append ".val" to a given operand) is made upstream in
@@ -18,6 +20,7 @@
 //   Uninit         -> qint_mid_t <name> = cq_init_<W>(0);
 //   ClassicalInit  -> qint_mid_t <name> = cq_init_<W>(<initText>);
 //   QuantumAdd     -> qint_mid_t <name>; <name>.val = <lhsExpr> + <rhsExpr>;
+//   QuantumCopy    -> <midStructName> <name>; <name>.val = <sourceName>.val;
 //
 // Width-suffix is the LLVM IR-style intrinsic suffix string (e.g.
 // "i32") supplied by TypeMap::irWidthSuffix; it is spliced verbatim
@@ -38,6 +41,8 @@ struct VarRewriteInput {
         Uninit,         // `quantum int x;`               → cq_init_<W>(0)
         ClassicalInit,  // `quantum int x = E;`           → cq_init_<W>(E)
         QuantumAdd,     // `quantum int z = X + Y;`       → .val arithmetic
+        QuantumCopy,    // `quantum T b = a;` (same canonical type)
+                        //                                → split form, no intrinsic
     } form;
 
     // ClassicalInit: the original initializer's source text, spliced
@@ -50,6 +55,16 @@ struct VarRewriteInput {
     // sides verbatim around a single " + ".
     std::string lhsExpr;
     std::string rhsExpr;
+
+    // QuantumCopy (Pattern 6 — M9): the mid-struct typedef for `<name>`
+    // (e.g. "qint_mid_t") and the source-side VarDecl name (e.g. "a").
+    // Codegen emits `<midStructName> <name>; <name>.val = <sourceName>.val;`
+    // — no intrinsic call, because SROA erases this pattern in Phase 2's
+    // scope (see PRD §"On assignment and surviving operations"). Both
+    // VarDecls must share the canonical type (the rewriter does this
+    // check before emitting this form).
+    std::string midStructName;
+    std::string sourceName;
 };
 
 // Render a single VarRewriteInput as one rewritten C statement

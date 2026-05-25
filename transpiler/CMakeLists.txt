@@ -90,7 +90,9 @@ add_executable(quantum_transpiler_unit_tests
     tests/unit/test_source_text.cpp
     tests/unit/test_operand_class.cpp
     tests/unit/test_codegen.cpp
-    tests/unit/test_decl_stmt_rewrite.cpp
+    tests/unit/test_decl_stmt_rewrite_int.cpp
+    tests/unit/test_decl_stmt_rewrite_float.cpp
+    tests/unit/test_decl_stmt_rewrite_pattern6.cpp
     tests/unit/test_cast_rewrite.cpp
     tests/unit/test_cq_mid_compiles.cpp
     tests/unit/test_cq_runtime_compiles.cpp
