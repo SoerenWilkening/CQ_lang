@@ -1,23 +1,29 @@
 // WidthDispatch.h — Symbol and type resolver for the cq-lowering pass.
 //
-// In Phase 2 M12 this is intentionally a thin, i32/si32-only surface:
-// every accessor below knows exactly one suffix (`si32`) and one ABI
-// width (`i32`). M13 (`cq-p2-m13`) replaces the bodies with the full
-// 14-suffix table; the API exposed here is the contract that M14–M17
-// consume so M13 can land without touching the consumers.
+// IR-pass parallel to the rewriter's TypeMap: knows the canonical
+// 14-suffix table (PRD §"Type map"), the suffix → ABI-width collapse
+// (PRD §"Width unification"), and how to spell every intrinsic /
+// runtime / template symbol the lowering needs.
 //
-// Symbol-resolution policy mirrors the pre-split monolith:
-//   * Front-end intrinsics (`@cq_init_si32`, `@cq_measure_si32`) are
-//     looked up but never *created* — they come in from the rewriter or
+// Symbol policy:
+//   * Front-end intrinsics (`@cq_init_<sfx>`, `@cq_measure_<sfx>`) are
+//     looked up but never *created* — they come from the rewriter or
 //     they don't exist (the passthrough_no_quantum fixture relies on
 //     the latter).
-//   * Runtime / template symbols (`@cqrt_alloc_i32`, `@cqrt_measure_i32`,
-//     `@cq_template_add_i32{,_hl}`) are *lazy*: declared on first call
-//     via `M.getOrInsertFunction`. This preserves Phase 1's invariant
-//     that a function with no quantum work leaks no runtime decls.
+//   * Runtime / template symbols (`@cqrt_alloc_<W>`, `@cqrt_measure_<W>`,
+//     `@cq_template_add_<W>{,_hl}`) are lazy: declared on first call
+//     via `M.getOrInsertFunction`. Preserves Phase 1's invariant that
+//     a quantum-free function leaks no runtime decls.
 //
-// Spec: phases/phase2/PLAN.md §4.12 (M12 split contract), §4.13 (M13
-// generalization).
+// Width unification: 14 suffixes collapse to 7 ABI widths {i1, i8, i16,
+// i32, i64, f32, f64}. `sl`/`ul` are target-dependent (resolved from
+// the Module's DataLayout at construction).
+//
+// Legacy no-arg overloads kept as shims pinned to `si32` / `i32` so M12
+// consumers build unchanged; M14–M17 retarget each consumer.
+//
+// Spec: phases/phase2/PRD.md §"Type map", §"Width unification";
+//       phases/phase2/PLAN.md §4.13.
 
 #ifndef CQ_IRPASS_WIDTH_DISPATCH_H_
 #define CQ_IRPASS_WIDTH_DISPATCH_H_
@@ -27,42 +33,83 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Module.h"
 
+#include <optional>
+
 namespace cq {
 
 class WidthDispatch {
 public:
   explicit WidthDispatch(llvm::Module &M);
 
+  // All known intrinsic suffixes, in canonical order (PRD §Type map).
+  // 14 entries: int family {i1, c, si8, ui8, si16, ui16, si32, ui32,
+  // sl, ul, sll, ull} then float family {f32, f64}.
+  llvm::ArrayRef<llvm::StringRef> allSuffixes() const;
+
+  // Suffix → ABI-width string ("si8" → "i8", "f32" → "f32"). Signedness
+  // collapse per PRD §Width unification; `sl`/`ul` are target-dependent
+  // and resolved against the Module's DataLayout at construction.
+  // Returns "" for an unknown suffix.
+  llvm::StringRef abiWidthFor(llvm::StringRef sfx) const;
+
+  // Suffix → LLVM Type for the .val field's underlying scalar. Int
+  // family returns an IntegerType of the ABI width (i1/i8/i16/i32/i64);
+  // float family returns Float / Double. nullptr for an unknown suffix.
+  llvm::Type *llvmTypeFor(llvm::StringRef sfx, llvm::LLVMContext &ctx) const;
+
   // Front-end intrinsic lookups (no insertion). Return nullptr if the
-  // intrinsic is not declared in the module — that's the cue to skip
-  // any per-width work for this suffix.
-  llvm::Function *initFn() const;     // @cq_init_si32
-  llvm::Function *measureFn() const;  // @cq_measure_si32
+  // intrinsic is not declared — that's the cue to skip per-suffix work.
+  llvm::Function *initFn(llvm::StringRef sfx) const;     // @cq_init_<sfx>
+  llvm::Function *measureFn(llvm::StringRef sfx) const;  // @cq_measure_<sfx>
 
   // Runtime / template symbol resolvers. Each call is idempotent and
-  // lazy: the decl is inserted on first call, reused thereafter. M13
-  // will add a suffix parameter; M12 keeps the surface minimal.
-  llvm::FunctionCallee allocFn() const;       // @cqrt_alloc_i32
-  llvm::FunctionCallee measureRtFn() const;   // @cqrt_measure_i32
-  llvm::FunctionCallee addTemplate(bool isHL) const;  // @cq_template_add_i32{,_hl}
+  // lazy: the decl is inserted on first call, reused thereafter.
+  llvm::FunctionCallee allocFn(llvm::StringRef abiWidth) const;       // @cqrt_alloc_<W>
+  llvm::FunctionCallee measureRtFn(llvm::StringRef abiWidth) const;   // @cqrt_measure_<W>
 
-  // Mid-struct recognition for taint propagation and rebind. M12 only
-  // knows about `qint_mid_t`; M15 (`cq-p2-m15`) generalizes to the
-  // full 14-struct table. nullptr/false on no match.
-  bool isMidStruct(llvm::StructType *ST) const;
+  // Template-symbol resolvers. `isQQ=true` selects the Q+Q symbol
+  // (`@cq_template_add_<W>`); `isQQ=false` selects Q+C (`..._hl`).
+  llvm::FunctionCallee addTemplate(llvm::StringRef abiWidth, bool isQQ) const;
+
+  // Mid-struct recognition: name-keyed lookup over the 14 mid-struct
+  // typedefs declared in include/cq_mid.h. Returns the matching suffix
+  // (e.g., `qint_mid_t` → "si32"); `std::nullopt` for non-mid structs.
+  std::optional<llvm::StringRef> midStructToSuffix(llvm::StructType *st) const;
+
+  // --- Legacy M12 surface ------------------------------------------------
+  //
+  // Pinned to suffix `si32` / ABI width `i32`. Retained so the post-M12
+  // consumers (CQLoweringPass, TaintPropagation, MidHandleRebind,
+  // OpcodeLowering, MeasureLowering) keep building unchanged. M14–M17
+  // migrate each call site to the suffix-aware overloads.
+
+  llvm::Function *initFn() const { return initFn("si32"); }
+  llvm::Function *measureFn() const { return measureFn("si32"); }
+  llvm::FunctionCallee allocFn() const { return allocFn("i32"); }
+  llvm::FunctionCallee measureRtFn() const { return measureRtFn("i32"); }
+  llvm::FunctionCallee addTemplate(bool isHL) const {
+    return addTemplate("i32", /*isQQ=*/!isHL);
+  }
+  bool isMidStruct(llvm::StructType *ST) const {
+    return midStructToSuffix(ST).has_value();
+  }
 
   // Type accessors.
-  llvm::Type *i32Ty() const { return I32; }
+  llvm::Type *i32Ty() const { return llvm::Type::getInt32Ty(M.getContext()); }
   llvm::LLVMContext &context() const { return M.getContext(); }
   llvm::Module &module() const { return M; }
 
   // Names of front-end intrinsic decls eligible for end-of-pass cleanup
-  // (erased iff use-less). M13 replaces this with the per-suffix list.
+  // (erased iff use-less). Returns the full per-suffix list — 28 names
+  // (14 inits + 14 measures) — so the cleanup loop in CQLoweringPass
+  // covers every suffix M13 added.
   llvm::ArrayRef<llvm::StringRef> frontEndIntrinsicNames() const;
 
 private:
   llvm::Module &M;
-  llvm::Type *I32;
+  // ABI width to use for `sl`/`ul` on this target. Computed from the
+  // Module's DataLayout at construction; "i64" on LP64, "i32" otherwise.
+  llvm::StringRef LongAbiWidth;
 };
 
 }  // namespace cq
