@@ -19,9 +19,6 @@
 // i32, i64, f32, f64}. `sl`/`ul` are target-dependent (resolved from
 // the Module's DataLayout at construction).
 //
-// Legacy no-arg overloads kept as shims pinned to `si32` / `i32` so M12
-// consumers build unchanged; M14–M17 retarget each consumer.
-//
 // Spec: phases/phase2/PRD.md §"Type map", §"Width unification";
 //       phases/phase2/PLAN.md §4.13.
 
@@ -76,28 +73,11 @@ public:
   // (e.g., `qint_mid_t` → "si32"); `std::nullopt` for non-mid structs.
   std::optional<llvm::StringRef> midStructToSuffix(llvm::StructType *st) const;
 
-  // --- Legacy M12 surface ------------------------------------------------
-  //
-  // Pinned to suffix `si32` / ABI width `i32`. Retained so the post-M12
-  // consumers (CQLoweringPass, TaintPropagation, MidHandleRebind,
-  // OpcodeLowering, MeasureLowering) keep building unchanged. M14–M17
-  // migrate each call site to the suffix-aware overloads.
-
-  llvm::Function *initFn() const { return initFn("si32"); }
-  llvm::Function *measureFn() const { return measureFn("si32"); }
-  llvm::FunctionCallee allocFn() const { return allocFn("i32"); }
-  llvm::FunctionCallee measureRtFn() const { return measureRtFn("i32"); }
-  llvm::FunctionCallee addTemplate(bool isHL) const {
-    return addTemplate("i32", /*isQQ=*/!isHL);
-  }
-  bool isMidStruct(llvm::StructType *ST) const {
-    return midStructToSuffix(ST).has_value();
-  }
-
-  // Type accessors.
+  // Convenience accessors. `i32Ty()` is justified by PRD §"Width
+  // unification": the handle is always i32 across every ABI width, so
+  // measure lowering needs an i32 Type for the handle argument.
   llvm::Type *i32Ty() const { return llvm::Type::getInt32Ty(M.getContext()); }
   llvm::LLVMContext &context() const { return M.getContext(); }
-  llvm::Module &module() const { return M; }
 
   // Names of front-end intrinsic decls eligible for end-of-pass cleanup
   // (erased iff use-less). Returns the full per-suffix list — 28 names
