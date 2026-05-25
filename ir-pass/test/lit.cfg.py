@@ -26,3 +26,13 @@ filecheck = getattr(config, "filecheck", None) or os.environ.get("FILECHECK", "F
 config.substitutions.append(("%cq-opt", cq_opt))
 config.substitutions.append(("%cq-pass", cq_pass))
 config.substitutions.append(("%filecheck", filecheck))
+
+# Add the LLVM tools directory to PATH so bundled wrappers like `not`
+# (used by negative LIT fixtures to invert opt's exit code) resolve.
+# `cq_opt` is typically `/usr/lib/llvm-19/bin/opt`; the wrapper sits in
+# the same directory. Falls back gracefully if `cq_opt` is a bare name.
+_llvm_bin = os.path.dirname(cq_opt) if os.path.dirname(cq_opt) else ""
+if _llvm_bin:
+    config.environment["PATH"] = _llvm_bin + os.pathsep + os.environ.get(
+        "PATH", ""
+    )
