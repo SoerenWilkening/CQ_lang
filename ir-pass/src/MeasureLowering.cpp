@@ -1,6 +1,17 @@
-// MeasureLowering.cpp — Lower `@cq_measure_si32` calls to
-// `@cqrt_measure_i32`. Behavior preserved from the pre-M12 monolith's
-// step 6.
+// MeasureLowering.cpp — Lower `@cq_measure_<sfx>` calls to the matching
+// `@cqrt_measure_<W>(handle)` runtime entry per PRD §"Width unification".
+// M17 generalizes the M12 path (which was pinned to `cq_measure_si32` →
+// `cqrt_measure_i32`) by deriving the runtime symbol per call site:
+//
+//   1. Resolve the suffix from the front-end intrinsic name (strip the
+//      `cq_measure_` prefix).
+//   2. Collapse signedness via `WidthDispatch::abiWidthFor(sfx)` (e.g.
+//      `si16` → `i16`, `f64` → `f64`).
+//   3. Ask `WidthDispatch::measureRtFn(abiWidth)` for the lazy-declared
+//      `@cqrt_measure_<W>` FunctionCallee.
+//
+// The handle argument is always i32 across every width (PRD §"Width
+// unification"); only the return-value type varies.
 
 #include "MeasureLowering.h"
 
@@ -8,6 +19,7 @@
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
@@ -20,18 +32,52 @@ using namespace llvm;
 
 namespace cq {
 
+namespace {
+
+// Extract the suffix from a front-end measure intrinsic's name
+// (`cq_measure_<sfx>`). Returns "" if the name doesn't match the
+// expected prefix; callers treat an empty suffix as an unrecognized
+// width and surface a diagnostic.
+StringRef suffixFromMeasureName(const CallInst *Measure) {
+  Function *Callee = Measure->getCalledFunction();
+  if (!Callee)
+    return {};
+  StringRef N = Callee->getName();
+  constexpr StringRef kPrefix = "cq_measure_";
+  if (!N.starts_with(kPrefix))
+    return {};
+  return N.substr(kPrefix.size());
+}
+
+}  // namespace
+
 void lowerMeasures(Module &M, WidthDispatch &wd, TaintSet &taint,
                    RebindMap &rebind) {
   (void)M;
   if (taint.MeasureCalls.empty())
     return;
 
-  FunctionCallee MeasureRT = wd.measureRtFn();
   Type *I32 = wd.i32Ty();
   IRBuilder<> Builder(wd.context());
 
   std::vector<Instruction *> ToErase;
   for (CallInst *Measure : taint.MeasureCalls) {
+    // Resolve the per-call runtime symbol. Suffix → ABI width →
+    // FunctionCallee. An unrecognized suffix or width is treated the
+    // same as a missing decl: report and skip so the bad call survives
+    // to a later verifier run.
+    StringRef Sfx = suffixFromMeasureName(Measure);
+    StringRef AbiWidth = wd.abiWidthFor(Sfx);
+    FunctionCallee MeasureRT = AbiWidth.empty()
+                                   ? FunctionCallee()
+                                   : wd.measureRtFn(AbiWidth);
+    if (!MeasureRT) {
+      Measure->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+          *Measure->getFunction(),
+          "cq_measure_<sfx>: unrecognized suffix or unsupported ABI width"));
+      continue;
+    }
+
     Value *StructArg = Measure->getArgOperand(0);
     Value *Handle = nullptr;
     InsertValueInst *IVToErase = nullptr;
@@ -60,9 +106,9 @@ void lowerMeasures(Module &M, WidthDispatch &wd, TaintSet &taint,
     if (!Handle) {
       Measure->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
           *Measure->getFunction(),
-          "cq_measure_si32 operand pattern not recognized; expected "
-          "direct cq_init_si32 result, insertvalue %struct poison, "
-          "i32 %h, 0, or tainted i32 handle"));
+          "cq_measure_<sfx> operand pattern not recognized; expected "
+          "direct cq_init_<sfx> result, insertvalue %struct poison, "
+          "<T> %h, 0, or tainted i32 handle"));
       continue;
     }
 
