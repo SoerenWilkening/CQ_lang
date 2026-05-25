@@ -1,16 +1,19 @@
 // Unit tests for Codegen. Pure string assembly — no Clang AST needed,
-// so we just hand the renderer fully-populated VarRewriteInput structs
-// and compare against the byte-exact expected output documented in
-// PLAN §4.4.2.
+// so we hand the renderer fully-populated VarRewriteInput structs and
+// compare against the byte-exact expected output documented in PRD
+// §"Rewriter patterns" and PLAN §4.4.2.
 //
-// Phase 1's Form enum collapses to three values: Uninit, ClassicalInit,
-// QuantumAdd. The tests below cover one byte-exact emission per Form
-// (with a mixed-operand QuantumAdd to exercise that the renderer
-// splices both sides verbatim regardless of quantum-ness), plus the
-// multi-decl join, an empty-vector defensive contract, and a non-si32
-// width to defend against accidental hard-coding of the suffix.
+// M10 split: the Form enum is four-wide (Uninit / ClassicalInit /
+// QuantumAdd / QuantumCopy), the suffix is `TypeMap::intrinsicSuffix`
+// (signedness-bearing, e.g. "si32"), and the mid-struct typedef comes
+// from `TypeMap::midStructName` (no `qint_mid_t` hardcode). The tests
+// below sweep all 14 mid-struct types for Patterns 1/2 (init forms) and
+// representative widths for Patterns 3/4 (QuantumAdd) and 6
+// (QuantumCopy). Each input is a hand-built VarRewriteInput; we don't
+// invoke TypeMap here (that's covered by test_type_map.cpp).
 #include <gtest/gtest.h>
 
+#include <string>
 #include <vector>
 
 #include "Codegen.h"
@@ -19,168 +22,238 @@ using qct::renderDeclStmt;
 using qct::renderVar;
 using qct::VarRewriteInput;
 
-// ---------------------------------------------------------------------------
-// One test per Form. The expected strings are byte-exact — spacing,
-// the `qint_mid_t` type name, and the `cq_init_<W>` / `.val` shapes
-// are all part of the contract (PLAN §4.4.2).
-// ---------------------------------------------------------------------------
+namespace {
 
-TEST(CodegenTest, Uninit) {
-    // `quantum int x;` -> `qint_mid_t x = cq_init_si32(0);`.
-    // The literal `0` is hardcoded by the renderer (it's the canonical
-    // zero-init value), so initText is intentionally left empty.
+// Build an Uninit input with the per-type (suffix, mid-struct) pair.
+VarRewriteInput uninit(const std::string &name, const std::string &sfx,
+                       const std::string &mid) {
     VarRewriteInput in{};
-    in.name = "x";
-    in.widthSuffix = "si32";
+    in.name = name;
+    in.widthSuffix = sfx;
+    in.midStructName = mid;
     in.form = VarRewriteInput::Form::Uninit;
-    EXPECT_EQ(renderVar(in), "qint_mid_t x = cq_init_si32(0);");
+    return in;
 }
 
-TEST(CodegenTest, ClassicalInit) {
-    // `quantum int x = 3+f();` -> the classical expression survives
-    // verbatim inside cq_init_<W>(...). Whitespace inside the user
-    // expression (here: none — `3+f()`) is preserved exactly as it
-    // was spliced in by the caller.
+// Build a ClassicalInit input spliced with the user expression text.
+VarRewriteInput classicalInit(const std::string &name, const std::string &sfx,
+                              const std::string &mid,
+                              const std::string &initText) {
     VarRewriteInput in{};
-    in.name = "x";
-    in.widthSuffix = "si32";
+    in.name = name;
+    in.widthSuffix = sfx;
+    in.midStructName = mid;
     in.form = VarRewriteInput::Form::ClassicalInit;
-    in.initText = "3+f()";
-    EXPECT_EQ(renderVar(in), "qint_mid_t x = cq_init_si32(3+f());");
+    in.initText = initText;
+    return in;
 }
 
-TEST(CodegenTest, QuantumAddBothQuantum) {
-    // `quantum int c = a + b;` where both a and b are quantum.
-    // DeclStmtRewrite decorates the operands as "a.val" / "b.val"
-    // before handing them to Codegen, which splices both verbatim.
+// Build a QuantumAdd input. Operand strings already carry their
+// decoration ("a.val" for quantum, raw text for classical) per
+// DeclStmtRewrite's contract.
+VarRewriteInput quantumAdd(const std::string &name, const std::string &sfx,
+                           const std::string &mid, const std::string &lhs,
+                           const std::string &rhs) {
     VarRewriteInput in{};
-    in.name = "c";
-    in.widthSuffix = "si32";
+    in.name = name;
+    in.widthSuffix = sfx;
+    in.midStructName = mid;
     in.form = VarRewriteInput::Form::QuantumAdd;
-    in.lhsExpr = "a.val";
-    in.rhsExpr = "b.val";
-    EXPECT_EQ(renderVar(in),
+    in.lhsExpr = lhs;
+    in.rhsExpr = rhs;
+    return in;
+}
+
+// Build a QuantumCopy (Pattern-6) input. No suffix needed — the form
+// emits no intrinsic call (SROA erases the assignment).
+VarRewriteInput quantumCopy(const std::string &name, const std::string &mid,
+                            const std::string &source) {
+    VarRewriteInput in{};
+    in.name = name;
+    in.midStructName = mid;
+    in.form = VarRewriteInput::Form::QuantumCopy;
+    in.sourceName = source;
+    return in;
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Pattern 1 (Uninit) per-type goldens. PRD §"Type map" pairs each of the
+// 14 supported builtin types with one (suffix, mid-struct) row; the
+// renderer threads both verbatim into the output. The 14 builtin rows
+// plus 2 <stdint.h> typedef rows (int32_t → si32, uint64_t → ul on LP64)
+// are exercised in a single table-driven test to keep this file under
+// the 280-LOC budget (PLAN §2.4).
+// ---------------------------------------------------------------------------
+
+TEST(CodegenTest, UninitPerType) {
+    struct Row {
+        const char *sfx;
+        const char *mid;
+        const char *want;
+    };
+    // 14 builtin rows + 2 typedef rows. The typedef rows reuse the
+    // suffix/mid-struct of their canonical-type target (int32_t → int,
+    // uint64_t → unsigned long on LP64), because TypeMap canonicalises
+    // before reaching Codegen — so the rendered output is byte-identical
+    // to the corresponding builtin row.
+    const Row rows[] = {
+        {"i1",   "qbool_mid_t",       "qbool_mid_t x = cq_init_i1(0);"},
+        {"c",    "qchar_mid_t",       "qchar_mid_t x = cq_init_c(0);"},
+        {"si8",  "qschar_mid_t",      "qschar_mid_t x = cq_init_si8(0);"},
+        {"ui8",  "quchar_mid_t",      "quchar_mid_t x = cq_init_ui8(0);"},
+        {"si16", "qshort_mid_t",      "qshort_mid_t x = cq_init_si16(0);"},
+        {"ui16", "qushort_mid_t",     "qushort_mid_t x = cq_init_ui16(0);"},
+        {"si32", "qint_mid_t",        "qint_mid_t x = cq_init_si32(0);"},
+        {"ui32", "quint_mid_t",       "quint_mid_t x = cq_init_ui32(0);"},
+        {"sl",   "qlong_mid_t",       "qlong_mid_t x = cq_init_sl(0);"},
+        {"ul",   "qulong_mid_t",      "qulong_mid_t x = cq_init_ul(0);"},
+        {"sll",  "qlonglong_mid_t",   "qlonglong_mid_t x = cq_init_sll(0);"},
+        {"ull",  "qulonglong_mid_t",  "qulonglong_mid_t x = cq_init_ull(0);"},
+        {"f32",  "qfloat_mid_t",      "qfloat_mid_t x = cq_init_f32(0);"},
+        {"f64",  "qdouble_mid_t",     "qdouble_mid_t x = cq_init_f64(0);"},
+        // Typedef cases (PLAN §4.10): int32_t → int, uint64_t → ulong.
+        {"si32", "qint_mid_t",        "qint_mid_t x = cq_init_si32(0);"},
+        {"ul",   "qulong_mid_t",      "qulong_mid_t x = cq_init_ul(0);"},
+    };
+    for (const Row &r : rows) {
+        SCOPED_TRACE(r.want);
+        EXPECT_EQ(renderVar(uninit("x", r.sfx, r.mid)), r.want);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pattern 2 (ClassicalInit) — spot-check that the initializer source
+// text is spliced verbatim inside `cq_init_<sfx>(...)`. Per-type
+// coverage is redundant with Pattern 1 (same code path); we exercise
+// one integer and one float to defend against accidental case-specific
+// formatting drift.
+// ---------------------------------------------------------------------------
+
+TEST(CodegenTest, ClassicalInitInt) {
+    // `quantum int x = 3+f();` — internal whitespace preserved exactly.
+    EXPECT_EQ(renderVar(classicalInit("x", "si32", "qint_mid_t", "3+f()")),
+              "qint_mid_t x = cq_init_si32(3+f());");
+}
+
+TEST(CodegenTest, ClassicalInitFloat) {
+    EXPECT_EQ(renderVar(classicalInit("x", "f32", "qfloat_mid_t", "3.5f")),
+              "qfloat_mid_t x = cq_init_f32(3.5f);");
+}
+
+// ---------------------------------------------------------------------------
+// Patterns 3/4 (QuantumAdd) — representative widths (i32, i64-via-sl,
+// f32, f64). The renderer doesn't branch on operand quantum-ness (the
+// caller pre-decorates), so a Q+Q and a Q+C case is enough per width to
+// confirm splicing.
+// ---------------------------------------------------------------------------
+
+TEST(CodegenTest, QuantumAddIntQQ) {
+    EXPECT_EQ(renderVar(quantumAdd("c", "si32", "qint_mid_t", "a.val", "b.val")),
               "qint_mid_t c; c.val = a.val + b.val;");
 }
 
-TEST(CodegenTest, QuantumAddQuantumPlusClassical) {
-    // `quantum int c = a + 5;` — quantum lhs, classical rhs. The lhs
-    // is already decorated; the rhs is the raw classical source text.
-    // Codegen does NOT branch on operand quantum-ness — both sides go
-    // through the same splicing path.
-    VarRewriteInput in{};
-    in.name = "c";
-    in.widthSuffix = "si32";
-    in.form = VarRewriteInput::Form::QuantumAdd;
-    in.lhsExpr = "a.val";
-    in.rhsExpr = "5";
-    EXPECT_EQ(renderVar(in),
+TEST(CodegenTest, QuantumAddIntQC) {
+    EXPECT_EQ(renderVar(quantumAdd("c", "si32", "qint_mid_t", "a.val", "5")),
               "qint_mid_t c; c.val = a.val + 5;");
 }
 
-TEST(CodegenTest, QuantumAddClassicalPlusQuantum) {
-    // `quantum int c = 5 + a;` — commuted mixed-operand. Same path,
-    // just with the decorated operand on the right.
-    VarRewriteInput in{};
-    in.name = "c";
-    in.widthSuffix = "si32";
-    in.form = VarRewriteInput::Form::QuantumAdd;
-    in.lhsExpr = "5";
-    in.rhsExpr = "a.val";
-    EXPECT_EQ(renderVar(in),
+TEST(CodegenTest, QuantumAddIntCQ) {
+    // Commuted mixed-operand — same path, decorated operand on the right.
+    EXPECT_EQ(renderVar(quantumAdd("c", "si32", "qint_mid_t", "5", "a.val")),
               "qint_mid_t c; c.val = 5 + a.val;");
 }
 
+TEST(CodegenTest, QuantumAddLongQQ) {
+    EXPECT_EQ(renderVar(quantumAdd("c", "sl", "qlong_mid_t", "a.val", "b.val")),
+              "qlong_mid_t c; c.val = a.val + b.val;");
+}
+
+TEST(CodegenTest, QuantumAddFloatQQ) {
+    EXPECT_EQ(renderVar(quantumAdd("c", "f32", "qfloat_mid_t", "a.val", "b.val")),
+              "qfloat_mid_t c; c.val = a.val + b.val;");
+}
+
+TEST(CodegenTest, QuantumAddFloatQC) {
+    // `quantum float c = a + 1.5f;` — classical-rhs splice keeps the
+    // float-literal suffix verbatim.
+    EXPECT_EQ(renderVar(quantumAdd("c", "f32", "qfloat_mid_t", "a.val", "1.5f")),
+              "qfloat_mid_t c; c.val = a.val + 1.5f;");
+}
+
+TEST(CodegenTest, QuantumAddDoubleQQ) {
+    EXPECT_EQ(renderVar(quantumAdd("c", "f64", "qdouble_mid_t", "a.val", "b.val")),
+              "qdouble_mid_t c; c.val = a.val + b.val;");
+}
+
 // ---------------------------------------------------------------------------
-// Multi-decl + boundary cases.
+// Pattern 6 (QuantumCopy) — PRD §"On assignment and surviving
+// operations". The split form emits no intrinsic call: the IR pass
+// never sees the assignment because SROA collapses it to SSA aliasing.
+// The mid-struct name must come from the input (per-type), so we sweep
+// a representative integer + float.
+// ---------------------------------------------------------------------------
+
+TEST(CodegenTest, QuantumCopyInt) {
+    // PLAN §4.10 explicit golden: `(QuantumCopy {name: "b", source:
+    // "a", type: "int"})` -> `qint_mid_t b; b.val = a.val;`.
+    EXPECT_EQ(renderVar(quantumCopy("b", "qint_mid_t", "a")),
+              "qint_mid_t b; b.val = a.val;");
+}
+
+TEST(CodegenTest, QuantumCopyFloat) {
+    EXPECT_EQ(renderVar(quantumCopy("b", "qfloat_mid_t", "a")),
+              "qfloat_mid_t b; b.val = a.val;");
+}
+
+TEST(CodegenTest, QuantumCopyBool) {
+    EXPECT_EQ(renderVar(quantumCopy("b", "qbool_mid_t", "a")),
+              "qbool_mid_t b; b.val = a.val;");
+}
+
+// ---------------------------------------------------------------------------
+// Multi-decl join + empty-vector boundary. The single-space join is
+// part of the contract (PLAN §4.4.2 multi-decl example).
 // ---------------------------------------------------------------------------
 
 TEST(CodegenTest, MultiDecl) {
-    // PLAN §4.4.2 multi-decl example. Two VarRewriteInputs joined with
-    // a single ASCII space; the result is a flat one-line replacement
-    // that still parses as two C statements.
-    //   `quantum int a = 3, b = 2;`
-    //     -> `qint_mid_t a = cq_init_si32(3); qint_mid_t b = cq_init_si32(2);`
-    std::vector<VarRewriteInput> vars;
-    {
-        VarRewriteInput a{};
-        a.name = "a";
-        a.widthSuffix = "si32";
-        a.form = VarRewriteInput::Form::ClassicalInit;
-        a.initText = "3";
-        vars.push_back(a);
-    }
-    {
-        VarRewriteInput b{};
-        b.name = "b";
-        b.widthSuffix = "si32";
-        b.form = VarRewriteInput::Form::ClassicalInit;
-        b.initText = "2";
-        vars.push_back(b);
-    }
+    // `quantum int a = 3, b = 2;`
+    std::vector<VarRewriteInput> vars{
+        classicalInit("a", "si32", "qint_mid_t", "3"),
+        classicalInit("b", "si32", "qint_mid_t", "2"),
+    };
     EXPECT_EQ(renderDeclStmt(vars),
               "qint_mid_t a = cq_init_si32(3); qint_mid_t b = cq_init_si32(2);");
 }
 
 TEST(CodegenTest, MultiDeclQuantumAddJoin) {
     // Two QuantumAdds joined: confirms the single-space join works
-    // even when individual elements themselves contain spaces /
-    // semicolons (the QuantumAdd shape has an internal semicolon
-    // between the decl and the assignment).
-    std::vector<VarRewriteInput> vars;
-    {
-        VarRewriteInput c{};
-        c.name = "c";
-        c.widthSuffix = "si32";
-        c.form = VarRewriteInput::Form::QuantumAdd;
-        c.lhsExpr = "a.val";
-        c.rhsExpr = "b.val";
-        vars.push_back(c);
-    }
-    {
-        VarRewriteInput d{};
-        d.name = "d";
-        d.widthSuffix = "si32";
-        d.form = VarRewriteInput::Form::QuantumAdd;
-        d.lhsExpr = "a.val";
-        d.rhsExpr = "5";
-        vars.push_back(d);
-    }
+    // even when individual elements contain internal semicolons.
+    std::vector<VarRewriteInput> vars{
+        quantumAdd("c", "si32", "qint_mid_t", "a.val", "b.val"),
+        quantumAdd("d", "si32", "qint_mid_t", "a.val", "5"),
+    };
     EXPECT_EQ(renderDeclStmt(vars),
               "qint_mid_t c; c.val = a.val + b.val; "
               "qint_mid_t d; d.val = a.val + 5;");
 }
 
+TEST(CodegenTest, MultiDeclMixedTypes) {
+    // Each VarDecl carries its own mid-struct name, so a heterogeneous
+    // multi-decl (rare but legal in C: `quantum int a; quantum float b;`
+    // — well, two adjacent DeclStmts) renders each row with its own
+    // typedef. Exercises the per-type lookup directly.
+    std::vector<VarRewriteInput> vars{
+        uninit("a", "si32", "qint_mid_t"),
+        uninit("b", "f32", "qfloat_mid_t"),
+    };
+    EXPECT_EQ(renderDeclStmt(vars),
+              "qint_mid_t a = cq_init_si32(0); qfloat_mid_t b = cq_init_f32(0);");
+}
+
 TEST(CodegenTest, EmptyMultiDecl) {
-    // Defensive contract: an empty input vector yields an empty
-    // replacement (so the caller can no-op a DeclStmt that lost all
-    // its quantum decls).
+    // Defensive contract: empty vector yields empty replacement, so the
+    // caller can no-op a DeclStmt that lost all its quantum decls.
     EXPECT_EQ(renderDeclStmt({}), "");
-}
-
-// ---------------------------------------------------------------------------
-// Width-suffix variation. Phase 1's tests only exercise i32 in
-// integration, but the renderer is width-agnostic. The case below
-// defends against accidental hard-coding of "i32" in the formatter.
-// ---------------------------------------------------------------------------
-
-TEST(CodegenTest, WidthSuffixI16) {
-    // `quantum short x;` against a target with 16-bit short would
-    // resolve to widthSuffix "i16"; the renderer must thread it into
-    // the symbol name verbatim.
-    VarRewriteInput in{};
-    in.name = "x";
-    in.widthSuffix = "i16";
-    in.form = VarRewriteInput::Form::Uninit;
-    EXPECT_EQ(renderVar(in), "qint_mid_t x = cq_init_i16(0);");
-}
-
-TEST(CodegenTest, WidthSuffixI8WithClassicalInit) {
-    // `quantum char x = 7;` -> i8 suffix flows through ClassicalInit.
-    VarRewriteInput in{};
-    in.name = "x";
-    in.widthSuffix = "i8";
-    in.form = VarRewriteInput::Form::ClassicalInit;
-    in.initText = "7";
-    EXPECT_EQ(renderVar(in), "qint_mid_t x = cq_init_i8(7);");
 }

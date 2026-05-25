@@ -7,9 +7,11 @@ namespace qct {
 
 namespace {
 
-// Build "cq_init_<W>(<value>)". `value` is spliced verbatim — the caller
-// is expected to pass either the literal "0" (Uninit) or the original
-// source text of a classical initializer (ClassicalInit).
+// Build "cq_init_<sfx>(<value>)". `value` is spliced verbatim — the
+// caller passes either the literal "0" (Uninit) or the original source
+// text of a classical initializer (ClassicalInit). The suffix is
+// `TypeMap::intrinsicSuffix` (e.g. "si32", "ui8", "sl", "f64"),
+// signedness-bearing per PRD §"Type map" (M10).
 std::string cqInitCall(const std::string &widthSuffix,
                        const std::string &value) {
     std::ostringstream os;
@@ -17,25 +19,32 @@ std::string cqInitCall(const std::string &widthSuffix,
     return os.str();
 }
 
-// Build "qint_mid_t <name> = <rhs>;" — the common skeleton for Uninit
-// and ClassicalInit, which both yield a single initializing assignment.
-std::string declInitWith(const std::string &name, const std::string &rhs) {
+// Build "<midStructName> <name> = <rhs>;" — the common skeleton for
+// Uninit and ClassicalInit, which both yield a single initializing
+// assignment. The mid-struct name is supplied by the caller from
+// `TypeMap::midStructName` so the same helper works uniformly for all
+// 14 Phase 2 mid-struct types (M10 widened this from a `qint_mid_t`
+// hardcode; PRD §"Rewriter patterns" rows 1–2 use per-type typedefs).
+std::string declInitWith(const std::string &midStructName,
+                         const std::string &name, const std::string &rhs) {
     std::ostringstream os;
-    os << "qint_mid_t " << name << " = " << rhs << ";";
+    os << midStructName << " " << name << " = " << rhs << ";";
     return os.str();
 }
 
-// Build "qint_mid_t <name>; <name>.val = <lhsExpr> + <rhsExpr>;" — the
-// QuantumAdd form. Two statements joined by a single ASCII space so
+// Build "<midStructName> <name>; <name>.val = <lhsExpr> + <rhsExpr>;" —
+// the QuantumAdd form. Two statements joined by a single ASCII space so
 // the result is a flat one-line replacement that still parses as two
 // C statements (a declaration followed by an assignment). Operand
 // strings are spliced verbatim; the caller is responsible for
-// appending ".val" to quantum operands (see DeclStmtRewrite).
-std::string declThenAdd(const std::string &name,
+// appending ".val" to quantum operands (see DeclStmtRewrite). Like
+// declInitWith, the mid-struct name is per-type (M10).
+std::string declThenAdd(const std::string &midStructName,
+                        const std::string &name,
                         const std::string &lhsExpr,
                         const std::string &rhsExpr) {
     std::ostringstream os;
-    os << "qint_mid_t " << name << "; "
+    os << midStructName << " " << name << "; "
        << name << ".val = " << lhsExpr << " + " << rhsExpr << ";";
     return os.str();
 }
@@ -64,20 +73,26 @@ std::string renderVar(const VarRewriteInput &in) {
     using Form = VarRewriteInput::Form;
     switch (in.form) {
     case Form::Uninit:
-        // `quantum int x;` -> initialized to literal 0 with the
-        // resolved width suffix.
-        return declInitWith(in.name, cqInitCall(in.widthSuffix, "0"));
+        // `quantum T x;` -> initialized to literal 0 with the resolved
+        // width suffix and the per-type mid-struct typedef (both
+        // supplied by the caller from TypeMap; M10 generalized this
+        // from the i32-only Phase-1 hardcode).
+        return declInitWith(in.midStructName, in.name,
+                            cqInitCall(in.widthSuffix, "0"));
     case Form::ClassicalInit:
-        // `quantum int x = E;` -> splice E verbatim inside cq_init_<W>
+        // `quantum T x = E;` -> splice E verbatim inside cq_init_<sfx>
         // so the original source expression survives the transform
-        // (preserving precedence, spacing, calls, etc.).
-        return declInitWith(in.name, cqInitCall(in.widthSuffix, in.initText));
+        // (preserving precedence, spacing, calls, etc.). Mid-struct
+        // name + suffix are per-type (M10).
+        return declInitWith(in.midStructName, in.name,
+                            cqInitCall(in.widthSuffix, in.initText));
     case Form::QuantumAdd:
-        // `quantum int z = X + Y;` -> decl + .val arithmetic. Operand
+        // `quantum T z = X + Y;` -> decl + .val arithmetic. Operand
         // strings already carry their decoration ("a.val" for quantum,
         // raw text for classical) per DeclStmtRewrite's contract; both
-        // sides are spliced verbatim around a single " + ".
-        return declThenAdd(in.name, in.lhsExpr, in.rhsExpr);
+        // sides are spliced verbatim around a single " + ". Mid-struct
+        // name is per-type (M10).
+        return declThenAdd(in.midStructName, in.name, in.lhsExpr, in.rhsExpr);
     case Form::QuantumCopy:
         // `quantum T b = a;` (a a quantum VarDecl of the same canonical
         // type) -> decl + .val pass-through. No intrinsic; the IR pass
@@ -90,7 +105,8 @@ std::string renderVar(const VarRewriteInput &in) {
     // Unknown Form (e.g. a future enumerator that bypassed our switch):
     // fail safe by emitting an Uninit-style declaration so we still
     // produce parseable C rather than crashing the rewriter.
-    return declInitWith(in.name, cqInitCall(in.widthSuffix, "0"));
+    return declInitWith(in.midStructName, in.name,
+                        cqInitCall(in.widthSuffix, "0"));
 }
 
 std::string renderDeclStmt(const std::vector<VarRewriteInput> &vars) {

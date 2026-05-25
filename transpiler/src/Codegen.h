@@ -4,28 +4,25 @@
 // Deliberately Clang-free: the input is a plain struct (VarRewriteInput)
 // populated by the AST-touching glue elsewhere, and the output is the
 // final replacement text. This makes the rewrite logic trivially
-// unit-testable without spinning up a CompilerInstance — which is the
-// whole point of PLAN section 3.5.
+// unit-testable without spinning up a CompilerInstance (PLAN §3.5).
 //
-// Phase 1 emission targets (PLAN §4.4.2). The form enum collapses from
-// v1's five values to three; Phase 2 (M9) adds a fourth: `QuantumCopy`
-// for Pattern 6 (`quantum T b = a;` where `a` is a quantum VarDecl of
-// the same canonical type). Taint propagation in the IR pass makes the
-// QQ/QC/CQ distinctions go away, so both quantum-touching adds use the
-// same ".val arithmetic" pattern. The classify-and-decorate decision
-// (whether to append ".val" to a given operand) is made upstream in
-// DeclStmtRewrite via OperandClass; Codegen receives already-decorated
-// strings and stays Clang-free.
+// Phase 1 had three Forms; Phase 2 M9 added `QuantumCopy` for Pattern 6
+// (`quantum T b = a;`, same canonical type). Taint propagation in the
+// IR pass collapses QQ/QC/CQ distinctions, so both quantum-touching
+// adds use the same ".val arithmetic" pattern; classify-and-decorate
+// (whether to append ".val" to an operand) happens upstream in
+// DeclStmtRewrite via OperandClass.
 //
-//   Uninit         -> qint_mid_t <name> = cq_init_<W>(0);
-//   ClassicalInit  -> qint_mid_t <name> = cq_init_<W>(<initText>);
-//   QuantumAdd     -> qint_mid_t <name>; <name>.val = <lhsExpr> + <rhsExpr>;
+//   Uninit         -> <midStructName> <name> = cq_init_<sfx>(0);
+//   ClassicalInit  -> <midStructName> <name> = cq_init_<sfx>(<initText>);
+//   QuantumAdd     -> <midStructName> <name>; <name>.val = <lhsExpr> + <rhsExpr>;
 //   QuantumCopy    -> <midStructName> <name>; <name>.val = <sourceName>.val;
 //
-// Width-suffix is the LLVM IR-style intrinsic suffix string (e.g.
-// "i32") supplied by TypeMap::irWidthSuffix; it is spliced verbatim
-// into the cq_init_<W> symbol name. Phase 1's tests exercise i32 only,
-// but the renderer is width-agnostic.
+// M10 widened `widthSuffix` from Phase 1's width-only `"i32"` form to
+// the signedness-bearing `TypeMap::intrinsicSuffix` (e.g. "si32", "ui8",
+// "sl", "f64"), and replaced the `qint_mid_t` hardcode with
+// `TypeMap::midStructName(T)` so the same renderer handles all 14
+// Phase 2 mid-struct types.
 #pragma once
 
 #include <string>
@@ -35,18 +32,23 @@ namespace qct {
 
 struct VarRewriteInput {
     std::string name;           // e.g. "x"
-    std::string widthSuffix;    // e.g. "i32" — from TypeMap::irWidthSuffix
+    std::string widthSuffix;    // signedness-bearing intrinsic suffix
+                                // from `TypeMap::intrinsicSuffix` (e.g.
+                                // "si32", "ui8", "sl", "f64")
+    std::string midStructName;  // per-type mid-struct typedef from
+                                // `TypeMap::midStructName` (e.g.
+                                // "qint_mid_t", "qfloat_mid_t")
 
     enum class Form {
-        Uninit,         // `quantum int x;`               → cq_init_<W>(0)
-        ClassicalInit,  // `quantum int x = E;`           → cq_init_<W>(E)
-        QuantumAdd,     // `quantum int z = X + Y;`       → .val arithmetic
+        Uninit,         // `quantum T x;`            → cq_init_<sfx>(0)
+        ClassicalInit,  // `quantum T x = E;`        → cq_init_<sfx>(E)
+        QuantumAdd,     // `quantum T z = X + Y;`    → .val arithmetic
         QuantumCopy,    // `quantum T b = a;` (same canonical type)
-                        //                                → split form, no intrinsic
+                        //                           → split form, no intrinsic
     } form;
 
-    // ClassicalInit: the original initializer's source text, spliced
-    // verbatim inside cq_init_<W>(...).
+    // ClassicalInit: original initializer source text, spliced verbatim
+    // inside cq_init_<sfx>(...).
     std::string initText;
 
     // QuantumAdd: each side is already decorated by the caller —
@@ -56,14 +58,10 @@ struct VarRewriteInput {
     std::string lhsExpr;
     std::string rhsExpr;
 
-    // QuantumCopy (Pattern 6 — M9): the mid-struct typedef for `<name>`
-    // (e.g. "qint_mid_t") and the source-side VarDecl name (e.g. "a").
+    // QuantumCopy (Pattern 6 — M9): source-side VarDecl name (e.g. "a").
     // Codegen emits `<midStructName> <name>; <name>.val = <sourceName>.val;`
     // — no intrinsic call, because SROA erases this pattern in Phase 2's
-    // scope (see PRD §"On assignment and surviving operations"). Both
-    // VarDecls must share the canonical type (the rewriter does this
-    // check before emitting this form).
-    std::string midStructName;
+    // scope (see PRD §"On assignment and surviving operations").
     std::string sourceName;
 };
 
