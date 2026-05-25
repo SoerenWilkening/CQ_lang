@@ -94,6 +94,7 @@ add_executable(quantum_transpiler_unit_tests
     tests/unit/test_cast_rewrite.cpp
     tests/unit/test_cq_mid_compiles.cpp
     tests/unit/test_cq_runtime_compiles.cpp
+    tests/unit/test_cq_templates_compiles.cpp
 )
 # test_cq_mid_compiles.cpp #include's <cq_mid.h> from the repo-root
 # include/ dir (the transpiled-C ABI surface; not normally consumed by
@@ -103,6 +104,10 @@ add_executable(quantum_transpiler_unit_tests
 # runtime/ dir (per cq-p2-m04); same rationale — declarations-only
 # header that the IR pass output and the host binary both consume,
 # no C++ source needs it outside this compile-smoke test.
+# test_cq_templates_compiles.cpp #include's <cq_templates.h> from the
+# same runtime/ dir (per cq-p2-m05); declares the 14 template stubs
+# the IR pass dispatches tainted `add` instructions to. Same -I scheme
+# as cq_runtime — the runtime/ entry above covers it.
 target_include_directories(quantum_transpiler_unit_tests
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
