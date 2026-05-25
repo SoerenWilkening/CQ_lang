@@ -123,21 +123,25 @@ through the new pipeline and runs, producing the golden call-trace log
 under `tests/e2e/`. Specifically:
 
 - **Rewriter** (`transpiler/`): emits the new intrinsic surface
-  (`qint_mid_t`, `cq_init_i32`, `cq_measure_i32`); collapsed v1's
+  (`qint_mid_t`, `cq_init_si32`, `cq_measure_si32`); collapsed v1's
   per-operand `Form` enum to `Uninit` / `ClassicalInit` / `QuantumAdd`;
-  new `CastRewrite` module for measurement-as-cast.
+  new `CastRewrite` module for measurement-as-cast. (Mid-level
+  intrinsics carried width-only `_i32` suffix at Phase 1 land; Phase 2
+  M3 repointed them to the signedness-bearing `_si32` suffix.)
 - **IR pass** (`ir-pass/libCQPass.so`): productionized `cq-lowering`
   slice of the prototype — forward taint propagation, mid-struct →
-  handle rebinding, lowering of `cq_init_i32` / tainted `add i32` /
-  `cq_measure_i32`. Q+Q vs Q+C add dispatch via `cq_template_add_i32_hl`
+  handle rebinding, lowering of `cq_init_si32` / tainted `add i32` /
+  `cq_measure_si32`. Q+Q vs Q+C add dispatch via `cq_template_add_i32_hl`
   (mixed-operand) keeps classical literals as bare integers through the
   ABI — classical operands are never promoted to handles.
 - **Headers** (`include/`): user-facing `CQ.h` (just the `quantum`
   macro); transpiled-C ABI in `cq_mid.h` (`qint_mid_t` +
-  `cq_init_i32` + `cq_measure_i32`).
+  `cq_init_si32` + `cq_measure_si32`).
 - **Stub runtime** (`runtime/libcq_runtime.a` + `libcq_templates.a`):
-  trace-only `cqrt_alloc_classical_i32`, `cqrt_measure_i32`,
-  `cqrt_free`, `cq_template_add_i32`, `cq_template_add_i32_hl`.
+  trace-only `cqrt_alloc_i32`, `cqrt_measure_i32`, `cqrt_free`,
+  `cq_template_add_i32`, `cq_template_add_i32_hl`. (Phase 2 M3
+  collapsed Phase 1's classical-alloc symbol + the planned fresh-ancilla
+  zero-arg variant into the single value-taking `cqrt_alloc_i32`.)
 - **`cqc` driver** (`tools/cqc`): orchestrates the four pipeline stages
   (rewriter → `clang -O1 -emit-llvm` → `opt -passes=cq-lowering` →
   link). `--emit-ll` exposes text LLVM IR intermediates; honors
@@ -165,19 +169,18 @@ full new pipeline rather than stopping at transpiled C.
 **Components touched:**
 - **Rewriter** (extends v1): emit the new `@cq_*` intrinsic surface for
   the v1 feature subset:
-  - `quantum int x = N;` → `qint_mid_t x = cq_init_i32(N);`
+  - `quantum int x = N;` → `qint_mid_t x = cq_init_si32(N);`
   - `quantum int z = a + b;` → `qint_mid_t z; z.val = a.val + b.val;`
-  - `(int) q` → `cq_measure_i32(q)`
+  - `(int) q` → `cq_measure_si32(q)`
   - Replaces v1's `init_qint` / `add` stub calls with the new intrinsics
 - **IR pass** (productionizes prototype's `cq-lowering` slice for i32):
-  taint, mid→handle rebinding, lowering of `@cq_init_i32` / tainted
-  `add i32` / `@cq_measure_i32` to `cqrt_*` calls
+  taint, mid→handle rebinding, lowering of `@cq_init_si32` / tainted
+  `add i32` / `@cq_measure_si32` to `cqrt_*` calls
 - **CQ.h** (replaces user `#define quantum`): declares `quantum` keyword
-  + the four intrinsics this phase needs (`cq_init_i32`, `cq_measure_i32`,
+  + the four intrinsics this phase needs (`cq_init_si32`, `cq_measure_si32`,
   the `qint_mid_t` struct type — others added in Phase 2)
 - **Stub `libcq_runtime`** (new): printf-name impls of
-  `cqrt_alloc_classical_i32`, `cqrt_alloc_i32`, `cqrt_free`,
-  `cqrt_measure_i32`
+  `cqrt_alloc_i32`, `cqrt_free`, `cqrt_measure_i32`
 - **Stub template library** (new): printf-name impls of
   `cq_template_add_i32` (Q+Q) and `cq_template_add_i32_hl` (Q+C
   mixed-operand; IR pass dispatches on taint-set membership)

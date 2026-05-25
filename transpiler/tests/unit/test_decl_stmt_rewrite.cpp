@@ -19,11 +19,13 @@
 //   - Defensive   non-quantum DeclStmt early-out
 //
 // The widthSuffix flows from `TypeMap::irWidthSuffix(QualType, TargetInfo)`,
-// which on the default in-process target resolves `int` to "i32"; that's
-// what's spliced into the emitted symbol names below. The AST-walking
-// helpers intentionally duplicate the ones in test_source_text.cpp and
-// test_operand_class.cpp; factoring them into a shared header is its
-// own change and explicitly out of scope.
+// which on the default in-process target resolves `int` to "i32"; the
+// `DeclStmtRewrite` call site then prefixes "s" (Phase 2 M3 transitional;
+// see DeclStmtRewrite.cpp:170) to give the signedness-bearing intrinsic
+// suffix "si32" that's spliced into the emitted symbol names below.
+// The AST-walking helpers intentionally duplicate the ones in
+// test_source_text.cpp and test_operand_class.cpp; factoring them into
+// a shared header is its own change and explicitly out of scope.
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -129,30 +131,30 @@ std::optional<qct::StmtRewrite> rewriteDeclFor(const std::string &body,
 
 // ---------------------------------------------------------------------------
 // Pattern 1: uninitialized quantum int.
-//   `quantum int x;` -> `qint_mid_t x = cq_init_i32(0);`
+//   `quantum int x;` -> `qint_mid_t x = cq_init_si32(0);`
 // ---------------------------------------------------------------------------
 
 TEST(DeclStmtRewriteTest, UninitProducesPattern1) {
     auto r = rewriteDeclFor("    quantum int x;", "x");
     ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->replacement, "qint_mid_t x = cq_init_i32(0);");
+    EXPECT_EQ(r->replacement, "qint_mid_t x = cq_init_si32(0);");
 }
 
 // ---------------------------------------------------------------------------
 // Pattern 2: classical-literal initializer.
-//   `quantum int x = 7;` -> `qint_mid_t x = cq_init_i32(7);`
+//   `quantum int x = 7;` -> `qint_mid_t x = cq_init_si32(7);`
 // The classical expression survives verbatim inside cq_init_<W>(...).
 // ---------------------------------------------------------------------------
 
 TEST(DeclStmtRewriteTest, ClassicalLiteralInit) {
     auto r = rewriteDeclFor("    quantum int x = 7;", "x");
     ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->replacement, "qint_mid_t x = cq_init_i32(7);");
+    EXPECT_EQ(r->replacement, "qint_mid_t x = cq_init_si32(7);");
 }
 
 // ---------------------------------------------------------------------------
 // Pattern 2 (classvar): classical-variable initializer.
-//   `quantum int x = c;` -> `qint_mid_t x = cq_init_i32(c);`
+//   `quantum int x = c;` -> `qint_mid_t x = cq_init_si32(c);`
 // `c` is a plain (non-quantum) classical int, so it's spliced verbatim
 // rather than decorated with `.val`. Exercises the OperandClass path
 // that keeps non-binop initializers in the ClassicalInit form even when
@@ -165,7 +167,7 @@ TEST(DeclStmtRewriteTest, ClassicalVarInit) {
         "    quantum int x = c;",
         "x");
     ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->replacement, "qint_mid_t x = cq_init_i32(c);");
+    EXPECT_EQ(r->replacement, "qint_mid_t x = cq_init_si32(c);");
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +221,7 @@ TEST(DeclStmtRewriteTest, ClassicalPlusQuantumCommuted) {
 
 // ---------------------------------------------------------------------------
 // Multi-decl quantum statement: `quantum int a = 3, b = 2;` becomes
-// two rewritten cq_init_i32 calls separated by a single space, matching
+// two rewritten cq_init_si32 calls separated by a single space, matching
 // the Codegen::renderDeclStmt join contract from PLAN §3.5 / §4.4.2.
 // Also exercised by fixture 07 in P9 — covering it at unit level here
 // keeps the join logic locked in.
@@ -229,7 +231,7 @@ TEST(DeclStmtRewriteTest, MultiQuantumDeclStmt) {
     auto r = rewriteDeclFor("    quantum int a = 3, b = 2;", "a");
     ASSERT_TRUE(r.has_value());
     EXPECT_EQ(r->replacement,
-              "qint_mid_t a = cq_init_i32(3); qint_mid_t b = cq_init_i32(2);");
+              "qint_mid_t a = cq_init_si32(3); qint_mid_t b = cq_init_si32(2);");
 }
 
 // ---------------------------------------------------------------------------

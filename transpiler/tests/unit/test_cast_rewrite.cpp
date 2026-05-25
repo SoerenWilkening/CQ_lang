@@ -6,15 +6,16 @@
 //
 // Per PLAN §4.4.4 the cases covered below are:
 //
-//   - `(int) q`   where q is quantum            -> "cq_measure_i32(q)"
-//   - `(int) (q)` (paren stripped around q)     -> "cq_measure_i32(q)"
+//   - `(int) q`   where q is quantum            -> "cq_measure_si32(q)"
+//   - `(int) (q)` (paren stripped around q)     -> "cq_measure_si32(q)"
 //   - `(int) c`   where c is non-quantum        -> nullopt
 //   - cast in expr context (`(int) q + 1`)      -> rewrites only the cast
 //
-// All target widths use cq_measure_i32 (the issue is explicit; surrounding
-// C does any truncation classically). The AST-walking helpers intentionally
-// duplicate the ones in test_decl_stmt_rewrite.cpp; factoring them into a
-// shared header is its own change and explicitly out of scope.
+// All target widths use cq_measure_si32 (Phase 1 hardcode; Phase 2 M11
+// generalizes to per-type via TypeMap::intrinsicSuffix). The AST-walking
+// helpers intentionally duplicate the ones in test_decl_stmt_rewrite.cpp;
+// factoring them into a shared header is its own change and explicitly
+// out of scope.
 #include <gtest/gtest.h>
 
 #include <memory>
@@ -108,7 +109,7 @@ std::optional<qct::CastRewrite> firstCastRewrite(const std::string &body) {
 }  // namespace
 
 // ---------------------------------------------------------------------------
-// `(int) q` where q is quantum -> `cq_measure_i32(q)`.
+// `(int) q` where q is quantum -> `cq_measure_si32(q)`.
 // The canonical measurement-as-cast pattern from PRD pattern #5.
 // ---------------------------------------------------------------------------
 
@@ -117,11 +118,11 @@ TEST(CastRewriteTest, IntCastOfQuantumVar) {
         "    quantum int q = 3;\n"
         "    int m = (int) q;");
     ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->replacement, "cq_measure_i32(q)");
+    EXPECT_EQ(r->replacement, "cq_measure_si32(q)");
 }
 
 // ---------------------------------------------------------------------------
-// `(int) (q)` -> `cq_measure_i32(q)`. Operand parens are stripped before
+// `(int) (q)` -> `cq_measure_si32(q)`. Operand parens are stripped before
 // extracting <argText>; the test pins the PLAN §4.4.4 acceptance contract
 // for paren-wrapped operands.
 // ---------------------------------------------------------------------------
@@ -131,7 +132,7 @@ TEST(CastRewriteTest, IntCastOfParenthesisedQuantumVar) {
         "    quantum int q = 3;\n"
         "    int m = (int) (q);");
     ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->replacement, "cq_measure_i32(q)");
+    EXPECT_EQ(r->replacement, "cq_measure_si32(q)");
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +153,7 @@ TEST(CastRewriteTest, ClassicalCastReturnsNullopt) {
 // `+ 1` — so Rewriter::ReplaceText leaves the trailing arithmetic
 // untouched. We can't easily assert on the SourceRange directly (it
 // references storage owned by the destroyed ASTUnit), but we *can*
-// assert that the replacement string is exactly `cq_measure_i32(q)`
+// assert that the replacement string is exactly `cq_measure_si32(q)`
 // — without the `+ 1` — which is the externally-observable
 // contract that matters.
 // ---------------------------------------------------------------------------
@@ -162,12 +163,12 @@ TEST(CastRewriteTest, CastInsideExpressionContextRewritesOnlyTheCast) {
         "    quantum int q = 3;\n"
         "    int r = (int) q + 1;");
     ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->replacement, "cq_measure_i32(q)");
+    EXPECT_EQ(r->replacement, "cq_measure_si32(q)");
 }
 
 // ---------------------------------------------------------------------------
 // `(void) q;` is the unused-warning C idiom — it must NOT be rewritten
-// to cq_measure_i32(q). The e2e fixtures rely on this so `(void) q;`
+// to cq_measure_si32(q). The e2e fixtures rely on this so `(void) q;`
 // stays a no-op in the lowered trace.
 // ---------------------------------------------------------------------------
 
@@ -192,15 +193,17 @@ TEST(CastRewriteTest, NullInputReturnsNullopt) {
 // ---------------------------------------------------------------------------
 // Narrower target type: `(short) q` where q is `quantum int`. Per the
 // issue + PLAN §4.4.4 paragraph "Width-narrower casts", ALL target
-// widths use `cq_measure_i32` — the surrounding C does any truncation
-// classically. This pins that policy at the unit level so a future
-// width-discriminated change can't sneak through unit-test-green.
+// widths use `cq_measure_si32` in Phase 1 — the surrounding C does any
+// truncation classically. This pins that policy at the unit level so a
+// future width-discriminated change can't sneak through unit-test-green.
+// Phase 2 M11 will replace the i32 hardcode with a TypeMap-resolved
+// suffix; until then, narrower target types still route through si32.
 // ---------------------------------------------------------------------------
 
-TEST(CastRewriteTest, NarrowerTargetTypeStillUsesI32) {
+TEST(CastRewriteTest, NarrowerTargetTypeStillUsesSI32) {
     auto r = firstCastRewrite(
         "    quantum int q = 3;\n"
         "    short s = (short) q;");
     ASSERT_TRUE(r.has_value());
-    EXPECT_EQ(r->replacement, "cq_measure_i32(q)");
+    EXPECT_EQ(r->replacement, "cq_measure_si32(q)");
 }

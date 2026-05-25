@@ -1,10 +1,10 @@
 // CQLoweringPass.h — Phase 1 production header for the cq-lowering IR pass.
 //
 // The pass walks each function, finds the front-end intrinsics that the
-// rewriter+Clang leave behind (`@cq_init_i32`, `@cq_measure_i32`),
+// rewriter+Clang leave behind (`@cq_init_si32`, `@cq_measure_si32`),
 // propagates taint forward from init returns, and rewrites:
 //
-//   * `cq_init_i32(value)`                -> `cqrt_alloc_classical_i32(value)`
+//   * `cq_init_si32(value)`               -> `cqrt_alloc_i32(value)`
 //   * tainted `add i32 %a, %b` where both are tainted (Q+Q)
 //                                          -> `cq_template_add_i32(%a, %b)`
 //   * tainted `add i32 %a, %c` where one operand is classical (Q+C)
@@ -13,10 +13,10 @@
 //     so non-constant classical operands — function args, runtime-loaded
 //     values, globals — are also routed to `_hl`. Operands are swapped if
 //     the classical side landed on the lhs so the handle stays first.)
-//   * `cq_measure_i32(insertvalue ..)`    -> `cqrt_measure_i32(handle)`
-//   * `cq_measure_i32(i32 %tainted)`      -> `cqrt_measure_i32(handle)`
+//   * `cq_measure_si32(insertvalue ..)`   -> `cqrt_measure_i32(handle)`
+//   * `cq_measure_si32(i32 %tainted)`     -> `cqrt_measure_i32(handle)`
 //     (post -O1 flattened-struct shape, including the cast-rewriter
-//     `(int)q` -> `cq_measure_i32(q)` lowering path)
+//     `(int)q` -> `cq_measure_si32(q)` lowering path)
 //
 // extractvalue/insertvalue traffic on the `%qint_mid_t` struct is removed
 // so the post-pass IR contains only i32 handles. After lowering, the pass

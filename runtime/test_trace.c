@@ -10,8 +10,8 @@
 #include "cq_templates.h"
 
 int main(void) {
-    int32_t h_a = cqrt_alloc_classical_i32(3);
-    int32_t h_b = cqrt_alloc_classical_i32(5);
+    int32_t h_a = cqrt_alloc_i32(3);
+    int32_t h_b = cqrt_alloc_i32(5);
     int32_t h_c = cq_template_add_i32(h_a, h_b);
     (void) cqrt_measure_i32(h_c);
     return 0;

@@ -1,9 +1,9 @@
 // CQLoweringPass.cpp — Phase 1 production port of the cq-lowering pass.
 //
 // Ported from prototype/cq_pass.cpp. Deltas vs. prototype (per
-// phases/phase1/PLAN.md §4.5):
+// phases/phase1/PLAN.md §4.5; Phase 2 M3 rename applied):
 //
-//   * `cq_measure`               -> `cq_measure_i32`
+//   * `cq_measure`               -> `cq_measure_si32`
 //   * `cqrt_measure`             -> `cqrt_measure_i32`  (and now returns i32)
 //   * fresh-ancilla `cqrt_alloc_i32` dropped from add lowering;
 //     the template returns its own handle.
@@ -41,7 +41,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // that all call sites have been lowered. Matches the architecture's
   // promise that no @cq_* (init/measure) remains in the IR after this pass.
   if (Changed) {
-    for (const char *Name : {"cq_init_i32", "cq_measure_i32"}) {
+    for (const char *Name : {"cq_init_si32", "cq_measure_si32"}) {
       if (Function *FE = M.getFunction(Name)) {
         if (FE->use_empty())
           FE->eraseFromParent();
@@ -59,7 +59,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
 
   Type *I32 = Type::getInt32Ty(Ctx);
 
-  // --- Step 1: collect cq_init_i32 and cq_measure_i32 call sites. ---
+  // --- Step 1: collect cq_init_si32 and cq_measure_si32 call sites. ---
   //
   // This precedes the runtime decl insertion so a function with zero
   // front-end intrinsics doesn't leak `cqrt_*` / `cq_template_*` declarations
@@ -76,9 +76,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       if (!Callee)
         continue;
       StringRef N = Callee->getName();
-      if (N == "cq_init_i32")
+      if (N == "cq_init_si32")
         InitCalls.push_back(CI);
-      else if (N == "cq_measure_i32")
+      else if (N == "cq_measure_si32")
         MeasureCalls.push_back(CI);
     }
   }
@@ -91,15 +91,15 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Declarations are inserted only when the function actually has work that
   // calls into them. This keeps cq_template_add_i32 out of modules that
   // contain only measure-without-add, and similarly avoids leaking
-  // cqrt_alloc_classical_i32 / cqrt_measure_i32 into measure-only or
-  // init-only functions. The LIT fixtures measure_only.ll and
+  // cqrt_alloc_i32 / cqrt_measure_i32 into measure-only or init-only
+  // functions. The LIT fixtures measure_only.ll and
   // passthrough_no_quantum.ll pin this behavior.
   //
   // cq_template_add_i32 returns a fresh handle and takes the two operand
   // handles — no out-handle parameter (the template owns its allocation,
   // resolving PRD open item §6.3).
   auto getAllocClassical = [&]() {
-    return M.getOrInsertFunction("cqrt_alloc_classical_i32",
+    return M.getOrInsertFunction("cqrt_alloc_i32",
                                  FunctionType::get(I32, {I32}, false));
   };
   auto getTemplateAdd = [&]() {
@@ -123,8 +123,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
                                  FunctionType::get(I32, {I32}, false));
   };
 
-  // --- Step 2: replace each @cq_init_i32(value) with
-  // @cqrt_alloc_classical_i32(value). The init call canonically returns a
+  // --- Step 2: replace each @cq_init_si32(value) with
+  // @cqrt_alloc_i32(value). The init call canonically returns a
   // %qint_mid_t struct, but clang -O1 SROAs the single-field struct down
   // to a bare i32 (visible in the post-Clang IR for the e2e fixtures).
   // Track the mapping so the extractvalue cleanup in step 3 can rewire
@@ -159,7 +159,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       BirthOrder[Alloc] = NextBirth++;
       // Flattened-struct shape (post clang -O1): Init returns i32 and
       // its direct users (e.g. `add i32 %2, %1` and
-      // `cq_measure_i32(i32 %1)`) point straight at the Init result. We
+      // `cq_measure_si32(i32 %1)`) point straight at the Init result. We
       // rewire those uses to the Alloc so taint propagation in step 4 has
       // edges to follow and the measure operand-match in step 6 sees the
       // tainted handle. The non-flattened (struct) shape is handled by
@@ -213,7 +213,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
         Function *Callee = CI->getCalledFunction();
         if (Callee) {
           StringRef N = Callee->getName();
-          if (N == "cq_measure_i32" || N == "cqrt_measure_i32")
+          if (N == "cq_measure_si32" || N == "cqrt_measure_i32")
             continue;
         }
       }
@@ -309,13 +309,13 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     I->eraseFromParent();
   ToErase.clear();
 
-  // --- Step 6: lower @cq_measure_i32 to @cqrt_measure_i32. ---
+  // --- Step 6: lower @cq_measure_si32 to @cqrt_measure_i32. ---
   //
   // Three operand patterns are recognized:
   //
-  //  (a) The struct arg is a direct @cq_init_i32 call that step 2 already
+  //  (a) The struct arg is a direct @cq_init_si32 call that step 2 already
   //      mapped to a handle (the canonical -O0-shaped measure_only
-  //      fixture: %s = call @cq_init_i32(..); %m = call @cq_measure_i32(%s)).
+  //      fixture: %s = call @cq_init_si32(..); %m = call @cq_measure_si32(%s)).
   //      Use the mapped handle directly.
   //
   //  (b) The struct arg is `insertvalue %qint_mid_t poison, i32 %h, 0`
@@ -326,7 +326,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   //  (c) The struct arg is already an i32 SSA value carrying a tainted
   //      handle. This is the post-clang-O1 shape, where SROA/IPSCCP
   //      flattens the single-field `qint_mid_t` struct so both
-  //      `cq_init_i32` and `cq_measure_i32` operate on `i32` directly,
+  //      `cq_init_si32` and `cq_measure_si32` operate on `i32` directly,
   //      and the measure's argument is e.g. the result of a now-lowered
   //      `cq_template_add_i32` call (or, in the cast-rewriter path, a
   //      handle SSA value that has flowed through plain i32 IR). The
@@ -362,8 +362,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
 
       if (!Handle) {
         F.getContext().diagnose(DiagnosticInfoUnsupported(
-            F, "cq_measure_i32 operand pattern not recognized; expected "
-               "direct cq_init_i32 result, insertvalue %struct poison, "
+            F, "cq_measure_si32 operand pattern not recognized; expected "
+               "direct cq_init_si32 result, insertvalue %struct poison, "
                "i32 %h, 0, or tainted i32 handle"));
         continue;
       }
@@ -382,7 +382,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     I->eraseFromParent();
   ToErase.clear();
 
-  // --- Step 7: erase the original cq_init_i32 calls (now use-less). ---
+  // --- Step 7: erase the original cq_init_si32 calls (now use-less). ---
 
   for (CallInst *Init : InitCalls) {
     if (Init->use_empty())

@@ -167,7 +167,13 @@ std::optional<StmtRewrite> buildRewrite(const clang::DeclStmt *ds,
         }
         VarRewriteInput in{};
         in.name = vd->getNameAsString();
-        in.widthSuffix = irWidthSuffix(vd->getType(), ti);
+        // Phase 2 M3: prefix `s` to give the signedness-bearing
+        // intrinsic suffix (e.g. "si32") the mid-level surface expects
+        // (`cq_init_si32`, `cq_measure_si32`). Phase 1 only supports
+        // signed `int`, so a literal `"s"` is sufficient here. M8 will
+        // replace this with a proper `TypeMap::intrinsicSuffix(QualType)`
+        // accessor that knows about unsigned and floating-point types.
+        in.widthSuffix = "s" + irWidthSuffix(vd->getType(), ti);
         populateFromInit(vd, sm, lo, &in);
         vars.push_back(std::move(in));
     }

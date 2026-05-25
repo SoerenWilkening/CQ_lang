@@ -21,8 +21,8 @@ extern "C" {
 
 typedef struct { int32_t val; } qint_mid_t;
 
-qint_mid_t cq_init_i32(int32_t value);
-int32_t    cq_measure_i32(qint_mid_t q);
+qint_mid_t cq_init_si32(int32_t value);
+int32_t    cq_measure_si32(qint_mid_t q);
 
 #ifdef __cplusplus
 }

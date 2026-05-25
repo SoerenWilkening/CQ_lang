@@ -227,7 +227,7 @@ void QuantumRewriteAction::EndSourceFileAction() {
     // `#include <CQ.h>` at its start so the rewritten output picks up
     // the Phase-1 user-facing header (the `quantum` macro and, via the
     // transpiled-C ABI in cq_mid.h that cqc threads in, the per-width
-    // intrinsics like cq_init_i32 / cq_measure_i32). Angle-bracket form
+    // intrinsics like cq_init_si32 / cq_measure_si32). Angle-bracket form
     // per PLAN §4.4.5 — the include is system-style so it resolves
     // through -I include/ from the driver. We use InsertText with
     // InsertAfter=true (a no-op here since this is the only insertion

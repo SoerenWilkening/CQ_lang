@@ -17,18 +17,18 @@
 
 #include <stdio.h>
 
-/* Process-global handle counter. Shared between cqrt_alloc_classical_i32
- * here and cq_template_add_i32 (templates module, bd issue -0np) via
- * the cqrt_alloc_handle() helper, so handles stay globally monotonic. */
+/* Process-global handle counter. Shared between cqrt_alloc_i32 here and
+ * cq_template_add_i32 (templates module, bd issue -0np) via the
+ * cqrt_alloc_handle() helper, so handles stay globally monotonic. */
 static int32_t next_handle = 0;
 
 int32_t cqrt_alloc_handle(void) {
     return next_handle++;
 }
 
-int32_t cqrt_alloc_classical_i32(int32_t value) {
+int32_t cqrt_alloc_i32(int32_t value) {
     int32_t h = cqrt_alloc_handle();
-    printf("cqrt_alloc_classical_i32(%d) -> h%d\n", value, h);
+    printf("cqrt_alloc_i32(%d) -> h%d\n", value, h);
     fflush(stdout);
     return h;
 }

@@ -7,8 +7,8 @@
 // QuantumAdd. The tests below cover one byte-exact emission per Form
 // (with a mixed-operand QuantumAdd to exercise that the renderer
 // splices both sides verbatim regardless of quantum-ness), plus the
-// multi-decl join, an empty-vector defensive contract, and a non-i32
-// width to defend against accidental hard-coding of "i32".
+// multi-decl join, an empty-vector defensive contract, and a non-si32
+// width to defend against accidental hard-coding of the suffix.
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -26,14 +26,14 @@ using qct::VarRewriteInput;
 // ---------------------------------------------------------------------------
 
 TEST(CodegenTest, Uninit) {
-    // `quantum int x;` -> `qint_mid_t x = cq_init_i32(0);`.
+    // `quantum int x;` -> `qint_mid_t x = cq_init_si32(0);`.
     // The literal `0` is hardcoded by the renderer (it's the canonical
     // zero-init value), so initText is intentionally left empty.
     VarRewriteInput in{};
     in.name = "x";
-    in.widthSuffix = "i32";
+    in.widthSuffix = "si32";
     in.form = VarRewriteInput::Form::Uninit;
-    EXPECT_EQ(renderVar(in), "qint_mid_t x = cq_init_i32(0);");
+    EXPECT_EQ(renderVar(in), "qint_mid_t x = cq_init_si32(0);");
 }
 
 TEST(CodegenTest, ClassicalInit) {
@@ -43,10 +43,10 @@ TEST(CodegenTest, ClassicalInit) {
     // was spliced in by the caller.
     VarRewriteInput in{};
     in.name = "x";
-    in.widthSuffix = "i32";
+    in.widthSuffix = "si32";
     in.form = VarRewriteInput::Form::ClassicalInit;
     in.initText = "3+f()";
-    EXPECT_EQ(renderVar(in), "qint_mid_t x = cq_init_i32(3+f());");
+    EXPECT_EQ(renderVar(in), "qint_mid_t x = cq_init_si32(3+f());");
 }
 
 TEST(CodegenTest, QuantumAddBothQuantum) {
@@ -55,7 +55,7 @@ TEST(CodegenTest, QuantumAddBothQuantum) {
     // before handing them to Codegen, which splices both verbatim.
     VarRewriteInput in{};
     in.name = "c";
-    in.widthSuffix = "i32";
+    in.widthSuffix = "si32";
     in.form = VarRewriteInput::Form::QuantumAdd;
     in.lhsExpr = "a.val";
     in.rhsExpr = "b.val";
@@ -70,7 +70,7 @@ TEST(CodegenTest, QuantumAddQuantumPlusClassical) {
     // through the same splicing path.
     VarRewriteInput in{};
     in.name = "c";
-    in.widthSuffix = "i32";
+    in.widthSuffix = "si32";
     in.form = VarRewriteInput::Form::QuantumAdd;
     in.lhsExpr = "a.val";
     in.rhsExpr = "5";
@@ -83,7 +83,7 @@ TEST(CodegenTest, QuantumAddClassicalPlusQuantum) {
     // just with the decorated operand on the right.
     VarRewriteInput in{};
     in.name = "c";
-    in.widthSuffix = "i32";
+    in.widthSuffix = "si32";
     in.form = VarRewriteInput::Form::QuantumAdd;
     in.lhsExpr = "5";
     in.rhsExpr = "a.val";
@@ -100,12 +100,12 @@ TEST(CodegenTest, MultiDecl) {
     // a single ASCII space; the result is a flat one-line replacement
     // that still parses as two C statements.
     //   `quantum int a = 3, b = 2;`
-    //     -> `qint_mid_t a = cq_init_i32(3); qint_mid_t b = cq_init_i32(2);`
+    //     -> `qint_mid_t a = cq_init_si32(3); qint_mid_t b = cq_init_si32(2);`
     std::vector<VarRewriteInput> vars;
     {
         VarRewriteInput a{};
         a.name = "a";
-        a.widthSuffix = "i32";
+        a.widthSuffix = "si32";
         a.form = VarRewriteInput::Form::ClassicalInit;
         a.initText = "3";
         vars.push_back(a);
@@ -113,13 +113,13 @@ TEST(CodegenTest, MultiDecl) {
     {
         VarRewriteInput b{};
         b.name = "b";
-        b.widthSuffix = "i32";
+        b.widthSuffix = "si32";
         b.form = VarRewriteInput::Form::ClassicalInit;
         b.initText = "2";
         vars.push_back(b);
     }
     EXPECT_EQ(renderDeclStmt(vars),
-              "qint_mid_t a = cq_init_i32(3); qint_mid_t b = cq_init_i32(2);");
+              "qint_mid_t a = cq_init_si32(3); qint_mid_t b = cq_init_si32(2);");
 }
 
 TEST(CodegenTest, MultiDeclQuantumAddJoin) {
@@ -131,7 +131,7 @@ TEST(CodegenTest, MultiDeclQuantumAddJoin) {
     {
         VarRewriteInput c{};
         c.name = "c";
-        c.widthSuffix = "i32";
+        c.widthSuffix = "si32";
         c.form = VarRewriteInput::Form::QuantumAdd;
         c.lhsExpr = "a.val";
         c.rhsExpr = "b.val";
@@ -140,7 +140,7 @@ TEST(CodegenTest, MultiDeclQuantumAddJoin) {
     {
         VarRewriteInput d{};
         d.name = "d";
-        d.widthSuffix = "i32";
+        d.widthSuffix = "si32";
         d.form = VarRewriteInput::Form::QuantumAdd;
         d.lhsExpr = "a.val";
         d.rhsExpr = "5";

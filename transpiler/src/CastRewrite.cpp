@@ -18,7 +18,7 @@ std::optional<CastRewrite> buildCastRewrite(const clang::CStyleCastExpr *ce,
     }
     // `(void) q;` is the standard C idiom for suppressing unused-variable
     // warnings — it deliberately evaluates and discards without producing
-    // a value. Treat it as a no-op (do not rewrite to cq_measure_i32),
+    // a value. Treat it as a no-op (do not rewrite to cq_measure_si32),
     // matching the existing e2e fixtures' expected.log and the C
     // programmer's reading of the idiom. Explicit measurement still
     // requires a non-void target (`(int) q`).
@@ -48,7 +48,7 @@ std::optional<CastRewrite> buildCastRewrite(const clang::CStyleCastExpr *ce,
 
     // <argText> is the bare DeclRefExpr's source text — i.e. the
     // variable name, with any operand-side parens stripped per PLAN
-    // §4.4.4 acceptance test ("(int)(q) -> cq_measure_i32(q)"). Using
+    // §4.4.4 acceptance test ("(int)(q) -> cq_measure_si32(q)"). Using
     // the peeled `probe` rather than the raw `sub` produces exactly
     // that emission.
     const clang::SourceManager &sm = ctx.getSourceManager();
@@ -62,7 +62,10 @@ std::optional<CastRewrite> buildCastRewrite(const clang::CStyleCastExpr *ce,
     }
 
     CastRewrite out;
-    out.replacement = "cq_measure_i32(" + argText + ")";
+    // Phase 2 M3: hard-coded `si32` since Phase 1 only supports signed
+    // `int`. M11 (CastRewrite suffix-driven measure) replaces this with
+    // a TypeMap-resolved suffix once unsigned / float widths land.
+    out.replacement = "cq_measure_si32(" + argText + ")";
 
     // Hand back the CStyleCastExpr's token range. The cast's begin
     // location is the opening `(` of the cast's type parenthesis and

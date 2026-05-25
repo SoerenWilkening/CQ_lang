@@ -130,18 +130,18 @@ run_stage() {
     if ! "$@"; then echo "cqc: stage $label failed" >&2; exit 4; fi
 }
 
-# Stage 1: rewriter — quantum int → cq_init_i32 / qint_mid_t emission.
+# Stage 1: rewriter — quantum int → cq_init_si32 / qint_mid_t emission.
 run_stage transpile bash -c \
     '"$1" "$2" -- -std=c11 -I"$3" > "$4"' _ "$transpiler" "$input" "$prefix/include" "$t_c"
 
 # Stage 2: clang -O1 -emit-llvm. -include cq_mid.h supplies the ABI decls
-# (qint_mid_t, cq_init_i32, cq_measure_i32) that the rewriter relies on;
+# (qint_mid_t, cq_init_si32, cq_measure_si32) that the rewriter relies on;
 # see PLAN.md §4.2 — the driver, not the rewriter, injects them.
 # $clang_emit_flag is -c (default, emit .bc) or -S (--emit-ll, emit .ll).
 run_stage compile "$clang_bin" -O1 -emit-llvm "$clang_emit_flag" "$t_c" \
     -include cq_mid.h -I"$prefix/include" -o "$t_bc"
 
-# Stage 3: opt cq-lowering — turn cq_init_i32 + tainted add into runtime calls.
+# Stage 3: opt cq-lowering — turn cq_init_si32 + tainted add into runtime calls.
 # $opt_emit_flag[@] is empty (default, emit .bc) or (-S) for --emit-ll.
 run_stage lower "$opt_bin" -load-pass-plugin "$pass_so" \
     -passes=cq-lowering "${opt_emit_flag[@]}" "$t_bc" -o "$l_bc"

@@ -40,8 +40,8 @@ Output (stub trace-only runtime — Phase 1 is a pipeline proof, not a real
 quantum backend):
 
 ```
-cqrt_alloc_classical_i32(3) -> h0
-cqrt_alloc_classical_i32(5) -> h1
+cqrt_alloc_i32(3) -> h0
+cqrt_alloc_i32(5) -> h1
 cq_template_add_i32(h0, h1) -> h2
 cqrt_measure_i32(h2) -> 0
 ```
@@ -58,9 +58,9 @@ frontend).
       │
       ▼
   quantum_transpiler        libtooling rewriter
-      │                       quantum int x = N;     → qint_mid_t x = cq_init_i32(N);
+      │                       quantum int x = N;     → qint_mid_t x = cq_init_si32(N);
       │                       quantum int z = a + b; → qint_mid_t z; z.val = a.val + b.val;
-      │                       (int) q                → cq_measure_i32(q)
+      │                       (int) q                → cq_measure_si32(q)
       ▼
   example.transpiled.c
       │
@@ -72,9 +72,9 @@ frontend).
       │
       ▼
   opt -passes=cq-lowering   CQ IR pass plugin (libCQPass.so)
-      │                       forward taint propagation from @cq_init_i32 returns;
+      │                       forward taint propagation from @cq_init_si32 returns;
       │                       tainted add i32 → cq_template_add_i32(_hl);
-      │                       @cq_measure_i32 → cqrt_measure_i32.
+      │                       @cq_measure_si32 → cqrt_measure_i32.
       ▼
   example.lowered.bc
       │
@@ -154,7 +154,7 @@ The build produces:
 | --- | --- |
 | `build/transpiler/quantum_transpiler` | libtooling rewriter binary |
 | `build/ir-pass/libCQPass.so` | `opt` pass plugin (registers `cq-lowering`) |
-| `build/runtime/libcq_runtime.a` | trace-only runtime (`cqrt_alloc_classical_i32`, `cqrt_measure_i32`, `cqrt_free`) |
+| `build/runtime/libcq_runtime.a` | trace-only runtime (`cqrt_alloc_i32`, `cqrt_measure_i32`, `cqrt_free`) |
 | `build/runtime/libcq_templates.a` | trace-only template library (`cq_template_add_i32`, `cq_template_add_i32_hl`) |
 
 The [`tools/cqc`](tools/cqc) shell driver locates all four artifacts under
@@ -222,7 +222,7 @@ CQ_lang/
 ├── CMakeLists.txt              top-level orchestration
 ├── include/
 │   ├── CQ.h                    user-facing (just the quantum macro)
-│   └── cq_mid.h                transpiled-C ABI (qint_mid_t, cq_init_i32, cq_measure_i32)
+│   └── cq_mid.h                transpiled-C ABI (qint_mid_t, cq_init_si32, cq_measure_si32)
 ├── transpiler/                 libtooling rewriter (modules + unit tests + v1 e2e)
 │   └── src/                      TypeMap, QuantumAttr, SourceText, OperandClass,
 │                                 Codegen, DeclStmtRewrite, CastRewrite, Matcher, main

@@ -4,15 +4,16 @@
 // module:
 //   - confirms the cast's operand is a quantum DeclRefExpr,
 //   - extracts the bare DeclRefExpr's source text via SourceText,
-//   - builds the replacement `cq_measure_i32(<argText>)`,
+//   - builds the replacement `cq_measure_si32(<argText>)`,
 //   - returns the SourceRange of the original CStyleCastExpr so the
 //     caller substitutes only the cast (the surrounding expression
 //     context, e.g. `+ 1`, is left untouched).
 //
 // Per PLAN §4.4.4 + the issue's explicit note, ALL target widths use
-// the same `cq_measure_i32` intrinsic — width truncation for narrower
+// the same `cq_measure_si32` intrinsic — width truncation for narrower
 // casts (e.g. `(short) q`) is done by the surrounding C classically.
-// Phase 2 will introduce per-width siblings; Phase 1 hardcodes i32.
+// Phase 2 M11 will introduce per-width siblings; until then, the
+// emission is hardcoded to si32.
 //
 // Returns std::nullopt when the cast's operand (after peeling) is not
 // a DeclRefExpr to a quantum-annotated VarDecl — classical casts are

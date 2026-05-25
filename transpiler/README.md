@@ -3,7 +3,7 @@
 The libtooling rewriter — Stage 1 of the CQ pipeline. Reads C source with
 the `quantum` attribute (set by the `quantum` macro in `<CQ.h>`) and emits
 transpiled C that uses the per-width intrinsic surface
-(`qint_mid_t`, `cq_init_i32`, `cq_measure_i32`) declared in
+(`qint_mid_t`, `cq_init_si32`, `cq_measure_si32`) declared in
 [`<cq_mid.h>`](../include/cq_mid.h).
 
 Stages 2–4 (Clang → IR pass → link) live elsewhere in the tree; see the
@@ -16,7 +16,7 @@ emission).
 
 > **History.** The pre-architecture v1 tool was a standalone source-to-source
 > transpiler against the stub `qint.h`. Phase 1 supersedes that surface
-> (`qint_t` → `qint_mid_t`, `init_qint`/`add` → `cq_init_i32`/`.val`
+> (`qint_t` → `qint_mid_t`, `init_qint`/`add` → `cq_init_si32`/`.val`
 > arithmetic, retains the rewriter as a sub-build of the top-level project.
 > See [`phases/v1/PRD.md`](../phases/v1/PRD.md) for the v1 contract;
 > [`phases/phase1/PRD.md`](../phases/phase1/PRD.md) for what changed.
@@ -32,7 +32,7 @@ emission).
 | `src/OperandClass.{cpp,h}` | `Expr` → Quantum / Classical |
 | `src/Codegen.{cpp,h}` | rewrite-input → output string (Clang-free, pure) |
 | `src/DeclStmtRewrite.{cpp,h}` | `DeclStmt` → SourceRange + replacement |
-| `src/CastRewrite.{cpp,h}` | `CStyleCastExpr` → `cq_measure_i32(…)` (Phase 1 addition) |
+| `src/CastRewrite.{cpp,h}` | `CStyleCastExpr` → `cq_measure_si32(…)` (Phase 1 addition) |
 | `src/Matcher.{cpp,h}` | MatchFinder wiring + frontend action |
 
 ## Build
