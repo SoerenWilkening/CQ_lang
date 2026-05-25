@@ -1,22 +1,64 @@
 // MidHandleRebind.cpp — Mid-struct → i32-handle SSA rebinding. Behavior
-// preserved from the pre-M12 monolith's steps 2 and 3.
+// preserved from the pre-M12 monolith's steps 2 and 3, generalized in
+// M15 from `qint_mid_t`-only recognition to the full 14-entry
+// mid-struct table via `WidthDispatch::midStructToSuffix`. The
+// rebinding logic (replace struct-typed SSA value with i32 handle) is
+// unchanged — handles are i32 across every ABI width per PRD §"Width
+// unification" — but the per-init alloc symbol now switches per width:
+// `qfloat_mid_t` → `cqrt_alloc_f32`, `qbool_mid_t` → `cqrt_alloc_i1`,
+// and so on. Spec: phases/phase2/PLAN.md §4.15.
 
 #include "MidHandleRebind.h"
 
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
+#include <optional>
 #include <vector>
 
 using namespace llvm;
 
 namespace cq {
+
+namespace {
+
+// Recognize an init's mid-struct return type → its 14-suffix. Returns
+// std::nullopt if the init's return type is not one of the known
+// identified-struct shapes (e.g., a future SROA-flattened init whose
+// signature already lost the struct wrapper). Callers fall back to
+// extracting the suffix from the function name in that case.
+std::optional<StringRef> suffixFromInitStructReturn(const CallInst *Init,
+                                                    const WidthDispatch &wd) {
+  auto *ST = dyn_cast<StructType>(Init->getType());
+  if (!ST)
+    return std::nullopt;
+  return wd.midStructToSuffix(ST);
+}
+
+// Extract the suffix from the init function name (`cq_init_<sfx>`).
+// Used as a fallback when the init's return type has already been
+// flattened past the mid-struct wrapper. Returns "" if the name doesn't
+// match the expected prefix.
+StringRef suffixFromInitName(const CallInst *Init) {
+  Function *Callee = Init->getCalledFunction();
+  if (!Callee)
+    return {};
+  StringRef N = Callee->getName();
+  constexpr StringRef kPrefix = "cq_init_";
+  if (!N.starts_with(kPrefix))
+    return {};
+  return N.substr(kPrefix.size());
+}
+
+}  // namespace
 
 RebindMap rebindMids(Module &M, WidthDispatch &wd, TaintSet &taint) {
   RebindMap rebind;
@@ -24,18 +66,37 @@ RebindMap rebindMids(Module &M, WidthDispatch &wd, TaintSet &taint) {
     return rebind;
 
   IRBuilder<> Builder(wd.context());
-  FunctionCallee AllocFn = wd.allocFn();
-  Type *I32 = wd.i32Ty();
 
-  // --- Step 2 (legacy): emit cqrt_alloc_<W>(value) per init, build the
-  // struct→handle map, and (flattened-shape only) RAUW the init result.
+  // --- Step 2 (legacy, M15-widened): emit cqrt_alloc_<W>(value) per
+  // init, build the struct→handle map, and (flattened-shape only) RAUW
+  // the init result.
   //
   // The RAUW for the flattened shape is critical: it gives downstream
   // passes (taint-set-driven OpcodeLowering, MeasureLowering pattern c)
   // real i32 SSA edges to follow, because in the flattened shape there
   // is no extractvalue intermediary. The struct shape keeps the init's
   // struct uses alive until step 7 (eraseDeadInits) reclaims them.
+  //
+  // M15: the per-init alloc symbol is now selected per width. We resolve
+  // the suffix from the init's struct return type first (the 14-entry
+  // mid-struct table); if that fails (flattened shape) we fall back to
+  // the function name (`cq_init_<sfx>`). Either way we then compute the
+  // ABI width and ask WidthDispatch for the matching alloc decl.
   for (CallInst *Init : taint.InitCalls) {
+    StringRef Sfx;
+    if (auto FromStruct = suffixFromInitStructReturn(Init, wd))
+      Sfx = *FromStruct;
+    else
+      Sfx = suffixFromInitName(Init);
+    if (Sfx.empty())
+      continue;
+    StringRef AbiWidth = wd.abiWidthFor(Sfx);
+    if (AbiWidth.empty())
+      continue;
+    FunctionCallee AllocFn = wd.allocFn(AbiWidth);
+    if (!AllocFn)
+      continue;
+
     Builder.SetInsertPoint(Init);
     Value *Val = Init->getArgOperand(0);
     CallInst *Alloc = Builder.CreateCall(AllocFn, {Val}, "h");
@@ -49,10 +110,14 @@ RebindMap rebindMids(Module &M, WidthDispatch &wd, TaintSet &taint) {
     // dispatch will need to see it as tainted. Add unconditionally.
     taint.Tainted.insert(Alloc);
 
-    if (Init->getType() == I32) {
-      // Flattened (`-O1` SROA) shape: types match; rewire init's i32
-      // users to the alloc directly. The init itself becomes use-less
-      // and is reclaimed by eraseDeadInits.
+    // Flattened (`-O1` SROA) shape: the init's return type equals the
+    // ABI scalar type (i1/i8/.../f64) for this width, so we can rewire
+    // init users straight to the alloc. The struct shape leaves
+    // `Init->getType()` as a StructType and falls through to step 3's
+    // extractvalue rewriting. Pre-M15 this branch was i32-only; now
+    // every supported width can take the flattened path.
+    Type *AbiTy = wd.llvmTypeFor(Sfx, wd.context());
+    if (AbiTy && Init->getType() == AbiTy) {
       Init->replaceAllUsesWith(Alloc);
     }
   }
