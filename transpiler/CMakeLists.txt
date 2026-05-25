@@ -92,6 +92,15 @@ add_executable(quantum_transpiler_unit_tests
     tests/unit/test_codegen.cpp
     tests/unit/test_decl_stmt_rewrite.cpp
     tests/unit/test_cast_rewrite.cpp
+    tests/unit/test_cq_mid_compiles.cpp
+)
+# test_cq_mid_compiles.cpp #include's <cq_mid.h> from the repo-root
+# include/ dir (the transpiled-C ABI surface; not normally consumed by
+# C++ sources). cqc threads the same dir in via -I at clang time
+# (tools/cqc line 101); here we add it explicitly for the test target.
+target_include_directories(quantum_transpiler_unit_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 target_link_libraries(quantum_transpiler_unit_tests
     PRIVATE
