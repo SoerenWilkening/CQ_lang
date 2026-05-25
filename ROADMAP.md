@@ -198,7 +198,45 @@ Diagnostic location preservation (`!dbg`) baseline.
 
 ---
 
-## Phase 2 — Type system breadth + entry-point `CQ.h`
+## Phase 2 — Type system breadth + entry-point `CQ.h` [DONE]
+
+**Landed 2026-05-25.** The Phase 1 i32 vertical slice generalized to
+all 14 mid-struct types (every C integer width × signedness, `_Bool`,
+`float`, `double`) without changing the pipeline shape. Specifically:
+
+- **Rewriter** (`transpiler/`): keyword recognition extended to the
+  full Phase-2 surface (`_Bool` / `bool`, `char`, `short`, `long`,
+  `long long`, `float`, `double`, signed + unsigned); suffix-driven
+  `cq_init_<sfx>` / `cq_measure_<sfx>` emission via `TypeMap`'s
+  14-type table; Pattern 6 (same-type Q-to-Q assignment) emits the
+  split form with no copy intrinsic (SROA erases it, per
+  PRD §"On assignment and surviving operations").
+- **IR pass** (`ir-pass/libCQPass.so`): the 395-LOC `CQLoweringPass`
+  split into five width-parametric modules — `WidthDispatch`,
+  `TaintPropagation`, `MidHandleRebind`, `OpcodeLowering`,
+  `MeasureLowering`. Per-width `add` / `fadd` lowering to
+  `cq_template_add_<W>[_hl]`; per-width `cq_measure_<sfx>` → `cqrt_measure_<W>`.
+- **Headers** (`include/`): `cq_mid.h` grew to 14 mid-struct typedefs +
+  28 frontend intrinsic decls.
+- **Stub runtime / templates**: 16 `cqrt_*` symbols (7 alloc + 7
+  measure + `cqrt_free` + `cqrt_alloc_handle`) and 14 `cq_template_add_<W>`
+  (plus 14 `_hl` variants — 28 total). All trace-only `printf` bodies;
+  real implementations explicitly deferred to the Backend phase.
+- **Tests**: 21 e2e fixtures (4 Phase-1 carryover repointed to `_si32`,
+  14 per-type under `tests/e2e/fixtures/types/<sfx>/`, 2 `<stdint.h>`
+  typedef fixtures byte-identical to their canonical counterparts, 1
+  shared-handle measurement fixture locking the no-copy trace shape);
+  104 L2 GTest cases; 36 L3 LIT cases — all green.
+- **Documented limitation**: `_Bool` (i1) arithmetic patterns (3, 4,
+  6-with-downstream-use) are not exercised end-to-end because Clang's
+  `-O1` lowers `_Bool + literal` to `or i8` *before* the IR pass sees
+  it. The `add i1` template exists but Clang never emits `add i1`.
+  Picked up naturally when Phase 3 adds bit-operator templates.
+
+PRD + plan + closure note: `phases/phase2/PRD.md`,
+`phases/phase2/PLAN.md`, `phases/phase2/CLOSURE.md`.
+
+---
 
 **Goal.** Every integer + floating-point width is first-class. CQ.h
 consolidates as the single user-facing header.
