@@ -4,20 +4,25 @@
 // module:
 //   - confirms the cast's operand is a quantum DeclRefExpr,
 //   - extracts the bare DeclRefExpr's source text via SourceText,
-//   - builds the replacement `cq_measure_si32(<argText>)`,
+//   - resolves the cast's target type to its intrinsic suffix via
+//     `TypeMap::intrinsicSuffix(T)` (PRD §"Type map" — `si32`, `ui8`,
+//     `sl`, `f64`, …),
+//   - builds the replacement `cq_measure_<sfx>(<argText>)`,
 //   - returns the SourceRange of the original CStyleCastExpr so the
 //     caller substitutes only the cast (the surrounding expression
 //     context, e.g. `+ 1`, is left untouched).
 //
-// Per PLAN §4.4.4 + the issue's explicit note, ALL target widths use
-// the same `cq_measure_si32` intrinsic — width truncation for narrower
-// casts (e.g. `(short) q`) is done by the surrounding C classically.
-// Phase 2 M11 will introduce per-width siblings; until then, the
-// emission is hardcoded to si32.
+// Per PRD §"Rewriter patterns" pattern #5, `(T) q` (q quantum T) lowers
+// to `cq_measure_<sfx>(q)`. The cast's target-type QualType picks the
+// intrinsic — typedefs and cv-qualifiers peel through `getCanonicalType()`
+// inside `TypeMap`, so `(int32_t) q` and `(int) q` route to the same
+// `_si32` emission.
 //
 // Returns std::nullopt when the cast's operand (after peeling) is not
-// a DeclRefExpr to a quantum-annotated VarDecl — classical casts are
-// left alone.
+// a DeclRefExpr to a quantum-annotated VarDecl (classical casts are
+// left alone), the operand text can't be recovered, or the target type
+// is out of Phase 2 scope (long double, wide chars, pointers, …) and
+// has no intrinsic suffix.
 #pragma once
 
 #include <optional>

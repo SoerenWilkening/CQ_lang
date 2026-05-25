@@ -2,12 +2,14 @@
 
 #include "QuantumAttr.h"
 #include "SourceText.h"
+#include "TypeMap.h"
 
 #include <clang/AST/ASTContext.h>
 #include <clang/AST/Decl.h>
 #include <clang/AST/Expr.h>
 #include <clang/Basic/LangOptions.h>
 #include <clang/Basic/SourceManager.h>
+#include <llvm/ADT/StringRef.h>
 
 namespace qct {
 
@@ -61,11 +63,22 @@ std::optional<CastRewrite> buildCastRewrite(const clang::CStyleCastExpr *ce,
         return std::nullopt;
     }
 
+    // M11: per-type suffix via TypeMap. The cast's target type T is
+    // what selects the measurement intrinsic (PRD §"Rewriter patterns"
+    // pattern #5: `(T) q` → `cq_measure_<sfx>(q)`). `intrinsicSuffix`
+    // peels typedefs + cv-qualifiers via `getCanonicalType()` so
+    // `<stdint.h>` typedefs route to their underlying builtin (e.g.
+    // `int32_t` → "si32", `uint64_t` → "ul" on LP64). An empty suffix
+    // means the target type is out of Phase 2 scope (long double, wide
+    // chars, pointers, …); decline to rewrite rather than emit a broken
+    // `cq_measure_()` call.
+    llvm::StringRef sfx = intrinsicSuffix(ce->getType());
+    if (sfx.empty()) {
+        return std::nullopt;
+    }
     CastRewrite out;
-    // Phase 2 M3: hard-coded `si32` since Phase 1 only supports signed
-    // `int`. M11 (CastRewrite suffix-driven measure) replaces this with
-    // a TypeMap-resolved suffix once unsigned / float widths land.
-    out.replacement = "cq_measure_si32(" + argText + ")";
+    out.replacement =
+        "cq_measure_" + sfx.str() + "(" + argText + ")";
 
     // Hand back the CStyleCastExpr's token range. The cast's begin
     // location is the opening `(` of the cast's type parenthesis and
