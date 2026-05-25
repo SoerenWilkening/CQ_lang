@@ -14,3 +14,22 @@ cqrt_alloc_f32(3.140000) -> h7
 cqrt_measure_f32(h7) -> 0.000000
 cqrt_alloc_f64(2.718282) -> h8
 cqrt_measure_f64(h8) -> 0.000000
+cqrt_alloc_i1(0) -> h9
+cq_template_add_i1(h3, h9) -> h10
+cq_template_add_i1_hl(h3, 1) -> h11
+cqrt_alloc_i8(42) -> h12
+cq_template_add_i8(h4, h12) -> h13
+cq_template_add_i8_hl(h4, 42) -> h14
+cqrt_alloc_i16(1000) -> h15
+cq_template_add_i16(h5, h15) -> h16
+cq_template_add_i16_hl(h5, 1000) -> h17
+cq_template_add_i32_hl(h0, 99) -> h18
+cqrt_alloc_i64(12345) -> h19
+cq_template_add_i64(h6, h19) -> h20
+cq_template_add_i64_hl(h6, 12345) -> h21
+cqrt_alloc_f32(1.500000) -> h22
+cq_template_add_f32(h7, h22) -> h23
+cq_template_add_f32_hl(h7, 1.500000) -> h24
+cqrt_alloc_f64(2.500000) -> h25
+cq_template_add_f64(h8, h25) -> h26
+cq_template_add_f64_hl(h8, 2.500000) -> h27
