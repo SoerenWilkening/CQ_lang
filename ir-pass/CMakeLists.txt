@@ -44,7 +44,12 @@ endif()
 # Enzyme, and the sanitizers all follow this pattern.
 add_library(CQPass MODULE
   src/CQLoweringPass.cpp
+  src/MeasureLowering.cpp
+  src/MidHandleRebind.cpp
+  src/OpcodeLowering.cpp
   src/Plugin.cpp
+  src/TaintPropagation.cpp
+  src/WidthDispatch.cpp
 )
 
 target_include_directories(CQPass PUBLIC

@@ -1,394 +1,111 @@
-// CQLoweringPass.cpp — Phase 1 production port of the cq-lowering pass.
+// CQLoweringPass.cpp — Phase 2 M12 thin orchestrator for the
+// cq-lowering pass.
 //
-// Ported from prototype/cq_pass.cpp. Deltas vs. prototype (per
-// phases/phase1/PLAN.md §4.5; Phase 2 M3 rename applied):
+// Pre-M12 this file was a 395-LOC monolith; the per-step bodies have
+// moved into width-resolver / taint / rebind / opcode / measure modules
+// (PLAN.md §2.6 layout). M12 is a behavior-preserving refactor: every
+// Phase 1 LIT fixture still passes byte-for-byte. Width parameterization
+// (handling `_Bool` / `i8` / `i16` / `i64` / `f32` / `f64`) is
+// M13–M17, landed in subsequent commits so a regression bisects clean.
 //
-//   * `cq_measure`               -> `cq_measure_si32`
-//   * `cqrt_measure`             -> `cqrt_measure_i32`  (and now returns i32)
-//   * fresh-ancilla `cqrt_alloc_i32` dropped from add lowering;
-//     the template returns its own handle.
-//   * `cqrt_template_add_i32`    -> `cq_template_add_i32`
-//     (returns i32 handle; takes two i32 operands).
-//
-// Other prototype passes (cq-uncompute, cq-specialize, cq-control) stay in
-// the prototype directory — Phase 1 productionizes only cq-lowering.
+// Spec: phases/phase2/PLAN.md §4.12; pre-split history in
+// phases/phase1/PLAN.md §4.5.
 
 #include "CQLoweringPass.h"
 
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/IR/DiagnosticInfo.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/Module.h"
+#include "MeasureLowering.h"
+#include "MidHandleRebind.h"
+#include "OpcodeLowering.h"
+#include "TaintPropagation.h"
+#include "WidthDispatch.h"
 
-#include <set>
-#include <vector>
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Module.h"
 
 using namespace llvm;
 
 namespace cq {
 
-PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
-  bool Changed = false;
-  for (Function &F : M) {
-    if (F.isDeclaration())
-      continue;
-    Changed |= runOnFunction(F);
-  }
+namespace {
 
-  // Module-level cleanup: erase the front-end intrinsic declarations now
-  // that all call sites have been lowered. Matches the architecture's
-  // promise that no @cq_* (init/measure) remains in the IR after this pass.
-  if (Changed) {
-    for (const char *Name : {"cq_init_si32", "cq_measure_si32"}) {
-      if (Function *FE = M.getFunction(Name)) {
-        if (FE->use_empty())
-          FE->eraseFromParent();
-      }
-    }
-  }
-
-  return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
-}
-
-bool CQLoweringPass::runOnFunction(Function &F) {
-  Module &M = *F.getParent();
-  LLVMContext &Ctx = M.getContext();
-  IRBuilder<> Builder(Ctx);
-
-  Type *I32 = Type::getInt32Ty(Ctx);
-
-  // --- Step 1: collect cq_init_si32 and cq_measure_si32 call sites. ---
-  //
-  // This precedes the runtime decl insertion so a function with zero
-  // front-end intrinsics doesn't leak `cqrt_*` / `cq_template_*` declarations
-  // into the module. (The LIT fixture passthrough_no_quantum.ll pins this.)
-
-  std::vector<CallInst *> InitCalls;
-  std::vector<CallInst *> MeasureCalls;
-  for (BasicBlock &BB : F) {
-    for (Instruction &I : BB) {
-      auto *CI = dyn_cast<CallInst>(&I);
-      if (!CI)
-        continue;
-      Function *Callee = CI->getCalledFunction();
-      if (!Callee)
-        continue;
-      StringRef N = Callee->getName();
-      if (N == "cq_init_si32")
-        InitCalls.push_back(CI);
-      else if (N == "cq_measure_si32")
-        MeasureCalls.push_back(CI);
-    }
-  }
-
-  if (InitCalls.empty() && MeasureCalls.empty())
-    return false;
-
-  // --- Declare the runtime functions lazily, on first use. ---
-  //
-  // Declarations are inserted only when the function actually has work that
-  // calls into them. This keeps cq_template_add_i32 out of modules that
-  // contain only measure-without-add, and similarly avoids leaking
-  // cqrt_alloc_i32 / cqrt_measure_i32 into measure-only or init-only
-  // functions. The LIT fixtures measure_only.ll and
-  // passthrough_no_quantum.ll pin this behavior.
-  //
-  // cq_template_add_i32 returns a fresh handle and takes the two operand
-  // handles — no out-handle parameter (the template owns its allocation,
-  // resolving PRD open item §6.3).
-  auto getAllocClassical = [&]() {
-    return M.getOrInsertFunction("cqrt_alloc_i32",
-                                 FunctionType::get(I32, {I32}, false));
-  };
-  auto getTemplateAdd = [&]() {
-    return M.getOrInsertFunction("cq_template_add_i32",
-                                 FunctionType::get(I32, {I32, I32}, false));
-  };
-  // Q+C mixed-operand variant — chosen when exactly one operand of a
-  // tainted add is in the Tainted set (the other is classical: a
-  // literal, function arg, runtime-loaded value, global, etc.).
-  // Distinct C symbol because C lacks overloading; user-facing trace
-  // prints "cq_template_add_i32" for both variants and lets the bare-
-  // int vs `h%d` format disambiguate. Never promote the classical
-  // operand to a handle: that would conflict with the planned
-  // cq_alloc optimization (PLAN.md §6.3).
-  auto getTemplateAddHL = [&]() {
-    return M.getOrInsertFunction("cq_template_add_i32_hl",
-                                 FunctionType::get(I32, {I32, I32}, false));
-  };
-  auto getMeasureRT = [&]() {
-    return M.getOrInsertFunction("cqrt_measure_i32",
-                                 FunctionType::get(I32, {I32}, false));
-  };
-
-  // --- Step 2: replace each @cq_init_si32(value) with
-  // @cqrt_alloc_i32(value). The init call canonically returns a
-  // %qint_mid_t struct, but clang -O1 SROAs the single-field struct down
-  // to a bare i32 (visible in the post-Clang IR for the e2e fixtures).
-  // Track the mapping so the extractvalue cleanup in step 3 can rewire
-  // users to the handle. In the i32-flattened shape there is no
-  // extractvalue to rewire, so we additionally RAUW the init to the alloc
-  // directly (types match, so this is sound) — that gives step 4's taint
-  // worklist real users to walk through. ---
-
-  // BirthOrder records the order in which each tainted i32 SSA value
-  // came into being — Allocs from step 2 (initial creation order) and
-  // cq_template_add_i32 results from step 5 (assigned as each tainted
-  // add lowers). Step 5 uses it to canonicalize the operand order for
-  // Q+Q adds, so the runtime trace's `(h<lhs>, h<rhs>)` ordering is
-  // stable across clang versions (clang -O1 may reorder commutative
-  // adds by SSA index; canonicalizing here pins the trace to
-  // handle-creation order regardless). The lower BirthOrder wins lhs.
-  // 0 means "not assigned" — only the canonicalized values have non-
-  // zero entries.
-  DenseMap<Value *, unsigned> BirthOrder;
-  unsigned NextBirth = 1;
-
-  DenseMap<Value *, Value *> StructToHandle;
-  if (!InitCalls.empty()) {
-    FunctionCallee AllocClassical = getAllocClassical();
-    for (CallInst *Init : InitCalls) {
-      Builder.SetInsertPoint(Init);
-      Value *Val = Init->getArgOperand(0);
-      CallInst *Alloc = Builder.CreateCall(AllocClassical, {Val}, "h");
-      if (DebugLoc DL = Init->getDebugLoc())
-        Alloc->setDebugLoc(DL);
-      StructToHandle[Init] = Alloc;
-      BirthOrder[Alloc] = NextBirth++;
-      // Flattened-struct shape (post clang -O1): Init returns i32 and
-      // its direct users (e.g. `add i32 %2, %1` and
-      // `cq_measure_si32(i32 %1)`) point straight at the Init result. We
-      // rewire those uses to the Alloc so taint propagation in step 4 has
-      // edges to follow and the measure operand-match in step 6 sees the
-      // tainted handle. The non-flattened (struct) shape is handled by
-      // the extractvalue cleanup in step 3 instead.
-      if (Init->getType() == I32)
-        Init->replaceAllUsesWith(Alloc);
-    }
-  }
-
-  // --- Step 3: rewrite extractvalue %s, 0 → use handle directly. ---
-
-  std::vector<Instruction *> ToErase;
-  for (BasicBlock &BB : F) {
-    for (Instruction &I : BB) {
-      auto *EV = dyn_cast<ExtractValueInst>(&I);
-      if (!EV)
-        continue;
-      Value *Agg = EV->getAggregateOperand();
-      auto It = StructToHandle.find(Agg);
-      if (It == StructToHandle.end())
-        continue;
-      if (EV->getNumIndices() != 1 || EV->getIndices()[0] != 0)
-        continue;
-      EV->replaceAllUsesWith(It->second);
-      ToErase.push_back(EV);
-    }
-  }
-  for (Instruction *I : ToErase)
-    I->eraseFromParent();
-  ToErase.clear();
-
-  // --- Step 4: forward taint propagation. ---
-  // Sources: the i32 handle SSA values produced by step 2.
-
-  std::set<Value *> Tainted;
-  std::vector<Value *> Worklist;
-  for (auto &P : StructToHandle) {
-    Tainted.insert(P.second);
-    Worklist.push_back(P.second);
-  }
-
-  while (!Worklist.empty()) {
-    Value *V = Worklist.back();
-    Worklist.pop_back();
-    for (User *U : V->users()) {
-      auto *I = dyn_cast<Instruction>(U);
-      if (!I)
-        continue;
-      // Don't propagate through measurement (it's a taint sink).
-      if (auto *CI = dyn_cast<CallInst>(I)) {
-        Function *Callee = CI->getCalledFunction();
-        if (Callee) {
-          StringRef N = Callee->getName();
-          if (N == "cq_measure_si32" || N == "cqrt_measure_i32")
-            continue;
-        }
-      }
-      if (Tainted.insert(I).second)
-        Worklist.push_back(I);
-    }
-  }
-
-  // --- Step 5: lower tainted `add i32 %a, %b` to template call. ---
-  //
-  // Each tainted add becomes:
-  //   %h_sum = call i32 @cq_template_add_i32(i32 %a, i32 %b)
-  // and `%c`'s users are rewired to `%h_sum`. The template owns its own
-  // allocation; the prototype's fresh-ancilla preamble (cqrt_alloc_i32)
-  // is dropped (PLAN.md §4.5, §6.3).
-
-  std::vector<BinaryOperator *> TaintedAdds;
-  for (BasicBlock &BB : F) {
-    for (Instruction &I : BB) {
-      auto *BO = dyn_cast<BinaryOperator>(&I);
-      if (!BO)
-        continue;
-      if (BO->getOpcode() != Instruction::Add)
-        continue;
-      if (BO->getType() != I32)
-        continue;
-      if (!Tainted.count(BO))
-        continue;
-      TaintedAdds.push_back(BO);
-    }
-  }
-
-  if (!TaintedAdds.empty()) {
-    for (BinaryOperator *Add : TaintedAdds) {
-      Builder.SetInsertPoint(Add);
-      Value *A = Add->getOperand(0);
-      Value *B = Add->getOperand(1);
-      // Dispatch on whether each operand carries a quantum handle.
-      // The Tainted set (built in step 4 + step 5 self-updates) is the
-      // authoritative classifier: members carry handles, non-members are
-      // classical (constant literals, function args, runtime-loaded
-      // classical values, globals — any of them can show up as an add
-      // operand once one side is tainted). isa<ConstantInt> would miss
-      // the non-constant classical cases.
-      //
-      //   * Q+Q (both tainted): symmetric cq_template_add_i32.
-      //   * Q+C / C+Q: cq_template_add_i32_hl(h, c) — swap so the
-      //     handle is always the lhs (matches the _hl signature).
-      //   * C+C: unreachable for a tainted add. Step 4 propagates
-      //     taint only from handle sources; a non-tainted add never
-      //     enters this list.
-      bool ATainted = Tainted.count(A);
-      bool BTainted = Tainted.count(B);
-      Value *Lhs;
-      Value *Rhs;
-      FunctionCallee Callee;
-      if (ATainted && BTainted) {
-        // Canonicalize Q+Q operand order by BirthOrder so the trace
-        // `(h<lhs>, h<rhs>)` is stable across clang versions. If
-        // either side lacks a BirthOrder (taint reached it through a
-        // path other than step 2 / step 5 — not expected for Phase 1
-        // shapes but defensible), preserve LLVM's order.
-        unsigned BA = BirthOrder.lookup(A);
-        unsigned BB = BirthOrder.lookup(B);
-        if (BA != 0 && BB != 0 && BB < BA) {
-          Lhs = B;
-          Rhs = A;
-        } else {
-          Lhs = A;
-          Rhs = B;
-        }
-        Callee = getTemplateAdd();
-      } else if (ATainted) {
-        Lhs = A;
-        Rhs = B;
-        Callee = getTemplateAddHL();
-      } else {  // BTainted (C+C is unreachable)
-        Lhs = B;
-        Rhs = A;
-        Callee = getTemplateAddHL();
-      }
-      CallInst *T = Builder.CreateCall(Callee, {Lhs, Rhs}, "h_sum");
-      if (DebugLoc DL = Add->getDebugLoc())
-        T->setDebugLoc(DL);
-      Add->replaceAllUsesWith(T);
-      Tainted.insert(T);
-      Tainted.erase(Add);
-      BirthOrder[T] = NextBirth++;
-      ToErase.push_back(Add);
-    }
-  }
-  for (Instruction *I : ToErase)
-    I->eraseFromParent();
-  ToErase.clear();
-
-  // --- Step 6: lower @cq_measure_si32 to @cqrt_measure_i32. ---
-  //
-  // Three operand patterns are recognized:
-  //
-  //  (a) The struct arg is a direct @cq_init_si32 call that step 2 already
-  //      mapped to a handle (the canonical -O0-shaped measure_only
-  //      fixture: %s = call @cq_init_si32(..); %m = call @cq_measure_si32(%s)).
-  //      Use the mapped handle directly.
-  //
-  //  (b) The struct arg is `insertvalue %qint_mid_t poison, i32 %h, 0`
-  //      (the post-O1, post-add-lowering shape from lowering_basic). Pull
-  //      the handle out of the insertvalue and erase the insertvalue if
-  //      it's only used by this measure.
-  //
-  //  (c) The struct arg is already an i32 SSA value carrying a tainted
-  //      handle. This is the post-clang-O1 shape, where SROA/IPSCCP
-  //      flattens the single-field `qint_mid_t` struct so both
-  //      `cq_init_si32` and `cq_measure_si32` operate on `i32` directly,
-  //      and the measure's argument is e.g. the result of a now-lowered
-  //      `cq_template_add_i32` call (or, in the cast-rewriter path, a
-  //      handle SSA value that has flowed through plain i32 IR). The
-  //      taint set computed in step 4 (+ updates from step 5) tells us
-  //      which i32 SSA values carry quantum handles. The CastRewrite
-  //      module (transpiler/src/CastRewrite.cpp) pins this case via the
-  //      worked_example / mixed_operand / full_example e2e fixtures.
-
-  if (!MeasureCalls.empty()) {
-    FunctionCallee MeasureRT = getMeasureRT();
-    for (CallInst *Measure : MeasureCalls) {
-      Value *StructArg = Measure->getArgOperand(0);
-      Value *Handle = nullptr;
-      InsertValueInst *IVToErase = nullptr;
-
-      if (auto It = StructToHandle.find(StructArg);
-          It != StructToHandle.end()) {
-        // Pattern (a): init→handle mapping already gave us the SSA value.
-        Handle = It->second;
-      } else if (auto *IV = dyn_cast<InsertValueInst>(StructArg)) {
-        if (IV->getNumIndices() == 1 && IV->getIndices()[0] == 0) {
-          // Pattern (b): pull from insertvalue.
-          Handle = IV->getInsertedValueOperand();
-          if (IV->hasOneUse())
-            IVToErase = IV;
-        }
-      } else if (StructArg->getType() == I32 && Tainted.count(StructArg)) {
-        // Pattern (c): flattened-struct shape — the arg is already an
-        // i32 SSA value carrying a tainted handle (init result, or
-        // cq_template_add_i32 result from step 5). Use it as-is.
-        Handle = StructArg;
-      }
-
-      if (!Handle) {
-        F.getContext().diagnose(DiagnosticInfoUnsupported(
-            F, "cq_measure_si32 operand pattern not recognized; expected "
-               "direct cq_init_si32 result, insertvalue %struct poison, "
-               "i32 %h, 0, or tainted i32 handle"));
-        continue;
-      }
-
-      Builder.SetInsertPoint(Measure);
-      CallInst *NewM = Builder.CreateCall(MeasureRT, {Handle}, "m");
-      if (DebugLoc DL = Measure->getDebugLoc())
-        NewM->setDebugLoc(DL);
-      Measure->replaceAllUsesWith(NewM);
-      ToErase.push_back(Measure);
-      if (IVToErase)
-        ToErase.push_back(IVToErase);
-    }
-  }
-  for (Instruction *I : ToErase)
-    I->eraseFromParent();
-  ToErase.clear();
-
-  // --- Step 7: erase the original cq_init_si32 calls (now use-less). ---
-
-  for (CallInst *Init : InitCalls) {
+// Step 7 (legacy): erase init calls that became use-less after rebind
+// (flattened-shape RAUW) and measure lowering (struct-shape, extractvalue
+// + insertvalue traffic gone). Inits with surviving uses stay in place —
+// that's the diagnostic-surface preference: a dangling cq_init survives
+// to a later verifier run instead of being silently dropped.
+void eraseDeadInits(TaintSet &taint) {
+  for (CallInst *Init : taint.InitCalls) {
     if (Init->use_empty())
       Init->eraseFromParent();
   }
+}
 
+// Module-level cleanup: erase the front-end intrinsic declarations now
+// that all call sites have been lowered. Matches the architecture's
+// promise that no @cq_init_<sfx> / @cq_measure_<sfx> remains in the IR
+// after this pass. Gated on Changed so a passthrough-classical module
+// stays byte-identical.
+void eraseDeadDecls(Module &M, WidthDispatch &wd) {
+  for (StringRef Name : wd.frontEndIntrinsicNames()) {
+    if (Function *FE = M.getFunction(Name)) {
+      if (FE->use_empty())
+        FE->eraseFromParent();
+    }
+  }
+}
+
+}  // namespace
+
+PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
+  WidthDispatch wd(M);
+  TaintSet taint = propagate(M, wd);
+
+  // No quantum work anywhere in the module: leave the IR byte-identical
+  // and (crucially) emit no runtime/template decls. The
+  // passthrough_no_quantum LIT fixture pins this path.
+  if (taint.InitCalls.empty() && taint.MeasureCalls.empty())
+    return PreservedAnalyses::all();
+
+  RebindMap rebind = rebindMids(M, wd, taint);
+  lowerOps(M, wd, taint, rebind);
+  lowerMeasures(M, wd, taint, rebind);
+  eraseDeadInits(taint);
+  eraseDeadDecls(M, wd);
+
+  return PreservedAnalyses::none();
+}
+
+bool CQLoweringPass::runOnFunction(Function &F) {
+  // Compatibility shim for any unit-level caller of the per-function
+  // entry point. M12 lifts the canonical lowering loop to module scope
+  // (so the WidthDispatch / TaintSet objects can amortize across
+  // functions); this wrapper preserves the historical Function&
+  // signature by routing through a single-function "module view."
+  Module &M = *F.getParent();
+  WidthDispatch wd(M);
+  TaintSet taint = propagate(M, wd);
+  if (taint.InitCalls.empty() && taint.MeasureCalls.empty())
+    return false;
+
+  // Restrict the work lists to the requested function. Callers of
+  // runOnFunction expect side-effects only on F.
+  auto onlyInF = [&F](auto &Calls) {
+    Calls.erase(std::remove_if(Calls.begin(), Calls.end(),
+                               [&F](CallInst *CI) {
+                                 return CI->getFunction() != &F;
+                               }),
+                Calls.end());
+  };
+  onlyInF(taint.InitCalls);
+  onlyInF(taint.MeasureCalls);
+  if (taint.InitCalls.empty() && taint.MeasureCalls.empty())
+    return false;
+
+  RebindMap rebind = rebindMids(M, wd, taint);
+  lowerOps(M, wd, taint, rebind);
+  lowerMeasures(M, wd, taint, rebind);
+  eraseDeadInits(taint);
+  eraseDeadDecls(M, wd);
   return true;
 }
 
