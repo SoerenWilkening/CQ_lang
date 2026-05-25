@@ -28,8 +28,22 @@ if [[ ! -x "$CQC" ]]; then
 fi
 
 fail=0
-for d in "$FIXTURES"/*/; do
-    name=$(basename "$d")
+# Discover fixtures by their `input.c` so the directory layout can nest
+# arbitrarily. Phase 2 M18 adds 14 per-type fixtures under
+# `$FIXTURES/types/<sfx>/`, which the original single-level glob
+# (`$FIXTURES/*/`) misses; `find` here walks both the legacy top-level
+# fixtures and the new subtree without further changes. The `-print0 |
+# sort -z` pair gives stable ordering across filesystems so flake-on-rerun
+# can't hide here.
+while IFS= read -r -d '' input_c; do
+    d="$(dirname "$input_c")"
+    # Use the path relative to $FIXTURES so nested fixtures get
+    # distinguishable names (e.g. "types/si32" vs a hypothetical top-level
+    # "si32"). Strips the FIXTURES prefix + leading slash; falls back to
+    # basename if realpath happens to be absent.
+    if name=$(realpath --relative-to="$FIXTURES" "$d" 2>/dev/null); then :; else
+        name=$(basename "$d")
+    fi
     bin=$(mktemp)
     if ! "$CQC" "$d/input.c" -o "$bin" "${CQC_EXTRA_ARGS[@]}" 2>"$bin.compile.log"; then
         echo "BUILD FAIL: $name"; cat "$bin.compile.log"; fail=1; continue
@@ -39,5 +53,5 @@ for d in "$FIXTURES"/*/; do
     else
         echo "OK: $name"
     fi
-done
+done < <(find "$FIXTURES" -mindepth 2 -type f -name input.c -print0 | sort -z)
 exit "$fail"
