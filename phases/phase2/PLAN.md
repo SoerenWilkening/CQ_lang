@@ -1052,12 +1052,15 @@ have.
 
 ## 6. Open-items dispositions (PRD §"Open items")
 
-The PRD leaves six items "decided in implementation." This plan
-recommends the following defaults; rationale per item.
+The PRD leaves six items "decided in implementation." **This section
+is the canonical disposition.** Each item below is pinned by M1
+(`cq-p2-m01`) and locks the contract for M2 / M6 / M7. Code landing
+after M1 takes these as fixed; reopening any item requires a new `bd`
+issue and an explicit amendment to this section.
 
 ### 6.1 Suffix scheme
 
-**Default: the PRD table verbatim.** `i1` / `c` / `si8` / `ui8` / `si16`
+**Pinned: the PRD table verbatim.** `i1` / `c` / `si8` / `ui8` / `si16`
 / `ui16` / `si32` / `ui32` / `sl` / `ul` / `sll` / `ull` / `f32` / `f64`.
 
 **Rationale.** It's already in the PRD; reopening it costs days. The
@@ -1067,7 +1070,7 @@ integer."
 
 ### 6.2 `qchar_mid_t` runtime alloc
 
-**Default: aliases `cqrt_alloc_i8`.** No separate `cqrt_alloc_c`.
+**Pinned: aliases `cqrt_alloc_i8`.** No separate `cqrt_alloc_c`.
 
 **Rationale.** Signedness is invisible at the runtime ABI per PRD §"Width
 unification." Plain `char` shares the i8 alloc with `signed char` and
@@ -1077,7 +1080,7 @@ split.
 
 ### 6.3 `qint_mid_t` rename
 
-**Default: keep `qint_mid_t`.** The intrinsic `cq_init_i32` → `cq_init_si32`
+**Pinned: keep `qint_mid_t`.** The intrinsic `cq_init_i32` → `cq_init_si32`
 renames; the typedef does not.
 
 **Rationale.** Minimizes Phase-1 churn. `qint` clearly maps to `int`
@@ -1087,7 +1090,7 @@ multiplying the M3 rename's blast radius for marginal gain.
 
 ### 6.4 Float `_Bool` cast semantics
 
-**Default: no special handling in Phase 2.** Phase 2's `quantum float`
+**Pinned: no special handling in Phase 2.** Phase 2's `quantum float`
 fixture does not exercise `(_Bool) q_float`.
 
 **Rationale.** The cast lowers to `fcmp une float %v, 0.0` + `zext`
@@ -1098,7 +1101,7 @@ work.
 
 ### 6.5 `<stdbool.h>` `bool` behavior
 
-**Default: lock with an e2e fixture using `bool` instead of `_Bool`.**
+**Pinned: lock with an e2e fixture using `bool` instead of `_Bool`.**
 
 **Rationale.** `bool` is `#define bool _Bool` (or `_Bool` directly under
 `-std=c23`); both lower to the same canonical type. The fixture is
@@ -1110,7 +1113,7 @@ Add to `tests/e2e/fixtures/types/i1/input.c` a sibling
 
 ### 6.6 Trace text format
 
-**Default: pinned at M6/M7.**
+**Pinned format (binding contract for M6/M7):**
 
 | Symbol | Format |
 |---|---|

@@ -385,7 +385,7 @@ Phase 2 is done when **all** of the following hold:
 
 ## Open items (decided in implementation)
 
-These do not block PRD acceptance but are tracked as in-flight implementation decisions:
+These do not block PRD acceptance. **Canonical disposition lives in [`PLAN.md`](PLAN.md) §6** (pinned by M1 / `cq-p2-m01`); the list below is preserved for traceability against the original PRD intent.
 
 - **Exact suffix scheme.** The table above uses `si32`/`ui32`/`sl`/`ul`/`f32`/`f64`. Alternative schemes (`s32`/`u32`, `sli`/`uli`, `flt`/`dbl`) are equally defensible. Pinned by the first batch of generated code.
 - **Whether `qchar_mid_t` needs its own alloc symbol or aliases `cqrt_alloc_i8`.** Current design aliases (all 8-bit ints share `cqrt_alloc_i8`); revisit if backend-tracing needs to distinguish plain `char` from `signed char` / `unsigned char` (probably it doesn't, since the LLVM opcode at the call site already carries signedness for sign-dependent ops).
