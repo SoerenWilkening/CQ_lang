@@ -2,3 +2,15 @@ cqrt_alloc_i32(3) -> h0
 cqrt_alloc_i32(5) -> h1
 cq_template_add_i32(h0, h1) -> h2
 cqrt_measure_i32(h2) -> 0
+cqrt_alloc_i1(1) -> h3
+cqrt_measure_i1(h3) -> 0
+cqrt_alloc_i8(127) -> h4
+cqrt_measure_i8(h4) -> 0
+cqrt_alloc_i16(1024) -> h5
+cqrt_measure_i16(h5) -> 0
+cqrt_alloc_i64(9000000000) -> h6
+cqrt_measure_i64(h6) -> 0
+cqrt_alloc_f32(3.140000) -> h7
+cqrt_measure_f32(h7) -> 0.000000
+cqrt_alloc_f64(2.718282) -> h8
+cqrt_measure_f64(h8) -> 0.000000
