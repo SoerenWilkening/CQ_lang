@@ -6,6 +6,7 @@
 #include "QuantumAttr.h"
 #include "SourceText.h"
 #include "TypeMap.h"
+#include "UnaryMatcher.h"
 
 #include <string>
 #include <vector>
@@ -129,6 +130,28 @@ void populateFromInit(const clang::VarDecl *vd,
         out->form = VarRewriteInput::Form::QuantumCopy;
         out->sourceName = src->getNameAsString();
         return;
+    }
+
+    // Pattern 9 declaration-init (M8 round 2): `quantum T b = -a;` (or
+    // ~a, !a, ++a, a++, --a, a--) on a quantum operand. PLAN §4.8
+    // acceptance lists the shapes; PLAN §6.4 fixes the prefix/postfix
+    // ordering. UnaryMatcher gates on the seven Phase 3 unary opcodes
+    // plus a Quantum operand classification (paren/cast wrappers
+    // already peeled). Codegen pairs the result with the declaration
+    // prefix via the QuantumUnaryInit form.
+    if (const auto *uo = clang::dyn_cast<clang::UnaryOperator>(probe)) {
+        UnaryMatch um = matchUnary(uo);
+        if (um.matched) {
+            std::string opnd = quantumOperandName(um.operand.expr);
+            if (!opnd.empty()) {
+                out->form = VarRewriteInput::Form::QuantumUnaryInit;
+                out->sourceName = std::move(opnd);
+                out->unaryOpcode = um.opcode;
+                return;
+            }
+            // Operand wasn't a DeclRef though UnaryMatch said Quantum
+            // — defensive; drop to ClassicalInit fallback below.
+        }
     }
 
     // Delegate the binop recognition to BinopMatcher (Phase 3 M7

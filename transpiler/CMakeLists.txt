@@ -62,6 +62,21 @@ add_library(quantum_transpiler_lib STATIC
     src/BinopMatcher.cpp
     src/AssignMatcher.cpp
     src/UnaryMatcher.cpp
+    # Phase 3 M8: split per-pattern codegens. BinopCodegen carries
+    # Phase 2's QuantumAdd emission verbatim (now invoked by Codegen);
+    # AssignCodegen and UnaryCodegen are new for Patterns 7-9.
+    src/BinopCodegen.cpp
+    src/AssignCodegen.cpp
+    src/UnaryCodegen.cpp
+    # Phase 3 M8: per-pattern AST glue that consumes the matchers + new
+    # codegens. AssignRewrite handles Patterns 7 & 8 end-to-end;
+    # UnaryRewrite handles standalone Pattern 9 inc/dec statements;
+    # AssignUnaryCallbacks holds the MatchFinder callbacks that
+    # delegate to those rewriters (factored out of Matcher.cpp to
+    # respect the 300-LOC ceiling on that file).
+    src/AssignRewrite.cpp
+    src/UnaryRewrite.cpp
+    src/AssignUnaryCallbacks.cpp
 )
 target_include_directories(quantum_transpiler_lib PUBLIC src)
 target_link_libraries(quantum_transpiler_lib
@@ -109,6 +124,16 @@ add_executable(quantum_transpiler_unit_tests
     tests/unit/matchers/test_binop_matcher.cpp
     tests/unit/matchers/test_assign_matcher.cpp
     tests/unit/matchers/test_unary_matcher.cpp
+    # Phase 3 M8: per-pattern codegen unit tests.
+    tests/unit/codegen/test_binop_codegen.cpp
+    tests/unit/codegen/test_assign_codegen.cpp
+    tests/unit/codegen/test_unary_codegen.cpp
+    # Phase 3 M8 round 2: full-pipeline (AST→rewriter→text) tests for
+    # Pattern 9 declaration-init and assignment-RHS inc/dec shapes.
+    # The codegen unit tests above exercise the emitter in isolation;
+    # this file pins the AST wiring so a future refactor cannot
+    # silently regress the byte-exact emission from PLAN §4.8.
+    tests/unit/test_pattern9_pipeline.cpp
 )
 # test_cq_mid_compiles.cpp #include's <cq_mid.h> from the repo-root
 # include/ dir (the transpiled-C ABI surface; not normally consumed by

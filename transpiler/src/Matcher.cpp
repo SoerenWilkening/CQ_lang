@@ -1,5 +1,6 @@
 #include "Matcher.h"
 
+#include "AssignUnaryCallbacks.h"
 #include "CastRewrite.h"
 #include "DeclStmtRewrite.h"
 #include "QuantumAttr.h"
@@ -170,7 +171,9 @@ public:
     QuantumConsumer(clang::Rewriter *rewriter,
                     std::set<clang::FileID> *rewrittenFiles)
         : declStmtCallback_(rewriter, rewrittenFiles),
-          castCallback_(rewriter, rewrittenFiles) {
+          castCallback_(rewriter, rewrittenFiles),
+          assignCallback_(rewriter, rewrittenFiles),
+          unaryCallback_(rewriter, rewrittenFiles) {
         // Match every DeclStmt that contains at least one VarDecl with
         // an Annotate attribute. The hasQuantumAttr filter is applied
         // in the callback (and inside buildRewrite) because the matcher
@@ -197,6 +200,39 @@ public:
                                                .bind("castvar"))))))
                                .bind("cast");
         finder_.addMatcher(castMatcher, &castCallback_);
+
+        // M8 — Pattern 7 (BO_Assign) and Pattern 8 (CompoundAssign):
+        // any assignment whose LHS (peeled through implicit casts) is
+        // a VarDecl carrying an Annotate attribute. The buildAssignRewrite
+        // call (via AssignMatcher) re-validates that the LHS is quantum
+        // and that the opcode is one we model.
+        auto assignMatcher = m::binaryOperator(
+                                 m::isAssignmentOperator(),
+                                 m::hasLHS(m::ignoringParenImpCasts(
+                                     m::declRefExpr(m::to(
+                                         m::varDecl(m::hasAttr(
+                                                        clang::attr::Annotate))
+                                             .bind("assignlhs"))))))
+                                 .bind("assign");
+        finder_.addMatcher(assignMatcher, &assignCallback_);
+
+        // M8 — Pattern 9 (standalone inc/dec on quantum operand). The
+        // `hasParent(compoundStmt())` guard restricts the match to
+        // statement-scope unaries — `++a;` as a standalone statement,
+        // not `b = ++a;` where the unary is embedded inside an
+        // enclosing assignment (the latter requires multi-statement
+        // lifting and is deferred; see UnaryRewrite.h). The pure-unary
+        // forms (`-a`, `~a`, `!a`) are handled inside AssignRewrite's
+        // RHS decoration and don't flow here either.
+        auto unaryMatcher = m::unaryOperator(
+                                m::hasUnaryOperand(m::ignoringParenImpCasts(
+                                    m::declRefExpr(m::to(
+                                        m::varDecl(m::hasAttr(
+                                                       clang::attr::Annotate))
+                                            .bind("unaryvar"))))),
+                                m::hasParent(m::compoundStmt()))
+                                .bind("unary");
+        finder_.addMatcher(unaryMatcher, &unaryCallback_);
     }
 
     void HandleTranslationUnit(clang::ASTContext &ctx) override {
@@ -206,6 +242,8 @@ public:
 private:
     DeclStmtCallback declStmtCallback_;
     CastCallback castCallback_;
+    AssignCallback assignCallback_;
+    UnaryCallback unaryCallback_;
     m::MatchFinder finder_;
 };
 

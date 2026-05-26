@@ -1,7 +1,12 @@
 #include "Codegen.h"
 
+#include "BinopCodegen.h"
+#include "UnaryCodegen.h"
+
 #include <sstream>
 #include <string>
+
+#include <clang/AST/OperationKinds.h>
 
 namespace qct {
 
@@ -23,8 +28,7 @@ std::string cqInitCall(const std::string &widthSuffix,
 // Uninit and ClassicalInit, which both yield a single initializing
 // assignment. The mid-struct name is supplied by the caller from
 // `TypeMap::midStructName` so the same helper works uniformly for all
-// 14 Phase 2 mid-struct types (M10 widened this from a `qint_mid_t`
-// hardcode; PRD §"Rewriter patterns" rows 1–2 use per-type typedefs).
+// 14 Phase 2 mid-struct types.
 std::string declInitWith(const std::string &midStructName,
                          const std::string &name, const std::string &rhs) {
     std::ostringstream os;
@@ -32,32 +36,11 @@ std::string declInitWith(const std::string &midStructName,
     return os.str();
 }
 
-// Build "<midStructName> <name>; <name>.val = <lhsExpr> + <rhsExpr>;" —
-// the QuantumAdd form. Two statements joined by a single ASCII space so
-// the result is a flat one-line replacement that still parses as two
-// C statements (a declaration followed by an assignment). Operand
-// strings are spliced verbatim; the caller is responsible for
-// appending ".val" to quantum operands (see DeclStmtRewrite). Like
-// declInitWith, the mid-struct name is per-type (M10).
-std::string declThenAdd(const std::string &midStructName,
-                        const std::string &name,
-                        const std::string &lhsExpr,
-                        const std::string &rhsExpr) {
-    std::ostringstream os;
-    os << midStructName << " " << name << "; "
-       << name << ".val = " << lhsExpr << " + " << rhsExpr << ";";
-    return os.str();
-}
-
 // Build "<midStructName> <name>; <name>.val = <sourceName>.val;" — the
-// QuantumCopy (Pattern 6) form. Like declThenAdd this is one flat line
-// containing two C statements (declaration + assignment), but with no
-// intrinsic call: SROA collapses this into SSA aliasing in Phase 2's
-// scope, so emitting an intermediate `cq_copy_<sfx>` would be both
-// wasted work and trace-noise (PRD §"On assignment and surviving
-// operations"). The mid-struct name is supplied by the caller from
-// `TypeMap::midStructName` rather than hardcoded, so this code path
-// works uniformly for all 14 Phase 2 mid-struct types.
+// QuantumCopy (Pattern 6) form. Like emitQuantumAdd this is one flat
+// line containing two C statements (declaration + assignment), but with
+// no intrinsic call: SROA collapses this into SSA aliasing in Phase 2's
+// scope. The mid-struct name comes from `TypeMap::midStructName`.
 std::string declThenCopy(const std::string &midStructName,
                          const std::string &name,
                          const std::string &sourceName) {
@@ -67,40 +50,75 @@ std::string declThenCopy(const std::string &midStructName,
     return os.str();
 }
 
+// Predicate: opcode is a pure-unary (no side effect) operator.
+bool isPureUnaryOpcode(clang::UnaryOperatorKind op) {
+    return op == clang::UO_Minus || op == clang::UO_Not ||
+           op == clang::UO_LNot;
+}
+
+// Build the QuantumUnaryInit form (Pattern 9 declaration-init — M8
+// round 2). Emits the declaration `<midStructName> <name>;` followed by
+// the UnaryCodegen emission with `destExpr = <name>.val`. For
+// pure-unary opcodes (UO_Minus, UO_Not, UO_LNot) `emitUnary` returns
+// the bare expression text (no semicolon), so we wrap it into an
+// assignment statement here. For inc/dec opcodes `emitUnary` already
+// returns the full two-statement form per PLAN §6.4, which we splice
+// verbatim after the declaration.
+std::string declThenUnary(const std::string &midStructName,
+                          const std::string &name,
+                          const std::string &sourceName,
+                          clang::UnaryOperatorKind op) {
+    UnaryEmitInput uin{};
+    uin.opcode = op;
+    uin.operandName = sourceName;
+    uin.destExpr = name + ".val";
+    std::ostringstream os;
+    os << midStructName << " " << name << "; ";
+    if (isPureUnaryOpcode(op)) {
+        // emitUnary returns just the expression (no `;`); wrap it.
+        os << name << ".val = " << emitUnary(uin) << ";";
+    } else {
+        // emitUnary returns one or two `;`-terminated statements
+        // assembled per PLAN §6.4's prefix-vs-postfix ordering.
+        os << emitUnary(uin);
+    }
+    return os.str();
+}
+
 }  // namespace
 
+// Phase 3 M8 multiplex: this is the slimmed entry point. The
+// QuantumAdd path now delegates to BinopCodegen (extracted verbatim
+// from Phase 2); Uninit, ClassicalInit, and QuantumCopy remain inline
+// here because they're trivial declaration-init shapes that don't need
+// a sibling module. Patterns 7 (plain assign) / 8 (compound assign) /
+// 9 (unary) live in AssignCodegen and UnaryCodegen respectively and
+// are invoked by the assign/unary rewriters — they do not flow through
+// this function (the form-based dispatch here is dedicated to DeclStmt
+// rewrites).
 std::string renderVar(const VarRewriteInput &in) {
     using Form = VarRewriteInput::Form;
     switch (in.form) {
     case Form::Uninit:
-        // `quantum T x;` -> initialized to literal 0 with the resolved
-        // width suffix and the per-type mid-struct typedef (both
-        // supplied by the caller from TypeMap; M10 generalized this
-        // from the i32-only Phase-1 hardcode).
         return declInitWith(in.midStructName, in.name,
                             cqInitCall(in.widthSuffix, "0"));
     case Form::ClassicalInit:
-        // `quantum T x = E;` -> splice E verbatim inside cq_init_<sfx>
-        // so the original source expression survives the transform
-        // (preserving precedence, spacing, calls, etc.). Mid-struct
-        // name + suffix are per-type (M10).
         return declInitWith(in.midStructName, in.name,
                             cqInitCall(in.widthSuffix, in.initText));
     case Form::QuantumAdd:
-        // `quantum T z = X + Y;` -> decl + .val arithmetic. Operand
-        // strings already carry their decoration ("a.val" for quantum,
-        // raw text for classical) per DeclStmtRewrite's contract; both
-        // sides are spliced verbatim around a single " + ". Mid-struct
-        // name is per-type (M10).
-        return declThenAdd(in.midStructName, in.name, in.lhsExpr, in.rhsExpr);
+        // BinopCodegen::emitQuantumAdd carries the Phase 2 emission
+        // logic verbatim; the byte-exact output is unchanged from the
+        // pre-split helper.
+        return emitQuantumAdd(in.midStructName, in.name, in.lhsExpr,
+                              in.rhsExpr);
     case Form::QuantumCopy:
-        // `quantum T b = a;` (a a quantum VarDecl of the same canonical
-        // type) -> decl + .val pass-through. No intrinsic; the IR pass
-        // never sees the assignment because SROA collapses it to SSA
-        // aliasing in Phase 2's scope. Mid-struct name comes from
-        // TypeMap (per-type, not hardcoded) so the same case handles
-        // all 14 Phase 2 mid-struct types.
         return declThenCopy(in.midStructName, in.name, in.sourceName);
+    case Form::QuantumUnaryInit:
+        // M8 round 2 — Pattern 9 declaration-init forms per PLAN §4.8
+        // / §6.4. UnaryCodegen handles the per-opcode ordering; we
+        // only contribute the declaration prefix here.
+        return declThenUnary(in.midStructName, in.name, in.sourceName,
+                             in.unaryOpcode);
     }
     // Unknown Form (e.g. a future enumerator that bypassed our switch):
     // fail safe by emitting an Uninit-style declaration so we still

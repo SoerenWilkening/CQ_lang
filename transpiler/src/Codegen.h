@@ -7,16 +7,26 @@
 // unit-testable without spinning up a CompilerInstance (PLAN §3.5).
 //
 // Phase 1 had three Forms; Phase 2 M9 added `QuantumCopy` for Pattern 6
-// (`quantum T b = a;`, same canonical type). Taint propagation in the
-// IR pass collapses QQ/QC/CQ distinctions, so both quantum-touching
-// adds use the same ".val arithmetic" pattern; classify-and-decorate
-// (whether to append ".val" to an operand) happens upstream in
-// DeclStmtRewrite via OperandClass.
+// (`quantum T b = a;`, same canonical type). Phase 3 M8 (round 2) adds
+// `QuantumUnaryInit` for Pattern 9 declaration-init forms — `quantum
+// int b = -a;` etc. — per PLAN §4.8 acceptance and §6.4 ordering.
+// Taint propagation in the IR pass collapses QQ/QC/CQ distinctions, so
+// both quantum-touching adds use the same ".val arithmetic" pattern;
+// classify-and-decorate (whether to append ".val" to an operand)
+// happens upstream in DeclStmtRewrite via OperandClass.
 //
-//   Uninit         -> <midStructName> <name> = cq_init_<sfx>(0);
-//   ClassicalInit  -> <midStructName> <name> = cq_init_<sfx>(<initText>);
-//   QuantumAdd     -> <midStructName> <name>; <name>.val = <lhsExpr> + <rhsExpr>;
-//   QuantumCopy    -> <midStructName> <name>; <name>.val = <sourceName>.val;
+//   Uninit            -> <midStructName> <name> = cq_init_<sfx>(0);
+//   ClassicalInit     -> <midStructName> <name> = cq_init_<sfx>(<initText>);
+//   QuantumAdd        -> <midStructName> <name>; <name>.val = <lhsExpr> + <rhsExpr>;
+//   QuantumCopy       -> <midStructName> <name>; <name>.val = <sourceName>.val;
+//   QuantumUnaryInit  -> <midStructName> <name>; <UnaryCodegen emission with
+//                        destExpr=<name>.val>;
+//                        Pure-unary (UO_Minus/Not/LNot):
+//                          `<midStructName> <name>; <name>.val = <op><src>.val;`
+//                        Prefix inc/dec (UO_PreInc/Dec):
+//                          `<midStructName> <name>; <src>.val ±= 1; <name>.val = <src>.val;`
+//                        Postfix inc/dec (UO_PostInc/Dec):
+//                          `<midStructName> <name>; <name>.val = <src>.val; <src>.val ±= 1;`
 //
 // M10 widened `widthSuffix` from Phase 1's width-only `"i32"` form to
 // the signedness-bearing `TypeMap::intrinsicSuffix` (e.g. "si32", "ui8",
@@ -27,6 +37,8 @@
 
 #include <string>
 #include <vector>
+
+#include <clang/AST/OperationKinds.h>
 
 namespace qct {
 
@@ -40,11 +52,13 @@ struct VarRewriteInput {
                                 // "qint_mid_t", "qfloat_mid_t")
 
     enum class Form {
-        Uninit,         // `quantum T x;`            → cq_init_<sfx>(0)
-        ClassicalInit,  // `quantum T x = E;`        → cq_init_<sfx>(E)
-        QuantumAdd,     // `quantum T z = X + Y;`    → .val arithmetic
-        QuantumCopy,    // `quantum T b = a;` (same canonical type)
-                        //                           → split form, no intrinsic
+        Uninit,            // `quantum T x;`            → cq_init_<sfx>(0)
+        ClassicalInit,     // `quantum T x = E;`        → cq_init_<sfx>(E)
+        QuantumAdd,        // `quantum T z = X + Y;`    → .val arithmetic
+        QuantumCopy,       // `quantum T b = a;` (same canonical type)
+                           //                           → split form, no intrinsic
+        QuantumUnaryInit,  // `quantum T b = -a;` (or ~a/!a/++a/a++/--a/a--)
+                           //                           → decl + UnaryCodegen
     } form;
 
     // ClassicalInit: original initializer source text, spliced verbatim
@@ -63,6 +77,15 @@ struct VarRewriteInput {
     // — no intrinsic call, because SROA erases this pattern in Phase 2's
     // scope (see PRD §"On assignment and surviving operations").
     std::string sourceName;
+
+    // QuantumUnaryInit (Pattern 9 declaration-init — M8 round 2):
+    // `unaryOpcode` is one of the seven Phase 3 unary opcodes (UO_Minus,
+    // UO_Not, UO_LNot, UO_PreInc, UO_PostInc, UO_PreDec, UO_PostDec).
+    // `sourceName` (reused from QuantumCopy) is the operand VarDecl's
+    // bare identifier (e.g. "a"). Codegen emits the declaration then
+    // routes through `UnaryCodegen::emitUnary` with `destExpr =
+    // <name>.val`, producing the per-opcode shape documented above.
+    clang::UnaryOperatorKind unaryOpcode;
 };
 
 // Render a single VarRewriteInput as one rewritten C statement
