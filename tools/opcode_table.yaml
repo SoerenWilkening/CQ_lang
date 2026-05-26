@@ -1,0 +1,244 @@
+# tools/opcode_table.yaml — Phase 3 opcode surface (single source of truth).
+#
+# Drives `tools/gen_templates.py` (M2), which emits:
+#   - runtime/cq_templates.h           (~700 lines, ~680 declarations)
+#   - runtime/cq_templates.c           (~1400 lines, printf-name stubs)
+#   - ir-pass/src/OpcodeTables.cpp     (dispatch tables consumed by M11-M14)
+#   - ir-pass/test/phase3/<op>/*.ll    (~340 LIT fixtures, M16)
+#
+# Spec: phases/phase3/PRD.md §"Operator surface"; phases/phase3/PLAN.md §4.1, §6.
+# Policy: backend stays stubbed (memory `feedback-no-backend-until-frontend-done`).
+# This file declares SYMBOLS and DISPATCH METADATA only; never template bodies.
+#
+# ----------------------------------------------------------------------------
+# SCHEMA (inline; validated by tools/gen_templates_test.py in M2)
+# ----------------------------------------------------------------------------
+# Top-level keys:
+#   version          : string  — schema version, "1".
+#   phase            : string  — owning phase identifier, "phase3".
+#   widths           : map     — symbolic width -> {bits, c_type, domain}.
+#   predicates       : map     — predicate-family -> ordered LLVM mnemonics.
+#   binary_opcodes   : list    — every binary data opcode (17 in Phase 3).
+#   unary_opcodes    : list    — every unary data opcode (1: fneg).
+#   compare_opcodes  : list    — comparator opcodes (2: icmp, fcmp).
+#   cast_opcodes     : list    — width / domain casts (9 kinds, 68 pairs).
+#
+# Required keys per `binary_opcodes` entry:
+#   opcode, family, widths, llvm_inst, c_operators, variants
+#   (signed_variant: bool optional — present when sign-aware).
+# Required keys per `unary_opcodes` entry:
+#   opcode, family, widths, llvm_inst, c_operators, variants.
+# Required keys per `compare_opcodes` entry:
+#   opcode, family, widths, llvm_inst, predicate_set, result_type, variants.
+#   (result_type MUST be "flag_handle"; PRD §"Comparison contract".)
+# Required keys per `cast_opcodes` entry:
+#   opcode, kind, llvm_inst, c_operators, pairs, variants.
+#   pairs is list of {from, to}; both names must appear in `widths`.
+#
+# Naming convention (PLAN §6.7 — modifier-then-variant):
+#   forward Q+Q:   cq_template_<op>[_<pred>]_<W>[_<from_to>]
+#   forward Q+C:   cq_template_<op>[_<pred>]_<W>[_<from_to>]_hl
+#   inverse Q+Q:   cq_template_<op>[_<pred>]_<W>[_<from_to>]_inv
+#   inverse Q+C:   cq_template_<op>[_<pred>]_<W>[_<from_to>]_hl_inv
+#
+# Acceptance count check (PLAN §4.1):
+#   binary_opcodes  == 17 (7 int_arith + 6 int_bitwise + 4 fp_arith)
+#   unary_opcodes   == 1  (fneg)
+#   compare_opcodes == 2  (icmp x 10 preds x 5 widths; fcmp x 6 preds x 2 widths)
+#   cast_opcodes    == 9  (sext, zext, trunc, fpext, fptrunc, sitofp, uitofp,
+#                          fptosi, fptoui; total 68 cross-pairs)
+# ============================================================================
+
+version: "1"
+phase: "phase3"
+
+# -- Widths --------------------------------------------------------------------
+# Symbolic names map to ABI metadata. Runtime ABI is signedness-agnostic
+# (PRD §"Width unification" carryover from Phase 2). 7 widths total.
+widths:
+  i1:  { bits: 1,  c_type: "bool",    domain: "int" }
+  i8:  { bits: 8,  c_type: "int8_t",  domain: "int" }
+  i16: { bits: 16, c_type: "int16_t", domain: "int" }
+  i32: { bits: 32, c_type: "int32_t", domain: "int" }
+  i64: { bits: 64, c_type: "int64_t", domain: "int" }
+  f32: { bits: 32, c_type: "float",   domain: "fp"  }
+  f64: { bits: 64, c_type: "double",  domain: "fp"  }
+
+# -- Predicate sets ------------------------------------------------------------
+# `icmp`: 10 LLVM predicates Clang emits from C source.
+# `fcmp`: 6 ordered preds (PRD §"Floating-point comparison"); unordered preds
+# are explicitly out of scope (PRD §"Known soft-failure modes").
+predicates:
+  icmp: [eq, ne, slt, sgt, sle, sge, ult, ugt, ule, uge]
+  fcmp: [oeq, one, olt, ogt, ole, oge]
+
+# -- Binary opcodes (17 = 7 int_arith + 6 int_bitwise + 4 fp_arith) -----------
+# Int widths: i1, i8, i16, i32, i64.  FP widths: f32, f64.
+# All carry the same 4-variant grid: {fwd_qq, fwd_hl, inv_qq, inv_hl}.
+# `c_operators` is informational (LIT/e2e generators).
+binary_opcodes:
+  # Integer arithmetic (7)
+  - { opcode: add,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Add",  c_operators: ["+","+=","++"],                      variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: sub,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Sub",  c_operators: ["-","-=","--","unary -"],            variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: mul,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Mul",  c_operators: ["*","*="],                           variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: sdiv, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::SDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: udiv, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::UDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: srem, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::SRem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: urem, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::URem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  # Integer bitwise (6)
+  - { opcode: and,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::And",  c_operators: ["&","&="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: or,   family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Or",   c_operators: ["|","|="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: xor,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Xor",  c_operators: ["^","^=","unary ~"],                variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: shl,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Shl",  c_operators: ["<<","<<="],                        variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: lshr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::LShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: ashr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::AShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  # Floating-point arithmetic (4; fneg is unary, frem deferred to Phase 7)
+  - { opcode: fadd, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FAdd", c_operators: ["+","+="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: fsub, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FSub", c_operators: ["-","-="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: fmul, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FMul", c_operators: ["*","*="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: fdiv, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FDiv", c_operators: ["/","/="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+
+# -- Unary opcodes (1: fneg) ---------------------------------------------------
+# PRD §"Floating-point arithmetic": "the only genuinely new unary opcode".
+# Int unary -/~/!/++/-- lower to existing binary opcodes (sub/xor/add).
+unary_opcodes:
+  - { opcode: fneg, family: fp_arith, widths: [f32,f64], llvm_inst: "llvm::Instruction::FNeg", c_operators: ["unary -"], variants: [fwd, inv] }
+
+# -- Compare opcodes (2 families: icmp, fcmp) ----------------------------------
+# Result is a flag handle (i32 ABI, logical-1-bit). PRD §"Comparison contract".
+# _hl variants carry handle on LHS, classical scalar on RHS; operand-swap
+# canonicalization handles classical-on-lhs at lowering time.
+compare_opcodes:
+  - { opcode: icmp, family: int_compare, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::ICmp", predicate_set: icmp, result_type: flag_handle, variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: fcmp, family: fp_compare,  widths: [f32,f64],           llvm_inst: "llvm::Instruction::FCmp", predicate_set: fcmp, result_type: flag_handle, variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+
+# -- Cast opcodes (9 kinds, 68 cross-pairs) ------------------------------------
+# Casts are unary at the IR level — no Q+C variants. PRD §"Integer width
+# casts", §"Floating-point width casts", §"Cross-domain casts".
+# sitofp/fptosi exclude i1 (signed bool is meaningless; Clang uses
+# uitofp/fptoui for _Bool). uitofp/fptoui include i1.
+cast_opcodes:
+  # Integer width casts (3 kinds x 10 pairs each = 30 pairs)
+  - opcode: sext
+    kind: int_width
+    llvm_inst: "llvm::Instruction::SExt"
+    c_operators: ["(signed widen)"]
+    variants: [fwd, inv]
+    pairs:
+      - { from: i1,  to: i8  }
+      - { from: i1,  to: i16 }
+      - { from: i1,  to: i32 }
+      - { from: i1,  to: i64 }
+      - { from: i8,  to: i16 }
+      - { from: i8,  to: i32 }
+      - { from: i8,  to: i64 }
+      - { from: i16, to: i32 }
+      - { from: i16, to: i64 }
+      - { from: i32, to: i64 }
+  - opcode: zext
+    kind: int_width
+    llvm_inst: "llvm::Instruction::ZExt"
+    c_operators: ["(unsigned widen)"]
+    variants: [fwd, inv]
+    pairs:
+      - { from: i1,  to: i8  }
+      - { from: i1,  to: i16 }
+      - { from: i1,  to: i32 }
+      - { from: i1,  to: i64 }
+      - { from: i8,  to: i16 }
+      - { from: i8,  to: i32 }
+      - { from: i8,  to: i64 }
+      - { from: i16, to: i32 }
+      - { from: i16, to: i64 }
+      - { from: i32, to: i64 }
+  - opcode: trunc
+    kind: int_width
+    llvm_inst: "llvm::Instruction::Trunc"
+    c_operators: ["(narrow)"]
+    variants: [fwd, inv]
+    pairs:
+      - { from: i8,  to: i1  }
+      - { from: i16, to: i1  }
+      - { from: i16, to: i8  }
+      - { from: i32, to: i1  }
+      - { from: i32, to: i8  }
+      - { from: i32, to: i16 }
+      - { from: i64, to: i1  }
+      - { from: i64, to: i8  }
+      - { from: i64, to: i16 }
+      - { from: i64, to: i32 }
+  # FP width casts (2 kinds, 1 pair each)
+  - opcode: fpext
+    kind: fp_width
+    llvm_inst: "llvm::Instruction::FPExt"
+    c_operators: ["(float widen)"]
+    variants: [fwd, inv]
+    pairs: [{ from: f32, to: f64 }]
+  - opcode: fptrunc
+    kind: fp_width
+    llvm_inst: "llvm::Instruction::FPTrunc"
+    c_operators: ["(float narrow)"]
+    variants: [fwd, inv]
+    pairs: [{ from: f64, to: f32 }]
+  # Cross-domain casts (4 kinds, 8+10+8+10 = 36 pairs)
+  - opcode: sitofp
+    kind: int_to_fp
+    llvm_inst: "llvm::Instruction::SIToFP"
+    c_operators: ["(signed-int -> float)"]
+    variants: [fwd, inv]
+    pairs:
+      - { from: i8,  to: f32 }
+      - { from: i8,  to: f64 }
+      - { from: i16, to: f32 }
+      - { from: i16, to: f64 }
+      - { from: i32, to: f32 }
+      - { from: i32, to: f64 }
+      - { from: i64, to: f32 }
+      - { from: i64, to: f64 }
+  - opcode: uitofp
+    kind: int_to_fp
+    llvm_inst: "llvm::Instruction::UIToFP"
+    c_operators: ["(unsigned-int -> float)"]
+    variants: [fwd, inv]
+    pairs:
+      - { from: i1,  to: f32 }
+      - { from: i1,  to: f64 }
+      - { from: i8,  to: f32 }
+      - { from: i8,  to: f64 }
+      - { from: i16, to: f32 }
+      - { from: i16, to: f64 }
+      - { from: i32, to: f32 }
+      - { from: i32, to: f64 }
+      - { from: i64, to: f32 }
+      - { from: i64, to: f64 }
+  - opcode: fptosi
+    kind: fp_to_int
+    llvm_inst: "llvm::Instruction::FPToSI"
+    c_operators: ["(float -> signed-int)"]
+    variants: [fwd, inv]
+    pairs:
+      - { from: f32, to: i8  }
+      - { from: f32, to: i16 }
+      - { from: f32, to: i32 }
+      - { from: f32, to: i64 }
+      - { from: f64, to: i8  }
+      - { from: f64, to: i16 }
+      - { from: f64, to: i32 }
+      - { from: f64, to: i64 }
+  - opcode: fptoui
+    kind: fp_to_int
+    llvm_inst: "llvm::Instruction::FPToUI"
+    c_operators: ["(float -> unsigned-int)"]
+    variants: [fwd, inv]
+    pairs:
+      - { from: f32, to: i1  }
+      - { from: f32, to: i8  }
+      - { from: f32, to: i16 }
+      - { from: f32, to: i32 }
+      - { from: f32, to: i64 }
+      - { from: f64, to: i1  }
+      - { from: f64, to: i8  }
+      - { from: f64, to: i16 }
+      - { from: f64, to: i32 }
+      - { from: f64, to: i64 }
+# -- End of opcode table -------------------------------------------------------
