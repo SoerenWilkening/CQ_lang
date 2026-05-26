@@ -79,12 +79,12 @@ int main(void) {
     (void) cq_template_add_i64_hl(h_i64, (int64_t)12345);
 
     int32_t h_f32_b = cqrt_alloc_f32(1.5f);
-    (void) cq_template_add_f32(h_f32, h_f32_b);
-    (void) cq_template_add_f32_hl(h_f32, 1.5f);
+    (void) cq_template_fadd_f32(h_f32, h_f32_b);
+    (void) cq_template_fadd_f32_hl(h_f32, 1.5f);
 
     int32_t h_f64_b = cqrt_alloc_f64(2.5);
-    (void) cq_template_add_f64(h_f64, h_f64_b);
-    (void) cq_template_add_f64_hl(h_f64, 2.5);
+    (void) cq_template_fadd_f64(h_f64, h_f64_b);
+    (void) cq_template_fadd_f64_hl(h_f64, 2.5);
 
     return 0;
 }

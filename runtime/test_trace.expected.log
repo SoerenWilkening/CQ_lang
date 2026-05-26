@@ -28,8 +28,8 @@ cqrt_alloc_i64(12345) -> h19
 cq_template_add_i64(h6, h19) -> h20
 cq_template_add_i64_hl(h6, 12345) -> h21
 cqrt_alloc_f32(1.500000) -> h22
-cq_template_add_f32(h7, h22) -> h23
-cq_template_add_f32_hl(h7, 1.500000) -> h24
+cq_template_fadd_f32(h7, h22) -> h23
+cq_template_fadd_f32_hl(h7, 1.500000) -> h24
 cqrt_alloc_f64(2.500000) -> h25
-cq_template_add_f64(h8, h25) -> h26
-cq_template_add_f64_hl(h8, 2.500000) -> h27
+cq_template_fadd_f64(h8, h25) -> h26
+cq_template_fadd_f64_hl(h8, 2.500000) -> h27
