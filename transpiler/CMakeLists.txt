@@ -55,6 +55,13 @@ add_library(quantum_transpiler_lib STATIC
     src/DeclStmtRewrite.cpp
     src/CastRewrite.cpp
     src/Matcher.cpp
+    # Phase 3 M7: split per-pattern matchers. BinopMatcher carries
+    # Phase 2's binop recognition (now invoked by DeclStmtRewrite);
+    # AssignMatcher and UnaryMatcher are new for Patterns 7-9. Codegen
+    # wiring lands in M8.
+    src/BinopMatcher.cpp
+    src/AssignMatcher.cpp
+    src/UnaryMatcher.cpp
 )
 target_include_directories(quantum_transpiler_lib PUBLIC src)
 target_link_libraries(quantum_transpiler_lib
@@ -98,6 +105,10 @@ add_executable(quantum_transpiler_unit_tests
     tests/unit/test_cq_mid_compiles.cpp
     tests/unit/test_cq_runtime_compiles.cpp
     tests/unit/test_cq_templates_compiles.cpp
+    # Phase 3 M7: per-pattern matcher unit tests.
+    tests/unit/matchers/test_binop_matcher.cpp
+    tests/unit/matchers/test_assign_matcher.cpp
+    tests/unit/matchers/test_unary_matcher.cpp
 )
 # test_cq_mid_compiles.cpp #include's <cq_mid.h> from the repo-root
 # include/ dir (the transpiled-C ABI surface; not normally consumed by

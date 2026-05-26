@@ -1,5 +1,6 @@
 #include "DeclStmtRewrite.h"
 
+#include "BinopMatcher.h"
 #include "Codegen.h"
 #include "OperandClass.h"
 #include "QuantumAttr.h"
@@ -130,24 +131,26 @@ void populateFromInit(const clang::VarDecl *vd,
         return;
     }
 
-    const auto *bo = clang::dyn_cast<clang::BinaryOperator>(probe);
-    if (bo == nullptr || bo->getOpcode() != clang::BO_Add) {
+    // Delegate the binop recognition to BinopMatcher (Phase 3 M7
+    // split): the matcher is opcode-aware and reports the operand
+    // classification through OperandInfo. We still gate on BO_Add
+    // here because Phase 2 only emits one arithmetic opcode through
+    // the rewriter; Phase 3 M11 widens the IR-pass dispatch but the
+    // rewriter remains add-only until M8 wires the rest. Any
+    // non-quantum binop (including non-Add quantum binops, which
+    // don't exist yet) falls through to ClassicalInit, which splices
+    // the user's original source text verbatim — preserving the
+    // Phase 2 contract byte-exact.
+    BinopMatch bm = matchBinop(probe);
+    if (!bm.matched || bm.opcode != clang::BO_Add) {
         fallbackClassical();
         return;
     }
 
-    OperandInfo lhs = classify(bo->getLHS());
-    OperandInfo rhs = classify(bo->getRHS());
+    OperandInfo lhs = bm.lhs;
+    OperandInfo rhs = bm.rhs;
     const bool lhsQ = (lhs.kind == OperandKind::Quantum);
     const bool rhsQ = (rhs.kind == OperandKind::Quantum);
-
-    if (!lhsQ && !rhsQ) {
-        // C + C: a "quantum int x = 1 + 2;" — both sides are
-        // classical, so the whole binop is a classical expression.
-        // Splice the entire binop verbatim into cq_init_<W>(...).
-        fallbackClassical();
-        return;
-    }
 
     // At least one side is quantum: emit QuantumAdd. Each side is
     // decorated here — quantum operands become "<name>.val", classical
