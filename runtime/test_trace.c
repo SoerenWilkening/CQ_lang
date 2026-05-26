@@ -86,5 +86,14 @@ int main(void) {
     (void) cq_template_fadd_f64(h_f64, h_f64_b);
     (void) cq_template_fadd_f64_hl(h_f64, 2.5);
 
+    /* --- Phase 3 M4: exercise one symbol per new family (sub, xor,
+     * icmp, sext, fneg). Reuses Phase 1/2 handles; each call allocates
+     * one fresh handle (h28..h32). */
+    (void) cq_template_sub_i32(h_a, h_b);
+    (void) cq_template_xor_i32(h_a, h_b);
+    (void) cq_template_icmp_slt_i32(h_a, h_b);
+    (void) cq_template_sext_i8_to_i32(h_i8);
+    (void) cq_template_fneg_f64(h_f64);
+
     return 0;
 }

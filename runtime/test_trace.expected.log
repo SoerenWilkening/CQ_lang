@@ -33,3 +33,8 @@ cq_template_fadd_f32_hl(h7, 1.500000) -> h24
 cqrt_alloc_f64(2.500000) -> h25
 cq_template_fadd_f64(h8, h25) -> h26
 cq_template_fadd_f64_hl(h8, 2.500000) -> h27
+cq_template_sub_i32(h0, h1) -> h28
+cq_template_xor_i32(h0, h1) -> h29
+cq_template_icmp_slt_i32(h0, h1) -> h30
+cq_template_sext_i8_to_i32(h4) -> h31
+cq_template_fneg_f64(h8) -> h32
