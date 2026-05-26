@@ -1,7 +1,7 @@
 ; lowering_add_qc_f32.ll — Per-width Q+C fadd for the f32 ABI (M16).
 ; One tainted `qfloat_mid_t` handle, one float literal flow through
 ; `fadd float` and must lower to
-; `cq_template_add_f32_hl(handle, classical)`.
+; `cq_template_fadd_f32_hl(handle, classical)`.
 ;
 ; Spec: phases/phase2/PLAN.md §4.16.
 
@@ -9,9 +9,9 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
 
 ; CHECK:     call i32 @cqrt_alloc_f32(float 3.250000e+00)
-; CHECK:     call i32 @cq_template_add_f32_hl(i32 %{{[a-zA-Z0-9_.]+}}, float 4.500000e+00)
+; CHECK:     call i32 @cq_template_fadd_f32_hl(i32 %{{[a-zA-Z0-9_.]+}}, float 4.500000e+00)
 
-; CHECK-NOT: call i32 @cq_template_add_f32(i32 %{{.*}}, i32 %
+; CHECK-NOT: call i32 @cq_template_fadd_f32(i32 %{{.*}}, i32 %
 ; CHECK-NOT: cq_init_f32
 ; CHECK-NOT: fadd float
 

@@ -142,17 +142,22 @@ FunctionCallee WidthDispatch::measureRtFn(StringRef abiWidth) const {
 
 FunctionCallee WidthDispatch::addTemplate(StringRef abiWidth,
                                           bool isQQ) const {
-  // Q+Q (`cq_template_add_<W>`) and Q+C (`..._hl`) are distinct C
+  // Q+Q (`cq_template_(add|fadd)_<W>`) and Q+C (`..._hl`) are distinct C
   // symbols (C lacks overloading). Q+Q: (handle, handle) → handle.
   // Q+C: (handle, classical-of-width-W) → handle. Both return i32
   // handle; the rhs type is what distinguishes them at the call site.
-  // Matches cq_templates.h declarations exactly.
+  // Matches cq_templates.h declarations exactly. Phase 3 M3 split the
+  // int and float opcode roots to follow LLVM IR convention: integer
+  // widths land on `cq_template_add_i*`, float widths on
+  // `cq_template_fadd_f*`. The opcode root is selected by the abiWidth
+  // prefix ('f' → fadd, otherwise → add).
   LLVMContext &Ctx = M.getContext();
   Type *ClassicalTy = typeForAbiWidth(abiWidth, Ctx);
   if (!ClassicalTy)
     return FunctionCallee();
   Type *Handle = Type::getInt32Ty(Ctx);
-  std::string Name = ("cq_template_add_" + abiWidth).str();
+  StringRef OpcodeRoot = abiWidth.starts_with("f") ? "fadd_" : "add_";
+  std::string Name = ("cq_template_" + OpcodeRoot + abiWidth).str();
   if (!isQQ)
     Name += "_hl";
   Type *RhsTy = isQQ ? Handle : ClassicalTy;

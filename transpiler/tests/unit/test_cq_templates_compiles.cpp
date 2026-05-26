@@ -46,8 +46,8 @@ static_assert(signature_is<decltype(cq_template_add_i8),  int32_t, int32_t, int3
 static_assert(signature_is<decltype(cq_template_add_i16), int32_t, int32_t, int32_t>, "cq_template_add_i16");
 static_assert(signature_is<decltype(cq_template_add_i32), int32_t, int32_t, int32_t>, "cq_template_add_i32");
 static_assert(signature_is<decltype(cq_template_add_i64), int32_t, int32_t, int32_t>, "cq_template_add_i64");
-static_assert(signature_is<decltype(cq_template_add_f32), int32_t, int32_t, int32_t>, "cq_template_add_f32");
-static_assert(signature_is<decltype(cq_template_add_f64), int32_t, int32_t, int32_t>, "cq_template_add_f64");
+static_assert(signature_is<decltype(cq_template_fadd_f32), int32_t, int32_t, int32_t>, "cq_template_fadd_f32");
+static_assert(signature_is<decltype(cq_template_fadd_f64), int32_t, int32_t, int32_t>, "cq_template_fadd_f64");
 
 // ---------------------------------------------------------------------
 // Add Q+C — 7 widths. PRD §"Stub template library" lines 160-170:
@@ -64,8 +64,8 @@ static_assert(signature_is<decltype(cq_template_add_i8_hl),  int32_t, int32_t, i
 static_assert(signature_is<decltype(cq_template_add_i16_hl), int32_t, int32_t, int16_t>, "cq_template_add_i16_hl");
 static_assert(signature_is<decltype(cq_template_add_i32_hl), int32_t, int32_t, int32_t>, "cq_template_add_i32_hl");
 static_assert(signature_is<decltype(cq_template_add_i64_hl), int32_t, int32_t, int64_t>, "cq_template_add_i64_hl");
-static_assert(signature_is<decltype(cq_template_add_f32_hl), int32_t, int32_t, float>,   "cq_template_add_f32_hl");
-static_assert(signature_is<decltype(cq_template_add_f64_hl), int32_t, int32_t, double>,  "cq_template_add_f64_hl");
+static_assert(signature_is<decltype(cq_template_fadd_f32_hl), int32_t, int32_t, float>,   "cq_template_fadd_f32_hl");
+static_assert(signature_is<decltype(cq_template_fadd_f64_hl), int32_t, int32_t, double>,  "cq_template_fadd_f64_hl");
 
 }  // namespace
 

@@ -1,7 +1,7 @@
 ; lowering_add_qc_f64.ll — Per-width Q+C fadd for the f64 ABI (M16).
 ; One tainted `qdouble_mid_t` handle, one double literal flow through
 ; `fadd double` and must lower to
-; `cq_template_add_f64_hl(handle, classical)`.
+; `cq_template_fadd_f64_hl(handle, classical)`.
 ;
 ; Spec: phases/phase2/PLAN.md §4.16.
 
@@ -9,9 +9,9 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
 
 ; CHECK:     call i32 @cqrt_alloc_f64(double 1.414210e+00)
-; CHECK:     call i32 @cq_template_add_f64_hl(i32 %{{[a-zA-Z0-9_.]+}}, double 6.250000e+00)
+; CHECK:     call i32 @cq_template_fadd_f64_hl(i32 %{{[a-zA-Z0-9_.]+}}, double 6.250000e+00)
 
-; CHECK-NOT: call i32 @cq_template_add_f64(i32 %{{.*}}, i32 %
+; CHECK-NOT: call i32 @cq_template_fadd_f64(i32 %{{.*}}, i32 %
 ; CHECK-NOT: cq_init_f64
 ; CHECK-NOT: fadd double
 

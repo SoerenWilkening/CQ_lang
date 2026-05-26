@@ -1,6 +1,6 @@
 ; lowering_add_qq_f64.ll — Per-width Q+Q fadd for the f64 ABI (M16).
 ; Two tainted `qdouble_mid_t` handles flow through `fadd double` and
-; must lower to `cq_template_add_f64(handle, handle)`. The float opcode
+; must lower to `cq_template_fadd_f64(handle, handle)`. The float opcode
 ; selection uses `Type::isDoubleTy()`.
 ;
 ; Spec: phases/phase2/PLAN.md §4.16.
@@ -10,9 +10,9 @@
 
 ; CHECK:     call i32 @cqrt_alloc_f64(double 2.718280e+00)
 ; CHECK:     call i32 @cqrt_alloc_f64(double 3.141590e+00)
-; CHECK:     call i32 @cq_template_add_f64(
+; CHECK:     call i32 @cq_template_fadd_f64(
 
-; CHECK-NOT: call i32 @cq_template_add_f64_hl(
+; CHECK-NOT: call i32 @cq_template_fadd_f64_hl(
 ; CHECK-NOT: cq_init_f64
 ; CHECK-NOT: fadd double
 

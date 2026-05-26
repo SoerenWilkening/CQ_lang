@@ -2,7 +2,7 @@
 // calls. M16 generalizes from the Phase 1 `add i32`-only path to:
 //
 //   add iW  → cq_template_add_iW(_hl)  for W ∈ {1, 8, 16, 32, 64}
-//   fadd fW → cq_template_add_fW(_hl)  for fW ∈ {float, double}
+//   fadd fW → cq_template_fadd_fW(_hl) for fW ∈ {float, double}
 //
 // Per-width selection comes from the operand type:
 // `Type::getIntegerBitWidth()` for integers, `isFloatTy()` / `isDoubleTy()`

@@ -1,6 +1,6 @@
 ; lowering_add_qq_f32.ll — Per-width Q+Q fadd for the f32 ABI (M16).
 ; Two tainted `qfloat_mid_t` handles flow through `fadd float` and must
-; lower to `cq_template_add_f32(handle, handle)`. The float opcode
+; lower to `cq_template_fadd_f32(handle, handle)`. The float opcode
 ; selection uses `Type::isFloatTy()`; the handle is still i32 across
 ; every ABI width per PRD §"Width unification".
 ;
@@ -11,9 +11,9 @@
 
 ; CHECK:     call i32 @cqrt_alloc_f32(float 1.500000e+00)
 ; CHECK:     call i32 @cqrt_alloc_f32(float 2.500000e+00)
-; CHECK:     call i32 @cq_template_add_f32(
+; CHECK:     call i32 @cq_template_fadd_f32(
 
-; CHECK-NOT: call i32 @cq_template_add_f32_hl(
+; CHECK-NOT: call i32 @cq_template_fadd_f32_hl(
 ; CHECK-NOT: cq_init_f32
 ; CHECK-NOT: fadd float
 
