@@ -28,4 +28,28 @@ struct OperandInfo {
 // Classical. Null `e` → Classical with `expr == nullptr`.
 OperandInfo classify(const clang::Expr *e);
 
+// Classify the left-hand side of an assignment (BinaryOperator with
+// opcode BO_Assign, or any CompoundAssignOperator). The LHS is
+// Quantum iff `e` (after peeling ParenExpr/ImplicitCastExpr layers)
+// is a DeclRefExpr to a quantum-annotated VarDecl. Semantically this
+// distinguishes Patterns 7 (`q = …`) and 8 (`q += …`): a quantum LHS
+// must be rewritten to `q.val = …` so the mid-handle's payload is
+// updated rather than its handle being aliased. The predicate is the
+// same as `classify` — the helper exists so call sites read as
+// "classify the assignment LHS" rather than "classify some Expr".
+// Null `e` → Classical with `expr == nullptr`.
+OperandInfo classifyAssignLHS(const clang::Expr *e);
+
+// Classify the operand of a UnaryOperator (Pattern 9: `-q`, `~q`,
+// `!q`, `++q`, `q++`, etc.). Quantum iff `e` (after peeling layers)
+// is a DeclRefExpr to a quantum-annotated VarDecl. A quantum unary
+// operand routes to `UnaryCodegen`, which materializes `b.val =
+// -a.val;` (etc.); a classical operand falls through to stock C
+// emission. Predicate matches `classify` / `classifyAssignLHS`; the
+// distinct entry point keeps codegen call sites self-documenting and
+// gives us a single seam if unary classification ever needs to
+// diverge (e.g. excluding `!` for floating-point quantum operands).
+// Null `e` → Classical with `expr == nullptr`.
+OperandInfo classifyUnaryOperand(const clang::Expr *e);
+
 }  // namespace qct

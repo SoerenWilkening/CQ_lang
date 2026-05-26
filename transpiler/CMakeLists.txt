@@ -89,6 +89,7 @@ add_executable(quantum_transpiler_unit_tests
     tests/unit/test_type_map.cpp
     tests/unit/test_source_text.cpp
     tests/unit/test_operand_class.cpp
+    tests/unit/operand_class/test_assign_lhs.cpp
     tests/unit/test_codegen.cpp
     tests/unit/test_decl_stmt_rewrite_int.cpp
     tests/unit/test_decl_stmt_rewrite_float.cpp
