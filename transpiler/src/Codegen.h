@@ -27,6 +27,7 @@
 //                          `<midStructName> <name>; <src>.val ±= 1; <name>.val = <src>.val;`
 //                        Postfix inc/dec (UO_PostInc/Dec):
 //                          `<midStructName> <name>; <name>.val = <src>.val; <src>.val ±= 1;`
+//   QuantumCrossCopy  -> <midStructName> <name>; <name>.val = (<castTypeName>) <sourceName>.val;
 //
 // M10 widened `widthSuffix` from Phase 1's width-only `"i32"` form to
 // the signedness-bearing `TypeMap::intrinsicSuffix` (e.g. "si32", "ui8",
@@ -59,6 +60,8 @@ struct VarRewriteInput {
                            //                           → split form, no intrinsic
         QuantumUnaryInit,  // `quantum T b = -a;` (or ~a/!a/++a/a++/--a/a--)
                            //                           → decl + UnaryCodegen
+        QuantumCrossCopy,  // `quantum T b = q_other;` (cross-width Q→Q)
+                           //                           → decl + cast on .val
     } form;
 
     // ClassicalInit: original initializer source text, spliced verbatim
@@ -86,6 +89,13 @@ struct VarRewriteInput {
     // routes through `UnaryCodegen::emitUnary` with `destExpr =
     // <name>.val`, producing the per-opcode shape documented above.
     clang::UnaryOperatorKind unaryOpcode;
+
+    // QuantumCrossCopy (Patterns 10/11 — Phase 3 M9): cross-width Q→Q
+    // init. `sourceName` carries the source quantum VarDecl name;
+    // `castTypeName` is the destination's C type name for the cast (e.g.
+    // "long" for `quantum long b = q_int;`). Codegen emits
+    // `<midStructName> <name>; <name>.val = (<castTypeName>) <sourceName>.val;`
+    std::string castTypeName;
 };
 
 // Render a single VarRewriteInput as one rewritten C statement

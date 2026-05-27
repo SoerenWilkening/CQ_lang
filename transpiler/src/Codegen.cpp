@@ -50,6 +50,16 @@ std::string declThenCopy(const std::string &midStructName,
     return os.str();
 }
 
+std::string declThenCrossCopy(const std::string &midStructName,
+                              const std::string &name,
+                              const std::string &sourceName,
+                              const std::string &castTypeName) {
+    std::ostringstream os;
+    os << midStructName << " " << name << "; "
+       << name << ".val = (" << castTypeName << ") " << sourceName << ".val;";
+    return os.str();
+}
+
 // Predicate: opcode is a pure-unary (no side effect) operator.
 bool isPureUnaryOpcode(clang::UnaryOperatorKind op) {
     return op == clang::UO_Minus || op == clang::UO_Not ||
@@ -119,6 +129,9 @@ std::string renderVar(const VarRewriteInput &in) {
         // only contribute the declaration prefix here.
         return declThenUnary(in.midStructName, in.name, in.sourceName,
                              in.unaryOpcode);
+    case Form::QuantumCrossCopy:
+        return declThenCrossCopy(in.midStructName, in.name, in.sourceName,
+                                 in.castTypeName);
     }
     // Unknown Form (e.g. a future enumerator that bypassed our switch):
     // fail safe by emitting an Uninit-style declaration so we still

@@ -9,9 +9,37 @@
 #include <clang/AST/Expr.h>
 #include <clang/Basic/LangOptions.h>
 #include <clang/Basic/SourceManager.h>
+#include <clang/Lex/Lexer.h>
 #include <llvm/ADT/StringRef.h>
 
 namespace qct {
+
+namespace {
+
+// Clang drops the `annotate("quantum")` declaration attribute on cast
+// types, so the AST's QualType for `(quantum long)` is just `long`.
+// Detect Q→Q by inspecting the unexpanded source text of the cast's
+// type specifier for the "quantum" macro name.
+bool isDestinationQuantum(const clang::CStyleCastExpr *ce,
+                          const clang::SourceManager &sm,
+                          const clang::LangOptions &lo) {
+    clang::SourceLocation lparen = sm.getSpellingLoc(ce->getLParenLoc());
+    clang::SourceLocation rparen = sm.getSpellingLoc(ce->getRParenLoc());
+    if (lparen.isInvalid() || rparen.isInvalid()) {
+        return false;
+    }
+    bool invalid = false;
+    llvm::StringRef text = clang::Lexer::getSourceText(
+        clang::CharSourceRange::getCharRange(lparen.getLocWithOffset(1),
+                                             rparen),
+        sm, lo, &invalid);
+    if (invalid) {
+        return false;
+    }
+    return text.contains("quantum");
+}
+
+}  // namespace
 
 std::optional<CastRewrite> buildCastRewrite(const clang::CStyleCastExpr *ce,
                                             const clang::ASTContext &ctx) {
@@ -76,9 +104,18 @@ std::optional<CastRewrite> buildCastRewrite(const clang::CStyleCastExpr *ce,
     if (sfx.empty()) {
         return std::nullopt;
     }
+
     CastRewrite out;
-    out.replacement =
-        "cq_measure_" + sfx.str() + "(" + argText + ")";
+    if (isDestinationQuantum(ce, sm, lo)) {
+        // Q→Q: stock C cast on .val — no measurement.
+        clang::PrintingPolicy pp(lo);
+        std::string typeName = ce->getType().getAsString(pp);
+        out.replacement =
+            "(" + typeName + ") " + argText + ".val";
+    } else {
+        out.replacement =
+            "cq_measure_" + sfx.str() + "(" + argText + ")";
+    }
 
     // Hand back the CStyleCastExpr's token range. The cast's begin
     // location is the opening `(` of the cast's type parenthesis and

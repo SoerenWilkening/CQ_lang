@@ -230,23 +230,17 @@ TEST(DeclStmtRewritePattern6Test, TypedefCanonicalMatch) {
     EXPECT_EQ(r->replacement, "qschar_mid_t b; b.val = a.val;");
 }
 
-// Negative: cross-type assignment routes to ClassicalInit (the
-// initializer is spliced verbatim into cq_init_<sfx>). The IR pass
-// will fail at lowering — a documented soft-failure mode for Phase 2
-// (PRD §"Diagnostics baseline"); the rewriter itself produces
-// parseable C here.
+// Cross-type Q→Q: Pattern 11 (Phase 3 M9). `quantum int b = a;` where
+// `a` is `quantum long` emits a cross-copy with a narrowing cast on
+// `.val`. Phase 2 routed this to ClassicalInit; Phase 3 handles it.
 
-TEST(DeclStmtRewritePattern6Test, CrossTypeFallsToClassicalInit) {
+TEST(DeclStmtRewritePattern6Test, CrossTypeEmitsQuantumCrossCopy) {
     auto r = rewriteDeclFor(
         "    quantum long a = 7;\n"
         "    quantum int b = a;",
         "b");
     ASSERT_TRUE(r.has_value());
-    // The exact splice depends on Clang's source-text recovery (it may
-    // be just "a" or "a" with implicit-cast adornment); both spellings
-    // are valid C. Assert on the surrounding scaffolding instead.
-    EXPECT_NE(r->replacement.find("qint_mid_t b = cq_init_si32("),
-              std::string::npos);
+    EXPECT_EQ(r->replacement, "qint_mid_t b; b.val = (int) a.val;");
 }
 
 // Negative: assigning from a classical (non-quantum) variable does

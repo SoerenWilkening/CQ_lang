@@ -257,3 +257,47 @@ TEST(CodegenTest, EmptyMultiDecl) {
     // caller can no-op a DeclStmt that lost all its quantum decls.
     EXPECT_EQ(renderDeclStmt({}), "");
 }
+
+// ---------------------------------------------------------------------------
+// Pattern 10/11 (QuantumCrossCopy) — Phase 3 M9. Cross-width Q→Q init
+// emits a stock C cast on `.val`. The cast type name comes from the
+// destination VarDecl's type (e.g. "long" for `quantum long b = q_int;`).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+VarRewriteInput quantumCrossCopy(const std::string &name,
+                                 const std::string &mid,
+                                 const std::string &source,
+                                 const std::string &castType) {
+    VarRewriteInput in{};
+    in.name = name;
+    in.midStructName = mid;
+    in.form = VarRewriteInput::Form::QuantumCrossCopy;
+    in.sourceName = source;
+    in.castTypeName = castType;
+    return in;
+}
+
+}  // namespace
+
+TEST(CodegenTest, QuantumCrossCopyIntToLong) {
+    EXPECT_EQ(renderVar(quantumCrossCopy("b", "qlong_mid_t", "a", "long")),
+              "qlong_mid_t b; b.val = (long) a.val;");
+}
+
+TEST(CodegenTest, QuantumCrossCopyLongToInt) {
+    EXPECT_EQ(renderVar(quantumCrossCopy("b", "qint_mid_t", "a", "int")),
+              "qint_mid_t b; b.val = (int) a.val;");
+}
+
+TEST(CodegenTest, QuantumCrossCopyIntToFloat) {
+    EXPECT_EQ(renderVar(quantumCrossCopy("b", "qfloat_mid_t", "a", "float")),
+              "qfloat_mid_t b; b.val = (float) a.val;");
+}
+
+TEST(CodegenTest, QuantumCrossCopyIntToUnsignedLong) {
+    EXPECT_EQ(
+        renderVar(quantumCrossCopy("b", "qulong_mid_t", "a", "unsigned long")),
+        "qulong_mid_t b; b.val = (unsigned long) a.val;");
+}

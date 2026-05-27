@@ -121,15 +121,52 @@ void populateFromInit(const clang::VarDecl *vd,
     // of the same canonical type. Tried before the binop dispatch so a
     // bare DeclRefExpr doesn't fall through to ClassicalInit's
     // verbatim-splice path. If the canonical types don't match, this
-    // returns null and we proceed to the binop/classical dispatch
-    // below — letting cross-type cases route through ClassicalInit (a
-    // documented soft-failure mode for Phase 2; see PRD
-    // §"Diagnostics baseline").
+    // returns null and we proceed to cross-width Q→Q (Pattern 11)
+    // before the binop/classical dispatch.
     if (const clang::VarDecl *src =
             patternSixSource(probe, vd->getType())) {
         out->form = VarRewriteInput::Form::QuantumCopy;
         out->sourceName = src->getNameAsString();
         return;
+    }
+
+    // Patterns 10/11 (Phase 3 M9): cross-width Q→Q init. Peel through
+    // CStyleCastExpr (for explicit `(quantum T)` casts) in addition to
+    // the paren/implicit layers already stripped above. If the underlying
+    // expression is a quantum DeclRefExpr, emit a stock C cast on `.val`.
+    {
+        const clang::Expr *crossProbe = probe;
+        for (;;) {
+            if (const auto *cse =
+                    clang::dyn_cast<clang::CStyleCastExpr>(crossProbe)) {
+                crossProbe = cse->getSubExpr();
+                continue;
+            }
+            if (const auto *pe =
+                    clang::dyn_cast<clang::ParenExpr>(crossProbe)) {
+                crossProbe = pe->getSubExpr();
+                continue;
+            }
+            if (const auto *ice =
+                    clang::dyn_cast<clang::ImplicitCastExpr>(crossProbe)) {
+                crossProbe = ice->getSubExpr();
+                continue;
+            }
+            break;
+        }
+        if (const auto *dre =
+                clang::dyn_cast<clang::DeclRefExpr>(crossProbe)) {
+            if (const auto *srcVd =
+                    clang::dyn_cast<clang::VarDecl>(dre->getDecl())) {
+                if (hasQuantumAttr(srcVd)) {
+                    clang::PrintingPolicy pp(lo);
+                    out->form = VarRewriteInput::Form::QuantumCrossCopy;
+                    out->sourceName = srcVd->getNameAsString();
+                    out->castTypeName = vd->getType().getAsString(pp);
+                    return;
+                }
+            }
+        }
     }
 
     // Pattern 9 declaration-init (M8 round 2): `quantum T b = -a;` (or

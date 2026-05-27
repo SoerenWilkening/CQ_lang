@@ -134,6 +134,8 @@ add_executable(quantum_transpiler_unit_tests
     # this file pins the AST wiring so a future refactor cannot
     # silently regress the byte-exact emission from PLAN §4.8.
     tests/unit/test_pattern9_pipeline.cpp
+    # Phase 3 M9: cast discriminator tests (Q→Q vs Q→C).
+    tests/unit/cast_discriminator/test_cast_discriminator.cpp
 )
 # test_cq_mid_compiles.cpp #include's <cq_mid.h> from the repo-root
 # include/ dir (the transpiled-C ABI surface; not normally consumed by
