@@ -11,8 +11,6 @@
 ; sibling (`ui32`) — same `cqrt_alloc_i32` / `cqrt_measure_i32` /
 ; `cq_template_add_i32` symbols. Non-i32 suffix coverage lands with
 ; M15–M17 once the per-width downstream symbols come online.
-;
-; Spec: phases/phase2/PLAN.md §4.14.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

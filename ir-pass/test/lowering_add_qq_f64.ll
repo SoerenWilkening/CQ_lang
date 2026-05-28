@@ -2,8 +2,6 @@
 ; Two tainted `qdouble_mid_t` handles flow through `fadd double` and
 ; must lower to `cq_template_fadd_f64(handle, handle)`. The float opcode
 ; selection uses `Type::isDoubleTy()`.
-;
-; Spec: phases/phase2/PLAN.md §4.16.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

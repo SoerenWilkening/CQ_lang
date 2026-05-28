@@ -9,8 +9,6 @@
 ; lineage carrier. The end-to-end Phase 1 pattern (extractvalue + add +
 ; measure) is already covered by `lowering_basic.ll`; this fixture keeps
 ; the M15-shape uniform with the other six rebind fixtures (init-only).
-;
-; Spec: phases/phase2/PLAN.md §4.15.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

@@ -14,8 +14,7 @@
  * linker would resolve a definition (PRD §"Intrinsic surface").
  *
  * Architecture references: docs/architecture.md §3 (mid-type), §6.1
- * (init), §6.2 (measure). Phase 2 contract: phases/phase2/PRD.md
- * §"Type map" and §"Intrinsic surface"; phases/phase2/PLAN.md §4.2.
+ * (init), §6.2 (measure).
  */
 #ifndef CQ_MID_H_
 #define CQ_MID_H_

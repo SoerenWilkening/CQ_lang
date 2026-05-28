@@ -10,8 +10,6 @@
 ; — struct→handle via rebind). The end-to-end Phase 1 pattern with add
 ; is already covered by `lowering_basic.ll` and `measure_only.ll`; this
 ; fixture keeps the M17-shape uniform with the other six.
-;
-; Spec: phases/phase2/PLAN.md §4.17.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

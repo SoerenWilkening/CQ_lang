@@ -2,8 +2,6 @@
 ; One tainted `qfloat_mid_t` handle, one float literal flow through
 ; `fadd float` and must lower to
 ; `cq_template_fadd_f32_hl(handle, classical)`.
-;
-; Spec: phases/phase2/PLAN.md §4.16.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

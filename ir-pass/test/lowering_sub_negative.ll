@@ -4,8 +4,6 @@
 ; OpcodeLowering must report it through a loud, recognizable
 ; "no template for opcode" diagnostic — never silently leave the `sub`
 ; in the IR. PLAN.md §4.16: "loud, not silent."
-;
-; Spec: phases/phase2/PLAN.md §4.16, §8.4; PRD §"Diagnostics baseline".
 
 ; The pass calls `DiagnosticInfoUnsupported(DS_Error)` which makes opt
 ; exit non-zero. Inverting via `not` is the canonical LIT idiom — the

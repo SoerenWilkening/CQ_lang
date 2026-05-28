@@ -2,8 +2,6 @@
 ; tainted `qbool_mid_t` handle, one literal `true` flow through `add i1`
 ; and must lower to `cq_template_add_i1_hl(handle, classical)`. Taint-
 ; set non-membership selects the `_hl` dispatch.
-;
-; Spec: phases/phase2/PLAN.md §4.16.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

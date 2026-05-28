@@ -7,8 +7,6 @@
 ;
 ; Pre-M15 layering: only i32-ABI suffixes (`si32`, `ui32`) are safe
 ; downstream. Non-i32-ABI suffixes lift with M15.
-;
-; Spec: phases/phase2/PLAN.md §4.14.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

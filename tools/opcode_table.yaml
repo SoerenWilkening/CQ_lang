@@ -6,7 +6,6 @@
 #   - ir-pass/src/OpcodeTables.cpp     (dispatch tables consumed by M11-M14)
 #   - ir-pass/test/phase3/<op>/*.ll    (~340 LIT fixtures, M16)
 #
-# Spec: phases/phase3/PRD.md §"Operator surface"; phases/phase3/PLAN.md §4.1, §6.
 # Policy: backend stays stubbed (memory `feedback-no-backend-until-frontend-done`).
 # This file declares SYMBOLS and DISPATCH METADATA only; never template bodies.
 #

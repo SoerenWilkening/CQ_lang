@@ -7,8 +7,6 @@
 ; Pre-M17 the measure lowering is i32-only, so this fixture leaves the
 ; add result unused and returns void — the per-width add lowering is
 ; what we're pinning.
-;
-; Spec: phases/phase2/PLAN.md §4.16.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

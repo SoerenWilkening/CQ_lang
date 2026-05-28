@@ -2,8 +2,6 @@
 ; tainted handles from `cq_init_si16` (suffix `si16` maps to ABI width
 ; `i16`) flow through `add i16` and must lower to
 ; `cq_template_add_i16(handle, handle)`.
-;
-; Spec: phases/phase2/PLAN.md §4.16.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

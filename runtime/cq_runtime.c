@@ -1,6 +1,6 @@
 /* cq_runtime.c — Phase 2 trace-only runtime stub.
  *
- * See cq_runtime.h and phases/phase2/PLAN.md §4.6, §6.6 for the spec.
+ * See cq_runtime.h for the spec.
  *
  * Each entry point prints exactly one '\n'-terminated trace line to
  * stdout and flushes, so the trace stays well-ordered with any other

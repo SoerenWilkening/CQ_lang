@@ -6,7 +6,7 @@
 // unchanged — handles are i32 across every ABI width per PRD §"Width
 // unification" — but the per-init alloc symbol now switches per width:
 // `qfloat_mid_t` → `cqrt_alloc_f32`, `qbool_mid_t` → `cqrt_alloc_i1`,
-// and so on. Spec: phases/phase2/PLAN.md §4.15.
+// and so on.
 
 #include "MidHandleRebind.h"
 

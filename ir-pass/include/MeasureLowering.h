@@ -33,8 +33,6 @@
 // place. This is intentionally loud rather than silent so a future
 // front-end shape that we missed surfaces as a build break instead of
 // a wrong trace.
-//
-// Spec: phases/phase2/PLAN.md §4.12, §4.17.
 
 #ifndef CQ_IRPASS_MEASURE_LOWERING_H_
 #define CQ_IRPASS_MEASURE_LOWERING_H_

@@ -7,8 +7,6 @@
 ; unification"; only the measure's return type widens to float. Init
 ; flows directly into measure (operand pattern (a) — struct→handle via
 ; rebind).
-;
-; Spec: phases/phase2/PLAN.md §4.17.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

@@ -18,9 +18,6 @@
 // Width unification: 14 suffixes collapse to 7 ABI widths {i1, i8, i16,
 // i32, i64, f32, f64}. `sl`/`ul` are target-dependent (resolved from
 // the Module's DataLayout at construction).
-//
-// Spec: phases/phase2/PRD.md §"Type map", §"Width unification";
-//       phases/phase2/PLAN.md §4.13.
 
 #ifndef CQ_IRPASS_WIDTH_DISPATCH_H_
 #define CQ_IRPASS_WIDTH_DISPATCH_H_

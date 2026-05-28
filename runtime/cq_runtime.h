@@ -33,9 +33,6 @@
  * Front-end intrinsics (cq_init_*, cq_measure_*) carry the
  * signedness-bearing suffix (e.g. _si32); the IR pass bridges
  * frontend signedness suffix → runtime width-only suffix.
- *
- * Spec: phases/phase2/PRD.md §"Stub libcq_runtime";
- *       phases/phase2/PLAN.md §4.4.
  */
 #ifndef CQ_RUNTIME_H_
 #define CQ_RUNTIME_H_

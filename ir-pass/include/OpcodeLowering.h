@@ -30,8 +30,6 @@
 //
 // Mutates `taint` and `rebind`: template result inherits the op's
 // taint and `BirthOrder` slot; the original op is dropped from both.
-//
-// Spec: phases/phase2/PLAN.md §4.12, §4.16; PRD §"IR pass changes".
 
 #ifndef CQ_IRPASS_OPCODE_LOWERING_H_
 #define CQ_IRPASS_OPCODE_LOWERING_H_

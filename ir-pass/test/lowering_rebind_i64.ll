@@ -12,8 +12,6 @@
 ; unification"; only the alloc's argument type widens to i64. This
 ; fixture isolates the rebind step: no `add`, no measure, so the
 ; M16/M17 paths (still i32-pinned pre-M17) don't fire.
-;
-; Spec: phases/phase2/PLAN.md §4.15.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

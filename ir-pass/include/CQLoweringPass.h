@@ -21,8 +21,6 @@
 // extractvalue/insertvalue traffic on the `%qint_mid_t` struct is removed
 // so the post-pass IR contains only i32 handles. After lowering, the pass
 // erases the front-end intrinsic declarations once they are use-less.
-//
-// Spec: phases/phase1/PLAN.md §4.5.
 
 #ifndef CQ_IRPASS_CQ_LOWERING_PASS_H_
 #define CQ_IRPASS_CQ_LOWERING_PASS_H_

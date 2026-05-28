@@ -3,8 +3,6 @@
 ; `cq_template_add_i32(handle, handle)`. The Phase 1 baseline; the
 ; existing `lowering_basic.ll` covers the full chain through measure,
 ; while this fixture isolates the per-width add lowering.
-;
-; Spec: phases/phase2/PLAN.md §4.16.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

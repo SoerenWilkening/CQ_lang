@@ -10,8 +10,6 @@
 // reuses the same address). `BirthOrder` is seeded with alloc
 // creation order; `OpcodeLowering` extends it for template results
 // and consumes it for stable Q+Q operand canonicalization.
-//
-// Spec: phases/phase2/PLAN.md §4.12, §4.15.
 
 #ifndef CQ_IRPASS_MID_HANDLE_REBIND_H_
 #define CQ_IRPASS_MID_HANDLE_REBIND_H_

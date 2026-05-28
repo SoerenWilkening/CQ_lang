@@ -10,8 +10,6 @@
 ; (still i32-pinned pre-M17) don't fire. The dangling init has no users
 ; → step 7 (eraseDeadInits) reclaims it, and the cleanup loop drops the
 ; now-useless `cq_init_i1` declaration too.
-;
-; Spec: phases/phase2/PLAN.md §4.15.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

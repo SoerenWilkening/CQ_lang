@@ -3,8 +3,6 @@
 ; lower to `cq_template_fadd_f32(handle, handle)`. The float opcode
 ; selection uses `Type::isFloatTy()`; the handle is still i32 across
 ; every ABI width per PRD §"Width unification".
-;
-; Spec: phases/phase2/PLAN.md §4.16.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

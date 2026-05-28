@@ -16,8 +16,6 @@
 // downstream add results, etc. `rebindMids` updates the set as it
 // rewrites mid-struct traffic: every newly-emitted `cqrt_alloc_<W>`
 // handle is added, every erased extractvalue is removed.
-//
-// Spec: phases/phase2/PLAN.md §4.12, §4.14.
 
 #ifndef CQ_IRPASS_TAINT_PROPAGATION_H_
 #define CQ_IRPASS_TAINT_PROPAGATION_H_
