@@ -8,7 +8,7 @@
  * by PLAN.md §6.6 and locked byte-exact by runtime_trace_test (the
  * test_trace driver + test_trace.expected.log golden).
  *
- * Format conventions (PLAN §6.6):
+ * Format conventions:
  *   - handle:  h<N>           (printed as %d of int32_t handle id)
  *   - ints:    %lld           (value cast to long long, uniform across
  *                              all int widths so the format string does

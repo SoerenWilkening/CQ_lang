@@ -146,8 +146,8 @@ FunctionCallee WidthDispatch::addTemplate(StringRef abiWidth,
   // symbols (C lacks overloading). Q+Q: (handle, handle) → handle.
   // Q+C: (handle, classical-of-width-W) → handle. Both return i32
   // handle; the rhs type is what distinguishes them at the call site.
-  // Matches cq_templates.h declarations exactly. Phase 3 M3 split the
-  // int and float opcode roots to follow LLVM IR convention: integer
+  // Matches cq_templates.h declarations exactly. The int and float
+  // opcode roots are split to follow LLVM IR convention: integer
   // widths land on `cq_template_add_i*`, float widths on
   // `cq_template_fadd_f*`. The opcode root is selected by the abiWidth
   // prefix ('f' → fadd, otherwise → add).

@@ -75,11 +75,11 @@ std::string opcodeDescription(BinaryOperator *BO) {
   return os.str();
 }
 
-// "No template for opcode" diagnostic. PLAN §4.16 — failure must be
-// loud, not silent. We use `DiagnosticInfoUnsupported` to match
-// MeasureLowering's pattern (one consistent diagnostic surface across
-// the pass). The string carries enough detail that a downstream LIT
-// fixture can FileCheck a recognizable substring.
+// "No template for opcode" diagnostic. Failure must be loud, not
+// silent. We use `DiagnosticInfoUnsupported` to match MeasureLowering's
+// pattern (one consistent diagnostic surface across the pass). The
+// string carries enough detail that a downstream LIT fixture can
+// FileCheck a recognizable substring.
 void diagnoseNoTemplate(BinaryOperator *BO) {
   std::string Detail = opcodeDescription(BO);
   std::string Msg = "no template for opcode '" + Detail +

@@ -35,13 +35,13 @@
 #   opcode, kind, llvm_inst, c_operators, pairs, variants.
 #   pairs is list of {from, to}; both names must appear in `widths`.
 #
-# Naming convention (PLAN §6.7 — modifier-then-variant):
+# Naming convention (modifier-then-variant):
 #   forward Q+Q:   cq_template_<op>[_<pred>]_<W>[_<from_to>]
 #   forward Q+C:   cq_template_<op>[_<pred>]_<W>[_<from_to>]_hl
 #   inverse Q+Q:   cq_template_<op>[_<pred>]_<W>[_<from_to>]_inv
 #   inverse Q+C:   cq_template_<op>[_<pred>]_<W>[_<from_to>]_hl_inv
 #
-# Acceptance count check (PLAN §4.1):
+# Acceptance count check:
 #   binary_opcodes  == 17 (7 int_arith + 6 int_bitwise + 4 fp_arith)
 #   unary_opcodes   == 1  (fneg)
 #   compare_opcodes == 2  (icmp x 10 preds x 5 widths; fcmp x 6 preds x 2 widths)

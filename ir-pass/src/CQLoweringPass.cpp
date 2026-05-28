@@ -1,15 +1,8 @@
-// CQLoweringPass.cpp — Phase 2 M12 thin orchestrator for the
-// cq-lowering pass.
+// CQLoweringPass.cpp — thin orchestrator for the cq-lowering pass.
 //
-// Pre-M12 this file was a 395-LOC monolith; the per-step bodies have
-// moved into width-resolver / taint / rebind / opcode / measure modules
-// (PLAN.md §2.6 layout). M12 is a behavior-preserving refactor: every
-// Phase 1 LIT fixture still passes byte-for-byte. Width parameterization
-// (handling `_Bool` / `i8` / `i16` / `i64` / `f32` / `f64`) is
-// M13–M17, landed in subsequent commits so a regression bisects clean.
-//
-// Spec: phases/phase2/PLAN.md §4.12; pre-split history in
-// phases/phase1/PLAN.md §4.5.
+// Per-step bodies live in width-resolver / taint / rebind / opcode /
+// measure modules. Width parameterization handles `_Bool` / `i8` /
+// `i16` / `i64` / `f32` / `f64`.
 
 #include "CQLoweringPass.h"
 
