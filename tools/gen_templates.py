@@ -15,7 +15,7 @@ Naming (PLAN §6.7 - "_hl" then "_inv"):
   fwd Q+Q:   cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>]
   fwd Q+C:   ..._hl    inv Q+Q: ..._inv    inv Q+C: ..._hl_inv
 
-Spec: phases/phase3/PLAN.md §4.2; trace format mirrors runtime/cq_templates.c.
+Trace format mirrors runtime/cq_templates.c.
 """
 from __future__ import annotations
 

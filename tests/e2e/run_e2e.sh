@@ -5,7 +5,6 @@
 # resulting binary, and diff its stdout against expected.log. Skips with
 # PASS when cqc is not yet built — the cqc shell driver lives in a separate
 # bd issue (-rm8) and may not exist when this harness is first wired up.
-# See phases/phase1/PLAN.md §4.7.
 #
 # Usage: run_e2e.sh [<cqc-path>] [<fixtures-dir>] [extra cqc args ...]
 #

@@ -3,8 +3,6 @@
 # Builds libcq_runtime as a static library (PRD §6: trace-only stubs,
 # e2e tests link the host binary against this). C11, propagates -Wall
 # -Wextra from the top-level CMakeLists.txt.
-#
-# Spec: phases/phase1/PLAN.md §4.3.
 
 add_library(cq_runtime STATIC
     cq_runtime.c
@@ -45,8 +43,6 @@ add_test(
 # under -Wall -Wextra -Wpedantic -Werror. The strict flags live only on
 # this target (root CMakeLists ships -Wall -Wextra without -Werror, per
 # its comment on line 9-11).
-#
-# Spec: phases/phase3/PLAN.md §4.3.
 add_library(runtime_header_compile_obj OBJECT test_header_compile.c)
 target_include_directories(runtime_header_compile_obj PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """tools/gen_templates_test.py - self-test for tools/gen_templates.py.
 
-Asserts (phase3 M2 acceptance):
+Asserts:
   1. Total symbol count == 680.
   2. Per-kind breakdown matches YAML projection (derived at runtime).
   3. Every .h declaration has a matching .c definition.

@@ -4,8 +4,6 @@
 # plugin that registers exactly one pass: `cq-lowering`. The pass itself
 # lives in src/CQLoweringPass.cpp; the registration shim lives in
 # src/Plugin.cpp; the public header is include/CQLoweringPass.h.
-#
-# Spec: phases/phase1/PLAN.md §4.5.
 
 # Standalone-configure support: if invoked without the top-level CMake,
 # replicate the LLVM lookup so the directory still configures.
