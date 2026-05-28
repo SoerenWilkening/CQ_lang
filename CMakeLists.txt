@@ -43,12 +43,13 @@ enable_testing()
 # ir-pass/, tests/e2e/. Only the bits that exist today are wired in; the
 # others land in later issues (-0np runtime, -rum ir-pass root, -e6t etc.)
 # and will be picked up automatically once their CMakeLists.txt files exist.
+#
+# Note: the transpiler/ subdirectory was archived (see archive/transpiler/)
+# under the taint-driven design — users write cq_* primitives directly,
+# so the libtooling AST rewriter and the tools/cqc driver that orchestrated
+# it are no longer part of the active build.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/runtime/CMakeLists.txt")
     add_subdirectory(runtime)
-endif()
-
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/transpiler/CMakeLists.txt")
-    add_subdirectory(transpiler)
 endif()
 
 # ir-pass: prefer the parent CMakeLists when issue -rum lands it; fall back
