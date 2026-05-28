@@ -559,6 +559,48 @@ clang combined.lowered.bc -lcq_templates -lcq_runtime -o program
 `cqc` (the project driver) wraps this multi-step flow under a single
 invocation that mirrors a stock `clang -flto` command line.
 
+### Optimization-level guidance
+
+The `-O` level passed to Clang at Stage 1 and to Clang at Stage 3 are
+independent choices with different risk profiles. Stage 2 (the
+`cq-lowering` pass itself) takes no `-O` level.
+
+| Stage | Default | `-O`-level-safe? | Notes |
+|---|---|---|---|
+| Stage 1 (pre-IR-pass) | `-O1` | floor only | `-O1` is the validated floor: mem2reg / SROA must run before the pass sees the IR (§3.1 of [`backend.md`](./backend.md) requires post-`mem2reg`/post-`SROA` SSA). `-O0` is not supported. `-O2+` is not prohibited but introduces risks (see below). |
+| Stage 3 (post-pass codegen) | matches user's `-O` | yes, any level | Stage 3 IR contains only stock LLVM ops on classical SSA plus opaque `cqrt_*` and `cq_template_*` externals. Whatever Clang chooses to do at `-O3` is by definition safe — there are no tainted ops left for stock optimizations to miscompile. Most binary runtime performance comes from this stage. |
+
+Stage-1 risks at `-O2`:
+
+- **Aggressive inlining** can pre-empt clone-on-taint (§7.2 of
+  [`backend.md`](./backend.md)) by inlining a callee before the pass
+  observes the call site, collapsing the taint signature.
+- **IPSCCP / argpromotion** can rewrite function signatures, breaking
+  the per-callsite taint-signature key the specialization cache uses.
+- **LoopUnroll / LoopVectorize** on a tainted loop (tainted bound,
+  tainted condition, tainted body) reshapes the CFG the pass walks.
+- **SimplifyCFG** can flatten branches whose post-dominator the
+  controlled-form lowering depends on (§8 of `backend.md`).
+- **GVN** can CSE across tainted values, fusing distinct handles into
+  one.
+
+Stage-1 risks at `-O3` add one more hazard:
+
+- **SLPVectorize** can fuse a tainted scalar op with an adjacent
+  untainted scalar op into a single vector op. The current template
+  surface (§12 of `backend.md`) covers scalar opcodes only, so a
+  vector-tainted op silently miscompiles without dedicated
+  vector-tainted-op template support.
+
+If a user pushes `-O3` at Stage 1 before vector-tainted templates
+exist, the workaround is `-fno-vectorize -fno-slp-vectorize` to
+suppress the vectorizers while keeping the rest of `-O3` active.
+
+Raising the Stage-1 default above `-O1` requires a regression test
+matrix: small CQ programs compiled at each `-O` level, lowered IR
+diffed, runtime gate sequences compared. Until that matrix exists,
+the default stays `-O1`.
+
 ---
 
 ## 9. Cross-references
