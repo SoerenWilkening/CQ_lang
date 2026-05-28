@@ -47,7 +47,11 @@ enable_testing()
 # Note: the transpiler/ subdirectory was archived (see archive/transpiler/)
 # under the taint-driven design — users write cq_* primitives directly,
 # so the libtooling AST rewriter and the tools/cqc driver that orchestrated
-# it are no longer part of the active build.
+# it are no longer part of the active build. The Phase 1 tests/e2e/ harness
+# (see archive/tests/e2e/) drove tools/cqc against fixtures and was archived
+# alongside it; a new e2e harness for the taint-driven pipeline (plain C +
+# cq_* primitives → clang → opt cq-lowering → link) will be wired in once
+# the pipeline gains enough surface to test end-to-end.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/runtime/CMakeLists.txt")
     add_subdirectory(runtime)
 endif()
@@ -58,8 +62,4 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ir-pass/CMakeLists.txt")
     add_subdirectory(ir-pass)
 elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ir-pass/test/CMakeLists.txt")
     add_subdirectory(ir-pass/test)
-endif()
-
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/CMakeLists.txt")
-    add_subdirectory(tests/e2e)
 endif()
