@@ -1,4 +1,4 @@
-; lowering_rebind_i16.ll — Width-parametric mid-struct rebind (M15) for
+; lowering_rebind_i16.ll — Width-parametric mid-struct rebind for
 ; the i16 ABI. Pins that `qshort_mid_t` is recognized through
 ; `WidthDispatch::midStructToSuffix` and that the per-init alloc target
 ; switches to `cqrt_alloc_i16` instead of the legacy i32-pinned shim.
@@ -8,8 +8,8 @@
 ;
 ; The handle is still i32 across every ABI width per PRD §"Width
 ; unification"; only the alloc's argument type widens. This fixture
-; isolates the rebind step: no `add`, no measure, so the M16/M17 paths
-; (still i32-pinned pre-M17) don't fire.
+; isolates the rebind step: no `add`, no measure, so the broader paths
+; don't fire.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

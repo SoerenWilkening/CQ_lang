@@ -1,8 +1,8 @@
-// Plugin.cpp — Phase 1 LLVM pass-plugin entry point for libCQPass.so.
+// Plugin.cpp — LLVM pass-plugin entry point for libCQPass.so.
 //
 // Registers only the cq-lowering pass. The prototype's other three passes
 // (cq-uncompute, cq-specialize, cq-control) stay in prototype/cq_pass.cpp
-// and are NOT productionized for Phase 1 (per PLAN.md §4.5).
+// and are NOT productionized.
 //
 // Standard out-of-tree pass-plugin shape (Polly / Enzyme / sanitizer
 // runtimes use the same pattern): we expose llvmGetPassPluginInfo() as a

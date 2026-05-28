@@ -1,7 +1,7 @@
 // OpcodeLowering.h — Lower tainted arithmetic opcodes to per-width
-// template calls. Was inline in `CQLoweringPass.cpp` step 5 (pre-M12).
+// template calls. Originally inline in `CQLoweringPass.cpp` step 5.
 //
-// M16 contract: walk every tainted BinaryOperator, dispatch Q+Q vs Q+C
+// Contract: walk every tainted BinaryOperator, dispatch Q+Q vs Q+C
 // from operand-taint membership, and emit the matching template:
 //
 //   * `add iW`  for W ∈ {1, 8, 16, 32, 64}
@@ -10,7 +10,7 @@
 // Width comes from `Type::getIntegerBitWidth()` / `isFloatTy()` /
 // `isDoubleTy()`; the symbol is `WidthDispatch::addTemplate(W, isQQ)`.
 //
-// Operand canonicalization (Phase 1 invariants, preserved):
+// Operand canonicalization (invariants preserved):
 //   * Q+Q: operands ordered by `BirthOrder` (lower-birth becomes lhs).
 //     Stabilizes the trace across clang versions that may swap
 //     commutative-add operands by SSA index.
@@ -25,8 +25,8 @@
 // Negative path: a tainted op whose opcode is not `add`/`fadd` (e.g.
 // `sub`), or whose width has no template (e.g. `i128`, `half`), emits
 // a `DiagnosticInfoUnsupported` "no template for opcode" error. PRD
-// §"Diagnostics baseline" mandates this stay loud, not silent, in
-// Phase 2; Phase 3 widens template coverage.
+// §"Diagnostics baseline" mandates this stay loud, not silent;
+// template coverage will widen later.
 //
 // Mutates `taint` and `rebind`: template result inherits the op's
 // taint and `BirthOrder` slot; the original op is dropped from both.

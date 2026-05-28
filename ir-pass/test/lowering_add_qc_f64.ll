@@ -1,4 +1,4 @@
-; lowering_add_qc_f64.ll — Per-width Q+C fadd for the f64 ABI (M16).
+; lowering_add_qc_f64.ll — Per-width Q+C fadd for the f64 ABI.
 ; One tainted `qdouble_mid_t` handle, one double literal flow through
 ; `fadd double` and must lower to
 ; `cq_template_fadd_f64_hl(handle, classical)`.

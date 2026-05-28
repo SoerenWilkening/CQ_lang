@@ -1,17 +1,17 @@
 // TaintPropagation.h — Forward taint propagation from quantum init
-// sources. Was inline in `CQLoweringPass.cpp` step 4 (pre-Phase-2-M12).
+// sources. Originally inline in `CQLoweringPass.cpp` step 4.
 //
-// M12 contract: walk the module, collect every `@cq_init_<sfx>` call
+// Contract: walk the module, collect every `@cq_init_<sfx>` call
 // site, seed the taint set with each init's RESULT SSA value, and
 // forward-propagate through user instructions. Taint sinks
 // (`@cq_measure_<sfx>`, `@cqrt_measure_<W>`) stop propagation —
 // measurement is the canonical point where quantum state becomes
-// classical. M14 widened the source set from `{cq_init_si32}` alone
-// to every suffix in `WidthDispatch::allSuffixes()`; both init and
+// classical. The source set spans every suffix in
+// `WidthDispatch::allSuffixes()`; both init and
 // measure intrinsic enumerations share that 14-suffix table.
 //
-// Propagation runs BEFORE `MidHandleRebind::rebindMids` (per PLAN.md
-// §4.12 split contract). Consequence: the taint set initially contains
+// Propagation runs BEFORE `MidHandleRebind::rebindMids` (split-step
+// contract). Consequence: the taint set initially contains
 // pre-rebind SSA values — init struct returns, extractvalue %s, 0 i32s,
 // downstream add results, etc. `rebindMids` updates the set as it
 // rewrites mid-struct traffic: every newly-emitted `cqrt_alloc_<W>`

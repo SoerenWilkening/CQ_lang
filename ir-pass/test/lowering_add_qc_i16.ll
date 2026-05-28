@@ -1,4 +1,4 @@
-; lowering_add_qc_i16.ll — Per-width Q+C add for the i16 ABI (M16). One
+; lowering_add_qc_i16.ll — Per-width Q+C add for the i16 ABI. One
 ; tainted `qshort_mid_t` handle, one i16 literal flow through `add i16`
 ; and must lower to `cq_template_add_i16_hl(handle, classical)`.
 

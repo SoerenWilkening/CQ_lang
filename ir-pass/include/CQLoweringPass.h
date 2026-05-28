@@ -1,4 +1,4 @@
-// CQLoweringPass.h — Phase 1 production header for the cq-lowering IR pass.
+// CQLoweringPass.h — production header for the cq-lowering IR pass.
 //
 // The pass walks each function, finds the front-end intrinsics that the
 // rewriter+Clang leave behind (`@cq_init_si32`, `@cq_measure_si32`),

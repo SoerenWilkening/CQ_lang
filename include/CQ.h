@@ -1,4 +1,4 @@
-/* CQ.h — Phase 1 user-facing header.
+/* CQ.h — user-facing header.
  *
  * The minimal surface a quantum-algorithm author needs to `#include`.
  * Just the `quantum` annotation that marks variables for the rewriter

@@ -1,4 +1,4 @@
-/* cq_mid.h — transpiled-C ABI for Phase 1 / Phase 2.
+/* cq_mid.h — transpiled-C ABI.
  *
  * Emitted into transpiled output by the rewriter; not part of the
  * user-facing surface in <CQ.h>. Declares the mid-level structs that
@@ -7,7 +7,7 @@
  * the cq-lowering IR pass to rewrite into cqrt_ and cq_template_
  * runtime calls.
  *
- * Phase 2 generalizes Phase 1's i32-only surface to the full C scalar
+ * Generalizes the original i32-only surface to the full C scalar
  * type set: 14 mid-structs (one per C scalar kind tracked by the type
  * map) and 28 intrinsics (init + measure per mid-struct). Bodies are
  * intentionally absent — the IR pass lowers each call site before any
@@ -42,7 +42,7 @@ extern "C" {
 /* runtime ABI.                                                        */
 /*                                                                     */
 /* Note: `qint_mid_t.val` is `int32_t` (not plain `int`) to preserve   */
-/* the Phase 1 binary layout — PRD §Type map line 79.                  */
+/* the binary layout — PRD §Type map line 79.                          */
 /* ------------------------------------------------------------------ */
 typedef struct { bool               val; } qbool_mid_t;
 typedef struct { char               val; } qchar_mid_t;
@@ -50,7 +50,7 @@ typedef struct { signed char        val; } qschar_mid_t;
 typedef struct { unsigned char      val; } quchar_mid_t;
 typedef struct { short              val; } qshort_mid_t;
 typedef struct { unsigned short     val; } qushort_mid_t;
-typedef struct { int32_t            val; } qint_mid_t;          /* unchanged from Phase 1 */
+typedef struct { int32_t            val; } qint_mid_t;          /* unchanged */
 typedef struct { unsigned int       val; } quint_mid_t;
 typedef struct { long               val; } qlong_mid_t;
 typedef struct { unsigned long      val; } qulong_mid_t;

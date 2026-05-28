@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""tools/gen_templates.py - Phase 3 template-stub generator.
+"""tools/gen_templates.py - template-stub generator.
 
 Reads tools/opcode_table.yaml and emits:
   - cq_templates.h          : extern "C" declarations (~680 symbols)
   - cq_templates.c          : printf-trace stub bodies
   - OpcodeTables.cpp        : IR-pass dispatch tables (linear scan)
-  - lit/<opcode>/<sym>.ll   : LIT fixture stubs (placeholder for M16)
+  - lit/<opcode>/<sym>.ll   : LIT fixture stubs (placeholder)
 
 Each file embeds the YAML SHA-256 in its banner so consumers can detect
 drift. --check mode regenerates into a tempdir and diffs byte-for-byte
@@ -29,7 +29,7 @@ import tempfile
 import yaml
 
 # Per-width C type + printf format + (optional) cast for the Q+C trace body.
-# Mirrors Phase 2's existing add/fadd stub format exactly.
+# Mirrors the existing add/fadd stub format exactly.
 WIDTH_INFO = {
     "i1":  {"ctype": "bool",    "fmt": "%d",   "cast": "(int)"},
     "i8":  {"ctype": "int8_t",  "fmt": "%lld", "cast": "(long long)"},
@@ -156,13 +156,13 @@ def emit_source(rows, yaml_sha):
 
 
 def emit_opcode_tables(rows, table, yaml_sha):
-    """Emit dispatch tables consumed by the IR pass (M10-M14).
+    """Emit dispatch tables consumed by the IR pass.
 
     Schema: one std::array per opcode-family, rows of {op, width, sym}.
     Linear-scan lookup is fine at table size <= 70.
     """
     parts = [banner(yaml_sha),
-             "// OpcodeTables.cpp - dispatch tables for IR-pass lowering (M11-M14).\n\n",
+             "// OpcodeTables.cpp - dispatch tables for IR-pass lowering.\n\n",
              "#include <array>\n#include <string_view>\n\nnamespace cq {\n\n",
              "struct OpcodeRow { std::string_view op; std::string_view width; "
              "std::string_view sym; };\n\n"]
@@ -199,7 +199,7 @@ def emit_opcode_tables(rows, table, yaml_sha):
 
 
 def emit_lit_fixtures(rows, yaml_sha):
-    """Emit a placeholder LIT fixture per forward symbol; real CHECKs land in M16.
+    """Emit a placeholder LIT fixture per forward symbol; real CHECKs land later.
 
     Returns dict {relative-path: content}.
     """
@@ -269,7 +269,7 @@ def check_mode(out_dir, yaml_path, targets):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Phase 3 template generator")
+    p = argparse.ArgumentParser(description="template generator")
     p.add_argument("--yaml", default=str(pathlib.Path(__file__).parent / "opcode_table.yaml"))
     p.add_argument("--output-dir", required=True)
     p.add_argument("--check", action="store_true",

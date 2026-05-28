@@ -1,4 +1,4 @@
-; lowering_add_qc_i8.ll — Per-width Q+C add for the i8 ABI (M16). One
+; lowering_add_qc_i8.ll — Per-width Q+C add for the i8 ABI. One
 ; tainted `qschar_mid_t` handle, one i8 literal flow through `add i8`
 ; and must lower to `cq_template_add_i8_hl(handle, classical)`.
 

@@ -12,7 +12,7 @@
 //     the latter).
 //   * Runtime / template symbols (`@cqrt_alloc_<W>`, `@cqrt_measure_<W>`,
 //     `@cq_template_add_<W>{,_hl}`) are lazy: declared on first call
-//     via `M.getOrInsertFunction`. Preserves Phase 1's invariant that
+//     via `M.getOrInsertFunction`. Preserves the invariant that
 //     a quantum-free function leaks no runtime decls.
 //
 // Width unification: 14 suffixes collapse to 7 ABI widths {i1, i8, i16,
@@ -79,7 +79,7 @@ public:
   // Names of front-end intrinsic decls eligible for end-of-pass cleanup
   // (erased iff use-less). Returns the full per-suffix list — 28 names
   // (14 inits + 14 measures) — so the cleanup loop in CQLoweringPass
-  // covers every suffix M13 added.
+  // covers every suffix.
   llvm::ArrayRef<llvm::StringRef> frontEndIntrinsicNames() const;
 
 private:

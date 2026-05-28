@@ -1,6 +1,6 @@
 // MidHandleRebind.cpp — Mid-struct → i32-handle SSA rebinding. Behavior
-// preserved from the pre-M12 monolith's steps 2 and 3, generalized in
-// M15 from `qint_mid_t`-only recognition to the full 14-entry
+// preserved from the original monolith's steps 2 and 3, generalized
+// from `qint_mid_t`-only recognition to the full 14-entry
 // mid-struct table via `WidthDispatch::midStructToSuffix`. The
 // rebinding logic (replace struct-typed SSA value with i32 handle) is
 // unchanged — handles are i32 across every ABI width per PRD §"Width
@@ -67,7 +67,7 @@ RebindMap rebindMids(Module &M, WidthDispatch &wd, TaintSet &taint) {
 
   IRBuilder<> Builder(wd.context());
 
-  // --- Step 2 (legacy, M15-widened): emit cqrt_alloc_<W>(value) per
+  // --- Step 2 (legacy, width-widened): emit cqrt_alloc_<W>(value) per
   // init, build the struct→handle map, and (flattened-shape only) RAUW
   // the init result.
   //
@@ -77,7 +77,7 @@ RebindMap rebindMids(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // is no extractvalue intermediary. The struct shape keeps the init's
   // struct uses alive until step 7 (eraseDeadInits) reclaims them.
   //
-  // M15: the per-init alloc symbol is now selected per width. We resolve
+  // The per-init alloc symbol is selected per width. We resolve
   // the suffix from the init's struct return type first (the 14-entry
   // mid-struct table); if that fails (flattened shape) we fall back to
   // the function name (`cq_init_<sfx>`). Either way we then compute the
@@ -114,7 +114,7 @@ RebindMap rebindMids(Module &M, WidthDispatch &wd, TaintSet &taint) {
     // ABI scalar type (i1/i8/.../f64) for this width, so we can rewire
     // init users straight to the alloc. The struct shape leaves
     // `Init->getType()` as a StructType and falls through to step 3's
-    // extractvalue rewriting. Pre-M15 this branch was i32-only; now
+    // extractvalue rewriting. Originally this branch was i32-only; now
     // every supported width can take the flattened path.
     Type *AbiTy = wd.llvmTypeFor(Sfx, wd.context());
     if (AbiTy && Init->getType() == AbiTy) {

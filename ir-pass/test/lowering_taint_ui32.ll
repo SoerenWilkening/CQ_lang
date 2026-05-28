@@ -1,16 +1,16 @@
-; lowering_taint_ui32.ll — Width-parametric taint sources (M14). Pins
+; lowering_taint_ui32.ll — Width-parametric taint sources. Pins
 ; that `@cq_init_ui32` is recognized as a taint source identically to
 ; `@cq_init_si32`: the init call seeds the work-list, the resulting
 ; handle is tainted, and the downstream `add i32` is rewritten to a
 ; Q+Q template call. Same FileCheck shape as `lowering_basic.ll`,
 ; differing only in the front-end intrinsic suffix.
 ;
-; M14 only widens the SOURCE set in TaintPropagation. The downstream
-; lowering (MidHandleRebind / OpcodeLowering / MeasureLowering) still
-; uses i32-pinned legacy shims, so this fixture exercises the i32-ABI
-; sibling (`ui32`) — same `cqrt_alloc_i32` / `cqrt_measure_i32` /
-; `cq_template_add_i32` symbols. Non-i32 suffix coverage lands with
-; M15–M17 once the per-width downstream symbols come online.
+; The SOURCE set widening in TaintPropagation is independent of the
+; downstream lowering (MidHandleRebind / OpcodeLowering /
+; MeasureLowering), which uses i32-pinned shims here, so this fixture
+; exercises the i32-ABI sibling (`ui32`) — same `cqrt_alloc_i32` /
+; `cqrt_measure_i32` / `cq_template_add_i32` symbols. Non-i32 suffix
+; coverage lands once the per-width downstream symbols come online.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

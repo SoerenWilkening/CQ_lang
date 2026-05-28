@@ -1,7 +1,7 @@
 // MeasureLowering.h — Lower `@cq_measure_<sfx>` to `@cqrt_measure_<W>`.
-// Was inline in `CQLoweringPass.cpp` step 6 (pre-Phase-2-M12).
+// Originally inline in `CQLoweringPass.cpp` step 6.
 //
-// M17 contract: walk every `@cq_measure_<sfx>` call collected by
+// Contract: walk every `@cq_measure_<sfx>` call collected by
 // `TaintPropagation` (14 frontend suffixes collapse to 7 ABI widths
 // per PRD §"Width unification"), resolve its struct/handle operand via
 // one of three shapes, and emit `@cqrt_measure_<W>(handle)` in its
@@ -9,7 +9,7 @@
 // name (`cq_measure_<sfx>`) → `WidthDispatch::abiWidthFor(sfx)` →
 // `WidthDispatch::measureRtFn(W)`.
 //
-// Operand shapes (Phase 1 invariants, all pinned by LIT/e2e fixtures):
+// Operand shapes (invariants pinned by LIT/e2e fixtures):
 //
 //   (a) Direct init result: the measure arg is a known `@cq_init_<sfx>`
 //       call recorded in `rebind.StructToHandle`. Used by

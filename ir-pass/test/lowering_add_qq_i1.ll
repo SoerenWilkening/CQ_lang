@@ -1,10 +1,10 @@
-; lowering_add_qq_i1.ll — Per-width Q+Q add for the i1 ABI (M16). Two
+; lowering_add_qq_i1.ll — Per-width Q+Q add for the i1 ABI. Two
 ; tainted `qbool_mid_t` handles flow through `add i1` and must lower to
 ; `cq_template_add_i1(handle, handle)`. The handle stays i32 across
 ; every ABI width per PRD §"Width unification"; only the source op's
 ; operand type drives the per-width template selection.
 ;
-; Pre-M17 the measure lowering is i32-only, so this fixture leaves the
+; Originally the measure lowering was i32-only, so this fixture leaves the
 ; add result unused and returns void — the per-width add lowering is
 ; what we're pinning.
 

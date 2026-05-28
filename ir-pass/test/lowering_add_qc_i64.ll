@@ -1,4 +1,4 @@
-; lowering_add_qc_i64.ll — Per-width Q+C add for the i64 ABI (M16). One
+; lowering_add_qc_i64.ll — Per-width Q+C add for the i64 ABI. One
 ; tainted `qlonglong_mid_t` handle, one i64 literal flow through `add
 ; i64` and must lower to `cq_template_add_i64_hl(handle, classical)`.
 

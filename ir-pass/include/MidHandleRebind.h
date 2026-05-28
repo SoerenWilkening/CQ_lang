@@ -1,5 +1,5 @@
-// MidHandleRebind.h — Mid-struct → i32-handle SSA rebinding. Was
-// inline in `CQLoweringPass.cpp` steps 2–3 (pre-Phase-2-M12).
+// MidHandleRebind.h — Mid-struct → i32-handle SSA rebinding.
+// Originally inline in `CQLoweringPass.cpp` steps 2–3.
 //
 // For every init in `taint.InitCalls`, emit `cqrt_alloc_<W>(value)`
 // adjacent to it and rewire mid-struct traffic to i32 handles. Both

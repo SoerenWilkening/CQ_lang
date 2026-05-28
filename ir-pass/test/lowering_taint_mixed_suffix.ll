@@ -1,12 +1,12 @@
-; lowering_taint_mixed_suffix.ll — Width-parametric taint sources (M14).
+; lowering_taint_mixed_suffix.ll — Width-parametric taint sources.
 ; Two distinct front-end suffixes (`si32` and `ui32`) coexist in the
 ; same module. Each init must be picked up as a separate taint source;
 ; the resulting handles flow through a single tainted `add i32` that
-; lowers to Q+Q. Confirms M14's enumeration walks the full suffix list
+; lowers to Q+Q. Confirms the enumeration walks the full suffix list
 ; rather than matching a single fixed name.
 ;
-; Pre-M15 layering: only i32-ABI suffixes (`si32`, `ui32`) are safe
-; downstream. Non-i32-ABI suffixes lift with M15.
+; Originally only i32-ABI suffixes (`si32`, `ui32`) were safe
+; downstream; non-i32-ABI suffixes lift later.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

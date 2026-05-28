@@ -1,12 +1,12 @@
-/* cq_runtime.c — Phase 2 trace-only runtime stub.
+/* cq_runtime.c — trace-only runtime stub.
  *
  * See cq_runtime.h for the spec.
  *
  * Each entry point prints exactly one '\n'-terminated trace line to
  * stdout and flushes, so the trace stays well-ordered with any other
- * stdout traffic from the host binary. Trace-line formats are pinned
- * by PLAN.md §6.6 and locked byte-exact by runtime_trace_test (the
- * test_trace driver + test_trace.expected.log golden).
+ * stdout traffic from the host binary. Trace-line formats are locked
+ * byte-exact by runtime_trace_test (the test_trace driver +
+ * test_trace.expected.log golden).
  *
  * Format conventions:
  *   - handle:  h<N>           (printed as %d of int32_t handle id)
@@ -20,10 +20,10 @@
  * Measure bodies print the zero return value as a literal in the trace
  * ("0" for ints, "0.000000" for floats). This is byte-identical to
  * formatting (long long)0 with %lld and 0.0 with %f respectively, and
- * matches the Phase 1 cqrt_measure_i32 convention.
+ * matches the original cqrt_measure_i32 convention.
  *
  * cqrt_free's trace-line format: this module emits "cqrt_free(h<N>)"
- * with NO "-> void" suffix. The arrow notation in the PLAN.md format
+ * with NO "-> void" suffix. The arrow notation in the trace format
  * exists to carry a return value; with no return there is nothing to
  * write after the parens, so we omit the arrow. Documented here so
  * the convention is discoverable from one place.
@@ -97,8 +97,8 @@ int32_t cqrt_alloc_f64(double value) {
 
 /* ---------------------------------------------------------------------
  * Measure bodies — one per width. Return zero of the matching width
- * (Phase 2 runtime is trace-only, no simulation). Zero is printed as
- * a literal to keep all measure bodies uniform and match the Phase 1
+ * (the runtime is trace-only, no simulation). Zero is printed as
+ * a literal to keep all measure bodies uniform and match the original
  * cqrt_measure_i32 convention; byte-identical to %lld of (long long)0
  * for ints and %f of 0.0 for floats.
  * ------------------------------------------------------------------- */

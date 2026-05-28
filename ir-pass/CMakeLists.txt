@@ -1,4 +1,4 @@
-# ir-pass/CMakeLists.txt — Phase 1 productionized CQ lowering pass plugin.
+# ir-pass/CMakeLists.txt — productionized CQ lowering pass plugin.
 #
 # Builds the CQPass shared module (libCQPass.so), an opt-loadable pass
 # plugin that registers exactly one pass: `cq-lowering`. The pass itself
@@ -15,7 +15,7 @@ if(NOT CMAKE_PROJECT_NAME)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   find_package(LLVM REQUIRED CONFIG)
   if(NOT LLVM_VERSION_MAJOR EQUAL 19)
-    message(FATAL_ERROR "Phase 1 pins LLVM 19; found ${LLVM_VERSION_MAJOR}")
+    message(FATAL_ERROR "LLVM 19 required; found ${LLVM_VERSION_MAJOR}")
   endif()
   message(STATUS "ir-pass (standalone): using LLVM ${LLVM_PACKAGE_VERSION}")
   include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})

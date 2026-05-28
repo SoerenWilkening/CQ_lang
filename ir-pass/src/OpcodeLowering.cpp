@@ -1,12 +1,12 @@
 // OpcodeLowering.cpp — Lower tainted arithmetic to per-width template
-// calls. M16 generalizes from the Phase 1 `add i32`-only path to:
+// calls. Generalizes from the original `add i32`-only path to:
 //
 //   add iW  → cq_template_add_iW(_hl)  for W ∈ {1, 8, 16, 32, 64}
 //   fadd fW → cq_template_fadd_fW(_hl) for fW ∈ {float, double}
 //
 // Per-width selection comes from the operand type:
 // `Type::getIntegerBitWidth()` for integers, `isFloatTy()` / `isDoubleTy()`
-// for floats. Q+Q vs Q+C dispatch is unchanged from Phase 1 — taint-set
+// for floats. Q+Q vs Q+C dispatch is unchanged — taint-set
 // membership of each operand drives it; the symbol name is now produced
 // through `WidthDispatch::addTemplate(abiWidth, isQQ)` instead of being
 // hardcoded.
@@ -15,7 +15,7 @@
 // `fadd` (e.g., `sub`, `mul`) — or one whose width has no template (e.g.,
 // `fadd half`) — produces a `DiagnosticInfoUnsupported` "no template for
 // opcode" error. PRD §"Diagnostics baseline" mandates this stay loud,
-// not silent, in Phase 2; Phase 3 widens template coverage.
+// not silent; template coverage will widen later.
 
 #include "OpcodeLowering.h"
 
@@ -178,7 +178,7 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
       unsigned BA = rebind.BirthOrder.lookup(A);
       unsigned BB_ = rebind.BirthOrder.lookup(B);
       // If either side lacks a BirthOrder, fall back to LLVM's operand
-      // order. Not expected in Phase 1/2 shapes but harmless.
+      // order. Not expected in canonical shapes but harmless.
       if (BA != 0 && BB_ != 0 && BB_ < BA) {
         Lhs = B;
         Rhs = A;

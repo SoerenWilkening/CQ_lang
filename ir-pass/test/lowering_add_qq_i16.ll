@@ -1,4 +1,4 @@
-; lowering_add_qq_i16.ll — Per-width Q+Q add for the i16 ABI (M16). Two
+; lowering_add_qq_i16.ll — Per-width Q+Q add for the i16 ABI. Two
 ; tainted handles from `cq_init_si16` (suffix `si16` maps to ABI width
 ; `i16`) flow through `add i16` and must lower to
 ; `cq_template_add_i16(handle, handle)`.

@@ -1,7 +1,7 @@
 // TaintPropagation.cpp — Forward taint propagation from quantum init
-// returns. Behavior preserved from the pre-M12 monolith's step-4 worker;
-// M14 widens the source set from `{@cq_init_si32}` to every
-// `@cq_init_<sfx>` declared in the module (14-suffix enumeration via
+// returns. Behavior preserved from the original monolith's step-4 worker;
+// the source set spans every `@cq_init_<sfx>` declared in the module
+// (14-suffix enumeration via
 // `WidthDispatch::allSuffixes()`). Propagation rules are unchanged.
 
 #include "TaintPropagation.h"
@@ -28,7 +28,7 @@ using FnSet = SmallPtrSet<Function *, 16>;
 
 // Per-function pass: collect init/measure call sites in BB order and
 // seed the propagation work-list with init RESULT SSA values. Iterating
-// per-function (rather than via `F->users()`) preserves Phase 1's
+// per-function (rather than via `F->users()`) preserves the
 // BB-order semantics — `MidHandleRebind` assigns `BirthOrder` to allocs
 // in this same order, which `OpcodeLowering` reads back for stable Q+Q
 // operand canonicalization.

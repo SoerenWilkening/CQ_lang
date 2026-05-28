@@ -1,7 +1,7 @@
 ; lowering_q_plus_c.ll — Mixed-operand Q+C dispatch. A tainted add whose
 ; rhs is an LLVM ConstantInt lowers to cq_template_add_i32_hl (handle,
 ; literal). Also covers the lhs-constant case where the IR pass swaps
-; operands so the handle is always first. Spec: PLAN.md §4.7.1 / §6.3.
+; operands so the handle is always first.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

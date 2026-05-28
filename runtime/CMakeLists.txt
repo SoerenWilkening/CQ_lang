@@ -1,4 +1,4 @@
-# runtime/CMakeLists.txt — Phase 1 trace-only runtime.
+# runtime/CMakeLists.txt — trace-only runtime.
 #
 # Builds libcq_runtime as a static library (PRD §6: trace-only stubs,
 # e2e tests link the host binary against this). C11, propagates -Wall

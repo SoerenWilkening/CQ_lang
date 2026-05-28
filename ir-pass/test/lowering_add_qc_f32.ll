@@ -1,4 +1,4 @@
-; lowering_add_qc_f32.ll — Per-width Q+C fadd for the f32 ABI (M16).
+; lowering_add_qc_f32.ll — Per-width Q+C fadd for the f32 ABI.
 ; One tainted `qfloat_mid_t` handle, one float literal flow through
 ; `fadd float` and must lower to
 ; `cq_template_fadd_f32_hl(handle, classical)`.

@@ -1,4 +1,4 @@
-; lowering_add_qq_i64.ll — Per-width Q+Q add for the i64 ABI (M16). Two
+; lowering_add_qq_i64.ll — Per-width Q+Q add for the i64 ABI. Two
 ; tainted handles from `cq_init_sll` (suffix `sll` maps to ABI width
 ; `i64`) flow through `add i64` and must lower to
 ; `cq_template_add_i64(handle, handle)`.

@@ -1,9 +1,9 @@
 ; lowering_sub_negative.ll — Negative fixture: a tainted `sub i32` has
-; no template registered in Phase 2 (PRD §"Diagnostics baseline"
-; documents this as a known soft-failure mode pending Phase 3).
+; no template registered (PRD §"Diagnostics baseline"
+; documents this as a known soft-failure mode).
 ; OpcodeLowering must report it through a loud, recognizable
 ; "no template for opcode" diagnostic — never silently leave the `sub`
-; in the IR. PLAN.md §4.16: "loud, not silent."
+; in the IR — loud, not silent.
 
 ; The pass calls `DiagnosticInfoUnsupported(DS_Error)` which makes opt
 ; exit non-zero. Inverting via `not` is the canonical LIT idiom — the
@@ -27,7 +27,7 @@ entry:
   %a_struct = call %qint_mid_t @cq_init_si32(i32 3)
   %a        = extractvalue %qint_mid_t %a_struct, 0
 
-  ; Tainted `sub`: Phase 2 has no template for this opcode. The pass
+  ; Tainted `sub`: no template for this opcode. The pass
   ; must diagnose the gap rather than swallowing it silently.
   %c        = sub i32 %a, 5
   ret void

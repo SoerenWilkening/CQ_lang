@@ -1,6 +1,6 @@
 ; passthrough_no_quantum.ll — Purely classical add with no cq_* intrinsics.
 ; The pass must early-out (no cq_init_si32 in the module) and leave the
-; classical add i32 untouched. Spec: PLAN.md §4.5.
+; classical add i32 untouched.
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

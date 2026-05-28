@@ -35,21 +35,17 @@ endif()
 # headers, so find_package(Clang) is no longer required.
 find_package(LLVM CONFIG REQUIRED)
 if(NOT LLVM_VERSION_MAJOR EQUAL 19)
-    message(FATAL_ERROR "Phase 1 pins LLVM 19; found ${LLVM_VERSION_MAJOR}")
+    message(FATAL_ERROR "LLVM 19 required; found ${LLVM_VERSION_MAJOR}")
 endif()
 message(STATUS "cq_lang: using LLVM ${LLVM_PACKAGE_VERSION} from ${LLVM_DIR}")
 
 enable_testing()
 
-# Conditional add_subdirectory: PLAN.md §4.1 names runtime/, transpiler/,
-# ir-pass/, tests/e2e/. Only the bits that exist today are wired in; the
-# others land in later issues (-0np runtime, -rum ir-pass root, -e6t etc.)
-# and will be picked up automatically once their CMakeLists.txt files exist.
-#
-# Note: the transpiler/ subdirectory was archived (see archive/transpiler/)
+# Conditional add_subdirectory: only the bits with a CMakeLists.txt are
+# wired in. The transpiler/ subdirectory was archived (see archive/transpiler/)
 # under the taint-driven design — users write cq_* primitives directly,
 # so the libtooling AST rewriter and the tools/cqc driver that orchestrated
-# it are no longer part of the active build. The Phase 1 tests/e2e/ harness
+# it are no longer part of the active build. The tests/e2e/ harness
 # (see archive/tests/e2e/) drove tools/cqc against fixtures and was archived
 # alongside it; a new e2e harness for the taint-driven pipeline (plain C +
 # cq_* primitives → clang → opt cq-lowering → link) will be wired in once

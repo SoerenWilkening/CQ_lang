@@ -1,4 +1,4 @@
-; lowering_add_qc_i1.ll — Per-width Q+C add for the i1 ABI (M16). One
+; lowering_add_qc_i1.ll — Per-width Q+C add for the i1 ABI. One
 ; tainted `qbool_mid_t` handle, one literal `true` flow through `add i1`
 ; and must lower to `cq_template_add_i1_hl(handle, classical)`. Taint-
 ; set non-membership selects the `_hl` dispatch.

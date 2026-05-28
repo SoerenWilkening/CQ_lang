@@ -70,7 +70,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
 
 bool CQLoweringPass::runOnFunction(Function &F) {
   // Compatibility shim for any unit-level caller of the per-function
-  // entry point. M12 lifts the canonical lowering loop to module scope
+  // entry point. The canonical lowering loop runs at module scope
   // (so the WidthDispatch / TaintSet objects can amortize across
   // functions); this wrapper preserves the historical Function&
   // signature by routing through a single-function "module view."

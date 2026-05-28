@@ -1,6 +1,6 @@
 // MeasureLowering.cpp — Lower `@cq_measure_<sfx>` calls to the matching
 // `@cqrt_measure_<W>(handle)` runtime entry per PRD §"Width unification".
-// M17 generalizes the M12 path (which was pinned to `cq_measure_si32` →
+// Generalizes the original path (which was pinned to `cq_measure_si32` →
 // `cqrt_measure_i32`) by deriving the runtime symbol per call site:
 //
 //   1. Resolve the suffix from the front-end intrinsic name (strip the

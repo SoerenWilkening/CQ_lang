@@ -1,4 +1,4 @@
-; lowering_add_qq_f64.ll — Per-width Q+Q fadd for the f64 ABI (M16).
+; lowering_add_qq_f64.ll — Per-width Q+Q fadd for the f64 ABI.
 ; Two tainted `qdouble_mid_t` handles flow through `fadd double` and
 ; must lower to `cq_template_fadd_f64(handle, handle)`. The float opcode
 ; selection uses `Type::isDoubleTy()`.

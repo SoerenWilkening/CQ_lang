@@ -1,8 +1,6 @@
 ; lowering_basic.ll — Standard lowering: two taint sources, one tainted add,
-; one measurement. Port of prototype/test/input.ll updated to Phase 1's
-; measure signature (cq_measure_si32 returns i32, not i64). Spec:
-; phase1/PLAN.md §4.5; phase2/PLAN.md §4.3 (M3 intrinsic rename + runtime
-; alloc collapse).
+; one measurement. Port of prototype/test/input.ll updated to the current
+; measure signature (cq_measure_si32 returns i32, not i64).
 
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

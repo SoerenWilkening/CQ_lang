@@ -1,4 +1,4 @@
-; lowering_measure_i64.ll — Width-parametric measure lowering (M17) for
+; lowering_measure_i64.ll — Width-parametric measure lowering for
 ; the i64 ABI. Pins that `cq_measure_sll` lowers to `cqrt_measure_i64`
 ; (returning i64) instead of the legacy i32-pinned shim.
 ;

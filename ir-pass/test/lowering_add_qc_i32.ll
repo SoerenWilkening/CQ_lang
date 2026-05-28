@@ -1,6 +1,6 @@
-; lowering_add_qc_i32.ll — Per-width Q+C add for the i32 ABI (M16). One
+; lowering_add_qc_i32.ll — Per-width Q+C add for the i32 ABI. One
 ; tainted `qint_mid_t` handle, one i32 literal flow through `add i32`
-; and lower to `cq_template_add_i32_hl(handle, classical)`. The Phase 1
+; and lower to `cq_template_add_i32_hl(handle, classical)`. The
 ; baseline; `lowering_q_plus_c.ll` covers the full chain through
 ; measure plus the lhs-constant swap path, while this fixture isolates
 ; the per-width add lowering.

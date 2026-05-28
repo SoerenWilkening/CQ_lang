@@ -1,23 +1,23 @@
-# tools/opcode_table.yaml — Phase 3 opcode surface (single source of truth).
+# tools/opcode_table.yaml — opcode surface (single source of truth).
 #
-# Drives `tools/gen_templates.py` (M2), which emits:
+# Drives `tools/gen_templates.py`, which emits:
 #   - runtime/cq_templates.h           (~700 lines, ~680 declarations)
 #   - runtime/cq_templates.c           (~1400 lines, printf-name stubs)
-#   - ir-pass/src/OpcodeTables.cpp     (dispatch tables consumed by M11-M14)
-#   - ir-pass/test/phase3/<op>/*.ll    (~340 LIT fixtures, M16)
+#   - ir-pass/src/OpcodeTables.cpp     (dispatch tables consumed by the IR pass)
+#   - ir-pass/test/phase3/<op>/*.ll    (~340 LIT fixtures)
 #
 # Policy: backend stays stubbed (memory `feedback-no-backend-until-frontend-done`).
 # This file declares SYMBOLS and DISPATCH METADATA only; never template bodies.
 #
 # ----------------------------------------------------------------------------
-# SCHEMA (inline; validated by tools/gen_templates_test.py in M2)
+# SCHEMA (inline; validated by tools/gen_templates_test.py)
 # ----------------------------------------------------------------------------
 # Top-level keys:
 #   version          : string  — schema version, "1".
 #   phase            : string  — owning phase identifier, "phase3".
 #   widths           : map     — symbolic width -> {bits, c_type, domain}.
 #   predicates       : map     — predicate-family -> ordered LLVM mnemonics.
-#   binary_opcodes   : list    — every binary data opcode (17 in Phase 3).
+#   binary_opcodes   : list    — every binary data opcode (17).
 #   unary_opcodes    : list    — every unary data opcode (1: fneg).
 #   compare_opcodes  : list    — comparator opcodes (2: icmp, fcmp).
 #   cast_opcodes     : list    — width / domain casts (9 kinds, 68 pairs).
@@ -53,7 +53,7 @@ phase: "phase3"
 
 # -- Widths --------------------------------------------------------------------
 # Symbolic names map to ABI metadata. Runtime ABI is signedness-agnostic
-# (PRD §"Width unification" carryover from Phase 2). 7 widths total.
+# (PRD §"Width unification"). 7 widths total.
 widths:
   i1:  { bits: 1,  c_type: "bool",    domain: "int" }
   i8:  { bits: 8,  c_type: "int8_t",  domain: "int" }
@@ -91,7 +91,7 @@ binary_opcodes:
   - { opcode: shl,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Shl",  c_operators: ["<<","<<="],                        variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
   - { opcode: lshr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::LShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
   - { opcode: ashr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::AShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
-  # Floating-point arithmetic (4; fneg is unary, frem deferred to Phase 7)
+  # Floating-point arithmetic (4; fneg is unary, frem deferred)
   - { opcode: fadd, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FAdd", c_operators: ["+","+="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
   - { opcode: fsub, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FSub", c_operators: ["-","-="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
   - { opcode: fmul, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FMul", c_operators: ["*","*="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }

@@ -16,7 +16,7 @@ namespace {
 
 // Canonical 14-suffix table — PRD §Type map. Int family first, then
 // floats. Same order is reused by allSuffixes() and the front-end
-// intrinsic name table; M14's per-suffix taint walk and M17's per-suffix
+// intrinsic name table; the per-suffix taint walk and the per-suffix
 // measure walk both rely on this order being canonical.
 //
 // AbiWidth = "" marks the target-dependent rows (sl, ul); they resolve
@@ -53,7 +53,7 @@ constexpr MidRow kMidRows[] = {
 };
 
 // ABI-width string → LLVM Type. The 7 supported widths cover the entire
-// Phase 2 surface; any other string returns nullptr and the caller is
+// surface; any other string returns nullptr and the caller is
 // expected to bail with a FunctionCallee(). Used by llvmTypeFor() and
 // by the three lazy-decl resolvers (allocFn, measureRtFn, addTemplate).
 Type *typeForAbiWidth(StringRef W, LLVMContext &Ctx) {

@@ -1,4 +1,4 @@
-; lowering_add_qq_i8.ll — Per-width Q+Q add for the i8 ABI (M16). Two
+; lowering_add_qq_i8.ll — Per-width Q+Q add for the i8 ABI. Two
 ; tainted handles from `cq_init_si8` (suffix `si8` maps to ABI width
 ; `i8`) flow through `add i8` and must lower to
 ; `cq_template_add_i8(handle, handle)`.

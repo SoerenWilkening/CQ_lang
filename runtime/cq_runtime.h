@@ -1,4 +1,4 @@
-/* cq_runtime.h — Phase 2 trace-only runtime stub (declarations).
+/* cq_runtime.h — trace-only runtime stub (declarations).
  *
  * Declares the 15 cqrt_* lowering targets used by the IR pass:
  *   - 7 allocators (one per width): cqrt_alloc_i{1,8,16,32,64} +
@@ -6,10 +6,10 @@
  *     returns a fresh monotonically-increasing handle.
  *   - 7 measure ops (one per width): cqrt_measure_i{1,8,16,32,64} +
  *     cqrt_measure_f{32,64}. Each takes a handle and returns a value
- *     of the matching width (always 0 in Phase 2 — the runtime is
+ *     of the matching width (always 0 — the runtime is
  *     trace-only, no simulation).
  *   - cqrt_free(handle): width-irrelevant lifetime hook; declared
- *     but unused in Phase 2 (reserved for later lifetime work).
+ *     but unused (reserved for later lifetime work).
  *
  * Plus the internal helper `cqrt_alloc_handle`, which is NOT one of
  * the 15 PRD-pinned symbols but is retained so templates (cq_templates)
@@ -25,10 +25,9 @@
  * Trace format (per call):
  *     <symbol>(<arg1>[, <arg2>...]) -> <return>
  * (or "<symbol>(<args>)" for cqrt_free, which has no return value).
- * Handles are printed as h<N>, N starting at 0. Bodies for the 12
- * new per-width symbols land in M06; existing 3 bodies (i32 alloc,
- * i32 measure, free) and the cqrt_alloc_handle helper body are
- * unchanged from Phase 1.
+ * Handles are printed as h<N>, N starting at 0. All 12 new per-width
+ * symbol bodies, plus the original 3 (i32 alloc, i32 measure, free)
+ * and the cqrt_alloc_handle helper, are unchanged.
  *
  * Front-end intrinsics (cq_init_*, cq_measure_*) carry the
  * signedness-bearing suffix (e.g. _si32); the IR pass bridges
@@ -41,7 +40,7 @@
 
 /* `bool` is a macro for `_Bool` in C11 via <stdbool.h>; it is a native
  * keyword in C++. Including <stdbool.h> keeps the `bool` spellings
- * below valid in both C TUs (the IR-pass output, the .c bodies in M06)
+ * below valid in both C TUs (the IR-pass output, the .c bodies)
  * and the C++ unit-test consumer (tests/unit/test_cq_runtime_compiles).
  * The PRD spells the parameter type `_Bool`; `bool` is the equivalent
  * spelling once <stdbool.h> is in scope, and the only one that parses
@@ -67,7 +66,7 @@ int32_t cqrt_alloc_f64(double  value);
 
 /* -----------------------------------------------------------------
  * Measurement — one per width. Takes a handle; returns a value of
- * the matching width (always 0 in Phase 2, runtime is trace-only).
+ * the matching width (always 0, runtime is trace-only).
  * Trace: "cqrt_measure_<W>(h<handle>) -> <0 in width's format>".
  * ----------------------------------------------------------------- */
 bool    cqrt_measure_i1 (int32_t handle);
@@ -79,8 +78,8 @@ float   cqrt_measure_f32(int32_t handle);
 double  cqrt_measure_f64(int32_t handle);
 
 /* -----------------------------------------------------------------
- * Free — width-irrelevant (handle-typed only). Declared but unused
- * in Phase 2; reserved for later lifetime work.
+ * Free — width-irrelevant (handle-typed only). Declared but unused;
+ * reserved for later lifetime work.
  * Trace: "cqrt_free(h<handle>)" (no return-value suffix).
  * ----------------------------------------------------------------- */
 void cqrt_free(int32_t handle);
@@ -89,7 +88,7 @@ void cqrt_free(int32_t handle);
  * Used by cqrt_alloc_<W> here and by cq_template_* in the templates
  * module to keep handle numbering globally monotonic. NOT one of the
  * 15 PRD-pinned runtime symbols; not part of the user-facing CQ.h
- * surface either. Retained per PLAN.md §4.4. */
+ * surface either. */
 int32_t cqrt_alloc_handle(void);
 
 #ifdef __cplusplus
