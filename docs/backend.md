@@ -61,11 +61,8 @@ It does **not** define:
 - Specific opcode-template circuit families (ripple-carry vs.
   Cuccaro vs. Draper; Karatsuba vs. schoolbook multiplier; etc.) —
   deferred to backend-implementation time
-- Simulator internals (statevector representation, density matrix
-  support, noise models) — runtime-variant concerns
-- Hardware backend transport (calibration, gate compilation to
-  native ISAs, connectivity-aware routing) — runtime-variant
-  concerns
+- Simulator internals (statevector representation, gate-counter
+  bookkeeping) — runtime-variant concerns
 
 ---
 
@@ -94,9 +91,8 @@ What the backend is **not**:
   operates on stock SSA, leaves classical code alone, and inherits
   every classical optimization Clang already ran.
 - A simulator. The runtime hands gate sequences to whatever output
-  target it is bound against (OpenQASM stream, in-memory `Circuit`
-  struct, simulator state, hardware transport). The compiler does
-  not assume any particular execution semantics.
+  target it is bound against (gate counter, simulator state). The
+  compiler does not assume any particular execution semantics.
 - A whole-function transformer. Uncomputation is per-op, derived
   from per-value SSA provenance — not Bennett-style whole-call
   wrap-around. Bennett's construction is used only at one
@@ -931,17 +927,17 @@ runtime implementations:
 
 | Runtime | Behavior at each `cqrt_*` call |
 |---|---|
-| `libcq_runtime_qasm.so` | Append a line to an OpenQASM output stream |
-| `libcq_runtime_circuit.so` | Append to an in-memory `Circuit` struct |
-| `libcq_runtime_eager.so` | Apply the gate immediately to a statevector (Orkan-style EagerContext) |
-| `libcq_runtime_density.so` | Apply to a density matrix; supports noise |
-| `libcq_runtime_hw.so` | Serialize and dispatch to a hardware backend |
+| `libcq_runtime_count.so` | Increment per-gate counters; no quantum state maintained |
+| `libcq_runtime_sim.so` | Apply the gate to a statevector simulator |
 
-A direct-execution variant (`libcq_runtime_eager.so`) bypasses
-circuit construction entirely — gates apply to simulator state at
-call time, no `gate_sequence` array maintained, no `Circuit` object
-built. The handle ABI is identical; only the runtime's internal
-behavior differs.
+Both variants implement the same handle ABI; the IR-emitted code
+cannot tell them apart. `_count` is the resource-estimator mode
+(useful for circuit-complexity analysis, gate-count diffs across
+algorithm variants, regression testing of optimization passes
+without committing to a simulator's numerical accuracy). `_sim` is
+the execution mode (runs the algorithm on a statevector backend).
+The link-time choice of runtime variant is the only knob between
+them.
 
 The classical-shadow short-circuit at measurement
 (`qreg_state_t.value` carrying the deterministic value when no
@@ -1033,8 +1029,10 @@ Selection mechanism (open):
 - **Cost model** (minimize depth / ancilla / gate count) — fine-grained,
   driven by Phase 11 cost-model infrastructure.
 - **Backend hint** — different `libcq_runtime` variants prefer
-  different templates (e.g., a connectivity-constrained hardware
-  backend favors templates with fewer long-range gates).
+  different templates (e.g., the `_count` variant may favor
+  templates whose gate count reflects a target hardware family;
+  the `_sim` variant may favor templates with simpler
+  numerically-stable rotations).
 
 Phase 1 ships one canonical variant per opcode-width pair; the
 variant-selection policy is a Phase 11 concern.
