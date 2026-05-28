@@ -133,6 +133,24 @@ does not create superposition — if applied to a non-tainted value, it is
 physically a no-op. If applied to an already-tainted value, it is lowered
 to a gate call but does not change taint status.
 
+**Multi-bit semantics.** For a W-bit operand, `cq_theta(x, θ)` applies
+`Ry(θ)` to each of the W qubits in the register (tensor product); the
+same per-bit rule applies to `cq_phi`. This is the natural register-as-
+tensor-product reading and matches Sturm.jl's `q.θ += δ` on `QInt{W}`.
+Gate-level details are a backend concern; the frontend treats the
+operation as opaque.
+
+**Operand-state dispatch.** `cq_theta` may be applied either to a
+classical value (creating fresh superposition) or to an already-tainted
+handle (continuing to rotate an existing register — chained rotation).
+The IR pass dispatches on operand state at lowering time; see *Step 2*
+below.
+
+**Measurement preserves the handle.** `cq_measure` reads the register
+into a classical scalar but does not consume the underlying qubit
+register. After measurement the register persists in a classical
+eigenstate and may be re-rotated by subsequent `cq_theta` calls.
+
 ---
 
 ## What this example exercises
@@ -143,11 +161,13 @@ to a gate call but does not change taint status.
 - SSA natural splitting of classical vs. quantum lifetimes (no IR-pass
   splitting logic needed)
 
-What this example does **not** exercise (deferred to future proposals):
+What this example does **not** walk through end-to-end (mechanism
+described elsewhere in this document; lowered IR walk deferred):
 
 - `cq_phi` (Rz) applied to an already-tainted variable
-- Function lifting (classical function called with tainted argument)
-- Quantum control flow, loops, uncomputation
+- Function lifting — see *Function lifting* below
+- Quantum control flow — see *Quantum control flow* below
+- Loops with tainted bounds, uncomputation at scope exit
 
 ---
 
@@ -307,8 +327,10 @@ SSA chain:
 | `%c` | **yes** | `add i32` with tainted operand `%a1` (Q+C mixed) |
 | `%m` | **classical** | `@cq_measure_i32` is a taint sink |
 
-Same propagation rules as the current pipeline. The only difference is
-the seed: `@cq_theta_i32` return instead of `@cq_init_i32` return.
+Forward operand-taint rules are the same as the current pipeline; only
+the seed changes (`@cq_theta_i32` return instead of `@cq_init_i32`
+return). When branches enter the picture, an additional **control-flow
+taint rule** applies — see *Quantum control flow*.
 
 ---
 
@@ -322,13 +344,20 @@ Scan for `@cq_theta_*` calls. Their return values are taint sources.
 (Also scan `@cq_phi_*` — these propagate existing taint but do not
 seed new taint.)
 
-### Step 2 — Insert allocation (new)
+### Step 2 — Insert allocation when operand is classical
 
-For each `@cq_theta_*` call, the input operand is a classical value that
-must be loaded onto a qubit register. Insert `cqrt_alloc_<W>` before
-the theta call:
+For each `@cq_theta_*` call, dispatch on the operand's taint state:
+
+- **Classical operand** — the input is a bit pattern that must be loaded
+  onto a fresh qubit register. Insert `cqrt_alloc_<W>` immediately before
+  the theta call, then lower the theta call to `cqrt_ry_<W>` on the new
+  handle.
+- **Tainted operand** — the input is already a qubit-register handle
+  (chained rotation). No allocation. Lower the theta call directly to
+  `cqrt_ry_<W>` on the existing handle.
 
 ```llvm
+; classical operand:
 ; before:
 %a1 = call i32 @cq_theta_i32(i32 3, double 0.5)
 
@@ -336,12 +365,19 @@ the theta call:
 %h_a = call i32 @cqrt_alloc_i32(i32 3)          ; allocate + init qubits
 call void @cqrt_ry_i32(i32 %h_a, double 0.5)    ; apply Ry gate
 ; %h_a is now the tainted handle
+
+; tainted operand (chained rotation):
+; before:
+%a2 = call i32 @cq_theta_i32(i32 %h_a, double 0.3)
+
+; after — no re-allocation:
+call void @cqrt_ry_i32(i32 %h_a, double 0.3)
 ```
 
 This replaces the current pipeline's allocation at declaration time
 (`cq_init_*` → `cqrt_alloc_*` in `MidHandleRebind`). The key difference:
-**allocation is gate-triggered, not declaration-triggered.** A variable
-that is never rotated is never allocated.
+**allocation is gate-triggered on classical operands, not declaration-
+triggered**, and a variable that is never rotated is never allocated.
 
 ### Step 3 — Forward taint propagation
 
@@ -357,6 +393,13 @@ handled identically.
 ### Step 5 — Measure lowering
 
 `@cq_measure_i32(%c)` → `@cqrt_measure_i32(%h_c)`. Same as current.
+
+Measurement does not consume the handle. The qubit register persists in
+a classical eigenstate after `cqrt_measure_*` returns, and subsequent
+operations (including further `cq_theta` calls) may re-rotate it. From
+the IR pass's perspective, the SSA handle for `%c` is unchanged across
+the measure call; `%m` is a separate classical scalar carrying the
+measurement outcome.
 
 ### Step 6 — Cleanup
 
@@ -412,18 +455,161 @@ int main(void) {
 }
 ```
 
-Under the **current** design, `ipow` would need `quantum int` declarations
-for every variable that touches the tainted input — or a transpiler-level
-specialization pass. Under the **proposed** design, the IR pass sees
-tainted `%x` flow into `ipow`, and every operation inside `ipow` that
-touches `%x` (or values derived from it) is rewritten to quantum
-templates. No source changes needed.
+Under the **current** design, `ipow` would need `quantum int`
+declarations for every variable that touches the tainted input — or a
+transpiler-level specialization pass. Under the **proposed** design,
+the IR pass handles this through two complementary lifting paths.
 
-**Constraint:** this requires the IR for `ipow` to be visible at pass
-time. The CQ driver compiles all source to LLVM IR; linking IR modules
-before the CQ pass (LTO-style) is a natural extension. Standard library
-functions (e.g., from `math.h`) are also available as LLVM bitcode —
-the IR pass rewrites their opcodes the same way.
+### Two lifting paths
+
+The pass uses different mechanisms depending on whether the callee's
+body is visible at pass time.
+
+**Path 1: Curated symbol substitution.** For callees with no visible
+body (libm, LLVM intrinsics, opaque shared libraries). The pass
+maintains a table mapping classical symbols to quantum templates:
+
+```
+@sin            → @cq_template_sin_f64
+@cos            → @cq_template_cos_f64
+@llvm.sqrt.f64  → @cq_template_sqrt_f64
+@fabs           → @cq_template_fabs_f64
+...
+```
+
+At a callsite with one or more tainted arguments, the pass swaps the
+symbol. The body of the original function is never inspected. errno-
+style side effects are discarded by the quantum template by
+construction; symbols in the rejection list (`printf`, syscalls,
+functions writing to externally-visible globals) cause the pass to
+error with a diagnostic, on Bennett-irreversibility grounds.
+
+**Path 2: Per-callsite specialization (clone-on-taint).** For callees
+with visible IR bodies (user code, LTO-linked libraries). When a
+callsite passes one or more tainted arguments, the pass clones the
+callee keyed by its taint signature, taint-propagates and lowers the
+clone, and rewrites the call to point at it. The original function is
+untouched for classical callers; `@ipow` and `@ipow_q` coexist in the
+final binary.
+
+For the example above, `ipow(x, 3)` with tainted `x` and classical `3`
+follows Path 2: the pass clones `ipow` with signature
+`(tainted, classical)`, propagates taint through the clone's body (the
+`result` accumulator becomes tainted on the first iteration, the `*=`
+lowers to the quantum mul template), and rewrites the call. The loop
+counter `i` and the `i < exp` comparison stay classical because `exp`
+is classical — taint propagation is per-value, not per-function.
+
+### Specialization algorithm
+
+```
+1. Seed taint at cq_theta() returns.
+2. Propagate within the current function (forward, SSA-driven).
+3. At each call instruction:
+   a. Compute the tainted-argument mask from operand taint.
+   b. If mask == 0 → leave the call alone (classical path).
+   c. If callee is in the curated symbol table → substitute the symbol.
+   d. Otherwise → look up (callee, mask) in the clone cache.
+      If no clone exists, materialize one (LLVM CloneFunction),
+      seed taint on the corresponding parameters, recurse.
+      Rewrite the call to point at the clone.
+4. Iterate the call graph in SCC order until fixed point.
+```
+
+LLVM's `CallGraphSCCPass` infrastructure provides the SCC walk.
+Mutually recursive groups materialize their clones together; recursive
+calls inside a clone resolve to the same clone because the signature
+is preserved across the recursion, so the fixed point converges
+trivially.
+
+### Clone count is bounded by use, not combinatorics
+
+For an N-argument function the theoretical maximum is 2^N taint
+signatures, but the materialized count is bounded by the distinct
+signatures *actually observed* at callsites in the linked program —
+typically one or two per function. This is structurally the same
+problem as C++ template instantiation, which compilers handle at much
+larger scale than C math code will ever reach.
+
+### Indirect calls
+
+Tainted arguments to indirect calls — `(*fp)(tainted_x)` where `fp`
+cannot be statically resolved — are **rejected** at the IR pass with a
+diagnostic. The alternatives (specialize every potential target;
+require devirtualization to succeed) are either over-approximations or
+build-system entanglements; refusal is the cleanest rule for early
+phases and can be relaxed later if needed.
+
+### Visibility / LTO requirement
+
+The cloning path requires the IR for every potentially-tainted callee
+to be visible to the pass. The CQ driver therefore compiles all source
+to LLVM IR and **must** link IR modules before invoking the CQ pass.
+This is a hard requirement of the design, not an optional extension.
+
+Build-system implication: drive the build with `clang -flto` (or
+pre-link bitcode with `llvm-link`) so the pass operates on a single
+fully-linked module. Functions whose bodies are not LTO-visible fall
+back to the curated-symbol path (Path 1) — if a symbol appears in
+neither the visibility set nor the curated table and is called with
+tainted arguments, the pass errors.
+
+---
+
+## Quantum control flow
+
+A branch whose condition is tainted is a quantum branch: the program is
+in a superposition of "taken" and "not taken." Instructions in the
+branch's shadow execute coherently, controlled by the condition.
+
+Under the current design, the rewriter syntactically detects
+`if (q_cond)` and brackets the region with `cq_when_begin`/`cq_when_end`
+markers that the IR pass uses to identify the controlled region. With
+the rewriter gone, this responsibility moves to the IR pass and is done
+**structurally on the LLVM IR** — no source-level marker is needed.
+
+### Mechanism
+
+For each tainted `br i1 %cond, label %T, label %F`:
+
+1. Compute the immediate post-dominator `%merge` via LLVM's
+   `PostDominatorTree`.
+2. Treat every value defined in the dominated shadow as
+   **control-tainted**, including φ-node results at `%merge` whose
+   direct operands are classical literals. Operand-only taint would
+   miss these — a φ-node merging `10` and `20` looks classical — but
+   the selected value semantically depends on the quantum branch.
+3. Lower every instruction in the shadow to its controlled form, with
+   `%cond` (or the lowered comparator handle) as the control wire.
+   Memory stores become controlled-stores; nested tainted branches
+   AND with the outer condition (Toffoli-style); function calls
+   specialize through the clone-on-taint path with their relevant
+   inputs seeded as control-tainted.
+
+### Why no user-facing `cq_when`
+
+A `cq_when` surface marker would only matter if the user wanted to
+quantum-control on a condition the pass would not flag as tainted. But
+quantum control on a classical condition has no physical content:
+a classical 1 reduces to unconditional application, a classical 0 to
+no-op. There is no superposition of "applied vs. not" without a
+tainted control wire.
+
+So taint of the branch condition is **necessary and sufficient** for
+controlled-form lowering. The current pipeline's manual `cq_when_*`
+markers are recoverable from the IR; under the proposed design they
+are emitted internally by the pass (or skipped in favor of direct
+controlled-form lowering — an implementation detail).
+
+### Deferred
+
+The worked example above contains no branches. A follow-up proposal
+will walk a branching example end-to-end and pin down:
+
+- Early `return` inside a tainted branch (carry-through
+  "have-I-returned?" qubit)
+- Loops with tainted bounds (ROADMAP Phase 10 territory)
+- `invert(...)` interaction with controlled regions
 
 ---
 
@@ -446,11 +632,20 @@ the IR pass rewrites their opcodes the same way.
 | Component | Change |
 |---|---|
 | `TaintPropagation.cpp` | Seed from `@cq_theta_*` returns instead of `@cq_init_*` |
-| `CQLoweringPass.cpp` | Add allocation-insertion step; remove `MidHandleRebind` call |
+| `CQLoweringPass.cpp` | Add gate-triggered allocation step (dispatched on operand-taint state); remove `MidHandleRebind` call; identify tainted-branch shadow regions structurally via `PostDominatorTree` and apply controlled-form lowering (replaces rewriter-inserted `cq_when_*` markers) |
 | `CQ.h` | Replace `quantum` macro with primitive declarations |
 | `cqc` driver | Remove transpiler invocation |
 | `WidthDispatch` | Map `cq_theta_*`/`cq_phi_*` names to widths (same mechanism) |
 | Phase 3 opcode table | Cast opcodes (sext, zext, trunc, etc.) are always representation changes, never measurement |
+
+### Added
+
+| Component | Purpose |
+|---|---|
+| Function specialization pass | Clone-on-taint per callsite, keyed by `(callee, tainted_arg_mask)`; runs as a `CallGraphSCCPass` |
+| Curated symbol table | Maps libm / LLVM-intrinsic symbols to quantum templates (e.g. `@sin → @cq_template_sin_f64`) |
+| Bennett-rejection list | Symbols whose tainted use is irreversible (`printf`, syscalls, errno-touching functions) — pass errors with diagnostic |
+| LTO driver mode | `cqc` must pre-link bitcode (via `llvm-link` or `-flto`) so callee bodies are visible to the pass |
 
 ### Preserved
 
@@ -520,15 +715,38 @@ b = cq_phi(b, 1.0);      /* b is NOT tainted — no-op, removed by IR pass */
 
 ## Compilation flow
 
-```bash
-# Proposed (3 stages):
-clang -O1 -emit-llvm -include CQ.h example.c -o example.bc      # Stage 1
-opt -load-pass-plugin libCQPass.so -passes=cq-lowering \
-    example.bc -o example.lowered.bc                              # Stage 2
-clang example.lowered.bc -lcq_templates -lcq_runtime -o example  # Stage 3
-./example                                                          # emits circuit
+### Single-file program
 
-# Current (4 stages):
+```bash
+clang -O1 -emit-llvm -include CQ.h example.c -o example.bc        # Stage 1
+opt -load-pass-plugin libCQPass.so -passes=cq-lowering \
+    example.bc -o example.lowered.bc                                # Stage 2
+clang example.lowered.bc -lcq_templates -lcq_runtime -o example    # Stage 3
+./example                                                            # emits circuit
+```
+
+### Multi-file program (function lifting across translation units)
+
+The clone-on-taint path needs callee bodies in the same bitcode module
+the pass sees. Pre-link with `llvm-link` (or build with `-flto`)
+*before* running `opt`:
+
+```bash
+clang -O1 -emit-llvm -include CQ.h main.c -o main.bc
+clang -O1 -emit-llvm util.c -o util.bc                 # no CQ.h needed
+llvm-link main.bc util.bc -o combined.bc               # ← link bitcode first
+opt -load-pass-plugin libCQPass.so -passes=cq-lowering \
+    combined.bc -o combined.lowered.bc
+clang combined.lowered.bc -lcq_templates -lcq_runtime -o program
+```
+
+Functions whose bodies are not LTO-visible (libm, opaque libraries)
+flow through the curated symbol table instead — no bitcode required
+for those.
+
+### Current (4 stages, for comparison)
+
+```bash
 quantum_transpiler example.c > example.transpiled.c               # ← eliminated
 clang -O1 -emit-llvm -include cq_mid.h example.transpiled.c ...
 opt -load-pass-plugin libCQPass.so ...
