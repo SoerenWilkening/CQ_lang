@@ -426,8 +426,9 @@ nuw`, `icmp slt` vs `icmp ult`) rather than in the runtime symbol.
 This is asymmetric with the frontend intrinsic surface, which **does**
 carry signedness (`cq_theta_si32` vs `cq_theta_ui32`) because the
 frontend needs to preserve the C type at the source level. The pass
-bridges these — see [`include/cq_mid.h`](../include/cq_mid.h) for the
-suffix-to-width map and
+bridges these — see [`docs/frontend.md` §3.1](frontend.md#31-the-three-primitive-families)
+and [`ir-pass/src/WidthDispatch.cpp`](../ir-pass/src/WidthDispatch.cpp)
+(the `kRows`/`MidRow` tables) for the suffix-to-width map, and
 [`runtime/cq_runtime.h`](../runtime/cq_runtime.h)'s preamble for the
 rationale.
 

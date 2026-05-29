@@ -85,8 +85,8 @@ macro; the IR observes the per-type specialization after preprocessing.
 The fan-out covers the same 14 C scalar types the type map tracked
 under the previous design — bool, the four character/byte forms, two
 short widths, two int widths, two long widths, two long-long widths,
-plus `float` and `double`. The suffix convention matches the existing
-[`cq_mid.h`](../include/cq_mid.h) declarations:
+plus `float` and `double`. The suffix convention is defined by the
+table below — this is the canonical suffix-to-type map:
 
 | C type | Suffix | Notes |
 |---|---|---|
@@ -161,7 +161,8 @@ Two notes on the dispatch:
   hit the corresponding case (`int32_t → int` on LP64/LLP64, etc.).
 - **`long` and `long long` are distinct cases even when same-width.**
   C treats them as separate types regardless of platform sizing, so the
-  `_Generic` must list both — same convention as `cq_mid.h`. The IR
+  `_Generic` must list both — both appear as distinct rows in the §3.1
+  suffix table (`_sl` and `_sll`). The IR
   pass needs no runtime type tag because the specialization name
   (`_sl` vs `_sll`) identifies the operand at the call site, and Clang
   lowers `long` and `long long` to whatever LLVM integer width matches
