@@ -308,7 +308,7 @@ What the IR pass sees after Clang `-O1`:
 ```llvm
 define i32 @main() {
   %a2 = ... ; classical SSA chain — may be constant-folded
-  %a3 = call i32 @cq_theta_i32(i32 %a2, double 5.0e-01)  ; taint source
+  %a3 = call i32 @cq_theta_si32(i32 %a2, double 5.0e-01)  ; taint source
   %b  = add i32 %a3, 5                                    ; stock LLVM add
   ; ...
 }
