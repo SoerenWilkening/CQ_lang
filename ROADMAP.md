@@ -161,7 +161,7 @@ at Phase 1.
 
 ---
 
-## Phase 1 — New intrinsic surface in `CQ.h`
+## Phase 1 — New intrinsic surface in `CQ.h` [DONE]
 
 **Goal.** Replace the old-design `CQ.h` (and obsolete `cq_mid.h`) with
 the taint-driven intrinsic surface that
