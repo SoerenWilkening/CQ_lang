@@ -45,11 +45,10 @@ enable_testing()
 # wired in. The transpiler/ subdirectory was archived (see archive/transpiler/)
 # under the taint-driven design — users write cq_* primitives directly,
 # so the libtooling AST rewriter and the tools/cqc driver that orchestrated
-# it are no longer part of the active build. The tests/e2e/ harness
-# (see archive/tests/e2e/) drove tools/cqc against fixtures and was archived
-# alongside it; a new e2e harness for the taint-driven pipeline (plain C +
-# cq_* primitives → clang → opt cq-lowering → link) will be wired in once
-# the pipeline gains enough surface to test end-to-end.
+# it are no longer part of the active build. The old tools/cqc-driven
+# tests/e2e/ harness was archived alongside it (see archive/tests/e2e/); the
+# taint-driven replacement (plain C + cq_* primitives → clang -O1 → opt
+# cq-lowering → link → run) is wired in below at tests/e2e/.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/runtime/CMakeLists.txt")
     add_subdirectory(runtime)
 endif()
@@ -65,4 +64,12 @@ endif()
 # tests/frontend: LIT harness for the intrinsic-surface (clang) fixtures.
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/frontend/CMakeLists.txt")
     add_subdirectory(tests/frontend)
+endif()
+
+# tests/e2e: the taint-driven vertical slice (clang -O1 → opt cq-lowering →
+# link → run, byte-diff vs golden). Placed AFTER the runtime and ir-pass
+# blocks so the cq_runtime / cq_templates / CQPass targets exist when the
+# $<TARGET_FILE:...> generator expressions resolve.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/CMakeLists.txt")
+    add_subdirectory(tests/e2e)
 endif()
