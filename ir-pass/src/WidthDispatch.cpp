@@ -33,10 +33,9 @@ constexpr SuffixRow kRows[] = {
     {"f32",  "f32"}, {"f64",  "f64"},
 };
 
-// Mid-struct typedef name → suffix. The 14 names come straight from
-// include/cq_mid.h; identified-struct comparison is what the rewriter
-// + Clang emit, so a literal/anonymous struct never matches
-// (intentional).
+// Mid-struct typedef name → suffix (suffix convention: docs/frontend.md
+// §3.1). Identified-struct comparison is what the rewriter + Clang emit,
+// so a literal/anonymous struct never matches (intentional).
 struct MidRow {
   StringRef Name;
   StringRef Sfx;

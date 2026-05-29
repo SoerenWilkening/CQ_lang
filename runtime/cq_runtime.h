@@ -18,8 +18,9 @@
  * Width-only ABI: the runtime sees widths, not signedness. So
  * `signed char` and `unsigned char` both lower to `cqrt_alloc_i8`;
  * signedness is implicit in the LLVM opcode at the call site, not in
- * the runtime symbol. This is intentionally asymmetric with cq_mid.h
- * (which DOES carry signedness because the rewriter cares). See
+ * the runtime symbol. This is intentionally asymmetric with the
+ * front-end suffix convention (docs/frontend.md §3.1; include/CQ.h),
+ * which DOES carry signedness because the rewriter cares. See
  * PRD §"Stub libcq_runtime" (Width unification at the runtime ABI).
  *
  * Trace format (per call):

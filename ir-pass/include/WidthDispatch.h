@@ -66,8 +66,9 @@ public:
   llvm::FunctionCallee addTemplate(llvm::StringRef abiWidth, bool isQQ) const;
 
   // Mid-struct recognition: name-keyed lookup over the 14 mid-struct
-  // typedefs declared in include/cq_mid.h. Returns the matching suffix
-  // (e.g., `qint_mid_t` → "si32"); `std::nullopt` for non-mid structs.
+  // typedefs (suffix convention: docs/frontend.md §3.1). Returns the
+  // matching suffix (e.g., `qint_mid_t` → "si32"); `std::nullopt` for
+  // non-mid structs.
   std::optional<llvm::StringRef> midStructToSuffix(llvm::StructType *st) const;
 
   // Convenience accessors. `i32Ty()` is justified by PRD §"Width
