@@ -145,3 +145,4 @@
 {"id":"int-11ee5ae3","kind":"field_change","created_at":"2026-05-29T17:12:38.768654974Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-2os","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-d2b1ff33","kind":"field_change","created_at":"2026-05-29T17:12:39.550658439Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-i22","extra":{"field":"status","new_value":"closed","old_value":"open","reason":"Closed"}}
 {"id":"int-4e1e4b24","kind":"field_change","created_at":"2026-05-29T17:20:03.10563375Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-dqr","extra":{"field":"status","new_value":"closed","old_value":"in_progress","reason":"Closed"}}
+{"id":"int-2f43984d","kind":"field_change","created_at":"2026-05-29T20:50:38.531212Z","actor":"sorenwilkening","issue_id":"test_C_libtooling-42t","extra":{"field":"status","new_value":"deferred","old_value":"open"}}
