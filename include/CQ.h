@@ -37,6 +37,22 @@ unsigned long long  cq_theta_ull (unsigned long long x, double angle);
 float               cq_theta_f32 (float              x, double angle);
 double              cq_theta_f64 (double             x, double angle);
 
+/* cq_phi — Rz(φ) phase rotation; propagates taint, never a source. */
+bool                cq_phi_i1  (bool               x, double angle);
+char                cq_phi_c   (char               x, double angle);
+signed char         cq_phi_si8 (signed char        x, double angle);
+unsigned char       cq_phi_ui8 (unsigned char      x, double angle);
+short               cq_phi_si16(short              x, double angle);
+unsigned short      cq_phi_ui16(unsigned short     x, double angle);
+int                 cq_phi_si32(int                x, double angle);
+unsigned int        cq_phi_ui32(unsigned int       x, double angle);
+long                cq_phi_sl  (long               x, double angle);
+unsigned long       cq_phi_ul  (unsigned long      x, double angle);
+long long           cq_phi_sll (long long          x, double angle);
+unsigned long long  cq_phi_ull (unsigned long long x, double angle);
+float               cq_phi_f32 (float              x, double angle);
+double              cq_phi_f64 (double             x, double angle);
+
 #ifdef __cplusplus
 }
 #endif
@@ -57,6 +73,24 @@ double              cq_theta_f64 (double             x, double angle);
     unsigned long long: cq_theta_ull,              \
     float:              cq_theta_f32,              \
     double:             cq_theta_f64               \
+)(x, angle)
+
+/* cq_phi — Rz phase-rotation dispatch (same 14 widths as cq_theta). */
+#define cq_phi(x, angle) _Generic((x),             \
+    bool:               cq_phi_i1,                 \
+    char:               cq_phi_c,                  \
+    signed char:        cq_phi_si8,                \
+    unsigned char:      cq_phi_ui8,                \
+    short:              cq_phi_si16,               \
+    unsigned short:     cq_phi_ui16,               \
+    int:                cq_phi_si32,               \
+    unsigned int:       cq_phi_ui32,               \
+    long:               cq_phi_sl,                 \
+    unsigned long:      cq_phi_ul,                 \
+    long long:          cq_phi_sll,                \
+    unsigned long long: cq_phi_ull,                \
+    float:              cq_phi_f32,                \
+    double:             cq_phi_f64                 \
 )(x, angle)
 
 #endif  /* CQ_H_ */
