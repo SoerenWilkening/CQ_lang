@@ -66,6 +66,13 @@ unsigned long long  cq_measure_ull (unsigned long long x);
 float               cq_measure_f32 (float              x);
 double              cq_measure_f64 (double             x);
 
+/* Inversion markers — bare extern, no attributes. LLVM cannot prove an
+   unknown extern is side-effect-free, so calls survive elimination at
+   every -O level (PRD §2.4). The IR pass detects the bracket via these
+   names at module-level call sites (docs/frontend.md §3.5). */
+void __cq_invert_begin(void);
+void __cq_invert_end  (void);
+
 #ifdef __cplusplus
 }
 #endif
@@ -123,5 +130,20 @@ double              cq_measure_f64 (double             x);
     float:              cq_measure_f32,            \
     double:             cq_measure_f64             \
 )(x)
+
+/* Manual inversion bracket. The asm-volatile memory barrier pins the
+   marker to its position so the optimizer cannot hoist bracketed code
+   across it: cq_invert_begin emits the begin-call THEN a barrier (code
+   can't move above begin); cq_invert_end emits a barrier THEN the
+   end-call (code can't move below end). Bare-extern + barrier => the
+   calls survive DCE at -O0..-O3. */
+#define cq_invert_begin()  do {                                    \
+        __cq_invert_begin();                                       \
+        __asm__ __volatile__("" ::: "memory");                     \
+    } while (0)
+#define cq_invert_end()    do {                                    \
+        __asm__ __volatile__("" ::: "memory");                     \
+        __cq_invert_end();                                         \
+    } while (0)
 
 #endif  /* CQ_H_ */
