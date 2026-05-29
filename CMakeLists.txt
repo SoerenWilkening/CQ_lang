@@ -61,3 +61,8 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ir-pass/CMakeLists.txt")
 elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/ir-pass/test/CMakeLists.txt")
     add_subdirectory(ir-pass/test)
 endif()
+
+# tests/frontend: LIT harness for the intrinsic-surface (clang) fixtures.
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/frontend/CMakeLists.txt")
+    add_subdirectory(tests/frontend)
+endif()
