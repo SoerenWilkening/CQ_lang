@@ -200,6 +200,8 @@ under platform-dependent `long` / `long long` widths.
 
 ## Phase 2 — IR pass: taint sources, gate-triggered allocation
 
+**Design:** see [`docs/prd/phase-02-taint-allocation/PRD.md`](docs/prd/phase-02-taint-allocation/PRD.md).
+
 **Goal.** Re-point the existing `TaintPropagation` module from the
 retired `@cq_init_*` source set to the new `@cq_theta_*` source set,
 and introduce gate-triggered allocation at `@cq_theta` call sites.
