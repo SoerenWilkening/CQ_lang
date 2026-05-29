@@ -13,10 +13,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Legacy annotation macro — unused under the taint-driven design;
-   removed in M07. Retained here so the M03/M05 slices stay minimal. */
-#define quantum __attribute__((annotate("quantum")))
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -52,6 +48,23 @@ long long           cq_phi_sll (long long          x, double angle);
 unsigned long long  cq_phi_ull (unsigned long long x, double angle);
 float               cq_phi_f32 (float              x, double angle);
 double              cq_phi_f64 (double             x, double angle);
+
+/* cq_measure — measurement; the sole sink. Return is classical
+   (operand only, no angle). */
+bool                cq_measure_i1  (bool               x);
+char                cq_measure_c   (char               x);
+signed char         cq_measure_si8 (signed char        x);
+unsigned char       cq_measure_ui8 (unsigned char      x);
+short               cq_measure_si16(short              x);
+unsigned short      cq_measure_ui16(unsigned short     x);
+int                 cq_measure_si32(int                x);
+unsigned int        cq_measure_ui32(unsigned int       x);
+long                cq_measure_sl  (long               x);
+unsigned long       cq_measure_ul  (unsigned long      x);
+long long           cq_measure_sll (long long          x);
+unsigned long long  cq_measure_ull (unsigned long long x);
+float               cq_measure_f32 (float              x);
+double              cq_measure_f64 (double             x);
 
 #ifdef __cplusplus
 }
@@ -92,5 +105,23 @@ double              cq_phi_f64 (double             x, double angle);
     float:              cq_phi_f32,                \
     double:             cq_phi_f64                 \
 )(x, angle)
+
+/* cq_measure — measurement dispatch (operand only; no angle). */
+#define cq_measure(x) _Generic((x),                \
+    bool:               cq_measure_i1,             \
+    char:               cq_measure_c,              \
+    signed char:        cq_measure_si8,            \
+    unsigned char:      cq_measure_ui8,            \
+    short:              cq_measure_si16,           \
+    unsigned short:     cq_measure_ui16,           \
+    int:                cq_measure_si32,           \
+    unsigned int:       cq_measure_ui32,           \
+    long:               cq_measure_sl,             \
+    unsigned long:      cq_measure_ul,             \
+    long long:          cq_measure_sll,            \
+    unsigned long long: cq_measure_ull,            \
+    float:              cq_measure_f32,            \
+    double:             cq_measure_f64             \
+)(x)
 
 #endif  /* CQ_H_ */
