@@ -33,28 +33,11 @@ constexpr SuffixRow kRows[] = {
     {"f32",  "f32"}, {"f64",  "f64"},
 };
 
-// Mid-struct typedef name → suffix (suffix convention: docs/frontend.md
-// §3.1). Identified-struct comparison is what the rewriter + Clang emit,
-// so a literal/anonymous struct never matches (intentional).
-struct MidRow {
-  StringRef Name;
-  StringRef Sfx;
-};
-
-constexpr MidRow kMidRows[] = {
-    {"qbool_mid_t",      "i1"},   {"qchar_mid_t",      "c"},
-    {"qschar_mid_t",     "si8"},  {"quchar_mid_t",     "ui8"},
-    {"qshort_mid_t",     "si16"}, {"qushort_mid_t",    "ui16"},
-    {"qint_mid_t",       "si32"}, {"quint_mid_t",      "ui32"},
-    {"qlong_mid_t",      "sl"},   {"qulong_mid_t",     "ul"},
-    {"qlonglong_mid_t",  "sll"},  {"qulonglong_mid_t", "ull"},
-    {"qfloat_mid_t",     "f32"},  {"qdouble_mid_t",    "f64"},
-};
-
 // ABI-width string → LLVM Type. The 7 supported widths cover the entire
 // surface; any other string returns nullptr and the caller is
 // expected to bail with a FunctionCallee(). Used by llvmTypeFor() and
-// by the three lazy-decl resolvers (allocFn, measureRtFn, addTemplate).
+// by the lazy-decl resolvers (allocFn, measureRtFn, ryRtFn, rzRtFn,
+// addTemplate).
 Type *typeForAbiWidth(StringRef W, LLVMContext &Ctx) {
   if (W == "i1")  return Type::getInt1Ty(Ctx);
   if (W == "i8")  return Type::getInt8Ty(Ctx);
@@ -73,7 +56,7 @@ WidthDispatch::WidthDispatch(Module &mod) : M(mod) {
   // size: LP64 (Linux/macOS 64-bit) → i64; ILP32 / LLP64 (Win64) → i32.
   // PRD §Width unification line 149 mandates this be derived from the
   // DataLayout. Pointer size is the cheapest reliable proxy and matches
-  // how the rewriter's TypeMap resolves `long` via TargetInfo.
+  // how the frontend's suffix scheme resolves `long`.
   LongAbiWidth =
       mod.getDataLayout().getPointerSizeInBits() == 64 ? "i64" : "i32";
 }
@@ -107,8 +90,12 @@ Type *WidthDispatch::llvmTypeFor(StringRef sfx, LLVMContext &ctx) const {
   return W.empty() ? nullptr : typeForAbiWidth(W, ctx);
 }
 
-Function *WidthDispatch::initFn(StringRef sfx) const {
-  return M.getFunction(("cq_init_" + sfx).str());
+Function *WidthDispatch::thetaFn(StringRef sfx) const {
+  return M.getFunction(("cq_theta_" + sfx).str());
+}
+
+Function *WidthDispatch::phiFn(StringRef sfx) const {
+  return M.getFunction(("cq_phi_" + sfx).str());
 }
 
 Function *WidthDispatch::measureFn(StringRef sfx) const {
@@ -139,6 +126,35 @@ FunctionCallee WidthDispatch::measureRtFn(StringRef abiWidth) const {
       FunctionType::get(Ret, {Type::getInt32Ty(Ctx)}, false));
 }
 
+FunctionCallee WidthDispatch::ryRtFn(StringRef abiWidth) const {
+  // Signature: void(i32 handle, double angle). Mirrors cqrt_ry_<W> in
+  // runtime/cq_runtime.h. The width only selects the symbol name — the
+  // handle is i32 and the angle double for every ABI width. The
+  // typeForAbiWidth guard rejects unknown widths (returns a null callee
+  // so the caller diagnoses rather than minting a garbage symbol).
+  LLVMContext &Ctx = M.getContext();
+  if (!typeForAbiWidth(abiWidth, Ctx))
+    return FunctionCallee();
+  return M.getOrInsertFunction(
+      ("cqrt_ry_" + abiWidth).str(),
+      FunctionType::get(Type::getVoidTy(Ctx),
+                        {Type::getInt32Ty(Ctx), Type::getDoubleTy(Ctx)},
+                        false));
+}
+
+FunctionCallee WidthDispatch::rzRtFn(StringRef abiWidth) const {
+  // Signature: void(i32 handle, double angle). Mirrors cqrt_rz_<W> in
+  // runtime/cq_runtime.h. Same shape as ryRtFn.
+  LLVMContext &Ctx = M.getContext();
+  if (!typeForAbiWidth(abiWidth, Ctx))
+    return FunctionCallee();
+  return M.getOrInsertFunction(
+      ("cqrt_rz_" + abiWidth).str(),
+      FunctionType::get(Type::getVoidTy(Ctx),
+                        {Type::getInt32Ty(Ctx), Type::getDoubleTy(Ctx)},
+                        false));
+}
+
 FunctionCallee WidthDispatch::addTemplate(StringRef abiWidth,
                                           bool isQQ) const {
   // Q+Q (`cq_template_(add|fadd)_<W>`) and Q+C (`..._hl`) are distinct C
@@ -164,34 +180,23 @@ FunctionCallee WidthDispatch::addTemplate(StringRef abiWidth,
       Name, FunctionType::get(Handle, {Handle, RhsTy}, false));
 }
 
-std::optional<StringRef>
-WidthDispatch::midStructToSuffix(StructType *ST) const {
-  if (!ST || !ST->hasName())
-    return std::nullopt;
-  // LLVM may version-suffix identified structs (e.g. `qint_mid_t.0`)
-  // when a TU links against another that already declared the type.
-  // Strip everything past the first '.' for robust matching.
-  StringRef N = ST->getName();
-  size_t Dot = N.find('.');
-  if (Dot != StringRef::npos)
-    N = N.substr(0, Dot);
-  for (const MidRow &R : kMidRows)
-    if (R.Name == N)
-      return R.Sfx;
-  return std::nullopt;
-}
-
 ArrayRef<StringRef> WidthDispatch::frontEndIntrinsicNames() const {
-  // 28 entries: cq_init_<sfx> then cq_measure_<sfx> for all 14 suffixes
-  // in canonical order. Used by CQLoweringPass's end-of-pass dead-decl
-  // sweep; decl-only entries (use_empty()) get erased so a passthrough-
-  // quantum-touch module leaves no front-end intrinsic decls behind.
+  // 42 entries: cq_theta_<sfx>, then cq_phi_<sfx>, then cq_measure_<sfx>
+  // for all 14 suffixes in canonical order. Used by CQLoweringPass's
+  // end-of-pass dead-decl sweep; decl-only entries (use_empty()) get
+  // erased so a quantum-touched module leaves no front-end intrinsic
+  // decls behind.
   static const StringRef Names[] = {
-      "cq_init_i1",      "cq_init_c",       "cq_init_si8",
-      "cq_init_ui8",     "cq_init_si16",    "cq_init_ui16",
-      "cq_init_si32",    "cq_init_ui32",    "cq_init_sl",
-      "cq_init_ul",      "cq_init_sll",     "cq_init_ull",
-      "cq_init_f32",     "cq_init_f64",
+      "cq_theta_i1",     "cq_theta_c",      "cq_theta_si8",
+      "cq_theta_ui8",    "cq_theta_si16",   "cq_theta_ui16",
+      "cq_theta_si32",   "cq_theta_ui32",   "cq_theta_sl",
+      "cq_theta_ul",     "cq_theta_sll",    "cq_theta_ull",
+      "cq_theta_f32",    "cq_theta_f64",
+      "cq_phi_i1",       "cq_phi_c",        "cq_phi_si8",
+      "cq_phi_ui8",      "cq_phi_si16",     "cq_phi_ui16",
+      "cq_phi_si32",     "cq_phi_ui32",     "cq_phi_sl",
+      "cq_phi_ul",       "cq_phi_sll",      "cq_phi_ull",
+      "cq_phi_f32",      "cq_phi_f64",
       "cq_measure_i1",   "cq_measure_c",    "cq_measure_si8",
       "cq_measure_ui8",  "cq_measure_si16", "cq_measure_ui16",
       "cq_measure_si32", "cq_measure_ui32", "cq_measure_sl",

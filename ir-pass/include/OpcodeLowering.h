@@ -28,8 +28,8 @@
 // §"Diagnostics baseline" mandates this stay loud, not silent;
 // template coverage will widen later.
 //
-// Mutates `taint` and `rebind`: template result inherits the op's
-// taint and `BirthOrder` slot; the original op is dropped from both.
+// Mutates `taint`: the template result inherits the op's taint and the
+// next `taint.BirthOrder` slot; the original op is dropped from the set.
 
 #ifndef CQ_IRPASS_OPCODE_LOWERING_H_
 #define CQ_IRPASS_OPCODE_LOWERING_H_
@@ -40,13 +40,12 @@ namespace cq {
 
 class WidthDispatch;
 struct TaintSet;
-struct RebindMap;
 
 // Walks tainted BinaryOperators in `M`, lowers each in BB order to
 // its per-width template (or emits a "no template" diagnostic), and
-// updates `taint`/`rebind` as template-call SSA values replace ops.
-void lowerOps(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
-              RebindMap &rebind);
+// updates `taint` as template-call SSA values replace ops. Operand
+// canonicalization reads `taint.BirthOrder` (seeded by RotationLowering).
+void lowerOps(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
 }  // namespace cq
 

@@ -1,8 +1,10 @@
-// TaintPropagation.cpp — Forward taint propagation from quantum init
-// returns. Behavior preserved from the original monolith's step-4 worker;
-// the source set spans every `@cq_init_<sfx>` declared in the module
-// (14-suffix enumeration via
-// `WidthDispatch::allSuffixes()`). Propagation rules are unchanged.
+// TaintPropagation.cpp — Forward taint propagation from quantum rotation
+// returns. The source set spans every `@cq_theta_<sfx>` declared in the
+// module (14-suffix enumeration via `WidthDispatch::allSuffixes()`);
+// `@cq_phi_<sfx>` is collected for lowering but is not a source;
+// `@cq_measure_<sfx>` is the sink. Propagation rules are unchanged from the
+// original source-collection version — only the source predicate moved to
+// the `@cq_theta_<sfx>` rotation family.
 
 #include "TaintPropagation.h"
 
@@ -23,16 +25,19 @@ namespace {
 
 // Set of front-end intrinsic Function*s. `SmallPtrSet` because membership
 // lookups happen once per CallInst during the BB walk; pointer-keyed and
-// small (≤14 inits, ≤14 measures) makes it a perfect fit.
+// small (≤14 thetas, ≤14 phis, ≤14 measures) makes it a perfect fit.
 using FnSet = SmallPtrSet<Function *, 16>;
 
-// Per-function pass: collect init/measure call sites in BB order and
-// seed the propagation work-list with init RESULT SSA values. Iterating
-// per-function (rather than via `F->users()`) preserves the
-// BB-order semantics — `MidHandleRebind` assigns `BirthOrder` to allocs
-// in this same order, which `OpcodeLowering` reads back for stable Q+Q
-// operand canonicalization.
-void collectAndSeed(Function &F, const FnSet &InitFns,
+// Per-function pass: collect theta/phi/measure call sites in BB order and
+// seed the propagation work-list with theta RESULT SSA values. Iterating
+// per-function (rather than via `F->users()`) preserves the BB-order
+// semantics — `RotationLowering` assigns `BirthOrder` to alloc handles in
+// this same order, which `OpcodeLowering` reads back for stable Q+Q operand
+// canonicalization. Phi calls are collected unconditionally but NOT seeded:
+// a phi propagates taint through a tainted operand (reached as an ordinary
+// user) but never introduces it, and a phi on a classical operand must
+// still be collected so the lowering can delete it.
+void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
                     const FnSet &MeasureFns, TaintSet &out,
                     std::vector<Value *> &Worklist) {
   for (BasicBlock &BB : F) {
@@ -43,10 +48,12 @@ void collectAndSeed(Function &F, const FnSet &InitFns,
       Function *Callee = CI->getCalledFunction();
       if (!Callee)
         continue;
-      if (InitFns.contains(Callee)) {
-        out.InitCalls.push_back(CI);
+      if (ThetaFns.contains(Callee)) {
+        out.ThetaCalls.push_back(CI);
         if (out.Tainted.insert(CI).second)
           Worklist.push_back(CI);
+      } else if (PhiFns.contains(Callee)) {
+        out.PhiCalls.push_back(CI);
       } else if (MeasureFns.contains(Callee)) {
         out.MeasureCalls.push_back(CI);
       }
@@ -73,15 +80,18 @@ bool isMeasureSink(Instruction *I, const FnSet &MeasureFns) {
   return Callee->getName().starts_with("cqrt_measure_");
 }
 
-// Resolve every declared `@cq_init_<sfx>` / `@cq_measure_<sfx>` into the
-// pair (InitFns, MeasureFns). Suffixes whose intrinsic isn't declared in
-// `M` are skipped — that's the early-out cue the per-function walk uses
-// to leave a purely-classical module untouched. Order doesn't matter:
-// `collectAndSeed` walks call sites in BB order, not symbol order.
-void resolveSources(WidthDispatch &wd, FnSet &InitFns, FnSet &MeasureFns) {
+// Resolve every declared `@cq_theta_<sfx>` / `@cq_phi_<sfx>` /
+// `@cq_measure_<sfx>` into the three FnSets. Suffixes whose intrinsic isn't
+// declared in `M` are skipped — that's the early-out cue the per-function
+// walk uses to leave a purely-classical module untouched. Order doesn't
+// matter: `collectAndSeed` walks call sites in BB order, not symbol order.
+void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
+                    FnSet &MeasureFns) {
   for (StringRef Sfx : wd.allSuffixes()) {
-    if (Function *F = wd.initFn(Sfx))
-      InitFns.insert(F);
+    if (Function *F = wd.thetaFn(Sfx))
+      ThetaFns.insert(F);
+    if (Function *F = wd.phiFn(Sfx))
+      PhiFns.insert(F);
     if (Function *F = wd.measureFn(Sfx))
       MeasureFns.insert(F);
   }
@@ -91,28 +101,30 @@ void resolveSources(WidthDispatch &wd, FnSet &InitFns, FnSet &MeasureFns) {
 
 TaintSet propagate(Module &M, WidthDispatch &wd) {
   TaintSet out;
-  FnSet InitFns;
+  FnSet ThetaFns;
+  FnSet PhiFns;
   FnSet MeasureFns;
-  resolveSources(wd, InitFns, MeasureFns);
+  resolveSources(wd, ThetaFns, PhiFns, MeasureFns);
 
   // No front-end intrinsics anywhere in the module → nothing to do.
   // The passthrough_no_quantum LIT fixture pins this early-out path:
   // the pass must leave a purely classical module byte-identical, and
   // crucially must NOT leak `cqrt_*` / `cq_template_*` decls.
-  if (InitFns.empty() && MeasureFns.empty())
+  if (ThetaFns.empty() && PhiFns.empty() && MeasureFns.empty())
     return out;
 
   std::vector<Value *> Worklist;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
-    collectAndSeed(F, InitFns, MeasureFns, out, Worklist);
+    collectAndSeed(F, ThetaFns, PhiFns, MeasureFns, out, Worklist);
   }
 
-  // Forward taint propagation. Each tainted SSA value's user
-  // instructions become tainted, except measure sinks. The work-list
-  // discipline (insert-then-push) means each value is processed exactly
-  // once.
+  // Forward taint propagation. Each tainted SSA value's user instructions
+  // become tainted, except measure sinks. The work-list discipline
+  // (insert-then-push) means each value is processed exactly once. A
+  // tainted-operand phi is reached here as a normal user, so its result
+  // taints and propagates onward — correct (Rz preserves the value).
   while (!Worklist.empty()) {
     Value *V = Worklist.back();
     Worklist.pop_back();

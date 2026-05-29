@@ -15,7 +15,6 @@
 
 #include "MeasureLowering.h"
 
-#include "MidHandleRebind.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
@@ -51,8 +50,7 @@ StringRef suffixFromMeasureName(const CallInst *Measure) {
 
 }  // namespace
 
-void lowerMeasures(Module &M, WidthDispatch &wd, TaintSet &taint,
-                   RebindMap &rebind) {
+void lowerMeasures(Module &M, WidthDispatch &wd, TaintSet &taint) {
   (void)M;
   if (taint.MeasureCalls.empty())
     return;
@@ -78,37 +76,18 @@ void lowerMeasures(Module &M, WidthDispatch &wd, TaintSet &taint,
       continue;
     }
 
-    Value *StructArg = Measure->getArgOperand(0);
-    Value *Handle = nullptr;
-    InsertValueInst *IVToErase = nullptr;
-
-    if (auto It = rebind.StructToHandle.find(StructArg);
-        It != rebind.StructToHandle.end()) {
-      // Pattern (a): init result was already mapped to a handle by
-      // rebind. Use the recorded handle directly.
-      Handle = It->second;
-    } else if (auto *IV = dyn_cast<InsertValueInst>(StructArg)) {
-      if (IV->getNumIndices() == 1 && IV->getIndices()[0] == 0) {
-        // Pattern (b): pull the handle out of the insertvalue. We can
-        // safely erase the insertvalue iff this measure is its only
-        // user; otherwise something else still wants the struct view.
-        Handle = IV->getInsertedValueOperand();
-        if (IV->hasOneUse())
-          IVToErase = IV;
-      }
-    } else if (StructArg->getType() == I32 && taint.Tainted.count(StructArg)) {
-      // Pattern (c): flattened-struct shape — the arg is already a
-      // tainted i32 handle (init result post-SROA, or a template
-      // result from OpcodeLowering). Use it as-is.
-      Handle = StructArg;
-    }
-
-    if (!Handle) {
+    // Under the plain-SSA surface the measure operand is always already a
+    // tainted i32 handle — a theta result RAUW'd to its alloc handle by
+    // RotationLowering, or a `cq_template_add_<W>` result from
+    // OpcodeLowering. The retired mid-struct patterns (direct init result,
+    // insertvalue unwrap) have no inputs and are gone. An operand that is
+    // not a tainted i32 handle is reported (loud) and left in place.
+    Value *Handle = Measure->getArgOperand(0);
+    if (!(Handle->getType() == I32 && taint.Tainted.count(Handle))) {
       Measure->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
           *Measure->getFunction(),
-          "cq_measure_<sfx> operand pattern not recognized; expected "
-          "direct cq_init_<sfx> result, insertvalue %struct poison, "
-          "<T> %h, 0, or tainted i32 handle"));
+          "cq_measure_<sfx> operand not recognized; expected a tainted "
+          "i32 handle"));
       continue;
     }
 
@@ -118,8 +97,6 @@ void lowerMeasures(Module &M, WidthDispatch &wd, TaintSet &taint,
       NewM->setDebugLoc(DL);
     Measure->replaceAllUsesWith(NewM);
     ToErase.push_back(Measure);
-    if (IVToErase)
-      ToErase.push_back(IVToErase);
   }
 
   for (Instruction *I : ToErase)

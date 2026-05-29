@@ -1,37 +1,27 @@
-; lowering_measure_i64.ll — Width-parametric measure lowering for
-; the i64 ABI. Pins that `cq_measure_sll` lowers to `cqrt_measure_i64`
-; (returning i64) instead of the legacy i32-pinned shim.
+; lowering_measure_i64.ll — Width-parametric measure lowering for the
+; i64 ABI: `cq_measure_sll` lowers to `cqrt_measure_i64` (returning
+; i64). The handle is i32 across every ABI width; only the return type
+; varies.
 ;
-; Four frontend suffixes map to the i64 ABI on LP64: `sl`, `ul` (via
-; `DataLayout` pointer-width resolution), `sll`, `ull`. We pick `sll`
-; (qlonglong_mid_t) — it's target-independent (resolves to i64 even on
-; ILP32/LLP64 targets), so the fixture is portable.
-;
-; The handle is still i32 across every ABI width per PRD §"Width
-; unification"; only the measure's return type widens to i64. Init flows
-; directly into measure (operand pattern (a) — struct→handle via rebind).
-
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
-
-; CHECK:     call i32 @cqrt_alloc_i64(i64 1234567890)
+;
+; CHECK:     call i32 @cqrt_alloc_i64(i64 99)
 ; CHECK:     call i64 @cqrt_measure_i64(i32
-
-; CHECK-NOT: cq_init_sll
+;
+; CHECK-NOT: cq_theta_sll
 ; CHECK-NOT: cq_measure_sll
 ; CHECK-NOT: cqrt_measure_i32
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-%qlonglong_mid_t = type { i64 }
-
-declare %qlonglong_mid_t @cq_init_sll(i64)
-declare i64              @cq_measure_sll(%qlonglong_mid_t)
+declare i64 @cq_theta_sll(i64, double)
+declare i64 @cq_measure_sll(i64)
 
 define i64 @example() {
 entry:
-  %a_struct = call %qlonglong_mid_t @cq_init_sll(i64 1234567890)
-  %m        = call i64 @cq_measure_sll(%qlonglong_mid_t %a_struct)
+  %a = call i64 @cq_theta_sll(i64 99, double 5.000000e-01)
+  %m = call i64 @cq_measure_sll(i64 %a)
   ret i64 %m
 }

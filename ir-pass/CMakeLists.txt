@@ -43,9 +43,9 @@ endif()
 add_library(CQPass MODULE
   src/CQLoweringPass.cpp
   src/MeasureLowering.cpp
-  src/MidHandleRebind.cpp
   src/OpcodeLowering.cpp
   src/Plugin.cpp
+  src/RotationLowering.cpp
   src/TaintPropagation.cpp
   src/WidthDispatch.cpp
 )

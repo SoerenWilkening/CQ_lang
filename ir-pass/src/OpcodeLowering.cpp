@@ -19,7 +19,6 @@
 
 #include "OpcodeLowering.h"
 
-#include "MidHandleRebind.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
@@ -90,8 +89,7 @@ void diagnoseNoTemplate(BinaryOperator *BO) {
 
 }  // namespace
 
-void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
-              RebindMap &rebind) {
+void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // Walk every tainted BinaryOperator (any opcode) in BB / function
   // order. Collecting up front (rather than walking-and-rewriting in
   // the same loop) sidesteps iterator-invalidation when each lowering
@@ -175,8 +173,8 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
     Value *Rhs;
     bool IsQQ;
     if (ATainted && BTainted) {
-      unsigned BA = rebind.BirthOrder.lookup(A);
-      unsigned BB_ = rebind.BirthOrder.lookup(B);
+      unsigned BA = taint.BirthOrder.lookup(A);
+      unsigned BB_ = taint.BirthOrder.lookup(B);
       // If either side lacks a BirthOrder, fall back to LLVM's operand
       // order. Not expected in canonical shapes but harmless.
       if (BA != 0 && BB_ != 0 && BB_ < BA) {
@@ -209,7 +207,7 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
     // canonicalization sees this handle.
     taint.Tainted.insert(T);
     taint.Tainted.erase(BO);
-    rebind.BirthOrder[T] = rebind.NextBirth++;
+    taint.BirthOrder[T] = taint.NextBirth++;
     ToErase.push_back(BO);
   }
 

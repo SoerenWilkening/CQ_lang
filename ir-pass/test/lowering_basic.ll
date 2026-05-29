@@ -1,16 +1,17 @@
-; lowering_basic.ll — Standard lowering: two taint sources, one tainted add,
-; one measurement. Port of prototype/test/input.ll updated to the current
-; measure signature (cq_measure_si32 returns i32, not i64).
-
+; lowering_basic.ll — Standard lowering: two classical theta sources, one
+; tainted add, one measurement. Plain scalar SSA (no mid-struct).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
-
+;
 ; CHECK:     call i32 @cqrt_alloc_i32(i32 3)
+; CHECK:     call void @cqrt_ry_i32(
 ; CHECK:     call i32 @cqrt_alloc_i32(i32 5)
+; CHECK:     call void @cqrt_ry_i32(
 ; CHECK:     call i32 @cq_template_add_i32(
 ; CHECK:     call i32 @cqrt_measure_i32(
-
-; CHECK-NOT: cq_init_si32
+;
+; CHECK-NOT: cq_theta_si32
 ; CHECK-NOT: cq_measure_si32
 ; CHECK-NOT: extractvalue
 ; CHECK-NOT: insertvalue
@@ -19,23 +20,14 @@
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
-%qint_mid_t = type { i32 }
-
-declare %qint_mid_t @cq_init_si32(i32)
-declare i32         @cq_measure_si32(%qint_mid_t)
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
 
 define i32 @example() {
 entry:
-  %a_struct = call %qint_mid_t @cq_init_si32(i32 3)
-  %a        = extractvalue %qint_mid_t %a_struct, 0
-
-  %b_struct = call %qint_mid_t @cq_init_si32(i32 5)
-  %b        = extractvalue %qint_mid_t %b_struct, 0
-
-  %c        = add i32 %a, %b
-
-  %c_struct = insertvalue %qint_mid_t poison, i32 %c, 0
-  %m        = call i32 @cq_measure_si32(%qint_mid_t %c_struct)
-
+  %a = call i32 @cq_theta_si32(i32 3, double 5.000000e-01)
+  %b = call i32 @cq_theta_si32(i32 5, double 5.000000e-01)
+  %c = add i32 %a, %b
+  %m = call i32 @cq_measure_si32(i32 %c)
   ret i32 %m
 }
