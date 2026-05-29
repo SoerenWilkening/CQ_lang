@@ -38,3 +38,17 @@ cq_template_xor_i32(h0, h1) -> h29
 cq_template_icmp_slt_i32(h0, h1) -> h30
 cq_template_sext_i8_to_i32(h4) -> h31
 cq_template_fneg_f64(h8) -> h32
+cqrt_ry_i1(h3, 0.785398)
+cqrt_rz_i1(h3, 0.785398)
+cqrt_ry_i8(h4, 0.785398)
+cqrt_rz_i8(h4, 0.785398)
+cqrt_ry_i16(h5, 0.785398)
+cqrt_rz_i16(h5, 0.785398)
+cqrt_ry_i32(h0, 0.785398)
+cqrt_rz_i32(h0, 0.785398)
+cqrt_ry_i64(h6, 0.785398)
+cqrt_rz_i64(h6, 0.785398)
+cqrt_ry_f32(h7, 0.785398)
+cqrt_rz_f32(h7, 0.785398)
+cqrt_ry_f64(h8, 0.785398)
+cqrt_rz_f64(h8, 0.785398)

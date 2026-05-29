@@ -146,6 +146,113 @@ double cqrt_measure_f64(int32_t handle) {
 }
 
 /* ---------------------------------------------------------------------
+ * Ry rotation bodies — one per width. Void; like cqrt_free, no "-> "
+ * arrow (nothing to return). The handle prints as h<N>, the angle as
+ * %f (default 6-digit precision, matching the float trace format).
+ * ------------------------------------------------------------------- */
+
+void cqrt_ry_i1(int32_t handle, double angle) {
+    printf("cqrt_ry_i1(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i8(int32_t handle, double angle) {
+    printf("cqrt_ry_i8(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i16(int32_t handle, double angle) {
+    printf("cqrt_ry_i16(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i32(int32_t handle, double angle) {
+    printf("cqrt_ry_i32(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i64(int32_t handle, double angle) {
+    printf("cqrt_ry_i64(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_f32(int32_t handle, double angle) {
+    printf("cqrt_ry_f32(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_f64(int32_t handle, double angle) {
+    printf("cqrt_ry_f64(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
+ * Rz rotation bodies — one per width. Same shape as Ry.
+ * ------------------------------------------------------------------- */
+
+void cqrt_rz_i1(int32_t handle, double angle) {
+    printf("cqrt_rz_i1(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i8(int32_t handle, double angle) {
+    printf("cqrt_rz_i8(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i16(int32_t handle, double angle) {
+    printf("cqrt_rz_i16(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i32(int32_t handle, double angle) {
+    printf("cqrt_rz_i32(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i64(int32_t handle, double angle) {
+    printf("cqrt_rz_i64(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_f32(int32_t handle, double angle) {
+    printf("cqrt_rz_f32(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_f64(int32_t handle, double angle) {
+    printf("cqrt_rz_f64(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
+ * Gate primitives (backend.md §11.4) — handle-typed, void. Declared +
+ * defined this phase but NOT emitted by the IR pass yet (Phase 8), so
+ * they are left unexercised by the trace driver. Same no-arrow void
+ * trace convention as cqrt_free; args printed as h<N>.
+ * ------------------------------------------------------------------- */
+
+void cqrt_x(int32_t q) {
+    printf("cqrt_x(h%d)\n", q);
+    fflush(stdout);
+}
+
+void cqrt_h(int32_t q) {
+    printf("cqrt_h(h%d)\n", q);
+    fflush(stdout);
+}
+
+void cqrt_cnot(int32_t ctrl, int32_t tgt) {
+    printf("cqrt_cnot(h%d, h%d)\n", ctrl, tgt);
+    fflush(stdout);
+}
+
+void cqrt_toffoli(int32_t c1, int32_t c2, int32_t tgt) {
+    printf("cqrt_toffoli(h%d, h%d, h%d)\n", c1, c2, tgt);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */
 

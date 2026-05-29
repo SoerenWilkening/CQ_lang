@@ -24,6 +24,12 @@
  *   - For i32: a single `cq_template_add_i32_hl(h0, ...)` call closes
  *     the matrix (the Q+Q variant already ran on line 24).
  * Handles in the new block walk h9..h27 monotonically.
+ *
+ * Rotation exercise: after the template walk (which closes at h32),
+ * one cqrt_ry_<W> + cqrt_rz_<W> pair runs per width. These are void
+ * and mint NO handles — the counter stays at h32 — so each reuses an
+ * existing handle of the matching width. The 4 gate placeholders
+ * (cqrt_x/h/cnot/toffoli) are deliberately NOT exercised here.
  */
 #include "cq_runtime.h"
 #include "cq_templates.h"
@@ -93,6 +99,28 @@ int main(void) {
     (void) cq_template_icmp_slt_i32(h_a, h_b);
     (void) cq_template_sext_i8_to_i32(h_i8);
     (void) cq_template_fneg_f64(h_f64);
+
+    /* --- exercise the 7 ry + 7 rz rotation symbols, one pair per
+     * width. These are void and mint NO handles, so the monotonic
+     * counter stays at h32 throughout this block; each call reuses an
+     * existing handle of the matching width. The 4 gate placeholders
+     * (cqrt_x/h/cnot/toffoli) are intentionally left unexercised —
+     * they are declared + defined but not emitted until Phase 8.
+     * Angle 0.785398 prints byte-exact at %f's default 6 digits. */
+    cqrt_ry_i1(h_i1, 0.785398);
+    cqrt_rz_i1(h_i1, 0.785398);
+    cqrt_ry_i8(h_i8, 0.785398);
+    cqrt_rz_i8(h_i8, 0.785398);
+    cqrt_ry_i16(h_i16, 0.785398);
+    cqrt_rz_i16(h_i16, 0.785398);
+    cqrt_ry_i32(h_a, 0.785398);
+    cqrt_rz_i32(h_a, 0.785398);
+    cqrt_ry_i64(h_i64, 0.785398);
+    cqrt_rz_i64(h_i64, 0.785398);
+    cqrt_ry_f32(h_f32, 0.785398);
+    cqrt_rz_f32(h_f32, 0.785398);
+    cqrt_ry_f64(h_f64, 0.785398);
+    cqrt_rz_f64(h_f64, 0.785398);
 
     return 0;
 }

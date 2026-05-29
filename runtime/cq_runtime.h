@@ -1,6 +1,6 @@
 /* cq_runtime.h — trace-only runtime stub (declarations).
  *
- * Declares the 15 cqrt_* lowering targets used by the IR pass:
+ * Declares the 33 cqrt_* lowering targets used by the IR pass:
  *   - 7 allocators (one per width): cqrt_alloc_i{1,8,16,32,64} +
  *     cqrt_alloc_f{32,64}. Each takes an initial classical value and
  *     returns a fresh monotonically-increasing handle.
@@ -8,11 +8,21 @@
  *     cqrt_measure_f{32,64}. Each takes a handle and returns a value
  *     of the matching width (always 0 — the runtime is
  *     trace-only, no simulation).
+ *   - 7 Ry rotations (one per width): cqrt_ry_i{1,8,16,32,64} +
+ *     cqrt_ry_f{32,64}. Each takes a handle + double angle, returns
+ *     void; the lowered theta calls (backend.md §11.3) emit these.
+ *   - 7 Rz rotations (one per width): cqrt_rz_i{1,8,16,32,64} +
+ *     cqrt_rz_f{32,64}. Same shape as Ry; the lowered phi calls emit
+ *     these on tainted operands.
+ *   - 4 gate primitives (backend.md §11.4): cqrt_x, cqrt_h,
+ *     cqrt_cnot, cqrt_toffoli — handle-typed, void, for internal use
+ *     by the template library and Phase 11 passes. Declared + defined
+ *     this phase but NOT yet emitted by the IR pass (Phase 8).
  *   - cqrt_free(handle): width-irrelevant lifetime hook; declared
  *     but unused (reserved for later lifetime work).
  *
  * Plus the internal helper `cqrt_alloc_handle`, which is NOT one of
- * the 15 PRD-pinned symbols but is retained so templates (cq_templates)
+ * the 33 PRD-pinned symbols but is retained so templates (cq_templates)
  * can keep handle numbering globally monotonic with libcq_runtime.
  *
  * Width-only ABI: the runtime sees widths, not signedness. So
@@ -25,10 +35,13 @@
  *
  * Trace format (per call):
  *     <symbol>(<arg1>[, <arg2>...]) -> <return>
- * (or "<symbol>(<args>)" for cqrt_free, which has no return value).
- * Handles are printed as h<N>, N starting at 0. All 12 new per-width
- * symbol bodies, plus the original 3 (i32 alloc, i32 measure, free)
- * and the cqrt_alloc_handle helper, are unchanged.
+ * (or "<symbol>(<args>)" for the void ops — cqrt_free, the ry/rz
+ * rotations, and the gate primitives — which have no return value).
+ * Handles are printed as h<N>, N starting at 0. The ry/rz rotations
+ * print "cqrt_<op>_<W>(h<handle>, <angle>)" (angle as %f, 6 digits);
+ * the gate primitives print their handle args only. None of the
+ * void ops mint a handle, so the monotonic counter never advances on
+ * them.
  *
  * Front-end intrinsics (cq_init_*, cq_measure_*) carry the
  * signedness-bearing suffix (e.g. _si32); the IR pass bridges
@@ -79,6 +92,45 @@ float   cqrt_measure_f32(int32_t handle);
 double  cqrt_measure_f64(int32_t handle);
 
 /* -----------------------------------------------------------------
+ * Ry rotation — one per width. Takes a handle + double angle; void.
+ * Applies Ry(angle) to each qubit of the register (backend.md §11.3);
+ * the lowered theta calls emit these. Trace (no return-value suffix):
+ *     "cqrt_ry_<W>(h<handle>, <angle>)"   (angle as %f, 6 digits).
+ * ----------------------------------------------------------------- */
+void cqrt_ry_i1 (int32_t handle, double angle);
+void cqrt_ry_i8 (int32_t handle, double angle);
+void cqrt_ry_i16(int32_t handle, double angle);
+void cqrt_ry_i32(int32_t handle, double angle);
+void cqrt_ry_i64(int32_t handle, double angle);
+void cqrt_ry_f32(int32_t handle, double angle);
+void cqrt_ry_f64(int32_t handle, double angle);
+
+/* -----------------------------------------------------------------
+ * Rz rotation — one per width. Same shape as Ry; the lowered phi
+ * calls emit these on tainted operands. Trace (no return suffix):
+ *     "cqrt_rz_<W>(h<handle>, <angle>)"   (angle as %f, 6 digits).
+ * ----------------------------------------------------------------- */
+void cqrt_rz_i1 (int32_t handle, double angle);
+void cqrt_rz_i8 (int32_t handle, double angle);
+void cqrt_rz_i16(int32_t handle, double angle);
+void cqrt_rz_i32(int32_t handle, double angle);
+void cqrt_rz_i64(int32_t handle, double angle);
+void cqrt_rz_f32(int32_t handle, double angle);
+void cqrt_rz_f64(int32_t handle, double angle);
+
+/* -----------------------------------------------------------------
+ * Gate primitives (backend.md §11.4) — handle-typed, void. For
+ * internal use by the template library and Phase 11 passes; declared
+ * + defined this phase but NOT emitted by the IR pass yet (Phase 8).
+ * Trace (no return-value suffix): args printed as h<N>, e.g.
+ *     "cqrt_x(h<q>)", "cqrt_cnot(h<ctrl>, h<tgt>)".
+ * ----------------------------------------------------------------- */
+void cqrt_x      (int32_t q);
+void cqrt_h      (int32_t q);
+void cqrt_cnot   (int32_t ctrl, int32_t tgt);
+void cqrt_toffoli(int32_t c1, int32_t c2, int32_t tgt);
+
+/* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;
  * reserved for later lifetime work.
  * Trace: "cqrt_free(h<handle>)" (no return-value suffix).
@@ -88,7 +140,7 @@ void cqrt_free(int32_t handle);
 /* Internal helper: returns the next monotonically increasing handle.
  * Used by cqrt_alloc_<W> here and by cq_template_* in the templates
  * module to keep handle numbering globally monotonic. NOT one of the
- * 15 PRD-pinned runtime symbols; not part of the user-facing CQ.h
+ * 33 PRD-pinned runtime symbols; not part of the user-facing CQ.h
  * surface either. */
 int32_t cqrt_alloc_handle(void);
 
