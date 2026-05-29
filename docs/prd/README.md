@@ -26,3 +26,4 @@ sequence and per-phase scope.
 | Phase | Goal | PRD |
 |---|---|---|
 | 1 | New intrinsic surface in `CQ.h` | [`phase-01-intrinsic-surface/PRD.md`](phase-01-intrinsic-surface/PRD.md) |
+| 2 | IR pass: taint sources, gate-triggered allocation | [`phase-02-taint-allocation/PRD.md`](phase-02-taint-allocation/PRD.md) |
