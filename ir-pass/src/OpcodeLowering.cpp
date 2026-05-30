@@ -1,34 +1,43 @@
-// OpcodeLowering.cpp — Lower tainted arithmetic to per-width template
-// calls. Generalizes from the original `add i32`-only path to:
+// OpcodeLowering.cpp — the single ordered driver for tainted data-opcode
+// lowering (Phase 3; PRD §2.2/§2.3, IMPLEMENTATION §1.4/§5.3). It owns
+// collection, program order, cast-width capture, dispatch, and erase; the
+// per-instruction emit + RAUW + bookkeeping lives in the class lowerers
+// (`ArithLowering` here; `CompareLowering`/`CastLowering` in WP4/WP5).
 //
-//   add iW  → cq_template_add_iW(_hl)  for W ∈ {1, 8, 16, 32, 64}
-//   fadd fW → cq_template_fadd_fW(_hl) for fW ∈ {float, double}
+// One program-order walk over all four tainted instruction classes
+// (`BinaryOperator`, `UnaryOperator`, `CmpInst`, `CastInst`) builds:
+//   * `Work`  — instructions to rewrite, in program order. SSA dominance
+//     guarantees producers precede consumers, so when a consumer is
+//     rewritten its operands are already template handles (RAUW propagated
+//     them) and already in `taint.Tainted` (IMPLEMENTATION §1.4).
+//   * `CastW` — captured (from,to) ABI widths per tainted cast, recorded
+//     BEFORE any rewrite mutates an operand. `CastInst::getSrcTy()` reads
+//     `getOperand(0)->getType()`, so once the operand is RAUW'd to an i32
+//     handle the source width is lost (PRD §2.3 / risk R1). Capture is why
+//     collection is fully up-front.
 //
-// Per-width selection comes from the operand type:
-// `Type::getIntegerBitWidth()` for integers, `isFloatTy()` / `isDoubleTy()`
-// for floats. Q+Q vs Q+C dispatch is unchanged — taint-set
-// membership of each operand drives it; the symbol name is now produced
-// through `WidthDispatch::addTemplate(abiWidth, isQQ)` instead of being
-// hardcoded.
+// After collection the driver iterates `Work`, dispatches by `dyn_cast` to
+// the matching rewriter, and erases ONLY the instructions that were
+// actually rewritten. A rewriter returns false when it diagnosed/left an
+// op un-lowered (unsupported opcode/width) — that op must stay in the IR
+// (erasing a still-used value would corrupt it / break `opt -verify`).
 //
-// Negative path: a tainted instruction whose opcode is not `add` or
-// `fadd` (e.g., `sub`, `mul`) — or one whose width has no template (e.g.,
-// `fadd half`) — produces a `DiagnosticInfoUnsupported` "no template for
-// opcode" error. PRD §"Diagnostics baseline" mandates this stay loud,
-// not silent; template coverage will widen later.
+// WP3 status: binary + unary are live (ArithLowering). The compare and
+// cast dispatch arms are wired structurally but INERT — their lowerers
+// land in WP4/WP5. Until then they return false (no RAUW, no erase), so an
+// inert compare/cast is left exactly as-is and the verifier stays clean.
 
 #include "OpcodeLowering.h"
 
+#include "ArithLowering.h"
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/DebugLoc.h"
-#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
-#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
 #include <vector>
@@ -37,128 +46,104 @@ using namespace llvm;
 
 namespace cq {
 
+namespace {
+
+// Captured ABI widths for a tainted cast, recorded at collection time
+// (before any rewrite RAUWs the operand and loses the source type). Keyed
+// by the CastInst* in `CastW`. Consumed by `rewriteCast` (WP5).
+struct CastWidths {
+  StringRef From;
+  StringRef To;
+};
+
+// A tainted compare is lowered ONLY when its result is in pure
+// data/measure position (PRD §2.8). A result feeding a `br i1` or a
+// `select i1` condition is left untouched (owned by Phase 4); IR stays
+// well-typed and the flag handle never reaches a terminator. Defined here
+// (rather than CompareLowering, a WP4 TU) so the driver can gate compare
+// collection in WP3 without pulling in a not-yet-existing lowerer.
+bool isDataPositionCompare(CmpInst *cmp) {
+  for (User *U : cmp->users()) {
+    if (isa<BranchInst>(U))
+      return false;
+    if (auto *Sel = dyn_cast<SelectInst>(U))
+      if (Sel->getCondition() == cmp)
+        return false;
+  }
+  return true;
+}
+
+// Inert compare/cast rewrite for WP3: the real lowerers land in WP4/WP5.
+// Returning false guarantees the driver never RAUWs or erases an
+// un-lowered compare/cast, so `opt -verify` stays clean. No WP3 fixture
+// introduces a tainted data-position compare or cast, so this path is not
+// exercised by tests — it exists to keep the dispatch total and safe.
+bool rewriteCompareInert(CmpInst *, WidthDispatch &, TaintSet &) {
+  return false;
+}
+bool rewriteCastInert(CastInst *, CastWidths, WidthDispatch &, TaintSet &) {
+  return false;
+}
+
+}  // namespace
+
 void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
-  // Walk every tainted BinaryOperator (any opcode) in BB / function
-  // order. Collecting up front (rather than walking-and-rewriting in
-  // the same loop) sidesteps iterator-invalidation when each lowering
-  // RAUWs the original instruction. We catch unsupported opcodes here
-  // too so a tainted `sub i32` is reported (loud) rather than left
-  // silently in the IR for the verifier to swallow.
-  std::vector<BinaryOperator *> TaintedBOs;
+  // ── Phase 1: one program-order collection over all four classes ──
+  // Gated by taint membership. Casts also capture (from,to) widths here,
+  // before any rewrite corrupts the operand type (PRD §2.3).
+  std::vector<Instruction *> Work;
+  DenseMap<CastInst *, CastWidths> CastW;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
-        auto *BO = dyn_cast<BinaryOperator>(&I);
-        if (!BO)
+        if (!taint.Tainted.count(&I))
           continue;
-        if (!taint.Tainted.count(BO))
-          continue;
-        TaintedBOs.push_back(BO);
+        if (isa<BinaryOperator>(&I) || isa<UnaryOperator>(&I)) {
+          Work.push_back(&I);
+        } else if (auto *Cmp = dyn_cast<CmpInst>(&I)) {
+          // A branch/select-feeding compare is Phase 4's — never enqueue
+          // it (so it is never rewritten or erased). Data-position
+          // compares are enqueued; their lowerer is inert until WP4.
+          if (isDataPositionCompare(Cmp))
+            Work.push_back(&I);
+        } else if (auto *Cast = dyn_cast<CastInst>(&I)) {
+          // Capture widths before the operand is RAUW'd (risk R1). The
+          // rewriter is inert until WP5, but the capture is structurally
+          // correct now so WP5 only adds the emit.
+          CastW[Cast] = {abiWidthFromType(Cast->getSrcTy()),
+                         abiWidthFromType(Cast->getDestTy())};
+          Work.push_back(&I);
+        }
       }
     }
   }
 
-  if (TaintedBOs.empty())
+  if (Work.empty())
     return;
 
-  IRBuilder<> Builder(wd.context());
+  // ── Phase 2: rewrite in program order, dispatch by dyn_cast ──
+  // Each rewriter does emit + RAUW + taint/BirthOrder bookkeeping and
+  // returns true iff it rewrote the op (and the driver may erase it).
+  // false ⇒ diagnosed/inert/left un-lowered ⇒ MUST NOT be erased.
   std::vector<Instruction *> ToErase;
-
-  for (BinaryOperator *BO : TaintedBOs) {
-    // Filter to supported opcodes. `add` covers integer widths
-    // {i1, i8, i16, i32, i64}; `fadd` covers {float, double}. Any
-    // other opcode (sub, mul, ...) hits the negative path.
-    unsigned Op = BO->getOpcode();
-    bool IsIntAdd = Op == Instruction::Add;
-    bool IsFAdd   = Op == Instruction::FAdd;
-    if (!IsIntAdd && !IsFAdd) {
-      diagnoseNoTemplate(BO);
-      continue;
+  for (Instruction *I : Work) {
+    bool Rewritten = false;
+    if (auto *BO = dyn_cast<BinaryOperator>(I)) {
+      Rewritten = rewriteBinary(BO, wd, taint);
+    } else if (auto *UO = dyn_cast<UnaryOperator>(I)) {
+      Rewritten = rewriteUnary(UO, wd, taint);
+    } else if (auto *Cmp = dyn_cast<CmpInst>(I)) {
+      Rewritten = rewriteCompareInert(Cmp, wd, taint);  // WP4
+    } else if (auto *Cast = dyn_cast<CastInst>(I)) {
+      Rewritten = rewriteCastInert(Cast, CastW[Cast], wd, taint);  // WP5
     }
-
-    // Resolve ABI width from the operand type. PRD §"Width unification":
-    // 7 supported widths. Any other width (`half`, `i128`, ...) is
-    // reported as unsupported, matching the "no template" surface.
-    StringRef AbiWidth = abiWidthFromType(BO->getType());
-    if (AbiWidth.empty()) {
-      diagnoseNoTemplate(BO);
-      continue;
-    }
-    // Sanity: integer adds must land on integer widths and float adds
-    // on float widths. A tainted `add float` (impossible in well-typed
-    // IR) would otherwise pick a Q+Q i-template silently.
-    if (IsIntAdd && !BO->getType()->isIntegerTy()) {
-      diagnoseNoTemplate(BO);
-      continue;
-    }
-    if (IsFAdd && !BO->getType()->isFloatingPointTy()) {
-      diagnoseNoTemplate(BO);
-      continue;
-    }
-
-    Builder.SetInsertPoint(BO);
-    Value *A = BO->getOperand(0);
-    Value *B = BO->getOperand(1);
-
-    // Dispatch on whether each operand carries a quantum handle.
-    // taint.Tainted is authoritative — it covers literals (never
-    // tainted) AND non-constant classical sources like fn-args and
-    // loaded globals (also never tainted). isa<ConstantInt> would miss
-    // the latter; the lowering_q_plus_arg fixture pins this.
-    //
-    //   * Q+Q (both tainted): symmetric cq_template_add_<W>, ordered
-    //     by BirthOrder so the trace is clang-version-stable.
-    //   * Q+C / C+Q: cq_template_add_<W>_hl(handle, classical) — swap
-    //     when LLVM landed the classical on the lhs.
-    //   * C+C: unreachable. A non-tainted op can't have entered the
-    //     work list (TaintPropagation only seeds from init returns).
-    bool ATainted = taint.Tainted.count(A) != 0;
-    bool BTainted = taint.Tainted.count(B) != 0;
-
-    Value *Lhs;
-    Value *Rhs;
-    bool IsQQ;
-    if (ATainted && BTainted) {
-      unsigned BA = taint.BirthOrder.lookup(A);
-      unsigned BB_ = taint.BirthOrder.lookup(B);
-      // If either side lacks a BirthOrder, fall back to LLVM's operand
-      // order. Not expected in canonical shapes but harmless.
-      if (BA != 0 && BB_ != 0 && BB_ < BA) {
-        Lhs = B;
-        Rhs = A;
-      } else {
-        Lhs = A;
-        Rhs = B;
-      }
-      IsQQ = true;
-    } else if (ATainted) {
-      Lhs = A;
-      Rhs = B;
-      IsQQ = false;
-    } else {  // BTainted (C+C unreachable)
-      Lhs = B;
-      Rhs = A;
-      IsQQ = false;
-    }
-
-    FunctionCallee Callee = wd.addTemplate(AbiWidth, IsQQ);
-    CallInst *T = Builder.CreateCall(Callee, {Lhs, Rhs}, "h_sum");
-    if (DebugLoc DL = BO->getDebugLoc())
-      T->setDebugLoc(DL);
-    BO->replaceAllUsesWith(T);
-
-    // Promote the template result into the taint set; drop the now-
-    // dead op (its pointer would otherwise dangle in the set after
-    // erase). BirthOrder inherits the next slot so a subsequent Q+Q
-    // canonicalization sees this handle.
-    taint.Tainted.insert(T);
-    taint.Tainted.erase(BO);
-    taint.BirthOrder[T] = taint.NextBirth++;
-    ToErase.push_back(BO);
+    if (Rewritten)
+      ToErase.push_back(I);
   }
 
+  // ── Phase 3: erase only the rewritten originals ──
   for (Instruction *I : ToErase)
     I->eraseFromParent();
 }

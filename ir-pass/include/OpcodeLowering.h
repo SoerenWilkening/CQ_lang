@@ -1,35 +1,29 @@
-// OpcodeLowering.h — Lower tainted arithmetic opcodes to per-width
-// template calls. Originally inline in `CQLoweringPass.cpp` step 5.
+// OpcodeLowering.h — The single ordered driver for tainted data-opcode
+// lowering (Phase 3). Originally inline in `CQLoweringPass.cpp` step 5;
+// in Phase 3 it is the collect-classify-dispatch-erase loop and the
+// per-instruction emit moves out to the class lowerers.
 //
-// Contract: walk every tainted BinaryOperator, dispatch Q+Q vs Q+C
-// from operand-taint membership, and emit the matching template:
+// Contract: ONE program-order walk over all four tainted instruction
+// classes (`BinaryOperator`, `UnaryOperator`, `CmpInst`, `CastInst`)
+// builds a program-order work list (and captures each cast's (from,to)
+// ABI widths BEFORE any RAUW corrupts the operand type; PRD §2.3). The
+// driver then rewrites in program order — dispatching by `dyn_cast` to
+// `ArithLowering::rewriteBinary` / `rewriteUnary` (live in WP3) and the
+// compare/cast arms (inert until WP4/WP5) — and finally erases ONLY the
+// instructions a rewriter actually rewrote. A rewriter that diagnoses or
+// leaves an op un-lowered returns false, and the driver leaves that op in
+// the IR (erasing a still-used value would break `opt -verify`).
 //
-//   * `add iW`  for W ∈ {1, 8, 16, 32, 64}
-//   * `fadd fW` for fW ∈ {float (f32), double (f64)}
+// Single program-order collection (not per-class) keeps producer-before-
+// consumer without per-class ordering assumptions: SSA dominance ⇒
+// producers precede consumers, so a consumer's operands are already
+// template handles (and already tainted) when it is rewritten.
 //
-// Width comes from `Type::getIntegerBitWidth()` / `isFloatTy()` /
-// `isDoubleTy()`; the symbol is `WidthDispatch::addTemplate(W, isQQ)`.
+// Operand classification / canonicalization and the loud "no template"
+// diagnostic live in the lowerers + `OpcodeSupport`; see `ArithLowering.h`.
 //
-// Operand canonicalization (invariants preserved):
-//   * Q+Q: operands ordered by `BirthOrder` (lower-birth becomes lhs).
-//     Stabilizes the trace across clang versions that may swap
-//     commutative-add operands by SSA index.
-//   * Q+C: handle is always lhs, classical operand always rhs. The
-//     `_hl` template's signature is `(handle, classical)`; we swap
-//     when LLVM landed the classical on the lhs.
-//
-// "Classical" = taint-set non-membership, NOT `isa<ConstantInt>`: a
-// function arg never touched by a handle is classical too. The
-// `lowering_q_plus_arg.ll` LIT fixture pins this.
-//
-// Negative path: a tainted op whose opcode is not `add`/`fadd` (e.g.
-// `sub`), or whose width has no template (e.g. `i128`, `half`), emits
-// a `DiagnosticInfoUnsupported` "no template for opcode" error. PRD
-// §"Diagnostics baseline" mandates this stay loud, not silent;
-// template coverage will widen later.
-//
-// Mutates `taint`: the template result inherits the op's taint and the
-// next `taint.BirthOrder` slot; the original op is dropped from the set.
+// Mutates `taint`: each rewriter promotes its template result into the
+// taint set with the next `taint.BirthOrder` slot and drops the original.
 
 #ifndef CQ_IRPASS_OPCODE_LOWERING_H_
 #define CQ_IRPASS_OPCODE_LOWERING_H_

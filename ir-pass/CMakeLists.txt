@@ -41,6 +41,7 @@ endif()
 # link against LLVM — opt/clang provide the symbols at dlopen time. Polly,
 # Enzyme, and the sanitizers all follow this pattern.
 add_library(CQPass MODULE
+  src/ArithLowering.cpp
   src/CQLoweringPass.cpp
   src/MeasureLowering.cpp
   src/OpcodeLowering.cpp
