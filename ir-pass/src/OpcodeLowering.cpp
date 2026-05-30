@@ -2,7 +2,7 @@
 // lowering (Phase 3; PRD §2.2/§2.3, IMPLEMENTATION §1.4/§5.3). It owns
 // collection, program order, cast-width capture, dispatch, and erase; the
 // per-instruction emit + RAUW + bookkeeping lives in the class lowerers
-// (`ArithLowering` here; `CompareLowering`/`CastLowering` in WP4/WP5).
+// (`ArithLowering`, `CompareLowering`, `CastLowering`).
 //
 // One program-order walk over all four tainted instruction classes
 // (`BinaryOperator`, `UnaryOperator`, `CmpInst`, `CastInst`) builds:
@@ -22,14 +22,15 @@
 // op un-lowered (unsupported opcode/width) — that op must stay in the IR
 // (erasing a still-used value would corrupt it / break `opt -verify`).
 //
-// WP4 status: binary + unary + compare are live (ArithLowering,
-// CompareLowering). The cast dispatch arm is wired structurally but INERT —
-// its lowerer lands in WP5. Until then it returns false (no RAUW, no erase),
-// so an inert cast is left exactly as-is and the verifier stays clean.
+// All four classes are live: binary + unary (ArithLowering), compare
+// (CompareLowering), and cast (CastLowering). Each rewriter returns false on
+// an unsupported op so the driver leaves it un-lowered and `opt -verify`
+// stays clean.
 
 #include "OpcodeLowering.h"
 
 #include "ArithLowering.h"
+#include "CastLowering.h"
 #include "CompareLowering.h"
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
@@ -46,27 +47,6 @@
 using namespace llvm;
 
 namespace cq {
-
-namespace {
-
-// Captured ABI widths for a tainted cast, recorded at collection time
-// (before any rewrite RAUWs the operand and loses the source type). Keyed
-// by the CastInst* in `CastW`. Consumed by `rewriteCast` (WP5).
-struct CastWidths {
-  StringRef From;
-  StringRef To;
-};
-
-// Inert cast rewrite for WP4: the real cast lowerer lands in WP5. Returning
-// false guarantees the driver never RAUWs or erases an un-lowered cast, so
-// `opt -verify` stays clean. (The data-position gate `isDataPositionCompare`
-// and the real `rewriteCompare` now live in CompareLowering; only the cast
-// arm remains inert.)
-bool rewriteCastInert(CastInst *, CastWidths, WidthDispatch &, TaintSet &) {
-  return false;
-}
-
-}  // namespace
 
 void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // ── Phase 1: one program-order collection over all four classes ──
@@ -90,9 +70,11 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
           if (isDataPositionCompare(Cmp))
             Work.push_back(&I);
         } else if (auto *Cast = dyn_cast<CastInst>(&I)) {
-          // Capture widths before the operand is RAUW'd (risk R1). The
-          // rewriter is inert until WP5, but the capture is structurally
-          // correct now so WP5 only adds the emit.
+          // Capture widths NOW, before any rewrite RAUWs the operand and
+          // makes `getSrcTy()` read the i32 handle (risk R1). `rewriteCast`
+          // consumes exactly this captured pair — never the live operand
+          // type. This up-front capture is what makes the measured-compare
+          // zext bridge emit `cq_template_zext_i1_to_i32` instead of garbage.
           CastW[Cast] = {abiWidthFromType(Cast->getSrcTy()),
                          abiWidthFromType(Cast->getDestTy())};
           Work.push_back(&I);
@@ -118,7 +100,7 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
     } else if (auto *Cmp = dyn_cast<CmpInst>(I)) {
       Rewritten = rewriteCompare(Cmp, wd, taint);
     } else if (auto *Cast = dyn_cast<CastInst>(I)) {
-      Rewritten = rewriteCastInert(Cast, CastW[Cast], wd, taint);  // WP5
+      Rewritten = rewriteCast(Cast, CastW[Cast], wd, taint);
     }
     if (Rewritten)
       ToErase.push_back(I);

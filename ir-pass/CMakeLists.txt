@@ -42,6 +42,7 @@ endif()
 # Enzyme, and the sanitizers all follow this pattern.
 add_library(CQPass MODULE
   src/ArithLowering.cpp
+  src/CastLowering.cpp
   src/CompareLowering.cpp
   src/CQLoweringPass.cpp
   src/MeasureLowering.cpp
