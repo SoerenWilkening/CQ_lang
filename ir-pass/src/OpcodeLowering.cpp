@@ -19,6 +19,7 @@
 
 #include "OpcodeLowering.h"
 
+#include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
@@ -26,68 +27,15 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
-#include "llvm/Support/raw_ostream.h"
 
 #include <vector>
 
 using namespace llvm;
 
 namespace cq {
-
-namespace {
-
-// Resolve a value's LLVM type to its ABI-width string ("i1"/.../"f64")
-// per PRD §"Width unification". Returns "" for unsupported widths (e.g.,
-// `half`, `fp128`, `i128`); the caller emits a "no template" diagnostic
-// in that case. Integer widths are restricted to the 5 supported
-// {1,8,16,32,64}; any other integer width (e.g., i24, i128) is unsupported.
-StringRef abiWidthFromType(Type *Ty) {
-  if (!Ty)
-    return {};
-  if (auto *IT = dyn_cast<IntegerType>(Ty)) {
-    switch (IT->getBitWidth()) {
-    case 1:  return "i1";
-    case 8:  return "i8";
-    case 16: return "i16";
-    case 32: return "i32";
-    case 64: return "i64";
-    default: return {};
-    }
-  }
-  if (Ty->isFloatTy())  return "f32";
-  if (Ty->isDoubleTy()) return "f64";
-  return {};
-}
-
-// Stringify an instruction's opcode and operand type for diagnostics.
-// Produces text like "sub i32" or "fadd half" so a LIT fixture can pin
-// the failure mode without depending on the SSA name LLVM picks.
-std::string opcodeDescription(BinaryOperator *BO) {
-  std::string s;
-  raw_string_ostream os(s);
-  os << BO->getOpcodeName() << ' ';
-  BO->getType()->print(os);
-  return os.str();
-}
-
-// "No template for opcode" diagnostic. Failure must be loud, not
-// silent. We use `DiagnosticInfoUnsupported` to match MeasureLowering's
-// pattern (one consistent diagnostic surface across the pass). The
-// string carries enough detail that a downstream LIT fixture can
-// FileCheck a recognizable substring.
-void diagnoseNoTemplate(BinaryOperator *BO) {
-  std::string Detail = opcodeDescription(BO);
-  std::string Msg = "no template for opcode '" + Detail +
-                    "' in tainted context";
-  BO->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
-      *BO->getFunction(), Msg));
-}
-
-}  // namespace
 
 void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // Walk every tainted BinaryOperator (any opcode) in BB / function

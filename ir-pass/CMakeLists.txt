@@ -44,9 +44,11 @@ add_library(CQPass MODULE
   src/CQLoweringPass.cpp
   src/MeasureLowering.cpp
   src/OpcodeLowering.cpp
+  src/OpcodeSupport.cpp
   src/Plugin.cpp
   src/RotationLowering.cpp
   src/TaintPropagation.cpp
+  src/TemplateName.cpp
   src/WidthDispatch.cpp
 )
 

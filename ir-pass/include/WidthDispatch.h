@@ -27,6 +27,8 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Module.h"
 
+#include "TemplateName.h"  // cq::Shape
+
 namespace cq {
 
 class WidthDispatch {
@@ -66,8 +68,35 @@ public:
   llvm::FunctionCallee ryRtFn(llvm::StringRef abiWidth) const;        // @cqrt_ry_<W>
   llvm::FunctionCallee rzRtFn(llvm::StringRef abiWidth) const;        // @cqrt_rz_<W>
 
-  // Template-symbol resolvers. `isQQ=true` selects the Q+Q symbol
-  // (`@cq_template_add_<W>`); `isQQ=false` selects Q+C (`..._hl`).
+  // General template-symbol resolvers (PRD §2.1). Each spells the symbol
+  // via `TemplateName::*` and lazily mints the matching `FunctionType` via
+  // `getOrInsertFunction`. The handle is always i32; the classical operand
+  // of an `_hl`/`_lh` form is at its real LLVM width (`llvmWidthType`) so
+  // the IR call matches the generated C signature. Return a null
+  // FunctionCallee for an unsupported width (caller diagnoses).
+  //
+  //   * dataTemplateFn    — binary/unary data ops. Arity/types by Shape:
+  //       QQ    (i32, i32) → i32     HL  (i32, W) → i32
+  //       LH    (W, i32)   → i32     Unary (i32)  → i32   (fneg)
+  //   * compareTemplateFn — icmp/fcmp; QQ (i32,i32)→i32, HL (i32,W)→i32;
+  //                         result is an i32 flag handle (never i1).
+  //   * castTemplateFn    — unary, always (i32) → i32 (the handle's ABI
+  //                         width changes but the SSA type stays i32).
+  llvm::FunctionCallee dataTemplateFn(llvm::StringRef stem,
+                                      llvm::StringRef abiWidth,
+                                      Shape shape) const;
+  llvm::FunctionCallee compareTemplateFn(llvm::StringRef op,
+                                         llvm::StringRef pred,
+                                         llvm::StringRef abiWidth,
+                                         Shape shape) const;
+  llvm::FunctionCallee castTemplateFn(llvm::StringRef op,
+                                      llvm::StringRef fromW,
+                                      llvm::StringRef toW) const;
+
+  // Back-compat shim for the Phase-2 entry point. `isQQ=true` → Q+Q
+  // (`cq_template_(add|fadd)_<W>`); `isQQ=false` → Q+C (`..._hl`). The
+  // opcode stem is derived from the width prefix ('f' → fadd, else add) to
+  // reproduce the original behavior exactly; delegates to dataTemplateFn.
   llvm::FunctionCallee addTemplate(llvm::StringRef abiWidth, bool isQQ) const;
 
   // Convenience accessors. `i32Ty()` is justified by PRD §"Width
@@ -83,6 +112,11 @@ public:
   llvm::ArrayRef<llvm::StringRef> frontEndIntrinsicNames() const;
 
 private:
+  // ABI-width string → the classical operand's LLVM type for an `_hl`/`_lh`
+  // template (`i16`→i16, `f64`→double, …). nullptr for an unsupported
+  // width. The handle stays i32; this is only the classical-operand type.
+  llvm::Type *llvmWidthType(llvm::StringRef abiWidth) const;
+
   llvm::Module &M;
   // ABI width to use for `sl`/`ul` on this target. Computed from the
   // Module's DataLayout at construction; "i64" on LP64, "i32" otherwise.

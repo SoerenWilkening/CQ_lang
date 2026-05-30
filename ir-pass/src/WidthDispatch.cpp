@@ -3,6 +3,8 @@
 
 #include "WidthDispatch.h"
 
+#include "TemplateName.h"
+
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
@@ -155,29 +157,88 @@ FunctionCallee WidthDispatch::rzRtFn(StringRef abiWidth) const {
                         false));
 }
 
+Type *WidthDispatch::llvmWidthType(StringRef abiWidth) const {
+  // The classical operand of an `_hl`/`_lh` template at its real LLVM
+  // width. Reuses the shared ABI-width → Type table; nullptr for any
+  // unsupported width.
+  return typeForAbiWidth(abiWidth, M.getContext());
+}
+
+FunctionCallee WidthDispatch::dataTemplateFn(StringRef stem,
+                                             StringRef abiWidth,
+                                             Shape shape) const {
+  // Binary/unary data op. Handle is i32; the classical operand of an
+  // `_hl`/`_lh` form is at its real LLVM width so the call matches the
+  // generated C signature. Symbol via TemplateName::dataName.
+  LLVMContext &Ctx = M.getContext();
+  Type *Handle = Type::getInt32Ty(Ctx);
+  std::string Name = dataName(stem, abiWidth, shape);
+  switch (shape) {
+  case Shape::QQ:
+    return M.getOrInsertFunction(
+        Name, FunctionType::get(Handle, {Handle, Handle}, false));
+  case Shape::Unary:
+    return M.getOrInsertFunction(
+        Name, FunctionType::get(Handle, {Handle}, false));
+  case Shape::HL:
+  case Shape::LH: {
+    Type *Classical = llvmWidthType(abiWidth);
+    if (!Classical)
+      return FunctionCallee();
+    // HL: (handle, classical); LH: (classical, handle). Operand order is
+    // observable — it is the whole point of the distinct `_lh` symbol.
+    if (shape == Shape::HL)
+      return M.getOrInsertFunction(
+          Name, FunctionType::get(Handle, {Handle, Classical}, false));
+    return M.getOrInsertFunction(
+        Name, FunctionType::get(Handle, {Classical, Handle}, false));
+  }
+  }
+  return FunctionCallee();
+}
+
+FunctionCallee WidthDispatch::compareTemplateFn(StringRef op, StringRef pred,
+                                                StringRef abiWidth,
+                                                Shape shape) const {
+  // icmp/fcmp → an i32 flag handle (never i1). QQ (i32,i32)→i32; HL
+  // (i32, classical)→i32. No `_lh` compares (a left literal is handled by
+  // predicate flip upstream). Symbol via TemplateName::compareName.
+  LLVMContext &Ctx = M.getContext();
+  Type *Handle = Type::getInt32Ty(Ctx);
+  std::string Name = compareName(op, pred, abiWidth, shape);
+  if (shape == Shape::QQ)
+    return M.getOrInsertFunction(
+        Name, FunctionType::get(Handle, {Handle, Handle}, false));
+  // HL — the only other valid compare shape.
+  Type *Classical = llvmWidthType(abiWidth);
+  if (!Classical)
+    return FunctionCallee();
+  return M.getOrInsertFunction(
+      Name, FunctionType::get(Handle, {Handle, Classical}, false));
+}
+
+FunctionCallee WidthDispatch::castTemplateFn(StringRef op, StringRef fromW,
+                                             StringRef toW) const {
+  // Casts are unary at the IR level: (i32 handle) → i32 handle. The width
+  // pair only selects the symbol (and, semantically, the handle's ABI
+  // width); the SSA type is i32 on both sides. Symbol via
+  // TemplateName::castName.
+  LLVMContext &Ctx = M.getContext();
+  Type *Handle = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      castName(op, fromW, toW),
+      FunctionType::get(Handle, {Handle}, false));
+}
+
 FunctionCallee WidthDispatch::addTemplate(StringRef abiWidth,
                                           bool isQQ) const {
-  // Q+Q (`cq_template_(add|fadd)_<W>`) and Q+C (`..._hl`) are distinct C
-  // symbols (C lacks overloading). Q+Q: (handle, handle) → handle.
-  // Q+C: (handle, classical-of-width-W) → handle. Both return i32
-  // handle; the rhs type is what distinguishes them at the call site.
-  // Matches cq_templates.h declarations exactly. The int and float
-  // opcode roots are split to follow LLVM IR convention: integer
-  // widths land on `cq_template_add_i*`, float widths on
-  // `cq_template_fadd_f*`. The opcode root is selected by the abiWidth
-  // prefix ('f' → fadd, otherwise → add).
-  LLVMContext &Ctx = M.getContext();
-  Type *ClassicalTy = typeForAbiWidth(abiWidth, Ctx);
-  if (!ClassicalTy)
-    return FunctionCallee();
-  Type *Handle = Type::getInt32Ty(Ctx);
-  StringRef OpcodeRoot = abiWidth.starts_with("f") ? "fadd_" : "add_";
-  std::string Name = ("cq_template_" + OpcodeRoot + abiWidth).str();
-  if (!isQQ)
-    Name += "_hl";
-  Type *RhsTy = isQQ ? Handle : ClassicalTy;
-  return M.getOrInsertFunction(
-      Name, FunctionType::get(Handle, {Handle, RhsTy}, false));
+  // Phase-2 entry point, now a shim over dataTemplateFn. The opcode stem
+  // is derived from the width prefix ('f' → fadd, else add) — the exact
+  // rule the old hardcoded path used — and Q+Q/Q+C map to Shape::QQ/HL.
+  // Output is byte-identical to the pre-refactor symbol/type, which the
+  // existing lowering_add_* fixtures pin.
+  StringRef Stem = abiWidth.starts_with("f") ? "fadd" : "add";
+  return dataTemplateFn(Stem, abiWidth, isQQ ? Shape::QQ : Shape::HL);
 }
 
 ArrayRef<StringRef> WidthDispatch::frontEndIntrinsicNames() const {
