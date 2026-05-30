@@ -2,18 +2,17 @@
 """tools/gen_templates.py - template-stub generator.
 
 Reads tools/opcode_table.yaml and emits:
-  - cq_templates.h          : extern "C" declarations (~680 symbols)
+  - cq_templates.h          : extern "C" declarations (~780 symbols)
   - cq_templates.c          : printf-trace stub bodies
-  - OpcodeTables.cpp        : IR-pass dispatch tables (linear scan)
-  - lit/<opcode>/<sym>.ll   : LIT fixture stubs (placeholder)
 
 Each file embeds the YAML SHA-256 in its banner so consumers can detect
 drift. --check mode regenerates into a tempdir and diffs byte-for-byte
 against the on-disk artifacts.
 
-Naming ("_hl" then "_inv"):
-  fwd Q+Q:   cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>]
-  fwd Q+C:   ..._hl    inv Q+Q: ..._inv    inv Q+C: ..._hl_inv
+Naming ("_hl"/"_lh" shape, then "_inv" direction):
+  fwd Q+Q:     cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>]
+  fwd Q+C rhs: ..._hl    fwd C+Q lhs: ..._lh
+  inv Q+Q:     ..._inv   inv Q+C rhs: ..._hl_inv   inv C+Q lhs: ..._lh_inv
 
 Trace format mirrors runtime/cq_templates.c.
 """
@@ -40,7 +39,25 @@ WIDTH_INFO = {
     "f64": {"ctype": "double",  "fmt": "%f",   "cast": ""},
 }
 
-TARGETS = ("h", "c", "opcodetables", "lit")
+TARGETS = ("h", "c")
+
+# Variant token -> (symbol suffix, operand shape). Single source of truth for
+# the variant grid; enumerate_all/signature/stub_body all key off `shape`.
+#   qq  : both operands quantum handles            -> sym(h, h)
+#   hl  : handle on LHS, classical scalar on RHS    -> sym(h, classical)
+#   lh  : classical scalar on LHS, handle on RHS    -> sym(classical, h)
+#   a1  : arity-1 (unary / cast)                    -> sym(h)
+# The `_inv` direction is folded into the suffix (modifier-then-direction).
+VARIANT_INFO = {
+    "fwd_qq": ("",        "qq"),
+    "fwd_hl": ("_hl",     "hl"),
+    "fwd_lh": ("_lh",     "lh"),
+    "inv_qq": ("_inv",    "qq"),
+    "inv_hl": ("_hl_inv", "hl"),
+    "inv_lh": ("_lh_inv", "lh"),
+    "fwd":    ("",        "a1"),
+    "inv":    ("_inv",    "a1"),
+}
 
 
 # -------------------- symbol enumeration --------------------
@@ -48,40 +65,44 @@ TARGETS = ("h", "c", "opcodetables", "lit")
 def enumerate_all(table):
     """Return lex-sorted list of row dicts, one per emitted symbol.
 
-    Row fields: sym, kind, op, width (or from/to for casts), variant,
-    hl_ctype_w (None for arity-1 / Q+Q variants; width-name for _hl variants).
-    Compare rows also carry `pred`.
+    Variant-driven: each opcode's `variants` list is expanded through
+    VARIANT_INFO into (suffix, shape) pairs, so the symbol grid follows the
+    YAML directly. Row fields: sym, kind, op, shape, variant, width (or
+    from/to for casts), classical_w (width-name carrying the classical
+    operand's C type for hl/lh shapes; None otherwise). Compare rows also
+    carry `pred`.
     """
     rows = []
-    # Binary: 4 variants per (op, width).
+
+    def emit(base, kind, variants, extra):
+        for v in variants:
+            suffix, shape = VARIANT_INFO[v]
+            row = {"sym": base + suffix, "kind": kind, "shape": shape, "variant": v}
+            row.update(extra)
+            row["classical_w"] = extra.get("width") if shape in ("hl", "lh") else None
+            rows.append(row)
+
+    # Binary: variant grid per (op, width).
     for op in table["binary_opcodes"]:
         for w in op["widths"]:
-            base = f"cq_template_{op['opcode']}_{w}"
-            rows.append({"sym": base,             "kind": "binary", "op": op["opcode"], "width": w, "variant": "fwd_qq", "hl_ctype_w": None})
-            rows.append({"sym": base + "_hl",     "kind": "binary", "op": op["opcode"], "width": w, "variant": "fwd_hl", "hl_ctype_w": w})
-            rows.append({"sym": base + "_inv",    "kind": "binary", "op": op["opcode"], "width": w, "variant": "inv_qq", "hl_ctype_w": None})
-            rows.append({"sym": base + "_hl_inv", "kind": "binary", "op": op["opcode"], "width": w, "variant": "inv_hl", "hl_ctype_w": w})
-    # Unary: 2 variants per (op, width).
+            emit(f"cq_template_{op['opcode']}_{w}", "binary", op["variants"],
+                 {"op": op["opcode"], "width": w})
+    # Unary: variant grid per (op, width).
     for op in table["unary_opcodes"]:
         for w in op["widths"]:
-            base = f"cq_template_{op['opcode']}_{w}"
-            rows.append({"sym": base,          "kind": "unary", "op": op["opcode"], "width": w, "variant": "fwd", "hl_ctype_w": None})
-            rows.append({"sym": base + "_inv", "kind": "unary", "op": op["opcode"], "width": w, "variant": "inv", "hl_ctype_w": None})
-    # Compare: 4 variants per (family, pred, width).
+            emit(f"cq_template_{op['opcode']}_{w}", "unary", op["variants"],
+                 {"op": op["opcode"], "width": w})
+    # Compare: variant grid per (family, pred, width).
     for op in table["compare_opcodes"]:
         for pred in table["predicates"][op["predicate_set"]]:
             for w in op["widths"]:
-                base = f"cq_template_{op['opcode']}_{pred}_{w}"
-                rows.append({"sym": base,             "kind": "compare", "op": op["opcode"], "width": w, "variant": "fwd_qq", "hl_ctype_w": None, "pred": pred})
-                rows.append({"sym": base + "_hl",     "kind": "compare", "op": op["opcode"], "width": w, "variant": "fwd_hl", "hl_ctype_w": w,    "pred": pred})
-                rows.append({"sym": base + "_inv",    "kind": "compare", "op": op["opcode"], "width": w, "variant": "inv_qq", "hl_ctype_w": None, "pred": pred})
-                rows.append({"sym": base + "_hl_inv", "kind": "compare", "op": op["opcode"], "width": w, "variant": "inv_hl", "hl_ctype_w": w,    "pred": pred})
-    # Cast: 2 variants per (kind, from, to). No Q+C - casts are arity-1 at IR level.
+                emit(f"cq_template_{op['opcode']}_{pred}_{w}", "compare", op["variants"],
+                     {"op": op["opcode"], "width": w, "pred": pred})
+    # Cast: variant grid per (kind, from, to). Casts are arity-1 at IR level.
     for op in table["cast_opcodes"]:
         for pair in op["pairs"]:
-            base = f"cq_template_{op['opcode']}_{pair['from']}_to_{pair['to']}"
-            rows.append({"sym": base,          "kind": "cast", "op": op["opcode"], "from": pair["from"], "to": pair["to"], "variant": "fwd"})
-            rows.append({"sym": base + "_inv", "kind": "cast", "op": op["opcode"], "from": pair["from"], "to": pair["to"], "variant": "inv"})
+            emit(f"cq_template_{op['opcode']}_{pair['from']}_to_{pair['to']}", "cast",
+                 op["variants"], {"op": op["opcode"], "from": pair["from"], "to": pair["to"]})
     rows.sort(key=lambda r: r["sym"])
     return rows
 
@@ -91,34 +112,47 @@ def enumerate_all(table):
 def signature(row):
     """Return the C declaration (no trailing ';')."""
     sym = row["sym"]
-    if row["kind"] in ("cast", "unary"):
+    shape = row["shape"]
+    if shape == "a1":  # arity-1: cast / unary
         return f"int32_t {sym}(int32_t a_handle)"
-    if row["hl_ctype_w"] is None:  # Q+Q binary or compare
+    if shape == "qq":  # Q+Q binary or compare
         return f"int32_t {sym}(int32_t a_handle, int32_t b_handle)"
-    ctype = WIDTH_INFO[row["hl_ctype_w"]]["ctype"]
-    return f"int32_t {sym}(int32_t a_handle, {ctype} b_classical)"
+    ctype = WIDTH_INFO[row["classical_w"]]["ctype"]
+    if shape == "hl":  # handle on LHS, classical scalar on RHS
+        return f"int32_t {sym}(int32_t a_handle, {ctype} b_classical)"
+    # shape == "lh": classical scalar on LHS, handle on RHS
+    return f"int32_t {sym}({ctype} a_classical, int32_t b_handle)"
 
 
 def stub_body(row):
     """Return the C body lines (without the signature braces)."""
     sym = row["sym"]
-    if row["kind"] in ("cast", "unary"):
+    shape = row["shape"]
+    if shape == "a1":  # arity-1: cast / unary
         return (
             "    int32_t h = cqrt_alloc_handle();\n"
             f"    printf(\"{sym}(h%d) -> h%d\\n\", a_handle, h);\n"
             "    fflush(stdout);\n    return h;\n"
         )
-    if row["hl_ctype_w"] is None:  # Q+Q binary or compare
+    if shape == "qq":  # Q+Q binary or compare
         return (
             "    int32_t h = cqrt_alloc_handle();\n"
             f"    printf(\"{sym}(h%d, h%d) -> h%d\\n\", a_handle, b_handle, h);\n"
             "    fflush(stdout);\n    return h;\n"
         )
-    info = WIDTH_INFO[row["hl_ctype_w"]]
-    cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
+    info = WIDTH_INFO[row["classical_w"]]
+    if shape == "hl":  # handle on LHS, classical scalar on RHS
+        cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
+        return (
+            "    int32_t h = cqrt_alloc_handle();\n"
+            f"    printf(\"{sym}(h%d, {info['fmt']}) -> h%d\\n\", a_handle, {cast_expr}, h);\n"
+            "    fflush(stdout);\n    return h;\n"
+        )
+    # shape == "lh": classical scalar on LHS, handle on RHS; trace order classical, handle.
+    cast_expr = f"{info['cast']}a_classical" if info["cast"] else "a_classical"
     return (
         "    int32_t h = cqrt_alloc_handle();\n"
-        f"    printf(\"{sym}(h%d, {info['fmt']}) -> h%d\\n\", a_handle, {cast_expr}, h);\n"
+        f"    printf(\"{sym}({info['fmt']}, h%d) -> h%d\\n\", {cast_expr}, b_handle, h);\n"
         "    fflush(stdout);\n    return h;\n"
     )
 
@@ -155,69 +189,6 @@ def emit_source(rows, yaml_sha):
     return "".join(parts)
 
 
-def emit_opcode_tables(rows, table, yaml_sha):
-    """Emit dispatch tables consumed by the IR pass.
-
-    Schema: one std::array per opcode-family, rows of {op, width, sym}.
-    Linear-scan lookup is fine at table size <= 70.
-    """
-    parts = [banner(yaml_sha),
-             "// OpcodeTables.cpp - dispatch tables for IR-pass lowering.\n\n",
-             "#include <array>\n#include <string_view>\n\nnamespace cq {\n\n",
-             "struct OpcodeRow { std::string_view op; std::string_view width; "
-             "std::string_view sym; };\n\n"]
-
-    def section(name, comment, items):
-        parts.append(f"// {comment}\n")
-        parts.append(f"inline constexpr std::array<OpcodeRow, {len(items)}> {name} = {{{{\n")
-        for op, w, sym in items:
-            parts.append(f"    {{\"{op}\", \"{w}\", \"{sym}\"}},\n")
-        parts.append("}};\n\n")
-
-    bin_items = [(op["opcode"], w, f"cq_template_{op['opcode']}_{w}")
-                 for op in table["binary_opcodes"] for w in op["widths"]]
-    section("binaryOpcodeTable", "binary arith + bitwise (Q+Q forward stems)", bin_items)
-
-    una_items = [(op["opcode"], w, f"cq_template_{op['opcode']}_{w}")
-                 for op in table["unary_opcodes"] for w in op["widths"]]
-    section("unaryOpcodeTable", "unary (fneg only, Q+Q forward stems)", una_items)
-
-    cmp_items = [(f"{op['opcode']}_{pred}", w,
-                  f"cq_template_{op['opcode']}_{pred}_{w}")
-                 for op in table["compare_opcodes"]
-                 for pred in table["predicates"][op["predicate_set"]]
-                 for w in op["widths"]]
-    section("compareOpcodeTable", "icmp + fcmp (Q+Q forward stems, per-predicate)", cmp_items)
-
-    cast_items = [(op["opcode"], f"{pair['from']}_to_{pair['to']}",
-                   f"cq_template_{op['opcode']}_{pair['from']}_to_{pair['to']}")
-                  for op in table["cast_opcodes"] for pair in op["pairs"]]
-    section("castOpcodeTable", "cast opcodes (forward stems, per from/to pair)", cast_items)
-
-    parts.append("}  // namespace cq\n")
-    return "".join(parts)
-
-
-def emit_lit_fixtures(rows, yaml_sha):
-    """Emit a placeholder LIT fixture per forward symbol; real CHECKs land later.
-
-    Returns dict {relative-path: content}.
-    """
-    fixtures = {}
-    for r in rows:
-        if "inv" in r["variant"]:
-            continue
-        rel = f"{r['op']}/{r['sym']}.ll"
-        fixtures[rel] = (
-            f"; AUTOGENERATED - do not edit. yaml-sha256: {yaml_sha}\n"
-            f"; Source: tools/opcode_table.yaml; emitter: tools/gen_templates.py\n"
-            f"; Placeholder - real CHECK lines land later.\n"
-            f"; RUN: true\n"
-            f"; Target symbol: {r['sym']}\n"
-        )
-    return fixtures
-
-
 # -------------------- top-level glue --------------------
 
 def load_yaml(path):
@@ -236,14 +207,6 @@ def write_artifacts(out_dir, yaml_path, targets):
         (out_dir / "cq_templates.h").write_text(emit_header(rows, sha))
     if "c" in targets:
         (out_dir / "cq_templates.c").write_text(emit_source(rows, sha))
-    if "opcodetables" in targets:
-        (out_dir / "OpcodeTables.cpp").write_text(emit_opcode_tables(rows, table, sha))
-    if "lit" in targets:
-        lit_dir = out_dir / "lit"
-        for rel, content in emit_lit_fixtures(rows, sha).items():
-            fp = lit_dir / rel
-            fp.parent.mkdir(parents=True, exist_ok=True)
-            fp.write_text(content)
 
 
 def check_mode(out_dir, yaml_path, targets):

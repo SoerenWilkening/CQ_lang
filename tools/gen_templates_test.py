@@ -2,10 +2,10 @@
 """tools/gen_templates_test.py - self-test for tools/gen_templates.py.
 
 Asserts:
-  1. Total symbol count == 680.
+  1. Total symbol count == 780.
   2. Per-kind breakdown matches YAML projection (derived at runtime).
   3. Every .h declaration has a matching .c definition.
-  4. YAML SHA-256 banner appears in every emitted file.
+  4. YAML SHA-256 banner appears in every emitted file (cq_templates.{h,c}).
   5. Generator is byte-idempotent.
   6. --check returns 0 on clean tree, 1 after a tampered byte.
 
@@ -64,8 +64,8 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_680(self):
-        self.assertEqual(len(self.h_decls), 680)
+    def test_total_symbol_count_is_780(self):
+        self.assertEqual(len(self.h_decls), 780)
 
     def test_per_kind_breakdown_matches_yaml(self):
         expected = _expected_counts(self.table)
@@ -78,11 +78,9 @@ class GenTemplatesTest(unittest.TestCase):
         self.assertEqual(self.h_decls, self.c_defs)
 
     def test_yaml_sha_banner_in_all_files(self):
-        for rel in ("cq_templates.h", "cq_templates.c", "OpcodeTables.cpp"):
+        for rel in ("cq_templates.h", "cq_templates.c"):
             self.assertIn(self.yaml_sha, (self.out / rel).read_text(),
                           f"yaml-sha256 missing from {rel}")
-        any_lit = next((self.out / "lit").rglob("*.ll"))
-        self.assertIn(self.yaml_sha, any_lit.read_text())
 
     def test_idempotence(self):
         with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
