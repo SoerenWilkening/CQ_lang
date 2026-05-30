@@ -22,14 +22,15 @@
 // op un-lowered (unsupported opcode/width) — that op must stay in the IR
 // (erasing a still-used value would corrupt it / break `opt -verify`).
 //
-// WP3 status: binary + unary are live (ArithLowering). The compare and
-// cast dispatch arms are wired structurally but INERT — their lowerers
-// land in WP4/WP5. Until then they return false (no RAUW, no erase), so an
-// inert compare/cast is left exactly as-is and the verifier stays clean.
+// WP4 status: binary + unary + compare are live (ArithLowering,
+// CompareLowering). The cast dispatch arm is wired structurally but INERT —
+// its lowerer lands in WP5. Until then it returns false (no RAUW, no erase),
+// so an inert cast is left exactly as-is and the verifier stays clean.
 
 #include "OpcodeLowering.h"
 
 #include "ArithLowering.h"
+#include "CompareLowering.h"
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -56,31 +57,11 @@ struct CastWidths {
   StringRef To;
 };
 
-// A tainted compare is lowered ONLY when its result is in pure
-// data/measure position (PRD §2.8). A result feeding a `br i1` or a
-// `select i1` condition is left untouched (owned by Phase 4); IR stays
-// well-typed and the flag handle never reaches a terminator. Defined here
-// (rather than CompareLowering, a WP4 TU) so the driver can gate compare
-// collection in WP3 without pulling in a not-yet-existing lowerer.
-bool isDataPositionCompare(CmpInst *cmp) {
-  for (User *U : cmp->users()) {
-    if (isa<BranchInst>(U))
-      return false;
-    if (auto *Sel = dyn_cast<SelectInst>(U))
-      if (Sel->getCondition() == cmp)
-        return false;
-  }
-  return true;
-}
-
-// Inert compare/cast rewrite for WP3: the real lowerers land in WP4/WP5.
-// Returning false guarantees the driver never RAUWs or erases an
-// un-lowered compare/cast, so `opt -verify` stays clean. No WP3 fixture
-// introduces a tainted data-position compare or cast, so this path is not
-// exercised by tests — it exists to keep the dispatch total and safe.
-bool rewriteCompareInert(CmpInst *, WidthDispatch &, TaintSet &) {
-  return false;
-}
+// Inert cast rewrite for WP4: the real cast lowerer lands in WP5. Returning
+// false guarantees the driver never RAUWs or erases an un-lowered cast, so
+// `opt -verify` stays clean. (The data-position gate `isDataPositionCompare`
+// and the real `rewriteCompare` now live in CompareLowering; only the cast
+// arm remains inert.)
 bool rewriteCastInert(CastInst *, CastWidths, WidthDispatch &, TaintSet &) {
   return false;
 }
@@ -104,8 +85,8 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
           Work.push_back(&I);
         } else if (auto *Cmp = dyn_cast<CmpInst>(&I)) {
           // A branch/select-feeding compare is Phase 4's — never enqueue
-          // it (so it is never rewritten or erased). Data-position
-          // compares are enqueued; their lowerer is inert until WP4.
+          // it (so it is never rewritten or erased). Data-position compares
+          // are enqueued and lowered by CompareLowering::rewriteCompare.
           if (isDataPositionCompare(Cmp))
             Work.push_back(&I);
         } else if (auto *Cast = dyn_cast<CastInst>(&I)) {
@@ -135,7 +116,7 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
     } else if (auto *UO = dyn_cast<UnaryOperator>(I)) {
       Rewritten = rewriteUnary(UO, wd, taint);
     } else if (auto *Cmp = dyn_cast<CmpInst>(I)) {
-      Rewritten = rewriteCompareInert(Cmp, wd, taint);  // WP4
+      Rewritten = rewriteCompare(Cmp, wd, taint);
     } else if (auto *Cast = dyn_cast<CastInst>(I)) {
       Rewritten = rewriteCastInert(Cast, CastW[Cast], wd, taint);  // WP5
     }
