@@ -12,3 +12,8 @@ transpiler/build*
 .DS_Store
 IMG_2423.jpg
 'build
+
+# LLVM lit scratch — leaks only when lit runs in the source tree
+# (the canonical run is under build/, already ignored above).
+ir-pass/test/Output/
+**/.lit_test_times.txt
