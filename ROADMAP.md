@@ -245,6 +245,8 @@ Existing LIT fixtures repointed to the new source/sink set.
 
 ## Phase 3 — IR pass: full opcode lowering
 
+**Design:** see [`docs/prd/phase-03-opcode-lowering/PRD.md`](docs/prd/phase-03-opcode-lowering/PRD.md).
+
 **Goal.** Every quantum-touching arithmetic / bitwise / comparison /
 unary / cast operation flows through the pipeline, identified by taint
 propagation, lowered to its template-call. Width × signedness × operand
