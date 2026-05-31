@@ -198,7 +198,7 @@ under platform-dependent `long` / `long long` widths.
 
 ---
 
-## Phase 2 — IR pass: taint sources, gate-triggered allocation
+## Phase 2 — IR pass: taint sources, gate-triggered allocation [DONE]
 
 **Design:** see [`docs/prd/phase-02-taint-allocation/PRD.md`](docs/prd/phase-02-taint-allocation/PRD.md).
 
@@ -240,6 +240,20 @@ return z;`) builds end-to-end, runs against the trace runtime, and
 prints the expected `cqrt_alloc_i32(3)` → `cqrt_ry_i32(h0, 0.5)` →
 `cq_template_add_i32_hl(h0, 1)` → `cqrt_measure_i32(...)` sequence.
 Existing LIT fixtures repointed to the new source/sink set.
+
+**Status (complete, 2026-05-31).** All done-criteria met. The canonical
+smoke fixture [`slice_theta_add_measure`](tests/e2e/slice_theta_add_measure.c)
+(`int x = 3; x = cq_theta(x, 0.5); int y = x + 1; int z = cq_measure(y);`)
+builds end-to-end through the 4-stage pipeline (clang -O1 → opt cq-lowering →
+link → run) and diffs clean against its golden, emitting exactly
+`cqrt_alloc_i32(3)` → `cqrt_ry_i32(h0, 0.5)` → `cq_template_add_i32_hl(h0, 1)`
+→ `cqrt_measure_i32(h1)` (e2e test `e2e-slice-theta-add-measure`, green).
+`TaintPropagation` is repointed to the `@cq_theta_*` source / `@cq_measure_*`
+sink set; gate-triggered allocation dispatches on operand taint (classical →
+`cqrt_alloc_<W>` + `cqrt_ry_<W>`, tainted → no re-alloc); `MidHandleRebind` is
+retired (no `qint_mid_t` in the new IR); `MeasureLowering` emits the width-only
+runtime symbol. Superseded in practice by Phase 3, which generalizes the opcode
+surface this slice's single `add_hl` first exercised.
 
 ---
 
