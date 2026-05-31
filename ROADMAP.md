@@ -243,9 +243,10 @@ Existing LIT fixtures repointed to the new source/sink set.
 
 ---
 
-## Phase 3 — IR pass: full opcode lowering
+## Phase 3 — IR pass: full opcode lowering [DONE]
 
-**Design:** see [`docs/prd/phase-03-opcode-lowering/PRD.md`](docs/prd/phase-03-opcode-lowering/PRD.md).
+**Design:** see [`docs/prd/phase-03-opcode-lowering/PRD.md`](docs/prd/phase-03-opcode-lowering/PRD.md)
+and [`IMPLEMENTATION.md`](docs/prd/phase-03-opcode-lowering/IMPLEMENTATION.md).
 
 **Goal.** Every quantum-touching arithmetic / bitwise / comparison /
 unary / cast operation flows through the pipeline, identified by taint
@@ -258,15 +259,19 @@ shape fan-out covered.
 - Integer bitwise: `and`, `or`, `xor`, `shl`, `lshr`, `ashr`.
 - Integer compare: `icmp` × 10 predicates.
 - FP arith: `fadd`, `fsub`, `fmul`, `fdiv`, `frem`, `fneg`.
-- FP compare: `fcmp` × 14 predicates.
+- FP compare: `fcmp` × 6 ordered predicates `{oeq, une, olt, ogt, ole, oge}`
+  (the realized `-O1` no-fast-math surface — see the reconciliation note below;
+  supersedes "× 14 predicates").
 - Int casts: `sext`, `zext`, `trunc` × applicable width pairs.
 - FP casts: `fptrunc`, `fpext` × applicable width pairs.
 - Mixed casts: `sitofp`, `uitofp`, `fptosi`, `fptoui` × int×fp pairs.
 
 Operand shapes: `HH` (both tainted) → base symbol; `HL` (tainted +
-constant literal) → `_hl` suffix. The IR pass canonicalizes operand
-order for commutative opcodes; non-commutative `_lh` deferred until a
-real call site demands it.
+constant literal) → `_hl` suffix; `LH` (literal + tainted, non-commutative
+ops) → `_lh` suffix. The IR pass canonicalizes operand order for commutative
+opcodes (BirthOrder for `HH`, literal→RHS for `HL`) and flips predicates for
+literal-on-left compares; the non-commutative `_lh` form is realized this phase
+(supersedes "deferred until a real call site demands it" — see PRD §2.6).
 
 **Components touched:**
 - `OpcodeLowering`: table-driven dispatch keyed by `(opcode, width,
@@ -279,6 +284,33 @@ real call site demands it.
 **Done when:** programs using the full operator set across mixed quantum
 / classical operands produce expected template-call sequences; one LIT
 fixture per (opcode, width, shape) combination green.
+
+**Status (WP0–WP6 complete, 2026-05-31).** All done-criteria met: the four
+instruction classes (`BinaryOperator`, `UnaryOperator`, `CmpInst`, `CastInst`)
+lower to the expected `cq_template_*` calls under per-(opcode, width, shape) LIT
+fixtures; `_lh` programs lower to `_lh`; data-position compares bridge through
+`zext` to `cqrt_measure_i32` while `br`/`select`-feeding compares stay untouched
+and `opt -verify` clean; unsupported tainted opcodes still emit the loud
+`DiagnosticInfoUnsupported`. Two e2e trace smokes diff clean against goldens:
+[`slice_qq_hl_arith`](tests/e2e/slice_qq_hl_arith.c) (HH `mul`, HL `add_hl`, LH
+`sub_lh`/`shl_lh`) and
+[`slice_compare_measure`](tests/e2e/slice_compare_measure.c) (`icmp`/`fcmp` →
+`zext` → measure).
+
+**Reconciliations vs [`docs/backend.md`](docs/backend.md) §6.3** (the planned
+38-opcode surface, narrowed to what stage-1 `-O1` actually emits — PRD §2.9):
+- **`fcmp`: 6 ordered predicates, not 14.** `clang -O1` (no fast-math) emits
+  exactly `{oeq, une, olt, ogt, ole, oge}`; the yaml's `one` was a bug (clang
+  emits `fcmp une` for `!=`, never `one`), fixed to `une` and closing
+  `test_C_libtooling-7ws`. The 8 unordered / fast-math-only predicates (incl.
+  `one`) stay out of scope until fast-math enters the floor (PRD §2.7, §5).
+- **`frem` has no C-operator source.** Float `%` is illegal C; `frem` arrives
+  only via `fmod()` (a Phase 6 libm substitution), so its lowering is pinned by
+  a hand-written `.ll` fixture rather than a C-sourced e2e smoke (PRD §2.6).
+- **`sub_hl` is unreachable from C; `sub` survives as `sub_lh`.** `-O1`
+  canonicalizes `x - C` to `add x, -C`, so a handle-minus-literal never reaches
+  the pass as `sub`; `sub` survives only as `C - x` → `sub_lh`. The arith smoke
+  pins this (`x - 3` → `add_i32_hl(h, -3)`; `100 - x` → `sub_i32_lh(100, h)`).
 
 ---
 
