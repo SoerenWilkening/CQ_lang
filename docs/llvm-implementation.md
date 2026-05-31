@@ -5,7 +5,7 @@ pipeline relies on. Every transformation maps to a stable, documented
 extension point in upstream LLVM — no patched sources, no vendored
 `llvm-project`, no per-release rebase. The no-fork shape was validated
 2026-05-22 by a working prototype against LLVM 19.1.7
-([`../prototype/`](../prototype/)); this document records the substrate
+([`../archive/prototype/`](../archive/prototype/)); this document records the substrate
 the prototype and full pipeline depend on.
 
 Companion documents:
@@ -32,7 +32,7 @@ pipeline was designed against a no-fork constraint, every transformation
 maps to a stable documented LLVM C++ API, and four production-quality
 precedents (Enzyme, AddressSanitizer, OpenMP runtime, Polly) ship the
 same shape without forking LLVM. The conclusion was validated against
-stock LLVM 19.1.7 by the prototype at [`../prototype/`](../prototype/).
+stock LLVM 19.1.7 by the prototype at [`../archive/prototype/`](../archive/prototype/).
 
 The remainder of this document is the substrate reference: stage by
 stage, the specific LLVM extension points and C++ APIs CQ uses. Stage
@@ -268,7 +268,7 @@ exercises every architecturally novel mechanism against stock LLVM
 
 **VALIDATED 2026-05-22** across the architecturally novel LLVM C++
 APIs the pass relies on. A working prototype lives at
-[`../prototype/`](../prototype/) and exposes four passes
+[`../archive/prototype/`](../archive/prototype/) and exposes four passes
 (`cq-lowering`, `cq-uncompute`, `cq-specialize`, `cq-control`) — one
 per validation slice.
 

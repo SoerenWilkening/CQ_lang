@@ -31,7 +31,7 @@ endif()
 
 # Find LLVM once; subprojects pick this up from the cache. The libtooling
 # Clang dependency went away with the transpiler/ archive (see archive/);
-# the active build (ir-pass/, runtime/, prototype/) uses only LLVM C++
+# the active build (ir-pass/, runtime/) uses only LLVM C++
 # headers, so find_package(Clang) is no longer required.
 find_package(LLVM CONFIG REQUIRED)
 if(NOT LLVM_VERSION_MAJOR EQUAL 19)

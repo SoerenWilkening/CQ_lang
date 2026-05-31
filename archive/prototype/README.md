@@ -1,7 +1,7 @@
 # CQ Pass Plugin — Phase 2 / 5 / 7 Prototype
 
 A minimal LLVM pass plugin that validates the no-LLVM-fork architecture
-claim from [`../docs/llvm-fork-analysis.md`](../docs/llvm-fork-analysis.md)
+claim from [`../../docs/llvm-fork-analysis.md`](../../docs/llvm-fork-analysis.md)
 across three architecturally novel mechanisms.
 
 ## What this validates
@@ -125,6 +125,6 @@ prototype/
 
 This prototype implements a small slice of the IR pass specified in:
 
-- [`../docs/architecture.md`](../docs/architecture.md) §7 (IR pass responsibilities)
-- [`../docs/backend.md`](../docs/backend.md) §3–§5 (input contract, mid→handle rebinding, IR pass algorithms)
-- [`../docs/llvm-fork-analysis.md`](../docs/llvm-fork-analysis.md) (the claim being validated)
+- [`../../docs/architecture.md`](../../docs/architecture.md) §7 (IR pass responsibilities)
+- [`../../docs/backend.md`](../../docs/backend.md) §3–§5 (input contract, mid→handle rebinding, IR pass algorithms)
+- [`../../docs/llvm-fork-analysis.md`](../../docs/llvm-fork-analysis.md) (the claim being validated)

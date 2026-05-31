@@ -104,7 +104,7 @@ as the substrate every subsequent phase builds on.
   `OpcodeLowering`, `MeasureLowering` — plus a `Plugin.cpp`
   registration shim and a `CQLoweringPass.cpp` driver. Builds against
   stock LLVM 19 with no patches.
-- **Prototype** ([`prototype/`](prototype/), 525 LOC C++): four passes
+- **Prototype** ([`archive/prototype/`](archive/prototype/), 525 LOC C++): four passes
   validating no-fork architecture on stock LLVM 19.1.7 —
   `cq-lowering` (taint + lowering), `cq-uncompute`
   (`PostDominatorTree`-based last-use), `cq-specialize`
