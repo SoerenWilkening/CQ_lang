@@ -14,11 +14,36 @@
 #include "FlagConjunction.h"
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/Support/ErrorHandling.h"
 
 using namespace llvm;
 
 namespace cq {
+
+// Recover the QQ compare width for a tainted-tainted control condition
+// (`if (q1 < q2)`, PRD §2.4). Both operands are i32-laundered handles, so the
+// logical width is unrecoverable from the IR; it is read from the per-handle
+// `taint.HandleWidth` side-table (recorded at the rotation mint, §5.6). Risk
+// R3: a missing entry is staleness — a real bug, not something to paper over —
+// so a missing or mismatched width is a hard `report_fatal_error`, not a quiet
+// bail. Returns the (equal) width; precondition: both operands are tainted.
+StringRef qqControlWidth(CmpInst *Cmp, TaintSet &taint) {
+  Value *A = Cmp->getOperand(0);
+  Value *B = Cmp->getOperand(1);
+  auto IA = taint.HandleWidth.find(A);
+  auto IB = taint.HandleWidth.find(B);
+  if (IA == taint.HandleWidth.end() || IB == taint.HandleWidth.end())
+    report_fatal_error(
+        "cq controlled lowering: Q+Q control condition operand missing from "
+        "HandleWidth side-table (stale width, risk R3)");
+  if (IA->second != IB->second)
+    report_fatal_error(
+        "cq controlled lowering: Q+Q control condition operands have unequal "
+        "recorded widths (risk R3)");
+  return IA->second;
+}
 
 bool lowerControlFlag(ControlRegion &region, WidthDispatch &wd,
                       ControlledSymbols &csyms, TaintSet &taint) {
@@ -67,9 +92,19 @@ bool lowerControlFlag(ControlRegion &region, WidthDispatch &wd,
   if (!Cmp)
     return false;  // WP3 conditions are always compares; defensive.
 
-  // HL path for WP3 (`qqWidth` empty → Q+Q bails, exactly as Phase 3). Forward
-  // compute (not inverse), inserted before the compare by default.
-  Value *Flag = lowerCompareToFlag(Cmp, wd, taint, /*qqWidth=*/{},
+  // WP6: a Q+Q control condition (`if (q1 < q2)`, both operands tainted, PRD
+  // §2.4). Phase 3 bailed here — the laundered i32 width is wrong. Recover the
+  // logical width from the `HandleWidth` side-table and pass it as `qqWidth` so
+  // `lowerCompareToFlag` emits the QQ template `cq_template_icmp_<pred>_<W>`
+  // (no `_hl`) instead of diagnosing. The HL path (one classical operand) keeps
+  // `qqWidth` empty exactly as before. Mismatched/missing widths trap (risk R3).
+  StringRef QqWidth;
+  if (taint.Tainted.count(Cmp->getOperand(0)) &&
+      taint.Tainted.count(Cmp->getOperand(1)))
+    QqWidth = qqControlWidth(Cmp, taint);
+
+  // Forward compute (not inverse), inserted before the compare by default.
+  Value *Flag = lowerCompareToFlag(Cmp, wd, taint, QqWidth,
                                    /*inverse=*/false, /*before=*/nullptr);
   if (!Flag)
     return false;  // unsupported compare (already diagnosed); skip region.

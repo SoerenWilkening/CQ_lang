@@ -37,6 +37,28 @@ add_test(NAME e2e-slice-compare-measure
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_compare_measure.expected.log")
 
+# Phase 4 (WP6): a quantum-CONTROLLED gate. `if (q > k) y = cq_phi(y, θ);`
+# survives -O1 as a br-diamond (opaque gate-call arm) and lowers to the flag
+# compute -> cqrt_rz_i32_controlled(flag, h, θ) -> flag uncompute -> measure.
+add_test(NAME e2e-slice-control-gate
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_gate.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_gate.expected.log")
+
+# Phase 4 (WP6): a classical-arm MERGE reduction. `y = (q > k) ? A : B;`
+# survives -O1 as a select-over-constants and dissolves to cqrt_alloc(B) +
+# cq_template_add_i32_hl_controlled(flag, regB, A-B) -> flag uncompute -> measure.
+add_test(NAME e2e-slice-control-merge
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_merge.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_merge.expected.log")
+
 # Convenience target: build the prerequisites, then run every e2e slice.
 add_custom_target(check-e2e
   COMMAND ${CMAKE_CTEST_COMMAND} -R "^e2e-" --output-on-failure

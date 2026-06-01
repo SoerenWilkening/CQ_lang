@@ -8,12 +8,27 @@
 #ifndef CQ_IRPASS_CONTROL_FLAG_H_
 #define CQ_IRPASS_CONTROL_FLAG_H_
 
+#include "llvm/ADT/StringRef.h"
+
+namespace llvm {
+class CmpInst;
+}  // namespace llvm
+
 namespace cq {
 
 class ControlledSymbols;
 class WidthDispatch;
 struct TaintSet;
 struct ControlRegion;
+
+// Recover the QQ compare width for a tainted-tainted (`if (q1 < q2)`) control
+// condition from the `taint.HandleWidth` side-table (PRD §2.4, §5.6). Shared by
+// the forward control-flag compute (`lowerControlFlag`) and its uncompute
+// counterpart (`ControlledLowering::emitUncompute`) so both spell the same QQ
+// width. Risk R3: a missing/mismatched entry is staleness — a real bug — so it
+// `report_fatal_error`s rather than silently emitting a wrong-width symbol.
+// Precondition: both `Cmp` operands are in `taint.Tainted`.
+llvm::StringRef qqControlWidth(llvm::CmpInst *Cmp, TaintSet &taint);
 
 // Mint `region.Flag` from `region.Condition`.
 //   * Plain compare (`region.Conj == ConjNone`, WP3): the HL path (`qqWidth`

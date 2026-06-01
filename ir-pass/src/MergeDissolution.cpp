@@ -58,7 +58,7 @@ void dissolveBranchPhi(ControlRegion &region) {
 
 // WP4 `[classical, classical]` `select` reduction (PRD §2.6).
 void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
-                    ControlledSymbols &csyms) {
+                    ControlledSymbols &csyms, TaintSet &taint) {
   auto *Sel = dyn_cast_or_null<SelectInst>(region.Merge);
   if (!Sel || !region.Flag)
     return;  // no flag (ControlFlag failed) → leave the select for the verifier.
@@ -97,15 +97,25 @@ void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
   Sel->replaceAllUsesWith(Res);
   Sel->eraseFromParent();
   region.Merge = nullptr;  // dissolved.
+
+  // The reduction's result is a fresh i32 quantum handle (the dissolved `y`).
+  // Register it as tainted (with a BirthOrder slot, matching the data-path
+  // bookkeeping) so downstream consumers — a `cq_measure`, or further tainted
+  // arithmetic — recognize it. Without this, a `y = (q>0)?A:B; measure(y);`
+  // slice trips MeasureLowering's "operand not a tainted i32 handle" guard
+  // (the `br`-diamond case is fine: it RAUWs to an already-tainted in-place
+  // handle, never minting a new one). `RegB` is consumed in-place by the add,
+  // so only the final `Res` needs tracking.
+  taint.Tainted.insert(Res);
+  taint.BirthOrder[Res] = taint.NextBirth++;
 }
 
 }  // namespace
 
 void dissolveMerge(ControlRegion &region, WidthDispatch &wd,
                    ControlledSymbols &csyms, TaintSet &taint) {
-  (void)taint;
   if (region.Kind == ControlRegion::SelectRegion)
-    dissolveSelect(region, wd, csyms);
+    dissolveSelect(region, wd, csyms, taint);
   else
     dissolveBranchPhi(region);
 }

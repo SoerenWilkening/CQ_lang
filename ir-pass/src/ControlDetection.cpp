@@ -99,6 +99,63 @@ bool armEscapesOrCollect(BasicBlock *Arm, BasicBlock *MergeBB,
   return false;
 }
 
+// Does the block `Arm` cleanly RECONVERGE to `Sibling` — the controllable
+// shape (WP3 diamond / nested-AND inner arm)? An arm reconverges iff it is
+// guarded solely by the branch in `Pred` (single predecessor) and its
+// terminator is an unconditional `br` to `Sibling` (it falls straight through
+// to the merge). Controllable arms always reconverge; an escaping arm does
+// not. Used to distinguish "controllable" from "escape" for a tainted-condition
+// branch that matched no controllable shape.
+bool armReconverges(BasicBlock *Arm, BasicBlock *Pred, BasicBlock *Sibling) {
+  if (Arm->getSinglePredecessor() != Pred)
+    return false;
+  auto *Term = dyn_cast<BranchInst>(Arm->getTerminator());
+  return Term && !Term->isConditional() && Term->getSuccessor(0) == Sibling;
+}
+
+// Escape guard for a tainted-condition `br i1` that matched NEITHER controllable
+// shape (no diamond, no select, no nested-AND, no flag conjunction): per PRD
+// line 108/309 (`if (q) return …;` / `break` / measure-in-arm), a guarded arm
+// that does NOT reconverge but instead ESCAPES — contains a `ReturnInst` /
+// `@cq_measure_*` / leaves the region — is "return/measure under quantum
+// control." Emit the loud diagnostic (refined to reject/bridge in Phase 4.1).
+//
+// Fire ONLY when an arm is guarded solely by this branch (single predecessor —
+// genuinely "under" the control) and does NOT reconverge to its sibling
+// successor. This deliberately does NOT fire on the controllable shapes — WP3's
+// diamond arm, WP4/WP5's select/conjunction (no CFG to escape), and the
+// nested-AND inner arm all reconverge (`armReconverges`), so they are handled
+// by their own matchers + arm walks above. Returns true (diagnosed) on escape.
+bool branchEscapes(BranchInst *Br) {
+  BasicBlock *Pred = Br->getParent();
+  BasicBlock *S0 = Br->getSuccessor(0);
+  BasicBlock *S1 = Br->getSuccessor(1);
+  for (int i = 0; i < 2; ++i) {
+    BasicBlock *Arm = i == 0 ? S0 : S1;
+    BasicBlock *Sibling = i == 0 ? S1 : S0;
+    // Only an arm guarded solely by THIS branch is "under" the control. A
+    // shared block (e.g. a common merge with multiple predecessors) is not an
+    // escape arm — its `ret` is reached on every path, not under the guard.
+    if (Arm->getSinglePredecessor() != Pred)
+      continue;
+    // A reconverging arm is the controllable shape — not an escape. (Its own
+    // matcher either claimed it or its body is benign fall-through.)
+    if (armReconverges(Arm, Pred, Sibling))
+      continue;
+    for (Instruction &I : *Arm) {
+      if (isa<ReturnInst>(&I)) {
+        diagnoseEscape(&I, "return");
+        return true;
+      }
+      if (isMeasureCall(I)) {
+        diagnoseEscape(&I, "measurement");
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 // Recognize the `&&`/`||` flag-combination idiom (PRD §2.5): `-O1` spells a
 // short-circuit condition as an `i1`-select over two flags — AND =
 // `select i1 %fa, i1 %fb, i1 false`; OR = `select i1 %fa, i1 true, i1 %fb`.
@@ -302,8 +359,15 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
 
       BasicBlock *Arm = nullptr;
       BasicBlock *MergeBB = nullptr;
-      if (!matchDiamond(Br, Arm, MergeBB))
-        continue;  // not the WP3 2-block-diamond shape.
+      if (!matchDiamond(Br, Arm, MergeBB)) {
+        // No controllable shape (diamond/select/nested-AND/conjunction). If a
+        // guarded arm ESCAPES (`ret`/`measure`/out-of-region) instead of
+        // reconverging, this is "return/measure under quantum control" (PRD
+        // line 108/309) — emit the loud diagnostic (refined in Phase 4.1).
+        // Otherwise it is benign control flow we simply do not lower.
+        branchEscapes(Br);
+        continue;
+      }
 
       // Escape guard + shadow collection in one arm walk (PRD §5).
       ControlRegion region;

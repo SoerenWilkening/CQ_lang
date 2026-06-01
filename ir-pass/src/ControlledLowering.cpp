@@ -94,10 +94,17 @@ void emitUncompute(ControlRegion &region, WidthDispatch &wd,
   auto *Cmp = dyn_cast_or_null<CmpInst>(region.Condition);
   if (!Cmp)
     return;
-  // HL path (`qqWidth` empty), inverse=true → `cq_template_icmp_<pred>_<W>`
-  // `_hl_inv(handle, classical)`. The result is the uncompute and is
+  // WP6: a Q+Q control condition uncomputes with the QQ `_inv` twin
+  // `cq_template_icmp_<pred>_<W>_inv(h1, h2)` (no `_hl`), the mirror of the
+  // forward QQ flag in `lowerControlFlag`. Recover the same width from the
+  // side-table; the HL path keeps `qqWidth` empty → `_hl_inv(handle, classical)`.
+  StringRef QqWidth;
+  if (taint.Tainted.count(Cmp->getOperand(0)) &&
+      taint.Tainted.count(Cmp->getOperand(1)))
+    QqWidth = qqControlWidth(Cmp, taint);
+  // inverse=true → the `_inv` twin. The result is the uncompute and is
   // intentionally unconsumed (a balanced ancilla, not a data value).
-  (void)lowerCompareToFlag(Cmp, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+  (void)lowerCompareToFlag(Cmp, wd, taint, QqWidth, /*inverse=*/true,
                            /*before=*/At);
 }
 

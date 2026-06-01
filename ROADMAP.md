@@ -328,7 +328,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — IR pass: controlled-form lowering
+## Phase 4 — IR pass: controlled-form lowering [DONE]
 
 **Design:** see [`docs/prd/phase-04-controlled-form/PRD.md`](docs/prd/phase-04-controlled-form/PRD.md).
 
@@ -390,6 +390,38 @@ mixed conditions) produce expected `_controlled` template-call
 sequences. Linear single-BB regions (Phase 4 prototype mechanism) plus
 multi-BB cases (Phase 5 prototype mechanism for post-dominator analysis)
 green.
+
+**Status (WP0–WP6 complete, 2026-06-01).** All done-criteria met against the
+realized `clang -O1` control menu (PRD §2.1 — the pass targets what survives
+`-O1`, not the source braces; detection is structural, no user region marker).
+The controlled template surface (`_controlled`/`_controlled_inv` × shape, flag
+always arg 0) plus its runtime/template impls land in WP1; the eight control TUs
+(`ControlDetection`/`ControlFlag`/`ControlledSubstitution`/`MergeDissolution`/
+`CFGLinearization`/`FlagConjunction`/`ControlledLowering` + the `CompareLowering`
+Q+Q reopen) realize the spine. Each shape has a green LIT fixture (`opt -verify`
+clean), one per: `br`-diamond gate → `cqrt_rz_<W>_controlled` + `_hl`
+compute/uncompute bracket; classical-arm `select` reduction (constant **and**
+runtime variable) → `cqrt_alloc(B)` + `cq_template_add_<W>_hl_controlled(flag, ·,
+A−B)`; `&&`/`||` → one combined flag via `cqrt_toffoli` (+ De Morgan `X`s for
+`||`); nested `if` → single-flag AND (one `cqrt_toffoli` per level, every op
+single-controlled, flags uncomputed LIFO); Q+Q condition (`if (q1 < q2)`) → the
+HH compare template `cq_template_icmp_<pred>_<W>` using the `HandleWidth`
+side-table (recorded at the rotation mint; missing/mismatched width traps, risk
+R3). A classical-condition `select`/`br` is left byte-untouched (detection keys
+strictly on condition taint), and a quantum-controlled escape (`if (q) return
+…;` — a tainted-condition branch whose arm escapes instead of reconverging)
+emits the loud `DiagnosticInfoUnsupported` ("…under quantum control"). Two e2e
+trace smokes diff clean against goldens captured from real output (the only
+layer that LINKS, proving every emitted controlled symbol resolves +
+signature-matches): [`slice_control_gate`](tests/e2e/slice_control_gate.c)
+(controlled rotation) and [`slice_control_merge`](tests/e2e/slice_control_merge.c)
+(classical-arm reduction).
+
+Two `-O1` shapes remain Phase 4.1 (epic
+[`test_C_libtooling-aht`](.beads/issues.jsonl)): the escape *refinement* —
+this epic diagnoses the escape loudly; Phase 4.1 decides reject vs.
+`-fcq-measurement-bridge` ([`-aht.2`](.beads/issues.jsonl)) — and tainted
+`switch` + N-way φ ([`-aht.1`](.beads/issues.jsonl)).
 
 ---
 
