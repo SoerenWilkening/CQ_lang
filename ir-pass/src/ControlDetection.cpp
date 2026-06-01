@@ -1,7 +1,7 @@
 // ControlDetection.cpp — Pure-analysis recovery of controlled regions from
 // the realized `-O1` control surface (PRD §2.2, IMPLEMENTATION §5.1). WP3
-// recognizes the `br`-diamond + merge-`φ` shape; `select`-sourced regions
-// (WP4) and flag conjunctions (WP6) are not built here.
+// recognizes the `br`-diamond + merge-`φ` shape; WP4 adds the classical-arm
+// `select i1` shape; flag conjunctions (WP6) are not built here.
 //
 // Detection keys STRICTLY on taint membership of the branch condition (§1.3):
 // a tainted-condition `br i1` over a 2-block diamond is a controlled region;
@@ -137,6 +137,37 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
     if (F.isDeclaration())
       continue;
     for (BasicBlock &BB : F) {
+      // WP4: a tainted-condition `select i1` whose arms are BOTH classical is
+      // the single-block `if/else`-over-constants reduction (PRD §2.2). It has
+      // no CFG diamond — `Pred`/`Arm`/`MergeBB` stay null, so linearization is
+      // a no-op for it. The "both arms classical" test is the exact
+      // discriminator: it excludes WP5's `&&`/`||` flag-selects (an arm is a
+      // tainted i1 flag) and the deferred `[≥1 tainted arm]` data mux (§5.5).
+      for (Instruction &I : BB) {
+        auto *Sel = dyn_cast<SelectInst>(&I);
+        if (!Sel)
+          continue;
+        // §1.3: keyed strictly on taint of the condition (same test as `br`).
+        // A classical-condition select is left byte-untouched (§1.3, WP6).
+        if (!taint.Tainted.count(Sel->getCondition()))
+          continue;
+        // Both value arms must be classical (neither tainted). This is the
+        // load-bearing discriminator (see above); do NOT special-case the i1
+        // result type — the arm-taint test already excludes flag-selects.
+        if (taint.Tainted.count(Sel->getTrueValue()) ||
+            taint.Tainted.count(Sel->getFalseValue()))
+          continue;
+
+        ControlRegion region;
+        region.Condition = Sel->getCondition();
+        region.Kind = ControlRegion::SelectRegion;
+        region.Merge = Sel;  // dissolved by MergeDissolution; no CFG.
+        region.Depth = 0;
+        // No Pred/Arm/MergeBB and no Shadow — a classical-arm select has no
+        // in-shadow gate body and no diamond.
+        plan.Regions.push_back(std::move(region));
+      }
+
       auto *Br = dyn_cast<BranchInst>(BB.getTerminator());
       if (!Br || !Br->isConditional())
         continue;
