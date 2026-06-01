@@ -59,6 +59,19 @@ add_test(NAME e2e-slice-control-merge
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_merge.expected.log")
 
+# Phase 4 (mux.1): a MIXED-ARM select mux. `y = (q > 0) ? (12 - q) : -3;`
+# survives -O1 as a select with ONE tainted arm (`12 - q`) + one classical arm
+# (`-3`) and dissolves to the UNCONTROLLED delta cq_template_sub_i32_hl(Q, -3)
+# + cqrt_alloc_i32(-3) + the Shape::QQ cq_template_add_i32_controlled(flag,
+# regC, delta) -> flag uncompute -> measure.
+add_test(NAME e2e-slice-control-mux-mixed
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_mux_mixed.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_mux_mixed.expected.log")
+
 # Convenience target: build the prerequisites, then run every e2e slice.
 add_custom_target(check-e2e
   COMMAND ${CMAKE_CTEST_COMMAND} -R "^e2e-" --output-on-failure

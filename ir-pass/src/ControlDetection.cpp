@@ -291,12 +291,16 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
     if (F.isDeclaration())
       continue;
     for (BasicBlock &BB : F) {
-      // WP4: a tainted-condition `select i1` whose arms are BOTH classical is
-      // the single-block `if/else`-over-constants reduction (PRD §2.2). It has
-      // no CFG diamond — `Pred`/`Arm`/`MergeBB` stay null, so linearization is
-      // a no-op for it. The "both arms classical" test is the exact
-      // discriminator: it excludes WP5's `&&`/`||` flag-selects (an arm is a
-      // tainted i1 flag) and the deferred `[≥1 tainted arm]` data mux (§5.5).
+      // WP4: a tainted-condition `select i1` reduces to a controlled add onto a
+      // register seeded from the CLASSICAL arm (PRD §2.2/§2.6). It has no CFG
+      // diamond — `Pred`/`Arm`/`MergeBB` stay null, so linearization is a no-op
+      // for it. Two arm shapes are in scope here:
+      //   * [classical, classical] (WP4): host `sub A−B` → controlled add (HL).
+      //   * MIXED, exactly ONE tainted arm (mux.1): the tainted handle Q is one
+      //     arm, a classical C the other — `delta = Q−C` via the UNCONTROLLED
+      //     `sub_<W>_hl` template, then a Shape::QQ controlled add onto regC.
+      // `MergeDissolution` re-derives which arm is the seed from `taint`, so no
+      // extra ControlRegion field is needed.
       for (Instruction &I : BB) {
         auto *Sel = dyn_cast<SelectInst>(&I);
         if (!Sel)
@@ -305,10 +309,21 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         // A classical-condition select is left byte-untouched (§1.3, WP6).
         if (!taint.Tainted.count(Sel->getCondition()))
           continue;
-        // Both value arms must be classical (neither tainted). This is the
-        // load-bearing discriminator (see above); do NOT special-case the i1
-        // result type — the arm-taint test already excludes flag-selects.
-        if (taint.Tainted.count(Sel->getTrueValue()) ||
+        // EXCLUDE the `&&`/`||` flag-conjunction idiom (PRD §2.5): that select
+        // is i1-typed and carries a tainted i1 sub-flag in exactly one arm, so
+        // the "exactly one tainted arm" test below would otherwise misfire on
+        // it. A data mux/reduction select is always a DATA width (i32/…), never
+        // i1 — so skipping i1-typed selects here cleanly hands the conjunction
+        // back to its `br i1 %and, …` carrier (the WP5 path) untouched.
+        if (Sel->getType()->isIntegerTy(1))
+          continue;
+        // Arm-taint discriminator. Reject BOTH arms tainted — that is the
+        // both-tainted data mux (§5.5, child .2, out of scope here). Accept
+        // neither-tainted ([classical, classical], WP4) and EXACTLY-ONE-tainted
+        // (the mixed-arm mux, mux.1): both build a SelectRegion below; the
+        // seed-arm distinction (which arm is the classical seed) is re-derived
+        // from `taint` in `dissolveSelect`.
+        if (taint.Tainted.count(Sel->getTrueValue()) &&
             taint.Tainted.count(Sel->getFalseValue()))
           continue;
 
