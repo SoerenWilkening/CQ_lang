@@ -385,6 +385,20 @@ catalogued 2026-06-01.
 Both depend on the Phase 4 core landing first; grouped under epic
 [`test_C_libtooling-aht`](.beads/issues.jsonl).
 
+**Deferred to a Phase 4.2 follow-up.** The `[≥1 tainted arm]` data select —
+`y = cond ? A : B` with a tainted condition and at least one quantum value arm
+(e.g. `if (q>0) y = 12 - q;`, which `-O1` hands the pass as
+`select i1 cmp, %h_op, C`). WP4 handles only classical arms. Established
+2026-06-01 (triaging `example/test_control.c`): this is **pass-side only and
+needs no new runtime primitive** — the two-handle `_controlled` adder is
+already generated, so the classical-arm reduction generalizes (`_hl`→`_hh`,
+register delta) for one classical arm, and `alloc(0)` + two controlled adds
+covers both-handle arms. The earlier "needs a `cswap`/Fredkin mux" framing was
+incorrect. Tracked under epic
+[`test_C_libtooling-mux`](.beads/issues.jsonl) (`.1` mixed arm, `.2` both
+handles), with [`test_C_libtooling-mux-diag`](.beads/issues.jsonl) the interim
+guard that diagnoses the shape instead of silently miscompiling it.
+
 **Done when:** programs with quantum `if`s (including nested, including
 mixed conditions) produce expected `_controlled` template-call
 sequences. Linear single-BB regions (Phase 4 prototype mechanism) plus

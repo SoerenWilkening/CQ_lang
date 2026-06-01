@@ -76,8 +76,10 @@ Two invariants Phase 4 *adds*, both binding:
   controlled rotation/gate runtime symbols, and the `cqrt_toffoli`
   flag-conjunction primitive; regenerate the header; CI hash (2.8).
 
-**Out of scope.** See §5. Load-bearing exclusions: handle-arm / mixed-arm
-multiplexer (needs a `cswap`/Fredkin primitive); tainted `switch` and
+**Out of scope.** See §5. Load-bearing exclusions: tainted-arm select
+multiplexer (a *pass-side* reduction onto the already-generated `_controlled`
+HH adder — **no new primitive**; Phase 4.2 — beads
+[`test_C_libtooling-mux`](../../../.beads/issues.jsonl)); tainted `switch` and
 quantum-controlled escape (Phase 4.1 — beads
 [`test_C_libtooling-aht`](../../../.beads/issues.jsonl)); data-handle
 uncomputation (Phase 5); manual inversion (Phase 7); real template bodies
@@ -103,7 +105,8 @@ target what survives, not the source braces. The catalog:
 | `if(q) y = gate(y);` (opaque body) | real `br` diamond + `φ[modified, orig]` | **Phase 4** — 2.6 + 2.10 |
 | `if(qa && qb)` / `if(qa \|\| qb)` | `select i1` = AND/OR of flags, then br/select | **Phase 4** — 2.5 |
 | `if / else if / else` | nested `select`s | **Phase 4** — composed 2.6 |
-| `if(q) y = hp; else y = hq;` (handle arms) | `select i1 cmp, hp, hq` | **out (§5)** — needs mux |
+| `if(q) y = f(q); else y = C;` (one handle arm) | `select i1 cmp, hq, C` | **Phase 4.2** (`-mux.1`) — HH-controlled-add reduction |
+| `if(q) y = hp; else y = hq;` (both handle arms) | `select i1 cmp, hp, hq` | **Phase 4.2** (`-mux.2`) — `alloc(0)` + 2 controlled adds |
 | `switch(q)` | real `switch` + N-way φ | **Phase 4.1** (`-aht.1`) |
 | `if(q) return …;` / `break` / measure-in-arm | `br` + φ with **escape** in an arm | **Phase 4.1** (`-aht.2`) |
 
@@ -181,8 +184,13 @@ taint of its two arms:
   been a *classical operand* slot (literal or runtime), so **variable
   arms reduce identically to constant arms** — covering the
   [`backend.md`](../../backend.md) §8.2 / §4.4 headline `φ [10, 20]`.
-- **`[≥1 tainted arm]`** — deferred (§5); needs a true reversible
-  multiplexer.
+- **`[≥1 tainted arm]`** — deferred to Phase 4.2 (§5), but **pass-side
+  only, not a new primitive**: the already-generated HH controlled adder
+  `cq_template_add_<W>_controlled(flag, h, h)` *is* the mux. One classical
+  arm → seed `cqrt_alloc(C)` and add the register delta `Q−C` controlled
+  (`-mux.1`); both arms handles → `cqrt_alloc(0)` + two controlled adds
+  `f·hp + ¬f·hq` (`-mux.2`). The earlier "needs a `cswap`/Fredkin" note was
+  wrong — `cswap` is only an in-place alternative.
 
 ### 2.7 Nesting: the single-flag AND model (reconciles §8.5 vs Done-when)
 
@@ -314,11 +322,30 @@ block. Dissolve the φ **before** erasing, so no use dangles; the result is
 
 ## 5. Out of scope
 
-- **Handle-arm / mixed-arm multiplexer** — `select i1 %f, %hp, %hq` (≥1
-  tainted arm). The classical-arm reduction (2.6) does not apply; this
-  needs a true reversible mux (`cqrt_cswap` / Fredkin) plus its
-  controlled/inverse forms. Deferred (candidate follow-up; not Phase 4.1,
-  which is switch + escape).
+- **Tainted-arm select multiplexer** — `select i1 %f, A, B` (tainted
+  condition, ≥1 tainted value arm). Deferred to **Phase 4.2** (beads
+  [`test_C_libtooling-mux`](../../../.beads/issues.jsonl)), NOT Phase 4.1.
+  **Correction (2026-06-01):** this needs **no new runtime primitive** — the
+  earlier "needs a `cqrt_cswap`/Fredkin mux" claim was wrong. The two-handle
+  `_controlled` adder `cq_template_<op>_<W>_controlled(flag, h, h)` (+ `_inv`)
+  is already generated across the op×width grid (§2.8 / D1) and minted by
+  `ControlledSymbols::controlledDataTemplateFn(stem, W, Shape::QQ, inv)`
+  (`Shape::QQ` carries no `_hl`/`_lh` infix → the bare `_controlled` symbol).
+  The classical-arm reduction (2.6) generalizes directly:
+  - **one classical arm** (`-mux.1`, the common case) — seed
+    `cqrt_alloc_<W>(C)` from the classical arm, build the register delta
+    `Q − C` with the uncontrolled `cq_template_sub_<W>_hl`, then one HH
+    `cq_template_add_<W>_controlled(ctrl, regC, delta)`. Identical shape to
+    2.6 with `_hl`→`_hh` and a register (not host) delta.
+  - **both arms handles** (`-mux.2`) — `cqrt_alloc_<W>(0)` + two controlled
+    adds `f·hp + ¬f·hq` (the `¬f` via a LIFO-bracketed `cqrt_x`, reusing the
+    2.5 De Morgan machinery); both source handles are read, so they survive
+    for their other uses.
+  Work is **pass-side only** (ControlDetection guard + a MergeDissolution
+  branch); `cqrt_cswap`/Fredkin remains a future *in-place* alternative, not a
+  requirement. Until this lands the unsupported shape must be **diagnosed, not
+  silently passed through** (beads
+  [`test_C_libtooling-mux-diag`](../../../.beads/issues.jsonl)).
 - **Tainted `switch`** — Phase 4.1, beads
   [`test_C_libtooling-aht.1`](../../../.beads/issues.jsonl) (default:
   pre-run stock `-lowerswitch`).

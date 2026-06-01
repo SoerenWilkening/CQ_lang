@@ -565,8 +565,18 @@ its own dissolution keyed on **arm taint**:
   `cq_template_add_<W>_hl_controlled(flag, regB, %d)`; RAUW the merge to
   it. Variable arms reduce identically to constants (the `_hl` slot is a
   classical-operand slot).
-- **`[≥1 tainted arm]`** — deferred (PRD §5; needs a reversible mux);
-  detection rejects it (no region built) so nothing dissolves it.
+- **`[≥1 tainted arm]`** — deferred to Phase 4.2 (PRD §5, beads
+  `test_C_libtooling-mux`); detection currently rejects it (no region built)
+  so nothing dissolves it — and, until the guard below lands, nothing
+  *diagnoses* it either (silent passthrough; beads `…-mux-diag`).
+  **It needs no new primitive** (correcting an earlier note): the HH
+  `_controlled` adder minted by `controlledDataTemplateFn(stem, W,
+  Shape::QQ, inv)` *is* the mux. One classical arm → `allocFn(C)` + register
+  delta `Q−C` (uncontrolled `_hl`) + one `Shape::QQ` controlled add
+  (`-mux.1`); both arms handles → `allocFn(0)` + two controlled adds
+  `f·hp + ¬f·hq` with a `csyms.xFn()` ¬f bracket (`-mux.2`). Pass-side only:
+  relax the `taint.Tainted.count(arm)` reject in `detectControlRegions` and
+  add a tainted-arm branch to `dissolveSelect`.
 
 Misclassification corrupts the result (risk R2): classify strictly by
 membership in `taint.Tainted` + `region.Shadow`; one fixture per arm-taint
@@ -804,8 +814,9 @@ choice survives between sessions.
   In Phase 4's realized `-O1` menu it is **inert**: an in-shadow op is
   either a gate body (a rotation, owned by `RotationLowering` /
   `ControlledSubstitution`) or arith that produces a *new* tainted value —
-  which makes the merge `φ` a `[tainted, …]` arm, the deferred mux case
-  (PRD §5). So: wire + document as the forward seam; **no fixture** for a
+  which makes the merge `φ` a `[tainted, …]` arm, the tainted-arm mux case
+  (PRD §5; Phase 4.2 / beads `test_C_libtooling-mux` — pass-side, no new
+  primitive). So: wire + document as the forward seam; **no fixture** for a
   shape `-O1` won't hand us; revisit if a future `-O` level preserves
   in-shadow data-arith.
 - **D3 — module count → KEEP EIGHT TUs. [DECIDED]** Honors the request's
