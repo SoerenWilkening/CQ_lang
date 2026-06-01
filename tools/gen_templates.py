@@ -48,6 +48,13 @@ TARGETS = ("h", "c")
 #   lh  : classical scalar on LHS, handle on RHS    -> sym(classical, h)
 #   a1  : arity-1 (unary / cast)                    -> sym(h)
 # The `_inv` direction is folded into the suffix (modifier-then-direction).
+#
+# Controlled axis (Phase 4, PRD §2.8): `controlled_*` tokens mirror the
+# fwd/inv shape grid for binary ops only. `_controlled` follows the shape
+# suffix, `_inv` stays last (`…[_hl|_lh]_controlled[_inv]`). Every controlled
+# symbol prepends an `int32_t ctrl_flag` as argument 0 (§1.2); this is keyed
+# off the shape carrying a `c` prefix below, consumed by signature/stub_body.
+CONTROLLED_SHAPES = {"cqq", "chl", "clh"}
 VARIANT_INFO = {
     "fwd_qq": ("",        "qq"),
     "fwd_hl": ("_hl",     "hl"),
@@ -57,6 +64,12 @@ VARIANT_INFO = {
     "inv_lh": ("_lh_inv", "lh"),
     "fwd":    ("",        "a1"),
     "inv":    ("_inv",    "a1"),
+    "controlled_qq":     ("_controlled",        "cqq"),
+    "controlled_hl":     ("_hl_controlled",     "chl"),
+    "controlled_lh":     ("_lh_controlled",     "clh"),
+    "controlled_inv_qq": ("_controlled_inv",    "cqq"),
+    "controlled_inv_hl": ("_hl_controlled_inv", "chl"),
+    "controlled_inv_lh": ("_lh_controlled_inv", "clh"),
 }
 
 
@@ -79,7 +92,9 @@ def enumerate_all(table):
             suffix, shape = VARIANT_INFO[v]
             row = {"sym": base + suffix, "kind": kind, "shape": shape, "variant": v}
             row.update(extra)
-            row["classical_w"] = extra.get("width") if shape in ("hl", "lh") else None
+            # hl/lh (and their controlled twins chl/clh) carry a classical
+            # operand whose C type comes from the symbol's width.
+            row["classical_w"] = extra.get("width") if shape in ("hl", "lh", "chl", "clh") else None
             rows.append(row)
 
     # Binary: variant grid per (op, width).
@@ -110,49 +125,62 @@ def enumerate_all(table):
 # -------------------- signature + body helpers --------------------
 
 def signature(row):
-    """Return the C declaration (no trailing ';')."""
+    """Return the C declaration (no trailing ';').
+
+    Controlled shapes (cqq/chl/clh) mirror their uncontrolled twins
+    (qq/hl/lh) but prepend `int32_t ctrl_flag` as parameter 0 — the single
+    control wire (PRD §1.2). The control flag is always argument 0.
+    """
     sym = row["sym"]
     shape = row["shape"]
-    if shape == "a1":  # arity-1: cast / unary
+    ctrl = "int32_t ctrl_flag, " if shape in CONTROLLED_SHAPES else ""
+    if shape == "a1":  # arity-1: cast / unary (never controlled)
         return f"int32_t {sym}(int32_t a_handle)"
-    if shape == "qq":  # Q+Q binary or compare
-        return f"int32_t {sym}(int32_t a_handle, int32_t b_handle)"
+    if shape in ("qq", "cqq"):  # Q+Q binary or compare
+        return f"int32_t {sym}({ctrl}int32_t a_handle, int32_t b_handle)"
     ctype = WIDTH_INFO[row["classical_w"]]["ctype"]
-    if shape == "hl":  # handle on LHS, classical scalar on RHS
-        return f"int32_t {sym}(int32_t a_handle, {ctype} b_classical)"
-    # shape == "lh": classical scalar on LHS, handle on RHS
-    return f"int32_t {sym}({ctype} a_classical, int32_t b_handle)"
+    if shape in ("hl", "chl"):  # handle on LHS, classical scalar on RHS
+        return f"int32_t {sym}({ctrl}int32_t a_handle, {ctype} b_classical)"
+    # shape lh/clh: classical scalar on LHS, handle on RHS
+    return f"int32_t {sym}({ctrl}{ctype} a_classical, int32_t b_handle)"
 
 
 def stub_body(row):
-    """Return the C body lines (without the signature braces)."""
+    """Return the C body lines (without the signature braces).
+
+    Controlled shapes (cqq/chl/clh) prepend the control flag to the trace as
+    a leading `h%d` (the flag is an i32 handle, PRD §1.2); the rest of the
+    trace mirrors the uncontrolled twin exactly.
+    """
     sym = row["sym"]
     shape = row["shape"]
-    if shape == "a1":  # arity-1: cast / unary
+    ctrl_fmt = "h%d, " if shape in CONTROLLED_SHAPES else ""
+    ctrl_arg = "ctrl_flag, " if shape in CONTROLLED_SHAPES else ""
+    if shape == "a1":  # arity-1: cast / unary (never controlled)
         return (
             "    int32_t h = cqrt_alloc_handle();\n"
             f"    printf(\"{sym}(h%d) -> h%d\\n\", a_handle, h);\n"
             "    fflush(stdout);\n    return h;\n"
         )
-    if shape == "qq":  # Q+Q binary or compare
+    if shape in ("qq", "cqq"):  # Q+Q binary or compare
         return (
             "    int32_t h = cqrt_alloc_handle();\n"
-            f"    printf(\"{sym}(h%d, h%d) -> h%d\\n\", a_handle, b_handle, h);\n"
+            f"    printf(\"{sym}({ctrl_fmt}h%d, h%d) -> h%d\\n\", {ctrl_arg}a_handle, b_handle, h);\n"
             "    fflush(stdout);\n    return h;\n"
         )
     info = WIDTH_INFO[row["classical_w"]]
-    if shape == "hl":  # handle on LHS, classical scalar on RHS
+    if shape in ("hl", "chl"):  # handle on LHS, classical scalar on RHS
         cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
         return (
             "    int32_t h = cqrt_alloc_handle();\n"
-            f"    printf(\"{sym}(h%d, {info['fmt']}) -> h%d\\n\", a_handle, {cast_expr}, h);\n"
+            f"    printf(\"{sym}({ctrl_fmt}h%d, {info['fmt']}) -> h%d\\n\", {ctrl_arg}a_handle, {cast_expr}, h);\n"
             "    fflush(stdout);\n    return h;\n"
         )
-    # shape == "lh": classical scalar on LHS, handle on RHS; trace order classical, handle.
+    # shape lh/clh: classical scalar on LHS, handle on RHS; trace order classical, handle.
     cast_expr = f"{info['cast']}a_classical" if info["cast"] else "a_classical"
     return (
         "    int32_t h = cqrt_alloc_handle();\n"
-        f"    printf(\"{sym}({info['fmt']}, h%d) -> h%d\\n\", {cast_expr}, b_handle, h);\n"
+        f"    printf(\"{sym}({ctrl_fmt}{info['fmt']}, h%d) -> h%d\\n\", {ctrl_arg}{cast_expr}, b_handle, h);\n"
         "    fflush(stdout);\n    return h;\n"
     )
 

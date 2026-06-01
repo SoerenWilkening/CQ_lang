@@ -226,6 +226,84 @@ void cqrt_rz_f64(int32_t handle, double angle) {
 }
 
 /* ---------------------------------------------------------------------
+ * Controlled Rz rotation bodies (Phase 4, PRD §2.8) — one per width ×
+ * {controlled, controlled_inv}. The control flag is argument 0 and
+ * prints as a leading h<N>; otherwise identical no-arrow void trace as
+ * the uncontrolled rz. Declared + defined this phase; the IR pass emits
+ * these from WP3 onward (controlled gate-body substitution).
+ * ------------------------------------------------------------------- */
+
+void cqrt_rz_i1_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i1_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i8_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i8_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i16_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i16_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i32_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i32_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i64_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i64_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_f32_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_f32_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_f64_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_f64_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i1_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i1_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i8_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i8_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i16_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i16_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i32_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i32_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_i64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_i64_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_f32_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_f64_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Gate primitives (backend.md §11.4) — handle-typed, void. Declared +
  * defined this phase but NOT emitted by the IR pass yet (Phase 8), so
  * they are left unexercised by the trace driver. Same no-arrow void
@@ -249,6 +327,35 @@ void cqrt_cnot(int32_t ctrl, int32_t tgt) {
 
 void cqrt_toffoli(int32_t c1, int32_t c2, int32_t tgt) {
     printf("cqrt_toffoli(h%d, h%d, h%d)\n", c1, c2, tgt);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
+ * Controlled gate primitives + Toffoli inverse (Phase 4, PRD §2.8).
+ * cqrt_toffoli_inv uncomputes a flag conjunction (PRD §2.5/§2.7); the
+ * controlled gate forms prepend one i32 control-flag handle as arg 0
+ * (PRD §1.2). Same no-arrow void trace as their uncontrolled twins; the
+ * control flag prints as a leading h<N>. Not emitted by the IR pass
+ * yet — declared + defined for Phase-8 / flag-conjunction completeness.
+ * ------------------------------------------------------------------- */
+
+void cqrt_toffoli_inv(int32_t c1, int32_t c2, int32_t tgt) {
+    printf("cqrt_toffoli_inv(h%d, h%d, h%d)\n", c1, c2, tgt);
+    fflush(stdout);
+}
+
+void cqrt_x_controlled(int32_t ctrl, int32_t q) {
+    printf("cqrt_x_controlled(h%d, h%d)\n", ctrl, q);
+    fflush(stdout);
+}
+
+void cqrt_h_controlled(int32_t ctrl, int32_t q) {
+    printf("cqrt_h_controlled(h%d, h%d)\n", ctrl, q);
+    fflush(stdout);
+}
+
+void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt) {
+    printf("cqrt_cnot_controlled(h%d, h%d, h%d)\n", ctrl, target_ctrl, tgt);
     fflush(stdout);
 }
 

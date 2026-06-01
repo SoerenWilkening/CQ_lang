@@ -1,6 +1,10 @@
 /* cq_runtime.h — trace-only runtime stub (declarations).
  *
- * Declares the 33 cqrt_* lowering targets used by the IR pass:
+ * Declares the cqrt_* lowering targets used by the IR pass. The base
+ * surface is 33 symbols (below); Phase 4 (PRD §2.8) adds the controlled
+ * surface — cqrt_rz_<W>_controlled[_inv] (7 widths × 2), cqrt_toffoli_inv,
+ * and cqrt_x/h/cnot_controlled — each prepending one i32 control-flag
+ * handle as argument 0 (PRD §1.2). The 33 base symbols:
  *   - 7 allocators (one per width): cqrt_alloc_i{1,8,16,32,64} +
  *     cqrt_alloc_f{32,64}. Each takes an initial classical value and
  *     returns a fresh monotonically-increasing handle.
@@ -119,6 +123,34 @@ void cqrt_rz_f32(int32_t handle, double angle);
 void cqrt_rz_f64(int32_t handle, double angle);
 
 /* -----------------------------------------------------------------
+ * Controlled Rz rotation (Phase 4, PRD §2.8) — the controlled form of
+ * the lowered cq_phi gate body. Prepends a single i32 control-flag
+ * handle as argument 0 (PRD §1.2: one control wire per op); the
+ * `_controlled_inv` form is the region-inversion variant (Phase 5/7
+ * uncompute, which cannot reuse plain rz because the control wire must
+ * thread through). 7 widths × {controlled, controlled_inv}. Trace (no
+ * return-value suffix), control flag printed as a leading h<N>:
+ *     "cqrt_rz_<W>_controlled(h<ctrl>, h<handle>, <angle>)".
+ * Declared + defined this phase; the IR pass begins emitting the
+ * controlled rz in WP3 (substitution of in-shadow gate bodies).
+ * ----------------------------------------------------------------- */
+void cqrt_rz_i1_controlled (int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_i8_controlled (int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_i16_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_i32_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_i64_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_f32_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_f64_controlled(int32_t ctrl, int32_t handle, double angle);
+
+void cqrt_rz_i1_controlled_inv (int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_i8_controlled_inv (int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_i16_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_i32_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_i64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+
+/* -----------------------------------------------------------------
  * Gate primitives (backend.md §11.4) — handle-typed, void. For
  * internal use by the template library and Phase 11 passes; declared
  * + defined this phase but NOT emitted by the IR pass yet (Phase 8).
@@ -129,6 +161,20 @@ void cqrt_x      (int32_t q);
 void cqrt_h      (int32_t q);
 void cqrt_cnot   (int32_t ctrl, int32_t tgt);
 void cqrt_toffoli(int32_t c1, int32_t c2, int32_t tgt);
+
+/* -----------------------------------------------------------------
+ * Controlled gate primitives + Toffoli inverse (Phase 4, PRD §2.8).
+ * `cqrt_toffoli_inv` uncomputes a flag conjunction (the && / || / nest
+ * bracket, PRD §2.5/§2.7); `cqrt_toffoli` itself already exists above.
+ * `cqrt_x/h/cnot_controlled` prepend one i32 control-flag handle as
+ * argument 0 (PRD §1.2), rounding out the controlled gate surface for
+ * Phase-8 completeness. Same no-arrow void trace convention as their
+ * uncontrolled twins; the control flag prints as a leading h<N>.
+ * ----------------------------------------------------------------- */
+void cqrt_toffoli_inv (int32_t c1, int32_t c2, int32_t tgt);
+void cqrt_x_controlled   (int32_t ctrl, int32_t q);
+void cqrt_h_controlled   (int32_t ctrl, int32_t q);
+void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt);
 
 /* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;

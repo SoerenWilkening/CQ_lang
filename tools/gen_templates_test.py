@@ -2,12 +2,14 @@
 """tools/gen_templates_test.py - self-test for tools/gen_templates.py.
 
 Asserts:
-  1. Total symbol count == 780.
+  1. Total symbol count == 1172.
   2. Per-kind breakdown matches YAML projection (derived at runtime).
   3. Every .h declaration has a matching .c definition.
   4. YAML SHA-256 banner appears in every emitted file (cq_templates.{h,c}).
   5. Generator is byte-idempotent.
   6. --check returns 0 on clean tree, 1 after a tampered byte.
+  7. Every controlled symbol's first parameter is the i32 control flag
+     (PRD §1.2: one control wire per op, prepended as argument 0).
 
 Run: python3 tools/gen_templates_test.py
 """
@@ -64,8 +66,26 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_780(self):
-        self.assertEqual(len(self.h_decls), 780)
+    def test_total_symbol_count_is_1172(self):
+        self.assertEqual(len(self.h_decls), 1172)
+
+    def test_controlled_first_param_is_control_flag(self):
+        """PRD §1.2: every controlled symbol prepends `int32_t ctrl_flag`
+        as argument 0 (the single control wire). Pins the controlled
+        surface against a signature that forgets / reorders the flag."""
+        # Grab each controlled decl's parameter list from the header.
+        sigs = dict(re.findall(
+            r"^int32_t (cq_template_\w*_controlled(?:_inv)?)\(([^)]*)\)",
+            self.h_text, re.MULTILINE))
+        controlled = [d for d in self.h_decls if "_controlled" in d]
+        self.assertTrue(controlled, "no controlled symbols emitted")
+        self.assertEqual(sorted(sigs), sorted(controlled),
+                         "controlled decl set mismatch between regex and h_decls")
+        for sym, params in sigs.items():
+            first = params.split(",")[0].strip()
+            self.assertEqual(first, "int32_t ctrl_flag",
+                             f"{sym}: first parameter is {first!r}, "
+                             "expected 'int32_t ctrl_flag' (PRD §1.2)")
 
     def test_per_kind_breakdown_matches_yaml(self):
         expected = _expected_counts(self.table)
