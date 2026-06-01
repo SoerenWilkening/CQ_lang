@@ -292,15 +292,20 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       continue;
     for (BasicBlock &BB : F) {
       // WP4: a tainted-condition `select i1` reduces to a controlled add onto a
-      // register seeded from the CLASSICAL arm (PRD §2.2/§2.6). It has no CFG
+      // register seeded from a chosen arm (PRD §2.2/§2.6). It has no CFG
       // diamond — `Pred`/`Arm`/`MergeBB` stay null, so linearization is a no-op
-      // for it. Two arm shapes are in scope here:
+      // for it. Three arm shapes are in scope here, all keyed on the tainted
+      // condition (the arm-taint discriminator is re-derived in
+      // `MergeDissolution`, so no extra ControlRegion field is needed):
       //   * [classical, classical] (WP4): host `sub A−B` → controlled add (HL).
       //   * MIXED, exactly ONE tainted arm (mux.1): the tainted handle Q is one
       //     arm, a classical C the other — `delta = Q−C` via the UNCONTROLLED
       //     `sub_<W>_hl` template, then a Shape::QQ controlled add onto regC.
-      // `MergeDissolution` re-derives which arm is the seed from `taint`, so no
-      // extra ControlRegion field is needed.
+      //   * BOTH arms tainted (mux.2): neither arm is classical, so neither the
+      //     host `sub` nor the `cqrt_alloc(C)`-from-classical seed apply. Build
+      //     `regOut = alloc(0)`, then `add_controlled(f, regOut, hp)` and a ¬f
+      //     `add_controlled(f, regOut, hq)` (cqrt_x flag bracket); both source
+      //     handles are READ, never consumed, so they stay live for other uses.
       for (Instruction &I : BB) {
         auto *Sel = dyn_cast<SelectInst>(&I);
         if (!Sel)
@@ -317,15 +322,13 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         // back to its `br i1 %and, …` carrier (the WP5 path) untouched.
         if (Sel->getType()->isIntegerTy(1))
           continue;
-        // Arm-taint discriminator. Reject BOTH arms tainted — that is the
-        // both-tainted data mux (§5.5, child .2, out of scope here). Accept
-        // neither-tainted ([classical, classical], WP4) and EXACTLY-ONE-tainted
-        // (the mixed-arm mux, mux.1): both build a SelectRegion below; the
-        // seed-arm distinction (which arm is the classical seed) is re-derived
-        // from `taint` in `dissolveSelect`.
-        if (taint.Tainted.count(Sel->getTrueValue()) &&
-            taint.Tainted.count(Sel->getFalseValue()))
-          continue;
+        // Every non-i1 tainted-condition select builds a SelectRegion. The
+        // arm-taint discriminator — neither tainted ([classical, classical],
+        // WP4) / exactly one tainted (mixed mux, mux.1) / both tainted (data
+        // mux, mux.2) — is re-derived from `taint` in `dissolveSelect`, which
+        // dispatches the three reductions. (The both-tainted case used to be
+        // rejected here; mux.2 lifted that so both-tainted gets its own add(0)
+        // + two-controlled-adds branch instead of falling through unlowered.)
 
         ControlRegion region;
         region.Condition = Sel->getCondition();

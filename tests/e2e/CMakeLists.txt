@@ -72,6 +72,21 @@ add_test(NAME e2e-slice-control-mux-mixed
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_mux_mixed.expected.log")
 
+# Phase 4 (mux.2): a BOTH-ARMS-HANDLE select mux. `y = (q > 0) ? (12 - q) :
+# (q + 5);` survives -O1 as a select whose BOTH arms are tainted handles (no
+# classical arm). The mixed reduction cannot apply, so the pass copies
+# additively into a fresh ancilla: cqrt_alloc_i32(0) + two Shape::QQ
+# cq_template_add_i32_controlled(flag, regOut, hp/hq) with a ¬flag cqrt_x
+# bracket around the second -> flag uncompute -> measure. Both source handles
+# (hp = sub_i32_lh, hq = add_i32_hl) stay referenced.
+add_test(NAME e2e-slice-control-mux-handles
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_mux_handles.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_mux_handles.expected.log")
+
 # Convenience target: build the prerequisites, then run every e2e slice.
 add_custom_target(check-e2e
   COMMAND ${CMAKE_CTEST_COMMAND} -R "^e2e-" --output-on-failure

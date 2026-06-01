@@ -11,14 +11,14 @@
 // `region.Pred` edge is definitionally the unmodified path.
 //
 // `select` case (`region.Merge` is a `SelectInst`): `select i1 %c, A, B` means
-// `%c ? A : B`. With the control flag = lowered condition the result is
-// `B + flag·(A−B)`. Two arm shapes share that reduction:
+// `%c ? A : B`. With the control flag = lowered condition the reduction is one
+// of THREE, dispatched on arm taint:
 //
-//   [classical, classical] (WP4): emit a HOST `%d = sub A, B` (plain LLVM,
-//   stays classical — both operands classical, so the `sub` is never
-//   tainted/lowered; constants fold, runtime args stay a real `sub`), then
-//   `cqrt_alloc_<W>(B)` to seed a handle at the false arm, then
-//   `cq_template_add_<W>_hl_controlled(flag, regB, %d)`.
+//   [classical, classical] (WP4): result `B + flag·(A−B)`. Emit a HOST
+//   `%d = sub A, B` (plain LLVM, stays classical — both operands classical, so
+//   the `sub` is never tainted/lowered; constants fold, runtime args stay a
+//   real `sub`), then `cqrt_alloc_<W>(B)` to seed a handle at the false arm,
+//   then `cq_template_add_<W>_hl_controlled(flag, regB, %d)`.
 //
 //   MIXED — exactly ONE tainted arm (mux.1): one arm is a tainted handle Q,
 //   the other a classical C, so the host `sub` would not stay classical. Build
@@ -30,8 +30,19 @@
 //   arm the add is wrapped in a self-inverse `cqrt_x` flag bracket so it fires
 //   on ¬flag (`f ? C : Q`). Result = `C + ctrl·(Q−C)` = `ctrl ? Q : C`.
 //
+//   BOTH arms tainted (mux.2): neither arm is classical, so neither the host
+//   `sub` (mixed/classical paths) nor the `cqrt_alloc(C)`-from-classical seed
+//   apply, and a consuming/in-place strategy is unsafe — an arm may be live
+//   elsewhere. Build an additive copy into a FRESH ancilla:
+//   `regOut = cqrt_alloc_<W>(0)`, `cq_template_add_<W>_controlled(f, regOut,
+//   A)` (regOut += f·A), then a self-inverse `cqrt_x` flag bracket around
+//   `cq_template_add_<W>_controlled(f, regOut, B)` (regOut += ¬f·B). Result =
+//   `f·A + ¬f·B = f ? A : B`. A and B are READ as the add's b_handle operand,
+//   never consumed, so both source handles stay live for their other uses.
+//
 // Either way: RAUW the select to the controlled-add result, erase it, and
-// register the result as a fresh tainted i32 handle.
+// register the result as a fresh tainted i32 handle. The source arm handles
+// are never erased — only the select node is.
 
 #include "MergeDissolution.h"
 
@@ -43,6 +54,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Constants.h"  // ConstantInt
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
@@ -68,7 +80,7 @@ void dissolveBranchPhi(ControlRegion &region) {
   region.Merge = nullptr;  // dissolved; linearization must not touch it again.
 }
 
-// `select` reduction (PRD §2.6). Two arm shapes:
+// `select` reduction (PRD §2.6). Three arm shapes, dispatched on arm taint:
 //   * [classical, classical] (WP4): `y = B + flag·(A−B)` — host `sub A−B` →
 //     `cqrt_alloc_<W>(B)` → `cq_template_add_<W>_hl_controlled(flag, regB, %d)`.
 //   * MIXED, exactly one tainted arm (mux.1): one arm is a tainted handle Q,
@@ -81,6 +93,14 @@ void dissolveBranchPhi(ControlRegion &region) {
 //     `cqrt_x` bracket around the controlled add (X is its own inverse, so the
 //     pair restores the flag for its own compare-uncompute — no extra bracket
 //     bookkeeping in `emitUncompute`).
+//   * BOTH tainted (mux.2): both arms are tainted i32 handles A (true) / B
+//     (false). No classical operand, so the difference/seed strategies above
+//     do not apply — and an arm may be live elsewhere, so it must NOT be
+//     consumed. Build `regOut = cqrt_alloc_<W>(0)` (a fresh ancilla), then
+//     `add_<W>_controlled(flag, regOut, A)` (regOut += flag·A) and, inside a
+//     self-inverse `cqrt_x` flag bracket, `add_<W>_controlled(flag, regOut, B)`
+//     (regOut += ¬flag·B). Result = `flag·A + ¬flag·B = flag ? A : B`. A and B
+//     are only READ (the add's b_handle), never erased — they stay live.
 void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
                     ControlledSymbols &csyms, TaintSet &taint) {
   auto *Sel = dyn_cast_or_null<SelectInst>(region.Merge);
@@ -96,7 +116,9 @@ void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
   if (AbiWidth.empty())
     return;  // unsupported value width; leave it well-typed for the verifier.
 
-  // Detection guarantees AT MOST one arm is tainted (both-tainted is rejected).
+  // Arm-taint discriminator. Detection builds a SelectRegion for every non-i1
+  // tainted-condition select; here we split on arm taint into the three
+  // reductions (neither / exactly one / both).
   const bool TrueTainted = taint.Tainted.count(A) != 0;
   const bool FalseTainted = taint.Tainted.count(B) != 0;
 
@@ -128,7 +150,7 @@ void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
       RegB->setDebugLoc(DL);
       Res->setDebugLoc(DL);
     }
-  } else {
+  } else if (TrueTainted != FalseTainted) {
     // ── MIXED, exactly one tainted arm (mux.1) ──
     // Q is the tainted handle, C the classical arm; `QisTrue` ⇒ ctrl = flag,
     // else ctrl = ¬flag (the `cqrt_x` bracket below).
@@ -169,6 +191,40 @@ void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
         DCall->setDebugLoc(DL);
       RegC->setDebugLoc(DL);
       Res->setDebugLoc(DL);
+    }
+  } else {
+    // ── BOTH arms tainted (mux.2) ──
+    // A and B are tainted i32 handles (hp / hq). No classical operand, so the
+    // mixed/classical seed strategies do not apply, and an arm may be live
+    // elsewhere (so consuming one is unsafe). Copy additively into a FRESH
+    // ancilla: regOut = alloc(0); regOut += flag·A; regOut += ¬flag·B (¬flag
+    // via a self-inverse `cqrt_x` flag bracket). Result = flag ? A : B. Both A
+    // and B are only READ as the QQ add's b_handle — never erased or consumed.
+    FunctionCallee AddQQ =
+        csyms.controlledDataTemplateFn("add", AbiWidth, Shape::QQ,
+                                       /*inverse=*/false);
+    FunctionCallee X = csyms.xFn();  // void cqrt_x(i32); self-inverse.
+    if (!AddQQ || !X)
+      return;  // unsupported width — leave the select standing (verify-clean).
+
+    // Fresh ancilla seeded to 0. The alloc takes the classical init value at the
+    // select's value width; 0 of that integer type matches allocFn's parameter.
+    Value *Zero = ConstantInt::get(A->getType(), 0);
+    CallInst *RegOut = Builder.CreateCall(Alloc, {Zero}, "h");
+
+    // regOut += flag·A.
+    CallInst *Acc1 = Builder.CreateCall(AddQQ, {region.Flag, RegOut, A}, "h_sel");
+    // ¬flag bracket: X(flag); regOut += flag·B (now ¬flag·B); X(flag). The pair
+    // is self-inverse, so the flag is restored for the standard compare-uncompute.
+    Builder.CreateCall(X, {region.Flag});
+    CallInst *Acc2 = Builder.CreateCall(AddQQ, {region.Flag, Acc1, B}, "h_sel");
+    Builder.CreateCall(X, {region.Flag});
+    Res = Acc2;
+
+    if (DebugLoc DL = Sel->getDebugLoc()) {
+      RegOut->setDebugLoc(DL);
+      Acc1->setDebugLoc(DL);
+      Acc2->setDebugLoc(DL);
     }
   }
 
