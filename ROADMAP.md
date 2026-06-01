@@ -330,6 +330,8 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ## Phase 4 — IR pass: controlled-form lowering
 
+**Design:** see [`docs/prd/phase-04-controlled-form/PRD.md`](docs/prd/phase-04-controlled-form/PRD.md).
+
 **Goal.** Structural recovery of quantum-controlled regions from tainted
 `br i1` conditions, without any user-emitted region marker. Replaces
 the prototype's `cq_when_begin`/`_end`-driven detection with the
@@ -363,6 +365,25 @@ post-dominator-based shadow computation
 (control-tainted signature flag, recursion with §6 specialization);
 loops with tainted bounds (likely punted to a quantum-while phase
 post-freeze).
+
+**Deferred to a Phase 4.1 follow-up (separate session).** Two `clang
+-O1` control shapes sit outside the core controlled-region mechanism
+(tainted `select` / `br`-diamond+φ normalization) and are consciously
+cut to keep Phase 4 narrow; the realized `-O1` control menu was
+catalogued 2026-06-01.
+- **Tainted `switch`.** `-O1` keeps a real `switch` + N-way φ for
+  `switch (q)`; the `select`/`br` normalization does not cover it.
+  Pre-run stock `-lowerswitch` (folds to `icmp`-eq chains +
+  selects/`br`s) or add a native multi-way controlled mux. Tracked as
+  [`test_C_libtooling-aht.1`](.beads/issues.jsonl).
+- **Quantum-controlled escape.** `if (q) return …;` / `break` / `goto`,
+  and measurement inside a tainted-branch arm, gate an *escape* from the
+  region rather than an in-place gate — not a clean controlled shadow.
+  Needs a reject-diagnostic vs. `-fcq-measurement-bridge` (§7) decision.
+  Tracked as [`test_C_libtooling-aht.2`](.beads/issues.jsonl).
+
+Both depend on the Phase 4 core landing first; grouped under epic
+[`test_C_libtooling-aht`](.beads/issues.jsonl).
 
 **Done when:** programs with quantum `if`s (including nested, including
 mixed conditions) produce expected `_controlled` template-call
