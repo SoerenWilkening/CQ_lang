@@ -51,6 +51,13 @@ public:
   // float family returns Float / Double. nullptr for an unknown suffix.
   llvm::Type *llvmTypeFor(llvm::StringRef sfx, llvm::LLVMContext &ctx) const;
 
+  // ABI-width string → the classical operand's LLVM type for an `_hl`/`_lh`
+  // template (`i16`→i16, `f64`→double, …). nullptr for an unsupported
+  // width. The handle stays i32; this is only the classical-operand type.
+  // Public so ControlledSymbols (Phase 4) can mint the matching controlled
+  // template signatures off the same table.
+  llvm::Type *llvmWidthType(llvm::StringRef abiWidth) const;
+
   // Front-end intrinsic lookups (no insertion). Return nullptr if the
   // intrinsic is not declared — that's the cue to skip per-suffix work.
   llvm::Function *thetaFn(llvm::StringRef sfx) const;    // @cq_theta_<sfx>
@@ -112,11 +119,6 @@ public:
   llvm::ArrayRef<llvm::StringRef> frontEndIntrinsicNames() const;
 
 private:
-  // ABI-width string → the classical operand's LLVM type for an `_hl`/`_lh`
-  // template (`i16`→i16, `f64`→double, …). nullptr for an unsupported
-  // width. The handle stays i32; this is only the classical-operand type.
-  llvm::Type *llvmWidthType(llvm::StringRef abiWidth) const;
-
   llvm::Module &M;
   // ABI width to use for `sl`/`ul` on this target. Computed from the
   // Module's DataLayout at construction; "i64" on LP64, "i32" otherwise.

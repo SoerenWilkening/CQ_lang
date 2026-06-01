@@ -59,6 +59,21 @@ struct TaintSet {
   // "not assigned"; only canonicalized values have non-zero entries.
   llvm::DenseMap<llvm::Value *, unsigned> BirthOrder;
   unsigned NextBirth = 1;
+
+  // Phase 4 (PRD §2.8). Logical ABI width of each quantum handle, recorded
+  // at its rotation mint point (`RotationLowering`) from the `cq_theta`
+  // classical operand. Read when building Q+Q control conditions (PRD §2.4),
+  // where both operands are i32-laundered handles and the width is otherwise
+  // unrecoverable. Populated and consumed by later WPs; unread this WP.
+  llvm::DenseMap<llvm::Value *, llvm::StringRef> HandleWidth;
+
+  // Phase 4 (PRD §2.10). Maps an in-shadow op result to its controlling i32
+  // flag handle. Built by the control-flag / flag-conjunction passes and
+  // consumed by controlled substitution and `OpcodeLowering`. The region
+  // list and in-shadow set are NOT here — they ride the `ControlPlan` struct
+  // returned by region detection (epic D4). Populated by later WPs; unread
+  // this WP.
+  llvm::DenseMap<llvm::Value *, llvm::Value *> ControlFlag;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure

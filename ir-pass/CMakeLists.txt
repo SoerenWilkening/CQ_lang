@@ -44,6 +44,7 @@ add_library(CQPass MODULE
   src/ArithLowering.cpp
   src/CastLowering.cpp
   src/CompareLowering.cpp
+  src/ControlledSymbols.cpp
   src/CQLoweringPass.cpp
   src/MeasureLowering.cpp
   src/OpcodeLowering.cpp

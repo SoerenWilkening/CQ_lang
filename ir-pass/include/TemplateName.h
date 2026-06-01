@@ -3,9 +3,10 @@
 // type construction (that is `WidthDispatch`'s job). This TU owns the
 // *string* only.
 //
-// The convention (forward stems only — Phase 3 emits no `_inv`):
+// The convention (Phase 4 adds the trailing `[_controlled][_inv]` axis;
+// both default off so forward, uncontrolled output is unchanged):
 //
-//   cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>][_hl|_lh]
+//   cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>][_hl|_lh][_controlled][_inv]
 //
 //   * data    : cq_template_<op>_<W>[_hl|_lh]
 //                 add i32 Q+Q     → cq_template_add_i32
@@ -45,22 +46,37 @@ namespace cq {
 //   * Unary — single operand (fneg / casts). No shape suffix.
 enum class Shape { QQ, HL, LH, Unary };
 
-// Binary/unary data op: `cq_template_<stem>_<W>[_hl|_lh]`. `Shape::Unary`
-// (fneg) and `Shape::QQ` get no shape suffix; `HL`→`_hl`, `LH`→`_lh`.
-std::string dataName(llvm::StringRef stem, llvm::StringRef width, Shape shape);
+// Controlled / inverse axis (Phase 4, PRD §2.8). Both default to the
+// no-control forward form, so every existing caller stays byte-identical.
+// The grammar appends, after the shape suffix: `_controlled` when
+// `controlled`, then `_inv` when `inverse` — in that fixed order. E.g.
+// data add i32 HL controlled → `cq_template_add_i32_hl_controlled`;
+// controlled_inv → `cq_template_add_i32_hl_controlled_inv`; QQ controlled
+// → `cq_template_add_i32_controlled`. (An `_inv`-only form — `inverse`
+// without `controlled` — spells `..._inv`, matching the generated
+// uncontrolled inverse templates.)
 
-// Compare op: `cq_template_<op>_<pred>_<W>[_hl]`. `op` is "icmp"/"fcmp",
-// `pred` the LLVM predicate name. Only `Shape::QQ` (no suffix) and
-// `Shape::HL` (`_hl`) are valid — compares have no `_lh` form (a
+// Binary/unary data op: `cq_template_<stem>_<W>[_hl|_lh][_controlled][_inv]`.
+// `Shape::Unary` (fneg) and `Shape::QQ` get no shape suffix; `HL`→`_hl`,
+// `LH`→`_lh`. `_controlled`/`_inv` follow the shape suffix (see above).
+std::string dataName(llvm::StringRef stem, llvm::StringRef width, Shape shape,
+                     bool controlled = false, bool inverse = false);
+
+// Compare op: `cq_template_<op>_<pred>_<W>[_hl][_controlled][_inv]`. `op` is
+// "icmp"/"fcmp", `pred` the LLVM predicate name. Only `Shape::QQ` (no
+// suffix) and `Shape::HL` (`_hl`) are valid — compares have no `_lh` form (a
 // literal-on-left compare canonicalizes by predicate flip; PRD §2.4).
 std::string compareName(llvm::StringRef op, llvm::StringRef pred,
-                        llvm::StringRef width, Shape shape);
+                        llvm::StringRef width, Shape shape,
+                        bool controlled = false, bool inverse = false);
 
-// Cast op: `cq_template_<op>_<from>_to_<to>`. `op` is the cast opcode name
-// ("sext"/"zext"/"trunc"/"fpext"/"fptrunc"/"sitofp"/"uitofp"/"fptosi"/
-// "fptoui"). Casts are unary at the IR level → no shape suffix (PRD §2.3).
+// Cast op: `cq_template_<op>_<from>_to_<to>[_controlled][_inv]`. `op` is the
+// cast opcode name ("sext"/"zext"/"trunc"/"fpext"/"fptrunc"/"sitofp"/
+// "uitofp"/"fptosi"/"fptoui"). Casts are unary at the IR level → no shape
+// suffix (PRD §2.3); the controlled/inverse tokens still trail last.
 std::string castName(llvm::StringRef op, llvm::StringRef fromW,
-                     llvm::StringRef toW);
+                     llvm::StringRef toW, bool controlled = false,
+                     bool inverse = false);
 
 }  // namespace cq
 

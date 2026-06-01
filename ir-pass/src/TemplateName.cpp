@@ -27,28 +27,47 @@ StringRef shapeSuffix(Shape shape) {
   return "";
 }
 
-}  // namespace
-
-std::string dataName(StringRef stem, StringRef width, Shape shape) {
-  // cq_template_<stem>_<W>[_hl|_lh]. Matches the existing
-  // `cq_template_add_i32` / `cq_template_add_i32_hl` /
-  // `cq_template_sub_i32_lh` symbols byte-for-byte.
-  return ("cq_template_" + stem + "_" + width + shapeSuffix(shape)).str();
+// The trailing `[_controlled][_inv]` axis (Phase 4, PRD §2.8). Appended
+// after the shape suffix in a fixed order: `_controlled` first (when
+// controlled), then `_inv` (when inverse). With both false the result is
+// the empty string, so the no-control forward symbol is byte-identical to
+// the Phase-3 names.
+StringRef ctrlInvSuffix(bool controlled, bool inverse) {
+  if (controlled)
+    return inverse ? "_controlled_inv" : "_controlled";
+  return inverse ? "_inv" : "";
 }
 
-std::string compareName(StringRef op, StringRef pred, StringRef width,
-                        Shape shape) {
-  // cq_template_<op>_<pred>_<W>[_hl]. Compares insert the predicate token
-  // between the op name and the width; no `_lh` form exists.
-  return ("cq_template_" + op + "_" + pred + "_" + width + shapeSuffix(shape))
+}  // namespace
+
+std::string dataName(StringRef stem, StringRef width, Shape shape,
+                     bool controlled, bool inverse) {
+  // cq_template_<stem>_<W>[_hl|_lh][_controlled][_inv]. With the default
+  // (uncontrolled, forward) axis this matches the existing
+  // `cq_template_add_i32` / `cq_template_add_i32_hl` /
+  // `cq_template_sub_i32_lh` symbols byte-for-byte.
+  return ("cq_template_" + stem + "_" + width + shapeSuffix(shape) +
+          ctrlInvSuffix(controlled, inverse))
       .str();
 }
 
-std::string castName(StringRef op, StringRef fromW, StringRef toW) {
-  // cq_template_<op>_<from>_to_<to>. Unary at the IR level — no shape
-  // suffix. The width pair keys the symbol (and changes the handle's ABI
-  // width); both widths are captured before RAUW (PRD §2.3).
-  return ("cq_template_" + op + "_" + fromW + "_to_" + toW).str();
+std::string compareName(StringRef op, StringRef pred, StringRef width,
+                        Shape shape, bool controlled, bool inverse) {
+  // cq_template_<op>_<pred>_<W>[_hl][_controlled][_inv]. Compares insert the
+  // predicate token between the op name and the width; no `_lh` form exists.
+  return ("cq_template_" + op + "_" + pred + "_" + width + shapeSuffix(shape) +
+          ctrlInvSuffix(controlled, inverse))
+      .str();
+}
+
+std::string castName(StringRef op, StringRef fromW, StringRef toW,
+                     bool controlled, bool inverse) {
+  // cq_template_<op>_<from>_to_<to>[_controlled][_inv]. Unary at the IR
+  // level — no shape suffix. The width pair keys the symbol (and changes the
+  // handle's ABI width); both widths are captured before RAUW (PRD §2.3).
+  return ("cq_template_" + op + "_" + fromW + "_to_" + toW +
+          ctrlInvSuffix(controlled, inverse))
+      .str();
 }
 
 }  // namespace cq
