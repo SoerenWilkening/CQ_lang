@@ -8,6 +8,9 @@
 
 #include "RotationLowering.h"
 
+#include "ControlPlan.h"
+#include "ControlledSymbols.h"
+#include "OpcodeSupport.h"  // abiWidthFromType
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
@@ -51,7 +54,40 @@ void diagnoseUnsupported(CallInst *CI, const char *What) {
 
 }  // namespace
 
-void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint) {
+bool emitRz(CallInst *Phi, Value *Handle, Value *Angle, WidthDispatch &wd,
+            bool controlled, Value *Flag) {
+  StringRef Sfx = suffixFromName(Phi, "cq_phi_");
+  StringRef Abi = wd.abiWidthFor(Sfx);
+  IRBuilder<> Builder(Phi);
+  if (!controlled) {
+    // Uncontrolled gate body: `cqrt_rz_<W>(handle, angle)`.
+    FunctionCallee Rz = Abi.empty() ? FunctionCallee() : wd.rzRtFn(Abi);
+    if (!Rz) {
+      diagnoseUnsupported(Phi, "phi suffix/width");
+      return false;  // leave the phi in place for the verifier.
+    }
+    CallInst *RzCall = Builder.CreateCall(Rz, {Handle, Angle});
+    if (DebugLoc DL = Phi->getDebugLoc())
+      RzCall->setDebugLoc(DL);
+    return true;
+  }
+  // Controlled gate body: `cqrt_rz_<W>_controlled(flag, handle, angle)`, the
+  // i32 control flag prepended as arg 0 (PRD §1.2).
+  ControlledSymbols csyms(*Phi->getModule(), wd);
+  FunctionCallee Rz =
+      Abi.empty() ? FunctionCallee() : csyms.controlledRotationFn(Abi);
+  if (!Rz) {
+    diagnoseUnsupported(Phi, "controlled phi suffix/width");
+    return false;
+  }
+  CallInst *RzCall = Builder.CreateCall(Rz, {Flag, Handle, Angle});
+  if (DebugLoc DL = Phi->getDebugLoc())
+    RzCall->setDebugLoc(DL);
+  return true;
+}
+
+void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
+                    const ControlPlan *plan) {
   (void)M;
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty())
     return;
@@ -89,6 +125,13 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint) {
       Handle = H;
       taint.Tainted.insert(H);
       taint.BirthOrder[H] = taint.NextBirth++;  // BB-order seed → stable Q+Q
+      // §5.6: record the handle's LOGICAL width from the classical `cq_theta`
+      // operand, on the freshly minted i32 handle, BEFORE the RAUW below
+      // launders the theta result's type away. Read later when building a Q+Q
+      // control condition (PRD §2.4), where both operands are i32 handles.
+      // `abiWidthFromType` returns a stable StringRef literal (no storage
+      // lifetime concern).
+      taint.HandleWidth[H] = abiWidthFromType(Op->getType());
     }
 
     CallInst *RyCall = Builder.CreateCall(Ry, {Handle, Angle});
@@ -104,21 +147,20 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint) {
 
   // --- PHI. Iterate in collection order (collected regardless of taint).
   for (CallInst *Phi : taint.PhiCalls) {
+    // In-shadow gate bodies are lowered CONTROLLED by the orchestrator
+    // (`lowerControlledRegions`), not here (§1.4). Skip them entirely — do
+    // NOT emit an uncontrolled Rz and do NOT erase: `ControlledSubstitution`
+    // owns their emit + erase.
+    if (plan && plan->InShadow.count(Phi))
+      continue;
     Value *Op = Phi->getArgOperand(0);
     Value *Angle = Phi->getArgOperand(1);
     if (taint.Tainted.count(Op)) {
-      // Tainted operand → emit rz on the handle.
-      StringRef Sfx = suffixFromName(Phi, "cq_phi_");
-      StringRef Abi = wd.abiWidthFor(Sfx);
-      FunctionCallee Rz = Abi.empty() ? FunctionCallee() : wd.rzRtFn(Abi);
-      if (!Rz) {
-        diagnoseUnsupported(Phi, "phi suffix/width");
-        continue;  // leave the phi in place for the verifier
-      }
-      Builder.SetInsertPoint(Phi);
-      CallInst *RzCall = Builder.CreateCall(Rz, {Op, Angle});
-      if (DebugLoc DL = Phi->getDebugLoc())
-        RzCall->setDebugLoc(DL);
+      // Tainted operand → emit uncontrolled rz on the handle. A failed emit
+      // (unsupported width) leaves the phi standing for the verifier — do not
+      // erase it.
+      if (!emitRz(Phi, Op, Angle, wd, /*controlled=*/false, /*flag=*/nullptr))
+        continue;
     }
     // Classical operand → no rz (Rz on a basis state is unobservable,
     // PRD §4.1). RAUW the phi result to its operand either way (the

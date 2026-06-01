@@ -43,10 +43,16 @@ endif()
 add_library(CQPass MODULE
   src/ArithLowering.cpp
   src/CastLowering.cpp
+  src/CFGLinearization.cpp
   src/CompareLowering.cpp
+  src/ControlDetection.cpp
+  src/ControlFlag.cpp
+  src/ControlledLowering.cpp
+  src/ControlledSubstitution.cpp
   src/ControlledSymbols.cpp
   src/CQLoweringPass.cpp
   src/MeasureLowering.cpp
+  src/MergeDissolution.cpp
   src/OpcodeLowering.cpp
   src/OpcodeSupport.cpp
   src/Plugin.cpp

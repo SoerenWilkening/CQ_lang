@@ -9,15 +9,19 @@
 
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
-#include "TemplateName.h"  // cq::Shape
+#include "TemplateName.h"  // cq::Shape, cq::compareName
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+
+#include <string>
 
 using namespace llvm;
 
@@ -53,7 +57,9 @@ bool isDataPositionCompare(CmpInst *cmp) {
   return true;
 }
 
-bool rewriteCompare(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint) {
+Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
+                         StringRef qqWidth, bool inverse,
+                         Instruction *before) {
   // `op` is the family stem the symbol table uses: "icmp" / "fcmp". The
   // predicate range partition is authoritative (an fcmp predicate is < 32;
   // an icmp predicate is in [32,..]); `isa<ICmpInst>` would do as well.
@@ -68,74 +74,114 @@ bool rewriteCompare(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint) {
   const bool ATainted = taint.Tainted.count(A) != 0;
   const bool BTainted = taint.Tainted.count(B) != 0;
 
-  // Q+Q (both operands tainted) data-position compares are UNSUPPORTED in
-  // Phase 3 and diagnosed loudly. The logical width is genuinely
-  // unrecoverable here: both operands are i32-laundered handles (the earlier
-  // rotation lowering RAUW'd the rotation result to an i32 handle, erasing
-  // the qubit's i1/i16/f32 width), so there is no classical operand to read a
-  // real width from. Falling back to operand 0's laundered i32 type would
-  // silently emit a wrong/nonexistent symbol (e.g. `cq_template_fcmp_une_i32`,
-  // which is both the wrong width and an integer-compare name on a float
-  // compare) with no diagnostic. Deferred to a later phase; until then this
-  // matches every other unsupported path — diagnose and leave un-lowered (the
-  // driver keeps the well-typed `icmp`/`fcmp`, so `opt -verify` stays clean).
-  if (ATainted && BTainted) {
-    diagnoseNoTemplate(cmp);
-    return false;
-  }
-
-  // Width is the data width of the values being compared — NOT the i1 result
-  // type. Read it from the CLASSICAL operand: a tainted operand is an i32
-  // handle whose original logical width was laundered away by the earlier
-  // rotation lowering (the qubit's i1/i16/f32 width does not survive as the
-  // handle's i32 type), but a classical operand keeps its real LLVM type
-  // (`float 1.0` stays `float`). For the `_hl` shapes (one handle, one
-  // classical) this recovers the true width (e.g. `f32` for `fcmp une float
-  // %h, 1.0`).
-  Type *WidthTy = !ATainted ? A->getType() : B->getType();
-  StringRef AbiWidth = abiWidthFromType(WidthTy);
-  if (AbiWidth.empty()) {
-    diagnoseNoTemplate(cmp);
-    return false;
-  }
-
   CmpInst::Predicate Pred = cmp->getPredicate();
+  StringRef AbiWidth;
   Value *Lhs = nullptr;
   Value *Rhs = nullptr;
   Shape ShapeSel;
-  if (BTainted) {
-    // Classical on the LEFT (A), handle on the right (B): flip the predicate
-    // so the handle moves to the LHS, then emit `_hl(handle, classical)`.
-    // There are NO `_lh` compare templates (PRD §2.4); `5 < x` ⇒ `x > 5`.
-    Lhs = B;
-    Rhs = A;
-    Pred = flipPredicate(Pred);
-    ShapeSel = Shape::HL;
-  } else {
-    // Handle on the LEFT (A), classical on the right (B): already the `_hl`
-    // shape, predicate unchanged.
-    Lhs = A;
+
+  if (ATainted && BTainted) {
+    // Q+Q. The data path (Phase 3) bails here: the logical width is
+    // unrecoverable from two i32-laundered handles, and falling back to the
+    // laundered i32 type would silently emit a wrong/nonexistent symbol.
+    // Phase 4's CONTROL path may pass `qqWidth` (recovered from the
+    // `HandleWidth` side-table, PRD §2.4); without it, stay HL-only — diagnose
+    // and return null (the caller leaves the well-typed `icmp`, so `opt
+    // -verify` stays clean). WP3's fixture is HL, so `qqWidth` is empty here.
+    if (qqWidth.empty()) {
+      diagnoseNoTemplate(cmp);
+      return nullptr;
+    }
+    AbiWidth = qqWidth;
+    Lhs = A;  // HH template: both operands are handles, no flip needed.
     Rhs = B;
+    ShapeSel = Shape::QQ;
+  } else {
+    // Q+C / C+Q. Width is the data width of the values compared — NOT the i1
+    // result type. Read it from the CLASSICAL operand: a tainted operand is an
+    // i32 handle whose logical width was laundered away by rotation lowering,
+    // but a classical operand keeps its real LLVM type (`float 1.0` stays
+    // `float`). For `_hl` (one handle, one classical) this recovers the true
+    // width (e.g. `f32` for `fcmp une float %h, 1.0`).
+    Type *WidthTy = !ATainted ? A->getType() : B->getType();
+    AbiWidth = abiWidthFromType(WidthTy);
+    if (AbiWidth.empty()) {
+      diagnoseNoTemplate(cmp);
+      return nullptr;
+    }
+    if (BTainted) {
+      // Classical on the LEFT (A), handle on the right (B): flip the predicate
+      // so the handle moves to the LHS, then emit `_hl(handle, classical)`.
+      // There are NO `_lh` compare templates (PRD §2.4); `5 < x` ⇒ `x > 5`.
+      Lhs = B;
+      Rhs = A;
+      Pred = flipPredicate(Pred);
+    } else {
+      // Handle on the LEFT (A), classical on the right (B): already `_hl`,
+      // predicate unchanged.
+      Lhs = A;
+      Rhs = B;
+    }
     ShapeSel = Shape::HL;
   }
 
   StringRef PredName = CmpInst::getPredicateName(Pred);
-  FunctionCallee Callee = wd.compareTemplateFn(Op, PredName, AbiWidth, ShapeSel);
+  FunctionCallee Callee;
+  if (!inverse) {
+    // Forward compute: resolve via the shared `WidthDispatch` resolver so the
+    // data path and the control path mint byte-identical signatures.
+    Callee = wd.compareTemplateFn(Op, PredName, AbiWidth, ShapeSel);
+  } else {
+    // Uncompute (§1.5): the `_inv` twin of the SAME plain compare template
+    // (these are plain compares, NOT controlled). Mint it directly via the
+    // TemplateName inverse axis with the identical HL/QQ signature so it
+    // matches the generated `cq_template_icmp_<pred>_<W>_hl_inv` C decl. Kept
+    // local (not a new `WidthDispatch` parameter) so the data-path resolver
+    // stays untouched.
+    Module &M = *cmp->getModule();
+    LLVMContext &Ctx = M.getContext();
+    Type *Handle = Type::getInt32Ty(Ctx);
+    std::string Name = compareName(Op, PredName, AbiWidth, ShapeSel,
+                                   /*controlled=*/false, /*inverse=*/true);
+    if (ShapeSel == Shape::QQ) {
+      Callee = M.getOrInsertFunction(
+          Name, FunctionType::get(Handle, {Handle, Handle}, false));
+    } else {
+      Type *Classical = wd.llvmWidthType(AbiWidth);
+      if (Classical)
+        Callee = M.getOrInsertFunction(
+            Name, FunctionType::get(Handle, {Handle, Classical}, false));
+    }
+  }
   if (!Callee) {
     diagnoseNoTemplate(cmp);
-    return false;
+    return nullptr;
   }
 
-  IRBuilder<> Builder(cmp);
-  // The template returns an i32 flag handle (never i1). RAUW the i1 compare
-  // result with this i32 handle — a cross-type RAUW, laundered by erasure
-  // (IMPLEMENTATION §1.2 / risk R2; verified clean on this assertions-OFF
-  // LLVM-19, guarded by the per-fixture `verify` RUN line).
+  // The template returns an i32 flag handle (never i1). Insert before the
+  // caller-chosen point (the uncompute lands after the controlled region),
+  // defaulting to the compare itself (the forward compute). This helper does
+  // NOT RAUW or erase `cmp` — that is `rewriteCompare`'s data-path job; the
+  // control path leaves `cmp` standing until linearization (§1.3).
+  IRBuilder<> Builder(before ? before : cmp);
   CallInst *T = Builder.CreateCall(Callee, {Lhs, Rhs}, "h_cmp");
   if (DebugLoc DL = cmp->getDebugLoc())
     T->setDebugLoc(DL);
-  cmp->replaceAllUsesWith(T);
-  promote(T, cmp, taint);
+  return T;
+}
+
+bool rewriteCompare(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint) {
+  // Data-position path (Phase 3): mint the flag via the shared helper (HL
+  // only — `qqWidth` empty keeps the Q+Q bail), then RAUW the i1 compare
+  // result with the i32 flag handle (a cross-type RAUW, laundered by erasure;
+  // IMPLEMENTATION §1.2 / risk R2, guarded by the per-fixture `verify` RUN
+  // line) and bookkeep. A null flag means the helper diagnosed (unsupported
+  // width / Q+Q) and left the compare standing — the driver must NOT erase it.
+  Value *Flag = lowerCompareToFlag(cmp, wd, taint);
+  if (!Flag)
+    return false;
+  cmp->replaceAllUsesWith(Flag);
+  promote(Flag, cmp, taint);
   return true;
 }
 

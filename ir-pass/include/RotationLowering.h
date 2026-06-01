@@ -26,16 +26,40 @@
 
 #include "llvm/IR/Module.h"
 
+namespace llvm {
+class CallInst;
+class Value;
+}  // namespace llvm
+
 namespace cq {
 
 class WidthDispatch;
 struct TaintSet;
+struct ControlPlan;
 
 // Lowers every `@cq_theta_<sfx>` / `@cq_phi_<sfx>` collected by
 // `propagate` (in `taint.ThetaCalls` / `taint.PhiCalls`), in BB order, and
 // erases the originals. Mutates `taint`: inserts minted alloc handles into
-// `taint.Tainted` and seeds `taint.BirthOrder` for each.
-void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+// `taint.Tainted`, seeds `taint.BirthOrder`, and records each handle's logical
+// ABI width in `taint.HandleWidth` (from the `cq_theta` classical operand,
+// before any RAUW launders it — §5.6). `plan` (may be null) names the
+// in-shadow gate-body `cq_phi` calls: those are skipped here, because the
+// controlled-region orchestrator (`lowerControlledRegions`) lowers them to
+// their `_controlled` variant instead (§1.4).
+void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
+                    const ControlPlan *plan = nullptr);
+
+// Emit the `cq_phi` gate body as a runtime Rz on the i32 `handle`, controlled
+// or uncontrolled (IMPLEMENTATION §5.1/§5.4). Uncontrolled →
+// `cqrt_rz_<W>(handle, angle)`; controlled → `cqrt_rz_<W>_controlled(flag,
+// handle, angle)` with the flag prepended as arg 0 (PRD §1.2, via
+// `ControlledSymbols::controlledRotationFn`). `phi` supplies the width suffix,
+// debug loc, and insertion point; the Rz is inserted before it. Returns true
+// iff the Rz was emitted (false ⇒ unsupported width, diagnosed loudly, `phi`
+// left standing for the verifier). Shared by `lowerRotations` (uncontrolled)
+// and `ControlledSubstitution` (controlled).
+bool emitRz(llvm::CallInst *phi, llvm::Value *handle, llvm::Value *angle,
+            WidthDispatch &wd, bool controlled, llvm::Value *flag);
 
 }  // namespace cq
 

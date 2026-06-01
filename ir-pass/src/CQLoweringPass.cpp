@@ -6,6 +6,8 @@
 
 #include "CQLoweringPass.h"
 
+#include "ControlPlan.h"
+#include "ControlledLowering.h"
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
 #include "RotationLowering.h"
@@ -52,9 +54,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
+  // Detect controlled regions (PURE ANALYSIS) right after propagation, so the
+  // plan's in-shadow set is available to `lowerRotations` (which must skip the
+  // gate-body `cq_phi` calls the controlled orchestrator lowers instead, §1.4).
+  ControlPlan plan = detectControlRegions(M, taint);
+
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
-  lowerRotations(M, wd, taint);
+  lowerRotations(M, wd, taint, &plan);
+  lowerControlledRegions(M, wd, taint, plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
   eraseDeadDecls(M, wd);
@@ -91,7 +99,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.MeasureCalls.empty())
     return false;
 
-  lowerRotations(M, wd, taint);
+  ControlPlan plan = detectControlRegions(M, taint);
+  lowerRotations(M, wd, taint, &plan);
+  lowerControlledRegions(M, wd, taint, plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
   eraseDeadDecls(M, wd);

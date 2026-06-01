@@ -41,8 +41,12 @@
 #ifndef CQ_IRPASS_COMPARE_LOWERING_H_
 #define CQ_IRPASS_COMPARE_LOWERING_H_
 
+#include "llvm/ADT/StringRef.h"
+
 namespace llvm {
 class CmpInst;
+class Instruction;
+class Value;
 }  // namespace llvm
 
 namespace cq {
@@ -66,6 +70,33 @@ bool isDataPositionCompare(llvm::CmpInst *cmp);
 // + `_hl` (no `_lh` compares); Q+Q→diagnosed unsupported. A lowered result is
 // always an i32 flag handle.
 bool rewriteCompare(llvm::CmpInst *cmp, WidthDispatch &wd, TaintSet &taint);
+
+// Mint the compare-template flag for `cmp` WITHOUT touching `cmp` itself
+// (Phase 4 control path; PRD §2.3, IMPLEMENTATION §5.2). Extracted from
+// `rewriteCompare`'s flag-minting guts so the data path and the control path
+// share one symbol/predicate-flip implementation: it classifies operands by
+// taint, applies the literal-on-left predicate flip, and emits the i32 flag
+// call `cq_template_icmp_<pred>_<W>_hl[_inv](handle, classical)` (HL only —
+// there are no `_lh` compares). Returns the i32 flag `Value*`, or nullptr on
+// an unsupported width / unsupported Q+Q (diagnosed loudly, like the data
+// path). Unlike `rewriteCompare` it does NOT RAUW or bookkeep `cmp` — the
+// original compare survives until linearization erases it, keeping the
+// `br i1` well-typed at the WP boundary (§1.3).
+//
+//   * `qqWidth` empty → HL-only (the WP3 / Phase-3 behavior): a Q+Q compare
+//     is unsupported and returns nullptr.
+//   * `qqWidth` set (a Q+Q control condition, PRD §2.4) → emit the HH
+//     template `cq_template_icmp_<pred>_<W>` at that width. (Forward seam for
+//     WP6; unused by WP3.)
+//   * `inverse` → spell the `_inv` twin for the flag UNCOMPUTE (§1.5).
+//
+// The insertion point is `before` when non-null, else immediately before
+// `cmp` (the forward compute). For the uncompute, callers pass the region's
+// post-body insertion point.
+llvm::Value *lowerCompareToFlag(llvm::CmpInst *cmp, WidthDispatch &wd,
+                                TaintSet &taint, llvm::StringRef qqWidth = {},
+                                bool inverse = false,
+                                llvm::Instruction *before = nullptr);
 
 }  // namespace cq
 
