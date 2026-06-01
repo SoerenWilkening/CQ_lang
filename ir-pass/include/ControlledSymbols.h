@@ -66,6 +66,11 @@ public:
   // flag handles. `inverse` selects the uncompute twin `cqrt_toffoli_inv`.
   llvm::FunctionCallee toffoliFn(bool inverse = false) const;
 
+  // Pauli-X gate primitive (the De Morgan `||` bracket, PRD §2.5):
+  // `void cqrt_x(i32 q)`. Width-agnostic — the operand is an i32 flag handle.
+  // Its own inverse (X is an involution), so there is no `_inv` twin.
+  llvm::FunctionCallee xFn() const;
+
 private:
   llvm::Module &M;
   WidthDispatch &Wd;

@@ -51,6 +51,7 @@ add_library(CQPass MODULE
   src/ControlledSubstitution.cpp
   src/ControlledSymbols.cpp
   src/CQLoweringPass.cpp
+  src/FlagConjunction.cpp
   src/MeasureLowering.cpp
   src/MergeDissolution.cpp
   src/OpcodeLowering.cpp

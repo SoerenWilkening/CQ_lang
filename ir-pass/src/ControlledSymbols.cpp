@@ -81,4 +81,14 @@ FunctionCallee ControlledSymbols::toffoliFn(bool inverse) const {
       FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
 }
 
+FunctionCallee ControlledSymbols::xFn() const {
+  // `void cqrt_x(i32 q)`. Width-agnostic; the operand is an i32 flag handle.
+  // X is an involution (its own inverse), so there is no `_inv` twin — the
+  // De Morgan uncompute re-emits the same `cqrt_x`.
+  LLVMContext &Ctx = M.getContext();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      "cqrt_x", FunctionType::get(Type::getVoidTy(Ctx), {I32}, false));
+}
+
 }  // namespace cq

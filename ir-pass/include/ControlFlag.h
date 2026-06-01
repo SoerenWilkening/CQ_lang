@@ -10,16 +10,24 @@
 
 namespace cq {
 
+class ControlledSymbols;
 class WidthDispatch;
 struct TaintSet;
 struct ControlRegion;
 
-// Mint `region.Flag` from `region.Condition`. WP3 uses the HL path (`qqWidth`
-// empty); the Q+Q path (reading `taint.HandleWidth`) is the forward seam for
-// WP6. Returns true on success (flag stored); false if the compare was
-// unsupported (diagnosed by the helper) — the caller then skips the region.
+// Mint `region.Flag` from `region.Condition`.
+//   * Plain compare (`region.Conj == ConjNone`, WP3): the HL path (`qqWidth`
+//     empty); the Q+Q path (reading `taint.HandleWidth`) is the forward seam
+//     for WP6.
+//   * Compound `&&`/`||` (`region.Conj != ConjNone`, WP5): lower `region.CondA`
+//     and `region.CondB` each to its own flag via the same HL path, then
+//     `FlagConjunction::combineFlags` ANDs/ORs them into the single
+//     `region.Flag` (§1.2, PRD §2.5). `csyms` mints `cqrt_alloc_i1` /
+//     `cqrt_toffoli` / `cqrt_x` for the combination.
+// Returns true on success (flag stored); false if any compare/symbol was
+// unsupported (diagnosed) — the caller then skips the region.
 bool lowerControlFlag(ControlRegion &region, WidthDispatch &wd,
-                      TaintSet &taint);
+                      ControlledSymbols &csyms, TaintSet &taint);
 
 }  // namespace cq
 

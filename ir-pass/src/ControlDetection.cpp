@@ -1,23 +1,26 @@
 // ControlDetection.cpp — Pure-analysis recovery of controlled regions from
-// the realized `-O1` control surface (PRD §2.2, IMPLEMENTATION §5.1). WP3
-// recognizes the `br`-diamond + merge-`φ` shape; WP4 adds the classical-arm
-// `select i1` shape; flag conjunctions (WP6) are not built here.
+// the realized `-O1` control surface (PRD §2.2/§2.5/§2.7, IMPLEMENTATION §5.1).
+// WP3 recognizes the `br`-diamond + merge-`φ` shape; WP4 adds the classical-arm
+// `select i1` shape; WP5 adds the `&&`/`||` flag-combination select idiom and
+// the un-flattened nested `if(a){if(b)…}` shape (both fold into the single-flag
+// conjunction model).
 //
 // Detection keys STRICTLY on taint membership of the branch condition (§1.3):
-// a tainted-condition `br i1` over a 2-block diamond is a controlled region;
-// a classical-condition branch has no physical content and is ignored. No IR
-// is mutated — the plan is consumed downstream (`RotationLowering` skips the
-// in-shadow `cq_phi`; `ControlledLowering` lowers the region). The escape
-// guard (ret/measure/out-of-region br in the arm) emits the loud diagnostic
-// and skips the region (PRD §5; structural cousin of the prototype's
-// `computeFreePoint` ret check).
+// a tainted-condition `br i1` over a (possibly nested) diamond is a controlled
+// region; a classical-condition branch has no physical content and is ignored.
+// No IR is mutated — the plan is consumed downstream (`RotationLowering` skips
+// the in-shadow `cq_phi`; `ControlledLowering` lowers the region). The escape
+// guard (ret/measure/out-of-region br in the arm) emits the loud diagnostic and
+// skips the region (PRD §5; cousin of the prototype's `computeFreePoint`).
 
 #include "ControlPlan.h"
 
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
@@ -96,6 +99,50 @@ bool armEscapesOrCollect(BasicBlock *Arm, BasicBlock *MergeBB,
   return false;
 }
 
+// Recognize the `&&`/`||` flag-combination idiom (PRD §2.5): `-O1` spells a
+// short-circuit condition as an `i1`-select over two flags — AND =
+// `select i1 %fa, i1 %fb, i1 false`; OR = `select i1 %fa, i1 true, i1 %fb`.
+// Both sub-conditions are tainted compares (so the select is tainted); it is
+// NOT a data select (an arm is a tainted i1 flag, never a classical value, so
+// WP4's "both arms classical" test already excludes it). On a match, set
+// `A`/`B` to the two sub-compares and `Kind` to the conjunction.
+bool matchFlagConjunction(Value *Cond, TaintSet &taint, Value *&A, Value *&B,
+                          ControlRegion::ConjKind &Kind) {
+  auto *Sel = dyn_cast<SelectInst>(Cond);
+  if (!Sel || !Sel->getType()->isIntegerTy(1))
+    return false;  // a flag conjunction is an i1-typed select.
+
+  Value *C = Sel->getCondition();
+  Value *T = Sel->getTrueValue();
+  Value *F = Sel->getFalseValue();
+  auto *Tc = dyn_cast<ConstantInt>(T);
+  auto *Fc = dyn_cast<ConstantInt>(F);
+
+  // AND: `select i1 %fa, i1 %fb, i1 false` — true arm is a flag, false arm is 0.
+  if (Fc && Fc->isZero() && !Tc) {
+    A = C;
+    B = T;
+    Kind = ControlRegion::ConjAnd;
+  }
+  // OR: `select i1 %fa, i1 true, i1 %fb` — true arm is 1, false arm is a flag.
+  else if (Tc && Tc->isOne() && !Fc) {
+    A = C;
+    B = F;
+    Kind = ControlRegion::ConjOr;
+  } else {
+    return false;
+  }
+
+  // Both sub-conditions must be tainted compares (the physical content). A
+  // classical sub-condition would make this a degenerate select, not a
+  // quantum flag conjunction — leave it for the verifier / passthrough.
+  if (!isa<CmpInst>(A) || !isa<CmpInst>(B))
+    return false;
+  if (!taint.Tainted.count(A) || !taint.Tainted.count(B))
+    return false;
+  return true;
+}
+
 // Recognize a 2-block diamond: a `br i1 %cond, A, B` where exactly one
 // successor is a single-predecessor "arm" that unconditionally branches to the
 // other successor (the "merge"). Sets `Arm`/`MergeBB` and returns true on a
@@ -123,6 +170,56 @@ bool matchDiamond(BranchInst *Br, BasicBlock *&Arm, BasicBlock *&MergeBB) {
       continue;
     Arm = CandArm;
     MergeBB = CandMerge;
+    return true;
+  }
+  return false;
+}
+
+// Recognize an un-flattened nested `if (a) { if (b) gate; }` at the OUTER
+// branch (PRD §2.7). `-O1` keeps two diamonds (vs folding to one range check)
+// when the inner guard can't merge with the outer (distinct operands / an
+// opaque arm). Shape — `Pred -[a]-> {Mid, Merge}`, `Mid -[b]-> {Arm, Merge}`,
+// `Arm -> Merge` (Merge carries a 3-way φ). On a match, fills the nesting
+// anchors + `CondA=a`/`CondB=b` so the region reuses the conjunction flag
+// machinery verbatim (the gate ends up controlled by one `f_both = a ∧ b`,
+// "one Toffoli per level"); linearization later splices `Mid`+`Arm`+`Merge`
+// into `Pred`. The escape guard runs on the innermost `Arm` only — `Mid`'s
+// trailing conditional `br` is the expected inner guard, not an escape, and
+// its non-control body is spliced through.
+bool matchNestedAnd(BranchInst *Br, TaintSet &taint, BasicBlock *&Mid,
+                    BasicBlock *&Arm, BasicBlock *&MergeBB, Value *&CondA,
+                    Value *&CondB, SmallVectorImpl<Instruction *> &Shadow) {
+  BasicBlock *Pred = Br->getParent();
+  for (int i = 0; i < 2; ++i) {
+    BasicBlock *CandMid = Br->getSuccessor(i);     // intermediate inner guard.
+    BasicBlock *CandMerge = Br->getSuccessor(1 - i);  // the common merge.
+    if (CandMid->getSinglePredecessor() != Pred)
+      continue;  // `Mid` must be guarded solely by the outer branch.
+    auto *MidBr = dyn_cast<BranchInst>(CandMid->getTerminator());
+    if (!MidBr || !MidBr->isConditional() ||
+        !taint.Tainted.count(MidBr->getCondition()))
+      continue;  // `Mid` holds a tainted (quantum-guard) inner `br i1`.
+    // One inner successor is the merge; the other is the innermost gate arm.
+    BasicBlock *CandArm = nullptr;
+    for (int j = 0; j < 2; ++j)
+      if (MidBr->getSuccessor(j) == CandMerge &&
+          MidBr->getSuccessor(1 - j) != CandMerge)
+        CandArm = MidBr->getSuccessor(1 - j);
+    if (!CandArm || CandArm->getSinglePredecessor() != CandMid)
+      continue;
+    // The arm is a clean single-pred fall-through to the φ-merge (WP3 diamond).
+    auto *ArmTerm = dyn_cast<BranchInst>(CandArm->getTerminator());
+    if (!ArmTerm || ArmTerm->isConditional() ||
+        ArmTerm->getSuccessor(0) != CandMerge ||
+        !isa<PHINode>(&CandMerge->front()))
+      continue;
+    if (armEscapesOrCollect(CandArm, CandMerge, Shadow))
+      return false;  // diagnosed escape on the innermost arm; not usable.
+    Mid = CandMid;
+    Arm = CandArm;
+    MergeBB = CandMerge;
+    CondA = Br->getCondition();     // outer compare.
+    CondB = MidBr->getCondition();  // inner compare.
     return true;
   }
   return false;
@@ -176,6 +273,33 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       if (!taint.Tainted.count(Br->getCondition()))
         continue;
 
+      // WP5: try the un-flattened NESTED `if(a){if(b)gate;}` shape FIRST (its
+      // outer arm is a conditional `br`, so `matchDiamond` won't accept it).
+      // The inner gate-body diamond must NOT then be re-detected as a separate
+      // flat region — the `InShadow` check below guards that. PRD §2.7.
+      {
+        BasicBlock *Mid = nullptr, *Arm = nullptr, *MergeBB = nullptr;
+        Value *CondA = nullptr, *CondB = nullptr;
+        ControlRegion region;
+        if (matchNestedAnd(Br, taint, Mid, Arm, MergeBB, CondA, CondB,
+                           region.Shadow)) {
+          region.Condition = Br->getCondition();  // the outer compare.
+          region.Kind = ControlRegion::BranchRegion;
+          region.Merge = &MergeBB->front();  // the common merge PHINode.
+          region.Pred = &BB;
+          region.Mid = Mid;
+          region.Arm = Arm;
+          region.MergeBB = MergeBB;
+          region.Conj = ControlRegion::ConjAnd;  // nesting = AND of the guards.
+          region.CondA = CondA;
+          region.CondB = CondB;
+          for (Instruction *S : region.Shadow)
+            plan.InShadow.insert(S);
+          plan.Regions.push_back(std::move(region));
+          continue;  // gate claimed; the inner diamond is now off-limits.
+        }
+      }
+
       BasicBlock *Arm = nullptr;
       BasicBlock *MergeBB = nullptr;
       if (!matchDiamond(Br, Arm, MergeBB))
@@ -186,6 +310,16 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       if (armEscapesOrCollect(Arm, MergeBB, region.Shadow))
         continue;  // diagnosed; region skipped.
 
+      // Skip a diamond whose gate body was already claimed by an enclosing
+      // nested region (the inner level of `if(a){if(b)gate;}`): its ops are in
+      // `plan.InShadow`, and the enclosing region owns the single combined flag.
+      bool AlreadyClaimed = false;
+      for (Instruction *S : region.Shadow)
+        if (plan.InShadow.count(S))
+          AlreadyClaimed = true;
+      if (AlreadyClaimed)
+        continue;
+
       region.Condition = Br->getCondition();
       region.Kind = ControlRegion::BranchRegion;
       region.Merge = &MergeBB->front();  // the merge PHINode.
@@ -193,6 +327,14 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       region.Arm = Arm;
       region.MergeBB = MergeBB;
       region.Depth = 0;
+
+      // WP5: if the branch condition is the `&&`/`||` flag-combination idiom
+      // (PRD §2.5), record the conjunction kind + the two sub-compares so
+      // `ControlFlag`/`FlagConjunction` combine them into one flag. Otherwise
+      // `Conj` stays `ConjNone` and the WP3 plain-compare path is taken
+      // unchanged.
+      matchFlagConjunction(region.Condition, taint, region.CondA, region.CondB,
+                           region.Conj);
 
       for (Instruction *S : region.Shadow)
         plan.InShadow.insert(S);
