@@ -29,8 +29,11 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"  // predecessors
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"  // ArrayType
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -131,6 +134,221 @@ bool tryNormalizeSwitch(SwitchInst *Sw, TaintSet &taint) {
   return true;
 }
 
+// Strip a zext/sext to recover the underlying index value (clang widens the i32
+// table index to i64 for the `getelementptr`). Returns `V` unchanged if it is
+// not such a cast.
+Value *stripIntCast(Value *V) {
+  if (auto *Z = dyn_cast<ZExtInst>(V))
+    return Z->getOperand(0);
+  if (auto *S = dyn_cast<SExtInst>(V))
+    return S->getOperand(0);
+  return V;
+}
+
+// Recognize + rewrite ONE jump-table angle diamond rooted at the conditional
+// branch terminating `Pred` (test_C_libtooling-5zu). The exact `-O1` shape:
+//   Pred:   %idx   = add i32 %q, K            ; (or %idx == %q, K = 0)
+//           %bound = icmp ult i32 %idx, N
+//           br i1 %bound, label %Lookup, label %Merge
+//   Lookup: %z   = zext/sext i32 %idx to i64  ; (optional)
+//           %gep = getelementptr inbounds [N' x T], ptr @G, i64 0, i64 %z
+//           %a   = load T, ptr %gep
+//           br label %Merge
+//   Merge:  %phi = phi T [ %a, %Lookup ], [ %base, %Pred ]   ; bound ? table[idx] : base
+// where `@G` is a constant array of ≥N angle constants and `%q` is a tainted
+// handle. On a match, replace `%phi` with the eq-flag select chain
+// `select([q==i−K], table[i], …select(…, base))` (i ∈ [0,N), constants read at
+// compile time), collapse the diamond (Pred → Merge unconditional, delete
+// Lookup), and erase the dead bound/idx. Returns true if rewritten.
+//
+// The map `q ↦ q+K` is a bijection mod 2³², so the unsigned in-bounds set
+// `{q : (q+K) ∈ [0,N)}` is EXACTLY `{i−K mod 2³² : i ∈ [0,N)}` — the eq-flag
+// constants — and any other `q` falls through to `base`. So the select chain is
+// exact even under wraparound. STRICT recognition (canonical `ult`, 2-index gep
+// with a zero first index, constant global, single 2-incoming φ, tainted
+// scrutinee); any deviation declines, leaving the memory-escape guard to
+// diagnose.
+bool tryNormalizeJumpTableAngle(BranchInst *Br, TaintSet &taint) {
+  if (!Br->isConditional())
+    return false;
+  BasicBlock *Pred = Br->getParent();
+
+  // Bound check: `icmp ult %idx, N` (the in-bounds test); Lookup is the TRUE
+  // (in-bounds) successor, Merge the FALSE (out-of-bounds → base) successor.
+  auto *Bound = dyn_cast<ICmpInst>(Br->getCondition());
+  if (!Bound || Bound->getPredicate() != ICmpInst::ICMP_ULT)
+    return false;
+  auto *NC = dyn_cast<ConstantInt>(Bound->getOperand(1));
+  if (!NC)
+    return false;
+  Value *Idx = Bound->getOperand(0);
+  BasicBlock *Lookup = Br->getSuccessor(0);
+  BasicBlock *Merge = Br->getSuccessor(1);
+  if (Lookup == Merge || Lookup->getSinglePredecessor() != Pred)
+    return false;
+  auto *LBr = dyn_cast<BranchInst>(Lookup->getTerminator());
+  if (!LBr || LBr->isConditional() || LBr->getSuccessor(0) != Merge)
+    return false;
+
+  // The table load: a `load T` from a `getelementptr` into a constant global
+  // array indexed by (a cast of) `%idx`.
+  LoadInst *Load = nullptr;
+  for (Instruction &I : *Lookup)
+    if (auto *LD = dyn_cast<LoadInst>(&I)) {
+      Load = LD;
+      break;
+    }
+  if (!Load)
+    return false;
+  // The load must be plain (no volatile/atomic semantics to preserve) and used
+  // ONLY by the merge φ — otherwise deleting the Lookup arm below would drop a
+  // side effect or strand a live external use of the loaded value (a broken
+  // module). (adversarial review, 2026-06-03.)
+  if (!Load->isSimple() || !Load->hasOneUse())
+    return false;
+  auto *Gep = dyn_cast<GetElementPtrInst>(Load->getPointerOperand());
+  if (!Gep || !Gep->hasOneUse() || Gep->getNumIndices() != 2)
+    return false;  // need `gep [N' x T], ptr, 0, idx` (the canonical array gep).
+  auto *I0 = dyn_cast<ConstantInt>(Gep->getOperand(1));
+  if (!I0 || !I0->isZero())
+    return false;  // first gep index must be 0 (array base).
+  if (stripIntCast(Gep->getOperand(2)) != Idx)
+    return false;  // the element index must be the bounded `%idx`.
+  auto *G = dyn_cast<GlobalVariable>(Gep->getPointerOperand());
+  if (!G || !G->isConstant() || !G->hasInitializer())
+    return false;
+  auto *ArrTy = dyn_cast<ArrayType>(G->getValueType());
+  if (!ArrTy || Gep->getSourceElementType() != ArrTy)
+    return false;
+  Type *ElemTy = ArrTy->getElementType();
+  // ONLY a `double` ANGLE table is in scope (5zu). The CQ rotation surface takes
+  // a `double` angle (`cq_phi_<sfx>(i32, double)` → `cqrt_rz_<W>(i32, double)`)
+  // for EVERY width, so the angle constants must be `double`; an `f32` table
+  // would feed a `float` to the double-typed `cqrt_rz` (a broken module), and a
+  // non-FP table (e.g. `[N x i32]`, clang's lowering of a DATA `switch`) is not a
+  // rotation-angle dispatch at all. Either way decline so the tainted-memory-
+  // escape guard diagnoses it — never mislower or emit a broken module.
+  // (adversarial review, 2026-06-03.)
+  if (!ElemTy->isDoubleTy())
+    return false;
+  uint64_t ArrLen = ArrTy->getNumElements();
+  uint64_t N = NC->getZExtValue();
+  if (N == 0 || N > ArrLen)
+    return false;  // bound out of range — not the canonical table dispatch.
+
+  // The Lookup arm must contain NOTHING but the (optional) index cast, the gep,
+  // the load, and the unconditional terminator — collapsing the diamond DELETES
+  // this block, so any other instruction (a `store`, a `call`, a second load)
+  // would be silently dropped (a miscompile). (adversarial review.)
+  SmallPtrSet<const Instruction *, 4> AllowedInLookup;
+  AllowedInLookup.insert(Gep);
+  AllowedInLookup.insert(Load);
+  AllowedInLookup.insert(LBr);
+  if (auto *Cast = dyn_cast<Instruction>(Gep->getOperand(2)))
+    if (Cast->getParent() == Lookup) {
+      if (!Cast->hasOneUse())
+        return false;  // the cast must feed only the gep.
+      AllowedInLookup.insert(Cast);
+    }
+  for (Instruction &I : *Lookup)
+    if (!AllowedInLookup.count(&I))
+      return false;  // an unexpected (possibly side-effecting) instruction.
+
+  // The scrutinee + affine offset: `%idx == %q` (K=0) or `%idx = add %q, K`.
+  Value *Q = Idx;
+  int64_t K = 0;
+  if (auto *Bin = dyn_cast<BinaryOperator>(Idx)) {
+    if (Bin->getOpcode() != Instruction::Add)
+      return false;
+    auto *KC = dyn_cast<ConstantInt>(Bin->getOperand(1));
+    if (!KC)
+      return false;
+    Q = Bin->getOperand(0);
+    K = KC->getSExtValue();
+  }
+  if (!taint.Tainted.count(Q))
+    return false;  // the scrutinee must be a quantum handle.
+  Type *IdxTy = Q->getType();
+  if (!IdxTy->isIntegerTy())
+    return false;
+
+  // The merge angle `φ`: EXACTLY one φ, 2 incomings `[load, Lookup]` and
+  // `[base, Pred]`, of the table element type. (A multi-φ / handle-reconverging
+  // merge is a different shape — decline.)
+  PHINode *Phi = nullptr;
+  for (PHINode &P : Merge->phis()) {
+    if (Phi)
+      return false;  // more than one φ.
+    Phi = &P;
+  }
+  if (!Phi || Phi->getType() != ElemTy || Phi->getNumIncomingValues() != 2)
+    return false;
+  int Li = Phi->getBasicBlockIndex(Lookup);
+  int Pi = Phi->getBasicBlockIndex(Pred);
+  if (Li < 0 || Pi < 0 || Phi->getIncomingValue(Li) != Load)
+    return false;
+  Value *Base = Phi->getIncomingValue(Pi);
+  // Merge must reconverge ONLY the two diamond edges (no extra predecessor).
+  for (BasicBlock *P : predecessors(Merge))
+    if (P != Pred && P != Lookup)
+      return false;
+  // The dispatched value must feed ONLY rotation ANGLES (`cq_phi` arg 1) — the
+  // angle dispatch this transform targets. An FP `φ` consumed elsewhere is not a
+  // rotation-angle table; decline so the memory-escape guard diagnoses it rather
+  // than rewriting a shape the WP16 angle-chain path will not lower. (Mirrors
+  // detection's `usersAreAngleFeeds`; adversarial review, 2026-06-03.)
+  for (User *U : Phi->users()) {
+    auto *CI = dyn_cast<CallInst>(U);
+    if (!CI)
+      return false;
+    const Function *Cal = CI->getCalledFunction();
+    if (!Cal || !Cal->getName().starts_with("cq_phi_"))
+      return false;
+    if (CI->arg_size() < 2 || CI->getArgOperand(1) != Phi ||
+        CI->getArgOperand(0) == Phi)
+      return false;
+  }
+
+  // Read the N table constants at compile time.
+  Constant *Init = G->getInitializer();
+  SmallVector<Constant *, 8> Angles;
+  for (uint64_t i = 0; i < N; ++i) {
+    Constant *C = Init->getAggregateElement((unsigned)i);
+    if (!C || C->getType() != ElemTy)
+      return false;  // non-constant / type-mismatched entry — decline.
+    Angles.push_back(C);
+  }
+
+  // ── Rewrite. Build the eq-flag select chain in `Merge` (co-located with the
+  // φ's consumers, so the WP16 angle-chain detection's single-block invariant
+  // holds), replace the φ, then collapse the diamond. ──
+  IRBuilder<> B(Merge->getFirstNonPHI());
+  Value *Acc = Base;
+  for (uint64_t i = 0; i < N; ++i) {
+    // q == i − K (truncated to the scrutinee width — matches the unsigned
+    // in-bounds q for table index i, even under add wraparound).
+    Constant *EqVal = ConstantInt::get(IdxTy, (uint64_t)((int64_t)i - K));
+    Value *Flag = B.CreateICmpEQ(Q, EqVal, "jt_eq");
+    taint.Tainted.insert(Flag);  // a tainted-condition select for detection.
+    Acc = B.CreateSelect(Flag, Angles[i], Acc, "jt_sel");
+  }
+  Phi->replaceAllUsesWith(Acc);
+  Phi->eraseFromParent();
+
+  // Collapse: Pred → Merge unconditionally; delete the (now predecessor-less)
+  // Lookup arm, which erases the dead gep/load/cast with it.
+  Br->eraseFromParent();
+  BranchInst::Create(Merge, Pred);
+  DeleteDeadBlock(Lookup);
+  // Erase the now-dead bound + affine index in Pred.
+  if (Bound->use_empty())
+    Bound->eraseFromParent();
+  if (auto *IdxI = dyn_cast<Instruction>(Idx))
+    if (IdxI->use_empty())
+      IdxI->eraseFromParent();
+  return true;
+}
+
 }  // namespace
 
 void normalizeTaintedSwitches(Module &M, TaintSet &taint) {
@@ -146,6 +364,24 @@ void normalizeTaintedSwitches(Module &M, TaintSet &taint) {
           Candidates.push_back(Sw);
     for (SwitchInst *Sw : Candidates)
       tryNormalizeSwitch(Sw, taint);
+  }
+}
+
+void normalizeJumpTableAngle(Module &M, TaintSet &taint) {
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    // Collect candidate conditional branches first (rewriting mutates the CFG).
+    // A jump-table angle diamond is rooted at a tainted-bound conditional `br`
+    // (the bound `icmp ult %idx, N` is tainted because `%idx` derives from the
+    // quantum scrutinee).
+    SmallVector<BranchInst *, 4> Candidates;
+    for (BasicBlock &BB : F)
+      if (auto *Br = dyn_cast<BranchInst>(BB.getTerminator()))
+        if (Br->isConditional() && taint.Tainted.count(Br->getCondition()))
+          Candidates.push_back(Br);
+    for (BranchInst *Br : Candidates)
+      tryNormalizeJumpTableAngle(Br, taint);
   }
 }
 

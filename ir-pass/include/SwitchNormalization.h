@@ -35,6 +35,23 @@ struct TaintSet;
 // the value-merge shape are left untouched for the WP12 diagnostic.
 void normalizeTaintedSwitches(llvm::Module &M, TaintSet &taint);
 
+// Phase 4.x (test_C_libtooling-5zu): rewrite the `-O1` JUMP-TABLE lowering of a
+// tainted angle `switch`/`if-else-if` into the same eq-flag angle-select chain
+// the WP16 path lowers. `clang` may lower `a = (idx<N) ? table[idx] : base`
+// (idx = q + K, `@table` a constant array of N angle constants) to a bound-check
+// diamond + `getelementptr`/`load` indexed by the quantum scrutinee — which the
+// tainted-memory-escape guard otherwise (correctly) diagnoses. This normalizer
+// recognizes that exact shape and replaces the merge `φ` with
+// `base + Σ_i [q == i−K]·(table[i] − base)` spelled as a nested `select` chain
+// (the table constants read at compile time), then collapses the diamond and
+// deletes the now-dead `gep`/`load`/bound — so detection sees a clean
+// `AngleSelectRegion` chain and `reduceAngleSelectChain` lowers it with NO new
+// lowering code and NO memory addressing on a handle. Runs after `propagate`
+// (and `normalizeTaintedSwitches`) and before `detectControlRegions`. A shape it
+// declines is left untouched — the tainted-memory-escape guard remains the
+// safety fallback.
+void normalizeJumpTableAngle(llvm::Module &M, TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_SWITCH_NORMALIZATION_H_

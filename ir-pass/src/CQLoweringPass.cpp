@@ -60,6 +60,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // select-mux path lowers it. Declined (gated/sparse) switches stay for the
   // WP12 diagnostic in `detectControlRegions`.
   normalizeTaintedSwitches(M, taint);
+  // Phase 4.x (test_C_libtooling-5zu): rewrite the `-O1` jump-table lowering of
+  // a tainted angle switch into the WP16 eq-flag angle-select chain BEFORE the
+  // tainted-memory-escape guard in detection — so the `gep`/`load` are gone and
+  // the chain lowers with no handle-indexed memory access.
+  normalizeJumpTableAngle(M, taint);
 
   // Detect controlled regions (PURE ANALYSIS) right after propagation, so the
   // plan's in-shadow set is available to `lowerRotations` (which must skip the
@@ -107,6 +112,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     return false;
 
   normalizeTaintedSwitches(M, taint);
+  // Phase 4.x (test_C_libtooling-5zu): rewrite the `-O1` jump-table lowering of
+  // a tainted angle switch into the WP16 eq-flag angle-select chain BEFORE the
+  // tainted-memory-escape guard in detection — so the `gep`/`load` are gone and
+  // the chain lowers with no handle-indexed memory access.
+  normalizeJumpTableAngle(M, taint);
   ControlPlan plan = detectControlRegions(M, taint);
   lowerRotations(M, wd, taint, &plan);
   lowerControlledRegions(M, wd, taint, plan);
