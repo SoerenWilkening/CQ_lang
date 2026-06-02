@@ -15,6 +15,7 @@
 
 #include "ControlPlan.h"
 
+#include "OpcodeSupport.h"  // abiWidthFromType
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/SmallVector.h"
@@ -355,7 +356,22 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         // back to its `br i1 %and, …` carrier (the WP5 path) untouched.
         if (Sel->getType()->isIntegerTy(1))
           continue;
-        // Every non-i1 tainted-condition select builds a SelectRegion. The
+        // WP9 (Family B1): a tainted-condition select whose value type is not an
+        // integer HANDLE width is a rotation-angle (or other non-handle) choice
+        // sunk under quantum control — `-O1` folds `if(q){rz(u,a);}else{rz(u,b);}`
+        // into `rz(u, select(cmp, a, b))` over the classical `double` angle. The
+        // value type is `double` (a valid f64 ABI width, so `abiWidthFromType`
+        // alone does NOT reject it), never an i32/i64 handle. `dissolveSelect`
+        // would emit an integer `sub`/`add` on that fp value → broken module.
+        // Diagnose loudly and skip (WP10 lowers it as controlled-rotation-by-
+        // difference). The check mirrors the `-mux-diag` precedent.
+        if (!Sel->getType()->isIntegerTy() ||
+            abiWidthFromType(Sel->getType()).empty()) {
+          diagnoseEscape(Sel, "rotation angle");
+          continue;
+        }
+        // Every non-i1, integer-handle-width tainted-condition select builds a
+        // SelectRegion. The
         // arm-taint discriminator — neither tainted ([classical, classical],
         // WP4) / exactly one tainted (mixed mux, mux.1) / both tainted (data
         // mux, mux.2) — is re-derived from `taint` in `dissolveSelect`, which
