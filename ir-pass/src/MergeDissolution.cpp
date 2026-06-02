@@ -202,17 +202,33 @@ void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
   Value *A = Sel->getTrueValue();   // flag=1 arm.
   Value *B = Sel->getFalseValue();  // flag=0 arm.
 
-  // Width is the ABI width of the select's value type (e.g. i32). The two arms
-  // share that type (a well-formed select), so reading it off A is exact.
-  StringRef AbiWidth = abiWidthFromType(A->getType());
-  if (AbiWidth.empty())
-    return;  // unsupported value width; leave it well-typed for the verifier.
-
   // Arm-taint discriminator. Detection builds a SelectRegion for every non-i1
   // tainted-condition select; here we split on arm taint into the three
   // reductions (neither / exactly one / both).
   const bool TrueTainted = taint.Tainted.count(A) != 0;
   const bool FalseTainted = taint.Tainted.count(B) != 0;
+
+  // WP11 (Family F): the LOGICAL handle width. A tainted arm that is a DIRECT
+  // `cq_theta` result has been laundered to an i32 handle (handles are always
+  // i32, PRD §"Width unification"), so its LLVM type (i32) is NOT the logical
+  // width — read the §2.4 `HandleWidth` side-table recorded at the rotation
+  // mint. Fall back to the arm's LLVM type only for a tainted arm that is still
+  // a pre-lowering stock op (its real width survives) or a genuinely classical
+  // arm. Both arms share the logical width in a well-formed mux, so a tainted
+  // arm's recorded width is authoritative. Without this, an i64 both-tainted
+  // mux of direct theta handles reads i32 off the laundered type and emits
+  // `cqrt_alloc_i32` + `add_i32_controlled` for i64 data — a silent
+  // width-collapse miscompile (Phase 4.2 i32 muxes are unaffected: their arms
+  // are i32 arithmetic ops, not laundered handles, so the fallback returns i32).
+  StringRef AbiWidth;
+  if (TrueTainted)
+    AbiWidth = taint.HandleWidth.lookup(A);
+  if (AbiWidth.empty() && FalseTainted)
+    AbiWidth = taint.HandleWidth.lookup(B);
+  if (AbiWidth.empty())
+    AbiWidth = abiWidthFromType(A->getType());
+  if (AbiWidth.empty())
+    return;  // missing/unsupported width (risk R3); leave it for the verifier.
 
   FunctionCallee Alloc = wd.allocFn(AbiWidth);
   if (!Alloc)
@@ -285,9 +301,11 @@ void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
     if (!AddQQ || !X)
       return;  // unsupported width — leave the select standing (verify-clean).
 
-    // Fresh ancilla seeded to 0. The alloc takes the classical init value at the
-    // select's value width; 0 of that integer type matches allocFn's parameter.
-    Value *Zero = ConstantInt::get(A->getType(), 0);
+    // Fresh ancilla seeded to 0. The alloc's init value carries the LOGICAL
+    // width (i64 for an i64 mux), NOT the laundered arm type (i32) — take the
+    // zero's type straight from `allocFn`'s parameter so it matches (WP11).
+    Type *InitTy = Alloc.getFunctionType()->getParamType(0);
+    Value *Zero = ConstantInt::get(InitTy, 0);
     CallInst *RegOut = Builder.CreateCall(Alloc, {Zero}, "h");
 
     // regOut += flag·A.
