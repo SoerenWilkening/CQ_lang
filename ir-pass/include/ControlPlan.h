@@ -144,6 +144,16 @@ struct ControlRegion {
   // (above). Empty for every non-switch region.
   llvm::SmallVector<SwitchArm, 4> SwitchArms;
 
+  // WP18 follow-on (test_C_libtooling-509): the switch's DEFAULT edge goes
+  // STRAIGHT to the merge (an empty `default:`), so there is NO distinct default
+  // block — `clang -O1` routes `switch …, label %merge [ … ]`. When true, `Arm`
+  // is null (no default gate body / nothing to splice) and the default angle
+  // base rides the `Pred` (switch-block) φ edge instead of an `Arm` edge; the
+  // default control is implicit (no case matched ⇒ no gate, the unconditional
+  // base angle), so `lowerGatedSwitch` skips the ¬OR default substitution and
+  // the OR-fold entirely. False for a distinct default block (gated or empty).
+  bool SwitchDefaultDirect = false;
+
   // The single gate arm is the FALSE successor of the `br i1 cond, S0, S1` (i.e.
   // `Arm == S1`), so it is taken when `cond` is FALSE and its gates fire on
   // ¬flag, not flag. `clang` produces this whenever it swaps the branch targets

@@ -587,16 +587,24 @@ Instruction *reduceAngleSwitchPhi(ControlRegion &region,
   // already-tainted handle and uses per-case flags (no single `region.Flag` to
   // stamp on `taint.ControlFlag`), so nothing new is registered here.
   (void)taint;
-  if (region.AnglePhi.empty() || !region.Arm)
+  if (region.AnglePhi.empty())
     return nullptr;
   if (CaseFlags.size() != region.SwitchArms.size())
     return nullptr;  // flag/arm count mismatch (malformed); leave for verifier.
+
+  // The default (base) angle rides the default φ edge: a distinct default block
+  // (`region.Arm`), or — for an empty `default:` routed straight to the merge
+  // (test_C_libtooling-509) — the switch block itself (`region.Pred`).
+  BasicBlock *DefaultEdge =
+      region.SwitchDefaultDirect ? region.Pred : region.Arm;
+  if (!DefaultEdge)
+    return nullptr;
 
   SmallVector<Instruction *, 4> ToErase;
   for (PHINode *P : region.AnglePhi) {
     if (!P)
       continue;
-    int Di = P->getBasicBlockIndex(region.Arm);  // the default (base) edge.
+    int Di = P->getBasicBlockIndex(DefaultEdge);  // the default (base) edge.
     if (Di < 0)
       continue;  // no default edge; leave the φ for the verifier.
     Value *Base = P->getIncomingValue(Di);

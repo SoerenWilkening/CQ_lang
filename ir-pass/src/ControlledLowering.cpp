@@ -225,7 +225,9 @@ void linearizeSwitch(ControlRegion &region, SwitchInst *Sw) {
   if (!Pred || !Merge)
     return;
   SmallVector<BasicBlock *, 4> Arms;
-  Arms.push_back(region.Arm);  // the default arm.
+  if (region.Arm)
+    Arms.push_back(region.Arm);  // the default arm (null for a direct-to-merge
+                                 // empty default — nothing to splice/erase).
   for (SwitchArm &A : region.SwitchArms)
     Arms.push_back(A.Block);
 
@@ -279,24 +281,31 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
 
   // 2. OR-fold for the default control: orAcc = f_1 ∨ … ∨ f_n. `OrFlags[j]`
   //    combines its running predecessor with `Flags[j+1]` (recorded for the
-  //    mirror-image uncompute).
-  Value *OrAcc = Flags[0];
+  //    mirror-image uncompute). Needed ONLY when the default arm has a gate body
+  //    to control on ¬OR; an empty / direct-to-merge default (test_C_libtooling-
+  //    509) has no default gate, so the "no case matched" outcome is just the
+  //    absence of any case gate — skip the OR-fold ancillas entirely.
+  const bool HasDefaultGate = !region.Shadow.empty();
+  Value *OrAcc = HasDefaultGate ? Flags[0] : nullptr;
   SmallVector<Value *, 4> OrFlags;
-  for (unsigned k = 1; k < Flags.size(); ++k) {
-    Value *NewOr =
-        combineFlags(OrAcc, Flags[k], ControlRegion::ConjOr, csyms, wd, Sw);
-    if (!NewOr)
-      return;  // unsupported symbol (diagnosed); leave for the verifier.
-    OrFlags.push_back(NewOr);
-    OrAcc = NewOr;
-  }
+  if (HasDefaultGate)
+    for (unsigned k = 1; k < Flags.size(); ++k) {
+      Value *NewOr =
+          combineFlags(OrAcc, Flags[k], ControlRegion::ConjOr, csyms, wd, Sw);
+      if (!NewOr)
+        return;  // unsupported symbol (diagnosed); leave for the verifier.
+      OrFlags.push_back(NewOr);
+      OrAcc = NewOr;
+    }
 
-  // 3. Control each case arm on its eq-flag; the default arm on ¬OrAcc (the
-  //    self-inverse `cqrt_x` bracket — fires when NO case matched).
+  // 3. Control each case arm on its eq-flag; the default arm (when it has a gate
+  //    body) on ¬OrAcc (the self-inverse `cqrt_x` bracket — fires when NO case
+  //    matched). A direct-to-merge / empty default has no gate to substitute.
   for (unsigned k = 0; k < region.SwitchArms.size(); ++k)
     substituteArm(region.SwitchArms[k].Shadow, Flags[k], /*Negate=*/false,
                   region.SwitchArms[k].Block, wd, taint);
-  substituteArm(region.Shadow, OrAcc, /*Negate=*/true, region.Arm, wd, taint);
+  if (HasDefaultGate)
+    substituteArm(region.Shadow, OrAcc, /*Negate=*/true, region.Arm, wd, taint);
 
   // 4. Dissolve the N-way merge φ(s): the arm gates mutated the handle IN PLACE,
   //    so post-substitution every incoming is the in-place handle. RAUW to a

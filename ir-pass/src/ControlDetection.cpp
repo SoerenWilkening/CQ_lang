@@ -570,23 +570,49 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
   if (Sw->getNumCases() == 0)
     return false;  // degenerate (no cases) — not the gated shape.
 
-  // Structure: default + every (distinct) case arm reconverges on one merge.
+  // Structure: every (distinct) CASE arm reconverges on one common merge. The
+  // merge is recovered from the case arms (not the default) so the default can
+  // be either a distinct reconverging block OR an empty `default:` routed
+  // straight to the merge (test_C_libtooling-509).
   SmallPtrSet<BasicBlock *, 8> ArmBlocks;
-  BasicBlock *Merge = gatedArmTarget(Default, SwBB);
-  if (!Merge)
-    return false;
-  ArmBlocks.insert(Default);
+  BasicBlock *Merge = nullptr;
   for (auto Case : Sw->cases()) {
     BasicBlock *CB = Case.getCaseSuccessor();
-    if (gatedArmTarget(CB, SwBB) != Merge)
-      return false;  // an arm does not reconverge on the common merge.
+    BasicBlock *M = gatedArmTarget(CB, SwBB);
+    if (!M)
+      return false;  // a case arm does not cleanly reconverge.
+    if (!Merge)
+      Merge = M;
+    else if (Merge != M)
+      return false;  // case arms disagree on the merge.
     if (!ArmBlocks.insert(CB).second)
-      return false;  // a shared arm block (duplicate target) — decline.
+      return false;  // a shared arm block (duplicate target) — decline (future).
   }
+  if (!Merge)
+    return false;
+
+  // Classify the default edge against that merge:
+  //   * empty `default:` routed STRAIGHT to the merge (`Default == Merge`) — no
+  //     default block; the default control is implicit (no case matched ⇒ the
+  //     unconditional base), and the merge gains a `Pred`(switch-block) edge.
+  //   * a distinct default block reconverging on the merge (the original WP18
+  //     shape) — rides `Arm`/`Shadow`, controlled on the ¬OR flag.
+  // Anything else (default elsewhere, or a distinct block not reconverging) is
+  // declined for the WP12 diagnostic.
+  bool DefaultDirect = false;
+  if (Default == Merge) {
+    DefaultDirect = true;
+  } else {
+    if (gatedArmTarget(Default, SwBB) != Merge)
+      return false;  // default neither direct-to-merge nor reconverging.
+    if (!ArmBlocks.insert(Default).second)
+      return false;  // default block shared with a case arm — decline.
+  }
+
   if (!isa<PHINode>(&Merge->front()))
     return false;  // no value merge → not the gated value-reconverging shape.
   for (BasicBlock *Pred : predecessors(Merge))
-    if (!ArmBlocks.count(Pred))
+    if (!ArmBlocks.count(Pred) && !(DefaultDirect && Pred == SwBB))
       return false;  // an extra (non-arm) merge predecessor.
 
   // A classical-FP merge `φ` is a rotation angle dispatched by the switch under
@@ -616,7 +642,10 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
   region.Pred = SwBB;
   region.MergeBB = Merge;
   region.Merge = &Merge->front();  // the N-way merge φ.
-  region.Arm = Default;            // the default arm rides Arm/Shadow.
+  // Default arm: a distinct block rides `Arm`/`Shadow`; an empty direct-to-merge
+  // default has NO block (`Arm` stays null) and no gate shadow.
+  region.SwitchDefaultDirect = DefaultDirect;
+  region.Arm = DefaultDirect ? nullptr : Default;
   for (PHINode *P : AnglePhis)
     region.AnglePhi.push_back(P);
   for (Instruction *C : AngleCons) {
@@ -626,8 +655,9 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
 
   // Escape-guard + shadow-collect each arm (PRD §5). An arm with a `ret`,
   // measurement, or out-of-region branch is the quantum-controlled escape
-  // (WP17) — diagnosed, no region.
-  if (armEscapesOrCollect(Default, Merge, region.Shadow))
+  // (WP17) — diagnosed, no region. The direct-to-merge default has no block to
+  // guard (its control is the implicit "no case matched", no gate body).
+  if (!DefaultDirect && armEscapesOrCollect(Default, Merge, region.Shadow))
     return true;  // diagnosed.
   for (auto Case : Sw->cases()) {
     SwitchArm arm;
