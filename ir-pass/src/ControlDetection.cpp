@@ -107,6 +107,56 @@ bool isCleanAngleSelect(SelectInst *Sel,
   return true;
 }
 
+// Fix (test_C_libtooling-cwk): does the diamond merge `MergeBB` carry a CLASSICAL
+// `φ` that the merge-dissolution reduction cannot lower? Such a `φ` is the
+// `br`-diamond analog of the `select i1 c, double a, double b` rotation-angle
+// choice `isCleanAngleSelect` handles — a classical value (a rotation ANGLE, or
+// any other non-handle value) chosen under quantum control. The SELECT form is
+// lowered as controlled-rotation-by-difference (WP10/WP16); the diamond form is
+// NOT yet routed there, so `dissolveBranchPhi` falls into its `reduceClassicalMux`
+// path. That reduction only handles a width `abiWidthFromType` accepts — and for
+// a `double` it WRONGLY accepts the f64 DATA width, emitting `cqrt_alloc_f64` +
+// `cq_template_add_f64_hl_controlled` and rewriting the rotation's `double` angle
+// operand to an i32 handle (a broken/wrong lowering; it also emits an integer
+// `sub` on `double` operands). For any OTHER unsupported type (a `<2 x double>`
+// vector, an `i128`/odd-width integer, a pointer) it returns null, leaving the
+// `φ` standing until linearization erases the arm blocks → a dangling `φ` ("PHI
+// nodes not grouped" broken module). Either way the region must never be built.
+//
+// The discriminator MIRRORS the select-form B1 guard (`!isIntegerTy() ||
+// abiWidthFromType(...).empty()`, the `Sel->getType()` test below): it rejects
+// any classical `φ` whose type is non-integer (FP scalar/vector, pointer, …) OR
+// an integer of an unsupported ABI width, while LEAVING the legitimate WP4/WP7
+// integer-data mux (`i1`/`i8`/`i16`/`i32`/`i64`, non-empty `abiWidthFromType`)
+// to lower normally. A plain `isFloatingPointTy()` test would be strictly weaker
+// — it is scalar-only (misses `<2 x double>`) and ignores the unsupported-integer
+// and pointer cases — so this matches the actual reduction hazard, not just f64.
+//
+// Diagnosed on the same "rotation angle under quantum control" surface as the
+// select-form guard (which uses that message for any non-handle classical value
+// under control, rotation-fed or not). Returns the offending `φ` (its `!dbg`
+// source-locates the rejection) or null. A tainted value reaching the reduction
+// is an i32 handle, so the no-tainted-incoming check leaves the genuine
+// gate-handle / data-mux φ to `dissolveBranchPhi`; this fires only on a wholly
+// classical, unlowerable merge value (until the diamond-form difference lowering
+// lands — fix (b), the cwk follow-on).
+PHINode *unlowerableClassicalMergePhi(BasicBlock *MergeBB, TaintSet &taint) {
+  for (PHINode &P : MergeBB->phis()) {
+    // Supported integer-data width (the WP4/WP7 classical mux) → lowerable; skip.
+    if (P.getType()->isIntegerTy() && !abiWidthFromType(P.getType()).empty())
+      continue;
+    bool AnyTainted = false;
+    for (Value *In : P.incoming_values())
+      if (taint.Tainted.count(In)) {
+        AnyTainted = true;
+        break;
+      }
+    if (!AnyTainted)
+      return &P;  // a wholly-classical φ the reduction cannot lower.
+  }
+  return nullptr;
+}
+
 // Safety guard (Phase 4.1 spike, `-aht.3`): a tainted value used to compute a
 // memory ADDRESS — a `getelementptr` base/index, or a `load`/`store` pointer —
 // or stored to memory is UNSUPPORTED and would otherwise SILENTLY MISCOMPILE.
@@ -482,7 +532,8 @@ BasicBlock *gatedArmTarget(BasicBlock *Arm, BasicBlock *SwBB) {
 // on the ¬OR flag — lowered by `lowerGatedSwitch`). Returns true if HANDLED
 // (region built OR an arm escape was diagnosed); false if the shape does not
 // match (the caller fires the WP12 `switch` diagnostic as the fallback).
-bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan) {
+bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
+                               TaintSet &taint) {
   BasicBlock *SwBB = Sw->getParent();
   BasicBlock *Default = Sw->getDefaultDest();
   if (Sw->getNumCases() == 0)
@@ -506,6 +557,20 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan) {
   for (BasicBlock *Pred : predecessors(Merge))
     if (!ArmBlocks.count(Pred))
       return false;  // an extra (non-arm) merge predecessor.
+
+  // A classical-FP merge `φ` is a rotation angle (or other classical double)
+  // dispatched by the switch under quantum control — the `SwitchRegion` analog
+  // of the `br`-diamond cwk hole. `lowerGatedSwitch` dissolves only TAINTED
+  // (handle) φ; a classical-double φ is left undissolved, then the switch is
+  // linearized away, leaving the φ with no live predecessors (a broken module,
+  // "PHI nodes not grouped"). No diamond-form angle dispatch is lowerable yet
+  // (the cwk follow-on), so diagnose it on the same "rotation angle" surface and
+  // OWN the diagnostic (return true) so the caller does not also fire the WP12
+  // `switch` fallback.
+  if (PHINode *BadPhi = unlowerableClassicalMergePhi(Merge, taint)) {
+    diagnoseEscape(BadPhi, "rotation angle");
+    return true;  // diagnosed.
+  }
 
   // Structure matches: from here this function OWNS the diagnostic (returns true
   // even on an arm escape, so the caller does not also fire the WP12 fallback).
@@ -665,7 +730,7 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
           // diagnoses an arm escape); otherwise the WP12 fallback fires. The
           // value-merge `switch` was already rewritten away by WP15
           // (`normalizeTaintedSwitches`) before detection.
-          if (!tryBuildGatedSwitchRegion(Sw, plan))
+          if (!tryBuildGatedSwitchRegion(Sw, plan, taint))
             diagnoseEscape(Sw, "switch");
         }
         continue;
@@ -689,6 +754,12 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         ControlRegion region;
         if (matchNestedAnd(Br, taint, Mid, Arm, MergeBB, CondA, CondB,
                            region.Shadow)) {
+          // A classical-FP φ on the nested-AND merge is a diamond-form angle
+          // under quantum control (cwk) — diagnose, don't build the region.
+          if (PHINode *BadPhi = unlowerableClassicalMergePhi(MergeBB, taint)) {
+            diagnoseEscape(BadPhi, "rotation angle");
+            continue;
+          }
           region.Condition = Br->getCondition();  // the outer compare.
           region.Kind = ControlRegion::BranchRegion;
           region.Merge = &MergeBB->front();  // the common merge PHINode.
@@ -734,6 +805,13 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
               AlreadyClaimed = true;
           if (AlreadyClaimed)
             continue;
+
+          // Reject a classical-FP merge `φ` (diamond-form angle-under-control,
+          // cwk) before building — same guard as the one-content-arm diamond.
+          if (PHINode *BadPhi = unlowerableClassicalMergePhi(SymMerge, taint)) {
+            diagnoseEscape(BadPhi, "rotation angle");
+            continue;
+          }
 
           region.Condition = Br->getCondition();
           region.Kind = ControlRegion::BranchRegion;
@@ -785,6 +863,14 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
           AlreadyClaimed = true;
       if (AlreadyClaimed)
         continue;
+
+      // A classical-FP merge `φ` is a rotation angle (or other classical double)
+      // chosen under quantum control via the diamond form — not yet lowerable,
+      // and `dissolveBranchPhi` would miscompile it (cwk). Diagnose, don't build.
+      if (PHINode *BadPhi = unlowerableClassicalMergePhi(MergeBB, taint)) {
+        diagnoseEscape(BadPhi, "rotation angle");
+        continue;
+      }
 
       region.Condition = Br->getCondition();
       region.Kind = ControlRegion::BranchRegion;
