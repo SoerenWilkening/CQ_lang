@@ -107,8 +107,20 @@ target what survives, not the source braces. The catalog:
 | `if / else if / else` | nested `select`s | **Phase 4** — composed 2.6 |
 | `if(q) y = f(q); else y = C;` (one handle arm) | `select i1 cmp, hq, C` | **Phase 4.2** (`-mux.1`) — HH-controlled-add reduction |
 | `if(q) y = hp; else y = hq;` (both handle arms) | `select i1 cmp, hp, hq` | **Phase 4.2** (`-mux.2`) — `alloc(0)` + 2 controlled adds |
-| `switch(q)` | real `switch` + N-way φ | **Phase 4.1** (`-aht.1`) |
+| `switch(q)` | real `switch` + N-way φ | **Phase 4.1** (`-aht.1` / Family E) |
 | `if(q) return …;` / `break` / measure-in-arm | `br` + φ with **escape** in an arm | **Phase 4.1** (`-aht.2`) |
+| `if(q){ g(u); g(v); }` (≥2 gated handles) | `br` diamond + **N φ** at merge | **Phase 4.3** (Family A) — *broke core* |
+| `if(q){ y = …; g(u); }` (data **and** gate in one arm) | `br` diamond + data-φ + gate-φ | **Phase 4.3** (Family A) — *broke core* |
+| `if(q){ g(u); } else { g(v); }` (gates in both arms) | symmetric two-content-arm `br` diamond | **Phase 4.3** (Family C) — *broke core* |
+| `if(q){ rz(u,a); } else { rz(u,b); }` (differ by angle) | `rz(u, select(cmp, a, b))` — **angle select** | **Phase 4.3** (Family B) — *broke core* |
+
+> **⚠ This catalog was incomplete (corrected 2026-06-02).** The last four
+> rows were added after a post-landing audit (§7) found Phase 4 core
+> crashes or silently miscompiles on them; the `[DONE]` marking is
+> reopened. The audit also reclassified the `switch` row: `-O1` only keeps
+> a real `switch` for side-effecting/sparse arms (dense constant arms fold
+> to `select`s the pass already lowers), and the filed `-lowerswitch`
+> default is **not** free — see §7, Family E.
 
 The first row is the key reconciliation: `if (q) y += k` is **already
 correct** under Phase 3 as `y + flag·k` — adding the flag register to `y`
@@ -175,7 +187,11 @@ taint of its two arms:
 - **`[modified, original]`** — a controlled gate already mutated the
   register in place (e.g. `φ [rotated_y, y]`): RAUW the merge to the
   in-place handle; emit no merge value. This is the common `br`-diamond
-  case.
+  case. **Correction (2026-06-02):** as implemented this dissolved only
+  the *single front* φ (`region.Merge = &MergeBB->front()`), assuming one
+  gated handle per region. A merge with ≥2 φ (≥2 gated handles, or a data
+  assignment alongside a gate) leaks the rest and crashes — Family A (§7),
+  the audit's largest defect. Dissolution must iterate **every** merge φ.
 - **`[classical, classical]`** — constant *or* runtime classical
   variable: `y = B + flag·(A−B)`. Emit a **host** classical `sub`
   (`%d = A − B`, stays a plain LLVM instruction) and one
@@ -347,8 +363,14 @@ block. Dissolve the φ **before** erasing, so no use dangles; the result is
   silently passed through** (beads
   [`test_C_libtooling-mux-diag`](../../../.beads/issues.jsonl)).
 - **Tainted `switch`** — Phase 4.1, beads
-  [`test_C_libtooling-aht.1`](../../../.beads/issues.jsonl) (default:
-  pre-run stock `-lowerswitch`).
+  [`test_C_libtooling-aht.1`](../../../.beads/issues.jsonl). **Update
+  (2026-06-02):** the "pre-run stock `-lowerswitch`" default is **not**
+  free — `-lowerswitch` emits a balanced pivot *tree* (`icmp slt`/`eq` +
+  `br` with shared multi-pred merges) the pass currently crashes on. It
+  becomes viable only after Phase 4.3 Families A + C + a closed-diamond
+  guard land. The surviving `switch` silently miscompiles today (branches
+  on the quantum handle id), so Phase 4.3 adds a **diagnostic guard**
+  (Family D) while the lowering stays here. See §7, Families D + E.
 - **Quantum-controlled escape** — `return`/`break`/`goto`/measure inside a
   tainted-branch arm. Phase 4 emits the loud diagnostic only; the
   reject-vs-`-fcq-measurement-bridge` decision is Phase 4.1, beads
@@ -398,3 +420,153 @@ block. Dissolve the φ **before** erasing, so no use dangles; the result is
   a use of the φ or an arm value still dangles. Mitigation: dissolve the φ
   first, then erase; collection-before-mutation (Phase 3 discipline);
   `opt -verify` gate.
+
+---
+
+## 7. Phase 4.3 — realized-`-O1` control-shape completeness (post-landing audit, 2026-06-02)
+
+**Why this section exists.** Phase 4 core (WP0–WP6) was marked `[DONE]`
+against the §2.1 catalog — but that catalog was compiled from a *narrow*
+set of `if` probes. A follow-up exhaustive sweep — **44** representative
+quantum-`if` shapes compiled at real `clang -O1`, each run through the
+pass, and **each failure adversarially re-verified from scratch** with its
+root cause pinned to `file:line` — found the catalog materially
+incomplete:
+
+| audit verdict | count | meaning |
+|---|---|---|
+| ✅ lowered | 14 | the happy paths Phase 4 core actually covers |
+| 🔴 crash | 21 | broken-module / LLVM verifier abort |
+| ⚠️ silent miscompile | 7 | **valid IR that links, runs, and returns garbage** |
+| 🟡 clean diagnostic | 2 | the only escapes that work (`return`/`measure`) |
+
+**28 of 44 ordinary `if`-shapes are mis-handled, all confirmed real.**
+Phase 4 core handles only the single-gated-handle, classical-arm,
+single-φ happy paths. The `[DONE]` marking is **reopened**: Phase 4 is
+feature-complete on its happy paths but not on the realized `-O1` `if`
+menu. The failures cluster into **six root-cause families**; each has a
+verified cause and a fix decision below. (The sweep's confirmation went
+both ways — it also *corrected* probe attributions, e.g. the `break`
+crash is loop+multi-φ, not flag-conjunction; and the `lowerswitch`+gate
+case is a segfault, not the milder miscompile first claimed.)
+
+### 7.1 The six families
+
+**Family A — multi-φ merge dissolution (the keystone).**
+*Cause:* detection records `region.Merge = &MergeBB->front()`
+(`ControlDetection.cpp:407`; `:363` for nested-AND) — a single
+`Instruction*` — and `dissolveBranchPhi` (`MergeDissolution.cpp:68`)
+dissolves only that one φ. A merge with ≥2 φ leaks the rest, which CFG
+linearization (`CFGLinearization.cpp:56`) splices mid-block →
+`PHI nodes not grouped at top of basic block` broken module (or, depending
+on φ order, a verify-clean **wrong** module).
+*Hits:* ≥2 gated handles in one arm; a data assignment **and** a gate in
+one arm (every mixed-arm shape); multi-handle arms under `&&`/`||`;
+`goto`-reshaped escapes. **~15 crashes + 2 silent miscompiles — the
+largest family.**
+*Fix:* dissolve **every** φ in the merge block by its `region.Pred`-edge
+incoming value; drop the single-merge-φ assumption (`ControlRegion::Merge`
+becomes a set / the dissolver iterates `MergeBB->phis()`). One contained
+change clears the majority of the audit's failures. **Sequence first.**
+
+**Family B — angle-select misclassification (a gate sunk to its classical
+rotation parameter).**
+*Cause:* the SelectRegion admission gate (`ControlDetection.cpp:323`)
+excludes only `i1`-typed selects; it admits floating-point (and non-handle
+integer) selects as data muxes. When `-O1` sinks
+`if(q){rz(u,a);}else{rz(u,b);}` into `rz(u, select(cmp, a, b))`, the select
+is over the **classical `double` angle**, and `dissolveSelect` emits a
+controlled-add onto an allocated handle → type-mismatch crash (or a silent
+miscompile when the angle is computed branchlessly).
+*Hits:* symmetric-by-angle `if/else`; chained angle muxes; the
+dense-`switch` self-fold.
+*Decision (confirmed 2026-06-02): **diagnose-first, then lower.***
+- **B1** — add an fp / non-handle guard to the SelectRegion gate so the
+  shape is loudly diagnosed instead of mis-lowered (mirrors the
+  `-mux-diag` precedent).
+- **B2** — lower correctly as **controlled-rotation-by-difference**:
+  `Rz(b)` unconditional, then `ctrl-Rz(a−b)` on the flag — valid because
+  Ry/Rz are angle-additive (`Rz(b + f·(a−b)) = Rz(b)·ctrl_f Rz(a−b)`).
+- plus a taint-discipline fix: the angle operand (arg 1) of
+  `cq_theta`/`cq_phi` is a classical scalar and must never enter the
+  quantum-handle taint set.
+
+**Family C — symmetric (two-content-arm) diamond.**
+*Cause:* `matchDiamond` (`ControlDetection.cpp:208-233`) accepts only a
+*one*-content-arm diamond (one arm has content; the sibling **is** the
+merge). A symmetric `if(q){g}else{g}` where both arms hold gates and both
+fall through to a common merge matches nothing → it falls to
+`branchEscapes`, which (arms reconverge, no `ret`/measure) treats it as
+"benign control flow we do not lower" → gates lowered **uncontrolled**, a
+residual `br i1` on the quantum handle survives. **Silent miscompile.**
+*Fix:* `matchDiamond` must accept the symmetric shape — both successors
+single-pred, both branching to a common merge `M` carrying φ(s).
+
+**Family D — tainted `switch` (no `SwitchInst` handling at all).**
+*Cause:* detection only does `dyn_cast<BranchInst>`
+(`ControlDetection.cpp:343`); `grep -rn Switch ir-pass/src` returns zero.
+A `switch(q)` surviving `-O1` branches on the quantum **handle id**; the
+pass leaves it untouched and lowers arm gates uncontrolled. **Silent
+miscompile.**
+*Fix (this phase, safety only):* detect a tainted-scrutinee `SwitchInst`
+→ emit the loud diagnostic. The *lowering* stays deferred to Phase 4.1
+(Family E). Cheap; kills the silent miscompile.
+
+**Family E — `-lowerswitch` pivot tree mis-handled → Phase 4.1.**
+*Finding:* the filed Phase 4.1 default ("pre-run stock `-lowerswitch`") is
+**not** a free ride. `-lowerswitch` lowers a tainted switch into a
+balanced pivot **tree** of `icmp slt`/`icmp eq` + conditional `br` with
+**shared multi-pred** φ-merges. `matchDiamond` accepts a shared multi-pred
+merge as a diamond merge; linearization then frees a still-referenced
+block → crash; nested range-compare arms aren't recognized → swallowed.
+*Implication:* doing `if` first is a **hard dependency** for switch, not a
+priority — switch-via-`lowerswitch` becomes viable only after Families A +
+C land, and even then Phase 4.1 must add a **closed-diamond guard**
+(`matchDiamond`: require the merge have exactly two preds — `Pred` and
+`Arm`) and re-verify the pivot-tree path. Budget a *small dedicated*
+switch follow-up; do not assume free.
+
+**Family F — mux width-collapse at i64 (a latent Phase 4.2 bug).**
+*Cause:* `dissolveSelect` reads the reduction width from
+`abiWidthFromType(A->getType())` (`MergeDissolution.cpp:115`); for a
+both-tainted mux whose arms are direct `cq_theta_sll` (i64) results
+laundered to i32 handles, it reads **i32**, emitting `cqrt_alloc_i32` +
+`cq_template_add_i32_controlled` to accumulate i64 data — silent
+width-collapse. (Phase 4.2 i32 muxes are unaffected.)
+*Fix:* recover the logical width from the `taint.HandleWidth` side-table
+(§2.4) for tainted arms, not from the SSA arm type.
+
+### 7.2 Re-scoped sequence
+
+| order | family | severity | fix | owner phase |
+|---|---|---|---|---|
+| 1 | **A** multi-φ dissolution | 🔴 ~15 crash + 2 silent | iterate every merge φ | **4.3** (keystone) |
+| 2 | **C** symmetric diamond | ⚠️ silent | accept two-content-arm common-merge diamond | **4.3** |
+| 3 | **B1** angle-select diagnostic | 🔴/⚠️ | fp/non-handle guard on SelectRegion → diagnose | **4.3** |
+| 4 | **B2** angle-select lowering | (B1) | controlled-rotation-by-difference + angle taint-discipline | **4.3** |
+| 5 | **F** mux i64 width | ⚠️ silent | width from `HandleWidth`, not arm type | **4.3** (reopens 4.2) |
+| 6 | **D** switch diagnostic guard | ⚠️ silent | diagnose tainted `SwitchInst` | **4.3** (safety) |
+| — | **E** switch lowering | 🔴/⚠️ | `-lowerswitch` + closed-diamond guard, re-verify | **4.1** (depends on A+C) |
+
+The safety layer (B1, D) and the keystone (A) land first — they convert
+every crash/silent-miscompile into either a correct lowering or a loud
+diagnostic, so no shape miscompiles silently after Phase 4.3 begins.
+
+### 7.3 Scope split vs Phase 4.1 / 4.2
+
+- **Phase 4.3 (new) — `if` completeness:** Families A, C, B (diagnose +
+  lower), F; plus the Family D `switch` *diagnostic guard* (safety only).
+- **Phase 4.1 (re-informed) — `switch` + escape lowering:** Family E
+  (`switch` via `-lowerswitch` + closed-diamond guard, with re-verify) and
+  the escape reject-vs-`-fcq-measurement-bridge` decision (`-aht.2`),
+  which now also covers the `goto`/`break` escapes that currently crash
+  through Family A.
+- **Phase 4.2 — mux:** landed, reopened only for Family F (i64 width).
+
+**Audit method (reproducible).** 8-category fan-out over the `if`-shape
+space; per shape: `clang -I<inc> -include CQ.h -O1 -emit-llvm` →
+`opt -load-pass-plugin libCQPass.so -passes=cq-lowering` →
+`opt -passes=verify`; each crash/silent-miscompile re-derived and
+confirmed by an independent adversarial verifier. The rubric treats a
+verify-clean module that still carries a `switch`/`br i1` on a quantum
+handle as a **silent miscompile**, not a pass.

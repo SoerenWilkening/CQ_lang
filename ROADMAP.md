@@ -328,7 +328,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — IR pass: controlled-form lowering [DONE]
+## Phase 4 — IR pass: controlled-form lowering [DONE (happy paths) · completeness → Phase 4.3]
 
 **Design:** see [`docs/prd/phase-04-controlled-form/PRD.md`](docs/prd/phase-04-controlled-form/PRD.md).
 
@@ -436,6 +436,20 @@ Two `-O1` shapes remain Phase 4.1 (epic
 this epic diagnoses the escape loudly; Phase 4.1 decides reject vs.
 `-fcq-measurement-bridge` ([`-aht.2`](.beads/issues.jsonl)) — and tainted
 `switch` + N-way φ ([`-aht.1`](.beads/issues.jsonl)).
+
+**⚠ Completeness reopened — Phase 4.3 (post-landing audit, 2026-06-02).**
+The `[DONE]` above is for the **happy paths**. An exhaustive sweep of 44
+`-O1` `if`-shapes found **28 mis-handled** (21 crashes, 7 silent
+miscompiles), all adversarially verified — Phase 4 core covers only
+single-gated-handle / classical-arm / single-φ. Six root-cause families
+(A–F); the `if`-completeness subset (multi-φ dissolution *keystone*,
+symmetric diamond, angle-select diagnose→lower, mux i64 width, switch
+diagnostic guard) is epic
+[`test_C_libtooling-u6v`](.beads/issues.jsonl); Family E (`switch`
+lowering — `-lowerswitch` is **not** free) stays Phase 4.1, re-informed.
+Design + plan:
+[`PRD.md §7`](docs/prd/phase-04-controlled-form/PRD.md) +
+[`IMPLEMENTATION.md §12`](docs/prd/phase-04-controlled-form/IMPLEMENTATION.md).
 
 ---
 

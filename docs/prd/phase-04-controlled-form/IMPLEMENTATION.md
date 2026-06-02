@@ -832,3 +832,193 @@ choice survives between sessions.
   `HandleWidth` + `ControlFlag` (written/read across `RotationLowering` /
   `ControlFlag` / `OpcodeLowering`). Keeps `TaintSet` narrow and the
   Phase-4-only region data off the shared struct.
+
+---
+
+## 12. Phase 4.3 work packages — control-shape completeness (post-landing audit)
+
+Phase 4 core (WP0–WP6) green-lit the happy paths, but the 2026-06-02 audit
+(PRD §7) found **28 of 44** ordinary `if`-shapes crash or silently
+miscompile, in **six root-cause families**. These WPs close the realized
+`-O1` `if` menu. Each is small and independent except where noted; every
+WP keeps `ir-pass-lit` green and every prior fixture byte-identical
+(collection-before-mutation + standing `verify`, §1.6). RED fixtures are
+hand-authored from **real `clang -O1` output** of the audit shapes, same
+as WP3–WP6.
+
+**Invariant for this phase:** *no shape may silently miscompile after a WP
+lands.* Every change converts a crash/silent-miscompile into either a
+correct lowering or a loud `DiagnosticInfoUnsupported`. WP9 (B1) and WP15
+(D) are order-independent safety guards — pull either forward if a
+"zero-silent-miscompile at every commit" bisection property is wanted.
+
+### WP7 — Family A: multi-φ merge dissolution (the keystone)
+
+A tainted diamond whose merge carries **≥2 φ** — ≥2 gated handles
+(`if(q){u=g(u); v=g(v);}`), or a data assignment alongside a gate
+(`if(q){y=5; u=g(u);}`) — leaks every φ past the first and crashes
+(`PHI nodes not grouped`) or, by φ order, silently miscompiles. Single
+biggest win: clears ~15 crashes + 2 silent miscompiles, and unblocks the
+`goto` escape.
+
+- **RED.** `lowering_control_multigate_i32.ll` (`br` diamond, arm with two
+  `cq_phi` on distinct handles → 2 merge φ) and
+  `lowering_control_mixed_arm_i32.ll` (arm with one `cq_phi` **and** a
+  classical `y = 5` → a gate-handle φ + a classical-data φ). Both abort the
+  pass today → RED.
+- **GREEN.**
+  - **`ControlPlan` / `ControlRegion`** — stop assuming one merge φ.
+    `region.Merge = &MergeBB->front()` (`ControlDetection.cpp:407`, `:363`)
+    becomes either a `SmallVector<PHINode*>` of all merge φ, or — simpler —
+    keep `MergeBB` and have the dissolver iterate it (D4 carrier already
+    holds `MergeBB`).
+  - **`MergeDissolution::dissolveBranchPhi`** — iterate
+    `for (PHINode &P : make_early_inc_range(MergeBB->phis()))`; for **each**
+    φ take its `region.Pred`-edge incoming value (`getBasicBlockIndex(Pred)`)
+    and RAUW→erase, exactly as the single-φ path. A `[mod,orig]` φ (gate
+    handle) RAUWs to its in-place handle; a `[classical,classical]` φ that
+    rode along in the same arm reduces via the existing §5.5 host-difference
+    path (a mixed multi-φ merge dissolves each φ by its own arm-taint class).
+  - **`CFGLinearization`** — unchanged: it already splices after dissolution;
+    with all φ gone the `PHI nodes not grouped` abort cannot arise.
+- **Files:** `MergeDissolution.cpp`, `ControlPlan.h`/`ControlDetection.cpp`
+  (carrier), the two fixtures.
+- **Done:** both fixtures green (every controlled gate emitted, all φ gone,
+  one block, `verify`-clean); `compound-and-or` multi-handle + `goto`
+  escape shapes from the audit now lower or diagnose; full lit green.
+
+### WP8 — Family C: symmetric (two-content-arm) diamond
+
+`if(q){u=g(u);} else {v=g(v);}` keeps a `br` diamond where **both**
+successors hold content and fall through to a common merge — `matchDiamond`
+(one-content-arm only) rejects it, `branchEscapes` deems it benign, and the
+gates lower **uncontrolled** with a residual `br i1` on the handle. Silent
+miscompile.
+
+- **RED.** `lowering_control_ifelse_sym_i32.ll` (`br i1` → `A:{g(u)}`,
+  `B:{g(v)}`, both `→ merge` with φ(s)). Today: residual `br`, uncontrolled
+  gates → RED (negative check: no residual `br i1` on a handle).
+- **GREEN.** `matchDiamond` (`ControlDetection.cpp:208-233`) gains the
+  symmetric case: `Pred -[tainted br]-> {A, B}` where A and B are **both**
+  single-pred blocks whose unconditional terminators target a **common**
+  third block `Merge` carrying φ(s). Emit a region whose `Shadow` is the
+  union of both arms' gates; the true arm's gates are controlled on `flag`,
+  the false arm's on `¬flag` (the §2.5 `cqrt_x` LIFO bracket, reused). φ
+  dissolution is WP7's multi-φ path. Composes with WP7 (a symmetric diamond
+  with multi-handle arms is just more φ).
+- **Files:** `ControlDetection.cpp` (matcher + region build),
+  `ControlledSubstitution.cpp` (¬flag arm bracket), the fixture.
+- **Done:** symmetric `if/else` lowers to controlled gates on both arms
+  (flag / ¬flag), no residual `br`, `verify`-clean.
+
+### WP9 — Family B1: angle-select diagnostic (diagnose-first)
+
+`-O1` sinks `if(q){rz(u,a);}else{rz(u,b);}` into
+`rz(u, select(cmp, a, b))` — a tainted-condition select over the
+**classical `double` angle**. The SelectRegion gate (admits any non-`i1`
+type) mis-lowers it as a data mux → type-mismatch crash. Diagnose first
+(mirrors `-mux-diag`); WP10 lowers it.
+
+- **RED.** `lowering_control_angle_select.ll` (`select i1 %c, double a,
+  double b` feeding `cq_phi`'s angle arg) → currently crashes; becomes a
+  **negative** fixture asserting the loud diagnostic.
+- **GREEN.** In the SelectRegion admission gate (`ControlDetection.cpp:323`),
+  alongside the `isIntegerTy(1)` exclusion, also exclude a select whose
+  value type is **not an integer handle width** (`!Sel->getType()->isIntegerTy()`
+  or `abiWidthFromType` empty) — a floating-point / parameter select is a
+  rotation-angle choice, not a register mux. On that shape emit
+  `diagnoseEscape`-style `DiagnosticInfoUnsupported`
+  ("rotation angle under quantum control") and skip.
+- **Files:** `ControlDetection.cpp`, the negative fixture.
+- **Done:** angle-select diagnoses loudly instead of crashing; no data-mux
+  symbol emitted for an fp select.
+
+### WP10 — Family B2: angle-select → controlled-rotation-by-difference
+
+Replace WP9's diagnostic with the correct lowering. `rz(u, cmp?a:b)` =
+`Rz(b)` unconditional then `ctrl_cmp Rz(a−b)` — valid because Ry/Rz are
+angle-additive (`Rz(b + f·(a−b)) = Rz(b)·ctrl_f Rz(a−b)`). Generalizes to
+the N-way angle φ (the `-lowerswitch`/nested-mux angle case).
+
+- **RED.** `lowering_control_angle_rotdiff.ll` (the WP9 shape) → now a
+  **positive** fixture: expect `cqrt_rz_<W>(u, b)` + `cqrt_rz_<W>_controlled(flag, u, a−b)`.
+- **GREEN.**
+  - **Taint discipline** — exclude the angle operand (arg index 1) of
+    `cq_theta`/`cq_phi` from taint propagation, so an angle-derived `select`
+    is never marked a quantum-data value.
+  - **A new angle-select reduction** (in `MergeDissolution` or a sibling):
+    when a tainted-condition select feeds **only** rotation-angle operands,
+    emit the unconditional base rotation `Rz(b)` and a controlled difference
+    rotation `ctrl Rz(a−b)` on the flag (host `sub a−b` for constants;
+    template `sub` for runtime). For an N-way angle φ, chain one controlled
+    difference per distinct angle (LIFO-bracketed flags).
+  - Lift the WP9 diagnostic for the lowerable case; keep it for any
+    angle-select that is **not** a clean rotation-parameter feed.
+- **Files:** `TaintPropagation.cpp` (angle-arg exclusion),
+  `MergeDissolution.cpp`/new reduction, `RotationLowering.cpp` (emit base +
+  controlled-difference), the fixture.
+- **Done:** symmetric-by-angle `if/else` lowers to base + controlled-diff
+  rotations; trace-equivalent to the braced controlled rotation;
+  `verify`-clean.
+
+### WP11 — Family F: mux i64 width-collapse fix (reopens Phase 4.2)
+
+A both-tainted mux whose arms are direct `cq_theta_sll` (i64) results
+laundered to i32 handles makes `dissolveSelect` read width off
+`A->getType()` = **i32**, emitting `cqrt_alloc_i32` + i32 controlled adds
+for i64 data. Silent width-collapse.
+
+- **RED.** `lowering_control_mux_handles_i64.ll` (mux.2 at i64) — asserts
+  `cqrt_alloc_i64` + `cq_template_add_i64_controlled`; today emits the i32
+  forms → RED.
+- **GREEN.** In `dissolveSelect` (`MergeDissolution.cpp:115`), for the
+  tainted-arm paths (mux.1 / mux.2) recover the logical width from
+  `taint.HandleWidth[A]` (the §2.4 side-table, recorded at the rotation/alloc
+  mint), falling back to `abiWidthFromType` only for a genuinely classical
+  arm. Trap on a missing width (risk R3 discipline).
+- **Files:** `MergeDissolution.cpp`, the i64 fixture.
+- **Done:** i64 mux emits i64 alloc/add; i32 mux fixtures byte-identical.
+
+### WP12 — Family D: tainted-`switch` diagnostic guard (safety only)
+
+A `switch(q)` surviving `-O1` (side-effecting / sparse arms) branches on
+the quantum **handle id** and silently miscompiles — detection only
+`dyn_cast<BranchInst>`. The *lowering* stays Phase 4.1 (Family E,
+`-lowerswitch` + closed-diamond guard); this WP just stops the silent
+miscompile.
+
+- **RED.** `lowering_control_switch.ll` (`switch i32 %q [...]` on a tainted
+  scrutinee) → **negative** fixture asserting the diagnostic.
+- **GREEN.** In `detectControlRegions`, after the `BranchInst` handling
+  (`ControlDetection.cpp:343`), add
+  `if (auto *Sw = dyn_cast<SwitchInst>(BB.getTerminator()))` — if
+  `taint.Tainted.count(Sw->getCondition())`, emit the loud
+  `DiagnosticInfoUnsupported` ("switch under quantum control"). No lowering.
+- **Files:** `ControlDetection.cpp`, the negative fixture.
+- **Done:** tainted `switch` diagnoses loudly; classical-scrutinee `switch`
+  untouched.
+
+### 12.1 Sequencing
+
+| order | WP | family | RED→GREEN | gate |
+|---|---|---|---|---|
+| 1 | WP7 | A multi-φ | +multigate/mixed-arm green | `verify`-clean; ~15 crashes cleared |
+| 2 | WP8 | C symmetric | +`if/else`-both-arms green | no residual `br` on handle |
+| 3 | WP9 | B1 angle diag | crash→diagnostic | negative fixture |
+| 4 | WP10 | B2 angle lower | diagnostic→base+ctrl-diff | trace-equiv |
+| 5 | WP11 | F mux i64 | +i64 mux green | i32 byte-identical |
+| 6 | WP12 | D switch diag | miscompile→diagnostic | negative fixture |
+
+Family E (`switch` lowering) is **not** in this phase — it depends on WP7 +
+WP8 + a closed-diamond guard in `matchDiamond` and gets its own Phase 4.1
+follow-up with a re-verified `-lowerswitch` path (PRD §7, Family E). On
+Phase 4.3 close, reopen the §2.1 catalog rows and re-run the audit sweep to
+confirm the 28 broken shapes are green-or-diagnosed.
+
+### 12.2 Risks (additive to §9)
+
+| id | risk | mitigation |
+|---|---|---|
+| R8 | **Multi-φ dissolution mis-pairs an arm.** A mixed gate-φ + data-φ merge dissolves each φ by the wrong arm-taint class. | Classify *per φ* by `taint.Tainted` of its incoming values + `region.Shadow` (R2 discipline), not once per region; one fixture per φ-mix (gate+gate, gate+classical). |
+| R9 | **Angle taint-discipline over-prunes.** Excluding arg-1 of `cq_theta`/`cq_phi` from taint accidentally declassifies a genuinely quantum value used elsewhere. | The angle is a `double` scalar parameter, never a handle; exclude only the **operand-use at arg 1**, not the SSA value globally; `verify` + the existing rotation fixtures guard regressions. |
+| R10 | **Symmetric-diamond ¬flag bracket leaks.** The false-arm `cqrt_x` flag bracket is not balanced LIFO with the true arm. | Reuse the §2.5/§2.9 LIFO bracket machinery verbatim; nested-symmetric fixture asserts compute/uncompute order. |
