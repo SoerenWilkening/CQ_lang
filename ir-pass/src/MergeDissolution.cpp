@@ -116,7 +116,13 @@ CallInst *reduceClassicalMux(Value *A, Value *B, Value *Flag,
 void dissolveBranchPhi(ControlRegion &region, WidthDispatch &wd,
                        ControlledSymbols &csyms, TaintSet &taint) {
   BasicBlock *MergeBB = region.MergeBB;
-  if (!MergeBB || !region.Pred)
+  // The "in-place" merge edge. For a one-content-arm diamond it is `region.Pred`
+  // (the unmodified fall-through). For a WP8 symmetric two-content-arm diamond
+  // `Pred` is NOT a merge predecessor (both arms are) — key on the TRUE arm
+  // edge instead; post-substitution both arm edges carry the same in-place
+  // handle, so either works and the true-arm edge is canonical.
+  BasicBlock *InPlaceEdge = region.ArmFalse ? region.Arm : region.Pred;
+  if (!MergeBB || !InPlaceEdge)
     return;
 
   // Stable insertion anchor for any classical-data reduction: the merge's first
@@ -126,7 +132,7 @@ void dissolveBranchPhi(ControlRegion &region, WidthDispatch &wd,
   Instruction *InsertPt = MergeBB->getFirstNonPHI();
 
   for (PHINode &P : make_early_inc_range(MergeBB->phis())) {
-    int PredIdx = P.getBasicBlockIndex(region.Pred);
+    int PredIdx = P.getBasicBlockIndex(InPlaceEdge);
     if (PredIdx < 0)
       continue;  // not wired through this diamond's Pred edge; leave it.
     Value *InPlace = P.getIncomingValue(PredIdx);

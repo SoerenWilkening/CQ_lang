@@ -232,6 +232,39 @@ bool matchDiamond(BranchInst *Br, BasicBlock *&Arm, BasicBlock *&MergeBB) {
   return false;
 }
 
+// Recognize a SYMMETRIC two-content-arm diamond (WP8, Family C, PRD §7):
+// `Pred -[tainted br]-> {ArmT, ArmF}` where BOTH successors are single-pred
+// content arms that unconditionally fall through to a COMMON third merge block
+// `M` carrying φ(s). `if(q){u=g(u);}else{v=g(v);}` lowers this way at `-O1`.
+// Distinct from `matchDiamond` (one-content-arm: the sibling successor IS the
+// merge, so the merge has two preds and fails the single-pred arm test here).
+// On a match the TRUE successor is `ArmT`, the FALSE `ArmF`. `matchDiamond` is
+// tried first, so by the time this runs the one-content-arm shape is excluded.
+bool matchSymmetricDiamond(BranchInst *Br, BasicBlock *&ArmT, BasicBlock *&ArmF,
+                           BasicBlock *&MergeBB) {
+  BasicBlock *Pred = Br->getParent();
+  BasicBlock *S0 = Br->getSuccessor(0);  // true arm
+  BasicBlock *S1 = Br->getSuccessor(1);  // false arm
+  // Both arms must be guarded solely by this branch.
+  if (S0->getSinglePredecessor() != Pred || S1->getSinglePredecessor() != Pred)
+    return false;
+  auto *T0 = dyn_cast<BranchInst>(S0->getTerminator());
+  auto *T1 = dyn_cast<BranchInst>(S1->getTerminator());
+  if (!T0 || T0->isConditional() || !T1 || T1->isConditional())
+    return false;  // each arm must unconditionally fall through.
+  BasicBlock *M = T0->getSuccessor(0);
+  if (M != T1->getSuccessor(0))
+    return false;  // both arms must reconverge to the SAME merge.
+  if (M == S0 || M == S1)
+    return false;  // a degenerate self-loop, not a forward diamond.
+  if (!isa<PHINode>(&M->front()))
+    return false;  // the merge must carry the SSA merge φ(s) we dissolve.
+  ArmT = S0;
+  ArmF = S1;
+  MergeBB = M;
+  return true;
+}
+
 // Recognize an un-flattened nested `if (a) { if (b) gate; }` at the OUTER
 // branch (PRD §2.7). `-O1` keeps two diamonds (vs folding to one range check)
 // when the inner guard can't merge with the outer (distinct operands / an
@@ -378,6 +411,51 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       BasicBlock *Arm = nullptr;
       BasicBlock *MergeBB = nullptr;
       if (!matchDiamond(Br, Arm, MergeBB)) {
+        // WP8 (Family C): try the SYMMETRIC two-content-arm diamond before
+        // declaring escape. Both arms hold gates and fall through to a common
+        // merge; the true arm is controlled on the flag, the false arm on
+        // ¬flag (the §2.5 `cqrt_x` bracket). φ dissolution is WP7's multi-φ
+        // path keyed on the true-arm edge.
+        BasicBlock *ArmT = nullptr, *ArmF = nullptr, *SymMerge = nullptr;
+        if (matchSymmetricDiamond(Br, ArmT, ArmF, SymMerge)) {
+          ControlRegion region;
+          // Escape-guard + shadow-collect BOTH arms (PRD §5).
+          if (armEscapesOrCollect(ArmT, SymMerge, region.Shadow))
+            continue;  // diagnosed; region skipped.
+          if (armEscapesOrCollect(ArmF, SymMerge, region.ShadowFalse))
+            continue;  // diagnosed; region skipped.
+          // Skip if either arm's body was already claimed by an enclosing
+          // nested region (defensive; symmetric arms are normally fresh).
+          bool AlreadyClaimed = false;
+          for (Instruction *S : region.Shadow)
+            if (plan.InShadow.count(S))
+              AlreadyClaimed = true;
+          for (Instruction *S : region.ShadowFalse)
+            if (plan.InShadow.count(S))
+              AlreadyClaimed = true;
+          if (AlreadyClaimed)
+            continue;
+
+          region.Condition = Br->getCondition();
+          region.Kind = ControlRegion::BranchRegion;
+          region.Merge = &SymMerge->front();
+          region.Pred = &BB;
+          region.Arm = ArmT;        // true arm (flag).
+          region.ArmFalse = ArmF;   // false arm (¬flag).
+          region.MergeBB = SymMerge;
+          region.Depth = 0;
+          // A symmetric diamond may still be guarded by an `&&`/`||` flag
+          // conjunction; record it so the flag machinery combines the
+          // sub-compares (no-op for a plain compare).
+          matchFlagConjunction(region.Condition, taint, region.CondA,
+                               region.CondB, region.Conj);
+          for (Instruction *S : region.Shadow)
+            plan.InShadow.insert(S);
+          for (Instruction *S : region.ShadowFalse)
+            plan.InShadow.insert(S);
+          plan.Regions.push_back(std::move(region));
+          continue;
+        }
         // No controllable shape (diamond/select/nested-AND/conjunction). If a
         // guarded arm ESCAPES (`ret`/`measure`/out-of-region) instead of
         // reconverging, this is "return/measure under quantum control" (PRD

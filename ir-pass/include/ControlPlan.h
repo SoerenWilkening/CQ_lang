@@ -74,6 +74,8 @@ struct ControlRegion {
 
   // In-shadow gate-body ops (the `then`-arm `cq_phi` calls), in program
   // order. `ControlledSubstitution` lowers each to its `_controlled` variant.
+  // For a symmetric two-content-arm diamond (WP8) this holds the TRUE arm's
+  // gates (controlled on `flag`); `ShadowFalse` holds the FALSE arm's.
   llvm::SmallVector<llvm::Instruction *, 4> Shadow;
 
   // br-sourced CFG anchors (null for a select region). `Pred` holds the
@@ -82,6 +84,17 @@ struct ControlRegion {
   llvm::BasicBlock *Pred = nullptr;
   llvm::BasicBlock *Arm = nullptr;
   llvm::BasicBlock *MergeBB = nullptr;
+
+  // WP8 (Family C) symmetric two-content-arm diamond: `if(q){A}else{B}` where
+  // BOTH successors hold content and fall through to a common merge. `Arm` is
+  // the TRUE arm (gates controlled on `flag`); `ArmFalse` is the FALSE arm
+  // (gates controlled on `¬flag` via the §2.5 `cqrt_x` LIFO bracket), and
+  // `ShadowFalse` its gate bodies. Null/empty for the one-content-arm diamond
+  // (WP3) and select/nested shapes. When `ArmFalse` is set the merge `φ`
+  // dissolves by the `Arm`-edge incoming (the merge's predecessors are the two
+  // arms, not `Pred`), and linearization splices BOTH arms into `Pred`.
+  llvm::BasicBlock *ArmFalse = nullptr;
+  llvm::SmallVector<llvm::Instruction *, 4> ShadowFalse;
   // Nested-AND intermediate guard block (WP5, PRD §2.7): for the un-flattened
   // `if (a) { if (b) gate; }` shape, `Pred -[a]-> {Mid, Merge}`,
   // `Mid -[b]-> {Arm, Merge}`, `Arm -> Merge`. `Mid` holds the inner compare

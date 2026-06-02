@@ -5,24 +5,45 @@
 #include "ControlledSubstitution.h"
 
 #include "ControlPlan.h"
-#include "RotationLowering.h"  // emitRz
+#include "ControlledSymbols.h"  // xFn (¬flag bracket)
+#include "RotationLowering.h"   // emitRz
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
 using namespace llvm;
 
 namespace cq {
 
-void substituteControlled(ControlRegion &region, WidthDispatch &wd,
-                          TaintSet &taint) {
-  Value *Flag = region.Flag;
-  if (!Flag)
-    return;  // ControlFlag failed/wasn't run; nothing safe to substitute.
+namespace {
+
+// Substitute one arm's in-shadow `cq_phi` gate bodies with their controlled
+// `cqrt_rz_<W>_controlled(flag, handle, angle)` forms. When `Negate` (the WP8
+// false arm), wrap the whole arm in a self-inverse `cqrt_x` flag bracket so the
+// gates fire on ¬flag: `X(flag)` before the first gate, the controlled gates,
+// then `X(flag)` before the arm's terminator. The pair is self-inverse, so the
+// flag is restored for the standard compare-uncompute downstream (§2.5/§2.9).
+void substituteArm(ArrayRef<Instruction *> Shadow, Value *Flag, bool Negate,
+                   BasicBlock *ArmBlock, WidthDispatch &wd, TaintSet &taint) {
+  if (Shadow.empty())
+    return;
+
+  FunctionCallee X;
+  if (Negate) {
+    ControlledSymbols csyms(*ArmBlock->getModule(), wd);
+    X = csyms.xFn();
+    if (!X)
+      return;  // unsupported — leave the gates for the verifier.
+    // Leading `X(flag)` before the first gate body.
+    IRBuilder<> B(Shadow.front());
+    B.CreateCall(X, {Flag});
+  }
 
   SmallVector<Instruction *, 4> ToErase;
-  for (Instruction *S : region.Shadow) {
+  for (Instruction *S : Shadow) {
     auto *Phi = dyn_cast<CallInst>(S);
     if (!Phi)
       continue;
@@ -44,8 +65,29 @@ void substituteControlled(ControlRegion &region, WidthDispatch &wd,
     ToErase.push_back(Phi);
   }
 
+  // Trailing `X(flag)` after the last gate (before the arm terminator), closing
+  // the ¬flag bracket. Emitted before erasing so the arm still has its `br`.
+  if (Negate && X)
+    IRBuilder<>(ArmBlock->getTerminator()).CreateCall(X, {Flag});
+
   for (Instruction *I : ToErase)
     I->eraseFromParent();
+}
+
+}  // namespace
+
+void substituteControlled(ControlRegion &region, WidthDispatch &wd,
+                          TaintSet &taint) {
+  Value *Flag = region.Flag;
+  if (!Flag)
+    return;  // ControlFlag failed/wasn't run; nothing safe to substitute.
+
+  // True arm (and the only arm for WP3/WP5): controlled on the flag.
+  substituteArm(region.Shadow, Flag, /*Negate=*/false, region.Arm, wd, taint);
+  // WP8 symmetric: the false arm fires on ¬flag (a self-inverse cqrt_x bracket).
+  if (region.ArmFalse)
+    substituteArm(region.ShadowFalse, Flag, /*Negate=*/true, region.ArmFalse, wd,
+                  taint);
 }
 
 }  // namespace cq

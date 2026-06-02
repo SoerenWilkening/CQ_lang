@@ -171,6 +171,48 @@ Instruction *linearizeNested(ControlRegion &region) {
   return Boundary;
 }
 
+// Collapse a WP8 SYMMETRIC two-content-arm diamond `Pred -[br i1]-> {ArmT,
+// ArmF}`, `ArmT -> Merge`, `ArmF -> Merge` into the single block `Pred`
+// (collection-before-mutation, §1.6). Both arms hold controlled gate bodies (the
+// false arm bracketed by `cqrt_x`), so both bodies splice through. The merge φ
+// MUST already be dissolved. Returns the splice boundary. Erases the dead
+// condition like `linearizeRegion` (the caller erases any conjunction
+// sub-compares).
+Instruction *linearizeSymmetric(ControlRegion &region) {
+  BasicBlock *Pred = region.Pred;
+  BasicBlock *ArmT = region.Arm;
+  BasicBlock *ArmF = region.ArmFalse;
+  BasicBlock *Merge = region.MergeBB;
+  if (!Pred || !ArmT || !ArmF || !Merge)
+    return nullptr;
+
+  auto *PredBr = dyn_cast<BranchInst>(Pred->getTerminator());
+  auto *ArmTBr = dyn_cast<BranchInst>(ArmT->getTerminator());
+  auto *ArmFBr = dyn_cast<BranchInst>(ArmF->getTerminator());
+  if (!PredBr || !PredBr->isConditional() || !ArmTBr || ArmTBr->isConditional() ||
+      !ArmFBr || ArmFBr->isConditional())
+    return nullptr;
+
+  Instruction *Boundary = &Merge->front();
+
+  // Drop the conditional branch; refill `Pred` by splicing both arm bodies then
+  // the merge. No `br i32` is ever synthesized (§1.1).
+  PredBr->eraseFromParent();
+  Pred->splice(Pred->end(), ArmT, ArmT->begin(), ArmTBr->getIterator());
+  ArmTBr->eraseFromParent();
+  Pred->splice(Pred->end(), ArmF, ArmF->begin(), ArmFBr->getIterator());
+  ArmFBr->eraseFromParent();
+  Pred->splice(Pred->end(), Merge, Merge->begin(), Merge->end());
+
+  ArmT->eraseFromParent();
+  ArmF->eraseFromParent();
+  Merge->eraseFromParent();
+  if (auto *Cond = dyn_cast_or_null<Instruction>(region.Condition))
+    if (Cond->use_empty())
+      Cond->eraseFromParent();
+  return Boundary;
+}
+
 }  // namespace
 
 void lowerControlledRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
@@ -261,6 +303,10 @@ void lowerControlledRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
     if (R.Mid) {
       linearizeNested(R);
       eraseDeadConds({R.Condition, R.CondB, R.CondA});
+    } else if (R.ArmFalse) {
+      linearizeSymmetric(R);  // erases R.Condition when dead.
+      if (R.Conj != ControlRegion::ConjNone)
+        eraseDeadConds({R.CondB, R.CondA});
     } else {
       linearizeRegion(R);  // erases R.Condition when dead.
       if (R.Conj != ControlRegion::ConjNone)
