@@ -246,6 +246,19 @@ void lowerControlledRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   for (ControlRegion *RP : Order) {
     ControlRegion &R = *RP;
 
+    // WP16: an angle-select CHAIN (the head select's false arm is itself a
+    // select) uses a per-case flag bracket, not the single `region.Flag` model
+    // — route it to the dedicated reducer BEFORE the generic flag mint (which
+    // it would otherwise leave dangling as an unbalanced compute). Detection
+    // already validated mutual exclusivity. A single angle select (false arm =
+    // base angle) falls through to the WP10 path below.
+    if (R.Kind == ControlRegion::AngleSelectRegion)
+      if (auto *Head = dyn_cast_or_null<SelectInst>(R.Merge))
+        if (isa<SelectInst>(Head->getFalseValue())) {
+          reduceAngleSelectChain(R, wd, taint);
+          continue;
+        }
+
     // 1. Control-wire (flag compute). For a compound/nested region this lowers
     //    both sub-compares and combines them into the single flag. On failure
     //    the compare/symbol was diagnosed; leave the region untouched

@@ -56,6 +56,19 @@ void dissolveMerge(ControlRegion &region, WidthDispatch &wd,
 llvm::Instruction *reduceAngleSelect(ControlRegion &region, WidthDispatch &wd,
                                      TaintSet &taint);
 
+// WP16 (PRD §8.4) — lower an angle-select CHAIN: the multi-angle generalization
+// of `reduceAngleSelect` (angle `switch`/`if-else-if`). `-O1` sinks it to
+// `rz(u, select(f_n, a_n, …select(f_1, a_1, a_default)))`. Walks the false-arm
+// chain from `region.Merge` (the head select) and, per consuming rotation,
+// emits the unconditional base `Rz(handle, a_default)` plus one
+// flag-controlled difference `Rz_controlled(f_k, handle, a_k − a_default)` per
+// case, each in its own compare compute/uncompute bracket. Detection validated
+// the chain is mutually exclusive (`icmp eq` on one scrutinee, distinct
+// constants), so this manages all per-case flags itself — NOT the single
+// `region.Flag` — and the orchestrator routes here BEFORE `lowerControlFlag`.
+void reduceAngleSelectChain(ControlRegion &region, WidthDispatch &wd,
+                            TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_MERGE_DISSOLUTION_H_

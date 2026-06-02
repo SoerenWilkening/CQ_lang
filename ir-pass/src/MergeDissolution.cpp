@@ -46,6 +46,7 @@
 
 #include "MergeDissolution.h"
 
+#include "CompareLowering.h"  // lowerCompareToFlag (WP16 per-case flags)
 #include "ControlPlan.h"
 #include "ControlledSymbols.h"
 #include "OpcodeSupport.h"  // abiWidthFromType
@@ -55,11 +56,14 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/STLExtras.h"  // make_early_inc_range
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"  // phis(), getFirstNonPHI
 #include "llvm/IR/Constants.h"   // ConstantInt
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
+
+#include <utility>
 
 using namespace llvm;
 
@@ -408,6 +412,89 @@ Instruction *reduceAngleSelect(ControlRegion &region, WidthDispatch &wd,
     Sel->eraseFromParent();
   region.Merge = nullptr;
   return Anchor;
+}
+
+void reduceAngleSelectChain(ControlRegion &region, WidthDispatch &wd,
+                            TaintSet &taint) {
+  auto *Head = dyn_cast_or_null<SelectInst>(region.Merge);
+  if (!Head)
+    return;
+
+  // Walk the false-arm chain (outer→inner): collect (condition, case-angle)
+  // pairs and the non-select base angle. Detection validated the chain is
+  // mutually exclusive (each condition `icmp eq` against one scrutinee with a
+  // distinct constant), so the nested select equals the additive form
+  // `base + Σ_k f_k·(a_k − base)` this lowers to.
+  SmallVector<std::pair<CmpInst *, Value *>, 4> Cases;
+  SmallVector<SelectInst *, 4> ChainSelects;
+  SelectInst *Cur = Head;
+  Value *Base = nullptr;
+  while (Cur) {
+    auto *Cmp = dyn_cast<CmpInst>(Cur->getCondition());
+    if (!Cmp)
+      return;  // malformed post-validation; leave the chain for the verifier.
+    Cases.push_back({Cmp, Cur->getTrueValue()});
+    ChainSelects.push_back(Cur);
+    Value *F = Cur->getFalseValue();
+    if (auto *Next = dyn_cast<SelectInst>(F)) {
+      Cur = Next;
+      continue;
+    }
+    Base = F;
+    break;
+  }
+  if (!Base)
+    return;
+
+  SmallVector<Instruction *, 4> ToErase;
+  for (Instruction *S : region.Shadow) {
+    auto *Phi = dyn_cast<CallInst>(S);
+    if (!Phi || Phi->arg_size() < 2)
+      continue;
+    Value *Handle = Phi->getArgOperand(0);
+    DebugLoc DL = Phi->getDebugLoc();
+
+    // Unconditional BASE rotation by the default angle.
+    if (!emitRz(Phi, Handle, Base, wd, /*controlled=*/false, /*flag=*/nullptr))
+      continue;  // unsupported width — leave the rotation for the verifier.
+
+    // One controlled-DIFFERENCE rotation per case, each inside its own
+    // compare compute/uncompute bracket. The eq-flags are mutually exclusive,
+    // so independent (non-overlapping) brackets are correct — no LIFO nesting.
+    for (auto &C : Cases) {
+      CmpInst *Cmp = C.first;
+      Value *Ak = C.second;
+      Value *Flag = lowerCompareToFlag(Cmp, wd, taint, /*qqWidth=*/{},
+                                       /*inverse=*/false, /*before=*/Phi);
+      if (!Flag)
+        continue;  // unsupported compare (diagnosed) — skip this case.
+      IRBuilder<> Builder(Phi);
+      Value *Diff = Builder.CreateFSub(Ak, Base, "ang_diff");
+      if (auto *DI = dyn_cast<Instruction>(Diff))
+        if (DL)
+          DI->setDebugLoc(DL);
+      if (!emitRz(Phi, Handle, Diff, wd, /*controlled=*/true, Flag))
+        continue;
+      // Uncompute the flag (`_inv` twin), restoring the balanced ancilla.
+      (void)lowerCompareToFlag(Cmp, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                               /*before=*/Phi);
+    }
+
+    Phi->replaceAllUsesWith(Handle);  // the rotation value is the in-place handle.
+    ToErase.push_back(Phi);
+  }
+
+  for (Instruction *I : ToErase)
+    I->eraseFromParent();
+  // Erase the chain selects (head→inner; each dead once its single consumer is
+  // gone) then their now-dead condition compares.
+  for (SelectInst *Sel : ChainSelects)
+    if (Sel->use_empty())
+      Sel->eraseFromParent();
+  for (auto &C : Cases)
+    if (C.first->use_empty())
+      C.first->eraseFromParent();
+  region.Merge = nullptr;
 }
 
 }  // namespace cq

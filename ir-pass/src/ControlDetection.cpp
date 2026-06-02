@@ -100,6 +100,69 @@ bool isCleanAngleSelect(SelectInst *Sel,
   return true;
 }
 
+// WP16 (PRD §8.4): is `Sel` an INNER member of an angle-select chain — every
+// user is a `select` that takes `Sel` as its FALSE value (the running base)?
+// `-O1` sinks an angle `switch`/`if-else-if` to a nested select chain
+// `select(f_n, a_n, …select(f_1, a_1, base))` feeding the rotation angle; the
+// chain HEAD (consumed by the rotations) is recognized by `isCleanAngleSelect`,
+// while inner members thread the base through false arms. Skipped at detection
+// so they are neither diagnosed nor doubly-regioned — `reduceAngleSelectChain`
+// dissolves the whole chain from the head.
+bool isAngleChainInner(SelectInst *Sel) {
+  if (Sel->use_empty())
+    return false;
+  for (User *U : Sel->users()) {
+    auto *S2 = dyn_cast<SelectInst>(U);
+    if (!S2 || S2->getFalseValue() != Sel)
+      return false;
+  }
+  return true;
+}
+
+// WP16 (PRD §8.4): does the angle-select chain rooted at `Head` consist of
+// MUTUALLY EXCLUSIVE cases — every condition down the false-arm chain is
+// `icmp eq` against the SAME scrutinee with a pairwise-DISTINCT constant, each
+// true arm a (non-select) case angle, the chain bottoming out at a non-select
+// base? Only then does the nested select equal the additive form
+// `base + Σ_k f_k·(a_k − base)` that `reduceAngleSelectChain` emits (a general,
+// non-exclusive `if-else-if` angle chain would need AND-NOT guards — out of
+// first-cut scope, so it stays the loud B1 diagnostic).
+bool isMutuallyExclusiveAngleChain(SelectInst *Head) {
+  Value *Scrut = nullptr;
+  SmallVector<const ConstantInt *, 4> Consts;
+  SelectInst *Cur = Head;
+  while (Cur) {
+    auto *Cmp = dyn_cast<ICmpInst>(Cur->getCondition());
+    if (!Cmp || Cmp->getPredicate() != ICmpInst::ICMP_EQ)
+      return false;
+    const ConstantInt *CV = nullptr;
+    Value *S = nullptr;
+    if ((CV = dyn_cast<ConstantInt>(Cmp->getOperand(1))))
+      S = Cmp->getOperand(0);
+    else if ((CV = dyn_cast<ConstantInt>(Cmp->getOperand(0))))
+      S = Cmp->getOperand(1);
+    else
+      return false;  // not `scrutinee == const`.
+    if (!Scrut)
+      Scrut = S;
+    else if (Scrut != S)
+      return false;  // a different scrutinee — not one N-way dispatch.
+    for (const ConstantInt *Prev : Consts)
+      if (Prev->getValue() == CV->getValue())
+        return false;  // duplicate case constant — not pairwise-exclusive.
+    Consts.push_back(CV);
+    if (isa<SelectInst>(Cur->getTrueValue()))
+      return false;  // the true arm is a case angle, not another select.
+    Value *F = Cur->getFalseValue();
+    if (auto *Next = dyn_cast<SelectInst>(F)) {
+      Cur = Next;
+      continue;
+    }
+    return true;  // bottomed out at the non-select base angle.
+  }
+  return false;
+}
+
 // Scan the single guarded arm `Arm` for an escape (PRD §5): a `ReturnInst`, a
 // measurement, or any terminator that does not fall straight through to
 // `MergeBB`. On escape, diagnose at the offending instruction and return true.
@@ -406,6 +469,16 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
           // quantum control) keep the loud WP9 diagnostic (Family B1).
           SmallVector<Instruction *, 4> Consumers;
           if (isCleanAngleSelect(Sel, Consumers)) {
+            // WP16: a CHAIN (the false arm is itself a select) must be mutually
+            // exclusive (eq-flags on one scrutinee) for the additive
+            // base+difference lowering to be valid; a non-exclusive chain stays
+            // the loud B1 diagnostic. A single select (false arm = base angle)
+            // takes the WP10 path unchanged.
+            if (isa<SelectInst>(Sel->getFalseValue()) &&
+                !isMutuallyExclusiveAngleChain(Sel)) {
+              diagnoseEscape(Sel, "rotation angle");
+              continue;
+            }
             ControlRegion region;
             region.Condition = Sel->getCondition();
             region.Kind = ControlRegion::AngleSelectRegion;
@@ -416,6 +489,10 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
               plan.InShadow.insert(C);
             }
             plan.Regions.push_back(std::move(region));
+          } else if (isAngleChainInner(Sel)) {
+            // An inner member of an angle-select chain — the head (consumed by
+            // the rotations) owns it; skip so it is neither diagnosed nor
+            // doubly regioned. `reduceAngleSelectChain` walks it from the head.
           } else {
             diagnoseEscape(Sel, "rotation angle");
           }
