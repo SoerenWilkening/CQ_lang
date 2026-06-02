@@ -18,9 +18,11 @@
 #include "OpcodeSupport.h"  // abiWidthFromType
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"  // predecessors
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -458,6 +460,88 @@ bool matchNestedAnd(BranchInst *Br, TaintSet &taint, BasicBlock *&Mid,
   return false;
 }
 
+// WP18 reconverge target: `Arm`'s UNIQUE predecessor is `SwBB` and it ends in an
+// unconditional `br` to a merge. Unlike `valueMergeArmTarget` (SwitchNormalization),
+// a NON-empty body is allowed — the arm holds the gate sequence, escape-guarded
+// separately. Returns the merge it falls to (null on mismatch / self-loop).
+BasicBlock *gatedArmTarget(BasicBlock *Arm, BasicBlock *SwBB) {
+  if (Arm->getUniquePredecessor() != SwBB)
+    return nullptr;
+  auto *Br = dyn_cast<BranchInst>(Arm->getTerminator());
+  if (!Br || Br->isConditional())
+    return nullptr;
+  BasicBlock *Merge = Br->getSuccessor(0);
+  return (Merge == Arm) ? nullptr : Merge;
+}
+
+// WP18 (PRD §8.5): recognize a gated multi-arm `switch` — a tainted-scrutinee
+// `SwitchInst` whose case + default arms each reconverge (single-pred,
+// unconditional `br`) on a common merge carrying an N-way `φ`, with NO merge
+// predecessor outside the arms, and gate bodies (`cq_phi`) per arm. On a match
+// build a `SwitchRegion` (each case arm controlled on its eq-flag, the default
+// on the ¬OR flag — lowered by `lowerGatedSwitch`). Returns true if HANDLED
+// (region built OR an arm escape was diagnosed); false if the shape does not
+// match (the caller fires the WP12 `switch` diagnostic as the fallback).
+bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan) {
+  BasicBlock *SwBB = Sw->getParent();
+  BasicBlock *Default = Sw->getDefaultDest();
+  if (Sw->getNumCases() == 0)
+    return false;  // degenerate (no cases) — not the gated shape.
+
+  // Structure: default + every (distinct) case arm reconverges on one merge.
+  SmallPtrSet<BasicBlock *, 8> ArmBlocks;
+  BasicBlock *Merge = gatedArmTarget(Default, SwBB);
+  if (!Merge)
+    return false;
+  ArmBlocks.insert(Default);
+  for (auto Case : Sw->cases()) {
+    BasicBlock *CB = Case.getCaseSuccessor();
+    if (gatedArmTarget(CB, SwBB) != Merge)
+      return false;  // an arm does not reconverge on the common merge.
+    if (!ArmBlocks.insert(CB).second)
+      return false;  // a shared arm block (duplicate target) — decline.
+  }
+  if (!isa<PHINode>(&Merge->front()))
+    return false;  // no value merge → not the gated value-reconverging shape.
+  for (BasicBlock *Pred : predecessors(Merge))
+    if (!ArmBlocks.count(Pred))
+      return false;  // an extra (non-arm) merge predecessor.
+
+  // Structure matches: from here this function OWNS the diagnostic (returns true
+  // even on an arm escape, so the caller does not also fire the WP12 fallback).
+  ControlRegion region;
+  region.Kind = ControlRegion::SwitchRegion;
+  region.Condition = Sw->getCondition();  // the tainted scrutinee.
+  region.Pred = SwBB;
+  region.MergeBB = Merge;
+  region.Merge = &Merge->front();  // the N-way merge φ.
+  region.Arm = Default;            // the default arm rides Arm/Shadow.
+
+  // Escape-guard + shadow-collect each arm (PRD §5). An arm with a `ret`,
+  // measurement, or out-of-region branch is the quantum-controlled escape
+  // (WP17) — diagnosed, no region.
+  if (armEscapesOrCollect(Default, Merge, region.Shadow))
+    return true;  // diagnosed.
+  for (auto Case : Sw->cases()) {
+    SwitchArm arm;
+    arm.Value = Case.getCaseValue();
+    arm.Block = Case.getCaseSuccessor();
+    if (armEscapesOrCollect(arm.Block, Merge, arm.Shadow))
+      return true;  // diagnosed.
+    region.SwitchArms.push_back(std::move(arm));
+  }
+
+  // All arm gate bodies are in-shadow (so `lowerRotations` skips them; the
+  // gated-switch lowering controls them instead, §1.4).
+  for (Instruction *S : region.Shadow)
+    plan.InShadow.insert(S);
+  for (SwitchArm &A : region.SwitchArms)
+    for (Instruction *S : A.Shadow)
+      plan.InShadow.insert(S);
+  plan.Regions.push_back(std::move(region));
+  return true;
+}
+
 }  // namespace
 
 ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
@@ -574,8 +658,16 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       // is left untouched. Detection runs before measure lowering, so a tainted
       // scrutinee is exactly `taint.Tainted.count` of the switch condition.
       if (auto *Sw = dyn_cast<SwitchInst>(BB.getTerminator())) {
-        if (taint.Tainted.count(Sw->getCondition()))
-          diagnoseEscape(Sw, "switch");
+        if (taint.Tainted.count(Sw->getCondition())) {
+          // WP18 (PRD §8.5): a gated multi-arm `switch` (distinct side-effecting
+          // gate bodies per arm) lowers as N-way controlled substitution. On a
+          // shape match `tryBuildGatedSwitchRegion` builds a SwitchRegion (or
+          // diagnoses an arm escape); otherwise the WP12 fallback fires. The
+          // value-merge `switch` was already rewritten away by WP15
+          // (`normalizeTaintedSwitches`) before detection.
+          if (!tryBuildGatedSwitchRegion(Sw, plan))
+            diagnoseEscape(Sw, "switch");
+        }
         continue;
       }
 

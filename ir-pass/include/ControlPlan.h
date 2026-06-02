@@ -20,6 +20,7 @@
 
 namespace llvm {
 class BasicBlock;
+class ConstantInt;
 class Instruction;
 class Module;
 class Value;
@@ -29,6 +30,17 @@ namespace cq {
 
 class WidthDispatch;
 struct TaintSet;
+
+// WP18 (PRD §8.5) — one case arm of a gated `SwitchRegion`: the case constant,
+// its arm block, and the arm's in-shadow gate bodies (the `cq_phi` calls that
+// become `_controlled` on the arm's `icmp eq` flag). The DEFAULT arm is carried
+// by the region's own `Arm`/`Shadow` (controlled on the ¬OR "none-matched"
+// flag).
+struct SwitchArm {
+  llvm::ConstantInt *Value = nullptr;
+  llvm::BasicBlock *Block = nullptr;
+  llvm::SmallVector<llvm::Instruction *, 4> Shadow;
+};
 
 // One recovered controlled region, normalized from a tainted `select i1` or a
 // tainted `br i1` diamond to a single internal shape (IMPLEMENTATION §5.1).
@@ -72,7 +84,19 @@ struct ControlRegion {
   // ANGLE (`select i1 c, double a, double b`) feeding only rotation-angle
   // operands; lowered as controlled-rotation-by-difference (`Merge` is the
   // select, `Shadow` the consuming `cq_phi`/`cq_theta` calls).
-  enum Kind { SelectRegion, BranchRegion, AngleSelectRegion } Kind = BranchRegion;
+  // SwitchRegion (WP18, PRD §8.5) — a gated multi-arm `switch` whose arms apply
+  // distinct SIDE-EFFECTING gate sequences (not a value/angle select). `Pred`
+  // is the switch block, `Condition` the tainted scrutinee, `MergeBB` the common
+  // merge, `SwitchArms` the case arms (value + block + gate shadow), and
+  // `Arm`/`Shadow` the DEFAULT arm. Lowered by `lowerGatedSwitch`: per-case
+  // `icmp eq` flags, each arm controlled on its flag, the default on the
+  // ¬(f_1∨…∨f_n) flag, the N-way φ dissolved, the switch linearized away.
+  enum Kind {
+    SelectRegion,
+    BranchRegion,
+    AngleSelectRegion,
+    SwitchRegion
+  } Kind = BranchRegion;
 
   // The merge node: a `SelectInst` (select-sourced) or the merge-block
   // `PHINode` (br-sourced). `MergeDissolution` rewrites/erases it.
@@ -101,6 +125,10 @@ struct ControlRegion {
   // arms, not `Pred`), and linearization splices BOTH arms into `Pred`.
   llvm::BasicBlock *ArmFalse = nullptr;
   llvm::SmallVector<llvm::Instruction *, 4> ShadowFalse;
+
+  // WP18 (SwitchRegion) — the case arms. The default arm rides `Arm`/`Shadow`
+  // (above). Empty for every non-switch region.
+  llvm::SmallVector<SwitchArm, 4> SwitchArms;
 
   // The single gate arm is the FALSE successor of the `br i1 cond, S0, S1` (i.e.
   // `Arm == S1`), so it is taken when `cond` is FALSE and its gates fire on

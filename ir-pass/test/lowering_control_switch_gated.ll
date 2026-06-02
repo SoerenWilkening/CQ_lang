@@ -1,22 +1,41 @@
 ; lowering_control_switch_gated.ll — Phase 4.1 WP18 (PRD §8.5, epic `-aht.3`),
-; negative (RED). The one multi-way shape that does NOT fold into the
-; switch→select-chain normalization (WP15) or the angle-select-chain (WP16): a
-; cascade of arms with ARBITRARY SIDE-EFFECTING gate bodies — distinct gate
-; SEQUENCES per case (here case 2 applies TWO `cq_phi`s, case 1 and default
-; one), not a single value or rotation angle. There is no value to select; each
-; arm's ops must become `_controlled` on its eq-flag (the WP8 symmetric
-; two-content-arm diamond generalized to an N-way false-arm chain).
+; positive. The one multi-way shape that does NOT fold into the
+; switch→select-chain (WP15) or angle-select-chain (WP16): a cascade of arms
+; with ARBITRARY SIDE-EFFECTING gate bodies — distinct gate SEQUENCES per case
+; (case 2 applies TWO `cq_phi`s; case 1 and default one each), not a value or a
+; rotation angle. There is no value to select; each arm's gates become
+; `_controlled` on its eq-flag (the WP8 symmetric two-content-arm diamond
+; generalized to an N-way false-arm chain). `clang -O1` keeps this as a
+; `SwitchInst` with gate-body arms reconverging on an N-way φ (confirmed by the
+; `-aht.3` diagnose-first spike).
 ;
-; Diagnose-first spike (`-aht.3`, 2026-06-02): confirmed `clang -O1` KEEPS this
-; as a `SwitchInst` with gate-body arms reconverging on an N-way `φ` (it does
-; NOT reshape to a select chain — the differing gate counts are not a value
-; mux). So it is SAFE today: WP15 declines (arms are non-empty), and the WP12
-; tainted-`switch` guard diagnoses it (no silent miscompile). This fixture pins
-; that safety; it becomes POSITIVE when WP18 lands the N-way controlled
-; substitution.
+; Lowering (`lowerGatedSwitch`): per-case eq-flags `f1=(q==1)`, `f2=(q==2)`;
+; the default fires on ¬(f1∨f2) (the OR-fold `f_conj` + a `cqrt_x` bracket — the
+; "none matched" control); each arm's `cq_phi` gates become
+; `cqrt_rz_i32_controlled` on its flag (case 2's two gates both on `f2`); the
+; N-way φ dissolves to the in-place handle; the flags uncompute reverse-LIFO
+; (`cqrt_toffoli_inv` then the `_hl_inv` compares); the switch is linearized
+; away. Arms are mutually exclusive, so exactly one fires per basis state — the
+; switch semantics. Every flag ancilla is balanced; no residual `switch`/`phi`.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}switch under quantum control
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; CHECK:     %[[HQ:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK:     %[[HV:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v0)
+; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[HQ]], i32 1)
+; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[HQ]], i32 2)
+; CHECK:     %[[FC:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK:     call void @cqrt_toffoli(i32 %[[F1]], i32 %[[F2]], i32 %[[FC]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[FC]], i32 %[[HV]], double 9.000000e-01)
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[HV]], double 1.000000e-01)
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[HV]], double 2.000000e-01)
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[HV]], double 3.000000e-01)
+; CHECK:     call void @cqrt_toffoli_inv(i32 %[[F1]], i32 %[[F2]], i32 %[[FC]])
+; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[HQ]], i32 2)
+; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[HQ]], i32 1)
+; CHECK:     call i32 @cqrt_measure_i32(i32 %[[HV]])
+; CHECK-NOT: switch
+; CHECK-NOT: = phi
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

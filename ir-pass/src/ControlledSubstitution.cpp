@@ -18,14 +18,13 @@ using namespace llvm;
 
 namespace cq {
 
-namespace {
-
 // Substitute one arm's in-shadow `cq_phi` gate bodies with their controlled
 // `cqrt_rz_<W>_controlled(flag, handle, angle)` forms. When `Negate` (the WP8
-// false arm), wrap the whole arm in a self-inverse `cqrt_x` flag bracket so the
-// gates fire on ¬flag: `X(flag)` before the first gate, the controlled gates,
-// then `X(flag)` before the arm's terminator. The pair is self-inverse, so the
-// flag is restored for the standard compare-uncompute downstream (§2.5/§2.9).
+// false arm / a WP18 default arm), wrap the whole arm in a self-inverse `cqrt_x`
+// flag bracket so the gates fire on ¬flag: `X(flag)` before the first gate, the
+// controlled gates, then `X(flag)` before the arm's terminator. The pair is
+// self-inverse, so the flag is restored for the standard compare-uncompute
+// downstream (§2.5/§2.9). Exposed (ControlledSubstitution.h) for WP18.
 void substituteArm(ArrayRef<Instruction *> Shadow, Value *Flag, bool Negate,
                    BasicBlock *ArmBlock, WidthDispatch &wd, TaintSet &taint) {
   if (Shadow.empty())
@@ -73,8 +72,6 @@ void substituteArm(ArrayRef<Instruction *> Shadow, Value *Flag, bool Negate,
   for (Instruction *I : ToErase)
     I->eraseFromParent();
 }
-
-}  // namespace
 
 void substituteControlled(ControlRegion &region, WidthDispatch &wd,
                           TaintSet &taint) {

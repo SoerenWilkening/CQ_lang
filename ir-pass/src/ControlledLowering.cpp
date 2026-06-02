@@ -44,6 +44,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
 #include <algorithm>
@@ -213,6 +214,125 @@ Instruction *linearizeSymmetric(ControlRegion &region) {
   return Boundary;
 }
 
+// WP18 (PRD §8.5) — collapse a gated `SwitchRegion` into `Pred`: drop the switch
+// terminator, splice each arm's (now controlled) gate body then the merge body
+// into `Pred`. The merge φ MUST already be dissolved. Splice order is default
+// then cases; the arms are mutually exclusive (controlled on disjoint eq-flags),
+// so order is immaterial.
+void linearizeSwitch(ControlRegion &region, SwitchInst *Sw) {
+  BasicBlock *Pred = region.Pred;
+  BasicBlock *Merge = region.MergeBB;
+  if (!Pred || !Merge)
+    return;
+  SmallVector<BasicBlock *, 4> Arms;
+  Arms.push_back(region.Arm);  // the default arm.
+  for (SwitchArm &A : region.SwitchArms)
+    Arms.push_back(A.Block);
+
+  Sw->eraseFromParent();  // drop the N-way terminator; `Pred` falls through.
+  for (BasicBlock *Arm : Arms) {
+    auto *Br = dyn_cast<BranchInst>(Arm->getTerminator());
+    if (!Br)
+      continue;
+    Pred->splice(Pred->end(), Arm, Arm->begin(), Br->getIterator());
+    Br->eraseFromParent();
+  }
+  Pred->splice(Pred->end(), Merge, Merge->begin(), Merge->end());
+  for (BasicBlock *Arm : Arms)
+    Arm->eraseFromParent();
+  Merge->eraseFromParent();
+}
+
+// WP18 (PRD §8.5) — lower a gated `SwitchRegion` to per-arm controlled gates.
+// Mint an `icmp eq` flag per case; OR-fold them into the default's "none
+// matched" control; control each case arm on its own flag and the default on
+// ¬OR (a self-inverse `cqrt_x` bracket); dissolve the N-way φ to the in-place
+// handle; uncompute reverse-LIFO; linearize the switch away. The arms are
+// mutually exclusive (eq on one scrutinee), so exactly one fires per basis
+// state — the switch semantics. Manages all per-arm flags itself, so the
+// orchestrator routes here BEFORE the single-flag `lowerControlFlag`.
+void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
+                      ControlledSymbols &csyms, TaintSet &taint) {
+  if (!region.Pred || region.SwitchArms.empty())
+    return;
+  auto *Sw = dyn_cast<SwitchInst>(region.Pred->getTerminator());
+  if (!Sw)
+    return;
+  // Re-read the scrutinee LIVE: rotation lowering ran before this and RAUW'd
+  // the `cq_theta` scrutinee to its i32 handle (and erased the theta), so the
+  // detection-time `region.Condition` is stale — `Sw->getCondition()` is the
+  // current handle.
+  Value *Scrut = Sw->getCondition();
+
+  // 1. A per-case forward `icmp_eq_<W>_hl(handle, v_k)` flag, minted DIRECTLY
+  //    (no throwaway `icmp`: the handle is i32 but `v_k` carries the logical
+  //    width, so a real `icmp eq i32 %h, <W>` would mismatch — `emitEqFlag`
+  //    spells the template off the operands instead).
+  SmallVector<Value *, 4> Flags;
+  for (SwitchArm &A : region.SwitchArms) {
+    Value *Flag = emitEqFlag(Scrut, A.Value, wd, /*inverse=*/false,
+                             /*before=*/Sw);
+    if (!Flag)
+      return;  // unsupported width; leave the switch for the verifier.
+    Flags.push_back(Flag);
+  }
+
+  // 2. OR-fold for the default control: orAcc = f_1 ∨ … ∨ f_n. `OrFlags[j]`
+  //    combines its running predecessor with `Flags[j+1]` (recorded for the
+  //    mirror-image uncompute).
+  Value *OrAcc = Flags[0];
+  SmallVector<Value *, 4> OrFlags;
+  for (unsigned k = 1; k < Flags.size(); ++k) {
+    Value *NewOr =
+        combineFlags(OrAcc, Flags[k], ControlRegion::ConjOr, csyms, wd, Sw);
+    if (!NewOr)
+      return;  // unsupported symbol (diagnosed); leave for the verifier.
+    OrFlags.push_back(NewOr);
+    OrAcc = NewOr;
+  }
+
+  // 3. Control each case arm on its eq-flag; the default arm on ¬OrAcc (the
+  //    self-inverse `cqrt_x` bracket — fires when NO case matched).
+  for (unsigned k = 0; k < region.SwitchArms.size(); ++k)
+    substituteArm(region.SwitchArms[k].Shadow, Flags[k], /*Negate=*/false,
+                  region.SwitchArms[k].Block, wd, taint);
+  substituteArm(region.Shadow, OrAcc, /*Negate=*/true, region.Arm, wd, taint);
+
+  // 4. Dissolve the N-way merge φ(s): the arm gates mutated the handle IN PLACE,
+  //    so post-substitution every incoming is the in-place handle. RAUW to a
+  //    tainted incoming and erase — per-φ, so a multi-handle merge dissolves
+  //    each φ to its own base handle.
+  for (PHINode &P : make_early_inc_range(region.MergeBB->phis())) {
+    Value *Handle = nullptr;
+    for (unsigned i = 0, e = P.getNumIncomingValues(); i != e; ++i)
+      if (taint.Tainted.count(P.getIncomingValue(i))) {
+        Handle = P.getIncomingValue(i);
+        break;
+      }
+    if (!Handle)
+      continue;  // no tainted incoming (malformed); leave for the verifier.
+    P.replaceAllUsesWith(Handle);
+    P.eraseFromParent();
+  }
+
+  // 5. Uncompute, reverse LIFO, at the merge boundary (compute → controlled
+  //    body → uncompute → continuation, §1.5): the OR-fold first (mirror of
+  //    `combineFlags`), then each per-case compare-uncompute.
+  if (Instruction *UncomputeAt = region.MergeBB->getFirstNonPHI()) {
+    for (int k = (int)OrFlags.size() - 1; k >= 0; --k) {
+      Value *Prev = (k == 0) ? Flags[0] : OrFlags[k - 1];
+      uncombineFlags(Prev, Flags[k + 1], OrFlags[k], ControlRegion::ConjOr,
+                     csyms, UncomputeAt);
+    }
+    for (int k = (int)region.SwitchArms.size() - 1; k >= 0; --k)
+      (void)emitEqFlag(Scrut, region.SwitchArms[k].Value, wd, /*inverse=*/true,
+                       /*before=*/UncomputeAt);
+  }
+
+  // 6. Linearize the switch away.
+  linearizeSwitch(region, Sw);
+}
+
 }  // namespace
 
 void lowerControlledRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
@@ -245,6 +365,14 @@ void lowerControlledRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
 
   for (ControlRegion *RP : Order) {
     ControlRegion &R = *RP;
+
+    // WP18: a gated `SwitchRegion` manages its own per-arm eq-flags + the ¬OR
+    // default flag — route to the dedicated lowering BEFORE the single-flag
+    // `lowerControlFlag` (which the switch does not use).
+    if (R.Kind == ControlRegion::SwitchRegion) {
+      lowerGatedSwitch(R, wd, csyms, taint);
+      continue;
+    }
 
     // WP16: an angle-select CHAIN (the head select's false arm is itself a
     // select) uses a per-case flag bracket, not the single `region.Flag` model

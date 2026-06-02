@@ -13,6 +13,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Constants.h"  // ConstantInt
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
@@ -168,6 +169,39 @@ Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
   if (DebugLoc DL = cmp->getDebugLoc())
     T->setDebugLoc(DL);
   return T;
+}
+
+Value *emitEqFlag(Value *handle, ConstantInt *caseValue, WidthDispatch &wd,
+                  bool inverse, Instruction *before) {
+  if (!handle || !caseValue || !before)
+    return nullptr;
+  StringRef AbiWidth = abiWidthFromType(caseValue->getType());
+  if (AbiWidth.empty())
+    return nullptr;  // unsupported case-value width.
+
+  // HL form: handle on the left, the case constant (at its real width) on the
+  // right. Forward = the shared resolver (byte-identical to the data path);
+  // inverse = the `_inv` twin minted directly (same shape), mirroring
+  // `lowerCompareToFlag`.
+  FunctionCallee Callee;
+  if (!inverse) {
+    Callee = wd.compareTemplateFn("icmp", "eq", AbiWidth, Shape::HL);
+  } else {
+    Module &M = *before->getModule();
+    Type *Handle = Type::getInt32Ty(M.getContext());
+    Type *Classical = wd.llvmWidthType(AbiWidth);
+    if (!Classical)
+      return nullptr;
+    std::string Name = compareName("icmp", "eq", AbiWidth, Shape::HL,
+                                   /*controlled=*/false, /*inverse=*/true);
+    Callee = M.getOrInsertFunction(
+        Name, FunctionType::get(Handle, {Handle, Classical}, false));
+  }
+  if (!Callee)
+    return nullptr;
+
+  IRBuilder<> Builder(before);
+  return Builder.CreateCall(Callee, {handle, caseValue}, "h_cmp");
 }
 
 bool rewriteCompare(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint) {

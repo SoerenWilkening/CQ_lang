@@ -45,6 +45,7 @@
 
 namespace llvm {
 class CmpInst;
+class ConstantInt;
 class Instruction;
 class Value;
 }  // namespace llvm
@@ -53,6 +54,19 @@ namespace cq {
 
 class WidthDispatch;
 struct TaintSet;
+
+// WP18 (PRD §8.5) — mint a switch-case eq-flag DIRECTLY, with no throwaway
+// `CmpInst`: the HL `cq_template_icmp_eq_<W>_hl(handle, caseValue)` forward flag
+// (or its `_inv` twin when `inverse`), where `W` is `caseValue`'s ABI width.
+// The gated-switch scrutinee handle is i32 (laundered by rotation lowering)
+// while the case constants carry the logical width, so a real
+// `icmp eq i32 %handle, <W> const` cannot be built (operand-type mismatch);
+// this emits the template call directly off the operands the way
+// `lowerCompareToFlag` does, sharing the same symbol grammar. Returns the i32
+// flag `Value*` (inserted before `before`), or nullptr on an unsupported width.
+llvm::Value *emitEqFlag(llvm::Value *handle, llvm::ConstantInt *caseValue,
+                        WidthDispatch &wd, bool inverse,
+                        llvm::Instruction *before);
 
 // A tainted compare is lowered ONLY when its result is in pure data/measure
 // position: no user is a `BranchInst`, nor a `SelectInst` using it as the
