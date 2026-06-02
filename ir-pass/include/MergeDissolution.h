@@ -56,6 +56,18 @@ void dissolveMerge(ControlRegion &region, WidthDispatch &wd,
 llvm::Instruction *reduceAngleSelect(ControlRegion &region, WidthDispatch &wd,
                                      TaintSet &taint);
 
+// cwk fix (b) (test_C_libtooling-byx) — the `br`-diamond analog of
+// `reduceAngleSelect`: lower a classical-angle merge `φ` (`region.AnglePhi`,
+// consumed by `region.AngleConsumers`) as controlled-rotation-by-difference. Per
+// consumer emit the unconditional base `Rz(handle, base)` plus a flag-controlled
+// difference `Rz_controlled(flag, handle, arm − base)`, where the base is the
+// `flag==0` φ edge (`ArmFalse`/`Arm`/`Pred` per shape). Runs AFTER
+// `dissolveBranchPhi` (sibling gate-handle φ dissolved first) and BEFORE the flag
+// uncompute; returns the uncompute anchor (after the last rotation) or null.
+// `region.Flag` must already be minted (`lowerControlFlag`).
+llvm::Instruction *reduceAngleDiamondPhi(ControlRegion &region, WidthDispatch &wd,
+                                         TaintSet &taint);
+
 // WP16 (PRD §8.4) — lower an angle-select CHAIN: the multi-angle generalization
 // of `reduceAngleSelect` (angle `switch`/`if-else-if`). `-O1` sinks it to
 // `rz(u, select(f_n, a_n, …select(f_1, a_1, a_default)))`. Walks the false-arm

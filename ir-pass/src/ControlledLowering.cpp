@@ -438,6 +438,17 @@ void lowerControlledRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
         R.MergeBB ? R.MergeBB->getFirstNonPHI() : nullptr;
     dissolveMerge(R, wd, csyms, taint);
 
+    // cwk fix (b): a classical-angle merge φ (the diamond-form rotation-angle
+    // dispatch) is lowered as base + controlled-difference AFTER the gate-handle
+    // φ dissolution above (so a consumer's arg-0 is the live handle). It emits
+    // rotations in the merge block and erases the consuming `cq_phi` that
+    // `getFirstNonPHI()` named — OVERRIDE `UncomputeAt` with the anchor it
+    // returns (the surviving node after the last rotation) so the flag uncompute
+    // lands AFTER the controlled-difference, not on the erased consumer (§1.5).
+    if (!R.AnglePhi.empty())
+      if (Instruction *AngleAnchor = reduceAngleDiamondPhi(R, wd, taint))
+        UncomputeAt = AngleAnchor;
+
     // 4. Flag uncompute, minted while the condition compare(s) still stand and
     //    anchored at the merge boundary so it brackets the controlled body
     //    (§1.5). For a conjunction this is the LIFO reverse of the compute.

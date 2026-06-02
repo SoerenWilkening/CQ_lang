@@ -107,6 +107,28 @@ CallInst *reduceClassicalMux(Value *A, Value *B, Value *Flag,
   return Res;
 }
 
+// The surviving node after the LAST consumer in PROGRAM (block) order — the
+// flag-uncompute anchor for the angle reducers (WP10 select / cwk-fix-(b)
+// diamond). The consumer lists are collected in `users()` order (LLVM use-list =
+// reverse-of-creation), NOT program order, so anchoring off the last-ITERATED
+// consumer's successor can land the uncompute MID-bracket — the controlled
+// rotations of the program-later consumers would then fire on an already
+// uncomputed flag (a verify-clean SILENT miscompile). Walk the block and take
+// the successor of the block-latest consumer instead. Call BEFORE erasing the
+// consumers (so the returned node is valid and not itself a consumer — the
+// block-last consumer's successor is by definition not a consumer). All
+// consumers share one block (the merge); empty list ⇒ null.
+Instruction *anchorAfterLastConsumer(const SmallVectorImpl<Instruction *> &Cons) {
+  if (Cons.empty())
+    return nullptr;
+  BasicBlock *BB = Cons.front()->getParent();
+  Instruction *Last = nullptr;
+  for (Instruction &I : *BB)
+    if (llvm::is_contained(Cons, &I))
+      Last = &I;
+  return Last ? Last->getNextNode() : nullptr;
+}
+
 // WP7 `br`-diamond merge dissolution — dissolve EVERY φ in the merge block, not
 // just `region.Merge`. A single-arm diamond may carry ≥2 φ: multiple gated
 // handles (`if(q){u=g(u); v=g(v);}`), or a classical data assignment riding
@@ -137,6 +159,12 @@ void dissolveBranchPhi(ControlRegion &region, WidthDispatch &wd,
   Instruction *InsertPt = MergeBB->getFirstNonPHI();
 
   for (PHINode &P : make_early_inc_range(MergeBB->phis())) {
+    // A classical-angle `φ` (cwk fix (b)) is OWNED by `reduceAngleDiamondPhi`
+    // (base + controlled-difference rotations) — never the integer-handle
+    // `reduceClassicalMux` path, which would mislower the `phi double`. Skip it
+    // here; the orchestrator runs the angle reducer after this dissolution.
+    if (llvm::is_contained(region.AnglePhi, &P))
+      continue;
     int PredIdx = P.getBasicBlockIndex(InPlaceEdge);
     if (PredIdx < 0)
       continue;  // not wired through this diamond's Pred edge; leave it.
@@ -376,7 +404,6 @@ Instruction *reduceAngleSelect(ControlRegion &region, WidthDispatch &wd,
   Value *A = Sel->getTrueValue();   // flag=1 angle.
   Value *B = Sel->getFalseValue();  // flag=0 angle (the base).
 
-  Instruction *Anchor = nullptr;
   SmallVector<Instruction *, 4> ToErase;
   for (Instruction *S : region.Shadow) {
     auto *Phi = dyn_cast<CallInst>(S);
@@ -399,18 +426,115 @@ Instruction *reduceAngleSelect(ControlRegion &region, WidthDispatch &wd,
     if (!emitRz(Phi, Handle, Diff, wd, /*controlled=*/true, region.Flag))
       continue;
 
-    Anchor = Phi->getNextNode();  // uncompute lands after the last rotation.
     Phi->replaceAllUsesWith(Handle);  // the phi value is the in-place handle.
     taint.ControlFlag[Handle] = region.Flag;
     ToErase.push_back(Phi);
   }
 
+  // Uncompute after the program-order-last rotation — off the block-last
+  // consumer, NOT the last-iterated one (`region.Shadow` is use-list order, so
+  // a multi-rotation angle select would otherwise land the uncompute mid-bracket
+  // → controlled rotations on an uncomputed flag, a silent miscompile).
+  Instruction *Anchor = anchorAfterLastConsumer(ToErase);
   for (Instruction *I : ToErase)
     I->eraseFromParent();
   // Erase the now-dead angle select (all consuming rotations are gone).
   if (Sel->use_empty())
     Sel->eraseFromParent();
   region.Merge = nullptr;
+  return Anchor;
+}
+
+// cwk fix (b) (test_C_libtooling-byx) — the `br`-diamond analog of
+// `reduceAngleSelect`: lower a classical-angle merge `φ` (recorded in
+// `region.AnglePhi`, feeding the rotations in `region.AngleConsumers`) as
+// controlled-rotation-by-difference. Per consuming `cq_phi`/`cq_theta`, emit the
+// unconditional BASE `Rz(handle, base)` then a flag-controlled DIFFERENCE
+// `Rz_controlled(flag, handle, arm − base)` — Ry/Rz angle-additivity, so the
+// total angle is `arm` when the flag holds and `base` otherwise.
+//
+// POLARITY (C2) is read off the φ's INCOMING EDGES, never select-style
+// true/false: the `flag==0` edge carries the BASE angle, the other edge the
+// `flag==1` angle. The zero edge is `ArmFalse` for a WP8 symmetric diamond (the
+// false arm), `Arm` for a swapped one-arm diamond (`ArmNegated` — the arm is the
+// FALSE successor, taken when the condition is false), and `Pred` for the
+// ordinary true-successor one-arm diamond (the straight-through edge).
+//   ⚠ Do NOT reuse `dissolveBranchPhi`'s `InPlaceEdge = ArmFalse ? Arm : Pred`:
+//   that names the `flag==1` (Arm/Pred) edge and is sound there only because a
+//   gate-handle φ carries the SAME handle on both edges. The two angle edges
+//   differ, so the base must be the `flag==0` edge — using the wrong edge swaps
+//   base/diff (a silent miscompile in the symmetric and ArmNegated shapes).
+//
+// Runs AFTER `dissolveBranchPhi` (which dissolves any sibling gate-handle φ), so
+// a consumer's arg-0 handle is read LIVE. Returns the uncompute anchor (the node
+// after the last rotation, surviving the consumer erasure) for the orchestrator
+// to anchor the flag uncompute, or null on failure. `region.Flag` must be minted.
+Instruction *reduceAngleDiamondPhi(ControlRegion &region, WidthDispatch &wd,
+                                   TaintSet &taint) {
+  if (!region.Flag)
+    return nullptr;  // no flag (ControlFlag failed) → leave for the verifier.
+
+  // Emit every consumer's base + controlled-difference FIRST, collecting the
+  // lowered consumers; the uncompute anchor is computed afterward off the
+  // block-LAST consumer (so it lands after ALL rotations, not after whichever
+  // consumer happened to be last in use-list order — risk: a mid-bracket
+  // uncompute, see `anchorAfterLastConsumer`).
+  SmallVector<Instruction *, 4> ToErase;
+  for (PHINode *P : region.AnglePhi) {
+    if (!P)
+      continue;
+    BasicBlock *ZeroEdge = region.ArmFalse
+                               ? region.ArmFalse
+                               : (region.ArmNegated ? region.Arm : region.Pred);
+    int Zi = ZeroEdge ? P->getBasicBlockIndex(ZeroEdge) : -1;
+    if (Zi < 0)
+      continue;  // malformed (no flag==0 edge); leave the φ for the verifier.
+    Value *Base = P->getIncomingValue(Zi);  // the flag==0 (base) angle.
+    // The flag==1 angle: the first incoming that is NOT the zero edge (a 2-way
+    // diamond has exactly the two edges; the N-way nested/switch forms get their
+    // own reducers).
+    Value *ArmAngle = nullptr;
+    for (unsigned k = 0, e = P->getNumIncomingValues(); k != e; ++k)
+      if (static_cast<int>(k) != Zi) {
+        ArmAngle = P->getIncomingValue(k);
+        break;
+      }
+    if (!ArmAngle)
+      continue;
+
+    for (Instruction *S : region.AngleConsumers) {
+      auto *Phi = dyn_cast<CallInst>(S);
+      if (!Phi || Phi->arg_size() < 2 || Phi->getArgOperand(1) != P)
+        continue;  // not a rotation consuming THIS angle φ.
+      Value *Handle = Phi->getArgOperand(0);  // re-read LIVE (post handle-φ RAUW).
+      // BASE: unconditional `cqrt_rz_<W>(handle, base)`.
+      if (!emitRz(Phi, Handle, Base, wd, /*controlled=*/false, /*flag=*/nullptr))
+        continue;  // unsupported width — leave the rotation for the verifier.
+      // DIFFERENCE angle `arm − base`: a HOST fp `fsub` (both angles classical).
+      IRBuilder<> Builder(Phi);
+      Value *Diff = Builder.CreateFSub(ArmAngle, Base, "ang_diff");
+      if (auto *DI = dyn_cast<Instruction>(Diff))
+        if (DebugLoc DL = Phi->getDebugLoc())
+          DI->setDebugLoc(DL);
+      // CONTROLLED: `cqrt_rz_<W>_controlled(flag, handle, arm − base)`.
+      if (!emitRz(Phi, Handle, Diff, wd, /*controlled=*/true, region.Flag))
+        continue;
+      Phi->replaceAllUsesWith(Handle);  // the φ value is the in-place handle.
+      taint.ControlFlag[Handle] = region.Flag;
+      ToErase.push_back(Phi);
+    }
+  }
+
+  // The uncompute lands after the program-order-last rotation (compute → body →
+  // uncompute, §1.5). Compute it before erasing — the block-last consumer's
+  // successor survives (it is not itself a consumer).
+  Instruction *Anchor = anchorAfterLastConsumer(ToErase);
+  for (Instruction *I : ToErase)
+    I->eraseFromParent();
+  for (PHINode *P : region.AnglePhi)
+    if (P && P->use_empty())
+      P->eraseFromParent();  // the angle φ is dead once its rotations are gone.
+  region.AnglePhi.clear();
   return Anchor;
 }
 

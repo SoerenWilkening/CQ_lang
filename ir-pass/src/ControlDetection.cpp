@@ -77,6 +77,40 @@ bool isPhiCall(const Instruction &I) {
   return Callee && Callee->getName().starts_with("cq_phi_");
 }
 
+// Is EVERY user of `V` a `cq_phi` rotation that takes `V` as the classical ANGLE
+// (arg 1), never the arg-0 handle? On success fills `Consumers` with the rotation
+// calls (in use order). Shared by the WP10 select-form angle guard and the
+// cwk-fix-(b) diamond/switch-form angle guard — the SSA shape of the angle feed
+// is identical whether `V` is a `select` or a merge `φ`.
+//
+// `cq_phi` ONLY (not `cq_theta`): the controlled-rotation-by-difference lowering
+// (`reduceAngleSelect`/`reduceAngleDiamondPhi` → `emitRz`) reads the width off a
+// `cq_phi_` callee and emits `cqrt_rz[_controlled]`. A `cq_theta` (the Ry-prep
+// rotation) is NOT lowerable that way — accepting it here would build a region
+// `emitRz` then fails to lower, leaving the rotation standing and the angle `φ`
+// dangling (a broken module). Excluding it routes a `cq_theta`-fed angle to the
+// loud "rotation angle" diagnostic instead (no silent miscompile).
+bool usersAreAngleFeeds(Value *V, SmallVectorImpl<Instruction *> &Consumers) {
+  if (V->use_empty())
+    return false;
+  for (User *U : V->users()) {
+    auto *CI = dyn_cast<CallInst>(U);
+    if (!CI)
+      return false;
+    const Function *Callee = CI->getCalledFunction();
+    if (!Callee)
+      return false;
+    if (!Callee->getName().starts_with("cq_phi_"))
+      return false;
+    // `V` must be the angle (arg 1), never the arg-0 handle.
+    if (CI->arg_size() < 2 || CI->getArgOperand(1) != V ||
+        CI->getArgOperand(0) == V)
+      return false;
+    Consumers.push_back(CI);
+  }
+  return true;
+}
+
 // WP10 (Family B2): is `Sel` a CLEAN rotation-parameter feed — a select used
 // EXCLUSIVELY as the classical ANGLE (arg 1) of one or more `cq_phi`/`cq_theta`
 // rotations? `-O1` sinks `if(q){rz(u,a);}else{rz(u,b);}` into
@@ -86,25 +120,7 @@ bool isPhiCall(const Instruction &I) {
 // On a clean match, fills `Consumers` with the rotation calls (in use order).
 bool isCleanAngleSelect(SelectInst *Sel,
                         SmallVectorImpl<Instruction *> &Consumers) {
-  if (Sel->use_empty())
-    return false;
-  for (User *U : Sel->users()) {
-    auto *CI = dyn_cast<CallInst>(U);
-    if (!CI)
-      return false;
-    const Function *Callee = CI->getCalledFunction();
-    if (!Callee)
-      return false;
-    StringRef N = Callee->getName();
-    if (!N.starts_with("cq_phi_") && !N.starts_with("cq_theta_"))
-      return false;
-    // `Sel` must be the angle (arg 1), never the arg-0 handle.
-    if (CI->arg_size() < 2 || CI->getArgOperand(1) != Sel ||
-        CI->getArgOperand(0) == Sel)
-      return false;
-    Consumers.push_back(CI);
-  }
-  return true;
+  return usersAreAngleFeeds(Sel, Consumers);
 }
 
 // Fix (test_C_libtooling-cwk): does the diamond merge `MergeBB` carry a CLASSICAL
@@ -153,6 +169,55 @@ PHINode *unlowerableClassicalMergePhi(BasicBlock *MergeBB, TaintSet &taint) {
       }
     if (!AnyTainted)
       return &P;  // a wholly-classical φ the reduction cannot lower.
+  }
+  return nullptr;
+}
+
+// cwk fix (b) (test_C_libtooling-byx): classify a diamond's merge `φ` for the
+// angle-lowering path. The `br`-diamond / gated-switch analog of
+// `isCleanAngleSelect`, generalized to the WHOLE merge so a mixed merge is never
+// partially lowered. For each `φ` in `MergeBB`:
+//   * supported integer-data width (the WP4/WP7 classical mux) → skip
+//     (`dissolveBranchPhi` lowers it);
+//   * a gate-handle `φ` (any tainted incoming) → skip (dissolved by RAUW);
+//   * a wholly-classical SCALAR-FP `φ` whose users are all clean `cq_phi` angle
+//     feeds → LOWERABLE: append to `AnglePhi` and its rotations to `Consumers`
+//     (these join `plan.InShadow`; `reduceAngleDiamondPhi` lowers them as
+//     base + controlled-difference);
+//   * ANY OTHER wholly-classical `φ` (a `<2 x double>` vector / `i128` / `ptr`,
+//     or a scalar-FP angle feeding a non-rotation, or a `cq_theta`) is NOT
+//     lowerable → return it so the caller DIAGNOSES the whole region.
+// Returning the first unlowerable `φ` (rather than short-circuiting on the first
+// lowerable one) is load-bearing: a merge carrying a lowerable angle `φ` AND an
+// unlowerable sibling `φ` must be rejected wholesale — building the region would
+// leave the sibling to `reduceClassicalMux`/linearization (the cwk-fix-(a)
+// miscompile/broken module). Returns null iff every classical `φ` is lowerable
+// (possibly with `AnglePhi` empty — an ordinary gate/data region).
+PHINode *classifyAngleMerge(BasicBlock *MergeBB, TaintSet &taint,
+                            SmallVectorImpl<PHINode *> &AnglePhi,
+                            SmallVectorImpl<Instruction *> &Consumers) {
+  for (PHINode &P : MergeBB->phis()) {
+    // The legitimate integer-data mux (WP4/WP7) — leave it to dissolveBranchPhi.
+    if (P.getType()->isIntegerTy() && !abiWidthFromType(P.getType()).empty())
+      continue;
+    // A gate-handle (tainted-incoming) φ is dissolved by RAUW, not lowered here.
+    bool AnyTainted = false;
+    for (Value *In : P.incoming_values())
+      if (taint.Tainted.count(In)) {
+        AnyTainted = true;
+        break;
+      }
+    if (AnyTainted)
+      continue;
+    // A wholly-classical φ. Lowerable iff a scalar-FP clean `cq_phi` angle feed.
+    SmallVector<Instruction *, 4> Cons;
+    if (P.getType()->isFloatingPointTy() && usersAreAngleFeeds(&P, Cons)) {
+      AnglePhi.push_back(&P);
+      for (Instruction *C : Cons)
+        Consumers.push_back(C);
+      continue;
+    }
+    return &P;  // unlowerable (vec/i128/ptr, non-rotation use, cq_theta, …).
   }
   return nullptr;
 }
@@ -806,11 +871,25 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
           if (AlreadyClaimed)
             continue;
 
-          // Reject a classical-FP merge `φ` (diamond-form angle-under-control,
-          // cwk) before building — same guard as the one-content-arm diamond.
-          if (PHINode *BadPhi = unlowerableClassicalMergePhi(SymMerge, taint)) {
-            diagnoseEscape(BadPhi, "rotation angle");
-            continue;
+          // A classical-FP merge `φ` is a rotation angle dispatched under
+          // quantum control (cwk). A CLEAN angle feed lowers as controlled-
+          // rotation-by-difference (fix (b), reduceAngleDiamondPhi); record it
+          // + its consuming rotations (which join InShadow so lowerRotations
+          // skips them). A NON-clean / unlowerable-type φ stays diagnosed.
+          {
+            SmallVector<PHINode *, 2> AnglePhis;
+            SmallVector<Instruction *, 4> AngleCons;
+            if (PHINode *BadPhi =
+                    classifyAngleMerge(SymMerge, taint, AnglePhis, AngleCons)) {
+              diagnoseEscape(BadPhi, "rotation angle");
+              continue;
+            }
+            for (PHINode *P : AnglePhis)
+              region.AnglePhi.push_back(P);
+            for (Instruction *C : AngleCons) {
+              region.AngleConsumers.push_back(C);
+              plan.InShadow.insert(C);
+            }
           }
 
           region.Condition = Br->getCondition();
@@ -864,12 +943,27 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       if (AlreadyClaimed)
         continue;
 
-      // A classical-FP merge `φ` is a rotation angle (or other classical double)
-      // chosen under quantum control via the diamond form — not yet lowerable,
-      // and `dissolveBranchPhi` would miscompile it (cwk). Diagnose, don't build.
-      if (PHINode *BadPhi = unlowerableClassicalMergePhi(MergeBB, taint)) {
-        diagnoseEscape(BadPhi, "rotation angle");
-        continue;
+      // A classical-FP merge `φ` is a rotation angle chosen under quantum
+      // control via the diamond form (cwk). A CLEAN angle feed lowers as
+      // controlled-rotation-by-difference (fix (b), reduceAngleDiamondPhi);
+      // record it + its consuming rotations (which join InShadow so
+      // lowerRotations skips them — the orchestrator lowers them). A non-clean
+      // use, or an unlowerable angle type (vector/ptr/i128), stays diagnosed —
+      // `dissolveBranchPhi` would otherwise miscompile it.
+      {
+        SmallVector<PHINode *, 2> AnglePhis;
+        SmallVector<Instruction *, 4> AngleCons;
+        if (PHINode *BadPhi =
+                classifyAngleMerge(MergeBB, taint, AnglePhis, AngleCons)) {
+          diagnoseEscape(BadPhi, "rotation angle");
+          continue;
+        }
+        for (PHINode *P : AnglePhis)
+          region.AnglePhi.push_back(P);
+        for (Instruction *C : AngleCons) {
+          region.AngleConsumers.push_back(C);
+          plan.InShadow.insert(C);
+        }
       }
 
       region.Condition = Br->getCondition();

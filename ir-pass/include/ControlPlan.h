@@ -23,6 +23,7 @@ class BasicBlock;
 class ConstantInt;
 class Instruction;
 class Module;
+class PHINode;
 class Value;
 }  // namespace llvm
 
@@ -125,6 +126,19 @@ struct ControlRegion {
   // arms, not `Pred`), and linearization splices BOTH arms into `Pred`.
   llvm::BasicBlock *ArmFalse = nullptr;
   llvm::SmallVector<llvm::Instruction *, 4> ShadowFalse;
+
+  // cwk fix (b) (test_C_libtooling-byx) — a wholly-classical scalar-FP merge `φ`
+  // (a rotation ANGLE) dispatched under quantum control via the `br`-diamond /
+  // gated-switch form: the CFG analog of `AngleSelectRegion`. Detection records
+  // the angle `φ`(s) here and their consuming `cq_phi`/`cq_theta` rotations in
+  // `AngleConsumers` (which also join `plan.InShadow` so `lowerRotations` skips
+  // them — the orchestrator lowers them as base + controlled-difference via
+  // `reduceAngleDiamondPhi`). A diamond may also carry an ordinary gate-handle
+  // `φ` alongside (the realistic mixed `if(q){gate; ang=a;}` shape); that one is
+  // dissolved by `dissolveBranchPhi` as usual, which SKIPS any `φ` listed here.
+  // Empty for every region without an angle `φ`.
+  llvm::SmallVector<llvm::PHINode *, 2> AnglePhi;
+  llvm::SmallVector<llvm::Instruction *, 4> AngleConsumers;
 
   // WP18 (SwitchRegion) — the case arms. The default arm rides `Arm`/`Shadow`
   // (above). Empty for every non-switch region.
