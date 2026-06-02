@@ -2,10 +2,13 @@
 // IMPLEMENTATION §5.5). The merge is a stock SSA merge (no `cq_template_*` to
 // suffix), so it gets its own dissolution keyed on arm taint.
 //
-//   * WP3 `[modified, original]` `br`-diamond case (`region.Merge` is a
-//     `PHINode`): the controlled gate mutated the register in place, so the
-//     merge `φ[rotated_y, y]` RAUWs to the in-place handle `y` (the incoming
-//     value from the non-arm predecessor) and the `φ` is erased.
+//   * `br`-diamond case: dissolve EVERY `φ` in the merge block (WP7), each by
+//     its own arm-taint class. A `[modified, original]` gate-handle `φ` RAUWs
+//     to the in-place handle (the incoming value from the non-arm predecessor)
+//     and is erased; a `[classical, classical]` data `φ` that rode along under
+//     the same guard reduces via the §5.5 host-difference path (below). A
+//     single-arm diamond may carry ≥2 `φ` (multiple gated handles, or a data
+//     assignment alongside a gate); leaving any behind crashes linearization.
 //   * WP4 `[classical, classical]` `select` case (`region.Merge` is a
 //     `SelectInst`): `select i1 %c, A, B` reduces to `y = B + flag·(A−B)`.
 //     Emit a host `%d = sub A, B` (plain LLVM — stays classical), then

@@ -53,8 +53,10 @@
 #include "TemplateName.h"  // cq::Shape
 #include "WidthDispatch.h"
 
+#include "llvm/ADT/STLExtras.h"  // make_early_inc_range
 #include "llvm/ADT/StringRef.h"
-#include "llvm/IR/Constants.h"  // ConstantInt
+#include "llvm/IR/BasicBlock.h"  // phis(), getFirstNonPHI
+#include "llvm/IR/Constants.h"   // ConstantInt
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
@@ -64,19 +66,103 @@ namespace cq {
 
 namespace {
 
-// WP3 `[modified, original]` `br`-diamond merge `φ`.
-void dissolveBranchPhi(ControlRegion &region) {
-  auto *Merge = dyn_cast_or_null<PHINode>(region.Merge);
-  if (!Merge || !region.Pred)
+// §5.5 host-difference reduction for a `[classical, classical]` mux under
+// quantum control: `result = B + flag·(A−B)`. Emit a HOST `%d = A − B` (plain
+// LLVM — both operands classical, so the `sub` never taints/lowers; constants
+// fold), `cqrt_alloc_<W>(B)` to seed a handle at the false/in-place arm, then
+// `cq_template_add_<W>_hl_controlled(flag, regB, %d)`. Inserts before
+// `InsertPt`. Returns the controlled-add result (a fresh i32 handle) — the
+// CALLER registers it as tainted — or null on an unsupported width. Shared by
+// the WP4 `select` [classical,classical] arm-shape and the WP7 classical-data
+// merge `φ` that rode along under a gate.
+CallInst *reduceClassicalMux(Value *A, Value *B, Value *Flag,
+                             Instruction *InsertPt, WidthDispatch &wd,
+                             ControlledSymbols &csyms, DebugLoc DL) {
+  StringRef AbiWidth = abiWidthFromType(A->getType());
+  if (AbiWidth.empty())
+    return nullptr;  // unsupported value width.
+  FunctionCallee Alloc = wd.allocFn(AbiWidth);
+  FunctionCallee Add = csyms.controlledDataTemplateFn("add", AbiWidth, Shape::HL,
+                                                      /*inverse=*/false);
+  if (!Alloc || !Add)
+    return nullptr;  // unsupported width.
+
+  IRBuilder<> Builder(InsertPt);
+  // (1) Host difference `%d = A − B` (folds for constants; a real `sub` for
+  //     runtime args — classical either way).
+  Value *Delta = Builder.CreateSub(A, B, "d");
+  // (2) Seed a handle initialized to the false/in-place arm B.
+  CallInst *RegB = Builder.CreateCall(Alloc, {B}, "h");
+  // (3) Controlled add of the classical delta onto regB, gated by the flag.
+  CallInst *Res = Builder.CreateCall(Add, {Flag, RegB, Delta}, "h_sel");
+  if (DL) {
+    RegB->setDebugLoc(DL);
+    Res->setDebugLoc(DL);
+  }
+  return Res;
+}
+
+// WP7 `br`-diamond merge dissolution — dissolve EVERY φ in the merge block, not
+// just `region.Merge`. A single-arm diamond may carry ≥2 φ: multiple gated
+// handles (`if(q){u=g(u); v=g(v);}`), or a classical data assignment riding
+// alongside a gate (`if(q){y=5; u=g(u);}`). Leaving any φ behind makes CFG
+// linearization splice it mid-block → `PHI nodes not grouped` (or, by φ order, a
+// verify-clean WRONG module). Each φ is classified by its arm taint and
+// dissolved by its own class (risk R8 — per-φ, not once per region):
+//   * gate-handle φ ([mod, orig]; substitution already rewrote `mod` to the
+//     in-place handle): RAUW to the unmodified `region.Pred`-edge handle, erase.
+//   * classical-data φ ([classical, classical]): a classical mux under the
+//     quantum guard — reduce via §5.5 (`reduceClassicalMux`).
+void dissolveBranchPhi(ControlRegion &region, WidthDispatch &wd,
+                       ControlledSymbols &csyms, TaintSet &taint) {
+  BasicBlock *MergeBB = region.MergeBB;
+  if (!MergeBB || !region.Pred)
     return;
 
-  int PredIdx = Merge->getBasicBlockIndex(region.Pred);
-  if (PredIdx < 0)
-    return;  // not the expected diamond wiring; leave it for the verifier.
-  Value *InPlace = Merge->getIncomingValue(PredIdx);
+  // Stable insertion anchor for any classical-data reduction: the merge's first
+  // non-φ instruction (it survives φ erasure). The orchestrator anchors the
+  // flag uncompute at this same point (captured pre-dissolution), so a
+  // reduction emitted here stays BEFORE the uncompute (compute → uncompute).
+  Instruction *InsertPt = MergeBB->getFirstNonPHI();
 
-  Merge->replaceAllUsesWith(InPlace);
-  Merge->eraseFromParent();
+  for (PHINode &P : make_early_inc_range(MergeBB->phis())) {
+    int PredIdx = P.getBasicBlockIndex(region.Pred);
+    if (PredIdx < 0)
+      continue;  // not wired through this diamond's Pred edge; leave it.
+    Value *InPlace = P.getIncomingValue(PredIdx);
+
+    // The "modified" arm-edge incoming (a diamond merge has the Pred and Arm
+    // edges; take the first non-Pred incoming).
+    Value *Modified = nullptr;
+    for (unsigned k = 0, e = P.getNumIncomingValues(); k != e; ++k)
+      if (static_cast<int>(k) != PredIdx) {
+        Modified = P.getIncomingValue(k);
+        break;
+      }
+
+    // Gate-handle φ: either incoming is tainted (post-substitution both are the
+    // same in-place handle). RAUW to the unmodified Pred-edge handle.
+    const bool Quantum = taint.Tainted.count(InPlace) != 0 ||
+                         (Modified && taint.Tainted.count(Modified) != 0);
+    if (Quantum) {
+      P.replaceAllUsesWith(InPlace);
+      P.eraseFromParent();
+      continue;
+    }
+
+    // Classical-data φ: A = arm/modified value, B = Pred/in-place value.
+    if (!Modified || !region.Flag)
+      continue;  // malformed; leave it well-typed for the verifier.
+    CallInst *Res = reduceClassicalMux(Modified, InPlace, region.Flag, InsertPt,
+                                       wd, csyms, P.getDebugLoc());
+    if (!Res)
+      continue;  // unsupported width; leave the φ for the verifier.
+    P.replaceAllUsesWith(Res);
+    P.eraseFromParent();
+    taint.Tainted.insert(Res);
+    taint.BirthOrder[Res] = taint.NextBirth++;
+  }
+
   region.Merge = nullptr;  // dissolved; linearization must not touch it again.
 }
 
@@ -130,26 +216,12 @@ void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
   IRBuilder<> Builder(Sel);
 
   if (!TrueTainted && !FalseTainted) {
-    // ── [classical, classical] (WP4) — kept byte-identical ──
-    FunctionCallee Add =
-        csyms.controlledDataTemplateFn("add", AbiWidth, Shape::HL,
-                                       /*inverse=*/false);
-    if (!Add)
+    // ── [classical, classical] (WP4) — the §5.5 host-difference reduction,
+    // shared with WP7's classical-data merge φ via `reduceClassicalMux`. ──
+    Res = reduceClassicalMux(A, B, region.Flag, /*InsertPt=*/Sel, wd, csyms,
+                             Sel->getDebugLoc());
+    if (!Res)
       return;  // unsupported width — leave the select standing (verify-clean).
-
-    // (1) Host difference `%d = A − B`. Plain LLVM `sub` — both arms classical,
-    // so it stays classical (never tainted, never lowered). For constants LLVM
-    // folds it (10−20 → -10); for runtime args it is a real `sub`.
-    Value *Delta = Builder.CreateSub(A, B, "d");
-    // (2) Seed a handle initialized to the false arm B.
-    CallInst *RegB = Builder.CreateCall(Alloc, {B}, "h");
-    // (3) Controlled add of the classical delta onto regB, gated by the flag
-    // (arg 0). `_hl` is (flag, handle, classical).
-    Res = Builder.CreateCall(Add, {region.Flag, RegB, Delta}, "h_sel");
-    if (DebugLoc DL = Sel->getDebugLoc()) {
-      RegB->setDebugLoc(DL);
-      Res->setDebugLoc(DL);
-    }
   } else if (TrueTainted != FalseTainted) {
     // ── MIXED, exactly one tainted arm (mux.1) ──
     // Q is the tainted handle, C the classical arm; `QisTrue` ⇒ ctrl = flag,
@@ -251,7 +323,7 @@ void dissolveMerge(ControlRegion &region, WidthDispatch &wd,
   if (region.Kind == ControlRegion::SelectRegion)
     dissolveSelect(region, wd, csyms, taint);
   else
-    dissolveBranchPhi(region);
+    dissolveBranchPhi(region, wd, csyms, taint);
 }
 
 }  // namespace cq

@@ -233,14 +233,20 @@ void lowerControlledRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
     //    by the one combined flag).
     substituteControlled(R, wd, taint);
 
-    // 3. Dissolve the merge φ to the in-place handle (must precede block
-    //    erasure so no use dangles, §1.6).
+    // 3. Dissolve the merge φ(s) to the in-place handle (must precede block
+    //    erasure so no use dangles, §1.6). Capture the uncompute boundary FIRST
+    //    — the merge's first non-φ instruction, stable across φ erasure. WP7's
+    //    multi-φ dissolution may emit a classical-mux reduction here; anchoring
+    //    the uncompute at this point (not the post-dissolution `front()`, which
+    //    a reduction would have shifted) keeps compute → uncompute order.
+    Instruction *UncomputeAt =
+        R.MergeBB ? R.MergeBB->getFirstNonPHI() : nullptr;
     dissolveMerge(R, wd, csyms, taint);
 
     // 4. Flag uncompute, minted while the condition compare(s) still stand and
     //    anchored at the merge boundary so it brackets the controlled body
     //    (§1.5). For a conjunction this is the LIFO reverse of the compute.
-    emitUncompute(R, wd, csyms, taint, R.MergeBB ? &R.MergeBB->front() : nullptr);
+    emitUncompute(R, wd, csyms, taint, UncomputeAt);
     FlagStack.pop_back();
 
     // 5. Collapse the diamond to a single straight-line block; the nested shape
