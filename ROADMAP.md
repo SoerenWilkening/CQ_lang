@@ -372,15 +372,23 @@ post-freeze).
 cut to keep Phase 4 narrow; the realized `-O1` control menu was
 catalogued 2026-06-01.
 - **Tainted `switch`.** `-O1` keeps a real `switch` + N-way φ for
-  `switch (q)`; the `select`/`br` normalization does not cover it.
-  Pre-run stock `-lowerswitch` (folds to `icmp`-eq chains +
-  selects/`br`s) or add a native multi-way controlled mux. Tracked as
-  [`test_C_libtooling-aht.1`](.beads/issues.jsonl).
+  `switch (q)`. **Direction finalized (PRD §8.2, 2026-06-02):** a
+  **data-flow `select`-chain normalization** (a step between taint-prop and
+  lowering) rewrites `switch` + N-way φ → `icmp eq` flags + nested
+  `select`s, lowered by the existing mux path — no new control region, no
+  N-way φ dissolution, no new ABI. **Supersedes** the earlier
+  `-lowerswitch` / native-mux options (`-lowerswitch` is not free — it
+  crashes on pivot-tree shared-multi-pred merges). Tracked as
+  [`test_C_libtooling-aht.1`](.beads/issues.jsonl); gated side-effecting
+  multi-arm cascades split to [`-aht.3`](.beads/issues.jsonl).
 - **Quantum-controlled escape.** `if (q) return …;` / `break` / `goto`,
-  and measurement inside a tainted-branch arm, gate an *escape* from the
-  region rather than an in-place gate — not a clean controlled shadow.
-  Needs a reject-diagnostic vs. `-fcq-measurement-bridge` (§7) decision.
-  Tracked as [`test_C_libtooling-aht.2`](.beads/issues.jsonl).
+  and measurement inside a tainted-branch arm, gate an *escape* rather than
+  an in-place gate. **Verdict finalized (PRD §8.6, 2026-06-02):**
+  reject-by-default — confirmed correct by the Bennett/Sturm/Silq/QCM
+  cross-check (the field-standard terminal state, not a stopgap) — with
+  `-fcq-measurement-bridge` only as an explicit deferred-measurement
+  demotion to classical control. Tracked as
+  [`test_C_libtooling-aht.2`](.beads/issues.jsonl).
 
 Both depend on the Phase 4 core landing first; grouped under epic
 [`test_C_libtooling-aht`](.beads/issues.jsonl).
@@ -433,9 +441,12 @@ signature-matches): [`slice_control_gate`](tests/e2e/slice_control_gate.c)
 
 Two `-O1` shapes remain Phase 4.1 (epic
 [`test_C_libtooling-aht`](.beads/issues.jsonl)): the escape *refinement* —
-this epic diagnoses the escape loudly; Phase 4.1 decides reject vs.
-`-fcq-measurement-bridge` ([`-aht.2`](.beads/issues.jsonl)) — and tainted
-`switch` + N-way φ ([`-aht.1`](.beads/issues.jsonl)).
+this epic diagnoses the escape loudly; Phase 4.1's verdict (PRD §8.6) is
+reject-by-default, with `-fcq-measurement-bridge` only as an explicit
+classical-control demotion ([`-aht.2`](.beads/issues.jsonl)) — and tainted
+`switch` lowering via select-chain normalization (PRD §8.2;
+[`-aht.1`](.beads/issues.jsonl), gated cascades →
+[`-aht.3`](.beads/issues.jsonl)).
 
 **⚠ Completeness reopened — Phase 4.3 (post-landing audit, 2026-06-02).**
 The `[DONE]` above is for the **happy paths**. An exhaustive sweep of 44
@@ -446,7 +457,8 @@ single-gated-handle / classical-arm / single-φ. Six root-cause families
 symmetric diamond, angle-select diagnose→lower, mux i64 width, switch
 diagnostic guard) is epic
 [`test_C_libtooling-u6v`](.beads/issues.jsonl); Family E (`switch`
-lowering — `-lowerswitch` is **not** free) stays Phase 4.1, re-informed.
+lowering) stays Phase 4.1 — now realized as **select-chain normalization**
+(PRD §8.2), not `-lowerswitch`.
 Design + plan:
 [`PRD.md §7`](docs/prd/phase-04-controlled-form/PRD.md) +
 [`IMPLEMENTATION.md §12`](docs/prd/phase-04-controlled-form/IMPLEMENTATION.md).

@@ -25,6 +25,22 @@ Companion documents:
 
 ---
 
+## Status (2026-06-02)
+
+| Sub-phase | Scope | State |
+|---|---|---|
+| **Phase 4 core** (WP0–WP6, epic `test_C_libtooling-656`) | controlled surface + `br`-diamond / classical-arm `select` / `&&`‖`\|\|` / nested-AND / Q+Q condition / escape *diagnostic* + e2e | ✅ **DONE** |
+| **Phase 4.2** (epic `test_C_libtooling-mux`) | `[≥1 tainted arm]` data mux — mux.1 (mixed) + mux.2 (both-handle) | ✅ **DONE** (reopened only for Family F i64 width, fixed in 4.3) |
+| **Phase 4.3** (epic `test_C_libtooling-u6v`, §7) | realized-`-O1` `if`-menu completeness: Families A (multi-φ keystone), C (symmetric diamond), B1/B2 (angle-select diag+lower), F (mux i64 width), D (`switch` *diagnostic* guard) + 2 re-sweep findings | ✅ **DONE** — re-sweep 29 lowered / 4 diagnosed / 1 untouched; 0 crash, 0 silent miscompile |
+| **Phase 4.1** (epic `test_C_libtooling-aht`, §8) | tainted `switch` *lowering* + quantum-controlled escape (`return`/`break`/`goto`/`measure`) refinement | ⏳ **PLANNED** — design in §8 |
+
+The only open work is **Phase 4.1**; everything the `if`-menu needs has
+landed. §8 records the Phase 4.1 design, re-informed by a verified
+cross-check against the Bennett.jl / Sturm.jl stack + the quantum-control
+literature (2026-06-02; [`bennett-jl-comparison.md`](../../bennett-jl-comparison.md)).
+
+---
+
 ## 0. Invariant recap (not new — the ground Phase 4 stands on)
 
 Carried from Phase 3, restated so the decisions below are unambiguous:
@@ -526,6 +542,14 @@ miscompile.**
 (Family E). Cheap; kills the silent miscompile.
 
 **Family E — `-lowerswitch` pivot tree mis-handled → Phase 4.1.**
+> **→ Superseded by §8.2 (2026-06-02).** The `-lowerswitch` route below is
+> *not* the chosen Phase 4.1 direction. Phase 4.1 instead normalizes a
+> tainted `switch` to a **data-flow `select` chain** (§8.2), which never
+> produces the pivot-tree `br`-diamonds analyzed here — so the crash class
+> below cannot arise, and no N-way φ dissolution / closed-diamond guard is
+> needed. The analysis is retained as the record of *why* `-lowerswitch` was
+> rejected.
+
 *Finding:* the filed Phase 4.1 default ("pre-run stock `-lowerswitch`") is
 **not** a free ride. `-lowerswitch` lowers a tainted switch into a
 balanced pivot **tree** of `icmp slt`/`icmp eq` + conditional `br` with
@@ -570,10 +594,11 @@ diagnostic, so no shape miscompiles silently after Phase 4.3 begins.
 - **Phase 4.3 (new) — `if` completeness:** Families A, C, B (diagnose +
   lower), F; plus the Family D `switch` *diagnostic guard* (safety only).
 - **Phase 4.1 (re-informed) — `switch` + escape lowering:** Family E
-  (`switch` via `-lowerswitch` + closed-diamond guard, with re-verify) and
-  the escape reject-vs-`-fcq-measurement-bridge` decision (`-aht.2`),
-  which now also covers the `goto`/`break` escapes that currently crash
-  through Family A.
+  (`switch` lowering) and the escape reject-vs-`-fcq-measurement-bridge`
+  decision (`-aht.2`), which now also covers the `goto`/`break` escapes
+  that currently crash through Family A. **Design finalized in §8**
+  (2026-06-02): `switch` → **select-chain normalization** (supersedes the
+  `-lowerswitch` path); escape verdict = **reject-default**.
 - **Phase 4.2 — mux:** landed, reopened only for Family F (i64 width).
 
 **Audit method (reproducible).** 8-category fan-out over the `if`-shape
@@ -583,3 +608,200 @@ space; per shape: `clang -I<inc> -include CQ.h -O1 -emit-llvm` →
 confirmed by an independent adversarial verifier. The rubric treats a
 verify-clean module that still carries a `switch`/`br i1` on a quantum
 handle as a **silent miscompile**, not a pass.
+
+---
+
+## 8. Phase 4.1 — `switch` lowering + quantum-controlled escape (design)
+
+> **Status — PLANNED (design finalized 2026-06-02).** Tracked by epic
+> `test_C_libtooling-aht` (`-aht.1` switch, `-aht.2` escape) + a new
+> follow-on for the gated multi-arm cascade (§8.5). Re-informed by a
+> **verified** cross-check against Tobias Osborne's Julia stack —
+> **Bennett.jl** (classical→reversible compiler) and **Sturm.jl** (quantum
+> DSL) — plus the quantum-control-flow literature (Quantum Control Machine,
+> Silq, Janus). Sources fetched + adversarially verified 2026-06-02; full
+> write-up in [`bennett-jl-comparison.md`](../../bennett-jl-comparison.md).
+
+### 8.1 The reframe — `switch` and multi-way `if` are one problem
+
+At the opcode level CQ's job is uniform: **replace tainted ops with quantum
+functionality**. A `switch (q)` and an `if/else if/else` chain on a tainted
+scrutinee are the *same* construct — **multi-way dispatch** — and the right
+move (the one Bennett also makes) is to **eliminate the N-way control by
+reducing it to constructs the existing opcode pipeline already lowers**,
+rather than to grow a bespoke N-way control-region matcher.
+
+Bennett does this at extract time with `_expand_switches`: it desugars an
+N-way `switch` into a **linear cascade of `icmp eq` + 2-way `br` diamonds**
+(its `phi.jl` MUX-chain machinery then emits the gates). CQ makes the *same
+move* but to a **different normal form** — because CQ's downstream is
+opcode-replacement over data flow, not gate-emission over a CFG, the right
+target is a **`select` chain**, not a `br` cascade. A `select` is the
+value-form of an `if`; a `select` chain is the value-form of a `switch`.
+
+This **supersedes the Family E `-lowerswitch` default** (§7.1):
+`-lowerswitch` emits a balanced pivot *tree* with shared multi-pred
+φ-merges that crash linearization. The select-chain normalization never
+produces `br`-diamonds, so it sidesteps that entire failure class — and
+needs **no new control region and no N-way φ dissolution** (the N-way φ
+never forms).
+
+### 8.2 Switch lowering — `normalizeTaintedSwitch` (data-flow, opcode-level)
+
+A pass step wedged **between taint propagation and opcode/region lowering**:
+
+```
+taint propagation → normalizeTaintedSwitch → (control-region detect +) opcode lowering → cqrt_*
+                    switch + N-way φ  ⇒  icmp-eq flags + select chain   (dissolveSelect — unchanged)
+```
+
+**Gate:** fire only on a tainted scrutinee
+(`taint.Tainted.count(Sw->getCondition())`) — exactly where the Phase 4.3
+Family D guard (WP12) currently diagnoses. A classical-scrutinee `switch`
+stays untouched for the classical backend.
+
+**Algorithm (value-merge form — the common case).** Read the case values
+off the `SwitchInst` (`cases()` → `{ConstantInt, BasicBlock}`,
+`getDefaultDest()`) and the per-arm values off the merge φ:
+
+1. For each case `(val_k, block_k)`: `A_k` = the merge-φ incoming from
+   `block_k`; `A_default` = the incoming from the default block.
+2. Emit eq-flags + a nested select chain (default = innermost base):
+
+   ```
+   f_k = icmp eq %q, val_k
+   acc = A_default ; acc = select f_k, A_k, acc      // folded per case
+   ```
+
+3. RAUW the merge φ with the final `acc`; delete the arm blocks, the
+   `switch`, and the φ; fall the switch block straight through to the merge.
+
+Before (post-`-O1`) → after:
+
+```llvm
+switch i32 %q, label %dflt [ i32 1,%c1  i32 2,%c2 ]   %f1 = icmp eq i32 %q, 1
+c1/c2/dflt: br %merge                                  %f2 = icmp eq i32 %q, 2
+merge: %y = phi [10,%c1],[20,%c2],[99,%dflt]           %s1 = select %f1, 10, 99   ; dflt = base
+                                                       %y  = select %f2, 20, %s1
+```
+
+Then **existing opcode lowering finishes it, with zero new lowering code**:
+`%f1,%f2` → `cqrt_template_icmp_eq_<W>_hl` flags (the same eq-flag the
+`if (u != 5)` diamond path mints); `%s1` (`[classical,classical]`) →
+`reduceClassicalMux` (WP4); `%y` (mixed) → `dissolveSelect` mux.1. Eq-flags
+are mutually exclusive, so the nesting is order-independent and correct.
+
+**Properties.**
+1. **Scales to any N** — a linear chain of N eq-flags + N selects; sparse vs
+   dense case values are identical (we never build a jump table).
+2. **Sidesteps both Phase-4.3 gaps** — no N-way φ (collapsed to binary
+   selects), and no shared-multi-pred-merge crash (no `br`-diamonds).
+3. **Never inherits Bennett's `_expand_switches` U11 φ-rewrite trap** — CQ
+   *reads then deletes* the φ; the merge becomes single-predecessor, so
+   there is nothing to re-key.
+4. **No new ABI** — reuses the select-mux template surface.
+5. **New code is just the normalization** (read cases + φ, build the chain,
+   delete the diamond); everything downstream is untouched.
+6. Linear *depth* (N sequential controlled-adds) → a deep circuit for huge
+   N; the log-depth fix (unary iteration / QROM, Babbush et al. 2018,
+   arXiv:1805.03662) lives *below* the `cqrt_*` ABI and is a runtime/template
+   concern, **not** a pass concern — the pass stays correct at any N.
+
+**First-cut scope:** value-merge, `break`-terminated, clean reconverging
+arms, merge predecessors = case/default blocks only (same gatekeepers as the
+escape rule). Follow-ons: fall-through (no `break`), `default` as a real
+body, sparse/range cases, merges with extra non-switch predecessors — each a
+guard or diagnose-and-punt, as in the `if`-shape sweep.
+
+### 8.3 Multi-way value `if` — comes along for free
+
+The same normal form covers `if/else if/else` value dispatch. When `-O1`
+already emits a `select` chain (`y = c1?A : c2?B : C`), `dissolveSelect`
+lowers it **today** — it is exactly the shape §8.2 produces. When `-O1`
+instead emits a `br` cascade (an N-way merge φ), the *same* select-chain
+normalization, generalized to "any multi-way value merge → select chain,"
+closes it — and with it the general N-way-φ case Phase 4.3 left to 4.1.
+
+### 8.4 The rotation-parameter slice — angle-select-chain
+
+A `switch`/`if` whose arms differ only in a **rotation parameter**
+(`case k: rz(u, a_k)`) is the select-chain applied to the *angle*: `-O1`
+sinks it to `rz(u, <select-chain over q>)`, which is the WP10 angle-select
+(`reduceAngleSelect`) generalized from a single select to a select *chain* —
+base rotation `Rz(a_default)` + one controlled-difference rotation per case
+(LIFO-bracketed flags). Same mechanism as §8.2; specify it alongside (WP10
+already notes the N-way generalization).
+
+### 8.5 The gated multi-arm cascade — the one genuinely separate mechanism
+
+The only multi-way shape that does **not** fold into the select form is a
+cascade of arms with **arbitrary side-effecting gate bodies** (distinct gate
+sequences / controlled arithmetic per case, not just a value or an angle).
+There is no value to select; each arm's ops must become `_controlled` on its
+eq-flag. This is the **controlled-region** path (the Phase 4.3 symmetric
+two-content-arm diamond generalized to an N-way false-arm chain), *not* the
+opcode/select path. It is the CQ analog of Bennett's `_expand_switches`
+branch-cascade and is the right place for that **Option-B fallback** if a
+real call site needs it. Tracked as a **separate follow-on** — do not
+conflate with the select-chain unit.
+
+### 8.6 Quantum-controlled escape — the verdict
+
+A tainted-branch arm that **escapes** (`return`/`break`/`goto`, or a
+`cq_measure` inside the arm) is not a clean controlled shadow. The
+cross-check against the Julia stack and the literature is unambiguous and
+**confirms the current loud-reject posture** as the correct terminal state,
+not a stopgap:
+
+- **Measurement under quantum control → reject, permanently.** Bennett has
+  no measurement op at all (classical→reversible; measurement lives in
+  Sturm/Orkan). Sturm forbids `measure`/`return` inside `when(q)`. Silq's
+  rejected `condMeas` *is* this exact program — a measurement gated on a
+  superposed predicate is unphysical (you would have to measure the control
+  first). Keep the `DiagnosticInfoUnsupported`.
+- **`return`/`break`/`goto` under quantum control → reject by default.**
+  Bennett raises a loud, specific error on non-reconverging exits
+  (`lower_loop!: IRRet in loop body … not supported`). The Quantum Control
+  Machine result (arXiv:2304.15000) proves a superposed jump/return is
+  non-injective and cannot be a unitary; the necessary-and-sufficient
+  conditions are **injectivity** + **synchronization** (all branches
+  reconverge to one join). Janus / reversible-flowchart theory bans
+  arbitrary `goto`/`break`/`return` and proves (Structured Reversible
+  Program Theorem) no expressive power is lost — the programmer refactors.
+- **`-fcq-measurement-bridge` — accept only as an explicit demotion.** The
+  bridge is sound **iff** framed honestly as *promoting quantum control to
+  classical control via deferred measurement*: insert the measure **at the
+  region boundary** (collapsing the predicate before the body), opt-in, with
+  a loud diagnostic, and **statically reject** the case where the measured
+  value re-enters a still-coherent region. That is exactly Silq's sanctioned
+  fix and the OpenQASM-3 feed-forward model. Sold as a transparent lowering
+  of "the same `if`," it is an anti-pattern (it silently changes observable
+  behavior — Silq/Q#/Quipper refuse it). Sturm ships the *dual*
+  (`deferred_measurement.jl`): recognize measure-then-classical-branch and
+  **promote** it to a coherent controlled gate — a collapse-free
+  optimization worth a separate future pass.
+
+**Future-phase extension (recorded, not in scope) — `return`/`break` via
+predication.** For the *bounded, reconverging* subset only — an exit that
+reconverges at the post-dominator join with a classically-bounded enclosing
+loop — the established technique is **done-flag (guard-qubit) predication**
+(the quantum lift of classical if-conversion; QCM / Tower): allocate a
+`retval` register **and** a `done` ancilla; on the exit predicate write
+`retval` and set `done`; **control every op after the exit point on
+`¬done`** (one more wire on the existing AND-into-Toffoli control stack);
+the final return writes `retval` on `¬done`; **uncompute `done`** at
+function exit (recompute the predicate from the still-live args, CNOT it
+off) or it leaks as garbage entangled with the result. A true
+non-reconverging escape stays rejected. Later phase — capture only.
+
+### 8.7 What the cross-check confirms (don't rediscover)
+
+| established mechanism | source (verified 2026-06-02) | CQ component |
+|---|---|---|
+| eliminate `switch` by reducing to the existing dispatch machinery | Bennett `_expand_switches` (extract-time desugar) | §8.2 `normalizeTaintedSwitch` (to **selects**, not `br`) |
+| controlled-rotation-by-difference for parameter dispatch | Ry/Rz angle-additivity (Sturm rotations) | §8.4 angle-select-chain (WP10 generalized) |
+| reject non-reconverging exit at the structure break | Bennett `cfg.jl`; QCM injectivity+synchronization | §8.6 escape diagnostic |
+| reject measurement under quantum control | Silq `condMeas`; Sturm `when` rule; Q#/Quipper | §8.6 measure diagnostic |
+| deferred-measurement: measure-then-branch → controlled gate | Sturm `deferred_measurement.jl` (Nielsen–Chuang §4.4) | the collapse-free dual to the bridge (future pass) |
+| done-flag predication for bounded reconverging exits | QCM / Tower / classical if-conversion | §8.6 future-phase `return`/`break` extension |
+| gate-level depth opt (unary iteration / QROM) | Babbush et al. 2018 (arXiv:1805.03662) | **below** the `cqrt_*` ABI — runtime/template, not pass |

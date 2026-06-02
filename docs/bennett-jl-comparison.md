@@ -365,6 +365,51 @@ What CQ_lang explicitly does *not* adopt:
 
 ---
 
+## Control flow: `switch`, escape, and measurement (2026-06-02 cross-check)
+
+A focused re-fetch + adversarial verification of Bennett.jl and Sturm.jl on
+the three control-flow shapes CQ deferred (full design consequences in
+[Phase 4 PRD §8](./prd/phase-04-controlled-form/PRD.md); beads epic
+`test_C_libtooling-aht`).
+
+- **`switch` — Bennett *lowers* it, it does not defer.** `_expand_switches`
+  desugars an N-way `switch` into a **linear `icmp eq` + 2-way `br`
+  cascade** at extract time; its path-predicate φ/MUX machinery then emits
+  the gates. This is Bennett's *own* extract-time desugaring — **not** LLVM
+  `-lowerswitch`, and **not** a "MUX" construct (an earlier summary slip;
+  "MUX" in Bennett means φ value-selection + memory addressing only). Sturm
+  has only the **binary** `cases(q::QBool, …)`; multi-way dispatch on a
+  quantum value routes through `oracle(f, q)`. **CQ adopts the *idea*
+  (eliminate `switch` by reduction) but to a `select` chain, not a `br`
+  cascade** — because CQ's downstream is opcode-replacement over data flow,
+  not gate-emission over a CFG (PRD §8.2).
+- **Escape (`return`/`break`/`goto`) — reject is the field standard.**
+  Bennett loud-rejects non-reconverging exits (`cfg.jl`: "IRRet in loop
+  body … not supported"); reconverging diamonds lower fine. Sturm forbids
+  `return` inside `when(q)`. The Quantum Control Machine result
+  (arXiv:2304.15000) supplies the theorem: a superposed jump/return is
+  non-injective, and the necessary+sufficient conditions are **injectivity**
+  + **synchronization** (all branches reconverge). CQ's loud-reject is the
+  correct default, not over-caution (PRD §8.6).
+- **Measurement under quantum control — reject permanently.** Bennett has no
+  measurement op at all (measurement lives in Sturm/Orkan); Sturm forbids it
+  in `when`; Silq's rejected `condMeas` is the identical program.
+  `-fcq-measurement-bridge` is sound *only* as an explicit deferred-
+  measurement **demotion to classical control** (Silq's sanctioned fix /
+  OpenQASM-3 feed-forward), never as a transparent "same `if`." Sturm ships
+  the *dual* (`deferred_measurement.jl`): measure-then-classical-branch →
+  coherent controlled gate.
+
+**Verified-vs-vision.** Bennett's `when(qubit) do … end` quantum-control
+hook is **vision, not implemented** — only `controlled()` ships; the working
+`when` is in Sturm. Bennett's **bounded loops** (`max_loop_iterations`
+unroll) and **quantum-indexed memory** (QROM / MUX-EXCH) are real and are
+CQ's principal catch-up items — deferred, handled by the same techniques,
+not architectural losses. CQ already spans Sturm + Bennett at the frontend
+(it has rotations + measurement; Bennett alone has neither).
+
+---
+
 ## Open questions
 
 1. **Curated-symbol coverage.** Sturm has a working list of math-symbol

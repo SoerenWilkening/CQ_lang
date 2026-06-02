@@ -23,6 +23,20 @@ not just the PRD prose.
 
 ---
 
+## Status (2026-06-02)
+
+| WPs | Sub-phase | State |
+|---|---|---|
+| **WP0–WP6** (§4) | Phase 4 core — controlled surface, `br`-diamond, classical-arm `select`, `&&`/`\|\|` + nested-AND, Q+Q condition, escape *diagnostic*, e2e (epic `test_C_libtooling-656`) | ✅ **DONE** |
+| **WP7–WP14** (§12) | Phase 4.3 — `if`-menu completeness: A multi-φ keystone, C symmetric, B1/B2 angle, F mux i64, D `switch` diagnostic + 2 re-sweep findings (epic `test_C_libtooling-u6v`) | ✅ **DONE** (74/74 lit) |
+| **WP15–WP18** (§13) | Phase 4.1 — `switch` *lowering* (select-chain normalization) + escape verdict + gated-cascade follow-on (epic `test_C_libtooling-aht`) | ⏳ **PLANNED** (PRD §8) |
+
+Phase 4.2 (data mux, epic `test_C_libtooling-mux`) also **DONE** (reopened
+only for Family F i64 width, fixed in WP11). The remaining work is the
+**Phase 4.1 WPs in §13**.
+
+---
+
 ## 0. The headline: `-O1` already dissolved most control; the surface and the pass do not exist
 
 Verified against the tree, three facts reshape this phase versus a naive
@@ -1034,3 +1048,108 @@ confirm the 28 broken shapes are green-or-diagnosed.
 | R8 | **Multi-φ dissolution mis-pairs an arm.** A mixed gate-φ + data-φ merge dissolves each φ by the wrong arm-taint class. | Classify *per φ* by `taint.Tainted` of its incoming values + `region.Shadow` (R2 discipline), not once per region; one fixture per φ-mix (gate+gate, gate+classical). |
 | R9 | **Angle taint-discipline over-prunes.** Excluding arg-1 of `cq_theta`/`cq_phi` from taint accidentally declassifies a genuinely quantum value used elsewhere. | The angle is a `double` scalar parameter, never a handle; exclude only the **operand-use at arg 1**, not the SSA value globally; `verify` + the existing rotation fixtures guard regressions. |
 | R10 | **Symmetric-diamond ¬flag bracket leaks.** The false-arm `cqrt_x` flag bracket is not balanced LIFO with the true arm. | Reuse the §2.5/§2.9 LIFO bracket machinery verbatim; nested-symmetric fixture asserts compute/uncompute order. |
+
+---
+
+## 13. Phase 4.1 work packages — `switch` (select-chain normalization) + escape verdict
+
+> **Status — PLANNED (design 2026-06-02, PRD §8).** Epic
+> `test_C_libtooling-aht`. Supersedes the Family E `-lowerswitch` default
+> (PRD §7.1) with a **data-flow select-chain normalization** that needs no
+> new control region, no N-way φ dissolution, and no new ABI. Depends on
+> Phase 4.3 having landed (WP7 multi-φ infra, WP10 angle-select).
+
+### WP15 — `normalizeTaintedSwitch`: switch + N-way φ → eq-flags + select chain
+
+The value-merge form (`-aht.1`). A tainted-scrutinee `SwitchInst` (+ its
+merge φ) is rewritten — *before* control-region detection — into `icmp eq`
+flags + a nested `select` chain; the existing select-mux path then lowers it.
+
+- **RED.** `lowering_control_switch_lower.ll` — a tainted `switch i32 %q`
+  with 3 cases + default and a 4-way merge φ over constants. Today: WP12
+  diagnostic (`switch under quantum control`). Becomes a **positive**
+  fixture: expect N `icmp eq` + a `select` chain lowering to `cqrt_alloc`
+  + `cq_template_add_<W>_hl_controlled` (default base) and mux.1 controlled
+  adds (cases).
+- **GREEN.** New `normalizeTaintedSwitch` step (own TU or a function in a
+  normalization TU), run after taint propagation, before
+  `detectControlRegions`:
+  - gate on `taint.Tainted.count(Sw->getCondition())`; leave classical
+    switches untouched. Replaces the WP12 diagnostic *for the lowerable
+    value-merge shape*; keep WP12 as the fallback for shapes the normalizer
+    declines.
+  - read `Sw->cases()` + `getDefaultDest()`; for the merge φ collect `A_k`
+    per case block + `A_default`.
+  - build `f_k = icmp eq %q, val_k` and the nested `select` chain; RAUW the
+    φ; delete arm blocks + switch + φ; rewire to fall through to the merge.
+  - require the value-merge shape (arms empty but for `br merge`; merge
+    preds = case/default blocks); decline (keep the WP12 diagnostic)
+    otherwise.
+- **Files:** new normalization TU, `CQLoweringPass.cpp` (pipeline slot),
+  the fixture. **Reuses `dissolveSelect`/`reduceClassicalMux` unchanged.**
+- **Done:** the value-merge switch lowers to the expected controlled trace;
+  classical switch byte-identical; the WP12 negative fixture still diagnoses
+  the non-value-merge (gated/sparse) shape; full lit green.
+
+### WP16 — angle-select-chain (rotation-parameter dispatch; `-aht.1`)
+
+Generalize WP10's `reduceAngleSelect` from a single select to a **chain**: a
+`switch`/`if` over rotation angles arrives (post-`-O1`) as
+`rz(u, <select-chain over q>)`.
+
+- **RED.** `lowering_control_angle_switch.ll` — `rz(u, select-chain)` over
+  ≥3 angles. Today: handled for a single select only.
+- **GREEN.** In `isCleanAngleSelect`/`reduceAngleSelect`, accept a nested
+  select chain feeding the angle: emit base `Rz(a_default)` + one
+  controlled-difference rotation per case (`Rz(a_k − running)`),
+  LIFO-bracketed flags.
+- **Files:** `ControlDetection.cpp` (chain recognition),
+  `MergeDissolution.cpp` (`reduceAngleSelect`), the fixture.
+- **Done:** angle-switch lowers to base + N controlled-difference rotations;
+  single-select angle fixtures byte-identical.
+
+### WP17 — escape verdict: keep reject-default; spec the bridge (`-aht.2`)
+
+Codify the PRD §8.6 decision. No lowering of true escapes.
+
+- **Default (already live):** `return`/`measure`/`break`/`goto` under
+  quantum control emit `DiagnosticInfoUnsupported` (the Phase 4.3 WP14
+  catch-all already covers the `break`/`goto` crash path). Add/confirm
+  negative LIT fixtures for each with correct source location.
+- **`-fcq-measurement-bridge` (opt-in, off by default):** when set, on a
+  measure-bearing tainted arm, insert the measure **at the region boundary**
+  (collapse the predicate to classical), emit a loud "promoting quantum
+  control to classical control (deferred measurement)" diagnostic, and lower
+  the body as classical control. **Statically reject** re-entry of the
+  measured value into a still-coherent region.
+- **Files:** flag plumbing, `ControlDetection.cpp` (bridge branch), negative
+  + bridge fixtures.
+- **Done:** escapes reject by default with source locations; the bridge,
+  when enabled, demotes to classical control with the loud diagnostic and
+  rejects re-entry.
+
+### WP18 (follow-on) — gated multi-arm cascade (general side-effecting)
+
+The one multi-way shape that is **not** a select-chain: N arms with
+arbitrary side-effecting gate bodies (PRD §8.5). Lower via controlled
+substitution (the WP8 symmetric two-content-arm diamond generalized to an
+N-way false-arm chain), or fall back to the Bennett-style `br` cascade
+(Option B). **New issue, separate from `-aht.1`'s select-chain unit** —
+different mechanism; do not conflate.
+
+- **RED.** `lowering_control_switch_gated.ll` — `switch(q)` whose arms apply
+  distinct gate sequences to an external handle.
+- **GREEN.** detect the N-way false-arm cascade; compute N mutually-exclusive
+  eq-flags (default = AND of negations); control each arm's gates on its flag
+  (LIFO `cqrt_x` brackets); φ dissolution via WP7.
+- **Done:** gated multi-arm switch lowers to per-arm controlled gates; no
+  residual `switch`/`br i1` on a handle.
+
+### 13.1 Sequencing & deps
+
+| order | WP | scope | depends on |
+|---|---|---|---|
+| 1 | WP15 | switch value-merge → select chain | WP7 (multi-φ), WP4 (mux) |
+| 2 | WP16 | angle-switch → angle-select chain | WP10 |
+| 3 | WP17 | escape reject + bridge | WP14 (catch-all) |
+| — | WP18 | gated multi-arm cascade (follow-on) | WP7, WP8 |

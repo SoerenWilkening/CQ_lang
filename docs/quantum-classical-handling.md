@@ -721,5 +721,5 @@ taint-driven design exists to keep.
 | Stock LLVM C++ APIs every mechanism uses | [`llvm-implementation.md`](./llvm-implementation.md) |
 | Proposal that diagnosed the prior failures and motivated the redesign | [`rationale/proposal-taint-driven-pipeline.md`](./rationale/proposal-taint-driven-pipeline.md) |
 | End-to-end worked example, source → lowered IR | [`example.md`](./example.md) |
-| Design comparison with Sturm.jl / Bennett.jl (resync to taint-driven design pending) | [`bennett-jl-comparison.md`](./bennett-jl-comparison.md) |
+| Design comparison with Sturm.jl / Bennett.jl (incl. control-flow `switch`/escape/measurement cross-check, 2026-06-02) | [`bennett-jl-comparison.md`](./bennett-jl-comparison.md) |
 | Archived prior-design Q/C handling doc (cast-as-measurement) | [`archive/old-design/quantum-classical-handling.md`](./archive/old-design/quantum-classical-handling.md) |
