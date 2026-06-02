@@ -328,7 +328,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — IR pass: controlled-form lowering [DONE (happy paths) · completeness → Phase 4.3]
+## Phase 4 — IR pass: controlled-form lowering [DONE · core (4) + `if`-completeness (4.3); `switch`/escape lowering → 4.1]
 
 **Design:** see [`docs/prd/phase-04-controlled-form/PRD.md`](docs/prd/phase-04-controlled-form/PRD.md).
 

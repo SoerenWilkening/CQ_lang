@@ -837,6 +837,18 @@ choice survives between sessions.
 
 ## 12. Phase 4.3 work packages — control-shape completeness (post-landing audit)
 
+> **Status — COMPLETE (2026-06-02).** WP7–WP12 landed (one commit each), plus
+> two re-sweep findings: WP13 false-successor arm polarity + value-propagated
+> Pred-edge φ (`region.ArmNegated` ¬flag bracket; gate-φ dissolves to its
+> tainted incoming, not the Pred edge), and WP14 the unhandled-tainted-branch
+> safety net (a loud `control flow under quantum control` diagnostic for a
+> quantum loop `break`/irreducible `goto`). Close-gate audit re-sweep: 34
+> shapes → 29 lowered, 4 diagnosed, 1 classical-`switch` untouched; zero
+> crashes, zero silent miscompiles. `ir-pass-lit` 74/74 (+1 XFAIL). New
+> fixtures: `multigate_i32`, `mixed_arm_i32`, `ifelse_sym_i32`, `angle_select`
+> (B1 neg, repointed), `angle_rotdiff` (B2 pos), `mux_handles_i64`, `switch` +
+> `switch_classical`, `ne_i32`. Epic `test_C_libtooling-u6v` closed.
+
 Phase 4 core (WP0–WP6) green-lit the happy paths, but the 2026-06-02 audit
 (PRD §7) found **28 of 44** ordinary `if`-shapes crash or silently
 miscompile, in **six root-cause families**. These WPs close the realized

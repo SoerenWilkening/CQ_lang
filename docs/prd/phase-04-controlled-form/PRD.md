@@ -425,6 +425,19 @@ block. Dissolve the φ **before** erasing, so no use dangles; the result is
 
 ## 7. Phase 4.3 — realized-`-O1` control-shape completeness (post-landing audit, 2026-06-02)
 
+> **Status — COMPLETE (2026-06-02).** All six families (A keystone multi-φ,
+> C symmetric, B1/B2 angle diagnose+lower, D switch diagnostic, F mux i64)
+> landed as WP7–WP12, plus two findings surfaced by the close-gate re-sweep:
+> false-successor arm polarity + value-propagated Pred-edge φ (`-u6v.7`), and
+> a catch-all diagnostic for unhandled tainted branches — quantum loop
+> `break`/`goto` (`-u6v.8`). The re-sweep (34 representative `if`-shapes across
+> the 8 categories plus comparator/negation variants) is **29 lowered + 4
+> loudly diagnosed + 1 classical-`switch` untouched — zero crashes, zero silent
+> miscompiles**. 9 new LIT fixtures; `ir-pass-lit` 74/74 (+1 XFAIL). The
+> `switch` LOWERING (Family E) and the realized `break`/`goto`/`return` escape
+> lowering remain Phase 4.1 (epic `test_C_libtooling-aht`). Epic
+> `test_C_libtooling-u6v` closed.
+
 **Why this section exists.** Phase 4 core (WP0–WP6) was marked `[DONE]`
 against the §2.1 catalog — but that catalog was compiled from a *narrow*
 set of `if` probes. A follow-up exhaustive sweep — **44** representative
