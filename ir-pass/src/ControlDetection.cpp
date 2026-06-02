@@ -570,11 +570,17 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
   if (Sw->getNumCases() == 0)
     return false;  // degenerate (no cases) — not the gated shape.
 
-  // Structure: every (distinct) CASE arm reconverges on one common merge. The
-  // merge is recovered from the case arms (not the default) so the default can
-  // be either a distinct reconverging block OR an empty `default:` routed
-  // straight to the merge (test_C_libtooling-509).
+  // Structure: every CASE arm reconverges on one common merge. The merge is
+  // recovered from the case arms (not the default) so the default can be either
+  // a distinct reconverging block OR an empty `default:` routed straight to the
+  // merge (test_C_libtooling-509). Distinct case BLOCKS are collected in
+  // first-seen order (`ArmOrder`); two+ case values targeting one block — a
+  // SHARED arm clang folds for duplicate-body cases — register the block ONCE,
+  // and their constants are grouped per block when the arms are built below
+  // (test_C_libtooling-6qg). The arm is then controlled on the OR of its cases'
+  // eq-flags by `lowerGatedSwitch`.
   SmallPtrSet<BasicBlock *, 8> ArmBlocks;
+  SmallVector<BasicBlock *, 4> ArmOrder;
   BasicBlock *Merge = nullptr;
   for (auto Case : Sw->cases()) {
     BasicBlock *CB = Case.getCaseSuccessor();
@@ -585,8 +591,8 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
       Merge = M;
     else if (Merge != M)
       return false;  // case arms disagree on the merge.
-    if (!ArmBlocks.insert(CB).second)
-      return false;  // a shared arm block (duplicate target) — decline (future).
+    if (ArmBlocks.insert(CB).second)
+      ArmOrder.push_back(CB);  // a fresh case-arm block (shared targets fold here).
   }
   if (!Merge)
     return false;
@@ -634,6 +640,34 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
     return true;  // diagnosed.
   }
 
+  // Every merge `φ` that `lowerGatedSwitch` can dissolve is EITHER a UNIFORMLY
+  // tainted handle `φ` — every incoming the same in-place handle, RAUW'd in
+  // step 4 — OR a recorded angle `φ` (lowered by `reduceAngleSwitchPhi`). A φ with
+  // ANY non-tainted incoming is NOT uniformly the handle and step 4's RAUW would
+  // silently DROP the non-handle edges:
+  //   * all-classical incomings (`classifyAngleMerge` skips it as a WP4/WP7
+  //     integer mux) — a pure DATA mux; left in a region it strands a `<badref>`
+  //     `φ` after linearization (`report_fatal_error`);
+  //   * a handle/constant MIX (a gate arm that ALSO assigns a classical value) —
+  //     RAUW to the handle erases the classical case/default edges, returning the
+  //     raw handle id unconditionally (a verify-clean wrong result).
+  // The gated path has no data-mux lowering (unlike the `br`-diamond's
+  // `reduceClassicalMux`) and cannot distinguish a value-propagated-constant-
+  // equal-to-the-handle from a genuine distinct value, so it DECLINES on any
+  // non-tainted incoming → the WP12 diagnostic (over-declining a rare value-prop
+  // shape is SAFE; silently dropping an edge is not). Guards the shared-arm
+  // surface this commit opens AND closes the pre-existing non-shared instances
+  // (test_C_libtooling-6qg, adversarial review 2026-06-03). See
+  // [[cwk-merge-phi-discriminator]].
+  SmallPtrSet<PHINode *, 2> AngleSet(AnglePhis.begin(), AnglePhis.end());
+  for (PHINode &P : Merge->phis()) {
+    if (AngleSet.count(&P))
+      continue;  // an angle φ — reduceAngleSwitchPhi lowers it.
+    for (Value *In : P.incoming_values())
+      if (!taint.Tainted.count(In))
+        return false;  // not a uniformly-tainted handle φ; decline to WP12.
+  }
+
   // Structure matches: from here this function OWNS the diagnostic (returns true
   // even on an arm escape, so the caller does not also fire the WP12 fallback).
   ControlRegion region;
@@ -659,11 +693,18 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
   // guard (its control is the implicit "no case matched", no gate body).
   if (!DefaultDirect && armEscapesOrCollect(Default, Merge, region.Shadow))
     return true;  // diagnosed.
-  for (auto Case : Sw->cases()) {
+  for (BasicBlock *CB : ArmOrder) {
     SwitchArm arm;
-    arm.Value = Case.getCaseValue();
-    arm.Block = Case.getCaseSuccessor();
-    if (armEscapesOrCollect(arm.Block, Merge, arm.Shadow))
+    arm.Block = CB;
+    // Group every case constant that targets this block (one for an ordinary
+    // arm; several for a shared/folded duplicate-body arm). Switch-case order is
+    // stable, so the constant order is deterministic.
+    for (auto Case : Sw->cases())
+      if (Case.getCaseSuccessor() == CB)
+        arm.Values.push_back(Case.getCaseValue());
+    // Escape-guard + shadow-collect the arm ONCE (a shared block appears a single
+    // time in `ArmOrder`, so its gates are not double-collected).
+    if (armEscapesOrCollect(CB, Merge, arm.Shadow))
       return true;  // diagnosed.
     region.SwitchArms.push_back(std::move(arm));
   }

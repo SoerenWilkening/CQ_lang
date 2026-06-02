@@ -571,10 +571,11 @@ Instruction *reduceAngleDiamondPhi(ControlRegion &region, WidthDispatch &wd,
 // are mutually exclusive (eq on one scrutinee), so the total angle is `a_k` for
 // the matching case and `base` for the default — exactly the switch dispatch.
 //
-// REUSES the per-case eq-flags `lowerGatedSwitch` already minted for the arm
-// gate bodies (`CaseFlags[k]` ↔ `region.SwitchArms[k]`), so no fresh compares
-// are emitted — the single compute/uncompute bracket the gates live in covers
-// the angle rotations too. The default's ¬OR "none-matched" flag is NOT needed:
+// REUSES the per-ARM flags `lowerGatedSwitch` already minted for the arm gate
+// bodies (`CaseFlags[k]` ↔ `region.SwitchArms[k]`; for a shared arm that flag is
+// the OR of its cases' eq-flags), so no fresh compares are emitted — the single
+// compute/uncompute bracket the gates live in covers the angle rotations too.
+// The default's ¬OR "none-matched" flag is NOT needed:
 // the unconditional base IS the default angle. Runs AFTER the handle-φ
 // dissolution (step 4) and BEFORE the flag uncompute (step 5); returns the
 // uncompute anchor (the node after the last rotation, surviving the consumer

@@ -41,6 +41,7 @@
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
@@ -269,43 +270,76 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
   // 1. A per-case forward `icmp_eq_<W>_hl(handle, v_k)` flag, minted DIRECTLY
   //    (no throwaway `icmp`: the handle is i32 but `v_k` carries the logical
   //    width, so a real `icmp eq i32 %h, <W>` would mismatch — `emitEqFlag`
-  //    spells the template off the operands instead).
-  SmallVector<Value *, 4> Flags;
+  //    spells the template off the operands instead). Grouped per ARM: a shared
+  //    arm (two+ case values folded onto one body, test_C_libtooling-6qg) gets
+  //    one eq-flag per case value, OR-folded into the arm flag in step 2.
+  //    `AllVals` records every case constant in compute order for the
+  //    reverse-LIFO compare-uncompute (step 5).
+  SmallVector<SmallVector<Value *, 2>, 4> ArmEq;
+  SmallVector<ConstantInt *, 8> AllVals;
   for (SwitchArm &A : region.SwitchArms) {
-    Value *Flag = emitEqFlag(Scrut, A.Value, wd, /*inverse=*/false,
-                             /*before=*/Sw);
-    if (!Flag)
-      return;  // unsupported width; leave the switch for the verifier.
-    Flags.push_back(Flag);
+    SmallVector<Value *, 2> Eqs;
+    for (ConstantInt *V : A.Values) {
+      Value *Flag = emitEqFlag(Scrut, V, wd, /*inverse=*/false, /*before=*/Sw);
+      if (!Flag)
+        return;  // unsupported width; leave the switch for the verifier.
+      Eqs.push_back(Flag);
+      AllVals.push_back(V);
+    }
+    ArmEq.push_back(std::move(Eqs));
   }
 
-  // 2. OR-fold for the default control: orAcc = f_1 ∨ … ∨ f_n. `OrFlags[j]`
-  //    combines its running predecessor with `Flags[j+1]` (recorded for the
-  //    mirror-image uncompute). Needed ONLY when the default arm has a gate body
-  //    to control on ¬OR; an empty / direct-to-merge default (test_C_libtooling-
-  //    509) has no default gate, so the "no case matched" outcome is just the
-  //    absence of any case gate — skip the OR-fold ancillas entirely.
-  const bool HasDefaultGate = !region.Shadow.empty();
-  Value *OrAcc = HasDefaultGate ? Flags[0] : nullptr;
-  SmallVector<Value *, 4> OrFlags;
-  if (HasDefaultGate)
-    for (unsigned k = 1; k < Flags.size(); ++k) {
-      Value *NewOr =
-          combineFlags(OrAcc, Flags[k], ControlRegion::ConjOr, csyms, wd, Sw);
-      if (!NewOr)
-        return;  // unsupported symbol (diagnosed); leave for the verifier.
-      OrFlags.push_back(NewOr);
-      OrAcc = NewOr;
+  // 2. Each arm's control flag is the OR of its case eq-flags — a single-case
+  //    arm IS its one eq-flag (no fold). `OrSteps` records every OR-combination
+  //    (per-arm folds here + the default fold in step 3) in compute order so
+  //    step 5 uncomputes them mirror-image (reverse LIFO). For the common
+  //    single-case-per-arm switch no per-arm fold is emitted, so `ArmFlags`
+  //    equals the old per-case `Flags` and the trace is byte-identical.
+  struct OrStep {
+    Value *A, *B, *Out;
+  };
+  SmallVector<OrStep, 8> OrSteps;
+  auto orFold = [&](ArrayRef<Value *> Fs) -> Value * {
+    Value *Acc = Fs[0];
+    for (unsigned i = 1; i < Fs.size(); ++i) {
+      Value *Out =
+          combineFlags(Acc, Fs[i], ControlRegion::ConjOr, csyms, wd, Sw);
+      if (!Out)
+        return nullptr;  // unsupported symbol (diagnosed); caller bails.
+      OrSteps.push_back({Acc, Fs[i], Out});
+      Acc = Out;
     }
+    return Acc;
+  };
+  SmallVector<Value *, 4> ArmFlags;
+  for (auto &Eqs : ArmEq) {
+    Value *AF = orFold(Eqs);
+    if (!AF)
+      return;  // unsupported OR symbol; leave the switch for the verifier.
+    ArmFlags.push_back(AF);
+  }
 
-  // 3. Control each case arm on its eq-flag; the default arm (when it has a gate
-  //    body) on ¬OrAcc (the self-inverse `cqrt_x` bracket — fires when NO case
-  //    matched). A direct-to-merge / empty default has no gate to substitute.
+  // 3. The default's "none matched" control is ¬(f_1 ∨ … ∨ f_n) over ALL the arm
+  //    flags (= over every case eq-flag). Needed ONLY when the default arm has a
+  //    gate body to control on ¬OR; an empty / direct-to-merge default
+  //    (test_C_libtooling-509) has no default gate, so the "no case matched"
+  //    outcome is just the absence of any case gate — skip the default fold.
+  const bool HasDefaultGate = !region.Shadow.empty();
+  Value *OrAll = nullptr;
+  if (HasDefaultGate) {
+    OrAll = orFold(ArmFlags);
+    if (!OrAll)
+      return;  // unsupported symbol (diagnosed); leave for the verifier.
+  }
+
+  // 4-pre. Control each case arm on its OR-of-cases flag; the default arm (when
+  //    it has a gate body) on ¬OrAll (the self-inverse `cqrt_x` bracket — fires
+  //    when NO case matched). A direct-to-merge / empty default has no gate.
   for (unsigned k = 0; k < region.SwitchArms.size(); ++k)
-    substituteArm(region.SwitchArms[k].Shadow, Flags[k], /*Negate=*/false,
+    substituteArm(region.SwitchArms[k].Shadow, ArmFlags[k], /*Negate=*/false,
                   region.SwitchArms[k].Block, wd, taint);
   if (HasDefaultGate)
-    substituteArm(region.Shadow, OrAcc, /*Negate=*/true, region.Arm, wd, taint);
+    substituteArm(region.Shadow, OrAll, /*Negate=*/true, region.Arm, wd, taint);
 
   // 4. Dissolve the N-way merge φ(s): the arm gates mutated the handle IN PLACE,
   //    so post-substitution every incoming is the in-place handle. RAUW to a
@@ -326,28 +360,29 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
 
   // 4.5 cwk fix (b) PR3: a classical-angle merge φ (a rotation angle dispatched
   //     per case) is lowered as base + per-case controlled-difference, reusing
-  //     the per-case eq-flags minted above. Returns the anchor (after the last
-  //     rotation) so the flag uncompute lands AFTER the controlled-differences,
-  //     not on the erased consumer. Runs after the handle-φ dissolution (so a
-  //     consumer's arg-0 is the live handle).
+  //     the per-arm flags minted above (a shared arm's difference fires on the
+  //     OR of its cases). Returns the anchor (after the last rotation) so the
+  //     flag uncompute lands AFTER the controlled-differences, not on the erased
+  //     consumer. Runs after the handle-φ dissolution (so a consumer's arg-0 is
+  //     the live handle).
   Instruction *AngleAnchor =
       region.AnglePhi.empty() ? nullptr
-                              : reduceAngleSwitchPhi(region, Flags, wd, taint);
+                              : reduceAngleSwitchPhi(region, ArmFlags, wd, taint);
 
   // 5. Uncompute, reverse LIFO, at the merge boundary (compute → controlled
-  //    body → uncompute → continuation, §1.5): the OR-fold first (mirror of
-  //    `combineFlags`), then each per-case compare-uncompute. Anchor AFTER the
-  //    angle rotations when an angle φ was lowered (4.5), else at the boundary.
+  //    body → uncompute → continuation, §1.5): the OR-folds first (mirror of
+  //    `combineFlags`, in reverse compute order — the default fold, then the
+  //    per-arm folds), then each per-case compare-uncompute (reverse of the
+  //    mint order). Anchor AFTER the angle rotations when an angle φ was lowered
+  //    (4.5), else at the boundary.
   Instruction *UncomputeAt =
       AngleAnchor ? AngleAnchor : region.MergeBB->getFirstNonPHI();
   if (UncomputeAt) {
-    for (int k = (int)OrFlags.size() - 1; k >= 0; --k) {
-      Value *Prev = (k == 0) ? Flags[0] : OrFlags[k - 1];
-      uncombineFlags(Prev, Flags[k + 1], OrFlags[k], ControlRegion::ConjOr,
-                     csyms, UncomputeAt);
-    }
-    for (int k = (int)region.SwitchArms.size() - 1; k >= 0; --k)
-      (void)emitEqFlag(Scrut, region.SwitchArms[k].Value, wd, /*inverse=*/true,
+    for (int i = (int)OrSteps.size() - 1; i >= 0; --i)
+      uncombineFlags(OrSteps[i].A, OrSteps[i].B, OrSteps[i].Out,
+                     ControlRegion::ConjOr, csyms, UncomputeAt);
+    for (int i = (int)AllVals.size() - 1; i >= 0; --i)
+      (void)emitEqFlag(Scrut, AllVals[i], wd, /*inverse=*/true,
                        /*before=*/UncomputeAt);
   }
 

@@ -32,13 +32,18 @@ namespace cq {
 class WidthDispatch;
 struct TaintSet;
 
-// WP18 (PRD §8.5) — one case arm of a gated `SwitchRegion`: the case constant,
-// its arm block, and the arm's in-shadow gate bodies (the `cq_phi` calls that
-// become `_controlled` on the arm's `icmp eq` flag). The DEFAULT arm is carried
-// by the region's own `Arm`/`Shadow` (controlled on the ¬OR "none-matched"
-// flag).
+// WP18 (PRD §8.5) — one case arm of a gated `SwitchRegion`: the case constant(s)
+// targeting it, its arm block, and the arm's in-shadow gate bodies (the `cq_phi`
+// calls that become `_controlled` on the arm's flag). The DEFAULT arm is carried
+// by the region's own `Arm`/`Shadow` (controlled on the ¬OR "none-matched" flag).
+//
+// `Values` holds ALL case constants that target `Block`: usually one, but a
+// SHARED arm block — two+ case values folded onto one body by `clang` for
+// duplicate-body cases (test_C_libtooling-6qg) — carries several. The arm is then
+// controlled on the OR of its cases' `icmp eq` flags (`f_{v1} ∨ … ∨ f_{vm}`),
+// which gates both the gate-body substitution and the angle difference.
 struct SwitchArm {
-  llvm::ConstantInt *Value = nullptr;
+  llvm::SmallVector<llvm::ConstantInt *, 2> Values;
   llvm::BasicBlock *Block = nullptr;
   llvm::SmallVector<llvm::Instruction *, 4> Shadow;
 };
@@ -88,10 +93,10 @@ struct ControlRegion {
   // SwitchRegion (WP18, PRD §8.5) — a gated multi-arm `switch` whose arms apply
   // distinct SIDE-EFFECTING gate sequences (not a value/angle select). `Pred`
   // is the switch block, `Condition` the tainted scrutinee, `MergeBB` the common
-  // merge, `SwitchArms` the case arms (value + block + gate shadow), and
+  // merge, `SwitchArms` the case arms (case value(s) + block + gate shadow), and
   // `Arm`/`Shadow` the DEFAULT arm. Lowered by `lowerGatedSwitch`: per-case
-  // `icmp eq` flags, each arm controlled on its flag, the default on the
-  // ¬(f_1∨…∨f_n) flag, the N-way φ dissolved, the switch linearized away.
+  // `icmp eq` flags, each arm controlled on the OR of its cases' flags, the
+  // default on the ¬(f_1∨…∨f_n) flag, the N-way φ dissolved, switch linearized.
   enum Kind {
     SelectRegion,
     BranchRegion,
