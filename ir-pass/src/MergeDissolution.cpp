@@ -148,11 +148,18 @@ void dissolveBranchPhi(ControlRegion &region, WidthDispatch &wd,
       }
 
     // Gate-handle φ: either incoming is tainted (post-substitution both are the
-    // same in-place handle). RAUW to the unmodified Pred-edge handle.
-    const bool Quantum = taint.Tainted.count(InPlace) != 0 ||
-                         (Modified && taint.Tainted.count(Modified) != 0);
-    if (Quantum) {
-      P.replaceAllUsesWith(InPlace);
+    // same in-place handle). RAUW to the in-place HANDLE — the TAINTED incoming.
+    // Normally that is the unmodified Pred edge, but `clang` can value-propagate
+    // the Pred edge to a CONSTANT when the branch condition pins it (e.g.
+    // `if (u != 5)` canonicalizes to `icmp eq`, so the merge's straight-through
+    // edge is the known literal `5`, not the handle). In that case the handle
+    // rides the modified arm edge; RAUWing to the Pred constant would drop the
+    // handle and emit e.g. `cq_measure(5)`. Prefer whichever incoming is tainted.
+    const bool InTainted = taint.Tainted.count(InPlace) != 0;
+    const bool ModTainted = Modified && taint.Tainted.count(Modified) != 0;
+    if (InTainted || ModTainted) {
+      Value *Handle = InTainted ? InPlace : Modified;
+      P.replaceAllUsesWith(Handle);
       P.eraseFromParent();
       continue;
     }

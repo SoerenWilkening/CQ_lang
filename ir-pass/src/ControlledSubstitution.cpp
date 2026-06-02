@@ -82,8 +82,12 @@ void substituteControlled(ControlRegion &region, WidthDispatch &wd,
   if (!Flag)
     return;  // ControlFlag failed/wasn't run; nothing safe to substitute.
 
-  // True arm (and the only arm for WP3/WP5): controlled on the flag.
-  substituteArm(region.Shadow, Flag, /*Negate=*/false, region.Arm, wd, taint);
+  // The primary gate arm. Normally the TRUE successor (fires on `flag`), but a
+  // swapped branch (`if (u != 5)` → `icmp eq; br eq, Merge, Arm`) puts it on the
+  // FALSE successor, where the gates fire on ¬flag (`region.ArmNegated`) via the
+  // self-inverse `cqrt_x` bracket.
+  substituteArm(region.Shadow, Flag, /*Negate=*/region.ArmNegated, region.Arm,
+                wd, taint);
   // WP8 symmetric: the false arm fires on ¬flag (a self-inverse cqrt_x bracket).
   if (region.ArmFalse)
     substituteArm(region.ShadowFalse, Flag, /*Negate=*/true, region.ArmFalse, wd,

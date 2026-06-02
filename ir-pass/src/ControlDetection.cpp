@@ -236,7 +236,8 @@ bool matchFlagConjunction(Value *Cond, TaintSet &taint, Value *&A, Value *&B,
 // other successor (the "merge"). Sets `Arm`/`MergeBB` and returns true on a
 // match. The merge must have a `PHINode` (the `[modified, original]` φ) — a
 // no-φ diamond is not WP3's shape.
-bool matchDiamond(BranchInst *Br, BasicBlock *&Arm, BasicBlock *&MergeBB) {
+bool matchDiamond(BranchInst *Br, BasicBlock *&Arm, BasicBlock *&MergeBB,
+                  bool &ArmIsFalse) {
   BasicBlock *S0 = Br->getSuccessor(0);
   BasicBlock *S1 = Br->getSuccessor(1);
 
@@ -258,6 +259,10 @@ bool matchDiamond(BranchInst *Br, BasicBlock *&Arm, BasicBlock *&MergeBB) {
       continue;
     Arm = CandArm;
     MergeBB = CandMerge;
+    // `i == 1` ⇒ the arm is the FALSE successor (`br i1 cond, Merge, Arm`), so
+    // it is taken when `cond` is false and its gates fire on ¬flag. `clang`
+    // emits this for swapped branches (`if (u != 5)` → `icmp eq; br eq, M, A`).
+    ArmIsFalse = (i == 1);
     return true;
   }
   return false;
@@ -484,7 +489,8 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
 
       BasicBlock *Arm = nullptr;
       BasicBlock *MergeBB = nullptr;
-      if (!matchDiamond(Br, Arm, MergeBB)) {
+      bool ArmIsFalse = false;
+      if (!matchDiamond(Br, Arm, MergeBB, ArmIsFalse)) {
         // WP8 (Family C): try the SYMMETRIC two-content-arm diamond before
         // declaring escape. Both arms hold gates and fall through to a common
         // merge; the true arm is controlled on the flag, the false arm on
@@ -534,8 +540,15 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         // guarded arm ESCAPES (`ret`/`measure`/out-of-region) instead of
         // reconverging, this is "return/measure under quantum control" (PRD
         // line 108/309) — emit the loud diagnostic (refined in Phase 4.1).
-        // Otherwise it is benign control flow we simply do not lower.
-        branchEscapes(Br);
+        if (branchEscapes(Br))
+          continue;
+        // Safety net (epic invariant): the condition is TAINTED (checked above)
+        // but the branch matched NO controllable shape and is not a clean
+        // ret/measure escape — e.g. a quantum-controlled loop `break` or an
+        // irreducible `goto` that `-O1` keeps as a `br i1` on the handle. Left
+        // alone it would branch on the HANDLE id — a SILENT MISCOMPILE. Diagnose
+        // loudly; the realized lowering of these escapes is Phase 4.1 (-aht.2).
+        diagnoseEscape(Br, "control flow");
         continue;
       }
 
@@ -560,6 +573,7 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       region.Pred = &BB;
       region.Arm = Arm;
       region.MergeBB = MergeBB;
+      region.ArmNegated = ArmIsFalse;  // false-successor arm ⇒ gates on ¬flag.
       region.Depth = 0;
 
       // WP5: if the branch condition is the `&&`/`||` flag-combination idiom

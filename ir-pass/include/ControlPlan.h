@@ -101,6 +101,16 @@ struct ControlRegion {
   // arms, not `Pred`), and linearization splices BOTH arms into `Pred`.
   llvm::BasicBlock *ArmFalse = nullptr;
   llvm::SmallVector<llvm::Instruction *, 4> ShadowFalse;
+
+  // The single gate arm is the FALSE successor of the `br i1 cond, S0, S1` (i.e.
+  // `Arm == S1`), so it is taken when `cond` is FALSE and its gates fire on
+  // ¬flag, not flag. `clang` produces this whenever it swaps the branch targets
+  // — e.g. `if (u != 5)` canonicalizes to `icmp eq; br eq, Merge, Arm`. The
+  // controlled substitution wraps such an arm in the self-inverse `cqrt_x` flag
+  // bracket (the same ¬flag mechanism as the WP8 symmetric false arm). False for
+  // the ordinary true-successor diamond and for select/symmetric regions (whose
+  // polarity is carried explicitly by the arm assignment).
+  bool ArmNegated = false;
   // Nested-AND intermediate guard block (WP5, PRD §2.7): for the un-flattened
   // `if (a) { if (b) gate; }` shape, `Pred -[a]-> {Mid, Merge}`,
   // `Mid -[b]-> {Arm, Merge}`, `Arm -> Merge`. `Mid` holds the inner compare
