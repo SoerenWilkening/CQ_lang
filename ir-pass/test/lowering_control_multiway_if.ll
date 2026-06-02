@@ -9,15 +9,27 @@
 ;
 ;   y = (u==1) ? 10 : ((u==2) ? 20 : 99)
 ;
+; The CHECKs pin the FULL controlled trace (flag↔value bindings + deltas), not
+; just the presence of templates: inner mux `(u==2)?20:99` → base 99 +
+; f2·(20−99=−79); outer mux.1 `(u==1)?10:inner` → base 10 + ¬f1·(inner−10), the
+; ¬f1 cqrt_x bracket. A wrong delta sign, wrong mux polarity, or wrong
+; flag-to-value binding fails here (it would pass a looser fixture).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
-; CHECK-DAG: call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 1)
-; CHECK-DAG: call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 2)
+; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 1)
+; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 2)
 ; CHECK:     call i32 @cqrt_alloc_i32(i32 99)
-; CHECK:     call i32 @cq_template_add_i32_hl_controlled(
+; CHECK:     call i32 @cq_template_add_i32_hl_controlled(i32 %[[F2]], i32 %{{[a-zA-Z0-9_.]+}}, i32 -79)
+; CHECK:     %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 10)
+; CHECK:     call i32 @cqrt_alloc_i32(i32 10)
+; CHECK:     call void @cqrt_x(i32 %[[F1]])
+; CHECK:     call i32 @cq_template_add_i32_controlled(i32 %[[F1]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[D]])
+; CHECK:     call void @cqrt_x(i32 %[[F1]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: select i1
+; CHECK-NOT: phi
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0) {

@@ -9,7 +9,7 @@
 ; branching on the handle id (a silent miscompile) or crashing.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}under quantum control
+; CHECK: error{{.*}}control flow under quantum control
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %n) {
