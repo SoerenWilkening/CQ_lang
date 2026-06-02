@@ -93,6 +93,20 @@ bool isPhiCall(const Instruction &I) {
 bool usersAreAngleFeeds(Value *V, SmallVectorImpl<Instruction *> &Consumers) {
   if (V->use_empty())
     return false;
+  // The angle source is always an instruction (a `SelectInst` or merge `PHINode`).
+  // The controlled-rotation-by-difference reducers anchor the flag uncompute
+  // after the BLOCK-LAST consumer (`anchorAfterLastConsumer`), which scans a
+  // SINGLE block — so every consumer MUST be co-located with the source. A
+  // consumer in a different block would have its controlled rotation emitted
+  // AFTER the uncompute (which lands in the source's block), firing on an
+  // already-uncomputed flag — a verify-clean SILENT miscompile (adversarial
+  // review, 2026-06-03). Require single-block co-location; a cross-block angle
+  // feed is NOT cleanly lowerable and is left to the loud "rotation angle"
+  // diagnostic (no region built).
+  auto *VI = dyn_cast<Instruction>(V);
+  if (!VI)
+    return false;
+  BasicBlock *HomeBB = VI->getParent();
   for (User *U : V->users()) {
     auto *CI = dyn_cast<CallInst>(U);
     if (!CI)
@@ -106,6 +120,8 @@ bool usersAreAngleFeeds(Value *V, SmallVectorImpl<Instruction *> &Consumers) {
     if (CI->arg_size() < 2 || CI->getArgOperand(1) != V ||
         CI->getArgOperand(0) == V)
       return false;
+    if (CI->getParent() != HomeBB)
+      return false;  // cross-block consumer — not single-block-anchorable.
     Consumers.push_back(CI);
   }
   return true;
@@ -121,56 +137,6 @@ bool usersAreAngleFeeds(Value *V, SmallVectorImpl<Instruction *> &Consumers) {
 bool isCleanAngleSelect(SelectInst *Sel,
                         SmallVectorImpl<Instruction *> &Consumers) {
   return usersAreAngleFeeds(Sel, Consumers);
-}
-
-// Fix (test_C_libtooling-cwk): does the diamond merge `MergeBB` carry a CLASSICAL
-// `φ` that the merge-dissolution reduction cannot lower? Such a `φ` is the
-// `br`-diamond analog of the `select i1 c, double a, double b` rotation-angle
-// choice `isCleanAngleSelect` handles — a classical value (a rotation ANGLE, or
-// any other non-handle value) chosen under quantum control. The SELECT form is
-// lowered as controlled-rotation-by-difference (WP10/WP16); the diamond form is
-// NOT yet routed there, so `dissolveBranchPhi` falls into its `reduceClassicalMux`
-// path. That reduction only handles a width `abiWidthFromType` accepts — and for
-// a `double` it WRONGLY accepts the f64 DATA width, emitting `cqrt_alloc_f64` +
-// `cq_template_add_f64_hl_controlled` and rewriting the rotation's `double` angle
-// operand to an i32 handle (a broken/wrong lowering; it also emits an integer
-// `sub` on `double` operands). For any OTHER unsupported type (a `<2 x double>`
-// vector, an `i128`/odd-width integer, a pointer) it returns null, leaving the
-// `φ` standing until linearization erases the arm blocks → a dangling `φ` ("PHI
-// nodes not grouped" broken module). Either way the region must never be built.
-//
-// The discriminator MIRRORS the select-form B1 guard (`!isIntegerTy() ||
-// abiWidthFromType(...).empty()`, the `Sel->getType()` test below): it rejects
-// any classical `φ` whose type is non-integer (FP scalar/vector, pointer, …) OR
-// an integer of an unsupported ABI width, while LEAVING the legitimate WP4/WP7
-// integer-data mux (`i1`/`i8`/`i16`/`i32`/`i64`, non-empty `abiWidthFromType`)
-// to lower normally. A plain `isFloatingPointTy()` test would be strictly weaker
-// — it is scalar-only (misses `<2 x double>`) and ignores the unsupported-integer
-// and pointer cases — so this matches the actual reduction hazard, not just f64.
-//
-// Diagnosed on the same "rotation angle under quantum control" surface as the
-// select-form guard (which uses that message for any non-handle classical value
-// under control, rotation-fed or not). Returns the offending `φ` (its `!dbg`
-// source-locates the rejection) or null. A tainted value reaching the reduction
-// is an i32 handle, so the no-tainted-incoming check leaves the genuine
-// gate-handle / data-mux φ to `dissolveBranchPhi`; this fires only on a wholly
-// classical, unlowerable merge value (until the diamond-form difference lowering
-// lands — fix (b), the cwk follow-on).
-PHINode *unlowerableClassicalMergePhi(BasicBlock *MergeBB, TaintSet &taint) {
-  for (PHINode &P : MergeBB->phis()) {
-    // Supported integer-data width (the WP4/WP7 classical mux) → lowerable; skip.
-    if (P.getType()->isIntegerTy() && !abiWidthFromType(P.getType()).empty())
-      continue;
-    bool AnyTainted = false;
-    for (Value *In : P.incoming_values())
-      if (taint.Tainted.count(In)) {
-        AnyTainted = true;
-        break;
-      }
-    if (!AnyTainted)
-      return &P;  // a wholly-classical φ the reduction cannot lower.
-  }
-  return nullptr;
 }
 
 // cwk fix (b) (test_C_libtooling-byx): classify a diamond's merge `φ` for the
@@ -623,16 +589,21 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
     if (!ArmBlocks.count(Pred))
       return false;  // an extra (non-arm) merge predecessor.
 
-  // A classical-FP merge `φ` is a rotation angle (or other classical double)
-  // dispatched by the switch under quantum control — the `SwitchRegion` analog
-  // of the `br`-diamond cwk hole. `lowerGatedSwitch` dissolves only TAINTED
-  // (handle) φ; a classical-double φ is left undissolved, then the switch is
-  // linearized away, leaving the φ with no live predecessors (a broken module,
-  // "PHI nodes not grouped"). No diamond-form angle dispatch is lowerable yet
-  // (the cwk follow-on), so diagnose it on the same "rotation angle" surface and
-  // OWN the diagnostic (return true) so the caller does not also fire the WP12
-  // `switch` fallback.
-  if (PHINode *BadPhi = unlowerableClassicalMergePhi(Merge, taint)) {
+  // A classical-FP merge `φ` is a rotation angle dispatched by the switch under
+  // quantum control — the `SwitchRegion` analog of the `br`-diamond cwk hole.
+  // `lowerGatedSwitch` dissolves only TAINTED (handle) φ; a classical-double φ
+  // would otherwise be left undissolved, then the switch linearized away,
+  // leaving the φ with no live predecessors (a broken module, "PHI nodes not
+  // grouped"). A CLEAN scalar-FP angle feed lowers as base + per-case
+  // controlled-difference (cwk fix (b) PR3, `reduceAngleSwitchPhi`); record it +
+  // its consuming rotations (which join InShadow so `lowerRotations` skips them
+  // — `lowerGatedSwitch` lowers them on the per-case eq-flags). A NON-clean /
+  // unlowerable-type φ (vector/i128/ptr, non-rotation use, `cq_theta`) is NOT
+  // lowerable → diagnose on the "rotation angle" surface and OWN the diagnostic
+  // (return true) so the caller does not also fire the WP12 `switch` fallback.
+  SmallVector<PHINode *, 2> AnglePhis;
+  SmallVector<Instruction *, 4> AngleCons;
+  if (PHINode *BadPhi = classifyAngleMerge(Merge, taint, AnglePhis, AngleCons)) {
     diagnoseEscape(BadPhi, "rotation angle");
     return true;  // diagnosed.
   }
@@ -646,6 +617,12 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
   region.MergeBB = Merge;
   region.Merge = &Merge->front();  // the N-way merge φ.
   region.Arm = Default;            // the default arm rides Arm/Shadow.
+  for (PHINode *P : AnglePhis)
+    region.AnglePhi.push_back(P);
+  for (Instruction *C : AngleCons) {
+    region.AngleConsumers.push_back(C);
+    plan.InShadow.insert(C);
+  }
 
   // Escape-guard + shadow-collect each arm (PRD §5). An arm with a `ret`,
   // measurement, or out-of-region branch is the quantum-controlled escape
@@ -819,11 +796,48 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         ControlRegion region;
         if (matchNestedAnd(Br, taint, Mid, Arm, MergeBB, CondA, CondB,
                            region.Shadow)) {
-          // A classical-FP φ on the nested-AND merge is a diamond-form angle
-          // under quantum control (cwk) — diagnose, don't build the region.
-          if (PHINode *BadPhi = unlowerableClassicalMergePhi(MergeBB, taint)) {
-            diagnoseEscape(BadPhi, "rotation angle");
-            continue;
+          // A classical-FP merge `φ` is a rotation angle dispatched under
+          // quantum control via the nested-AND form (cwk). A CLEAN angle feed
+          // lowers as controlled-rotation-by-difference on the COMBINED `a ∧ b`
+          // flag (fix (b), `reduceAngleDiamondPhi` treats the 3-way `φ` as
+          // 2-way: the flag==1 angle on the innermost `Arm` edge, the base on
+          // the `Pred`/`Mid` flag==0 edges); record it + its consuming rotations
+          // (which join InShadow so lowerRotations skips them). A NON-clean /
+          // unlowerable-type `φ` stays diagnosed.
+          {
+            SmallVector<PHINode *, 2> AnglePhis;
+            SmallVector<Instruction *, 4> AngleCons;
+            if (PHINode *BadPhi =
+                    classifyAngleMerge(MergeBB, taint, AnglePhis, AngleCons)) {
+              diagnoseEscape(BadPhi, "rotation angle");
+              continue;
+            }
+            // A nested-AND angle φ is lowerable ONLY as a 2-way-on-conjunction
+            // dispatch: the two flag==0 edges — `Mid` (inner-guard-false) and
+            // the outer `Pred` (outer-guard-false) — must carry the SAME base
+            // angle, so the 3-way φ collapses to base + single controlled
+            // difference. A no-`else` nested `if` gives them the SAME SSA value;
+            // but `if(a){ang=z; if(b){ang=x;}}` yields THREE distinct angles,
+            // which `reduceAngleDiamondPhi` cannot reduce (its CleanBase check
+            // bails, stranding the φ → a broken module). DIAGNOSE that here
+            // rather than commit an unlowerable region (adversarial review,
+            // 2026-06-03; restores the pre-classifyAngleMerge clean rejection).
+            bool UnequalBase = false;
+            for (PHINode *P : AnglePhis)
+              if (P->getIncomingValueForBlock(Mid) !=
+                  P->getIncomingValueForBlock(&BB)) {
+                diagnoseEscape(P, "rotation angle");
+                UnequalBase = true;
+                break;
+              }
+            if (UnequalBase)
+              continue;
+            for (PHINode *P : AnglePhis)
+              region.AnglePhi.push_back(P);
+            for (Instruction *C : AngleCons) {
+              region.AngleConsumers.push_back(C);
+              plan.InShadow.insert(C);
+            }
           }
           region.Condition = Br->getCondition();  // the outer compare.
           region.Kind = ControlRegion::BranchRegion;

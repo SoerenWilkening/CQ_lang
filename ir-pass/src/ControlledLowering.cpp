@@ -315,10 +315,23 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
     P.eraseFromParent();
   }
 
+  // 4.5 cwk fix (b) PR3: a classical-angle merge φ (a rotation angle dispatched
+  //     per case) is lowered as base + per-case controlled-difference, reusing
+  //     the per-case eq-flags minted above. Returns the anchor (after the last
+  //     rotation) so the flag uncompute lands AFTER the controlled-differences,
+  //     not on the erased consumer. Runs after the handle-φ dissolution (so a
+  //     consumer's arg-0 is the live handle).
+  Instruction *AngleAnchor =
+      region.AnglePhi.empty() ? nullptr
+                              : reduceAngleSwitchPhi(region, Flags, wd, taint);
+
   // 5. Uncompute, reverse LIFO, at the merge boundary (compute → controlled
   //    body → uncompute → continuation, §1.5): the OR-fold first (mirror of
-  //    `combineFlags`), then each per-case compare-uncompute.
-  if (Instruction *UncomputeAt = region.MergeBB->getFirstNonPHI()) {
+  //    `combineFlags`), then each per-case compare-uncompute. Anchor AFTER the
+  //    angle rotations when an angle φ was lowered (4.5), else at the boundary.
+  Instruction *UncomputeAt =
+      AngleAnchor ? AngleAnchor : region.MergeBB->getFirstNonPHI();
+  if (UncomputeAt) {
     for (int k = (int)OrFlags.size() - 1; k >= 0; --k) {
       Value *Prev = (k == 0) ? Flags[0] : OrFlags[k - 1];
       uncombineFlags(Prev, Flags[k + 1], OrFlags[k], ControlRegion::ConjOr,

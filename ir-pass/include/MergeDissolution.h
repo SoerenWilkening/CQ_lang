@@ -21,8 +21,11 @@
 #ifndef CQ_IRPASS_MERGE_DISSOLUTION_H_
 #define CQ_IRPASS_MERGE_DISSOLUTION_H_
 
+#include "llvm/ADT/ArrayRef.h"
+
 namespace llvm {
 class Instruction;
+class Value;
 }  // namespace llvm
 
 namespace cq {
@@ -67,6 +70,21 @@ llvm::Instruction *reduceAngleSelect(ControlRegion &region, WidthDispatch &wd,
 // `region.Flag` must already be minted (`lowerControlFlag`).
 llvm::Instruction *reduceAngleDiamondPhi(ControlRegion &region, WidthDispatch &wd,
                                          TaintSet &taint);
+
+// cwk fix (b) PR3 (test_C_libtooling-byx) — the gated-`switch` analog of
+// `reduceAngleSelectChain`: lower a gated `SwitchRegion`'s classical-angle merge
+// `φ`(s) (`region.AnglePhi`, consumed by `region.AngleConsumers`) as base +
+// per-case controlled-difference. The base is the DEFAULT arm's `φ` incoming
+// (`region.Arm`), applied unconditionally; each case `k` adds
+// `Rz_controlled(CaseFlags[k], handle, a_k − base)`, REUSING the per-case
+// eq-flags `lowerGatedSwitch` already minted for the arm gate bodies
+// (`CaseFlags[k]` ↔ `region.SwitchArms[k]`). Runs AFTER the handle-φ dissolution
+// and BEFORE the flag uncompute; returns the uncompute anchor (after the last
+// rotation) or null. The cases are mutually exclusive, so the differences are
+// independent — no per-case bracketing beyond the shared switch uncompute.
+llvm::Instruction *reduceAngleSwitchPhi(ControlRegion &region,
+                                        llvm::ArrayRef<llvm::Value *> CaseFlags,
+                                        WidthDispatch &wd, TaintSet &taint);
 
 // WP16 (PRD §8.4) — lower an angle-select CHAIN: the multi-angle generalization
 // of `reduceAngleSelect` (angle `switch`/`if-else-if`). `-O1` sinks it to

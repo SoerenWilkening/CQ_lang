@@ -55,6 +55,7 @@
 #include "TemplateName.h"  // cq::Shape
 #include "WidthDispatch.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"  // make_early_inc_range
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -454,11 +455,17 @@ Instruction *reduceAngleSelect(ControlRegion &region, WidthDispatch &wd,
 // total angle is `arm` when the flag holds and `base` otherwise.
 //
 // POLARITY (C2) is read off the φ's INCOMING EDGES, never select-style
-// true/false: the `flag==0` edge carries the BASE angle, the other edge the
-// `flag==1` angle. The zero edge is `ArmFalse` for a WP8 symmetric diamond (the
-// false arm), `Arm` for a swapped one-arm diamond (`ArmNegated` — the arm is the
-// FALSE successor, taken when the condition is false), and `Pred` for the
-// ordinary true-successor one-arm diamond (the straight-through edge).
+// true/false: the `flag==0` (ZERO) edge carries the BASE angle, the `flag==1`
+// (ONE) edge the arm angle. Both are named EXPLICITLY per shape (NOT "the first
+// non-zero incoming" — that scan only works for a 2-way φ):
+//   * symmetric diamond (WP8):   zero=`ArmFalse`,  one=`Arm` (the true arm)
+//   * swapped one-arm (`ArmNegated`): zero=`Arm`,  one=`Pred` (arm is the FALSE
+//     successor, taken when the condition is false)
+//   * ordinary one-arm diamond:  zero=`Pred`,      one=`Arm` (straight-through)
+//   * nested-AND `a ∧ b` (PR2):  zero=`Pred`,      one=`Arm` (innermost arm) —
+//     the 3-way φ's base rides BOTH the `Mid` and `Pred` edges (the inner- and
+//     outer-guard-false paths, SSA-identical), so it reduces to the same 2-way
+//     base/arm form on the COMBINED conjunction flag (`region.Flag`).
 //   ⚠ Do NOT reuse `dissolveBranchPhi`'s `InPlaceEdge = ArmFalse ? Arm : Pred`:
 //   that names the `flag==1` (Arm/Pred) edge and is sound there only because a
 //   gate-handle φ carries the SAME handle on both edges. The two angle edges
@@ -483,23 +490,39 @@ Instruction *reduceAngleDiamondPhi(ControlRegion &region, WidthDispatch &wd,
   for (PHINode *P : region.AnglePhi) {
     if (!P)
       continue;
+    // The flag==0 (BASE) edge and the flag==1 (ARM) edge, named EXPLICITLY per
+    // shape rather than "the first non-zero incoming" — that scan is only sound
+    // for a 2-way φ, but the nested-AND form (PR2) has a 3-way φ whose base
+    // rides BOTH the `Mid` (inner-guard-false) and `Pred` (outer-guard-false)
+    // edges, so "first non-zero" can latch the wrong edge depending on φ order.
+    //   * symmetric diamond:        zero=ArmFalse,  one=Arm  (=armT)
+    //   * swapped one-arm diamond:  zero=Arm,       one=Pred  (ArmNegated)
+    //   * ordinary one-arm diamond: zero=Pred,      one=Arm
+    //   * nested-AND (`a ∧ b`):     zero=Pred,      one=Arm  (innermost arm)
     BasicBlock *ZeroEdge = region.ArmFalse
                                ? region.ArmFalse
                                : (region.ArmNegated ? region.Arm : region.Pred);
+    BasicBlock *OneEdge = region.ArmNegated ? region.Pred : region.Arm;
     int Zi = ZeroEdge ? P->getBasicBlockIndex(ZeroEdge) : -1;
-    if (Zi < 0)
-      continue;  // malformed (no flag==0 edge); leave the φ for the verifier.
-    Value *Base = P->getIncomingValue(Zi);  // the flag==0 (base) angle.
-    // The flag==1 angle: the first incoming that is NOT the zero edge (a 2-way
-    // diamond has exactly the two edges; the N-way nested/switch forms get their
-    // own reducers).
-    Value *ArmAngle = nullptr;
+    int Oi = OneEdge ? P->getBasicBlockIndex(OneEdge) : -1;
+    if (Zi < 0 || Oi < 0)
+      continue;  // malformed (missing flag edge); leave the φ for the verifier.
+    Value *Base = P->getIncomingValue(Zi);     // the flag==0 (base) angle.
+    Value *ArmAngle = P->getIncomingValue(Oi);  // the flag==1 (arm) angle.
+    // Defensive (no silent miscompile): every incoming OTHER than the flag==1
+    // arm edge must carry the base angle. For a 2-way φ this is trivially the
+    // single zero edge; for the nested-AND 3-way φ the `Mid` and `Pred` edges
+    // both carry the pre-existing angle (SSA gives them the SAME value), so they
+    // equal Base. A differing edge means this is not a clean 2-way-on-the-
+    // conjunction dispatch — leave the φ for the verifier (a loud "PHI nodes not
+    // grouped") rather than rotate by a wrong difference.
+    bool CleanBase = true;
     for (unsigned k = 0, e = P->getNumIncomingValues(); k != e; ++k)
-      if (static_cast<int>(k) != Zi) {
-        ArmAngle = P->getIncomingValue(k);
+      if (static_cast<int>(k) != Oi && P->getIncomingValue(k) != Base) {
+        CleanBase = false;
         break;
       }
-    if (!ArmAngle)
+    if (!CleanBase)
       continue;
 
     for (Instruction *S : region.AngleConsumers) {
@@ -534,6 +557,91 @@ Instruction *reduceAngleDiamondPhi(ControlRegion &region, WidthDispatch &wd,
   for (PHINode *P : region.AnglePhi)
     if (P && P->use_empty())
       P->eraseFromParent();  // the angle φ is dead once its rotations are gone.
+  region.AnglePhi.clear();
+  return Anchor;
+}
+
+// cwk fix (b) PR3 (test_C_libtooling-byx) — the gated-`switch` analog of
+// `reduceAngleSelectChain`: lower a gated `SwitchRegion`'s classical-angle merge
+// `φ`(s) (`region.AnglePhi`, consumed by `region.AngleConsumers`) as base +
+// per-case controlled-difference. The BASE angle is the DEFAULT arm's `φ`
+// incoming (`region.Arm`, applied unconditionally — the angle when no case
+// matched); each case `k` adds `Rz_controlled(CaseFlags[k], handle, a_k − base)`
+// where `a_k` is the `φ` incoming from `region.SwitchArms[k].Block`. The cases
+// are mutually exclusive (eq on one scrutinee), so the total angle is `a_k` for
+// the matching case and `base` for the default — exactly the switch dispatch.
+//
+// REUSES the per-case eq-flags `lowerGatedSwitch` already minted for the arm
+// gate bodies (`CaseFlags[k]` ↔ `region.SwitchArms[k]`), so no fresh compares
+// are emitted — the single compute/uncompute bracket the gates live in covers
+// the angle rotations too. The default's ¬OR "none-matched" flag is NOT needed:
+// the unconditional base IS the default angle. Runs AFTER the handle-φ
+// dissolution (step 4) and BEFORE the flag uncompute (step 5); returns the
+// uncompute anchor (the node after the last rotation, surviving the consumer
+// erasure) so the uncompute lands after the controlled-differences, or null.
+Instruction *reduceAngleSwitchPhi(ControlRegion &region,
+                                  ArrayRef<Value *> CaseFlags, WidthDispatch &wd,
+                                  TaintSet &taint) {
+  // `taint` is part of the reducer signature for consistency with the diamond /
+  // select-chain reducers, but the switch-angle reduction RAUWs to an
+  // already-tainted handle and uses per-case flags (no single `region.Flag` to
+  // stamp on `taint.ControlFlag`), so nothing new is registered here.
+  (void)taint;
+  if (region.AnglePhi.empty() || !region.Arm)
+    return nullptr;
+  if (CaseFlags.size() != region.SwitchArms.size())
+    return nullptr;  // flag/arm count mismatch (malformed); leave for verifier.
+
+  SmallVector<Instruction *, 4> ToErase;
+  for (PHINode *P : region.AnglePhi) {
+    if (!P)
+      continue;
+    int Di = P->getBasicBlockIndex(region.Arm);  // the default (base) edge.
+    if (Di < 0)
+      continue;  // no default edge; leave the φ for the verifier.
+    Value *Base = P->getIncomingValue(Di);
+
+    for (Instruction *S : region.AngleConsumers) {
+      auto *Phi = dyn_cast<CallInst>(S);
+      if (!Phi || Phi->arg_size() < 2 || Phi->getArgOperand(1) != P)
+        continue;  // not a rotation consuming THIS angle φ.
+      Value *Handle = Phi->getArgOperand(0);  // re-read LIVE (post handle-φ RAUW).
+      DebugLoc DL = Phi->getDebugLoc();
+
+      // BASE: unconditional `cqrt_rz_<W>(handle, default-angle)`.
+      if (!emitRz(Phi, Handle, Base, wd, /*controlled=*/false, /*flag=*/nullptr))
+        continue;  // unsupported width — leave the rotation for the verifier.
+
+      // One controlled-DIFFERENCE rotation per case, on its eq-flag. The flags
+      // are mutually exclusive, so the differences are independent (no nesting).
+      for (unsigned k = 0; k < region.SwitchArms.size(); ++k) {
+        int Ai = P->getBasicBlockIndex(region.SwitchArms[k].Block);
+        if (Ai < 0)
+          continue;  // this case is not a φ predecessor; no difference to add.
+        Value *Ak = P->getIncomingValue(Ai);
+        IRBuilder<> Builder(Phi);
+        Value *Diff = Builder.CreateFSub(Ak, Base, "ang_diff");
+        if (auto *DI = dyn_cast<Instruction>(Diff))
+          if (DL)
+            DI->setDebugLoc(DL);
+        if (!emitRz(Phi, Handle, Diff, wd, /*controlled=*/true, CaseFlags[k]))
+          continue;
+      }
+
+      Phi->replaceAllUsesWith(Handle);  // the φ value is the in-place handle.
+      ToErase.push_back(Phi);
+    }
+  }
+
+  // Uncompute anchor: after the program-order-last rotation (consumers are
+  // collected in use-list order, so derive it off the block-last consumer — see
+  // `anchorAfterLastConsumer`).
+  Instruction *Anchor = anchorAfterLastConsumer(ToErase);
+  for (Instruction *I : ToErase)
+    I->eraseFromParent();
+  for (PHINode *P : region.AnglePhi)
+    if (P && P->use_empty())
+      P->eraseFromParent();
   region.AnglePhi.clear();
   return Anchor;
 }
