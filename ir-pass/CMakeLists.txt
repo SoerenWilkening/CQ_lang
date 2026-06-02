@@ -58,6 +58,7 @@ add_library(CQPass MODULE
   src/OpcodeSupport.cpp
   src/Plugin.cpp
   src/RotationLowering.cpp
+  src/SwitchNormalization.cpp
   src/TaintPropagation.cpp
   src/TemplateName.cpp
   src/WidthDispatch.cpp

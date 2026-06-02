@@ -11,6 +11,7 @@
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
 #include "RotationLowering.h"
+#include "SwitchNormalization.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
@@ -53,6 +54,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
+
+  // Phase 4.1 WP15 (PRD §8.2): rewrite a tainted-scrutinee value-merge `switch`
+  // into eq-flags + a `select` chain BEFORE region detection, so the existing
+  // select-mux path lowers it. Declined (gated/sparse) switches stay for the
+  // WP12 diagnostic in `detectControlRegions`.
+  normalizeTaintedSwitches(M, taint);
 
   // Detect controlled regions (PURE ANALYSIS) right after propagation, so the
   // plan's in-shadow set is available to `lowerRotations` (which must skip the
@@ -99,6 +106,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.MeasureCalls.empty())
     return false;
 
+  normalizeTaintedSwitches(M, taint);
   ControlPlan plan = detectControlRegions(M, taint);
   lowerRotations(M, wd, taint, &plan);
   lowerControlledRegions(M, wd, taint, plan);
