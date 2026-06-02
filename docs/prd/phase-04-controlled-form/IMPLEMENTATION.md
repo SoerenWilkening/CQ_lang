@@ -29,11 +29,12 @@ not just the PRD prose.
 |---|---|---|
 | **WP0–WP6** (§4) | Phase 4 core — controlled surface, `br`-diamond, classical-arm `select`, `&&`/`\|\|` + nested-AND, Q+Q condition, escape *diagnostic*, e2e (epic `test_C_libtooling-656`) | ✅ **DONE** |
 | **WP7–WP14** (§12) | Phase 4.3 — `if`-menu completeness: A multi-φ keystone, C symmetric, B1/B2 angle, F mux i64, D `switch` diagnostic + 2 re-sweep findings (epic `test_C_libtooling-u6v`) | ✅ **DONE** (74/74 lit) |
-| **WP15–WP18** (§13) | Phase 4.1 — `switch` *lowering* (select-chain normalization) + escape verdict + gated-cascade follow-on (epic `test_C_libtooling-aht`) | ⏳ **PLANNED** (PRD §8) |
+| **WP15–WP18** (§13) | Phase 4.1 — `switch` *lowering* (WP15 value-merge select-chain, WP16 angle-select-chain), escape verdict (WP17), gated multi-arm cascade (WP18 N-way controlled substitution) (epic `test_C_libtooling-aht`) | ✅ **DONE** (2026-06-02, 86/86 lit) |
 
 Phase 4.2 (data mux, epic `test_C_libtooling-mux`) also **DONE** (reopened
-only for Family F i64 width, fixed in WP11). The remaining work is the
-**Phase 4.1 WPs in §13**.
+only for Family F i64 width, fixed in WP11). **Phase 4.1 (§13, WP15–WP18) landed
+2026-06-02** — see §13 for the per-WP outcomes; a tainted-memory-address guard
+(jump-table miscompile) and review-driven fixture hardening landed alongside.
 
 ---
 
@@ -1053,11 +1054,20 @@ confirm the 28 broken shapes are green-or-diagnosed.
 
 ## 13. Phase 4.1 work packages — `switch` (select-chain normalization) + escape verdict
 
-> **Status — PLANNED (design 2026-06-02, PRD §8).** Epic
-> `test_C_libtooling-aht`. Supersedes the Family E `-lowerswitch` default
-> (PRD §7.1) with a **data-flow select-chain normalization** that needs no
-> new control region, no N-way φ dissolution, and no new ABI. Depends on
-> Phase 4.3 having landed (WP7 multi-φ infra, WP10 angle-select).
+> **Status — DONE (landed 2026-06-02, design PRD §8).** Epic
+> `test_C_libtooling-aht`. WP15 supersedes the Family E `-lowerswitch` default
+> (PRD §7.1) with a **data-flow select-chain normalization**
+> (`normalizeTaintedSwitch`) that needs no new control region, no N-way φ
+> dissolution, and no new ABI; WP16 generalizes `reduceAngleSelect` to a chain;
+> WP17 keeps the escape reject-by-default and adds `!dbg` source location; WP18
+> lowers the gated cascade via N-way controlled substitution (`lowerGatedSwitch`
+> + a new `SwitchRegion`). The diagnose-first spike additionally added a
+> tainted-memory-address guard (the `-O1` jump-table lowering of a tainted angle
+> `switch` had silently miscompiled). Built on Phase 4.3 (WP7 multi-φ infra,
+> WP10 angle-select). 86/86 lit (1 XFAIL: Phase-7 `cq_invert`). Open follow-ons
+> (filed): the jump-table angle dispatch + default-direct-to-merge gated shape,
+> and a P1 fix for a tainted `double`-φ feeding a rotation (diamond-form angle
+> merge).
 
 ### WP15 — `normalizeTaintedSwitch`: switch + N-way φ → eq-flags + select chain
 

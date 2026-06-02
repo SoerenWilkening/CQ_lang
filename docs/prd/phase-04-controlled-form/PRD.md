@@ -32,12 +32,21 @@ Companion documents:
 | **Phase 4 core** (WP0–WP6, epic `test_C_libtooling-656`) | controlled surface + `br`-diamond / classical-arm `select` / `&&`‖`\|\|` / nested-AND / Q+Q condition / escape *diagnostic* + e2e | ✅ **DONE** |
 | **Phase 4.2** (epic `test_C_libtooling-mux`) | `[≥1 tainted arm]` data mux — mux.1 (mixed) + mux.2 (both-handle) | ✅ **DONE** (reopened only for Family F i64 width, fixed in 4.3) |
 | **Phase 4.3** (epic `test_C_libtooling-u6v`, §7) | realized-`-O1` `if`-menu completeness: Families A (multi-φ keystone), C (symmetric diamond), B1/B2 (angle-select diag+lower), F (mux i64 width), D (`switch` *diagnostic* guard) + 2 re-sweep findings | ✅ **DONE** — re-sweep 29 lowered / 4 diagnosed / 1 untouched; 0 crash, 0 silent miscompile |
-| **Phase 4.1** (epic `test_C_libtooling-aht`, §8) | tainted `switch` *lowering* + quantum-controlled escape (`return`/`break`/`goto`/`measure`) refinement | ⏳ **PLANNED** — design in §8 |
+| **Phase 4.1** (epic `test_C_libtooling-aht`, §8) | tainted `switch` *lowering* (WP15 value-merge select-chain, WP16 angle-select-chain) + quantum-controlled escape verdict (WP17) + gated multi-arm cascade (WP18) | ✅ **DONE** (2026-06-02) — value-merge + multi-way `if` + angle dispatch lower; escape rejects source-located; gated cascade → N-way controlled substitution; 86/86 lit |
 
-The only open work is **Phase 4.1**; everything the `if`-menu needs has
-landed. §8 records the Phase 4.1 design, re-informed by a verified
-cross-check against the Bennett.jl / Sturm.jl stack + the quantum-control
-literature (2026-06-02; [`bennett-jl-comparison.md`](../../bennett-jl-comparison.md)).
+Phase 4.1 (§8, WP15–WP18) **landed 2026-06-02**: the value-merge `switch` and
+multi-way value `if` lower via the select-chain normalization, the angle
+`switch` via the angle-select-chain, the gated multi-arm cascade via N-way
+controlled substitution, and the quantum-controlled escape (`return`/`break`/
+`goto`/`measure`) rejects by default with `!dbg` source location. The spike
+also closed a silent-miscompile hole — a tainted `switch` lowered by `-O1` to a
+jump TABLE is now diagnosed (a tainted memory-address/index guard). §8 records
+the design, re-informed by a verified cross-check against the Bennett.jl /
+Sturm.jl stack + the quantum-control literature (2026-06-02;
+[`bennett-jl-comparison.md`](../../bennett-jl-comparison.md)). Open follow-ons
+(filed): lowering the jump-table angle dispatch + the default-direct-to-merge
+gated shape, and a P1 fix for a tainted `double`-φ feeding a rotation (diamond
+-form angle merge, found in review).
 
 ---
 
@@ -613,9 +622,9 @@ handle as a **silent miscompile**, not a pass.
 
 ## 8. Phase 4.1 — `switch` lowering + quantum-controlled escape (design)
 
-> **Status — PLANNED (design finalized 2026-06-02).** Tracked by epic
-> `test_C_libtooling-aht` (`-aht.1` switch, `-aht.2` escape) + a new
-> follow-on for the gated multi-arm cascade (§8.5). Re-informed by a
+> **Status — DONE (landed 2026-06-02; design finalized 2026-06-02).** Tracked
+> by epic `test_C_libtooling-aht` (`-aht.1` switch + angle, `-aht.2` escape,
+> `-aht.3` gated multi-arm cascade §8.5 — all closed). Re-informed by a
 > **verified** cross-check against Tobias Osborne's Julia stack —
 > **Bennett.jl** (classical→reversible compiler) and **Sturm.jl** (quantum
 > DSL) — plus the quantum-control-flow literature (Quantum Control Machine,
