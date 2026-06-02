@@ -389,6 +389,18 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         plan.Regions.push_back(std::move(region));
       }
 
+      // WP12 (Family D, safety): a `switch` on a tainted scrutinee branches on
+      // the quantum HANDLE id and silently miscompiles — there is no SwitchInst
+      // lowering (the realized lowering stays Phase 4.1, Family E: `-lowerswitch`
+      // + closed-diamond guard). Diagnose loudly; a classical-scrutinee switch
+      // is left untouched. Detection runs before measure lowering, so a tainted
+      // scrutinee is exactly `taint.Tainted.count` of the switch condition.
+      if (auto *Sw = dyn_cast<SwitchInst>(BB.getTerminator())) {
+        if (taint.Tainted.count(Sw->getCondition()))
+          diagnoseEscape(Sw, "switch");
+        continue;
+      }
+
       auto *Br = dyn_cast<BranchInst>(BB.getTerminator());
       if (!Br || !Br->isConditional())
         continue;
