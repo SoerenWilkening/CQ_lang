@@ -105,6 +105,45 @@ bool isCleanAngleSelect(SelectInst *Sel,
   return true;
 }
 
+// Safety guard (Phase 4.1 spike, `-aht.3`): a tainted value used to compute a
+// memory ADDRESS — a `getelementptr` base/index, or a `load`/`store` pointer —
+// or stored to memory is UNSUPPORTED and would otherwise SILENTLY MISCOMPILE.
+// The motivating case: `-O1` lowers a tainted `switch`/`if-else-if` over
+// rotation angles to a jump TABLE (a constant array + `gep` + `load`) indexed
+// by the handle id — the gep/load escape the WP12 `SwitchInst` guard (there is
+// no `SwitchInst` left), so the diamond matcher lowers it and the program reads
+// the table at the quantum REGISTER ID (an allocation counter), not the
+// superposed value, then rotates by garbage. There is no register-based CQ
+// program that legitimately addresses memory with a quantum handle (handles are
+// i32 SSA ids passed to `cqrt_*`/`cq_template_*`, never dereferenced), so this
+// diagnoses loudly with the offending instruction's source location. Returns
+// true (diagnosed) on the first offending op in `F`.
+bool diagnoseTaintedMemoryEscape(Function &F, TaintSet &taint) {
+  for (BasicBlock &BB : F) {
+    for (Instruction &I : BB) {
+      if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
+        for (Value *Op : GEP->operands())
+          if (taint.Tainted.count(Op)) {
+            diagnoseEscape(GEP, "memory addressing");
+            return true;
+          }
+      } else if (auto *LD = dyn_cast<LoadInst>(&I)) {
+        if (taint.Tainted.count(LD->getPointerOperand())) {
+          diagnoseEscape(LD, "memory load");
+          return true;
+        }
+      } else if (auto *ST = dyn_cast<StoreInst>(&I)) {
+        if (taint.Tainted.count(ST->getPointerOperand()) ||
+            taint.Tainted.count(ST->getValueOperand())) {
+          diagnoseEscape(ST, "memory store");
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 // WP16 (PRD §8.4): is `Sel` an INNER member of an angle-select chain — every
 // user is a `select` that takes `Sel` as its FALSE value (the running base)?
 // `-O1` sinks an angle `switch`/`if-else-if` to a nested select chain
@@ -426,6 +465,12 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
 
   for (Function &F : M) {
     if (F.isDeclaration())
+      continue;
+    // Safety guard first: a tainted value used as a memory address/index (the
+    // `-O1` jump-table lowering of a tainted angle `switch`) silently
+    // miscompiles. Diagnose and skip region detection for this function rather
+    // than let the diamond matcher lower a handle-indexed table.
+    if (diagnoseTaintedMemoryEscape(F, taint))
       continue;
     for (BasicBlock &BB : F) {
       // WP4: a tainted-condition `select i1` reduces to a controlled add onto a
