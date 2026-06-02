@@ -22,6 +22,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
@@ -38,12 +39,16 @@ namespace {
 // Loud "unsupported under quantum control" diagnostic, on the same
 // `DiagnosticInfoUnsupported(DS_Error)` surface the rest of the pass uses
 // (mirrors `diagnoseNoTemplate` / RotationLowering's `diagnoseUnsupported`).
-// `What` names the escape so a fixture can FileCheck it.
+// `What` names the escape so a fixture can FileCheck it. The offending
+// instruction's `!dbg` is attached so the rejection is SOURCE-LOCATED (WP17,
+// PRD §8.6 / backend.md §7 "source-location precision via !dbg") — `clang`
+// then prints `file:line:col:` at the `return`/`break`/`measure` site; an
+// instruction without debug info falls back to the function-level location.
 void diagnoseEscape(Instruction *Where, StringRef What) {
   std::string Msg =
       ("cq controlled lowering: " + What + " under quantum control").str();
-  Where->getFunction()->getContext().diagnose(
-      DiagnosticInfoUnsupported(*Where->getFunction(), Msg));
+  Where->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *Where->getFunction(), Msg, Where->getDebugLoc()));
 }
 
 // A `@cq_measure_<sfx>` (front-end) or `@cqrt_measure_<W>` (already lowered)
