@@ -66,7 +66,13 @@ struct ControlRegion {
   // compound/nested condition). Null until that step runs.
   llvm::Value *Flag = nullptr;
 
-  enum Kind { SelectRegion, BranchRegion } Kind = BranchRegion;
+  // SelectRegion — a tainted-condition DATA select (the WP4/4.2 mux, integer
+  // handle width). BranchRegion — a `br`-diamond (WP3/WP5/WP8). AngleSelectRegion
+  // (WP10, Family B2) — a tainted-condition select over the classical rotation
+  // ANGLE (`select i1 c, double a, double b`) feeding only rotation-angle
+  // operands; lowered as controlled-rotation-by-difference (`Merge` is the
+  // select, `Shadow` the consuming `cq_phi`/`cq_theta` calls).
+  enum Kind { SelectRegion, BranchRegion, AngleSelectRegion } Kind = BranchRegion;
 
   // The merge node: a `SelectInst` (select-sourced) or the merge-block
   // `PHINode` (br-sourced). `MergeDissolution` rewrites/erases it.

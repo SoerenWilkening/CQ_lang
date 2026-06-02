@@ -49,6 +49,7 @@
 #include "ControlPlan.h"
 #include "ControlledSymbols.h"
 #include "OpcodeSupport.h"  // abiWidthFromType
+#include "RotationLowering.h"  // emitRz (WP10 base + controlled-difference)
 #include "TaintPropagation.h"
 #include "TemplateName.h"  // cq::Shape
 #include "WidthDispatch.h"
@@ -348,6 +349,58 @@ void dissolveMerge(ControlRegion &region, WidthDispatch &wd,
     dissolveSelect(region, wd, csyms, taint);
   else
     dissolveBranchPhi(region, wd, csyms, taint);
+}
+
+Instruction *reduceAngleSelect(ControlRegion &region, WidthDispatch &wd,
+                               TaintSet &taint) {
+  auto *Sel = dyn_cast_or_null<SelectInst>(region.Merge);
+  if (!Sel || !region.Flag)
+    return nullptr;  // no flag (ControlFlag failed) → leave for the verifier.
+
+  // `select i1 c, a, b` = `c ? a : b`. Ry/Rz are angle-additive, so
+  // `Rz(b + f·(a−b)) = Rz(b) · ctrl_f Rz(a−b)`: emit the unconditional BASE
+  // rotation by the false-arm angle `b`, then a flag-controlled DIFFERENCE
+  // rotation by `a − b`. When the flag (= lowered condition) is 1 the total
+  // angle is `a`, when 0 it is `b` — exactly the select.
+  Value *A = Sel->getTrueValue();   // flag=1 angle.
+  Value *B = Sel->getFalseValue();  // flag=0 angle (the base).
+
+  Instruction *Anchor = nullptr;
+  SmallVector<Instruction *, 4> ToErase;
+  for (Instruction *S : region.Shadow) {
+    auto *Phi = dyn_cast<CallInst>(S);
+    if (!Phi || Phi->arg_size() < 2)
+      continue;
+    Value *Handle = Phi->getArgOperand(0);  // the rotation handle (arg 0).
+
+    // BASE: unconditional `cqrt_rz_<W>(handle, b)`. `emitRz` reads the width
+    // suffix off the `cq_phi` callee and inserts before it.
+    if (!emitRz(Phi, Handle, B, wd, /*controlled=*/false, /*flag=*/nullptr))
+      continue;  // unsupported width — leave the rotation for the verifier.
+    // DIFFERENCE angle `a − b`: a HOST fp `fsub` (both angles classical — the
+    // angle taint-discipline keeps them so; constants fold).
+    IRBuilder<> Builder(Phi);
+    Value *Diff = Builder.CreateFSub(A, B, "ang_diff");
+    if (auto *DI = dyn_cast<Instruction>(Diff))
+      if (DebugLoc DL = Phi->getDebugLoc())
+        DI->setDebugLoc(DL);
+    // CONTROLLED: `cqrt_rz_<W>_controlled(flag, handle, a−b)`.
+    if (!emitRz(Phi, Handle, Diff, wd, /*controlled=*/true, region.Flag))
+      continue;
+
+    Anchor = Phi->getNextNode();  // uncompute lands after the last rotation.
+    Phi->replaceAllUsesWith(Handle);  // the phi value is the in-place handle.
+    taint.ControlFlag[Handle] = region.Flag;
+    ToErase.push_back(Phi);
+  }
+
+  for (Instruction *I : ToErase)
+    I->eraseFromParent();
+  // Erase the now-dead angle select (all consuming rotations are gone).
+  if (Sel->use_empty())
+    Sel->eraseFromParent();
+  region.Merge = nullptr;
+  return Anchor;
 }
 
 }  // namespace cq

@@ -254,6 +254,18 @@ void lowerControlledRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       continue;
     FlagStack.push_back(R.Flag);
 
+    if (R.Kind == ControlRegion::AngleSelectRegion) {
+      // WP10 (Family B2): lower the angle select as controlled-rotation-by-
+      // difference. The flag is already minted (step 1); `reduceAngleSelect`
+      // emits base + controlled-diff per consumer and returns the uncompute
+      // anchor (after the last rotation). No CFG to linearize.
+      Instruction *UncomputeAt = reduceAngleSelect(R, wd, taint);
+      emitUncompute(R, wd, csyms, taint, UncomputeAt);
+      FlagStack.pop_back();
+      eraseDeadConds({R.Condition});
+      continue;
+    }
+
     if (R.Kind == ControlRegion::SelectRegion) {
       // WP4 classical-arm `select`: no CFG, no in-shadow body. Capture the
       // uncompute anchor (the node after the select — it survives dissolution,

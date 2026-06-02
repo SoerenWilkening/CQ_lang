@@ -21,6 +21,10 @@
 #ifndef CQ_IRPASS_MERGE_DISSOLUTION_H_
 #define CQ_IRPASS_MERGE_DISSOLUTION_H_
 
+namespace llvm {
+class Instruction;
+}  // namespace llvm
+
 namespace cq {
 
 class WidthDispatch;
@@ -40,6 +44,17 @@ struct ControlRegion;
 //     as the control wire; `wd`/`csyms` mint the runtime/template symbols.
 void dissolveMerge(ControlRegion &region, WidthDispatch &wd,
                    ControlledSymbols &csyms, TaintSet &taint);
+
+// WP10 (Family B2) — lower an `AngleSelectRegion`: a tainted-condition select
+// over the classical rotation ANGLE (`region.Merge`) feeding only rotation-angle
+// operands (`region.Shadow`). For each consuming `cq_phi`/`cq_theta` emit the
+// unconditional base `Rz(handle, b)` plus a flag-controlled difference
+// `Rz_controlled(flag, handle, a−b)` (Ry/Rz angle-additivity), erase the
+// consumers and the select. Returns the uncompute anchor (the node after the
+// last rotation) for the orchestrator's flag uncompute, or null on failure.
+// `region.Flag` must already be minted (`lowerControlFlag`).
+llvm::Instruction *reduceAngleSelect(ControlRegion &region, WidthDispatch &wd,
+                                     TaintSet &taint);
 
 }  // namespace cq
 

@@ -134,6 +134,21 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
         continue;
       if (isMeasureSink(I, MeasureFns))
         continue;
+      // WP10/R9 angle taint-discipline: the angle operand (arg 1) of a
+      // cq_theta/cq_phi is a classical scalar, never a quantum handle. If `V`
+      // reaches a rotation ONLY as its angle (arg 1) and not as the arg-0
+      // handle, do NOT propagate taint through that edge — an angle-derived
+      // value (e.g. an `if(q){rz(u,a)}else{rz(u,b)}` angle select) must stay
+      // classical so it lowers as a rotation-angle choice, not quantum data.
+      // Excluding only the arg-1 operand-use (not `V` globally) keeps a value
+      // that is ALSO used as a handle elsewhere tainted (risk R9).
+      if (auto *CI = dyn_cast<CallInst>(I)) {
+        Function *Callee = CI->getCalledFunction();
+        if (Callee && (ThetaFns.contains(Callee) || PhiFns.contains(Callee)) &&
+            CI->arg_size() >= 2 && CI->getArgOperand(1) == V &&
+            CI->getArgOperand(0) != V)
+          continue;  // V is used here only as the classical angle; skip edge.
+      }
       if (out.Tainted.insert(I).second)
         Worklist.push_back(I);
     }

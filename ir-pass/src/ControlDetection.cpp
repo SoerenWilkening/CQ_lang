@@ -70,6 +70,36 @@ bool isPhiCall(const Instruction &I) {
   return Callee && Callee->getName().starts_with("cq_phi_");
 }
 
+// WP10 (Family B2): is `Sel` a CLEAN rotation-parameter feed — a select used
+// EXCLUSIVELY as the classical ANGLE (arg 1) of one or more `cq_phi`/`cq_theta`
+// rotations? `-O1` sinks `if(q){rz(u,a);}else{rz(u,b);}` into
+// `rz(u, select(cmp, a, b))`; that select is the rotation angle and lowers as
+// controlled-rotation-by-difference. A select used anywhere else (a non-rotation
+// op, or the arg-0 handle) is NOT cleanly lowerable and stays a B1 diagnostic.
+// On a clean match, fills `Consumers` with the rotation calls (in use order).
+bool isCleanAngleSelect(SelectInst *Sel,
+                        SmallVectorImpl<Instruction *> &Consumers) {
+  if (Sel->use_empty())
+    return false;
+  for (User *U : Sel->users()) {
+    auto *CI = dyn_cast<CallInst>(U);
+    if (!CI)
+      return false;
+    const Function *Callee = CI->getCalledFunction();
+    if (!Callee)
+      return false;
+    StringRef N = Callee->getName();
+    if (!N.starts_with("cq_phi_") && !N.starts_with("cq_theta_"))
+      return false;
+    // `Sel` must be the angle (arg 1), never the arg-0 handle.
+    if (CI->arg_size() < 2 || CI->getArgOperand(1) != Sel ||
+        CI->getArgOperand(0) == Sel)
+      return false;
+    Consumers.push_back(CI);
+  }
+  return true;
+}
+
 // Scan the single guarded arm `Arm` for an escape (PRD §5): a `ReturnInst`, a
 // measurement, or any terminator that does not fall straight through to
 // `MergeBB`. On escape, diagnose at the offending instruction and return true.
@@ -356,18 +386,34 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         // back to its `br i1 %and, …` carrier (the WP5 path) untouched.
         if (Sel->getType()->isIntegerTy(1))
           continue;
-        // WP9 (Family B1): a tainted-condition select whose value type is not an
-        // integer HANDLE width is a rotation-angle (or other non-handle) choice
-        // sunk under quantum control — `-O1` folds `if(q){rz(u,a);}else{rz(u,b);}`
-        // into `rz(u, select(cmp, a, b))` over the classical `double` angle. The
-        // value type is `double` (a valid f64 ABI width, so `abiWidthFromType`
-        // alone does NOT reject it), never an i32/i64 handle. `dissolveSelect`
-        // would emit an integer `sub`/`add` on that fp value → broken module.
-        // Diagnose loudly and skip (WP10 lowers it as controlled-rotation-by-
-        // difference). The check mirrors the `-mux-diag` precedent.
+        // A tainted-condition select whose value type is not an integer HANDLE
+        // width is a rotation-angle (or other non-handle) choice sunk under
+        // quantum control — `-O1` folds `if(q){rz(u,a);}else{rz(u,b);}` into
+        // `rz(u, select(cmp, a, b))` over the classical `double` angle (a valid
+        // f64 ABI width, so `abiWidthFromType` alone does not reject it).
         if (!Sel->getType()->isIntegerTy() ||
             abiWidthFromType(Sel->getType()).empty()) {
-          diagnoseEscape(Sel, "rotation angle");
+          // WP10 (Family B2): a CLEAN rotation-parameter feed — the select is
+          // the angle of one or more rotations — lowers as controlled-rotation-
+          // by-difference (`AngleSelectRegion`). The consuming rotations join
+          // the in-shadow set so `lowerRotations` leaves them for the
+          // orchestrator. Otherwise (a non-rotation use of a double under
+          // quantum control) keep the loud WP9 diagnostic (Family B1).
+          SmallVector<Instruction *, 4> Consumers;
+          if (isCleanAngleSelect(Sel, Consumers)) {
+            ControlRegion region;
+            region.Condition = Sel->getCondition();
+            region.Kind = ControlRegion::AngleSelectRegion;
+            region.Merge = Sel;
+            region.Depth = 0;
+            for (Instruction *C : Consumers) {
+              region.Shadow.push_back(C);
+              plan.InShadow.insert(C);
+            }
+            plan.Regions.push_back(std::move(region));
+          } else {
+            diagnoseEscape(Sel, "rotation angle");
+          }
           continue;
         }
         // Every non-i1, integer-handle-width tainted-condition select builds a
