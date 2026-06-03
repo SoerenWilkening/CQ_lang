@@ -91,4 +91,14 @@ FunctionCallee ControlledSymbols::xFn() const {
       "cqrt_x", FunctionType::get(Type::getVoidTy(Ctx), {I32}, false));
 }
 
+FunctionCallee ControlledSymbols::cswapFn() const {
+  // `void cqrt_cswap(i32 ctrl, i32 a, i32 b)`. Width-agnostic; all three args
+  // are i32 handles (the control flag, then the two registers to swap). SWAP is
+  // an involution so the controlled-SWAP is its own inverse — no `_inv` twin.
+  LLVMContext &Ctx = M.getContext();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      "cqrt_cswap", FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
+}
+
 }  // namespace cq

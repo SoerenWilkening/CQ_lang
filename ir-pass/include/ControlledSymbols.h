@@ -71,6 +71,15 @@ public:
   // Its own inverse (X is an involution), so there is no `_inv` twin.
   llvm::FunctionCallee xFn() const;
 
+  // Controlled-SWAP / Fredkin (npu.4/.5): `void cqrt_cswap(i32 ctrl, i32 a,
+  // i32 b)` swaps registers a and b iff the i32 control flag is set. The
+  // primitive for the distinct-per-case-handle gated-switch MUX-EXCH lowering —
+  // `cqrt_cswap(f_q, regOut, q)` moves the selected source's state into the
+  // muxed register and frees the source. Width-agnostic (all three args are
+  // i32 handles). SWAP is an involution, so the controlled-SWAP is its own
+  // inverse — no `_inv` twin.
+  llvm::FunctionCallee cswapFn() const;
+
 private:
   llvm::Module &M;
   WidthDispatch &Wd;

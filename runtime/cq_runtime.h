@@ -177,6 +177,19 @@ void cqrt_h_controlled   (int32_t ctrl, int32_t q);
 void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt);
 
 /* -----------------------------------------------------------------
+ * Controlled-SWAP / Fredkin (npu.4) — `cqrt_cswap(i32 ctrl, i32 a,
+ * i32 b)` swaps registers a and b iff the i32 control flag is set.
+ * Unlike the Phase-8 placeholders above, this one IS emitted by the
+ * IR pass: it is the primitive for the distinct-per-case-handle gated
+ * switch MUX-EXCH lowering (npu.5) — `cqrt_cswap(f_q, regOut, q)` MOVEs
+ * the selected source's state into the muxed register and frees the
+ * source to |0> (no-cloning forbids a copy). SWAP is an involution, so
+ * the controlled-SWAP is its own inverse — no `_inv` twin. Same
+ * no-arrow void trace convention; all three args print as h<N>.
+ * ----------------------------------------------------------------- */
+void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b);
+
+/* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;
  * reserved for later lifetime work.
  * Trace: "cqrt_free(h<handle>)" (no return-value suffix).

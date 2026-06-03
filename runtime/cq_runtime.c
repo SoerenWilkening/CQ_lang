@@ -360,6 +360,18 @@ void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt) {
 }
 
 /* ---------------------------------------------------------------------
+ * Controlled-SWAP / Fredkin (npu.4) — swaps a and b iff ctrl is set.
+ * The MUX-EXCH primitive (npu.5): cqrt_cswap(f_q, regOut, q) moves the
+ * selected source into the muxed register and frees it. Trace prints
+ * all three handle args as h<N>; SWAP is its own inverse (no _inv twin).
+ * ------------------------------------------------------------------- */
+
+void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b) {
+    printf("cqrt_cswap(h%d, h%d, h%d)\n", ctrl, a, b);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */
 

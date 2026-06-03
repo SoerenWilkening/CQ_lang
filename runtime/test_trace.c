@@ -122,5 +122,11 @@ int main(void) {
     cqrt_ry_f64(h_f64, 0.785398);
     cqrt_rz_f64(h_f64, 0.785398);
 
+    /* --- npu.4 smoke: the controlled-SWAP / Fredkin primitive. Unlike the
+     * Phase-8 gate placeholders, cqrt_cswap IS emitted by the IR pass (the
+     * MUX-EXCH gated-switch lowering), so its trace format is pinned here.
+     * Void, mints no handle (counter stays at h32); reuses existing handles. */
+    cqrt_cswap(h_i1, h_a, h_i8);
+
     return 0;
 }
