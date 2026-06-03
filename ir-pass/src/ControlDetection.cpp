@@ -314,8 +314,26 @@ bool armEscapesOrCollect(BasicBlock *Arm, BasicBlock *MergeBB,
       }
       continue;  // the well-formed fall-through; not a shadow op.
     }
-    if (isPhiCall(I))
+    if (isPhiCall(I)) {
       Shadow.push_back(&I);
+      continue;
+    }
+    // npu.3: any OTHER instruction with an observable side effect — a classical
+    // call (the motivating `sink()`), a store, a non-tainted memory write — is
+    // NOT a gate body, yet `CFGLinearization` splices the whole arm body (all but
+    // the terminator) UNCONDITIONALLY into the predecessor, so an effect the
+    // source guarded on a quantum predicate fires on EVERY path (verify-clean
+    // SILENT miscompile, no diagnostic). A classical effect under quantum control
+    // is non-physical — same family as the measure/return/break/goto escapes — so
+    // reject it loudly and PERMANENTLY (no correct lowering exists). Pure SSA
+    // values (icmp/add/zext/gep feeding a gate angle) carry no effect and splice
+    // through harmlessly, so they are allowed. A TAINTED memory address/load/
+    // store is caught earlier by `diagnoseTaintedMemoryEscape` (function pre-scan,
+    // skips detection); this closes the CLASSICAL-operand sibling it leaves open.
+    if (I.mayHaveSideEffects()) {
+      diagnoseEscape(&I, "classical side effect");
+      return true;
+    }
   }
   return false;
 }
@@ -529,6 +547,21 @@ bool matchNestedAnd(BranchInst *Br, TaintSet &taint, BasicBlock *&Mid,
         ArmTerm->getSuccessor(0) != CandMerge ||
         !isa<PHINode>(&CandMerge->front()))
       continue;
+    // npu.3: `linearizeNested` splices `CandMid`'s body (everything before its
+    // conditional `br`) UNCONDITIONALLY into `Pred`, so a classical side effect
+    // in the intermediate guard would run on every path though the source guarded
+    // it on `CondA`. Only the innermost `CandArm` was escape-guarded before —
+    // guard `CandMid` too (the inner compare and other pure setup splice through
+    // harmlessly). Same non-physical "classical effect under quantum control"
+    // family as the arm-body guard in `armEscapesOrCollect`.
+    for (Instruction &MI : *CandMid) {
+      if (&MI == MidBr)
+        break;  // reached the well-formed inner-guard terminator.
+      if (MI.mayHaveSideEffects()) {
+        diagnoseEscape(&MI, "classical side effect");
+        return false;  // diagnosed; not a usable nested-AND.
+      }
+    }
     if (armEscapesOrCollect(CandArm, CandMerge, Shadow))
       return false;  // diagnosed escape on the innermost arm; not usable.
     Mid = CandMid;
