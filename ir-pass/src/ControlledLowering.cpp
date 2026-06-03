@@ -45,6 +45,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
@@ -246,23 +247,65 @@ void linearizeSwitch(ControlRegion &region, SwitchInst *Sw) {
   Merge->eraseFromParent();
 }
 
-// npu.6: recover a mux base handle's single-Ry prep angle from its already-
-// lowered `cqrt_ry_<W>(handle, angle)` call. Rotation lowering ran before this
-// (erasing the `cq_theta`), so the angle survives only on the `cqrt_ry`; the
-// detection gate's G2 (classical untainted arg-0 ⇒ exactly one Ry on the
-// handle) guarantees a unique match. The `_controlled_inv` twin we emit here is
-// excluded by `getArgOperand(0) == Handle` (its arg-0 is the control flag).
-static Value *recoverRyAngle(Value *Handle) {
+// npu.6 / u5f: one uncontrolled forward prep rotation on a mux base handle.
+// `IsRz` distinguishes the `cqrt_rz_<W>` (theta-then-cq_phi prep, an Rz) from the
+// `cqrt_ry_<W>` (cq_theta prep, an Ry) so the uncompute can emit the matching
+// inverse twin (`cqrt_rz_<W>_controlled_inv` vs `cqrt_ry_<W>_controlled_inv`).
+struct PrepStep {
+  bool IsRz;
+  Value *Angle;
+};
+
+// u5f: recover the FULL invertible prep chain of a mux base handle from its
+// already-lowered uncontrolled rotations, in PROGRAM ORDER. Rotation lowering
+// ran before this (erasing the `cq_theta`/`cq_phi`), so each prep survives only
+// as a 2-arg `cqrt_ry_<W>(handle, angle)` (a `cq_theta` link — possibly several
+// for a chained theta-of-theta, gate G2) or `cqrt_rz_<W>(handle, angle)` (an
+// UNCONDITIONAL prep `cq_phi`, gate G3a) whose arg-0 IS the handle. The in-arm
+// CONTROLLED gates are the 3-arg `cqrt_rz_<W>_controlled(flag, q, angle)` form
+// (arg-0 == flag, NOT the handle) — they did NOT fire on the non-selected path
+// and must be EXCLUDED (`arg_size() == 2` rejects them); the `_controlled_inv`
+// twins this lowering itself emits are likewise 3-arg.
+//
+// Program order matters: forward [ry(a1), ry(a2), rz(c)] must uncompute as
+// [rz_inv(c), ry_inv(a2), ry_inv(a1)] (reverse). The use-list is NOT program
+// order, so the matched calls are sorted by dominance (cross-block) + intra-block
+// position. The gate guarantees every prep dominates the merge anchor, so they
+// are totally ordered. Returns the chain in forward order (caller reverses for
+// the uncompute); empty on no match.
+static SmallVector<PrepStep, 4> recoverPrepChain(Value *Handle,
+                                                 DominatorTree &DT) {
+  SmallVector<CallInst *, 4> Calls;
   for (User *U : Handle->users()) {
     auto *CI = dyn_cast<CallInst>(U);
     if (!CI)
       continue;
     const Function *Callee = CI->getCalledFunction();
-    if (Callee && Callee->getName().starts_with("cqrt_ry_") &&
-        CI->arg_size() >= 2 && CI->getArgOperand(0) == Handle)
-      return CI->getArgOperand(1);
+    if (!Callee)
+      continue;
+    StringRef Name = Callee->getName();
+    bool Ry = Name.starts_with("cqrt_ry_");
+    bool Rz = Name.starts_with("cqrt_rz_");
+    if ((!Ry && !Rz) || CI->arg_size() != 2 || CI->getArgOperand(0) != Handle)
+      continue;  // not an uncontrolled prep on this handle (3-arg controlled /
+                 // `_inv` twins fail arg_size()==2 or arg-0==Handle).
+    Calls.push_back(CI);
   }
-  return nullptr;
+  // Sort into program order: same block ⇒ intra-block position; else dominance.
+  llvm::stable_sort(Calls, [&](CallInst *A, CallInst *B) {
+    if (A == B)
+      return false;
+    if (A->getParent() == B->getParent())
+      return A->comesBefore(B);
+    return DT.dominates(A, B);
+  });
+  SmallVector<PrepStep, 4> Chain;
+  for (CallInst *CI : Calls) {
+    bool IsRz =
+        CI->getCalledFunction()->getName().starts_with("cqrt_rz_");
+    Chain.push_back({IsRz, CI->getArgOperand(1)});
+  }
+  return Chain;
 }
 
 // WP18 (PRD §8.5) — lower a gated `SwitchRegion` to per-arm controlled gates.
@@ -445,22 +488,28 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
     if (!Ok || !DefaultBase)
       continue;  // structure off (gate should preclude); leave for the verifier.
 
-    // Recover every base's single-Ry prep angle BEFORE mutating use-lists (gate
-    // G2 guarantees a unique `cqrt_ry` per base).
-    Value *DefaultAngle = recoverRyAngle(DefaultBase);
-    SmallVector<Value *, 4> NonDefBases, NonDefAngles;
+    // u5f: recover every base's FULL invertible prep CHAIN (in program order)
+    // BEFORE mutating use-lists. For a clean single-Ry base this is a length-1
+    // ry-only chain (byte-identical to the npu.6 single-angle recovery); for a
+    // chained theta-of-theta (G2) it is N ry links; a theta-then-cq_phi (G3a)
+    // appends an rz link. A DominatorTree gives the cross-block program order the
+    // reverse-uncompute depends on.
+    DominatorTree DT(*region.MergeBB->getParent());
+    SmallVector<PrepStep, 4> DefaultChain = recoverPrepChain(DefaultBase, DT);
+    SmallVector<Value *, 4> NonDefBases;
+    SmallVector<SmallVector<PrepStep, 4>, 4> NonDefChains;
     for (auto &Pr : CaseFlagsByBase) {
       if (Pr.first == DefaultBase)
         continue;  // the default base's own cases are absorbed by the complement
-      Value *Ang = recoverRyAngle(Pr.first);
-      if (!Ang) {
+      SmallVector<PrepStep, 4> Chain = recoverPrepChain(Pr.first, DT);
+      if (Chain.empty()) {
         Ok = false;
         break;
       }
       NonDefBases.push_back(Pr.first);
-      NonDefAngles.push_back(Ang);
+      NonDefChains.push_back(std::move(Chain));
     }
-    if (!Ok || !DefaultAngle || NonDefBases.empty())
+    if (!Ok || DefaultChain.empty() || NonDefBases.empty())
       continue;
 
     StringRef W = taint.HandleWidth.lookup(DefaultBase);
@@ -469,9 +518,24 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
     FunctionCallee Cswap = csyms.cswapFn();
     FunctionCallee X = csyms.xFn();
     FunctionCallee RyInv = csyms.controlledRyInvFn(W);
+    FunctionCallee RzInv = csyms.controlledRotationFn(W, /*inverse=*/true);
     Instruction *Boundary = region.MergeBB->getFirstNonPHI();
-    if (!WTy || !Alloc || !Cswap || !X || !RyInv || !Boundary)
+    if (!WTy || !Alloc || !Cswap || !X || !RyInv || !RzInv || !Boundary)
       continue;  // unsupported width/symbol; leave the φ for the verifier.
+
+    // u5f: emit a base's prep-chain uncompute as the REVERSE-ORDER inverse of its
+    // forward rotations, each controlled on `Ctrl`. Forward [ry(a1), ry(a2),
+    // rz(c)] ⇒ [rz_inv(c), ry_inv(a2), ry_inv(a1)] (`U†` undoes `U` link by link,
+    // innermost-last). An rz link emits `cqrt_rz_<W>_controlled_inv`, an ry link
+    // `cqrt_ry_<W>_controlled_inv`; for the common length-1 ry chain this is the
+    // single `cqrt_ry_<W>_controlled_inv` the npu.6 path emitted (byte-identical).
+    auto emitChainInv = [&](IRBuilder<> &B, ArrayRef<PrepStep> Chain, Value *Ctrl,
+                            Value *Base) {
+      for (int s = (int)Chain.size() - 1; s >= 0; --s) {
+        FunctionCallee Inv = Chain[s].IsRz ? RzInv : RyInv;
+        B.CreateCall(Inv, {Ctrl, Base, Chain[s].Angle});
+      }
+    };
     // Pin step-5's uncompute AFTER the mux body inserted before `Boundary`.
     MuxAnchor = Boundary;
 
@@ -510,14 +574,15 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
     B.CreateCall(X, {OtherCaseOr});
     B.CreateCall(Cswap, {OtherCaseOr, RegOut, DefaultBase});
     B.CreateCall(X, {OtherCaseOr});
-    // UNCOMPUTE every non-selected source's prep: non-default base q on ¬CaseOr(q)
-    // (bracket); the default base on OtherCaseOr (positive — it IS ¬f_default).
+    // UNCOMPUTE every non-selected source's prep CHAIN (reverse-order inverse,
+    // u5f): non-default base q on ¬CaseOr(q) (the cqrt_x bracket); the default
+    // base on OtherCaseOr (positive — it IS ¬f_default).
     for (unsigned j = 0; j < NonDefBases.size(); ++j) {
       B.CreateCall(X, {NonDefFlags[j]});
-      B.CreateCall(RyInv, {NonDefFlags[j], NonDefBases[j], NonDefAngles[j]});
+      emitChainInv(B, NonDefChains[j], NonDefFlags[j], NonDefBases[j]);
       B.CreateCall(X, {NonDefFlags[j]});
     }
-    B.CreateCall(RyInv, {OtherCaseOr, DefaultBase, DefaultAngle});
+    emitChainInv(B, DefaultChain, OtherCaseOr, DefaultBase);
 
     P.replaceAllUsesWith(RegOut);
     P.eraseFromParent();

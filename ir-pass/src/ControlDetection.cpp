@@ -653,6 +653,25 @@ BasicBlock *gatedArmTarget(BasicBlock *Arm, BasicBlock *SwBB) {
 // uncompute insertion point. See docs/npu6-mux-exch-gate-spec.md §3.
 StringRef muxBasePreconditions(ArrayRef<Value *> Bases, TaintSet &taint,
                                DominatorTree &DT, Instruction *MergeAnchor) {
+  // G5 (per-link): a prep angle is uncompute-safe iff it is in scope at the merge
+  // uncompute anchor. A `ConstantFP` is trivially in scope; a non-constant angle
+  // (5bl §9 dominating-variable widening) is admitted ONLY if its def DOMINATES
+  // that anchor, so the merge-boundary `..._controlled_inv(¬f_q, q, angle)`
+  // references a live value (an arm-local computed angle is dead at the merge). A
+  // quantum-derived (tainted) angle is never invertible. Rotation lowering does
+  // not alter the CFG nor move the (classical) angle def, so this detection-time
+  // DominatorTree predicts the lowered-form dominance exactly (spec §8 open-risk
+  // #4). Applied to EVERY link of a chained theta (u5f). When in doubt, decline.
+  auto angleOk = [&](Value *Angle) -> bool {
+    if (isa<ConstantFP>(Angle))
+      return true;
+    if (taint.Tainted.count(Angle))
+      return false;  // a tainted (quantum-derived) angle — never invertible.
+    if (auto *AI = dyn_cast<Instruction>(Angle))
+      return MergeAnchor && DT.dominates(AI, MergeAnchor);
+    return isa<Argument>(Angle) || isa<Constant>(Angle);  // dominates the fn.
+  };
+
   StringRef Width;
   for (Value *B : Bases) {
     // G1: the base must be a DIRECT `cq_theta_` prep — reject a SelectInst /
@@ -666,37 +685,37 @@ StringRef muxBasePreconditions(ArrayRef<Value *> Bases, TaintSet &taint,
     if (!Callee || !Callee->getName().starts_with("cq_theta_") ||
         Theta->arg_size() < 2)
       return {};
-    // G2: classical (untainted) arg-0 — a tainted arg-0 is a chained
-    // theta-of-theta (two `cqrt_ry` on one handle) that a single `Ry†` cannot
-    // uncompute.
-    if (taint.Tainted.count(Theta->getArgOperand(0)))
-      return {};
-    // G5: a `ConstantFP` prep angle is trivially in scope at the merge uncompute
-    // anchor. A non-constant angle (5bl §9 dominating-variable widening) is
-    // admitted ONLY if its def DOMINATES that anchor, so the merge-boundary
-    // `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)` references a live value (an
-    // arm-local computed angle is dead at the merge). A quantum-derived (tainted)
-    // angle is never single-Ry†-uncomputable. Rotation lowering does not alter
-    // the CFG and does not move the (classical) angle def, so this detection-time
-    // DominatorTree predicts the lowered-form dominance exactly (spec §8 open-risk
-    // #4). When in doubt, decline (over-declining is safe).
-    Value *Angle = Theta->getArgOperand(1);
-    if (!isa<ConstantFP>(Angle)) {
-      if (taint.Tainted.count(Angle))
-        return {};  // a tainted (quantum-derived) angle — never Ry†-uncomputable.
-      if (auto *AI = dyn_cast<Instruction>(Angle)) {
-        if (!MergeAnchor || !DT.dominates(AI, MergeAnchor))
-          return {};  // arm-local / otherwise non-dominating computed angle.
-      } else if (!isa<Argument>(Angle) && !isa<Constant>(Angle)) {
-        return {};  // unknown angle category — decline conservatively.
-      }
-      // An `Argument` / `Constant` (non-FP) dominates the whole function — admit.
+    // G2 (WIDENED — u5f): walk the theta CHAIN down to a classical root. A
+    // single `cq_theta(y0, a)` with classical `y0` is a length-1 ry chain (the
+    // npu.6 happy path); a chained `cq_theta(cq_theta(y0, a1), a2)` lowers to N
+    // uncontrolled `cqrt_ry` on ONE handle, now uncomputed by the REVERSE-order
+    // multi-op Bennett inverse (`emitChainInv` in lowerGatedSwitch). The chain is
+    // invertible iff EVERY link is a `cq_theta_` call with a G5-valid angle and
+    // the root's arg-0 is non-tainted (classical/fresh). A non-theta tainted
+    // intermediate, or a tainted/non-dominating link angle, is NOT invertible —
+    // decline (over-declining is safe). G5 is checked per link here.
+    Value *Cur = Theta;
+    while (auto *Link = dyn_cast<CallInst>(Cur)) {
+      const Function *LC = Link->getCalledFunction();
+      if (!LC || !LC->getName().starts_with("cq_theta_") || Link->arg_size() < 2)
+        break;  // not a theta link — `Cur` is the chain root candidate (arg-0
+                // base); validated by the post-loop classical-root check.
+      if (!angleOk(Link->getArgOperand(1)))
+        return {};  // a link angle a single-/multi-op inverse cannot reproduce.
+      Cur = Link->getArgOperand(0);  // descend to the next link / the root.
     }
-    // G7: every distinct base of one logical width (the seed
-    // `abiWidthFromType(arg-0 type)` matches what `RotationLowering` later
-    // records in `taint.HandleWidth`, so the lowering's width-specialized
-    // `cqrt_ry_<W>_controlled_inv` resolves consistently).
-    StringRef W = abiWidthFromType(Theta->getArgOperand(0)->getType());
+    // The chain root (`Cur`, the deepest theta's arg-0) must be CLASSICAL: a
+    // tainted root is a non-theta quantum value feeding the prep (a `cq_measure`
+    // handle, a dissolved select, …) that the ry/rz-only inverse chain cannot
+    // undo. (A tainted root that is ITSELF a `cq_theta` is impossible here — the
+    // loop would have descended through it.)
+    if (taint.Tainted.count(Cur))
+      return {};
+    // G7: every distinct base of one logical width. The width is the chain ROOT's
+    // classical seed type (`abiWidthFromType`), which `RotationLowering` records
+    // in `taint.HandleWidth` for the freshly minted handle, so the lowering's
+    // width-specialized `cqrt_ry_<W>_controlled_inv` resolves consistently.
+    StringRef W = abiWidthFromType(Cur->getType());
     if (W.empty())
       return {};
     if (Width.empty())
@@ -710,21 +729,28 @@ StringRef muxBasePreconditions(ArrayRef<Value *> Bases, TaintSet &taint,
 // npu.5/.6 MUX-EXCH gate — the preconditions needing the collected arm/default
 // gate shadows (run AFTER region construction). Returns true iff the distinct-
 // base mux φ is safe to MUX-EXCH lower.
-//   G3a: every user of a mux base — and of every in-region gate body that
-//       threads a base to the merge — is another in-region gate body or the mux
-//       φ itself. Rejects a `theta-then-cq_phi` prep-Rz (an unconditional Rz the
-//       single `Ry†` won't undo), any out-of-region mutation, AND (subsuming the
-//       liveness angle) any use of a destructively-moved base that survives the
-//       merge.
+//   G3a (WIDENED — u5f): every user of a CHAIN NODE — a mux base, a theta link
+//       below it (chained theta-of-theta), an UNCONDITIONAL prep (`cq_phi`/theta
+//       on the handle that dominates the merge — a theta-then-cq_phi prep-Rz, now
+//       INVERTIBLE by the reverse-order multi-op Bennett uncompute), or an in-arm
+//       gate body threading a base to the merge — must be ANOTHER chain node, an
+//       in-arm gate body, or the mux φ. Rejects any out-of-region mutation, any
+//       NON-dominating ("arm-local") prep, AND (subsuming the liveness angle) any
+//       use of a destructively-moved base that survives the merge: because every
+//       admitted chain node dominates the merge and every Gate is in-arm
+//       (pre-merge), a user that is none of {chain node, Gate, mux φ} is exactly a
+//       post-merge-live / cross-region use — the G6 hazard — and is DECLINED here.
 //   G3b: PER-ARM CORRESPONDENCE — every in-region gate body that mutates base q
 //       must live in an arm whose mux-φ edge actually CARRIES q. A gate on q in a
 //       NON-q-selecting arm fires its controlled Rz on a branch where q is not
-//       selected, and the single `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)`
+//       selected, and the `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)` chain
 //       uncompute cannot undo that stray Rz — q stays entangled with the
 //       scrutinee and regOut decoheres (a verify-clean silent miscompile the
 //       set-membership walk in G3a does NOT catch).
 //   G6: cross-φ disjointness — no OTHER non-angle merge φ resolves to a mux base
 //       (a uniform φ RAUW'd to a `cqrt_cswap`-emptied source would be garbage).
+//       PERMANENT safety boundary — a destructive-move (cqrt_cswap) no-cloning /
+//       which-path hazard, NOT a deferred capability gap (see spec §9).
 bool muxRegionGate(ControlRegion &region, PHINode *Mux,
                    ArrayRef<Value *> Bases) {
   SmallPtrSet<Value *, 8> BaseSet(Bases.begin(), Bases.end());
@@ -737,19 +763,71 @@ bool muxRegionGate(ControlRegion &region, PHINode *Mux,
     for (Instruction *S : A.Shadow)
       Gates.insert(S);
 
-  // G3a. Chain nodes = each base + every gate body resolving to a base. Every
-  // user of a chain node must be an in-region gate body or the mux φ.
-  SmallVector<Value *, 16> ChainNodes(Bases.begin(), Bases.end());
+  // The merge uncompute anchor + a DominatorTree, so an admitted unconditional
+  // prep can be proven to DOMINATE the merge (live at the uncompute point) — an
+  // arm-local prep is rejected (over-decline-safe). The CFG is stable across
+  // rotation lowering, so this detection-time tree predicts the lowered form.
+  Instruction *MergeAnchor = region.MergeBB->getFirstNonPHI();
+  DominatorTree DT(*region.MergeBB->getParent());
+
+  // G3a. CHAIN NODES (u5f): grow a fixpoint set from the bases through (a) theta
+  // links BELOW each base — its `cq_theta_` arg-0 operand chain down to the
+  // classical root, lowering to extra uncontrolled `cqrt_ry` on ONE handle — and
+  // (b) UNCONDITIONAL preps ABOVE a chain node — a non-Gate `cq_phi_`/`cq_theta_`
+  // user on the handle (arg-0) that DOMINATES the merge, lowering to an extra
+  // uncontrolled `cqrt_rz`/`cqrt_ry`. Both are inverted by the reverse-order
+  // multi-op Bennett uncompute (`emitChainInv`). In-arm gate bodies that resolve
+  // to a base are also chain nodes (the original npu.6 set).
+  SmallPtrSet<Value *, 16> ChainSet(Bases.begin(), Bases.end());
+  SmallVector<Value *, 16> Worklist(Bases.begin(), Bases.end());
+  auto addNode = [&](Value *V) {
+    if (V && ChainSet.insert(V).second)
+      Worklist.push_back(V);
+  };
+  // In-arm gate bodies resolving to a base thread the handle to the merge.
   for (Instruction *G : Gates)
     if (BaseSet.count(resolveGatedHandleBase(G)))
-      ChainNodes.push_back(G);
-  for (Value *N : ChainNodes)
+      addNode(G);
+  while (!Worklist.empty()) {
+    Value *N = Worklist.pop_back_val();
+    // (a) descend a theta link's arg-0 (another theta, or the classical root).
+    if (auto *CI = dyn_cast<CallInst>(N)) {
+      const Function *C = CI->getCalledFunction();
+      if (C && C->getName().starts_with("cq_theta_") && CI->arg_size() >= 1)
+        if (auto *Op = dyn_cast<CallInst>(CI->getArgOperand(0))) {
+          const Function *OC = Op->getCalledFunction();
+          if (OC && OC->getName().starts_with("cq_theta_"))
+            addNode(Op);  // a chained theta-of-theta link.
+        }
+    }
+    // (b) ascend an UNCONDITIONAL prep: a non-Gate `cq_phi`/`cq_theta` user on
+    //     this handle (arg-0 == N) that DOMINATES the merge. An arm-local /
+    //     non-dominating prep is left out → its presence as an un-admitted user
+    //     of N trips the user check below and DECLINES (safe).
     for (User *U : N->users()) {
-      if (U == Mux)
+      auto *UI = dyn_cast<CallInst>(U);
+      if (!UI || Gates.count(UI))
+        continue;  // in-arm gate bodies are validated by G3b, not added here.
+      const Function *UC = UI->getCalledFunction();
+      if (!UC)
+        continue;
+      StringRef UN = UC->getName();
+      if ((UN.starts_with("cq_phi_") || UN.starts_with("cq_theta_")) &&
+          UI->arg_size() >= 1 && UI->getArgOperand(0) == N &&
+          MergeAnchor && DT.dominates(UI, MergeAnchor))
+        addNode(UI);  // an unconditional prep — invertible (extra Rz/Ry).
+    }
+  }
+  // Every user of every chain node must be a chain node, an in-arm gate body, or
+  // the mux φ. Anything else is an out-of-region / non-dominating prep / post-
+  // merge-live / cross-region use the chain uncompute cannot balance — DECLINE.
+  for (Value *N : ChainSet)
+    for (User *U : N->users()) {
+      if (U == Mux || ChainSet.count(U))
         continue;
       auto *UI = dyn_cast<Instruction>(U);
       if (!UI || !Gates.count(UI))
-        return false;  // out-of-region / prep-Rz / post-merge-live use.
+        return false;  // out-of-region / non-dominating prep / post-merge-live.
     }
 
   // G3b. Per-arm correspondence: a gate body mutating mux base q must live in an
