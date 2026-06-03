@@ -379,6 +379,15 @@ void dissolveSelect(ControlRegion &region, WidthDispatch &wd,
   // in-place by the add, so only the final `Res` needs tracking.
   taint.Tainted.insert(Res);
   taint.BirthOrder[Res] = taint.NextBirth++;
+  // §5.6 / WP11: record the reduction result's LOGICAL width on the freshly
+  // minted i32 handle. The arms were laundered to i32 handles, so a downstream
+  // mux/compare that reads `taint.HandleWidth.lookup(Res)` would otherwise miss
+  // and fall back to `abiWidthFromType(Res)` = i32 — collapsing an i64 NESTED
+  // mux (an outer select over the i32-laundered RESULTS of these reductions) to
+  // i32-width templates (silent width-collapse miscompile; the MIXED nested
+  // form crashes the verifier on the alloc/template type mismatch). `AbiWidth`
+  // is the logical width already computed for this reduction above.
+  taint.HandleWidth[Res] = AbiWidth;
 }
 
 }  // namespace
