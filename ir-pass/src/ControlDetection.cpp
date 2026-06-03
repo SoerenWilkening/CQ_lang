@@ -605,6 +605,123 @@ BasicBlock *gatedArmTarget(BasicBlock *Arm, BasicBlock *SwBB) {
   return (Merge == Arm) ? nullptr : Merge;
 }
 
+// npu.5/.6 MUX-EXCH gate — the per-distinct-base preconditions (G1/G2/G5/G7)
+// resolvable at detection time, on the PRE-rotation-lowering form where every
+// base is still a `cq_theta` call (rotation lowering runs later). Returns the
+// shared ABI width on success (non-empty); an empty StringRef on ANY failure
+// (caller declines the whole mux to the WP12 diagnostic — over-declining is
+// safe). `Bases` are the distinct `resolveGatedHandleBase` results of one mux φ
+// (size ≥ 2). See docs/npu6-mux-exch-gate-spec.md §3.
+StringRef muxBasePreconditions(ArrayRef<Value *> Bases, TaintSet &taint) {
+  StringRef Width;
+  for (Value *B : Bases) {
+    // G1: the base must be a DIRECT `cq_theta_` prep — reject a SelectInst /
+    // PHINode / Argument / `add`-of-handles / any non-theta base
+    // (`resolveGatedHandleBase` unwraps only `cq_phi`, returning the first
+    // non-`cq_phi` value with no theta check).
+    auto *Theta = dyn_cast<CallInst>(B);
+    if (!Theta)
+      return {};
+    const Function *Callee = Theta->getCalledFunction();
+    if (!Callee || !Callee->getName().starts_with("cq_theta_") ||
+        Theta->arg_size() < 2)
+      return {};
+    // G2: classical (untainted) arg-0 — a tainted arg-0 is a chained
+    // theta-of-theta (two `cqrt_ry` on one handle) that a single `Ry†` cannot
+    // uncompute.
+    if (taint.Tainted.count(Theta->getArgOperand(0)))
+      return {};
+    // G5 (conservative): a `ConstantFP` prep angle. The dominating-variable
+    // case is over-decline-safe deferred (no DominatorTree over the lowered
+    // form exists at decision time; spec §8 open-risk #4 / §9).
+    if (!isa<ConstantFP>(Theta->getArgOperand(1)))
+      return {};
+    // G7: every distinct base of one logical width (the seed
+    // `abiWidthFromType(arg-0 type)` matches what `RotationLowering` later
+    // records in `taint.HandleWidth`, so the lowering's width-specialized
+    // `cqrt_ry_<W>_controlled_inv` resolves consistently).
+    StringRef W = abiWidthFromType(Theta->getArgOperand(0)->getType());
+    if (W.empty())
+      return {};
+    if (Width.empty())
+      Width = W;
+    else if (Width != W)
+      return {};
+  }
+  return Width;
+}
+
+// npu.5/.6 MUX-EXCH gate — the preconditions needing the collected arm/default
+// gate shadows (run AFTER region construction). Returns true iff the distinct-
+// base mux φ is safe to MUX-EXCH lower.
+//   G3a: every user of a mux base — and of every in-region gate body that
+//       threads a base to the merge — is another in-region gate body or the mux
+//       φ itself. Rejects a `theta-then-cq_phi` prep-Rz (an unconditional Rz the
+//       single `Ry†` won't undo), any out-of-region mutation, AND (subsuming the
+//       liveness angle) any use of a destructively-moved base that survives the
+//       merge.
+//   G3b: PER-ARM CORRESPONDENCE — every in-region gate body that mutates base q
+//       must live in an arm whose mux-φ edge actually CARRIES q. A gate on q in a
+//       NON-q-selecting arm fires its controlled Rz on a branch where q is not
+//       selected, and the single `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)`
+//       uncompute cannot undo that stray Rz — q stays entangled with the
+//       scrutinee and regOut decoheres (a verify-clean silent miscompile the
+//       set-membership walk in G3a does NOT catch).
+//   G6: cross-φ disjointness — no OTHER non-angle merge φ resolves to a mux base
+//       (a uniform φ RAUW'd to a `cqrt_cswap`-emptied source would be garbage).
+bool muxRegionGate(ControlRegion &region, PHINode *Mux,
+                   ArrayRef<Value *> Bases) {
+  SmallPtrSet<Value *, 8> BaseSet(Bases.begin(), Bases.end());
+
+  // The in-region gate bodies (the default arm's, plus every case arm's).
+  SmallPtrSet<Instruction *, 16> Gates;
+  for (Instruction *S : region.Shadow)
+    Gates.insert(S);
+  for (SwitchArm &A : region.SwitchArms)
+    for (Instruction *S : A.Shadow)
+      Gates.insert(S);
+
+  // G3a. Chain nodes = each base + every gate body resolving to a base. Every
+  // user of a chain node must be an in-region gate body or the mux φ.
+  SmallVector<Value *, 16> ChainNodes(Bases.begin(), Bases.end());
+  for (Instruction *G : Gates)
+    if (BaseSet.count(resolveGatedHandleBase(G)))
+      ChainNodes.push_back(G);
+  for (Value *N : ChainNodes)
+    for (User *U : N->users()) {
+      if (U == Mux)
+        continue;
+      auto *UI = dyn_cast<Instruction>(U);
+      if (!UI || !Gates.count(UI))
+        return false;  // out-of-region / prep-Rz / post-merge-live use.
+    }
+
+  // G3b. Per-arm correspondence: a gate body mutating mux base q must live in an
+  // arm whose mux-φ edge carries q (the φ-incoming from that block resolves to
+  // q). A gate on q from a block carrying a DIFFERENT base — or no φ edge — is a
+  // wrong-arm mutation the single-Ry† uncompute cannot balance; decline.
+  for (Instruction *G : Gates) {
+    Value *QG = resolveGatedHandleBase(G);
+    if (!BaseSet.count(QG))
+      continue;  // not a mux-base gate body.
+    int Idx = Mux->getBasicBlockIndex(G->getParent());
+    if (Idx < 0 || resolveGatedHandleBase(Mux->getIncomingValue(Idx)) != QG)
+      return false;  // q mutated from an arm whose edge does not carry q.
+  }
+
+  // G6. No OTHER non-angle merge φ may resolve to a mux base.
+  SmallPtrSet<PHINode *, 2> AngleSet(region.AnglePhi.begin(),
+                                     region.AnglePhi.end());
+  for (PHINode &P : region.MergeBB->phis()) {
+    if (&P == Mux || AngleSet.count(&P))
+      continue;
+    for (Value *In : P.incoming_values())
+      if (BaseSet.count(resolveGatedHandleBase(In)))
+        return false;  // a sibling φ shares a destructively-moved base.
+  }
+  return true;
+}
+
 // WP18 (PRD §8.5): recognize a gated multi-arm `switch` — a tainted-scrutinee
 // `SwitchInst` whose case + default arms each reconverge (single-pred,
 // unconditional `br`) on a common merge carrying an N-way `φ`, with NO merge
@@ -721,20 +838,49 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
   // is SAFE — dropping an edge is not). The check is PER-φ: a genuine MULTI-handle
   // merge keeps its distinct base handles on SEPARATE φs (each uniform in its own
   // handle, RAUW'd to its own base — _multihandle), so it still lowers.
+  // npu.5/.6 supersedes the npu.1 same-base-only decline: a φ whose tainted
+  // incomings resolve to DISTINCT base handles is no longer always declined — it
+  // is a coherent multiplexer that lowers via the MUX-EXCH path IFF it passes
+  // the conservative G0–G7 gate (G3/G6 run below, after shadow collection). G0
+  // (every incoming tainted) is kept as the cheapest first filter.
   SmallPtrSet<PHINode *, 2> AngleSet(AnglePhis.begin(), AnglePhis.end());
+  SmallVector<PHINode *, 2> MuxPhis;
+  SmallVector<Value *, 4> MuxBases;
   for (PHINode &P : Merge->phis()) {
     if (AngleSet.count(&P))
       continue;  // an angle φ — reduceAngleSwitchPhi lowers it.
-    Value *Base = nullptr;
+    SmallPtrSet<Value *, 4> Bases;
     for (Value *In : P.incoming_values()) {
       if (!taint.Tainted.count(In))
-        return false;  // not a uniformly-tainted handle φ; decline to WP12.
-      Value *InBase = resolveGatedHandleBase(In);
-      if (!Base)
-        Base = InBase;
-      else if (Base != InBase)
-        return false;  // distinct per-case handles in one φ; decline to WP12 (npu.1).
+        return false;  // G0: not a uniformly-tainted handle φ; decline to WP12.
+      Bases.insert(resolveGatedHandleBase(In));
     }
+    if (Bases.size() >= 2) {
+      MuxPhis.push_back(&P);
+      MuxBases.assign(Bases.begin(), Bases.end());  // recorded for the lone mux φ
+    }
+    // Bases.size() == 1 ⇒ a uniform-base handle φ (the step-4 RAUW path,
+    // unchanged); never declined here.
+  }
+
+  // npu.5/.6 EARLY gate — the structural + per-base checks resolvable now
+  // (G3/G6 need the gate shadows, collected during region construction below).
+  bool DoMux = false;
+  if (!MuxPhis.empty()) {
+    // G6 (structural): exactly ONE distinct-base mux φ, and NO angle φ alongside
+    // — the per-base flag bookkeeping and the uncompute anchor assume a single
+    // muxed register with no `reduceAngleSwitchPhi` interleaving.
+    if (MuxPhis.size() != 1 || !AnglePhis.empty())
+      return false;
+    // G4: admit only a distinct reconverging default BLOCK with a gate body
+    // (HasDefaultGate), so the default-selected base has a `¬OrAll` control; a
+    // direct-to-merge (empty) default leaves that base unflagged.
+    if (DefaultDirect)
+      return false;
+    // G1/G2/G5/G7 per distinct base (returns the shared width or "" on failure).
+    if (muxBasePreconditions(MuxBases, taint).empty())
+      return false;
+    DoMux = true;
   }
 
   // Structure matches: from here this function OWNS the diagnostic (returns true
@@ -785,6 +931,18 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
   for (SwitchArm &A : region.SwitchArms)
     for (Instruction *S : A.Shadow)
       plan.InShadow.insert(S);
+
+  // npu.5/.6 LATE gate — G3 (no extra mutation / out-of-region / prep-Rz; no
+  // post-merge-live base) + G6 cross-φ disjointness, now that the arm/default
+  // gate shadows are collected. Any failure declines the WHOLE region to WP12
+  // (no IR was mutated; the region object is discarded). On success certify the
+  // mux so `lowerGatedSwitch` takes the cqrt_cswap MOVE + cqrt_ry_inv uncompute
+  // path instead of the edge-dropping RAUW.
+  if (DoMux) {
+    if (!muxRegionGate(region, MuxPhis[0], MuxBases))
+      return false;
+    region.MuxExch = true;
+  }
   plan.Regions.push_back(std::move(region));
   return true;
 }

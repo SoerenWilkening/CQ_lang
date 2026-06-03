@@ -159,6 +159,21 @@ struct ControlRegion {
   // the OR-fold entirely. False for a distinct default block (gated or empty).
   bool SwitchDefaultDirect = false;
 
+  // npu.5/.6 (MUX-EXCH): the merge carries exactly one DISTINCT-per-case-handle
+  // mux φ (a coherent multiplexer dispatching case0→qx, case1→qy, …) that PASSED
+  // the conservative G0–G7 safety gate in `tryBuildGatedSwitchRegion`. When set,
+  // `lowerGatedSwitch` lowers that φ by a fresh `regOut = cqrt_alloc(0)` + a
+  // per-distinct-base `cqrt_cswap(f_q, regOut, q)` controlled MOVE + a
+  // `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)` uncompute of every non-selected
+  // source (so regOut is not left entangled with the scrutinee), instead of the
+  // step-4 first-tainted RAUW (which would silently drop every other-handle
+  // edge). False ⇒ every handle φ is uniform-base (the RAUW path) — the gate
+  // declined any distinct-base φ to the WP12 diagnostic, so a distinct-base φ
+  // never reaches lowering with this false. The mux φ self-identifies at
+  // lowering (≥2 distinct tainted incomings); this bit only certifies the gate
+  // passed. See docs/npu6-mux-exch-gate-spec.md + [[cwk-merge-phi-discriminator]].
+  bool MuxExch = false;
+
   // The single gate arm is the FALSE successor of the `br i1 cond, S0, S1` (i.e.
   // `Arm == S1`), so it is taken when `cond` is FALSE and its gates fire on
   // ¬flag, not flag. `clang` produces this whenever it swaps the branch targets

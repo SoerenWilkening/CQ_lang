@@ -71,6 +71,22 @@ FunctionCallee ControlledSymbols::controlledRotationFn(StringRef abiWidth,
                         {I32, I32, Type::getDoubleTy(Ctx)}, false));
 }
 
+FunctionCallee ControlledSymbols::controlledRyInvFn(StringRef abiWidth) const {
+  // `void cqrt_ry_<W>_controlled_inv(i32 ctrl, i32 handle, double angle)`. The
+  // Ry twin of `controlledRotationFn`'s inverse form — only the `ry` stem and
+  // the always-inverse suffix differ. The width selects only the symbol name;
+  // the llvmWidthType guard rejects unknown widths (null callee so the caller
+  // diagnoses rather than minting a garbage symbol).
+  LLVMContext &Ctx = M.getContext();
+  if (!Wd.llvmWidthType(abiWidth))
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_ry_" + abiWidth + "_controlled_inv").str(),
+      FunctionType::get(Type::getVoidTy(Ctx),
+                        {I32, I32, Type::getDoubleTy(Ctx)}, false));
+}
+
 FunctionCallee ControlledSymbols::toffoliFn(bool inverse) const {
   // `void cqrt_toffoli[_inv](i32 c1, i32 c2, i32 tgt)`. Width-agnostic; all
   // three args are i32 flag handles.

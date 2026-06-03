@@ -1,9 +1,19 @@
 # npu.6 — MUX-EXCH uncompute safety gate (design spec)
 
-**Status:** design spec for the deferred `test_C_libtooling-npu.5`/`.6` feature. The
-shipped state is the **npu.1 interim decline** (commit `21264b6`): a distinct-per-case-handle
-gated switch is loudly declined to the WP12 `switch under quantum control` diagnostic.
-`cqrt_cswap` (npu.4, commit `555091e`) is the only feature plumbing that exists.
+**Status:** IMPLEMENTED (npu.5 + npu.6 landed atomically). A distinct-per-case-handle gated
+switch that passes the conservative G0–G7 gate now lowers MUX-EXCH (`regOut = cqrt_alloc(0)` +
+per-base `cqrt_cswap` MOVE + per-non-selected-source `cqrt_ry_<W>_controlled_inv` uncompute);
+everything else still declines to the always-safe WP12 diagnostic. The detection gate lives in
+`muxBasePreconditions`/`muxRegionGate` (`ControlDetection.cpp`), the lowering in `lowerGatedSwitch`
+(`ControlledLowering.cpp`), and `region.MuxExch` carries the decision. **Implementation addendum
+(adversarial review C1, 2026-06-03): G3 gained a per-arm-correspondence clause `G3b` — see §3.**
+
+**Provenance addendum:** an implementation-stage adversarial review (6 attackers, empirical via the
+built pass) confirmed the lowering algebra, flag lifecycle, bookkeeping, and all regression paths
+correct, and found ONE silent-miscompile hole (C1): the original G3 set-membership check admitted an
+in-region gate body that mutates a mux base from a NON-selecting arm (a stray controlled-Rz the
+single `Ry†` cannot undo). Closed by **G3b** below; regression fixtures
+`lowering_control_switch_gated_distinct_wrongarmmut{,_default}.ll`.
 
 **Provenance:** adversarial design review (2026-06-03) — 6 independent attackers each tried
 to break a proposed 4-precondition gate from a distinct angle, then a synthesizer merged what
@@ -55,6 +65,7 @@ still pre-lowering (detection runs before `lowerRotations`, `CQLoweringPass.cpp:
 | **G1** | **Base is a direct `cq_theta` prep.** Each distinct base `B = resolveGatedHandleBase(In)` must be a `CallInst` whose callee `starts_with("cq_theta_")` (≡ `B ∈ taint.ThetaCalls`). Reject `SelectInst`/`PHINode`/`Argument`/any non-theta tainted instruction. | dissolveSelect/branch-φ mux output, classical-data arm (`add`/`sub`/`zext` of handles), function-arg or any non-theta base | `resolveGatedHandleBase` only unwraps `cq_phi_` and returns the first non-`cq_phi` value with no Ry check (`:83-95`) |
 | **G2** | **Single-Ry prep (classical arg-0).** For each base `B` (a `cq_theta_` call): require `taint.Tainted.count(B->getArgOperand(0)) == false`. A tainted arg-0 is a **chained theta-of-theta** → two `cqrt_ry` on one handle → a single `Ry†` leaves residual `Ry`. | chained `cq_theta(cq_theta(...))` multi-Ry prep | `RotationLowering.cpp:98-118` (chained theta lowers ry-only on the existing handle; classical arg-0 mints a fresh handle + one `cqrt_ry` at `:119-135`) |
 | **G3** | **No extra mutation between prep and merge.** Every user of `B` and of every node on the unwrap chain (φ-incoming → … → `B`) must be either an in-arm gate body (`cq_phi_` in `region.Shadow`/`SwitchArm.Shadow`/`AngleConsumers`) or the φ-incoming itself. Reject a `theta-then-cq_phi` prep (`Ry` then `Rz` — `cq_phi` lowers to `cqrt_rz`, leaving Rz garbage the Ry† won't undo) or any out-of-region mutation. | `cq_phi(cq_theta(y0,a),c)` (Ry then Rz) prep; out-of-region mutation of the base | `resolveGatedHandleBase` unwraps `cq_phi` which lowers to `cqrt_rz` (`:89`) |
+| **G3b** | **Per-arm correspondence (ADDED — adversarial review C1, 2026-06-03).** Every in-region gate body that mutates a mux base `q` must live in an arm whose mux-φ edge actually CARRIES `q` (the φ-incoming from that block resolves to `q`). G3a's set-membership (`user ∈ Gates`) is too weak: it admits a gate on `q` sitting in a *non-`q`-selecting* arm, whose controlled `cqrt_rz` fires on a `¬f_q` branch — a stray Rz the single `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)` cannot undo, leaving `q` entangled with the scrutinee and decohering `regOut` (verify-clean, no diagnostic). | a stray `cq_phi(qy, …)` in the arm that selects `qx` (`wrongarmmut.ll`); the default-base variant `cq_phi(qx, …)` in a case arm (`wrongarmmut_default.ll`) | `muxRegionGate` G3b: `Mux->getBasicBlockIndex(G->getParent())` then `resolveGatedHandleBase(Mux->getIncomingValue(Idx)) == resolveGatedHandleBase(G)` |
 | **G4** | **No direct-to-merge default for a distinct-base mux φ.** Reject if `SwitchDefaultDirect` (compute `DefaultDirect` locally — `region.SwitchDefaultDirect` is set later) and the merge has a distinct-base φ. Admit only when `HasDefaultGate` (distinct default block w/ gate body) so `OrAll` and the `¬OrAll` bracket exist. | direct-to-merge (empty) default distinct-handle multiplexer (a default-selected base with no flag) | `ControlledLowering.cpp:327-333` (`OrAll` stays null when `!HasDefaultGate`) |
 | **G5** | **Variable-angle dominance.** Let `Angle = B->getArgOperand(1)`. Accept if `isa<ConstantFP>(Angle)`; else require `Angle`'s def to **dominate** `region.MergeBB->getFirstNonPHI()` (the npu.6 `UncomputeAt` anchor), via `DominatorTree`. | arm-local / computed prep angle not dominating the merge uncompute point | `cq_theta` arg-1 is an arbitrary `Value*` (`RotationLowering.cpp:112`; `TaintPropagation.cpp:137-151`) |
 | **G6** | **Cross-φ base disjointness + region-wide liveness.** `cqrt_cswap` is a **destructive move** (empties the selected source to `|0⟩`). Compute `MuxBases` = all distinct bases of every mux φ. Decline if any base is also the resolved base of **another** φ in the merge (uniform/angle φ), or is used by any instruction reachable from `region.MergeBB->getFirstNonPHI()` (a downstream `cq_phi`/`cqrt_rz`/`cq_measure`). | cross-φ shared-base aliasing; **any base live after the merge** (no-cloning / live-use destruction) — **this is the liveness angle** | `cqrt_cswap` move semantics (`ControlledSymbols.h:74-81`); the shipped gate is per-φ (`ControlDetection.cpp:725`) |

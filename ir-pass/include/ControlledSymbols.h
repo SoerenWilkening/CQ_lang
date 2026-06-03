@@ -61,6 +61,15 @@ public:
   llvm::FunctionCallee controlledRotationFn(llvm::StringRef abiWidth,
                                             bool inverse = false) const;
 
+  // Controlled Ry INVERSE (npu.6): `void cqrt_ry_<W>_controlled_inv`
+  // `(i32 ctrl, i32 handle, double angle)`. The controlled uncompute twin of
+  // the Ry prep (`cqrt_ry_<W>`); same shape as `controlledRotationFn` but the
+  // `ry` stem and there is only the inverse form (the prep is unconditional,
+  // only its disentangle is controlled). Emitted by the gated-switch MUX-EXCH
+  // lowering to return a non-selected source to |0>. Null callee for an
+  // unsupported width.
+  llvm::FunctionCallee controlledRyInvFn(llvm::StringRef abiWidth) const;
+
   // Toffoli flag conjunction (PRD §2.5/§2.7): `void cqrt_toffoli[_inv]`
   // `(i32 c1, i32 c2, i32 tgt)`. Width-agnostic — all three args are i32
   // flag handles. `inverse` selects the uncompute twin `cqrt_toffoli_inv`.

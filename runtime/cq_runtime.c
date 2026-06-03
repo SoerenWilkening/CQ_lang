@@ -304,6 +304,46 @@ void cqrt_rz_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
 }
 
 /* ---------------------------------------------------------------------
+ * Controlled Ry inverse (npu.6) — uncompute a non-selected source's
+ * single-Ry prep in the gated-switch MUX-EXCH lowering. Mirrors the
+ * controlled rz inverse block above; only the `ry` stem differs.
+ * --------------------------------------------------------------------- */
+void cqrt_ry_i1_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i1_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i8_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i8_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i16_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i16_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i32_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i32_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i64_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_f32_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_f64_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Gate primitives (backend.md §11.4) — handle-typed, void. Declared +
  * defined this phase but NOT emitted by the IR pass yet (Phase 8), so
  * they are left unexercised by the trace driver. Same no-arrow void

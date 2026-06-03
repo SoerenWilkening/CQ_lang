@@ -151,6 +151,28 @@ void cqrt_rz_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 
 /* -----------------------------------------------------------------
+ * Controlled Ry inverse (npu.6) — the controlled inverse of the
+ * Ry-prep rotation (`cqrt_ry_<W>`, the lowered cq_theta). Same
+ * `(i32 ctrl, i32 handle, double angle)` shape as the controlled Rz
+ * above. Emitted ONLY by the gated-switch MUX-EXCH lowering to
+ * UNCOMPUTE a non-selected source's single-Ry prep back to |0> on the
+ * branches where `cqrt_cswap` did NOT move it: `Ry†(angle)` controlled
+ * on ¬f_q (the source was prepared but not selected, so it stays
+ * entangled with the scrutinee unless its prep is reversed — Bennett /
+ * QROM disentangle). There is NO plain `cqrt_ry_<W>_controlled` twin:
+ * the prep itself is unconditional, only its inverse is controlled. 7
+ * widths. Trace mirrors the controlled rz:
+ *     "cqrt_ry_<W>_controlled_inv(h<ctrl>, h<handle>, <angle>)".
+ * ----------------------------------------------------------------- */
+void cqrt_ry_i1_controlled_inv (int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_i8_controlled_inv (int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_i16_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_i32_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_i64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+
+/* -----------------------------------------------------------------
  * Gate primitives (backend.md §11.4) — handle-typed, void. For
  * internal use by the template library and Phase 11 passes; declared
  * + defined this phase but NOT emitted by the IR pass yet (Phase 8).

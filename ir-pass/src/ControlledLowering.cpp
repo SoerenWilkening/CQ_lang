@@ -246,6 +246,25 @@ void linearizeSwitch(ControlRegion &region, SwitchInst *Sw) {
   Merge->eraseFromParent();
 }
 
+// npu.6: recover a mux base handle's single-Ry prep angle from its already-
+// lowered `cqrt_ry_<W>(handle, angle)` call. Rotation lowering ran before this
+// (erasing the `cq_theta`), so the angle survives only on the `cqrt_ry`; the
+// detection gate's G2 (classical untainted arg-0 ⇒ exactly one Ry on the
+// handle) guarantees a unique match. The `_controlled_inv` twin we emit here is
+// excluded by `getArgOperand(0) == Handle` (its arg-0 is the control flag).
+static Value *recoverRyAngle(Value *Handle) {
+  for (User *U : Handle->users()) {
+    auto *CI = dyn_cast<CallInst>(U);
+    if (!CI)
+      continue;
+    const Function *Callee = CI->getCalledFunction();
+    if (Callee && Callee->getName().starts_with("cqrt_ry_") &&
+        CI->arg_size() >= 2 && CI->getArgOperand(0) == Handle)
+      return CI->getArgOperand(1);
+  }
+  return nullptr;
+}
+
 // WP18 (PRD §8.5) — lower a gated `SwitchRegion` to per-arm controlled gates.
 // Mint an `icmp eq` flag per case; OR-fold them into the default's "none
 // matched" control; control each case arm on its own flag and the default on
@@ -341,20 +360,159 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
   if (HasDefaultGate)
     substituteArm(region.Shadow, OrAll, /*Negate=*/true, region.Arm, wd, taint);
 
-  // 4. Dissolve the N-way merge φ(s): the arm gates mutated the handle IN PLACE,
-  //    so post-substitution every incoming is the in-place handle. RAUW to a
-  //    tainted incoming and erase — per-φ, so a multi-handle merge dissolves
-  //    each φ to its own base handle.
+  // 4. Dissolve the N-way merge φ(s). A UNIFORM-base handle φ (post-substitution
+  //    every incoming is the same in-place handle) collapses by RAUW to that
+  //    handle. A DISTINCT-per-case-handle MUX φ — certified safe by the G0–G7
+  //    gate (`region.MuxExch`) — instead lowers MUX-EXCH: a fresh `regOut` and a
+  //    per-distinct-base `cqrt_cswap(f_q, regOut, q)` controlled MOVE, then a
+  //    `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)` uncompute of every
+  //    NON-selected source (else it stays entangled with the scrutinee and
+  //    decoheres regOut). The per-edge selecting flags PARTITION the scrutinee
+  //    (exactly one arm fires), so the DEFAULT-selected base's control is the
+  //    COMPLEMENT of the OR of the OTHER bases' case-flags — materialized with
+  //    the same self-inverse `cqrt_x` bracket as the default arm, never an
+  //    explicit `¬OrAll` value. Per-φ, so a uniform sibling φ still dissolves to
+  //    its own base.
+  //
+  //    The mux inserts its `regOut`/`cqrt_cswap`/`cqrt_ry_inv` body at the merge
+  //    boundary, which would otherwise become the new `getFirstNonPHI()` and pull
+  //    step 5's flag uncompute (eq-flag + OR-fold inverses) AHEAD of the body
+  //    that consumes those flags (a verify-clean miscompile). `MuxAnchor`
+  //    captures the boundary BEFORE the body is inserted so step 5 uncomputes
+  //    AFTER it — the same role `AngleAnchor` plays for reduceAngleSwitchPhi.
+  Instruction *MuxAnchor = nullptr;
   for (PHINode &P : make_early_inc_range(region.MergeBB->phis())) {
-    Value *Handle = nullptr;
-    for (unsigned i = 0, e = P.getNumIncomingValues(); i != e; ++i)
-      if (taint.Tainted.count(P.getIncomingValue(i))) {
-        Handle = P.getIncomingValue(i);
+    // Distinct tainted incoming handles.
+    SmallVector<Value *, 4> Handles;
+    for (unsigned i = 0, e = P.getNumIncomingValues(); i != e; ++i) {
+      Value *In = P.getIncomingValue(i);
+      if (taint.Tainted.count(In) && !is_contained(Handles, In))
+        Handles.push_back(In);
+    }
+    if (Handles.empty())
+      continue;  // no tainted incoming (malformed); leave for the verifier.
+
+    if (!region.MuxExch || Handles.size() < 2) {
+      // Uniform-base φ: RAUW to the in-place handle and erase (byte-identical to
+      // the pre-MUX-EXCH behaviour for every non-mux region).
+      P.replaceAllUsesWith(Handles.front());
+      P.eraseFromParent();
+      continue;
+    }
+
+    // --- MUX-EXCH (npu.5/.6) ---
+    // Group incomings by base handle (accumulating each base's selecting case
+    // flags) and identify the default-selected base. The detection gate
+    // guarantees the structure; on any unexpected mismatch leave the φ for the
+    // verifier (a LOUD broken-module failure, never a silent miscompile).
+    SmallVector<std::pair<Value *, SmallVector<Value *, 2>>, 4> CaseFlagsByBase;
+    Value *DefaultBase = nullptr;
+    bool Ok = true;
+    for (unsigned i = 0, e = P.getNumIncomingValues(); i != e; ++i) {
+      BasicBlock *IB = P.getIncomingBlock(i);
+      Value *H = P.getIncomingValue(i);
+      if (IB == region.Arm) {  // the default arm's edge
+        DefaultBase = H;
+        continue;
+      }
+      int K = -1;
+      for (unsigned a = 0, ae = region.SwitchArms.size(); a < ae; ++a)
+        if (region.SwitchArms[a].Block == IB) {
+          K = (int)a;
+          break;
+        }
+      if (K < 0) {
+        Ok = false;
         break;
       }
-    if (!Handle)
-      continue;  // no tainted incoming (malformed); leave for the verifier.
-    P.replaceAllUsesWith(Handle);
+      bool Found = false;
+      for (auto &Pr : CaseFlagsByBase)
+        if (Pr.first == H) {
+          Pr.second.push_back(ArmFlags[K]);
+          Found = true;
+          break;
+        }
+      if (!Found)
+        CaseFlagsByBase.emplace_back(H, SmallVector<Value *, 2>{ArmFlags[K]});
+    }
+    if (!Ok || !DefaultBase)
+      continue;  // structure off (gate should preclude); leave for the verifier.
+
+    // Recover every base's single-Ry prep angle BEFORE mutating use-lists (gate
+    // G2 guarantees a unique `cqrt_ry` per base).
+    Value *DefaultAngle = recoverRyAngle(DefaultBase);
+    SmallVector<Value *, 4> NonDefBases, NonDefAngles;
+    for (auto &Pr : CaseFlagsByBase) {
+      if (Pr.first == DefaultBase)
+        continue;  // the default base's own cases are absorbed by the complement
+      Value *Ang = recoverRyAngle(Pr.first);
+      if (!Ang) {
+        Ok = false;
+        break;
+      }
+      NonDefBases.push_back(Pr.first);
+      NonDefAngles.push_back(Ang);
+    }
+    if (!Ok || !DefaultAngle || NonDefBases.empty())
+      continue;
+
+    StringRef W = taint.HandleWidth.lookup(DefaultBase);
+    Type *WTy = wd.llvmWidthType(W);
+    FunctionCallee Alloc = wd.allocFn(W);
+    FunctionCallee Cswap = csyms.cswapFn();
+    FunctionCallee X = csyms.xFn();
+    FunctionCallee RyInv = csyms.controlledRyInvFn(W);
+    Instruction *Boundary = region.MergeBB->getFirstNonPHI();
+    if (!WTy || !Alloc || !Cswap || !X || !RyInv || !Boundary)
+      continue;  // unsupported width/symbol; leave the φ for the verifier.
+    // Pin step-5's uncompute AFTER the mux body inserted before `Boundary`.
+    MuxAnchor = Boundary;
+
+    // Per-non-default-base CaseOr(q) (single case ⇒ that flag; shared ⇒ an
+    // OR-fold recorded in `OrSteps` for the reverse-LIFO uncompute in step 5).
+    SmallVector<Value *, 4> NonDefFlags;
+    for (auto &Pr : CaseFlagsByBase) {
+      if (Pr.first == DefaultBase)
+        continue;
+      Value *F = orFold(Pr.second);
+      if (!F) {
+        Ok = false;
+        break;
+      }
+      NonDefFlags.push_back(F);
+    }
+    // OtherCaseOr = OR of every non-default base's flag; the default base fires
+    // on its complement (≡ its own cases ∨ no-case-matched).
+    Value *OtherCaseOr = Ok ? orFold(NonDefFlags) : nullptr;
+    if (!Ok || !OtherCaseOr)
+      continue;
+
+    IRBuilder<> B(Boundary);
+    Value *RegOut =
+        B.CreateCall(Alloc, {Constant::getNullValue(WTy)}, "regout");
+    // regOut is the muxed quantum register the φ RAUWs to — register it as a
+    // tainted handle of the mux width so downstream rotation/measure lowering
+    // recognizes it (mirror of RotationLowering's minted-handle bookkeeping).
+    taint.Tainted.insert(RegOut);
+    taint.HandleWidth[RegOut] = W;
+    taint.BirthOrder[RegOut] = taint.NextBirth++;
+    // MOVE each selected source into regOut: non-default bases on their positive
+    // CaseOr flag; the default base on ¬OtherCaseOr (cqrt_x self-inverse bracket).
+    for (unsigned j = 0; j < NonDefBases.size(); ++j)
+      B.CreateCall(Cswap, {NonDefFlags[j], RegOut, NonDefBases[j]});
+    B.CreateCall(X, {OtherCaseOr});
+    B.CreateCall(Cswap, {OtherCaseOr, RegOut, DefaultBase});
+    B.CreateCall(X, {OtherCaseOr});
+    // UNCOMPUTE every non-selected source's prep: non-default base q on ¬CaseOr(q)
+    // (bracket); the default base on OtherCaseOr (positive — it IS ¬f_default).
+    for (unsigned j = 0; j < NonDefBases.size(); ++j) {
+      B.CreateCall(X, {NonDefFlags[j]});
+      B.CreateCall(RyInv, {NonDefFlags[j], NonDefBases[j], NonDefAngles[j]});
+      B.CreateCall(X, {NonDefFlags[j]});
+    }
+    B.CreateCall(RyInv, {OtherCaseOr, DefaultBase, DefaultAngle});
+
+    P.replaceAllUsesWith(RegOut);
     P.eraseFromParent();
   }
 
@@ -374,9 +532,11 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
   //    `combineFlags`, in reverse compute order — the default fold, then the
   //    per-arm folds), then each per-case compare-uncompute (reverse of the
   //    mint order). Anchor AFTER the angle rotations when an angle φ was lowered
-  //    (4.5), else at the boundary.
-  Instruction *UncomputeAt =
-      AngleAnchor ? AngleAnchor : region.MergeBB->getFirstNonPHI();
+  //    (4.5), AFTER the MUX-EXCH body when a mux φ was lowered (so the flags it
+  //    consumes are still live), else at the boundary.
+  Instruction *UncomputeAt = AngleAnchor      ? AngleAnchor
+                             : MuxAnchor       ? MuxAnchor
+                                               : region.MergeBB->getFirstNonPHI();
   if (UncomputeAt) {
     for (int i = (int)OrSteps.size() - 1; i >= 0; --i)
       uncombineFlags(OrSteps[i].A, OrSteps[i].B, OrSteps[i].Out,
