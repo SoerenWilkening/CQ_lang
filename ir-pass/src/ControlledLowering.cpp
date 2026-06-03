@@ -408,10 +408,17 @@ void lowerGatedSwitch(ControlRegion &region, WidthDispatch &wd,
     SmallVector<std::pair<Value *, SmallVector<Value *, 2>>, 4> CaseFlagsByBase;
     Value *DefaultBase = nullptr;
     bool Ok = true;
+    // The default arm's φ edge: a distinct default BLOCK (`region.Arm`), or — for
+    // an empty `default:` routed straight to the merge (G4 widening, 5bl §9) —
+    // the switch block itself (`region.Pred`), mirroring `reduceAngleSwitchPhi`'s
+    // unconditional-base edge selection. For a distinct-block default `region.Arm`
+    // is the (non-Pred) reconverging block, so this is byte-identical there.
+    BasicBlock *DefaultEdge =
+        region.SwitchDefaultDirect ? region.Pred : region.Arm;
     for (unsigned i = 0, e = P.getNumIncomingValues(); i != e; ++i) {
       BasicBlock *IB = P.getIncomingBlock(i);
       Value *H = P.getIncomingValue(i);
-      if (IB == region.Arm) {  // the default arm's edge
+      if (IB == DefaultEdge) {  // the default arm's edge (Pred for a direct default)
         DefaultBase = H;
         continue;
       }

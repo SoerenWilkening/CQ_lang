@@ -18,6 +18,7 @@
 #include "OpcodeSupport.h"  // abiWidthFromType
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/STLExtras.h"  // erase_if (nested-merge guard)
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -26,6 +27,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/Dominators.h"  // DominatorTree (G5 dominating-variable angle)
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -611,8 +613,11 @@ BasicBlock *gatedArmTarget(BasicBlock *Arm, BasicBlock *SwBB) {
 // shared ABI width on success (non-empty); an empty StringRef on ANY failure
 // (caller declines the whole mux to the WP12 diagnostic — over-declining is
 // safe). `Bases` are the distinct `resolveGatedHandleBase` results of one mux φ
-// (size ≥ 2). See docs/npu6-mux-exch-gate-spec.md §3.
-StringRef muxBasePreconditions(ArrayRef<Value *> Bases, TaintSet &taint) {
+// (size ≥ 2). `DT`/`MergeAnchor` drive the G5 dominating-variable angle check
+// (5bl §9): `MergeAnchor` is `region.MergeBB->getFirstNonPHI()`, the npu.6
+// uncompute insertion point. See docs/npu6-mux-exch-gate-spec.md §3.
+StringRef muxBasePreconditions(ArrayRef<Value *> Bases, TaintSet &taint,
+                               DominatorTree &DT, Instruction *MergeAnchor) {
   StringRef Width;
   for (Value *B : Bases) {
     // G1: the base must be a DIRECT `cq_theta_` prep — reject a SelectInst /
@@ -631,11 +636,27 @@ StringRef muxBasePreconditions(ArrayRef<Value *> Bases, TaintSet &taint) {
     // uncompute.
     if (taint.Tainted.count(Theta->getArgOperand(0)))
       return {};
-    // G5 (conservative): a `ConstantFP` prep angle. The dominating-variable
-    // case is over-decline-safe deferred (no DominatorTree over the lowered
-    // form exists at decision time; spec §8 open-risk #4 / §9).
-    if (!isa<ConstantFP>(Theta->getArgOperand(1)))
-      return {};
+    // G5: a `ConstantFP` prep angle is trivially in scope at the merge uncompute
+    // anchor. A non-constant angle (5bl §9 dominating-variable widening) is
+    // admitted ONLY if its def DOMINATES that anchor, so the merge-boundary
+    // `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)` references a live value (an
+    // arm-local computed angle is dead at the merge). A quantum-derived (tainted)
+    // angle is never single-Ry†-uncomputable. Rotation lowering does not alter
+    // the CFG and does not move the (classical) angle def, so this detection-time
+    // DominatorTree predicts the lowered-form dominance exactly (spec §8 open-risk
+    // #4). When in doubt, decline (over-declining is safe).
+    Value *Angle = Theta->getArgOperand(1);
+    if (!isa<ConstantFP>(Angle)) {
+      if (taint.Tainted.count(Angle))
+        return {};  // a tainted (quantum-derived) angle — never Ry†-uncomputable.
+      if (auto *AI = dyn_cast<Instruction>(Angle)) {
+        if (!MergeAnchor || !DT.dominates(AI, MergeAnchor))
+          return {};  // arm-local / otherwise non-dominating computed angle.
+      } else if (!isa<Argument>(Angle) && !isa<Constant>(Angle)) {
+        return {};  // unknown angle category — decline conservatively.
+      }
+      // An `Argument` / `Constant` (non-FP) dominates the whole function — admit.
+    }
     // G7: every distinct base of one logical width (the seed
     // `abiWidthFromType(arg-0 type)` matches what `RotationLowering` later
     // records in `taint.HandleWidth`, so the lowering's width-specialized
@@ -872,13 +893,21 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
     // muxed register with no `reduceAngleSwitchPhi` interleaving.
     if (MuxPhis.size() != 1 || !AnglePhis.empty())
       return false;
-    // G4: admit only a distinct reconverging default BLOCK with a gate body
-    // (HasDefaultGate), so the default-selected base has a `¬OrAll` control; a
-    // direct-to-merge (empty) default leaves that base unflagged.
-    if (DefaultDirect)
-      return false;
+    // G4 (5bl §9 widening): BOTH a distinct reconverging default BLOCK with a
+    // gate body AND an empty direct-to-merge (`DefaultDirect`) default now lower.
+    // The default-selected base's control is the `¬OtherCaseOr` complement
+    // bracket the mux already emits (the partition identity: exactly one arm
+    // fires), so no `¬OrAll` value is needed; for a direct default the default
+    // base rides the `region.Pred` φ edge, mirroring `reduceAngleSwitchPhi`'s
+    // unconditional-base asymmetry. (Was: `if (DefaultDirect) return false;`.)
+    //
     // G1/G2/G5/G7 per distinct base (returns the shared width or "" on failure).
-    if (muxBasePreconditions(MuxBases, taint).empty())
+    // G5's dominating-variable angle check needs a DominatorTree (the CFG is
+    // stable across rotation lowering, so the detection-time tree is exact) and
+    // the merge uncompute anchor.
+    DominatorTree DT(*SwBB->getParent());
+    if (muxBasePreconditions(MuxBases, taint, DT, Merge->getFirstNonPHI())
+            .empty())
       return false;
     DoMux = true;
   }
@@ -1299,6 +1328,47 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         plan.InShadow.insert(S);
       plan.Regions.push_back(std::move(region));
     }
+  }
+
+  // SAFETY (adversarial review, 5bl): `lowerControlledRegions` lowers the
+  // collected regions SEQUENTIALLY, and a region's linearization (`linearizeSwitch`
+  // / the diamond + nested collapses) ERASES that region's `MergeBB`. A region
+  // whose `Pred` block IS another region's `MergeBB` — a controlled region nested
+  // directly in an enclosing controlled region's merge block (e.g. back-to-back
+  // quantum-controlled `switch`es, or a gated switch in a tainted-`if` merge — the
+  // shape clang -O1 emits for consecutive controlled statements) — therefore has
+  // its `Pred` freed when the enclosing region linearizes; lowering the inner
+  // region next dereferences the stale pointer (a hard use-after-free crash). The
+  // npu.5/.6 G4 direct-default widening NEWLY routes a distinct-base mux into this
+  // path (the distinct-base `SwitchDefaultDirect` shape was previously declined at
+  // G4 outright), as EITHER the inner region (its `Pred` = an enclosing merge) OR
+  // the enclosing one (its merge = an inner region's `Pred`) — the same
+  // `R'.Pred == R.MergeBB` relation, caught from R' by the one test below over ALL
+  // region kinds. So DECLINE such an inner region LOUDLY here (the always-safe
+  // over-decline) — while all blocks are still valid — rather than crash.
+  //
+  // NOTE: this guard covers exactly the nested-in-merge UAF the G4 widening can
+  // reach. A SEPARATE, PRE-EXISTING UAF — two tainted `if`-diamonds reconverging on
+  // ONE shared merge block (`matchDiamond`/`matchSymmetricDiamond` lack the merge
+  // extra-predecessor check the gated-switch path has) — is NOT a regression from
+  // this increment (no mux involved; a mux switch can never share a merge, since
+  // the switch path rejects extra merge predecessors) and is tracked separately;
+  // it must NOT be folded in here because a legitimate nested-AND (`if(a){if(b)…}`)
+  // is detected as a coordinated region pair that SHARES its merge yet lowers
+  // correctly, so a blanket shared-merge decline would wrongly reject it.
+  {
+    SmallPtrSet<BasicBlock *, 8> RegionMerges;
+    for (ControlRegion &R : plan.Regions)
+      if (R.MergeBB)
+        RegionMerges.insert(R.MergeBB);
+    auto IsNestedInMerge = [&](const ControlRegion &R) {
+      return R.Pred && RegionMerges.count(R.Pred);  // Pred is never own merge.
+    };
+    for (ControlRegion &R : plan.Regions)
+      if (IsNestedInMerge(R))
+        if (auto *T = R.Pred->getTerminator())
+          diagnoseEscape(T, isa<SwitchInst>(T) ? "switch" : "control flow");
+    llvm::erase_if(plan.Regions, IsNestedInMerge);
   }
 
   return plan;

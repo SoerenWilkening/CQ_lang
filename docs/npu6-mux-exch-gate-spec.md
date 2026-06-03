@@ -8,6 +8,14 @@ everything else still declines to the always-safe WP12 diagnostic. The detection
 (`ControlledLowering.cpp`), and `region.MuxExch` carries the decision. **Implementation addendum
 (adversarial review C1, 2026-06-03): G3 gained a per-arm-correspondence clause `G3b` — see §3.**
 
+**Widening addendum (test_C_libtooling-5bl, 2026-06-03):** two §9 residual cases were promoted
+from always-declined to lowering, each over-decline-safe and adversarially reviewed: **G5** now
+admits a non-`ConstantFP` prep angle whose def **dominates** the merge uncompute anchor (not just
+a literal), and **G4** now admits an **empty direct-to-merge default** (`SwitchDefaultDirect`) for
+a distinct-base mux (the default base rides the `region.Pred` φ edge; its control is the existing
+`¬OtherCaseOr` complement bracket). The other §9 cases (chained/multi-Ry G2/G3, cross-φ/post-merge-
+live G6/G3) **stay declined**. See §3 (G4/G5 rows), §9.
+
 **Provenance addendum:** an implementation-stage adversarial review (6 attackers, empirical via the
 built pass) confirmed the lowering algebra, flag lifecycle, bookkeeping, and all regression paths
 correct, and found ONE silent-miscompile hole (C1): the original G3 set-membership check admitted an
@@ -41,15 +49,17 @@ the trace runtime cannot catch. **The gate is the entire safety argument.** When
 
 ## 2. The narrow happy-path that LOWERS
 
-After this increment, the *only* distinct-base gated-switch multiplexer that lowers is:
+After this increment (with the 5bl G4/G5 widening), the distinct-base gated-switch multiplexer
+that lowers is:
 
-> a tainted-scrutinee `switch` with a **distinct reconverging default block carrying a gate
-> body** (`HasDefaultGate == true`, **not** `SwitchDefaultDirect`); **exactly one** mux φ in
-> the merge whose **every distinct base is a direct `cq_theta` with a classical (untainted)
-> arg-0** (a single `Ry` prep); a **`ConstantFP` or merge-dominating** prep angle; **no extra
-> mutation** between prep and merge other than in-arm controlled gate bodies; **every mux base
-> of one shared logical width**, **disjoint** from all sibling-φ bases and **dead after the
-> merge**.
+> a tainted-scrutinee `switch` with **either** a distinct reconverging default block carrying a
+> gate body (`HasDefaultGate`) **or** an empty direct-to-merge default (`SwitchDefaultDirect`, the
+> default base riding the `region.Pred` φ edge — 5bl); **exactly one** mux φ in the merge whose
+> **every distinct base is a direct `cq_theta` with a classical (untainted) arg-0** (a single `Ry`
+> prep); a **`ConstantFP`, or a non-tainted angle whose def dominates the merge uncompute anchor**
+> (5bl); **no extra mutation** between prep and merge other than in-arm controlled gate bodies;
+> **every mux base of one shared logical width**, **disjoint** from all sibling-φ bases and **dead
+> after the merge**.
 
 Everything else **declines** to WP12 (§5).
 
@@ -66,8 +76,8 @@ still pre-lowering (detection runs before `lowerRotations`, `CQLoweringPass.cpp:
 | **G2** | **Single-Ry prep (classical arg-0).** For each base `B` (a `cq_theta_` call): require `taint.Tainted.count(B->getArgOperand(0)) == false`. A tainted arg-0 is a **chained theta-of-theta** → two `cqrt_ry` on one handle → a single `Ry†` leaves residual `Ry`. | chained `cq_theta(cq_theta(...))` multi-Ry prep | `RotationLowering.cpp:98-118` (chained theta lowers ry-only on the existing handle; classical arg-0 mints a fresh handle + one `cqrt_ry` at `:119-135`) |
 | **G3** | **No extra mutation between prep and merge.** Every user of `B` and of every node on the unwrap chain (φ-incoming → … → `B`) must be either an in-arm gate body (`cq_phi_` in `region.Shadow`/`SwitchArm.Shadow`/`AngleConsumers`) or the φ-incoming itself. Reject a `theta-then-cq_phi` prep (`Ry` then `Rz` — `cq_phi` lowers to `cqrt_rz`, leaving Rz garbage the Ry† won't undo) or any out-of-region mutation. | `cq_phi(cq_theta(y0,a),c)` (Ry then Rz) prep; out-of-region mutation of the base | `resolveGatedHandleBase` unwraps `cq_phi` which lowers to `cqrt_rz` (`:89`) |
 | **G3b** | **Per-arm correspondence (ADDED — adversarial review C1, 2026-06-03).** Every in-region gate body that mutates a mux base `q` must live in an arm whose mux-φ edge actually CARRIES `q` (the φ-incoming from that block resolves to `q`). G3a's set-membership (`user ∈ Gates`) is too weak: it admits a gate on `q` sitting in a *non-`q`-selecting* arm, whose controlled `cqrt_rz` fires on a `¬f_q` branch — a stray Rz the single `cqrt_ry_<W>_controlled_inv(¬f_q, q, angle)` cannot undo, leaving `q` entangled with the scrutinee and decohering `regOut` (verify-clean, no diagnostic). | a stray `cq_phi(qy, …)` in the arm that selects `qx` (`wrongarmmut.ll`); the default-base variant `cq_phi(qx, …)` in a case arm (`wrongarmmut_default.ll`) | `muxRegionGate` G3b: `Mux->getBasicBlockIndex(G->getParent())` then `resolveGatedHandleBase(Mux->getIncomingValue(Idx)) == resolveGatedHandleBase(G)` |
-| **G4** | **No direct-to-merge default for a distinct-base mux φ.** Reject if `SwitchDefaultDirect` (compute `DefaultDirect` locally — `region.SwitchDefaultDirect` is set later) and the merge has a distinct-base φ. Admit only when `HasDefaultGate` (distinct default block w/ gate body) so `OrAll` and the `¬OrAll` bracket exist. | direct-to-merge (empty) default distinct-handle multiplexer (a default-selected base with no flag) | `ControlledLowering.cpp:327-333` (`OrAll` stays null when `!HasDefaultGate`) |
-| **G5** | **Variable-angle dominance.** Let `Angle = B->getArgOperand(1)`. Accept if `isa<ConstantFP>(Angle)`; else require `Angle`'s def to **dominate** `region.MergeBB->getFirstNonPHI()` (the npu.6 `UncomputeAt` anchor), via `DominatorTree`. | arm-local / computed prep angle not dominating the merge uncompute point | `cq_theta` arg-1 is an arbitrary `Value*` (`RotationLowering.cpp:112`; `TaintPropagation.cpp:137-151`) |
+| **G4** | **Default arm shape (WIDENED — 5bl).** Admit **either** `HasDefaultGate` (a distinct reconverging default block w/ gate body, controlled on `¬OrAll`) **or** an empty direct-to-merge default (`SwitchDefaultDirect`): the default-selected base's control is the `¬OtherCaseOr` complement bracket the mux already emits (the partition identity — exactly one arm fires per basis state — so no `¬OrAll` value is needed), and the default base rides the `region.Pred` φ edge instead of `region.Arm` (mirroring `reduceAngleSwitchPhi`). _Was: reject `SwitchDefaultDirect`._ | (now lowers — see `_distinct_emptydefault{,_distinctbase}.ll`) | `ControlledLowering.cpp` mux loop `DefaultEdge = SwitchDefaultDirect ? Pred : Arm`; `reduceAngleSwitchPhi` `MergeDissolution.cpp:605-609` |
+| **G5** | **Variable-angle dominance (WIDENED — 5bl).** Let `Angle = B->getArgOperand(1)`. Accept if `isa<ConstantFP>(Angle)`. Else: reject a **tainted** angle (never single-`Ry†`-uncomputable); accept an `Argument`/`Constant` (dominates the whole function); accept an `Instruction` iff its def **dominates** `region.MergeBB->getFirstNonPHI()` (the npu.6 `UncomputeAt` anchor) per a detection-time `DominatorTree`. Rotation lowering does not alter the CFG nor move the classical angle def, so the detection-time tree predicts the lowered-form dominance exactly (resolves §8 open-risk #4). _Was: accept only `ConstantFP`._ | arm-local / otherwise non-dominating computed angle (`_distinct_varangle_armlocal.ll`); tainted angle | `cq_theta` arg-1 is an arbitrary `Value*` (`RotationLowering.cpp:112`; `TaintPropagation.cpp:137-151`) |
 | **G6** | **Cross-φ base disjointness + region-wide liveness.** `cqrt_cswap` is a **destructive move** (empties the selected source to `|0⟩`). Compute `MuxBases` = all distinct bases of every mux φ. Decline if any base is also the resolved base of **another** φ in the merge (uniform/angle φ), or is used by any instruction reachable from `region.MergeBB->getFirstNonPHI()` (a downstream `cq_phi`/`cqrt_rz`/`cq_measure`). | cross-φ shared-base aliasing; **any base live after the merge** (no-cloning / live-use destruction) — **this is the liveness angle** | `cqrt_cswap` move semantics (`ControlledSymbols.h:74-81`); the shipped gate is per-φ (`ControlDetection.cpp:725`) |
 | **G7** | **Uniform width across mux bases.** Every distinct base of one mux φ must share `taint.HandleWidth`. `cqrt_cswap` is width-agnostic on i32 handle ids, but `cqrt_ry_<W>_controlled_inv` is **width-specialized** — a width mismatch would invert at the wrong width. | distinct bases of differing logical width | `taint.HandleWidth` seeded at `RotationLowering.cpp:134` |
 
@@ -140,17 +150,29 @@ Reverting any sub-part must revert to the always-safe npu.1 decline.
 - `lowering_control_switch_gated_distinct_3way.ll`: `case0→qx, case1→qy, case2→qz, default(block)→qx`
   — asserts `f_qx = OR(f0, f_default)` grouping and that `¬f_q` uncompute fires on exactly the
   non-selecting branches.
+- `_distinct_varangle.ll` (**5bl, replace the interim negative**): `%a = fadd … ` in `entry`
+  (dominates the merge), `%qx = cq_theta(x0, %a)` → **G5 widened, LOWERS**; the qx uncompute
+  `cqrt_ry_i32_controlled_inv(¬f_qx, qx, %a)` reuses the same `%a` as the forward prep.
+- `_distinct_emptydefault.ll` (**5bl, replace the interim negative**): a direct-to-merge empty
+  default distinct mux (`case0→qx, case1→qy`, the `entry`/`Pred` edge carrying default base `qx`)
+  → **G4 widened, LOWERS** with no default-gate Rz.
+- `_distinct_emptydefault_distinctbase.ll` (**5bl, new**): direct default whose `Pred` edge carries
+  a *genuinely default-only* third base `qz` → moves on `¬OtherCaseOr` (the `¬OR` fold), uncomputes
+  on the positive fold.
 
 **Decline (one per gate check):**
 - `_chainedtheta.ll` — `qy = cq_theta(cq_theta(y0,0.3),0.7)` → **G2**.
 - `_thetathenphi.ll` — `qy = cq_phi(cq_theta(y0,a),c)` (Ry then Rz) → **G3**.
 - `_selectbase.ll` — a mux edge base `%w = select i1 %c, %qy, %qz` → **G1**.
 - `_databasearm.ll` — a mux edge base `%sum = add i32 %qx, %qy` → **G1**.
-- `_distinct_emptydefault.ll` — distinct multiplexer with default routed straight to merge → **G4**.
-- `_varangle.ll` — `%a = fadd …` in a case arm, `%qx = cq_theta(x0, %a)` → **G5**.
+- `_distinct_varangle_armlocal.ll` (**5bl, new**) — `%b = fadd …` and `%qy = cq_theta(y0,%b)` BOTH
+  in case arm `c1` (so `%b` does **not** dominate the merge) → **G5 boundary, DECLINES**.
 - `_crossphi_alias.ll` — merge with mux φ `%r` (bases `qx`/`qy`) **and** uniform φ `%sm` (`qy`),
   `%o2` reads `%sm` → **G6**.
 - (a differing-width mux φ → **G7**.)
+
+Note: the former G4/G5 decline fixtures (`_distinct_emptydefault.ll`, `_distinct_varangle.ll`) are
+now POSITIVE per the 5bl widening; the residual G2/G3/G6 declines are unchanged.
 
 **Regression (must still lower / decline byte-identically):**
 `_multihandle.ll` (disjoint bases on *separate* uniform φs → step-4 RAUW, no mux), `_emptydefault.ll`,
@@ -178,11 +200,51 @@ Reverting any sub-part must revert to the always-safe npu.1 decline.
 
 ## 9. Residual general case (stays declined — the spike boundary)
 
-Everything outside §2 stays declined to WP12 (the always-safe npu.1 path): direct-to-merge default
-with distinct handles (G4), chained/multi-Ry or theta-then-gate preps (G2/G3), select/branch-φ/data-op/
-argument bases (G1), variable non-dominating angles (G5), cross-φ-shared or post-merge-live bases (G6),
-mixed-width muxes (G7). This boundary is **over-decline-safe**: every excluded shape is either
-ill-defined for the single-`Ry†` inverse or carries a register-aliasing/which-path hazard the trace
-runtime cannot detect. The most notable deferral is the **direct-default-with-distinct-handles** case
-— it needs the `reduceAngleSwitchPhi`-style unconditional-base asymmetry (`MergeDissolution.cpp:605-609`)
-ported to handles, a separate follow-on.
+Everything outside §2 stays declined to WP12 (the always-safe npu.1 path). After the **5bl
+widening** (G4 direct-default + G5 dominating-variable angle now lower — §3), the residual
+declined set is: chained/multi-Ry or theta-then-gate preps (G2/G3), select/branch-φ/data-op/
+argument bases (G1), arm-local **non-dominating** or **tainted** angles (G5), cross-φ-shared or
+post-merge-live bases (G6/G3), mixed-width muxes (G7). This boundary is **over-decline-safe**:
+every still-excluded shape is either ill-defined for the single-`Ry†` inverse (G2/G3 need a
+multi-op Bennett uncompute) or carries a register-aliasing/which-path hazard the trace runtime
+cannot detect (G6/G3 — no-cloning / live-use destruction). These are genuine capability gaps or
+hazards, not quick wins, and remain deferred.
+
+---
+
+## 10. Cross-region nested-merge safety guard (5bl adversarial-review fallout)
+
+`lowerControlledRegions` lowers the detected `ControlRegion`s **sequentially**, and a region's
+linearization **erases its `MergeBB`**. A controlled region whose **`Pred` block IS another
+region's `MergeBB`** — a controlled construct nested directly in an enclosing controlled region's
+merge block (back-to-back quantum-controlled `switch`es, or a gated switch in a tainted-`if` merge;
+the shape clang `-O1` emits for consecutive controlled statements) — therefore has its `Pred` freed
+when the enclosing region linearizes, and lowering it next **dereferences a stale block** → a hard
+use-after-free **SIGSEGV on valid input**. This is **pre-existing** (uniform / branch nestings hit
+it too), but the G4 direct-default widening **newly routed** a distinct-base mux into it (the
+distinct-base `SwitchDefaultDirect` shape was previously declined outright at G4, so the second
+region was never built).
+
+Because over-declining is always safe but a crash regression is not, `detectControlRegions` ends
+with a guard: collect **every** region's `MergeBB`; for any region whose `Pred` is in that set,
+fire the loud WP12 `...under quantum control` diagnostic and **drop it from the plan** (done while
+all blocks are still valid). The key is over EVERY region kind (branch + switch), not just
+SwitchRegions, since the widening's new mux region can be **either** the inner (its `Pred` = an
+enclosing region's merge) **or** the enclosing one (its merge = an inner region's `Pred`) — the same
+`inner.Pred == outer.MergeBB` relation, caught from the inner by the one `Pred ∈ {merges}` test.
+Regressions: `lowering_control_switch_gated_distinct_nestedmerge{,_branch}.ll`. A future increment
+could lower these by inner-first region ordering or post-linearization region re-discovery.
+
+**Scope boundary — what this guard does NOT cover (intentionally).** The 5bl re-review surfaced a
+**separate, pre-existing** UAF (issue `test_C_libtooling-ehf`, **not** a 5bl regression — it
+reproduces on baseline and involves no mux/G4/G5): two tainted `if`-diamonds reconverging on ONE
+**shared** merge block (`matchDiamond`/`matchSymmetricDiamond` lack the merge extra-predecessor check
+the gated-switch path has, so they admit a shared merge; the first lowered erases it, the second
+dereferences it). It is deliberately **not** folded into this guard: a `MergeBB`-shared-by-≥2-regions
+test would wrongly decline the legitimate **nested-AND** (`if(a){if(b)…}`), which detection
+represents as a *coordinated* region pair — the inner diamond's `Pred` equals the outer region's
+`Mid` — that shares its merge yet lowers correctly (`lowering_control_angle_nested_and.ll`). The
+proper fix (mirror the switch extra-predecessor check into the diamond paths) is tracked in `ehf`. A
+distinct-base mux can never *share* a merge (the switch path rejects extra merge predecessors), so
+the G4 widening cannot reach the shared-merge UAF — only the `Pred == MergeBB` nesting this guard
+covers.
