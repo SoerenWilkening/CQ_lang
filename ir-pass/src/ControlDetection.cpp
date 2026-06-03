@@ -484,6 +484,29 @@ bool matchDiamond(BranchInst *Br, BasicBlock *&Arm, BasicBlock *&MergeBB,
     // The merge must carry the SSA merge `φ` this region dissolves.
     if (!isa<PHINode>(&CandMerge->front()))
       continue;
+    // EXTRA-PREDECESSOR GUARD (test_C_libtooling-ehf — pre-existing UAF). The
+    // candidate merge's ONLY legitimate predecessors are this diamond's `Pred`
+    // (`Br->getParent()`, the straight-through flag==0 edge) and `CandArm` (the
+    // flag==1 fall-through). Any OTHER predecessor means the merge is SHARED with
+    // an external reconvergence — most acutely a SECOND tainted diamond
+    // reconverging on the SAME merge (`entry -> {pA,pB}`; each `p* -> {arm*, m}`).
+    // Both diamonds would build a `BranchRegion` with the same `MergeBB`;
+    // `lowerControlledRegions` lowers regions SEQUENTIALLY, and the first region's
+    // linearization ERASES the shared merge, so lowering the second dereferences
+    // the freed block — a deterministic use-after-free SIGSEGV on VALID
+    // (verify-clean) input. Reject here so the shape declines to the WP12
+    // "control flow" diagnostic, mirroring the gated-switch path's identical
+    // extra-merge-predecessor check (tryBuildGatedSwitchRegion, ~line 808). This
+    // also NATURALLY drops the redundant inner-diamond region in a nested-AND
+    // (`if(a){if(b)…}`): that inner merge carries the extra outer-guard-false
+    // `Pred` edge, so the inner `matchDiamond` declines and `matchNestedAnd`'s
+    // coordinated region alone lowers it.
+    bool ExtraPred = false;
+    for (BasicBlock *P : predecessors(CandMerge))
+      if (P != Br->getParent() && P != CandArm)
+        ExtraPred = true;  // a shared / externally-reconverging merge.
+    if (ExtraPred)
+      continue;  // not a clean one-content-arm diamond — try the other arm.
     Arm = CandArm;
     MergeBB = CandMerge;
     // `i == 1` ⇒ the arm is the FALSE successor (`br i1 cond, Merge, Arm`), so
@@ -522,6 +545,18 @@ bool matchSymmetricDiamond(BranchInst *Br, BasicBlock *&ArmT, BasicBlock *&ArmF,
     return false;  // a degenerate self-loop, not a forward diamond.
   if (!isa<PHINode>(&M->front()))
     return false;  // the merge must carry the SSA merge φ(s) we dissolve.
+  // EXTRA-PREDECESSOR GUARD (test_C_libtooling-ehf — pre-existing UAF). The
+  // merge's ONLY legitimate predecessors are the two content arms `S0`/`S1`; any
+  // OTHER predecessor means `M` is SHARED with an external reconvergence (e.g. a
+  // second tainted diamond merging on the same block). Both regions would build a
+  // `BranchRegion` with this `MergeBB`, and `lowerControlledRegions` lowers them
+  // SEQUENTIALLY — the first region's linearization ERASES `M`, so lowering the
+  // second dereferences the freed block (a deterministic use-after-free SIGSEGV
+  // on verify-clean input). Decline to the WP12 diagnostic, mirroring the
+  // gated-switch path's extra-merge-predecessor check (tryBuildGatedSwitchRegion).
+  for (BasicBlock *P : predecessors(M))
+    if (P != S0 && P != S1)
+      return false;  // a shared / externally-reconverging merge — decline.
   ArmT = S0;
   ArmF = S1;
   MergeBB = M;
@@ -1253,6 +1288,20 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
           plan.Regions.push_back(std::move(region));
           continue;
         }
+        // The INNER guard of an already-claimed nested-AND (`if(a){if(b)…}`):
+        // its parent is the `Mid` block of a committed region, and that region's
+        // `matchNestedAnd` already owns the inner `br` (the expected inner guard,
+        // per matchNestedAnd's contract — NOT an escape). Before the extra-pred
+        // guard (test_C_libtooling-ehf), this inner branch was matched by
+        // `matchDiamond` and silently dropped by the `AlreadyClaimed` check; that
+        // guard now correctly DECLINES the inner diamond (its merge carries the
+        // extra outer-guard-false `Pred` edge), so without this skip the inner
+        // guard would instead fall through to the loud "control flow" diagnostic
+        // and wrongly reject the whole (legitimately lowered) nested-AND. Skip it.
+        if (llvm::any_of(plan.Regions, [&](const ControlRegion &R) {
+              return R.Mid == Br->getParent();
+            }))
+          continue;  // inner guard of a committed nested-AND — already owned.
         // No controllable shape (diamond/select/nested-AND/conjunction). If a
         // guarded arm ESCAPES (`ret`/`measure`/out-of-region) instead of
         // reconverging, this is "return/measure under quantum control" (PRD
