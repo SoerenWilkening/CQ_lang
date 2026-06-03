@@ -77,6 +77,23 @@ bool isPhiCall(const Instruction &I) {
   return Callee && Callee->getName().starts_with("cq_phi_");
 }
 
+// Resolve a gated-switch merge-φ incoming to its BASE quantum handle by
+// unwrapping in-place gate applications: a `cq_phi_<sfx>(handle, angle)` call
+// returns the mutated handle, so its arg-0 is the SAME logical handle. Walk arg-0
+// through every `cq_phi` call; a non-`cq_phi` tainted value (a raw `cq_theta`
+// handle, or a dissolved-select result) is its own base. Used by the
+// same-base-handle uniformity check in `tryBuildGatedSwitchRegion` (npu.1).
+Value *resolveGatedHandleBase(Value *V) {
+  while (auto *CI = dyn_cast<CallInst>(V)) {
+    const Function *Callee = CI->getCalledFunction();
+    if (!Callee || !Callee->getName().starts_with("cq_phi_") ||
+        CI->arg_size() < 1)
+      break;
+    V = CI->getArgOperand(0);
+  }
+  return V;
+}
+
 // Is EVERY user of `V` a `cq_phi` rotation that takes `V` as the classical ANGLE
 // (arg 1), never the arg-0 handle? On success fills `Consumers` with the rotation
 // calls (in use order). Shared by the WP10 select-form angle guard and the
@@ -692,13 +709,32 @@ bool tryBuildGatedSwitchRegion(SwitchInst *Sw, ControlPlan &plan,
   // surface this commit opens AND closes the pre-existing non-shared instances
   // (test_C_libtooling-6qg, adversarial review 2026-06-03). See
   // [[cwk-merge-phi-discriminator]].
+  //
+  // npu.1: "every incoming the same in-place handle" is now ENFORCED, not just
+  // asserted. step 4 RAUWs the φ to its FIRST tainted incoming, so a φ whose
+  // tainted incomings resolve to DISTINCT base handles (a gated switch dispatching
+  // case0→qx, case1→qy — a coherent multiplexer) would silently DROP every
+  // other-handle edge: when s==1 the program then operates on qx, not qy (a
+  // verify-clean miscompile). Correct lowering is the deferred MUX-EXCH /
+  // controlled-SWAP (cqrt_cswap) feature; until it lands, DECLINE a distinct-base
+  // φ to the same WP12 'switch under quantum control' diagnostic (over-declining
+  // is SAFE — dropping an edge is not). The check is PER-φ: a genuine MULTI-handle
+  // merge keeps its distinct base handles on SEPARATE φs (each uniform in its own
+  // handle, RAUW'd to its own base — _multihandle), so it still lowers.
   SmallPtrSet<PHINode *, 2> AngleSet(AnglePhis.begin(), AnglePhis.end());
   for (PHINode &P : Merge->phis()) {
     if (AngleSet.count(&P))
       continue;  // an angle φ — reduceAngleSwitchPhi lowers it.
-    for (Value *In : P.incoming_values())
+    Value *Base = nullptr;
+    for (Value *In : P.incoming_values()) {
       if (!taint.Tainted.count(In))
         return false;  // not a uniformly-tainted handle φ; decline to WP12.
+      Value *InBase = resolveGatedHandleBase(In);
+      if (!Base)
+        Base = InBase;
+      else if (Base != InBase)
+        return false;  // distinct per-case handles in one φ; decline to WP12 (npu.1).
+    }
   }
 
   // Structure matches: from here this function OWNS the diagnostic (returns true
