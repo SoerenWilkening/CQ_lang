@@ -18,12 +18,14 @@
 #include "ChainWalk.h"
 #include "ControlledSymbols.h"
 #include "EmitInverse.h"
+#include "FreePoint.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Dominators.h"
@@ -50,27 +52,22 @@ bool isDataProducer(const CallInst *H) {
   return N.starts_with("cq_template_") && !N.contains("_controlled");
 }
 
-// Does the terminal escape Phase-5 emission? Conservative pre-FreePoint guard
-// (Step 3 productionizes this): a `ret` operand outlives the function, and a
-// measured handle's lifetime ends at the measurement sink — neither is freed.
-bool escapesOrMeasured(const Value *Terminal) {
-  for (const User *U : Terminal->users()) {
-    if (isa<ReturnInst>(U))
-      return true;
-    if (const auto *CI = dyn_cast<CallInst>(U)) {
-      const Function *Callee = CI->getCalledFunction();
-      if (Callee && Callee->getName().starts_with("cqrt_measure_"))
-        return true;
-    }
-  }
-  return false;
-}
-
 // Is every link of `Chain` something Step-2 can invert in place: a same-block,
 // uncontrolled gate, and — for a data template — a SINGLE-register link (exactly
 // one tainted operand)? A QQ template (two tainted operands) would branch the
 // lineage (whole-chain multi-register reversal is deferred), and a controlled
 // gate needs the Step-4 path; either disqualifies the whole terminal.
+//
+// SAME-BLOCK is REQUIRED and load-bearing for soundness, NOT a placement
+// convenience: a chain that crosses blocks may have MUTUALLY-EXCLUSIVE per-arm
+// links (e.g. a divergent `cqrt_rz` on each arm of an `i1` branch). A single
+// unconditional adjoint at the merge post-dominator would re-emit EVERY arm's
+// inverse on EVERY path — corrupting the register on each (divergent per-arm
+// mutating reversal is deferred to Step 6, never relaxed in here). The both-arm
+// case Phase 5 DOES handle is a forward chain wholly in a COMMON DOMINATOR whose
+// divergent per-arm aspect is a non-mutating USE that merely extends the live
+// range; FreePoint then post-dominates that use set to the merge, and the
+// single same-block adjoint reversed there is sound.
 bool isStep2Emittable(const ForwardChain &Chain, const TaintSet &taint) {
   if (Chain.Calls.empty())
     return false;
@@ -79,7 +76,7 @@ bool isStep2Emittable(const ForwardChain &Chain, const TaintSet &taint) {
   const BasicBlock *BB = Chain.Calls.front()->getParent();
   for (CallInst *G : Chain.Calls) {
     if (G->getParent() != BB)
-      return false;  // cross-block chain — Step 3/6
+      return false;  // cross-block chain — Step 6 (deferred, see header above)
     const Function *Callee = G->getCalledFunction();
     if (!Callee)
       return false;
@@ -135,24 +132,26 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
       continue;
 
     DominatorTree DT(F);
+    PostDominatorTree PDT(F);
     IRBuilder<> B(F.getContext());
     for (CallInst *Term : Terminals) {
-      if (escapesOrMeasured(Term))
+      // FreePoint OWNS classification + placement (PRD §2.4/§2.5/§2.6/§2.9):
+      // measure / escape (`ret` / `main` / `cq_invert_*`) skip with no emit; an
+      // unrecognized user, a post-measure gate, a non-reconverging arm, or a
+      // backedge-crossing live range is diagnosed LOUDLY inside `computeFreePoint`
+      // (which makes `opt` exit non-zero). Only `Insert` proceeds to emission.
+      FreePoint FP = computeFreePoint(Term, F, PDT, taint);
+      if (FP.Kind != FreePointKind::Insert)
         continue;
 
       ForwardChain Chain = recoverForwardChain(Term, taint, DT);
       if (!isStep2Emittable(Chain, taint))
         continue;
 
-      // Last touch of the register = the last forward gate in program order.
-      // Insert the reversed adjoint there (a call is never a terminator, so the
-      // next node exists), then `cqrt_free` of the final threaded handle at the
-      // SAME point (PRD §2.10). Step 3 routes placement through FreePoint's
-      // post-dominator last-use.
-      Instruction *At = Chain.Calls.back()->getNextNode();
-      if (!At)
-        continue;
-      B.SetInsertPoint(At);
+      // Anchor the reversed adjoint at FreePoint's post-dominating last-use point
+      // (after φ-nodes for a φ-merge), then `cqrt_free` the final threaded handle
+      // at the SAME point (PRD §2.10).
+      B.SetInsertPoint(FP.At);
       Value *Final = emitInverseChain(B, Chain.Calls, wd, csyms,
                                       /*Flag=*/nullptr, /*Terminal=*/Term);
       if (!Final)
