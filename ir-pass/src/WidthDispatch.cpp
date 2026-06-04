@@ -164,15 +164,16 @@ Type *WidthDispatch::llvmWidthType(StringRef abiWidth) const {
   return typeForAbiWidth(abiWidth, M.getContext());
 }
 
-FunctionCallee WidthDispatch::dataTemplateFn(StringRef stem,
-                                             StringRef abiWidth,
-                                             Shape shape) const {
+FunctionCallee WidthDispatch::dataTemplateFn(StringRef stem, StringRef abiWidth,
+                                             Shape shape, bool inverse) const {
   // Binary/unary data op. Handle is i32; the classical operand of an
   // `_hl`/`_lh` form is at its real LLVM width so the call matches the
-  // generated C signature. Symbol via TemplateName::dataName.
+  // generated C signature. Symbol via TemplateName::dataName. `inverse` selects
+  // the `_inv` twin (Phase 5, PRD §2.3) — same FunctionType, name flipped.
   LLVMContext &Ctx = M.getContext();
   Type *Handle = Type::getInt32Ty(Ctx);
-  std::string Name = dataName(stem, abiWidth, shape);
+  std::string Name = dataName(stem, abiWidth, shape, /*controlled=*/false,
+                              inverse);
   switch (shape) {
   case Shape::QQ:
     return M.getOrInsertFunction(
@@ -198,14 +199,16 @@ FunctionCallee WidthDispatch::dataTemplateFn(StringRef stem,
 }
 
 FunctionCallee WidthDispatch::compareTemplateFn(StringRef op, StringRef pred,
-                                                StringRef abiWidth,
-                                                Shape shape) const {
+                                                StringRef abiWidth, Shape shape,
+                                                bool inverse) const {
   // icmp/fcmp → an i32 flag handle (never i1). QQ (i32,i32)→i32; HL
   // (i32, classical)→i32. No `_lh` compares (a left literal is handled by
-  // predicate flip upstream). Symbol via TemplateName::compareName.
+  // predicate flip upstream). Symbol via TemplateName::compareName. `inverse`
+  // selects the `_inv` twin (Phase 5, PRD §2.3) — same FunctionType.
   LLVMContext &Ctx = M.getContext();
   Type *Handle = Type::getInt32Ty(Ctx);
-  std::string Name = compareName(op, pred, abiWidth, shape);
+  std::string Name = compareName(op, pred, abiWidth, shape,
+                                 /*controlled=*/false, inverse);
   if (shape == Shape::QQ)
     return M.getOrInsertFunction(
         Name, FunctionType::get(Handle, {Handle, Handle}, false));
@@ -218,16 +221,27 @@ FunctionCallee WidthDispatch::compareTemplateFn(StringRef op, StringRef pred,
 }
 
 FunctionCallee WidthDispatch::castTemplateFn(StringRef op, StringRef fromW,
-                                             StringRef toW) const {
+                                             StringRef toW,
+                                             bool inverse) const {
   // Casts are unary at the IR level: (i32 handle) → i32 handle. The width
   // pair only selects the symbol (and, semantically, the handle's ABI
   // width); the SSA type is i32 on both sides. Symbol via
-  // TemplateName::castName.
+  // TemplateName::castName. `inverse` selects the `_inv` twin (Phase 5,
+  // PRD §2.3) — same FunctionType.
   LLVMContext &Ctx = M.getContext();
   Type *Handle = Type::getInt32Ty(Ctx);
   return M.getOrInsertFunction(
-      castName(op, fromW, toW),
+      castName(op, fromW, toW, /*controlled=*/false, inverse),
       FunctionType::get(Handle, {Handle}, false));
+}
+
+FunctionCallee WidthDispatch::freeFn() const {
+  // Width-agnostic `void cqrt_free(i32)` (PRD §2.10). The handle is always i32,
+  // so this takes no width. Idempotent / lazy like the other runtime resolvers.
+  LLVMContext &Ctx = M.getContext();
+  return M.getOrInsertFunction(
+      "cqrt_free",
+      FunctionType::get(Type::getVoidTy(Ctx), {Type::getInt32Ty(Ctx)}, false));
 }
 
 FunctionCallee WidthDispatch::addTemplate(StringRef abiWidth,

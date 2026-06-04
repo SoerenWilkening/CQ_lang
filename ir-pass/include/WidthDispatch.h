@@ -89,16 +89,31 @@ public:
   //                         result is an i32 flag handle (never i1).
   //   * castTemplateFn    — unary, always (i32) → i32 (the handle's ABI
   //                         width changes but the SSA type stays i32).
+  //
+  // `inverse=true` (Phase 5, PRD §2.3) selects the declared `_inv` twin — the
+  // adjoint emitted at a tainted handle's last-use point (`EmitInverse`). The
+  // `_inv` twin's `FunctionType` is byte-identical to the forward (only the
+  // symbol name flips, via the already-inverse-aware `TemplateName::*`), so the
+  // type fan-out below is shared. (Rotations have NO `_inv` symbol — their
+  // inverse is the forward `cqrt_ry/rz_<W>` with a negated angle — so they are
+  // not resolved here.)
   llvm::FunctionCallee dataTemplateFn(llvm::StringRef stem,
-                                      llvm::StringRef abiWidth,
-                                      Shape shape) const;
+                                      llvm::StringRef abiWidth, Shape shape,
+                                      bool inverse = false) const;
   llvm::FunctionCallee compareTemplateFn(llvm::StringRef op,
                                          llvm::StringRef pred,
-                                         llvm::StringRef abiWidth,
-                                         Shape shape) const;
-  llvm::FunctionCallee castTemplateFn(llvm::StringRef op,
-                                      llvm::StringRef fromW,
-                                      llvm::StringRef toW) const;
+                                         llvm::StringRef abiWidth, Shape shape,
+                                         bool inverse = false) const;
+  llvm::FunctionCallee castTemplateFn(llvm::StringRef op, llvm::StringRef fromW,
+                                      llvm::StringRef toW,
+                                      bool inverse = false) const;
+
+  // Phase 5 (PRD §2.10). Width-agnostic deallocation: `void cqrt_free(i32)`.
+  // Emitted by `Uncomputation` immediately after a tainted handle's whole-chain
+  // adjoint, returning the freshly-zeroed handle to the runtime allocator. The
+  // handle is always i32 (PRD §"Width unification"), so this takes no width.
+  // Idempotent / lazy like the other runtime resolvers.
+  llvm::FunctionCallee freeFn() const;  // @cqrt_free
 
   // Back-compat shim for the Phase-2 entry point. `isQQ=true` → Q+Q
   // (`cq_template_(add|fadd)_<W>`); `isQQ=false` → Q+C (`..._hl`). The
