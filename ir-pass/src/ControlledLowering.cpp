@@ -58,6 +58,24 @@ namespace cq {
 
 namespace {
 
+// Phase 5 Step 0 hook (Phase-5 IMPLEMENTATION §2.4 / §4.0). Record the FIRST
+// instruction `emitUncompute` emitted at `At` — keyed by the region flag — into
+// `taint.FlagTeardown`, so Phase 5's in-shadow keep-alive (PRD §2.7) has a
+// deterministic, SSA-undiscoverable anchor for the controlled data-adjoint.
+// Every emit anchors an `IRBuilder` at `At` and inserts before it, so the
+// earliest-in-program-order emitted instruction is whatever now sits between
+// `Prev` (the frontier snapshotted before emission) and `At`. Anchoring the
+// data-adjoint before this head makes it nest OUTSIDE the entire LIFO teardown
+// (confirmed for the conjunction path: the head is the first `uncombineFlags`
+// call, ahead of the sub-compare `_inv`s). No-op if nothing was emitted.
+void recordFlagTeardown(TaintSet &taint, Value *Flag, Instruction *Prev,
+                        Instruction *At) {
+  Instruction *First = Prev ? Prev->getNextNode() : &At->getParent()->front();
+  if (First && First != At)
+    if (auto *Head = dyn_cast<CallInst>(First))
+      taint.FlagTeardown[Flag] = Head;
+}
+
 // Mint the flag uncompute for a region's condition, anchored at `At`, so it
 // brackets the controlled body (§1.5). Must run while the condition compare(s)
 // still stand.
@@ -73,6 +91,10 @@ void emitUncompute(ControlRegion &region, WidthDispatch &wd,
                    ControlledSymbols &csyms, TaintSet &taint, Instruction *At) {
   if (!region.Flag || !At)
     return;
+
+  // Step-0 hook: snapshot the insertion frontier before any emit so the
+  // recorded teardown head is exact regardless of which path runs below.
+  Instruction *Prev = At->getPrevNode();
 
   if (region.Conj != ControlRegion::ConjNone) {
     auto *CmpA = dyn_cast_or_null<CmpInst>(region.CondA);
@@ -91,6 +113,7 @@ void emitUncompute(ControlRegion &region, WidthDispatch &wd,
                              /*before=*/At);
     (void)lowerCompareToFlag(CmpA, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
                              /*before=*/At);
+    recordFlagTeardown(taint, region.Flag, Prev, At);
     return;
   }
 
@@ -109,6 +132,7 @@ void emitUncompute(ControlRegion &region, WidthDispatch &wd,
   // intentionally unconsumed (a balanced ancilla, not a data value).
   (void)lowerCompareToFlag(Cmp, wd, taint, QqWidth, /*inverse=*/true,
                            /*before=*/At);
+  recordFlagTeardown(taint, region.Flag, Prev, At);
 }
 
 // Erase the listed instructions if dead, deduplicating so the same value is

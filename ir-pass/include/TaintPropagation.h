@@ -74,6 +74,19 @@ struct TaintSet {
   // returned by region detection (epic D4). Populated by later WPs; unread
   // this WP.
   llvm::DenseMap<llvm::Value *, llvm::Value *> ControlFlag;
+
+  // Phase 5 Step 0 (Phase-5 IMPLEMENTATION §2.4 / §4.0). Maps a control flag to
+  // the FIRST instruction of its Phase-4 teardown — the `_inv` compare (plain)
+  // or `cqrt_toffoli_inv`/`cqrt_x` bracket head (conjunction) minted by
+  // `emitUncompute` (`ControlledLowering.cpp`). That teardown is NOT discoverable
+  // by SSA dataflow: it runs over the condition's DATA handles, not the flag, and
+  // the merge block that anchored it is erased post-linearization. Phase 5's
+  // in-shadow keep-alive (PRD §2.7) reads `FlagTeardown[ControlFlag[handle]]` and
+  // anchors the controlled data-adjoint immediately before this instruction so
+  // the adjoint nests OUTSIDE the entire (LIFO) flag teardown. Populated by
+  // `emitUncompute`; unread until Phase 5 Step 4.
+  llvm::DenseMap<llvm::Value * /*flag*/, llvm::CallInst * /*firstTeardown*/>
+      FlagTeardown;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure
