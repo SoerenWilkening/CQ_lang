@@ -19,10 +19,14 @@
 //     (no `_inv` lookup — X and SWAP are their own inverse). Void; returns the
 //     handle operand (arg0) for chain threading.
 //
-// Template `_inv` twins (`cq_template_*` → `_inv`, fresh-handle threading) land
-// in Step 2 (ChainWalk); the controlled `_controlled_inv` path lands in Step 4
-// (InShadowAdjoint). Until then `emitInverseCall` returns nullptr for those
-// callees (the conservative Step-1 Uncomputation only feeds it rotations).
+//   * Uncontrolled data template `cq_template_<op>_<W>[_hl|_lh](…)`: emit the
+//     declared `_inv` twin (FunctionType byte-identical to the forward — minted
+//     from the forward callee's name + type). This MINTS A FRESH handle, so the
+//     threaded `CurHandle` is substituted for the data operand and the fresh
+//     result is returned for the next reversed link (R-template-inv-fresh-handle).
+//
+// The controlled `_controlled_inv` path lands in Step 4 (InShadowAdjoint); until
+// then `emitInverseCall` returns nullptr for those callees.
 //
 // ABI width, when needed, is recovered from the forward callee NAME or
 // `taint.HandleWidth` — NEVER the i32-laundered SSA type (PRD §2.3).
@@ -40,26 +44,30 @@ class WidthDispatch;
 class ControlledSymbols;
 
 // Emit the inverse of a single forward call at `B`'s insertion point. Returns
-// the data handle the next reversed link should consume (the input handle for
-// in-place rotations / involutions; a fresh template result once Step 2 lands),
-// or nullptr if the callee is not (yet) an invertible Phase-5 target. `Flag`,
-// when non-null, supplies the i32 control flag for the controlled path
-// (Step 4); it is unused for the uncontrolled cases handled in Step 1.
+// the data handle the next reversed link should consume (the threaded handle for
+// in-place rotations / involutions; a fresh template result for the data-template
+// `_inv` case), or nullptr if the callee is not (yet) an invertible Phase-5
+// target. `Flag`, when non-null, supplies the i32 control flag for the controlled
+// path (Step 4). `CurHandle`, when non-null, is the live register handle threaded
+// in from the previous reversed link — substituted for this gate's data operand
+// so a chain of fresh-handle-minting `_inv` twins stays connected; null means
+// "use the forward call's own handle operand" (the head of a single-link chain).
 llvm::Value *emitInverseCall(llvm::IRBuilder<> &B, llvm::CallInst *Forward,
                              WidthDispatch &wd, ControlledSymbols &csyms,
-                             llvm::Value *Flag = nullptr);
+                             llvm::Value *Flag = nullptr,
+                             llvm::Value *CurHandle = nullptr);
 
 // Emit the adjoint of a whole forward chain: walk `ForwardChain` in REVERSE
-// (`Chain[N-1] … Chain[0]`), calling `emitInverseCall` per link. `ForwardChain`
-// is in FORWARD program order. In Step 1 every link is an in-place rotation, so
-// each gate already carries the correct handle (arg 0) and the per-link return
-// is a no-op; once Step 2 adds the non-in-place template `_inv` (which mints a
-// FRESH handle), this routes each produced SSA value into the next reversed
-// link's emission — and `emitInverseCall` gains a threaded-handle parameter.
-void emitInverseChain(llvm::IRBuilder<> &B,
-                      llvm::ArrayRef<llvm::CallInst *> ForwardChain,
-                      WidthDispatch &wd, ControlledSymbols &csyms,
-                      llvm::Value *Flag = nullptr);
+// (`Chain[N-1] … Chain[0]`), calling `emitInverseCall` per link and threading the
+// live handle through. `ForwardChain` is in FORWARD program order; `Terminal` is
+// the live head handle the first reversed link consumes. Each non-in-place
+// template `_inv` mints a FRESH handle that feeds the next link; in-place
+// rotations pass the handle through. Returns the FINAL threaded handle (the one
+// to `cqrt_free`), or nullptr if any link was not invertible.
+llvm::Value *emitInverseChain(llvm::IRBuilder<> &B,
+                              llvm::ArrayRef<llvm::CallInst *> ForwardChain,
+                              WidthDispatch &wd, ControlledSymbols &csyms,
+                              llvm::Value *Flag, llvm::Value *Terminal);
 
 }  // namespace cq
 

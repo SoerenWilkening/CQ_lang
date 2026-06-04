@@ -44,6 +44,7 @@ add_library(CQPass MODULE
   src/ArithLowering.cpp
   src/CastLowering.cpp
   src/CFGLinearization.cpp
+  src/ChainWalk.cpp
   src/CompareLowering.cpp
   src/ControlDetection.cpp
   src/ControlFlag.cpp
