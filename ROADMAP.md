@@ -328,7 +328,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — IR pass: controlled-form lowering [DONE · core (4) + `if`-completeness (4.3); `switch`/escape lowering → 4.1]
+## Phase 4 — IR pass: controlled-form lowering [DONE · core + 4.1 `switch`/escape + 4.2 mux + 4.3 `if`-completeness + 4.x MUX-EXCH]
 
 **Design:** see [`docs/prd/phase-04-controlled-form/PRD.md`](docs/prd/phase-04-controlled-form/PRD.md).
 
@@ -462,6 +462,21 @@ lowering) stays Phase 4.1 — now realized as **select-chain normalization**
 Design + plan:
 [`PRD.md §7`](docs/prd/phase-04-controlled-form/PRD.md) +
 [`IMPLEMENTATION.md §12`](docs/prd/phase-04-controlled-form/IMPLEMENTATION.md).
+
+**✅ Phase 4 complete (2026-06-04).** The planned Phase 4 scope has landed and
+no Phase-4 issue is open: core controlled-form (WP0–WP6), `switch`/escape
+lowering (4.1, WP15–WP18, 2026-06-02), the `[≥1 tainted arm]` data mux (4.2),
+`if`-completeness (4.3, epic [`-u6v`](.beads/issues.jsonl)), and the 4.x
+MUX-EXCH distinct-handle widening (gated-switch + `cqrt_cswap` + non-selected
+uncompute; epics [`-npu`](.beads/issues.jsonl)/[`-5bl`](.beads/issues.jsonl)/
+[`-u5f`](.beads/issues.jsonl)) with its permanent/deferred boundaries locked.
+The **residual** is *beyond* the planned scope and sequenced to later stages —
+it does **not** hold Phase 4 open: deferred capability gaps (memory-model
+`arr[q]`, non-exclusive / multi-angle merges, gated-switch non-tainted value
+merges, bounded-reconverging escape, shared-merge UAF) and permanent boundaries
+(escape / measurement, G6 no-cloning, raw handle-deref) are catalogued with
+their closing techniques and target phases in
+[`MISSING_CASES.md`](docs/prd/phase-04-controlled-form/MISSING_CASES.md).
 
 ---
 
