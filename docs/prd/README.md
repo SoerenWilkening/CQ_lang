@@ -29,3 +29,4 @@ sequence and per-phase scope.
 | 2 | IR pass: taint sources, gate-triggered allocation | [`phase-02-taint-allocation/PRD.md`](phase-02-taint-allocation/PRD.md) |
 | 3 | IR pass: full opcode lowering | [`phase-03-opcode-lowering/PRD.md`](phase-03-opcode-lowering/PRD.md) |
 | 4 | IR pass: controlled-form lowering | [`phase-04-controlled-form/PRD.md`](phase-04-controlled-form/PRD.md) |
+| 5 | IR pass: per-op uncomputation | [`phase-05-uncomputation/PRD.md`](phase-05-uncomputation/PRD.md) |

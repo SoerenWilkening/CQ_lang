@@ -482,9 +482,14 @@ their closing techniques and target phases in
 
 ## Phase 5 — IR pass: per-op uncomputation
 
+**Design:** see [`docs/prd/phase-05-uncomputation/PRD.md`](docs/prd/phase-05-uncomputation/PRD.md).
+
 **Goal.** Productionize the prototype's `cq-uncompute` slice past the
-`cqrt_free`-placeholder stage; emit the adjoint of each tainted
-handle's gate sequence at the SSA last-use point.
+`cqrt_free`-placeholder stage; emit the adjoint of each tainted **data**
+handle's gate chain at the SSA last-use point. Phase 5 owns *source-derived
+data* handles; *pass-invented control scratch* (flags, conjunction
+`toffoli`, MUX-EXCH non-selected sources) is already uncomputed by Phase 4
+(PRD §2.2).
 
 **Scope.**
 - Last-use computation: per the validated Phase 5 prototype mechanism —
@@ -503,6 +508,12 @@ handle's gate sequence at the SSA last-use point.
   inside an explicit `cq_invert_*` region (Phase 7 supersedes).
 - Diagnostics: source-location-preserved error at use-site when
   uncomputation is required of a non-adjointable result.
+- **Acyclic-CFG assumption; loops deferred.** Phase 5 reverses on
+  straight-line / diamond CFGs (no backedges); a tainted handle whose live
+  range crosses a loop backedge is **diagnosed loudly**, not miscompiled.
+  Loop uncomputation (loop-carried registers, per-iteration reversal)
+  **extends** this mechanism when loops land — it does not replace it (see
+  the loop section under "Beyond the freeze"; PRD §2.9).
 
 **Components touched:**
 - New `Uncomputation` module in `ir-pass/src/` (the prototype's
@@ -725,6 +736,14 @@ post-Phase-10 roadmap revision.
 - **Quantum-conditioned `while` loops.** Surface + semantics (amplitude
   amplification, transform-to-bounded-for, bounded-iteration, etc.)
   designed at PRD time. Punted past the freeze to keep v1.0 narrow.
+  **Carries a Phase 5 obligation:** this phase must **extend** Phase 5's
+  per-op uncomputation (the `emit_inverse` + last-use machinery) to loop
+  semantics — loop-carried tainted registers and per-iteration
+  compute/uncompute. Phase 5 assumes an acyclic CFG and diagnoses
+  backedge-crossing tainted live ranges; lifting that guard into correct
+  loop uncomputation is part of this phase, not a rewrite of Phase 5 (see
+  [`docs/prd/phase-05-uncomputation/PRD.md`](docs/prd/phase-05-uncomputation/PRD.md)
+  §2.9).
 - **Dynamic circuits.** Measurement-derived loop bounds; mid-circuit
   measurement feedback. Out of scope until post-backend.
 - **Cross-language input.** `rustc --emit=llvm-bc`, `flang -emit-llvm`,
