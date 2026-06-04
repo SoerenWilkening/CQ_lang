@@ -13,6 +13,7 @@
 #include "RotationLowering.h"
 #include "SwitchNormalization.h"
 #include "TaintPropagation.h"
+#include "Uncomputation.h"
 #include "WidthDispatch.h"
 
 #include "llvm/IR/Function.h"
@@ -77,6 +78,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   lowerControlledRegions(M, wd, taint, plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
+  // Phase 5 (PRD §2.8): per-op uncomputation runs LAST, after every other
+  // mutation has settled `taint` into its final post-lowering state.
+  uncompute(M, wd, taint);
   eraseDeadDecls(M, wd);
 
   return PreservedAnalyses::none();
@@ -122,6 +126,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   lowerControlledRegions(M, wd, taint, plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
+  // Phase 5 (PRD §2.8): uncomputation runs LAST in this entry point too — miss
+  // one and unit-level callers diverge from `run()`.
+  uncompute(M, wd, taint);
   eraseDeadDecls(M, wd);
   return true;
 }
