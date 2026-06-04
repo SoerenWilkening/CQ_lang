@@ -244,7 +244,15 @@ gaps a future increment could close), the G6 decline — a mux base that is **al
 which-path hazard with no correct lowering**. `cqrt_cswap` is a DESTRUCTIVE MOVE: it empties the
 selected source to `|0⟩`, so a base also consumed elsewhere would be read as garbage. There is no
 uncompute or gate sequence that can both move a register's state out AND leave it intact for a
-second consumer (that is precisely the no-cloning theorem). Lowering G6 would be the exact
+second consumer (that is precisely the no-cloning theorem). The non-destructive additive-copy
+fan-out — the `mux.2` path (`MergeDissolution.cpp` `regOut = cqrt_alloc(0)` + `regOut += f·A`),
+which keeps the sources live rather than freeing them — does **not** escape this either: `cq_theta`
+is an Ry rotation ([`backend.md`](backend.md)), so a base is a superposition `α|0⟩+β|1⟩`, and a
+controlled-add ENTANGLES rather than copies — `(α|0⟩+β|1⟩)|0⟩ → α|0⟩|0⟩ + β|1⟩|1⟩` — decohering the
+surviving source AND injecting a spurious EPR correlation that corrupts the JOINT measurement
+distribution even when both consumers are basis measurements (population-correct marginals do not
+imply a correct joint distribution). So neither implemented strategy (destructive move, additive
+copy) can lower G6. Lowering G6 would be the exact
 verify-clean silent-miscompile cardinal sin this subsystem exists to prevent. G6 therefore stays
 declined **permanently** — it is locked by two regression fixtures (`_crossphi_alias.ll`,
 `_postmergelive.ll`) and is **not** tracked as deferred work. The u5f widening deliberately drew

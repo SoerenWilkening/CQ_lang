@@ -215,11 +215,21 @@ PHINode *classifyAngleMerge(BasicBlock *MergeBB, TaintSet &taint,
 // by the handle id — the gep/load escape the WP12 `SwitchInst` guard (there is
 // no `SwitchInst` left), so the diamond matcher lowers it and the program reads
 // the table at the quantum REGISTER ID (an allocation counter), not the
-// superposed value, then rotates by garbage. There is no register-based CQ
-// program that legitimately addresses memory with a quantum handle (handles are
-// i32 SSA ids passed to `cqrt_*`/`cq_template_*`, never dereferenced), so this
-// diagnoses loudly with the offending instruction's source location. Returns
-// true (diagnosed) on the first offending op in `F`.
+// superposed value, then rotates by garbage. Two physically distinct cases
+// share this guard, with DIFFERENT permanence (see
+// docs/prd/phase-04-controlled-form/MISSING_CASES.md, P7 + D1):
+//   (a) PERMANENT under the v1.0 register-handle ABI — a raw `load`/`store`
+//       dereferencing a bare handle pointer has no coherent meaning (handles
+//       are i32 SSA ids passed to `cqrt_*`/`cq_template_*`, never dereferenced;
+//       dereferencing reads the allocation counter, not a value).
+//   (b) DEFERRED, not permanent — a STRUCTURED quantum-indexed table `arr[q]`
+//       IS a real QROM/MUX-EXCH operation reserved for the post-freeze
+//       Memory-model phase (ROADMAP.md). Its canonical constant-`double`
+//       angle-table sub-case ALREADY lowers pre-detection via
+//       `normalizeJumpTableAngle`; this guard is the safe fallback for the
+//       not-yet-handled residual, not a claim that `arr[q]` is unphysical.
+// Either way it diagnoses loudly with the offending instruction's source
+// location. Returns true (diagnosed) on the first offending op in `F`.
 bool diagnoseTaintedMemoryEscape(Function &F, TaintSet &taint) {
   for (BasicBlock &BB : F) {
     for (Instruction &I : BB) {

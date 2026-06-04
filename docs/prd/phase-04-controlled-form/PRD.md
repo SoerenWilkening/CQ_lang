@@ -11,6 +11,11 @@ so the rationale survives between sessions; the implementation plan
 `IMPLEMENTATION.md` alongside this file.
 
 Companion documents:
+- [`MISSING_CASES.md`](MISSING_CASES.md) — the tainted-conditional coverage
+  audit: which `br i1`/`select`/`switch` shapes are lowered vs
+  declined-permanent (the *desired exceptions*) vs declined-deferred (the
+  backlog), with the permanent-vs-deferred resolutions (memory-address →
+  deferred; G6 → permanent no-cloning).
 - [`ROADMAP.md`](../../../ROADMAP.md) §Phase 4 — phase scope and place in
   the sequence; the Phase 4.1 deferral note.
 - [`docs/backend.md`](../../backend.md) §8 (tainted-branch identification,
