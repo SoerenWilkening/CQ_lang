@@ -1,8 +1,10 @@
 # RSSA-based tainted control flow — idea, advantages, perspectives
 
-**Status:** design exploration, branch `rssa-swap-control`. The concise pitch +
-principles; `SCOPING.md` is the detailed spec and the `swap_route_*.ll` files are
-the IR target fixtures. **Roadmap update is pending review of this doc.**
+**Status:** design settled (2026-06-08), implementing on branch
+`swap-route-control`. The concise pitch + principles; `SCOPING.md` is the detailed
+spec and the `swap_route_*.ll` files are the IR target fixtures. Coherent-first,
+no measure-only mode; the compiler never inserts a measurement the user did not
+write. The ROADMAP "Phase 4 — RSSA swap-routed control flow" block tracks phasing.
 
 ## The idea (one line)
 

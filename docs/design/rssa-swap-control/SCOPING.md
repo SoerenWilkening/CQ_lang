@@ -1,17 +1,30 @@
-# RSSA swap-routed tainted control flow — scoping (DRAFT)
+# RSSA swap-routed tainted control flow — scoping
 
-**Status:** design exploration on branch `rssa-swap-control`. Not yet on the
-ROADMAP; no beads issues filed. Do not push toward closure (issue filing /
-ROADMAP edits) until the design is settled.
+**Status:** design **settled** by the author (2026-06-08) and moving to
+implementation on branch `swap-route-control`. The old controlled-op control path
+has been removed from the tree (commit `7cde677`); the ROADMAP "Phase 4 — RSSA
+swap-routed control flow" block carries the phasing. Coherent-first, no
+measure-only mode (see the 2026-06-08 revision note below).
 
 **Revised 2026-06-07 after a critical review** (statevector-checked). Material
 corrections: §3a (the coherent-path generality was *inverted* — now fixed),
 §3/§6 (the regime assumption is now stated; "coherence only from `R_z`/`R_y`" and
 "classical ops are free permutations" are qualified), §6a (the in-place carve-out
 is re-scoped to genuinely-in-place unitaries), §1/§3 (the `543bd85` provenance is
-corrected). Items the review *confirmed sound*: the routing permutation, v1
-measure-only for diagonal arms, and that nested control gets **cheaper**, not
+corrected). Items the review *confirmed sound*: the routing permutation, the
+diagonal-arm method-A rail-clean, and that nested control gets **cheaper**, not
 harder (§6a).
+
+**Revised 2026-06-08 (implementation kickoff).** Two author decisions supersede
+the earlier draft and are folded in below. (1) **No "measure-only" mode — the
+compiler never inserts a measurement the user did not write.** Coherence is
+restored unitarily by region-local **reverse-play** uncompute, which is
+*mandatory in every increment*, not deferred; the forward-only / measure-terminal
+"v1" sketch is **struck** (§3, §3b, §4, §9). (2) **Staging is by arm-body class**,
+not by measurement regime: rotation arms (§3a method-A, no new ABI) first, then
+classical-permutation arms (§3a method-B, `cqrt_copy_<W>`). Also: the old
+controlled-op control path has been removed from the tree (branch
+`swap-route-control`) so this design is built without it shaping it.
 
 **Scope & regime (read first).** This design optimizes for **correctness and
 maintainability in a single regime**: qubits are **not** treated as scarce, and
@@ -95,9 +108,10 @@ This is the quantum reading of Mogensen RSSA: phi lives on both the split and th
 join, and the join is literally the inverse of the split sharing the same live
 flag. It maps onto **existing** runtime symbols — `cqrt_cswap`,
 `cqrt_alloc_i32`/`cqrt_free`, plain `cqrt_rz/ry/x` (all already in the ABI) — so
-v1 adds **no new runtime ABI surface**; the coherent path adds exactly one new
-primitive (a per-width reversible copy — §3a). Concrete target IR: the two `.ll`
-specs.
+the **rotation-arm increment** (method-A, §3a) adds **no new runtime ABI
+surface**; the **classical-permutation-arm increment** (method-B, §3a) adds
+exactly one new primitive (a per-width reversible copy `cqrt_copy_<W>`). Both are
+coherent. Concrete target IR: the two `.ll` specs.
 
 The maintainability win is that arm bodies pass through **unchanged**: the pass
 never needs a `_controlled` variant of any gate, and `phi` becomes one uniform
@@ -140,24 +154,26 @@ dephases; only diagonal `R_z` and identity leave the rail at `|0⟩`).
 | classical permutation (`add`, `x`, `toffoli`, `mul`, …) | a classical value entangled with the flag | the classical inverse (`sub`, …) | mechanical, but **must** be uncomputed before interference / before `free` |
 | `R_y` (off-diagonal) | genuine superposition `cos·\|0⟩ + sin·\|1⟩` entangled with control | controlled-`R_y(-θ)` before any interference | **the one to be careful with** |
 
-**Measurement.** Two regimes, and the earlier "no measurement is required or
-enforced anywhere" was wrong on the v1 side:
-- **Coherent path (§3a):** no measurement needed — coherence is restored by
-  region-local cleanup.
-- **v1 (forward-only, §8):** the rail residue is kept and **ignored**, which is
-  sound **only if the output is terminal (measured) before any interference**. v1
-  therefore *requires* a measure-terminal precondition and must be **gated** by a
-  terminality/escape check — reuse `FreePoint`'s existing escape/measure analysis
-  rather than emitting unconditionally (see §3b, §7.5).
+**Measurement — none is added, ever.** The compiler never inserts a measurement
+the user did not write (a hard project invariant). There is **no "measure-only"
+mode**: coherence is restored *unitarily* by region-local **reverse-play** (the
+adjoint of the forward stream), so the routed output is correct even under
+downstream interference (Grover etc.) with **no terminal-measurement assumption**.
+Reverse-play uncompute is therefore **mandatory in every increment**, not a
+deferred refinement — the inactive rail is returned to `|0⟩` by adjointing the
+arm body, never by relying on a measurement to render its garbage harmless. (An
+earlier draft floated a forward-only "v1" that kept rail garbage and leaned on a
+measure-terminal precondition; that mode is struck — it is not built.)
 
 **Bonus — what swap-route does and does not "dissolve" re `543bd85`.** The
 divergent-arm `rz(-a)·rz(-b)` hazard came from flattening exclusive arms onto one
 register and reversing them at a single merge. Swap-route keeps exclusive arms on
-*separate rails*, so **v1 sidesteps it — but only because v1 emits no uncompute at
-all.** The negated-rotation uncompute (`rz(-b); rz(-a)`) **returns** in the
-coherent path (§3a / the uncompute fixture), so the hazard is *deferred*, not
-dissolved; the coherent path must reproduce the same care the Phase-5 guard
-encodes.
+*separate rails*, so the single-register reversal that bred the hazard never
+forms. But reverse-play uncompute is mandatory (§3 — there is no skip-uncompute
+mode), so the negated-rotation adjoint (`rz(-b); rz(-a)`) is still emitted on each
+rail (§3a / the uncompute fixture); swap-route must reproduce the same care the
+Phase-5 `isStep2Emittable` guard encodes. The hazard is **restructured onto
+disjoint rails**, not waved away by omitting uncompute.
 
 ## 3a. The coherent path: two methods, scoped by arm class
 
@@ -183,9 +199,10 @@ branch. Demo B confirms the rail cleanup restores coherence (`P(c=0)` 0.75 → 0
 Cleaning it with `icmp_inv(q)` is valid only when the body is **basis-preserving**
 (`R_z`), so that `icmp(q) == icmp(q0)`. For an off-diagonal `R_y` arm under a
 **data-derived** flag, `q ≠ q0` after the body, so the flag cannot be recomputed
-from `q` — it must be left dirty (measure-only) or the pre-body `q0` preserved to
-uncompute it. This is the genuine open question for coherent `R_y` (§7.3), and is
-why the in-place fixture is correctly scoped **diagonal-only**.
+from `q` — the pre-body `q0` must be **preserved** to uncompute it (leaving the
+flag dirty is **not** an option: there is no measure-only mode, §3). This is the
+genuine open question for coherent `R_y` (§7.3), and is why the in-place fixture
+is correctly scoped **diagonal-only** for now.
 
 **(B) Compute → copy-out → reverse-play — for classical-permutation bodies ONLY**
 (`add`, `mul`, `x`, `toffoli`, …). Run `R`, CNOT the **basis-valued** result into a
@@ -202,23 +219,24 @@ Method (B)'s copy is the **only new ABI** the design adds, and it is **per-width
 (`cqrt_copy_i32`, … — one transversal-CNOT copy per width, *not* a single symbol,
 *not* cloning).
 
-### 3b. v1 soundness obligations (new — from review)
+### 3b. Soundness obligation: reverse-play, then free on a clean rail
 
-v1 (forward-only, garbage kept) is correct **only** under two guards the spec must
-enforce, not assume:
-1. **Terminality.** The routed output must be measured (or otherwise terminal)
-   before any cross-branch interference. Gate emission on a `FreePoint`-style
-   escape/measure check; reject (loudly) otherwise. "Sound iff measured" with no
-   check is a verify-clean silent-miscompile risk.
-2. **`free` only on a clean rail.** `cqrt_free` is **compiler-emitted only** (never
-   user-facing) — confirmed in the runtime/header. On real hardware reclaiming a
-   qubit is a reset = projective measurement; freeing a rail still entangled with
-   the flag/`q` is a **hidden measurement that collapses `q`** before the user's
-   measure (verified: changes outcome statistics for non-diagonal arms; safe for
-   diagonal `R_z` whose rail returns to `|0⟩`). Rule: emit `free` only after the
-   rail is proven `|0⟩` — i.e. after its uncompute, or for diagonal-only arms —
-   routed through the same `FreePoint` discipline the controlled-op path already
-   uses (free **after** the reversed adjoint; never when `Escaped`/`Measured`).
+There is no measure-only shortcut (§3), so the single soundness obligation is that
+every rail is **uncomputed back to `|0⟩` by reverse-play before it is freed**:
+
+- **`free` only on a proven-`|0⟩` rail.** `cqrt_free` is **compiler-emitted only**
+  (never user-facing) — confirmed in the runtime/header. On real hardware
+  reclaiming a qubit is a reset = projective measurement; freeing a rail still
+  entangled with the flag/`q` is a **hidden measurement that collapses `q`** before
+  the user's own measure (verified: changes outcome statistics for non-diagonal
+  arms). Because reverse-play runs unconditionally, the rail is `|0⟩` at the free
+  point *by construction*; emit `free` **after** the reversed adjoint, routed
+  through the same `FreePoint` discipline the data-uncompute path already uses
+  (never when `Escaped`/`Measured` — there the caller owns the handle).
+
+The terminality "measure before interference" gate from the forward-only sketch is
+**gone**: coherence is guaranteed by the mandatory reverse-play, not by a
+measurement precondition. This is the one §3b carry-over.
 
 ## 4. Multiple tainted returns
 
@@ -228,17 +246,17 @@ runs uncontrolled on whatever is left. Program-order semantics are restored by a
 **exit priority cascade** — apply the site swaps lowest-priority first, the
 first-return condition last so it wins. No per-site "already-returned" flag is
 needed. **Validated for all basis inputs** in the oracle (Demo C); because the
-cascade is a fixed permutation, linearity extends that to superposed conditions
-**for measurement**. Two caveats the doc should keep honest: (i) Demo C tests only
-*basis* conditions with `x` bodies — coherent return *values* are untested; and
-(ii) "remaining work runs uncontrolled on whatever is left" applies real gates to
-parked-to-`|0⟩` rails, leaving branch-correlated garbage on the live register
-across the function tail — fine under measure-only, but its uncompute is the same
-§3a obligation. This is the natural lowering of D4 (bounded + reconverging
-return/break) and falls out of the swap model rather than needing the done-flag
-predication sketched earlier. *(NB: `return`/`break` are out of v1 scope and are
-currently permanent Phase-4 rejections P2/P3 — this is the design path to lifting
-them, not a shipped capability.)*
+cascade is a fixed permutation, linearity extends it to superposed conditions.
+Two caveats the doc should keep honest: (i) Demo C tests only *basis* conditions
+with `x` bodies — coherent return *values* are untested; and (ii) "remaining work
+runs uncontrolled on whatever is left" applies real gates to parked-to-`|0⟩`
+rails, leaving branch-correlated garbage on the live register across the function
+tail — that garbage is uncomputed by the **same §3a reverse-play obligation** as
+any other rail (no measure-only escape hatch). This is the natural lowering of D4
+(bounded + reconverging return/break) and falls out of the swap model rather than
+needing the done-flag predication sketched earlier. *(NB: `return`/`break` are out
+of the initial scope and are currently permanent Phase-4 rejections P2/P3 — this
+is the design path to lifting them, not a shipped capability.)*
 
 ## 5. What changes vs what stays
 
@@ -286,11 +304,11 @@ depth row is the corresponding upside for mutually-exclusive arms. Efficiency
 tuning (collapsing the CSWAP wrap for tiny arms; the loop pebble-game schedule) is
 **out of scope**.
 
-### 6a. Selection rule — swap-route is the v1 default; control-in-place is a later refinement
+### 6a. Selection rule — swap-route everything uniformly first; control-in-place is a later refinement
 
-For **v1, swap-route everything uniformly** — one mechanism, no per-arm
-classification (simpler emitter, correctness-first). The control-in-place
-specialization below is a *deferred optimization*, not a v1 requirement.
+The **first increment swap-routes everything uniformly** — one mechanism, no
+per-arm classification (simpler emitter, correctness-first). The control-in-place
+specialization below is a *deferred optimization*, not an initial requirement.
 
 When it is added, the carve-out is about **footprint × coherence**, two orthogonal
 axes the earlier "rz/ry vs classical" split conflated:
@@ -332,17 +350,23 @@ implementation cost and correctness surface.
    uncompute, or diagonal-only), via the `FreePoint` discipline. Open: leave
    allocated for a later uncompute pass vs free eagerly per arm.
 3. `R_y` handling: the data-derived **flag uncompute** for an off-diagonal arm
-   (§3a-A) — leave the flag dirty (measure-only) or preserve `q0` to clean it? And
-   the `R_z` phase-compensation bookkeeping when routed.
-4. Staging: build the swap-route emitter **alongside** the Phase-4 framework,
-   migrate fixtures one shape at a time, then remove the old `br`/`phi` machinery
-   — rather than a big-bang replacement. (Coexisting with the eventual §6a
-   control-in-place path is fine; v1 needs only the uniform emitter.)
-5. **v1 terminality guard (new):** the precise, mechanically-checkable definition
-   of "terminal" and where it is enforced (reuse `FreePoint` escape/measure). Until
-   this exists, v1 must be flagged experimental / measure-only.
+   (§3a-A) — preserve the pre-body `q0` to clean the flag (leaving it dirty is
+   off the table — no measure-only mode), or find a coherent alternative. And the
+   `R_z` phase-compensation bookkeeping when routed.
+4. Staging: the old control path is already removed (branch `swap-route-control`),
+   so this is a clean-slate build, not a coexist-then-migrate. Open: order the
+   arm-body classes (rotation method-A first, then classical method-B) and the
+   shapes (if-diamond → if/else → nested) within that. (Coexisting with the
+   eventual §6a control-in-place path is fine; the first increment needs only the
+   uniform emitter.)
+5. **Reverse-play scope (replaces the struck terminality guard):** confirm the
+   region-local reverse-play reuses the existing `EmitInverse` spine cleanly for
+   every arm-body class, and that the §3b free-on-clean-rail point is the
+   `FreePoint` post-dominator the data-uncompute path already computes — there is
+   no separate "terminal" definition to enforce.
 6. **`cqrt_copy_<W>` (new):** confirm the per-width set and its reversible-copy
-   semantics before the coherent path lands; it is the design's only new ABI.
+   semantics before the classical-arm (method-B) increment lands; it is the
+   design's only new ABI.
 
 ## 8. Prototype status
 
@@ -360,8 +384,14 @@ implementation cost and correctness surface.
   and *measures the output register* would have caught the §3a inversion and should
   be added. Safe to delete once the numbers here are trusted; regenerable on demand.
 
-## 9. Next step (proposed, not started)
+## 9. Next step (in progress)
 
-Implement the swap-route emitter behind a flag, targeting `swap_route_if_diamond.ll`
-first, then `swap_route_ifelse.ll`, **with the §3b guards in place from the start**.
-No ROADMAP / beads changes until we agree this scope.
+The old controlled-op control path has been removed (branch `swap-route-control`);
+a transitional stub diagnoses tainted control flow loudly until the emitter lands.
+Implement the swap-route emitter targeting `swap_route_if_diamond.ll` first, then
+`swap_route_ifelse.ll`, **coherent from the start** — region-local reverse-play
+uncompute (§3a method-A for rotation arms) and the §3b free-on-clean-rail
+discipline are in scope from the first increment; there is **no measure-only
+intermediate**. Staging is by arm-body class: rotation arms (method-A, no new ABI)
+first, then classical-permutation arms (method-B, `cqrt_copy_<W>`). The ROADMAP
+"Phase 4 — RSSA swap-routed control flow" block tracks the phasing.
