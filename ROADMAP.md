@@ -36,7 +36,7 @@ phase, not in advance.
 1. **Taint is the only Q/C boundary.** A `quantum` keyword plays no role.
    An SSA value is quantum iff it is derived (transitively, via stock
    LLVM data flow) from a `@cq_theta_*` return. Every downstream
-   distinction — allocation, opcode lowering, controlled-form,
+   distinction — allocation, opcode lowering, swap-route control,
    specialization, uncomputation — is driven by the same forward
    propagation (see [`docs/quantum-classical-handling.md`](docs/quantum-classical-handling.md)).
 
@@ -64,15 +64,22 @@ phase, not in advance.
    bodies. The library author writes one body; quantum and classical
    callers share it.
 
-6. **No source-level controlled-region brackets.** Tainted `br i1`
-   conditions identify the quantum-control region structurally via
-   post-dominator analysis. The user writes plain C `if`; the pass
-   recovers the controlled shadow.
+6. **No source-level controlled-region brackets.** Tainted `br i1` /
+   `select` / `switch` conditions identify the quantum-control region
+   structurally via post-dominator analysis. The user writes plain C
+   `if`; the pass recovers the **swap-route region** (Phase 4).
 
-7. **Forward + controlled-forward only; adjoints derived.** Each
-   primitive opcode template ships forward and controlled-forward
-   variants. Adjoint and controlled-adjoint are produced mechanically by
-   `emit_inverse` ([`docs/backend.md`](docs/backend.md) §10).
+7. **Control by routing, not by controlling gates; adjoints derived.**
+   Tainted control flow is lowered by routing data through `cqrt_cswap`
+   (RSSA swap-route, Phase 4), so arm bodies run **verbatim and
+   uncontrolled** — the pass needs **no `_controlled` variant per gate**.
+   Coherence is restored by region-local **reverse-play** (the adjoint of
+   the forward stream), produced mechanically by `emit_inverse`
+   ([`docs/backend.md`](docs/backend.md) §10). The runtime ships **forward**
+   templates; adjoints come from `emit_inverse`. (Controlled-forward
+   variants are retained only for the optional §6a control-in-place
+   peephole, not as the control mechanism — superseding the prior
+   "forward + controlled-forward only" framing.)
 
 8. **Width-only runtime ABI.** Signedness is implicit in the LLVM opcode
    (`add nsw` vs `add nuw`, `icmp slt` vs `icmp ult`); the frontend
@@ -328,157 +335,117 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — IR pass: controlled-form lowering [DONE · core + 4.1 `switch`/escape + 4.2 mux + 4.3 `if`-completeness + 4.x MUX-EXCH]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0 clean-slate DONE · emitter in progress]
 
-**Design:** see [`docs/prd/phase-04-controlled-form/PRD.md`](docs/prd/phase-04-controlled-form/PRD.md).
+**Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
++ [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md); IR target fixtures
+`swap_route_if_diamond.ll`, `swap_route_ifelse.ll`,
+`swap_route_if_diamond_uncompute.ll`.
 
-**Goal.** Structural recovery of quantum-controlled regions from tainted
-`br i1` conditions, without any user-emitted region marker. Replaces
-the prototype's `cq_when_begin`/`_end`-driven detection with the
-post-dominator-based shadow computation
-[`docs/backend.md`](docs/backend.md) §8 specifies.
+**Supersedes the controlled-op approach.** The original Phase 4 lowered tainted
+control by *flattening it into controlled ops* — mint a flag → substitute every
+arm gate with a `_controlled` template → dissolve the `phi` per type → uncompute
+the flag → linearize the CFG. That path shipped (core + 4.1 `switch`/escape + 4.2
+mux + 4.3 `if`-completeness + 4.x MUX-EXCH) and was then **removed wholesale**
+(commit `7cde677`) so the swap-route design is built without it shaping the
+implementation. This block replaces the controlled-op Phase 4 in full; the
+controlled-op history is recoverable from git (branch `rssa-swap-control`).
 
-**Scope.**
-- Tainted-branch identification: scan each function for
-  `br i1 %cond, label %T, label %F` where `%cond` is in the tainted
-  set.
-- Shadow computation: `PostDominatorTree` to find `%merge`; treat every
-  value defined in the dominated subgraph as control-tainted
-  (including φ-node results at `%merge` whose direct operands are
-  classical literals).
-- Controlled-variant substitution: each instruction in the shadow that
-  was already lowered to `cq_template_<op>_<W>` gets re-pointed to
-  `cq_template_<op>_<W>_controlled` with the control handle prepended;
-  not-yet-lowered instructions pick the controlled variant from the
-  start.
-- Nested branches: control wires AND together (Toffoli-style); the
-  shadow's inner branches inherit the outer control list.
+**Goal.** Lower tainted (quantum-dependent) `br` / `select` / `switch` by
+**routing data, not by controlling gates**: `cqrt_cswap` the operand(s) into a
+per-arm work rail, run the arm body **verbatim and uncontrolled** on the rail,
+and `cqrt_cswap` the active result back — the tainted `phi` is the **adjoint of
+the split**, sharing the same live condition (the quantum reading of Mogensen
+RSSA). Classical (untainted) control flow is left exactly as `clang -O1` emits it.
 
-**Components touched:**
-- New `ControlledLowering` module in `ir-pass/src/`.
-- `runtime/cq_templates.h`: `_controlled` variants for every forward
-  template (already declared per the autogenerator's shape × forward /
-  inverse cross-product).
+| construct | lowering |
+|-----------|----------|
+| tainted `br c` | `cqrt_cswap` the operand(s) into a per-arm work rail |
+| arm body | arm gates copied **verbatim, uncontrolled** onto the rail |
+| tainted `phi` | `cqrt_cswap` the active result back (adjoint of the split) |
 
-**Open items (defer to Phase 4 PRD):** memory stores in the shadow
-(controlled-store decomposition); function calls in the shadow
-(control-tainted signature flag, recursion with §6 specialization);
-loops with tainted bounds (likely punted to a quantum-while phase
-post-freeze).
+**Non-negotiable principles (design + author, 2026-06-08):**
+- **Coherent-first; no measure-only mode.** Coherence is restored *unitarily* by
+  region-local **reverse-play** — the adjoint of the forward stream, via
+  `emit_inverse` — so results are correct under downstream interference (Grover
+  etc.). Reverse-play is **mandatory in every increment**, never deferred.
+- **No added measurements — ever.** The compiler never inserts a measurement the
+  user did not write (hard project invariant). The only reclamation discipline is
+  "free a rail only after reverse-play returns it to `|0⟩`" (§3b) — freeing an
+  entangled rail would be a hidden measurement that collapses `q`.
+- **`select` is trivial and separate.** A `select` has no arm operations, so it is
+  a pure merge — a controlled-XOR copy (`out ^= c ? a : b`), **not** cswap routing.
+- **Maintainability win.** Arm bodies pass through unchanged (no `_controlled`
+  variant per gate); `phi` is one uniform CSWAP (not three per-type reductions);
+  nested control is the **same emitter applied recursively** — no flag-conjunction
+  Toffoli, no ordered flag uncompute (the old bug class is deleted, not migrated).
 
-**Deferred to a Phase 4.1 follow-up (separate session).** Two `clang
--O1` control shapes sit outside the core controlled-region mechanism
-(tainted `select` / `br`-diamond+φ normalization) and are consciously
-cut to keep Phase 4 narrow; the realized `-O1` control menu was
-catalogued 2026-06-01.
-- **Tainted `switch`.** `-O1` keeps a real `switch` + N-way φ for
-  `switch (q)`. **Direction finalized (PRD §8.2, 2026-06-02):** a
-  **data-flow `select`-chain normalization** (a step between taint-prop and
-  lowering) rewrites `switch` + N-way φ → `icmp eq` flags + nested
-  `select`s, lowered by the existing mux path — no new control region, no
-  N-way φ dissolution, no new ABI. **Supersedes** the earlier
-  `-lowerswitch` / native-mux options (`-lowerswitch` is not free — it
-  crashes on pivot-tree shared-multi-pred merges). Tracked as
-  [`test_C_libtooling-aht.1`](.beads/issues.jsonl); gated side-effecting
-  multi-arm cascades split to [`-aht.3`](.beads/issues.jsonl).
-- **Quantum-controlled escape.** `if (q) return …;` / `break` / `goto`,
-  and measurement inside a tainted-branch arm, gate an *escape* rather than
-  an in-place gate. **Verdict finalized (PRD §8.6, 2026-06-02):**
-  reject-by-default — confirmed correct by the Bennett/Sturm/Silq/QCM
-  cross-check (the field-standard terminal state, not a stopgap) — with
-  `-fcq-measurement-bridge` only as an explicit deferred-measurement
-  demotion to classical control. Tracked as
-  [`test_C_libtooling-aht.2`](.beads/issues.jsonl).
+**Increments (staged by arm-body class, not by measurement regime):**
 
-Both depend on the Phase 4 core landing first; grouped under epic
-[`test_C_libtooling-aht`](.beads/issues.jsonl).
+- **4.0 — Clean slate [DONE, `7cde677`].** The controlled-op control path
+  (`ControlDetection` / `ControlFlag` / `ControlledLowering` /
+  `ControlledSubstitution` / `FlagConjunction` / `CFGLinearization` /
+  `MergeDissolution` / `SwitchNormalization`) is removed. A transitional
+  `detectControlRegions` stub (`ControlStub.cpp`) diagnoses any tainted
+  `br`/`select`/`switch` loudly ("… under quantum control") and returns an empty
+  plan, so no tainted control flow silently passes through as classical control
+  over quantum state. Retained: Phases 1–3 lowering, `EmitInverse`, the Phase-5
+  data-uncompute spine (`ChainWalk`/`FreePoint`/`Uncomputation`),
+  `ControlledSymbols`, and `ControlPlan.h` (struct only — `RotationLowering`
+  reads `plan->InShadow`). Reusable runtime primitives (`cqrt_cswap`,
+  `cqrt_toffoli`, `cqrt_alloc_<W>`, `cqrt_free`) kept. Full suite green.
 
-**Deferred to a Phase 4.2 follow-up.** The `[≥1 tainted arm]` data select —
-`y = cond ? A : B` with a tainted condition and at least one quantum value arm
-(e.g. `if (q>0) y = 12 - q;`, which `-O1` hands the pass as
-`select i1 cmp, %h_op, C`). WP4 handles only classical arms. Established
-2026-06-01 (triaging `example/test_control.c`): this is **pass-side only and
-needs no new runtime primitive** — the two-handle `_controlled` adder is
-already generated, so the classical-arm reduction generalizes (`_hl`→`_hh`,
-register delta) for one classical arm, and `alloc(0)` + two controlled adds
-covers both-handle arms. The earlier "needs a `cswap`/Fredkin mux" framing was
-incorrect. Tracked under epic
-[`test_C_libtooling-mux`](.beads/issues.jsonl) (`.1` mixed arm, `.2` both
-handles), with [`test_C_libtooling-mux-diag`](.beads/issues.jsonl) the interim
-guard that diagnoses the shape instead of silently miscompiling it.
+- **4.1 — Swap-route emitter, rotation arms (method-A).** `if`-diamond then
+  `if/else`, targeting `swap_route_if_diamond.ll` / `swap_route_ifelse.ll`. The
+  answer (phase/superposition) stays on `q`; only the work rail is cleaned, by a
+  controlled-adjoint of the body on the inactive branch (§3a-A). **No new runtime
+  ABI** — reuses `cqrt_cswap`, `cqrt_alloc_<W>`, `cqrt_free`, `cqrt_rz/ry/x`, and
+  `emit_inverse`. The br/diamond cswap **emission wiring** is net-new (today
+  `cqrt_cswap` is emitted only on the removed MUX-EXCH path).
 
-**Done when:** programs with quantum `if`s (including nested, including
-mixed conditions) produce expected `_controlled` template-call
-sequences. Linear single-BB regions (Phase 4 prototype mechanism) plus
-multi-BB cases (Phase 5 prototype mechanism for post-dominator analysis)
-green.
+- **4.2 — Classical-permutation arms (method-B).** `add`/`mul`/`x`/`toffoli`
+  bodies: run `R` → CNOT-copy the basis-valued result into a fresh register →
+  reverse-play `R†` to restore `q0` and zero the rail (§3a-B), targeting
+  `swap_route_if_diamond_uncompute.ll`. Adds the design's **only new ABI**: the
+  per-width reversible copy `cqrt_copy_<W>` (one transversal-CNOT copy per width —
+  confirm the width set + semantics first, §7.6). This re-opens the Phase-8/10
+  freeze for that one family.
 
-**Status (WP0–WP6 complete, 2026-06-01).** All done-criteria met against the
-realized `clang -O1` control menu (PRD §2.1 — the pass targets what survives
-`-O1`, not the source braces; detection is structural, no user region marker).
-The controlled template surface (`_controlled`/`_controlled_inv` × shape, flag
-always arg 0) plus its runtime/template impls land in WP1; the eight control TUs
-(`ControlDetection`/`ControlFlag`/`ControlledSubstitution`/`MergeDissolution`/
-`CFGLinearization`/`FlagConjunction`/`ControlledLowering` + the `CompareLowering`
-Q+Q reopen) realize the spine. Each shape has a green LIT fixture (`opt -verify`
-clean), one per: `br`-diamond gate → `cqrt_rz_<W>_controlled` + `_hl`
-compute/uncompute bracket; classical-arm `select` reduction (constant **and**
-runtime variable) → `cqrt_alloc(B)` + `cq_template_add_<W>_hl_controlled(flag, ·,
-A−B)`; `&&`/`||` → one combined flag via `cqrt_toffoli` (+ De Morgan `X`s for
-`||`); nested `if` → single-flag AND (one `cqrt_toffoli` per level, every op
-single-controlled, flags uncomputed LIFO); Q+Q condition (`if (q1 < q2)`) → the
-HH compare template `cq_template_icmp_<pred>_<W>` using the `HandleWidth`
-side-table (recorded at the rotation mint; missing/mismatched width traps, risk
-R3). A classical-condition `select`/`br` is left byte-untouched (detection keys
-strictly on condition taint), and a quantum-controlled escape (`if (q) return
-…;` — a tainted-condition branch whose arm escapes instead of reconverging)
-emits the loud `DiagnosticInfoUnsupported` ("…under quantum control"). Two e2e
-trace smokes diff clean against goldens captured from real output (the only
-layer that LINKS, proving every emitted controlled symbol resolves +
-signature-matches): [`slice_control_gate`](tests/e2e/slice_control_gate.c)
-(controlled rotation) and [`slice_control_merge`](tests/e2e/slice_control_merge.c)
-(classical-arm reduction).
+- **4.3 — Nested control.** A tainted `br` inside an arm runs the **same emitter
+  recursively** on the enclosing arm's live rail; `c1 ∧ c2` falls out of the
+  routing structure with **no conjunction ancilla**. Reverse-play composes over
+  the region tree (mechanical stack unwind).
 
-Two `-O1` shapes remain Phase 4.1 (epic
-[`test_C_libtooling-aht`](.beads/issues.jsonl)): the escape *refinement* —
-this epic diagnoses the escape loudly; Phase 4.1's verdict (PRD §8.6) is
-reject-by-default, with `-fcq-measurement-bridge` only as an explicit
-classical-control demotion ([`-aht.2`](.beads/issues.jsonl)) — and tainted
-`switch` lowering via select-chain normalization (PRD §8.2;
-[`-aht.1`](.beads/issues.jsonl), gated cascades →
-[`-aht.3`](.beads/issues.jsonl)).
+- **4.4 — `select` (trivial).** Reimplement the tainted-`select` merge as a
+  controlled-XOR copy into a fresh register — no cswap routing, no flag bracket.
+  The old P6 rejection (coherent-handle copy interfered downstream) may relax for
+  classical operands, which XOR-copy reads non-destructively.
 
-**⚠ Completeness reopened — Phase 4.3 (post-landing audit, 2026-06-02).**
-The `[DONE]` above is for the **happy paths**. An exhaustive sweep of 44
-`-O1` `if`-shapes found **28 mis-handled** (21 crashes, 7 silent
-miscompiles), all adversarially verified — Phase 4 core covers only
-single-gated-handle / classical-arm / single-φ. Six root-cause families
-(A–F); the `if`-completeness subset (multi-φ dissolution *keystone*,
-symmetric diamond, angle-select diagnose→lower, mux i64 width, switch
-diagnostic guard) is epic
-[`test_C_libtooling-u6v`](.beads/issues.jsonl); Family E (`switch`
-lowering) stays Phase 4.1 — now realized as **select-chain normalization**
-(PRD §8.2), not `-lowerswitch`.
-Design + plan:
-[`PRD.md §7`](docs/prd/phase-04-controlled-form/PRD.md) +
-[`IMPLEMENTATION.md §12`](docs/prd/phase-04-controlled-form/IMPLEMENTATION.md).
+- **4.5 — tainted `switch`.** Re-add (the old `SwitchNormalization` was removed):
+  lower an N-way tainted `switch` via per-case routing / `icmp eq`-flag select
+  chain into the same emitter — no N-way `phi` dissolution, no new control region.
 
-**✅ Phase 4 complete (2026-06-04).** The planned Phase 4 scope has landed and
-no Phase-4 issue is open: core controlled-form (WP0–WP6), `switch`/escape
-lowering (4.1, WP15–WP18, 2026-06-02), the `[≥1 tainted arm]` data mux (4.2),
-`if`-completeness (4.3, epic [`-u6v`](.beads/issues.jsonl)), and the 4.x
-MUX-EXCH distinct-handle widening (gated-switch + `cqrt_cswap` + non-selected
-uncompute; epics [`-npu`](.beads/issues.jsonl)/[`-5bl`](.beads/issues.jsonl)/
-[`-u5f`](.beads/issues.jsonl)) with its permanent/deferred boundaries locked.
-The **residual** is *beyond* the planned scope and sequenced to later stages —
-it does **not** hold Phase 4 open: deferred capability gaps (memory-model
-`arr[q]`, non-exclusive / multi-angle merges, gated-switch non-tainted value
-merges, bounded-reconverging escape, shared-merge UAF) and permanent boundaries
-(escape / measurement, G6 no-cloning, raw handle-deref) are catalogued with
-their closing techniques and target phases in
-[`MISSING_CASES.md`](docs/prd/phase-04-controlled-form/MISSING_CASES.md).
+**Deferred to later increments (coherent — NOT measurement-restricted):**
+- **Controlled `return` / `break`** (§4): per-site return registers + an
+  **exit-priority cascade** (a fixed permutation — **no done-flag ancilla, no
+  measurement, no overhead**). Lifts the permanent P2/P3 rejections for the
+  **bounded + reconverging (D4)** subset only; non-reconverging exits stay
+  rejected by physics (QCM injectivity). Coherent return *values* ride the same
+  §3a reverse-play obligation.
+- **Control-in-place peephole** (§6a): for genuinely-in-place single-target
+  unitaries (`R_z`/`R_y`/Pauli), control in place (no work rail) — a footprint
+  optimization, not a correctness requirement.
 
----
+**Soundness obligation (§3b).** `cqrt_free` (compiler-emitted only) is emitted on
+a rail **only after** its reverse-play returns it to `|0⟩`, via the `FreePoint`
+post-dominator discipline (never when the handle escapes or is the user's measured
+output — there the caller owns it).
+
+**Done when:** programs with tainted `if` / `if-else` / nested / `select` /
+`switch` lower to the swap-route IR the `.ll` fixtures pin — coherent (reverse-play
+emitted, rails freed clean), `opt -verify` clean — and the e2e trace smokes diff
+clean against goldens captured from real linked output (the layer that proves
+every emitted symbol resolves + signature-matches).
 
 ## Phase 5 — IR pass: per-op uncomputation
 
@@ -490,6 +457,16 @@ handle's gate chain at the SSA last-use point. Phase 5 owns *source-derived
 data* handles; *pass-invented control scratch* (flags, conjunction
 `toffoli`, MUX-EXCH non-selected sources) is already uncomputed by Phase 4
 (PRD §2.2).
+
+**Reconciliation with swap-route Phase 4.** The controlled-op flag/conjunction
+scratch that PRD §2.2 referenced no longer exists (that path was removed). Under
+swap-route, Phase 5's machinery is *reused, not bypassed*: `emit_inverse` is the
+engine for Phase 4's region-local **reverse-play** (rail cleanup), and the
+`FreePoint` last-use / escape analysis computes the §3b "free a rail only after it
+is `|0⟩`" point. The "data handle last-use uncompute" Phase 5 productionizes and
+the "rail reverse-play" Phase 4 emits share the same `emit_inverse` + `FreePoint`
+spine — Phase 5 stays largely as written; only the cross-reference to control
+scratch is restated as the swap-route rail discipline.
 
 **Scope.**
 - Last-use computation: per the validated Phase 5 prototype mechanism —
@@ -535,6 +512,14 @@ prototype's `input_phase5_branch.ll` trajectory).
 full worklist-driven specialization synthesizer with both lifting paths
 (curated symbol substitution + clone-on-taint) and the rejection-set
 classifier.
+
+**Reconciliation with swap-route Phase 4.** A **quantum-controlled call** no
+longer needs a controlled specialization of the callee: swap-route routes the
+argument into the callee's input iff the condition holds, calls the function
+**unconditionally**, and routes the result back (`OVERVIEW.md`). So the
+controlled-call branch of specialization is **dropped** — only the
+tainted-**data**-argument clone-on-taint (Path 2) and curated substitution
+(Path 1) remain in scope here. Bounded recursion is still the unrolled form.
 
 **Scope.**
 - Path 1 — curated symbol substitution: maintained table mapping
@@ -607,17 +592,30 @@ the user-facing inversion surface.
 **Done when:** programs containing `cq_invert_begin()` / `cq_invert_end()`
 brackets produce the reversed-and-adjointed call sequence as their
 lowering, and the brackets themselves disappear from the IR. Brackets
-nested inside tainted-branch shadows inherit the controlled-form
-substitution correctly.
+nested inside a tainted-branch **swap-route region** invert correctly —
+the bracketed body is routed onto the arm's live rail like any arm body,
+so its inversion composes with the region's reverse-play.
 
 ---
 
 ## Phase 8 — Runtime template library completion
 
 **Goal.** Lock the runtime ABI (declarations + trace-only bodies) for
-the full 38-opcode × applicable widths × `{HH, HL, controlled, inv}`
-cross-product. Bodies remain stubs through the Phase 10 freeze; only
-the declared symbol set + the trace format need to be stable.
+the full 38-opcode × applicable widths × `{HH, HL, inv}` cross-product,
+plus the swap-route control primitives. Bodies remain stubs through the
+Phase 10 freeze; only the declared symbol set + the trace format need to
+be stable.
+
+**Reconciliation with swap-route Phase 4 (principle 7).** Control no longer rides
+a `_controlled` template per gate, so the **`_controlled` cross-product is not the
+control mechanism** and is *not* the load-bearing half of the freeze. The control
+ABI to freeze is instead the routing set — `cqrt_cswap`, `cqrt_alloc_<W>`,
+`cqrt_free` (all present) — plus the **one new primitive** the classical-arm
+increment adds: the per-width reversible copy `cqrt_copy_<W>` (Phase 4.2; confirm
+the width set first). The `_controlled` family is **retained** (it costs nothing
+to keep declared) only as the reserve for the optional §6a control-in-place
+peephole; it may be frozen-but-unused rather than deleted. `emit_inverse` still
+supplies every adjoint, so `inv` stays derived, not shipped.
 
 **Scope.**
 - `tools/opcode_table.yaml` covers the full surface; `gen_templates.py`
@@ -762,9 +760,11 @@ post-Phase-10 roadmap revision.
 - Phase 1 (header) is independent and can ship in isolation.
 - Phase 2 (taint sources + gate-triggered allocation) is the first IR
   pass work and the precondition for everything else in the pass.
-- Phases 3 (opcode breadth) and 4 (controlled-form) can be developed
+- Phases 3 (opcode breadth) and 4 (swap-route control) can be developed
   in parallel after Phase 2; both consume the same `TaintPropagation`
-  output without interacting.
+  output without interacting. Phase 4 additionally reuses Phase 5's
+  `emit_inverse` + `FreePoint` spine for its coherent reverse-play, so in
+  practice the early Phase-5 spine lands alongside Phase 4.1.
 - Phase 5 (uncomputation) needs Phase 3's template surface ready for
   `_inv` emission but is otherwise parallel with Phase 4.
 - Phase 6 (function lifting) is the largest IR-pass workstream and
