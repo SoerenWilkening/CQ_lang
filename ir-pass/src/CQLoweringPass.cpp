@@ -7,11 +7,9 @@
 #include "CQLoweringPass.h"
 
 #include "ControlPlan.h"
-#include "ControlledLowering.h"
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
 #include "RotationLowering.h"
-#include "SwitchNormalization.h"
 #include "TaintPropagation.h"
 #include "Uncomputation.h"
 #include "WidthDispatch.h"
@@ -56,26 +54,17 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
-  // Phase 4.1 WP15 (PRD §8.2): rewrite a tainted-scrutinee value-merge `switch`
-  // into eq-flags + a `select` chain BEFORE region detection, so the existing
-  // select-mux path lowers it. Declined (gated/sparse) switches stay for the
-  // WP12 diagnostic in `detectControlRegions`.
-  normalizeTaintedSwitches(M, taint);
-  // Phase 4.x (test_C_libtooling-5zu): rewrite the `-O1` jump-table lowering of
-  // a tainted angle switch into the WP16 eq-flag angle-select chain BEFORE the
-  // tainted-memory-escape guard in detection — so the `gep`/`load` are gone and
-  // the chain lowers with no handle-indexed memory access.
-  normalizeJumpTableAngle(M, taint);
-
-  // Detect controlled regions (PURE ANALYSIS) right after propagation, so the
-  // plan's in-shadow set is available to `lowerRotations` (which must skip the
-  // gate-body `cq_phi` calls the controlled orchestrator lowers instead, §1.4).
+  // Tainted control flow has no lowering on this branch (the old controlled-op
+  // path was removed pending the RSSA swap-route emitter). `detectControlRegions`
+  // is now a transitional stub (ControlStub.cpp): it diagnoses any tainted
+  // `br`/`select`/`switch` loudly ("… under quantum control") and returns an
+  // empty plan, so the in-shadow set is empty and `lowerRotations` lowers every
+  // rotation uncontrolled. A classical-condition branch stays byte-untouched.
   ControlPlan plan = detectControlRegions(M, taint);
 
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
   lowerRotations(M, wd, taint, &plan);
-  lowerControlledRegions(M, wd, taint, plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
   // Phase 5 (PRD §2.8): per-op uncomputation runs LAST, after every other
@@ -115,15 +104,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.MeasureCalls.empty())
     return false;
 
-  normalizeTaintedSwitches(M, taint);
-  // Phase 4.x (test_C_libtooling-5zu): rewrite the `-O1` jump-table lowering of
-  // a tainted angle switch into the WP16 eq-flag angle-select chain BEFORE the
-  // tainted-memory-escape guard in detection — so the `gep`/`load` are gone and
-  // the chain lowers with no handle-indexed memory access.
-  normalizeJumpTableAngle(M, taint);
+  // See run() — `detectControlRegions` is the transitional stub that diagnoses
+  // tainted control flow loudly and returns an empty plan.
   ControlPlan plan = detectControlRegions(M, taint);
   lowerRotations(M, wd, taint, &plan);
-  lowerControlledRegions(M, wd, taint, plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
   // Phase 5 (PRD §2.8): uncomputation runs LAST in this entry point too — miss

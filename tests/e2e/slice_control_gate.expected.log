@@ -1,6 +1,0 @@
-cqrt_alloc_i32(7) -> h0
-cqrt_ry_i32(h0, 0.500000)
-cq_template_icmp_sgt_i32_hl(h0, 5) -> h1
-cqrt_rz_i32_controlled(h1, h0, 0.250000)
-cq_template_icmp_sgt_i32_hl_inv(h0, 5) -> h2
-cqrt_measure_i32(h0) -> 0

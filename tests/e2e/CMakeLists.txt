@@ -37,55 +37,10 @@ add_test(NAME e2e-slice-compare-measure
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_compare_measure.expected.log")
 
-# Phase 4 (WP6): a quantum-CONTROLLED gate. `if (q > k) y = cq_phi(y, θ);`
-# survives -O1 as a br-diamond (opaque gate-call arm) and lowers to the flag
-# compute -> cqrt_rz_i32_controlled(flag, h, θ) -> flag uncompute -> measure.
-add_test(NAME e2e-slice-control-gate
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_gate.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_gate.expected.log")
-
-# Phase 4 (WP6): a classical-arm MERGE reduction. `y = (q > k) ? A : B;`
-# survives -O1 as a select-over-constants and dissolves to cqrt_alloc(B) +
-# cq_template_add_i32_hl_controlled(flag, regB, A-B) -> flag uncompute -> measure.
-add_test(NAME e2e-slice-control-merge
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_merge.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_merge.expected.log")
-
-# Phase 4 (mux.1): a MIXED-ARM select mux. `y = (q > 0) ? (12 - q) : -3;`
-# survives -O1 as a select with ONE tainted arm (`12 - q`) + one classical arm
-# (`-3`) and dissolves to the UNCONTROLLED delta cq_template_sub_i32_hl(Q, -3)
-# + cqrt_alloc_i32(-3) + the Shape::QQ cq_template_add_i32_controlled(flag,
-# regC, delta) -> flag uncompute -> measure.
-add_test(NAME e2e-slice-control-mux-mixed
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_mux_mixed.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_mux_mixed.expected.log")
-
-# Phase 4 (mux.2): a BOTH-ARMS-HANDLE select mux. `y = (q > 0) ? (12 - q) :
-# (q + 5);` survives -O1 as a select whose BOTH arms are tainted handles (no
-# classical arm). The mixed reduction cannot apply, so the pass copies
-# additively into a fresh ancilla: cqrt_alloc_i32(0) + two Shape::QQ
-# cq_template_add_i32_controlled(flag, regOut, hp/hq) with a ¬flag cqrt_x
-# bracket around the second -> flag uncompute -> measure. Both source handles
-# (hp = sub_i32_lh, hq = add_i32_hl) stay referenced.
-add_test(NAME e2e-slice-control-mux-handles
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_mux_handles.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_mux_handles.expected.log")
+# NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
+# control-mux-mixed / control-mux-handles) were removed with the old
+# controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
+# control emitter re-adds e2e coverage for tainted control flow when it lands.
 
 # Convenience target: build the prerequisites, then run every e2e slice.
 add_custom_target(check-e2e

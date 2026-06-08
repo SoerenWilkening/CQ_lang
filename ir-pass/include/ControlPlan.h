@@ -1,10 +1,16 @@
-// ControlPlan.h — Shared data shapes for Phase-4 controlled-region lowering
-// (PRD §2.2/§2.6/§2.10/§2.11, IMPLEMENTATION §5.1). `ControlDetection`
-// produces a `ControlPlan`; `ControlledLowering` and its helpers
-// (`ControlFlag`, `ControlledSubstitution`, `MergeDissolution`,
-// `CFGLinearization`) consume it, and `RotationLowering` reads its
-// `InShadow` set to skip the gate-body `cq_phi` calls it must NOT lower
-// uncontrolled.
+// ControlPlan.h — Shared data shapes for controlled-region lowering.
+//
+// NOTE (swap-route-control branch): the old controlled-op lowering that produced
+// and consumed a populated `ControlPlan` (ControlDetection / ControlledLowering /
+// ControlFlag / ControlledSubstitution / MergeDissolution / CFGLinearization)
+// was removed pending the RSSA swap-route emitter. The struct survives because
+// `RotationLowering` reads `plan->InShadow` to skip in-shadow gate bodies; the
+// transitional `detectControlRegions` stub (ControlStub.cpp) now returns an EMPTY
+// plan (no regions, empty InShadow), so every rotation lowers uncontrolled. The
+// rich `ControlRegion` fields below are retained as the design vocabulary the
+// swap-route emitter will reshape — they are currently unpopulated.
+//
+// Historical shape (PRD §2.2/§2.6/§2.10/§2.11, IMPLEMENTATION §5.1).
 //
 // Detection is PURE ANALYSIS (no IR mutation) so it runs before
 // `lowerRotations`: the region/shadow membership is by SSA *value* identity,
