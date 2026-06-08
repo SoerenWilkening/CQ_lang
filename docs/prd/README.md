@@ -29,7 +29,7 @@ sequence and per-phase scope.
 | 2 | IR pass: taint sources, gate-triggered allocation | [`phase-02-taint-allocation/PRD.md`](phase-02-taint-allocation/PRD.md) |
 | 3 | IR pass: full opcode lowering | [`phase-03-opcode-lowering/PRD.md`](phase-03-opcode-lowering/PRD.md) |
 | 4 | IR pass: swap-routed control flow | [design](../design/rssa-swap-control/) · [archived controlled-form PRD](../archive/old-design/phases/phase04-controlled-form/PRD.md) |
-| 5 | IR pass: per-op uncomputation | [`phase-05-uncomputation/PRD.md`](phase-05-uncomputation/PRD.md) |
+| 5 | IR pass: per-op uncomputation | live spine: [`backend.md`](../backend.md) §9–10 · [archived PRD](../archive/old-design/phases/phase05-uncomputation/PRD.md) |
 
 > **Phase 4 note.** The original **controlled-form** lowering was excised
 > (commit `7cde677`) and replaced by the **RSSA swap-route** design
@@ -37,4 +37,14 @@ sequence and per-phase scope.
 > archived at
 > [`docs/archive/old-design/phases/phase04-controlled-form/`](../archive/old-design/phases/phase04-controlled-form/).
 > A swap-route PRD lands when that phase's emitter work begins (PRDs are written
-> at phase start). **Phase 5**'s uncompute spine survived the rebuild and is current.
+> at phase start).
+>
+> **Phase 5 note.** The per-op-uncomputation **PRD** was written against the
+> controlled-form Phase 4 and is archived at
+> [`…/phase05-uncomputation/`](../archive/old-design/phases/phase05-uncomputation/).
+> Its **uncompute spine** (`EmitInverse`/`ChainWalk`/`FreePoint`/`Uncomputation`)
+> nonetheless **survived the rebuild and is live** — reused by the swap-route
+> emitter (`CLAUDE.md` Rule 14); the design-of-record for it is `backend.md`
+> §9–10. The control-coupled bits of the PRD (`InShadowAdjoint`, `ControlFlag`
+> subtraction) are dead post-`7cde677`. The old-generation Phase 5 bd issues were
+> erased 2026-06-08.

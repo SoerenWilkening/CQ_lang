@@ -449,7 +449,14 @@ every emitted symbol resolves + signature-matches).
 
 ## Phase 5 — IR pass: per-op uncomputation
 
-**Design:** see [`docs/prd/phase-05-uncomputation/PRD.md`](docs/prd/phase-05-uncomputation/PRD.md).
+**Design (archived, old-gen).** The original PRD was written against the
+controlled-form Phase 4 and is archived at
+[`docs/archive/old-design/phases/phase05-uncomputation/PRD.md`](docs/archive/old-design/phases/phase05-uncomputation/PRD.md);
+its control-coupled mechanics are dead post-`7cde677`. The surviving uncompute
+spine (`EmitInverse`/`ChainWalk`/`FreePoint`/`Uncomputation`, reused by the
+swap-route emitter) has its design-of-record in
+[`docs/backend.md`](docs/backend.md) §9–10. The old-gen Phase 5 bd issues were
+erased 2026-06-08 (divergent-arm soundness lesson kept in `bd remember`).
 
 **Goal.** Productionize the prototype's `cq-uncompute` slice past the
 `cqrt_free`-placeholder stage; emit the adjoint of each tainted **data**
@@ -740,7 +747,7 @@ post-Phase-10 roadmap revision.
   compute/uncompute. Phase 5 assumes an acyclic CFG and diagnoses
   backedge-crossing tainted live ranges; lifting that guard into correct
   loop uncomputation is part of this phase, not a rewrite of Phase 5 (see
-  [`docs/prd/phase-05-uncomputation/PRD.md`](docs/prd/phase-05-uncomputation/PRD.md)
+  [`docs/archive/old-design/phases/phase05-uncomputation/PRD.md`](docs/archive/old-design/phases/phase05-uncomputation/PRD.md)
   §2.9).
 - **Dynamic circuits.** Measurement-derived loop bounds; mid-circuit
   measurement feedback. Out of scope until post-backend.
