@@ -15,7 +15,7 @@ reject. There is no silent-miscompile hole and no accidental gap.
 Companion documents:
 - [`PRD.md`](PRD.md) §8.6 — the quantum-controlled **escape** verdict
   (measurement / `return` / `break` / `goto`); the permanent-reject list.
-- [`../../npu6-mux-exch-gate-spec.md`](../../npu6-mux-exch-gate-spec.md) §9/§10 —
+- [`npu6-mux-exch-gate-spec.md`](npu6-mux-exch-gate-spec.md) §9/§10 —
   the MUX-EXCH residual + the G6 permanent no-cloning boundary.
 - [`../../bennett-jl-comparison.md`](../../bennett-jl-comparison.md) — the
   Bennett/Sturm/Silq/QCM cross-check separating permanent rejects from deferred

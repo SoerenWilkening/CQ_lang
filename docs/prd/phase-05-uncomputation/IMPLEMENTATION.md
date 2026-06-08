@@ -19,7 +19,7 @@ against the tree on 2026-06-04.
 - [`docs/backend.md`](../../backend.md) §9 (last-use computation, adjoint
   emission, escape detection) / §10 (the `emit_inverse` rule, forward +
   controlled-forward commitment). Deltas vs the PRD are reconciled in §8.
-- [`docs/prd/phase-04-controlled-form/PRD.md`](../phase-04-controlled-form/PRD.md)
+- [`docs/archive/old-design/phases/phase04-controlled-form/PRD.md`](../../archive/old-design/phases/phase04-controlled-form/PRD.md) *(archived)*
   §2.9 — the Phase 4 / Phase 5 seam (Phase 4 brackets its own control scratch).
 - The Phase 5 prototype — `archive/prototype/cq_pass.cpp` (the `cq-uncompute`
   slice: `PostDominatorTree`-driven last-use + `ReturnInst` escape, bare

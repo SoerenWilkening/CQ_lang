@@ -15,11 +15,11 @@ Companion documents:
 - [`docs/backend.md`](../../backend.md) §9 (last-use computation, adjoint
   emission, escape detection), §10 (the `emit_inverse` rule, the
   forward + controlled-forward commitment, manual inversion).
-- [`docs/prd/phase-04-controlled-form/PRD.md`](../phase-04-controlled-form/PRD.md)
+- [`docs/archive/old-design/phases/phase04-controlled-form/PRD.md`](../../archive/old-design/phases/phase04-controlled-form/PRD.md) *(archived)*
   §2.9 — the Phase 4 / Phase 5 seam, pre-declared there: Phase 4 brackets
   its own control scratch so it "hands Phase 5 a region whose control
   ancillas are already balanced."
-- [`docs/prd/phase-04-controlled-form/MISSING_CASES.md`](../phase-04-controlled-form/MISSING_CASES.md)
+- [`docs/archive/old-design/phases/phase04-controlled-form/MISSING_CASES.md`](../../archive/old-design/phases/phase04-controlled-form/MISSING_CASES.md) *(archived)*
   — the deferred gaps that touch uncomputation (MUX-EXCH non-selected
   source = Phase 4 control scratch, *not* Phase 5; shared-merge UAF).
 - [`docs/quantum-classical-handling.md`](../../quantum-classical-handling.md)
@@ -389,7 +389,7 @@ forward/adjoint bracket.
 - **MUX-EXCH non-selected-source uncompute** — this is Phase 4 **control
   scratch** (the gated-switch disentangle), already owned by Phase 4.x
   (beads [`test_C_libtooling-npu.6`](../../../.beads/issues.jsonl);
-  [`MISSING_CASES.md`](../phase-04-controlled-form/MISSING_CASES.md)), not
+  [`MISSING_CASES.md`](../../archive/old-design/phases/phase04-controlled-form/MISSING_CASES.md)), not
   Phase 5 data.
 - **Whole-call Bennett wrap-around** — reserved for Phase 6 §7.2 clone
   synthesis, never used for per-op uncomputation

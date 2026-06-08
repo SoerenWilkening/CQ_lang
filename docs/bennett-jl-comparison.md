@@ -369,7 +369,7 @@ What CQ_lang explicitly does *not* adopt:
 
 A focused re-fetch + adversarial verification of Bennett.jl and Sturm.jl on
 the three control-flow shapes CQ deferred (full design consequences in
-[Phase 4 PRD §8](./prd/phase-04-controlled-form/PRD.md); beads epic
+[Phase 4 PRD §8](./archive/old-design/phases/phase04-controlled-form/PRD.md) *(archived)*; beads epic
 `test_C_libtooling-aht`).
 
 - **`switch` — Bennett *lowers* it, it does not defer.** `_expand_switches`
