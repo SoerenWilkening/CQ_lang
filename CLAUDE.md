@@ -86,25 +86,37 @@ libtooling-transpiler design lives in `archive/` and `docs/archive/old-design/`
 **Rule 5 — Coherent-first; never insert a measurement.** The compiler **never**
 emits a measurement the user did not write (hard project invariant). There is
 **no** measure-only / forward-only mode (struck 2026-06-08) — it silently
-corrupts under downstream interference (Grover/QPE). Region-local **reverse-play**
-uncompute (the adjoint of the forward stream, via `EmitInverse`) is **mandatory
-in every increment**, never deferred.
+corrupts under downstream interference (Grover/QPE). Coherence for the common
+**phase arm** is the uncontrolled `icmp_inv(q)` **flag-strip** (the rail is `|0⟩`
+for free under `Rz = diag(1,e^{iθ})`); region-local **reverse-play** (the adjoint
+of the forward stream, via `EmitInverse`) is the **on-demand** undo for user
+`cq_invert` and value-arm method-B, **not** an eager per-increment step (revised
+2026-06-09, superseding "mandatory in every increment"; see
+`docs/design/rssa-swap-control/SCOPING.md` §3a).
 
-**Rule 6 — Reverse-play before free.** `cqrt_free` is **compiler-emitted only**
-and is a hardware reset = projective measurement. Emit it on a rail **only after**
-reverse-play has returned it to `|0⟩`. Never free a handle that **Escaped**
-(`ret` / `cq_invert_*`) or is **Measured** — the caller / the measurement owns
-it. Route every free through the `FreePoint` post-dominator discipline; a
-post-measure gate, a loop-backedge live range, or an unrecognized user is a
-**loud reject**, never a silent skip.
+**Rule 6 — Free only a proven-`|0⟩` rail.** `cqrt_free` is **compiler-emitted
+only** and is a hardware reset = projective measurement. Emit it **only where the
+rail is provably `|0⟩`** — for a **phase arm** that is immediately (the rail is
+`|0⟩` for free, `Rz|0⟩ = |0⟩`); for a **value arm** only after its method-B
+reverse-play. A rail **not** provably `|0⟩` is **left allocated** (a qubit leak,
+accepted in the qubits-not-scarce regime), **never freed dirty** — freeing a
+dirty/entangled rail is a hidden measurement that collapses `q` (revised
+2026-06-09). Never free a handle that **Escaped** (`ret` / `cq_invert_*`) or is
+**Measured** — the caller / the measurement owns it. Route every free through the
+`FreePoint` post-dominator discipline; a post-measure gate, a loop-backedge live
+range, or an unrecognized user is a **loud reject**, never a silent skip.
 
-**Rule 7 — Method matches arm class.** Rotation arms (Rz / Ry) keep the answer
-**in place on `q`** and clean only the work rail with a controlled-adjoint
-(**method-A**). Classical-permutation arms (`add`/`mul`/`x`/`toffoli`) use
-compute → copy-out → reverse-play (**method-B**, `cqrt_copy_<W>`). **Never apply
-method-B to a rotation arm** — a CNOT copies a basis *label*, not a *phase*, so
-`R†` cancels the very superposition that was the answer (verified P0
-0.585 → 0.500, fully dephased).
+**Rule 7 — Method matches arm class.** **Phase arms** (`Rz` = `cq_phi`) keep the
+answer (a phase) **in place on `q`**; the rail is `|0⟩` for free and the
+data-derived flag is stripped by the **uncontrolled** `icmp_inv(q)` — **zero
+controlled gates** (method-A controlled-adjoint rail cleanup is **dropped**,
+2026-06-09: it buys nothing over §6a control-in-place). Classical-permutation /
+**value arms** (`add`/`mul`/`x`/`toffoli`) use compute → copy-out → reverse-play
+(**method-B**, `cqrt_copy_<W>`). **Never apply method-B to a phase arm** — a CNOT
+copies a basis *label*, not a *phase*, so `R†` cancels the very superposition that
+was the answer (verified P0 0.585 → 0.500, fully dephased). An arm that
+value-rewrites a variable the condition reads is a **loud reject** (clobber,
+SCOPING §3c).
 
 **Rule 8 — No-cloning / linearity.** Copy + uncompute cannot disentangle a
 superposition. Freeing a source that carries superposition requires
@@ -227,9 +239,11 @@ empty plan; the real emitter is being built. The enduring lessons — restructur
   you quantum-coherence correctness. The superposed-control / no-cloning /
   Rz·Ry / reverse-play layer is the **original** part of this design, validated
   by statevector simulation — never "it's RSSA, therefore correct" (SCOPING §0).
-- **Method-A vs method-B is by arm class, not convenience** (Rule 7). Bennett
-  compute→copy→uncompute is the *special* case (basis-valued arms), not the
-  general one; it **dephases** rotation answers.
+- **Method matches arm class, not convenience** (Rule 7). Phase arms keep the
+  answer on `q` and strip the flag with `icmp_inv` (zero controlled gates;
+  method-A is dropped). Bennett compute→copy→uncompute (**method-B**) is the
+  *special* case (basis-valued/value arms), not the general one; it **dephases**
+  phase/rotation answers.
 - **Branch polarity is inverted by `clang -O1`** (Rule 9): the gate arm is often
   the *false* successor; control on `¬flag` via a self-inverse `cqrt_x` bracket,
   and dissolve a gate-body φ to the **tainted** incoming, not the Pred edge.
@@ -381,7 +395,8 @@ plus `gen_templates.py --check` drift verification. Do not add CI.
   pass the literal through to the `_hl`/`_lh` template; never `cqrt_alloc` it
   (`quantum-classical-handling.md` §5.2, non-negotiable).
 - **Do NOT insert any measurement the user did not write, and do NOT free a rail
-  before reverse-play returns it to `|0⟩`** (Rules 5, 6).
+  that is not provably `|0⟩`** (a dirty rail is left allocated, never freed —
+  Rules 5, 6).
 - **Do NOT fork LLVM or add an MLIR dialect.** No-fork stock-LLVM-19 is locked
   for v1; MLIR re-evaluation is deferred to the Phase 10 freeze gate.
 - **Do NOT add GitHub CI**, and **do NOT use TodoWrite / markdown TODOs /

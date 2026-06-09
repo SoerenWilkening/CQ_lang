@@ -2,6 +2,15 @@
 """
 RSSA swap-routed tainted control flow -- semantics prototype.
 
+NOTE (revised 2026-06-09): this oracle predates the settled design. Demo B's
+"garbage IGNORED (v1 default)" / "Bennett uncompute" framing is superseded -- the
+production lowering never leaves or frees dirty garbage. For the canonical PHASE
+arm, coherence is the uncontrolled icmp_inv(q) flag-strip (the rail is |0> for
+free under Rz = diag(1, e^{i*theta})), zero controlled gates; full-region
+reverse-play is the ON-DEMAND undo (user cq_invert / value-arm method-B), not an
+eager step. See docs/design/rssa-swap-control/SCOPING.md  §3a/§3c. The demos below
+still validate the underlying routing / cswap semantics correctly.
+
 This is a PRINCIPLE prototype, not the production lowering. It uses a tiny exact
 statevector simulator to validate the semantics of the proposed model BEFORE we
 commit any of it to the LLVM pass framework. Registers are modelled as single

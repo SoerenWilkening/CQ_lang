@@ -1,10 +1,15 @@
 # RSSA-based tainted control flow — idea, advantages, perspectives
 
-**Status:** design settled (2026-06-08), implementing on branch
-`swap-route-control`. The concise pitch + principles; `SCOPING.md` is the detailed
-spec and the `swap_route_*.ll` files are the IR target fixtures. Coherent-first,
-no measure-only mode; the compiler never inserts a measurement the user did not
-write. The ROADMAP "Phase 4 — RSSA swap-routed control flow" block tracks phasing.
+**Status:** design settled, revised 2026-06-09 (statevector-checked dialogue;
+supersedes the 2026-06-08 method-A framing — see `SCOPING.md` §3a). Implementing
+on branch `swap-route-control`. The concise pitch + principles; `SCOPING.md` is the
+detailed spec, `docs/prd/phase-04-swap-route-control/PRD.md` the 4.1 PRD, and the
+`swap_route_*.ll` files are the IR target fixtures. The compiler never inserts a
+measurement the user did not write — enforced by *never freeing a non-`|0⟩` rail*.
+The common phase-arm (`Rz`) case is coherent with **zero controlled gates** (route
+uncontrolled, free the `|0⟩` rail, strip the `icmp` flag); the one rejection is an
+arm that value-clobbers a variable the condition reads. The ROADMAP "Phase 4 — RSSA
+swap-routed control flow" block tracks phasing.
 
 ## The idea (one line)
 
@@ -67,11 +72,12 @@ special cases and several permanent rejections.
 
 1. **RSSA skeleton** — the control-flow lowering (route / merge / return cascade).
    Always present; conserves the CFG. *This is the RSSA part.*
-2. **Arm-body handling** — chosen per arm: general gates leave garbage that is
-   *kept* and reversed region-locally (the correctness-first default); a
-   number-conserving / vacuum-fixing arm leaves none (Zhou-Ralph fast path); a
-   known cheap-to-control gate can simply be controlled in place. *Gate-physics,
-   layered on the skeleton.*
+2. **Arm-body handling** — chosen per arm: a **phase arm (`Rz`)** leaves the rail
+   `|0⟩` for free and is made coherent by the §3a flag-strip (no rail reversal); a
+   **value arm** uses compute → copy-out → reverse-play; full-region reverse-play
+   is the **on-demand** undo, not an eager default. A vacuum-fixing arm leaves no
+   garbage (Zhou-Ralph fast path); a genuinely-in-place rotation can be controlled
+   in place (§6a, later). *Gate-physics, layered on the skeleton.*
 3. **Optimization (later)** — pick the cheapest of the above per arm.
 
 ### The quantum-correctness layer is two gates
@@ -80,18 +86,27 @@ Of the unitary primitives, only **`R_z`** (phase) and **`R_y`** (superposition)
 are non-classical; `add`, `mul`, `icmp`, `cqrt_x`, `cqrt_toffoli`, `cqrt_cswap`
 are *permutations* (reversible classical). The routing (`cqrt_cswap`) is itself a
 permutation, so the control-flow skeleton is coherence-transparent — **coherence
-is created or broken only by `R_z`/`R_y`.** Classical garbage is uncomputed by its
-classical inverse (mechanical, no risk); `R_z` is phase bookkeeping; `R_y` is the
-one gate that needs genuine care. So the quantum-correctness layer is a *two-gate*
-layer, and the default is to control `R_z`/`R_y` in place (clean) and swap-route
-the classical structure. See `SCOPING.md §3`.
+is created or broken only by `R_z`/`R_y`.** Under the `R_z = diag(1, e^{iθ})`
+convention, `R_z|0⟩ = |0⟩`: a routed phase arm leaves its rail at `|0⟩` and — since
+`R_z` preserves `q`'s basis value — the `icmp` flag is stripped from the current
+`q` with **no controlled gate** (§3a). `R_y` (genuine superposition) and value arms
+are deferred (method-B / §6a); a value-clobber of a condition variable is rejected
+(§3c). So the quantum-correctness layer is a *two-gate* layer; the 4.1 default is
+to **swap-route phase arms uncontrolled and flag-strip** — control-in-place is the
+later §6a refinement, not the mechanism. See `SCOPING.md §3`/§3a/§3c.
 
 ## Prototype scope (correctness first)
 
 - Branch **only** with the controlled SWAP: route in → uncontrolled body → route
   back → merge. One mechanism, no special cases.
-- Inactive-rail garbage is **kept** (the reversibility witness) and uncomputed
-  region-locally before any coherent reuse — not measured, not ignored forever.
+- **Phase arms (`Rz`)** — the 4.1 scope: the inactive rail is `|0⟩` for free
+  (`Rz|0⟩ = |0⟩`) and freed clean; the `icmp` flag is stripped via `icmp_inv(q)`,
+  leaving `q` interference-safe with zero controlled gates (§3a).
+- **Value arms** (`add`/`mul`/`x`/…) — 4.2: compute → copy-out (`cqrt_copy_<W>`) →
+  reverse-play. A dirty rail is **left allocated** (never freed dirty — that would
+  be a hidden measurement), reclaimed by on-demand reverse-play.
+- **Reject** an arm that value-clobbers a variable the condition reads (§3c) — the
+  one shape no control model can keep coherent.
 - Quantum-data-bounded loops and recursion are **statically unrolled** to their
   upper bound.
 - No efficiency tuning yet.

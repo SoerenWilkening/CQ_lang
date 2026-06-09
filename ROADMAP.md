@@ -338,9 +338,10 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 ## Phase 4 — RSSA swap-routed tainted control flow [4.0 clean-slate DONE · emitter in progress]
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
-+ [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md); IR target fixtures
-`swap_route_if_diamond.ll`, `swap_route_ifelse.ll`,
-`swap_route_if_diamond_uncompute.ll`.
++ [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
+[`docs/prd/phase-04-swap-route-control/PRD.md`](docs/prd/phase-04-swap-route-control/PRD.md)
+(4.1 phase-arm increment); IR target fixtures `swap_route_if_diamond.ll`,
+`swap_route_ifelse.ll`, `swap_route_if_diamond_uncompute.ll`.
 
 **Supersedes the controlled-op approach.** The original Phase 4 lowered tainted
 control by *flattening it into controlled ops* — mint a flag → substitute every
@@ -364,15 +365,46 @@ RSSA). Classical (untainted) control flow is left exactly as `clang -O1` emits i
 | arm body | arm gates copied **verbatim, uncontrolled** onto the rail |
 | tainted `phi` | `cqrt_cswap` the active result back (adjoint of the split) |
 
-**Non-negotiable principles (design + author, 2026-06-08):**
-- **Coherent-first; no measure-only mode.** Coherence is restored *unitarily* by
-  region-local **reverse-play** — the adjoint of the forward stream, via
-  `emit_inverse` — so results are correct under downstream interference (Grover
-  etc.). Reverse-play is **mandatory in every increment**, never deferred.
+**Non-negotiable principles (design + author, revised 2026-06-09).** This
+revision supersedes the 2026-06-08 "method-A / reverse-play-mandatory" framing
+after a statevector-checked design dialogue; see
+[`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
+§3/§3a/§3c.
+
 - **No added measurements — ever.** The compiler never inserts a measurement the
-  user did not write (hard project invariant). The only reclamation discipline is
-  "free a rail only after reverse-play returns it to `|0⟩`" (§3b) — freeing an
-  entangled rail would be a hidden measurement that collapses `q`.
+  user did not write (hard project invariant). Its one teeth: `cqrt_free` is
+  emitted **only on a proven-`|0⟩` rail** — freeing a dirty/entangled rail is a
+  hidden reset = measurement that collapses `q`. A rail not provably `|0⟩` is
+  **left allocated** (a qubit "leak," accepted in the qubits-not-scarce regime,
+  §0), never freed. This is precisely what the struck "v1" got wrong — it freed
+  dirty rails; the fix is *don't free dirty*, not *free carefully*.
+- **`Rz = diag(1, e^{iθ})`** (phase-gate convention; `Rz|0⟩ = |0⟩` exactly). A
+  phase arm therefore leaves its inactive work rail at `|0⟩` **unconditionally** —
+  clean and disentangled, freeable as a no-op reset.
+- **Coherence for phase arms is a cheap flag-strip, not reverse-play.** The flag
+  is `icmp(q0)`; an `Rz` arm preserves `q`'s computational-basis *value*, so the
+  condition stays recomputable from the current `q`. Uncompute the flag with
+  `icmp_inv(q)` — an **uncontrolled** data-template inverse (zero controlled
+  gates) — leaving `q` with the answer, fully disentangled. The output is then
+  correct under measurement, full undo, **and** downstream interference (Grover).
+- **Method-A (controlled-adjoint rail cleanup) is dropped.** If you would emit a
+  controlled gate to clean a rail, you could have controlled the op *in place*
+  from the start (§6a) — so route + controlled-cleanup gains nothing. We never
+  emit controlled cleanup; rotation arms route uncontrolled and are cleaned by the
+  flag-strip above.
+- **Reverse-play is the on-demand coherence mechanism, not an eager step.** The
+  full-region adjoint (via `emit_inverse`) restores `q0` and zeros every ancilla
+  exactly, for *any* arm; it is emitted when the user inverts the region
+  (`cq_invert`, Phase 7) or an oracle uncomputes — **not** by the forward
+  lowering. (Supersedes the 2026-06-08 "reverse-play mandatory in every
+  increment.")
+- **The one rejection — clobbering the control's own data.** Reject (loud
+  `DiagnosticInfoUnsupported`) iff an arm performs a **value-changing write to a
+  quantum variable the branch condition transitively reads**. Model-independent
+  (control-in-place hits the same bind) and information-theoretically unfixable
+  for non-injective maps. *Not* rejected: phase (`Rz`) ops on a condition
+  variable; value ops on non-condition variables; reads of condition variables.
+  Vacuous for pure-phase 4.1; active once value arms (4.2) land.
 - **`select` is trivial and separate.** A `select` has no arm operations, so it is
   a pure merge — a controlled-XOR copy (`out ^= c ? a : b`), **not** cswap routing.
 - **Maintainability win.** Arm bodies pass through unchanged (no `_controlled`
@@ -395,21 +427,31 @@ RSSA). Classical (untainted) control flow is left exactly as `clang -O1` emits i
   reads `plan->InShadow`). Reusable runtime primitives (`cqrt_cswap`,
   `cqrt_toffoli`, `cqrt_alloc_<W>`, `cqrt_free`) kept. Full suite green.
 
-- **4.1 — Swap-route emitter, rotation arms (method-A).** `if`-diamond then
-  `if/else`, targeting `swap_route_if_diamond.ll` / `swap_route_ifelse.ll`. The
-  answer (phase/superposition) stays on `q`; only the work rail is cleaned, by a
-  controlled-adjoint of the body on the inactive branch (§3a-A). **No new runtime
-  ABI** — reuses `cqrt_cswap`, `cqrt_alloc_<W>`, `cqrt_free`, `cqrt_rz/ry/x`, and
-  `emit_inverse`. The br/diamond cswap **emission wiring** is net-new (today
-  `cqrt_cswap` is emitted only on the removed MUX-EXCH path).
+- **4.1 — Swap-route emitter, phase arms (`Rz`).** `if`-diamond then `if/else`,
+  targeting the regenerated **coherent** `swap_route_if_diamond.ll` /
+  `swap_route_ifelse.ll`. Mint the flag (the `icmp` `_hl` data template), `cqrt_cswap`
+  the operand into a `|0⟩` work rail, run the arm `Rz`s **verbatim and uncontrolled**
+  on the rail, `cqrt_cswap` back. Because `Rz|0⟩ = |0⟩`, the rail returns to `|0⟩`
+  and is freed clean; the flag is stripped with `icmp_inv(q)` and freed — `q` is
+  left with the answer, disentangled and interference-safe, with **zero controlled
+  gates**. **No new runtime ABI** — reuses `cqrt_cswap`, `cqrt_alloc_<W>`,
+  `cqrt_free`, `cqrt_rz`, `cqrt_x` (the ¬flag bracket), and the `icmp`
+  `_hl`/`_hl_inv` templates. The br/diamond cswap **emission wiring** is net-new
+  (today `cqrt_cswap` appears only inside `EmitInverse`). The
+  clobber-the-condition **reject predicate** ships here with its decline fixture,
+  though vacuous for phase arms. The tainted `br`/`phi` are erased and the diamond
+  flattened into a single straight-line block (provenance kept in value names).
 
-- **4.2 — Classical-permutation arms (method-B).** `add`/`mul`/`x`/`toffoli`
+- **4.2 — Classical-permutation / value arms (method-B).** `add`/`mul`/`x`/`toffoli`
   bodies: run `R` → CNOT-copy the basis-valued result into a fresh register →
   reverse-play `R†` to restore `q0` and zero the rail (§3a-B), targeting
   `swap_route_if_diamond_uncompute.ll`. Adds the design's **only new ABI**: the
   per-width reversible copy `cqrt_copy_<W>` (one transversal-CNOT copy per width —
   confirm the width set + semantics first, §7.6). This re-opens the Phase-8/10
-  freeze for that one family.
+  freeze for that one family. The **clobber-the-condition reject becomes active
+  here**: a value arm that rewrites a quantum variable the branch condition reads
+  is declined loudly (it cannot be both kept and disentangled — §3c), while a
+  value arm on any other register lowers normally.
 
 - **4.3 — Nested control.** A tainted `br` inside an arm runs the **same emitter
   recursively** on the enclosing arm's live rail; `c1 ∧ c2` falls out of the
@@ -442,10 +484,12 @@ post-dominator discipline (never when the handle escapes or is the user's measur
 output — there the caller owns it).
 
 **Done when:** programs with tainted `if` / `if-else` / nested / `select` /
-`switch` lower to the swap-route IR the `.ll` fixtures pin — coherent (reverse-play
-emitted, rails freed clean), `opt -verify` clean — and the e2e trace smokes diff
-clean against goldens captured from real linked output (the layer that proves
-every emitted symbol resolves + signature-matches).
+`switch` lower to the swap-route IR the `.ll` fixtures pin — coherent (phase arms:
+flag stripped via `icmp_inv`, rails `|0⟩`-clean and freed; reverse-play available
+for full-region undo), `opt -verify` clean; a clobber-the-condition arm declines
+loudly — and the e2e trace smokes diff clean against goldens captured from real
+linked output (the layer that proves every emitted symbol resolves +
+signature-matches).
 
 ## Phase 5 — IR pass: per-op uncomputation
 

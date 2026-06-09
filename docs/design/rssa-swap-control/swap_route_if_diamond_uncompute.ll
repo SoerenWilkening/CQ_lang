@@ -1,32 +1,35 @@
-; swap_route_if_diamond_uncompute.ll — DESIGN SPEC, the COHERENT path
+; swap_route_if_diamond_uncompute.ll — DESIGN SPEC, the uncompute companion
 ; ===========================================================================
-; The future (post-v1) coherent lowering of the SAME diamond as
-; swap_route_if_diamond.ll. v1 emits the forward swap-route and IGNORES the
-; work-register garbage (sound only for terminal/measured outputs). The coherent
-; path additionally UNCOMPUTES the ancilla so the region is garbage-free and can
-; be re-interfered (Grover/QPE built "on top"). This file specifies that path.
+; Revised 2026-06-09. Two things changed vs the original draft of this file:
 ;
-; Gated behind the §3 interference guard in SCOPING.md: emitted only when the
-; region's output reaches an interfering op before measurement.
+;   * METHOD-A (controlled-adjoint rail cleanup) IS DROPPED. The earlier draft
+;     spec'd a `cqrt_rz_i32_controlled` cleanup of the inactive rail as "the
+;     coherent path for rotation arms." That is struck: if you would emit a
+;     controlled gate to clean a rail, you could have controlled the op in place
+;     from the start (§6a), so it buys nothing. For PHASE arms there is no
+;     separate uncompute at all — coherence is the cheap `icmp_inv(q)` flag-strip
+;     already specified in `swap_route_if_diamond.ll` (SCOPING.md §3a).
 ;
-; SOURCE INTENT (same as swap_route_if_diamond.ll):
+;   * This file now specs the two uncompute shapes that DO survive:
+;       (B-undo)  full-region reverse-play  — the on-demand "undo the whole if"
+;                 (user `cq_invert` / oracle uncompute). Well-defined for ANY arm
+;                 via the existing EmitInverse spine; shown below on the phase
+;                 diamond.
+;       (B-keep)  compute → copy-out → reverse-play — VALUE arms only (4.2). Adds
+;                 the per-width `cqrt_copy_<W>` (the design's only new ABI). Exact
+;                 semantics + the reassignment/escape handling are pinned when 4.2
+;                 lands (SCOPING.md §7.6); sketched, not CHECK-pinned, here.
+;
+; SOURCE INTENT (same diamond as swap_route_if_diamond.ll):
 ;     q : quantum handle
-;     if (q > 5) { rz(q, a); rz(q, b); }
-;     <result re-interfered later>
+;     if (q > 5) { rz(q, a); rz(q, b); }   // PHASE arm
 ;
-; KEY IDEA (answer to "is uncompute just playing it in reverse?"):
-;   The forward swap-route is a clean unitary R made of self-inverse CSWAP/X plus
-;   the arm body. Its inverse R† is the instruction stream REVERSED with each body
-;   gate adjointed. Two uses:
-;     (A) full inverse  : run R† alone  -> restores q0, zeroes ancillas, DESTROYS
-;                         the answer. Use to undo the region as a subroutine.
-;     (B) keep answer   : run R ; copy the result out ; run R†  (compute-copy-
-;                         uncompute). Reverse-play restores q0 and zeroes t.
-;                         *** CLASSICAL-PERMUTATION bodies ONLY (basis-valued
-;                         results). WRONG for rz/ry: a CNOT copies a basis label,
-;                         not a phase, so R† cancels the phase/superposition that
-;                         WAS the answer. For rotations use the in-place method
-;                         below. See SCOPING.md §3a. ***
+; KEY IDEA: the forward swap-route is a clean unitary R of self-inverse CSWAP/X
+;   plus the arm body. Its inverse R† is the instruction stream REVERSED with each
+;   body gate adjointed (CSWAP/X self-inverse; rz(θ)† = rz(-θ); alloc† = free;
+;   mint† = `_inv`). Crucially, R† restores q0 BEFORE the flag uncompute, so the
+;   data-derived `icmp_inv(q)` is valid for ANY arm class (this is why the
+;   2026-06-08 "Ry flag uncompute" §7.3 worry dissolves — SCOPING.md §3a).
 ; ===========================================================================
 
 ; --- INPUT IR (frontend / pre-lowering) — identical to swap_route_if_diamond.ll
@@ -50,79 +53,54 @@ merge:
 }
 
 ; ===========================================================================
-; TARGET OUTPUT — method (B): compute -> copy-out -> reverse-play
-;   CLASSICAL-PERMUTATION bodies ONLY (add/mul/x/toffoli — basis-valued result).
-;   NOT general: WRONG for rz/ry, which it dephases (verified: P0 0.585 -> 0.500).
-;   The rz body below shows the MECHANICS only; for a real rz/ry arm the coherent
-;   path is the in-place method further down. See SCOPING.md §3a.
+; (B-undo) FULL-REGION REVERSE-PLAY — undo the whole `if` (user `cq_invert`
+;   bracket / oracle uncompute). R then R†. After it, q == q0 and every ancilla
+;   is |0>. Well-defined for any arm; the engine is the existing EmitInverse.
 ; ===========================================================================
 ; declare void @cqrt_cswap(i32, i32, i32)
 ; declare i32  @cqrt_alloc_i32(i32)
 ; declare void @cqrt_free(i32)
 ; declare void @cqrt_rz_i32(i32, double)
-; declare void @cqrt_copy_i32(i32, i32)        ; out ^= src (reversible CB copy = transversal CNOT; NOT cloning)
 ; declare i32  @cq_template_icmp_sgt_i32_hl(i32, i32)
 ; declare i32  @cq_template_icmp_sgt_i32_hl_inv(i32, i32)
 ;
-; define i32 @example(i32 %u0, double %a, double %b) {
+; define void @example_inverted(i32 %u0, double %a, double %b) {
 ; entry:
 ;   %q    = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-;
-;   ; ----- R : forward swap-route (identical to the v1 fixture, minus the free)
+;   ; ----- R : forward swap-route (identical to swap_route_if_diamond.ll, minus
+;   ;           the flag-strip + frees — those are folded into R† below)
 ;   %flag = call i32 @cq_template_icmp_sgt_i32_hl(i32 %q, i32 5)
 ;   %t    = call i32 @cqrt_alloc_i32(i32 0)
 ;   call void @cqrt_cswap(i32 %flag, i32 %q, i32 %t)
 ;   call void @cqrt_rz_i32(i32 %t, double %a)
 ;   call void @cqrt_rz_i32(i32 %t, double %b)
-;   call void @cqrt_cswap(i32 %flag, i32 %q, i32 %t)     ; answer now in %q
-;
-;   ; ----- copy-out : the ONE extra op that lets us keep the answer
-;   %out  = call i32 @cqrt_alloc_i32(i32 0)
-;   call void @cqrt_copy_i32(i32 %q, i32 %out)           ; %out := answer
-;
-;   ; ----- R† : reverse-play. Same instructions, reversed, each body adjointed.
-;   ;       CSWAP and X are self-inverse; rz(θ)† = rz(-θ); alloc† = free; mint† = inv.
 ;   call void @cqrt_cswap(i32 %flag, i32 %q, i32 %t)
-;   call void @cqrt_rz_i32(i32 %t, double %sub_b)         ; %sub_b = -b   (undo b first)
+;   ; ----- R† : reverse-play. Same instructions, reversed, each body adjointed.
+;   call void @cqrt_cswap(i32 %flag, i32 %q, i32 %t)
+;   call void @cqrt_rz_i32(i32 %t, double %sub_b)         ; %sub_b = -b  (undo b first)
 ;   call void @cqrt_rz_i32(i32 %t, double %sub_a)         ; %sub_a = -a
 ;   call void @cqrt_cswap(i32 %flag, i32 %q, i32 %t)      ; %q is now back to q0
 ;   call void @cqrt_free(i32 %t)                          ; t == |0>, clean free
-;   %f0 = call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %q, i32 5)  ; flag -> |0> (valid: q==q0)
-;
-;   ; result lives in %out; %q == q0, %t and %flag are clean and disentangled.
-;   %m = call i32 @cq_measure_si32(i32 %out)
-;   ret i32 %m
+;   %f0 = call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %q, i32 5) ; flag -> |0> (valid: q==q0)
+;   call void @cqrt_free(i32 %flag)
+;   ; q == q0; t and flag clean and disentangled. The region is fully undone.
+;   ret void
 ; }
-;
+
 ; ===========================================================================
-; TARGET OUTPUT — in-place + controlled-adjoint cleanup: THE coherent path for
-;   ROTATION bodies (keeps a phase/superposition answer; SCOPING.md §3a-A).
-;   No copy-out. Keeps the answer in %q. Cleans %t with a controlled-adjoint.
-;   The FLAG uncompute via icmp_inv(%q) shown here is valid ONLY for DIAGONAL
-;   (basis-preserving) rz, where icmp(%q)==icmp(q0,5). For an off-diagonal ry
-;   under a data-derived flag, %q != q0, so the flag must be left dirty
-;   (measure-only) or q0 preserved to clean it — open question, SCOPING.md §7.3.
-; ===========================================================================
-; define i32 @example(i32 %u0, double %a, double %b) {
-; entry:
-;   %q    = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-;   %flag = call i32 @cq_template_icmp_sgt_i32_hl(i32 %q, i32 5)
-;   %t    = call i32 @cqrt_alloc_i32(i32 0)
-;   call void @cqrt_cswap(i32 %flag, i32 %q, i32 %t)
-;   call void @cqrt_rz_i32(i32 %t, double %a)
-;   call void @cqrt_rz_i32(i32 %t, double %b)
-;   call void @cqrt_cswap(i32 %flag, i32 %q, i32 %t)      ; answer in %q; garbage in %t on ¬flag
-;   ; clean %t: adjoint body controlled on ¬flag (the branch that left garbage)
-;   call void @cqrt_x(i32 %flag)
-;   call void @cqrt_rz_i32_controlled(i32 %flag, i32 %t, double %sub_b)  ; rz(-b) if ¬flag
-;   call void @cqrt_rz_i32_controlled(i32 %flag, i32 %t, double %sub_a)  ; rz(-a) if ¬flag
-;   call void @cqrt_x(i32 %flag)
-;   call void @cqrt_free(i32 %t)                          ; t clean
-;   %f0 = call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %q, i32 5)  ; OK for rz (basis-preserving)
-;   %m  = call i32 @cq_measure_si32(i32 %q)
-;   ret i32 %m
-; }
+; (B-keep) COMPUTE → COPY-OUT → REVERSE-PLAY — VALUE arms only (4.2 sketch).
+;   For a basis-valued (permutation) arm (add/mul/x/toffoli): run R, copy the
+;   basis answer to a fresh register (`cqrt_copy_<W>`), then reverse-play R† to
+;   restore q0 and zero the rail (which makes the trailing icmp_inv valid). WRONG
+;   for rz/ry (a CNOT copies a basis label, not a phase; verified P0 0.585->0.500),
+;   which is exactly why phase arms use the flag-strip instead, NOT this. The
+;   `cqrt_copy_<W>` width set + reassignment/escape handling are pinned at 4.2
+;   (SCOPING.md §7.6) — sketched, not CHECK-pinned, here:
 ;
-; NOTE: path (B) reuses your existing EmitInverse machinery (rotation-negate /
-; _inv / self-adjoint) to produce R† — the uncompute target is exactly the
-; verbatim forward stream, so no ChainWalk/FreePoint lineage analysis is needed.
+;     %out  = call i32 @cqrt_alloc_i32(i32 0)
+;     call void @cqrt_copy_i32(i32 <answer>, i32 %out)   ; out := basis answer
+;     ; ... then R† as in (B-undo): restores q0, zeros rail+flag, leaves answer in %out
+;
+; NOTE: an arm that value-changes a variable the CONDITION reads is REJECTED
+; (SCOPING.md §3c) — no copy can disentangle a non-injective result. (B-keep)
+; therefore applies to value arms on NON-condition registers.
