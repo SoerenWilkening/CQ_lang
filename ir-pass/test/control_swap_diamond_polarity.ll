@@ -16,6 +16,9 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; Independent EXACT free-count scan (§8.2): two cqrt_free and no third anywhere —
+; the ¬flag X-bracket adds cqrt_x, NOT extra frees.
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -52,5 +55,15 @@ merge:
 ; CHECK:     call void @cqrt_free(i32 %[[T]])
 ; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
+; q (not the phi) is measured — RAUW merge-phi -> q
+; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
+; no-spurious-free: EXACTLY two frees total — no third after the flag free
+; CHECK-NOT: call void @cqrt_free
+; dephasing guard: zero controlled gates, zero copies, no surviving data mux
 ; CHECK-NOT: _controlled
+; CHECK-NOT: cqrt_copy
 ; CHECK-NOT: phi i32
+
+; Exact free count — two (work rail + flag), no third anywhere.
+; CNT-COUNT-2: call void @cqrt_free(
+; CNT-NOT:     call void @cqrt_free(

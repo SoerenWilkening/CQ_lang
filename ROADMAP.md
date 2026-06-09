@@ -335,7 +335,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0 clean-slate DONE · emitter in progress]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0 clean-slate + 4.1 phase-arm emitter DONE · 4.2+ in progress]
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
 + [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
@@ -427,20 +427,29 @@ after a statevector-checked design dialogue; see
   reads `plan->InShadow`). Reusable runtime primitives (`cqrt_cswap`,
   `cqrt_toffoli`, `cqrt_alloc_<W>`, `cqrt_free`) kept. Full suite green.
 
-- **4.1 — Swap-route emitter, phase arms (`Rz`).** `if`-diamond then `if/else`,
-  targeting the regenerated **coherent** `swap_route_if_diamond.ll` /
-  `swap_route_ifelse.ll`. Mint the flag (the `icmp` `_hl` data template), `cqrt_cswap`
-  the operand into a `|0⟩` work rail, run the arm `Rz`s **verbatim and uncontrolled**
-  on the rail, `cqrt_cswap` back. Because `Rz|0⟩ = |0⟩`, the rail returns to `|0⟩`
-  and is freed clean; the flag is stripped with `icmp_inv(q)` and freed — `q` is
-  left with the answer, disentangled and interference-safe, with **zero controlled
-  gates**. **No new runtime ABI** — reuses `cqrt_cswap`, `cqrt_alloc_<W>`,
-  `cqrt_free`, `cqrt_rz`, `cqrt_x` (the ¬flag bracket), and the `icmp`
-  `_hl`/`_hl_inv` templates. The br/diamond cswap **emission wiring** is net-new
-  (today `cqrt_cswap` appears only inside `EmitInverse`). The
-  clobber-the-condition **reject predicate** ships here with its decline fixture,
-  though vacuous for phase arms. The tainted `br`/`phi` are erased and the diamond
-  flattened into a single straight-line block (provenance kept in value names).
+- **4.1 — Swap-route emitter, phase arms (`Rz`) [DONE, branch `swap-route-control`,
+  WI-1…WI-5].** `if`-diamond then `if/else`, matching the **coherent**
+  `swap_route_if_diamond.ll` / `swap_route_ifelse.ll` design specs. Mint the flag
+  (the `icmp` `_hl` data template), `cqrt_cswap` the operand into a `|0⟩` work rail,
+  run the arm `Rz`s **verbatim and uncontrolled** on the rail, `cqrt_cswap` back.
+  Because `Rz|0⟩ = |0⟩`, the rail returns to `|0⟩` and is freed clean; the flag is
+  stripped with `icmp_inv(q)` and freed — `q` is left with the answer, disentangled
+  and interference-safe, with **zero controlled gates**. **No new runtime ABI** —
+  reuses `cqrt_cswap`, `cqrt_alloc_<W>`, `cqrt_free`, `cqrt_rz`, `cqrt_x` (the ¬flag
+  bracket), and the `icmp` `_hl`/`_hl_inv` templates. The br/diamond cswap
+  **emission wiring** is net-new (today `cqrt_cswap` appears only inside
+  `EmitInverse`). The clobber-the-condition **reject predicate** ships here with its
+  decline fixture, though vacuous for phase arms. The tainted `br`/`phi` are erased
+  and the diamond flattened into a single straight-line block (provenance kept in
+  value names). **Cleared (Rule 13)** against the statevector oracle
+  (`prototype_semantics.py` Demo A: swap-route ≡ controlled-op measurement stats to
+  3.3e-16; Demo B fixes the phase-arm-only coherence boundary) plus the §8 probe
+  matrix — no-spurious-free (`CHECK-COUNT` two frees/diamond, three/if-else),
+  polarity (FALSE-successor gate arm), transitive §3c reject, dephasing guard
+  (`CHECK-NOT` `_controlled`/`cqrt_copy` on a phase arm) — and a linked e2e golden
+  (`tests/e2e/slice_control_phase_diamond.c`, the only layer that proves every
+  emitted symbol resolves + signature-matches). Modules: `ControlDetect`,
+  `ArmClassify`, `SwapRouteEmit`, `RegionFlatten` (replacing `ControlStub`).
 
 - **4.2 — Classical-permutation / value arms (method-B).** `add`/`mul`/`x`/`toffoli`
   bodies: run `R` → CNOT-copy the basis-valued result into a fresh register →

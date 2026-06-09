@@ -54,5 +54,8 @@ merge:
 ; CHECK:     call void @cqrt_free(i32 %[[EE]])
 ; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
+; dephasing guard (§8.5): zero controlled gates, zero method-B copies on a phase arm
+; (a CNOT-copy copies a basis label not a phase -> dephases, verified P0 0.585->0.500)
 ; CHECK-NOT: _controlled
+; CHECK-NOT: cqrt_copy
 ; CHECK-NOT: phi i32
