@@ -43,9 +43,10 @@ struct ControlPlan;
 // `taint.Tainted`, seeds `taint.BirthOrder`, and records each handle's logical
 // ABI width in `taint.HandleWidth` (from the `cq_theta` classical operand,
 // before any RAUW launders it — §5.6). `plan` (may be null) names the
-// in-shadow gate-body `cq_phi` calls: those are skipped here, because the
-// controlled-region orchestrator (`lowerControlledRegions`) lowers them to
-// their `_controlled` variant instead (§1.4).
+// in-shadow gate-body `cq_phi` calls: those are skipped here. For the 4.1
+// swap-route emitter (`SwapRouteEmit::lowerControlRegions`) this set is EMPTY
+// — it runs before this pass and erases each arm `cq_phi` (§3), so the skip
+// never fires; the hook is retained for the §6a control-in-place peephole.
 void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
                     const ControlPlan *plan = nullptr);
 

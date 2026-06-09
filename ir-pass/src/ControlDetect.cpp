@@ -7,12 +7,14 @@
 // later rotation-lowering RAUW-to-handle because no block pointers are cached
 // across erasures (none happen here).
 //
-// WI-1 (detection + §3c reject, NO emission): every tainted-condition
-// `br`/`select`/`switch` is recognized and declined with a PRECISE string —
-// §3c clobber is a permanent reject; value-arm/nested/select/switch defer to a
-// named later increment; a recognized PHASE-arm region declines TRANSITIONALLY
-// ("phase-arm swap-route emission pending") so nothing mis-lowers until the
-// swap-route emitter lands (WI-2/WI-3). The returned plan is empty.
+// Disposition (swap-route 4.1):
+//   * accepted PHASE-arm DIAMOND → pushed onto `plan.Regions` for the
+//     `SwapRouteEmit` emitter (WI-2);
+//   * accepted PHASE-arm IF/ELSE → declined TRANSITIONALLY ("phase-arm
+//     swap-route emission pending") until the two-rail emitter lands (WI-3);
+//   * §3c clobber → permanent reject; value-arm / nested / select / switch /
+//     off-pattern → declined with a precise per-shape string.
+// Every decline is a loud `DiagnosticInfoUnsupported` (opt exits non-zero).
 //
 // See swap-route 4.1 IMPLEMENTATION §0/§2/§3.
 
@@ -145,8 +147,8 @@ RegionShape recoverRegion(BranchInst *BI, TaintSet &Taint, ControlRegion &R) {
 }
 
 // Recognize and classify one tainted-condition `br`, firing the precise
-// decline. WI-1 fires a diagnostic for every disposition (no region is pushed).
-void handleBranchRegion(BranchInst *BI, TaintSet &Taint) {
+// decline or PUSHING an accepted region onto `Plan` for `SwapRouteEmit`.
+void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan) {
   ControlRegion R;
   switch (recoverRegion(BI, Taint, R)) {
   case RegionShape::OffPattern:
@@ -156,12 +158,19 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint) {
     diagnoseUnderControl(BI, "nested control flow");
     return;
   case RegionShape::Diamond:
+    if (classifyArms(R, Taint) == ArmDisposition::Declined)
+      return;  // ArmClassify already fired the precise diagnostic (§3c / value).
+    // ACCEPT (WI-2): a pure phase arm over a tainted handle. Push the region so
+    // `lowerControlRegions` (SwapRouteEmit) emits the routed stream. Orientation
+    // (true/false-successor gate arm) rides `R.ArmNegated` (Rule 9) — the
+    // emitter X-brackets a ¬flag arm.
+    Plan.Regions.push_back(R);
+    return;
   case RegionShape::IfElse:
     if (classifyArms(R, Taint) == ArmDisposition::Declined)
       return;  // ArmClassify already fired the precise diagnostic (§3c / value).
-    // ACCEPT: pure phase arm(s) over a tainted handle. No emitter in WI-1 —
-    // decline TRANSITIONALLY so nothing mis-lowers. WI-2 replaces this line
-    // with `plan.Regions.push_back(R)` to drive SwapRouteEmit.
+    // ACCEPT shape, but the two-rail ¬flag-bracket if/else emitter lands in WI-3.
+    // Decline TRANSITIONALLY so nothing mis-lowers until then.
     diagnoseUnderControl(BI, "phase-arm swap-route emission pending");
     return;
   }
@@ -169,10 +178,11 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint) {
 
 }  // namespace
 
-// Scan every function for a tainted-condition `br i1` / `switch` / `select i1`
-// and decline it with the precise string; return an empty `ControlPlan`. A
-// classical-condition construct is left byte-untouched (detection keys strictly
-// on condition taint). No IR is mutated.
+// Scan every function for a tainted-condition `br i1` / `switch` / `select i1`:
+// push each accepted phase-arm diamond onto the returned `ControlPlan` and
+// decline everything else with its precise string. A classical-condition
+// construct is left byte-untouched (detection keys strictly on condition taint).
+// No IR is mutated here — emission is `SwapRouteEmit::lowerControlRegions`.
 ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
   ControlPlan plan;
   for (Function &F : M) {
@@ -182,7 +192,7 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       Instruction *Term = BB.getTerminator();
       if (auto *BI = dyn_cast<BranchInst>(Term)) {
         if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
-          handleBranchRegion(BI, taint);
+          handleBranchRegion(BI, taint, plan);
       } else if (auto *SI = dyn_cast<SwitchInst>(Term)) {
         if (taint.Tainted.count(SI->getCondition()))
           diagnoseUnderControl(SI, "switch");

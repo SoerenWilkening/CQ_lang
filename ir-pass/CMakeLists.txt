@@ -55,7 +55,9 @@ add_library(CQPass MODULE
   src/OpcodeLowering.cpp
   src/OpcodeSupport.cpp
   src/Plugin.cpp
+  src/RegionFlatten.cpp
   src/RotationLowering.cpp
+  src/SwapRouteEmit.cpp
   src/TaintPropagation.cpp
   src/TemplateName.cpp
   src/Uncomputation.cpp

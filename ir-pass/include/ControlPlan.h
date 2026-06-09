@@ -241,11 +241,14 @@ void diagnoseUnderControl(llvm::Instruction *Where, llvm::StringRef What);
 // tainted-condition `br i1`, recognize the §0 clean diamond / if-else shape by
 // SSA-value identity (Rule 9 — before any mutation), classify each arm
 // (phase / value / §3c clobber) via `ArmClassify`, and decline everything that
-// is not a pure-phase-over-tainted-handle region. WI-1 has NO emission: a
-// recognized phase region declines TRANSITIONALLY ("phase-arm swap-route
-// emission pending") and the returned `ControlPlan` is empty. A
+// is not a pure-phase-over-tainted-handle region. An accepted phase-arm DIAMOND
+// is pushed onto `plan.Regions` for `SwapRouteEmit::lowerControlRegions` (WI-2);
+// an accepted phase-arm IF/ELSE declines TRANSITIONALLY ("phase-arm swap-route
+// emission pending") until the two-rail emitter lands (WI-3). `plan.InShadow`
+// stays empty — the emitter erases each arm `cq_phi` before `lowerRotations`
+// runs, so there is no in-place gate body to skip (IMPLEMENTATION §3). A
 // classical-condition branch is ignored (detection keys strictly on condition
-// taint). No IR is mutated.
+// taint). No IR is mutated here.
 ControlPlan detectControlRegions(llvm::Module &M, TaintSet &taint);
 
 }  // namespace cq

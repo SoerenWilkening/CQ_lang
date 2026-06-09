@@ -8,13 +8,10 @@
 ; NO `phi i32`. Transcribed from docs/design/rssa-swap-control/swap_route_if_diamond.ll
 ; (symbol order IS the contract).
 ;
-; XFAIL until WI-2 lands SwapRouteEmit — WI-1 recognizes the region but declines
-; transitionally ("phase-arm swap-route emission pending"). Remove the XFAIL line
-; when this XPASSes.
+; WI-2 lands SwapRouteEmit (`lowerControlRegions`), so this XPASSes — XFAIL gone.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
-; XFAIL: *
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

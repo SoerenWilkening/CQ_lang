@@ -53,6 +53,43 @@ Value *walkPhaseSpine(Value *V) {
   return V;
 }
 
+// PURE ARM BODY (Rule 8 linearity + no stray ops). The arm block must contain
+// NOTHING beyond the linear phase spine that feeds the merge phi — i.e. every
+// non-terminator instruction in `ArmBB` is a `cq_phi` on the spine of
+// `ArmIncoming`. One check that rejects two distinct silent-miscompile/crash
+// paths the swap-route emitter cannot handle (both confirmed by the WI-2 §8
+// adversarial review, 2026-06-09):
+//   * FAN-OUT — a spine `cq_phi` reused by a sibling `cq_phi` (Rule 8 linearity).
+//     The emitter replays + erases ONLY the merge-feeding spine, so the off-spine
+//     sibling dangles in `taint.PhiCalls` → use-after-free when `lowerRotations`
+//     re-reads its freed operand (reproduced as a broken module).
+//   * STRAY op in the arm — a `cq_measure` / `cq_theta` / arithmetic the emitter
+//     neither replays nor scrubs. `RegionFlatten` erases the arm BLOCK, so the
+//     stray op is silently DROPPED from the IR (e.g. a user measurement vanishes)
+//     AND its `taint.MeasureCalls`/`ThetaCalls` pointer dangles → use-after-free
+//     in `lowerMeasures`/`lowerRotations`.
+// Whole-chain reversal needs linear lineage and a self-contained arm; anything
+// else is declined loudly (over-decline is safe; Prime Directive). The base
+// handle the spine bottoms at is NOT in `ArmBB` (it is the live register in the
+// pred), so it is correctly never inspected here.
+bool armBlockIsPureSpine(const BasicBlock *ArmBB, const Value *ArmIncoming) {
+  SmallPtrSet<const Value *, 8> Spine;
+  for (const Value *V = ArmIncoming; isPhiCall(V);) {
+    Spine.insert(V);
+    const auto *CI = cast<CallInst>(V);
+    if (CI->arg_size() < 1)
+      break;
+    V = CI->getArgOperand(0);
+  }
+  for (const Instruction &I : *ArmBB) {
+    if (I.isTerminator())
+      continue;
+    if (!Spine.count(&I))
+      return false;  // a fan-out sibling or a stray op — not a pure phase arm.
+  }
+  return true;
+}
+
 // Is `Base` a VALUE-changing op (changes the computational-basis value), as
 // opposed to a leaf quantum handle? Classified by OPCODE/kind, NEVER by defining
 // block — clang -O1 (LICM/sinking/GVN) freely hoists a branch-invariant value op
@@ -164,6 +201,21 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
     return ArmDisposition::Declined;
   }
 
+  // The condition compare must feed ONLY the branch. If it is ALSO in a data
+  // position (e.g. `c = icmp …; zext c; br c` — clang CSE of a reused `q>5`), the
+  // swap-route emitter mints a control flag from it but does NOT consume the
+  // compare; once the emitter erases the `br`, the data-position gate that kept
+  // `OpcodeLowering` off it is gone, so `OpcodeLowering` mints a SECOND flag for
+  // the same condition — two distinct flag handles for one logical condition, a
+  // verify-clean wrong-unitary (the route and the data use are then controlled by
+  // different physical flags). Decline (Prime Directive). Confirmed by the WI-2
+  // §8 adversarial review (2026-06-09).
+  for (const User *U : Region.Condition->users())
+    if (!isa<BranchInst>(U)) {
+      diagnoseUnderControl(declAnchor(Region), "condition used outside the branch");
+      return ArmDisposition::Declined;
+    }
+
   SmallPtrSet<Value *, 16> Prov;
   condProvenance(Region.Condition, Taint, Prov);
 
@@ -195,7 +247,8 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
       diagnoseUnderControl(declAnchor(Region), "control flow");
       return ArmDisposition::Declined;
     }
-    Value *Base = walkPhaseSpine(MergePhi->getIncomingValueForBlock(ArmBB));
+    Value *ArmIncoming = MergePhi->getIncomingValueForBlock(ArmBB);
+    Value *Base = walkPhaseSpine(ArmIncoming);
 
     // Pure phase chain bottoming at the routed handle: accept this arm. The
     // routed handle MAY itself be a value DERIVED before the region (an earlier
@@ -208,6 +261,10 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
         diagnoseUnderControl(declAnchor(Region), "control flow");
         return ArmDisposition::Declined;
       }
+      if (!armBlockIsPureSpine(ArmBB, ArmIncoming)) {
+        diagnoseUnderControl(declAnchor(Region), "impure phase arm");
+        return ArmDisposition::Declined;
+      }
       continue;
     }
 
@@ -216,6 +273,10 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
     if (!Routed && !isValueChangingOp(Base)) {
       if (!Taint.Tainted.count(Base)) {
         diagnoseUnderControl(declAnchor(Region), "control flow");
+        return ArmDisposition::Declined;
+      }
+      if (!armBlockIsPureSpine(ArmBB, ArmIncoming)) {
+        diagnoseUnderControl(declAnchor(Region), "impure phase arm");
         return ArmDisposition::Declined;
       }
       Routed = Base;

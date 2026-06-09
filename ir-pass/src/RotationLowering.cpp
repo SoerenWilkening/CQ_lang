@@ -147,10 +147,13 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
 
   // --- PHI. Iterate in collection order (collected regardless of taint).
   for (CallInst *Phi : taint.PhiCalls) {
-    // In-shadow gate bodies are lowered CONTROLLED by the orchestrator
-    // (`lowerControlledRegions`), not here (§1.4). Skip them entirely — do
-    // NOT emit an uncontrolled Rz and do NOT erase: `ControlledSubstitution`
-    // owns their emit + erase.
+    // `plan->InShadow` names cq_phi gate bodies a control emitter handles
+    // itself (so they must NOT be lowered here). For the 4.1 swap-route emitter
+    // (`SwapRouteEmit::lowerControlRegions`) this set is EMPTY: that emitter runs
+    // BEFORE this pass and ERASES each arm cq_phi (scrubbing it from
+    // taint.PhiCalls), so an in-shadow phi never reaches this loop. The guard is
+    // retained for forward control work that keeps gate bodies in place (the
+    // §6a control-in-place peephole).
     if (plan && plan->InShadow.count(Phi))
       continue;
     Value *Op = Phi->getArgOperand(0);

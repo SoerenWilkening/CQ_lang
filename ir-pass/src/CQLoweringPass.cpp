@@ -10,6 +10,7 @@
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
 #include "RotationLowering.h"
+#include "SwapRouteEmit.h"
 #include "TaintPropagation.h"
 #include "Uncomputation.h"
 #include "WidthDispatch.h"
@@ -55,13 +56,17 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
     return PreservedAnalyses::all();
 
   // Tainted control flow: `detectControlRegions` (ControlDetect.cpp) recognizes
-  // the swap-route phase-arm diamond/if-else shape and declines every tainted
-  // `br`/`select`/`switch` with a precise diagnostic ("… under quantum control",
-  // opt exits non-zero). WI-1 has no emitter, so it returns an EMPTY plan (even a
-  // recognized phase region declines transitionally) — the in-shadow set is empty
-  // and `lowerRotations` lowers every rotation uncontrolled. A classical-condition
-  // branch stays byte-untouched (detection keys strictly on condition taint).
+  // the swap-route phase-arm diamond/if-else shape by SSA identity (Rule 9, no
+  // mutation), pushes each accepted phase-arm DIAMOND onto `plan.Regions`, and
+  // declines everything else loudly ("… under quantum control", opt exits
+  // non-zero). `lowerControlRegions` (SwapRouteEmit) then emits the coherent
+  // routed stream per region — flag mint → |0> rail → cswap route-in → verbatim
+  // Rz on rail → cswap route-back → rail free → icmp_inv flag-strip → flag free —
+  // and flattens the CFG. It runs BEFORE `lowerRotations` so it can reference the
+  // still-present `@cq_theta` result; the later RAUW-to-handle updates every
+  // emitted call (Rule 9). A classical-condition branch stays byte-untouched.
   ControlPlan plan = detectControlRegions(M, taint);
+  lowerControlRegions(M, wd, taint, plan);
 
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
@@ -105,9 +110,13 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.MeasureCalls.empty())
     return false;
 
-  // See run() — `detectControlRegions` (ControlDetect.cpp) declines tainted
-  // control flow loudly and returns an empty plan (no emitter in WI-1).
+  // See run() — `detectControlRegions` pushes accepted phase-arm diamonds and
+  // declines the rest; `lowerControlRegions` emits the routed stream. BOTH must
+  // run in this entry point too, between detection and `lowerRotations`, or
+  // unit-level callers silently diverge from `run()` (the twin-pipeline trap,
+  // IMPLEMENTATION §6.5).
   ControlPlan plan = detectControlRegions(M, taint);
+  lowerControlRegions(M, wd, taint, plan);
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
