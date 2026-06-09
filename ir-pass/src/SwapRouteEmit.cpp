@@ -1,6 +1,9 @@
 // SwapRouteEmit.cpp — see header. The mutating swap-route emitter for accepted
-// phase-arm diamond regions. Emits the coherent, zero-controlled-gate routed
-// stream of SCOPING §3a in the §5 contract order, then rewires + flattens.
+// phase-arm regions — a one-content-arm diamond (§5a) or a two-arm if/else
+// (§5b), lowered by one arm-list-parameterized procedure. Emits the coherent,
+// zero-controlled-gate routed stream of SCOPING §3a in the §5 contract order
+// (an if/else routes BOTH arms to distinct rails, the else under ¬flag via the
+// cqrt_x bracket), then rewires + flattens.
 //
 // Correctness rests on statevector reasoning, NOT on `opt -verify` (Rule 2):
 //   `(|0> + |1>)/√2 ⊗ |0>_f` ─route+Rz+route→ `(|0>|0>_f + e^{iθ}|1>|1>_f)/√2`
@@ -67,15 +70,27 @@ StringRef intrinsicSuffix(const Value *V, StringRef Prefix) {
 
 bool isPhiCall(const Value *V) { return !intrinsicSuffix(V, "cq_phi_").empty(); }
 
-// Walk the arm's merge contribution back along its phase spine, collecting the
-// `@cq_phi` (Rz) calls in FORWARD program order (first gate applied first). The
-// chain is `qN = cq_phi(q{N-1}, angle)`; the back-walk hops arg-0 handles, so
-// reversing it yields forward order. An empty result means a degenerate empty
-// arm (`if (q) {}`) — handled by the caller.
-SmallVector<CallInst *, 4> collectArmPhis(Value *ArmIncoming) {
+// Walk the arm's merge contribution back along its IN-BLOCK phase spine,
+// collecting the `@cq_phi` (Rz) calls DEFINED IN `ArmBB` in FORWARD program order
+// (first gate applied first). The chain is `qN = cq_phi(q{N-1}, angle)`; the
+// back-walk hops arg-0 handles, so reversing it yields forward order. An empty
+// result means a degenerate gate-free arm (`if (q) {}` / an empty else) — handled
+// by the caller.
+//
+// The walk STOPS at the arm-block boundary: a `cq_phi` defined OUTSIDE `ArmBB` is
+// a pre-region rotation (the live DERIVED base handle), NOT an arm gate. Detection
+// declines such derived-handle regions, so the emitter should never see one — but
+// bounding here is load-bearing defense (Rule 10): an unbounded walk would collect
+// a pre-region phi SHARED by both arms once per arm, and the §6.1 reverse-erase
+// would double-free it (SIGSEGV). Keeping the per-arm gate list strictly in-block
+// makes that impossible regardless of what detection passes through.
+SmallVector<CallInst *, 4> collectArmPhis(Value *ArmIncoming,
+                                          const BasicBlock *ArmBB) {
   SmallVector<CallInst *, 4> Phis;
   for (Value *V = ArmIncoming; isPhiCall(V);) {
     auto *CI = cast<CallInst>(V);
+    if (CI->getParent() != ArmBB)
+      break;  // pre-region cq_phi — the derived base handle, not an arm gate.
     Phis.push_back(CI);
     if (CI->arg_size() < 1)
       break;
@@ -105,10 +120,44 @@ void emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
     stamp(B.CreateCall(X, {Flag}));
 }
 
-// Lower one accepted phase-arm diamond region (the §5a contract) to the
-// swap-route stream, emitted into the pred block before the conditional `br`.
-void emitDiamond(const ControlRegion &R, WidthDispatch &wd,
-                 const ControlledSymbols &csyms, TaintSet &taint) {
+// The value an arm's IN-BLOCK phase spine bottoms at — the routed base handle
+// (the live quantum register the arm's gates rotate). For an if/else, which has
+// no straight-through (Pred) merge edge, this recovers the routed handle
+// `classifyArms` proved BOTH arms share; for a gate-free arm (`ArmIncoming` is the
+// base itself) it returns that value unchanged. Bounded at the arm-block boundary
+// for the same reason as `collectArmPhis`: a `cq_phi` defined OUTSIDE `ArmBB` is
+// the live DERIVED base handle (route THIS), never hopped past to the theta.
+Value *phaseSpineBase(Value *ArmIncoming, const BasicBlock *ArmBB) {
+  Value *V = ArmIncoming;
+  while (isPhiCall(V)) {
+    auto *CI = cast<CallInst>(V);
+    if (CI->getParent() != ArmBB)
+      break;  // pre-region cq_phi — the live derived base handle.
+    if (CI->arg_size() < 1)
+      break;
+    V = CI->getArgOperand(0);
+  }
+  return V;
+}
+
+// One content arm's routed phase stream: whether it fires on ¬flag (X-bracketed
+// cswap) and its ordered Rz gates to replay verbatim on its own work rail.
+struct ArmStream {
+  bool Negated;
+  SmallVector<CallInst *, 4> Phis;
+};
+
+// Lower one accepted phase-arm region — a one-content-arm DIAMOND (§5a) or a
+// two-arm IF/ELSE (§5b) — to the coherent swap-route stream, emitted into the
+// pred block before the conditional `br`. Both shapes share ONE emission
+// procedure parameterized by the arm list: a diamond routes its single content
+// arm (Q = the straight-through incoming); an if/else routes BOTH arms to
+// DISTINCT |0> rails (Q = the shared phase-spine base), the true arm under flag
+// and the false arm under ¬flag via the self-inverse `cqrt_x` bracket. The join
+// is the literal adjoint of the split (the SAME cswap-pairs, same flag) — RSSA's
+// "phi on both splits and joins" (SCOPING §2).
+void emitRegion(const ControlRegion &R, WidthDispatch &wd,
+                const ControlledSymbols &csyms, TaintSet &taint) {
   auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
   auto *MergePhi = dyn_cast_or_null<PHINode>(R.Merge);
   if (!Cond || !MergePhi || !R.Pred || !R.Arm)
@@ -117,19 +166,53 @@ void emitDiamond(const ControlRegion &R, WidthDispatch &wd,
   if (!BI)
     return;
 
-  // The routed handle: the diamond's straight-through (Pred-edge) incoming — the
-  // live quantum register the arm's phases must land on. The arm's ordered phase
-  // gates: the Rz chain on the arm-edge incoming.
-  Value *Q = MergePhi->getIncomingValueForBlock(R.Pred);
-  SmallVector<CallInst *, 4> ArmPhis =
-      collectArmPhis(MergePhi->getIncomingValueForBlock(R.Arm));
+  // Arm list + per-arm polarity. A diamond has one content arm whose polarity
+  // rides `R.ArmNegated` (clang -O1 may make the gate arm the FALSE successor,
+  // Rule 9). An if/else has two arms assigned by successor: `R.Arm` (S0) fires on
+  // flag (unbracketed), `R.ArmFalse` (S1) on ¬flag (X-bracketed) — the flag
+  // equals the live branch condition, so this holds under any predicate
+  // canonicalization (clang may flip the predicate but the flag tracks it).
+  struct ArmInfo {
+    BasicBlock *BB;
+    bool Negated;
+  };
+  SmallVector<ArmInfo, 2> Arms;
+  if (R.ArmFalse) {
+    Arms.push_back({R.Arm, /*Negated=*/false});
+    Arms.push_back({R.ArmFalse, /*Negated=*/true});
+  } else {
+    Arms.push_back({R.Arm, R.ArmNegated});
+  }
 
-  // Empty arm (`if (q) {}`) — the arm contributes no gate, so the merge phi is
-  // just `q` on both edges (classifyArms accepted it because Base == Routed ==
-  // Q). It is pure identity: route NOTHING (no flag, no rail, no strip — there is
-  // no quantum op to control), just RAUW the phi to q and flatten the dead CFG.
-  // This is both correct and avoids needing a rotation width for a gate-free arm.
-  if (ArmPhis.empty()) {
+  // The routed handle Q: a diamond's straight-through (Pred-edge) incoming, or —
+  // for an if/else, which has no Pred edge — the shared phase-spine base the arms
+  // rotate. Never read width/identity off Q's SSA type (§4 width-source); Q is
+  // only the cswap data operand.
+  Value *Q = MergePhi->getBasicBlockIndex(R.Pred) >= 0
+                 ? MergePhi->getIncomingValueForBlock(R.Pred)
+                 : phaseSpineBase(MergePhi->getIncomingValueForBlock(R.Arm),
+                                  R.Arm);
+
+  // Per-arm ordered phase gates. A gate-free arm (`if (q) {}`, or an empty else)
+  // contributes Q unchanged, so routing it would be a no-op cswap pair — skip it
+  // (no rail, no route). `AllPhis` collects every gate to scrub + erase after the
+  // rewire.
+  SmallVector<ArmStream, 2> Streams;
+  SmallVector<CallInst *, 8> AllPhis;
+  for (const ArmInfo &A : Arms) {
+    SmallVector<CallInst *, 4> Phis =
+        collectArmPhis(MergePhi->getIncomingValueForBlock(A.BB), A.BB);
+    if (Phis.empty())
+      continue;
+    AllPhis.append(Phis.begin(), Phis.end());
+    Streams.push_back({A.Negated, Phis});
+  }
+
+  // Identity region — every arm is gate-free (`if (q) {}` diamond, or an
+  // empty/empty if/else): there is no quantum op to control. The merge phi is
+  // just Q on every edge; RAUW it to Q and flatten the dead CFG. No flag, no
+  // rail, no strip — and no rotation width needed for a gate-free region.
+  if (Streams.empty()) {
     MergePhi->replaceAllUsesWith(Q);
     scrubTaint(MergePhi, taint);
     MergePhi->eraseFromParent();
@@ -137,11 +220,12 @@ void emitDiamond(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
 
-  // ABI width: from the arm cq_phi suffix — the rotation width. The routed
-  // handle MAY be a value DERIVED before the region (its own suffix is
-  // unreliable), so never read width off Q (§4 width-source). ArmPhis is
-  // non-empty here (the empty arm returned above).
-  StringRef Abi = wd.abiWidthFor(intrinsicSuffix(ArmPhis.front(), "cq_phi_"));
+  // ABI width from the FIRST gate's `cq_phi` suffix — the rotation width (all
+  // arms rotate the same-width routed handle, by classifyArms). The routed handle
+  // MAY be a value DERIVED before the region (its own suffix is unreliable), so
+  // never read width off Q (§4 width-source).
+  StringRef Abi =
+      wd.abiWidthFor(intrinsicSuffix(Streams.front().Phis.front(), "cq_phi_"));
   Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
   FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
   FunctionCallee Rz = Abi.empty() ? FunctionCallee() : wd.rzRtFn(Abi);
@@ -157,29 +241,39 @@ void emitDiamond(const ControlRegion &R, WidthDispatch &wd,
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed (unsupported / Q+Q).
 
-  // 2. |0> work rail.
-  CallInst *Rail = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "rail");
-  if (DL)
-    Rail->setDebugLoc(DL);
-
-  // 3. Route-in (split).
-  emitRoute(B, csyms, Flag, Q, Rail, R.ArmNegated, DL);
-
-  // 4. Arm body, VERBATIM and UNCONTROLLED, on the rail.
-  for (CallInst *Phi : ArmPhis) {
-    CallInst *RzCall = B.CreateCall(Rz, {Rail, Phi->getArgOperand(1)});
-    if (DebugLoc PDL = Phi->getDebugLoc())
-      RzCall->setDebugLoc(PDL);
+  // 2. One |0> work rail per content arm (allocated up front — the §5b order).
+  SmallVector<Value *, 2> Rails;
+  for (size_t I = 0; I < Streams.size(); ++I) {
+    CallInst *Rail =
+        B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "rail");
+    if (DL)
+      Rail->setDebugLoc(DL);
+    Rails.push_back(Rail);
   }
 
-  // 5. Route-back (join = adjoint of the split, same flag + bracket).
-  emitRoute(B, csyms, Flag, Q, Rail, R.ArmNegated, DL);
+  // 3. Route-in (split) — q -> each rail, X-bracketed for a ¬flag arm.
+  for (size_t I = 0; I < Streams.size(); ++I)
+    emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL);
 
-  // 6. Rail free — the rail is |0> for free (Rz|0>=|0>); a clean reset, NOT a
+  // 4. Arm bodies, VERBATIM and UNCONTROLLED, each on its OWN rail.
+  for (size_t I = 0; I < Streams.size(); ++I)
+    for (CallInst *Phi : Streams[I].Phis) {
+      CallInst *RzCall = B.CreateCall(Rz, {Rails[I], Phi->getArgOperand(1)});
+      if (DebugLoc PDL = Phi->getDebugLoc())
+        RzCall->setDebugLoc(PDL);
+    }
+
+  // 5. Route-back (join = adjoint of the split, same flag + brackets).
+  for (size_t I = 0; I < Streams.size(); ++I)
+    emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL);
+
+  // 6. Rail frees — each rail is |0> for free (Rz|0>=|0>); a clean reset, NOT a
   //    measurement (SCOPING §3b).
-  CallInst *RailFree = B.CreateCall(wd.freeFn(), {Rail});
-  if (DL)
-    RailFree->setDebugLoc(DL);
+  for (Value *Rail : Rails) {
+    CallInst *RailFree = B.CreateCall(wd.freeFn(), {Rail});
+    if (DL)
+      RailFree->setDebugLoc(DL);
+  }
 
   // 7. Flag strip — q == q0 (Rz preserves the basis value), so icmp_inv(q)
   //    returns the flag to |0> with zero controlled gates. Reads `Cond`'s
@@ -199,7 +293,7 @@ void emitDiamond(const ControlRegion &R, WidthDispatch &wd,
   MergePhi->replaceAllUsesWith(Q);
   scrubTaint(MergePhi, taint);
   MergePhi->eraseFromParent();
-  for (CallInst *Phi : reverse(ArmPhis)) {
+  for (CallInst *Phi : reverse(AllPhis)) {
     scrubTaint(Phi, taint);
     Phi->eraseFromParent();
   }
@@ -214,7 +308,7 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
     return;  // nothing accepted — classical / fully-declined module untouched.
   ControlledSymbols csyms(M, wd);
   for (const ControlRegion &R : plan.Regions)
-    emitDiamond(R, wd, csyms, taint);
+    emitRegion(R, wd, csyms, taint);
 }
 
 }  // namespace cq

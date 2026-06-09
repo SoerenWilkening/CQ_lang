@@ -2,12 +2,15 @@
 // control regions (swap-route 4.1 IMPLEMENTATION §4/§5). This is the mutating
 // step that replaces `ControlStub`'s loud-decline-only behavior for the narrow
 // case `detectControlRegions` (ControlDetect) accepts: a tainted-condition
-// diamond whose single content arm is a pure phase chain (`@cq_phi`/Rz only)
-// over a tainted quantum handle.
+// diamond (one content arm, §5a) or if/else (two arms, §5b) whose every arm is a
+// pure phase chain (`@cq_phi`/Rz only) over ONE tainted quantum handle.
 //
-// Per accepted region the emitter lowers `if (cond) { rz(q,·)… }` to the
-// coherent, ZERO-controlled-gate routed stream (SCOPING §3a), emitted into the
-// pred block BEFORE the conditional `br`, in this exact order (the §5 contract):
+// Per accepted region the emitter lowers `if (cond) { rz(q,·)… }` (or
+// `… else { rz(q,·)… }`) to the coherent, ZERO-controlled-gate routed stream
+// (SCOPING §3a), emitted into the pred block BEFORE the conditional `br`. A
+// diamond routes its single content arm; an if/else routes BOTH arms to distinct
+// |0> rails — the true arm under flag, the else arm under ¬flag via a
+// self-inverse `cqrt_x(flag)` bracket. The exact order (the §5 contract):
 //   1. flag mint            cq_template_icmp_<pred>_<W>_hl(q, lit)   (CompareLowering)
 //   2. |0> work rail        cqrt_alloc_<W>(0)                        (WidthDispatch)
 //   3. route-in             [cqrt_x(flag);] cqrt_cswap(flag,q,rail) [;cqrt_x(flag)]

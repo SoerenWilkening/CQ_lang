@@ -40,14 +40,30 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
 bool isPhiCall(const Value *V) { return isCallToPrefix(V, "cq_phi_"); }
 bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 
-// Walk the PHASE spine: while `V` is a `cq_phi` (Rz) call, follow its arg-0
-// handle operand (arg 1 is the classical angle). Returns the first non-`cq_phi`
-// value the chain bottoms at — the arm's base handle or a value-changing op.
-Value *walkPhaseSpine(Value *V) {
+// Walk the PHASE spine WITHIN one arm block: while `V` is a `cq_phi` (Rz) call
+// DEFINED IN `ArmBB`, follow its arg-0 handle operand (arg 1 is the classical
+// angle). Returns the first value the chain bottoms at — the arm's base handle, a
+// value-changing op, OR a `cq_phi` defined OUTSIDE `ArmBB` (a pre-region rotation,
+// i.e. the live DERIVED base handle the arm extends).
+//
+// Bounding at the arm-block boundary is LOAD-BEARING (not a tidy-up): an
+// UNBOUNDED walk hops past a pre-region `cq_phi` all the way to the `cq_theta`
+// source, so a derived routed handle (`%qd = cq_phi(%q,·)` before the branch,
+// shared by both arm spines) is misread as the theta `%q`. For a diamond that was
+// caught downstream (`Base != StraightThrough` → decline); for an if/else, which
+// has NO straight-through to compare against, both arms appeared to bottom at the
+// same theta and the region was ACCEPTED, then the emitter collected the shared
+// pre-region phi ONCE PER ARM → double-erase SIGSEGV (verify-clean over-accept;
+// §8 adversarial review 2026-06-09, reproduced as exit 139). A `cq_phi` surfaced
+// as a base here is declined by the caller (over-decline is safe; routing a
+// derived handle is a deferred generalization).
+Value *walkPhaseSpine(Value *V, const BasicBlock *ArmBB) {
   while (auto *CI = dyn_cast<CallInst>(V)) {
     const Function *F = CI->getCalledFunction();
     if (!F || !F->getName().starts_with("cq_phi_") || CI->arg_size() < 1)
       break;
+    if (CI->getParent() != ArmBB)
+      break;  // pre-region cq_phi — the derived base handle, not an arm gate.
     V = CI->getArgOperand(0);
   }
   return V;
@@ -248,7 +264,23 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
       return ArmDisposition::Declined;
     }
     Value *ArmIncoming = MergePhi->getIncomingValueForBlock(ArmBB);
-    Value *Base = walkPhaseSpine(ArmIncoming);
+    Value *Base = walkPhaseSpine(ArmIncoming, ArmBB);
+
+    // A `cq_phi` surfaced as the in-block base is a pre-region rotation — the arm
+    // rotates a DERIVED handle (`%qd = cq_phi(%q,·)` before the branch), not a
+    // leaf quantum source. WI-3 routes only an un-derived handle, so decline (the
+    // derived-handle routing generalization is deferred; over-decline is safe,
+    // Prime Directive). This forecloses the if/else over-accept whose emitter
+    // double-erased the shared pre-region phi (SIGSEGV) and mis-resolved the
+    // routed handle to the stale theta (§8 adversarial review 2026-06-09). The
+    // diamond already declined this via `Base != StraightThrough`; the guard keeps
+    // it declining (now by an explicit reason) AND covers the if/else, which has
+    // no straight-through to compare against. See
+    // [[swap-route-ifelse-derived-base-boundary]].
+    if (isPhiCall(Base)) {
+      diagnoseUnderControl(declAnchor(Region), "control flow");
+      return ArmDisposition::Declined;
+    }
 
     // Pure phase chain bottoming at the routed handle: accept this arm. The
     // routed handle MAY itself be a value DERIVED before the region (an earlier

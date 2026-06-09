@@ -8,10 +8,8 @@
 // across erasures (none happen here).
 //
 // Disposition (swap-route 4.1):
-//   * accepted PHASE-arm DIAMOND → pushed onto `plan.Regions` for the
-//     `SwapRouteEmit` emitter (WI-2);
-//   * accepted PHASE-arm IF/ELSE → declined TRANSITIONALLY ("phase-arm
-//     swap-route emission pending") until the two-rail emitter lands (WI-3);
+//   * accepted PHASE-arm DIAMOND (one content arm, WI-2) or IF/ELSE (two arms,
+//     WI-3) → pushed onto `plan.Regions` for the `SwapRouteEmit` emitter;
 //   * §3c clobber → permanent reject; value-arm / nested / select / switch /
 //     off-pattern → declined with a precise per-shape string.
 // Every decline is a loud `DiagnosticInfoUnsupported` (opt exits non-zero).
@@ -158,20 +156,16 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan) {
     diagnoseUnderControl(BI, "nested control flow");
     return;
   case RegionShape::Diamond:
-    if (classifyArms(R, Taint) == ArmDisposition::Declined)
-      return;  // ArmClassify already fired the precise diagnostic (§3c / value).
-    // ACCEPT (WI-2): a pure phase arm over a tainted handle. Push the region so
-    // `lowerControlRegions` (SwapRouteEmit) emits the routed stream. Orientation
-    // (true/false-successor gate arm) rides `R.ArmNegated` (Rule 9) — the
-    // emitter X-brackets a ¬flag arm.
-    Plan.Regions.push_back(R);
-    return;
   case RegionShape::IfElse:
     if (classifyArms(R, Taint) == ArmDisposition::Declined)
       return;  // ArmClassify already fired the precise diagnostic (§3c / value).
-    // ACCEPT shape, but the two-rail ¬flag-bracket if/else emitter lands in WI-3.
-    // Decline TRANSITIONALLY so nothing mis-lowers until then.
-    diagnoseUnderControl(BI, "phase-arm swap-route emission pending");
+    // ACCEPT: a pure phase region over ONE tainted handle — a one-content-arm
+    // diamond (WI-2) or a two-arm if/else (WI-3). Push it so `lowerControlRegions`
+    // (SwapRouteEmit) emits the routed stream. Polarity: a diamond's single arm
+    // rides `R.ArmNegated` (Rule 9 — clang -O1 may make the gate arm the false
+    // successor); an if/else routes `R.Arm` (S0) under flag and `R.ArmFalse` (S1)
+    // under ¬flag via the emitter's `cqrt_x` bracket.
+    Plan.Regions.push_back(R);
     return;
   }
 }

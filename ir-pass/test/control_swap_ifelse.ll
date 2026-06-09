@@ -8,12 +8,11 @@
 ; the boolean. Transcribed from docs/design/rssa-swap-control/swap_route_ifelse.ll
 ; (the IR analog of prototype_semantics.py Demo A, matched to 3e-16).
 ;
-; XFAIL until WI-3 lands the if/else (¬flag bracket + dual rails). Remove the
-; XFAIL line when this XPASSes.
+; WI-3 lands the if/else (¬flag bracket + dual rails) in SwapRouteEmit, so this
+; XPASSes — XFAIL gone.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
-; XFAIL: *
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
