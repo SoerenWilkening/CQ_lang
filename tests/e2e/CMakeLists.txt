@@ -37,6 +37,21 @@ add_test(NAME e2e-slice-compare-measure
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_compare_measure.expected.log")
 
+# Phase 4.1 (WI-4): RSSA swap-routed PHASE-arm diamond. The only layer that
+# LINKS — it proves every symbol the swap-route emitter mints (the icmp flag
+# template + its `_hl_inv` strip, cqrt_cswap, the |0> rail alloc/free, the
+# verbatim arm rz) resolves and signature-matches against the runtime. Tainted
+# `if (q>5) { rz(q,a); rz(q,b); }` lowers to the pinned routed stream (§5a):
+# flag mint -> rail alloc -> cswap in -> verbatim rz -> cswap back -> rail free
+# -> icmp_inv flag-strip -> flag free; ZERO controlled gates, exactly two frees.
+add_test(NAME e2e-slice-control-phase-diamond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_diamond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_diamond.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
