@@ -17,3 +17,6 @@ IMG_2423.jpg
 # (the canonical run is under build/, already ignored above).
 ir-pass/test/Output/
 **/.lit_test_times.txt
+# Python bytecode (oracle scripts under docs/design run by hand)
+__pycache__/
+*.pyc
