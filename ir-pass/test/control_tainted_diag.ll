@@ -5,7 +5,8 @@
 ; `br i1` (a quantum-controlled region) must DIAGNOSE loudly ("… under quantum
 ; control") and fail (non-zero exit) — it must NEVER silently pass through as
 ; classical control over quantum state (a verify-clean silent miscompile). The
-; diagnostic is emitted by the `detectControlRegions` stub in ControlStub.cpp.
+; diagnostic is emitted by `detectControlRegions` in ControlDetect.cpp (the arm
+; rotates the CLASSICAL arg %y0, so it fails accept-criterion 3 — quantum base).
 ;
 ; A classical-condition branch stays byte-untouched (detection keys strictly on
 ; condition taint) — covered by the passthrough fixtures, not here.

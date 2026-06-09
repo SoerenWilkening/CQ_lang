@@ -54,12 +54,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
-  // Tainted control flow has no lowering on this branch (the old controlled-op
-  // path was removed pending the RSSA swap-route emitter). `detectControlRegions`
-  // is now a transitional stub (ControlStub.cpp): it diagnoses any tainted
-  // `br`/`select`/`switch` loudly ("… under quantum control") and returns an
-  // empty plan, so the in-shadow set is empty and `lowerRotations` lowers every
-  // rotation uncontrolled. A classical-condition branch stays byte-untouched.
+  // Tainted control flow: `detectControlRegions` (ControlDetect.cpp) recognizes
+  // the swap-route phase-arm diamond/if-else shape and declines every tainted
+  // `br`/`select`/`switch` with a precise diagnostic ("… under quantum control",
+  // opt exits non-zero). WI-1 has no emitter, so it returns an EMPTY plan (even a
+  // recognized phase region declines transitionally) — the in-shadow set is empty
+  // and `lowerRotations` lowers every rotation uncontrolled. A classical-condition
+  // branch stays byte-untouched (detection keys strictly on condition taint).
   ControlPlan plan = detectControlRegions(M, taint);
 
   // The lowered calls are erased inside each step, so nothing dangles and
@@ -104,8 +105,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.MeasureCalls.empty())
     return false;
 
-  // See run() — `detectControlRegions` is the transitional stub that diagnoses
-  // tainted control flow loudly and returns an empty plan.
+  // See run() — `detectControlRegions` (ControlDetect.cpp) declines tainted
+  // control flow loudly and returns an empty plan (no emitter in WI-1).
   ControlPlan plan = detectControlRegions(M, taint);
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);

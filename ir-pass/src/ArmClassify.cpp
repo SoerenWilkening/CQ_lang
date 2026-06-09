@@ -1,0 +1,247 @@
+// ArmClassify.cpp — Per-arm lineage classification + §3c provenance walk.
+// See ArmClassify.h for the contract and swap-route 4.1 IMPLEMENTATION §3.
+//
+// All analysis is by SSA-value identity, before any mutation (Rule 9). The
+// classifier walks each arm's contribution to the merge `φ` back along its
+// PHASE spine (the chain of `cq_phi`/Rz handle edges); the value the spine
+// bottoms at decides the arm's class:
+//   * a leaf handle (a value defined OUTSIDE the arm, or a `cq_theta` source) →
+//     pure phase arm — accept iff that handle is tainted (criterion 3);
+//   * an arm-local value-changing op (add/mul/…/non-rotation) → a value arm —
+//     §3c PERMANENT reject if it rewrites a register in the condition's
+//     transitive taint provenance, else a 4.2 value-arm decline.
+
+#include "ArmClassify.h"
+
+#include "ControlPlan.h"
+#include "TaintPropagation.h"
+
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Instructions.h"
+
+using namespace llvm;
+
+namespace cq {
+
+namespace {
+
+bool isCallToPrefix(const Value *V, StringRef Prefix) {
+  const auto *CI = dyn_cast<CallInst>(V);
+  if (!CI)
+    return false;
+  const Function *F = CI->getCalledFunction();
+  return F && F->getName().starts_with(Prefix);
+}
+
+bool isPhiCall(const Value *V) { return isCallToPrefix(V, "cq_phi_"); }
+bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
+
+// Walk the PHASE spine: while `V` is a `cq_phi` (Rz) call, follow its arg-0
+// handle operand (arg 1 is the classical angle). Returns the first non-`cq_phi`
+// value the chain bottoms at — the arm's base handle or a value-changing op.
+Value *walkPhaseSpine(Value *V) {
+  while (auto *CI = dyn_cast<CallInst>(V)) {
+    const Function *F = CI->getCalledFunction();
+    if (!F || !F->getName().starts_with("cq_phi_") || CI->arg_size() < 1)
+      break;
+    V = CI->getArgOperand(0);
+  }
+  return V;
+}
+
+// Is `Base` a VALUE-changing op (changes the computational-basis value), as
+// opposed to a leaf quantum handle? Classified by OPCODE/kind, NEVER by defining
+// block — clang -O1 (LICM/sinking/GVN) freely hoists a branch-invariant value op
+// out of the arm into a dominating block, so keying on `getParent()` there
+// mis-accepts a real data-mux / §3c-clobber arm as a phase leaf (a verify-clean
+// silent miscompile; caught by WI-1 adversarial review 2026-06-09). A leaf is a
+// `cq_theta` source, a function argument, or a constant; ANY other instruction
+// (add/mul/cast/select/non-rotation call/…) defining a new value from a quantum
+// operand is value-changing. The phase spine is walked past `cq_phi` BEFORE this
+// is consulted, so a `cq_phi` reaching here is malformed → treated as a value op
+// (decline). Note: this does NOT fire for a handle that is merely DERIVED before
+// the region — that handle equals the routed `StraightThrough` and is accepted
+// by the base-identity short-circuit in `classifyArms`, before this is reached.
+bool isValueChangingOp(const Value *Base) {
+  const auto *I = dyn_cast<Instruction>(Base);
+  if (!I)
+    return false;  // Argument / Constant — a leaf base.
+  if (isThetaCall(I))
+    return false;  // quantum source — a leaf handle.
+  return true;     // any other instruction defines a new basis value → decline.
+}
+
+// Backward taint provenance of the branch condition: every tainted value
+// reachable by walking operand edges back from `Cond`, stopping at `cq_theta`
+// sources. Replicates the per-use arg-1 angle exclusion from
+// TaintPropagation.cpp VERBATIM — the angle operand of a `cq_phi` is classical
+// and must never be collected as a condition operand (the f64/angle miscompile
+// family). Only tainted values are recorded; classical scaffolding (constants,
+// the classical seed of a theta) is traversed-through but never collected.
+void condProvenance(Value *Cond, TaintSet &Taint,
+                    SmallPtrSetImpl<Value *> &Out) {
+  SmallVector<Value *, 16> Work;
+  SmallPtrSet<Value *, 16> Seen;
+  Work.push_back(Cond);
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    if (Taint.Tainted.count(V))
+      Out.insert(V);
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;
+    if (isThetaCall(I))
+      continue;  // source: collected V already; do NOT enter the classical seed.
+    const bool IsPhi = isPhiCall(I);
+    for (unsigned Idx = 0, E = I->getNumOperands(); Idx < E; ++Idx) {
+      Value *Op = I->getOperand(Idx);
+      if (IsPhi) {
+        // arg-1 angle exclusion (TaintPropagation.cpp): skip the operand-use
+        // that is ONLY the angle (arg 1) and not also the arg-0 handle.
+        auto *CI = cast<CallInst>(I);
+        if (CI->arg_size() >= 2 && Op == CI->getArgOperand(1) &&
+            Op != CI->getArgOperand(0))
+          continue;
+      }
+      Work.push_back(Op);
+    }
+  }
+}
+
+// Does `Base`'s value lineage transitively read a register in `Prov`? Used only
+// for the if/else value-arm fallback (a diamond uses the straight-through
+// incoming directly). Conservative — stops at `cq_theta` sources.
+bool readsProvenance(Value *Base, const SmallPtrSetImpl<Value *> &Prov) {
+  SmallVector<Value *, 16> Work;
+  SmallPtrSet<Value *, 16> Seen;
+  Work.push_back(Base);
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    if (Prov.count(V))
+      return true;
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;
+    if (isThetaCall(I))
+      continue;
+    for (Value *Op : I->operands())
+      Work.push_back(Op);
+  }
+  return false;
+}
+
+// An instruction to anchor a generic decline diagnostic on (for the !dbg /
+// source location). Prefer the tainted condition; fall back to the merge phi.
+Instruction *declAnchor(const ControlRegion &R) {
+  if (auto *I = dyn_cast_or_null<Instruction>(R.Condition))
+    return I;
+  return R.Merge;
+}
+
+}  // namespace
+
+ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
+  auto *MergePhi = dyn_cast_or_null<PHINode>(Region.Merge);
+  if (!MergePhi) {
+    diagnoseUnderControl(declAnchor(Region), "control flow");
+    return ArmDisposition::Declined;
+  }
+
+  // The flag is minted from a SINGLE comparison (icmp/fcmp → `_hl` template). A
+  // compound condition (clang's `select i1` for `&&`/`||`) or any non-compare i1
+  // is not a 4.1-lowerable region — decline (closes the compound-cond
+  // over-accept; WI-1 adversarial review 2026-06-09).
+  if (!isa<CmpInst>(Region.Condition)) {
+    diagnoseUnderControl(declAnchor(Region), "control flow");
+    return ArmDisposition::Declined;
+  }
+
+  SmallPtrSet<Value *, 16> Prov;
+  condProvenance(Region.Condition, Taint, Prov);
+
+  // The diamond's straight-through (Pred-edge) incoming — the muxed variable's
+  // prior value AND the handle a phase arm must route. Present only for a
+  // diamond; an if/else has no Pred incoming (its routed handle is anchored on
+  // the first arm's spine base below).
+  Value *StraightThrough = nullptr;
+  if (Region.Pred && MergePhi->getBasicBlockIndex(Region.Pred) >= 0)
+    StraightThrough = MergePhi->getIncomingValueForBlock(Region.Pred);
+
+  SmallVector<BasicBlock *, 2> Arms;
+  if (Region.Arm)
+    Arms.push_back(Region.Arm);
+  if (Region.ArmFalse)
+    Arms.push_back(Region.ArmFalse);
+
+  // The single handle EVERY phase arm must rotate (and that the emitter routes):
+  // the diamond's straight-through incoming, or — for an if/else — the base the
+  // first arm's phase spine bottoms at. An arm whose spine hits a value-changing
+  // op, or bottoms at a DIFFERENT handle / a fresh `cq_theta` source, is not a
+  // pure phase arm over the routed handle (closes the cross-handle / new-source
+  // / hoisted-value-op mis-accepts; WI-1 adversarial review 2026-06-09).
+  Value *Routed = StraightThrough;
+
+  for (BasicBlock *ArmBB : Arms) {
+    if (MergePhi->getBasicBlockIndex(ArmBB) < 0) {
+      // Arm block does not feed the merge phi — off-pattern shape.
+      diagnoseUnderControl(declAnchor(Region), "control flow");
+      return ArmDisposition::Declined;
+    }
+    Value *Base = walkPhaseSpine(MergePhi->getIncomingValueForBlock(ArmBB));
+
+    // Pure phase chain bottoming at the routed handle: accept this arm. The
+    // routed handle MAY itself be a value DERIVED before the region (an earlier
+    // `add`/cast) — that is fine; only a value op ON THE ARM SPINE (i.e.
+    // Base != Routed) is a value/permutation arm. Criterion 3: the routed handle
+    // must be a tainted quantum handle (control_tainted_diag.ll's classical %y0
+    // is not).
+    if (Routed && Base == Routed) {
+      if (!Taint.Tainted.count(Base)) {
+        diagnoseUnderControl(declAnchor(Region), "control flow");
+        return ArmDisposition::Declined;
+      }
+      continue;
+    }
+
+    // If/else first arm: anchor the routed handle on a LEAF spine base (a value
+    // op as the first arm's base is a value arm, handled below).
+    if (!Routed && !isValueChangingOp(Base)) {
+      if (!Taint.Tainted.count(Base)) {
+        diagnoseUnderControl(declAnchor(Region), "control flow");
+        return ArmDisposition::Declined;
+      }
+      Routed = Base;
+      continue;
+    }
+
+    if (isValueChangingOp(Base)) {
+      // Value/permutation arm. §3c iff it rewrites the muxed condition operand:
+      // for a diamond the muxed variable is the straight-through incoming; for
+      // an if/else fall back to a backward provenance read of the arm's value.
+      const bool Clobber = StraightThrough ? Prov.count(StraightThrough) != 0
+                                           : readsProvenance(Base, Prov);
+      diagnoseUnderControl(cast<Instruction>(Base),
+                           Clobber ? "arm rewrites a condition operand"
+                                   : "value-arm swap-route");
+      return ArmDisposition::Declined;
+    }
+
+    // A leaf base that is NOT the routed handle: a cross-handle multiplexer or a
+    // fresh quantum source muxed against the routed slot — not a phase arm over
+    // the routed handle. Decline (over-decline is safe; Prime Directive).
+    diagnoseUnderControl(declAnchor(Region), "control flow");
+    return ArmDisposition::Declined;
+  }
+
+  return ArmDisposition::Accept;
+}
+
+}  // namespace cq

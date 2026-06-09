@@ -5,10 +5,11 @@
 // ControlFlag / ControlledSubstitution / MergeDissolution / CFGLinearization)
 // was removed pending the RSSA swap-route emitter. The struct survives because
 // `RotationLowering` reads `plan->InShadow` to skip in-shadow gate bodies; the
-// transitional `detectControlRegions` stub (ControlStub.cpp) now returns an EMPTY
-// plan (no regions, empty InShadow), so every rotation lowers uncontrolled. The
-// rich `ControlRegion` fields below are retained as the design vocabulary the
-// swap-route emitter will reshape — they are currently unpopulated.
+// WI-1 `detectControlRegions` (ControlDetect.cpp) recognizes the swap-route
+// phase-arm shape but, having no emitter yet, declines every tainted region and
+// returns an EMPTY plan (no regions, empty InShadow), so every rotation lowers
+// uncontrolled. The rich `ControlRegion` fields below are retained as the design
+// vocabulary the swap-route emitter will reshape — they are currently unpopulated.
 //
 // Historical shape (PRD §2.2/§2.6/§2.10/§2.11, IMPLEMENTATION §5.1).
 //
@@ -23,6 +24,7 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 namespace llvm {
 class BasicBlock;
@@ -225,12 +227,25 @@ struct ControlPlan {
   llvm::SmallPtrSet<const llvm::Instruction *, 8> InShadow;
 };
 
-// Pure-analysis detection (IMPLEMENTATION §5.1, PRD §2.2): for each
-// tainted-condition `br i1`, recognize the 2-block diamond + merge `φ`, build
-// a `BranchRegion`, and record the arm's `cq_phi` in `plan.InShadow`. A
-// classical-condition branch is ignored (§1.3). An arm that escapes
-// (`ret`/`@cq_measure_*`/out-of-region `br`) → loud `DiagnosticInfoUnsupported`
-// and the region is skipped (PRD §5). No IR is mutated.
+// Shared loud-decline primitive (swap-route 4.1 IMPLEMENTATION §2). Emits a
+// `DiagnosticInfoUnsupported(DS_Error)` of the form
+// `"cq controlled lowering: " + What + " under quantum control"`, anchored on
+// `Where`'s `!dbg` so the rejection is source-located and `opt` exits non-zero.
+// Defined once in `ControlDetect.cpp`; shared by `ControlDetect`/`ArmClassify`
+// so every control decline (shape, §3c clobber, value-arm, nested, select,
+// switch) speaks one diagnostic dialect. Over-declining is always safe; a
+// silent pass-through of quantum control is the only unforgivable bug.
+void diagnoseUnderControl(llvm::Instruction *Where, llvm::StringRef What);
+
+// Pure-analysis detection (swap-route 4.1 IMPLEMENTATION §0/§3). For each
+// tainted-condition `br i1`, recognize the §0 clean diamond / if-else shape by
+// SSA-value identity (Rule 9 — before any mutation), classify each arm
+// (phase / value / §3c clobber) via `ArmClassify`, and decline everything that
+// is not a pure-phase-over-tainted-handle region. WI-1 has NO emission: a
+// recognized phase region declines TRANSITIONALLY ("phase-arm swap-route
+// emission pending") and the returned `ControlPlan` is empty. A
+// classical-condition branch is ignored (detection keys strictly on condition
+// taint). No IR is mutated.
 ControlPlan detectControlRegions(llvm::Module &M, TaintSet &taint);
 
 }  // namespace cq
