@@ -335,7 +335,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0 clean-slate + 4.1 phase-arm emitter DONE · 4.2+ in progress]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0 + 4.1 DONE · 4.2 PRD'd 2026-06-10, starting · 4.3–4.5 pending]
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
 + [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
@@ -451,16 +451,22 @@ after a statevector-checked design dialogue; see
   emitted symbol resolves + signature-matches). Modules: `ControlDetect`,
   `ArmClassify`, `SwapRouteEmit`, `RegionFlatten` (replacing `ControlStub`).
 
-- **4.2 — Classical-permutation / value arms (method-B).** `add`/`mul`/`x`/`toffoli`
-  bodies: run `R` → CNOT-copy the basis-valued result into a fresh register →
-  reverse-play `R†` to restore `q0` and zero the rail (§3a-B), targeting
-  `swap_route_if_diamond_uncompute.ll`. Adds the design's **only new ABI**: the
-  per-width reversible copy `cqrt_copy_<W>` (one transversal-CNOT copy per width —
-  confirm the width set + semantics first, §7.6). This re-opens the Phase-8/10
-  freeze for that one family. The **clobber-the-condition reject becomes active
-  here**: a value arm that rewrites a quantum variable the branch condition reads
-  is declined loudly (it cannot be both kept and disentangled — §3c), while a
-  value arm on any other register lowers normally.
+- **4.2 — Classical-permutation / value arms (method-B) [PRD'd 2026-06-10 —
+  `docs/prd/phase-04-swap-route-control/PRD.md` Part II + `IMPLEMENTATION-4.2.md`].**
+  `add`/`mul`/`x`/`toffoli`-class bodies (linear chains of supported tainted
+  integer opcodes): run `R` → CNOT-copy the basis-valued result into a fresh
+  register → reverse-play `R†` to restore `q0` and zero the rail (§3a-B),
+  targeting `swap_route_if_diamond_uncompute.ll`. Adds the design's **only new
+  ABI**: the per-width reversible copy `cqrt_copy_<W>` — **§7.6 resolved (PRD
+  §8.1): the 5 integer widths only** (an FP merge φ is an angle, never data),
+  hand-written `cqrt_*` core ABI (the `cqrt_cswap` precedent), keep-sources-live
+  transversal-CNOT involution, no `_inv` twin. This re-opens the Phase-8/10
+  freeze for exactly that one 5-symbol family. The **clobber-the-condition
+  reject becomes active here**: a value arm that rewrites a quantum variable the
+  branch condition reads is declined loudly (it cannot be both kept and
+  disentangled — §3c), while a value arm on any other register lowers normally.
+  The §8 method-B oracle demo (path B, output register measured) is owed
+  before/with the emitter change (Rule 13).
 
 - **4.3 — Nested control.** A tainted `br` inside an arm runs the **same emitter
   recursively** on the enclosing arm's live rail; `c1 ∧ c2` falls out of the

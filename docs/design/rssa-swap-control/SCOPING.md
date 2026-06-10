@@ -318,6 +318,11 @@ is pure analysis before any mutation, Rule 9):
 | *read* of a condition variable | `if(q>5) p=q+1` | **accept** — `q`'s value survives |
 | value-change of a condition variable | `if(q>5) q+=3`, `if(q==1) x(q)` | **reject** |
 
+*(Reading note, 2026-06-10 — PRD Part II §8.3: this table's "accept" column
+means "**not rejected by §3c**", not "routable in 4.2" — e.g. `if(q>5) p=q+1`
+is no §3c clobber yet still declines `control flow` until a mux-capable
+increment.)*
+
 Why reject rather than patch it: when `q` is clobbered, the induced map
 `q0 → cond(q0)?f(q0):q0` is either injective (a legitimate unitary, but the
 compiler cannot cheaply prove the disjoint-image condition that makes it one) or
@@ -465,10 +470,22 @@ implementation cost and correctness surface.
    existing `EmitInverse` spine cleanly for every arm-body class (method-B and
    user `cq_invert`), and that the §3b free point is the `FreePoint` post-dominator
    the data-uncompute path already computes — there is no separate "terminal"
-   definition.
+   definition. **[Resolution pinned 2026-06-10, PRD Part II §8.5:**
+   `emitInverseChain` reverses the body chain only (first real invocation, 4.2
+   WI-4); the route cswaps are bracketed by the emitter's own `emitRoute`
+   because `emitInverseCall` threads the involution handle into arg 0 — the
+   cswap FLAG slot; the §3b free point is the trivially-post-dominating
+   single-block region point, `computeFreePoint` generalizing at 4.3.
+   Discharged when 4.2 WI-4 lands.]**
 6. **`cqrt_copy_<W>` (new):** confirm the per-width set and its reversible-copy
    semantics before the value-arm (method-B) increment lands; it is the design's
-   only new ABI.
+   only new ABI. **[Resolved 2026-06-10 as a written design decision — PRD
+   Part II §8.1 (`docs/prd/phase-04-swap-route-control/PRD.md`): the 5 integer
+   widths `i1/i8/i16/i32/i64` only (an FP merge φ is an angle, never data);
+   keep-sources-live transversal-CNOT basis copy `|x⟩|0⟩→|x⟩|x⟩`, an
+   involution, no `_inv` twin, never frees its source (Rule 8); hand-written
+   `cqrt_*` core ABI (`runtime/cq_runtime.{h,c}`, the `cqrt_cswap` precedent),
+   NOT the generated YAML surface. Lands with 4.2 WI-1.]**
 
 ## 8. Prototype status
 
@@ -485,6 +502,14 @@ implementation cost and correctness surface.
   conditions (Demo C); and it **never runs method (B)** — a demo that runs path B
   and *measures the output register* would have caught the §3a inversion and should
   be added. Safe to delete once the numbers here are trusted; regenerable on demand.
+  **[2026-06-10: the method-B demo is scoped as 4.2 WI-2 (`demo_D`,
+  IMPLEMENTATION-4.2 §7/§8.1) and is a Rule-13 precondition for the 4.2 emitter:
+  B-keep measured-output equivalence, rail/flag-exactly-`|0⟩`, the
+  **two-channel** kept-source interference probe (PRD Part II §8.2 — channel A
+  control visibility on `q` + channel B answer-register coherence via a
+  downstream Ry on `out`, superposed `p₀`, basis AND superposed control; both
+  asserted vs the analytic closed forms, exact-zero deltas in the basis-`p₀`
+  regime), and the phase-arm-under-B dephasing negative (P0 0.585→0.500).]**
 
 ## 9. Next step
 
@@ -497,11 +522,15 @@ stale-condition guard families alongside (see `MINT_AT_COMPARE.md` for the
 chained-Ry stale-condition verdict: permanent decline, purity theorem). Every
 not-yet-built shape declines loudly.
 
-**Next: 4.2 — value/permutation arms (method-B, `cqrt_copy_<W>`).** Entry gates:
-resolve the §7.6 copy-ABI width set/semantics, add the §8 method-B oracle demo
-(run path B, measure the output register) per Rule 13, activate the §3c reject
-for value arms, first real `emitInverseChain` invocation (§7.5). Then 4.3 nested
-→ 4.4 select → 4.5 switch. Reverse-play stays the on-demand undo, not an eager
-step (§3a). The ROADMAP "Phase 4 — RSSA swap-routed control flow" block and
+**Next: 4.2 — value/permutation arms (method-B, `cqrt_copy_<W>`).** Entry gates
+(status 2026-06-10): **(i) PRD/WI breakdown — DONE** (PRD Part II §§7–10 +
+`IMPLEMENTATION-4.2.md`, bd epic filed); **(ii) §7.6 copy-ABI width
+set/semantics — RESOLVED** as a design decision (PRD §8.1; lands WI-1);
+(iii) the §8 method-B oracle demo (run path B, measure the output register) —
+scoped WI-2, owed before/with the emitter per Rule 13; (iv) §3c activation +
+the Defect-2 string fix — scoped WI-3; (v) first real `emitInverseChain`
+invocation (§7.5, resolution pinned) — lands WI-4. Then 4.3 nested → 4.4
+select → 4.5 switch. Reverse-play stays the on-demand undo, not an eager step
+(§3a). The ROADMAP "Phase 4 — RSSA swap-routed control flow" block and
 [`docs/prd/phase-04-swap-route-control/PRD.md`](../../prd/phase-04-swap-route-control/PRD.md)
 track the phasing.

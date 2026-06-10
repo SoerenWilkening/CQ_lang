@@ -1,5 +1,9 @@
 # Phase 4.1 IMPLEMENTATION — RSSA swap-routed phase-arm control flow
 
+> **4.1 is closed (2026-06-10, §9).** The 4.2 increment (value/permutation
+> arms, method-B) has its own plan: [`IMPLEMENTATION-4.2.md`](IMPLEMENTATION-4.2.md)
+> (PRD Part II).
+
 Module layout, signatures, and the **test-driven** work-item sequence for the
 4.1 increment defined by [`PRD.md`](PRD.md). Companion to the PRD (which fixes
 *scope* and *binding decisions*); this file fixes *how the code is built*. Every
