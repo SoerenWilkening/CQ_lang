@@ -1,29 +1,40 @@
 // ArmClassify.cpp — Per-arm lineage classification + §3c provenance walk.
-// See ArmClassify.h for the contract and swap-route 4.1 IMPLEMENTATION §3.
+// See ArmClassify.h for the contract; swap-route 4.1 IMPLEMENTATION §3 (phase
+// arms) + 4.2 IMPLEMENTATION-4.2 §3 / PRD Part II §8.3 (value arms).
 //
 // All analysis is by SSA-value identity, before any mutation (Rule 9). The
 // classifier walks each arm's contribution to the merge `φ` back along its
-// PHASE spine (the chain of `cq_phi`/Rz handle edges); the value the spine
-// bottoms at decides the arm's class:
+// PHASE spine (the chain of `cq_phi`/Rz handle edges); what the spine bottoms
+// at decides the arm's class:
 //   * a leaf handle (a value defined OUTSIDE the arm — including a PRE-REGION
-//     `cq_phi`, the live DERIVED base — or a `cq_theta` source) →
-//     pure phase arm — accept iff that handle is tainted (criterion 3);
-//   * an arm-local value-changing op (add/mul/…/non-rotation) → a value arm —
-//     §3c PERMANENT reject if it rewrites a register in the condition's
-//     transitive taint provenance, else a 4.2 value-arm decline.
+//     `cq_phi`, the live DERIVED base — or a `cq_theta` source) equal to the
+//     routed slot → pure PHASE arm — accept iff tainted (criterion 3);
+//   * no spine at all → try the arm-block-bounded VALUE chain walk
+//     (`walkValueChain`): a pure linear chain of supported tainted integer
+//     `BinaryOperator`s bottoming at exactly the routed slot is the 4.2
+//     value-arm class — §3c PERMANENT reject if the routed register is in the
+//     condition's transitive taint provenance (ACTIVE since WI-3), accept
+//     class otherwise (transitionally declined until the WI-4 emitter);
+//     everything off-pattern declines with its precise string (mux/FP →
+//     `control flow`; mixed content → `mixed phase/value arm`; fan-out/stray
+//     → `impure value arm`; Q+Q link → `value-arm swap-route`).
 
 #include "ArmClassify.h"
 
 #include "ControlPlan.h"
+#include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WireWalk.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+
+#include <algorithm>
 
 using namespace llvm;
 
@@ -176,28 +187,147 @@ void condProvenance(Value *Cond, TaintSet &Taint,
   }
 }
 
-// Does `Base`'s value lineage transitively read a register in `Prov`? Used only
-// for the if/else value-arm fallback (a diamond uses the straight-through
-// incoming directly). Conservative — stops at `cq_theta` sources.
-bool readsProvenance(Value *Base, const SmallPtrSetImpl<Value *> &Prov) {
-  SmallVector<Value *, 16> Work;
-  SmallPtrSet<Value *, 16> Seen;
-  Work.push_back(Base);
-  while (!Work.empty()) {
-    Value *V = Work.pop_back_val();
-    if (!Seen.insert(V).second)
-      continue;
+// The routed base's first DIAGONAL-ALIAS hit in `Prov`, or null. Walks the
+// pre-region `cq_phi` arg-0 chain from `Routed`: rotation lowering RAUWs a
+// `%qd = cq_phi(%q, ·)` and its `%q` to the SAME i32 handle, so SSA-value
+// disjointness from the condition's provenance is NOT wire disjointness — a
+// value arm routed over `%qd` while the condition reads `%q` transforms the
+// very physical wire the `icmp_inv` flag-strip reads (§8 review 2026-06-10:
+// the §8.2 "no reliance on the reverse-play" rationale is false for that
+// shape; mid-stream the wire holds the muxed value and only the §4
+// strip-after-R† order would save it). Enforcing provenance disjointness
+// through this closure keeps the accept class inside the documented
+// rationale. Pure reading walk — no collection, so the arm-block bounding
+// discipline (which guards COLLECTION) does not apply; the chain terminates
+// at the first non-`cq_phi` (a theta source, template-derived value, or
+// argument — all genuinely fresh wires post-lowering).
+Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
+  for (Value *V = Routed;;) {
     if (Prov.count(V))
-      return true;
-    auto *I = dyn_cast<Instruction>(V);
-    if (!I)
-      continue;
-    if (isThetaCall(I))
-      continue;
-    for (Value *Op : I->operands())
-      Work.push_back(Op);
+      return V;
+    auto *CI = dyn_cast<CallInst>(V);
+    if (!CI || !isPhiCall(CI) || CI->arg_size() < 1)
+      return nullptr;
+    V = CI->getArgOperand(0);
   }
-  return false;
+}
+
+// ---- 4.2 value-arm classification (PRD Part II §8.3; IMPLEMENTATION-4.2 §3).
+// (The 4.1 if/else `readsProvenance` fallback that lived here is RETIRED —
+// replaced by the chain walk's base-identity: a condition READ now surfaces as
+// `ChainBase != Routed` → `control flow`, never the §3c string. That honors
+// the bd `swap-route-detect-known-limits` warning: `if(q>5){p=q+1}` is a
+// legitimate read, not a clobber.)
+
+// One arm's candidate VALUE chain — the value twin of `walkPhaseSpine`.
+struct ValueChain {
+  // The chain links in FORWARD (program/base-first) order — the §4 emit order
+  // the WI-4 emitter replays them in. Collected merge-first, reversed at end.
+  SmallVector<Instruction *, 6> Ops;
+  // The value the walk bottomed at (never itself a link). For a routable arm
+  // this must be EXACTLY the routed slot (base-identity — the Defect-2 fix).
+  Value *Base = nullptr;
+  // The walk reached an IN-ARM `cq_phi` link: a phase gate inside a value
+  // lineage (`if(q>5){rz(p,a); p=p+3}`) → `mixed phase/value arm`. The
+  // offending call is stashed for the diagnostic anchor.
+  Instruction *MixedPhi = nullptr;
+  // Some link consumed a SECOND tainted operand (a Q+Q link, `p = p + r`) — a
+  // recognized value shape 4.2 does not yet route (defer, PRD §8.3).
+  bool HasQQ = false;
+};
+
+// Walk the VALUE chain WITHIN one arm block: while `V` is a supported tainted
+// integer/fp `BinaryOperator` DEFINED IN `ArmBB`, follow its threaded operand
+// — the SOLE tainted one (the other is classical, the `_hl`/`_lh` template
+// shapes). Returns the chain and the value it bottoms at.
+//
+// ARM-BLOCK-BOUNDED for the same load-bearing reason as `walkPhaseSpine`
+// above (bd `swap-route-ifelse-derived-base-boundary`): a value op defined
+// OUTSIDE the arm is the routed base's own lineage, never an arm gate — and
+// an unbounded walk would double-collect a shared pre-region op into both
+// arms' chains (the double-erase/UAF family once the emitter replays+erases).
+//
+// A Q+Q link (both operands tainted) sets `HasQQ` and threads the operand
+// IDENTICAL to `RoutedHint` when exactly one matches (so `if(q>5){q=q+p}`
+// bottoms at the routed `%q` and stays eligible for the §3c PERMANENT reject
+// rather than the QQ defer — the PRD §8.3 disposition order runs the
+// provenance check first), falling back to operand 0 (every QQ chain declines
+// either way; the fallback only picks WHICH safe string fires).
+//
+// FP chains are walked like integer ones (fadd/fmul/… are supported stems) —
+// the CALLER declines any FP-typed merge as an angle (`control flow`) before
+// reading the base; never key the decision on abiWidthFromType() validity
+// (f64 has a valid width yet is an angle — the f64 miscompile family).
+ValueChain walkValueChain(Value *ArmIncoming, const BasicBlock *ArmBB,
+                          TaintSet &Taint, Value *RoutedHint) {
+  ValueChain C;
+  Value *V = ArmIncoming;
+  while (true) {
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I || I->getParent() != ArmBB)
+      break;  // out-of-arm (or non-instruction) — the chain's base.
+    if (isPhiCall(I)) {
+      C.MixedPhi = I;  // in-arm Rz inside a value lineage — mixed arm.
+      break;
+    }
+    auto *BO = dyn_cast<BinaryOperator>(I);
+    if (!BO || binaryStem(BO->getOpcode()).empty() ||
+        !Taint.Tainted.count(BO))
+      break;  // not a supported tainted link — bottoms here (caller declines).
+    Value *Op0 = BO->getOperand(0);
+    Value *Op1 = BO->getOperand(1);
+    const bool T0 = Taint.Tainted.count(Op0) != 0;
+    const bool T1 = Taint.Tainted.count(Op1) != 0;
+    Value *Next = nullptr;
+    if (T0 && T1) {
+      C.HasQQ = true;
+      Next = (Op1 == RoutedHint && Op0 != RoutedHint) ? Op1 : Op0;
+    } else if (T0 || T1) {
+      Next = T0 ? Op0 : Op1;
+    } else {
+      break;  // tainted result, untainted operands — off-pattern; bottoms here.
+    }
+    C.Ops.push_back(BO);
+    V = Next;
+  }
+  C.Base = V;
+  std::reverse(C.Ops.begin(), C.Ops.end());
+  return C;
+}
+
+// PURE VALUE ARM (Rule 8 linearity + no stray ops) — the value twin of
+// `armBlockIsPureSpine` above, rejecting the same two emitter-fatal families:
+//   * STRAY op beside the chain (incl. an off-path DAG sibling — the fan-out
+//     shape `p=(p+3)*(p^5)` threads one path and leaves the other as a stray):
+//     the WI-4 emitter replays + erases ONLY the chain, and `RegionFlatten`
+//     erases the arm BLOCK — a stray op is silently DROPPED (a vanishing user
+//     measurement, Rule 5) and its taint work-list pointer dangles (UAF).
+//   * FAN-OUT of a chain link: whole-chain reversal needs LINEAR lineage —
+//     reverse-playing a shared link double-uncomputes the shared prefix
+//     (use-after-free + double-free, Rule 8). Each link's ONLY user must be
+//     the next link; the merge-feeding link's only user the merge `φ` itself.
+// The base handle the chain bottoms at is NOT in `ArmBB` (it is the live
+// routed register in the pred), so it is correctly never inspected here.
+bool valueArmIsPureChain(const BasicBlock *ArmBB,
+                         ArrayRef<Instruction *> ChainOps,
+                         const PHINode *MergePhi) {
+  SmallPtrSet<const Instruction *, 8> OnChain(ChainOps.begin(),
+                                              ChainOps.end());
+  for (const Instruction &I : *ArmBB) {
+    if (I.isTerminator())
+      continue;
+    if (!OnChain.count(&I))
+      return false;  // a stray op / DAG sibling beside the chain.
+  }
+  for (size_t Idx = 0; Idx < ChainOps.size(); ++Idx) {
+    const Instruction *I = ChainOps[Idx];
+    const User *Expected = (Idx + 1 < ChainOps.size())
+                               ? cast<User>(ChainOps[Idx + 1])
+                               : cast<const User>(MergePhi);
+    if (!I->hasOneUse() || *I->user_begin() != Expected)
+      return false;  // fan-out, or a link consumed out of chain order.
+  }
+  return true;
 }
 
 // An instruction to anchor a generic decline diagnostic on (for the !dbg /
@@ -328,7 +458,7 @@ bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
 
 }  // namespace
 
-ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
+ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   auto *MergePhi = dyn_cast_or_null<PHINode>(Region.Merge);
   if (!MergePhi) {
     diagnoseUnderControl(declAnchor(Region), "control flow");
@@ -397,6 +527,14 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
   // / hoisted-value-op mis-accepts; WI-1 adversarial review 2026-06-09).
   Value *Routed = StraightThrough;
 
+  // 4.2 homogeneity bookkeeping (PRD Part II §0/§10): a region lowers
+  // all-phase (the 4.1 path) or all-value over ONE shared routed base; a
+  // phase arm beside a value arm has no single lowering method (the copy-out
+  // dephases the phase answer, Rule 7) → `mixed phase/value arm`.
+  bool SawPhaseArm = false;
+  bool SawValueArm = false;
+  Instruction *ValueAnchor = nullptr;  // first link of the first value chain
+
   for (BasicBlock *ArmBB : Arms) {
     if (MergePhi->getBasicBlockIndex(ArmBB) < 0) {
       // Arm block does not feed the merge phi — off-pattern shape.
@@ -435,6 +573,16 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
     // Criterion 3: the routed handle must be a tainted quantum handle
     // (control_tainted_diag.ll's classical %y0 is not).
     if (Routed && Base == Routed) {
+      // A phase arm in a region that already classified a VALUE arm (the
+      // routed base was anchored by its chain): heterogeneous if/else —
+      // declined before the per-arm checks (the mixture is the region-level
+      // defect; PRD §0/§10). An EMPTY arm (incoming == Routed, no gates)
+      // classifies as phase here, so `value-chain + empty arm` also declines
+      // mixed — safe over-decline; a WI-5+ increment may refine it.
+      if (SawValueArm) {
+        diagnoseUnderControl(declAnchor(Region), "mixed phase/value arm");
+        return ArmDisposition::Declined;
+      }
       if (!Taint.Tainted.count(Base)) {
         diagnoseUnderControl(declAnchor(Region), "control flow");
         return ArmDisposition::Declined;
@@ -443,6 +591,7 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
         diagnoseUnderControl(declAnchor(Region), "impure phase arm");
         return ArmDisposition::Declined;
       }
+      SawPhaseArm = true;
       continue;
     }
 
@@ -457,16 +606,177 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
         diagnoseUnderControl(declAnchor(Region), "impure phase arm");
         return ArmDisposition::Declined;
       }
+      SawPhaseArm = true;
       Routed = Base;
       continue;
     }
 
+    // ---- 4.2 value-arm classification (PRD Part II §8.3; IMPL-4.2 §3) ----
+    if (Base == ArmIncoming) {
+      // The phase spine consumed nothing — try the arm-block-bounded value
+      // chain. `Routed` doubles as the QQ threading hint (see walkValueChain).
+      ValueChain Chain = walkValueChain(ArmIncoming, ArmBB, Taint, Routed);
+
+      // The chain ran into an in-arm `cq_phi`: phase + value links in one
+      // lineage (`rz(p,a); p=p+3`). The answer carries both a phase and a
+      // changed basis — the CNOT copy-out copies only the basis label
+      // (dephasing the Rz answer, Rule 7) and the flag-strip is invalid over
+      // a changed basis. No copy-safe, strip-valid lowering exists (§6a
+      // territory).
+      if (Chain.MixedPhi) {
+        diagnoseUnderControl(Chain.MixedPhi, "mixed phase/value arm");
+        return ArmDisposition::Declined;
+      }
+
+      if (!Chain.Ops.empty()) {
+        // Heterogeneous if/else: a value arm beside an already-classified
+        // phase arm (the converse guard sits on the phase path above).
+        if (SawPhaseArm) {
+          diagnoseUnderControl(declAnchor(Region), "mixed phase/value arm");
+          return ArmDisposition::Declined;
+        }
+        // An FP-typed merge under tainted control is categorically an ANGLE,
+        // never routable data — even though f64 has a valid ABI width (the
+        // f64 silent-miscompile family; PRD §8.1). isFPOrFPVectorTy, not the
+        // scalar-only isFloatingPointTy (which misses <2 x double>).
+        if (MergePhi->getType()->isFPOrFPVectorTy()) {
+          diagnoseUnderControl(declAnchor(Region), "control flow");
+          return ArmDisposition::Declined;
+        }
+        // POSITIVE half of criterion 3's "merge type is integer" (§8 review,
+        // 2026-06-10): an integer VECTOR (<2 x i32>, reachable via the
+        // escape-whitelisted bitcast of a tainted i64) or a non-ABI-width
+        // integer (i128 via zext) is not routable data either — the WI-4
+        // emitter could mint no alloc/copy/template symbol for it (null
+        // FunctionCallee AFTER the route bracket is emitted — a
+        // crash-on-valid-input, violating detect-before-mutate). The width
+        // check is NECESSARY-not-sufficient and runs only AFTER the FP
+        // decline above — never key the DECISION on abiWidthFromType()
+        // validity (f64 has a valid width yet is an angle, the f64 trap).
+        if (!MergePhi->getType()->isIntegerTy() ||
+            abiWidthFromType(MergePhi->getType()).empty()) {
+          diagnoseUnderControl(declAnchor(Region), "control flow");
+          return ArmDisposition::Declined;
+        }
+        // The chain must bottom OUTSIDE the arm (at the live routed register
+        // in the pred); an in-arm bottoming value (a cast, an unsupported or
+        // untainted op under the chain) is a broken lineage.
+        if (auto *BaseInst = dyn_cast<Instruction>(Chain.Base);
+            BaseInst && BaseInst->getParent() == ArmBB) {
+          diagnoseUnderControl(declAnchor(Region), "control flow");
+          return ArmDisposition::Declined;
+        }
+        // Base-identity — THE DEFECT-2 FIX (PRD §8.3): a chain that bottoms
+        // anywhere but the routed slot is a data MUX of independently-derived
+        // values (`t=q+7; if(q>5) t=q+3` — Defect-2; `if(q>5){p=q+1}` — the
+        // condition READ). Replaying such a chain on the routed rail would
+        // compute f(routed), not the source's f(base): a verify-clean wrong
+        // unitary. Not routable, not a §3c clobber (the condition register is
+        // never overwritten) — the 4.4 select-family mux, declined generic.
+        if (Routed) {
+          if (Chain.Base != Routed) {
+            diagnoseUnderControl(declAnchor(Region), "control flow");
+            return ArmDisposition::Declined;
+          }
+        } else {
+          // If/else first arm: the chain's base anchors the shared routed
+          // slot (base-identity replaces the retired readsProvenance
+          // fallback; the second arm must bottom at this same base).
+          Routed = Chain.Base;
+        }
+        // §3c — ACTIVE (PRD §8.3 row 1; 4.1 shipped it vacuously): a ROUTABLE
+        // chain whose routed register is in the condition's transitive taint
+        // provenance rewrites the very register the flag was minted from. It
+        // cannot be both kept and disentangled (conservation of information)
+        // — the flag-strip premise `icmp_inv` reads the same basis as the
+        // mint dies with the rewrite. PERMANENT reject, before the QQ defer
+        // (so `if(q>5){q=q+p}` stays §3c, not deferred).
+        //
+        // The PERMANENT string fires ONLY on the proven diamond identity
+        // (straight-through == direct provenance member): the merge
+        // demonstrably overwrites the muxed condition register in the source
+        // program. Everything else in the provenance-overlap family declines
+        // GENERIC `control flow` (§8 review 2026-06-10 — the Defect-2 lesson,
+        // inverted: never brand a shape information-theoretically impossible
+        // on unproven evidence):
+        //   * an IF/ELSE-anchored base (`t=q+1 else t=q+2`, incl. the no-hint
+        //     QQ threading): the base was anchored heuristically from arm 1's
+        //     chain — the region may be a fresh-value READ mux over a live
+        //     `q` (writes a NON-condition variable), which must NEVER get the
+        //     §3c string (bd swap-route-detect-known-limits; the same rule
+        //     the retired readsProvenance fallback violated);
+        //   * a DIAGONAL-ALIAS hit (`Routed = %qd = cq_phi(%q,·)`, condition
+        //     reads `%q`): the source rewrites a DIFFERENT variable that
+        //     merely shares the physical wire post-RAUW — lowerable in
+        //     principle under a binding strip-after-R† order, so declined
+        //     revisitably, not permanently (see diagonalAliasHit).
+        if (Value *Hit = diagonalAliasHit(Routed, Prov)) {
+          if (StraightThrough && Hit == Routed) {
+            diagnoseUnderControl(Chain.Ops.front(),
+                                 "arm rewrites a condition operand");
+          } else {
+            diagnoseUnderControl(declAnchor(Region), "control flow");
+          }
+          return ArmDisposition::Declined;
+        }
+        // Criterion 3: the routed slot must be a tainted quantum register.
+        if (!Taint.Tainted.count(Routed)) {
+          diagnoseUnderControl(declAnchor(Region), "control flow");
+          return ArmDisposition::Declined;
+        }
+        // Rule 8 linearity + self-contained arm block (fan-out / stray op /
+        // DAG sibling — see valueArmIsPureChain).
+        if (!valueArmIsPureChain(ArmBB, Chain.Ops, MergePhi)) {
+          diagnoseUnderControl(declAnchor(Region), "impure value arm");
+          return ArmDisposition::Declined;
+        }
+        // A Q+Q link (second tainted operand) is a recognized value shape the
+        // routed replay does not yet handle — defer with the 4.2 string.
+        if (Chain.HasQQ) {
+          diagnoseUnderControl(Chain.Ops.front(), "value-arm swap-route");
+          return ArmDisposition::Declined;
+        }
+        // ACCEPT-class value arm: record the class + the ordered chain for
+        // the emitter (Shadow = Region.Arm's chain, ShadowFalse =
+        // Region.ArmFalse's; for an orientation-B diamond Region.Arm is the
+        // FALSE successor — polarity rides ArmNegated, never edge truth).
+        if (ArmBB == Region.Arm) {
+          Region.ClassArm = ArmClass::Value;
+          Region.Shadow.assign(Chain.Ops.begin(), Chain.Ops.end());
+        } else {
+          Region.ClassArmFalse = ArmClass::Value;
+          Region.ShadowFalse.assign(Chain.Ops.begin(), Chain.Ops.end());
+        }
+        SawValueArm = true;
+        if (!ValueAnchor)
+          ValueAnchor = Chain.Ops.front();
+        continue;
+      }
+      // Chain empty: ArmIncoming is not an in-arm link at all — fall through
+      // to the hoisted/leaf dispositions below.
+    } else if (auto *BaseInst = dyn_cast<Instruction>(Base);
+               BaseInst && BaseInst->getParent() == ArmBB &&
+               isValueChangingOp(Base)) {
+      // The phase spine consumed ≥1 `cq_phi` link and bottomed at an IN-ARM
+      // value op: an Rz stacked over a basis the arm itself changed
+      // (`p=p+3; rz(p,a)`) — the mirror direction of the chain-hits-phi
+      // mixed case above. Same physics, same string.
+      diagnoseUnderControl(BaseInst, "mixed phase/value arm");
+      return ArmDisposition::Declined;
+    }
+
     if (isValueChangingOp(Base)) {
-      // Value/permutation arm. §3c iff it rewrites the muxed condition operand:
-      // for a diamond the muxed variable is the straight-through incoming; for
-      // an if/else fall back to a backward provenance read of the arm's value.
-      const bool Clobber = StraightThrough ? Prov.count(StraightThrough) != 0
-                                           : readsProvenance(Base, Prov);
+      // An OUT-OF-ARM value-changing merge contribution (the in-arm walks
+      // consumed nothing): a HOISTED arm computation (Rule 9 — clang -O1
+      // freely hoists a branch-invariant value op into a dominating block).
+      // For a diamond, the 4.1 straight-through provenance proxy still
+      // decides §3c (the hoisted clobber `if(q>5){q=q+3}` keeps its permanent
+      // string regardless of schedule). The if/else `readsProvenance`
+      // fallback is RETIRED (PRD §8.3): without a straight-through there is
+      // no §3c evidence here — keep the deferred value-arm string (a safe
+      // decline either way; acceptance always requires an IN-ARM chain).
+      const bool Clobber =
+          StraightThrough && Prov.count(StraightThrough) != 0;
       diagnoseUnderControl(cast<Instruction>(Base),
                            Clobber ? "arm rewrites a condition operand"
                                    : "value-arm swap-route");
@@ -477,6 +787,20 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
     // fresh quantum source muxed against the routed slot — not a phase arm over
     // the routed handle. Decline (over-decline is safe; Prime Directive).
     diagnoseUnderControl(declAnchor(Region), "control flow");
+    return ArmDisposition::Declined;
+  }
+
+  // WI-3 TRANSITIONAL (IMPLEMENTATION-4.2 §7): value classification is live
+  // but the §4 emitter lands WI-4 — keep declining the accept class with the
+  // existing defer string (no new transitional string). THE FLIP IS STAGED:
+  // WI-4 accepts value DIAMONDS only (`Region.ArmFalse == nullptr`), reading
+  // the recorded ClassArm/Shadow, and un-XFAILs control_swap_value_diamond.ll;
+  // a two-arm value IF/ELSE must KEEP this decline until the WI-5 dual-rail
+  // emitter lands (flipping both at WI-4 would hand SwapRouteEmit a region
+  // shape it cannot emit — un-XFAIL control_swap_value_ifelse.ll only at
+  // WI-5).
+  if (SawValueArm) {
+    diagnoseUnderControl(ValueAnchor, "value-arm swap-route");
     return ArmDisposition::Declined;
   }
 

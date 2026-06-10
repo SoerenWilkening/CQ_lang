@@ -542,6 +542,27 @@ evidence.
   integer, and the arm block pure (no fan-out, no strays — the
   `armBlockIsPureSpine` analog over the value chain; Rule 8 linear lineage).
 
+**[WI-3 landing amendments — §8 adversarial review, 2026-06-10. Three
+hardenings beyond the letter above, all fixtured:** (i) *"merge type integer"
+is enforced positively* — an integer VECTOR (`<2 x i32>`, reachable via the
+escape-whitelisted bitcast) or a non-ABI-width integer (`i128`) merge declines
+`control flow`; the width check is necessary-not-sufficient and runs only
+AFTER the FP fence (never a classifying signal — the f64 trap stands).
+(ii) *Provenance disjointness is checked through the routed base's
+DIAGONAL-ALIAS closure*: `%qd = cq_phi(%q,·)` aliases `%q`'s physical wire
+post-RAUW (rotation lowering RAUWs both to one handle), so a value arm routed
+over `%qd` under `cond(q)` declines `control flow` — without the closure, the
+§8.2 "no reliance on the reverse-play" rationale would be FALSE for that
+member (mid-stream the shared wire holds the muxed value; only the §4
+strip-after-R† order would save it). A derived base disjoint from the
+condition stays accept-class. (iii) *The PERMANENT §3c string fires only on
+the PROVEN diamond identity* (straight-through == direct provenance member);
+an if/else-anchored base hitting provenance — the fresh-value read mux
+`t=q+1 else t=q+2`, including the no-hint Q+Q thread — declines generic
+`control flow`, never §3c (the Defect-2 lesson inverted: never brand a
+possibly-read shape information-theoretically impossible on an anchoring
+heuristic).**]**
+
 | shape (example) | verdict | diagnostic `What` |
 |---|---|---|
 | routable AND `Routed ∈ condProvenance` — `if(q>5){q=q+3}`, `if(q+1>5){q=q+3}` (transitive) | **permanent §3c reject** | `arm rewrites a condition operand` *(PRD-pinned string, unchanged from 4.1)* |

@@ -40,6 +40,17 @@ namespace cq {
 class WidthDispatch;
 struct TaintSet;
 
+// 4.2 (PRD Part II §8.3) — per-arm content class. A region is lowerable only
+// when HOMOGENEOUS: all-phase (the 4.1 route + verbatim-Rz replay + icmp_inv
+// flag-strip) or all-value (method-B: route + chain replay + copy-out +
+// reverse-play) over ONE shared routed base. Any mixture — phase and value
+// links in one chain, or a phase arm beside a value arm in an if/else —
+// declines `mixed phase/value arm`: a chain carrying both a phase and a
+// changed basis has no copy-safe, strip-valid lowering (the CNOT copy
+// dephases the Rz answer, Rule 7; §6a control-in-place territory). `Phase` is
+// the default so the 4.1 phase-arm paths need not write it.
+enum class ArmClass { Phase, Value };
+
 // WP18 (PRD §8.5) — one case arm of a gated `SwitchRegion`: the case constant(s)
 // targeting it, its arm block, and the arm's in-shadow gate bodies (the `cq_phi`
 // calls that become `_controlled` on the arm's flag). The DEFAULT arm is carried
@@ -117,14 +128,27 @@ struct ControlRegion {
   // `MergeDissolution` is gone, 7cde677).
   llvm::Instruction *Merge = nullptr;
 
-  // In-shadow gate-body ops (the `then`-arm `cq_phi` calls), in program
-  // order. RETAINED VOCABULARY, currently unpopulated: `SwapRouteEmit` walks
-  // the arm blocks directly and replays each gate verbatim+uncontrolled on the
+  // In-shadow gate-body ops, in program order. For a PHASE arm this is the
+  // retained-but-unpopulated 4.1 vocabulary: `SwapRouteEmit` walks the arm
+  // blocks directly and replays each `cq_phi` verbatim+uncontrolled on the
   // routed work rail (the excised `ControlledSubstitution`'s `_controlled`
   // lowering survives only as the §6a control-in-place reserve,
-  // `ControlledSymbols`). For a symmetric two-content-arm diamond (WP8) this
-  // would hold the TRUE arm's gates; `ShadowFalse` the FALSE arm's.
+  // `ControlledSymbols`). For a VALUE arm (4.2, `ClassArm == Value`)
+  // `ArmClassify` populates it with the arm's ordered chain links
+  // (FORWARD/base-first order — the §4 emit order: the WI-4 emitter moves +
+  // `rewriteBinary`s each link onto the rail, then reverse-plays the minted
+  // calls via `emitInverseChain`). `Shadow` is `Arm`'s content and
+  // `ShadowFalse` is `ArmFalse`'s — by FIELD identity, not edge truth: for an
+  // orientation-B diamond `Arm` is the FALSE successor (`ArmNegated` carries
+  // the polarity, Rule 9).
   llvm::SmallVector<llvm::Instruction *, 4> Shadow;
+
+  // 4.2 (PRD Part II §8.3) — the per-arm classes for `Arm` / `ArmFalse`.
+  // Meaningful only on a region that survived `classifyArms`; `Phase` is the
+  // 4.1 default (phase paths never write these). A value-class arm's ordered
+  // chain links live in `Shadow` / `ShadowFalse` above.
+  ArmClass ClassArm = ArmClass::Phase;
+  ArmClass ClassArmFalse = ArmClass::Phase;
 
   // br-sourced CFG anchors (null for a select region). `Pred` holds the
   // outer `br i1`; `Arm` is the innermost guarded block (the gate body);

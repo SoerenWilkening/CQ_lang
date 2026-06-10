@@ -48,7 +48,14 @@ fixture with **one tainted region per file**.
 > 4. **(no clobber, §3c — ACTIVE)** `Routed ∉ condProvenance(cond)`. The
 >    routed register and the condition's transitive taint provenance are
 >    disjoint — which is also what keeps the `icmp_inv(q)` flag-strip valid
->    with zero reliance on the reverse-play (PRD §8.2).
+>    with zero reliance on the reverse-play (PRD §8.2). *[WI-3 landing,
+>    2026-06-10: disjointness is enforced through the routed base's
+>    DIAGONAL-ALIAS closure (a pre-region `cq_phi` hop aliases the same
+>    physical wire post-RAUW) — without the closure this criterion's
+>    wire-level rationale would be false for `qd = rz(q,·); if(q>5){v=qd+3}`.
+>    See PRD §8.3's WI-3 landing amendments for this and the two sibling
+>    hardenings (positive integer merge-type fence; §3c string scoped to the
+>    proven diamond identity).]*
 >
 > Phase arms (4.1 criterion) continue to accept unchanged; a region is
 > phase-armed or value-armed **per arm chain**, and any mixture inside one
