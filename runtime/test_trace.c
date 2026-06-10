@@ -128,5 +128,18 @@ int main(void) {
      * Void, mints no handle (counter stays at h32); reuses existing handles. */
     cqrt_cswap(h_i1, h_a, h_i8);
 
+    /* --- 4.2 WI-1 smoke: the per-width reversible basis copy (PRD
+     * Part II §8.1) — the value-arm method-B copy-out primitive,
+     * emitted by the swap-route lowering. The 5 integer widths only
+     * (no FP twins exist — an FP merge phi under tainted control is
+     * an angle, never data). Void, mints no handle (counter stays at
+     * h32); each call reuses existing handles of the matching width
+     * (src = the first alloc of the width, dst = the second). */
+    cqrt_copy_i1(h_i1, h_i1_b);
+    cqrt_copy_i8(h_i8, h_i8_b);
+    cqrt_copy_i16(h_i16, h_i16_b);
+    cqrt_copy_i32(h_a, h_b);
+    cqrt_copy_i64(h_i64, h_i64_b);
+
     return 0;
 }

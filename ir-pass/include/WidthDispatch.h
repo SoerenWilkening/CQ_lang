@@ -69,6 +69,16 @@ public:
   llvm::FunctionCallee allocFn(llvm::StringRef abiWidth) const;       // @cqrt_alloc_<W>
   llvm::FunctionCallee measureRtFn(llvm::StringRef abiWidth) const;   // @cqrt_measure_<W>
 
+  // Reversible-copy resolver (Phase 4.2, PRD Part II §8.1 — the design's
+  // only new ABI). Signature `void(i32 src, i32 dst)` — handles are always
+  // i32; the width only selects the symbol name. INTEGER ABI widths only
+  // ({i1,i8,i16,i32,i64}): an FP merge phi under tainted control is
+  // categorically an angle, never data (the f64 miscompile family), so
+  // `f32`/`f64` return a null FunctionCallee (caller diagnoses) rather
+  // than minting dead ABI. Emitted as the copy-out step of the value-arm
+  // (method-B) swap-route lowering.
+  llvm::FunctionCallee copyFn(llvm::StringRef abiWidth) const;        // @cqrt_copy_<W>
+
   // Rotation runtime resolvers. Both signatures are `void(i32, double)`
   // (handle, angle) — the handle is always i32 across every ABI width
   // (PRD §"Width unification"). Names `@cqrt_ry_<W>` / `@cqrt_rz_<W>`.

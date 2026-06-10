@@ -412,6 +412,41 @@ void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b) {
 }
 
 /* ---------------------------------------------------------------------
+ * Reversible basis copy (Phase 4.2, PRD Part II §8.1) — one per integer
+ * width. Keep-sources-live transversal-CNOT copy |x>|0> -> |x>|x>; an
+ * involution (no _inv twin); never frees its source. Emitted by the
+ * value-arm (method-B) swap-route lowering as its copy-out step. Same
+ * no-arrow void trace convention as cqrt_cswap; both handles print as
+ * h<N>. Integer widths only — an FP merge phi under tainted control is
+ * an angle, never data, so no f32/f64 twins exist (see cq_runtime.h).
+ * ------------------------------------------------------------------- */
+
+void cqrt_copy_i1(int32_t src, int32_t dst) {
+    printf("cqrt_copy_i1(h%d, h%d)\n", src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_i8(int32_t src, int32_t dst) {
+    printf("cqrt_copy_i8(h%d, h%d)\n", src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_i16(int32_t src, int32_t dst) {
+    printf("cqrt_copy_i16(h%d, h%d)\n", src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_i32(int32_t src, int32_t dst) {
+    printf("cqrt_copy_i32(h%d, h%d)\n", src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_i64(int32_t src, int32_t dst) {
+    printf("cqrt_copy_i64(h%d, h%d)\n", src, dst);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */
 

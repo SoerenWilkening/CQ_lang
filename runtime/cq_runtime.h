@@ -212,6 +212,32 @@ void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt);
 void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b);
 
 /* -----------------------------------------------------------------
+ * Reversible basis copy (Phase 4.2, PRD Part II §8.1 — the design's
+ * only new ABI) — `cqrt_copy_<W>(src, dst)` is the keep-sources-live
+ * transversal-CNOT basis copy |x>_src |0>_dst -> |x>_src |x>_dst.
+ * Precondition: dst is a fresh |0> register (the emitter allocates it
+ * immediately before the copy). It copies a computational-basis
+ * *label*, not a state — WRONG for any phase/superposition carrier
+ * (Rule 7: a CNOT copy of an Rz/Ry answer dephases it; method-B is
+ * value-arm only). An involution — applying it twice returns dst to
+ * |0> — so there is NO cqrt_copy_<W>_inv twin (same class as cqrt_x /
+ * cqrt_cswap). It NEVER frees, consumes, or disentangles its source
+ * (Rule 8: freeing a superposed source stays cqrt_cswap-only).
+ * The 5 INTEGER widths only — an FP merge phi under tainted control
+ * is categorically an angle, never data (the f64 miscompile family),
+ * so no f32/f64 twins exist. Emitted by the IR pass as the copy-out
+ * step of the 4.2 value-arm (method-B) swap-route lowering. Same
+ * no-arrow void trace convention as cqrt_cswap; both handle args
+ * print as h<N>:
+ *     "cqrt_copy_<W>(h<src>, h<dst>)".
+ * ----------------------------------------------------------------- */
+void cqrt_copy_i1 (int32_t src, int32_t dst);
+void cqrt_copy_i8 (int32_t src, int32_t dst);
+void cqrt_copy_i16(int32_t src, int32_t dst);
+void cqrt_copy_i32(int32_t src, int32_t dst);
+void cqrt_copy_i64(int32_t src, int32_t dst);
+
+/* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;
  * reserved for later lifetime work.
  * Trace: "cqrt_free(h<handle>)" (no return-value suffix).

@@ -38,8 +38,8 @@ constexpr SuffixRow kRows[] = {
 // ABI-width string → LLVM Type. The 7 supported widths cover the entire
 // surface; any other string returns nullptr and the caller is
 // expected to bail with a FunctionCallee(). Used by llvmTypeFor() and
-// by the lazy-decl resolvers (allocFn, measureRtFn, ryRtFn, rzRtFn,
-// addTemplate).
+// by the lazy-decl resolvers (allocFn, copyFn, measureRtFn, ryRtFn,
+// rzRtFn, addTemplate).
 Type *typeForAbiWidth(StringRef W, LLVMContext &Ctx) {
   if (W == "i1")  return Type::getInt1Ty(Ctx);
   if (W == "i8")  return Type::getInt8Ty(Ctx);
@@ -114,6 +114,25 @@ FunctionCallee WidthDispatch::allocFn(StringRef abiWidth) const {
   return M.getOrInsertFunction(
       ("cqrt_alloc_" + abiWidth).str(),
       FunctionType::get(Type::getInt32Ty(Ctx), {ArgTy}, false));
+}
+
+FunctionCallee WidthDispatch::copyFn(StringRef abiWidth) const {
+  // Signature: void(i32 src, i32 dst). Mirrors cqrt_copy_<W> in
+  // runtime/cq_runtime.h (Phase 4.2, PRD Part II §8.1 — the design's only
+  // new ABI). The width only selects the symbol name — both handles are
+  // i32 for every ABI width. INTEGER widths only: an FP merge phi under
+  // tainted control is categorically an angle, never data (the f64
+  // miscompile family), so f32/f64 — and any unknown width — return a
+  // null callee (caller diagnoses) rather than minting dead ABI.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy())
+    return FunctionCallee();
+  return M.getOrInsertFunction(
+      ("cqrt_copy_" + abiWidth).str(),
+      FunctionType::get(Type::getVoidTy(Ctx),
+                        {Type::getInt32Ty(Ctx), Type::getInt32Ty(Ctx)},
+                        false));
 }
 
 FunctionCallee WidthDispatch::measureRtFn(StringRef abiWidth) const {

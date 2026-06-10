@@ -913,12 +913,51 @@ void cqrt_cnot    (int32_t ctrl, int32_t tgt);
 void cqrt_toffoli (int32_t c1, int32_t c2, int32_t tgt);
 ```
 
-These are not directly emitted by the IR pass for stock LLVM
-opcodes; instead the pass emits `cq_template_<op>_<W>` calls, and
-the template bodies (or post-lowering inlining at the runtime
-layer) decompose into these primitives. A future optimization pass
-operating on lowered IR may fuse, cancel, or commute gates at this
-level.
+These are not emitted by the IR pass for stock LLVM opcodes;
+instead the pass emits `cq_template_<op>_<W>` calls, and the
+template bodies (or post-lowering inlining at the runtime layer)
+decompose into these primitives. Since Phase 4.1, however, the
+swap-route control emitter does emit `cqrt_x` directly (the ¬flag
+bracket) alongside `cqrt_cswap` (the routing primitive); `cqrt_h`,
+`cqrt_cnot`, and `cqrt_toffoli` remain unemitted placeholders until
+Phase 8. A future optimization pass operating on lowered IR may
+fuse, cancel, or commute gates at this level.
+
+Phase 4.2 adds the per-width **reversible basis copy** to the
+hand-written core ABI (PRD Part II §8.1 — the design's only new
+ABI; the `cqrt_cswap` precedent, not the generated
+`cq_template_*` surface):
+
+```c
+void cqrt_copy_i1 (int32_t src, int32_t dst);
+void cqrt_copy_i8 (int32_t src, int32_t dst);
+void cqrt_copy_i16(int32_t src, int32_t dst);
+void cqrt_copy_i32(int32_t src, int32_t dst);
+void cqrt_copy_i64(int32_t src, int32_t dst);
+```
+
+`cqrt_copy_<W>(src, dst)` is the keep-sources-live transversal-CNOT
+basis copy `|x⟩_src |0⟩_dst → |x⟩_src |x⟩_dst` (`dst` must be a
+fresh `|0⟩` register; the emitter allocates it immediately before
+the copy). Like `cqrt_cswap` and the ¬flag `cqrt_x` bracket — and
+unlike the YAML-generated `cq_template_*` surface — it is emitted
+directly by the IR pass: it is the copy-out step of the value-arm
+(method-B) swap-route lowering. It copies a computational-basis *label*, not a
+state — it is wrong for any phase/superposition carrier (a CNOT
+copy of an `Rz`/`Ry` answer dephases it), it never frees or
+consumes its source (freeing a superposed source stays
+`cqrt_cswap`-only), and it is an involution, so there is no
+`cqrt_copy_<W>_inv` twin. The family is **integer-width only**: a
+floating-point merge φ under tainted control is categorically an
+angle, never data, so `f32`/`f64` twins would be dead ABI whose
+only possible caller is exactly that miscompile. Trace follows the
+no-arrow void convention: `cqrt_copy_<W>(h<src>, h<dst>)`.
+
+**Freeze note:** the Phase-8/10 ABI freeze re-opens for exactly
+this one family — the 5 `cqrt_copy_i{1,8,16,32,64}` symbols
+(reserved in advance by the ROADMAP Phase-8 "Reconciliation with
+swap-route Phase 4 (principle 7)" note). No other symbol is added;
+the generated `cq_template_*` surface is untouched.
 
 ### 11.5 Multiple runtime variants share one IR
 
