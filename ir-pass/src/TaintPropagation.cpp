@@ -10,14 +10,19 @@
 
 #include "WidthDispatch.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 
+#include <optional>
 #include <vector>
 
 using namespace llvm;
@@ -310,9 +315,204 @@ constexpr char kMsgClassicalSelect[] =
 constexpr char kMsgClassicalPhi[] =
     "cq taint escape: tainted value muxed by a classical-condition phi";
 
+// ───────────────────────────────────────────────────────────────────────────
+// One-register merge-phi lift (test_C_libtooling-5j5).
+//
+// The natural "classical if around a quantum gate" program
+//     if (classical_c) q = cq_phi(q, theta);  ...use(q)...
+// survives `clang -O1` as a merge phi whose two incomings are DISTINCT SSA
+// values denoting the SAME physical register:
+//     merge: %p = phi i32 [ %q2, %arm ], [ %q, %entry ]   ; %q2 = cq_phi(%q,θ)
+// (verified 2026-06-10 on both the `if` and the ternary form — clang cannot
+// speculate the opaque cq_phi call, so BOTH compile to this branch+phi shape,
+// never to a select). Rotation lowering is IN PLACE: `RotationLowering` emits
+// the gate at the call's position ON THE OPERAND HANDLE and RAUWs the result
+// to that same operand (cqrt_rz for cq_phi; ry-only on the existing handle for
+// a tainted-operand chained cq_theta). So after lowering, EVERY incoming of
+// such a phi is the same i32 handle — the phi is a pure SSA renaming that
+// never touches the register. RAUW'ing it to the wire's base SSA value and
+// erasing it reduces the module to the phi-less form the pipeline ALREADY
+// accepts (verified: gate-in-classical-arm + use-of-base lowers to
+// rz-inside-the-arm + measure-on-handle, in both main and non-main).
+//
+// Rule-13 trace/statevector clearance (the accept argument): the condition is
+// CLASSICAL — each shot executes exactly one path; no superposed control, no
+// flag, no routing, no cloning. The lift adds, moves, and removes NO gate;
+// only an SSA name disappears. Per-shot the emitted trace is exactly the gate
+// stream of the executed source path (gate fires iff its arm runs), which is
+// what the user wrote. The only hazard is a RECORD mismatch — an edge whose
+// incoming SSA value denotes a register history that some path entering the
+// merge through that edge does not physically have. The predicate below
+// makes that impossible:
+//   (3) every incoming resolves through the in-place gate wire (arg-0 of
+//       COLLECTED cq_theta/cq_phi call sites — exact CallInst membership,
+//       never name matching, this is an ACCEPT predicate) to ONE common base;
+//       a classical-operand theta MINTS a fresh register, so the walk stops
+//       there; template results (add/mul/...) mint fresh rails
+//       (`ArithLowering` RAUWs to the template CALL result) and never resolve
+//       — a derived-value arm stays declined;
+//   (6) every chain gate sits in ITS edge's incoming block, so entering via
+//       that edge implies the chain ran, this traversal, in order;
+//   (7a) no chain gate can reach the OTHER edge's terminator — kills every
+//       path that fires the gate and then enters the merge claiming a record
+//       without it (the loop-iteration-2 stale-base path, fixture
+//       lowering_reject_classical_mux_phi_loop.ll);
+//   (7b) the gate's own edge, once taken, can never lead back to the gate —
+//       every cycle through the gate exits its block through the checked
+//       terminator, so no path applies the chain twice while the incoming
+//       claims one application.
+// A SELECT is categorically NOT liftable: SSA forces a select's operands to
+// dominate it, so a gate-call incoming has ALREADY FIRED unconditionally when
+// the select executes — the "untaken" incoming names a pre-gate record the
+// physical register no longer holds (undoing an applied rotation on the one
+// register is non-unitary; it would need cloning). Accepting it would compile
+// "rotate iff c" IR semantics to "always rotate": the exact verify-clean
+// silent-miscompile class. Pinned: lowering_reject_classical_mux_select_onereg.ll.
+// ───────────────────────────────────────────────────────────────────────────
+
+// The backward in-place-gate wire resolution: peel collected cq_theta/cq_phi
+// call sites through their arg-0 handle while that handle is tainted (a
+// tainted-operand rotation is in-place — its result RAUWs to its operand).
+// Stops at a classical-operand theta (the register's mint point — the call
+// itself is the base), at any non-gate value (phi/select/template/argument),
+// and never steps through another mux (nested diamonds resolve to distinct
+// phi bases and decline — conservative, documented).
+struct WireChain {
+  Value *Base = nullptr;
+  // Gate calls peeled, incoming-value-first. Empty when the incoming IS the
+  // base (the pre-gate straight edge, or the degenerate same-value merge).
+  SmallVector<CallInst *, 4> Gates;
+};
+
+WireChain resolveWireBase(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls,
+                          const TaintSet &taint) {
+  WireChain Chain;
+  while (auto *CI = dyn_cast<CallInst>(V)) {
+    if (!GateCalls.count(CI))
+      break;  // not a collected rotation call site — V is the base.
+    Value *Handle = CI->getArgOperand(0);
+    if (!taint.Tainted.count(Handle))
+      break;  // classical-operand theta: the mint point IS the base.
+    Chain.Gates.push_back(CI);
+    V = Handle;
+  }
+  Chain.Base = V;
+  return Chain;
+}
+
+// Defensive ownership check on a terminator: the lift only fires under
+// CLASSICAL control. Every tainted-condition br/switch/select was adjudicated
+// by ControlDetect before this guard runs (accept → SwapRouteEmit erased the
+// merge phi; decline → opt already exited at that DS_Error), so under `opt`
+// this never sees a tainted condition — but an in-process host that continues
+// past a ControlDetect decline must NOT have this lift mutate a shape another
+// owner declined (same defensive stance as the tainted-condition `continue`
+// on the select branch below). Exotic terminators (invoke/indirectbr/...)
+// are unproven shapes — not acceptable.
+bool terminatorIsClassical(const Instruction *T, const TaintSet &taint) {
+  if (const auto *BI = dyn_cast<BranchInst>(T))
+    return !BI->isConditional() || !taint.Tainted.count(BI->getCondition());
+  if (const auto *SI = dyn_cast<SwitchInst>(T))
+    return !taint.Tainted.count(SI->getCondition());
+  return false;
+}
+
+// Try the one-register lift on a LIVE tainted-reading phi. Returns true iff
+// the phi was PROVEN a pure renaming of one register's per-path current
+// record, RAUW'd to the wire base, scrubbed from the taint set, and erased —
+// the caller then has nothing to diagnose. Any unproven branch returns false
+// and the caller declines loudly, exactly as before the lift (Prime
+// Directive: over-declining is always safe).
+bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
+                             const SmallPtrSetImpl<CallInst *> &GateCalls,
+                             std::optional<DominatorTree> &DT) {
+  // (1) Exactly the canonical 2-incoming diamond/if-else join (the -O1 shape;
+  //     ControlDetect's `soleMergePhi` carries the same discipline). N-ary
+  //     classical switch merges are per-edge provable by the same argument
+  //     but unfixtured — deliberate conservatism, lift later if needed.
+  if (Phi->getNumIncomingValues() != 2)
+    return false;
+  // (2) Every incoming tainted. A mixed tainted/untainted mux
+  //     ("handle-or-literal-5") is a real data mux on the handle domain and
+  //     stays declined (pinned: lowering_reject_classical_mux_phi_measured.ll).
+  for (Value *V : Phi->incoming_values())
+    if (!taint.Tainted.count(V))
+      return false;
+  // (3) Both incomings resolve to ONE base. Taint only ever holds
+  //     Instructions, so a matching base is an Instruction; the Phi-as-its-own
+  //     -base degenerate (self-incoming cycle) is rejected explicitly.
+  WireChain C0 = resolveWireBase(Phi->getIncomingValue(0), GateCalls, taint);
+  WireChain C1 = resolveWireBase(Phi->getIncomingValue(1), GateCalls, taint);
+  if (C0.Base != C1.Base || C0.Base == Phi)
+    return false;  // two registers (or a derived fresh rail) — real mux.
+  auto *BaseI = dyn_cast<Instruction>(C0.Base);
+  if (!BaseI)
+    return false;
+  // (4) Dominator tree — built lazily, once per function (same idiom as
+  //     `declineStaleRecordOps`).
+  Function &F = *Phi->getFunction();
+  if (!DT)
+    DT.emplace(F);
+  // (5) Defensive ownership: the join's deciding branch (the merge's
+  //     immediate dominator) and both incoming preds' terminators must be
+  //     classical (see terminatorIsClassical). Unreachable merge → decline.
+  DomTreeNode *Node = DT->getNode(Phi->getParent());
+  if (!Node || !Node->getIDom())
+    return false;
+  if (!terminatorIsClassical(Node->getIDom()->getBlock()->getTerminator(),
+                             taint))
+    return false;
+  for (unsigned i = 0; i < 2; ++i)
+    if (!terminatorIsClassical(Phi->getIncomingBlock(i)->getTerminator(),
+                               taint))
+      return false;
+  // RAUW validity: base must dominate every current phi user. SSA already
+  // implies it (base dominates each incoming edge's use point, hence every
+  // path into the merge), but the explicit check is cheap insurance.
+  if (!DT->dominates(BaseI, Phi))
+    return false;
+  // (6)+(7) Per-edge conditional-execution proof — see the block comment.
+  const WireChain *Chains[2] = {&C0, &C1};
+  for (unsigned i = 0; i < 2; ++i) {
+    BasicBlock *Self = Phi->getIncomingBlock(i);
+    BasicBlock *Other = Phi->getIncomingBlock(1 - i);
+    for (CallInst *G : Chains[i]->Gates) {
+      // (6) Single-block arm: the whole chain lives in this edge's pred, so
+      //     taking the edge implies the chain ran (block-local SSA order).
+      //     A chain call OUTSIDE the pred (a pre-branch gate on the wire)
+      //     makes the other edge's base record stale — decline (pinned:
+      //     lowering_reject_classical_mux_phi_crossblock_chain.ll).
+      if (G->getParent() != Self)
+        return false;
+      // (7a) No path may fire this gate and then enter the merge through the
+      //      OTHER edge, whose incoming claims a record without it (the
+      //      classical-loop iteration-2 staleness; pinned:
+      //      lowering_reject_classical_mux_phi_loop.ll).
+      if (isPotentiallyReachable(G, Other->getTerminator(), nullptr, &*DT))
+        return false;
+      // (7b) Once this edge is taken the gate must never re-fire: every cycle
+      //      through G leaves its block via this terminator, so this check
+      //      closes the applied-twice/recorded-once path.
+      if (isPotentiallyReachable(Self->getTerminator(), G, nullptr, &*DT))
+        return false;
+    }
+  }
+  // ACCEPT. The phi is a no-op on the handle domain: RAUW to the base (after
+  // rotation lowering every incoming IS this base's i32 handle), scrub the
+  // erased value from the taint set (`SwapRouteEmit::scrubTaint` precedent —
+  // a freed Instruction* must not linger in `Tainted` where a later
+  // allocation could alias it), and erase. Downstream stages now see the
+  // already-accepted phi-less shape; every later guard (tainted-angle,
+  // FreePoint post-dominator discipline, stale-skip) still adjudicates it.
+  Phi->replaceAllUsesWith(C0.Base);
+  taint.Tainted.erase(Phi);
+  Phi->eraseFromParent();
+  return true;
+}
+
 }  // namespace
 
-void declineClassicalMuxes(Module &M, const TaintSet &taint) {
+void declineClassicalMuxes(Module &M, TaintSet &taint) {
   // BB-order walk, one diagnostic per offending mux (deterministic order,
   // same discipline as declineTaintEscapes). Runs AFTER `lowerControlRegions`:
   // every tainted-condition construct has already been adjudicated by
@@ -324,11 +524,27 @@ void declineClassicalMuxes(Module &M, const TaintSet &taint) {
   // (`ret`), `main`-resident, non-terminal base, and the all-tainted
   // distinct-handle mux (which rules out the "mixed-incomings-only" variant
   // of this guard — see the wi5 trail).
+  //
+  // ONE deliberate accept (test_C_libtooling-5j5): the live merge PHI that is
+  // a proven pure renaming of ONE register's per-path current record — the
+  // natural `if (classical_c) q = cq_phi(q, θ); use(q)` shape — is RAUW'd to
+  // its wire base and erased (see liftOneRegisterMergePhi above for the full
+  // predicate and the Rule-13 clearance). Selects are NEVER lifted: a select's
+  // gate-call incoming dominates it, so the gate has already fired
+  // unconditionally and the untaken incoming names a record the register no
+  // longer holds.
+  SmallPtrSet<CallInst *, 32> GateCalls;
+  GateCalls.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
+  GateCalls.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
+    // Built lazily, only when a lift candidate exists in `F` (same idiom as
+    // declineStaleRecordOps).
+    std::optional<DominatorTree> DT;
     for (BasicBlock &BB : F) {
-      for (Instruction &I : BB) {
+      // early-inc: an accepted phi is erased mid-walk.
+      for (Instruction &I : llvm::make_early_inc_range(BB)) {
         if (auto *Sel = dyn_cast<SelectInst>(&I)) {
           // Tainted condition → ControlDetect's, never ours (defensive: under
           // opt the earlier "select under quantum control" decline already
@@ -345,14 +561,19 @@ void declineClassicalMuxes(Module &M, const TaintSet &taint) {
           // A DEAD phi is a pure live-range extender (no reader → no mux →
           // nothing downstream can read the wrong value): FreePoint's pinned
           // benign-merge domain (isBenignLiveRangePhi; ACCEPT fixture
-          // lowering_uncompute_branch_botharms.ll). Everything live that
-          // reads tainted data — mixed handle/literal, all-tainted distinct
-          // handles, even the degenerate same-value merge — is declined: its
-          // uncompute/free story is path-dependent and unproven.
+          // lowering_uncompute_branch_botharms.ll).
           if (Phi->use_empty())
             continue;
-          if (readsTaintedValue(*Phi, taint))
-            diagnoseEscape(Phi, kMsgClassicalPhi);
+          if (!readsTaintedValue(*Phi, taint))
+            continue;
+          // The one-register renaming lifts (RAUW + erase); every other live
+          // tainted-reading phi — mixed handle/literal, distinct registers,
+          // derived fresh-rail incomings, cross-block chains, loop-reachable
+          // merges — is declined: its record/uncompute story is
+          // path-dependent and unproven.
+          if (liftOneRegisterMergePhi(Phi, taint, GateCalls, DT))
+            continue;
+          diagnoseEscape(Phi, kMsgClassicalPhi);
           continue;
         }
       }

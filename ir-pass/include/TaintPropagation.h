@@ -128,10 +128,11 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 // (same surface as RotationLowering::declineTaintedAngle).
 void declineTaintEscapes(llvm::Module &M, const TaintSet &taint);
 
-// Classical-condition value-mux guard (test_C_libtooling-wi5). Pure analysis,
-// wired in BOTH pipeline entry points AFTER `lowerControlRegions` and BEFORE
-// `lowerRotations` (pre-RAUW SSA identity). Ordering is load-bearing twice
-// over (bd memory opt-exits-at-first-ds-error-freepoint-net):
+// Classical-condition value-mux guard (test_C_libtooling-wi5) + the
+// one-register merge-phi lift (test_C_libtooling-5j5). Wired in BOTH pipeline
+// entry points AFTER `lowerControlRegions` and BEFORE `lowerRotations`
+// (pre-RAUW SSA identity). Ordering is load-bearing twice over (bd memory
+// opt-exits-at-first-ds-error-freepoint-net):
 //   * AFTER control: ControlDetect owns every TAINTED-condition br/switch/
 //     select (accept → SwapRouteEmit consumes/erases the merge phi; decline →
 //     opt already exited at that first DS_Error), so whatever select/phi
@@ -146,10 +147,25 @@ void declineTaintEscapes(llvm::Module &M, const TaintSet &taint);
 // verify-clean silent-miscompile class, and NO later stage owns it — the
 // Phase-5 FreePoint "unrecognized user" net is bypassed whenever the base
 // handle is Measured/Escaped/`main`-resident or non-terminal. DECLINED loudly
-// here. The one accepted residue: a DEAD (use_empty) phi is a pure live-range
-// extender with no reader — FreePoint's pinned benign-merge domain
-// (lowering_uncompute_branch_botharms.ll) — and cannot miscompile.
-void declineClassicalMuxes(llvm::Module &M, const TaintSet &taint);
+// here. Two accepted residues:
+//   * a DEAD (use_empty) phi is a pure live-range extender with no reader —
+//     FreePoint's pinned benign-merge domain
+//     (lowering_uncompute_branch_botharms.ll) — and cannot miscompile;
+//   * the ONE-REGISTER live merge phi (test_C_libtooling-5j5): every incoming
+//     tainted and resolved through the in-place cq_theta/cq_phi arg-0 wire to
+//     one common base, each gate chain confined to its edge's incoming block,
+//     and no path able to fire a chain gate then enter the merge through an
+//     edge whose record omits it — the natural -O1 shape of
+//     `if (classical_c) q = cq_phi(q, θ); use(q)`. That phi is a PROVEN pure
+//     SSA renaming of one physical register: it is RAUW'd to the wire base
+//     and ERASED (hence non-const `taint` — the erased phi is scrubbed from
+//     `Tainted`), reducing the module to the already-accepted phi-less form.
+//     SELECTS are never lifted: a select's gate-call incoming dominates it,
+//     so the gate has already fired unconditionally and the untaken incoming
+//     names a record the one register no longer holds (undoing it is
+//     non-unitary). See liftOneRegisterMergePhi in the .cpp for the full
+//     predicate and the Rule-13 trace clearance.
+void declineClassicalMuxes(llvm::Module &M, TaintSet &taint);
 
 }  // namespace cq
 

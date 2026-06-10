@@ -16,7 +16,12 @@
 ;   * a merge phi of a TAINTED-condition region is ControlDetect's /
 ;     SwapRouteEmit's — pinned: control_swap_diamond.ll, control_swap_ifelse.ll
 ;     (accepted, phi erased) and control_swap_reject_clobber.ll (declined with
-;     its own message BEFORE this guard runs — opt exits at the first DS_Error).
+;     its own message BEFORE this guard runs — opt exits at the first DS_Error);
+;   * the ALL-TAINTED ONE-REGISTER merge phi (every incoming resolves through
+;     the in-place cq_theta/cq_phi arg-0 wire to one base) is lifted — RAUW'd
+;     to the base and erased (test_C_libtooling-5j5) — pinned ACCEPT:
+;     lowering_classical_mux_phi_onereg.ll. THIS fixture's literal-5 incoming
+;     is untainted, so the lift refuses and the decline stands.
 ;
 ; Guard: TaintPropagation::declineClassicalMuxes (post-control, pre-rotation,
 ; both entry points). It OWNS the exact `Msg` string; this CHECK mirrors it

@@ -66,6 +66,20 @@ add_test(NAME e2e-slice-control-phase-ifelse-derived
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_ifelse_derived.expected.log")
 
+# test_C_libtooling-5j5: the ONE-REGISTER classical-mux lift. The natural
+# `if (classical_c) q = cq_phi(q, a);` survives -O1 as a merge phi over two
+# SSA names of one register; the lift RAUWs it away and the CLASSICAL branch
+# stays byte-untouched, so the rz fires iff the condition held this shot.
+# Goldens BOTH polarities in one run (argc>0 true / argc>100 false): the
+# taken diamond's rz appears, the not-taken diamond's does not.
+add_test(NAME e2e-slice-classical-if-gate
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_classical_if_gate.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_classical_if_gate.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route

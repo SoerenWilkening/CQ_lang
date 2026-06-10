@@ -90,6 +90,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // erased) and no later stage owns it — the Phase-5 FreePoint net is bypassed
   // whenever the base handle is measured/escaped/`main`-resident or
   // non-terminal. Must run BEFORE `lowerRotations` (pre-RAUW SSA identity).
+  // One deliberate accept (test_C_libtooling-5j5): the proven ONE-REGISTER
+  // merge phi (`if (classical_c) q = cq_phi(q, θ); use(q)`) is RAUW'd to its
+  // wire base and erased here instead of declined.
   declineClassicalMuxes(M, taint);
 
   // The lowered calls are erased inside each step, so nothing dangles and
