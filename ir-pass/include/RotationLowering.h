@@ -4,6 +4,10 @@
 // gate-triggered allocation now happens here, at the theta call site.
 //
 // Contract (algorithm in RotationLowering.cpp; backend.md §5.1):
+//   * The arg-1 ANGLE of EITHER rotation must be classical (untainted). A
+//     quantum-derived angle has no fixed unitary → loud decline before any
+//     emission, rotation left standing (test_C_libtooling-659; the
+//     straight-line twin of ArmClassify::taintedAngleGate).
 //   * `@cq_theta_<sfx>(operand, angle)`:
 //       - classical operand → emit `cqrt_alloc_<W>(operand)` then
 //         `cqrt_ry_<W>(handle, angle)`; RAUW the theta result to the i32
@@ -58,7 +62,9 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 // debug loc, and insertion point; the Rz is inserted before it. Returns true
 // iff the Rz was emitted (false ⇒ unsupported width, diagnosed loudly, `phi`
 // left standing for the verifier). Shared by `lowerRotations` (uncontrolled)
-// and `ControlledSubstitution` (controlled).
+// and `ControlledSubstitution` (controlled). PRECONDITION: the caller has
+// verified `angle` is classical (untainted) — `lowerRotations` declines a
+// tainted angle before calling (test_C_libtooling-659).
 bool emitRz(llvm::CallInst *phi, llvm::Value *handle, llvm::Value *angle,
             WidthDispatch &wd, bool controlled, llvm::Value *flag);
 

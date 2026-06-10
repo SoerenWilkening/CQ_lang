@@ -45,11 +45,37 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
 
 // "Unsupported rotation" diagnostic — mirrors MeasureLowering's surface so
 // the pass speaks one diagnostic dialect. Failure is loud, not silent: the
-// offending call is left in place to surface at the verifier.
+// offending call is left in place to surface at the verifier. The call's
+// `!dbg` is attached so the rejection is source-located (same surface as
+// `diagnoseUnderControl`).
 void diagnoseUnsupported(CallInst *CI, const char *What) {
   std::string Msg = std::string("cq rotation lowering: unsupported ") + What;
-  CI->getFunction()->getContext().diagnose(
-      DiagnosticInfoUnsupported(*CI->getFunction(), Msg));
+  CI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *CI->getFunction(), Msg, CI->getDebugLoc()));
+}
+
+// Straight-line tainted-ANGLE gate (test_C_libtooling-659): quantum-derived
+// data in a rotation's arg-1 ANGLE slot has NO fixed unitary — angle =
+// f(quantum value), value in superposition — so there is nothing correct to
+// emit. The taint discipline keeps the angle operand classical PER-USE (taint
+// never propagates THROUGH an arg-1 edge, Rule 3), but the angle VALUE itself
+// is tainted when derived from a handle elsewhere (`sitofp(%q)`, `ext(%q)`).
+// Two loud-but-wrong outcomes without this guard, both found by the
+// test_C_libtooling-9hh §8 adversarial clearance (2026-06-10):
+//   (a) cast family — CastLowering cross-type-RAUWs the f64 cast result to an
+//       i32 handle inside the already-emitted `cqrt_rz`/`cqrt_ry`, which is
+//       FINAL (never erased): Broken module, opt exit 134;
+//   (b) opaque-call family — `%ang = call double @ext(i32 %q)` survives
+//       well-typed and, after the RAUW-to-handle, reads the i32 RUNTIME
+//       HANDLE TAG: a verify-clean silent miscompile.
+// The region-level twin is ArmClassify::taintedAngleGate (arms/derived base);
+// this is the straight-line root fix: decline loudly BEFORE any emission.
+// Returns true (and diagnoses) iff the rotation's angle is tainted.
+bool declineTaintedAngle(CallInst *Rot, const TaintSet &taint) {
+  if (Rot->arg_size() < 2 || !taint.Tainted.count(Rot->getArgOperand(1)))
+    return false;
+  diagnoseUnsupported(Rot, "quantum-derived rotation angle");
+  return true;
 }
 
 }  // namespace
@@ -110,6 +136,10 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
     }
     Value *Op = Theta->getArgOperand(0);  // re-read: RAUW may have updated it
     Value *Angle = Theta->getArgOperand(1);
+    // Quantum-derived angle → loud decline BEFORE any emission (no alloc, no
+    // ry); the theta is left standing (test_C_libtooling-659).
+    if (declineTaintedAngle(Theta, taint))
+      continue;
     Builder.SetInsertPoint(Theta);
 
     Value *Handle;
@@ -158,6 +188,12 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
       continue;
     Value *Op = Phi->getArgOperand(0);
     Value *Angle = Phi->getArgOperand(1);
+    // Quantum-derived angle → loud decline BEFORE any emission, on the
+    // classical-operand path too (deleting an Rz whose angle is entangled
+    // data would silently drop a quantum-dependent operation; over-declining
+    // is safe). The phi is left standing (test_C_libtooling-659).
+    if (declineTaintedAngle(Phi, taint))
+      continue;
     if (taint.Tainted.count(Op)) {
       // Tainted operand → emit uncontrolled rz on the handle. A failed emit
       // (unsupported width) leaves the phi standing for the verifier — do not

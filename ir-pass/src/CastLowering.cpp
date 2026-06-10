@@ -88,6 +88,29 @@ bool rewriteCast(CastInst *cast, CastWidths cw, WidthDispatch &wd,
   // call consuming the i32 handle and erased, so the transient mistyped
   // instruction never reaches the verifier (guarded by the per-fixture
   // `verify` RUN line).
+  //
+  // Erase-all-users audit vs EMITTER-MINTED FINAL calls (never erased; the
+  // test_C_libtooling-659 violation family). A final call can only hold a
+  // pending (not-yet-RAUW'd) cast result if it was minted BEFORE this RAUW:
+  //   * `cq_template_*` from `lowerOps` itself — safe by program order: the
+  //     driver rewrites producers before consumers (SSA dominance + the
+  //     single program-order work list), so by emission time every tainted
+  //     operand is already the i32 handle.
+  //   * `cqrt_measure_<W>` (`lowerMeasures`) and the uncompute adjoints —
+  //     minted AFTER `lowerOps`, when every RAUW has settled.
+  //   * `cqrt_ry_<W>` / `cqrt_rz_<W>` (`lowerRotations`, runs BEFORE
+  //     `lowerOps`) and SwapRouteEmit's replayed rail Rz — the ONLY final
+  //     calls minted before this point. Their arg-0 handle slot is
+  //     INTENTIONALLY laundered by later RAUWs (it converges to i32); their
+  //     arg-1 ANGLE slot must stay floating-point and is exactly what a
+  //     cross-type RAUW breaks (Broken module, exit 134). Both emitters now
+  //     refuse to mint a call holding a tainted angle:
+  //     `RotationLowering::declineTaintedAngle` (straight-line) and
+  //     `ArmClassify::taintedAngleGate` (control regions) decline loudly
+  //     before any emission — closing the family at the source.
+  // A NON-emitter-minted final user (an opaque user call consuming the f64
+  // cast result) still violates the invariant, but fails LOUDLY at the
+  // verifier (mistyped surviving call), never silently.
   cast->replaceAllUsesWith(T);
   promote(T, cast, taint);
   return true;
