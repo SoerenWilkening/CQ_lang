@@ -31,8 +31,9 @@ class of bug.
 ## The Prime Directive — when in doubt, DECLINE
 
 `opt -verify` clean proves the IR is **well-typed**, never that the **unitary is
-correct**. Correctness here is established by statevector/trace reasoning and
-golden end-to-end diffs — *not* by the verifier.
+correct**. Correctness here is established by analytic/trace reasoning, golden
+end-to-end diffs, and independent adversarial review (no simulations at this
+stage — owner decision 2026-06-10) — *not* by the verifier.
 
 **Over-declining is always safe. Over-accepting is a silent miscompile.** When
 any detection or lowering precondition is ambiguous, unproven, or off-pattern,
@@ -63,11 +64,12 @@ region to the swap-route emitter (`SwapRouteEmit.cpp`) or declines it loudly;
 there is no third path.
 
 **Rule 2 — Verify-clean is necessary, never sufficient.** Establish correctness
-by statevector reasoning (`docs/design/rssa-swap-control/prototype_semantics.py`
-is the one-off oracle — not in the build) **plus** golden e2e trace diff (the
-only layer that links and proves every emitted symbol resolves and
-signature-matches). "Passes `opt -verify`" and "runs without crashing" are not
-evidence.
+by golden e2e trace diff (the only layer that links and proves every emitted
+symbol resolves and signature-matches) **plus** independent adversarial review
+with analytic/trace reasoning. No simulations and no backend at this stage
+(owner decision 2026-06-10); the one-off oracles in
+`docs/design/rssa-swap-control/` are historical design artifacts, not a gate.
+"Passes `opt -verify`" and "runs without crashing" are not evidence.
 
 **Rule 3 — Taint is the only Q/C boundary.** A value is quantum iff it is
 (transitively, via stock LLVM data flow) derived from a `@cq_theta_*` result.
@@ -166,8 +168,10 @@ by reflex.
 tests.** Changes to the lowering core (`TaintPropagation`, the swap-route /
 control emitter, `FreePoint`, `EmitInverse`, `ChainWalk`, `Uncomputation`,
 `RotationLowering`) are where the silent miscompiles live. Before committing,
-clear the change against statevector/trace reasoning (or an independent second
-reviewer/agent). A green suite alone does **not** clear a core change.
+clear the change via an independent second reviewer/agent using
+analytic/trace-level reasoning (no statevector simulations at this stage —
+owner decision 2026-06-10). A green suite alone does **not** clear a core
+change.
 
 **Rule 14 — Reuse before reinvention; no duplicated lowering.** Check existing
 handlers (`OpcodeSupport` / `ArithLowering` / `CompareLowering` / `CastLowering`,
@@ -246,7 +250,8 @@ must respect:
 - **RSSA proves *classical* reversibility only.** Mogensen RSSA does **not** hand
   you quantum-coherence correctness. The superposed-control / no-cloning /
   Rz·Ry / reverse-play layer is the **original** part of this design, validated
-  by statevector simulation — never "it's RSSA, therefore correct" (SCOPING §0).
+  during design (2026-06) by one-off statevector reasoning — never "it's RSSA,
+  therefore correct" (SCOPING §0).
 - **Method matches arm class, not convenience** (Rule 7). Phase arms keep the
   answer on `q` and strip the flag with `icmp_inv` (zero controlled gates;
   method-A is dropped). Bennett compute→copy→uncompute (**method-B**) is the

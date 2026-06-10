@@ -61,7 +61,7 @@ Decline dispositions added/changed by 4.2 (shared `diagnoseUnderControl`,
 |---|---|---|
 | value chain on a condition-provenance register (`if(q>5){q=q+3}`, transitive `if(q+1>5){q=q+3}`) | **permanent §3c reject** (now non-vacuous) | `arm rewrites a condition operand` *(PRD-pinned, unchanged)* |
 | linear HL/LH chain on the routed base (`if(q>5){p=p+3}`) | **ACCEPT** *(was: defer `value-arm swap-route`)* | — |
-| QQ chain link (`if(q>5){p=p+r}`) | defer (oracle-unmodeled) | `value-arm swap-route` *(string retained for the deferred subset)* |
+| QQ chain link (`if(q>5){p=p+r}`) | defer (unanalyzed) | `value-arm swap-route` *(string retained for the deferred subset)* |
 | mixed `cq_phi`+value chain; heterogeneous phase/value if/else | decline (§6a territory) | `mixed phase/value arm` *(new)* |
 | impure value arm (fan-out / stray op) | decline (Rule 8) | `impure value arm` *(new, mirrors `impure phase arm`)* |
 | `ChainBase != Routed` — Defect-2 derived straight-through, fresh-value mux (`if(q>5){p=q+1}`) | decline (4.4 mux family — **the Defect-2 string fix**, PRD §8.3) | `control flow` *(existing generic)* |
@@ -89,7 +89,7 @@ it bursts).
 | `ir-pass/src/EmitInverse.cpp` | **WI-4.** Guard comment at the involution arg-0 threading seam (`EmitInverse.cpp:67-75`): `cqrt_cswap` must never be fed through a threaded chain (arg 0 is the FLAG) — the swap-route emitter brackets routes itself (PRD §8.5). No behavior change. |
 | `tests/e2e/CMakeLists.txt` + new slice | **WI-6.** `slice_control_value_diamond.{c,expected.log}` + explicit `add_test` (e2e is not auto-globbed). |
 | `docs/design/rssa-swap-control/swap_route_if_diamond_uncompute.ll` | **WI-4.** Pin (B-keep) with the §5d stream (deliberate spec regeneration, Rule 12). |
-| `docs/design/rssa-swap-control/prototype_semantics.py` | **WI-2.** `demo_D` — the method-B path-B demo (§8.1 below). Oracle only; not in the build. |
+| ~~`docs/design/rssa-swap-control/prototype_semantics.py`~~ | ~~**WI-2.** `demo_D`~~ **STRUCK** (owner decision 2026-06-10 — no simulations at this stage). The file stays untouched as a historical design artifact. |
 | `docs/backend.md` | **WI-1.** Core-ABI section: the `cqrt_copy_<W>` family + freeze-reopen note. |
 
 `CQLoweringPass.cpp` is **untouched**: the pipeline position
@@ -303,51 +303,48 @@ decline `control flow` (NOT the §3c string, NOT accepted); QQ `p=p+r` declines
 Red-green per Rule 12 (fixture first, watch it fail, implement minimally;
 accepts land `; XFAIL: *` until their WI). One commit per WI. WI-4/WI-5 are
 core-lowering changes — they do **not** ship on a green suite alone (Rule 13);
-they clear only after §8 (and WI-2 is their oracle precondition).
+they clear only after §8 (the WI-7 independent adversarial review, reasoning
+analytically against PRD §8.2's closed forms).
 
 | WI | Goal (observable) | Lands | Red→Green fixtures |
 |---|---|---|---|
 | **WI-1** | **`cqrt_copy_<W>` core ABI** (PRD §8.1). 5 integer widths, signature/trace pinned; `WidthDispatch::copyFn`; docs/backend.md ABI note. | `runtime/cq_runtime.{h,c}`, `WidthDispatch`, backend.md. | **green:** runtime trace-golden extension covering `cqrt_copy_*`; header-compile test; `gen_templates.py --check` clean (YAML untouched). |
-| **WI-2** | **Method-B oracle demo** (`demo_D`) — the §8-owed path-B run (Rule 13 gate for WI-4): B-keep on a value arm with the output register MEASURED ≡ controlled-op reference; rail+flag exactly `|0⟩`; the **two-channel interference probe** per the §8.1(c) bar (channels A+B asserted vs the analytic closed forms, PRD §8.2; incl. the answer-register probe: downstream Ry on `out`, superposed `p₀`, basis AND superposed control); negative control: B on a phase arm dephases (reproduce P0 0.585→0.500). Verdict recorded in SCOPING §8. | `prototype_semantics.py` (`demo_D`), SCOPING §8 update. | oracle run passes; no build-system coupling (oracle is not in the build). |
+| **WI-2** | **STRUCK** (owner decision 2026-06-10 — no statevector simulations at this stage). The method-B demo (`demo_D`) is not a deliverable. The B-keep two-channel boundary is documented analytically in PRD §8.2 (closed forms + recorded witness numbers, independent review 2026-06-10) and is cleared by the WI-7 independent adversarial review reasoning against those closed forms. bd paj.2 closed accordingly. *WIs are NOT renumbered — bd paj.N correspondence holds.* | — (nothing lands) | — |
 | **WI-3** | **Detection: value-arm classification + §3c ACTIVE + Defect-2 fix** (no emission — accepted value regions keep declining `value-arm swap-route` until WI-4 flips them; no new transitional string). | `ArmClassify` (+`ControlPlan.h` ArmClass), per §3. | **green:** `control_swap_value_reject_clobber_active.ll` (§3c on a would-be-routable chain), `control_swap_reject_value_mux_derived.ll` (Defect-2 → `control flow`), `control_swap_reject_value_readcond.ll` (`p=q+1` → `control flow`, NOT §3c), `control_swap_defer_value_qq.ll`, `control_swap_reject_value_mixed.ll`, `control_swap_reject_value_fanout.ll`, `control_swap_reject_value_fp_merge.ll`; existing `control_swap_reject_clobber.ll` + `control_swap_defer_valuearm.ll` stay green unchanged. **XFAIL:** the 5d/5e accepts. |
 | **WI-4** | **Emit value diamond** (core). §4 path; first real `emitInverseChain` invocation (§7.5 discharged); `EmitInverse` seam guard; scrub incl. `StaleDeclined`; pin (B-keep) in the design fixture; **delete/graduate** `control_swap_defer_valuearm.ll` → the accept (deliberate baseline regeneration, Rule 12). | `SwapRouteEmit`, `EmitInverse` comment, design fixture. | **green (un-XFAIL):** `control_swap_value_diamond.ll` (5d) + `control_swap_value_diamond_polarity.ll` (FALSE-successor arm, Rule 9) + `control_swap_value_diamond_derived.ll` (pre-region `cq_phi` base). |
 | **WI-5** | **Emit value if/else** (dual rails + ¬flag bracket + single copy-out + dual reverse-play). | `SwapRouteEmit` (two-arm value), `ArmClassify` (both-arms-same-base). | **green (un-XFAIL):** `control_swap_value_ifelse.ll` (5e); decline stays: heterogeneous phase/value if/else (`control_swap_reject_value_mixed_ifelse.ll`). |
 | **WI-6** | **e2e golden** (Rule 16/2 — the ONLY layer that links; the only proof `cqrt_copy_i32` resolves + signature-matches). C source = the measured `-O1`-surviving 6-op linear chain (PRD §8.4). | `tests/e2e/slice_control_value_diamond.{c,expected.log}` + explicit `add_test`. | **green:** `ctest -R e2e-slice-control-value-diamond`. |
 | **WI-7** | **§8 adversarial clearance + docs + closeout** (Rule 13). Probe matrix (§8 below); SCOPING §7.5/§7.6 marked resolved + §8 gap closed + §9 refresh; ROADMAP 4.2 flip; `bd remember` (copy-ABI invariant; Defect-2 supersession; select-folding shape reality); update bd memory `swap-route-detect-known-limits`. | docs, memories, residual XFAIL removal. | full `ctest` green; `gen_templates.py --check` clean. |
 
-Dependencies: WI-4 ← {WI-1, WI-2, WI-3}; WI-5 ← WI-4; WI-6 ← WI-4;
-WI-7 ← {WI-4, WI-5, WI-6}.
+Dependencies: WI-4 ← {WI-1, WI-3} *(WI-2 struck 2026-06-10 — no longer a
+precondition)*; WI-5 ← WI-4; WI-6 ← WI-4; WI-7 ← {WI-4, WI-5, WI-6}.
 
 ---
 
 ## 8. Adversarial verification plan (Rule 13 — clears the core change)
 
 A green suite does not clear the value path of `SwapRouteEmit`. Scope note
-(bd `rule13-no-backend-clearance-scope`): clearance is **design-level oracle
-modeling + lowered-IR reading + structural probes** — no execution backend
-exists; never claim "statevector-verified output".
+(bd `rule13-no-backend-clearance-scope`, amended 2026-06-10): clearance is
+**analytic/trace-level review + lowered-IR reading + structural probes** — no
+execution backend exists and no simulations at this stage (owner decision
+2026-06-10); never claim "statevector-verified output".
 
-1. **Oracle witness (WI-2, precondition).** `demo_D`: (a) B-keep value arm,
-   output register **measured** — distribution ≡ controlled-op reference
-   (assert < 1e-12); (b) rail + flag populations exactly 0 after R† + strip;
-   (c) **two-channel interference probe** (PRD §8.2; adjudicated bar —
-   independent review oracle, 2026-06-10 — shared verbatim with PRD §8.2 and
-   bd paj.2: **the documented deviation is asserted against the analytic
-   closed form on BOTH channels, plus exact-zero deltas on all observables in
-   the basis-`p₀` regime**). **Channel A** — control visibility (Hadamard
-   test on `q`): assert vs reference `Σ_p b_p b*_{f(p)}` / B-keep
-   `Σ_p |b_p|² · [f(p)=p]`. **Channel B** — answer-register coherence: a
-   downstream Ry on `out` (`cq_theta(out, t)` model) + measure, with
-   **superposed `p₀`**, under **BOTH** a basis-state and a superposed control
-   — even with a basis condition (channel A delta exactly zero) `out` loses
-   `p`-coherence (review-oracle witness, 2-bit registers, `f = +1 mod 4`:
-   reference `[.5, 0, 0, .5]` vs B-keep flat `[.25, .25, .25, .25]`).
-   Garbage-dephasing must be exact-ZERO (rails/flag exactly `|0⟩`). If any
-   number contradicts the §8.2 closed forms, WI-4 does not ship; (d) negative
-   control: path B on a phase arm reproduces the P0 0.585→0.500 dephasing
-   (why Rule 7 forbids B for phase arms).
+1. **Analytic boundary (PRD §8.2, recorded 2026-06-10).** The closed forms +
+   witness numbers stand as the reference (recorded by independent review,
+   2026-06-10, before the demo obligation was struck): **Channel A** —
+   control visibility (Hadamard test on `q`): reference `Σ_p b_p b*_{f(p)}`
+   vs B-keep `Σ_p |b_p|² · [f(p)=p]`. **Channel B** — answer-register
+   coherence (downstream Ry on `out`, superposed `p₀`, basis AND superposed
+   control): reference `[.5, 0, 0, .5]` vs B-keep flat
+   `[.25, .25, .25, .25]` (2-bit registers, `f = +1 mod 4`). Plus: rails/flag
+   exactly `|0⟩` after R† + strip (garbage-dephasing exact-zero); exact-zero
+   deltas on all observables in the basis-`p₀` regime; the phase-arm-under-B
+   P0 0.585→0.500 dephasing (recorded 2026-06-09) as the negative-control
+   evidence (why Rule 7 forbids B for phase arms). **WI-7's independent
+   reviewer reasons analytically against these closed forms**; if the
+   reasoning contradicts them, WI-4 does not ship (Rule 13).
 2. **Read the actual lowered IR** (Rule 11) for 5d/5e and diff against the
-   oracle-modeled construction — the emitter-fidelity gap is invisible to
+   §8.2 analytic construction — the emitter-fidelity gap is invisible to
    every automated layer.
 3. **No-spurious-free probe.** `CHECK-COUNT-2: @cqrt_free` (diamond) /
    `CHECK-COUNT-3` (if/else) + trailing `CHECK-NOT: @cqrt_free` — proves
@@ -381,9 +378,10 @@ exists; never claim "statevector-verified output".
       clean (second-RUN lines).
 - [ ] `cqrt_copy_i{1,8,16,32,64}` in the hand-written core ABI; runtime trace
       test covers them; `gen_templates.py --check` clean (YAML untouched).
-- [ ] `demo_D` passes the two-channel bar (§8.1(c) — both channels asserted
-      vs the analytic closed forms; exact-zero deltas in the basis-`p₀`
-      regime); verdict in SCOPING §8; recorded BEFORE/WITH WI-4 (Rule 13).
+- [ ] The §8.2 two-channel boundary is cleared by the WI-7 independent
+      adversarial review (analytic reasoning vs the closed forms; exact-zero
+      deltas in the basis-`p₀` regime) — the `demo_D` obligation was struck
+      (owner decision 2026-06-10, no simulations at this stage).
 - [ ] §3c active matrix fully fixtured (5f); Defect-2 declines `control flow`;
       bd memory updated.
 - [ ] First real `emitInverseChain` invocation (§7.5 discharged); seam guard
@@ -422,7 +420,8 @@ forward chain the emitter just built — no lineage recovery needed);
 
 ## 11. Out of scope (declines wired in WI-3, implemented in later increments)
 
-QQ chain links (oracle-unmodeled — own demo before any accept); mixed
+QQ chain links (unanalyzed — own deliberate analytic clearance before any
+accept); mixed
 phase/value arms + heterogeneous if/else (§6a territory); fresh-value mux /
 Defect-2 family (`control flow`, the 4.4 `select` machinery); FP merges
 (angles); nested (4.3 — `computeFreePoint` + block-lifetime activate there);

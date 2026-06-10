@@ -465,8 +465,10 @@ after a statevector-checked design dialogue; see
   reject becomes active here**: a value arm that rewrites a quantum variable the
   branch condition reads is declined loudly (it cannot be both kept and
   disentangled — §3c), while a value arm on any other register lowers normally.
-  The §8 method-B oracle demo (path B, output register measured) is owed
-  before/with the emitter change (Rule 13).
+  The §8 method-B demo obligation was **struck by owner decision 2026-06-10**
+  (no statevector simulations at this stage); the B-keep boundary is documented
+  analytically in PRD §8.2 and cleared by independent adversarial review
+  (Rule 13).
 
 - **4.3 — Nested control.** A tainted `br` inside an arm runs the **same emitter
   recursively** on the enclosing arm's live rail; `c1 ∧ c2` falls out of the

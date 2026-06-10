@@ -36,7 +36,7 @@ Companion documents:
 
 > **A quantum register reference is always an `i32` handle; a tainted `br i1`/`phi`
 > is control over quantum state and must NEVER reach the backend as classical
-> control. Coherence is established by statevector/trace reasoning, never by
+> control. Coherence is established by analytic/trace reasoning, never by
 > `opt -verify` (`CLAUDE.md` Prime Directive).**
 
 Two physics facts pin the lowering and are stated once:
@@ -234,7 +234,7 @@ misleads).
   diagnostic string and a source location; the decline fixture is green; the
   not-clobber contrast cases do **not** falsely reject.
 - The phase-arm e2e trace smoke diffs clean against its golden.
-- Adversarial review against statevector/trace reasoning clears the emitter
+- Adversarial review against analytic/trace reasoning clears the emitter
   (`CLAUDE.md` Rule 13) — a green suite alone does not clear a core change.
 - Full suite (`ctest`) green; `gen_templates.py --check` clean (no ABI change in
   4.1).
@@ -263,7 +263,7 @@ misleads).
 
 - **Verify-clean silent miscompile (the project hazard).** A routing that passes
   `opt -verify` and prints a plausible trace yet computes the wrong unitary, drops
-  a `phi` edge, or frees an entangled rail. Mitigation: statevector reasoning +
+  a `phi` edge, or frees an entangled rail. Mitigation: analytic/trace reasoning +
   e2e golden diff + adversarial review (Rule 13), never the verifier alone.
 - **`br` polarity inversion (Rule 9).** `clang -O1` canonicalizes `if(u!=k)` to
   `icmp eq; br eq, Merge, Arm`, so the gate arm is often the **false** successor.
@@ -301,9 +301,10 @@ misleads).
 
 Written 2026-06-10 at 4.2 start (Rule 16), after the status audit fixed the
 entry gates: (i) this treatment; (ii) the SCOPING §7.6 `cqrt_copy_<W>`
-resolution (§8.1 below); (iii) the SCOPING §8 method-B oracle demo, owed
-**before/with** the core emitter change per Rule 13 (it has never been
-simulated, and §8 records a path-B demo "would have caught the §3a inversion");
+resolution (§8.1 below); (iii) — the SCOPING §8 method-B demo obligation was
+**struck by owner decision 2026-06-10** (no statevector simulations at this
+stage); the B-keep boundary is documented analytically in §8.2 and the
+clearance gate is the WI-7 independent adversarial review;
 (iv) the §3c activation + the WI-1 Defect-2 string fix (bd memory
 `swap-route-detect-known-limits`); (v) the first real `emitInverseChain`
 invocation, discharging SCOPING §7.5. Module layout / fixtures / WI sequence:
@@ -315,8 +316,9 @@ dephases — verified P0 0.585→0.500), `swap-route-phase41-clearance` (the §8
 probe-matrix precedent this Part mirrors), `swap-route-detect-known-limits`
 (Defect-2; the one-tainted-region-per-fixture authoring rule — opt exits on the
 FIRST diagnostic), `swap-route-ifelse-derived-base-boundary` (arm-block-bounded
-spine walks), `rule13-no-backend-clearance-scope` (clearance = design-level
-oracle modeling; never claim "statevector-verified output").
+spine walks), `rule13-no-backend-clearance-scope` (clearance =
+analytic/trace-level review + lowered-IR reading, amended 2026-06-10; never
+claim "statevector-verified output").
 
 ---
 
@@ -347,7 +349,7 @@ opcodes, there is no user `x` intrinsic) — by **method-B**
 6. **Reverse-play `R†`** — route-back†, the chain's adjoint (`_inv` twins, via
    `emitInverseChain` — the **first real invocation**, §8.5), route-in†. This
    restores `p == p0` and returns the rail to `|0⟩` **on both branches**
-   (statevector trace: §8.2).
+   (analytic trace: §8.2).
 7. **Free the rail** — now provably `|0⟩` (§3b: free follows the reverse-play
    for value arms; never before it).
 8. **Strip the flag** — `icmp_inv(q)`: valid because the condition register is
@@ -472,10 +474,10 @@ SCOPING §3a "makes the trailing `icmp_inv` trivially valid" remark covers the
 general case; in 4.2's accepted subset it is valid outright).
 
 **The coherence contract (honest boundary — TWO observable deviation
-channels, proved by the independent review oracle, 2026-06-10; the WI-2 demo
-asserts both against the analytic closed forms below).** B-keep is
+channels, derived by independent review, 2026-06-10, with the analytic
+closed forms below).** B-keep is
 **measurement-correct** (the `out` distribution equals the controlled-op
-in-place reference exactly, always — the demo asserts it) and **undo-correct**
+in-place reference exactly, always) and **undo-correct**
 (B-undo composes). The rails and the flag are **exactly `|0⟩`** after R† +
 strip, so the garbage-dephasing assertions are **exact-zero**; and in the
 **basis-`p₀` regime every observable delta is exactly zero**. It is **not**
@@ -491,21 +493,20 @@ in-place `|q⟩|f_q(p₀)⟩`), and that kept-source correlation is observable o
 - **Channel B — answer-register coherence**: with a superposed `p₀` and even a
   **basis-state** condition (arm always taken — channel A's delta is exactly
   zero there), `out` itself loses `p`-coherence, visible to a plain downstream
-  `cq_theta(out, t)` + measure (review-oracle witness, 2-bit registers,
-  `f = +1 mod 4`: reference distribution `[.5, 0, 0, .5]` vs B-keep flat
-  `[.25, .25, .25, .25]`).
+  `cq_theta(out, t)` + measure (witness numbers recorded by the independent
+  review, 2026-06-10: 2-bit registers, `f = +1 mod 4` — reference distribution
+  `[.5, 0, 0, .5]` vs B-keep flat `[.25, .25, .25, .25]`).
 
-A demo recording only channel A could honestly record ~0 (basis condition) and
-bless an understated boundary — hence the adjudicated bar (binding; shared
-verbatim with IMPLEMENTATION-4.2 §8.1(c) and bd paj.2): **the documented
-deviation is asserted against the analytic closed form on BOTH channels, plus
-exact-zero deltas on all observables in the basis-`p₀` regime.** The bar is
-deliberately *not* "deviation must be zero" (that would relitigate Rule 7 and
-make 4.2 unshippable) and *not* bare "quantify + record" (under-specified —
-see the channel-A-only failure mode above). The kept-source correlation is
-inherent to Bennett-keep and is the documented boundary, not a 4.2 bug. The
-verdict and both numbers are recorded in SCOPING §8 before the emitter ships
-(Rule 13).
+A review covering only channel A could honestly record ~0 (basis condition)
+and bless an understated boundary — hence the boundary is documented on
+**BOTH channels** (binding documentation, the closed forms above). *The demo
+deliverable that originally enforced this bar was struck by owner decision
+2026-06-10 (no simulations at this stage):* clearance is the WI-7 independent
+adversarial review, reasoning analytically against these closed forms on both
+channels (plus the exact-zero observation in the basis-`p₀` regime). The
+boundary itself is deliberately *not* "deviation must be zero" (that would
+relitigate Rule 7 and make 4.2 unshippable). The kept-source correlation is
+inherent to Bennett-keep and is the documented boundary, not a 4.2 bug.
 
 **What restores fidelity — scoped honestly.** B-undo / `cq_invert` (SCOPING
 §3b: "value-arm / whole-region coherence by on-demand reverse-play") restores
@@ -520,8 +521,9 @@ keep-and-continue value regions the boundary remains open until a §6a
 treatment lands.
 
 **Never apply B to a phase arm** (Rule 7): the dephasing probe stays —
-every phase-arm accept fixture keeps `CHECK-NOT: cqrt_copy`, and the demo
-reproduces the P0 0.585 → 0.500 dephasing as its negative control.
+every phase-arm accept fixture keeps `CHECK-NOT: cqrt_copy`; the recorded
+P0 0.585 → 0.500 dephasing (2026-06-09) stands as the negative-control
+evidence.
 
 ### 8.3 The §3c reject goes ACTIVE — predicate, strings, Defect-2 fix
 
@@ -687,11 +689,11 @@ orchestrator (each gets a probe fixture, IMPLEMENTATION-4.2 §8):
 - `cqrt_copy_i{1,8,16,32,64}` land in the hand-written core ABI with the
   pinned signature/trace; the runtime trace test covers them;
   `gen_templates.py --check` stays clean (YAML untouched).
-- The method-B oracle demo (path B, **measuring the output register**, plus
-  the **two-channel** interference probes — §8.2 channels A and B, asserted
-  against the analytic closed forms, exact-zero deltas in the basis-`p₀`
-  regime — and the phase-arm dephasing negative) passes and its verdict is
-  recorded in SCOPING §8 — **before or with** the emitter change (Rule 13).
+- The §8.2 B-keep two-channel boundary is cleared by **independent adversarial
+  review** reasoning **analytically** against the closed forms (channels A and
+  B; exact-zero deltas in the basis-`p₀` regime; the phase-arm dephasing
+  negative stands as recorded evidence) — the oracle-demo obligation was
+  **struck by owner decision 2026-06-10** (no simulations at this stage).
 - §3c active: the full §8.3 matrix is fixtured — `q=q+3` rejects with the
   exact PRD-pinned string (+ transitive variant), `p=p+3` **accepts**,
   `p=q+1` and Defect-2 decline `control flow` (NOT §3c, NOT accepted), QQ
@@ -717,8 +719,8 @@ Honestly listed; each currently (or will, via WI-3) declines loudly:
 
 - **QQ chain links** (`p = p + r`, a second live quantum register read, not
   rewritten): method-B plausibly sound (the second operand is read-only on
-  both R and R†), but unmodeled — requires its own oracle demo before any
-  accept. Deferred; declines `value-arm swap-route`.
+  both R and R†), but unanalyzed — requires its own deliberate analytic
+  clearance before any accept. Deferred; declines `value-arm swap-route`.
 - **Mixed phase/value arms** (`rz(p,a); p=p+3` in one chain): the answer
   carries both a phase and a changed basis — copy dephases the phase part,
   strip is invalid for the value part. No B-variant fixes this; the candidate
@@ -745,12 +747,14 @@ Honestly listed; each currently (or will, via WI-3) declines loudly:
   straight-line and region paths.
 - **B-keep interference boundary** (kept-source correlation, §8.2 —
   **two channels**: control visibility + answer-register coherence): inherent
-  to Bennett-keep; asserted by the oracle demo against the analytic closed
-  forms on both channels. B-undo / `cq_invert` (Phase 7) restores fidelity
+  to Bennett-keep; cleared by the WI-7 independent adversarial review
+  reasoning analytically against the §8.2 closed forms on both channels (the
+  demo obligation was struck — owner decision 2026-06-10). B-undo /
+  `cq_invert` (Phase 7) restores fidelity
   only for compute→use→uncompute patterns; the keep-and-continue boundary
   stays open pending §6a control-in-place (§8.2 — it is NOT fully
-  dischargeable at Phase 7). If the demo's numbers contradict the §8.2 closed
-  forms, the emitter does NOT ship until the discrepancy is resolved
+  dischargeable at Phase 7). If the review's reasoning contradicts the §8.2
+  closed forms, the emitter does NOT ship until the discrepancy is resolved
   (Rule 13).
 - **`select`-folded short value arms** (§8.4): the dominant C-level shape for
   small arms reaches the pass as a tainted `select` — 4.4's scope. 4.2 does
