@@ -5,7 +5,8 @@
 // classifier walks each arm's contribution to the merge `φ` back along its
 // PHASE spine (the chain of `cq_phi`/Rz handle edges); the value the spine
 // bottoms at decides the arm's class:
-//   * a leaf handle (a value defined OUTSIDE the arm, or a `cq_theta` source) →
+//   * a leaf handle (a value defined OUTSIDE the arm — including a PRE-REGION
+//     `cq_phi`, the live DERIVED base — or a `cq_theta` source) →
 //     pure phase arm — accept iff that handle is tainted (criterion 3);
 //   * an arm-local value-changing op (add/mul/…/non-rotation) → a value arm —
 //     §3c PERMANENT reject if it rewrites a register in the condition's
@@ -55,8 +56,9 @@ bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 // same theta and the region was ACCEPTED, then the emitter collected the shared
 // pre-region phi ONCE PER ARM → double-erase SIGSEGV (verify-clean over-accept;
 // §8 adversarial review 2026-06-09, reproduced as exit 139). A `cq_phi` surfaced
-// as a base here is declined by the caller (over-decline is safe; routing a
-// derived handle is a deferred generalization).
+// as a base here is the live DERIVED base handle — the caller routes it like any
+// other tainted leaf (test_C_libtooling-9hh, 2026-06-10; criterion 3 permits a
+// derived tainted base).
 Value *walkPhaseSpine(Value *V, const BasicBlock *ArmBB) {
   while (auto *CI = dyn_cast<CallInst>(V)) {
     const Function *F = CI->getCalledFunction();
@@ -112,19 +114,25 @@ bool armBlockIsPureSpine(const BasicBlock *ArmBB, const Value *ArmIncoming) {
 // out of the arm into a dominating block, so keying on `getParent()` there
 // mis-accepts a real data-mux / §3c-clobber arm as a phase leaf (a verify-clean
 // silent miscompile; caught by WI-1 adversarial review 2026-06-09). A leaf is a
-// `cq_theta` source, a function argument, or a constant; ANY other instruction
-// (add/mul/cast/select/non-rotation call/…) defining a new value from a quantum
-// operand is value-changing. The phase spine is walked past `cq_phi` BEFORE this
-// is consulted, so a `cq_phi` reaching here is malformed → treated as a value op
-// (decline). Note: this does NOT fire for a handle that is merely DERIVED before
-// the region — that handle equals the routed `StraightThrough` and is accepted
-// by the base-identity short-circuit in `classifyArms`, before this is reached.
+// `cq_theta` source, a `cq_phi` (Rz) result, a function argument, or a constant;
+// ANY other instruction (add/mul/cast/select/non-rotation call/…) defining a new
+// value from a quantum operand is value-changing.
+//
+// `cq_phi` is a leaf BY OPCODE: Rz = diag(1, e^{iθ}) is DIAGONAL, so it preserves
+// the computational-basis value no matter which block clang placed it in — the
+// block-position trap above cannot arise for it (and `-O1` never hoists an
+// opaque external `cq_*` call anyway). The arm-bounded spine walk consumed every
+// IN-arm `cq_phi` before this is consulted, so one reaching here is a PRE-REGION
+// rotation: the live DERIVED base handle the arm extends
+// (test_C_libtooling-9hh; §0 criterion 3 permits a derived tainted base).
 bool isValueChangingOp(const Value *Base) {
   const auto *I = dyn_cast<Instruction>(Base);
   if (!I)
     return false;  // Argument / Constant — a leaf base.
   if (isThetaCall(I))
     return false;  // quantum source — a leaf handle.
+  if (isPhiCall(I))
+    return false;  // pre-region Rz — diagonal: the live DERIVED leaf handle.
   return true;     // any other instruction defines a new basis value → decline.
 }
 
@@ -199,6 +207,77 @@ Instruction *declAnchor(const ControlRegion &R) {
   return R.Merge;
 }
 
+// The first rotation whose arg-1 ANGLE operand is TAINTED — i.e. quantum-derived
+// data in the angle slot — among the arm's IN-BLOCK spine gates and (for a
+// derived base) the pre-region base `cq_phi` itself. Null if every angle is
+// classical. The emitter replays each spine gate's angle operand VERBATIM onto
+// the rail (`cqrt_rz(rail, angle)`), and nothing downstream lowers a tainted
+// non-template angle producer — after rotation lowering's RAUW it reads the i32
+// RUNTIME HANDLE, a fixed per-run tag, while the source semantics
+// (angle = f(quantum value), value in superposition) admit NO fixed unitary.
+// That is a verify-clean silent miscompile (found by the test_C_libtooling-9hh
+// §8 adversarial review, 2026-06-10 — probe: `%ang = call double @ext(i32 %qd)`
+// in the pred, arm gate `cq_phi(%qd, %ang)`; the lowered trace prints
+// `cqrt_rz(rail, ext(handle_id))`). The only sound disposition is a loud
+// decline — the angle-classicality precondition is the criterion-3 parallel for
+// arg-1 (Rule 3: the angle operand is classical, per-operand-use).
+CallInst *taintedAngleGate(Value *ArmIncoming, const BasicBlock *ArmBB,
+                           Value *Base, TaintSet &Taint) {
+  auto AngleTainted = [&Taint](CallInst *CI) {
+    return CI->arg_size() >= 2 && Taint.Tainted.count(CI->getArgOperand(1));
+  };
+  for (Value *V = ArmIncoming; isPhiCall(V);) {
+    auto *CI = cast<CallInst>(V);
+    if (CI->getParent() != ArmBB)
+      break;  // pre-region — handled via Base below.
+    if (AngleTainted(CI))
+      return CI;
+    if (CI->arg_size() < 1)
+      break;
+    V = CI->getArgOperand(0);
+  }
+  // A derived base's OWN angle must be classical too: declining here turns the
+  // later broken-module abort (rotation lowering RAUWs the f64 angle to an i32
+  // handle inside a call that is never erased — exit 134) into a clean,
+  // source-located decline.
+  if (isPhiCall(Base) && AngleTainted(cast<CallInst>(Base)))
+    return cast<CallInst>(Base);
+  return nullptr;
+}
+
+// Does a TAINTED-OPERAND `cq_theta` (an IN-PLACE, NON-DIAGONAL Ry on an existing
+// handle) sit between the condition compare and the branch? The emitter mints
+// the flag at the BRANCH position, so the flag reads the basis AFTER any gate
+// between the compare and the branch. A diagonal gate (`cq_phi`/Rz) preserves
+// the basis, so the mint still equals the source compare (the stale-condition
+// accept's soundness). A chained Ry does NOT: the flag then encodes a predicate
+// of the post-Ry state — the wrong arm fires AND `icmp_inv` cannot strip the
+// flag (verify-clean miscompile, pre-existing at WI-3, confirmed by independent
+// statevector probe 2026-06-10: overlap 0.853, residual flag P=0.118). Decline
+// conservatively: any tainted-operand theta between compare and branch (even on
+// another wire — over-decline is safe), or a compare we cannot bound the scan
+// for (defined outside the pred block). The principled fix — minting the flag
+// at the COMPARE's program point — is deferred (see the bd follow-up issue).
+bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint) {
+  auto *Cond = dyn_cast_or_null<Instruction>(R.Condition);
+  if (!Cond || !R.Pred)
+    return true;  // cannot reason about the gap — decline (Prime Directive).
+  if (Cond->getParent() != R.Pred)
+    return true;  // unbounded gap across blocks — conservative decline.
+  const Instruction *BI = R.Pred->getTerminator();
+  for (const Instruction *I = Cond->getNextNode(); I && I != BI;
+       I = I->getNextNode()) {
+    const auto *CI = dyn_cast<CallInst>(I);
+    if (!CI)
+      continue;
+    const Function *F = CI->getCalledFunction();
+    if (F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
+        Taint.Tainted.count(CI->getArgOperand(0)))
+      return true;  // chained Ry on a live handle after the compare.
+  }
+  return false;
+}
+
 }  // namespace
 
 ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
@@ -231,6 +310,16 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
       diagnoseUnderControl(declAnchor(Region), "condition used outside the branch");
       return ArmDisposition::Declined;
     }
+
+  // The flag is minted at the BRANCH; a tainted-operand `cq_theta` (non-diagonal
+  // Ry) between the compare and the branch makes that mint read a different
+  // basis than the source compare — the wrong arm fires and the flag cannot be
+  // stripped. Decline (see nonDiagonalGateBeforeBranch).
+  if (nonDiagonalGateBeforeBranch(Region, Taint)) {
+    diagnoseUnderControl(declAnchor(Region),
+                         "condition predates a non-diagonal gate");
+    return ArmDisposition::Declined;
+  }
 
   SmallPtrSet<Value *, 16> Prov;
   condProvenance(Region.Condition, Taint, Prov);
@@ -266,28 +355,34 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
     Value *ArmIncoming = MergePhi->getIncomingValueForBlock(ArmBB);
     Value *Base = walkPhaseSpine(ArmIncoming, ArmBB);
 
-    // A `cq_phi` surfaced as the in-block base is a pre-region rotation — the arm
-    // rotates a DERIVED handle (`%qd = cq_phi(%q,·)` before the branch), not a
-    // leaf quantum source. WI-3 routes only an un-derived handle, so decline (the
-    // derived-handle routing generalization is deferred; over-decline is safe,
-    // Prime Directive). This forecloses the if/else over-accept whose emitter
-    // double-erased the shared pre-region phi (SIGSEGV) and mis-resolved the
-    // routed handle to the stale theta (§8 adversarial review 2026-06-09). The
-    // diamond already declined this via `Base != StraightThrough`; the guard keeps
-    // it declining (now by an explicit reason) AND covers the if/else, which has
-    // no straight-through to compare against. See
-    // [[swap-route-ifelse-derived-base-boundary]].
-    if (isPhiCall(Base)) {
-      diagnoseUnderControl(declAnchor(Region), "control flow");
+    // Every angle on the arm spine (and a derived base's own angle) must be
+    // CLASSICAL — quantum-derived data in the angle slot has no fixed unitary
+    // and the emitter would replay it as a handle tag (see taintedAngleGate; the
+    // §8 adversarial probe family for test_C_libtooling-9hh).
+    if (CallInst *Bad = taintedAngleGate(ArmIncoming, ArmBB, Base, Taint)) {
+      diagnoseUnderControl(Bad, "rotation angle");
       return ArmDisposition::Declined;
     }
 
+    // A `cq_phi` surfaced as the in-block base is a PRE-REGION rotation: the arm
+    // rotates a DERIVED handle (`%qd = cq_phi(%q,·)` before the branch). That is
+    // a legitimate routed base (test_C_libtooling-9hh, 2026-06-10): %qd is
+    // tainted with theta lineage (criterion 3), Rz is diagonal so the flag
+    // minted from icmp(q) stays recoverable by icmp_inv(q), and rotation
+    // lowering RAUWs %q and %qd to the SAME i32 handle — routing the live SSA
+    // register is exactly what the emitter does for an un-derived base. It flows
+    // through the leaf paths below (isValueChangingOp treats `cq_phi` as a
+    // leaf); the WI-3 crash family stays foreclosed by the arm-block-bounded
+    // walks here and in SwapRouteEmit (the shared pre-region phi is never
+    // collected as an arm gate, so it cannot be double-erased — see
+    // [[swap-route-ifelse-derived-base-boundary]]).
+
     // Pure phase chain bottoming at the routed handle: accept this arm. The
     // routed handle MAY itself be a value DERIVED before the region (an earlier
-    // `add`/cast) — that is fine; only a value op ON THE ARM SPINE (i.e.
-    // Base != Routed) is a value/permutation arm. Criterion 3: the routed handle
-    // must be a tainted quantum handle (control_tainted_diag.ll's classical %y0
-    // is not).
+    // `add`/cast, or the pre-region `cq_phi` above) — that is fine; only a value
+    // op ON THE ARM SPINE (i.e. Base != Routed) is a value/permutation arm.
+    // Criterion 3: the routed handle must be a tainted quantum handle
+    // (control_tainted_diag.ll's classical %y0 is not).
     if (Routed && Base == Routed) {
       if (!Taint.Tainted.count(Base)) {
         diagnoseUnderControl(declAnchor(Region), "control flow");

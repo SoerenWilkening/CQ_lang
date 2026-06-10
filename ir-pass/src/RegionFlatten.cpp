@@ -54,8 +54,15 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint) {
   // 1. Drop the conditional branch — control is now straight-line. This leaves
   //    Pred terminator-less for exactly the next statement (no verify runs in
   //    between), and makes the arms unreachable + the condition compare dead.
-  if (BI)
+  //    Scrub it first: the `br i1` is a USER of the tainted condition, so
+  //    TaintPropagation put it in taint.Tainted — erasing without scrubbing
+  //    leaves a dangling Instruction* whose heap address a later-minted
+  //    instruction could reuse, turning membership probes into false taint
+  //    (§6.1 hygiene; §8 adversarial review 2026-06-10).
+  if (BI) {
+    scrubTaint(BI, taint);
     BI->eraseFromParent();
+  }
 
   // 2. Splice the merge block's surviving instructions (the measure / ret that
   //    consumed the RAUW'd phi — the phi itself was already erased upstream)

@@ -78,12 +78,14 @@ bool isPhiCall(const Value *V) { return !intrinsicSuffix(V, "cq_phi_").empty(); 
 // by the caller.
 //
 // The walk STOPS at the arm-block boundary: a `cq_phi` defined OUTSIDE `ArmBB` is
-// a pre-region rotation (the live DERIVED base handle), NOT an arm gate. Detection
-// declines such derived-handle regions, so the emitter should never see one — but
-// bounding here is load-bearing defense (Rule 10): an unbounded walk would collect
-// a pre-region phi SHARED by both arms once per arm, and the §6.1 reverse-erase
-// would double-free it (SIGSEGV). Keeping the per-arm gate list strictly in-block
-// makes that impossible regardless of what detection passes through.
+// a pre-region rotation — the live DERIVED base handle the region ROUTES
+// (accepted since test_C_libtooling-9hh), NOT an arm gate. It stays in
+// `taint.PhiCalls`, so `lowerRotations` lowers it as an ordinary unconditional
+// Rz at its own (pre-stream) position and RAUWs it to the same i32 handle as its
+// theta. Bounding here is load-bearing (Rule 10): an unbounded walk would
+// collect a pre-region phi SHARED by both arms once per arm, and the §6.1
+// reverse-erase would double-free it (SIGSEGV — the WI-3 crash). Keeping the
+// per-arm gate list strictly in-block makes that impossible.
 SmallVector<CallInst *, 4> collectArmPhis(Value *ArmIncoming,
                                           const BasicBlock *ArmBB) {
   SmallVector<CallInst *, 4> Phis;
@@ -160,11 +162,22 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
                 const ControlledSymbols &csyms, TaintSet &taint) {
   auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
   auto *MergePhi = dyn_cast_or_null<PHINode>(R.Merge);
-  if (!Cond || !MergePhi || !R.Pred || !R.Arm)
-    return;  // detection guarantees the shape; bail defensively.
-  auto *BI = dyn_cast<BranchInst>(R.Pred->getTerminator());
-  if (!BI)
+  if (!Cond || !MergePhi || !R.Pred || !R.Arm) {
+    // Detection guarantees the shape; if it ever fails to hold, bail LOUDLY — a
+    // silently skipped accepted region leaves the tainted `br` to the backend
+    // as classical control over quantum state (the unforgivable outcome,
+    // Rule 1). Anchor on whatever instruction is still available.
+    if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
+      diagnoseUnderControl(A, "control flow");
+    else if (R.Merge)
+      diagnoseUnderControl(R.Merge, "control flow");
     return;
+  }
+  auto *BI = dyn_cast<BranchInst>(R.Pred->getTerminator());
+  if (!BI) {
+    diagnoseUnderControl(Cond, "control flow");  // loud, never a silent skip.
+    return;
+  }
 
   // Arm list + per-arm polarity. A diamond has one content arm whose polarity
   // rides `R.ArmNegated` (clang -O1 may make the gate arm the FALSE successor,
@@ -229,8 +242,13 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
   FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
   FunctionCallee Rz = Abi.empty() ? FunctionCallee() : wd.rzRtFn(Abi);
-  if (!RailTy || !Alloc || !Rz)
-    return;  // unsupported width — detection should not have accepted; leave it.
+  if (!RailTy || !Alloc || !Rz) {
+    // Unsupported width past detection — decline LOUDLY (a silent leave-in-
+    // place would hand the tainted `br` to the backend as classical control
+    // while the later rotation lowering fires the arm gates unconditionally).
+    diagnoseUnderControl(Cond, "control flow");
+    return;
+  }
 
   const DebugLoc DL = BI->getDebugLoc();
   IRBuilder<> B(BI);  // every stream call lands before the conditional br.
@@ -306,6 +324,33 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
                          const ControlPlan &plan) {
   if (plan.Regions.empty())
     return;  // nothing accepted — classical / fully-declined module untouched.
+
+  // Pre-flight, while EVERY region's blocks are still valid (the block-lifetime
+  // rule): no accepted region may reference a block that flattening another
+  // accepted region will erase (its Arm/ArmFalse/MergeBB). Detection forecloses
+  // the known sequential layouts (an if/else or diamond merge hosting the next
+  // tainted branch declines as nested), so this should be unreachable — but a
+  // future shape that slips through must decline LOUDLY here, not dereference
+  // freed memory in emitRegion (the §8-confirmed sequential-region SIGSEGV
+  // family, 2026-06-10). Pointer-identity checks only; nothing is dereferenced.
+  for (const ControlRegion &A : plan.Regions)
+    for (const ControlRegion &B : plan.Regions) {
+      if (&A == &B)
+        continue;
+      for (BasicBlock *Doomed : {B.Arm, B.ArmFalse, B.MergeBB}) {
+        if (!Doomed)
+          continue;
+        if (A.Pred == Doomed || A.Arm == Doomed || A.ArmFalse == Doomed ||
+            A.MergeBB == Doomed) {
+          if (auto *Anchor = dyn_cast_or_null<Instruction>(A.Condition))
+            diagnoseUnderControl(Anchor, "control flow");
+          else if (A.Merge)
+            diagnoseUnderControl(A.Merge, "control flow");
+          return;  // lower NOTHING — over-declining is always safe.
+        }
+      }
+    }
+
   ControlledSymbols csyms(M, wd);
   for (const ControlRegion &R : plan.Regions)
     emitRegion(R, wd, csyms, taint);

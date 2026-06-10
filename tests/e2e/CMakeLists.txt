@@ -52,6 +52,20 @@ add_test(NAME e2e-slice-control-phase-diamond
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_diamond.expected.log")
 
+# Phase 4.1 follow-on (test_C_libtooling-9hh): two-arm PHASE if/else routing a
+# DERIVED base (a pre-region cq_phi result). Links the dual-rail §5b stream —
+# both rails, the cqrt_x ¬flag bracket, and the pre-region cqrt_rz that must
+# precede the flag mint — against the runtime. The arms are asymmetric (2 vs 1
+# gates) deliberately: symmetric one-gate arms canonicalize at -O1 into the
+# 4.4-deferred tainted ANGLE SELECT, which declines (Rule 9).
+add_test(NAME e2e-slice-control-phase-ifelse-derived
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_ifelse_derived.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_ifelse_derived.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route

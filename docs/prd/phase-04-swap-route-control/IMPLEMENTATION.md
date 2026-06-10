@@ -41,6 +41,50 @@ existing `control_tainted_diag.ll` a **decline** (its arm rotates the *classical
 arg `%y0`, failing (3)) so that fixture stays green with no edit — verify, don't
 repoint.
 
+> **Addendum (2026-06-10, test_C_libtooling-9hh — derived base accepted).**
+> Criterion 3's "tainted quantum handle" explicitly includes a **derived** base:
+> a pre-region, unconditional `cq_phi` result (`%qd = cq_phi(%q,·)` before the
+> branch, shared by the arm spines). WI-3 shipped a stricter SSA-conservative
+> decline (`isPhiCall(Base)` → `control flow`) as crash-containment; that guard
+> is now removed. Soundness: `cq_phi` is an Rz — **diagonal**, so it is a leaf
+> by opcode in `isValueChangingOp` (basis value preserved ⇒ the flag minted from
+> `icmp(q)` stays recoverable by `icmp_inv(q)`), and rotation lowering RAUWs
+> `%q` and `%qd` to the **same** i32 handle, so routing the live SSA register is
+> identical at the handle level. The WI-3 double-erase family stays foreclosed
+> by the arm-block-bounded spine walks (the shared pre-region phi is never
+> collected as an arm gate). A derived base that does **not** equal the routed
+> handle (diamond stale straight-through; mixed-depth if/else arms) still
+> declines `control flow`. Statevector clearance:
+> `docs/design/rssa-swap-control/clearance_derived_base.py` (coherence-exact
+> under both Rz conventions, 1-qubit AND 2-bit-register models; the two-arm
+> stream is convention-independent up to global phase). Fixtures:
+> `control_swap_{diamond,ifelse}_derived*.ll`,
+> `control_swap_reject_{diamond_derived_crosshandle,ifelse_derived_mixed}.ll`;
+> e2e: `slice_control_phase_ifelse_derived` (asymmetric arms — symmetric
+> one-gate arms fold to the 4.4-deferred tainted **angle select** at `-O1`).
+>
+> The §8 adversarial clearance of this change added three guards to the accept
+> predicate (each with its own decline string + fixtures):
+> 1. **Angle classicality** (`taintedAngleGate`) — every arm-spine gate's arg-1
+>    angle, and a derived base's own angle, must be **untainted**; a
+>    quantum-derived angle has no fixed unitary and would lower verbatim to a
+>    handle-tag read (verify-clean silent miscompile, confirmed live for both
+>    derived and un-derived bases) → `rotation angle`
+>    (`control_swap_reject_tainted_angle{,_underived,_prebase}.ll`).
+> 2. **Sequential regions** — an if/else MERGE hosting the next tainted branch
+>    declines as `nested control flow` while blocks are still valid (an
+>    accepted region's flatten erases its merge = the next region's Pred —
+>    SIGSEGV; pre-existing at WI-3, reach widened by the derived accept). The
+>    emitter also pre-flights cross-region block aliasing and made every
+>    defensive bail **loud** (`control_swap_reject_seq_ifelse.ll`).
+> 3. **Compare/branch gap** (`nonDiagonalGateBeforeBranch`) — a tainted-operand
+>    `cq_theta` (non-diagonal Ry) between the compare and the branch makes the
+>    branch-position flag mint read the wrong basis (verify-clean wrong-arm +
+>    clean flag, fidelity 0.848 vs source in the oracle; pre-existing) →
+>    `condition predates a non-diagonal gate`
+>    (`control_swap_reject_stalecond_chained_theta.ll`). The principled
+>    mint-at-compare design is a deferred follow-up.
+
 Decline dispositions for everything else (each a loud `DiagnosticInfoUnsupported`
 via the shared `diagnoseUnderControl`, `opt` exits non-zero):
 

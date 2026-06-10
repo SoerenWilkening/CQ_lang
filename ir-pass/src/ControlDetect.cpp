@@ -129,6 +129,17 @@ RegionShape recoverRegion(BranchInst *BI, TaintSet &Taint, ControlRegion &R) {
     if (M == uncondSucc(S1) && M != S0 && M != S1 &&
         S0->getSinglePredecessor() == Pred &&
         S1->getSinglePredecessor() == Pred) {
+      // The MERGE hosting the next region's tainted branch (sequential
+      // `if/else; if`) must decline HERE, while every block is still valid: an
+      // accepted if/else's flattenRegion splices + ERASES its merge block,
+      // which is exactly the second region's Pred — emitting both is a
+      // use-after-free (SIGSEGV on valid input; §8 adversarial review
+      // 2026-06-10). A DIAMOND gets this protection incidentally (its merge is
+      // an immediate successor, caught by the Nested check above); the if/else
+      // merge is one hop further, so check it explicitly. Same imprecise-but-
+      // safe "nested" label as the sequential-diamond case (known-limits §3).
+      if (hasTaintedCondBranch(M, Taint))
+        return RegionShape::Nested;
       if (PHINode *Phi = soleMergePhi(M))
         if (Phi->getBasicBlockIndex(S0) >= 0 &&
             Phi->getBasicBlockIndex(S1) >= 0) {
