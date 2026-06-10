@@ -245,25 +245,79 @@ CallInst *taintedAngleGate(Value *ArmIncoming, const BasicBlock *ArmBB,
   return nullptr;
 }
 
+// SSA wire-walk twin of the positional scan below (position-robust, Rule 9): a
+// pure tainted producer (`icmp`, `add`, casts) can be SCHEDULED anywhere —
+// LLVM may sink the compare, or the arithmetic feeding it, below the chained
+// theta with the SSA graph unchanged (`%c` still denotes the pre-Ry value) —
+// so POSITION proves nothing about the wire. Opaque `cq_*` calls do keep
+// their order, so the wire itself is reliable. Seeding matters as much as
+// walking: the walk is seeded from the condition's full tainted backward
+// PROVENANCE (`condProvenance`), NOT just the compare's direct operands — a
+// derived condition (`%d = add %q, 1; icmp %d`) hides the stale `%q` one pure
+// wire-hop behind the compare, and direct-operand seeding never reached
+// `%q`'s chained theta user (confirmed accepted+miscompiled by the pre-fix
+// tree 2026-06-10: `cq_template_add(%h, 1)` emitted after `cqrt_ry(%h, %t2)`;
+// fixture control_swap_reject_stalecond_derived_cond.ll). From each seed,
+// follow in-place gate user edges — a `cq_phi` user taking the value as its
+// arg-0 handle is DIAGONAL (basis preserved; keep walking its result, the
+// same physical wire), a `cq_theta` user is an in-place Ry AFTER the compared
+// value was defined, i.e. the branch-time mint would read a post-Ry basis
+// while the SSA operand denotes the pre-Ry value (the sunk-compare layout of
+// the same miscompile — confirmed accepted+miscompiled 2026-06-10; fixture
+// control_swap_reject_stalecond_sunk_compare.ll). The walk does not cross the
+// merge `phi` (a PHINode user is not a call), so PHI-MEDIATED post-region
+// thetas are unreachable; a DIRECT post-region theta user of a provenance
+// value IS reachable and declines — over-decline, accepted as safe (the wire
+// demonstrably gains a non-diagonal gate while the condition's record is
+// live; Prime Directive).
+bool wireGainsNonDiagonalGate(const SmallPtrSetImpl<Value *> &Prov) {
+  SmallVector<Value *, 16> Work(Prov.begin(), Prov.end());
+  SmallPtrSet<Value *, 16> Seen;
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    for (User *U : V->users()) {
+      auto *CI = dyn_cast<CallInst>(U);
+      if (!CI || CI->arg_size() < 1 || CI->getArgOperand(0) != V)
+        continue;  // not an in-place gate on this wire (angle/data uses, br).
+      if (isThetaCall(CI))
+        return true;  // chained Ry on the condition's wire — decline.
+      if (isPhiCall(CI))
+        Work.push_back(CI);  // diagonal — same wire, keep walking forward.
+    }
+  }
+  return false;
+}
+
 // Does a TAINTED-OPERAND `cq_theta` (an IN-PLACE, NON-DIAGONAL Ry on an existing
-// handle) sit between the condition compare and the branch? The emitter mints
-// the flag at the BRANCH position, so the flag reads the basis AFTER any gate
-// between the compare and the branch. A diagonal gate (`cq_phi`/Rz) preserves
-// the basis, so the mint still equals the source compare (the stale-condition
-// accept's soundness). A chained Ry does NOT: the flag then encodes a predicate
-// of the post-Ry state — the wrong arm fires AND `icmp_inv` cannot strip the
-// flag (verify-clean miscompile, pre-existing at WI-3, confirmed by independent
-// statevector probe 2026-06-10: overlap 0.853, residual flag P=0.118). Decline
-// conservatively: any tainted-operand theta between compare and branch (even on
-// another wire — over-decline is safe), or a compare we cannot bound the scan
-// for (defined outside the pred block). The principled fix — minting the flag
-// at the COMPARE's program point — is deferred (see the bd follow-up issue).
-bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint) {
+// handle) sit between the condition compare and the branch — positionally OR on
+// the condition's SSA provenance wire (`wireGainsNonDiagonalGate`)? The emitter
+// mints the flag at the BRANCH position, so the flag reads the basis AFTER any
+// gate between the compare and the branch. A diagonal gate (`cq_phi`/Rz)
+// preserves the basis, so the mint still equals the source compare (the
+// stale-condition accept's soundness). A chained Ry does NOT: the flag then
+// encodes a predicate of the post-Ry state — the wrong arm fires AND `icmp_inv`
+// cannot strip the flag (verify-clean miscompile, pre-existing at WI-3; oracle
+// investigation_mint_at_compare.py P2: stream fidelity cos^2(t2/2) = 0.848 with
+// a CLEAN flag). Decline conservatively: any tainted-operand theta between
+// compare and branch (even on another wire — over-decline is safe), any theta
+// user anywhere on the condition's tainted provenance wire (the sunk-compare
+// and derived-condition layouts), or a compare we cannot bound the scan for
+// (defined outside the pred block). Minting at the COMPARE's program point was
+// investigated and REJECTED (test_C_libtooling-ee5): it fixes arm selection but
+// no flag-freeing compilation of this shape is source-exact — the decline is
+// permanent. Design-of-record:
+// docs/design/rssa-swap-control/MINT_AT_COMPARE.md.
+bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
+                                 const SmallPtrSetImpl<Value *> &Prov) {
   auto *Cond = dyn_cast_or_null<Instruction>(R.Condition);
   if (!Cond || !R.Pred)
     return true;  // cannot reason about the gap — decline (Prime Directive).
   if (Cond->getParent() != R.Pred)
     return true;  // unbounded gap across blocks — conservative decline.
+  if (wireGainsNonDiagonalGate(Prov))
+    return true;  // chained Ry on the condition's wire, schedule-independent.
   const Instruction *BI = R.Pred->getTerminator();
   for (const Instruction *I = Cond->getNextNode(); I && I != BI;
        I = I->getNextNode()) {
@@ -311,18 +365,21 @@ ArmDisposition classifyArms(const ControlRegion &Region, TaintSet &Taint) {
       return ArmDisposition::Declined;
     }
 
+  // Backward tainted provenance of the condition — shared by the wire-walk
+  // guard below (its seed set; direct-operand seeding misses a derived
+  // condition's wire) and the §3c clobber check on value arms.
+  SmallPtrSet<Value *, 16> Prov;
+  condProvenance(Region.Condition, Taint, Prov);
+
   // The flag is minted at the BRANCH; a tainted-operand `cq_theta` (non-diagonal
   // Ry) between the compare and the branch makes that mint read a different
   // basis than the source compare — the wrong arm fires and the flag cannot be
   // stripped. Decline (see nonDiagonalGateBeforeBranch).
-  if (nonDiagonalGateBeforeBranch(Region, Taint)) {
+  if (nonDiagonalGateBeforeBranch(Region, Taint, Prov)) {
     diagnoseUnderControl(declAnchor(Region),
                          "condition predates a non-diagonal gate");
     return ArmDisposition::Declined;
   }
-
-  SmallPtrSet<Value *, 16> Prov;
-  condProvenance(Region.Condition, Taint, Prov);
 
   // The diamond's straight-through (Pred-edge) incoming — the muxed variable's
   // prior value AND the handle a phase arm must route. Present only for a

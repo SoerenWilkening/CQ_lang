@@ -70,6 +70,15 @@ but that is a side benefit, not the goal.
   a variable the condition reads → loud decline).
 - `prototype_semantics.py` — one-off statevector oracle (NOT part of the build;
   see §8). Validates the semantics the `.ll` specs cannot show on their face.
+- `MINT_AT_COMPARE.md` + `investigation_mint_at_compare.py` — design-of-record
+  + oracle for the chained-Ry stale-condition shape (test_C_libtooling-ee5):
+  mint-at-compare fixes arm selection but **no flag-freeing compilation is
+  source-exact** — the "condition predates a non-diagonal gate" decline is
+  permanent. The guard is SSA-wire-walk hardened, seeded from the condition's
+  full tainted provenance (covers both sunk-compare scheduling and derived
+  conditions that hide the wire behind pure arithmetic); the branch-free
+  instance of the same stale-record family is tracked pass-wide as
+  test_C_libtooling-uzb.
 
 ---
 

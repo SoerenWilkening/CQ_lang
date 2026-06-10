@@ -16,9 +16,16 @@
 ; source compare. Diagonality is precisely the load-bearing property; an
 ; intervening Ry breaks it. The guard declines conservatively on ANY
 ; tainted-operand cq_theta between the compare and the branch (even on another
-; wire — over-decline is safe), and on a compare outside the pred block (the
-; scan cannot be bounded). The principled fix — minting the flag at the
-; COMPARE's program point — is a deferred design question (bd follow-up).
+; wire — over-decline is safe), on a theta user anywhere on the condition's
+; tainted PROVENANCE wire — seeded via condProvenance, so it covers both the
+; sunk-compare layout (control_swap_reject_stalecond_sunk_compare.ll) and the
+; derived-condition layout (control_swap_reject_stalecond_derived_cond.ll) —
+; and on a compare outside the pred block (the scan cannot be bounded).
+; Minting the flag at the COMPARE's program point was investigated and
+; REJECTED (test_C_libtooling-ee5): it fixes arm selection but no flag-freeing
+; compilation of this shape is source-exact — the decline is PERMANENT. See
+; docs/design/rssa-swap-control/MINT_AT_COMPARE.md (oracle:
+; investigation_mint_at_compare.py).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
