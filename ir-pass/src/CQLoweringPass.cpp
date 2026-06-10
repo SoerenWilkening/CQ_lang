@@ -83,6 +83,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   ControlPlan plan = detectControlRegions(M, taint);
   lowerControlRegions(M, wd, taint, plan);
 
+  // Classical-condition mux guard (test_C_libtooling-wi5): a LIVE select/phi
+  // reading tainted data that SURVIVES control lowering is classically
+  // conditioned (ControlDetect adjudicated every tainted condition above —
+  // declined regions already exited opt; accepted regions' merge phis are
+  // erased) and no later stage owns it — the Phase-5 FreePoint net is bypassed
+  // whenever the base handle is measured/escaped/`main`-resident or
+  // non-terminal. Must run BEFORE `lowerRotations` (pre-RAUW SSA identity).
+  declineClassicalMuxes(M, taint);
+
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
   lowerRotations(M, wd, taint, &plan);
@@ -139,6 +148,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // IMPLEMENTATION §6.5).
   ControlPlan plan = detectControlRegions(M, taint);
   lowerControlRegions(M, wd, taint, plan);
+  // Classical-condition mux guard in this entry point too (twin-pipeline
+  // trap, IMPLEMENTATION §6.5) — see run() for the ordering rationale.
+  declineClassicalMuxes(M, taint);
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);

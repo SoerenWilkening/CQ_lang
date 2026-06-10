@@ -264,11 +264,14 @@ void declineTaintEscapes(Module &M, const TaintSet &taint) {
           continue;
         // 3. Control-flow value merges/muxes — owned by ControlDetect (a
         //    tainted-condition select/switch/branch accepts as a swap-route
-        //    region or declines "... under quantum control") and by the
-        //    Phase-5 FreePoint net (a classical-condition phi/select over
-        //    tainted data reaches its "unrecognized user" reject). Declining
-        //    them here would re-own shapes whose fixtures pin those
-        //    diagnostics character-for-character.
+        //    region or declines "... under quantum control") and, for the
+        //    CLASSICAL-condition leftovers, by `declineClassicalMuxes`, which
+        //    runs after `lowerControlRegions` (test_C_libtooling-wi5 — the
+        //    Phase-5 FreePoint net is NOT an owner: its "unrecognized user"
+        //    reject is bypassed when the base handle is Measured / Escaped /
+        //    `main`-resident or non-terminal). Declining them here would
+        //    re-own the tainted-condition shapes whose fixtures pin the
+        //    "... under quantum control" diagnostics character-for-character.
         if (isa<PHINode>(I) || isa<SelectInst>(I))
           continue;
         // 4. Terminators: a tainted `br`/`switch` condition is ControlDetect's;
@@ -287,6 +290,71 @@ void declineTaintEscapes(Module &M, const TaintSet &taint) {
         //    (FreePoint returns Measured before its FirstUnrecognized check),
         //    so the decline must happen HERE, pre-lowering.
         diagnoseEscape(&I, isa<StoreInst>(I) ? kMsgStore : kMsgOther);
+      }
+    }
+  }
+}
+
+namespace {
+
+// The exact diagnostic strings the classical-mux guard owns
+// (test_C_libtooling-wi5). The negative fixtures mirror each one
+// CHARACTER-FOR-CHARACTER (Rule 12):
+//   * lowering_reject_classical_mux_select_measured.ll     → kMsgClassicalSelect
+//   * lowering_reject_classical_mux_select_escape.ll       → kMsgClassicalSelect
+//   * lowering_reject_classical_mux_select_alltainted_main.ll
+//                                                          → kMsgClassicalSelect
+//   * lowering_reject_classical_mux_phi_measured.ll        → kMsgClassicalPhi
+constexpr char kMsgClassicalSelect[] =
+    "cq taint escape: tainted value muxed by a classical-condition select";
+constexpr char kMsgClassicalPhi[] =
+    "cq taint escape: tainted value muxed by a classical-condition phi";
+
+}  // namespace
+
+void declineClassicalMuxes(Module &M, const TaintSet &taint) {
+  // BB-order walk, one diagnostic per offending mux (deterministic order,
+  // same discipline as declineTaintEscapes). Runs AFTER `lowerControlRegions`:
+  // every tainted-condition construct has already been adjudicated by
+  // ControlDetect (declined → opt exited at that first DS_Error; accepted →
+  // SwapRouteEmit RAUW'd + erased + taint-scrubbed the merge phi), so a
+  // surviving select/phi over tainted data is CLASSICALLY conditioned, and no
+  // later stage owns it — decline loudly (Prime Directive). Confirmed silent
+  // pre-guard for all five bypass shapes: base-also-measured, base-escaped
+  // (`ret`), `main`-resident, non-terminal base, and the all-tainted
+  // distinct-handle mux (which rules out the "mixed-incomings-only" variant
+  // of this guard — see the wi5 trail).
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        if (auto *Sel = dyn_cast<SelectInst>(&I)) {
+          // Tainted condition → ControlDetect's, never ours (defensive: under
+          // opt the earlier "select under quantum control" decline already
+          // exited; an in-process host that continues past it must still not
+          // see a second owner claim the same shape).
+          if (taint.Tainted.count(Sel->getCondition()))
+            continue;
+          if (taint.Tainted.count(Sel->getTrueValue()) ||
+              taint.Tainted.count(Sel->getFalseValue()))
+            diagnoseEscape(Sel, kMsgClassicalSelect);
+          continue;
+        }
+        if (auto *Phi = dyn_cast<PHINode>(&I)) {
+          // A DEAD phi is a pure live-range extender (no reader → no mux →
+          // nothing downstream can read the wrong value): FreePoint's pinned
+          // benign-merge domain (isBenignLiveRangePhi; ACCEPT fixture
+          // lowering_uncompute_branch_botharms.ll). Everything live that
+          // reads tainted data — mixed handle/literal, all-tainted distinct
+          // handles, even the degenerate same-value merge — is declined: its
+          // uncompute/free story is path-dependent and unproven.
+          if (Phi->use_empty())
+            continue;
+          if (readsTaintedValue(*Phi, taint))
+            diagnoseEscape(Phi, kMsgClassicalPhi);
+          continue;
+        }
       }
     }
   }

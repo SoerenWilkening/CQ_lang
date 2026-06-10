@@ -128,6 +128,29 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 // (same surface as RotationLowering::declineTaintedAngle).
 void declineTaintEscapes(llvm::Module &M, const TaintSet &taint);
 
+// Classical-condition value-mux guard (test_C_libtooling-wi5). Pure analysis,
+// wired in BOTH pipeline entry points AFTER `lowerControlRegions` and BEFORE
+// `lowerRotations` (pre-RAUW SSA identity). Ordering is load-bearing twice
+// over (bd memory opt-exits-at-first-ds-error-freepoint-net):
+//   * AFTER control: ControlDetect owns every TAINTED-condition br/switch/
+//     select (accept → SwapRouteEmit consumes/erases the merge phi; decline →
+//     opt already exited at that first DS_Error), so whatever select/phi
+//     survives to this guard is classically conditioned — no re-owning of the
+//     pinned "… under quantum control" fixtures.
+//   * BEFORE rotation lowering: after RAUW the mux reads the i32 handle tag
+//     and is verify-clean.
+//
+// A LIVE select/phi that reads a tainted SSA value under a CLASSICAL condition
+// is a runtime-chosen alias of quantum state ("handle-or-literal", or
+// "handle-or-other-handle"): measuring or gating its result is the
+// verify-clean silent-miscompile class, and NO later stage owns it — the
+// Phase-5 FreePoint "unrecognized user" net is bypassed whenever the base
+// handle is Measured/Escaped/`main`-resident or non-terminal. DECLINED loudly
+// here. The one accepted residue: a DEAD (use_empty) phi is a pure live-range
+// extender with no reader — FreePoint's pinned benign-merge domain
+// (lowering_uncompute_branch_botharms.ll) — and cannot miscompile.
+void declineClassicalMuxes(llvm::Module &M, const TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_TAINT_PROPAGATION_H_
