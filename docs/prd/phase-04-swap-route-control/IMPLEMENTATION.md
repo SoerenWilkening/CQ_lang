@@ -434,19 +434,21 @@ against statevector/trace reasoning:
 
 ---
 
-## 9. Done criteria (maps PRD §4)
+## 9. Done criteria (maps PRD §4) — **all met; 4.1 closed 2026-06-10** (epic
+closed `e4baa67`; §8 clearance `c3359d2`; derived-base addendum `9786cef`)
 
-- [ ] Diamond (5a) + if/else (5b) lower to the pinned routed streams;
+- [x] Diamond (5a) + if/else (5b) lower to the pinned routed streams;
       `CHECK-NOT: _controlled` and `CHECK-NOT: phi i32` green; `opt -verify`
       clean (second-RUN line).
-- [ ] Classical-condition `br`/if-else left byte-identical (passthrough fixtures
+- [x] Classical-condition `br`/if-else left byte-identical (passthrough fixtures
       stay green; `control_tainted_diag.ll` still declines).
-- [ ] §3c clobber emits the exact string with a source location; decline +
+- [x] §3c clobber emits the exact string with a source location; decline +
       derived-condition probes green; contrast cases do **not** false-reject.
-- [ ] Phase-arm e2e trace diffs clean against its golden.
-- [ ] §8 adversarial review clears `SwapRouteEmit` (statevector + no-spurious-free
+- [x] Phase-arm e2e trace diffs clean against its golden
+      (`slice_control_phase_diamond` + `slice_control_phase_ifelse_derived`).
+- [x] §8 adversarial review clears `SwapRouteEmit` (statevector + no-spurious-free
       + dephasing guard), not just green tests.
-- [ ] Full `ctest` green; `gen_templates.py --check` clean (no 4.1 ABI change).
+- [x] Full `ctest` green; `gen_templates.py --check` clean (no 4.1 ABI change).
 
 ---
 

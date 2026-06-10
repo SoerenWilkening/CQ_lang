@@ -61,8 +61,10 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 // `ControlledSymbols::controlledRotationFn`). `phi` supplies the width suffix,
 // debug loc, and insertion point; the Rz is inserted before it. Returns true
 // iff the Rz was emitted (false ⇒ unsupported width, diagnosed loudly, `phi`
-// left standing for the verifier). Shared by `lowerRotations` (uncontrolled)
-// and `ControlledSubstitution` (controlled). PRECONDITION: the caller has
+// left standing for the verifier). Today only `lowerRotations` calls it
+// (uncontrolled); the controlled form is retained solely for the optional §6a
+// control-in-place peephole (`ControlledSymbols::controlledRotationFn` reserve
+// — `ControlledSubstitution` was excised in 7cde677). PRECONDITION: the caller has
 // verified `angle` is classical (untainted) — `lowerRotations` declines a
 // tainted angle before calling (test_C_libtooling-659).
 bool emitRz(llvm::CallInst *phi, llvm::Value *handle, llvm::Value *angle,

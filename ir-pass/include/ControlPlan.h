@@ -113,13 +113,17 @@ struct ControlRegion {
   } Kind = BranchRegion;
 
   // The merge node: a `SelectInst` (select-sourced) or the merge-block
-  // `PHINode` (br-sourced). `MergeDissolution` rewrites/erases it.
+  // `PHINode` (br-sourced). `SwapRouteEmit` RAUWs/erases it (the excised
+  // `MergeDissolution` is gone, 7cde677).
   llvm::Instruction *Merge = nullptr;
 
   // In-shadow gate-body ops (the `then`-arm `cq_phi` calls), in program
-  // order. `ControlledSubstitution` lowers each to its `_controlled` variant.
-  // For a symmetric two-content-arm diamond (WP8) this holds the TRUE arm's
-  // gates (controlled on `flag`); `ShadowFalse` holds the FALSE arm's.
+  // order. RETAINED VOCABULARY, currently unpopulated: `SwapRouteEmit` walks
+  // the arm blocks directly and replays each gate verbatim+uncontrolled on the
+  // routed work rail (the excised `ControlledSubstitution`'s `_controlled`
+  // lowering survives only as the §6a control-in-place reserve,
+  // `ControlledSymbols`). For a symmetric two-content-arm diamond (WP8) this
+  // would hold the TRUE arm's gates; `ShadowFalse` the FALSE arm's.
   llvm::SmallVector<llvm::Instruction *, 4> Shadow;
 
   // br-sourced CFG anchors (null for a select region). `Pred` holds the

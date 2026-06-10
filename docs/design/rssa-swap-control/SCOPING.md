@@ -486,16 +486,22 @@ implementation cost and correctness surface.
   and *measures the output register* would have caught the §3a inversion and should
   be added. Safe to delete once the numbers here are trusted; regenerable on demand.
 
-## 9. Next step (in progress)
+## 9. Next step
 
-The old controlled-op control path has been removed (branch `swap-route-control`);
-a transitional stub diagnoses tainted control flow loudly until the emitter lands.
-Implement the swap-route emitter targeting the regenerated coherent
-`swap_route_if_diamond.ll` first, then `swap_route_ifelse.ll`. The 4.1 increment is
-**phase arms (`Rz`)**: route uncontrolled, free the `|0⟩` rail, strip the flag with
-`icmp_inv(q)` — coherent with **zero controlled gates** and no new ABI (§3a). The
-§3c clobber-the-condition reject ships alongside. Value/permutation arms (method-B,
-`cqrt_copy_<W>`) follow in 4.2; reverse-play is the on-demand undo, not an eager
+**4.1 (phase arms) landed and closed 2026-06-10** (epic `e4baa67`; derived-base
+addendum `9786cef`): `ControlDetect`/`ArmClassify`/`SwapRouteEmit`/`RegionFlatten`
+lower the phase-arm if-diamond and if/else exactly as §3a specifies — route
+uncontrolled, free the `|0⟩` rail, strip the flag with `icmp_inv(q)`, zero
+controlled gates, no new ABI — with the §3c clobber reject and the tainted-angle /
+stale-condition guard families alongside (see `MINT_AT_COMPARE.md` for the
+chained-Ry stale-condition verdict: permanent decline, purity theorem). Every
+not-yet-built shape declines loudly.
+
+**Next: 4.2 — value/permutation arms (method-B, `cqrt_copy_<W>`).** Entry gates:
+resolve the §7.6 copy-ABI width set/semantics, add the §8 method-B oracle demo
+(run path B, measure the output register) per Rule 13, activate the §3c reject
+for value arms, first real `emitInverseChain` invocation (§7.5). Then 4.3 nested
+→ 4.4 select → 4.5 switch. Reverse-play stays the on-demand undo, not an eager
 step (§3a). The ROADMAP "Phase 4 — RSSA swap-routed control flow" block and
 [`docs/prd/phase-04-swap-route-control/PRD.md`](../../prd/phase-04-swap-route-control/PRD.md)
 track the phasing.

@@ -19,10 +19,12 @@ class of bug.
 > **Authoritative status lives in [`ROADMAP.md`](ROADMAP.md), not here.** This
 > file is the *operating manual*; the ROADMAP is the *plan of record* (Phases
 > 0–10 + the 10 cross-cutting design principles). **Current focus: Phase 4 —
-> RSSA swap-routed tainted control flow**; clean-slate `4.0` is done, the
-> swap-route emitter is in progress on branch `swap-route-control`. Read
-> `ROADMAP.md` and `docs/design/rssa-swap-control/` *before* touching control
-> flow. Phases 0–3 are done; 5–10 are not started.
+> RSSA swap-routed tainted control flow**; clean-slate `4.0` and the `4.1`
+> phase-arm emitter are **done** (branch `swap-route-control`); `4.2`
+> (value/permutation arms, method-B) is next. Read `ROADMAP.md` and
+> `docs/design/rssa-swap-control/` *before* touching control flow. Phases 0–3
+> are done; 5–10 are not started (the early Phase-5 uncompute spine landed
+> alongside 4.1).
 
 ---
 
@@ -56,8 +58,9 @@ be written down — future agents (and you, after compaction) depend on it.
 when unsure (see Prime Directive). Diagnostics carry the offending instruction's
 `!dbg` so they are source-located and `opt` exits non-zero. A tainted
 `br` / `select` / `switch` is **never** silently passed to the backend as
-classical control over quantum state — `ControlStub.cpp` exists precisely to
-hold that invariant during the swap-route rebuild.
+classical control over quantum state — `ControlDetect.cpp` either hands the
+region to the swap-route emitter (`SwapRouteEmit.cpp`) or declines it loudly;
+there is no third path.
 
 **Rule 2 — Verify-clean is necessary, never sufficient.** Establish correctness
 by statevector reasoning (`docs/design/rssa-swap-control/prototype_semantics.py`
@@ -199,7 +202,8 @@ do **not** indicate new-design progress.
  LLVM 19 IR ──► opt -load-pass-plugin build/ir-pass/libCQPass.so -passes=cq-lowering
       │            │
       │            ├─ propagate()        forward taint  (@cq_theta = source · @cq_measure = sink)
-      │            ├─ detectControl()    tainted br/select/switch → LOUD DECLINE (swap-route stub)
+      │            ├─ guards             taint-escape · stale-record · (post-detect) classical-mux → LOUD DECLINE
+      │            ├─ detectControl()    tainted br: phase-arm region → swap-route emit + flatten; else LOUD DECLINE
       │            ├─ lowerRotations()   theta → cqrt_alloc_<W> + cqrt_ry_<W> ; phi → cqrt_rz_<W>
       │            ├─ lowerOps()         tainted add/mul/icmp/cast → cq_template_*[_hl|_lh]
       │            ├─ lowerMeasures()    cq_measure → cqrt_measure_<W>
@@ -226,10 +230,14 @@ verify-clean silent miscompile in this project's history. The **old controlled-o
 lowering** (mint a flag → substitute each arm gate with a `_controlled` template
 → dissolve the φ → uncompute the flag → linearize the CFG) shipped and was then
 **removed wholesale** (`7cde677`) so the new **RSSA swap-route** design is built
-without it shaping the implementation. Today `detectControlRegions`
-(`ControlStub.cpp`) only **loudly declines** any tainted condition and returns an
-empty plan; the real emitter is being built. The enduring lessons — restructured,
-**not deleted** — that any control work must respect:
+without it shaping the implementation. Today `ControlDetect` recognizes
+phase-arm if-diamond / if/else regions (incl. derived-base routing) and
+`SwapRouteEmit` lowers them (flag mint → `cqrt_cswap` route → verbatim arm Rz →
+route back → clean frees → `icmp_inv` flag-strip, zero controlled gates;
+`RegionFlatten` erases the CFG diamond); **every other tainted-control shape
+loudly declines** (value arms → 4.2, nested → 4.3, select → 4.4, switch → 4.5).
+The enduring lessons — restructured, **not deleted** — that any control work
+must respect:
 
 - **RSSA φ appear on BOTH splits and joins.** The merge is the **adjoint of the
   branch**, sharing the **same live condition**: `br` routes the operand *in*
@@ -269,15 +277,19 @@ When you cannot *prove* the shape, **decline loudly** (Prime Directive).
 
 ## Hallucination-Risk Callouts (specific things agents get wrong)
 
-- **`ControlDetection.cpp` / `MergeDissolution.cpp` no longer exist.** They were
-  excised (`7cde677`, branch `swap-route-control`). The live tree has
-  `ControlStub.cpp` (loud-decline only) and `ControlPlan.h` (struct kept; rich
-  fields **unpopulated** — only `InShadow` is read, and it's empty). The old
-  logic is recoverable from git history but is **not** the path forward.
-- **Phase 4 is *not* done.** The controlled-op Phase 4 shipped and was **removed
-  wholesale**; the current Phase 4 is the swap-route rebuild — `4.0` clean-slate
-  done, emitter (`4.1`+) in progress. Old ROADMAP/issue references to a "finished"
-  controlled-form Phase 4 describe the deleted generation.
+- **`ControlDetection.cpp` / `MergeDissolution.cpp` / `ControlStub.cpp` no
+  longer exist.** The first two were excised (`7cde677`); the transitional
+  `ControlStub.cpp` was replaced by the live emitter chain
+  `ControlDetect.cpp` / `ArmClassify.cpp` / `SwapRouteEmit.cpp` /
+  `RegionFlatten.cpp` (with `ControlPlan.h` populated — `Regions` is real now).
+  The old controlled-op logic is recoverable from git history but is **not**
+  the path forward.
+- **Phase 4 is only partially done — and the *old* "done" Phase 4 is a trap.**
+  The controlled-op Phase 4 shipped and was **removed wholesale**; the current
+  Phase 4 is the swap-route rebuild — `4.0` + `4.1` (phase arms) done, `4.2`–
+  `4.5` (value arms / nested / select / switch) not started. Old ROADMAP/issue
+  references to a "finished" controlled-form Phase 4 describe the deleted
+  generation.
 - **Casts are representation changes, NEVER measurements.** The only path to a
   measurement gate is an explicit `cq_measure(...)`. There is no flag/syntax to
   turn a cast into a measurement (this asymmetry is by design; it's what lets
@@ -306,13 +318,13 @@ cmake -S . -B build -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm -DCMAKE_B
 cmake --build build -j8
 cmake --build build --target CQPass        # just the pass → build/ir-pass/libCQPass.so
 
-# Full suite (7 ctest entries; ~27s, expect 100% pass)
+# Full suite (10 ctest entries; ~50s, expect 100% pass)
 cmake --build build && ctest --test-dir build --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # 66 *.ll lowering/control/uncompute fixtures
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # 136 *.ll lowering/control/uncompute fixtures (1 XFAIL: Phase-7 tracker)
 ctest --test-dir build -R frontend-lit --output-on-failure   # CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -R '^e2e-'      --output-on-failure   # 3 vertical slices — the only layer that LINKS
+ctest --test-dir build -R '^e2e-'      --output-on-failure   # 6 vertical slices — the only layer that LINKS
 ctest --test-dir build -R runtime      --output-on-failure   # trace golden-diff + header compile
 
 # One fixture (lit --filter matches the test display name)
@@ -461,13 +473,14 @@ bd close <id>         # Complete work
 
 | Path | Responsibility |
 |---|---|
-| `ir-pass/src/CQLoweringPass.cpp` | Orchestrator: `propagate → detectControl → lowerRotations → lowerOps → lowerMeasures → uncompute`; passthrough early-out |
-| `ir-pass/src/TaintPropagation.cpp` | Forward taint: seed at `@cq_theta` results, propagate through users, stop at `@cq_measure`, skip the arg-1 angle |
+| `ir-pass/src/CQLoweringPass.cpp` | Orchestrator: `propagate → escape/stale guards → detectControl+emit → classical-mux guard → lowerRotations → lowerOps → lowerMeasures → uncompute`; passthrough early-out |
+| `ir-pass/src/TaintPropagation.cpp` | Forward taint (seed at `@cq_theta`, sink at `@cq_measure`, skip arg-1 angle) + collection-time `cq_*` prototype validation + `declineTaintEscapes` (unknown call/store/other) + `declineClassicalMuxes` (live select/phi over tainted data; one-register merge-phi lift) |
 | `ir-pass/src/RotationLowering.cpp` | `theta → cqrt_alloc_<W> + cqrt_ry_<W>` (qubit allocation point); `phi → cqrt_rz_<W>`; RAUW result to the `i32` handle |
 | `ir-pass/src/OpcodeLowering.cpp` + `Arith/Compare/Cast` | Tainted `add/mul/icmp/fcmp/cast/fneg → cq_template_*`; up-front cast-width capture before RAUW |
 | `ir-pass/src/OpcodeSupport.cpp` · `TemplateName.cpp` · `WidthDispatch.cpp` | Supported-set/commutativity/predicate policy · symbol-string grammar · suffix→width + lazy `FunctionCallee` minting |
 | `ir-pass/src/MeasureLowering.cpp` | `@cq_measure_<sfx> → cqrt_measure_<W>` |
-| `ir-pass/src/ControlStub.cpp` · `include/ControlPlan.h` | **Transitional** loud-decline for tainted control · region vocabulary (only `InShadow` read, empty) |
+| `ir-pass/src/ControlDetect.cpp` · `ArmClassify.cpp` · `SwapRouteEmit.cpp` · `RegionFlatten.cpp` · `include/ControlPlan.h` | Swap-route control: region detection (declines what it can't prove) · arm/condition classification + tainted-angle/stale-condition guards · routed phase-arm emission · CFG flattening · populated region plan |
+| `ir-pass/src/OpcodeLowering.cpp` (`declineStaleRecordOps`) · `WireWalk.{h,cpp}` | Pass-wide stale-record guard (tainted pure op scheduled past a non-diagonal wire gate → loud decline) · shared forward in-place-gate wire walk (position-free and position-aware modes) |
 | `ir-pass/src/Uncomputation.cpp` · `ChainWalk.cpp` · `FreePoint.cpp` · `EmitInverse.cpp` | Per-op uncompute spine (runs last): terminal/chain recovery · post-dom free point · reversed adjoint + `cqrt_free` |
 | `runtime/cq_runtime.{h,c}` | Hand-written `cqrt_*` core ABI (trace-only) |
 | `runtime/cq_templates.{h,c}` | **Autogenerated** `cq_template_*` bodies — edit `tools/opcode_table.yaml`, not these |
@@ -476,7 +489,8 @@ bd close <id>         # Complete work
 **Docs map:** `ROADMAP.md` (plan of record) · `docs/frontend.md` (intrinsic
 surface) · `docs/backend.md` (IR pass + runtime ABI) ·
 `docs/quantum-classical-handling.md` (taint as the Q/C boundary; mixed-operand
-semantics) · `docs/design/rssa-swap-control/{OVERVIEW,SCOPING}.md` (the in-flight
-control design + `prototype_semantics.py` oracle) · `docs/llvm-implementation.md`
+semantics) · `docs/design/rssa-swap-control/{OVERVIEW,SCOPING,MINT_AT_COMPARE}.md`
+(the control design + the `prototype_semantics.py` / `clearance_derived_base.py` /
+`investigation_mint_at_compare.py` oracles) · `docs/llvm-implementation.md`
 (stock LLVM-19 C++ APIs) · `docs/prd/` (per-phase PRDs) ·
 `docs/archive/old-design/` (retired design — reference only).
