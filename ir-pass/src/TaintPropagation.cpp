@@ -14,15 +14,19 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Type.h"
 
 #include <optional>
+#include <string>
 #include <vector>
 
 using namespace llvm;
@@ -88,20 +92,103 @@ bool isMeasureSink(Instruction *I, const FnSet &MeasureFns) {
   return Callee->getName().starts_with("cqrt_measure_");
 }
 
+// ── Declared-prototype validation (test_C_libtooling-pn2) ───────────────────
+// The 42-name front-end surface is resolved BY NAME ONLY (`M.getFunction`);
+// nothing downstream ever re-checks the declared TYPE. A user declaration
+// carrying a reserved name with the wrong prototype therefore drives the
+// lowering into minting a mistyped replacement — loud (the final verifier
+// aborts: Broken module, opt exit 134) but NOT the pass's source-located
+// DiagnosticInfoUnsupported dialect, and for a theta/phi MISSING its angle
+// parameter the `getArgOperand(1)` read is out of range on a no-assert LLVM
+// (the CALLEE OPERAND leaks into the emitted cqrt_ry as its "angle";
+// verified 2026-06-10 on all five probe shapes: measure wrong-return, theta
+// wrong-arg/missing-angle, phi wrong-angle/wrong-return). So each resolved
+// decl is validated HERE, at collection time — both pipeline entry points
+// (run / runOnFunction) come through propagate(), so the guard cannot be
+// bypassed (twin-pipeline trap, IMPLEMENTATION §6.5).
+//
+// Canonical prototype per suffix (CQ.h, with T = WidthDispatch::llvmTypeFor):
+//   cq_theta_<sfx> / cq_phi_<sfx>: T (T, double)    cq_measure_<sfx>: T (T)
+// Exact FunctionType match — no varargs, no extra params. Parameter
+// ATTRIBUTES (zeroext/noundef/...) are not part of the FunctionType and are
+// accepted, so every clang-emitted CQ.h decl passes.
+bool declMatchesPrototype(const Function *F, Type *T, bool HasAngle) {
+  FunctionType *FT = F->getFunctionType();
+  if (!T || FT->isVarArg() || FT->getReturnType() != T)
+    return false;
+  if (FT->getNumParams() != (HasAngle ? 2u : 1u) || FT->getParamType(0) != T)
+    return false;
+  return !HasAngle || FT->getParamType(1)->isDoubleTy();
+}
+
+// Loud decline for a malformed reserved-name declaration, in the owning
+// concern's diagnostic dialect (`Concern` = "cq rotation lowering" for
+// theta/phi, "cq measure lowering" for measure). Prefers the first call site
+// (use-list order) for the function context and `!dbg` source location; a
+// decl-only mismatch diagnoses on the declaration itself. The negative
+// fixtures mirror each rendered message CHARACTER-FOR-CHARACTER (Rule 12):
+//   * lowering_reject_decl_prototype_theta.ll   → "... for cq_theta_si32"
+//   * lowering_reject_decl_prototype_phi.ll     → "... for cq_phi_si32"
+//   * lowering_reject_decl_prototype_measure.ll → "... for cq_measure_f64"
+//   * lowering_reject_decl_prototype_unused.ll  → decl-only, no call sites
+void diagnoseMalformedDecl(Function *F, StringRef Concern) {
+  std::string Msg = (Twine(Concern) + ": unsupported declared prototype for " +
+                     F->getName())
+                        .str();
+  for (User *U : F->users()) {
+    auto *CI = dyn_cast<CallInst>(U);
+    if (!CI || CI->getCalledFunction() != F)
+      continue;
+    CI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+        *CI->getFunction(), Msg, CI->getDebugLoc()));
+    return;
+  }
+  F->getContext().diagnose(DiagnosticInfoUnsupported(*F, Msg));
+}
+
 // Resolve every declared `@cq_theta_<sfx>` / `@cq_phi_<sfx>` /
 // `@cq_measure_<sfx>` into the three FnSets. Suffixes whose intrinsic isn't
 // declared in `M` are skipped — that's the early-out cue the per-function
 // walk uses to leave a purely-classical module untouched. Order doesn't
 // matter: `collectAndSeed` walks call sites in BB order, not symbol order.
+//
+// Every resolved decl is prototype-validated; a mismatch declines loudly and
+// is NOT inserted (so no later stage builds a mistyped replacement from it —
+// for an in-process host that continues past the DS_Error, its calls become
+// opaque externs adjudicated by the taint-escape guard; under `opt` the
+// first DS_Error already exited). DELIBERATE passthrough-boundary choice
+// (pinned by lowering_reject_decl_prototype_unused.ll): the decline fires
+// even for a decl with NO call sites — the 42 names are RESERVED by
+// convention (cf. FreePoint's `cq_invert_` prefix escapes), a wrong-typed
+// declaration of one is a user error whether or not it is currently called,
+// and gating on "has calls" would make the diagnostic depend on DCE
+// happenstance (over-declining is always safe, Prime Directive). An
+// UNRECOGNIZED suffix (e.g. `cq_measure_xyz999`) is NOT in the 42-name
+// surface and stays out of collection — and validation — entirely.
 void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
                     FnSet &MeasureFns) {
   for (StringRef Sfx : wd.allSuffixes()) {
-    if (Function *F = wd.thetaFn(Sfx))
-      ThetaFns.insert(F);
-    if (Function *F = wd.phiFn(Sfx))
-      PhiFns.insert(F);
-    if (Function *F = wd.measureFn(Sfx))
-      MeasureFns.insert(F);
+    if (Function *F = wd.thetaFn(Sfx)) {
+      if (declMatchesPrototype(F, wd.llvmTypeFor(Sfx, F->getContext()),
+                               /*HasAngle=*/true))
+        ThetaFns.insert(F);
+      else
+        diagnoseMalformedDecl(F, "cq rotation lowering");
+    }
+    if (Function *F = wd.phiFn(Sfx)) {
+      if (declMatchesPrototype(F, wd.llvmTypeFor(Sfx, F->getContext()),
+                               /*HasAngle=*/true))
+        PhiFns.insert(F);
+      else
+        diagnoseMalformedDecl(F, "cq rotation lowering");
+    }
+    if (Function *F = wd.measureFn(Sfx)) {
+      if (declMatchesPrototype(F, wd.llvmTypeFor(Sfx, F->getContext()),
+                               /*HasAngle=*/false))
+        MeasureFns.insert(F);
+      else
+        diagnoseMalformedDecl(F, "cq measure lowering");
+    }
   }
 }
 
