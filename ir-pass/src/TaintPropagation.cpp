@@ -11,8 +11,11 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 
 #include <vector>
@@ -155,6 +158,138 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
   }
 
   return out;
+}
+
+namespace {
+
+// The exact diagnostic strings the taint-escape guard owns
+// (test_C_libtooling-bxv). The negative fixtures mirror each one
+// CHARACTER-FOR-CHARACTER (Rule 12):
+//   * lowering_reject_taint_escape_opaque_call.ll    → kMsgUnknownCallee
+//   * lowering_reject_taint_escape_deep_arg.ll       → kMsgUnknownCallee
+//   * lowering_reject_taint_escape_inmodule_body.ll  → kMsgUnknownCallee
+//   * lowering_reject_taint_escape_indirect_call.ll  → kMsgUnknownCallee
+//   * lowering_reject_taint_escape_store_global.ll   → kMsgStore
+//   * lowering_reject_taint_escape_gep.ll            → kMsgOther
+constexpr char kMsgUnknownCallee[] =
+    "cq taint escape: tainted value consumed by an unknown callee";
+constexpr char kMsgStore[] = "cq taint escape: tainted value stored to memory";
+constexpr char kMsgOther[] =
+    "cq taint escape: tainted value reaches an unsupported instruction";
+
+// Loud `DiagnosticInfoUnsupported(DS_Error)` with the offending instruction's
+// `!dbg` — the one diagnostic surface the whole pass speaks (same idiom as
+// FreePoint::diagnose and RotationLowering::diagnoseUnsupported); `opt` exits
+// non-zero, which the negative LIT fixtures invert with `RUN: not`.
+void diagnoseEscape(Instruction *I, StringRef Msg) {
+  I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *I->getFunction(), Msg, I->getDebugLoc()));
+}
+
+// Does `I` read at least one tainted SSA value? Operand-level test (not
+// result-taint): the escape is the EDGE from a quantum value into a consumer
+// the lowering cannot rewrite. For a CallBase, `operands()` includes the
+// called operand, so an indirect call THROUGH a tainted pointer also trips.
+bool readsTaintedValue(const Instruction &I, const TaintSet &taint) {
+  for (const Value *Op : I.operands())
+    if (taint.Tainted.count(const_cast<Value *>(Op)))
+      return true;
+  return false;
+}
+
+}  // namespace
+
+void declineTaintEscapes(Module &M, const TaintSet &taint) {
+  // Exact membership for the collected front-end intrinsic call sites —
+  // never name-prefix matching on the ACCEPT side (a user function named
+  // `cq_theta_evil` must not slip through). `propagate` collected precisely
+  // the calls whose callee resolved through WidthDispatch's 42-name surface.
+  SmallPtrSet<const CallInst *, 32> IntrinsicCalls;
+  IntrinsicCalls.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
+  IntrinsicCalls.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
+  IntrinsicCalls.insert(taint.MeasureCalls.begin(), taint.MeasureCalls.end());
+
+  // BB-order walk (deterministic diagnostic order, like
+  // OpcodeLowering::declineStaleRecordOps). One diagnostic per offending
+  // instruction. The KNOWN-CONSUMER list below is everything a later stage
+  // provably owns — each entry cites its owner; ANYTHING else that reads a
+  // tainted value is an unproven shape and declines loudly (Prime Directive:
+  // over-declining is always safe, over-accepting is a silent miscompile).
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        // 1. Calls/invokes FIRST (an InvokeInst is also a terminator — it must
+        //    not fall through to the terminator skip below).
+        if (auto *CB = dyn_cast<CallBase>(&I)) {
+          // 1a. Front-end intrinsic call sites: arg-0 handle slot is lowered
+          //     (RotationLowering / MeasureLowering); the arg-1 ANGLE slot is
+          //     OWNED by RotationLowering::declineTaintedAngle and
+          //     ArmClassify::taintedAngleGate (test_C_libtooling-659) — both
+          //     run later and still fire, so this guard skips the whole call.
+          if (auto *CI = dyn_cast<CallInst>(CB))
+            if (IntrinsicCalls.count(CI))
+              continue;
+          const Function *Callee = CB->getCalledFunction();
+          StringRef N = Callee ? Callee->getName() : StringRef();
+          // 1b. The pass's own runtime symbols. At guard time (pre-lowering)
+          //     none should exist; accepting them anyway keeps the rule honest
+          //     for a re-entrant caller (same defensive stance as
+          //     `isMeasureSink`'s `cqrt_measure_` prefix above) and for the
+          //     `runOnFunction` unit shim run after a sibling was lowered.
+          // 1c. `cq_invert_*`: the Phase-7 manual-inversion handoff — a
+          //     RECOGNIZED escape, the same set FreePoint silently skips
+          //     (isRecognizedEscapeUser; pinned ACCEPT fixture
+          //     lowering_uncompute_escape_invert.ll).
+          if (N.starts_with("cqrt_") || N.starts_with("cq_template_") ||
+              N.starts_with("cq_invert_"))
+            continue;
+          // 1d. Everything else — opaque extern, in-module body (Phase 6
+          //     clone-on-taint is NOT implemented; a visible body is exactly
+          //     as un-lowered as a declaration), llvm.* intrinsic (e.g. the
+          //     -O1 `llvm.smin` min/max idiom), or indirect (null callee) —
+          //     is an UNKNOWN callee: after RAUW it would read the i32
+          //     runtime handle tag, verify-clean.
+          if (readsTaintedValue(I, taint))
+            diagnoseEscape(&I, kMsgUnknownCallee);
+          continue;
+        }
+        // 2. The four lowerOps instruction classes — owned by Arith/Compare/
+        //    CastLowering, whose drivers diagnose their own unsupported
+        //    members loudly ("no template for opcode ... in tainted context",
+        //    e.g. the inttoptr probe; fixture lowering_icmp_qq_negative.ll).
+        if (isa<BinaryOperator>(I) || isa<UnaryOperator>(I) ||
+            isa<CmpInst>(I) || isa<CastInst>(I))
+          continue;
+        // 3. Control-flow value merges/muxes — owned by ControlDetect (a
+        //    tainted-condition select/switch/branch accepts as a swap-route
+        //    region or declines "... under quantum control") and by the
+        //    Phase-5 FreePoint net (a classical-condition phi/select over
+        //    tainted data reaches its "unrecognized user" reject). Declining
+        //    them here would re-own shapes whose fixtures pin those
+        //    diagnostics character-for-character.
+        if (isa<PHINode>(I) || isa<SelectInst>(I))
+          continue;
+        // 4. Terminators: a tainted `br`/`switch` condition is ControlDetect's;
+        //    `ret` of a tainted handle is FreePoint's RECOGNIZED Escaped case —
+        //    the caller owns the handle (pinned ACCEPT fixtures
+        //    lowering_uncompute_escape_return.ll, control_swap_ifelse_escape.ll).
+        if (I.isTerminator())
+          continue;
+        if (!readsTaintedValue(I, taint))
+          continue;
+        // 5. Unowned readers of a tainted value. A store exits the SSA-only
+        //    taint domain into memory (a later load reads the handle tag,
+        //    untainted); everything else (getelementptr, atomicrmw, freeze,
+        //    va_arg, ...) has no reversible-lowering story at all. Both are
+        //    bypassed by the Phase-5 net when the handle is ALSO measured
+        //    (FreePoint returns Measured before its FirstUnrecognized check),
+        //    so the decline must happen HERE, pre-lowering.
+        diagnoseEscape(&I, isa<StoreInst>(I) ? kMsgStore : kMsgOther);
+      }
+    }
+  }
 }
 
 }  // namespace cq

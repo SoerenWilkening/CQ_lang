@@ -1,19 +1,22 @@
-; lowering_reject_tainted_angle_opaque.ll — DECLINE: quantum-derived rotation
-; ANGLE in STRAIGHT-LINE code, opaque-call family.
+; lowering_reject_tainted_angle_opaque.ll — DECLINE: the opaque-call family of
+; the straight-line tainted-ANGLE bug (test_C_libtooling-659), now owned by the
+; module-wide taint-escape guard (test_C_libtooling-bxv).
 ;
-; `%ang = call double @ext(i32 %q)` is TAINTED (any non-angle user of a tainted
-; value is) and feeds `cq_phi`'s arg-1 ANGLE slot. Unlike the cast family this
-; one survives WELL-TYPED: nothing lowers an opaque call, so after rotation
-; lowering's RAUW (%q → i32 runtime handle) the surviving `@ext` call reads the
-; RUNTIME HANDLE TAG — verify-clean, links, runs, prints a plausible trace with
-; a fixed angle = f(handle_tag): the silent-miscompile class, in straight-line
-; code (found by the test_C_libtooling-9hh §8 adversarial clearance, tracked as
-; test_C_libtooling-659). Reachable from real C:
-; `double t = f(q); q = cq_phi(q, t);` — no control flow at all.
+; `%ang = call double @ext(i32 %q)` commits TWO violations at once:
+;   (1) @ext CONSUMES the tainted %q in a non-angle position — after rotation
+;       lowering's RAUW the surviving call would read the i32 RUNTIME HANDLE
+;       TAG (verify-clean, links, runs, plausible trace: the silent-miscompile
+;       class found by the test_C_libtooling-9hh §8 adversarial clearance);
+;   (2) its result feeds `cq_phi`'s arg-1 ANGLE slot — angle = f(quantum
+;       value), no fixed unitary.
+; Reachable from real C: `double t = f(q); q = cq_phi(q, t);` — no control flow.
 ;
-; The region-level guard (ArmClassify::taintedAngleGate) never runs here; the
-; straight-line guard in RotationLowering::lowerRotations must decline loudly
-; BEFORE any emission.
+; RE-POINTED (bxv): violation (1) is the more fundamental one and its guard
+; (TaintPropagation::declineTaintEscapes) runs FIRST, before any lowering; opt
+; exits at the first error diagnostic, so the escape message is what this
+; program prints. The ANGLE-slot guard (RotationLowering::declineTaintedAngle)
+; still backstops every non-escape producer — pinned by
+; lowering_reject_tainted_angle_{cast,theta}.ll.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
@@ -24,10 +27,10 @@ declare double @ext(i32)
 define i32 @example(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %ang = call double @ext(i32 %q)                 ; TAINTED angle producer
+  %ang = call double @ext(i32 %q)                 ; TAINTED angle producer + escape
   %qd = call i32 @cq_phi_si32(i32 %q, double %ang)
   %m = call i32 @cq_measure_si32(i32 %qd)
   ret i32 %m
 }
 
-; CHECK: error{{.*}}cq rotation lowering: unsupported quantum-derived rotation angle
+; CHECK: error{{.*}}cq taint escape: tainted value consumed by an unknown callee

@@ -55,6 +55,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
+  // Taint-escape guard (test_C_libtooling-bxv): pure analysis, FIRST — before
+  // any mutation — because the escape is only diagnosable on pre-RAUW SSA
+  // identity (after rotation lowering every tainted value IS the i32 handle
+  // and an unknown call reading it is verify-clean). Declines loudly any
+  // consumer of a tainted value the lowering does not own (unknown callee /
+  // store / unsupported instruction).
+  declineTaintEscapes(M, taint);
+
   // Straight-line stale-record guard (test_C_libtooling-uzb): pure analysis,
   // FIRST — before any mutation — because it needs SSA-record identity
   // (rotation lowering's RAUW collapses the pre-/post-Ry values onto one i32
@@ -117,10 +125,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.MeasureCalls.empty())
     return false;
 
-  // Stale-record guard runs FIRST here too (twin-pipeline trap,
-  // IMPLEMENTATION §6.5) — see run(). Module-scoped like `lowerOps`, which
-  // also walks all of `M` (only the rotation/measure work lists above are
-  // F-restricted).
+  // Taint-escape + stale-record guards run FIRST here too (twin-pipeline
+  // trap, IMPLEMENTATION §6.5) — see run(). Both are module-scoped like
+  // `lowerOps`, which also walks all of `M` (only the rotation/measure work
+  // lists above are F-restricted).
+  declineTaintEscapes(M, taint);
   declineStaleRecordOps(M, taint);
 
   // See run() — `detectControlRegions` pushes accepted phase-arm diamonds and

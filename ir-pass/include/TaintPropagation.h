@@ -110,6 +110,24 @@ struct TaintSet {
 // suffix's natural ABI scalar — plain SSA, no struct wrapper).
 TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 
+// Pre-lowering taint-escape guard (test_C_libtooling-bxv). Pure analysis on
+// the still-unmutated IR, wired FIRST in BOTH pipeline entry points (the
+// twin-pipeline trap, IMPLEMENTATION §6.5) — it needs pre-RAUW SSA identity,
+// before rotation lowering launders every tainted value onto an i32 handle.
+//
+// The taint discipline only knows how to lower stock opcodes and cq
+// intrinsics. Any OTHER consumer of a tainted SSA value exits the discipline's
+// visibility while staying verify-clean (a same-typed opaque call reads the
+// runtime handle tag after RAUW; a store leaks it into memory, where taint —
+// being SSA-only — never follows): the silent-miscompile class. This guard
+// walks every instruction in BB order and LOUDLY DECLINES
+// (`DiagnosticInfoUnsupported`, DS_Error, `!dbg`) every user of a tainted
+// value that is not on the known-consumer list (see the implementation for
+// the list and the per-owner diagnostic split). Lowering still proceeds —
+// the diagnostic makes `opt` exit non-zero, so nothing consumes the output
+// (same surface as RotationLowering::declineTaintedAngle).
+void declineTaintEscapes(llvm::Module &M, const TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_TAINT_PROPAGATION_H_
