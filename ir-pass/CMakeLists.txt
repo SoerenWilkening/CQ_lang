@@ -62,6 +62,7 @@ add_library(CQPass MODULE
   src/TemplateName.cpp
   src/Uncomputation.cpp
   src/WidthDispatch.cpp
+  src/WireWalk.cpp
 )
 
 target_include_directories(CQPass PUBLIC

@@ -23,6 +23,7 @@
 #define CQ_IRPASS_TAINT_PROPAGATION_H_
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -87,6 +88,20 @@ struct TaintSet {
   // `emitUncompute`; unread until Phase 5 Step 4.
   llvm::DenseMap<llvm::Value * /*flag*/, llvm::CallInst * /*firstTeardown*/>
       FlagTeardown;
+
+  // Straight-line stale-record guard (test_C_libtooling-uzb). Tainted PURE
+  // producers (add/sub/mul/casts/data-position icmp) whose template, emitted
+  // at the instruction's SCHEDULED position, would read a wire basis a
+  // tainted-operand `cq_theta` (in-place, non-diagonal Ry) has already
+  // rotated — while the SSA operand denotes the PRE-Ry record (a verify-clean
+  // wrong unitary). Populated by `declineStaleRecordOps` (pure analysis on
+  // the still-unmutated IR, where the pre-/post-Ry SSA values are still
+  // distinct — after rotation lowering's RAUW both are the same i32 handle
+  // and the distinction is unrecoverable). `lowerOps` skips members (the
+  // diagnostic has already fired; lower nothing — Prime Directive). Members
+  // are never erased before `lowerOps` reads this set, so the pointers stay
+  // valid.
+  llvm::SmallPtrSet<llvm::Instruction *, 4> StaleDeclined;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure

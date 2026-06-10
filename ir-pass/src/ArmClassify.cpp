@@ -16,6 +16,7 @@
 
 #include "ControlPlan.h"
 #include "TaintPropagation.h"
+#include "WireWalk.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -265,29 +266,22 @@ CallInst *taintedAngleGate(Value *ArmIncoming, const BasicBlock *ArmBB,
 // while the SSA operand denotes the pre-Ry value (the sunk-compare layout of
 // the same miscompile — confirmed accepted+miscompiled 2026-06-10; fixture
 // control_swap_reject_stalecond_sunk_compare.ll). The walk does not cross the
-// merge `phi` (a PHINode user is not a call), so PHI-MEDIATED post-region
+// merge `phi` (`CrossValueRouting` off), so PHI-MEDIATED post-region
 // thetas are unreachable; a DIRECT post-region theta user of a provenance
 // value IS reachable and declines — over-decline, accepted as safe (the wire
 // demonstrably gains a non-diagonal gate while the condition's record is
 // live; Prime Directive).
+//
+// The walk core is shared with the straight-line stale-record guard
+// (`OpcodeLowering::declineStaleRecordOps`, test_C_libtooling-uzb) via
+// `WireWalk::findNonDiagonalWireGate` (Rule 14). This caller is the
+// POSITION-FREE mode: the flag is minted at the BRANCH, a point unrelated to
+// the compare's own schedule, so no positional accept is possible here — any
+// theta on the wire declines.
 bool wireGainsNonDiagonalGate(const SmallPtrSetImpl<Value *> &Prov) {
-  SmallVector<Value *, 16> Work(Prov.begin(), Prov.end());
-  SmallPtrSet<Value *, 16> Seen;
-  while (!Work.empty()) {
-    Value *V = Work.pop_back_val();
-    if (!Seen.insert(V).second)
-      continue;
-    for (User *U : V->users()) {
-      auto *CI = dyn_cast<CallInst>(U);
-      if (!CI || CI->arg_size() < 1 || CI->getArgOperand(0) != V)
-        continue;  // not an in-place gate on this wire (angle/data uses, br).
-      if (isThetaCall(CI))
-        return true;  // chained Ry on the condition's wire — decline.
-      if (isPhiCall(CI))
-        Work.push_back(CI);  // diagonal — same wire, keep walking forward.
-    }
-  }
-  return false;
+  SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
+  return findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/false) !=
+         nullptr;
 }
 
 // Does a TAINTED-OPERAND `cq_theta` (an IN-PLACE, NON-DIAGONAL Ry on an existing

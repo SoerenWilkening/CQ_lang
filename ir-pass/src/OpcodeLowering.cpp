@@ -35,18 +35,101 @@
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
+#include "WireWalk.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 
+#include <optional>
 #include <vector>
 
 using namespace llvm;
 
 namespace cq {
+
+namespace {
+
+// Loud decline for a stale-record pure producer. Same
+// `DiagnosticInfoUnsupported(DS_Error)` surface + `!dbg` source location as
+// the rest of the pass; the negative fixtures mirror the message
+// character-for-character (Rule 12).
+void diagnoseStaleRecord(Instruction *I) {
+  I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *I->getFunction(),
+      "cq opcode lowering: operand predates a non-diagonal gate",
+      I->getDebugLoc()));
+}
+
+// Is `I` an instruction `lowerOps` would collect? Mirrors the Phase-1
+// collection below exactly: the four tainted classes, with branch/select-
+// condition compares excluded (Phase 4's — ArmClassify owns their stale
+// check via the provenance-seeded wire walk and its own diagnostic).
+bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
+  if (!taint.Tainted.count(&I))
+    return false;
+  if (isa<BinaryOperator>(&I) || isa<UnaryOperator>(&I) || isa<CastInst>(&I))
+    return true;
+  if (auto *Cmp = dyn_cast<CmpInst>(&I))
+    return isDataPositionCompare(Cmp);
+  return false;
+}
+
+}  // namespace
+
+void declineStaleRecordOps(Module &M, TaintSet &taint) {
+  // WHY POSITION-AWARE (and why that is not the MINT_AT_COMPARE §4 trap):
+  // a pure tainted producer's template is emitted AT THE PRODUCER'S OWN
+  // scheduled position, and opaque calls keep their order through the
+  // backend — so the schedule this pass sees IS the emitted gate stream.
+  // The §4 lesson ("position is not provenance") condemned inferring wire
+  // state at one point (the branch-time mint) from the schedule of ANOTHER
+  // instruction (the compare); here the inspected point and the emission
+  // point are the same instruction, so dominance over the operand's wire
+  // gates is exactly the emitted-stream order. Consequences:
+  //   * `d = q + 1` SCHEDULED BEFORE a chained `theta(q, t2)` stays
+  //     accepted: the template fires pre-Ry, capturing the record onto its
+  //     own fresh rail — matching SSA semantics — and the later Ry on `q`'s
+  //     wire cannot touch that rail (fixture
+  //     lowering_stale_record_add_before_theta.ll pins this boundary).
+  //   * the same op SCHEDULED AFTER the chained theta declines: the
+  //     template would read the post-Ry basis while `%d` denotes the
+  //     pre-Ry record (the confirmed verify-clean miscompile; fixture
+  //     lowering_reject_stale_record_add.ll).
+  //   * a position-FREE rule would over-decline the first shape — a
+  //     legitimate use-then-re-rotate program — for no soundness gain.
+  // Diagonal gates (`cq_phi`/Rz) on the wire are basis-preserving and never
+  // trigger (bd memory rz-diag-flag-strip-invariant; fixture
+  // lowering_stale_record_add_after_phi.ll).
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    // Built lazily — only when a tainted in-scope op exists in `F`.
+    std::optional<DominatorTree> DT;
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        if (!inLowerOpsScope(I, taint))
+          continue;
+        for (Value *Op : I.operands()) {
+          if (!taint.Tainted.count(Op))
+            continue;  // classical operand — no wire.
+          if (!DT)
+            DT.emplace(F);
+          if (findNonDiagonalWireGate(Op, /*CrossValueRouting=*/true, &I,
+                                      &*DT)) {
+            diagnoseStaleRecord(&I);
+            taint.StaleDeclined.insert(&I);
+            break;  // one diagnostic per op; lowerOps will skip it.
+          }
+        }
+      }
+    }
+  }
+}
 
 void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // ── Phase 1: one program-order collection over all four classes ──
@@ -60,6 +143,14 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
         if (!taint.Tainted.count(&I))
+          continue;
+        // Stale-record decline (test_C_libtooling-uzb): the diagnostic
+        // already fired in `declineStaleRecordOps` (which ran before any
+        // mutation); lower NOTHING for this op (emitting its template here
+        // would put the wrong unitary in the stream — the template reads
+        // the post-Ry basis while the SSA operand denotes the pre-Ry
+        // record). Never enqueued ⇒ never rewritten ⇒ never erased.
+        if (taint.StaleDeclined.count(&I))
           continue;
         if (isa<BinaryOperator>(&I) || isa<UnaryOperator>(&I)) {
           Work.push_back(&I);

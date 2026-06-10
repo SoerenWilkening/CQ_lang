@@ -151,14 +151,25 @@ is retained for its cross-wire conservatism. Fixtures:
 char-for-char); the accepted `stalecond` / derived / cross-qubit fixtures
 are unaffected (their condition provenance wires carry only diagonal users).
 
-*Residual exposure (tracked, out of ArmClassify's reach):* the same
+*Residual exposure — **closed 2026-06-10** (test_C_libtooling-uzb):* the same
 position-vs-SSA stale-record family exists with **no branch at all** —
-straight-line `q = theta(u0,g); q2 = theta(q,t2); d = q + 1; measure(d)` is
-silently accepted today, with `cq_template_add` firing post-Ry
-(OpcodeLowering/TaintPropagation domain; the ee5 guard fix closes only the
-in-region condition instance). Filed as **test_C_libtooling-uzb** (P1 bug).
-Any future accept-predicate for such shapes must use wire-window reasoning,
-not instruction position.
+straight-line `q = theta(u0,g); q2 = theta(q,t2); d = q + 1; measure(d)` was
+silently accepted, with `cq_template_add` firing post-Ry (out of
+ArmClassify's reach; the ee5 guard closed only the in-region condition
+instance). Now declined pass-wide by
+`OpcodeLowering::declineStaleRecordOps` — a pure pre-lowering analysis that
+walks each tainted operand's wire via the **shared** walker
+(`WireWalk::findNonDiagonalWireGate`, hoisted from ArmClassify). Unlike the
+condition guard, this one is **position-aware**, and soundly so: a pure op's
+template is emitted *at the op's own scheduled position* (the inspected point
+IS the emission point — not this section's mint-at-branch trap), so a theta
+provably after every execution of the op (`DT.dominates(op, theta)` **and**
+`!isPotentiallyReachable(theta, op)` — the second conjunct closes
+loop-iteration-2 staleness) is harmless and the pre-scheduled
+use-then-re-rotate shape keeps lowering. Fixtures:
+`lowering_reject_stale_record_{add,crossblock,loop}.ll` (decline) and
+`lowering_stale_record_add_{before_theta,after_phi}.ll` (the accept
+boundary: pre-theta schedule and diagonal-only wires stay green).
 
 ## 5. Verdict
 
@@ -170,5 +181,7 @@ possible future *explicit opt-in*, never a silent accept. The
 `"condition predates a non-diagonal gate"` decline is the permanent answer,
 robust — after the §4 hardening (wire-walk + provenance seeding) — to both
 instruction scheduling and derived (arithmetic-mediated) conditions. The
-branch-free instance of the same stale-record family remains open pass-wide
-(test_C_libtooling-uzb; §4 residual-exposure note).
+branch-free instance of the same stale-record family is closed pass-wide by
+the position-aware `declineStaleRecordOps` guard
+(`"operand predates a non-diagonal gate"`; test_C_libtooling-uzb, 2026-06-10;
+§4 residual-exposure note).

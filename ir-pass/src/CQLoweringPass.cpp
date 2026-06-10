@@ -55,6 +55,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
+  // Straight-line stale-record guard (test_C_libtooling-uzb): pure analysis,
+  // FIRST — before any mutation — because it needs SSA-record identity
+  // (rotation lowering's RAUW collapses the pre-/post-Ry values onto one i32
+  // handle) and the original schedule (= the emitted opaque-call stream). It
+  // diagnoses loudly and marks `taint.StaleDeclined` for `lowerOps` to skip.
+  declineStaleRecordOps(M, taint);
+
   // Tainted control flow: `detectControlRegions` (ControlDetect.cpp) recognizes
   // the swap-route phase-arm diamond/if-else shape by SSA identity (Rule 9, no
   // mutation), pushes each accepted phase-arm DIAMOND onto `plan.Regions`, and
@@ -109,6 +116,12 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.MeasureCalls.empty())
     return false;
+
+  // Stale-record guard runs FIRST here too (twin-pipeline trap,
+  // IMPLEMENTATION §6.5) — see run(). Module-scoped like `lowerOps`, which
+  // also walks all of `M` (only the rotation/measure work lists above are
+  // F-restricted).
+  declineStaleRecordOps(M, taint);
 
   // See run() — `detectControlRegions` pushes accepted phase-arm diamonds and
   // declines the rest; `lowerControlRegions` emits the routed stream. BOTH must

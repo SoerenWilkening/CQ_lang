@@ -35,10 +35,29 @@ namespace cq {
 class WidthDispatch;
 struct TaintSet;
 
+// Straight-line stale-record guard (test_C_libtooling-uzb) — PURE ANALYSIS,
+// mutates no IR; must run BEFORE any lowering (Rule 9): it needs SSA-record
+// identity (rotation lowering's RAUW collapses the pre-Ry and post-Ry values
+// onto one i32 handle) and the original schedule (the positions templates and
+// ry calls will be emitted at). For every instruction `lowerOps` would lower,
+// it walks each tainted operand's forward in-place-gate wire
+// (`WireWalk::findNonDiagonalWireGate`, position-aware mode) and — when the
+// wire gains a tainted-operand `cq_theta` (non-diagonal Ry) that is not
+// provably after every execution of the op — fires the loud
+// `DiagnosticInfoUnsupported` and records the op in `taint.StaleDeclined` so
+// `lowerOps` lowers nothing for it. SSA says the operand denotes the wire's
+// PRE-Ry record; the template, an opaque call emitted at the op's scheduled
+// position, would read the POST-Ry basis: a verify-clean wrong unitary
+// (MINT_AT_COMPARE.md §4 residual exposure; oracle P2 fidelity cos^2(t2/2)).
+// Branch/select-condition compares are excluded — they are Phase 4's, and
+// ArmClassify's provenance-seeded wire walk owns their stale check.
+void declineStaleRecordOps(llvm::Module &M, TaintSet &taint);
+
 // Walks tainted BinaryOperators in `M`, lowers each in BB order to
 // its per-width template (or emits a "no template" diagnostic), and
 // updates `taint` as template-call SSA values replace ops. Operand
 // canonicalization reads `taint.BirthOrder` (seeded by RotationLowering).
+// Skips `taint.StaleDeclined` members (diagnosed by `declineStaleRecordOps`).
 void lowerOps(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
 }  // namespace cq

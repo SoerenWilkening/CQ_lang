@@ -12,16 +12,22 @@
 ; `cq_template_add_i32_hl(%h, 1)` AFTER `cqrt_ry(%h, %t2)` while the source
 ; `%d` denotes the pre-Ry value — the identical wrong-arm/wrong-record unitary
 ; of the sibling fixtures, verify-clean (confirmed against the pre-fix tree
-; 2026-06-10). The guard now seeds the wire-walk from the condition's full
-; tainted backward PROVENANCE (condProvenance), so a tainted-operand cq_theta
-; user anywhere on the condition's provenance wire declines regardless of how
-; many pure ops separate the compare from the wire (Rule 9: position is not
-; provenance). Design-of-record:
+; 2026-06-10). TWO independent guards now decline this module, in pass order:
+;   1. the PASS-WIDE straight-line stale-record guard
+;      (OpcodeLowering::declineStaleRecordOps, test_C_libtooling-uzb) fires
+;      FIRST — `%d` itself is a stale pure producer scheduled after the
+;      chained Ry, branch or no branch — and opt exits at the first
+;      diagnostic, so its message is the one this fixture pins;
+;   2. behind it, ArmClassify's provenance-seeded wire walk
+;      (condProvenance + WireWalk, the test_C_libtooling-ee5 hardening)
+;      still declines the REGION for layouts where no in-scope pure op is
+;      itself stale — pinned by the sibling fixture
+;      control_swap_reject_stalecond_derived_cond_preadd.ll (add scheduled
+;      BEFORE the chained theta: guard 1 is silent there, the region declines
+;      with "condition predates a non-diagonal gate under quantum control").
+; Design-of-record:
 ; docs/design/rssa-swap-control/MINT_AT_COMPARE.md §4 (the decline is
 ; permanent — no flag-freeing compilation of this shape is source-exact).
-; The same stale-record family with NO branch (straight-line
-; `d = q + 1; measure(d)` after a chained theta) is outside this guard's
-; reach — tracked pass-wide as a separate bug (OpcodeLowering domain).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
@@ -44,4 +50,4 @@ merge:
   ret i32 %m
 }
 
-; CHECK: error{{.*}}condition predates a non-diagonal gate under quantum control
+; CHECK: error{{.*}}cq opcode lowering: operand predates a non-diagonal gate
