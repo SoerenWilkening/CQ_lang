@@ -14,12 +14,11 @@
 //     `BinaryOperator`s bottoming at exactly the routed slot is the 4.2
 //     value-arm class — §3c PERMANENT reject if the routed register is in the
 //     condition's transitive taint provenance (ACTIVE since WI-3), accept
-//     class otherwise: a value DIAMOND lowers (WI-4, the method-B §4 emitter);
-//     a two-arm value IF/ELSE stays transitionally declined until the WI-5
-//     dual-rail emitter; everything off-pattern declines with its precise
-//     string (mux/FP → `control flow`; mixed content → `mixed phase/value
-//     arm`; fan-out/stray → `impure value arm`; Q+Q link → `value-arm
-//     swap-route`).
+//     class otherwise: a value DIAMOND (WI-4) and a two-arm value IF/ELSE over
+//     ONE shared routed base (WI-5) both lower via the method-B §4 emitter;
+//     everything off-pattern declines with its precise string (mux/FP →
+//     `control flow`; mixed content → `mixed phase/value arm`; fan-out/stray
+//     → `impure value arm`; Q+Q link → `value-arm swap-route`).
 
 #include "ArmClassify.h"
 
@@ -535,7 +534,6 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   // dephases the phase answer, Rule 7) → `mixed phase/value arm`.
   bool SawPhaseArm = false;
   bool SawValueArm = false;
-  Instruction *ValueAnchor = nullptr;  // first link of the first value chain
 
   for (BasicBlock *ArmBB : Arms) {
     if (MergePhi->getBasicBlockIndex(ArmBB) < 0) {
@@ -726,6 +724,41 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
           diagnoseUnderControl(declAnchor(Region), "control flow");
           return ArmDisposition::Declined;
         }
+        // Routed-base WIRE staleness (WI-5 §8 adversarial review,
+        // 2026-06-11 — a latent WI-4 over-accept): the routed base's
+        // physical wire — its diagonal-alias closure, the same backward
+        // `cq_phi` chain diagonalAliasHit walks — must gain NO non-diagonal
+        // (Ry) in-place gate. A chained `cq_theta` reaching the wire through
+        // a SIBLING SSA name of the closure (`%qd = cq_phi(%q,·);
+        // %q2 = cq_theta(%q,·)`) is invisible to every other guard:
+        // condProvenance stops AT a theta source (never entering its tainted
+        // arg-0), so neither the condition-seeded wire walk nor
+        // diagonalAliasHit ever reaches `%q` — yet post-RAUW the route-in at
+        // the branch reads the POST-Ry wire while the chain's SSA base names
+        // the PRE-Ry RECORD: the stale-record family
+        // (lowering_reject_stale_record_add.ll), replayed onto the rail as a
+        // verify-clean wrong unitary. Position-free walk — ANY theta on the
+        // wire declines, including a post-region one (over-decline is safe,
+        // Prime Directive). PHASE arms are immune and unguarded: `cq_phi` is
+        // wire-named and diagonal — replaying Rz on the live wire at the
+        // branch is exactly the source's program order; no basis record is
+        // read (the same opcode-not-position rationale as isValueChangingOp).
+        {
+          SmallVector<Value *, 4> WireSeeds;
+          for (Value *V = Routed;;) {
+            WireSeeds.push_back(V);
+            auto *CI = dyn_cast<CallInst>(V);
+            if (!CI || !isPhiCall(CI) || CI->arg_size() < 1)
+              break;
+            V = CI->getArgOperand(0);
+          }
+          if (CallInst *Gate = findNonDiagonalWireGate(
+                  WireSeeds, /*CrossValueRouting=*/false)) {
+            diagnoseUnderControl(Gate,
+                                 "routed base predates a non-diagonal gate");
+            return ArmDisposition::Declined;
+          }
+        }
         // A DERIVED routed base's OWN angle must be classical — the arg-1
         // parallel of criterion 3 (Rule 3). The phase path declines this via
         // taintedAngleGate's base check, but that helper inspects the PHASE
@@ -766,8 +799,6 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
           Region.ShadowFalse.assign(Chain.Ops.begin(), Chain.Ops.end());
         }
         SawValueArm = true;
-        if (!ValueAnchor)
-          ValueAnchor = Chain.Ops.front();
         continue;
       }
       // Chain empty: ArmIncoming is not an in-arm link at all — fall through
@@ -808,19 +839,13 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
     return ArmDisposition::Declined;
   }
 
-  // THE FLIP IS STAGED (IMPLEMENTATION-4.2 §7): WI-4 accepts value DIAMONDS
-  // only (`Region.ArmFalse == nullptr`) — the §4 emitter reads the recorded
-  // ClassArm/Shadow. A two-arm value IF/ELSE KEEPS the WI-3 transitional
-  // decline (existing defer string, no new transitional string) until the
-  // WI-5 dual-rail emitter lands: flipping both at WI-4 would hand
-  // SwapRouteEmit a region shape it cannot emit, and the 5e XFAIL would MASK
-  // the miscompile, not catch it (un-XFAIL control_swap_value_ifelse.ll only
-  // at WI-5).
-  if (SawValueArm && Region.ArmFalse) {
-    diagnoseUnderControl(ValueAnchor, "value-arm swap-route");
-    return ArmDisposition::Declined;
-  }
-
+  // Both staged flips are in (IMPLEMENTATION-4.2 §7): a value DIAMOND (WI-4)
+  // and a two-arm value IF/ELSE (WI-5) both reach the §4 emitter, which reads
+  // the recorded ClassArm/ClassArmFalse + Shadow/ShadowFalse. Homogeneity is
+  // already proven here: a surviving two-arm region is either all-phase or
+  // all-value over ONE shared routed base (the mixed declines above), and an
+  // if/else second chain bottoming anywhere but the first arm's anchored base
+  // declined `control flow` (base-identity).
   return ArmDisposition::Accept;
 }
 

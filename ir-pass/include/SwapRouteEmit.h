@@ -1,9 +1,12 @@
-// SwapRouteEmit.h — The RSSA swap-route emitter for tainted-condition PHASE-arm
-// control regions (swap-route 4.1 IMPLEMENTATION §4/§5). This is the mutating
+// SwapRouteEmit.h — The RSSA swap-route emitter for tainted-condition control
+// regions (swap-route 4.1 IMPLEMENTATION §4/§5 — PHASE arms; 4.2
+// IMPLEMENTATION-4.2 §4/§5d/§5e — VALUE arms, method-B). This is the mutating
 // step that replaces `ControlStub`'s loud-decline-only behavior for the narrow
-// case `detectControlRegions` (ControlDetect) accepts: a tainted-condition
-// diamond (one content arm, §5a) or if/else (two arms, §5b) whose every arm is a
-// pure phase chain (`@cq_phi`/Rz only) over ONE tainted quantum handle.
+// cases `detectControlRegions` (ControlDetect) accepts: a tainted-condition
+// diamond (one content arm) or if/else (two arms) whose every arm is a pure
+// phase chain (`@cq_phi`/Rz only, §5a/§5b) — or a pure linear value chain
+// (supported tainted integer BinaryOperators, §5d/§5e) — over ONE tainted
+// quantum handle.
 //
 // Per accepted region the emitter lowers `if (cond) { rz(q,·)… }` (or
 // `… else { rz(q,·)… }`) to the coherent, ZERO-controlled-gate routed stream
@@ -31,11 +34,18 @@
 // merge-phi incoming identity (ControlDetect) and records the polarity in
 // `ControlRegion::ArmNegated`.
 //
+// A VALUE-class region (ClassArm/ClassArmFalse == Value, the ordered chain in
+// Shadow/ShadowFalse) instead takes the method-B B-keep path (see
+// emitValueRegion in the .cpp): per-arm |0> rails, the chain replayed VERBATIM
+// + UNCONTROLLED on each rail via `rewriteBinary`, ONE `cqrt_copy_<W>`-out of
+// the settled register, then per-arm reverse-play R† via `emitInverseChain`
+// before the clean rail frees and the same flag strip.
+//
 // Runs AFTER `detectControlRegions` and BEFORE `lowerRotations` (§4): it
 // references the still-present `@cq_theta` result `%q`; when `lowerRotations`
 // later RAUWs `%q` to its `i32` alloc handle every emitter call updates
-// automatically (the SSA-identity discipline, Rule 9). Reuses existing runtime
-// symbols only — no new ABI (PRD §1/§3).
+// automatically (the SSA-identity discipline, Rule 9). The only post-4.1 ABI
+// addition is the `cqrt_copy_<W>` family (PRD Part II §8.1).
 
 #ifndef CQ_IRPASS_SWAP_ROUTE_EMIT_H_
 #define CQ_IRPASS_SWAP_ROUTE_EMIT_H_
@@ -51,7 +61,8 @@ struct TaintSet;
 struct ControlPlan;
 
 // Emit the swap-route stream for every region in `plan.Regions` (each a §0
-// accepted phase-arm diamond, populated by `detectControlRegions`). Mutates the
+// accepted phase- or value-arm diamond / if-else, populated by
+// `detectControlRegions`). Mutates the
 // module IR and `taint` (scrubs every erased instruction). A plan with no
 // regions is a no-op, so a classical-only / fully-declined module is untouched.
 void lowerControlRegions(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,

@@ -508,6 +508,17 @@ boundary itself is deliberately *not* "deviation must be zero" (that would
 relitigate Rule 7 and make 4.2 unshippable). The kept-source correlation is
 inherent to Bennett-keep and is the documented boundary, not a 4.2 bug.
 
+**Two-arm (§5e if/else) generalization** *(WI-5 §8 review, 2026-06-11)*: the
+closed forms above are the one-content-arm specialization (else = identity).
+For the dual-rail if/else the B-keep final state is
+`Σ c_{q,p₀} |q⟩|p₀⟩|h_q(p₀)⟩_out` with `h_q = f` (then) or `g` (else), so
+channel A's overlap factor generalizes from `[f(p)=p]` to `[f(p)=g(p)]`
+(in-place reference coherence `Σ_{p,p'} b*_p b_{p'} · [f(p')=g(p)]`); channel
+B is unchanged per branch. **No new channel exists**: the second rail returns
+exactly to `|0⟩` on every basis branch and factors out (the per-arm grouped
+R† equals the literal global adjoint — arm streams commute: disjoint rails,
+route cswaps on complementary flag values).
+
 **What restores fidelity — scoped honestly.** B-undo / `cq_invert` (SCOPING
 §3b: "value-arm / whole-region coherence by on-demand reverse-play") restores
 full interference fidelity **only for compute→use→uncompute patterns** (the

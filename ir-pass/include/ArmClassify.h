@@ -10,10 +10,10 @@
 //     `BinaryOperator`s bottoming at exactly the routed slot (base-identity),
 //     each link consuming the threaded value as its sole tainted operand.
 //     Routable + `Routed ∈ condProvenance` is the §3c PERMANENT reject (ACTIVE
-//     since 4.2 WI-3); routable + disjoint is the accept class (transitionally
-//     still declined `value-arm swap-route` until WI-4 lands the emitter; the
-//     classified chain is recorded in `Shadow`/`ShadowFalse` + `ClassArm`/
-//     `ClassArmFalse` for it).
+//     since 4.2 WI-3); routable + disjoint is the accept class — a value
+//     DIAMOND (WI-4) or a two-arm value IF/ELSE over ONE shared routed base
+//     (WI-5), with the ordered chain recorded in `Shadow`/`ShadowFalse` +
+//     `ClassArm`/`ClassArmFalse` for the method-B emitter.
 //   * Everything else declines loudly with its precise string: `ChainBase !=
 //     Routed` mux shapes (the Defect-2 fix) and FP-typed merges → `control
 //     flow`; mixed phase/value content (either stacking order, or
@@ -35,11 +35,12 @@ struct TaintSet;
 
 // Outcome of classifying every arm of a recovered region.
 //   * Accept   — every arm is a pure phase chain over a tainted quantum handle
-//                (the §0 accept criteria 2 and 3 both hold). NO diagnostic was
-//                fired; the caller pushes the region for emission. (4.2 WI-3:
-//                a fully-routable all-VALUE region does NOT yet return Accept —
-//                classifyArms fires the transitional `value-arm swap-route`
-//                decline itself; WI-4 flips that to Accept.)
+//                (the §0 accept criteria 2 and 3 both hold), OR every arm is a
+//                routable value chain over ONE shared tainted routed base
+//                disjoint from the condition's provenance (the 4.2 §0
+//                criterion; diamond since WI-4, if/else since WI-5). NO
+//                diagnostic was fired; the caller pushes the region for
+//                emission.
 //   * Declined — some arm failed a criterion; `classifyArms` has ALREADY fired
 //                the precise loud diagnostic (§3c clobber / mux / mixed /
 //                impure / QQ-defer / non-quantum base). The caller must lower
