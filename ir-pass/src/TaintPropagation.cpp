@@ -255,19 +255,24 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
 namespace {
 
 // The exact diagnostic strings the taint-escape guard owns
-// (test_C_libtooling-bxv). The negative fixtures mirror each one
-// CHARACTER-FOR-CHARACTER (Rule 12):
+// (test_C_libtooling-bxv; the non-i32 return string is test_C_libtooling-udw).
+// The negative fixtures mirror each one CHARACTER-FOR-CHARACTER (Rule 12):
 //   * lowering_reject_taint_escape_opaque_call.ll    → kMsgUnknownCallee
 //   * lowering_reject_taint_escape_deep_arg.ll       → kMsgUnknownCallee
 //   * lowering_reject_taint_escape_inmodule_body.ll  → kMsgUnknownCallee
 //   * lowering_reject_taint_escape_indirect_call.ll  → kMsgUnknownCallee
 //   * lowering_reject_taint_escape_store_global.ll   → kMsgStore
 //   * lowering_reject_taint_escape_gep.ll            → kMsgOther
+//   * lowering_reject_taint_escape_return_straightline.ll   → kMsgNonI32Return
+//   * lowering_reject_taint_escape_return_phase_diamond.ll  → kMsgNonI32Return
+//   * lowering_reject_taint_escape_return_value_diamond.ll  → kMsgNonI32Return
 constexpr char kMsgUnknownCallee[] =
     "cq taint escape: tainted value consumed by an unknown callee";
 constexpr char kMsgStore[] = "cq taint escape: tainted value stored to memory";
 constexpr char kMsgOther[] =
     "cq taint escape: tainted value reaches an unsupported instruction";
+constexpr char kMsgNonI32Return[] =
+    "cq taint escape: tainted value returned at non-i32 width";
 
 // Loud `DiagnosticInfoUnsupported(DS_Error)` with the offending instruction's
 // `!dbg` — the one diagnostic surface the whole pass speaks (same idiom as
@@ -366,10 +371,34 @@ void declineTaintEscapes(Module &M, const TaintSet &taint) {
         //    "... under quantum control" diagnostics character-for-character.
         if (isa<PHINode>(I) || isa<SelectInst>(I))
           continue;
-        // 4. Terminators: a tainted `br`/`switch` condition is ControlDetect's;
-        //    `ret` of a tainted handle is FreePoint's RECOGNIZED Escaped case —
-        //    the caller owns the handle (pinned ACCEPT fixtures
-        //    lowering_uncompute_escape_return.ll, control_swap_ifelse_escape.ll).
+        // 4. Terminators. A tainted `br`/`switch` CONDITION is ControlDetect's.
+        //    A `ret` of a tainted value is FreePoint's RECOGNIZED Escaped case —
+        //    the caller owns the handle — but ONLY at i32 width (pinned ACCEPT
+        //    fixtures lowering_uncompute_escape_return.ll,
+        //    control_swap_ifelse_escape.ll). The runtime handle is ALWAYS i32:
+        //    every lowering path RAUWs a tainted SSA value to a `cqrt_alloc_*`
+        //    i32 result (RotationLowering §1) — straight-line theta, the phase-
+        //    diamond merge, and the value-diamond `cqrt_copy` merge alike — and
+        //    that cross-type RAUW is laundered ONLY by ERASURE of the tainted
+        //    user. A `ret` is NEVER erased, so returning a tainted value at a
+        //    width other than i32 leaves `ret <iN!=32> <i32 handle>` in the
+        //    final IR: the verifier aborts with report_fatal_error("Broken
+        //    module found") — loud and unconsumable, but NOT the Rule-1 source-
+        //    located decline, and for the value-diamond (which PRD Part II §8.5
+        //    sanctions as ACCEPT-class: ret is a legitimate consumer of `out`)
+        //    it crashes accepted input. Declining HERE, pre-RAUW, converts that
+        //    abort into a clean decline — the same move as
+        //    ArmClassify::taintedAngleGate. i32-width tainted rets stay
+        //    accepted; a non-tainted ret (e.g. of a `cq_measure` result, a
+        //    classical value past the taint sink) is untouched
+        //    (test_C_libtooling-udw; pinned boundary
+        //    lowering_taint_escape_return_measure_i64.ll).
+        if (auto *Ret = dyn_cast<ReturnInst>(&I)) {
+          Value *RV = Ret->getReturnValue();
+          if (RV && taint.Tainted.count(RV) && !RV->getType()->isIntegerTy(32))
+            diagnoseEscape(&I, kMsgNonI32Return);
+          continue;
+        }
         if (I.isTerminator())
           continue;
         if (!readsTaintedValue(I, taint))
