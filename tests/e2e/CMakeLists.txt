@@ -66,6 +66,26 @@ add_test(NAME e2e-slice-control-phase-ifelse-derived
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_ifelse_derived.expected.log")
 
+# Phase 4.2 (WI-6, test_C_libtooling-paj.6): RSSA swap-routed VALUE-arm diamond
+# (method-B). The only layer that LINKS — and 4.2 adds a NEW runtime symbol, so
+# this golden is the ONLY proof cqrt_copy_i32 resolves + signature-matches
+# against libcq_runtime (Rule 2/16). The 6-op linear chain `if (q>5) { p=p+3;
+# p=p*5; p=p^9; p=p+1; p=p*7; p=p^2; }` SURVIVES -O1 as a clean br-diamond (a
+# short arm folds to a tainted SELECT — 4.4-deferred, PRD §8.4); clang
+# reassociates the constants, so the golden pins the POST-reassociation method-B
+# stream (§5d): flag mint -> |0> rail -> cswap in -> chain verbatim -> cswap
+# back -> cqrt_copy_i32 (sole basis copy) -> R-dagger (route-back-dagger,
+# reversed _inv chain, route-in-dagger) -> rail free -> icmp_inv strip -> flag
+# free. EXACTLY TWO frees (rail + flag); out and the restored source p are never
+# freed; ZERO controlled gates, no surviving `phi i32`.
+add_test(NAME e2e-slice-control-value-diamond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond.expected.log")
+
 # test_C_libtooling-5j5: the ONE-REGISTER classical-mux lift. The natural
 # `if (classical_c) q = cq_phi(q, a);` survives -O1 as a merge phi over two
 # SSA names of one register; the lift RAUWs it away and the CLASSICAL branch
