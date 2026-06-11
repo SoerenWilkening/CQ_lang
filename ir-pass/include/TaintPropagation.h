@@ -45,6 +45,16 @@ struct TaintSet {
   llvm::SmallVector<llvm::CallInst *, 8> PhiCalls;
   llvm::SmallVector<llvm::CallInst *, 8> MeasureCalls;
 
+  // Front-end intrinsic call sites reached via `invoke` instead of a direct
+  // `call` (test_C_libtooling-rzs9). `collectAndSeed` declines each one LOUDLY
+  // (an `invoke` is a terminator with normal + unwind successors — terminator
+  // surgery the call-position lowering has no story for) and records it here so
+  // `declineTaintEscapes` SKIPS the same site by EXACT membership, rather than
+  // re-flagging a tainted arg-0 as a misleading "unknown callee" (the callee IS
+  // known — it is reached via the unsupported form). Normally empty: clang -O1
+  // on exception-free C never emits `invoke` for these opaque externs.
+  llvm::SmallPtrSet<llvm::CallBase *, 4> IntrinsicInvokes;
+
   // All SSA values that carry quantum taint at any point in the pipeline.
   // `RotationLowering` mutates this set (inserts alloc handles minted at
   // classical-operand thetas); `OpcodeLowering` mutates it again as tainted

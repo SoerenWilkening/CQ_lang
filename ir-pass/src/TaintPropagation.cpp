@@ -40,6 +40,30 @@ namespace {
 // small (≤14 thetas, ≤14 phis, ≤14 measures) makes it a perfect fit.
 using FnSet = SmallPtrSet<Function *, 16>;
 
+// Loud decline for a front-end intrinsic reached via `invoke` instead of a
+// direct `call` (test_C_libtooling-rzs9). The 42-name surface is opaque
+// externs that clang -O1 on exception-free C always reaches with a plain
+// `call`; an `invoke` is a TERMINATOR with normal + unwind successors, and
+// every lowering stage (RotationLowering / MeasureLowering / Uncomputation)
+// inserts plain CallInsts at the call position and RAUWs the result —
+// terminator surgery the pipeline has no story for. Declining is the correct
+// move (Prime Directive: over-declining is always safe): silently dropping it
+// (the historical `dyn_cast<CallInst>` gap) treated an invoke'd theta's result
+// as CLASSICAL — a verify-clean UNDER-taint — and left the `@cq_*` extern to a
+// Stage-3 LINK error. Source-located via the invoke's `!dbg`; the negative
+// fixtures mirror the rendered message character-for-character (Rule 12):
+//   * lowering_reject_intrinsic_invoke_theta.ll
+//   * lowering_reject_intrinsic_invoke_phi.ll
+//   * lowering_reject_intrinsic_invoke_measure.ll
+void diagnoseIntrinsicInvoke(CallBase *CB, const Function *Callee) {
+  std::string Msg =
+      (Twine("cq taint propagation: front-end intrinsic ") + Callee->getName() +
+       " reached via invoke; only a direct call is supported")
+          .str();
+  CB->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *CB->getFunction(), Msg, CB->getDebugLoc()));
+}
+
 // Per-function pass: collect theta/phi/measure call sites in BB order and
 // seed the propagation work-list with theta RESULT SSA values. Iterating
 // per-function (rather than via `F->users()`) preserves the BB-order
@@ -54,19 +78,40 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
                     std::vector<Value *> &Worklist) {
   for (BasicBlock &BB : F) {
     for (Instruction &I : BB) {
-      auto *CI = dyn_cast<CallInst>(&I);
-      if (!CI)
+      // CallBase (not CallInst) so an `invoke` of a front-end intrinsic is
+      // SEEN here — the historical seeding gap (test_C_libtooling-rzs9):
+      // `dyn_cast<CallInst>` returns null on an InvokeInst, so an invoke'd
+      // theta was never seeded as a source and an invoke'd measure never
+      // recognized as a sink.
+      auto *CB = dyn_cast<CallBase>(&I);
+      if (!CB)
         continue;
-      Function *Callee = CI->getCalledFunction();
+      Function *Callee = CB->getCalledFunction();
       if (!Callee)
         continue;
-      if (ThetaFns.contains(Callee)) {
+      const bool IsTheta = ThetaFns.contains(Callee);
+      const bool IsPhi = PhiFns.contains(Callee);
+      const bool IsMeasure = MeasureFns.contains(Callee);
+      if (!IsTheta && !IsPhi && !IsMeasure)
+        continue;
+      // A front-end intrinsic reached via `invoke` (any non-`call` CallBase) is
+      // an off-pattern shape the call-position lowering cannot rewrite — decline
+      // LOUDLY (diagnoseIntrinsicInvoke) and record the site so the escape guard
+      // does not re-flag a tainted arg-0 as an "unknown callee". Lower nothing:
+      // the call is NOT collected into any work list.
+      auto *CI = dyn_cast<CallInst>(CB);
+      if (!CI) {
+        diagnoseIntrinsicInvoke(CB, Callee);
+        out.IntrinsicInvokes.insert(CB);
+        continue;
+      }
+      if (IsTheta) {
         out.ThetaCalls.push_back(CI);
         if (out.Tainted.insert(CI).second)
           Worklist.push_back(CI);
-      } else if (PhiFns.contains(Callee)) {
+      } else if (IsPhi) {
         out.PhiCalls.push_back(CI);
-      } else if (MeasureFns.contains(Callee)) {
+      } else {  // IsMeasure
         out.MeasureCalls.push_back(CI);
       }
     }
@@ -80,11 +125,17 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
 // rule honest if a future re-entrant pass invokes propagation after
 // measure lowering. The `cqrt_measure_` prefix match covers all 7 ABI
 // widths uniformly (i1, i8, i16, i32, i64, f32, f64).
+//
+// CallBase (not CallInst) so an `invoke`'d @cq_measure is still recognized as a
+// sink (test_C_libtooling-rzs9). Under `opt` an invoke'd intrinsic already
+// declined at collection (collectAndSeed), but in any host that continues past
+// that DS_Error this keeps the sink predicate honest — otherwise taint would
+// over-propagate THROUGH the measure into its result.
 bool isMeasureSink(Instruction *I, const FnSet &MeasureFns) {
-  auto *CI = dyn_cast<CallInst>(I);
-  if (!CI)
+  auto *CB = dyn_cast<CallBase>(I);
+  if (!CB)
     return false;
-  Function *Callee = CI->getCalledFunction();
+  Function *Callee = CB->getCalledFunction();
   if (!Callee)
     return false;
   if (MeasureFns.contains(Callee))
@@ -328,6 +379,15 @@ void declineTaintEscapes(Module &M, const TaintSet &taint) {
           if (auto *CI = dyn_cast<CallInst>(CB))
             if (IntrinsicCalls.count(CI))
               continue;
+          // An `invoke` of a front-end intrinsic was already declined loudly at
+          // collection (collectAndSeed → diagnoseIntrinsicInvoke,
+          // test_C_libtooling-rzs9). Skip it here by EXACT membership — NEVER by
+          // name prefix, so a user function named `cq_theta_evil` reached via
+          // invoke still escapes (the accept-side hazard guarded at line ~302) —
+          // so this guard does not re-flag a tainted arg-0 as a misleading
+          // "unknown callee" (the callee IS known; the invoke form is not).
+          if (taint.IntrinsicInvokes.count(CB))
+            continue;
           const Function *Callee = CB->getCalledFunction();
           StringRef N = Callee ? Callee->getName() : StringRef();
           // 1b. The pass's own runtime symbols. At guard time (pre-lowering)
