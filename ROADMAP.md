@@ -335,7 +335,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0 + 4.1 DONE · 4.2 PRD'd 2026-06-10, starting · 4.3–4.5 pending]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0 + 4.1 + 4.2 DONE · 4.3–4.5 pending]
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
 + [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
@@ -451,8 +451,9 @@ after a statevector-checked design dialogue; see
   emitted symbol resolves + signature-matches). Modules: `ControlDetect`,
   `ArmClassify`, `SwapRouteEmit`, `RegionFlatten` (replacing `ControlStub`).
 
-- **4.2 — Classical-permutation / value arms (method-B) [PRD'd 2026-06-10 —
-  `docs/prd/phase-04-swap-route-control/PRD.md` Part II + `IMPLEMENTATION-4.2.md`].**
+- **4.2 — Classical-permutation / value arms (method-B) [DONE 2026-06-11,
+  branch `swap-route-control`, WI-1..WI-7 — `docs/prd/phase-04-swap-route-control/PRD.md`
+  Part II + `IMPLEMENTATION-4.2.md`].**
   `add`/`mul`/`x`/`toffoli`-class bodies (linear chains of supported tainted
   integer opcodes): run `R` → CNOT-copy the basis-valued result into a fresh
   register → reverse-play `R†` to restore `q0` and zero the rail (§3a-B),
@@ -467,8 +468,12 @@ after a statevector-checked design dialogue; see
   disentangled — §3c), while a value arm on any other register lowers normally.
   The §8 method-B demo obligation was **struck by owner decision 2026-06-10**
   (no statevector simulations at this stage); the B-keep boundary is documented
-  analytically in PRD §8.2 and cleared by independent adversarial review
-  (Rule 13).
+  analytically in PRD §8.2 and was **cleared by the WI-7 independent
+  adversarial review** (Rule 13 — 4 analytic lenses + skeptic adjudication;
+  **4/4 cleared, 0 confirmed defects, 0 silent-miscompiles**; IMPLEMENTATION-4.2
+  §8.10). Lands: `cqrt_copy_<W>` core ABI (db47cb4), value-arm detection +
+  Defect-2 fix (cf6c54c), value diamond — first real `emitInverseChain`
+  (a1bb41c), value if/else (92f28af), e2e golden (7139b7a). **Next: 4.3 nested.**
 
 - **4.3 — Nested control.** A tainted `br` inside an arm runs the **same emitter
   recursively** on the enclosing arm's live rail; `c1 ∧ c2` falls out of the

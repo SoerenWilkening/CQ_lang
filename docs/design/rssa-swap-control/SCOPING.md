@@ -476,7 +476,12 @@ implementation cost and correctness surface.
    because `emitInverseCall` threads the involution handle into arg 0 — the
    cswap FLAG slot; the §3b free point is the trivially-post-dominating
    single-block region point, `computeFreePoint` generalizing at 4.3.
-   Discharged when 4.2 WI-4 lands.]**
+   **DISCHARGED — 4.2 WI-4 landed (commit `a1bb41c`): the first real
+   `emitInverseChain` invocation + the cswap-seam guard are in
+   `SwapRouteEmit`/`EmitInverse`, and the WI-7 clearance (lens 2,
+   IMPLEMENTATION-4.2 §8.10) confirmed the route cswaps are NOT threaded
+   through the inverse chain and the rail free consumes the final `_inv`
+   handle on both branches.]**
 6. **`cqrt_copy_<W>` (new):** confirm the per-width set and its reversible-copy
    semantics before the value-arm (method-B) increment lands; it is the design's
    only new ABI. **[Resolved 2026-06-10 as a written design decision — PRD
@@ -511,6 +516,15 @@ implementation cost and correctness surface.
   adversarial review (4.2 WI-7) reasoning against those closed forms. The
   oracle `.py` files in this directory remain as historical design artifacts
   only — not gates.]**
+  **[2026-06-11 — GAP CLOSED: the 4.2 WI-7 independent adversarial review ran
+  (4 analytic lenses + skeptic adjudication; IMPLEMENTATION-4.2 §8.10). Lens 1
+  re-derived all five PRD §8.2 closed forms by hand (channels A/B, the two-arm
+  generalization, basis-`p₀` exact-zero, the phase-arm `0.585→0.500`
+  dephasing negative) and proved the only extra observable (a `q`-`out`
+  cross-coherence) is a marginal shadow of the same kept-source entanglement —
+  the documented boundary is complete at the mechanism level. CLEARED: 4/4
+  lenses, 0 confirmed defects, 0 silent-miscompiles. This is the analytic
+  replacement for the struck path-B demo; nothing further is owed here.]**
 
 ## 9. Next step
 
@@ -523,16 +537,24 @@ stale-condition guard families alongside (see `MINT_AT_COMPARE.md` for the
 chained-Ry stale-condition verdict: permanent decline, purity theorem). Every
 not-yet-built shape declines loudly.
 
-**Next: 4.2 — value/permutation arms (method-B, `cqrt_copy_<W>`).** Entry gates
-(status 2026-06-10): **(i) PRD/WI breakdown — DONE** (PRD Part II §§7–10 +
-`IMPLEMENTATION-4.2.md`, bd epic filed); **(ii) §7.6 copy-ABI width
-set/semantics — RESOLVED** as a design decision (PRD §8.1; lands WI-1);
-(iii) the §8 method-B demo — **STRUCK by owner decision 2026-06-10** (no
-simulations at this stage; the B-keep boundary is documented analytically in
-PRD §8.2, cleared by the WI-7 independent adversarial review); (iv) §3c
-activation + the Defect-2 string fix — scoped WI-3; (v) first real
-`emitInverseChain` invocation (§7.5, resolution pinned) — lands WI-4. Then 4.3 nested → 4.4
-select → 4.5 switch. Reverse-play stays the on-demand undo, not an eager step
-(§3a). The ROADMAP "Phase 4 — RSSA swap-routed control flow" block and
+**4.2 (value/permutation arms, method-B, `cqrt_copy_<W>`) landed and closed
+2026-06-11** (branch `swap-route-control`, WI-1..WI-7): the swap-route emitter
+routes a value arm's register into a `|0⟩` rail, runs the linear template
+chain verbatim, `cqrt_copy`s the basis answer out, reverse-plays `R†` (first
+real `emitInverseChain`) to restore `p₀` and zero the rail, then frees clean
+and strips the flag. All entry gates closed: PRD/WI breakdown (PRD Part II
+§§7–10 + `IMPLEMENTATION-4.2.md`); §7.6 copy-ABI (PRD §8.1; the 5 integer
+widths, hand-written core, WI-1); the §8 method-B demo **STRUCK** and replaced
+by the WI-7 independent adversarial review (**CLEARED**: 4/4 lenses, 0
+confirmed defects — §8 above, IMPLEMENTATION-4.2 §8.10); §3c activation +
+Defect-2 fix (WI-3); first real `emitInverseChain` (§7.5 discharged, WI-4);
+value if/else (WI-5); the value-diamond e2e golden (WI-6). `cqrt_copy_i32`
+links and signature-matches. Full `ctest` green; `gen_templates.py --check`
+clean.
+
+**Next: 4.3 — nested control** (a tainted `br` inside an arm; `computeFreePoint`
++ block-lifetime discipline activate there), then 4.4 `select` → 4.5 `switch`.
+Reverse-play stays the on-demand undo, not an eager step (§3a). The ROADMAP
+"Phase 4 — RSSA swap-routed control flow" block and
 [`docs/prd/phase-04-swap-route-control/PRD.md`](../../prd/phase-04-swap-route-control/PRD.md)
 track the phasing.

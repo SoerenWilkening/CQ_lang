@@ -39,7 +39,13 @@ fixture with **one tainted region per file**.
 >    threaded value as its **sole tainted operand** (other operand classical →
 >    the `_hl`/`_lh` template shapes), no `cq_phi`/`cq_theta`/compare/cast
 >    link, no fan-out, no stray op in the arm block (the
->    `armBlockIsPureSpine` analog over the value chain — Rule 8 linearity);
+>    `armBlockIsPureSpine` analog over the value chain — Rule 8 linearity).
+>    *Read through PRD §8.6:* "supported stems" is the full `binaryStem` set,
+>    which is **not** filtered on injectivity — the non-injective subset
+>    (div/rem, even-literal `mul`, masking `and`/`or`, shifts) is admitted and
+>    carried under the **shared Phase-5 fictional `_inv` axiom**, exactly as
+>    straight-line uncompute does; the §8.2 permutation framing is the honest
+>    real-template ideal, not a narrower accept gate;
 > 3. **(routed base)** the chain bottoms at **exactly the routed slot**:
 >    the diamond's straight-through (Pred-edge) incoming / the if/else arms'
 >    **shared** base — a tainted quantum handle (derived pre-region `cq_phi`
@@ -55,7 +61,16 @@ fixture with **one tainted region per file**.
 >    wire-level rationale would be false for `qd = rz(q,·); if(q>5){v=qd+3}`.
 >    See PRD §8.3's WI-3 landing amendments for this and the two sibling
 >    hardenings (positive integer merge-type fence; §3c string scoped to the
->    proven diamond identity).]*
+>    proven diamond identity).]* *[WI-7, 2026-06-11: the diagonal-alias walk
+>    terminating soundly at a **template-derived** routed base rests on the
+>    **out-of-place keep-source template ABI** — every `cq_template_<op>`
+>    writes a **fresh** result register and keeps its operands live (it does
+>    not overwrite the condition wire), so a base bottoming at a template
+>    result (or a `cq_theta` source, or a function argument) is a genuinely
+>    fresh wire disjoint from `q`, which is why `diagonalAliasHit`
+>    (`ArmClassify.cpp:205`) stops the `cq_phi` arg-0 walk there. This ABI
+>    contract was previously pinned only in that function's code comment;
+>    it is part of criterion 4's soundness and recorded here.]*
 >
 > Phase arms (4.1 criterion) continue to accept unchanged; a region is
 > phase-armed or value-armed **per arm chain**, and any mixture inside one
@@ -275,10 +290,22 @@ decline `control flow` (NOT the §3c string, NOT accepted); QQ `p=p+r` declines
    result into `Tainted`/`BirthOrder` — those template calls are NOT erased
    and need no scrub.)
 2. **`uncompute` must add nothing.** The routed register's users now include
-   `cqrt_copy` — extend the §6.2-4.1 argument: `isTerminalHandle`
-   (`ChainWalk.cpp:84`) returns false for `cqrt_*` users, so `p`, the rail
-   handles, and `out` (measured/escaped) all stay out of the uncompute net.
-   **Net frees per value diamond: exactly two** (probe §8.3).
+   `cqrt_copy` — extend the §6.2-4.1 argument. Two guards combine, and naming
+   the right one matters (WI-7 clarification, 2026-06-11): **`out`** is held
+   out of the net by `isTerminalHandle` (`ChainWalk.cpp:84`) — its only
+   non-benign user is the measure sink (or a `ret` escape), so it reads as a
+   terminal and is never a free candidate. The **routed source `p`** is held
+   out by `forwardConsumerCount`/`HasFanOut` (`ChainWalk.cpp:73,138`):
+   `cqrt_copy(p, out)` is a `CallInst` user of `p` that is **neither an
+   in-place gate on `p` nor a measure sink**, so it **counts as a forward
+   consumer** — `p` therefore has fan-out (the route cswaps *and* the copy),
+   and `recoverForwardChain` bails rather than walking a chain through `p`
+   (which could otherwise reach a spurious free of `p` or of a dead chain
+   rooted at `out` — a hidden measurement). **Invariant (named, bd
+   `cqrt-copy-forward-consumer-chainwalk`): `cqrt_copy` MUST keep counting as
+   a forward consumer in `ChainWalk` — any future refinement of the fan-out
+   exemption that exempts the copy re-opens this spurious-free hazard.** Net
+   frees per value diamond: **exactly two** (rail-final + flag; probe §8.3).
 3. **The `emitInverseCall` cswap arg-0 seam.** `EmitInverse.cpp:67-75` threads
    `CurHandle` into `Args[0]` for involutions; for `cqrt_cswap` arg 0 is the
    FLAG — feeding route cswaps through `emitInverseChain` would thread a rail
@@ -377,26 +404,63 @@ execution backend exists and no simulations at this stage (owner decision
    §6.5).
 9. **e2e trace diff** (WI-6) — the linking proof for the new ABI symbol.
 
+### 8.10 WI-7 clearance verdict (2026-06-11) — **CLEARED**
+
+The §8 matrix was run as an independent adversarial review (4 analytic lenses
++ skeptic adjudication of every concerning/silent-miscompile finding;
+analytic/trace reasoning only, no simulation): **4/4 lenses cleared, 0
+confirmed defects, 0 confirmed silent-miscompiles.**
+
+- **Lens 1 (closed forms, probe 1).** All five PRD §8.2 forms re-derived by
+  hand-equivalent finite-register algebra and confirmed: channel A
+  `Σ_p |b_p|²·[f(p)=p]` (kept-source labels kill the `p≠p'` cross terms),
+  channel B `out` → maximally mixed `I/4` (witness `[.5,0,0,.5]`→`[.25,.25,
+  .25,.25]`), the two-arm `[f(p)=p]→[f(p)=g(p)]` generalization, exact-zero
+  deltas in the basis-`p₀` regime, and the phase-arm-under-B `0.585→0.500`
+  dephasing negative. Completeness probe: the only finding (a `q`-`out`
+  cross-coherence block) was proven a marginal **shadow of the one
+  kept-source entanglement** — B-keep is bit-for-bit (reference + retained
+  source) — so the boundary is honest and complete at the mechanism level
+  (§8.2 now states this explicitly).
+- **Lens 2 (lowered-IR unitary trace, probes 2/4/8).** Both §5d and §5e
+  traced basis-by-basis on the flag: correct answer in `out`, **both rails
+  return to `|0⟩` on both branches**, source restored to `p₀`, the §5e
+  grouped per-arm R† **equals the literal global adjoint** (arm streams
+  commute — disjoint rails, route cswaps on complementary flag values), every
+  `cqrt_cswap` keeps the flag in arg0 (§8.5 seam), and the §5e X-brackets
+  select `¬flag`/`flag` correctly and pair to net-identity.
+- **Lens 3 (free/leak/strip, probes 3/8).** Exactly two frees (§5d) / three
+  (§5e); neither `out` nor the source is ever freed; rail free consumes the
+  final `_inv` handle; flag-strip valid by condition/routed disjointness;
+  `uncompute` adds nothing (the §6.2 dual guard — `isTerminalHandle` for
+  `out`, `HasFanOut`-via-`cqrt_copy` for the source).
+- **Lens 4 (over-accept/decline matrix, probes 5/6/7).** Every §8.3 row
+  declines/accepts with the exact diagnostic; no constructed over-accept
+  survived; dephasing guards present on phase fixtures (one missing
+  `CHECK-NOT: cqrt_copy` on `control_swap_empty_arm.ll` added at WI-7) and
+  `CHECK-NOT: _controlled` on value fixtures.
+
 ---
 
-## 9. Done criteria (maps PRD §9) — open at 4.2 start
+## 9. Done criteria (maps PRD §9) — **all met at WI-7 (2026-06-11)**
 
-- [ ] 5d + 5e lower to the pinned streams; postconditions green; `opt -verify`
+- [x] 5d + 5e lower to the pinned streams; postconditions green; `opt -verify`
       clean (second-RUN lines).
-- [ ] `cqrt_copy_i{1,8,16,32,64}` in the hand-written core ABI; runtime trace
+- [x] `cqrt_copy_i{1,8,16,32,64}` in the hand-written core ABI; runtime trace
       test covers them; `gen_templates.py --check` clean (YAML untouched).
-- [ ] The §8.2 two-channel boundary is cleared by the WI-7 independent
+- [x] The §8.2 two-channel boundary is cleared by the WI-7 independent
       adversarial review (analytic reasoning vs the closed forms; exact-zero
       deltas in the basis-`p₀` regime) — the `demo_D` obligation was struck
       (owner decision 2026-06-10, no simulations at this stage).
-- [ ] §3c active matrix fully fixtured (5f); Defect-2 declines `control flow`;
+- [x] §3c active matrix fully fixtured (5f); Defect-2 declines `control flow`;
       bd memory updated.
-- [ ] First real `emitInverseChain` invocation (§7.5 discharged); seam guard
+- [x] First real `emitInverseChain` invocation (§7.5 discharged); seam guard
       landed.
-- [ ] `slice_control_value_diamond` e2e links + diffs clean.
-- [ ] 4.1 phase fixtures all green, `CHECK-NOT: cqrt_copy` intact.
-- [ ] §8 adversarial review clears the emitter change — not just green tests.
-- [ ] Full `ctest` green.
+- [x] `slice_control_value_diamond` e2e links + diffs clean.
+- [x] 4.1 phase fixtures all green, `CHECK-NOT: cqrt_copy` intact.
+- [x] §8 adversarial review clears the emitter change — not just green tests
+      (§8.10: 4/4 lenses, 0 defects).
+- [x] Full `ctest` green.
 
 ---
 

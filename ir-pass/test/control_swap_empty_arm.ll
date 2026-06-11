@@ -32,3 +32,10 @@ merge:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK-NEXT: %{{[a-zA-Z0-9_.]+}} = call i32 @cqrt_measure_i32(i32 %[[H]])
 ; CHECK-NEXT: ret i32
+; Dephasing/shape guards (the §8 probe-6 phase-fixture discipline — the CHECK-NEXT
+; chain above already leaves no room, these make the intent explicit and uniform
+; with every other phase accept fixture): no method-B copy leaks onto a phase arm
+; (Rule 7), zero controlled gates, no surviving data mux.
+; CHECK-NOT: cqrt_copy
+; CHECK-NOT: _controlled
+; CHECK-NOT: phi i32

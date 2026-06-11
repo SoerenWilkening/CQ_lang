@@ -508,6 +508,21 @@ boundary itself is deliberately *not* "deviation must be zero" (that would
 relitigate Rule 7 and make 4.2 unshippable). The kept-source correlation is
 inherent to Bennett-keep and is the documented boundary, not a 4.2 bug.
 
+*Channels A and B are named **witnesses**, not an exhaustive enumeration*
+(clarification, WI-7 review 2026-06-11): the **single root cause** is that
+the restored source `p₀` stays entangled with `out` — globally B-keep is
+**bit-for-bit** the in-place reference plus a retained source copy,
+`Σ_q Σ_{p₀} c |q⟩|p₀⟩|h_q(p₀)⟩_out`. By purification/Schmidt uniqueness every
+observable deviation is a **marginal shadow of that one entanglement**: the
+`q`-marginal is channel A, the `out`-marginal is channel B, and the joint
+`q`-`out` cross-coherence block (also non-zero, and reachable since reads of
+the live condition are permitted) carries **no information beyond** the same
+kept-source correlation — it is not a third independent channel. The boundary
+is therefore characterized at the **mechanism** level (the kept-source
+entanglement) and witnessed by A and B; B-keep remains **measurement-correct**
+on `out` (the computational-basis `out` and joint `(q,out)` distributions are
+*exact* against the in-place reference), which is what the lowering promises.
+
 **Two-arm (§5e if/else) generalization** *(WI-5 §8 review, 2026-06-11)*: the
 closed forms above are the one-content-arm specialization (else = identity).
 For the dual-rail if/else the B-keep final state is
@@ -674,10 +689,27 @@ straight-line lowering (which emits the same `_inv` symbols); 4.2 neither
 widens nor narrows that exposure. Carried as an open item for the real-body
 phase (§10), with the same disposition in both code paths (consistency over
 special-casing). Note: the §8.2 free/strip soundness trace assumes every
-chain link is a true **permutation**; for the non-injective subset (the
-`sdiv`/`udiv`-class stems, even-literal `mul`) the trace — like straight-line
-uncompute — inherits this shared Phase-5 axiom *fictionally* until real
-template bodies land.
+chain link is a true **permutation**; for the non-injective subset the trace —
+like straight-line uncompute — inherits this shared Phase-5 axiom *fictionally*
+until real template bodies land.
+
+**The non-injective subset enumerated (binding, completed at WI-7).**
+`walkValueChain` (`ArmClassify.cpp:262`) admits **every** integer stem
+`binaryStem` names — it does **not** filter on injectivity, by design (parity
+with straight-line uncompute). Of those, the maps that are NOT bijections on
+`Z/2^W` are: the **div/rem family** (`sdiv`/`udiv`/`srem`/`urem` — lossy), an
+**even-literal `mul`** (the literal is a zero divisor, not a unit mod 2^W), a
+**`and`/`or` with a non-trivial literal** (a mask clears/forces bits — a
+witness probe `if(q>5){p=p&7}` lowers verify-clean with a
+`cq_template_and_i32_hl_inv` adjoint), and the **shift stems** `shl`/`lshr`/
+`ashr` (each discards bits off one end). The bijections — `add`/`sub`/`xor` by
+any literal, `mul` by an **odd** literal — have honest inverses and are not
+affected. (Both e2e/lit golden chains use only bijective stems —
+`mul 5`/`mul 7`/`add`/`xor` — so no golden exercises a fictional adjoint; the
+fixtures' adjoints are mathematically real.) Exposure + disposition are
+**identical** to straight-line uncompute, which emits the same `_inv` symbols
+on the same non-injective stems; 4.2 adds no new exposure. See **§0
+criterion 2**, which is read through this subsection.
 
 ### 8.7 Composition with the three guards landed 2026-06-10 (binding)
 
@@ -708,6 +740,13 @@ orchestrator (each gets a probe fixture, IMPLEMENTATION-4.2 §8):
 ---
 
 ## 9. Done criteria (4.2)
+
+> **STATUS: ALL MET — 4.2 DONE (2026-06-11, WI-1..WI-7, branch
+> `swap-route-control`).** The §8.2 two-channel boundary and the emitter were
+> cleared by the WI-7 independent adversarial review (4/4 lenses, 0 confirmed
+> defects, 0 silent-miscompiles — IMPLEMENTATION-4.2 §8.10). Full `ctest`
+> green (11 entries incl. the value-diamond e2e); `gen_templates.py --check`
+> clean. Each criterion below is satisfied.
 
 - A tainted value-arm `if`-diamond and `if/else` (linear HL/LH chains) lower to
   the routed B-keep stream the fixtures pin (mint → rail → route-in → verbatim

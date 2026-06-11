@@ -173,9 +173,12 @@ void cqrt_ry_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 void cqrt_ry_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 
 /* -----------------------------------------------------------------
- * Gate primitives (backend.md §11.4) — handle-typed, void. For
- * internal use by the template library and Phase 11 passes; declared
- * + defined this phase but NOT emitted by the IR pass yet (Phase 8).
+ * Gate primitives (backend.md §11.4) — handle-typed, void. `cqrt_x` IS
+ * pass-emitted since Phase 4.1: the swap-route emitter brackets a
+ * ¬flag (else / false-successor) arm in a self-inverse `cqrt_x(flag)`
+ * pair so the enclosed `cqrt_cswap` routes on the negated flag. The
+ * other three (`cqrt_h`/`cqrt_cnot`/`cqrt_toffoli`) are declared +
+ * defined but not yet emitted (reserved for Phase 8 / 11 passes).
  * Trace (no return-value suffix): args printed as h<N>, e.g.
  *     "cqrt_x(h<q>)", "cqrt_cnot(h<ctrl>, h<tgt>)".
  * ----------------------------------------------------------------- */
@@ -201,13 +204,19 @@ void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt);
 /* -----------------------------------------------------------------
  * Controlled-SWAP / Fredkin (npu.4) — `cqrt_cswap(i32 ctrl, i32 a,
  * i32 b)` swaps registers a and b iff the i32 control flag is set.
- * Unlike the Phase-8 placeholders above, this one IS emitted by the
- * IR pass: it is the primitive for the distinct-per-case-handle gated
- * switch MUX-EXCH lowering (npu.5) — `cqrt_cswap(f_q, regOut, q)` MOVEs
- * the selected source's state into the muxed register and frees the
- * source to |0> (no-cloning forbids a copy). SWAP is an involution, so
- * the controlled-SWAP is its own inverse — no `_inv` twin. Same
- * no-arrow void trace convention; all three args print as h<N>.
+ * It is pass-emitted: the RSSA swap-route control emitter
+ * (`SwapRouteEmit`, Phase 4) routes a tainted-`br` arm's operand into a
+ * |0> work rail with `cqrt_cswap(flag, value, rail)` and routes the
+ * active result back with the adjoint split — `cqrt_cswap(flag, value,
+ * railResult)` — the tainted `phi` being the inverse of the `br` on the
+ * same live flag (SWAP is an involution, so the route-back IS the
+ * adjoint helper call). Phase 4.1 routes phase arms; 4.2 routes the
+ * value-register of a method-B value arm (and brackets the ¬flag arm in
+ * a `cqrt_x` pair, see the gate primitives above). SWAP is an
+ * involution, so the controlled-SWAP is its own inverse — no `_inv`
+ * twin. (The deleted controlled-op generation's gated-switch MUX-EXCH
+ * use is gone with commit 7cde677; routing is the only caller now.)
+ * Same no-arrow void trace convention; all three args print as h<N>.
  * ----------------------------------------------------------------- */
 void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b);
 

@@ -839,10 +839,13 @@ struct):
 
 ### 11.2 Allocation, measurement, free
 
-The 15 `cqrt_*` symbols currently declared in
+The 15 `cqrt_*` allocation/measurement/free symbols declared in
 [`runtime/cq_runtime.h`](../runtime/cq_runtime.h) cover allocation
 (7 per-width variants), measurement (7 per-width variants), and
-free (one width-irrelevant entry):
+free (one width-irrelevant entry). (These 15 are one family of the
+hand-written core ABI; the header also declares the rotation,
+controlled-rotation, gate-primitive, `cqrt_cswap`, and `cqrt_copy_<W>`
+families — see §11.3/§11.4 and PRD Part II §8.1.)
 
 ```c
 /* Allocation — width-only ABI. Takes an initial classical value;
