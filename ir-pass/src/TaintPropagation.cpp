@@ -182,16 +182,23 @@ bool declMatchesPrototype(const Function *F, Type *T, bool HasAngle) {
 //   * lowering_reject_decl_prototype_phi.ll     → "... for cq_phi_si32"
 //   * lowering_reject_decl_prototype_measure.ll → "... for cq_measure_f64"
 //   * lowering_reject_decl_prototype_unused.ll  → decl-only, no call sites
+//   * lowering_reject_decl_prototype_invoke.ll  → invoke-only call site (thd7)
 void diagnoseMalformedDecl(Function *F, StringRef Concern) {
   std::string Msg = (Twine(Concern) + ": unsupported declared prototype for " +
                      F->getName())
                         .str();
   for (User *U : F->users()) {
-    auto *CI = dyn_cast<CallInst>(U);
-    if (!CI || CI->getCalledFunction() != F)
+    // CallBase (not CallInst) so an `invoke`'d call site still supplies the
+    // function context + `!dbg` source location (test_C_libtooling-thd7) —
+    // `dyn_cast<CallInst>` returns null on an InvokeInst, so an invoke-only
+    // malformed decl fell through to the decl-level diagnostic below (still
+    // LOUD, just without source-line precision). Same CallInst→CallBase
+    // generalization rzs9 applied to collectAndSeed / isMeasureSink.
+    auto *CB = dyn_cast<CallBase>(U);
+    if (!CB || CB->getCalledFunction() != F)
       continue;
-    CI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
-        *CI->getFunction(), Msg, CI->getDebugLoc()));
+    CB->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+        *CB->getFunction(), Msg, CB->getDebugLoc()));
     return;
   }
   F->getContext().diagnose(DiagnosticInfoUnsupported(*F, Msg));
