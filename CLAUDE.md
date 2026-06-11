@@ -19,9 +19,10 @@ class of bug.
 > **Authoritative status lives in [`ROADMAP.md`](ROADMAP.md), not here.** This
 > file is the *operating manual*; the ROADMAP is the *plan of record* (Phases
 > 0–10 + the 10 cross-cutting design principles). **Current focus: Phase 4 —
-> RSSA swap-routed tainted control flow**; clean-slate `4.0` and the `4.1`
-> phase-arm emitter are **done** (branch `swap-route-control`); `4.2`
-> (value/permutation arms, method-B) is next. Read `ROADMAP.md` and
+> RSSA swap-routed tainted control flow**; clean-slate `4.0`, the `4.1`
+> phase-arm emitter, and `4.2` (value/permutation arms, method-B) are **done**
+> (branch `swap-route-control`); `4.3` (nested control) is next. Read
+> `ROADMAP.md` and
 > `docs/design/rssa-swap-control/` *before* touching control flow. Phases 0–3
 > are done; 5–10 are not started (the early Phase-5 uncompute spine landed
 > alongside 4.1).
@@ -235,11 +236,14 @@ lowering** (mint a flag → substitute each arm gate with a `_controlled` templa
 → dissolve the φ → uncompute the flag → linearize the CFG) shipped and was then
 **removed wholesale** (`7cde677`) so the new **RSSA swap-route** design is built
 without it shaping the implementation. Today `ControlDetect` recognizes
-phase-arm if-diamond / if/else regions (incl. derived-base routing) and
-`SwapRouteEmit` lowers them (flag mint → `cqrt_cswap` route → verbatim arm Rz →
-route back → clean frees → `icmp_inv` flag-strip, zero controlled gates;
-`RegionFlatten` erases the CFG diamond); **every other tainted-control shape
-loudly declines** (value arms → 4.2, nested → 4.3, select → 4.4, switch → 4.5).
+phase-arm AND value-arm if-diamond / if/else regions (incl. derived-base
+routing); `SwapRouteEmit` lowers **phase arms** (flag mint → `cqrt_cswap` route
+→ verbatim arm Rz → route back → clean frees → `icmp_inv` flag-strip, zero
+controlled gates) and **value/permutation arms** by method-B (`R` →
+`cqrt_copy_<W>` copy-out → reverse-play `R†`; a value arm that clobbers a
+register the condition reads declines loudly — §3c); `RegionFlatten` erases the
+CFG diamond; **every other tainted-control shape loudly declines** (nested →
+4.3, select → 4.4, switch → 4.5).
 The enduring lessons — restructured, **not deleted** — that any control work
 must respect:
 
@@ -291,10 +295,10 @@ When you cannot *prove* the shape, **decline loudly** (Prime Directive).
   the path forward.
 - **Phase 4 is only partially done — and the *old* "done" Phase 4 is a trap.**
   The controlled-op Phase 4 shipped and was **removed wholesale**; the current
-  Phase 4 is the swap-route rebuild — `4.0` + `4.1` (phase arms) done, `4.2`–
-  `4.5` (value arms / nested / select / switch) not started. Old ROADMAP/issue
-  references to a "finished" controlled-form Phase 4 describe the deleted
-  generation.
+  Phase 4 is the swap-route rebuild — `4.0` + `4.1` (phase arms) + `4.2` (value
+  arms, method-B) done, `4.3`–`4.5` (nested / select / switch) not started. Old
+  ROADMAP/issue references to a "finished" controlled-form Phase 4 describe the
+  deleted generation.
 - **Casts are representation changes, NEVER measurements.** The only path to a
   measurement gate is an explicit `cq_measure(...)`. There is no flag/syntax to
   turn a cast into a measurement (this asymmetry is by design; it's what lets
