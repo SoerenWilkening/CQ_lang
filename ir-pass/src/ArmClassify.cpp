@@ -743,21 +743,15 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // wire-named and diagonal — replaying Rz on the live wire at the
         // branch is exactly the source's program order; no basis record is
         // read (the same opcode-not-position rationale as isValueChangingOp).
-        {
-          SmallVector<Value *, 4> WireSeeds;
-          for (Value *V = Routed;;) {
-            WireSeeds.push_back(V);
-            auto *CI = dyn_cast<CallInst>(V);
-            if (!CI || !isPhiCall(CI) || CI->arg_size() < 1)
-              break;
-            V = CI->getArgOperand(0);
-          }
-          if (CallInst *Gate = findNonDiagonalWireGate(
-                  WireSeeds, /*CrossValueRouting=*/false)) {
-            diagnoseUnderControl(Gate,
-                                 "routed base predates a non-diagonal gate");
-            return ArmDisposition::Declined;
-          }
+        // The diagonal-alias closure that seeds the walk lives in the
+        // WireWalk core itself since test_C_libtooling-6j1 (the straight-line
+        // twin of this guard) — `Routed` alone seeds the full backward
+        // `cq_phi` chain.
+        if (CallInst *Gate = findNonDiagonalWireGate(
+                Routed, /*CrossValueRouting=*/false)) {
+          diagnoseUnderControl(Gate,
+                               "routed base predates a non-diagonal gate");
+          return ArmDisposition::Declined;
         }
         // A DERIVED routed base's OWN angle must be classical — the arg-1
         // parallel of criterion 3 (Rule 3). The phase path declines this via

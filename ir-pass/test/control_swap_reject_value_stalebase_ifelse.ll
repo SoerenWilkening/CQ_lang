@@ -7,8 +7,12 @@
 ; (a chained Ry through the sibling SSA name) fires on the same physical wire
 ; before the branch: the dual route-ins would read the POST-Ry wire while the
 ; chains' SSA base names the PRE-Ry RECORD (stale-record family — see the
-; diamond twin for the full rationale). Declined by the routed-base
-; diagonal-alias-closure wire walk in classifyArms.
+; diamond twin for the full rationale). Since test_C_libtooling-6j1 the
+; observed message is the EARLIER straight-line guard's
+; (OpcodeLowering::declineStaleRecordOps — its seed closure catches the arm
+; ops over `%qd` first; opt exits at the FIRST DS_Error); the region-level
+; routed-base diagonal-alias-closure walk in classifyArms remains live behind
+; it, pinned by control_swap_reject_value_stalebase_inarm.ll.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
@@ -34,7 +38,7 @@ merge:
   ret i32 %m
 }
 
-; CHECK: error{{.*}}routed base predates a non-diagonal gate under quantum control
+; CHECK: error{{.*}}cq opcode lowering: operand predates a non-diagonal gate
 ; never the condition-side string, never accepted
 ; CHECK-NOT: condition predates a non-diagonal gate
 ; CHECK-NOT: cqrt_copy

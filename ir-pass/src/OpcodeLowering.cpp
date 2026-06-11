@@ -104,7 +104,13 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
   //     legitimate use-then-re-rotate program — for no soundness gain.
   // Diagonal gates (`cq_phi`/Rz) on the wire are basis-preserving and never
   // trigger (bd memory rz-diag-flag-strip-invariant; fixture
-  // lowering_stale_record_add_after_phi.ll).
+  // lowering_stale_record_add_after_phi.ll). An operand that is itself a
+  // diagonal ALIAS (`%qd = cq_phi(%q, ·)`) shares `%q`'s physical wire, so a
+  // chained theta consuming the SIBLING name `%q` stales it too — the wire
+  // walk closes every seed backward through `cq_phi` arg-0 hops before
+  // walking forward (test_C_libtooling-6j1; fixtures
+  // lowering_reject_stale_record_alias_{sibling,chain}.ll, accept twins
+  // lowering_stale_record_alias_{before_theta,producer}.ll).
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;

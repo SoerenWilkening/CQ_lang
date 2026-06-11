@@ -52,6 +52,18 @@ namespace cq {
 // theta on the wire is returned. Returns nullptr when the wire gains no
 // (relevant) non-diagonal gate. `DT` must be non-null whenever `EmitPoint`
 // is. Pure analysis — mutates nothing (Rule 9).
+//
+// Each seed is first CLOSED BACKWARD through diagonal `cq_phi` arg-0 hops
+// (test_C_libtooling-6j1): a `cq_phi` result denotes its parent's basis
+// record on its parent's physical wire (Rz is diagonal; rotation lowering
+// RAUWs the whole chain to one handle), so a theta consuming a SIBLING SSA
+// name of the chain is an in-place Ry on the seed's wire that user-edge
+// walking alone can never reach. The closure stops at the seed's nearest
+// non-`cq_phi` ancestor — its RECORD BOUNDARY, not necessarily the wire
+// origin: it never crosses a theta hop (a theta result is a fresh record,
+// and seeding at its parent would flag the producing gate itself — see
+// WireWalk.cpp), so a sibling Ry behind a CHAINED theta remains a known-open
+// over-accept family, tracked in test_C_libtooling-6vk.
 llvm::CallInst *findNonDiagonalWireGate(llvm::ArrayRef<llvm::Value *> Seeds,
                                         bool CrossValueRouting,
                                         const llvm::Instruction *EmitPoint =

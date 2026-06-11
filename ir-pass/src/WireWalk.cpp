@@ -34,7 +34,44 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
                                   bool CrossValueRouting,
                                   const Instruction *EmitPoint,
                                   const DominatorTree *DT) {
-  SmallVector<Value *, 16> Work(Seeds.begin(), Seeds.end());
+  // Diagonal-alias seed closure (test_C_libtooling-6j1): a seed names a basis
+  // RECORD, but the physical wire carrying it is shared with the seed's whole
+  // diagonal ancestry — rotation lowering RAUWs a `cq_phi` and its arg-0 to
+  // the SAME i32 handle, and Rz preserves the computational basis, so a
+  // `cq_phi` result denotes its parent's record on its parent's wire. A
+  // non-diagonal gate consuming a SIBLING SSA name of that ancestry
+  // (`%qd = cq_phi(%q, ·); %q2 = cq_theta(%q, ·)`) is therefore an in-place
+  // Ry on the seed's own wire that a forward-only walk from `%qd` can never
+  // reach (the walk follows USER edges only). Close every seed BACKWARD
+  // through `cq_phi` arg-0 hops before walking forward.
+  //
+  // The closure stops at the nearest non-`cq_phi` ancestor — the seed's
+  // RECORD BOUNDARY (a theta, a template result, an argument), NOT
+  // necessarily the physical wire origin: a CHAINED theta is mid-wire, and a
+  // sibling Ry behind it stays invisible to this walk — a KNOWN-OPEN
+  // pre-existing over-accept family, tracked in test_C_libtooling-6vk. The
+  // never-cross-theta stop is a deliberately conservative choice: naively
+  // seeding at a theta's parent puts the record-PRODUCING Ry itself on the
+  // user frontier and over-declines every legitimate chained-rotation
+  // consumer (accept boundary pinned by
+  // lowering_stale_record_alias_producer.ll and
+  // lowering_stale_record_add_before_theta.ll); a sound extension must
+  // exempt ON-ancestry gates while still flagging OFF-ancestry siblings
+  // (the 6vk fix sketch). Termination needs no visited set: arg-0 def
+  // edges strictly ascend the dominance order for reachable code, and a
+  // cyclic call chain is only expressible in UNREACHABLE code, which can
+  // never be tainted (taint is a forward fixpoint from `cq_theta`) — the
+  // same argument the pre-hoist ArmClassify manual closure relied on.
+  SmallVector<Value *, 16> Work;
+  for (Value *S : Seeds) {
+    for (Value *V = S;;) {
+      Work.push_back(V);
+      auto *CI = dyn_cast<CallInst>(V);
+      if (!CI || !isCallToPrefix(CI, "cq_phi_") || CI->arg_size() < 1)
+        break;
+      V = CI->getArgOperand(0);
+    }
+  }
   SmallPtrSet<Value *, 16> Seen;
   while (!Work.empty()) {
     Value *V = Work.pop_back_val();
