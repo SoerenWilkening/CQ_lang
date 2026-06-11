@@ -95,6 +95,16 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // wire base and erased here instead of declined.
   declineClassicalMuxes(M, taint);
 
+  // Post-lift stale-record re-sweep (test_C_libtooling-2qyz): the lift above
+  // RAUWs a merge phi to its wire base AFTER declineStaleRecordOps already ran,
+  // so a consumer over a re-Ry'd wire would lower silently. When a lift occurred
+  // (witnessed by taint.LiftedConsumers) this re-runs the FULL stale-record
+  // sweep on the post-lift IR — a stale op can be a TRANSITIVE consumer any
+  // number of in-place-gate hops below the lifted phi, so a scoped re-check is
+  // incomplete (Rule-13 finding). Idempotent + still pre-RAUW SSA identity;
+  // no-op when nothing was lifted.
+  declineLiftedStaleRecordOps(M, taint);
+
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
   lowerRotations(M, wd, taint, &plan);
@@ -154,6 +164,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Classical-condition mux guard in this entry point too (twin-pipeline
   // trap, IMPLEMENTATION §6.5) — see run() for the ordering rationale.
   declineClassicalMuxes(M, taint);
+  // Post-lift stale-record re-check (test_C_libtooling-2qyz) — see run().
+  declineLiftedStaleRecordOps(M, taint);
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);

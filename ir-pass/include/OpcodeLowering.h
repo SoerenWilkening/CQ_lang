@@ -53,6 +53,23 @@ struct TaintSet;
 // ArmClassify's provenance-seeded wire walk owns their stale check.
 void declineStaleRecordOps(llvm::Module &M, TaintSet &taint);
 
+// Post-lift stale-record re-sweep (test_C_libtooling-2qyz) — PURE ANALYSIS,
+// mutates no IR. Must run AFTER `declineClassicalMuxes` (whose one-register
+// merge-phi lift RAUWs a phi to its wire base, exposing a stale-record consumer
+// the earlier `declineStaleRecordOps` could not see through the opaque PHINode)
+// and BEFORE any rotation lowering (pre-RAUW SSA identity). When a lift occurred
+// (`taint.LiftedConsumers` non-empty) it re-runs the COMPLETE
+// `declineStaleRecordOps` sweep on the post-lift IR — NOT scoped to the recorded
+// direct consumers, because a stale op can sit any number of in-place-gate hops
+// (Rz / chained Ry) downstream of the lifted phi (a Rule-13 adversarial finding;
+// the direct-consumer subset is incomplete). The post-lift phi is the base SSA
+// value, so the unchanged `WireWalk` closure walks every consumer's full wire.
+// Idempotent — `checkStaleOp` skips `StaleDeclined`, so the first pass's
+// diagnostics are never duplicated or re-pointed; only newly-exposed ops are
+// diagnosed. Gated on the lift witness so non-lift modules incur no churn
+// (opt exits at the first DS_Error). A no-op when nothing was lifted.
+void declineLiftedStaleRecordOps(llvm::Module &M, TaintSet &taint);
+
 // Walks tainted BinaryOperators in `M`, lowers each in BB order to
 // its per-width template (or emits a "no template" diagnostic), and
 // updates `taint` as template-call SSA values replace ops. Operand

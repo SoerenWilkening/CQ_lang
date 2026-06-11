@@ -588,9 +588,25 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   // rotation lowering every incoming IS this base's i32 handle), scrub the
   // erased value from the taint set (`SwapRouteEmit::scrubTaint` precedent —
   // a freed Instruction* must not linger in `Tainted` where a later
-  // allocation could alias it), and erase. Downstream stages now see the
-  // already-accepted phi-less shape; every later guard (tainted-angle,
-  // FreePoint post-dominator discipline, stale-skip) still adjudicates it.
+  // allocation could alias it), and erase.
+  //
+  // Witness that a lift OCCURRED (test_C_libtooling-2qyz). The RAUW re-points
+  // every consumer onto the wire base, so a sibling Ry re-rotating that base's
+  // wire now stales any in-scope op downstream of the (erased) phi — but the
+  // stale-record guard (`declineStaleRecordOps`) already ran BEFORE this lift
+  // and saw only the opaque PHINode operand (its backward closure stops at a
+  // PHINode, and its forward walk from the phi never reaches the base's sibling
+  // theta), so it could not adjudicate the now-exposed shape. NOT "every later
+  // guard still adjudicates it" — the stale-record guard is an EARLIER guard.
+  // Recording the direct consumers flags the lift to the orchestrator, which
+  // re-runs the FULL stale-record sweep right after `declineClassicalMuxes`
+  // (`declineLiftedStaleRecordOps`). The sweep is complete, not scoped to these
+  // entries: the genuine stale op may be a TRANSITIVE consumer separated from
+  // the phi by in-place-gate hops (Rz / chained Ry) — a Rule-13 adversarial
+  // finding — so only re-walking every consumer's full wire is sound.
+  for (User *U : Phi->users())
+    if (auto *I = dyn_cast<Instruction>(U))
+      taint.LiftedConsumers.insert(I);
   Phi->replaceAllUsesWith(C0.Base);
   taint.Tainted.erase(Phi);
   Phi->eraseFromParent();

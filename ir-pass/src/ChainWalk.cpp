@@ -139,6 +139,24 @@ ForwardChain recoverForwardChain(Value *Terminal, const TaintSet &taint,
       break;
     }
 
+  // Lineage-measure guard (test_C_libtooling-3h8): a NON-terminal lineage handle
+  // read by a measurement sink. `forwardConsumerCount` excludes measure sinks
+  // (a measured handle is a sink, not a fan-out branch), so the fan-out guard
+  // above is BLIND to a measured upstream handle — yet the whole-chain adjoint +
+  // `cqrt_free` this terminal would emit resets the shared physical register
+  // BEFORE (or after) that measurement reads it: a hidden projective collapse
+  // (Rule 5/6) and a verify-clean wrong unitary. Flag it for the caller's loud
+  // decline. The terminal (Lineage[0]) is exempt — a measured terminal is the
+  // existing silent Measured skip (FreePoint), reached before this walk.
+  for (size_t I = 1, E = Lineage.size(); I < E && !FC.MeasuredUpstream; ++I)
+    for (User *U : Lineage[I]->users())
+      if (auto *CI = dyn_cast<CallInst>(U))
+        if (isMeasureSink(CI)) {
+          FC.MeasuredUpstream = true;
+          FC.UpstreamMeasure = CI;
+          break;
+        }
+
   // 2. Collect the per-link gates: every lineage handle that is a template
   //    producer (i.e. a non-alloc call) IS a forward link, and each lineage
   //    handle's in-place rotations are links on it. A seen-set dedups (a handle

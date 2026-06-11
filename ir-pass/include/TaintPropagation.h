@@ -102,6 +102,23 @@ struct TaintSet {
   // are never erased before `lowerOps` reads this set, so the pointers stay
   // valid.
   llvm::SmallPtrSet<llvm::Instruction *, 4> StaleDeclined;
+
+  // One-register merge-phi lift WITNESS (test_C_libtooling-2qyz). The lift
+  // (`liftOneRegisterMergePhi`) RAUWs a proven pure-renaming merge phi to its
+  // wire BASE and erases it — AFTER `declineStaleRecordOps` already ran — so a
+  // consumer that read the phi now resolves to the base, and a sibling Ry
+  // re-rotating the base's wire (invisible behind the PHINode at the earlier
+  // guard) would make the consumer's template stale. The lift inserts its
+  // direct Instruction consumers here so the orchestrator knows a lift OCCURRED
+  // and re-runs the FULL stale-record sweep (`declineLiftedStaleRecordOps`,
+  // right after `declineClassicalMuxes`, before any rotation lowering). The
+  // re-sweep is NOT scoped to these entries — a stale op can sit any number of
+  // in-place-gate hops downstream of the lifted phi (a Rule-13 adversarial
+  // finding), so the complete sweep is required for soundness; this set is the
+  // lift-occurred gate (non-empty ⇒ re-sweep, so non-lift modules incur no
+  // diagnostic churn). Pointers stay valid — consumers are not erased before
+  // the re-sweep.
+  llvm::SmallPtrSet<llvm::Instruction *, 4> LiftedConsumers;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure

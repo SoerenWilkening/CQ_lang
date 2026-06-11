@@ -50,6 +50,18 @@ struct ForwardChain {
   // is conservative and skips such terminals (true DAG/tree reversal is deferred);
   // the caller bails on this flag.
   bool HasFanOut = false;
+  // True when a NON-terminal lineage handle is read by a measurement sink
+  // (test_C_libtooling-3h8). The whole-chain adjoint + `cqrt_free` would reset a
+  // register the measurement still reads — a hidden collapse (Rule 5/6) and a
+  // verify-clean wrong unitary. `forwardConsumerCount` deliberately EXCLUDES
+  // measure sinks (a measured handle is a sink, not a fan-out branch), so a
+  // measured upstream handle never trips `HasFanOut`; this flag catches it
+  // separately. The caller declines LOUDLY (a post-measure free is a loud
+  // reject, not a silent skip). `UpstreamMeasure` is the offending sink, for the
+  // `!dbg` source location. The TERMINAL's own measure is NOT counted here — a
+  // measured terminal is the existing silent Measured skip (FreePoint).
+  bool MeasuredUpstream = false;
+  llvm::CallInst *UpstreamMeasure = nullptr;
 };
 
 // Reconstruct the whole forward chain of the register whose live terminal handle

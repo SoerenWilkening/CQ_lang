@@ -53,17 +53,21 @@ namespace cq {
 // (relevant) non-diagonal gate. `DT` must be non-null whenever `EmitPoint`
 // is. Pure analysis — mutates nothing (Rule 9).
 //
-// Each seed is first CLOSED BACKWARD through diagonal `cq_phi` arg-0 hops
-// (test_C_libtooling-6j1): a `cq_phi` result denotes its parent's basis
-// record on its parent's physical wire (Rz is diagonal; rotation lowering
-// RAUWs the whole chain to one handle), so a theta consuming a SIBLING SSA
-// name of the chain is an in-place Ry on the seed's wire that user-edge
-// walking alone can never reach. The closure stops at the seed's nearest
-// non-`cq_phi` ancestor — its RECORD BOUNDARY, not necessarily the wire
-// origin: it never crosses a theta hop (a theta result is a fresh record,
-// and seeding at its parent would flag the producing gate itself — see
-// WireWalk.cpp), so a sibling Ry behind a CHAINED theta remains a known-open
-// over-accept family, tracked in test_C_libtooling-6vk.
+// Each seed is first CLOSED BACKWARD, PER SEED, through diagonal `cq_phi`
+// arg-0 hops AND chained-`cq_theta` arg-0 hops to the wire origin
+// (test_C_libtooling-6j1 + test_C_libtooling-6vk): a `cq_phi` result, and a
+// chained `cq_theta` result (a Ry whose arg-0 is itself a quantum wire),
+// denote a record on their parent's physical wire (rotation lowering RAUWs the
+// whole chain to one handle), so a theta consuming a SIBLING SSA name of the
+// chain is an in-place Ry on the seed's wire that user-edge walking alone can
+// never reach. The ON-ANCESTRY gates on that backward chain (the gates that
+// PRODUCE the seed's record) are EXEMPT from the forward staling-gate frontier
+// — they precede the record and can never stale it; flagging the producing
+// theta would over-decline every chained-rotation consumer (the boundary the
+// previous never-cross-theta stop protected). Only an OFF-ancestry sibling
+// theta (a user of a shared parent handle, NOT on the seed's own arg-0 chain)
+// is stale evidence. A SOURCE theta's arg-0 is the classical init, so the
+// closure stops there.
 llvm::CallInst *findNonDiagonalWireGate(llvm::ArrayRef<llvm::Value *> Seeds,
                                         bool CrossValueRouting,
                                         const llvm::Instruction *EmitPoint =

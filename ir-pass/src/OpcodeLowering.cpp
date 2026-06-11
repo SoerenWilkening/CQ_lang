@@ -79,6 +79,27 @@ bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
   return false;
 }
 
+// Per-op stale-record check (shared by the straight-line guard and the
+// post-lift re-check, Rule 14). For each tainted operand of `I`, walk its
+// forward in-place-gate wire; if it gains a non-diagonal gate not provably
+// after `I`'s emission point, fire the loud diagnostic, record `I` in
+// `StaleDeclined` (so `lowerOps` lowers nothing for it), and return true. `DT`
+// must be the dominator tree of `I`'s function.
+bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT) {
+  if (taint.StaleDeclined.count(&I))
+    return false;  // already declined — idempotent across the post-lift re-sweep.
+  for (Value *Op : I.operands()) {
+    if (!taint.Tainted.count(Op))
+      continue;  // classical operand — no wire.
+    if (findNonDiagonalWireGate(Op, /*CrossValueRouting=*/true, &I, &DT)) {
+      diagnoseStaleRecord(&I);
+      taint.StaleDeclined.insert(&I);
+      return true;  // one diagnostic per op; lowerOps will skip it.
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 void declineStaleRecordOps(Module &M, TaintSet &taint) {
@@ -120,21 +141,48 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
       for (Instruction &I : BB) {
         if (!inLowerOpsScope(I, taint))
           continue;
-        for (Value *Op : I.operands()) {
-          if (!taint.Tainted.count(Op))
-            continue;  // classical operand — no wire.
-          if (!DT)
-            DT.emplace(F);
-          if (findNonDiagonalWireGate(Op, /*CrossValueRouting=*/true, &I,
-                                      &*DT)) {
-            diagnoseStaleRecord(&I);
-            taint.StaleDeclined.insert(&I);
-            break;  // one diagnostic per op; lowerOps will skip it.
-          }
-        }
+        if (!DT)
+          DT.emplace(F);  // a tainted in-scope op always has a tainted operand.
+        checkStaleOp(I, taint, *DT);
       }
     }
   }
+}
+
+void declineLiftedStaleRecordOps(Module &M, TaintSet &taint) {
+  // Re-adjudicate stale records exposed by the one-register merge-phi lift
+  // (test_C_libtooling-2qyz). `liftOneRegisterMergePhi` (declineClassicalMuxes)
+  // RAUWs a proven pure-renaming phi to its wire BASE and erases it — AFTER
+  // `declineStaleRecordOps` already ran. An in-scope op that consumed the phi
+  // (directly or through intervening in-place-gate hops) now resolves to the
+  // base, so a sibling Ry re-rotating the base's wire — invisible to the first
+  // guard, whose backward closure stops at the opaque PHINode — now stales it.
+  //
+  // The re-check is a FULL re-sweep, NOT scoped to the phi's direct users. A
+  // Rule-13 adversarial probe (2026-06-11) showed that scoping to the recorded
+  // direct consumers is INCOMPLETE: a stale arithmetic op can sit ANY number of
+  // in-place-gate hops (a diagonal `cq_phi`/Rz, or a chained `cq_theta`/Ry, both
+  // valid wire-sharing users that are not themselves `lowerOps` ops) downstream
+  // of the lifted phi, so the genuine stale op is a TRANSITIVE user the direct
+  // re-check never visits — a residual silent miscompile. Re-running the
+  // COMPLETE `declineStaleRecordOps` on the post-lift IR adjudicates every
+  // exposed op: the phi is now the base SSA value, so the (unchanged) WireWalk
+  // closure walks each consumer's wire all the way to the origin and finds the
+  // sibling regardless of how many hops away the consumer sits (Rule 14 — reuse
+  // the exact analysis, add no parallel wire-walk).
+  //
+  // Gated on a lift having occurred (`LiftedConsumers` is the witness, populated
+  // by `liftOneRegisterMergePhi`): a module with no lift skips the re-sweep
+  // entirely, so NO message-ownership churn on non-lift fixtures (opt exits at
+  // the first DS_Error). The re-sweep is idempotent — `checkStaleOp` skips ops
+  // already in `StaleDeclined`, so the first pass's diagnostics are neither
+  // duplicated nor re-pointed; only newly-exposed ops are diagnosed (with the
+  // accurate stale-record message — the lift proved the phi a pure renaming, so
+  // the residual defect IS a stale record). Still BEFORE any rotation lowering
+  // (pre-RAUW SSA identity).
+  if (taint.LiftedConsumers.empty())
+    return;  // no lift occurred — nothing to re-adjudicate.
+  declineStaleRecordOps(M, taint);
 }
 
 void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {

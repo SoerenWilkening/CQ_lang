@@ -28,6 +28,7 @@
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -38,6 +39,25 @@ using namespace llvm;
 namespace cq {
 
 namespace {
+
+// The uncompute-spine diagnostic FreePoint does NOT own (test_C_libtooling-3h8):
+// a NON-terminal lineage handle of a dead terminal is read by a measurement
+// sink. FreePoint inspects only the terminal's own users, so it never sees the
+// upstream measure; ChainWalk (which recovers the whole lineage) flags it and
+// the driver rejects here. LOUD reject, not a silent skip — a free of a
+// measured register is a hidden projective collapse (Rule 5/6). The negative
+// fixture lowering_uncompute_dead_sibling_premeasure.ll mirrors this string
+// character-for-character.
+constexpr char kMsgLineageMeasured[] =
+    "cq uncompute: dead chain would free a measured register";
+
+// Loud `DiagnosticInfoUnsupported(DS_Error)` on `Where`, with its `!dbg` so the
+// rejection is SOURCE-LOCATED (mirrors FreePoint::diagnose). `opt` exits
+// non-zero, which the negative LIT fixture inverts with `RUN: not`.
+void diagnose(Instruction *Where, StringRef Msg) {
+  Where->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *Where->getFunction(), Msg, Where->getDebugLoc()));
+}
 
 // A data-register producer we own: a tainted `cqrt_alloc_<W>` mint or an
 // UNCONTROLLED `cq_template_*` result. Controlled results are Phase-4/in-shadow
@@ -145,6 +165,17 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
         continue;
 
       ForwardChain Chain = recoverForwardChain(Term, taint, DT);
+      // Lineage-measure guard (test_C_libtooling-3h8): a NON-terminal lineage
+      // handle is measured, so the whole-chain adjoint + `cqrt_free` would reset
+      // a register the measurement still reads — a hidden collapse (Rule 5/6),
+      // invisible to FreePoint (which inspects only the terminal's own users)
+      // and to the fan-out guard (`forwardConsumerCount` excludes measure
+      // sinks). Loud reject, never a silent skip.
+      if (Chain.MeasuredUpstream) {
+        diagnose(Chain.UpstreamMeasure ? Chain.UpstreamMeasure : Term,
+                 kMsgLineageMeasured);
+        continue;
+      }
       if (!isStep2Emittable(Chain, taint))
         continue;
 
