@@ -16,9 +16,10 @@
 ;                 via the existing EmitInverse spine; shown below on the phase
 ;                 diamond.
 ;       (B-keep)  compute → copy-out → reverse-play — VALUE arms only (4.2). Adds
-;                 the per-width `cqrt_copy_<W>` (the design's only new ABI). Exact
-;                 semantics + the reassignment/escape handling are pinned when 4.2
-;                 lands (SCOPING.md §7.6); sketched, not CHECK-pinned, here.
+;                 the per-width `cqrt_copy_<W>` (the design's only new ABI;
+;                 §7.6 RESOLVED, PRD Part II §8.1). PINNED at 4.2 WI-4 below —
+;                 the executable contract is control_swap_value_diamond.ll
+;                 (IMPLEMENTATION-4.2 §5d, symbol order IS the contract).
 ;
 ; SOURCE INTENT (same diamond as swap_route_if_diamond.ll):
 ;     q : quantum handle
@@ -88,19 +89,49 @@ merge:
 ; }
 
 ; ===========================================================================
-; (B-keep) COMPUTE → COPY-OUT → REVERSE-PLAY — VALUE arms only (4.2 sketch).
-;   For a basis-valued (permutation) arm (add/mul/x/toffoli): run R, copy the
-;   basis answer to a fresh register (`cqrt_copy_<W>`), then reverse-play R† to
-;   restore q0 and zero the rail (which makes the trailing icmp_inv valid). WRONG
+; (B-keep) COMPUTE → COPY-OUT → REVERSE-PLAY — VALUE arms only. PINNED at 4.2
+;   WI-4 (the §5d contract stream; executable spec control_swap_value_diamond.ll,
+;   emitter SwapRouteEmit::emitValueDiamond). For a basis-valued (permutation)
+;   arm: run R, copy the basis answer to a fresh register (`cqrt_copy_<W>` —
+;   integer widths only, the design's sole new ABI), then reverse-play R† to
+;   restore p0 and zero the rail (which makes the trailing icmp_inv valid). WRONG
 ;   for rz/ry (a CNOT copies a basis label, not a phase; verified P0 0.585->0.500),
-;   which is exactly why phase arms use the flag-strip instead, NOT this. The
-;   `cqrt_copy_<W>` width set + reassignment/escape handling are pinned at 4.2
-;   (SCOPING.md §7.6) — sketched, not CHECK-pinned, here:
+;   which is exactly why phase arms use the flag-strip instead, NOT this.
 ;
-;     %out  = call i32 @cqrt_alloc_i32(i32 0)
-;     call void @cqrt_copy_i32(i32 <answer>, i32 %out)   ; out := basis answer
-;     ; ... then R† as in (B-undo): restores q0, zeros rail+flag, leaves answer in %out
+; SOURCE INTENT (value diamond; the condition register q is DISJOINT from the
+; routed value register p in every accepted region — SCOPING.md §3c):
+;     if (q > 5) { p = p*5; p = p+15; }
+;
+;   %flag = call i32  @cq_template_icmp_sgt_i32_hl(i32 %q, i32 5)      ; 1 mint
+;   %rail = call i32  @cqrt_alloc_i32(i32 0)                           ; 2 |0> rail
+;   call void @cqrt_cswap(i32 %flag, i32 %p, i32 %rail)                ; 3 route-in
+;   %v1   = call i32  @cq_template_mul_i32_hl(i32 %rail, i32 5)        ; 4 chain (verbatim,
+;   %v2   = call i32  @cq_template_add_i32_hl(i32 %v1, i32 15)         ; 4  uncontrolled)
+;   call void @cqrt_cswap(i32 %flag, i32 %p, i32 %v2)                  ; 5 route-back
+;   %out  = call i32  @cqrt_alloc_i32(i32 0)                           ; 6 copy target
+;   call void @cqrt_copy_i32(i32 %p, i32 %out)                         ; 6 B-keep copy
+;   call void @cqrt_cswap(i32 %flag, i32 %p, i32 %v2)                  ; 7 route-back†
+;   %u1   = call i32  @cq_template_add_i32_hl_inv(i32 %v2, i32 15)     ; 7 chain adjoint
+;   %u2   = call i32  @cq_template_mul_i32_hl_inv(i32 %u1, i32 5)      ; 7 chain adjoint
+;   call void @cqrt_cswap(i32 %flag, i32 %p, i32 %u2)                  ; 7 route-in†
+;   call void @cqrt_free(i32 %u2)                                      ; 8 rail |0> only AFTER R†
+;   %f0   = call i32  @cq_template_icmp_sgt_i32_hl_inv(i32 %q, i32 5)  ; 9 strip (q == q0)
+;   call void @cqrt_free(i32 %flag)                                    ; 9 flag free
+;   %m    = call i32  @cq_measure_si32(i32 %out)                       ; phi RAUW'd -> out
+;
+; LOAD-BEARING ORDER: the copy sits AFTER the route-back (the answer is on p
+; only then) and BEFORE the route-back† (R† destroys it on p); the rail free
+; consumes the FINAL threaded `_inv` handle (%u2 — not %rail/%v2); the strip
+; follows R†. EXACTLY TWO frees: %out (the answer) and %p (the restored source)
+; are NEVER freed — either free is a hidden measurement. The R† route cswaps
+; are emitted by `emitRoute` brackets, NOT through `emitInverseChain` — the
+; involution path threads the handle into arg 0, the cswap FLAG slot (the
+; EmitInverse seam; PRD Part II §8.5).
 ;
 ; NOTE: an arm that value-changes a variable the CONDITION reads is REJECTED
-; (SCOPING.md §3c) — no copy can disentangle a non-injective result. (B-keep)
-; therefore applies to value arms on NON-condition registers.
+; (SCOPING.md §3c, ACTIVE since 4.2 WI-3, through the routed base's
+; diagonal-alias closure) — no copy can disentangle a non-injective result.
+; (B-keep) therefore applies to value arms on NON-condition registers. The
+; kept-source correlation boundary (|q>|p0>|f(p0)> vs the in-place
+; |q>|f(p0)>, observable on channels A/B) is documented in PRD Part II §8.2 —
+; binding documentation, not a bug.

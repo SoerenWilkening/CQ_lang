@@ -64,6 +64,15 @@ Value *emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
 
   // Self-adjoint involutions: `cqrt_x` / `cqrt_cswap` are their own inverse, so
   // emit AS-IS (no `_inv` lookup). Void; return the (threaded) handle operand.
+  //
+  // GUARD — the swap-route seam (PRD Part II §8.5): `CurHandle` is threaded
+  // into Args[0], and for `cqrt_cswap(flag, a, b)` arg 0 is the FLAG slot, not
+  // a data operand. NEVER feed route cswaps through a threaded chain
+  // (`emitInverseChain`) — a rail handle would land in the flag slot: a
+  // verify-clean WRONG UNITARY. The swap-route value-arm emitter
+  // (SwapRouteEmit::emitValueDiamond) therefore brackets its R† route cswaps
+  // itself via `emitRoute` (cswap is self-inverse, so the adjoint bracket is
+  // the identical helper call) and hands this spine the BODY CHAIN only.
   if (Name == "cqrt_x" || Name == "cqrt_cswap") {
     SmallVector<Value *, 3> Args(Forward->args());
     if (CurHandle && !Args.empty())

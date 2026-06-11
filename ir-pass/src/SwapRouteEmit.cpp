@@ -1,25 +1,31 @@
 // SwapRouteEmit.cpp — see header. The mutating swap-route emitter for accepted
-// phase-arm regions — a one-content-arm diamond (§5a) or a two-arm if/else
-// (§5b), lowered by one arm-list-parameterized procedure. Emits the coherent,
+// regions. PHASE arms — a one-content-arm diamond (§5a) or a two-arm if/else
+// (§5b), lowered by one arm-list-parameterized procedure — emit the coherent,
 // zero-controlled-gate routed stream of SCOPING §3a in the §5 contract order
 // (an if/else routes BOTH arms to distinct rails, the else under ¬flag via the
-// cqrt_x bracket), then rewires + flattens.
+// cqrt_x bracket), then rewire + flatten. VALUE arms (4.2, one-content-arm
+// DIAMOND only until WI-5) lower by method-B B-keep (§5d): route + verbatim
+// chain replay + copy-out + reverse-play R† — see emitValueDiamond.
 //
-// Correctness rests on statevector reasoning, NOT on `opt -verify` (Rule 2):
+// Correctness rests on analytic state reasoning, NOT on `opt -verify` (Rule 2):
 //   `(|0> + |1>)/√2 ⊗ |0>_f` ─route+Rz+route→ `(|0>|0>_f + e^{iθ}|1>|1>_f)/√2`
 //   ─icmp_inv(q)→ `(|0> + e^{iθ}|1>)/√2 ⊗ |0>_f`: the rail returns to |0>
 //   UNCONDITIONALLY (Rz|0>=|0>), q keeps the conditional phase, and the flag is
 //   stripped because Rz preserves q's basis value (q == q0). Zero `_controlled`
-//   gates, no added measurement (SCOPING §3a/§3b).
+//   gates, no added measurement (SCOPING §3a/§3b). The value-arm trace is at
+//   emitValueDiamond (PRD Part II §8.2).
 
 #include "SwapRouteEmit.h"
 
+#include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "CompareLowering.h"     // lowerCompareToFlag
 #include "ControlPlan.h"         // ControlRegion / ControlPlan
 #include "ControlledSymbols.h"   // cswapFn / xFn
+#include "EmitInverse.h"         // emitInverseChain (the value-arm reverse-play)
+#include "OpcodeSupport.h"       // abiWidthFromType (value-arm rail width)
 #include "RegionFlatten.h"       // flattenRegion
 #include "TaintPropagation.h"    // TaintSet
-#include "WidthDispatch.h"       // allocFn / rzRtFn / freeFn / abiWidthFor
+#include "WidthDispatch.h"       // allocFn / copyFn / rzRtFn / freeFn / abiWidthFor
 
 #include "llvm/ADT/STLExtras.h"   // llvm::reverse
 #include "llvm/ADT/SmallVector.h"
@@ -50,6 +56,13 @@ namespace {
 void scrubTaint(Instruction *I, TaintSet &taint) {
   taint.Tainted.erase(I);
   taint.BirthOrder.erase(I);
+  // §6.1, grown at 4.2 WI-4: the value path erases arm `BinaryOperator`s,
+  // which are in `declineStaleRecordOps`' purview — a stale member whose heap
+  // address a later-minted instruction reuses would make `lowerOps`' skip
+  // probe silently DROP that instruction's lowering (a false StaleDeclined
+  // hit). Phase-path erasees are never members (cq_phi/phi/br/branch-feeding
+  // compares are out of the stale guard's scope), so this stays idempotent.
+  taint.StaleDeclined.erase(I);
   if (auto *CI = dyn_cast<CallInst>(I)) {
     auto &PC = taint.PhiCalls;
     PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
@@ -142,6 +155,195 @@ Value *phaseSpineBase(Value *ArmIncoming, const BasicBlock *ArmBB) {
   return V;
 }
 
+// Lower one accepted VALUE-arm DIAMOND (4.2, method-B B-keep; IMPLEMENTATION-4.2
+// §4, contract §5d) — emitted into the pred block before the conditional `br`,
+// in this exact order (symbol order IS the contract; reordering steps 5–9 is
+// trace-plausible, verify-clean, and WRONG):
+//
+//   1 flag mint        cq_template_icmp_<pred>_<W>_hl(q, lit)
+//   2 |0> work rail    cqrt_alloc_<W>(0)        width from the chain op's iN type
+//   3 route-in         cqrt_cswap(flag, p, rail)         [¬flag arm X-bracketed]
+//   4 arm chain        VERBATIM + UNCONTROLLED on the rail — each link moved,
+//                      base-retargeted (first link only), then rewriteBinary
+//   5 route-back       cqrt_cswap(flag, p, chainFinal)   p := the muxed answer
+//   6 copy-out         out = alloc(0); cqrt_copy_<W>(p, out) — AFTER route-back
+//                      (the answer is on p only then), BEFORE route-back† (R†
+//                      destroys it on p) — interlock §6.4
+//   7 reverse-play R†  route-back† · chain adjoint (_inv twins, emitInverseChain,
+//                      BODY CHAIN ONLY — the cswap arg-0 seam, PRD §8.5) · route-in†
+//   8 rail free        on the FINAL threaded _inv handle (interlock §6.5) —
+//                      provably |0> on BOTH branches only AFTER R† (§3b)
+//   9 strip+flag free  icmp_inv(q) + cqrt_free(flag) — valid outright: the
+//                      condition register is disjoint from the routed register
+//                      in every accepted region (§0 criterion 4)
+//  10 rewire           RAUW merge phi -> out; erase chain originals in reverse;
+//                      flatten. NEVER free `out` (the answer) or `p` (the
+//                      restored source) — either free is a hidden measurement.
+//
+// Correctness rests on the §8.2 register-threading trace, NOT on `opt -verify`
+// (Rule 2): flag=1 routes p0 into the rail, the chain computes f(p0) there, the
+// route-back parks f(p0) on p for the copy, and R† re-derives then unwinds the
+// chain so p == p0 and rail == |0> again; flag=0 leaves p untouched while the
+// chain computes f(0) garbage on the rail thread, which the chain adjoint
+// returns to |0>. Both branches end rail == |0> (clean free, not a hidden
+// measurement) and p == p0 (so icmp_inv strips the flag). The B-keep boundary
+// (kept-source correlation, channels A/B) is documented in PRD §8.2 — binding,
+// not a bug. NEVER this path for a phase arm (Rule 7): a CNOT copies a basis
+// label, not a phase (verified P0 0.585 -> 0.500, fully dephased).
+void emitValueDiamond(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
+                      PHINode *MergePhi, Value *Q, WidthDispatch &wd,
+                      ControlledSymbols &csyms, TaintSet &taint) {
+  // ABI width from the chain op's INTEGER SSA type — reliable pre-RAUW (the
+  // ops still carry iN; PRD §8.1 width-source). NEVER the theta suffix (the
+  // routed base may be derived), and never a classifying signal (the f64
+  // trap) — classifyArms' positive integer fence already proved validity, so
+  // a null here is a malformed plan: decline LOUDLY, lower nothing (Rule 1).
+  StringRef Abi = abiWidthFromType(R.Shadow.front()->getType());
+  Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
+  FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
+  FunctionCallee Copy = Abi.empty() ? FunctionCallee() : wd.copyFn(Abi);
+  if (!RailTy || !Alloc || !Copy) {
+    diagnoseUnderControl(Cond, "control flow");
+    return;
+  }
+
+  // Library-host parity (the twin-pipeline trap, IMPLEMENTATION §6.5): a
+  // chain link `declineStaleRecordOps` marked has ALREADY been diagnosed with
+  // the pledge "lower NOTHING for this op" (lowerOps honors it by skipping).
+  // In the `opt` host that DS_Error exited the process before emission ever
+  // runs; in an embedding host that does not exit, replaying the marked link
+  // onto the rail here would break the pledge. Decline pre-mutation — no lit
+  // fixture can pin this (opt exits at the stale diagnostic first); it is the
+  // Rule-1 defensive bail, never a silent skip.
+  for (Instruction *Op : R.Shadow)
+    if (taint.StaleDeclined.count(Op)) {
+      diagnoseUnderControl(Cond, "control flow");
+      return;
+    }
+
+  const DebugLoc DL = BI->getDebugLoc();
+  IRBuilder<> B(BI);  // every stream call lands before the conditional br.
+  auto stamp = [&DL](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+  };
+
+  // 1. Flag mint — cq_template_icmp_<pred>_<W>_hl(q, lit).
+  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
+                                   /*inverse=*/false, /*before=*/BI);
+  if (!Flag)
+    return;  // lowerCompareToFlag already diagnosed (unsupported / Q+Q).
+
+  // 2. The |0> work rail. It joins `taint.Tainted` so rewriteBinary classifies
+  //    the retargeted first link as HL/LH (handle + classical) — an untainted
+  //    rail would misclassify BOTH operands as classical and emit a wrong
+  //    shape. Its users are only cqrt_*/template calls, so the later
+  //    `uncompute` never selects it (isTerminalHandle is false — §6.2).
+  CallInst *Rail = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "rail");
+  stamp(Rail);
+  taint.Tainted.insert(Rail);
+
+  // 3. Route-in (split) — p -> rail, X-bracketed for a ¬flag (FALSE-successor)
+  //    arm (Rule 9 polarity rides R.ArmNegated).
+  emitRoute(B, csyms, Flag, Q, Rail, R.ArmNegated, DL);
+
+  // 4. Arm chain VERBATIM + UNCONTROLLED on the rail. Per link in FORWARD
+  //    (base-first) order: move to the stream position, retarget the FIRST
+  //    link's routed-base operand to the rail handle (later links already
+  //    point at their predecessor, rewired by the previous RAUW), then REUSE
+  //    ArithLowering::rewriteBinary verbatim — it emits the
+  //    cq_template_<op>_<W>_hl/_lh call immediately before the moved op,
+  //    RAUWs, and bookkeeps taint (Rule 14). The minted call is collected for
+  //    the reverse-play; the original (now use-empty) op is erased in step 10.
+  SmallVector<CallInst *, 6> Fwd;
+  for (Instruction *Op : R.Shadow) {
+    auto *BO = dyn_cast<BinaryOperator>(Op);
+    if (!BO) {
+      // classifyArms records only BinaryOperator links; anything else is a
+      // malformed plan — decline LOUDLY, never a silent skip (Rule 1).
+      diagnoseUnderControl(Cond, "control flow");
+      return;
+    }
+    BO->moveBefore(BI);
+    if (Fwd.empty())
+      BO->replaceUsesOfWith(Q, Rail);
+    if (!rewriteBinary(BO, wd, taint))
+      return;  // already diagnosed (no template) — abort the region loudly.
+    // rewriteBinary inserts exactly ONE call, immediately before BO.
+    Fwd.push_back(cast<CallInst>(BO->getPrevNode()));
+  }
+
+  // 5. Route-back (join = adjoint of the split, same flag + bracket) with the
+  //    chain-final handle — the physical rail register's current SSA name.
+  //    `p` now holds the muxed answer.
+  Value *ChainFinal = Fwd.back();
+  emitRoute(B, csyms, Flag, Q, ChainFinal, R.ArmNegated, DL);
+
+  // 6. B-keep copy-out: out := the basis-valued answer. `out` joins
+  //    `taint.Tainted` (+BirthOrder) so downstream consumers of the RAUW'd
+  //    merge phi keep classifying it as a quantum handle. NEVER free `out`,
+  //    NEVER free `p` (PRD §8.5 — the answer / the restored source; a free of
+  //    either is a hidden measurement).
+  CallInst *Out = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "out");
+  stamp(Out);
+  CallInst *CopyCall = B.CreateCall(Copy, {Q, Out});
+  stamp(CopyCall);
+  taint.Tainted.insert(Out);
+  taint.BirthOrder[Out] = taint.NextBirth++;
+
+  // 7. Reverse-play R†: route-back†, then the chain adjoint in exact reverse
+  //    with `_inv` twins — the BODY CHAIN ONLY through emitInverseChain (the
+  //    first real invocation, SCOPING §7.5): the route cswaps are bracketed by
+  //    emitRoute because emitInverseCall threads the involution handle into
+  //    Args[0], which for cqrt_cswap is the FLAG slot (the seam,
+  //    EmitInverse.cpp — feeding cswaps through the chain is a verify-clean
+  //    wrong unitary, PRD §8.5) — then route-in† with the THREADED handle.
+  emitRoute(B, csyms, Flag, Q, ChainFinal, R.ArmNegated, DL);
+  Value *RailFinal = emitInverseChain(B, Fwd, wd, csyms, /*Flag=*/nullptr,
+                                      /*Terminal=*/ChainFinal);
+  if (!RailFinal) {
+    // Every link is a forward uncontrolled template (we just minted them), so
+    // this is unreachable — but an un-invertible link must decline LOUDLY,
+    // never leave a half-reversed stream (Rule 1).
+    diagnoseUnderControl(Cond, "control flow");
+    return;
+  }
+  emitRoute(B, csyms, Flag, Q, RailFinal, R.ArmNegated, DL);
+
+  // 8. Rail free on the FINAL threaded handle — NOT the forward rail/chain
+  //    handles (freeing a stale handle version is trace-plausible but wrong,
+  //    interlock §6.5). Provably |0> on both branches only AFTER R† (§3b —
+  //    earlier it is f(0)-vs-0 entangled with the flag: a dirty free is a
+  //    hidden measurement).
+  CallInst *RailFree = B.CreateCall(wd.freeFn(), {RailFinal});
+  stamp(RailFree);
+
+  // 9. Flag-strip + flag free. Valid outright: the condition register is
+  //    disjoint from the routed register in every accepted region (§0
+  //    criterion 4 via the diagonal-alias closure), so q == q0 at the strip.
+  //    Reads `Cond`'s operands — MUST precede the erase of `Cond` (in
+  //    flattenRegion). Do NOT hoist above step 7/8 (strip-after-R† is the
+  //    documented order the accept class was cleared under).
+  lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                     /*before=*/BI);
+  CallInst *FlagFree = B.CreateCall(wd.freeFn(), {Flag});
+  stamp(FlagFree);
+
+  // 10. Rewire + erase + scrub + flatten. The measure on the phi becomes a
+  //     measure on `out` (the copied answer). Erase the chain originals in
+  //     REVERSE lineage order so each is use-empty when erased; scrub every
+  //     erased instruction from all taint work-lists incl. StaleDeclined
+  //     (§6.1).
+  MergePhi->replaceAllUsesWith(Out);
+  scrubTaint(MergePhi, taint);
+  MergePhi->eraseFromParent();
+  for (Instruction *Op : reverse(R.Shadow)) {
+    scrubTaint(Op, taint);
+    Op->eraseFromParent();
+  }
+  flattenRegion(R, taint);
+}
+
 // One content arm's routed phase stream: whether it fires on ¬flag (X-bracketed
 // cswap) and its ordered Rz gates to replay verbatim on its own work rail.
 struct ArmStream {
@@ -159,7 +361,7 @@ struct ArmStream {
 // is the literal adjoint of the split (the SAME cswap-pairs, same flag) — RSSA's
 // "phi on both splits and joins" (SCOPING §2).
 void emitRegion(const ControlRegion &R, WidthDispatch &wd,
-                const ControlledSymbols &csyms, TaintSet &taint) {
+                ControlledSymbols &csyms, TaintSet &taint) {
   auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
   auto *MergePhi = dyn_cast_or_null<PHINode>(R.Merge);
   if (!Cond || !MergePhi || !R.Pred || !R.Arm) {
@@ -205,6 +407,24 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
                  ? MergePhi->getIncomingValueForBlock(R.Pred)
                  : phaseSpineBase(MergePhi->getIncomingValueForBlock(R.Arm),
                                   R.Arm);
+
+  // 4.2 VALUE path (method-B, §4/§5d): classifyArms recorded the arm class +
+  // its ordered chain (Shadow, FORWARD order — by FIELD identity: for an
+  // orientation-B diamond R.Arm is the FALSE successor and polarity rides
+  // ArmNegated). This dispatch MUST precede the phase-stream collection: a
+  // value arm has no cq_phi gates, so falling through would hit the
+  // identity-region RAUW — a verify-clean silent wrong answer. WI-4 emits the
+  // one-content-arm DIAMOND only; classifyArms keeps declining a two-arm
+  // value if/else until the WI-5 dual-rail emitter, so anything else here is
+  // a malformed plan — decline LOUDLY, lower nothing (Rule 1).
+  if (R.ClassArm == ArmClass::Value || R.ClassArmFalse == ArmClass::Value) {
+    if (R.ClassArm != ArmClass::Value || R.ArmFalse || R.Shadow.empty()) {
+      diagnoseUnderControl(Cond, "control flow");
+      return;
+    }
+    emitValueDiamond(R, BI, Cond, MergePhi, Q, wd, csyms, taint);
+    return;
+  }
 
   // Per-arm ordered phase gates. A gate-free arm (`if (q) {}`, or an empty else)
   // contributes Q unchanged, so routing it would be a no-op cswap pair — skip it

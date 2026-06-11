@@ -11,11 +11,6 @@
 ; §3b) -> icmp_inv flag-strip + flag free. EXACTLY TWO frees: %out and the
 ; restored source %p are NEVER freed (either free is a hidden measurement).
 ;
-; XFAIL until WI-4 lands the value path of SwapRouteEmit (WI-3 classification
-; transitionally declines accept-class value regions as 'value-arm swap-route';
-; the WI-4 flip removes this XFAIL — lit treats an XPASS as a failure).
-; XFAIL: *
-;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
 ; Independent EXACT free-count scan (§8.3 probe): two cqrt_free, no third anywhere.

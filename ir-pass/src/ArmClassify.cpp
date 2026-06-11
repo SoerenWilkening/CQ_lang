@@ -14,10 +14,12 @@
 //     `BinaryOperator`s bottoming at exactly the routed slot is the 4.2
 //     value-arm class — §3c PERMANENT reject if the routed register is in the
 //     condition's transitive taint provenance (ACTIVE since WI-3), accept
-//     class otherwise (transitionally declined until the WI-4 emitter);
-//     everything off-pattern declines with its precise string (mux/FP →
-//     `control flow`; mixed content → `mixed phase/value arm`; fan-out/stray
-//     → `impure value arm`; Q+Q link → `value-arm swap-route`).
+//     class otherwise: a value DIAMOND lowers (WI-4, the method-B §4 emitter);
+//     a two-arm value IF/ELSE stays transitionally declined until the WI-5
+//     dual-rail emitter; everything off-pattern declines with its precise
+//     string (mux/FP → `control flow`; mixed content → `mixed phase/value
+//     arm`; fan-out/stray → `impure value arm`; Q+Q link → `value-arm
+//     swap-route`).
 
 #include "ArmClassify.h"
 
@@ -724,6 +726,22 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
           diagnoseUnderControl(declAnchor(Region), "control flow");
           return ArmDisposition::Declined;
         }
+        // A DERIVED routed base's OWN angle must be classical — the arg-1
+        // parallel of criterion 3 (Rule 3). The phase path declines this via
+        // taintedAngleGate's base check, but that helper inspects the PHASE
+        // spine's base, which for a value arm is the arm's first binop (the
+        // spine consumed nothing) — so the value chain's real base must be
+        // checked here. Loud either way (RotationLowering's own guard fires
+        // later), but mutation must never precede detection: without this the
+        // region is fully emitted and flattened before that downstream
+        // decline (§8 adversarial review, 2026-06-11; same string as the
+        // phase-path twin, control_swap_reject_value_derived_tainted_angle.ll).
+        if (auto *BaseCI = dyn_cast<CallInst>(Routed);
+            BaseCI && isPhiCall(BaseCI) && BaseCI->arg_size() >= 2 &&
+            Taint.Tainted.count(BaseCI->getArgOperand(1))) {
+          diagnoseUnderControl(BaseCI, "rotation angle");
+          return ArmDisposition::Declined;
+        }
         // Rule 8 linearity + self-contained arm block (fan-out / stray op /
         // DAG sibling — see valueArmIsPureChain).
         if (!valueArmIsPureChain(ArmBB, Chain.Ops, MergePhi)) {
@@ -790,16 +808,15 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
     return ArmDisposition::Declined;
   }
 
-  // WI-3 TRANSITIONAL (IMPLEMENTATION-4.2 §7): value classification is live
-  // but the §4 emitter lands WI-4 — keep declining the accept class with the
-  // existing defer string (no new transitional string). THE FLIP IS STAGED:
-  // WI-4 accepts value DIAMONDS only (`Region.ArmFalse == nullptr`), reading
-  // the recorded ClassArm/Shadow, and un-XFAILs control_swap_value_diamond.ll;
-  // a two-arm value IF/ELSE must KEEP this decline until the WI-5 dual-rail
-  // emitter lands (flipping both at WI-4 would hand SwapRouteEmit a region
-  // shape it cannot emit — un-XFAIL control_swap_value_ifelse.ll only at
-  // WI-5).
-  if (SawValueArm) {
+  // THE FLIP IS STAGED (IMPLEMENTATION-4.2 §7): WI-4 accepts value DIAMONDS
+  // only (`Region.ArmFalse == nullptr`) — the §4 emitter reads the recorded
+  // ClassArm/Shadow. A two-arm value IF/ELSE KEEPS the WI-3 transitional
+  // decline (existing defer string, no new transitional string) until the
+  // WI-5 dual-rail emitter lands: flipping both at WI-4 would hand
+  // SwapRouteEmit a region shape it cannot emit, and the 5e XFAIL would MASK
+  // the miscompile, not catch it (un-XFAIL control_swap_value_ifelse.ll only
+  // at WI-5).
+  if (SawValueArm && Region.ArmFalse) {
     diagnoseUnderControl(ValueAnchor, "value-arm swap-route");
     return ArmDisposition::Declined;
   }
