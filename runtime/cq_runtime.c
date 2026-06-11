@@ -401,9 +401,16 @@ void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt) {
 
 /* ---------------------------------------------------------------------
  * Controlled-SWAP / Fredkin (npu.4) — swaps a and b iff ctrl is set.
- * The MUX-EXCH primitive (npu.5): cqrt_cswap(f_q, regOut, q) moves the
- * selected source into the muxed register and frees it. Trace prints
- * all three handle args as h<N>; SWAP is its own inverse (no _inv twin).
+ * PURE self-inverse Fredkin: it frees NOTHING and allocates nothing
+ * (SCOPING §2/§3a, PRD Part II §8.2/§8.5). The swap-route emitters
+ * depend on that: every region issues route/route-back (+ R-dagger)
+ * cswap pairs over live registers and frees the work rail exactly once,
+ * separately — a cswap that freed an operand would double-free the rail
+ * and hidden-measure the routed register. (An earlier MUX-EXCH/npu.5
+ * sentence here described a move-and-free composite from the excised
+ * controlled-op design, 7cde677 — struck 2026-06-11; never revive it as
+ * the primitive's semantics.) Trace prints all three handle args as
+ * h<N>; SWAP is its own inverse (no _inv twin).
  * ------------------------------------------------------------------- */
 
 void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b) {
