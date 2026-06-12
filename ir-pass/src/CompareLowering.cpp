@@ -58,9 +58,15 @@ bool isDataPositionCompare(CmpInst *cmp) {
   return true;
 }
 
-Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
-                         StringRef qqWidth, bool inverse,
-                         Instruction *before) {
+// Shared classify-and-emit core for the data-path mint (`lowerCompareToFlag`)
+// and the swap-route inner-condition mint (`lowerCompareToFlagRail`). Operands
+// are classified by taint exactly once so BOTH callers mint byte-identical
+// signatures (§4 "the same template machinery"); when `railBase` is non-null it
+// is substituted for the parent-routed handle operand (see
+// `lowerCompareToFlagRail`). `railBase` is null on the data path.
+static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
+                               StringRef qqWidth, bool inverse,
+                               Instruction *before, Value *railBase) {
   // `op` is the family stem the symbol table uses: "icmp" / "fcmp". The
   // predicate range partition is authoritative (an fcmp predicate is < 32;
   // an icmp predicate is in [32,..]); `isa<ICmpInst>` would do as well.
@@ -126,6 +132,19 @@ Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
     ShapeSel = Shape::HL;
   }
 
+  // Swap-route inner condition (§4/§12.2): the parent-routed operand's
+  // amplitude physically lives on `railBase` after the outer route-in — the
+  // original SSA register holds |0> on the f1=1 path — so the inner flag must
+  // be minted FROM the rail, not from that now-stale register. The
+  // classification above lands the parent-routed handle in `Lhs` (for HL the
+  // sole tainted operand, moved left directly or via `flipPredicate`; for the
+  // Q+Q forward seam, operand 0), so the substitution is exactly
+  // `Lhs := railBase`, leaving `Rhs` (the classical operand that fixed
+  // `AbiWidth`) untouched. A plain mint off the stale register would compute
+  // the wrong predicate — verify-clean (§6 hazard 3). Null on the data path.
+  if (railBase)
+    Lhs = railBase;
+
   StringRef PredName = CmpInst::getPredicateName(Pred);
   FunctionCallee Callee;
   if (!inverse) {
@@ -169,6 +188,19 @@ Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
   if (DebugLoc DL = cmp->getDebugLoc())
     T->setDebugLoc(DL);
   return T;
+}
+
+Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
+                          StringRef qqWidth, bool inverse,
+                          Instruction *before) {
+  return lowerCompareImpl(cmp, wd, taint, qqWidth, inverse, before,
+                          /*railBase=*/nullptr);
+}
+
+Value *lowerCompareToFlagRail(CmpInst *cmp, Value *railBase, WidthDispatch &wd,
+                              TaintSet &taint, StringRef qqWidth, bool inverse,
+                              Instruction *before) {
+  return lowerCompareImpl(cmp, wd, taint, qqWidth, inverse, before, railBase);
 }
 
 Value *emitEqFlag(Value *handle, ConstantInt *caseValue, WidthDispatch &wd,

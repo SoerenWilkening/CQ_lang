@@ -112,6 +112,25 @@ llvm::Value *lowerCompareToFlag(llvm::CmpInst *cmp, WidthDispatch &wd,
                                 bool inverse = false,
                                 llvm::Instruction *before = nullptr);
 
+// Swap-route nested-control variant of `lowerCompareToFlag` (Phase 4.3, the ONE
+// new emission primitive — IMPLEMENTATION-4.3 §4/§12.2). Mints the inner
+// condition's flag with `railBase` substituted for the parent-routed handle
+// operand: for the inner condition `icmp slt %g, 9`, `%g`'s amplitude lives on
+// the parent's work rail (`rail1`) after the outer route-in (the original SSA
+// register holds |0> on the f1=1 path), so the flag must be `icmp(rail1, 9)`,
+// NOT `icmp(%g, 9)` — a plain `lowerCompareToFlag` would mint from the stale
+// register = verify-clean wrong predicate (§6 hazard 3). Operands are
+// classified exactly as the data path (so the symbol is byte-identical to its
+// `lowerCompareToFlag` twin); `railBase` lands in the handle slot and the OTHER
+// operand (the classical that fixes the width) is read in place. `inverse`
+// spells the `_hl_inv` twin for the inner-flag STRIP. The distinct `Rail`
+// suffix makes the substitution intent unmistakable at every call site.
+llvm::Value *lowerCompareToFlagRail(llvm::CmpInst *cmp, llvm::Value *railBase,
+                                    WidthDispatch &wd, TaintSet &taint,
+                                    llvm::StringRef qqWidth = {},
+                                    bool inverse = false,
+                                    llvm::Instruction *before = nullptr);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_COMPARE_LOWERING_H_
