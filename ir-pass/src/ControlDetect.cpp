@@ -21,8 +21,10 @@
 
 #include "ArmClassify.h"
 #include "ControlShape.h"
+#include "RegionTreeDetect.h"
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
@@ -161,14 +163,20 @@ namespace {
 
 // Recognize and classify one tainted-condition `br`, firing the precise
 // decline or PUSHING an accepted region onto `Plan` for `SwapRouteEmit`.
-void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan) {
+void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
+                        SmallPtrSetImpl<BranchInst *> &Claimed) {
   ControlRegion R;
   switch (recoverRegion(BI, Taint, R)) {
   case RegionShape::OffPattern:
     diagnoseUnderControl(BI, "control flow");
     return;
   case RegionShape::Nested:
-    diagnoseUnderControl(BI, "nested control flow");
+    // 4.3 — prove-or-decline the depth-2 nest instead of the blanket decline.
+    // A proven accept-shape declines TRANSITIONALLY here (the existing `nested
+    // control flow` string, MD5) until WI-3 lands the emitter; every other
+    // nested shape already fired its precise §5h string inside `recoverRegionTree`.
+    if (recoverRegionTree(BI, Taint, Plan, Claimed) == NestDisposition::Accepted)
+      diagnoseUnderControl(BI, "nested control flow");
     return;
   case RegionShape::Diamond:
   case RegionShape::IfElse:
@@ -194,14 +202,21 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan) {
 // No IR is mutated here — emission is `SwapRouteEmit::lowerControlRegions`.
 ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
   ControlPlan plan;
+  // Inner branches of an ACCEPTED nest, claimed by `recoverRegionTree` so the
+  // loop does NOT re-visit them (blocker FA0): the inner tainted `br` recovers
+  // FLAT in isolation (its 3-incoming merge → `soleMergePhi` null → OffPattern)
+  // and would false-decline `control flow`, killing the accept. `-O1` visits the
+  // outer Pred before the inner Mid, so the outer's claim lands first.
+  SmallPtrSet<BranchInst *, 4> Claimed;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
     for (BasicBlock &BB : F) {
       Instruction *Term = BB.getTerminator();
       if (auto *BI = dyn_cast<BranchInst>(Term)) {
-        if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
-          handleBranchRegion(BI, taint, plan);
+        if (BI->isConditional() && taint.Tainted.count(BI->getCondition()) &&
+            !Claimed.count(BI))
+          handleBranchRegion(BI, taint, plan, Claimed);
       } else if (auto *SI = dyn_cast<SwitchInst>(Term)) {
         if (taint.Tainted.count(SI->getCondition()))
           diagnoseUnderControl(SI, "switch");

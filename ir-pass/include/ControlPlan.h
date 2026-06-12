@@ -245,6 +245,16 @@ struct ControlRegion {
   unsigned Depth = 0;
   unsigned ParentIdx = kNoParent;
   llvm::Value *ParentFlag = nullptr;
+
+  // 4.3 (IMPLEMENTATION-4.3 §1/§4) — the parent region's work rail (`rail1`),
+  // onto which the parent routes its base before the child mints + routes. The
+  // child's inner flag is minted FROM this rail (`lowerCompareToFlagRail`), not
+  // from the now-stale-on-`q` SSA register the source compare read (§12.2). Null
+  // for a flat region or the outermost nest level; populated at EMIT time by
+  // `NestedRouteEmit` (WI-3) — WI-1 detection leaves it null (the parent/child
+  // link is the existing `ParentIdx`, the same link the pre-flight exemption
+  // and the emit-loop child lookup key on; no `ChildIdx` field — MD4).
+  llvm::Value *ParentRail = nullptr;
 };
 
 // The full detection result: the recovered regions plus the set of in-shadow

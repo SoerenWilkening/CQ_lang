@@ -1,0 +1,62 @@
+// RegionTreeDetect.h — Depth-2 nested-control region-tree recovery (pure analysis).
+//
+// Lifts the blanket `nested control flow` decline (ControlDetect's
+// `case RegionShape::Nested:`) for the PROVEN §0 depth-2 homogeneous-phase nest
+// only — every other nested shape declines loudly with its precise per-shape
+// string (the §5h decline matrix). All recognition is by SSA-value identity
+// BEFORE any IR mutation (Rule 9), reusing the de-anonymized shape recognizers
+// (`recoverRegion` siblings, ControlShape.h) and per-arm lineage walks
+// (ArmAnalysis.h) plus the tree-homogeneity gate (ArmHomogeneity.h).
+//
+// The seven §0 accept criteria, in the order that yields the §5h table (FA2 —
+// pinned empirically against the post-4.3 build, NOT the §3.1 narrative order):
+//   1. outer one-content-arm diamond (else `nested control flow`);
+//   7. inner single-pred / domination invariants (else `nested control flow`);
+//   2. depth-2 cap — inner arm not tainted-br, merge exactly 3-incoming (else
+//      `nested control flow`);
+//   3. exactly-one merge phi (else `control flow`);
+//   6. tree-homogeneous phase (else `mixed phase/value arm` / `value-arm
+//      swap-route` / `impure phase arm`);
+//   4. N-incoming RAUW-collapse to one base (else `control flow` — distinct-base
+//      AND a non-`cq_phi` intervening gate, e.g. cq_theta/Ry, both land here);
+//   5. mint-from-rail — inner cond operand in the parent-routed value's
+//      diagonal-alias closure (else `nested control flow` — the multi-register
+//      false-accept, the load-bearing binding signal).
+// Homogeneity (6) precedes RAUW-collapse (4): a value-op merge incoming does not
+// collapse through the `cq_phi` closure, so the reverse order mis-fires `control
+// flow` on a value nest instead of its homogeneity string.
+
+#ifndef CQ_IRPASS_REGION_TREE_DETECT_H_
+#define CQ_IRPASS_REGION_TREE_DETECT_H_
+
+#include "llvm/ADT/SmallPtrSet.h"
+
+namespace llvm {
+class BranchInst;
+}  // namespace llvm
+
+namespace cq {
+
+struct ControlPlan;
+struct TaintSet;
+
+// Outcome of proving the §0 nest shape for `OuterBI` (which `recoverRegion`
+// classified `RegionShape::Nested`).
+//   * Declined — `recoverRegionTree` has ALREADY fired the precise loud
+//     diagnostic; the caller lowers nothing.
+//   * Accepted — the proven depth-2 homogeneous-phase nest. NO diagnostic was
+//     fired; the inner `BranchInst` was recorded in `Claimed` (so
+//     `detectControlRegions` does not re-visit it and false-decline `control
+//     flow` — blocker FA0). WI-1: the caller fires the transitional `nested
+//     control flow` decline (no emitter yet). WI-3: the caller pushes the
+//     Outer (Depth 0) + Inner (Depth 1, ParentIdx=outer) regions onto
+//     `plan.Regions` and dispatches `NestedRouteEmit`.
+enum class NestDisposition { Accepted, Declined };
+
+NestDisposition recoverRegionTree(
+    llvm::BranchInst *OuterBI, TaintSet &Taint, ControlPlan &Plan,
+    llvm::SmallPtrSetImpl<llvm::BranchInst *> &Claimed);
+
+}  // namespace cq
+
+#endif  // CQ_IRPASS_REGION_TREE_DETECT_H_

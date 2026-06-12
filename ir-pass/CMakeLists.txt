@@ -43,6 +43,7 @@ endif()
 add_library(CQPass MODULE
   src/ArithLowering.cpp
   src/ArmClassify.cpp
+  src/ArmHomogeneity.cpp
   src/CastLowering.cpp
   src/ChainWalk.cpp
   src/CompareLowering.cpp
@@ -56,6 +57,7 @@ add_library(CQPass MODULE
   src/OpcodeSupport.cpp
   src/Plugin.cpp
   src/RegionFlatten.cpp
+  src/RegionTreeDetect.cpp
   src/RotationLowering.cpp
   src/SwapRouteEmit.cpp
   src/TaintPropagation.cpp
