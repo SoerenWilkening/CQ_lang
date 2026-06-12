@@ -2,7 +2,8 @@
 //
 // Replaces the transitional ControlStub.cpp (loud-decline-only). Owns the
 // shared `diagnoseUnderControl` primitive, the `detectControlRegions`
-// dispatcher, and the internal `recoverRegion` shape recovery. All recognition
+// dispatcher, and the `recoverRegion` shape recovery (de-anonymized into
+// `ControlShape.h` for the 4.3 RegionTreeDetect TU — WI-0/MD1). All recognition
 // is by SSA-value identity BEFORE any IR mutation (Rule 9) — it survives the
 // later rotation-lowering RAUW-to-handle because no block pointers are cached
 // across erasures (none happen here).
@@ -19,6 +20,7 @@
 #include "ControlPlan.h"
 
 #include "ArmClassify.h"
+#include "ControlShape.h"
 #include "TaintPropagation.h"
 
 #include "llvm/IR/BasicBlock.h"
@@ -45,10 +47,10 @@ void diagnoseUnderControl(Instruction *Where, StringRef What) {
       *Where->getFunction(), Msg, Where->getDebugLoc()));
 }
 
-namespace {
-
-// The recognized shape of a tainted-condition `br` region.
-enum class RegionShape { Diamond, IfElse, Nested, OffPattern };
+// The shape recognizers below are de-anonymized into the named `cq` namespace
+// (declared in ControlShape.h, WI-0/MD1) so the 4.3 RegionTreeDetect TU can reuse
+// them; `RegionShape` now lives in that header. PURE REFACTOR — definitions and
+// behavior unchanged.
 
 // `BB`'s unique successor iff it ends in an UNCONDITIONAL branch; else null.
 BasicBlock *uncondSucc(BasicBlock *BB) {
@@ -154,6 +156,8 @@ RegionShape recoverRegion(BranchInst *BI, TaintSet &Taint, ControlRegion &R) {
 
   return RegionShape::OffPattern;
 }
+
+namespace {
 
 // Recognize and classify one tainted-condition `br`, firing the precise
 // decline or PUSHING an accepted region onto `Plan` for `SwapRouteEmit`.

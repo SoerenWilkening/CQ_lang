@@ -22,6 +22,7 @@
 
 #include "ArmClassify.h"
 
+#include "ArmAnalysis.h"
 #include "ControlPlan.h"
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
@@ -54,6 +55,15 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
 bool isPhiCall(const Value *V) { return isCallToPrefix(V, "cq_phi_"); }
 bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 
+}  // namespace
+
+// The per-arm analyses below are de-anonymized into the named `cq` namespace
+// (declared in ArmAnalysis.h, WI-0/MD1) so the 4.3 RegionTreeDetect /
+// ArmHomogeneity TUs can reuse them. PURE REFACTOR — definitions and behavior
+// unchanged; the tiny `isPhiCall`/`isThetaCall`/`isCallToPrefix` predicates above
+// stay TU-local (they collide with same-named anon helpers in other TUs). The
+// remaining internal-only helpers keep their own (reopened) anonymous blocks.
+
 // Walk the PHASE spine WITHIN one arm block: while `V` is a `cq_phi` (Rz) call
 // DEFINED IN `ArmBB`, follow its arg-0 handle operand (arg 1 is the classical
 // angle). Returns the first value the chain bottoms at — the arm's base handle, a
@@ -83,6 +93,8 @@ Value *walkPhaseSpine(Value *V, const BasicBlock *ArmBB) {
   }
   return V;
 }
+
+namespace {
 
 // PURE ARM BODY (Rule 8 linearity + no stray ops). The arm block must contain
 // NOTHING beyond the linear phase spine that feeds the merge phi — i.e. every
@@ -148,6 +160,8 @@ bool isValueChangingOp(const Value *Base) {
     return false;  // pre-region Rz — diagonal: the live DERIVED leaf handle.
   return true;     // any other instruction defines a new basis value → decline.
 }
+
+}  // namespace
 
 // Backward taint provenance of the branch condition: every tainted value
 // reachable by walking operand edges back from `Cond`, stopping at `cq_theta`
@@ -219,23 +233,9 @@ Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
 // `ChainBase != Routed` → `control flow`, never the §3c string. That honors
 // the bd `swap-route-detect-known-limits` warning: `if(q>5){p=q+1}` is a
 // legitimate read, not a clobber.)
-
-// One arm's candidate VALUE chain — the value twin of `walkPhaseSpine`.
-struct ValueChain {
-  // The chain links in FORWARD (program/base-first) order — the §4 emit order
-  // the WI-4 emitter replays them in. Collected merge-first, reversed at end.
-  SmallVector<Instruction *, 6> Ops;
-  // The value the walk bottomed at (never itself a link). For a routable arm
-  // this must be EXACTLY the routed slot (base-identity — the Defect-2 fix).
-  Value *Base = nullptr;
-  // The walk reached an IN-ARM `cq_phi` link: a phase gate inside a value
-  // lineage (`if(q>5){rz(p,a); p=p+3}`) → `mixed phase/value arm`. The
-  // offending call is stashed for the diagnostic anchor.
-  Instruction *MixedPhi = nullptr;
-  // Some link consumed a SECOND tainted operand (a Q+Q link, `p = p + r`) — a
-  // recognized value shape 4.2 does not yet route (defer, PRD §8.3).
-  bool HasQQ = false;
-};
+//
+// `ValueChain` (the struct `walkValueChain` returns) is declared in
+// ArmAnalysis.h (WI-0/MD1) so the re-hosted PASS-1 classifier shares it.
 
 // Walk the VALUE chain WITHIN one arm block: while `V` is a supported tainted
 // integer/fp `BinaryOperator` DEFINED IN `ArmBB`, follow its threaded operand
@@ -296,6 +296,8 @@ ValueChain walkValueChain(Value *ArmIncoming, const BasicBlock *ArmBB,
   return C;
 }
 
+namespace {
+
 // PURE VALUE ARM (Rule 8 linearity + no stray ops) — the value twin of
 // `armBlockIsPureSpine` above, rejecting the same two emitter-fatal families:
 //   * STRAY op beside the chain (incl. an off-path DAG sibling — the fan-out
@@ -339,6 +341,8 @@ Instruction *declAnchor(const ControlRegion &R) {
   return R.Merge;
 }
 
+}  // namespace
+
 // The first rotation whose arg-1 ANGLE operand is TAINTED — i.e. quantum-derived
 // data in the angle slot — among the arm's IN-BLOCK spine gates and (for a
 // derived base) the pre-region base `cq_phi` itself. Null if every angle is
@@ -376,6 +380,8 @@ CallInst *taintedAngleGate(Value *ArmIncoming, const BasicBlock *ArmBB,
     return cast<CallInst>(Base);
   return nullptr;
 }
+
+namespace {
 
 // SSA wire-walk twin of the positional scan below (position-robust, Rule 9): a
 // pure tainted producer (`icmp`, `add`, casts) can be SCHEDULED anywhere —
