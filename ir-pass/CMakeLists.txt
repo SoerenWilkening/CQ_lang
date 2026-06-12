@@ -53,6 +53,7 @@ add_library(CQPass MODULE
   src/EmitInverse.cpp
   src/FreePoint.cpp
   src/MeasureLowering.cpp
+  src/NestedRouteEmit.cpp
   src/OpcodeLowering.cpp
   src/OpcodeSupport.cpp
   src/Plugin.cpp

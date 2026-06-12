@@ -50,12 +50,20 @@
 #ifndef CQ_IRPASS_SWAP_ROUTE_EMIT_H_
 #define CQ_IRPASS_SWAP_ROUTE_EMIT_H_
 
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/IRBuilder.h"
+
 namespace llvm {
+class BasicBlock;
+class CallInst;
+class DebugLoc;
 class Module;
+class Value;
 }  // namespace llvm
 
 namespace cq {
 
+class ControlledSymbols;
 class WidthDispatch;
 struct TaintSet;
 struct ControlPlan;
@@ -67,6 +75,20 @@ struct ControlPlan;
 // regions is a no-op, so a classical-only / fully-declined module is untouched.
 void lowerControlRegions(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
                          const ControlPlan &plan);
+
+// Reused routing primitives (de-anonymized from the .cpp's anonymous namespace,
+// WI-3/MD1-style, so the 4.3 `NestedRouteEmit` TU shares ONE definition per
+// Rule 14). `collectArmPhis` returns an arm block's IN-BLOCK `@cq_phi` (Rz) gates
+// in FORWARD program order, bounded at the arm-block boundary (a pre-region phi
+// is the live derived base, not an arm gate — the load-bearing bound, Rule 10).
+// `emitRoute` emits `cqrt_cswap(flag, q, rail)`, X-bracketed for a ¬flag
+// (`Negated`/FALSE-successor) arm; the route-in and route-back are the SAME call
+// (the RSSA join-is-the-inverse-of-the-split symmetry).
+llvm::SmallVector<llvm::CallInst *, 4> collectArmPhis(
+    llvm::Value *ArmIncoming, const llvm::BasicBlock *ArmBB);
+void emitRoute(llvm::IRBuilder<> &B, const ControlledSymbols &csyms,
+               llvm::Value *Flag, llvm::Value *Q, llvm::Value *Rail,
+               bool Negated, const llvm::DebugLoc &DL);
 
 }  // namespace cq
 

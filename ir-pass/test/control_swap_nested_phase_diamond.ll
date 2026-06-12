@@ -11,11 +11,8 @@
 ; flag vs q → free outer flag. ZERO controlled gates, NO cqrt_toffoli, NO phi i32,
 ; EXACTLY FOUR cqrt_free (rail2, %f2, rail1, %f1).
 ;
-; WI-1 lands DETECTION only — the proven nest declines transitionally via the
-; existing `nested control flow` string (no emitter yet), so this XFAILs. WI-3
-; lands NestedRouteEmit and this XPASSes — that is the signal to delete the XFAIL.
-;
-; XFAIL: *
+; WI-3 lands NestedRouteEmit — the proven nest now LOWERS to the §5g routed
+; stream below (XFAIL removed at WI-3 XPASS).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
@@ -65,16 +62,24 @@ merge:
 ; q (not the phi) is measured
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
 
-; THE ordered strip CHECK (§12.3) — inner strip BEFORE outer route-back (the
-; structural CHECKs above are order-blind: a temporal-misorder emitter produces
-; the identical symbol multiset yet dirty-frees %f2).
-; CHECK:     call i32 @cq_template_icmp_slt_i32_hl_inv(i32 %{{.*}}, i32 9)
-; CHECK:     call void @cqrt_cswap(i32 %{{.*}}, i32 %{{.*}}, i32 %{{.*}})
-
 ; Hard postconditions.
 ; CHECK-NOT: _controlled
 ; CHECK-NOT: cqrt_toffoli
 ; CHECK-NOT: phi i32
+
+; THE 4.3-specific ordered FileCheck (§8, §12.3). The full strip-before-outer-
+; route-back order is ALREADY pinned by the ordered main CHECK block above (inner
+; strip at the `_slt_..._hl_inv` line, then the outer route-back cswap); this is a
+; FOCUSED secondary guard in its OWN pass (a fresh check-prefix, cursor restarts at
+; the top) that survives even if the main block is loosened to CHECK-DAG. It pins
+; the §6.2/§12.3 NAMED misorder (inner strip placed AFTER the outer route-back),
+; which produces the IDENTICAL symbol multiset yet dirty-frees %f2 = a hidden
+; measurement collapsing q, invisible to `opt -verify`. (It does not by itself
+; exclude a strip hoisted BEFORE the inner route-back — that distinct misorder is
+; caught by the main block's inner-route-back→free-rail2→strip ordering.)
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=ORD
+; ORD:     call i32 @cq_template_icmp_slt_i32_hl_inv(i32 %{{.*}}, i32 9)
+; ORD:     call void @cqrt_cswap(i32 %{{.*}}, i32 %{{.*}}, i32 %{{.*}})
 
 ; Exactly four frees (rail2, %f2, rail1, %f1) — no fifth from uncompute.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT

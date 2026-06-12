@@ -7,12 +7,8 @@
 ; around BOTH route-in and route-back (the adjoint of the split). The flag-strip
 ; is polarity-independent (Rz preserves q's basis).
 ;
-; WI-1 lands DETECTION only — recognized as the accept shape, declined
-; transitionally `nested control flow` (no emitter), so this XFAILs. WI-3 lands
-; NestedRouteEmit and this XPASSes — delete the XFAIL then (and flesh out the
-; per-polarity cqrt_x bracket order).
-;
-; XFAIL: *
+; WI-3 lands NestedRouteEmit — recognized as the accept shape, now LOWERS to
+; the per-polarity routed stream (XFAIL removed at WI-3 XPASS).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -

@@ -171,12 +171,14 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     diagnoseUnderControl(BI, "control flow");
     return;
   case RegionShape::Nested:
-    // 4.3 — prove-or-decline the depth-2 nest instead of the blanket decline.
-    // A proven accept-shape declines TRANSITIONALLY here (the existing `nested
-    // control flow` string, MD5) until WI-3 lands the emitter; every other
-    // nested shape already fired its precise §5h string inside `recoverRegionTree`.
-    if (recoverRegionTree(BI, Taint, Plan, Claimed) == NestDisposition::Accepted)
-      diagnoseUnderControl(BI, "nested control flow");
+    // 4.3 — prove-or-decline the depth-2 nest instead of the blanket decline. On
+    // ACCEPT, `recoverRegionTree` has pushed the Outer (Depth 0) + Inner (Depth 1)
+    // regions onto `Plan` and recorded the inner `br` in `Claimed`;
+    // `lowerControlRegions` dispatches `NestedRouteEmit` for them. On decline it
+    // has already fired the precise §5h string. Either way nothing more to do here
+    // (WI-3 drops the WI-1 transitional `nested control flow` decline — the proven
+    // nest now LOWERS).
+    recoverRegionTree(BI, Taint, Plan, Claimed);
     return;
   case RegionShape::Diamond:
   case RegionShape::IfElse:

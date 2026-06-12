@@ -18,6 +18,8 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"          // llvm::successors
+#include "llvm/IR/Dominators.h"   // llvm::DominatorTree (the backedge guard)
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 
@@ -55,7 +57,7 @@ Value *diagonalBase(Value *V) {
 }  // namespace
 
 NestDisposition recoverRegionTree(
-    BranchInst *OuterBI, TaintSet &Taint, ControlPlan & /*Plan*/,
+    BranchInst *OuterBI, TaintSet &Taint, ControlPlan &Plan,
     SmallPtrSetImpl<BranchInst *> &Claimed) {
   BasicBlock *Pred = OuterBI->getParent();
   BasicBlock *S0 = OuterBI->getSuccessor(0);
@@ -101,6 +103,36 @@ NestDisposition recoverRegionTree(
   else
     return diagnoseUnderControl(OuterBI, "nested control flow"),
            NestDisposition::Declined;
+
+  // LOOP GUARD (WI-1 forward note / Rule 6 — the backedge live-range hazard). A
+  // loop-resident nest (the routed base is a loop-carried phi, or the region sits
+  // on a backedge) has no proven sound swap-route lowering in 4.3: the emitter's
+  // emitter-driven LIFO frees + 3-incoming-phi erase run BEFORE — and BYPASS — the
+  // `FreePoint` / `declineClassicalMuxes` backedge guards the flat path defers to
+  // ("tainted value muxed by a classical-condition phi"). So detection must
+  // re-check here, exactly as the flat path relies on those guards. Decline if any
+  // region edge is a backedge — a successor that DOMINATES its source (the textbook
+  // backedge test). Realistic loop nests are ALSO caught incidentally by criterion
+  // 5's provenance cycle (the backedge pulls the inner-arm gate, a non-closure
+  // `cq_phi`, into the inner condition's provenance), but this is the principled,
+  // structurally-complete guard that closes the exotic gap (a loop whose backedge
+  // does not thread the merge result). Fresh DT per call (never reuse across
+  // levels — §12.4). All four §5g/§5h-accept shapes are acyclic → no false decline.
+  DominatorTree DT(*Pred->getParent());
+  for (BasicBlock *B : {Pred, Mid, InnerArm, Merge})
+    for (BasicBlock *S : successors(B))
+      if (DT.dominates(S, B))
+        return diagnoseUnderControl(OuterBI, "nested control flow"),
+               NestDisposition::Declined;
+
+  // Per-level polarity (Rule 9 — clang -O1 may make either gate arm the FALSE
+  // successor; the emitter routes a negated level on ¬flag via the cqrt_x
+  // bracket). The OUTER gate arm `Mid` is the false successor iff it was S1 (i.e.
+  // the tainted branch was on S1, so !T0); the INNER content arm is the false
+  // successor iff it was IS1. Resolved by SSA/successor identity, never edge
+  // truth — the emitter pairs them against the 3-incoming phi incomings.
+  const bool OuterNeg = !T0;
+  const bool InnerNeg = (InnerArm == IS1);
 
   // Criterion 3 — exactly one merge phi. Two phis (the inner cond/arm on distinct
   // registers, real `-O1`) → `control flow`.
@@ -176,10 +208,72 @@ NestDisposition recoverRegionTree(
       return diagnoseUnderControl(OuterBI, "nested control flow"),
              NestDisposition::Declined;
 
-  // ACCEPT — the proven depth-2 homogeneous-phase nest. Record the inner branch
-  // so the detection loop does not re-visit it (FA0). WI-1: the caller fires the
-  // transitional `nested control flow` decline (no emitter). WI-3: the caller
-  // pushes the Outer/Inner regions + dispatches `NestedRouteEmit`.
+  // Criterion 5, STRENGTHENED (§8 adversarial review 2026-06-12 — a REAL verify-
+  // clean silent miscompile the leaf-loop above MISSED): the inner compare's
+  // tainted operand must be a DIRECT member of the rail closure — a diagonal
+  // (`cq_phi`/Rz) alias of the routed base, whose BASIS VALUE equals rail1's — NOT a
+  // value-DERIVED offshoot built in `Mid` (e.g. `%d = add %g, 1`). `lowerCompare
+  // ToFlagRail` mints the inner flag by substituting rail1 for that operand
+  // WHOLESALE: an in-`Mid` derivation is (i) DROPPED by the substitution, so the
+  // flag tests `rail1 < k` instead of `(rail1+1) < k` — a wrong predicate; AND
+  // (ii) it is neither a `cq_phi` gate (collectArmPhis walks only `cq_phi`) nor a
+  // compare, so `flattenRegionTree` never erases it → it dangles a live use of `%g`
+  // and the `Mid` block erase is a use-after-free (silent on this no-assert LLVM;
+  // SIGSEGV under Guard Malloc). The leaf-only check passes it (its sole quantum
+  // leaf `%g` IS in-closure), so the OPERAND itself must be checked. Over-decline
+  // the derived-inner shape (Prime Directive) — 4.3 does not replay an in-`Mid`
+  // derivation onto the rail. A direct `icmp(%g, k)` / `icmp(%q, k)` (gate-free
+  // Mid) / multi-gate `icmp(%g2, k)` keeps its operand IN the closure and lowers.
+  auto *InnerCmp = dyn_cast<CmpInst>(InnerCond);
+  if (!InnerCmp)
+    return diagnoseUnderControl(OuterBI, "nested control flow"),
+           NestDisposition::Declined;
+  const bool LhsT = Taint.Tainted.count(InnerCmp->getOperand(0)) != 0;
+  const bool RhsT = Taint.Tainted.count(InnerCmp->getOperand(1)) != 0;
+  if (LhsT == RhsT)  // both tainted (Q+Q) or neither (no rail handle) → decline.
+    return diagnoseUnderControl(OuterBI, "nested control flow"),
+           NestDisposition::Declined;
+  const Value *RailOperand = LhsT ? InnerCmp->getOperand(0) : InnerCmp->getOperand(1);
+  if (!RailClosure.count(RailOperand))
+    return diagnoseUnderControl(OuterBI, "nested control flow"),
+           NestDisposition::Declined;
+
+  // ACCEPT — the proven depth-2 homogeneous-phase nest. Push the Outer (Depth 0)
+  // and Inner (Depth 1) regions, in that order, so `plan.Regions` is already
+  // outer→inner (no sort — `lowerControlRegions` takes a `const ControlPlan&`,
+  // COMPLETENESS#7). The parent/child link is the existing `ParentIdx` (the same
+  // link the MD0 pre-flight exemption + MD4 emit-loop child lookup key on — no
+  // `ChildIdx` field). Both regions share `MergeBB`/`Merge` (the 3-incoming phi)
+  // and `Outer.Arm == Inner.Pred == Mid`. All block/value identities are stable
+  // from detection to emit (no IR mutates between). Record the inner branch in
+  // `Claimed` so the detection loop does not re-visit it and false-decline
+  // `control flow` (FA0). `lowerControlRegions` dispatches `NestedRouteEmit`.
+  const unsigned OuterIdx = Plan.Regions.size();
+
+  ControlRegion OuterR;
+  OuterR.Kind = ControlRegion::BranchRegion;
+  OuterR.Condition = OuterBI->getCondition();
+  OuterR.Pred = Pred;
+  OuterR.Arm = Mid;
+  OuterR.MergeBB = Merge;
+  OuterR.Merge = MergePhi;
+  OuterR.ArmNegated = OuterNeg;
+  OuterR.Depth = 0;
+  OuterR.ParentIdx = ControlRegion::kNoParent;
+  Plan.Regions.push_back(OuterR);
+
+  ControlRegion InnerR;
+  InnerR.Kind = ControlRegion::BranchRegion;
+  InnerR.Condition = InnerCond;
+  InnerR.Pred = Mid;
+  InnerR.Arm = InnerArm;
+  InnerR.MergeBB = Merge;
+  InnerR.Merge = MergePhi;
+  InnerR.ArmNegated = InnerNeg;
+  InnerR.Depth = 1;
+  InnerR.ParentIdx = OuterIdx;
+  Plan.Regions.push_back(InnerR);
+
   Claimed.insert(InnerBI);
   return NestDisposition::Accepted;
 }

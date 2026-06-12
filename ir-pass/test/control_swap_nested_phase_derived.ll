@@ -14,7 +14,6 @@
 ; transitionally `nested control flow`, so this XFAILs. WI-3 lands the emitter and
 ; this XPASSes — delete the XFAIL then.
 ;
-; XFAIL: *
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
@@ -40,9 +39,14 @@ merge:
   %m  = call double @cq_measure_f64(double %qm)
   ret double %m
 }
-; Structural markers (the full f64 routed stream is fleshed out in WI-3).
-; CHECK:     call i32 @cqrt_alloc_f64(i32 0)
+; Structural markers (WI-3): the f64 routed stream — the outer flag minted off the
+; DERIVED fadd handle, the rails f64 (the alloc seed carries the width as `double
+; 0.0`, NOT `i32 0`; handles themselves stay i32), the inner flag minted FROM rail1.
+; CHECK:     call i32 @cq_template_fadd_f64_hl(i32 %{{.*}}, double 1.000000e+00)
+; CHECK:     call i32 @cq_template_fcmp_ogt_f64_hl(i32 %{{.*}}, double 5.000000e+00)
+; CHECK:     call i32 @cqrt_alloc_f64(double 0.000000e+00)
 ; CHECK:     call void @cqrt_cswap(i32 %{{.*}}, i32 %{{.*}}, i32 %{{.*}})
+; CHECK:     call i32 @cq_template_fcmp_olt_f64_hl(i32 %{{.*}}, double 9.000000e+00)
 ; CHECK:     call double @cqrt_measure_f64(
 ; CHECK-NOT: _controlled
 ; CHECK-NOT: cqrt_toffoli

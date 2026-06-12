@@ -24,6 +24,7 @@
 #include "ControlPlan.h"         // ControlRegion / ControlPlan
 #include "ControlledSymbols.h"   // cswapFn / xFn
 #include "EmitInverse.h"         // emitInverseChain (the value-arm reverse-play)
+#include "NestedRouteEmit.h"     // lowerNestedRegion (the depth-2 nest dispatch)
 #include "OpcodeSupport.h"       // abiWidthFromType (value-arm rail width)
 #include "RegionFlatten.h"       // flattenRegion
 #include "TaintPropagation.h"    // TaintSet
@@ -85,57 +86,13 @@ StringRef intrinsicSuffix(const Value *V, StringRef Prefix) {
 
 bool isPhiCall(const Value *V) { return !intrinsicSuffix(V, "cq_phi_").empty(); }
 
-// Walk the arm's merge contribution back along its IN-BLOCK phase spine,
-// collecting the `@cq_phi` (Rz) calls DEFINED IN `ArmBB` in FORWARD program order
-// (first gate applied first). The chain is `qN = cq_phi(q{N-1}, angle)`; the
-// back-walk hops arg-0 handles, so reversing it yields forward order. An empty
-// result means a degenerate gate-free arm (`if (q) {}` / an empty else) — handled
-// by the caller.
-//
-// The walk STOPS at the arm-block boundary: a `cq_phi` defined OUTSIDE `ArmBB` is
-// a pre-region rotation — the live DERIVED base handle the region ROUTES
-// (accepted since test_C_libtooling-9hh), NOT an arm gate. It stays in
-// `taint.PhiCalls`, so `lowerRotations` lowers it as an ordinary unconditional
-// Rz at its own (pre-stream) position and RAUWs it to the same i32 handle as its
-// theta. Bounding here is load-bearing (Rule 10): an unbounded walk would
-// collect a pre-region phi SHARED by both arms once per arm, and the §6.1
-// reverse-erase would double-free it (SIGSEGV — the WI-3 crash). Keeping the
-// per-arm gate list strictly in-block makes that impossible.
-SmallVector<CallInst *, 4> collectArmPhis(Value *ArmIncoming,
-                                          const BasicBlock *ArmBB) {
-  SmallVector<CallInst *, 4> Phis;
-  for (Value *V = ArmIncoming; isPhiCall(V);) {
-    auto *CI = cast<CallInst>(V);
-    if (CI->getParent() != ArmBB)
-      break;  // pre-region cq_phi — the derived base handle, not an arm gate.
-    Phis.push_back(CI);
-    if (CI->arg_size() < 1)
-      break;
-    V = CI->getArgOperand(0);
-  }
-  std::reverse(Phis.begin(), Phis.end());
-  return Phis;
-}
-
-// Emit the route swap `cqrt_cswap(flag, q, rail)`, X-bracketed for an ArmNegated
-// (¬flag / FALSE-successor) arm: `cqrt_x(flag); cqrt_cswap(…); cqrt_x(flag)`.
-// Used identically for the route-in (split) and the route-back (join = adjoint
-// of the split, same flag) — that symmetry is the RSSA join-is-the-inverse-of-
-// the-split property (SCOPING §2).
-void emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
-               Value *Q, Value *Rail, bool Negated, const DebugLoc &DL) {
-  FunctionCallee Cswap = csyms.cswapFn();
-  FunctionCallee X = csyms.xFn();
-  auto stamp = [&](CallInst *C) {
-    if (DL)
-      C->setDebugLoc(DL);
-  };
-  if (Negated)
-    stamp(B.CreateCall(X, {Flag}));
-  stamp(B.CreateCall(Cswap, {Flag, Q, Rail}));
-  if (Negated)
-    stamp(B.CreateCall(X, {Flag}));
-}
+// `collectArmPhis` and `emitRoute` are DE-ANONYMIZED into the named `cq`
+// namespace (declared in SwapRouteEmit.h, WI-3/MD1-style) so the 4.3
+// `NestedRouteEmit` TU can reuse the SAME bounded arm-gate collector and the SAME
+// ¬flag-bracketed router at both nest levels (Rule 14 — one definition of the
+// correctness-critical routing primitive, no drift-prone copy). Their definitions
+// move below the anonymous block (so they can still see the TU-local `isPhiCall`);
+// behavior is unchanged. See the definitions just before `lowerControlRegions`.
 
 // The value an arm's IN-BLOCK phase spine bottoms at — the routed base handle
 // (the live quantum register the arm's gates rotate). For an if/else, which has
@@ -644,23 +601,94 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
 
 }  // namespace
 
+// Walk the arm's merge contribution back along its IN-BLOCK phase spine,
+// collecting the `@cq_phi` (Rz) calls DEFINED IN `ArmBB` in FORWARD program order
+// (first gate applied first). The chain is `qN = cq_phi(q{N-1}, angle)`; the
+// back-walk hops arg-0 handles, so reversing it yields forward order. An empty
+// result means a degenerate gate-free arm (`if (q) {}` / an empty else / a
+// gate-free `Mid`) — handled by the caller.
+//
+// The walk STOPS at the arm-block boundary: a `cq_phi` defined OUTSIDE `ArmBB` is
+// a pre-region rotation — the live DERIVED base handle the region ROUTES
+// (accepted since test_C_libtooling-9hh), NOT an arm gate. It stays in
+// `taint.PhiCalls`, so `lowerRotations` lowers it as an ordinary unconditional
+// Rz at its own (pre-stream) position and RAUWs it to the same i32 handle as its
+// theta. Bounding here is load-bearing (Rule 10): an unbounded walk would
+// collect a pre-region phi SHARED by both arms once per arm, and the §6.1
+// reverse-erase would double-free it (SIGSEGV — the WI-3 crash). Keeping the
+// per-arm gate list strictly in-block makes that impossible. De-anonymized
+// (named `cq`, declared in the header) so `NestedRouteEmit` reuses it per level.
+SmallVector<CallInst *, 4> collectArmPhis(Value *ArmIncoming,
+                                          const BasicBlock *ArmBB) {
+  SmallVector<CallInst *, 4> Phis;
+  for (Value *V = ArmIncoming; isPhiCall(V);) {
+    auto *CI = cast<CallInst>(V);
+    if (CI->getParent() != ArmBB)
+      break;  // pre-region cq_phi — the derived base handle, not an arm gate.
+    Phis.push_back(CI);
+    if (CI->arg_size() < 1)
+      break;
+    V = CI->getArgOperand(0);
+  }
+  std::reverse(Phis.begin(), Phis.end());
+  return Phis;
+}
+
+// Emit the route swap `cqrt_cswap(flag, q, rail)`, X-bracketed for an ArmNegated
+// (¬flag / FALSE-successor) arm: `cqrt_x(flag); cqrt_cswap(…); cqrt_x(flag)`.
+// Used identically for the route-in (split) and the route-back (join = adjoint
+// of the split, same flag) — that symmetry is the RSSA join-is-the-inverse-of-
+// the-split property (SCOPING §2). De-anonymized (named `cq`, declared in the
+// header) so `NestedRouteEmit` routes both nest levels through the SAME bracket
+// logic (a drift in the ¬flag polarity here would be a silent miscompile).
+void emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
+               Value *Q, Value *Rail, bool Negated, const DebugLoc &DL) {
+  FunctionCallee Cswap = csyms.cswapFn();
+  FunctionCallee X = csyms.xFn();
+  auto stamp = [&](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+  };
+  if (Negated)
+    stamp(B.CreateCall(X, {Flag}));
+  stamp(B.CreateCall(Cswap, {Flag, Q, Rail}));
+  if (Negated)
+    stamp(B.CreateCall(X, {Flag}));
+}
+
 void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
                          const ControlPlan &plan) {
   if (plan.Regions.empty())
     return;  // nothing accepted — classical / fully-declined module untouched.
 
+  const auto &Regions = plan.Regions;
+
+  // A coordinated parent/child pair (a Depth-N region and its Depth-(N+1) child,
+  // linked by `ParentIdx`) DELIBERATELY shares blocks: the 4.3 nest's Outer and
+  // Inner share `MergeBB` and `Outer.Arm == Inner.Pred` (§0 criterion 1).
+  // `NestedRouteEmit` tears the pair down together (one shared-merge erase), so
+  // the cross-region pre-flight below must EXEMPT such a pair while staying active
+  // for genuinely independent / sequential regions (blocker MD0).
+  auto coordinated = [&](size_t a, size_t b) {
+    const ControlRegion &A = Regions[a], &B = Regions[b];
+    return (B.Depth == A.Depth + 1 && B.ParentIdx == a) ||
+           (A.Depth == B.Depth + 1 && A.ParentIdx == b);
+  };
+
   // Pre-flight, while EVERY region's blocks are still valid (the block-lifetime
-  // rule): no accepted region may reference a block that flattening another
-  // accepted region will erase (its Arm/ArmFalse/MergeBB). Detection forecloses
-  // the known sequential layouts (an if/else or diamond merge hosting the next
-  // tainted branch declines as nested), so this should be unreachable — but a
-  // future shape that slips through must decline LOUDLY here, not dereference
-  // freed memory in emitRegion (the §8-confirmed sequential-region SIGSEGV
-  // family, 2026-06-10). Pointer-identity checks only; nothing is dereferenced.
-  for (const ControlRegion &A : plan.Regions)
-    for (const ControlRegion &B : plan.Regions) {
-      if (&A == &B)
+  // rule): no accepted region may reference a block that flattening ANOTHER
+  // (non-coordinated) accepted region will erase (its Arm/ArmFalse/MergeBB).
+  // Detection forecloses the known sequential layouts (an if/else or diamond merge
+  // hosting the next tainted branch declines as nested), so this should be
+  // unreachable for independent regions — but a future shape that slips through
+  // must decline LOUDLY here, not dereference freed memory in emitRegion (the
+  // §8-confirmed sequential-region SIGSEGV family, 2026-06-10). Pointer-identity
+  // checks only; nothing is dereferenced.
+  for (size_t a = 0; a < Regions.size(); ++a)
+    for (size_t b = 0; b < Regions.size(); ++b) {
+      if (a == b || coordinated(a, b))
         continue;
+      const ControlRegion &A = Regions[a], &B = Regions[b];
       for (BasicBlock *Doomed : {B.Arm, B.ArmFalse, B.MergeBB}) {
         if (!Doomed)
           continue;
@@ -676,8 +704,28 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
     }
 
   ControlledSymbols csyms(M, wd);
-  for (const ControlRegion &R : plan.Regions)
-    emitRegion(R, wd, csyms, taint);
+  // Emit. A Depth-0 region with a coordinated Depth-1 child is the proven depth-2
+  // nest — dispatch BOTH to `NestedRouteEmit::lowerNestedRegion` (it consumes +
+  // flattens the child too), and SKIP the child in this loop: re-visiting a
+  // Depth>0 region would dereference erased blocks (blocker MD4). `plan.Regions`
+  // is already outer→inner (detection pushes Outer before Inner, §3.1), so no sort
+  // is needed (the plan is `const`, COMPLETENESS#7). A flat (Depth-0, childless)
+  // region takes the unchanged `emitRegion` path.
+  for (size_t i = 0; i < Regions.size(); ++i) {
+    const ControlRegion &R = Regions[i];
+    if (R.Depth > 0)
+      continue;  // a nested child — owned by its parent's dispatch.
+    const ControlRegion *Child = nullptr;
+    for (size_t j = 0; j < Regions.size(); ++j)
+      if (Regions[j].Depth == R.Depth + 1 && Regions[j].ParentIdx == i) {
+        Child = &Regions[j];
+        break;
+      }
+    if (Child)
+      lowerNestedRegion(R, *Child, wd, csyms, taint);
+    else
+      emitRegion(R, wd, csyms, taint);
+  }
 }
 
 }  // namespace cq
