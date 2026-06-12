@@ -830,3 +830,590 @@ Honestly listed; each currently (or will, via WI-3) declines loudly:
 - **`select`-folded short value arms** (§8.4): the dominant C-level shape for
   small arms reaches the pass as a tainted `select` — 4.4's scope. 4.2 does
   not attempt partial select handling.
+
+---
+---
+
+# Part III — the 4.3 increment: nested control (phase arms)
+
+Written 2026-06-12 at 4.3 start (Rule 16), after a planning dialogue
+(owner + agent) that re-grounded the increment against **real `clang -O1`
+output** rather than the hand-stacked `control_swap_defer_nested.ll` shape.
+Two author decisions from that dialogue are binding and fold in below:
+**(1)** 4.3 goes **straight to the same-qubit nest** — the realistic shape
+where an inner tainted branch reads what the outer arm just gated (`%7` on the
+outer rail) — not a disjoint-qubit warm-up; the IR hands us the routing
+(§12.2), so the disjoint case is a strict sub-case, not a cheaper first step.
+**(2)** 4.3 stays **phase-only and depth-2**, mirroring how 4.1 (phase)
+deliberately preceded 4.2 (value): the genuinely new plumbing (region-tree
+walk, parent-rail threading, coordinated flatten, LIFO rail frees) is built
+against the *easiest* data case before value-arm subtlety (the copy-out /
+reverse-play composition across levels) is layered on. Module layout /
+fixtures / WI sequence land as `IMPLEMENTATION-4.3.md` at build kickoff.
+
+**The dialogue's load-bearing correction (binding framing).** The earlier
+"nested reverse-play is a new uncomputation hazard" worry was **overstated and
+is retracted**: the full faithful adjoint uncomputes unconditionally (`R†R = I`),
+and for **phase arms 4.3 emits no reverse-play at all** — coherence is the
+composed `icmp_inv` flag-strip (§12.3). The historical divergent-arm bug
+(`divergent-arm-uncompute-soundness-guard`, reverted `543bd85`) was a
+*single-register merge-point shortcut*, not the honest adjoint; swap-route
+keeps exclusive arms on disjoint rails so that shortcut never forms (SCOPING
+§3). The **quantum-correctness layer** for 4.3 is small and is settled (the
+`c1∧c2`-no-Toffoli routing and the LIFO strip-order are cleared, §12.2/§12.3,
+adversarial pre-clearance below). But the **emission STRUCTURE is genuinely
+new** — not "one wire": the symbol set is unchanged from 4.1, yet 4.3 adds
+(1) `ControlRegion` parent/child tree fields + a region-tree *builder* in
+`ControlDetect`; (2) a recursive/scoped emitter that threads the parent rail as
+the child's routed base; (3) a `lowerCompareToFlag` variant minting from a
+rail-substituted operand; (4) a coordinated *whole-tree* flatten helper
+(the per-region `flattenRegion` double-erases a shared merge — §12.4). Each is
+verify-clean-invisible if wrong and so earns the Rule-13 written trace, not just
+the per-fixture CHECK.
+
+Relevant bd memories (Rule 0/11 — to be re-verified against the live tree at
+build kickoff): `swap-route-detect-known-limits` (the nested decline is the
+deferral this Part lifts; the one-tainted-region-per-fixture authoring rule —
+`opt` exits on the FIRST diagnostic, so a nest's fixtures must pin the intended
+level's string), `divergent-arm-uncompute-soundness-guard` (the shortcut this
+design structurally avoids — see above), `swap-route-phase41-clearance` (the §8
+probe-matrix precedent), `swap-route-derived-base-clearance` (block-lifetime
+hole 2; the sequential-region SIGSEGV family §12.4 must not re-open),
+`cwk-merge-phi-discriminator` (any new merge-φ-building path inherits the
+discriminator gate), `mint-at-compare-decline-permanent` (the stale-condition
+purity theorem the inner flag must respect across the nesting boundary),
+`no-simulations-at-this-stage` (clearance = analytic/trace review, not
+statevector).
+
+**Adversarial pre-clearance (2026-06-12, Rule 13 — pre-code).** This PRD was
+run through a 5-lens hostile adversarial review (routing-trace / strip-order /
+detection-structural / classify-3c / completeness) + skeptic adjudication
+*before* any implementation. **Verdict: the depth-2 homogeneous-phase nest
+PHYSICS is CLEARED** — the §12.2 four-row `c1∧c2`-no-Toffoli routing and the
+§12.3 LIFO strip-order survived independent statevector adjudication, matching
+the controlled-in-place reference bit-for-bit (a phase nest copies nothing out,
+so there is no §8.2-style kept-source deviation channel; coherence is exact).
+**The accept-PREDICATE was `NOT-CLEARED`** on one false-accept silent miscompile
++ five spec-gaps; **all six are folded into §§11–14 below** (every fix is an
+over-decline-safe guard or a factual correction — no design change). The blocker
+was the **multi-register nest** (§12.4, the inner-condition-operand guard); the
+others were the `declineClassicalMuxes` order (§12.6, corrected), the depth-3 /
+both-arm decline strings (§12.7, corrected), the N-incoming RAUW collapse
+precondition (§11 step 6 / §12.4), the temporal strip-misorder proof + ordered
+CHECK (§12.3 / §13), and the dominator discriminator + coordinated-flatten
+helper (§12.4).
+
+**Re-clearance (2026-06-12, same day).** The amended predicate was then run
+through a focused delta re-clearance (4 verifiers extracting real `-O1` IR +
+fact-checking every citation against the live tree + a vacuity check on the
+intended accept shape). **Verdict: `CLEARED-WITH-AMENDMENTS`.** All six defects
+confirmed **closed**; the intended §11 same-qubit nest **survives every conjoined
+guard** (verified byte-for-byte against real `-O1` — 4.3 is **not vacuous**); **no
+surviving silent-miscompile, false-accept, or false-decline.** Four over-decline-
+safe residuals were folded in: a §12.6 citation drift (`773`→`775`); the
+symmetric-both-arm is a 3-incoming hoisted merge (declined by §12.4 invariant-(i),
+not the §12.7 >3 cap — §12.7/§13 corrected); the §12.4 relaxation must keep the
+**exactly-one-phi** discipline (real `-O1` emits two phis when inner cond/arm
+touch different registers — §12.4/§13); and tree-homogeneity must **suppress §3c
+emission** until the tree is proven homogeneous (else the inner-clobber fixture
+reds — §12.5/§13). The **physics and the accept-predicate design are now
+Rule-13-cleared**; the only clearance still owed is the **implementation-time §13
+gate** (the written `(f1,f2)` trace + the linked e2e golden + green `ctest`, when
+the emitter lands).
+
+---
+
+## 11. Scope (4.3)
+
+**In scope — the depth-2 homogeneous-phase nest.** Lower a tainted-condition
+`br i1` **diamond** whose single content arm itself contains a tainted-condition
+`br i1` **diamond**, both arm bodies **phase rotations** (`cq_phi` → `Rz`),
+reconverging at one shared merge — the shape `clang -O1` actually emits for
+`if (cond1(q)) { q = cq_phi(q, b); if (cond2(q)) { q = cq_phi(q, a); } }`
+(measured §12.1):
+
+```
+Pred:  %f1 = icmp …(q)           ; outer condition, tainted
+       br i1 %f1, Mid, Merge
+Mid:   %g  = cq_phi(q, b)        ; outer-arm intervening phase gate(s)
+       %f2 = icmp …(%g)          ; inner condition — reads the GATED value %g
+       br i1 %f2, Arm, Merge
+Arm:   %h  = cq_phi(%g, a)       ; inner-arm phase gate(s)
+       br Merge
+Merge: %m  = phi [%h, Arm], [%g, Mid], [%q, Pred]   ; 3-incoming
+```
+
+Emission is the **same emitter applied as a region-tree walk**, the inner level
+routing on the **outer arm's live rail** (§12.2):
+
+1. **Outer mint + route-in.** `%f1 = icmp_hl(q, …)`; `rail1 = alloc(0)`;
+   `cqrt_cswap(%f1, q, rail1)` (¬flag arms X-bracketed, as 4.1).
+2. **Replay the outer arm body on `rail1`.** The intervening `cq_phi` →
+   `cqrt_rz(rail1, b)` verbatim/uncontrolled (the 4.1 phase replay).
+3. **Recurse into the inner region with base := `rail1`.** Inner mint
+   `%f2 = icmp_hl(rail1, …)` — **from the rail, not the original `q`** (§12.2);
+   `rail2 = alloc(0)`; `cqrt_cswap(%f2, rail1, rail2)`; replay inner arm
+   `cqrt_rz(rail2, a)`; `cqrt_cswap(%f2, rail1, rail2)` route-back.
+4. **Inner clean-up, inside the outer bracket (LIFO).** `cqrt_free(rail2)`
+   (`Rz|0⟩=|0⟩` ⇒ `rail2` is `|0⟩`); strip the inner flag
+   `icmp_hl_inv(rail1, …)` **against `rail1`, before the outer route-back**
+   (§12.3); `cqrt_free(%f2)`.
+5. **Outer route-back + clean-up.** `cqrt_cswap(%f1, q, rail1)`;
+   `cqrt_free(rail1)`; strip the outer flag `icmp_hl_inv(q, …)`;
+   `cqrt_free(%f1)`.
+6. **Rewire + flatten.** RAUW the 3-incoming merge `phi` → `q`'s final handle;
+   erase both `br`s, both compares, the `phi`; flatten `Pred`/`Mid`/`Arm`/`Merge`
+   into one straight-line block in **one coordinated inner→outer pass** (§12.4).
+   **Binding precondition (the N-incoming RAUW-collapse gate, `cwk-merge-phi-
+   discriminator`):** a single-value RAUW of an N-incoming `phi` is the classic
+   dropped-edge silent miscompile *unless every incoming resolves — post-rotation-
+   lowering, through the `cq_phi` diagonal-alias closure — to the SAME `i32` base
+   handle*. That holds for the §11 shape only because every gate is diagonal `Rz`
+   (basis-preserving), so all three incomings (`%h`, `%g`, `%q`) collapse to `q`'s
+   one handle. Any nested merge with an incoming carrying a *distinct* base handle
+   **declines `control flow`**, never RAUW-to-first-incoming (the npu.1 collapse
+   bug). This is a homogeneity check on the **value** domain, distinct from
+   §12.5's phase/value-**class** homogeneity; both must pass.
+
+The conditional phase lands on `q` iff `f1 ∧ f2` — **no conjunction ancilla, no
+`cqrt_toffoli`** (§12.2). **No new runtime ABI** — reuses every symbol 4.1 used.
+
+Targets: new `.ll` contracts pinned from real `-O1` output
+(`control_swap_nested_phase_diamond.ll` and its polarity/derived-base/decline
+siblings — IMPLEMENTATION-4.3 §5) and ≥1 C-sourced e2e golden.
+
+**Out of scope (4.3) — see §14:** outer `if/else` nesting (else-nest / both-arm
+nest), depth > 2, **any** value arm in the tree (pure-value or mixed-with-phase),
+multi-register nests (route `q`, gate a disjoint `p`), nested `select`/`switch`.
+Each declines loudly.
+
+---
+
+## 12. Design decisions (4.3)
+
+Each resolved 2026-06-12 at 4.3 PRD time (owner dialogue) and binding.
+
+### 12.1 The `-O1` shape reality — nesting exists ONLY with an intervening tainted op (measured 2026-06-12)
+
+Rule 9/11 — measured against `clang -O1` on this tree, not guessed. The
+scope-defining fact, and the reason `control_swap_defer_nested.ll`'s hand-stacked
+3-incoming merge is **not** what real source produces:
+
+- **`if (q>5) { if (q<9) { φ } }`** (no code between the branches) **folds to a
+  single flat diamond** — `%c = icmp ult (q-6), 3; br %c, …` — one `icmp`, one
+  content arm. **Already lowered by 4.1.** Not a nest.
+- **`if (q>5 && q<9) { φ }`** — **identical fold.** Not a nest.
+- **`if (q>5) { φ_a } else { if (q<3) { φ_a } }`** (same gate both sides) —
+  **folds to one diamond** (OR-combined range). Not a nest.
+- **`if (q>5) { φ_b; if (q<9) { φ_a } }`** (a tainted gate **between** the
+  branches) — **stays a true nest**, and the inner condition is `icmp slt %7, 9`
+  where `%7 = cq_phi(%4, b)` is the **outer arm's gate output**, at a 3-incoming
+  merge (the §11 shape).
+
+Consequence (binding): the **trigger for 4.3 is a non-foldable tainted op
+between an outer tainted branch and an inner one** — which is the *normal* shape
+of quantum code ("rotate, then branch again on the result"). The "obvious"
+nested sources are a 4.1 concern, already green. 4.3's accept-fixtures are
+therefore pinned from **real `-O1` output** (the §8.4 precedent — document, don't
+fight, the canonicalizer); a hand-authored 3-incoming merge whose inner condition
+reads the *un-gated* `q` is rejected at authoring time as a shape `-O1` never
+emits (it would have folded).
+
+### 12.2 The one new mechanism — route on the enclosing rail; mint the inner flag from it; `c1∧c2` falls out
+
+This is the whole of 4.3's novelty over 4.1, and it is a **wire, not a physics
+problem**. Today the emitter is a flat loop over independent regions
+(`SwapRouteEmit.cpp` — `Q` is read from the merge `phi`/chain base and routed by
+`emitRoute`); the inner flag would be minted from a `CmpInst` operand by SSA
+identity (`lowerCompareToFlag`). Under the §11 shape that operand is `%g` (the
+gated value), whose amplitude — after the outer route-in `cqrt_cswap(%f1, q,
+rail1)` — physically lives on **`rail1`**, not on the original `q` register
+(which holds `|0⟩` on the `f1=1` path). Therefore:
+
+> **The inner region's routed base IS the outer arm's live rail.** The inner
+> flag is minted `icmp(rail1, …)`, the inner route-in cswaps `rail1`, and the
+> inner flag is stripped against `rail1` (§12.3). The emitter threads the
+> parent rail down a **region-tree walk** as the child's base.
+
+The SSA already names this for us *when the inner condition reads the gated
+value*: `%g` is the outer-arm gate result, and the emitter has just placed that
+value on `rail1` (step 2). So the emitter is not inventing a routed value — it
+follows the edge `-O1` drew, onto the rail it just used. A `lowerCompareToFlag`
+variant that mints from a substituted (rail) operand is the concrete new code.
+
+**Binding precondition — the mint-from-rail guard (§12.4; adversarial
+pre-clearance, the multi-register false-accept).** The above is sound ONLY when
+the inner condition operand IS the parent-routed base (`%g`'s lineage). It is
+**not** automatic: `if(q>5){ p=cq_phi(p,b); if(q<9){ p=cq_phi(p,a); } }` —
+condition on `q`, arms gating `p` — compiles under real `-O1` to a 3-incoming
+merge over `p` whose skip edges are all `p`-lineage (passing the §12.4 merge
+check) **yet the inner condition reads `q`, which is not on `rail1` (which holds
+`p`)**. Minting the inner flag from `rail1` there computes the wrong predicate →
+verify-clean silent miscompile. So 4.3 **requires the inner tainted-condition
+operand to lie in the diagonal-alias closure of the value the parent routed onto
+`rail1`**; any inner branch reading a register outside that closure **declines
+`nested control flow`** (the multi-register nest, §14). This guard, not the
+merge-edge agreement, is the load-bearing accept signal (§12.4 makes it binding).
+**Companion constraint:** every intervening outer-arm gate (step 2) must be a
+`cq_phi` (diagonal `Rz`); a non-`cq_phi` intervening gate (a `cq_theta`/`Ry`, or
+a value op) breaks both basis-preservation and mint-from-rail and **declines**
+(string per the arm-class / stale-condition guard that fires, §12.5/§12.6).
+
+**`c1 ∧ c2` with no conjunction ancilla (binding correctness claim — Rule 13
+trace owed).** Because the inner route-in operates on `rail1`, the inner cswap
+only moves a non-`|0⟩` value within the `f1=1` sub-population:
+
+| `(f1,f2)` | `rail1` after step 2 | inner route+gate+route-back | reaches `q` |
+|---|---|---|---|
+| `(0,·)` | `\|0⟩` (q never routed in) | cswaps move `\|0⟩↔\|0⟩`, `rz(\|0⟩)=\|0⟩` | nothing — `q` keeps `%q` |
+| `(1,0)` | `g(q)` | `%f2=0`: no inner swap; `rail1` keeps `g(q)` | `g(q)` — outer phase only |
+| `(1,1)` | `g(q)` | `%f2=1`: route to `rail2`, `rz`, route back | `h(g(q))` — both phases |
+
+The inner effect lands on `q` iff `f1 ∧ f2`, the conjunction implicit in the
+data dependency (`%f2` is computed from `rail1`, which carries the value only
+when `f1` fired). This is precisely SCOPING §6a's "no flag-conjunction Toffoli."
+The `_controlled`/conjunction path is the **control-in-place** alternative
+(§6a), which 4.3 does **not** take — confirmed by the owner: keep the routing.
+The four-row table is the **adversarial trace** §13 requires written and
+reviewed before emission ships (the rows are `(f1,f2)` basis combinations; Rule
+13, no simulation).
+
+### 12.3 No reverse-play for phase nests — flag-strip composition, and the strip ORDER is load-bearing
+
+For phase arms 4.3 emits **no per-rail adjoint / reverse-play** (SCOPING §3, the
+4.1 inheritance): each rail is `|0⟩` for free (`Rz|0⟩=|0⟩`) and coherence is the
+composed `icmp_inv` flag-strip. The uncompute "ordering hazard" raised in
+planning is therefore **not present for phase nests** — there is nothing to
+reverse-play. Reverse-play returns only with value nests (out of 4.3 scope,
+§14) and with user `cq_invert` (Phase 7), where it is the honest full adjoint
+(LIFO by construction — no shortcut).
+
+What **is** load-bearing is the **flag-strip order**, and it is the one place a
+flat-loop emitter (stripping each region's flag at its own merge) silently
+miscompiles:
+
+> **The inner flag must be stripped against `rail1` BEFORE the outer
+> route-back `cqrt_cswap(%f1, q, rail1)`.**
+
+Proof obligation — the **temporal** misorder, witnessed on the `f1=1`,
+`c2(k)≠c2(0)` population (corrected per pre-clearance; the realistic flat-loop
+bug is *temporal*, not a wrong-register substitution — the mint-from-rail design
+§12.2 never strips against `q`). The inner flag is minted `%f2 = icmp(rail1)`
+while `rail1` holds the routed value `g(q)`. A flat-loop emitter that strips
+`%f2` against the **correct** register `rail1` but **after** the outer route-back
+`cqrt_cswap(%f1, q, rail1)` reads a different value: the route-back empties
+`rail1` to `|0⟩` on the `f1=1` path, so `icmp_inv(rail1=|0⟩)` recomputes
+`c2(0)`, leaving `%f2 = c2(k) ⊕ c2(0)`. For any `k` with `c2(k) ≠ c2(0)` (e.g.
+`k=7, c2 = ·<9`: `c2(7)=1, c2(0)=1` — pick `c2 = ·>3`: `c2(7)=1, c2(0)=0`) the
+flag is left **`1` — dirty** → `cqrt_free(%f2)` is a hidden measurement
+collapsing `q` (Rule 6). The two binding sub-constraints, both owned by the
+emitter (not the flat loop): **(i)** inner *route-back* before inner *strip*
+(restores `rail1`'s mint value), and **(ii)** inner *strip* before the outer
+*route-back* (`rail1` not yet emptied). The strip-correctness invariant is
+verified on **all four `(f1,f2)` rows** (the §12.2 table) — every rail/flag
+provably `|0⟩` in population, every `cqrt_free` a clean reset. This order is the
+§13 Rule-13 trace's second obligation, and because it is **order-blind to the
+symbol multiset** (the misordered emitter produces the identical four `cqrt_free`
+/ zero `_controlled` / zero `phi i32` / `opt -verify`-clean output), it also
+needs a **targeted ordered FileCheck** (§13), not just the structural CHECKs.
+
+### 12.4 The N-incoming merge, coordinated flatten, and the block-lifetime SIGSEGV
+
+Two live single-region assumptions break under nesting and must be lifted
+deliberately:
+
+- **`soleMergePhi` 2-incoming cap** (`ControlDetect.cpp:76`) rejects the §11
+  3-incoming merge outright. 4.3 relaxes it to recognize the **specific**
+  `{[%h, Arm], [%g, Mid], [%q, Pred]}` triple: the arm edge (inner-gate value)
+  plus **two skip edges** that must each be the *identity straight-through* of
+  their level's base. Edge-structure: the outer-skip (`[%q, Pred]`) and
+  inner-skip (`[%g, Mid]`) must carry the **same routed lineage** (`%g` is `%q`'s
+  rail value after the outer gate — a diagonal-alias of `%q`); a merge whose
+  edges carry *distinct independently-derived* bases is **declined `control
+  flow`** (the §11-step-6 N-incoming RAUW-collapse gate, `cwk-merge-phi-
+  discriminator`; the old 3-distinct-angle dangling-φ bug). **This merge-edge
+  agreement is NECESSARY-NOT-SUFFICIENT** (mirroring §8.3's f64 fencing — it is
+  never the sole accept signal): the multi-register false-accept
+  (`if(q>5){ p=cq_phi(p,b); if(q<9){ p=cq_phi(p,a); } }`) passes it (all skip
+  edges are `p`-lineage) yet must decline. **The relaxation also carries forward
+  `soleMergePhi`'s existing exactly-one-phi discipline** (`ControlDetect.cpp:72`):
+  a 3-incoming merge block with **>1 `phi`** — which real `-O1` emits when the
+  inner condition and the inner arm touch *different* registers
+  (`if(q>5){ q=cq_phi(q); if(q<9){ r=cq_phi(r); } }` → a `q`-lineage phi **and** an
+  `r`-lineage phi) — **declines `control flow`**. (Routing only the first phi
+  would strand the second as a dangling 3-incoming tainted phi → `kMsgClassicalPhi`
+  on a mutated module, §12.6.) A two-phi decline probe pins it (§13).
+- **The mint-from-rail / inner-condition-operand guard (BINDING — the
+  pre-clearance blocker, the actual accept signal).** Accept a nested region
+  ONLY when the **inner tainted-condition operand lies in the diagonal-alias
+  closure of the value the parent routes onto `rail1`** (i.e. the inner condition
+  reads the same lineage the outer level threads down — `%g`, an `Rz`-alias of
+  `%q`). An inner branch whose condition reads a register *outside* that closure
+  (the multi-register nest: condition on `q`, data on `p`) **declines `nested
+  control flow`** — `classifyArms` today keys solely on the merge-phi incomings
+  and never ties the inner condition operand to the routed base, so without this
+  guard the wrong inner predicate is minted (verify-clean). A real-`-O1`
+  distinct-register decline fixture pins it (§13).
+- **`flattenRegion` double-erases a shared merge** (`RegionFlatten.cpp:86`
+  unconditionally `eraseFromParent()`s `Merge`). In a nest `Mid`, `Arm`, `Merge`
+  are shared across the two levels; calling the **per-region** helper once per
+  region erases `Merge` on the first call and **dereferences freed memory on the
+  second** (the documented sequential-region SIGSEGV, `swap-route-derived-base-
+  clearance` hole 2, `mux-exch-5bl-widening-nested-merge-guard`). So 4.3 **does
+  NOT reuse `flattenRegion` per-region** (correcting the earlier "reuse in one
+  coordinated pass"): it adds a **new whole-tree coordinated flatten helper**
+  that captures every block identity before the first erase, splices the single
+  shared `Merge` **exactly once**, and erases `{Pred-chain, Mid, Arm, Merge}`
+  each exactly once.
+- **Nest-vs-sequential discriminator (self-sufficient — corrected).** The
+  dominator check (inner `Pred` dominated by the outer arm) is **necessary-not-
+  sufficient**: the both-arm nest passes it too (each inner `Pred` *is* an outer
+  arm) yet must decline. The coordinated-pair permit therefore **conjoins three
+  invariants, all captured before any mutation**: (i) the outer region is a
+  **one-content-arm diamond** (NOT `if/else` — both-arm/else nesting is §14
+  out-of-scope, excluded *here*, not incidentally); (ii) the standard diamond
+  single-predecessor invariants hold at **both** levels
+  (`Arm->getSinglePredecessor()==Mid`, `Mid->getSinglePredecessor()==Pred`); and
+  (iii) the inner `Pred` is dominated by the outer arm (not post-dominating the
+  outer `Merge`, which is the sequential-overlap SIGSEGV shape → decline). **Do
+  not blanket-decline shared merges** (the legitimate nest shares its merge and
+  lowers correctly); decline only what fails (i)–(iii). A both-arm-nest decline
+  fixture and a double-erase regression probe pin both (§13).
+
+Rail frees follow the same LIFO as the flag strip (§12.3): `rail2` freed inside
+the inner bracket, `rail1` after the outer route-back. `computeFreePoint`'s
+naive post-dominator would push the inner-rail free to the *outer* merge
+(strictly too late); 4.3 frees by **region-tree scope-exit**, emitter-driven,
+not by post-dom reuse (for a phase rail the late free is `|0⟩`-clean and only
+wasteful, but the discipline is fixed now so it stays correct when value nests —
+where the late point is *dirty* — land).
+
+### 12.5 §3c across the region tree — cross-region union provenance + tree-level homogeneity
+
+The §3c clobber check is single-condition today (`condProvenance` over one
+`Region.Condition`, `ArmClassify.cpp`). Nesting adds two cross-level hazards;
+both are resolved conservatively:
+
+- **Inner arm clobbers the OUTER condition's data.** If an inner arm
+  value-changes a register the *outer* condition transitively reads, the outer
+  flag-strip `icmp_inv(q)` reads a different basis than the mint → outer flag
+  left dirty → hidden-measurement free. **Resolution (binding):** the cross-tree
+  §3c check evaluates against the **union of every condition in the region tree**
+  (enclosing + enclosed); an arm whose value-write hits that union is a clobber.
+  **But in 4.3 this check is computed-but-VACUOUS** and is *not the gate that
+  fires*: an inner value-write **is a value arm**, and tree-level homogeneity
+  (below) declines **any** value arm in the tree **first** — so a 4.3 fixture for
+  this shape declines with the homogeneity string (`mixed phase/value arm` /
+  `value-arm swap-route`), **not** `arm rewrites a condition operand` (§13 pins
+  the string that actually fires — pre-clearance OD). The union-§3c provenance is
+  built now (so it is ready and correct) but goes *active* only with the
+  value-nest increment, where a value arm can legitimately survive homogeneity.
+- **Tree-level homogeneity.** `SawPhaseArm`/`SawValueArm` are per-region.
+  A tree mixing a phase level and a value level has no single coherent merge
+  (a CNOT copy of the value level dephases the phase level, Rule 7). **4.3
+  requires every arm in the tree to be phase-class**; any value arm anywhere in
+  the tree declines (string per §8.3 — `mixed phase/value arm` for a mixed
+  tree, `value-arm swap-route` for a pure-value tree deferred to a value-nest
+  increment). Homogeneity is hoisted from a per-region to a **tree** invariant.
+  **Binding emission-ordering obligation (pre-clearance):** the tree-homogeneity
+  gate must run as a SEPARATE, EARLIER step than per-region §3c *emission* —
+  class-determination decides each arm's class **without emitting** the §3c
+  `arm rewrites a condition operand` diagnostic (`ArmClassify.cpp:715`), which is
+  gated behind the tree being homogeneous. Otherwise a genuinely-nested inner
+  *value* clobber (`if(q>5){ q=cq_phi(q,b); if(q<9){ q=q*7; q=q+3; } }`, real
+  `-O1`) classified per-region in isolation has `SawPhaseArm == false` *within the
+  inner region* (the outer `cq_phi` lives in `Mid`, not an arm of the inner
+  region), so the per-region mixed guard (`ArmClassify.cpp:634`) never fires,
+  classification reaches the inline §3c emission, and fires
+  `arm rewrites a condition operand` instead of the `mixed phase/value arm` the
+  §13 fixture pins. So `classifyArms` must be refactored to split
+  class-determination from §3c emission.
+
+### 12.6 Guard interactions and per-level polarity (Rule 9)
+
+- **`declineClassicalMuxes`** (corrected order — pre-clearance DEFECT). It runs
+  **AFTER** `detectControlRegions` **and** `lowerControlRegions`
+  (`CQLoweringPass.cpp` ~line 96), **not** before detection. So today a nest
+  declines *inside detection* (`recoverRegion` → `RegionShape::Nested` → `opt`
+  exits at the `DS_Error` before the guard runs) and the guard is never reached
+  for a nest — the earlier "it passes the phi through" reasoning was vacuous, and
+  the `liftOneRegisterMergePhi` exemption is **2-incoming-only**
+  (`TaintPropagation.cpp:616` hard-returns at `getNumIncomingValues()!=2`) so it
+  **cannot** lift the 3-incoming triple — *that sentence is struck.* The real
+  **binding accept-path obligation:** the nested emitter is the **sole owner** of
+  the 3-incoming merge `phi` and must RAUW→final handle + `scrubTaint` + erase it
+  **before** `declineClassicalMuxes` runs; a surviving 3-incoming tainted `phi`
+  would hit `diagnoseEscape(Phi, kMsgClassicalPhi)` (`TaintPropagation.cpp:775`;
+  773 is the preceding `liftOneRegisterMergePhi` call)
+  → a spurious `classical phi` decline on an already-mutated module (a
+  half-lowered crash-equivalent). Probe: a `kMsgClassicalPhi`-never-fires
+  assertion on an accepted nest. **Do NOT reorder the guard before detection**
+  (it would decline the live 3-incoming nested phi outright).
+- **Stale-condition guard** (`nonDiagonalGateBeforeBranch`) hard-requires
+  `Cond->getParent() == R.Pred`. For the inner region `Pred == Mid`, and a
+  non-diagonal gate in the outer arm before the inner compare sits in a
+  different block. 4.3 keeps the conservative `Cond->getParent() != Pred →
+  decline` posture for the inner level **unless** the inner compare and its
+  `br` are co-located in `Mid` (they are, in the §11 shape), in which case the
+  guard runs normally on `Mid`; an outer-arm non-diagonal (non-`Rz`) gate that
+  rebases the inner condition's wire is caught by the **mint-from-rail**
+  invariant (§12.2 — the inner flag is minted from `rail1`'s *current* value, so
+  a diagonal `Rz` is transparent and a non-diagonal op on that wire would have
+  made the arm non-phase, declined by homogeneity §12.5).
+- **Per-level polarity.** `clang -O1` may make either level's gate arm the
+  **false** successor (`ArmNegated`, the `cqrt_x` ¬flag bracket). Outer and
+  inner negate independently; the straight-through edge selection
+  (`getBasicBlockIndex`) must be applied per level against the 3-incoming phi,
+  not the 2-edge assumption. Fixtures cover all four (outer-neg × inner-neg)
+  combinations (§13).
+
+### 12.7 Depth cap — depth-2 only
+
+4.3 accepts **exactly one level of nesting**; the deeper / both-arm shapes are
+declined by **two distinct prongs** (measured against real `-O1`, not assumed —
+pre-clearance correction; the earlier "both-arm produces a 4-incoming merge"
+framing was wrong for the symmetric case):
+
+- **Depth-3** and the **asymmetric** both-arm nest (distinct gates per side)
+  each produce a genuine **4-incoming merge**. Once recursion is enabled the
+  outer matcher no longer short-circuits on "successor has a tainted br", and a
+  4-incoming `phi` matches neither the 2- nor the relaxed-3-incoming shape → it
+  would fall to `RegionShape::OffPattern` → the **generic `control flow`** string
+  (`ControlDetect.cpp:164`). So 4.3 adds an explicit **depth cap** — *inner arm
+  itself ends in a tainted `br`* **or** *the shared merge has >3 incomings* —
+  emitting **`nested control flow`** **before** `soleMergePhi` and **before any
+  inner-region emission** (also required to avoid the §12.4 block-lifetime hazard
+  of descending into a sub-region whose blocks the outer flatten erases).
+- The **symmetric** both-arm nest is **not** 4-incoming: `clang -O1` **hoists the
+  shared outer gate** out of both branches → a **3-incoming i32 merge** (+ a
+  separate FP angle phi), so the `>3-incoming` prong does **not** fire. It is
+  declined instead by **§12.4 invariant-(i)** — the outer region is not a
+  one-content-arm diamond (both successors carry tainted branches) → `nested
+  control flow`.
+
+The §13 fixtures are each pinned (Rule-12) to the string confirmed by **running
+the real `-O1` IR** — depth-3 / asymmetric-both-arm (4-incoming, the cap) and
+symmetric-both-arm (3-incoming + FP angle phi, §12.4 invariant-(i)). The cap is
+**principled-for-now**: the §12.2/§12.3 traces are carried for **two** flags;
+they generalize by the same parent-rail wire but are not auto-proven, so depth-3
+accept waits on extending the trace (a recorded deferral, not a physics wall).
+
+---
+
+## 13. Done criteria (4.3)
+
+- A tainted **depth-2 homogeneous-phase nest** (the §11 shape, pinned from real
+  `-O1` output) lowers to the region-tree routed stream: outer mint/route-in →
+  outer-arm `rz` on `rail1` → inner mint **from `rail1`** → inner route/`rz`/
+  route-back on `rail2` → inner `free` + inner `icmp_inv` strip (against
+  `rail1`, **before** the outer route-back) → outer route-back → outer `free` +
+  outer strip, with `CHECK-NOT: _controlled`, `CHECK-NOT: cqrt_toffoli`,
+  `CHECK-NOT: phi i32`, **exactly four `cqrt_free`** (`rail2`, `%f2`, `rail1`,
+  `%f1`), and `opt -verify` clean.
+- **A TARGETED ordered FileCheck pins the load-bearing strip sub-order**
+  (§12.3 — the structural CHECKs above are order-blind: the temporal-misorder
+  emitter produces the identical symbol multiset yet dirty-frees `%f2`). Pin
+  *only* the one sub-order — the inner `cq_template_icmp_…_hl_inv` (strip of
+  `%f2` against `rail1`) appears **before** the outer route-back
+  `cqrt_cswap(%f1, q, rail1)` — with ordered `CHECK:`/`CHECK:` (do **not** pin
+  the full sequence; the rail/flag frees float and a full-sequence pin
+  over-constrains).
+- The conjunction `f1∧f2` is implicit (no `cqrt_toffoli`, no conjunction
+  ancilla); the four-row `(f1,f2)` basis trace (§12.2) and the strip-order proof
+  (§12.3) are **written and cleared by independent adversarial review** (Rule
+  13, analytic/trace — no simulation) **before** the emitter ships. A green
+  suite alone does not clear it.
+- **Decline fixtures** (each `not … | FileCheck`, mirroring the string
+  character-for-character against the string that ACTUALLY fires — confirmed by
+  running the real `-O1` IR through the pass, not assumed; one tainted region
+  per fixture, `swap-route-detect-known-limits`):
+  - **multi-register nest** (cond on `q`, arms gate `p`; the pre-clearance
+    blocker, pinned from real `-O1` `/tmp/cq43_distinct.ll`-shape) →
+    `nested control flow` (the §12.4 inner-condition-operand guard);
+  - **depth-3** and **asymmetric both-arm nest** (genuine 4-incoming merges) →
+    `nested control flow` (the §12.7 active cap);
+  - **symmetric both-arm nest** (real `-O1` hoists the shared gate → 3-incoming
+    i32 merge **+ FP angle phi**, NOT 4-incoming) → `nested control flow` (the
+    §12.4 invariant-(i) "outer not a one-content-arm diamond" check, NOT the
+    >3-incoming cap — pin from the real shape);
+  - **two-phi merge** (`if(q>5){ q=cq_phi(q); if(q<9){ r=cq_phi(r); } }` — inner
+    condition and inner arm on different registers; real `-O1` emits a q-phi AND
+    an r-phi at the 3-incoming merge) → `control flow` (the §12.4 exactly-one-phi
+    discipline);
+  - **any value arm in the tree** → `mixed phase/value arm` (mixed) /
+    `value-arm swap-route` (pure-value);
+  - **inner-arm-clobbers-outer-condition** → **`mixed phase/value arm`** (the
+    homogeneity string that fires first — an inner value-write is a value arm;
+    §12.5 — **not** `arm rewrites a condition operand`, which is dead-in-4.3);
+  - **non-`cq_phi` intervening outer-arm gate** (a `cq_theta`/value op between
+    the branches) → the arm-class / stale-condition string that fires (§12.2);
+  - **distinct-base merge edges** → `control flow` (the N-incoming RAUW-collapse
+    gate, §11 step 6);
+  - **nested `select`/`switch`** → the inner `select`/`switch` string (fired
+    before nested-region recovery).
+- **Adversarial probes:** all four (outer-neg × inner-neg) polarity combinations
+  (§12.6); a derived-base outer condition that **provably survives `-O1`** as a
+  real derived compare — an **FP carrier `q + 1.0 > 5.0`** (verified to emit
+  `fadd`; note an *integer* `q+1 > 5` folds to `icmp sgt q, 4` and exercises
+  nothing — document, don't fight, the canonicalizer, §12.1) — to drive the
+  diagonal-alias closure; a same-merge **sequential** `if/else; if` that must
+  still decline (the §12.4 dominator discriminator); and a **double-erase
+  regression probe** asserting the coordinated whole-tree flatten erases the
+  shared `Merge` exactly once (no SIGSEGV — §12.4).
+- The `declineClassicalMuxes` pass-through is verified (§12.6) so the fixtures
+  exercise live code.
+- ≥1 **e2e trace golden** (C-sourced through the 4-stage pipeline, linked) diffs
+  clean against its `.expected.log` — the only layer proving every emitted
+  symbol resolves + signature-matches across two routing levels.
+- 4.1/4.2 regression floor green (single-region phase and value fixtures
+  unchanged; no nesting leakage into flat regions).
+- Full `ctest` green; `gen_templates.py --check` clean (**no ABI change in
+  4.3** — reuses 4.1's symbol set entirely).
+- bd memory updated: `swap-route-detect-known-limits` (nested no longer a
+  blanket decline — depth-2 phase accepted; depth-3 / if-else-nest / value-nest
+  still declined), and a new memory for the **mint-from-rail + strip-order**
+  invariant (the verify-clean-invisible 4.3 core rule).
+
+---
+
+## 14. Out of scope / open questions (4.3)
+
+Honestly listed; each declines loudly until its increment.
+
+- **Outer `if/else` nesting** — an inner diamond in the `else` arm, or in
+  **both** arms (`if(c){if(a)}else{if(b)}` — two parent-flag subtrees, a
+  4-incoming merge, doubled rail bookkeeping). The §12.2 routing trace and
+  §12.4 flatten are framed for nesting in **one** arm; both-arm nesting waits on
+  extending them to two sibling subtrees. Declines `nested control flow`.
+- **Depth > 2** (§12.7) — principled-for-now deferral; the two-flag traces
+  generalize but are not auto-proven. Declines `nested control flow`.
+- **Value arms anywhere in the tree** — pure-value nest or mixed phase/value
+  across levels (§12.5). The value path needs the copy-out / reverse-play
+  composition over the region tree (the honest full adjoint as a genuine
+  stack-unwind, §12.3) — sound in principle (LIFO by construction) but its own
+  increment with its own §8.2-style boundary + Rule-13 clearance. Declines
+  `mixed phase/value arm` (mixed) / `value-arm swap-route` (pure-value).
+- **Multi-register nests** — any nest where the **inner condition operand is not
+  in the diagonal-alias closure of the value the parent routed** (e.g. conditions
+  on `q`, arms gating a disjoint `p`; or route `q`, inner condition on `p`).
+  **Now actively DECLINED `nested control flow` by the §12.4 mint-from-rail
+  guard** (the pre-clearance blocker — §12 supplies the recognizer, no longer a
+  bare §14 assertion), with a real-`-O1` decline fixture (§13). (The
+  **disjoint-qubit** nest where the inner condition reads a register never
+  touched by the outer routing is a *strict sub-case* of §11 with a trivial
+  parent-rail wire; it could lower under the same emitter, but the 4.3 contract
+  and fixtures target the same-lineage shape per the owner's "go straight to
+  same-qubit" decision, and the guard declines it conservatively until a
+  multi-lineage increment proves it.)
+- **Nested `select` / `switch`** — `select`/`switch` lowering does not exist
+  (4.4/4.5); nesting an unbuilt construct declines on the inner construct's
+  string, before any nested-region recovery.
+- **Control-in-place §6a peephole for the nest** — the no-rail alternative
+  (controlling the inner `Rz` on `f1∧f2` in place) reintroduces the
+  `cqrt_toffoli` conjunction + ordered uncompute (the old bug class); explicitly
+  **not** the 4.3 mechanism, reserved as the later footprint optimization.
+- **Open question — depth-N generalization proof.** Whether the
+  no-conjunction-ancilla routing and the strip-order LIFO compose to arbitrary
+  depth by a single induction (almost certainly yes — each level is the same
+  parent-rail wire) or hide a depth-dependent entanglement subtlety. Resolved
+  before any depth>2 accept, not assumed.
