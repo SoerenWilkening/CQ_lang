@@ -86,6 +86,28 @@ add_test(NAME e2e-slice-control-value-diamond
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond.expected.log")
 
+# Phase 4.3 (WI-4, test_C_libtooling-s8yf.5): RSSA swap-routed depth-2
+# homogeneous-PHASE NEST. The only layer that LINKS — and so the only proof the
+# nested emitter's symbol set resolves and signature-matches across BOTH routing
+# levels against the runtime (Rule 2, Rule 16; 4.3 adds no new runtime ABI, so
+# this re-proves 4.1's symbols compose at depth 2). The §0 accept shape
+# `if (q>5) { q=rz(q,.25); if (q<9) { q=rz(q,.75); } }` SURVIVES -O1 as the
+# measured one-content-arm-diamond-inside-one-content-arm-diamond reconverging at
+# a single 3-incoming merge phi, and lowers to the §5g routed stream: outer mint
+# -> rail1 alloc -> outer route-in -> intervening rz on rail1 -> inner mint FROM
+# RAIL1 -> rail2 alloc -> inner route-in -> inner rz -> inner route-back -> free
+# rail2 -> STRIP f2 (BEFORE the outer route-back, the load-bearing §12.3 order)
+# -> free f2 -> outer route-back -> free rail1 -> STRIP f1 -> free f1 -> measure
+# q. EXACTLY FOUR frees (rail2, f2, rail1, f1); ZERO controlled gates, no
+# cqrt_toffoli, no surviving `phi i32`, no added measure.
+add_test(NAME e2e-slice-control-nested-phase
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_nested_phase.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_nested_phase.expected.log")
+
 # test_C_libtooling-5j5: the ONE-REGISTER classical-mux lift. The natural
 # `if (classical_c) q = cq_phi(q, a);` survives -O1 as a merge phi over two
 # SSA names of one register; the lift RAUWs it away and the CLASSICAL branch
