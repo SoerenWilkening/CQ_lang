@@ -512,10 +512,23 @@ after a statevector-checked design dialogue; see
   de-anonymized into `ControlShape.h`/`ArmAnalysis.h` (WI-0). **Next: 4.4
   `select`.**
 
-- **4.4 — `select` (trivial).** Reimplement the tainted-`select` merge as a
-  controlled-XOR copy into a fresh register — no cswap routing, no flag bracket.
-  The old P6 rejection (coherent-handle copy interfered downstream) may relax for
-  classical operands, which XOR-copy reads non-destructively.
+- **4.4 — tainted `select` (controlled-XOR copy merge).** PRD Part IV
+  (`docs/prd/phase-04-swap-route-control/PRD.md` §§15–18, written 2026-06-15,
+  Rule-13 pre-cleared `CLEARED-WITH-AMENDMENTS`). Reimplement the tainted-condition
+  `select` merge as a controlled-XOR copy into a fresh `|0⟩` register — **no cswap
+  routing** (a `select` has no arm ops), but **one self-inverse `cqrt_x` bracket**
+  for the ¬flag false-value copy (reused from 4.1; supersedes the earlier "no flag
+  bracket" shorthand — the bracket is required because the copy fires on `f=1`).
+  New ABI: `cqrt_copy_<W>_controlled` (5 integer widths first; fp-data staged).
+  **No correctness decline is forced by the merge** (it is a valid unitary, §3c is
+  vacuous, operands are left allocated — never freed dirty). The old P6 rejection
+  was the teeth of *freeing* a dirty entangled rail, which never-free-dirty
+  removes; it relaxes for all **data** operands. The two genuine guards are the
+  **USE-not-type angle gate** (a `select` result transitively reaching a rotation
+  arg-1 declines — a NEW detector check, no downstream backstop) and the
+  **scalar-ABI-width gate**; coherent (`Ry`/phase-carrying) operands ride the
+  conservative-default decline until the §16.7 boundary clears. Classical-condition
+  tainted-data selects (a different `declineClassicalMuxes` path) stay declined.
 
 - **4.5 — tainted `switch`.** Re-add (the old `SwitchNormalization` was removed):
   lower an N-way tainted `switch` via per-case routing / `icmp eq`-flag select

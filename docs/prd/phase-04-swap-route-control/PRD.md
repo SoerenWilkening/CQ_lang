@@ -5,14 +5,19 @@ Phase-specific design decisions, scope, and done criteria for lowering tainted
 PRD covers the **4.1 increment — phase arms (`Rz`)** in full (**Part I**, §§0–6 —
 closed 2026-06-10, epic `e4baa67`), the **4.2 increment — value/permutation arms
 (method-B)** in full (**Part II**, §§7–10 — written 2026-06-10 at 4.2 start,
-Rule 16), and records the binding decisions for the later increments (4.3
-nested, 4.4 `select`, 4.5 `switch`) so they survive between sessions and across
-the freeze. The old **controlled-op** Phase 4 shipped and was removed wholesale
-(commit `7cde677`); this PRD replaces its archived predecessor
+Rule 16), the **4.3 increment — nested control (depth-2 homogeneous phase)** in
+full (**Part III**, §§11–14 — closed 2026-06-15), and the **4.4 increment —
+tainted `select` (controlled-XOR copy merge)** (**Part IV**, §§15–18 — written
+2026-06-15 at 4.4 start, Rule 16); it further records the binding decisions for
+**4.5 `switch`** so they survive between sessions and across the freeze. The old
+**controlled-op** Phase 4 shipped and was removed wholesale (commit `7cde677`);
+this PRD replaces its archived predecessor
 ([`docs/archive/old-design/phases/phase04-controlled-form/`](../../archive/old-design/phases/phase04-controlled-form/)).
 It is a lean PRD — it memorializes the PRD-discovery decisions; the module-layout
-/ fixture / commit-shape plans land as `IMPLEMENTATION.md` (4.1) and
-[`IMPLEMENTATION-4.2.md`](IMPLEMENTATION-4.2.md) (4.2) alongside it.
+/ fixture / commit-shape plans land as `IMPLEMENTATION.md` (4.1),
+[`IMPLEMENTATION-4.2.md`](IMPLEMENTATION-4.2.md) (4.2), and
+[`IMPLEMENTATION-4.3.md`](IMPLEMENTATION-4.3.md) (4.3) alongside it
+(`IMPLEMENTATION-4.4.md` at 4.4 build kickoff).
 
 Companion documents:
 - [`ROADMAP.md`](../../../ROADMAP.md) §Phase 4 — phase scope, increments, place in
@@ -1417,3 +1422,553 @@ Honestly listed; each declines loudly until its increment.
   depth by a single induction (almost certainly yes — each level is the same
   parent-rail wire) or hide a depth-dependent entanglement subtlety. Resolved
   before any depth>2 accept, not assumed.
+
+---
+---
+
+# Part IV — the 4.4 increment: tainted `select` (controlled-XOR copy merge)
+
+Written 2026-06-15 at 4.4 start (Rule 16), after an owner+agent design dialogue
+that re-grounded the increment and **retracted two over-cautious framings** that
+the 4.1/4.2/SCOPING text had carried for `select`. The dialogue's binding
+conclusions fold in below; each is an over-*accept*-shrinking simplification, not
+a new mechanism.
+
+**The dialogue's two load-bearing corrections (binding).**
+
+1. **There is no coherence decline forced by the merge itself.** SCOPING §7.1's
+   residual worry — that copying a coherent operand "interfered downstream" (the
+   old Phase-4 P6 rejection) — was the *teeth of freeing a dirty entangled rail*,
+   which the swap-route never-free-dirty discipline (§3b, Rule 6) removes: the
+   merge leaves operands **allocated**, never freed, so no hidden measurement
+   forms. A `select` has **no arm operations** — it is a pure data merge
+   `out = c ? a : b`, always a valid unitary (controlled-XOR copy into a `|0⟩`
+   target; CNOT-copy is entanglement, **not** cloning). The §3c clobber is
+   **structurally vacuous** (a `select` writes nothing). Downstream coherent
+   re-use of an operand *separately from* the result is the user's own physics
+   (design principle 10), not a compiler decline. **Net: the merge mechanism
+   forces no rejection** — the SCOPING "P6 may relax for classical operands" hedge
+   is resolved to "the *principle* is relaxation for all data operands." (The
+   *shipped* 4.4 default is still conservative — coherent operands decline pending
+   the §16.7 clearance; the rejections that remain come from the angle/width gates
+   and that conservative default, never from the merge itself.)
+
+2. **The discriminator is the result's USE, not its type** — but the angle decline
+   is a **NEW detection-time check 4.4 must add, not a pre-existing guard it
+   inherits.** A `double` `select` is an *angle* only when its result reaches a
+   rotation's **arg-1** slot (`cq_phi`/`cq_theta`); fed anywhere else
+   (`fadd`/`fmul`/`fcmp`/`measure`/`ret`) it is ordinary fp **data**. The angle
+   case's correct lowering is a controlled rotation (the §6a/rotation path), not a
+   merge — so the principle "no FP *type*-guard in the merge" stands. **What the
+   first PRD draft got WRONG (pre-clearance blocker, empirically verified):** the
+   existing `declineTaintedAngle` (`RotationLowering.cpp:74`) keys on
+   `taint.Tainted` membership and runs at `CQLoweringPass.cpp:110`, *after* control
+   lowering at `:84` has already RAUW'd the tainted `%sel` to a **fresh untainted**
+   `cqrt_alloc` handle — so it **cannot** backstop a merged angle-select; the angle
+   position would leak into a handle (the f64/angle silent miscompile). Therefore
+   4.4 **adds its own transitive, pre-mutation arg-1 detector check** (§16.2), and
+   the `control_swap_defer_select_angle.ll` fixture **must be re-pinned** to the new
+   string — it does *not* "stay green unchanged."
+
+Consequently 4.4 is the **simplest** Phase-4 increment: a `select` is a single
+SSA instruction inside one basic block — **no CFG diamond, no blocks to erase, no
+`RegionFlatten`, no rail, no arm replay, no reverse-play, no flag-conjunction**.
+The block-lifetime SIGSEGV family (§6 risk, §12.4) **does not apply**. The only
+genuinely new surface is one ABI primitive (the controlled copy, §16.4); the rest
+reuses the 4.1 flag mint/strip and free discipline verbatim.
+
+Relevant bd memories (Rule 0/11 — re-verify against the live tree at build
+kickoff): `swap-route-detect-known-limits` (the `select` decline at
+`ControlDetect.cpp:229` is the deferral this Part lifts; the one-tainted-region-
+per-fixture authoring rule — `opt` exits on the FIRST diagnostic);
+`cwk-merge-phi-discriminator` (the classical-condition tainted-data `select` —
+the SSA-untaken-incoming silent-miscompile class — is a **different** decline path
+in `TaintPropagation::declineClassicalMuxes`, NOT touched by 4.4 — §16.8);
+`rz-diag-flag-strip-invariant` (the flag-strip reuse — here even simpler: the
+merge writes only the fresh `out`, never the condition lineage, §16.5);
+`no-simulations-at-this-stage` (clearance = analytic/trace review, not
+statevector); the f64/angle miscompile lesson (the angle-use decline, §16.2).
+
+**Adversarial pre-clearance (2026-06-15, Rule 13 — pre-code).** This PRD was run
+through a 5-lens hostile review (coherent-physics / angle-leak / ABI-emitter /
+detection-fixtures / consistency) + skeptic adjudication that **empirically** lifted
+the `ControlDetect.cpp` select decline, rebuilt the pass, and ran the angle fixture.
+**Verdict: `CLEARED-WITH-AMENDMENTS`** — the controlled-XOR-copy *shape* is sound
+(a `select` is a pure merge, §3c vacuous, leave-allocated is correct), but **one
+BLOCKER + several MAJOR amendments are folded into §§15–18 below** (every one is an
+over-decline-safe guard or a factual correction — no shape change). The **blocker**:
+the angle-use decline is NEW detection-time logic with **no downstream backstop**
+(the empirical finding above) — rewritten into §16.2 as a transitive pre-mutation
+arg-1 detector check, with the angle fixture **re-pinned**. Folded MAJORs:
+(a) a positive **scalar-ABI-width gate** + vector/i128/aggregate declines (else a
+non-ABI select mints a null callee *after* acceptance — §16.9/§17); (b) the §16.5
+"escaped" mechanism replaced by the **real use-based `isTerminalHandle`/`ChainWalk`**
+behavior; (c) the new **fp-accepting `WidthDispatch` controlled-copy minter** (the
+existing `copyFn` returns null for fp — §16.4); (d) the f32/f64 controlled-copy
+**reverses the binding `cq_runtime.h` no-FP-copy invariant** — resolved by shipping
+**5 integer widths first, fp-data declining** until the arg-1 gate is independently
+cleared (§16.4); (e) a **concrete pre-mutation aliasing predicate** (or conservative
+blanket decline — §16.9); (f) the **fan-out rule** (any transitive arg-1 use declines
+the *whole* select — §16.2); (g) the **ROADMAP "no flag bracket"** contradiction
+reconciled (§16.3). The two residual lenses that **must still clear before the
+emitter ships** are the §16.7 coherent-operand boundary (is `%out` ever *wrong*, not
+merely entangled?) and the §16.2 angle gate (is the transitive walk airtight?). The
+**§16.7 conservative fallback is the DEFAULT** until cleared: accept classical/basis
+operands; decline coherent (`Ry`/phase-carrying) operands.
+
+---
+
+## 15. Scope (4.4)
+
+**In scope — the tainted-condition integer-data `select`.** Lower
+`%sel = select i1 %c, T %a, T %b` where `%c` is **tainted** (derived from a
+`cq_theta`, typically `%c = icmp <pred> %qc, K`), `%sel` is used as **data**, and
+`T` is an **ABI-width integer** (`i1`/`i8`/`i16`/`i32`/`i64`) — into a controlled-XOR
+copy merge into a fresh `|0⟩` result register. The merge is width-parametric within
+that set. **fp-data widths (`f32`/`f64`) are staged out of this increment** (decline
+until the §16.2 angle gate is cleared — §16.4 amendment d); the *principle* is
+fp-as-data (type ≠ use), but the implementation ships integer-first for the
+Prime-Directive-safe surface. The `select` arises from a C ternary `?:` or from an
+`if/else` whose arms have **no side effects** and SimplifyCFG flattened to a `select`
+(the dominant small-arm shape — §8.4, the 4.2-deferred "select-folded" form, §18).
+
+**Two binding preconditions, both pure-SSA before any mutation (Rule 9):**
+(1) the **angle gate** — `%sel` must not transitively reach a rotation arg-1, else
+decline (§16.2, the blocker — there is no downstream backstop); (2) the **width
+gate** — the result must be a non-vector ABI-width integer, else decline (§16.9,
+the null-callee trap). Both run before the merge emits.
+
+The lowered stream (canonical, the graduated `control_swap_defer_select.ll` shape
+`select i1 %c, i32 %q, i32 %x` — one quantum-handle operand `%q`, one classical
+operand `%x`):
+
+1. **Mint the flag** from the condition: `%f = icmp_<pred>_<Wc>_hl(%qc, K)`
+   (`Wc` = the *condition* operand width; the flag is the `i1` boolean handle).
+   The original `%c` `icmp` becomes dead → erased.
+2. **Alloc the result rail** `%out = cqrt_alloc_<Wd>(0)` (`Wd` = the *data*
+   width; `|0⟩`).
+3. **Copy the true-value on the flag.** Quantum-handle operand → directly
+   `cqrt_copy_<Wd>_controlled(%f, %q, %out)`. (Classical operand → materialize
+   first, step 4 form.)
+4. **Copy the false-value on ¬flag**, X-bracketed (the 4.1 ¬flag convention):
+   `cqrt_x(%f)`; (classical `%x`:) `%xh = cqrt_alloc_<Wd>(%x)`;
+   `cqrt_copy_<Wd>_controlled(%f, %xh, %out)`; `cqrt_x(%f)`. The two copies write
+   **disjoint branches** (f=1 vs f=0) → no double-write; `%out = c ? a : b`.
+5. **Strip the flag** `%f0 = icmp_<pred>_<Wc>_hl_inv(%qc, K)`; `cqrt_free(%f)`.
+   Structurally valid because the merge never wrote `%qc`'s lineage (§16.5).
+6. **Rewire.** RAUW `%sel` → `%out`; erase the `select`. **No `phi`, no CFG
+   edit, no `_controlled` rotation, no `cqrt_cswap`, no reverse-play.**
+
+Operands (`%q`, the materialized `%xh`) are **left allocated** (no-cloning / §0
+leak, §16.5); `%out` is the live result owned by Phase-3/5 straight-line rules
+downstream. **Exactly ONE `cqrt_free`** (the flag).
+
+Targets: graduate `control_swap_defer_select.ll` (decline → accept), plus new
+`.ll` accept/probe contracts pinned from real `-O1` output (constant-operand,
+runtime-classical-operand, polarity, quantum-operand) and ≥1 C-sourced e2e golden
+(IMPLEMENTATION-4.4 §5).
+
+**Out of scope (4.4) — see §18, each declines loudly:** angle-use `select`
+(result transitively reaches a rotation arg-1 — the f64/angle family, §16.2);
+**fp-data widths** (`f32`/`f64`, staged — §16.4); **vector / `i128` / pointer /
+aggregate** result types (the width gate, §16.9); classical-**condition**
+tainted-data `select` (the `declineClassicalMuxes` path, untouched); tainted
+`switch` (4.5); a `select` operand that **aliases** the other's post-lowering
+register (the hoisted-in-place-arithmetic corner); nested control containing a
+`select` (declines on the `select` string, as today). A `select` has no arm ops,
+so there is **no value-arm / mixed-arm / §3c-clobber sub-case** to classify.
+
+---
+
+## 16. Design decisions (4.4)
+
+Each resolved 2026-06-15 at 4.4 PRD time (owner dialogue) and binding.
+
+### 16.1 A `select` is a pure merge — strictly simpler than 4.1–4.3
+
+No arm body (operands are already-computed values), so **nothing runs on a
+rail** — there is no route-in/replay/route-back, no `Rz`-rail-clean, no method-B
+copy-out, no reverse-play, no flag-conjunction. A `select` is also a **single SSA
+instruction within one basic block** — there is **no control-flow diamond**, so
+no block erasure, no `RegionFlatten`, and the block-lifetime SIGSEGV family (§6,
+§12.4) is structurally absent. The merge is `out = c ? a : b` realized as two
+controlled copies into a fresh `|0⟩` register. This is the SCOPING §5 "one or two
+controlled-XOR copies into a fresh register," now committed.
+
+### 16.2 The discriminator is USE not type — the NEW transitive arg-1 gate (BLOCKER)
+
+A `double` `select` is an **angle** iff `%sel` reaches a rotation's **arg-1** slot
+(`cq_phi`/`cq_theta`); then its lowering is a controlled rotation
+(`Rz(u,θ_false)` then `cRz(c,u,θ_true−θ_false)` — the §6a/rotation path, not a
+merge). Merging it as a data copy leaks the angle position into a handle — the
+**f64/angle miscompile family**. The principle "no FP *type*-guard in the merge"
+is correct; what is **wrong** is the first draft's claim that a *pre-existing*
+guard catches it.
+
+> **There is no downstream backstop (empirically verified, the pre-clearance
+> blocker).** Lifting the `ControlDetect.cpp:226–229` select decline and rebuilding
+> shows the angle fixture firing `declineTaintedAngle`'s
+> "unsupported quantum-derived rotation angle" — **only because no select emitter
+> exists yet** (the `cq_phi` survives to `lowerRotations`). `declineTaintedAngle`
+> (`RotationLowering.cpp:74`) tests `taint.Tainted` membership of the arg-1 value
+> and runs at `CQLoweringPass.cpp:110`. The select merge runs at `:84` and **RAUWs
+> the tainted `%sel` to a fresh untainted `cqrt_alloc` handle `%out`** — so by `:110`
+> the arg-1 test is false and the angle silently leaks. A green `opt -verify`
+> proves nothing.
+
+Therefore 4.4 **adds its own check** (binding):
+
+- **Where:** in the select detector inside `detectControlRegions` — **pure SSA
+  analysis, strictly before `lowerControlRegions` mutates** (Rule 9, detect-before-
+  mutate, survives RAUW-to-handle).
+- **What:** walk **all transitive users** of `%sel` through **value-preserving
+  carriers** (`fpext`/`fptrunc`/`bitcast`/nested `select`/`phi`); if **any** reaches
+  a rotation **arg index 1** (`@cq_phi_*`/`@cq_theta_*`), **decline the WHOLE
+  select** — never merge for the data uses and rotate for the angle use (the
+  **fan-out rule**: `%sel` can be tainted-as-data *and* feed arg-1 at once, because
+  the arg-1 angle exclusion is per-operand-use, `TaintPropagation.cpp:298`; splitting
+  it double-realizes the value = silent miscompile).
+- **String:** the detector owns its diagnostic; `control_swap_defer_select_angle.ll`
+  **must be re-pinned** to whatever string actually fires (confirmed against real
+  `-O1` IR, not assumed — Rule 11). Re-pinning is an explicit §17 done-criterion, a
+  deliberate baseline action (Rule 12); leaving the now-unreachable
+  "select under quantum control" CHECK in place would mask a non-firing gate.
+- **Probe:** a cast between select and arg-1 (`%w = fpext %sel; cq_phi(%qd, %w)`)
+  proves the transitive (not just direct-user) walk; a `CHECK-NOT` asserts **no
+  `cqrt_copy`/`cqrt_alloc` is emitted** for any angle-fed select; a dual-use fixture
+  (`%sel` feeding both `cq_phi` arg-1 **and** a `measure`) pins the fan-out decline.
+
+An **integer** `select` can never be an angle, so it always merges (subject to the
+§16.9 width gate, §16.7 coherence boundary, §16.8 condition partition, §18).
+
+### 16.3 The controlled-XOR-copy stream and the two widths
+
+`out = c ? a : b` with `out = |0⟩`: `out ^= a` controlled on `f`, then `out ^= b`
+controlled on `¬f`. The branches are disjoint (only one fires per basis branch of
+`c`), so `out` ends as `c?a:b` with no collision. `¬flag` control reuses the
+self-inverse `cqrt_x(%f)` bracket (the 4.1 convention). **Two widths are in play
+and must not be conflated:** the **condition width `Wc`** keys the `icmp` flag
+mint/strip (`cq_template_icmp_<pred>_<Wc>_hl[_inv]`); the **data width `Wd`** keys
+the copies and the `out` alloc (`cqrt_copy_<Wd>_controlled`, `cqrt_alloc_<Wd>`).
+They are equal only by coincidence (e.g. `select i1 (icmp i64 q), i8 a, i8 b` →
+`Wc=i64`, `Wd=i8`).
+
+**ROADMAP reconciliation (supersedes the "no flag bracket" shorthand).** The
+ROADMAP 4.4 entry reads "no cswap routing, no flag bracket." The "no cswap routing"
+half holds; the "no flag bracket" half is **stale and superseded here**: the ¬flag
+false-value copy *requires* the self-inverse `cqrt_x(%f)` bracket because
+`cqrt_copy_<Wd>_controlled` fires on `f=1`. The ROADMAP entry is updated to
+"one self-inverse `cqrt_x` bracket for the ¬flag false-value copy (reused from
+4.1)"; the PRD is authoritative for the mechanism.
+
+**Bracket scope is order-sensitive (ordered CHECK, §17).** The merge's whole
+correctness is the `dst=|0⟩` precondition (§16.4) **plus** the bracket tightly
+enclosing **only** the second copy. A mis-bracketed emitter (e.g. `cqrt_x` before
+*both* copies) double-writes `a` then `b` on the same basis branch yet produces the
+identical symbol *multiset* — invisible to a count-only CHECK. §17 pins an **ordered
+FileCheck** (`copy(f,a,out)` → `cqrt_x(f)` → `copy(f,b,out)` → `cqrt_x(f)`), the
+4.3 §12.3 strip-order precedent.
+
+### 16.4 New ABI — `cqrt_copy_<W>_controlled` (integer widths first; fp staged)
+
+The merge needs a **flag-controlled** register copy; today `cqrt_copy_<W>`
+(4.2) is **uncontrolled and integer-only** (`i1`/`i8`/`i16`/`i32`/`i64`):
+
+```c
+void cqrt_copy_<W>_controlled(int32_t ctrl, int32_t src, int32_t dst);
+```
+
+A **hand-written `cqrt_*` core ABI** addition (the `cqrt_copy`/`cqrt_cswap`
+precedent), in `runtime/cq_runtime.{h,c}` — **not** the autogenerated template
+surface, so `gen_templates.py --check` stays clean (YAML untouched), exactly as
+4.2's `cqrt_copy` landed. Trace mirrors `cqrt_cswap` (no-arrow void, leading
+`ctrl`): `cqrt_copy_<W>_controlled(h<ctrl>, h<src>, h<dst>)`. Self-inverse class
+(transversal Toffoli, `dst` starts `|0⟩`) → **no `_inv` twin**; never frees,
+consumes, or disentangles its source (Rule 8). It is the merge analogue of
+`cqrt_cswap` (a controlled primitive that IS the mechanism — consistent with "zero
+controlled *gates* on arm bodies," which is about arm replay, not merges).
+
+**Width set — integer-5 first, fp deferred (amendment d, Prime-Directive-safe).**
+4.4 ships `cqrt_copy_{i1,i8,i16,i32,i64}_controlled` and **declines fp-data
+selects** (`value-arm swap-route`-class string) initially. Declaring
+`cqrt_copy_{f32,f64}_controlled` **reverses the binding 4.2 §8.1 /
+`cq_runtime.h:235–237` invariant** ("declaring `cqrt_copy_f32/f64` would be dead
+ABI whose only possible caller is exactly the f64-as-data bug"). That reversal is
+defensible *only* once the §16.2 transitive arg-1 gate is proven airtight (an fp
+`select` that is data, not a leaked angle); until then fp-data declines, keeping the
+two copy families width-symmetric and shrinking the false-accept surface. fp widths
+are added in a follow-on once the fp-data accept path is independently cleared.
+
+**The IR-side minter is genuinely new (amendment c).** `WidthDispatch::copyFn`
+(`WidthDispatch.cpp:119–136`) is `void(i32 src, i32 dst)` — **no ctrl** — and
+hard-returns `FunctionCallee()` for any non-integer width (`:129`). 4.4 adds a
+**new minter** (e.g. `copyControlledFn`, or an extension of `ControlledSymbols`
+which already mints `cswapFn`) producing `void(i32 ctrl, i32 src, i32 dst)`. **Do
+NOT copy `copyFn`'s integer-only guard** — but with the deferral above the minter
+need only cover the 5 integer widths in this increment; the fp-accepting form lands
+with the fp-data clearance.
+
+**Operand materialization.** A **quantum-handle** operand is copied directly
+(it is already a register). A **classical** operand (compile-time constant **or**
+runtime classical value — both lack a qubit register) is materialized first via
+`%h = cqrt_alloc_<Wd>(value)` (`cqrt_alloc` already takes any `i32` init), then
+copied. **Recommended (option A):** materialize and leave the scratch allocated
+(a benign classical-valued §0 leak — trace-only runtime, qubits not scarce).
+*Alternative (option B):* a controlled XOR-by-literal template
+`cq_template_xor_<Wd>_hl_controlled(f, out, K)` avoids the scratch but reintroduces
+a `_controlled` member of the autogenerated template family (touches the YAML /
+SHA gate). **Default to A** — minimal ABI, all-core, no template `_controlled`
+reuse. The PRD pins A unless the e2e/footprint argues otherwise.
+
+### 16.5 Frees, leaks, and the structurally-valid flag-strip
+
+**Exactly ONE `cqrt_free`** — the flag, freed after the strip (provably `|0⟩`).
+Compare: phase/value diamonds free two (rail+flag), this frees one (no rail).
+`%out`, both operands, and any materialized classical scratch are **NEVER freed**:
+`%out` is the live result; operands and scratch are left allocated (freeing an
+operand entangled with `%out` via the copy would be a hidden measurement —
+Rule 6/8).
+
+**The no-free behavior is use-based, not a mark (amendment b — the first draft's
+"marked escaped-into-the-merge" mechanism does not exist).** `TaintPropagation` has
+no `Escaped`/`Measured` set; escape is pure SSA-use analysis. The correct mechanism:
+`cqrt_copy_<Wd>_controlled` is a **non-benign `CallInst` user** of its `src`, so
+`isTerminalHandle(src)` (`ChainWalk.cpp:84–107`) is **false** and the Phase-5 spine
+never selects `src` for `inverse + free`. **Binding obligation:** the controlled
+copy **must be added to `ChainWalk`'s recognized user set** so
+`forwardConsumerCount`/`recoverForwardChain` (`ChainWalk.cpp:131–159`) treat it
+consistently — otherwise an operand that is *also* an upstream lineage handle of
+another terminal trips the `forwardConsumerCount > 1` **fan-out bail** (`:137`) and
+**silently drops that unrelated chain's uncompute** (a §17 no-spurious-free probe
+pins this: an operand whose lineage also feeds a downstream rotation).
+
+**Operand-disposition matrix** (the copy is an *additional* consumer of each
+operand — for `(q>5)?q:x`, `%q` is read by the mint, the strip, **and** the copy):
+(i) operand also **Measured** downstream → the measure owns it, no free (FreePoint's
+domain); (ii) operand also **Escaped** (`ret`/`cq_invert`) → the caller owns it;
+(iii) operand with a **live downstream rotation/use** → the §16.7 channel-B
+coherence-loss case (covered by the §16.7 clearance / conservative fallback).
+
+**The flag-strip is structurally valid**, not merely "Rz-preserves-basis" valid as
+in 4.1: the merge writes **only** the fresh `%out` and never touches `%qc`'s
+lineage, so `icmp_<pred>_<Wc>_hl_inv(%qc, K)` recomputes the same boolean and returns
+the flag to `|0⟩` unconditionally — the cleanest strip in Phase 4.
+
+### 16.6 §3c is structurally vacuous
+
+The §2.5/§8.3 clobber rejection — an arm performing a value-changing write to a
+quantum variable the condition reads — **cannot fire** for a `select`: a `select`
+has no arm operations and writes nothing; it only reads its operands and produces
+`%sel`. There is no clobber predicate to evaluate and **no §3c decline fixture**
+for 4.4 (its absence is itself the contract — a `CHECK-NOT` on the clobber string
+in an operand-is-the-condition fixture, §17).
+
+### 16.7 The coherent-operand boundary — accept, with the §8.2-analogue clearance owed
+
+A **classical/basis-valued** operand copies non-destructively, leaves no
+entanglement of concern, and is **unconditionally fine**. A **coherent**
+(`Ry`-superposition / phase-carrying) operand, CNOT-copied, leaves `%out`
+**entangled** with the operand (`α|0⟩_a|0⟩_out + β|1⟩_a|1⟩_out`). The claim 4.4
+makes: **`%out` is the correct `c?a:b` in the computational-basis / reversible
+model** (each basis branch holds the right value), the leftover operand is
+**left allocated** (no-cloning forbids a disentangled copy; SWAP-move is the only
+reclaim and is reserved for the dead-operand `cqrt_cswap` path, not the keep-live
+merge — Rule 8).
+
+**Two channels, exactly as 4.2 §8.2 (amendment, sharpened).** The hazard is not
+only the cross-term between `%out` and the operand. CNOT-copying a coherent operand
+also **kills the off-diagonal of the operand's OWN marginal** — so a *standalone*
+downstream use of that operand (one the user never connects to `%out`) is dephased
+(channel B), not just `%out`-vs-operand interference (channel A). The clearance must
+reason against **both** channels, the same root cause as 4.2 §8.2.
+
+**Conservative fallback is the DEFAULT until cleared.** Per the Prime Directive,
+4.4 **ships accepting classical/basis-valued operands only and declining coherent
+(`Ry`/phase-carrying) operands** (`value-arm swap-route`-class string), widening to
+full coherent accept **only after** an independent Rule-13 clearance answers the
+hostile question — whether any basis/phase combination makes `%out` *wrong* (not
+merely entangled). The dialogue's position is full accept; the clearance adjudicates
+the widening. `cq_invert` (Phase 7) restores fidelity only for
+compute→use→uncompute, not keep-and-continue, so it does not discharge the boundary.
+A §17 probe pins a coherent operand whose lineage also feeds a downstream `cq_phi`
+(asserting the conservative decline until widened).
+
+### 16.8 The classical-CONDITION tainted-data `select` is a different path — untouched
+
+4.4 lowers only **tainted-condition** selects. A `select` with a **classical**
+condition over **tainted data** (`select i1 %classical, %tainted_a, %tainted_b`)
+is the `TaintPropagation::declineClassicalMuxes` path
+(`kMsgClassicalSelect` — "cq taint escape: tainted value muxed by a classical-
+condition select"), declined for the SSA-untaken-incoming silent-miscompile class
+(`lowering_reject_classical_mux_select_*.ll`, the `*_onereg` one-register-lift
+guard). That is **not** quantum control — there is no quantum flag to route — and
+**stays declined**. 4.4 must not relax it; the two paths share the `SelectInst`
+opcode and nothing else (a regression fixture pins it green, §17).
+
+### 16.9 Width gate, polarity (Rule 9), detection-before-mutation, distinct operands
+
+**Positive scalar-ABI-width gate (amendment, the null-callee trap).** Today the
+select detector (`ControlDetect.cpp:227–229`) inspects **only** the condition's
+taint — never the operand/result type. With the decline lifted, a tainted-condition
+**vector / `i128` / pointer / aggregate** select would be **accepted at detection**
+and then mint `cqrt_copy_<empty>_controlled` — a **null `FunctionCallee` minted
+after the mutation commits** (crash-on-valid-input, a detect-before-mutate
+violation). 4.4 adds a positive gate **mirroring the `ArmClassify.cpp:820–838`
+ordering**: the §16.2 **FP-USE fence first**, then require a **non-vector scalar
+result with non-empty `abiWidthFromType`** (and, per §16.4, an **integer** width
+this increment) — decline otherwise. The width check is necessary-not-sufficient and
+runs only **after** the FP-use fence. Vector / pointer / aggregate / `i128` selects
+are §18 out-of-scope with explicit decline fixtures.
+
+Detection is pure analysis by SSA-value identity **before any mutation** (survives
+rotation lowering's RAUW). A `select` has **no successor blocks** to swap, but `-O1`
+still canonicalizes the `icmp` predicate / operand order — the flag mint uses the
+**actual emitted predicate**, and the select's true-value (operand 1) maps to `f=1`,
+false-value (operand 2) to `f=0`; a polarity probe pins it.
+
+**Distinct-operand / aliasing guard — concrete predicate (amendment).** The two
+operands must resolve to **disjoint post-lowering qubit registers**; an operand that
+aliases the other's register (the hoisted-in-place-arithmetic corner, §18) would make
+one copy read a register the merge is muxing against. The dangerous alias only
+becomes literal *after* rotation lowering's RAUW-to-handle, which pre-mutation SSA
+cannot see directly, so the guard is one of:
+- **Conservative (recommended, Prime-Directive-safe):** accept only when each operand
+  is a **constant** or an SSA value with **provably-disjoint post-lowering handle
+  identity** — in practice declining the whole hoisted-in-place-arithmetic family. A
+  fresh **out-of-place** template result (e.g. `q+1` → a new `cq_template_add` handle,
+  distinct from `q`) satisfies this, so the common `(q>5)?q:q+1` form accepts.
+- **Concrete (if the conservative form proves too tight):** compute each operand's
+  **diagonal-alias closure** (the 4.3 §12.4 `diagonalAliasHit` machinery,
+  `ArmClassify.cpp:219–228`) — the registers rotation/template lowering will collapse
+  — and decline when the two closures **intersect**.
+
+The §17 decline fixture is pinned to **whichever predicate is chosen** (no
+done-criterion fixture for a guard with no defined predicate), with a matching accept
+fixture (distinct closures) and decline fixture (intersecting closures).
+
+---
+
+## 17. Done criteria (4.4)
+
+- A tainted-condition **integer-data `select`** lowers to the merge stream the
+  regenerated `.ll` fixtures pin (`icmp_<Wc>_hl` flag → `alloc <Wd>(0)` →
+  `copy_<Wd>_controlled` on flag → `cqrt_x` / `copy` / `cqrt_x` on ¬flag →
+  `icmp_<Wc>_hl_inv` strip → `cqrt_free`), `%sel` RAUW'd to `%out`, with the
+  **narrowed** `CHECK-NOT: cqrt_{rz,ry}{{.*}}_controlled` (the bare
+  `CHECK-NOT: _controlled` used in Parts I–III **cannot** be reused — it would
+  collide with the intended `cqrt_copy_<W>_controlled`), plus
+  `CHECK-NOT: cqrt_cswap`, `CHECK-NOT: phi i32`, **exactly ONE `cqrt_free`** (the
+  flag — `CHECK-COUNT-1` + `CHECK-NOT` for a second), `%out`/operands/scratch
+  never freed, and `opt -verify` clean.
+- An **ordered FileCheck** pins the bracket scope (§16.3): `copy(f,a,out)` →
+  `cqrt_x(f)` → `copy(f,b,out)` → `cqrt_x(f)` (a count-only CHECK passes a
+  mis-bracketed double-write — the 4.3 §12.3 ordered-CHECK precedent).
+- `cqrt_copy_<W>_controlled` lands for the **5 integer widths** in the
+  hand-written core ABI with the pinned signature/trace; the runtime trace test
+  covers them; the **new `WidthDispatch` controlled-copy minter** (not a clone of
+  the fp-rejecting `copyFn`) mints them; `gen_templates.py --check` stays clean
+  (YAML untouched). fp widths are deferred (§16.4).
+- **`%out` carries no measurement and no `phi`** — the select step emits zero
+  `cqrt_measure`; any measure in a fixture is the user's own `cq_measure`
+  lowering (Rule 5 — a fixture variant that `ret`s `%sel` proves no measure
+  appears).
+- **Decline fixtures** (each `not … | FileCheck`, mirroring the string
+  character-for-character **against the string that ACTUALLY fires** — confirmed
+  by running real `-O1` IR through the pass, not assumed; one tainted region per
+  fixture):
+  - **angle-use `select`** (`%sel` transitively feeds a `cq_phi`/`cq_theta`
+    arg-1) → declines via the **new §16.2 detector check**;
+    `control_swap_defer_select_angle.ll` is **RE-PINNED** to the string the
+    detector emits (a deliberate baseline action, Rule 12 — *not* "stays green");
+    a `CHECK-NOT` asserts **no `cqrt_copy`/`cqrt_alloc`** is emitted for it;
+  - **transitive-cast angle** (`%w = fpext %sel; cq_phi(%qd, %w)`) → same decline
+    (proves the walk follows value-preserving carriers, not just direct users);
+  - **dual-use fan-out** (`%sel` feeds a `cq_phi` arg-1 **and** a `measure`) →
+    declines the whole select (§16.2 fan-out rule — never split);
+  - **fp-data `select`** (`f64` result feeding `fadd`/`measure`) → declines
+    (staged out, §16.4) — re-pinned to accept once fp is cleared;
+  - **vector / `i128` / aggregate** result → the width-gate string (§16.9);
+  - **classical-condition tainted-data `select`** → the `declineClassicalMuxes`
+    string, untouched (`lowering_reject_classical_mux_select_*.ll` stay green —
+    §16.8);
+  - **aliasing operand** (intersecting diagonal-alias closures / not provably
+    disjoint) → the §16.9 aliasing guard string (pinned to the chosen predicate);
+  - **coherent operand** (`Ry`/phase-carrying) → declines under the §16.7
+    conservative default (until the boundary is cleared);
+  - **nested `select`** → the inner-`select` string (as today).
+- **Adversarial probes:** a polarity-canonicalized `icmp` (true/false-operand
+  mapping, §16.9); a **constant-operand** `select` (`(q>5)?5:7` — materialize
+  path, §16.4); a **runtime-classical-operand** `select` (the first
+  `cqrt_alloc_<Wd>(<runtime i32>)` emission — every existing emit site allocs a
+  null constant only; confirm the value-literal trace line, §16.4); an
+  **out-of-place-arithmetic operand** `select` (`(q>5)?q:q+1` — distinct closures,
+  **accepts**, §16.9); a **no-spurious-free** probe (an operand whose lineage also
+  feeds a downstream rotation — asserts the unrelated chain keeps its uncompute,
+  §16.5); an **operand-is-the-condition-register** `select` (`(q>5)?q:x` — the
+  structurally-valid strip + `CHECK-NOT` on the §3c clobber string, §16.5/§16.6).
+- ≥1 **e2e trace golden** (`tests/e2e/slice_control_select*.c`, C-sourced through
+  the 4-stage pipeline, **linked**) diffs clean against its `.expected.log` — the
+  only layer proving `cqrt_copy_<W>_controlled` resolves + signature-matches.
+- The **§16.7 coherent-operand boundary** (both channels) and the **§16.2 angle
+  gate** are **cleared by independent Rule-13 adversarial review** (analytic/trace,
+  no simulation) **before** the coherent/fp accept widens; a green suite alone does
+  **not** clear it. **The shipped 4.4 default is the conservative form** (classical/
+  basis integer operands accept; coherent + fp-data decline); the clearance gates
+  each widening.
+- 4.1/4.2/4.3 regression floor green (diamond/if-else/nested phase+value fixtures
+  unchanged; no `cqrt_copy_<W>_controlled` leakage into non-`select` paths).
+- Full `ctest` green; bd memory updated: `swap-route-detect-known-limits`
+  (`select` no longer a blanket decline — tainted-condition data selects
+  accepted; angle-use / classical-condition selects still decline), and a new
+  memory for the **use-not-type discriminator + coherent-operand leave-allocated**
+  invariant (the verify-clean-invisible 4.4 rules).
+
+---
+
+## 18. Out of scope / open questions (4.4)
+
+Honestly listed; each declines loudly until its increment.
+
+- **Angle-use `select`** — `%sel` *transitively* reaching a rotation arg-1
+  (§16.2). Its lowering is a controlled rotation (§6a/rotation path), not a merge.
+  Declined by the **new 4.4 detector check** (NOT a pre-existing guard — there is no
+  downstream backstop once the merge RAUWs `%sel` to an untainted handle); the
+  fan-out form (also feeding data) declines the whole select.
+- **fp-data `select`** (`f32`/`f64` result not used as an angle) — *in principle*
+  data (type ≠ use), but **staged out of 4.4** (§16.4): shipping
+  `cqrt_copy_{f32,f64}_controlled` reverses the binding `cq_runtime.h` no-FP-copy
+  invariant and is safe only once the §16.2 angle gate is independently cleared.
+  Declines until the fp-data accept path lands.
+- **Vector / `i128` / pointer / aggregate result types** — the §16.9 width gate;
+  no `abiWidthFromType`, so a merge would mint a null callee. Declines.
+- **Classical-condition tainted-data `select`** (§16.8) — the
+  `declineClassicalMuxes` path; not quantum control, stays declined.
+- **Tainted `switch`** — 4.5 (per-case routing / `icmp eq`-flag chain).
+- **Aliasing operands** (§16.9) — an operand sharing the other's post-lowering
+  qubit register (e.g. hoisted in-place arithmetic feeding one arm of the mux).
+  Declines via the aliasing guard until a fan-out/aliasing analysis proves the
+  copy-source and the muxed register are disjoint. The common out-of-place form
+  (`(q>5)?q:q+1`, distinct result handles) is in scope.
+- **`select`-folded short value arms** (the 4.2 §8.4 / §10 deferral) — a value
+  `if`-arm whose ops SimplifyCFG hoisted to unconditional arithmetic + a mux
+  reaches 4.4 as `select c, %computed, %orig`. The arithmetic is plain Phase-3
+  lowering (unconditional); 4.4 merges the mux **iff** `%computed` and `%orig` are
+  distinct live handles (§16.9). The case where the hoist made the arithmetic
+  alias `%orig`'s register is the aliasing decline above. No `select`-specific
+  arm-op handling is added.
+- **Coherent-operand interference boundary** (§16.7) — inherent to keep-live
+  copy (the §8.2 B-keep analogue): `%out` is faithful in the reversible model and
+  the leftover is left allocated, but coherent re-use of an operand *apart from*
+  `%out` decoheres under the entanglement (principle 10). Cleared by Rule-13
+  adversarial review before ship; conservative fallback declines coherent
+  operands. `cq_invert` (Phase 7) restores fidelity only for
+  compute→use→uncompute patterns, not keep-and-continue.
+- **One-copy degenerate merge** (an operand trivially `|0⟩`) — a footprint
+  optimization (one controlled copy instead of two); out of scope, always emit
+  two for correctness-first uniformity.
+- **Open question — does the controlled copy want an `_hl` literal twin
+  (option B)?** §16.4 defaults to materialize-then-copy (option A, all-core ABI).
+  If the e2e footprint or a later phase wants no classical scratch, the
+  `cq_template_xor_<W>_hl_controlled` family is the alternative (touches the YAML
+  / SHA gate). Resolved at IMPLEMENTATION-4.4 kickoff against the real linked
+  trace, not assumed.
