@@ -27,6 +27,7 @@
 #include "NestedRouteEmit.h"     // lowerNestedRegion (the depth-2 nest dispatch)
 #include "OpcodeSupport.h"       // abiWidthFromType (value-arm rail width)
 #include "RegionFlatten.h"       // flattenRegion
+#include "SelectMergeEmit.h"     // emitSelectRegion (the 4.4 select merge)
 #include "TaintPropagation.h"    // TaintSet
 #include "WidthDispatch.h"       // allocFn / copyFn / rzRtFn / freeFn / abiWidthFor
 
@@ -761,6 +762,15 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // region takes the unchanged `emitRegion` path.
   for (size_t i = 0; i < Regions.size(); ++i) {
     const ControlRegion &R = Regions[i];
+    if (R.Kind == ControlRegion::SelectRegion) {
+      // 4.4 — a tainted-condition integer-data select: the controlled-XOR copy
+      // merge (no CFG diamond, no rail/route, no child nest). Its block fields
+      // are all null, so the pre-flight above treated it as inert (the
+      // `if (!Doomed) continue;` guard). Dispatch + continue BEFORE the Depth /
+      // child-lookup branch, which keys on null CFG anchors.
+      emitSelectRegion(R, wd, csyms, taint);
+      continue;
+    }
     if (R.Depth > 0)
       continue;  // a nested child — owned by its parent's dispatch.
     const ControlRegion *Child = nullptr;

@@ -69,6 +69,45 @@ transitive arg-1 angle gate) and the **decline matrix**.
 
 ---
 
+## WI-3 amendments (adversarial-review findings, 2026-06-16)
+
+Two corrections folded into the implementation during the WI-3 Rule-13 clearance
+(a 4-lens independent adversarial review). Both override the prose below; the prose
+is retained for context but **these amendments are authoritative**:
+
+1. **§16.5 ChainWalk exemption — REJECTED, NOT added (was a latent silent
+   miscompile).** §16.5 / §6 hazard 5 / §10 / §8.5 / the WI-3 table row prescribed
+   OR-ing `!isControlledCopyOut(CI,H)` into `ChainWalk::forwardConsumerCount` so a
+   controlled-copy reading an upstream handle would not count toward its fan-out.
+   **This is wrong and was not implemented.** The controlled copy
+   `cqrt_copy_<W>_controlled(f, q, out)` IS a real fan-out consumer of `q` — `q`'s
+   basis label is copied into `%out`, entangling `q`'s rail with `%out`, so `q`
+   MUST stay live. With the exemption, `forwardConsumerCount(q)` drops below 2, the
+   fan-out bail does NOT fire, and the uncompute spine reverse-plays `q`'s chain and
+   FREES its rail — a free of a rail entangled with `%out` = a hidden measurement
+   collapsing `%out` (Rule 6/8), verify-clean. The DEFAULT (counting the copy)
+   correctly leaves `q`'s chain ALLOCATED (a qubits-not-scarce leak, Rule 6 —
+   safe). `ChainWalk.cpp` is UNCHANGED at HEAD. Guard:
+   `control_swap_select_fanout_alloc.ll`. Memory: `[[select-merge-no-chainwalk-exemption]]`.
+
+2. **Gate 5 (§16.7 / §0 gate 5) needs a BACKWARD phase-carrier half — the
+   forward-only proxy was an over-accept (a dephasing silent miscompile).**
+   `hasCoherentDownstreamUse` inspects only an operand's downstream USES, never its
+   PRODUCER, so an operand that IS a `cq_phi` (Rz/relative-phase) result — a
+   non-basis, complex-phase superposition — was ACCEPTED and basis-CNOT-copied into
+   `%out`, dephasing it (Rule 7, the 0.585→0.500 family; a downstream basis change
+   then yields the wrong distribution, `opt -verify` clean). Fix:
+   `SelectClassify::operandCarriesPhase` — decline `control flow` if either tainted
+   operand's backward lineage contains a `cq_phi`. This is the precise
+   tighten-not-widen line: a pure `cq_theta` (Ry) operand is a REAL-amplitude basis
+   superposition (the canonical `(q>5)?q:x` accept survives — the walk stops at
+   theta). Guard: `control_swap_reject_select_phase_operand.ll`. Memory:
+   `[[select-merge-phase-operand-dephasing]]`. (Also: a NIT — a Q+Q condition
+   `icmp %q,%y` now declines `control flow` at gate 2b rather than reaching the
+   data-path `no template` brand: `control_swap_reject_select_qqcond.ll`.)
+
+---
+
 ## 0. Accept criterion (the one definition everything keys on)
 
 > **4.4 lowers a tainted-condition `select` iff ALL hold; otherwise it declines

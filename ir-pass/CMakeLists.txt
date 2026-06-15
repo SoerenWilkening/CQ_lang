@@ -61,6 +61,7 @@ add_library(CQPass MODULE
   src/RegionTreeDetect.cpp
   src/RotationLowering.cpp
   src/SelectClassify.cpp
+  src/SelectMergeEmit.cpp
   src/SwapRouteEmit.cpp
   src/TaintPropagation.cpp
   src/TemplateName.cpp

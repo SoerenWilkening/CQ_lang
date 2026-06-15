@@ -115,6 +115,41 @@ bool selReachesRotationArg1(SelectInst *Sel) {
   return false;
 }
 
+// GATE 5 (the §16.7 PHASE-CARRIER half — the WI-3 Rule-13 dephasing finding) — is
+// the tainted value `Op` ITSELF a relative-phase (Rz) carrier? The controlled-XOR
+// copy merge is a CNOT basis copy: it copies a basis LABEL, not a phase (Rule 7),
+// so an operand whose backward lineage includes a `cq_phi` (Rz) — a non-basis,
+// COMPLEX-phase superposition — is DEPHASED into a wrong %out (the 0.585->0.500
+// family; verify-clean-invisible — the adversarial review's confirmed blocker). A
+// `cq_theta` (Ry) result is a REAL-amplitude basis superposition (no relative
+// phase) and IS the canonical accept, so the backward walk STOPS at theta (its
+// operands are the classical seed + angle, untainted). Walks every tainted
+// producer backward (the cq_phi arg-0 wire + arithmetic/cast data inputs);
+// over-decline-safe (any phi in the lineage declines the whole select).
+//
+// This is the BACKWARD twin of `hasCoherentDownstreamUse` (which catches an
+// operand whose lineage FEEDS a downstream rotation — channel B). Together they
+// enforce the §16.7 "decline coherent operands" intent that the forward-only
+// proxy alone missed. See [[select-merge-phase-operand-dephasing]].
+bool operandCarriesPhase(Value *Op, const TaintSet &Taint) {
+  SmallVector<Value *, 8> Work;
+  SmallPtrSet<Value *, 16> Visited;
+  Work.push_back(Op);
+  Visited.insert(Op);
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (isPhiCall(V))
+      return true;  // an Rz (cq_phi) in the lineage — a relative-phase carrier.
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;  // an argument / constant root — basis, not a phase.
+    for (Value *In : I->operands())
+      if (Taint.Tainted.count(In) && Visited.insert(In).second)
+        Work.push_back(In);
+  }
+  return false;
+}
+
 // GATE 5 (the §16.7 conservative coherent-operand default, decidable v1 proxy) —
 // does a tainted value `Op` have a QUANTUM use beyond this select: a downstream
 // rotation (`cq_phi`/`cq_theta`) ON its wire (arg-0) whose interference would
@@ -205,6 +240,17 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   if (!Cond || !comparePredLowerable(Cond))
     return diagnoseUnderControl(Sel, "control flow");
 
+  // GATE 2b — HL-only flag mint. A Q+Q condition (BOTH compare operands tainted,
+  // e.g. `icmp sgt %q, %y`) has no flag-mint template — `lowerCompareToFlag` is
+  // HL-only (handle + literal). Decline HERE in the CONTROL dialect rather than
+  // let `emitSelectRegion`'s step-1 mint reach the data-path `no template` bail
+  // (the message would mis-brand as a straight-line lowering failure — WI-3
+  // adversarial review NIT). Over-decline-safe; a Q+Q select condition is out of
+  // scope this increment regardless.
+  if (Cond->getNumOperands() >= 2 && taint.Tainted.count(Cond->getOperand(0)) &&
+      taint.Tainted.count(Cond->getOperand(1)))
+    return diagnoseUnderControl(Sel, "control flow");
+
   // GATE 3 — the §3.2 BLOCKER: NOT an angle. FIRST among the type gates (the
   // FP-use fence precedes the width gate, exactly as ArmClassify.cpp:820 precedes
   // :834). There is NO downstream backstop, so the angle MUST be caught here.
@@ -221,11 +267,16 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   if (T->isFPOrFPVectorTy() || !T->isIntegerTy() || abiWidthFromType(T).empty())
     return diagnoseUnderControl(Sel, "control flow");
 
-  // GATE 5 — conservative coherent-operand default (§16.7). A tainted value
-  // operand whose lineage also feeds a downstream rotation is channel-B
-  // dephasing — decline until the §8 Rule-13 clearance widens this.
+  // GATE 5 — conservative coherent-operand default (§16.7), BOTH halves. A
+  // tainted value operand is declined if it (a) IS itself a relative-phase (Rz)
+  // carrier — `operandCarriesPhase`, the WI-3 dephasing finding — or (b) FEEDS a
+  // downstream rotation beyond the select — `hasCoherentDownstreamUse`, channel B.
+  // Either makes the basis CNOT-copy merge produce a wrong/dephased %out. Declined
+  // until the §8 Rule-13 clearance widens this.
   for (Value *Op : {Sel->getTrueValue(), Sel->getFalseValue()})
-    if (taint.Tainted.count(Op) && hasCoherentDownstreamUse(Op, Sel, taint))
+    if (taint.Tainted.count(Op) &&
+        (operandCarriesPhase(Op, taint) ||
+         hasCoherentDownstreamUse(Op, Sel, taint)))
       return diagnoseUnderControl(Sel, "control flow");
 
   // GATE 6 — distinct operands / aliasing guard (§16.9). The two operands must
@@ -233,19 +284,19 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   if (operandsAlias(Sel->getTrueValue(), Sel->getFalseValue()))
     return diagnoseUnderControl(Sel, "control flow");
 
-  // ACCEPT — all six gates pass. WI-3 (SelectMergeEmit) replaces this
-  // transitional decline with the region push below; until the emitter exists,
-  // lowering nothing is the Prime-Directive-safe placeholder (pushing a
-  // SelectRegion now would reach `emitRegion`'s null-block dereference — there is
-  // no SelectRegion dispatch in `lowerControlRegions` yet):
-  //
-  //   ControlRegion R;
-  //   R.Kind = ControlRegion::SelectRegion;
-  //   R.Merge = Sel;                      // SelectInst fits Instruction* Merge
-  //   R.Condition = Sel->getCondition();
-  //   plan.Regions.push_back(R);
-  (void)plan;
-  diagnoseUnderControl(Sel, "control flow");
+  // ACCEPT — all six gates pass. Push a `SelectRegion` for `SelectMergeEmit`
+  // (WI-3, dispatched from `lowerControlRegions` on `Kind==SelectRegion`). No
+  // `ControlPlan` field is added: `Kind::SelectRegion` + the `Instruction* Merge`
+  // slot already hold a `SelectInst`, and the emitter reads `TrueValue`/
+  // `FalseValue` off `cast<SelectInst>(R.Merge)` and the width off
+  // `abiWidthFromType(Sel->getType())` (valid at emit time — L84 precedes
+  // rotation lowering at L110). The block/depth fields stay null (a select has no
+  // CFG diamond), which makes it inert to the cross-region pre-flight.
+  ControlRegion R;
+  R.Kind = ControlRegion::SelectRegion;
+  R.Merge = Sel;  // a SelectInst fits the Instruction* Merge slot.
+  R.Condition = Sel->getCondition();
+  plan.Regions.push_back(R);
 }
 
 }  // namespace cq
