@@ -605,9 +605,12 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   //       owns it), NOT the route-back. Stripping here would return the flag to
   //       |0> before the data read (read-after-collapse); freeing it would be a
   //       hidden measurement. The data lineage is the flag's reclaimer
-  //       (FreePoint → Escaped/Measured, no free). No DEFERRED strip is needed —
-  //       the only case that would need one (dead-within-function) was declined
-  //       upstream by classifyArms (WI-2).
+  //       (FreePoint → Escaped/Measured, no free). The only other case — a
+  //       dead-within-function lineage — is declined upstream by classifyArms and
+  //       stays declined: ziov.2 proposed a deferred strip there but it was closed
+  //       won't-fix (a flag-ONLY strip leaves the data-copy rails entangled with
+  //       q, a silent miscompile; see classifyArms' Unowned note). So on this
+  //       share path the flag is NEVER stripped or freed here.
   if (!R.ShareCondFlag) {
     // 7. Flag strip — q == q0 (Rz preserves the basis value), so icmp_inv(q)
     //    returns the flag to |0> with zero controlled gates. Reads `Cond`'s

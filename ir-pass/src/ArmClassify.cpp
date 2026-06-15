@@ -486,10 +486,16 @@ bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
 //   * Unowned — a lineage DEAD WITHIN THE FUNCTION (orphaned, no users) or
 //     reaching an unrecognized hole (store / opaque call / `cq_invert` / phi /
 //     select) leaves the flag a dirty entangled rail with no downstream owner
-//     (Rule 6/8); the deferred in-function `icmp_inv` strip is WI-2. There is NO
-//     `main`-name short-circuit — a dead lineage in `main` is the SAME dirty-flag
-//     hazard as in any function and declines identically (FreePoint's `main` rule
-//     governs the FREE question, never this strip/coherence one).
+//     (Rule 6/8) — DECLINE PERMANENTLY. (ziov.2 proposed lifting this with a
+//     deferred flag-strip; reviewed 2026-06-15 and CLOSED won't-fix — a
+//     flag-ONLY strip is a verify-clean silent miscompile, since each data op
+//     mints a FRESH rail [`cq_template_*` → `cqrt_alloc_handle`] holding a COPY
+//     of `q>5` entangled with q, a which-region record the flag-strip never
+//     touches that DEPHASES the arm's phase [SCOPING §3a is coherent only when
+//     the flag is the SOLE ancilla]; and the shape is unreachable from -O1.) There
+//     is NO `main`-name short-circuit — a dead lineage in `main` is the SAME
+//     dirty-flag hazard as in any function and declines identically (FreePoint's
+//     `main` rule governs the FREE question, never this strip/coherence one).
 //
 // Pure forward SSA walk (Rule 9 — before any mutation). `cq_invert_*` is NOT in
 // the accept set: it is an un-laundered escape whose param width may mismatch the
@@ -564,10 +570,12 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   // use, and SKIPS the eager flag strip+free — sound iff the data lineage is owned
   // downstream AND the flag is coherent at the route (`condDataUseDisposition`,
   // keyed on `Region.Pred` = the route block). A dead-within-function lineage
-  // orphans the flag as a dirty entangled rail (WI-2), and a measure of the flag
-  // IN the route block collapses it BEFORE the route controls on it — both decline
-  // LOUDLY (over-declining is always safe). This SUPERSEDES the flat 4.1 blanket
-  // decline ("condition used outside the branch"). Pure SSA analysis (Rule 9).
+  // orphans the flag as a dirty entangled rail (declined permanently — ziov.2's
+  // deferred-strip accept was closed won't-fix as a silent miscompile), and a
+  // measure of the flag IN the route block collapses it BEFORE the route controls
+  // on it — both decline LOUDLY (over-declining is always safe). This SUPERSEDES
+  // the flat 4.1 blanket decline ("condition used outside the branch"). Pure SSA
+  // analysis (Rule 9).
   bool HasDataUse = false;
   for (const User *U : Region.Condition->users())
     if (!isa<BranchInst>(U)) {

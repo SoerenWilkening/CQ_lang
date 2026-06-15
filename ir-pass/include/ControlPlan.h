@@ -264,9 +264,11 @@ struct ControlRegion {
   // SKIPS the eager strip+free (the data lineage owns the handle — it escapes or
   // is measured, FreePoint → Escaped/Measured, no free). `classifyArms` sets this
   // ONLY when the condition has a non-branch user whose forward lineage is wholly
-  // escaped/measured; a dead-within-function lineage declines (the deferred
-  // in-function strip is WI-2). False for the common no-data-use region (the
-  // unchanged eager strip+free path). The VALUE-arm twin is not yet implemented —
+  // escaped/measured; a dead-within-function lineage declines PERMANENTLY (ziov.2
+  // proposed a deferred in-function strip there but it was closed won't-fix — a
+  // flag-only strip leaves the data-copy rails entangled with q, a silent
+  // miscompile). False for the common no-data-use region (the unchanged eager
+  // strip+free path). The VALUE-arm twin is not yet implemented —
   // `emitValueRegion` declines a `ShareCondFlag` region (WI-later).
   bool ShareCondFlag = false;
 };

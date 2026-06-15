@@ -9,7 +9,9 @@
 ; with q with no downstream owner. The nested disposition declines it with the
 ; SAME string as the flat path ("condition data use neither escaped nor
 ; measured") — char-for-char, so detection and the negative fixture cannot drift.
-; The deferred in-function strip (flat WI-2) is unrelated to the nested path.
+; The flat-path deferred-strip accept (ziov.2) was reviewed and CLOSED won't-fix
+; as a silent miscompile (see control_swap_reject_cond_datause_dead.ll); this
+; nested decline stands regardless and is the permanent disposition here too.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}condition data use neither escaped nor measured under quantum control
