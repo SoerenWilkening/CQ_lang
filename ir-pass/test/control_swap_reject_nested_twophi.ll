@@ -33,4 +33,4 @@ merge:
   %m  = add nsw i32 %m1, %m2
   ret i32 %m
 }
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}lowering: control flow under quantum control

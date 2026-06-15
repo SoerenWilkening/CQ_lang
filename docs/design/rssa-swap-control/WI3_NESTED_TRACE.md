@@ -130,3 +130,59 @@ diamond too (`declineClassicalMuxes`: "tainted value muxed by a classical-condit
 phi"), so the disposition is consistent and safe (Prime Directive). Regression:
 `control_swap_reject_nested_loop.ll`. The acyclic §5g/§5h-accept shapes have no
 backedge → no false decline.
+
+---
+
+## WI-5 closeout re-confirmation (independent Rule-13 review, 2026-06-15)
+
+The WI-3 clearance above was written against the *design*; WI-5 re-ran the §8
+adversarial verification against the **shipped build on branch
+`swap-route-control`** — a fresh, independent 5-lens review (workflow
+`wi5-nested-route-clearance`): (1) emitter physics & strip-order / free-cleanliness,
+(2) emitter fidelity vs the cleared §4 stream **and the actual lowered IR**,
+(3) flatten & taint-set memory safety (UAF / double-free / stray-gate), (4)
+detection over-accept (the Prime-Directive boundary), (5) decline-matrix fidelity
+& pipeline coupling. Every concern was adversarially refuted by an independent
+verifier (default-to-refuted). **Result: CLEARED — 0 confirmed defects, 0 silent
+miscompiles.** Lenses 1 & 2 were fully CLEAR (0 findings); the only output was four
+NITs, none a miscompile (all are loud-safe or pre-existing). The shipped lowered IR
+and the e2e trace (`slice_control_nested_phase`) match this document's ground-truth
+stream **byte-for-byte** — including the load-bearing inner-strip-before-outer-
+route-back order, exactly four `cqrt_free`, and zero `_controlled`/`cqrt_toffoli`/
+`cqrt_copy`/`phi i32`. `opt -verify` clean; full `ctest` green;
+`gen_templates.py --check` clean (no ABI change — 4.3 reuses 4.1's symbol set).
+
+**NIT dispositions:**
+
+1. *(Lens 3, pre-existing — NOT a 4.3 regression)* A tainted control compare with a
+   **second non-branch (data) use** (`int f=(q>5); if(q>5){…}; return f+…` — clang
+   `-O1` CSEs to one `icmp` with `br` + `zext` uses) is left standing by
+   `flattenRegion(Tree)`'s `use_empty()` guard and re-minted by `lowerOps` into a
+   **second** `cq_template_icmp` flag (one routed/freed, one leaked). Verify-clean,
+   memory-safe, no wrong unitary; affects the **flat 4.1/4.2 path identically** (same
+   guard). A Q/C-boundary precision question — filed as `bd test_C_libtooling-ziov`,
+   out of 4.3 scope.
+2. *(Lens 4 — comment accuracy, FIXED)* `RegionTreeDetect.cpp`'s backedge guard
+   comment over-claimed "structurally-complete." It inspects only edges OUT of
+   `{Pred, Mid, InnerArm, Merge}`, so a loop-**external** latch
+   (`Merge→latch→header`, `latch ∉` set) is not seen here — but such a fresh-θ nest
+   lowers **soundly** (no rail/flag crosses the backedge; all frees inside the body),
+   the same accepted-leak disposition the flat 4.1 path gives the identical shape.
+   Comment softened with the explicit "must be widened for value-arm nests, where a
+   loop-carried dirty rail WOULD be a Rule-6 collapse" forward-note.
+3. *(Lens 5 — test hardening, FIXED)* Five `nested` reject fixtures
+   (`distinct_base`, `theta`, `twophi`, `select`, `switch`) pinned
+   `error{{.*}}control flow…`, a **substring** of `nested control flow…`, so a
+   criterion-reorder regression could silently swap the string and stay green.
+   Tightened to `error{{.*}}lowering: control flow…` (the `lowering: ` anchor breaks
+   the `nested ` false match) — char-for-char against the string that actually fires
+   (Rule 12). *(Reconciliation: the `select`/`switch` fixtures fire `control flow`,
+   not the §0/§5h-predicted `select`/`switch` — clang `-O1` collapses the inner `?:`
+   to an in-arm `add(select)` value chain / leaves the `switch` as the Mid
+   terminator, so the OUTER branch declines first; each fixture's own comment
+   documents this, and the as-built fixture is the authoritative contract.)*
+4. *(Lens 5 — defensive fail-loud, FIXED)* The MD0 pre-flight cross-region guard
+   (`SwapRouteEmit.cpp`) could `return` without a diagnostic iff `A.Condition` were a
+   non-`Instruction` **and** `A.Merge` were null — **doubly unreachable** today
+   (every region sets both). Added a fail-loud INVARIANT comment so a future
+   null-`Condition` region kind cannot silently regress (Rule 1 / Prime Directive).

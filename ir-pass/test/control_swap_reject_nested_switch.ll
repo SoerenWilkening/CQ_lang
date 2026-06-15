@@ -34,4 +34,4 @@ merge:
   %m  = call i32 @cq_measure_si32(i32 %qm)
   ret i32 %m
 }
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}lowering: control flow under quantum control

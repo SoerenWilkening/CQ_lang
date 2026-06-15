@@ -694,6 +694,15 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
           continue;
         if (A.Pred == Doomed || A.Arm == Doomed || A.ArmFalse == Doomed ||
             A.MergeBB == Doomed) {
+          // INVARIANT (WI-5 §8 review, NIT — keep this path fail-loud): every
+          // region recovered today sets BOTH `Condition = BI->getCondition()` (an
+          // Instruction) AND `Merge` (a PHINode), so one of the two diagnose arms
+          // ALWAYS fires before the `return` — this never silently skips a tainted
+          // br (Rule 1). A FUTURE region kind that leaves both null (e.g. a
+          // synthesized flag-combination Value) MUST add a fallback diagnostic here
+          // (anchor on a region block's terminator); a bare `return` past both arms
+          // would be a silent accept of quantum-controlled flow — the one
+          // unforgivable bug (Prime Directive).
           if (auto *Anchor = dyn_cast_or_null<Instruction>(A.Condition))
             diagnoseUnderControl(Anchor, "control flow");
           else if (A.Merge)

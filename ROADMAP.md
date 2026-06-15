@@ -335,7 +335,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0 + 4.1 + 4.2 DONE · 4.3–4.5 pending]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.3 DONE · 4.4–4.5 pending]
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
 + [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
@@ -473,12 +473,44 @@ after a statevector-checked design dialogue; see
   **4/4 cleared, 0 confirmed defects, 0 silent-miscompiles**; IMPLEMENTATION-4.2
   §8.10). Lands: `cqrt_copy_<W>` core ABI (db47cb4), value-arm detection +
   Defect-2 fix (cf6c54c), value diamond — first real `emitInverseChain`
-  (a1bb41c), value if/else (92f28af), e2e golden (7139b7a). **Next: 4.3 nested.**
+  (a1bb41c), value if/else (92f28af), e2e golden (7139b7a).
 
-- **4.3 — Nested control.** A tainted `br` inside an arm runs the **same emitter
-  recursively** on the enclosing arm's live rail; `c1 ∧ c2` falls out of the
-  routing structure with **no conjunction ancilla**. Reverse-play composes over
-  the region tree (mechanical stack unwind).
+- **4.3 — Nested control, depth-2 homogeneous-phase nest [DONE 2026-06-15,
+  branch `swap-route-control`, WI-0..WI-5 — `docs/prd/phase-04-swap-route-control/IMPLEMENTATION-4.3.md`
+  + PRD Part III §§11–14].** The blanket `nested control flow` decline is lifted
+  for the **one proven shape**: a one-content-arm diamond whose `Mid` arm ends in
+  another tainted-condition one-content-arm diamond, reconverging at a single
+  3-incoming merge `phi`, every arm a pure `Rz`/`cq_phi` chain. The **same emitter
+  applied recursively** (`NestedRouteEmit`): outer flag mint → route the base onto
+  `rail1` → replay the intervening `cq_phi` on `rail1` → mint the inner flag **FROM
+  `rail1`** (`lowerCompareToFlagRail`) → route `rail1` onto `rail2`, replay the
+  inner `cq_phi`, route back → LIFO teardown inside the outer bracket (free
+  `rail2`; strip `%f2` vs `rail1` — **after** the inner route-back, **before** the
+  outer route-back; free `%f2`) → outer route-back → free `rail1`, strip `%f1` vs
+  `q`, free `%f1`. `c1 ∧ c2` falls out of the routing structure with **no
+  conjunction ancilla** (the inner level routes `rail1`, which holds `q`'s
+  amplitude only on the `f1=1` path) — **zero** `_controlled`/`cqrt_toffoli`/
+  `cqrt_copy`, exactly **four** `cqrt_free`, **no new ABI** (reuses 4.1's symbol
+  set entirely). Detection (`RegionTreeDetect`, 7 criteria by SSA identity before
+  mutation) proves the shape or declines loudly; the binding accept signal is
+  **mint-from-rail** (criterion 5 — the inner condition's whole quantum lineage in
+  `rail1`'s diagonal-alias closure, and the compare's tainted operand a DIRECT
+  closure member, the strengthened check that caught a value-derived-inner-cond
+  silent miscompile). Everything off-pattern declines (depth-3 / both-arm / if-else
+  nest / multi-register / value-arm-in-tree / two-phi / distinct-base / loop /
+  nested `select`·`switch`). `flattenRegionTree` tears the pair down with the
+  **single shared-merge erase** + the load-bearing compares-before-gates /
+  reverse-lineage erase order. **Cleared (Rule 13)** by two independent adversarial
+  reviews — the WI-3 5-lens emitter-physics clearance (caught a real verify-clean
+  over-accept, fixed) and the WI-5 5-lens shipped-build re-confirmation (0
+  confirmed defects, 4 loud-safe/pre-existing NITs;
+  `docs/design/rssa-swap-control/WI3_NESTED_TRACE.md`) — plus the §5g ordered
+  FileCheck (inner-strip-before-outer-route-back, the only layer that catches a
+  temporal misorder) and a linked e2e golden
+  (`tests/e2e/slice_control_nested_phase.c`). Modules: `RegionTreeDetect`,
+  `ArmHomogeneity`, `NestedRouteEmit`, `flattenRegionTree`; reused helpers
+  de-anonymized into `ControlShape.h`/`ArmAnalysis.h` (WI-0). **Next: 4.4
+  `select`.**
 
 - **4.4 — `select` (trivial).** Reimplement the tainted-`select` merge as a
   controlled-XOR copy into a fresh register — no cswap routing, no flag bracket.

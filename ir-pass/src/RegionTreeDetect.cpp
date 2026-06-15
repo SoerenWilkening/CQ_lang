@@ -114,10 +114,18 @@ NestDisposition recoverRegionTree(
   // region edge is a backedge — a successor that DOMINATES its source (the textbook
   // backedge test). Realistic loop nests are ALSO caught incidentally by criterion
   // 5's provenance cycle (the backedge pulls the inner-arm gate, a non-closure
-  // `cq_phi`, into the inner condition's provenance), but this is the principled,
-  // structurally-complete guard that closes the exotic gap (a loop whose backedge
-  // does not thread the merge result). Fresh DT per call (never reuse across
-  // levels — §12.4). All four §5g/§5h-accept shapes are acyclic → no false decline.
+  // `cq_phi`, into the inner condition's provenance). SCOPE (WI-5 §8 review, NIT —
+  // do NOT over-trust this): this check inspects only edges OUT of the region
+  // block-set {Pred, Mid, InnerArm, Merge}, so it catches backedges INTERNAL to the
+  // region. A loop whose latch lies OUTSIDE that set (Merge → latch → header, latch
+  // ∉ set) is NOT inspected here and lowers — but ONLY soundly, because a phase nest
+  // self-cleans within the body (no rail/flag handle crosses the backedge; all four
+  // `cqrt_free` land inside the region), the SAME accepted-leak disposition the flat
+  // 4.1 path gives the identical "control region inside a fresh-θ loop" shape. When
+  // value-arm nests land, a loop-carried DIRTY rail WOULD be a Rule-6 collapse — this
+  // guard must then be WIDENED to all reachable backedges, not assumed complete.
+  // Fresh DT per call (never reuse across levels — §12.4). All four §5g/§5h-accept
+  // shapes are acyclic → no false decline.
   DominatorTree DT(*Pred->getParent());
   for (BasicBlock *B : {Pred, Mid, InnerArm, Merge})
     for (BasicBlock *S : successors(B))
