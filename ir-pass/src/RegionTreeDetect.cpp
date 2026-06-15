@@ -218,11 +218,37 @@ NestDisposition recoverRegionTree(
       diagnoseUnderControl(OuterBI,
                            "condition data use neither escaped nor measured");
       return true;
+    case CondDataDisp::Unlowerable:
+      // A data cast on the lineage has no template (unsupported width /
+      // out-of-scope pair) — the nested path already declines every cond-data-use
+      // before `NestedRouteEmit` mutates, so this only sharpens the reason from
+      // the generic "used outside the branch" to the precise cause (ziov.4).
+      diagnoseUnderControl(OuterBI, "condition data use has no template");
+      return true;
     }
     return true;  // exhaustive switch — silence -Wreturn-type.
   };
   if (declineCondDataUse(OuterBI->getCondition(), Pred) ||
       declineCondDataUse(InnerCond, Mid))
+    return NestDisposition::Declined;
+
+  // jvun — CONTROL-CONDITION predicate scope (outer AND inner). An out-of-scope
+  // fcmp predicate has no flag template; the OUTER mint is `NestedRouteEmit` step
+  // 1 (null-bails clean) but the INNER mint follows the outer rail alloc + route +
+  // replay, so an out-of-scope inner condition would MUTATE-then-decline. Decline
+  // BOTH here, in detection, before any emit (Rule 9 detect-before-mutate). The
+  // conditions are tainted `br` operands the nest proved are `CmpInst`s (the flag
+  // mints cast to `CmpInst`); guard the cast defensively all the same.
+  auto declineUnlowerableCond = [&](Value *CondV) -> bool {
+    auto *Cmp = dyn_cast<CmpInst>(CondV);
+    if (Cmp && !comparePredLowerable(Cmp)) {
+      diagnoseUnderControl(OuterBI, "control condition has no template");
+      return true;
+    }
+    return false;
+  };
+  if (declineUnlowerableCond(OuterBI->getCondition()) ||
+      declineUnlowerableCond(InnerCond))
     return NestDisposition::Declined;
 
   // Criterion 6 — TREE HOMOGENEITY (before RAUW-collapse, FA2). Any value arm →

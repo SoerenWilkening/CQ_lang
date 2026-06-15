@@ -61,6 +61,21 @@ llvm::CmpInst::Predicate flipPredicate(llvm::CmpInst::Predicate pred);
 bool castInScope(llvm::StringRef op, llvm::StringRef fromW,
                  llvm::StringRef toW);
 
+// Whether a compare `op` ("icmp"/"fcmp") with predicate-name `pred` is in the
+// Phase-3 compare surface. `pred` is `CmpInst::getPredicateName(...)` (e.g.
+// "eq"/"slt"/"oeq"/"une"). Mirrors the YAML `predicates:` map
+// (tools/opcode_table.yaml): `icmp` ships ALL 10 LLVM integer predicates;
+// `fcmp` ships only {oeq, une, olt, ogt, ole, oge} (the 5 ordered relationals
+// Clang emits for C float `< > <= >=` plus `une` for `!=`). An out-of-scope
+// fcmp predicate (`one`/`ord`/`uno`/`ueq`/unordered `u*`/`true`/`false`) has NO
+// generated template — keyed on `op` because icmp and fcmp share predicate-name
+// strings (`ugt`/`uge`/`ult`/`ule`). Width is gated separately by
+// `abiWidthFromType`; this is the PREDICATE axis only. Without this gate
+// `WidthDispatch::compareTemplateFn` would `getOrInsertFunction` a non-existent
+// `cq_template_fcmp_<pred>_<W>_hl` symbol (verify-clean, link-fails at Stage 3;
+// test_C_libtooling-jvun).
+bool compareInScope(llvm::StringRef op, llvm::StringRef pred);
+
 // A value's LLVM type → its ABI-width string ("i1"/…/"i64"/"f32"/"f64").
 // Returns "" for an unsupported width (`half`, `i128`, `fp128`, vectors);
 // the caller then diagnoses. Integer widths are restricted to the 5

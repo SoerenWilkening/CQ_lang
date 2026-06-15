@@ -130,6 +130,21 @@ bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
   return false;
 }
 
+bool compareInScope(StringRef op, StringRef pred) {
+  if (op == "icmp")
+    // All 10 LLVM integer predicates are in scope (YAML `icmp` predicate set).
+    return pred == "eq" || pred == "ne" || pred == "ugt" || pred == "uge" ||
+           pred == "ult" || pred == "ule" || pred == "sgt" || pred == "sge" ||
+           pred == "slt" || pred == "sle";
+  if (op == "fcmp")
+    // Only the 6 predicates Clang emits for C float `== != < > <= >=`
+    // (`oeq, une, olt, ogt, ole, oge`); every other fcmp predicate
+    // (`one`/`ord`/`uno`/`ueq`/unordered `u*`/`true`/`false`) is out of scope.
+    return pred == "oeq" || pred == "une" || pred == "olt" || pred == "ogt" ||
+           pred == "ole" || pred == "oge";
+  return false;
+}
+
 StringRef abiWidthFromType(Type *ty) {
   if (!ty)
     return {};

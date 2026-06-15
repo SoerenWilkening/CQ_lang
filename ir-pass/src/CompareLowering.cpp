@@ -146,6 +146,20 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
     Lhs = railBase;
 
   StringRef PredName = CmpInst::getPredicateName(Pred);
+  // Predicate-scope gate (test_C_libtooling-jvun): an out-of-scope fcmp
+  // predicate (anything outside {oeq,une,olt,ogt,ole,oge}) has NO generated
+  // template. Without this check `compareTemplateFn` would `getOrInsertFunction`
+  // a non-existent `cq_template_fcmp_<pred>_<W>_hl` symbol — opt exits 0,
+  // `opt -verify` is clean, and the program LINK-FAILS at Stage 3 (a verify-clean
+  // miscompile, Rule 1). Decline LOUDLY and leave `cmp` standing (well-typed i1,
+  // verify-clean), exactly like the unsupported-width / Q+Q bails above. Checked
+  // on the FINAL (post-`flipPredicate`) predicate; the flip never moves an
+  // in-scope predicate out of scope (`getSwappedPredicate` keeps ogt↔olt etc.
+  // in scope, self-maps une/oeq), and covers both the forward and `_inv` paths.
+  if (!compareInScope(Op, PredName)) {
+    diagnoseNoTemplate(cmp);
+    return nullptr;
+  }
   FunctionCallee Callee;
   if (!inverse) {
     // Forward compute: resolve via the shared `WidthDispatch` resolver so the

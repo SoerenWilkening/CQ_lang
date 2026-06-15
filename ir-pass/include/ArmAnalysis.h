@@ -26,6 +26,7 @@
 namespace llvm {
 class BasicBlock;
 class CallInst;
+class CmpInst;
 class Instruction;
 class Value;
 }  // namespace llvm
@@ -108,10 +109,28 @@ llvm::CallInst *taintedAngleGate(llvm::Value *ArmIncoming,
 // SSA walk, before any mutation (Rule 9). De-anonymized from `ArmClassify.cpp` so
 // `RegionTreeDetect` reuses the one predicate (Rule 14); the definition still lives
 // in `ArmClassify.cpp`.
-enum class CondDataDisp { ShareOk, MeasuredEarly, Unowned };
+// `Unlowerable` = a data op on the condition lineage (a cast to an unsupported
+// width / out-of-scope pair, e.g. `sext i1→i128`) has NO template, so accepting
+// the region would route+flatten it and only THEN hit `lowerOps`'s loud "no
+// template" decline — a mutate-then-decline (Rule 9 violation, ziov.4). Declining
+// it in detection keeps detect-before-mutate. The FLAT path declines it; the
+// NESTED path declines it too (it declines every cond-data-use disposition).
+enum class CondDataDisp { ShareOk, MeasuredEarly, Unowned, Unlowerable };
 
 CondDataDisp condDataUseDisposition(llvm::Instruction *Cond,
                                     const llvm::BasicBlock *RouteBlock);
+
+// Whether a control/data `CmpInst`'s predicate has a lowering template — the
+// predicate axis of `compareInScope`, with the icmp/fcmp family derived from the
+// instruction. An out-of-scope fcmp predicate (outside {oeq,une,olt,ogt,ole,oge})
+// has NO template (test_C_libtooling-jvun); a control region whose CONDITION uses
+// one must decline in DETECTION, before emit mints a flag from it. The flat flag
+// mint is emit step 1, but a NESTED inner mint follows the outer route/replay, so
+// without this pre-mutation gate an out-of-scope inner condition is a
+// mutate-then-decline (Rule 9). Shared by `condDataUseDisposition` (data lineage),
+// `classifyArms` (flat control condition), and `recoverRegionTree` (nested
+// outer+inner conditions).
+bool comparePredLowerable(const llvm::CmpInst *Cmp);
 
 }  // namespace cq
 

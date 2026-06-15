@@ -503,6 +503,14 @@ bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
 // is safe and consistent with the pre-ziov decline. De-anonymized into the named
 // `cq` namespace (declared in `ArmAnalysis.h`) so `RegionTreeDetect` (ziov.3)
 // reuses the one predicate for the nested-path decline (Rule 14).
+bool comparePredLowerable(const CmpInst *Cmp) {
+  // Predicate axis of `compareInScope`; icmp vs fcmp family from the instruction
+  // (their predicate-name strings overlap — `ugt`/`uge`/`ult`/`ule`). Width is
+  // gated elsewhere (`abiWidthFromType`); this is the predicate-only check (jvun).
+  return compareInScope(Cmp->isFPPredicate() ? "fcmp" : "icmp",
+                        CmpInst::getPredicateName(Cmp->getPredicate()));
+}
+
 CondDataDisp condDataUseDisposition(Instruction *Cond,
                                     const BasicBlock *RouteBlock) {
   if (!RouteBlock)
@@ -529,11 +537,53 @@ CondDataDisp condDataUseDisposition(Instruction *Cond,
         continue;  // measured downstream of the route — the measurement owns it.
       }
     }
-    // A tainted-result data op (cast/binop/compare/unary) carries the lineage
-    // onward COHERENTLY (a reversible read, no collapse); keep walking its users.
-    // An orphaned op (no users) is dead within the function — the flag would leak.
-    if (isa<CastInst>(I) || isa<BinaryOperator>(I) || isa<CmpInst>(I) ||
-        isa<UnaryOperator>(I)) {
+    // A data CAST carries the lineage onward COHERENTLY only if it is actually
+    // LOWERABLE. An unsupported source/dest width (`sext i1→i128`) or an
+    // out-of-scope pair has NO template, so `lowerOps`/`rewriteCast` would
+    // diagnose it — but only AFTER `emitRegion` routed + `flattenRegion` erased
+    // the diamond (mutate-then-decline; violates Rule 9 detect-before-mutate,
+    // ziov.4). Mirror `rewriteCast`'s lowerability gate with the SAME pure
+    // predicates (`abiWidthFromType` + `castInScope`; NO module-mutating template
+    // mint, so detection stays read-only) and decline PRE-mutation. Widths read
+    // live here are the TRUE types — detection runs before rotation lowering's
+    // RAUW-to-i32-handle, unlike `rewriteCast` which needs captured widths.
+    if (auto *Cast = dyn_cast<CastInst>(I)) {
+      StringRef From = abiWidthFromType(Cast->getSrcTy());
+      StringRef To = abiWidthFromType(Cast->getDestTy());
+      if (From.empty() || To.empty() ||
+          !castInScope(Cast->getOpcodeName(), From, To))
+        return CondDataDisp::Unlowerable;
+      if (Cast->use_empty())
+        return CondDataDisp::Unowned;  // dead-within-function lineage.
+      for (User *U : Cast->users())
+        if (auto *UI = dyn_cast<Instruction>(U))
+          Work.push_back(UI);
+      continue;
+    }
+    // A data COMPARE carries the lineage onward only if its predicate is
+    // LOWERABLE: an out-of-scope fcmp predicate (outside {oeq,une,olt,ogt,ole,
+    // oge}) has no template, so `lowerOps`/`rewriteCompare` would mint a
+    // non-existent symbol (it does NOT even decline — jvun) AFTER the diamond is
+    // routed+flattened. Gate the predicate here (the same `compareInScope`
+    // `rewriteCompare` now consults) and decline PRE-mutation. Width needs no
+    // separate check: the lineage seeds at the i1 compare result, so an
+    // unsupported fp/int width only enters via a cast — already gated above.
+    if (auto *Cmp = dyn_cast<CmpInst>(I)) {
+      if (!comparePredLowerable(Cmp))
+        return CondDataDisp::Unlowerable;
+      if (Cmp->use_empty())
+        return CondDataDisp::Unowned;  // dead-within-function lineage.
+      for (User *U : Cmp->users())
+        if (auto *UI = dyn_cast<Instruction>(U))
+          Work.push_back(UI);
+      continue;
+    }
+    // A tainted-result binop/unary carries the lineage onward COHERENTLY (a
+    // reversible read, no collapse); keep walking its users. Binops reach an
+    // unsupported width only THROUGH a cast (already gated); every supported
+    // binop opcode has a template. An orphaned op (no users) is dead within the
+    // function — the flag would leak.
+    if (isa<BinaryOperator>(I) || isa<UnaryOperator>(I)) {
       if (I->use_empty())
         return CondDataDisp::Unowned;  // dead-within-function lineage.
       for (User *U : I->users())
@@ -559,6 +609,17 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   // over-accept; WI-1 adversarial review 2026-06-09).
   if (!isa<CmpInst>(Region.Condition)) {
     diagnoseUnderControl(declAnchor(Region), "control flow");
+    return ArmDisposition::Declined;
+  }
+
+  // The flag is minted FROM this compare's predicate; an out-of-scope fcmp
+  // predicate (outside {oeq,une,olt,ogt,ole,oge}) has no template, so the mint
+  // would emit a non-existent symbol. SwapRouteEmit's flag-null bail catches it
+  // loudly, but only the FLAT mint is its emit step 1 — decline in DETECTION so
+  // the posture is uniform with the nested path (whose inner mint follows the
+  // outer route) and the reason is precise (test_C_libtooling-jvun).
+  if (!comparePredLowerable(cast<CmpInst>(Region.Condition))) {
+    diagnoseUnderControl(declAnchor(Region), "control condition has no template");
     return ArmDisposition::Declined;
   }
 
@@ -595,6 +656,14 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
     case CondDataDisp::Unowned:
       diagnoseUnderControl(declAnchor(Region),
                            "condition data use neither escaped nor measured");
+      return ArmDisposition::Declined;
+    case CondDataDisp::Unlowerable:
+      // A data cast on the lineage has no template (unsupported width /
+      // out-of-scope pair) — decline HERE, before `emitRegion` routes and
+      // `flattenRegion` erases the diamond, instead of letting `lowerOps`
+      // diagnose it post-mutation (Rule 9 detect-before-mutate; ziov.4).
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition data use has no template");
       return ArmDisposition::Declined;
     }
   }
