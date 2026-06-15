@@ -54,6 +54,17 @@ Value *diagonalBase(Value *V) {
   return V;
 }
 
+// ziov.3: does the tainted control compare `Cond` feed any NON-branch (data)
+// position? A condition reused as data (`int f=(q>5)` beside `if(q>5)`; clang -O1
+// CSEs the two to one `icmp` with a `br` + a data user) is the cond-data-use shape
+// the flat phase path SHARES one flag for (`condDataUseDisposition` → ShareOk).
+bool condHasDataUse(const Value *Cond) {
+  for (const User *U : Cond->users())
+    if (!isa<BranchInst>(U))
+      return true;
+  return false;
+}
+
 }  // namespace
 
 NestDisposition recoverRegionTree(
@@ -166,6 +177,53 @@ NestDisposition recoverRegionTree(
   Value *GMid = MergePhi->getIncomingValueForBlock(Mid);     // %g (routed to rail1)
   Value *HArm = MergePhi->getIncomingValueForBlock(InnerArm);  // %h
   Value *InnerCond = InnerBI->getCondition();
+
+  // ziov.3 — Q/C-BOUNDARY COND-DATA-USE on a nested condition (the flat path's
+  // `ArmClassify::condDataUseDisposition`, applied to BOTH nest levels). A tainted
+  // control compare ALSO read as data (`int f=(q>5)`; clang -O1 CSEs the two to one
+  // `icmp` with a `br` + a data user) is a cond-data-use: the flat 4.1 phase path
+  // SHARES ONE physical flag (mint once, route + feed the data use, skip the
+  // strip+free — ziov WI-1). `NestedRouteEmit` does NOT yet share, so left
+  // unchecked it (i) DUPLICATE-MINTS on an OUTER cond-data-use — `flattenRegionTree`
+  // keeps the live data compare (use_empty() false), then `lowerOps` mints a
+  // SECOND, leaked, entangled-with-q flag (verify-clean qubit leak, reachable from
+  // clang -O1); or (ii) (the inner level) would dangle a live use of the Mid gate
+  // the flatten erases. Apply the SAME disposition predicate the flat path uses,
+  // keyed on each region's route block (outer = `Pred`, inner = `Mid`), and decline
+  // LOUDLY HERE — in detection, before `NestedRouteEmit` mutates (Prime Directive;
+  // over-declining is always safe). BEFORE criterion 6 so the precise cond-data-use
+  // string fires rather than the arm-content `impure phase arm` an inner data use
+  // would otherwise hit (an in-`Mid`/`InnerArm` data op is a homogeneity stray);
+  // no existing reject fixture reuses a condition as data, so no message regresses.
+  // Nested flag-SHARING is a later WI: when it lands the `ShareOk` arm flips from
+  // decline to a shared-flag accept. Pure SSA analysis (Rule 9); diagnostics
+  // anchored on `OuterBI` like every other nested decline, messages mirror the flat
+  // path char-for-char.
+  auto declineCondDataUse = [&](Value *CondV, const BasicBlock *Route) -> bool {
+    auto *Cond = dyn_cast<Instruction>(CondV);
+    if (!Cond || !condHasDataUse(Cond))
+      return false;
+    switch (condDataUseDisposition(Cond, Route)) {
+    case CondDataDisp::ShareOk:
+      // A shareable cond-data-use, but `NestedRouteEmit` has no shared-flag path
+      // yet — decline (the flat VALUE-arm path declines a `ShareCondFlag` region
+      // with the SAME string). The later nested-sharing WI flips this to accept.
+      diagnoseUnderControl(OuterBI, "condition used outside the branch");
+      return true;
+    case CondDataDisp::MeasuredEarly:
+      diagnoseUnderControl(OuterBI,
+                           "condition measured before the control route");
+      return true;
+    case CondDataDisp::Unowned:
+      diagnoseUnderControl(OuterBI,
+                           "condition data use neither escaped nor measured");
+      return true;
+    }
+    return true;  // exhaustive switch — silence -Wreturn-type.
+  };
+  if (declineCondDataUse(OuterBI->getCondition(), Pred) ||
+      declineCondDataUse(InnerCond, Mid))
+    return NestDisposition::Declined;
 
   // Criterion 6 — TREE HOMOGENEITY (before RAUW-collapse, FA2). Any value arm →
   // `mixed phase/value arm` / `value-arm swap-route`; a Mid stray → `impure phase

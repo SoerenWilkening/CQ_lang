@@ -93,6 +93,26 @@ llvm::CallInst *taintedAngleGate(llvm::Value *ArmIncoming,
                                  const llvm::BasicBlock *ArmBB, llvm::Value *Base,
                                  TaintSet &Taint);
 
+// ziov WI-1 / ziov.3: disposition of a tainted CONTROL compare's NON-branch
+// (data) uses — the Q/C-boundary question raised when `q>5` is read in BOTH a
+// `br` (control) AND a data position (`int f=(q>5)`; clang -O1 CSEs the two to one
+// `icmp` with two uses). `ShareOk` = the data lineage is owned downstream (escapes
+// via `ret` or is measured AFTER the route) so a phase region can mint ONE flag
+// and skip its strip+free; `MeasuredEarly` = the lineage is measured IN
+// `RouteBlock`, collapsing the flag BEFORE the route controls on it; `Unowned` =
+// the lineage is dead-within-function or reaches an unrecognized hole (a dirty
+// entangled rail, no owner). `RouteBlock` is the region's route block (`Region.
+// Pred`). The FLAT phase path (`classifyArms`) SHARES on `ShareOk` and declines
+// the other two; the NESTED path (`recoverRegionTree`) declines ALL THREE — nested
+// flag-SHARING is a later WI (the `ShareOk` arm flips to accept then). Pure forward
+// SSA walk, before any mutation (Rule 9). De-anonymized from `ArmClassify.cpp` so
+// `RegionTreeDetect` reuses the one predicate (Rule 14); the definition still lives
+// in `ArmClassify.cpp`.
+enum class CondDataDisp { ShareOk, MeasuredEarly, Unowned };
+
+CondDataDisp condDataUseDisposition(llvm::Instruction *Cond,
+                                    const llvm::BasicBlock *RouteBlock);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_ARM_ANALYSIS_H_

@@ -463,6 +463,8 @@ bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
   return false;
 }
 
+}  // namespace
+
 // ziov WI-1: disposition of the condition compare's NON-branch (data) uses. The
 // condition `q>5` IS the control flag; when it is ALSO read as data (`int f =
 // (q>5)`), the route and the data use must share ONE physical flag (minted once,
@@ -492,9 +494,9 @@ bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
 // Pure forward SSA walk (Rule 9 — before any mutation). `cq_invert_*` is NOT in
 // the accept set: it is an un-laundered escape whose param width may mismatch the
 // i32 flag (a contrived Broken-module hazard, WI-1 review finding D); declining it
-// is safe and consistent with the pre-ziov decline.
-enum class CondDataDisp { ShareOk, MeasuredEarly, Unowned };
-
+// is safe and consistent with the pre-ziov decline. De-anonymized into the named
+// `cq` namespace (declared in `ArmAnalysis.h`) so `RegionTreeDetect` (ziov.3)
+// reuses the one predicate for the nested-path decline (Rule 14).
 CondDataDisp condDataUseDisposition(Instruction *Cond,
                                     const BasicBlock *RouteBlock) {
   if (!RouteBlock)
@@ -537,8 +539,6 @@ CondDataDisp condDataUseDisposition(Instruction *Cond,
   }
   return CondDataDisp::ShareOk;
 }
-
-}  // namespace
 
 ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   auto *MergePhi = dyn_cast_or_null<PHINode>(Region.Merge);
