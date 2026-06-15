@@ -86,6 +86,23 @@ struct TaintSet {
   // this WP.
   llvm::DenseMap<llvm::Value *, llvm::Value *> ControlFlag;
 
+  // ziov WI-1 (owner 2026-06-15). Maps a tainted condition compare that
+  // `SwapRouteEmit::emitRegion` minted a SHARED control flag for — because the
+  // compare is ALSO read as data (`int f = (q>5)`; clang -O1 CSEs the control and
+  // data uses to one `icmp`) — to that flag handle. The emitter mints the flag
+  // ONCE at the compare's position (so it dominates every data use) and records
+  // it here INSTEAD of RAUWing the compare; `lowerOps`'s `rewriteCompare` then
+  // REUSES the recorded flag for the surviving data-position compare rather than
+  // minting a SECOND flag (the ziov duplicate-mint). Recording (not RAUWing)
+  // defers the cross-type i1→i32 launder to lowerOps Phase 2, AFTER Phase 1 has
+  // captured the data casts' true i1 source width (a pre-RAUW capture the early
+  // emitter cannot do — RAUWing first turns `zext i1→i32` into a templateless
+  // `zext i32→i32`). Populated by `emitRegion`; consumed in `rewriteCompare` (the
+  // entry then goes stale as the compare is erased). Empty for every region
+  // without a shared condition flag.
+  llvm::DenseMap<llvm::Value * /*compare*/, llvm::Value * /*flag*/>
+      SharedCondFlags;
+
   // Phase 5 Step 0 (Phase-5 IMPLEMENTATION §2.4 / §4.0). Maps a control flag to
   // the FIRST instruction of its Phase-4 teardown — the `_inv` compare (plain)
   // or `cqrt_toffoli_inv`/`cqrt_x` bracket head (conjunction) minted by

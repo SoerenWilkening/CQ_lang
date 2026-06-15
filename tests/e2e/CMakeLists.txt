@@ -108,6 +108,21 @@ add_test(NAME e2e-slice-control-nested-phase
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_nested_phase.expected.log")
 
+# ziov WI-1 (test_C_libtooling-ziov.1): the SHARED-CONDITION-FLAG path. A tainted
+# control compare `q>5` reused as DATA (`int f = (q>5)`) lowers to ONE shared flag
+# — the route AND the data `zext`/`add` read the same icmp handle, the flag is
+# NEITHER stripped (no icmp_inv) NOR freed (its data lineage owns it). The only
+# layer that LINKS, so it proves the shared flag's data consumers resolve against
+# the runtime. EXACTLY ONE free (the rail); contrast slice_control_phase_diamond
+# (no data use → strip + flag free, two frees).
+add_test(NAME e2e-slice-control-cond-datause
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cond_datause.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cond_datause.expected.log")
+
 # test_C_libtooling-5j5: the ONE-REGISTER classical-mux lift. The natural
 # `if (classical_c) q = cq_phi(q, a);` survives -O1 as a merge phi over two
 # SSA names of one register; the lift RAUWs it away and the CLASSICAL branch

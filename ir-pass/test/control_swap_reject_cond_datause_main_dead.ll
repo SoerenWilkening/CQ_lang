@@ -1,0 +1,35 @@
+; control_swap_reject_cond_datause_main_dead.ll — DECLINE probe (ziov WI-1,
+; Rule-13 adversarial finding B): a DEAD-within-function condition-data-use in
+; `main` declines IDENTICALLY to the non-main case — there is NO `main`-name
+; short-circuit in the share/strip disposition.
+;
+; `condDataUseDisposition` must NOT treat `main`-residence as "owned": process
+; exit reclaiming the registers (FreePoint's `main` rule) answers the FREE
+; question, but it does NOT make a dead, never-measured, never-escaped flag safe
+; to leave ENTANGLED with q un-stripped (Rule 6/8 dirty-rail dephasing). The data
+; lineage `%d = zext %c; %dead = add %d, 7` is orphaned, so this is the SAME
+; hazard as control_swap_reject_cond_datause_dead.ll (a non-main `@example`) and
+; takes the SAME loud decline. (An earlier `main`-name short-circuit silently
+; accepted this; that was the WI-1 silent-miscompile-class regression.)
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error{{.*}}condition data use neither escaped nor measured under quantum control
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_phi_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+
+define i32 @main() {
+entry:
+  %q = call i32 @cq_theta_si32(i32 3, double 5.000000e-01)
+  %c = icmp sgt i32 %q, 5
+  %d = zext i1 %c to i32
+  %dead = add i32 %d, 7            ; DEAD: never measured, returned, or inverted
+  br i1 %c, label %arm, label %merge
+arm:
+  %q1 = call i32 @cq_phi_si32(i32 %q, double 2.500000e-01)
+  br label %merge
+merge:
+  %qm = phi i32 [ %q1, %arm ], [ %q, %entry ]
+  %m  = call i32 @cq_measure_si32(i32 %qm)
+  ret i32 %m
+}

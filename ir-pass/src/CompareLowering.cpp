@@ -243,6 +243,18 @@ bool rewriteCompare(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint) {
   // IMPLEMENTATION §1.2 / risk R2, guarded by the per-fixture `verify` RUN
   // line) and bookkeep. A null flag means the helper diagnosed (unsupported
   // width / Q+Q) and left the compare standing — the driver must NOT erase it.
+  // ziov WI-1: if `SwapRouteEmit::emitRegion` already minted a SHARED control
+  // flag for this exact compare (the condition is the control flag AND a data
+  // value), REUSE it — minting a second flag here is the ziov duplicate-mint. The
+  // shared flag was positioned at the compare so it dominates every data use;
+  // RAUW the now-redundant compare onto it (the same cross-type i1→i32 launder as
+  // the fresh-mint path below, but the data casts' i1 widths were already captured
+  // in Phase 1) and bookkeep. The driver erases `cmp` afterward.
+  if (Value *Shared = taint.SharedCondFlags.lookup(cmp)) {
+    cmp->replaceAllUsesWith(Shared);
+    promote(Shared, cmp, taint);
+    return true;
+  }
   Value *Flag = lowerCompareToFlag(cmp, wd, taint);
   if (!Flag)
     return false;

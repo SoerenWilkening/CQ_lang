@@ -255,6 +255,20 @@ struct ControlRegion {
   // link is the existing `ParentIdx`, the same link the pre-flight exemption
   // and the emit-loop child lookup key on; no `ChildIdx` field — MD4).
   llvm::Value *ParentRail = nullptr;
+
+  // ziov WI-1 (owner 2026-06-15) — the tainted condition compare `q>5` is read in
+  // BOTH a control (the `br`) AND a data position (`int f = (q>5)`; clang -O1 CSEs
+  // them to one `icmp` with two uses). The compare IS the control flag, so the
+  // route and the data use must share ONE physical flag: `SwapRouteEmit::emitRegion`
+  // mints it once, routes with it, feeds the SAME handle to the data use, and
+  // SKIPS the eager strip+free (the data lineage owns the handle — it escapes or
+  // is measured, FreePoint → Escaped/Measured, no free). `classifyArms` sets this
+  // ONLY when the condition has a non-branch user whose forward lineage is wholly
+  // escaped/measured; a dead-within-function lineage declines (the deferred
+  // in-function strip is WI-2). False for the common no-data-use region (the
+  // unchanged eager strip+free path). The VALUE-arm twin is not yet implemented —
+  // `emitValueRegion` declines a `ShareCondFlag` region (WI-later).
+  bool ShareCondFlag = false;
 };
 
 // The full detection result: the recovered regions plus the set of in-shadow

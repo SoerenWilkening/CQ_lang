@@ -207,6 +207,16 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   // classifyArms accepts only the homogeneous all-value region with every
   // chain non-empty; anything else here is a malformed plan — decline LOUDLY,
   // lower nothing (Rule 1).
+  // ziov WI-1: shared-condition-flag sharing is implemented for PHASE arms only
+  // (emitRegion). A VALUE-arm region whose condition is ALSO read as data is a
+  // later WI — decline LOUDLY here rather than mint a flag, strip+free it (step
+  // 9), and let `lowerOps` mint a second flag for the surviving data use (the
+  // very ziov duplicate-mint, now in the value path). Over-declining is safe.
+  if (R.ShareCondFlag) {
+    diagnoseUnderControl(Cond, "condition used outside the branch");
+    return;
+  }
+
   SmallVector<ValueArmStream, 2> Arms;
   if (R.ArmFalse) {
     if (R.ClassArm != ArmClass::Value || R.ClassArmFalse != ArmClass::Value ||
@@ -534,11 +544,26 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   const DebugLoc DL = BI->getDebugLoc();
   IRBuilder<> B(BI);  // every stream call lands before the conditional br.
 
-  // 1. Flag mint — cq_template_icmp_<pred>_<W>_hl(q, lit).
+  // 1. Flag mint — cq_template_icmp_<pred>_<W>_hl(q, lit). On the ziov share path
+  //    (R.ShareCondFlag — the condition is ALSO read as data) the flag is minted
+  //    at the COMPARE's position so it DOMINATES every data use (a data `zext` may
+  //    precede the routed stream); otherwise it lands at the branch as before.
+  Instruction *FlagAt = R.ShareCondFlag ? Cond->getNextNode() : BI;
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/BI);
+                                   /*inverse=*/false, /*before=*/FlagAt);
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed (unsupported / Q+Q).
+
+  // ziov WI-1: share THIS flag with the data use. Record it (do NOT RAUW) so
+  // `lowerOps`'s rewriteCompare REUSES it for the surviving data-position compare
+  // instead of minting a SECOND flag (the ziov bug). Recording — not RAUWing here
+  // — defers the i1→i32 launder to lowerOps Phase 2, AFTER Phase 1 captures the
+  // data casts' i1 source width (RAUWing now would corrupt `zext i1→i32` into a
+  // templateless `zext i32→i32`). The eager strip+free (steps 7-8) is SKIPPED
+  // below: the data lineage owns the handle (escaped/measured, classifyArms-
+  // proven) — stripping/freeing it is a read-after-collapse / hidden measurement.
+  if (R.ShareCondFlag)
+    taint.SharedCondFlags[Cond] = Flag;
 
   // 2. One |0> work rail per content arm (allocated up front — the §5b order).
   SmallVector<Value *, 2> Rails;
@@ -574,16 +599,27 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
       RailFree->setDebugLoc(DL);
   }
 
-  // 7. Flag strip — q == q0 (Rz preserves the basis value), so icmp_inv(q)
-  //    returns the flag to |0> with zero controlled gates. Reads `Cond`'s
-  //    operands, so it MUST precede the erase of `Cond` (in flattenRegion).
-  lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                     /*before=*/BI);
+  // 7-8. Flag strip + free — the eager ancilla cleanup. SKIPPED on the ziov
+  //       share path (R.ShareCondFlag): the condition is also live as DATA, so
+  //       the flag's last use is downstream (the escaped/measured data lineage
+  //       owns it), NOT the route-back. Stripping here would return the flag to
+  //       |0> before the data read (read-after-collapse); freeing it would be a
+  //       hidden measurement. The data lineage is the flag's reclaimer
+  //       (FreePoint → Escaped/Measured, no free). No DEFERRED strip is needed —
+  //       the only case that would need one (dead-within-function) was declined
+  //       upstream by classifyArms (WI-2).
+  if (!R.ShareCondFlag) {
+    // 7. Flag strip — q == q0 (Rz preserves the basis value), so icmp_inv(q)
+    //    returns the flag to |0> with zero controlled gates. Reads `Cond`'s
+    //    operands, so it MUST precede the erase of `Cond` (in flattenRegion).
+    lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                       /*before=*/BI);
 
-  // 8. Flag free.
-  CallInst *FlagFree = B.CreateCall(wd.freeFn(), {Flag});
-  if (DL)
-    FlagFree->setDebugLoc(DL);
+    // 8. Flag free.
+    CallInst *FlagFree = B.CreateCall(wd.freeFn(), {Flag});
+    if (DL)
+      FlagFree->setDebugLoc(DL);
+  }
 
   // 9. Rewire + erase + scrub, then flatten the CFG. The merge phi's value is now
   //    just `q` (a phase arm preserves q's basis identity), so a measure on the

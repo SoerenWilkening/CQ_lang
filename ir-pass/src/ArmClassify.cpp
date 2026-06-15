@@ -463,6 +463,81 @@ bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
   return false;
 }
 
+// ziov WI-1: disposition of the condition compare's NON-branch (data) uses. The
+// condition `q>5` IS the control flag; when it is ALSO read as data (`int f =
+// (q>5)`), the route and the data use must share ONE physical flag (minted once,
+// fed to both) — NOT a second mint. Sharing is sound iff the flag's eager
+// strip+free can be SKIPPED, which holds exactly when the data lineage is owned
+// downstream — it ESCAPES (`ret`) or is MEASURED — AND the flag is still COHERENT
+// when the route uses it as control.
+//
+// `RouteBlock` is the block the route stream is emitted into (`Region.Pred`, just
+// before the branch). TWO hazards close the accept set (BOTH verify-clean silent
+// miscompiles caught by the WI-1 Rule-13 adversarial review, 2026-06-15):
+//   * MeasuredEarly — a measurement of the flag's lineage IN `RouteBlock` runs
+//     BEFORE the route (every pre-existing `RouteBlock` instruction precedes the
+//     route, which is inserted at the branch). The cswap route would then be
+//     controlled by an ALREADY-COLLAPSED flag, silently destroying the coherent
+//     `if(q>5)` control (atk9: `bool f = cq_measure(q>5)` beside `if(q>5)`,
+//     reachable from clang -O1). A measure DOWNSTREAM of the route (the merge
+//     block or later) is fine — it owns the handle after the control use.
+//   * Unowned — a lineage DEAD WITHIN THE FUNCTION (orphaned, no users) or
+//     reaching an unrecognized hole (store / opaque call / `cq_invert` / phi /
+//     select) leaves the flag a dirty entangled rail with no downstream owner
+//     (Rule 6/8); the deferred in-function `icmp_inv` strip is WI-2. There is NO
+//     `main`-name short-circuit — a dead lineage in `main` is the SAME dirty-flag
+//     hazard as in any function and declines identically (FreePoint's `main` rule
+//     governs the FREE question, never this strip/coherence one).
+//
+// Pure forward SSA walk (Rule 9 — before any mutation). `cq_invert_*` is NOT in
+// the accept set: it is an un-laundered escape whose param width may mismatch the
+// i32 flag (a contrived Broken-module hazard, WI-1 review finding D); declining it
+// is safe and consistent with the pre-ziov decline.
+enum class CondDataDisp { ShareOk, MeasuredEarly, Unowned };
+
+CondDataDisp condDataUseDisposition(Instruction *Cond,
+                                    const BasicBlock *RouteBlock) {
+  if (!RouteBlock)
+    return CondDataDisp::Unowned;  // no route anchor — cannot prove ordering.
+  SmallVector<Instruction *, 8> Work;
+  SmallPtrSet<Instruction *, 16> Seen;
+  for (User *U : Cond->users())
+    if (!isa<BranchInst>(U))
+      if (auto *I = dyn_cast<Instruction>(U))
+        Work.push_back(I);
+  while (!Work.empty()) {
+    Instruction *I = Work.pop_back_val();
+    if (!Seen.insert(I).second)
+      continue;
+    if (isa<ReturnInst>(I))
+      continue;  // escape — a terminator, never in RouteBlock, always after the
+                 // route; the caller owns the handle.
+    if (auto *CI = dyn_cast<CallInst>(I)) {
+      const Function *F = CI->getCalledFunction();
+      if (F && (F->getName().starts_with("cq_measure_") ||
+                F->getName().starts_with("cqrt_measure_"))) {
+        if (CI->getParent() == RouteBlock)
+          return CondDataDisp::MeasuredEarly;  // collapses the flag pre-route.
+        continue;  // measured downstream of the route — the measurement owns it.
+      }
+    }
+    // A tainted-result data op (cast/binop/compare/unary) carries the lineage
+    // onward COHERENTLY (a reversible read, no collapse); keep walking its users.
+    // An orphaned op (no users) is dead within the function — the flag would leak.
+    if (isa<CastInst>(I) || isa<BinaryOperator>(I) || isa<CmpInst>(I) ||
+        isa<UnaryOperator>(I)) {
+      if (I->use_empty())
+        return CondDataDisp::Unowned;  // dead-within-function lineage.
+      for (User *U : I->users())
+        if (auto *UI = dyn_cast<Instruction>(U))
+          Work.push_back(UI);
+      continue;
+    }
+    return CondDataDisp::Unowned;  // unrecognized (store/opaque/cq_invert/phi/…).
+  }
+  return CondDataDisp::ShareOk;
+}
+
 }  // namespace
 
 ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
@@ -481,20 +556,40 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
     return ArmDisposition::Declined;
   }
 
-  // The condition compare must feed ONLY the branch. If it is ALSO in a data
-  // position (e.g. `c = icmp …; zext c; br c` — clang CSE of a reused `q>5`), the
-  // swap-route emitter mints a control flag from it but does NOT consume the
-  // compare; once the emitter erases the `br`, the data-position gate that kept
-  // `OpcodeLowering` off it is gone, so `OpcodeLowering` mints a SECOND flag for
-  // the same condition — two distinct flag handles for one logical condition, a
-  // verify-clean wrong-unitary (the route and the data use are then controlled by
-  // different physical flags). Decline (Prime Directive). Confirmed by the WI-2
-  // §8 adversarial review (2026-06-09).
+  // The condition compare may feed a DATA position in addition to the branch
+  // (e.g. `c = icmp …; zext c; br c` — clang CSE of a reused `q>5` bound to a
+  // variable `f`). The compare IS the control flag, so the route and the data use
+  // must share ONE physical flag (ziov, owner 2026-06-15): `SwapRouteEmit::
+  // emitRegion` mints it once, routes with it, feeds the SAME handle to the data
+  // use, and SKIPS the eager flag strip+free — sound iff the data lineage is owned
+  // downstream AND the flag is coherent at the route (`condDataUseDisposition`,
+  // keyed on `Region.Pred` = the route block). A dead-within-function lineage
+  // orphans the flag as a dirty entangled rail (WI-2), and a measure of the flag
+  // IN the route block collapses it BEFORE the route controls on it — both decline
+  // LOUDLY (over-declining is always safe). This SUPERSEDES the flat 4.1 blanket
+  // decline ("condition used outside the branch"). Pure SSA analysis (Rule 9).
+  bool HasDataUse = false;
   for (const User *U : Region.Condition->users())
     if (!isa<BranchInst>(U)) {
-      diagnoseUnderControl(declAnchor(Region), "condition used outside the branch");
+      HasDataUse = true;
+      break;
+    }
+  if (HasDataUse) {
+    switch (condDataUseDisposition(cast<Instruction>(Region.Condition),
+                                   Region.Pred)) {
+    case CondDataDisp::ShareOk:
+      Region.ShareCondFlag = true;
+      break;
+    case CondDataDisp::MeasuredEarly:
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition measured before the control route");
+      return ArmDisposition::Declined;
+    case CondDataDisp::Unowned:
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition data use neither escaped nor measured");
       return ArmDisposition::Declined;
     }
+  }
 
   // Backward tainted provenance of the condition — shared by the wire-walk
   // guard below (its seed set; direct-operand seeding misses a derived
