@@ -141,5 +141,18 @@ int main(void) {
     cqrt_copy_i32(h_a, h_b);
     cqrt_copy_i64(h_i64, h_i64_b);
 
+    /* --- 4.4 WI-2 smoke: the controlled per-width reversible basis copy
+     * (PRD Part IV §16.3) — the tainted-`select` controlled-XOR copy
+     * merge primitive, emitted by SelectMergeEmit. The 5 integer widths
+     * only (no FP twins exist — an FP merge phi under tainted control is
+     * an angle, never data). Void, mints no handle (counter stays at
+     * h32); the control flag (arg-0) reuses h_c, src/dst reuse the same
+     * existing handles as the uncontrolled copy block above. */
+    cqrt_copy_i1_controlled(h_c, h_i1, h_i1_b);
+    cqrt_copy_i8_controlled(h_c, h_i8, h_i8_b);
+    cqrt_copy_i16_controlled(h_c, h_i16, h_i16_b);
+    cqrt_copy_i32_controlled(h_c, h_a, h_b);
+    cqrt_copy_i64_controlled(h_c, h_i64, h_i64_b);
+
     return 0;
 }

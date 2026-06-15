@@ -89,6 +89,18 @@ public:
   // inverse — no `_inv` twin.
   llvm::FunctionCallee cswapFn() const;
 
+  // Controlled reversible basis copy (Phase 4.4, PRD Part IV §16.3):
+  // `void cqrt_copy_<W>_controlled(i32 ctrl, i32 src, i32 dst)` — the
+  // tainted-`select` controlled-XOR copy merge primitive. Copies `src`
+  // into the |0> `dst` rail iff the i32 control flag is set; the flag is
+  // PREPENDED as arg 0 (PRD §1.2), so src/dst follow at args 1/2. The
+  // width selects only the symbol name (all three args are i32 handles).
+  // INTEGER widths only — an FP merge phi under tainted control is
+  // categorically an angle, never data (the f64 family) — so f32/f64 (and
+  // any unknown width) return a null FunctionCallee (caller declines,
+  // §16.4 staged), guarded via the PUBLIC `WidthDispatch::llvmWidthType`.
+  llvm::FunctionCallee copyControlledFn(llvm::StringRef abiWidth) const;
+
 private:
   llvm::Module &M;
   WidthDispatch &Wd;

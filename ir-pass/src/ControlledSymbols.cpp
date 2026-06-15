@@ -117,4 +117,26 @@ FunctionCallee ControlledSymbols::cswapFn() const {
       "cqrt_cswap", FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
 }
 
+FunctionCallee ControlledSymbols::copyControlledFn(StringRef abiWidth) const {
+  // `void cqrt_copy_<W>_controlled(i32 ctrl, i32 src, i32 dst)`. Mirrors
+  // cqrt_copy_<W>_controlled in runtime/cq_runtime.h (Phase 4.4 — the
+  // tainted-`select` controlled-XOR copy merge). The control flag is
+  // arg 0 (PRD §1.2); src/dst follow. The width only selects the symbol
+  // name — all three args are i32 handles for every ABI width. INTEGER
+  // widths only: an FP merge phi under tainted control is categorically
+  // an angle, never data (the f64 miscompile family), so f32/f64 — and
+  // any unknown width — return a null callee (caller diagnoses) rather
+  // than minting dead ABI. The integer guard goes through the PUBLIC
+  // `Wd.llvmWidthType` (WidthDispatch's file-local `typeForAbiWidth` is
+  // unreachable here); the null check also covers an unknown abiWidth.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = Wd.llvmWidthType(abiWidth);
+  if (!Ty || !Ty->isIntegerTy())
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_copy_" + abiWidth + "_controlled").str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
+}
+
 }  // namespace cq

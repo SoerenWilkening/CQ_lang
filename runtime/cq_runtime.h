@@ -234,9 +234,10 @@ void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b);
  * (Rule 8: freeing a superposed source stays cqrt_cswap-only).
  * The 5 INTEGER widths only — an FP merge phi under tainted control
  * is categorically an angle, never data (the f64 miscompile family),
- * so no f32/f64 twins exist. Emitted by the IR pass as the copy-out
- * step of the 4.2 value-arm (method-B) swap-route lowering. Same
- * no-arrow void trace convention as cqrt_cswap; both handle args
+ * so no f32/f64 twins exist (for the plain copy here nor the
+ * `_controlled` merge twin below). Emitted by the IR pass as the
+ * copy-out step of the 4.2 value-arm (method-B) swap-route lowering.
+ * Same no-arrow void trace convention as cqrt_cswap; both handle args
  * print as h<N>:
  *     "cqrt_copy_<W>(h<src>, h<dst>)".
  * ----------------------------------------------------------------- */
@@ -245,6 +246,32 @@ void cqrt_copy_i8 (int32_t src, int32_t dst);
 void cqrt_copy_i16(int32_t src, int32_t dst);
 void cqrt_copy_i32(int32_t src, int32_t dst);
 void cqrt_copy_i64(int32_t src, int32_t dst);
+
+/* -----------------------------------------------------------------
+ * Controlled reversible basis copy (Phase 4.4, PRD Part IV §16.3 — the
+ * tainted-`select` controlled-XOR copy merge) — `cqrt_copy_<W>_controlled
+ * (ctrl, src, dst)` performs the transversal-CNOT basis copy of src into
+ * the |0> dst rail iff the i32 control flag `ctrl` is set, leaving dst
+ * |0> when ctrl is 0. The control flag is PREPENDED as argument 0 (the
+ * control-flag-as-arg-0 invariant, ControlledSymbols.h:7-10), so `src`
+ * is arg 1 and `dst` arg 2. The select-merge emitter (`SelectMergeEmit`,
+ * Phase 4.4) fires `copy(f, true, out)` then, X-bracketed on ¬f,
+ * `copy(f, false, out)` to mux the active operand into the fresh |0>
+ * result rail — NO rail, NO route, NO cswap. Like its uncontrolled
+ * sibling it copies a computational-basis *label*, not a state (WRONG
+ * for any phase/superposition carrier — Rule 7), it NEVER frees,
+ * consumes, or disentangles its source (Rule 8), and a controlled-CNOT
+ * is an involution, so there is NO cqrt_copy_<W>_controlled_inv twin.
+ * The 5 INTEGER widths only — same FP-is-an-angle reasoning as the
+ * plain copy above. Same no-arrow void trace convention as cqrt_cswap;
+ * all three handle args print as h<N>:
+ *     "cqrt_copy_<W>_controlled(h<ctrl>, h<src>, h<dst>)".
+ * ----------------------------------------------------------------- */
+void cqrt_copy_i1_controlled (int32_t ctrl, int32_t src, int32_t dst);
+void cqrt_copy_i8_controlled (int32_t ctrl, int32_t src, int32_t dst);
+void cqrt_copy_i16_controlled(int32_t ctrl, int32_t src, int32_t dst);
+void cqrt_copy_i32_controlled(int32_t ctrl, int32_t src, int32_t dst);
+void cqrt_copy_i64_controlled(int32_t ctrl, int32_t src, int32_t dst);
 
 /* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;

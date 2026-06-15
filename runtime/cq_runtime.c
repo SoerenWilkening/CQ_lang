@@ -454,6 +454,42 @@ void cqrt_copy_i64(int32_t src, int32_t dst) {
 }
 
 /* ---------------------------------------------------------------------
+ * Controlled reversible basis copy (Phase 4.4, PRD Part IV §16.3) — one
+ * per integer width. Copies src into the |0> dst rail iff the i32
+ * control flag ctrl is set (control flag arg-0); the tainted-`select`
+ * controlled-XOR copy merge primitive emitted by SelectMergeEmit. A
+ * controlled-CNOT involution (no _inv twin); never frees its source.
+ * Same no-arrow void trace convention as cqrt_cswap; all three handle
+ * args print as h<N>. Integer widths only — an FP merge phi under
+ * tainted control is an angle, never data (see cq_runtime.h).
+ * ------------------------------------------------------------------- */
+
+void cqrt_copy_i1_controlled(int32_t ctrl, int32_t src, int32_t dst) {
+    printf("cqrt_copy_i1_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_i8_controlled(int32_t ctrl, int32_t src, int32_t dst) {
+    printf("cqrt_copy_i8_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_i16_controlled(int32_t ctrl, int32_t src, int32_t dst) {
+    printf("cqrt_copy_i16_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_i32_controlled(int32_t ctrl, int32_t src, int32_t dst) {
+    printf("cqrt_copy_i32_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_i64_controlled(int32_t ctrl, int32_t src, int32_t dst) {
+    printf("cqrt_copy_i64_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */
 
