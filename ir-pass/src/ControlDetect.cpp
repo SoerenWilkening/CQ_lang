@@ -22,6 +22,7 @@
 #include "ArmClassify.h"
 #include "ControlShape.h"
 #include "RegionTreeDetect.h"
+#include "SelectClassify.h"
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -223,10 +224,17 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         if (taint.Tainted.count(SI->getCondition()))
           diagnoseUnderControl(SI, "switch");
       }
+      // 4.4 — prove-or-decline a tainted-condition `select` instead of the
+      // blanket decline. `classifySelectRegion` (SelectClassify) runs the §0
+      // six-gate ladder: on ACCEPT it pushes a `SelectRegion` for
+      // `SelectMergeEmit` (WI-3; WI-1 declines transitionally), else it fires the
+      // precise per-shape string (`rotation angle` / `control flow`). The
+      // per-block scan and the tainted-condition entry guard are unchanged; only
+      // the body flips from the WI-1 transitional `select` decline.
       for (Instruction &I : BB)
         if (auto *Sel = dyn_cast<SelectInst>(&I))
           if (taint.Tainted.count(Sel->getCondition()))
-            diagnoseUnderControl(Sel, "select");
+            classifySelectRegion(Sel, taint, plan);
     }
   }
   return plan;
