@@ -19,6 +19,7 @@
 #include "ArmAnalysis.h"     // walkPhaseSpine, walkValueChain, taintedAngleGate
 #include "ControlPlan.h"     // diagnoseUnderControl, SwitchClass
 #include "TaintPropagation.h"  // TaintSet
+#include "WireWalk.h"          // findNonDiagonalWireGate (routed-base wire staleness)
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -186,15 +187,76 @@ bool proveSwitchPhase(const SwitchShape &S, TaintSet &Taint) {
 
 // G6 VALUE — each content arm is a pure value chain bottoming at the SHARED routed
 // base `p` = the straight-through (default-edge) incoming, with `p != q` (C2
-// anchor; routing the scrutinee would clobber the eq-flags). WI-1 establishes the
-// base-identity / purity floor; the §3c clobber (G7) and its negatives land in
-// WI-3 beside the value emitter.
+// anchor; routing the scrutinee would clobber the eq-flags). WI-1 established the
+// base-identity / purity floor; WI-3 completes the proof into a faithful mirror of
+// the diamond value path (ArmClassify.cpp): the §3c clobber (G7), the routed-base
+// wire-staleness guard, and the derived-base own-angle guard all land here beside
+// the value emitter, each PRE-MUTATION (Rule 9 detect-before-mutate) so no
+// off-pattern shape is ever emitted+flattened before a downstream abort.
 bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
   Value *P = S.StraightThrough;
   if (!P || P == S.SI->getCondition()) {
     diagnoseUnderControl(S.SI, "value-arm swap-route");  // C2 mis-anchor.
     return false;
   }
+
+  // G7 §3c clobber (WI-3) — the routed base `p` must be DISJOINT from the
+  // SCRUTINEE's transitive taint provenance. Routing+rewriting a register the
+  // scrutinee reads clobbers the very wire the eq-flags are minted from: the
+  // flag-strip premise `icmp_inv(q, c_i)` reads the same basis as the mint, and
+  // that premise dies with the rewrite (information-theoretically impossible to
+  // both keep `p`'s answer and disentangle the scrutinee — §3c). `condProvenance`
+  // seeds the scrutinee-read set (its arg-1 angle exclusion intact); a value arm
+  // routed over `p` while the scrutinee reads `p`'s diagonal-alias closure (RAUW
+  // collapses `%qd = cq_phi(%q,·)` and `%q` to ONE handle, so SSA-value
+  // disjointness from `q` is NOT wire disjointness) is the silent miscompile.
+  // The PERMANENT string fires on the proven identity (`p` itself is read); a
+  // mere shared-wire alias declines GENERIC `control flow` — the flat-path
+  // Defect-2 discipline (never brand a shape information-theoretically impossible
+  // on unproven evidence). Mirrors the diamond value clobber (ArmClassify.cpp).
+  SmallPtrSet<Value *, 16> Prov;
+  condProvenance(S.SI->getCondition(), Taint, Prov);
+  if (Value *Hit = diagonalAliasHit(P, Prov)) {
+    diagnoseUnderControl(S.SI, Hit == P ? "arm rewrites a condition operand"
+                                        : "control flow");
+    return false;
+  }
+
+  // Routed-base WIRE staleness (WI-3 Rule-13 clearance) — the routed base `p`'s
+  // physical wire (its diagonal-alias closure: the backward `cq_phi` arg-0 chain)
+  // must gain NO non-diagonal (Ry/`cq_theta`) in-place gate. A chained theta
+  // reaching the wire through a SIBLING SSA name of the closure
+  // (`%pd = cq_phi(%p,·); %p2 = cq_theta(%p,·)`) is invisible to the §3c clobber
+  // scan above (`condProvenance` stops AT a theta source, never entering its
+  // tainted arg-0) and to G10 (which seeds only the SCRUTINEE `q`, never `p`) —
+  // yet post-RAUW the route-in reads the POST-Ry wire while the chain names the
+  // PRE-Ry RECORD: the stale-record family, replayed onto the rail as a
+  // verify-clean wrong unitary. Position-free walk — ANY theta on the wire
+  // declines (over-decline is safe). Mirrors the diamond value twin
+  // (ArmClassify.cpp:928) so the switch shares the diamond's primary guard rather
+  // than relying on the `valuePureChain` / `declineStaleRecordOps` backstop
+  // coincidence (Rule 14).
+  if (CallInst *Gate = findNonDiagonalWireGate(P, /*CrossValueRouting=*/false)) {
+    diagnoseUnderControl(Gate, "routed base predates a non-diagonal gate");
+    return false;
+  }
+
+  // A DERIVED routed base's OWN angle must be classical — the arg-1 parallel of
+  // criterion 3 (Rule 3). Without this the region is fully EMITTED and FLATTENED
+  // before `RotationLowering`'s own angle guard fires (mutate-then-decline, a
+  // Rule-9 detect-before-mutate violation; under a non-fatal-DS_Error host it
+  // leaves a half-mutated broken module — there is NO downstream backstop). The
+  // forward G3 walk (`mergeReachesRotationArg1`) cannot see it: the tainted angle
+  // is UPSTREAM of the straight-through incoming, never a forward user of the
+  // merge phi. Declines PRE-MUTATION, source-located, with the canonical
+  // `rotation angle` string. Mirrors the diamond value twin (ArmClassify.cpp:944).
+  if (auto *BaseCI = dyn_cast<CallInst>(P);
+      BaseCI && isPhiCall(BaseCI) && BaseCI->arg_size() >= 2 &&
+      Taint.Tainted.count(BaseCI->getArgOperand(1))) {
+    diagnoseUnderControl(BaseCI, "rotation angle");
+    return false;
+  }
+
   bool SawContent = false;
   for (const SwitchCase &C : S.Cases) {
     if (C.Incoming == P)

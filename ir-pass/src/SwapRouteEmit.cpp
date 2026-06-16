@@ -781,12 +781,15 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       // Depth / child-lookup branch (a switch carries no `ParentIdx` nest link).
       if (R.SwitchCls == SwitchClass::Phase) {
         emitSwitchPhaseRegion(R, wd, csyms, taint);
+      } else if (R.SwitchCls == SwitchClass::Value) {
+        // 4.5 WI-3 — homogeneous value-chain switch: the N-way method-B over the
+        // shared routed base `p` = the merge default-edge incoming (`p != q`).
+        emitSwitchValueRegion(R, wd, csyms, taint);
       } else {
-        // VALUE (WI-3) / DATA-MUX (WI-4) emitters are not yet landed. Detection
-        // pushes ONLY Phase switch regions today (non-Phase decline
-        // transitionally in `classifySwitchRegion`), so this is currently
-        // unreachable — but never silently skip a tainted switch (Prime
-        // Directive): bail LOUDLY.
+        // DATA-MUX (WI-4) emitter is not yet landed. Detection pushes only Phase
+        // and Value switch regions today (DataMux declines transitionally in
+        // `classifySwitchRegion`), so this is currently unreachable — but never
+        // silently skip a tainted switch (Prime Directive): bail LOUDLY.
         if (auto *Anchor = dyn_cast_or_null<Instruction>(R.Merge))
           diagnoseUnderControl(Anchor, "control flow");
         else if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))

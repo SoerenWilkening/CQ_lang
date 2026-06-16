@@ -50,6 +50,16 @@ struct TaintSet;
 void emitSwitchPhaseRegion(const ControlRegion &R, WidthDispatch &wd,
                            ControlledSymbols &csyms, TaintSet &taint);
 
+// Lower an accepted homogeneous VALUE switch region (`SwitchCls == Value`) — the
+// N-way method-B (route + verbatim chain replay + one copy-out + LIFO reverse-play
+// over the shared routed base `p` = the merge default-edge incoming, `p != q`).
+// Mutates the module IR and `taint`. The shape is detection-guaranteed; any residual
+// mismatch bails LOUDLY (never a silent skip of quantum-controlled flow — Prime
+// Directive). Declared here (one header, three `.cpp` — IMPLEMENTATION-4.5 §1);
+// defined in `SwitchValueEmit.cpp`.
+void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
+                           ControlledSymbols &csyms, TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_SWITCH_ROUTE_EMIT_H_

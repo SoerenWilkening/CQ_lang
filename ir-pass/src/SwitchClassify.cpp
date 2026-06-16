@@ -344,13 +344,13 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
                                 "condition data use neither escaped nor measured");
   }
 
-  // ACCEPT — the whole switch is proven. WI-2 lands the PHASE emitter
-  // (`emitSwitchPhaseRegion`): push the region for `lowerControlRegions`. The
-  // VALUE (WI-3) and DATA-MUX (WI-4) emitters are not yet landed, so a non-Phase
-  // accept still fires the TRANSITIONAL `switch` decline (its positive stays red
-  // until its WI graduates it) — never silently pass a tainted switch (Prime
-  // Directive).
-  if (Cls != SwitchClass::Phase)
+  // ACCEPT — the whole switch is proven. WI-2 lands the PHASE emitter and WI-3 the
+  // VALUE emitter (`emitSwitchPhaseRegion` / `emitSwitchValueRegion`): push the
+  // region for `lowerControlRegions`. The DATA-MUX (WI-4) emitter is not yet
+  // landed, so a DataMux accept still fires the TRANSITIONAL `switch` decline (its
+  // positive stays red until WI-4 graduates it) — never silently pass a tainted
+  // switch (Prime Directive).
+  if (Cls == SwitchClass::DataMux)
     return diagnoseUnderControl(SI, "switch");
 
   ControlRegion R;
