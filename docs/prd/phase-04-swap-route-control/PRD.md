@@ -1973,3 +1973,484 @@ Honestly listed; each declines loudly until its increment.
   `cq_template_xor_<W>_hl_controlled` family is the alternative (touches the YAML
   / SHA gate). Resolved at IMPLEMENTATION-4.4 kickoff against the real linked
   trace, not assumed.
+
+---
+
+# Part V — the 4.5 increment: tainted `switch` (N-way eq-flag routing + the const-fold re-anchor)
+
+Written 2026-06-16 at 4.5 start (Rule 16), after an owner+agent design dialogue
+grounded on a real `clang -O1` extraction matrix (the eight `s1…s8` shapes below)
+and two adversarial fan-out reviews (the maximal-scope value/data-mux/eq-diamond
+design + the kill-shot sweep). The **owner set the scope to maximal** in this
+dialogue: 4.5 lowers N-way **phase**, **value**, and **constant data-mux**
+`switch`, **plus** the equality-folded `br` diamonds clang emits for 1–2-case
+switches and `if(q==k)`. This Part is the plan of record; per-WI build notes go in
+`IMPLEMENTATION-4.5.md` (written during the increment).
+
+**The framing the dialogue established (binding).** A tainted `switch` is **not a
+new control mechanism** — it is the **N-way generalization of three already-shipped
+2-arm spines**, dispatched by the `clang -O1` output form:
+
+1. **Most "switch scenarios" never reach switch detection as a `switch` instr.**
+   Empirically (the extraction matrix): a **2-case** switch folds to a tainted `br`
+   diamond (4.1/4.2 path); an **affine** const data-mux (`case i: r = a·i+b`) folds
+   to a `select` (**4.4 lowers it today, exit 0**); a **non-affine const data-mux**
+   and a **double-angle mux** fold to a constant **jump table** (`gep`/`load`) that
+   declines via `declineTaintEscapes` **before** detection (out of scope, left
+   declining). A real `switch i32` survives **only** for distinct-arm-body switches
+   (phase arms, value arms) and the distinct-const data-mux below table-threshold.
+2. **The equality const-fold is the one genuinely new mechanism.** A `switch`
+   dispatches on **equality**, so `clang -O1` **constant-folds every surviving case
+   arm's gate operand to the case literal**: inside `case k:`, `cq_phi(q,θ)` becomes
+   `cq_phi(i32 k, θ)` — arg-0 is the constant `k`, **not** the scrutinee handle.
+   This is verified to **break naive reuse**: the *equality* diamond `if(q==5)`
+   **declines today** while the *inequality* `if(q>5)` lowers, precisely because the
+   existing emitter requires the arm gate to sit on the routed handle. Worse, a
+   const-operand `cq_phi(5,θ)` is **deleted** by `RotationLowering` (a classical
+   `Rz` is unobservable), RAUW-ing its result to the constant `5` and degenerating
+   the merge `phi` into the **wrong data-mux** `select(q==5, 5, q)`. So 4.5 must
+   **re-anchor the arm gate's angle (arg-1) onto the routed rail** and **erase the
+   folded gate before `lowerRotations`** — the *mechanism* (cswap-route + flag-strip
+   for phase, method-B for value, controlled-XOR copy for data-mux) is reused, but
+   this detection/re-anchor is original.
+3. **No new runtime ABI, no YAML edit.** Every primitive resolves to an existing
+   symbol (§21.5 table). The `select`-increment's `cqrt_copy_<W>_controlled` (4.4),
+   the 4.2 `cqrt_copy_<W>`/`emit_inverse`, and the 4.1 `cqrt_cswap`/`emitEqFlag`
+   mint+strip cover all four recipes. The default merge is realized **without** the
+   excised `FlagConjunction` (§20.5).
+
+**Adversarial pre-clearance (2026-06-16, Rule 13 — pre-code).** This Part was run
+through two hostile fan-out reviews (value-arm anchor / data-mux entanglement /
+eq-diamond gate-preservation / mixed-class interaction + a kill-shot sweep). The
+N-way *shapes* are sound; **the amendments folded into §§19–22 are every one an
+over-decline-safe guard or a factual anchor correction — no shape change.** The
+load-bearing kill-shots, each a re-run of a deleted-generation silent miscompile
+(`cwk-merge-phi-discriminator`, `mux-exch-gate-per-arm-correspondence`):
+(C1) **multi-phi hidden mixed-class** — a per-`phi` classifier reads a q-merge as
+all-phase and a p-merge as all-value, both accept, emitting two routings on one
+flag set → **G1 sole-content-phi** gate; (C2) **value-arm anchor** — the routed
+base for a value switch is `p` (the merge default-edge incoming), **NOT**
+`SI->getCondition()=q`; mis-anchoring cswaps `q` into the rails = self-inflicted
+§3c clobber → **G6 value-base assertion**; (C4) **grouped fall-through** — two case
+values on one label with one flag silently drops a path → **G9 one-flag-per-value
+(decline ≥2-value labels in v1)**; (C5) **non-empty default** — a `default:` body
+fires on `¬OR(flags)` that the no-default-flag rule drops → **G5 default-identity**.
+The two boundaries that **must still clear before the emitter ships** (Rule 13, in
+`IMPLEMENTATION-4.5.md`): the value-arm method-B N-way coherent boundary (is `%out`
+ever *wrong*, not merely entangled?) and the data-mux N-ary coherent-operand gate
+(the §16.7 select boundary, now N-ary).
+
+Relevant bd memories (Rule 0/11 — re-verify against the live tree at build
+kickoff): `swap-route-detect-known-limits` (its closing line — "4.5 switch is the
+only Phase-4 shape still a blanket decline" — is the deferral this Part lifts;
+the one-tainted-region-per-fixture authoring rule); `cwk-merge-phi-discriminator`
+(the gated-switch merge-`phi` silent-miscompile class — multi-handle / mixed-incoming
+/ distinct-base — restated as G1/G6/G8); `mux-exch-gate-per-arm-correspondence`
+(the distinct-per-case-handle multiplexer needs `cqrt_cswap`/Fredkin to free
+sources — the G8 no-cloning decline boundary); `jumptable-angle-normalizer-conservatism`
+(the jump-table angle/data mux — left declining via taint-escape, **not** re-added);
+`tainted-arm-select-mux-no-new-primitive` (the keep-sources-live copy reuse, and
+its caveat that freeing a superposed source needs Fredkin); the f64/angle miscompile
+lesson (the angle-use gate, G3/G6).
+
+---
+
+## 19. Scope (4.5)
+
+**In scope — four shapes, each an N-way generalization of a shipped 2-arm spine.**
+All recognition is pure-SSA **before any mutation** (Rule 9), and the **whole
+switch is proven before `SwitchRouteEmit` mutates one instruction** (the N-loop
+half-mutated-module hazard, §20.12). The routed base differs per class and is the
+single most error-prone anchor (§20.4 / C2).
+
+**(A) Phase-arm switch** — `switch(q){ case c_i: q = cq_phi(q,θ_i); … }`, every
+surviving case arm a homogeneous `Rz` (`cq_phi`) on the scrutinee, default empty.
+Survives `-O1` as a real `switch i32` + N-incoming merge `phi`; each arm gate
+const-folded to `cq_phi(c_i, θ_i)`. Routed base = **`q` = `SI->getCondition()`**.
+Lowered stream (per case `i`, generalizing `emitRegion`'s phase path):
+
+1. **Mint** `%f_i = emitEqFlag(q, c_i)` → `cq_template_icmp_eq_<Wq>_hl(q, c_i)`
+   (`CompareLowering.cpp:220`; the switch has **no** per-case `CmpInst` — flags are
+   *synthesized* from `SI->case_begin()…case_end()`).
+2. **Alloc** `|0⟩` rail `%r_i = cqrt_alloc_<W>(0)`.
+3. **Route-in** `cqrt_cswap(%f_i, q, %r_i)` (split).
+4. **Replay** `cqrt_rz_<W>(%r_i, θ_i)` — **arg-1 only**; arg-0 (`c_i`) discarded
+   (the emitter already reads only `getArgOperand(1)`).
+5. **Route-back** `cqrt_cswap(%f_i, q, %r_i)` (join = adjoint of split).
+6. **Free rail** `cqrt_free(%r_i)` — provably `|0⟩` (`Rz|0⟩=|0⟩` off-branch,
+   basis-permutation roundtrip on-branch).
+7. **Strip** `%g_i = emitEqFlag_inv(q, c_i)`; `cqrt_free(%f_i)`.
+
+Then RAUW the merge `phi` → `q`; per-case **scrub+erase the folded `cq_phi`**
+(before `RotationLowering`, §20.12); `flattenRegion` the N-way CFG. **No default
+flag** (empty default = identity, the merge default-edge incoming is `q`). **Zero
+controlled gates** beyond the route cswaps; `q` never freed (the answer).
+
+**(B) Value-arm switch** — `switch(q){ case c_i: p = op_i(p); … }`, every arm a
+pure linear tainted binop chain on **one** other handle `p` (≠ `q`), default empty.
+Routed base = **`p` = the merge `phi` default-edge incoming**, **not** `q` (C2).
+Generalizes `emitValueRegion` (method-B); the existing base-identity gate
+(`valueChainBase != base → decline`) generalizes to N **unchanged**. Per case:
+mint `%f_i`, `|0⟩` rail, `cqrt_cswap(%f_i, p, %r_i)`, run `op_i` verbatim on the
+rail, `cqrt_cswap` back (exactly one settles on `p`); then **one uncontrolled**
+`cqrt_copy_<W>(p, %out)` copy-out (answer on `p` only at that point); then
+**reverse-play** `op_i†` in LIFO order via `emitInverseChain` (body only — route
+cswaps are **never** fed through the inverter, §8.5 seam guard), restoring `p` and
+zeroing each rail; free rails clean; strip+free flags. RAUW merge → `%out`. **`p`
+and `%out` never freed** — `p` is restored to `p₀` and left live (no-cloning never
+arises, Rule 8), `%out` is the live result.
+
+**(C) Constant data-mux switch** — `switch(q){ case c_i: r = v_i; default:
+r = v_d; }`, **every** merge incoming a `ConstantInt`. The **preload + XOR-delta**
+merge (4.4's controlled-XOR copy generalized, made *easier* by distinct-literal
+disjointness — no `¬`-bracket, no double-write window):
+
+1. `%out = cqrt_alloc_<W>(v_d)` — **preload the default literal**.
+2. Per non-default case: `%f_i = emitEqFlag(q, c_i)`;
+   `%d_i = cqrt_alloc_<W>(v_i ^ v_d)` (the XOR-delta, a **compile-time constant**);
+   `cqrt_copy_<W>_controlled(%f_i, %d_i, %out)` (`out ^= f_i ? d_i : 0`).
+3. Strip+free all N flags (`emitEqFlag_inv`; each strip reads pristine `q`).
+
+RAUW merge → `%out`. Distinct literals ⇒ at most one `f_i=1` ⇒
+`out = v_d ⊕ (v_k⊕v_d) = v_k`; default fires no copy ⇒ `out = v_d`. **No
+`FlagConjunction` `¬OR` ancilla** — the default is the preload. `%out`, `q`, and
+the delta scratch `%d_i` left allocated (benign classical leak).
+
+**(D) Equality-folded `br` diamond** — `if(q==k){ q = cq_phi(q,θ); }` (1-case) and
+the 2-case-switch `if/else`. **Detection-only work; reuses `emitRegion` verbatim.**
+The diamond already recovers as a `ControlRegion`; the gap is `classifyArms`
+declining because the spine bottoms at the const-folded `ConstantInt k` instead of
+the routed handle. Fixed by a **strictly-additive** equality-fold accept clause in
+`classifyArms` (§20.6), which does **not** weaken the load-bearing `Base==Routed`
+cross-handle-mux reject. The emitter then replays arg-1 θ on the rail exactly as
+the inequality diamond does.
+
+**Out of scope (4.5) — see §22, each declines loudly:** jump-table data/angle
+muxes (fold to `gep`/`load`, decline via taint-escape pre-detection — **not**
+re-routed; the old `normalizeJumpTableAngle` is **not** revived); **distinct-handle
+data-mux** (`case 0: r=qa; case 1: r=qb` — the MUX-EXCH no-cloning case, needs
+`cqrt_cswap`/Fredkin to free sources, §20.10); **tainted (non-constant) data-mux**;
+**fp-data merge** (an fp merge is an angle, the f64 family); **vector/`i128`/
+pointer** merges; **non-empty `default:` body** (needs `¬OR`-of-flags =
+`FlagConjunction`, §20.8); **grouped fall-through** labels (≥2 case values → 1
+label, §20.9 — v1 declines); **mixed arm classes** (phase+value in one switch);
+**nested tainted branch inside a case** (deeper than the 4.3 depth-2 nest);
+**value arm that rewrites a scrutinee-read register** (§3c clobber, e.g.
+`case 1: q=q+1`).
+
+---
+
+## 20. Design decisions (4.5)
+
+Each resolved 2026-06-16 at 4.5 PRD time (owner dialogue) and binding.
+
+### 20.1 A switch is N independent eq-flag routings — the unifying frame
+
+Because the case literals are **distinct**, the per-case flags `f_i = icmp_eq(q,
+c_i)` are **mutually exclusive** (at most one fires per basis component), and the
+arms are therefore N **independent** routings sharing the scrutinee — the same
+emitter applied N times, exactly as 4.3 nested control is "the same emitter applied
+recursively." For **phase** arms this needs **no default flag** and **no `¬OR`
+cascade**: an unfired component is simply not routed (identity), which is precisely
+the merge `phi`'s untouched-scrutinee default edge. Sequential application is safe
+because each method preserves the property later flags depend on: a phase `Rz`
+preserves `q`'s computational-basis *value* (so `f_j = icmp_eq(q, c_j)` stays
+correct after case `i`); a value arm writes `p ≠ q` (so `q` is pristine for every
+flag). This is the positive correctness argument; the gates below enforce its
+preconditions.
+
+**Equivalence to the Bennett br-cascade — no conjunction, no Toffoli (alternative
+considered, 2026-06-16).** A `switch` can equally be read as the if-else-if cascade
+`if(q==c_0){A_0} else if(q==c_1){A_1} … else{D}` (Bennett.jl's `_expand_switches`
+move — `docs/bennett-jl-comparison.md` §"Control flow"). In the swap-route model
+the cascade and the flat N-way switch lower to the **identical circuit**: N
+independent controlled routings, each on its own `f_i = icmp_eq(q, c_i)`, each into
+its own rail. The cascade's nesting does **not** force a dependent control
+`f_i ∧ ¬f_0 ∧ … ∧ ¬f_{i-1}` — that `¬`-conjunction is **redundant** because the case
+constants are **disjoint**, so the equality flags are pairwise mutually exclusive
+*a priori* and `q==c_i` alone is the correct, sufficient control. (The dependence
+would be real only for a **general inequality cascade** — `if(q<10) else if(q<20)`,
+overlapping ranges where reaching the second test depends on the first failing —
+which is **not** a `switch`; that is ordinary nested/general control, §20.7 G11.)
+Therefore 4.5 needs **no `¬OR` flag-conjunction and no `FlagConjunction` Toffoli
+cascade** for the cases (the prohibited construct never arises), and it reads the N
+`(c_i, block)` pairs **directly off the `switch` instruction** — it does **not**
+materialize the nested br-cascade in IR (which the detector would bounce as a nested
+chain, §20.7 G11, only to flatten it right back out). The Bennett desugar-to-cascade
+and the in-place N-way are the same lowering distinguished only by whether the CFG
+is materialized; routing keeps it unmaterialized.
+
+### 20.2 The equality const-fold re-anchor (the KEY new mechanism, BLOCKER-class)
+
+`clang -O1` folds every surviving equality arm's gate operand to the case literal
+(`cq_phi(i32 k, θ)`), disconnecting it from the scrutinee. Two consequences, both
+verified:
+
+- **The arm gate must be re-anchored to the rail by physics, not SSA.** The
+  `cqrt_cswap` moves `q`'s `|c_i⟩` amplitude onto the rail; the emitter then emits
+  `cqrt_rz(rail, θ_i)` reading **only arg-1**, ignoring the const arg-0. There is
+  **no RAUW** of the folded operand — the connection is the route, not the value.
+- **The folded `cq_phi` must be erased before `RotationLowering` (`CQLoweringPass.cpp:110`).**
+  A classical-operand `cq_phi` is **deleted** by `RotationLowering` (an unobservable
+  `Rz`), which RAUWs its result to the constant and degenerates the merge `phi` into
+  `select(q==k, k, q)` — a verify-clean wrong data-mux. `SwitchRouteEmit` runs in the
+  detect/emit window (`:84`) and **per-case scrubs+erases** the folded gate (and its
+  `taint.PhiCalls` entry) before `:110`. **No block-pointer caching across erasures**
+  (Rule 9 — capture identities before the first erase).
+
+This re-anchor is original to 4.5; it has **no downstream backstop** (mirroring the
+4.4 angle-gate blocker), so it is a detection/emission-time obligation, not an
+inherited guard.
+
+### 20.3 Phase-arm recipe — generalizes the 4.1 diamond, zero controlled gates
+
+§19(A). The phase rail is `|0⟩` for free after route-back (`Rz|0⟩=|0⟩`), so it frees
+clean with **no reverse-play**; the flag strips via the **uncontrolled** `icmp_inv(q)`
+(method-A controlled cleanup stays dropped, principle 7). The merge `phi` RAUWs to
+`q` — the answer is left **in place, disentangled, interference-safe**.
+
+### 20.4 Value-arm recipe — method-B N-way, the merge-default-edge anchor (C2)
+
+§19(B). The **routed base is `p`, the merge `phi`'s default-edge incoming**, not the
+scrutinee `q`. This is the deepest anchor hazard: routing `q` (the condition) into
+the rails would cswap the condition into the work register = a self-inflicted §3c
+clobber and a wrong unitary. `classifySwitchRegion` asserts
+`valueChainBase(arm) == defaultEdgeIncoming && != SI->getCondition()` for **every**
+case (G6). Exactly one case settles on `p`; the single uncontrolled copy-out reads
+`p` between route-back and route-back†; LIFO reverse-play restores `p` to `p₀` and
+zeroes each rail; `p` and `%out` are left live (method-B clean-`|0⟩` frees only). No
+new ABI — `cqrt_copy_<W>` (no `_inv` twin) + `emitInverseChain` + route cswaps.
+
+### 20.5 Constant data-mux recipe — preload + XOR-delta, no FlagConjunction
+
+§19(C). The 4.4 select merge (`out = c ? a : b`, two copies, one `¬`-bracketed) is
+the 2-way case; the N-way default cannot be a `¬OR(f_i)` copy (that revives the
+**excised, prohibited** `FlagConjunction` Toffoli cascade). The **preload +
+XOR-delta** trick removes the need: initialize `%out` to the default literal, then
+conditionally XOR the per-case delta. Because `cqrt_copy_<W>_controlled` is
+XOR-into-out and the literals are disjoint, this yields `out = v_{case(q)}` with the
+default for free and **no double-write**. The XOR-delta `v_i ^ v_d` is a compile-time
+constant (both operands `ConstantInt`), materialized via `cqrt_alloc_<W>`. Requires
+**all** merge incomings `ConstantInt` and integer ABI width (G4/G6); a handle-valued
+incoming is the §20.10 boundary.
+
+### 20.6 Equality-folded diamond — a strictly-additive `classifyArms` clause (D)
+
+The diamond declines today because `walkPhaseSpine` bottoms at the const-folded
+`ConstantInt k`, failing the `Base==Routed` gate and reaching the `control flow`
+leaf-base reject. The fix is a **new accept clause, additive after the `Base==Routed`
+gate and before the value path** — it never weakens `Base==Routed` (a genuine
+cross-handle data-mux `if(q>5){t=qx}` must still decline). Accept iff: **(D1)** the
+condition is `icmp eq`; **(D2)** the spine base is a `ConstantInt k`; **(D3)** the
+icmp operands are exactly `{Routed(tainted handle), C(ConstantInt)}`; **(D4)**
+`C == k` (same `APInt`/width); **(D5)** `Routed` is tainted; **(D6)**
+`armBlockIsPureSpine` (verbatim reuse); **(D7)** `taintedAngleGate` — θ classical
+(verbatim reuse). For the **2-case if/else** (no Pred straight-through incoming),
+when the clause meets a const-folded arm with `Routed` still null, **anchor
+`Routed` = the icmp's non-constant tainted operand** (gated D1+D5); the sibling
+handle-form arm then validates via the existing `Base==Routed`. Both clang arm
+orderings and the FALSE-successor polarity (`ArmNegated` X-bracket) are already
+handled by `recoverRegion`/`emitRegion`. **Value-equality diamonds**
+(`if(q==5){p=p+1}`) are **already lowered** — `-O1` folds them to straight-line
+`add p, zext(icmp)`, no `br`; a non-affine one that keeps a `br` writes `p≠q` →
+**D3 fails** → stays declined (cross-handle reject preserved).
+
+### 20.7 The unified `classifySwitchRegion` accept ladder (G0–G11)
+
+A new module `SwitchClassify.cpp` mirrors `SelectClassify`'s ordered prove-or-decline
+ladder, run **per-case and per-merge**, proving the **whole switch before any
+mutation**. Any miss → loud decline, lower nothing:
+
+| # | Gate | Obligation | On miss (string) |
+|---|---|---|---|
+| **G0** | Scrutinee taint | `taint.Tainted.count(SI->getCondition())`. | (not a region) |
+| **G1** | Sole content merge `phi` (C1) | Exactly ONE non-angle, non-identity merge `phi`; identity-only second `phi`s RAUW-collapsed first. ≥2 content `phi`s = heterogeneous by construction. | `control flow` |
+| **G2** | Flag-mintability on `q` | Each `emitEqFlag(q, c_i)` = `icmp_eq_<Wq>_hl`, `Wq` non-empty + supported; not Q+Q / compound-`i1` / non-derivable. | `control flow` |
+| **G3** | Angle BLOCKER | The merge result must NOT reach a rotation arg-1 (forward arg-1 walk, value-preserving carriers). No backstop. | `rotation angle` |
+| **G4** | FP-fence + width | `!isFPOrFPVectorTy() && isIntegerTy() && !abiWidthFromType().empty()` (FP-fence **first** — f64 merge is an angle). | `control flow` |
+| **G5** | Arm-class homogeneity + default identity (C1/C5) | All cases AND default same class ∈ {phase, value, data-mux}; **default empty/identity** (incoming == straight-through). | `mixed phase/value arm` / `control flow` |
+| **G6** | Per-class base/operand proof | **Phase:** each arg-0 == its case literal; pure spine; θ classical. **Value:** pure linear chain, all bottoming at the merge default-edge incoming (≠ `q`, C2); base disjoint from `q`'s diagonal-alias closure; no non-diagonal wire gate; no Q+Q link. **Data-mux:** every incoming `ConstantInt`. | `control flow` / `impure {phase,value} arm` / `value-arm swap-route` / `rotation angle` |
+| **G7** | §3c clobber | A value arm must NOT rewrite a scrutinee-read register (`case 1: q=q+1`). | `arm rewrites a condition operand` |
+| **G8** | Distinct-handle / no-cloning (§20.10) | ≥2 distinct-base **tainted** data-mux incomings = MUX-EXCH (XOR-delta not const-computable; freeing a superposed source needs cswap, Rule 8). | `control flow` |
+| **G9** | Fall-through grouping (C4) | Each label reached by exactly ONE case value (v1 declines ≥2-value labels — one flag per **value**, not per label). | `control flow` |
+| **G10** | Scrutinee rawness / data-use | `q` not an un-owned data use; condition not predating a non-diagonal wire gate. | `condition data use neither escaped nor measured` / `condition predates a non-diagonal gate` |
+| **G11** | Nested branch in a case | A case body hosting a tainted `br`/`switch` (deeper than the 4.3 nest). | `control flow` |
+
+### 20.8 Default discipline — no default flag; non-empty default declines (C5)
+
+The empty default (the merge default-edge incoming is the straight-through value:
+`q` for phase, `p` for value, `v_d` for data-mux) needs **no flag** — it is the
+absence of routing / the preload. A **non-empty `default:` body** is a content arm
+that must fire on `¬OR(f_i)`; lowering it needs the `FlagConjunction` cascade
+(excised, prohibited). 4.5 **declines** any switch whose default destination is not
+the merge block or whose default incoming is not the straight-through value (G5).
+This is over-decline-safe; a default-body increment with a sanctioned `¬OR` is a
+future item (§22).
+
+### 20.9 Fall-through / grouped cases — one flag per value, v1 declines groups (C4)
+
+`case 0: case 1: X; break;` produces two case **values** mapping to **one** label /
+merge incoming. Minting one flag per **label** (`icmp_eq(q, c_0)` only) silently
+drops the `c_1` path — a verify-clean miscompile. Correct lowering mints one flag
+per case **value** and routes once per label under the (still mutually exclusive)
+per-value flags. 4.5 v1 **declines any label reached by ≥2 case values** (G9); the
+per-value-flag routing is recorded as a deferred positive (§22) with its own
+mutual-exclusivity fixture.
+
+### 20.10 Distinct-handle data-mux — the MUX-EXCH no-cloning boundary (G8)
+
+A data-mux whose cases produce **distinct quantum handles** (`case 0: r=qa;
+case 1: r=qb`) survives `-O1` as a real `switch i32` with distinct-base `phi`
+incomings → reaches the classifier. The XOR-delta is **not const-computable** (the
+deltas are handle differences), and freeing the superposed sources to leave a clean
+`%out` requires controlled-SWAP / Fredkin (`tainted-arm-select-mux-no-new-primitive`
+caveat; Rule 8 — copy+uncompute cannot disentangle a copied superposition). 4.5
+**declines** (G8, `operandsAlias` all-pairs + the all-`ConstantInt` gate); the
+coherent multiplexer is a future `cqrt_cswap`-based increment, not 4.5.
+
+### 20.11 No new ABI; module/file plan
+
+**New-ABI verdict: NONE** (§21.5 table — all primitives exist; no YAML edit, Rule 15
+untouched). The XOR-delta is a compile-time constant fold.
+
+- **NEW** `ir-pass/src/SwitchClassify.{cpp,h}` — `classifySwitchRegion` (G0–G11,
+  per-class disposition; pushes a validated region). Parallels `SelectClassify`.
+- **NEW** `ir-pass/src/SwitchRouteEmit.{cpp,h}` — `emitSwitchPhaseRegion` /
+  `emitSwitchValueRegion` / `emitSwitchDataMuxRegion`. Routed base = `q` (phase) /
+  merge-default-edge incoming (value) / preload `%out` (data-mux); **never** through
+  `ArmClassify`. Reuses `emitRoute`, `emitInverseChain`, `copyControlledFn`,
+  `materialize`, `lowerCompareToFlag`/`emitEqFlag`.
+- **EDIT** `ir-pass/src/ControlDetect.cpp:223–225` — replace the blanket
+  `diagnoseUnderControl(SI, "switch")` with `classifySwitchRegion(SI, taint, plan)`.
+- **EDIT** `ir-pass/src/ArmClassify.cpp` — the additive equality-fold clause (D1–D7)
+  + the if/else null-`Routed`-from-icmp anchor. **No weakening of `Base==Routed` /
+  the leaf-base reject.**
+- **EDIT** `include/ControlPlan.h` — `SwitchPhase`/`SwitchValue`/`SwitchDataMux`
+  kinds (or reuse the `SelectRegion` slot pattern).
+- **`CQLoweringPass.cpp`** — switch emit between detect (`:84`) and
+  `RotationLowering` (`:110`); per-case scrub of folded gates before `:110`.
+- **`ChainWalk.cpp` / `Uncomputation.cpp`** — **no change** (N controlled copies are
+  N legitimate consumers of the live `%out`; the 4.4 leave-allocated rule holds).
+
+### 20.12 Detect-before-mutate (whole-switch proof) + per-case scrub ordering
+
+The N-loop emitter must not leave a **half-mutated module** if a per-case obligation
+fails mid-loop (the §8.1 single-`DS_Error` exit only protects `opt`; an embedding
+host that survives the diagnostic would see a corrupt module). Therefore
+`classifySwitchRegion` **fully proves the whole switch** (all cases, the merge, the
+default) **before `SwitchRouteEmit` mutates one instruction** (Rule 9). The per-case
+folded-gate scrub (§20.2) and the N-way `flattenRegion` capture all block/value
+identities **before the first erase** — no block-pointer caching across erasures.
+
+---
+
+## 21. Done criteria (4.5)
+
+The increment is **DONE** when every shape in §19 lowers to the swap-route IR its
+`.ll` fixture pins — `opt -verify` clean — every off-pattern shape in the §20.7/§22
+decline matrix fires its **exact** diagnostic string, and the e2e trace smokes diff
+clean against goldens captured from real linked output. Staged as **7 work items**
+(more than 4.4's 5 — three arm classes + the eq-diamond), red-green throughout
+(Rule 12: the negative `RUN: not … | FileCheck` mirrors the string
+character-for-character, authored **first**):
+
+- **WI-1 — Detect-all classifier.** `SwitchClassify` (G0–G11) + the
+  `ControlDetect.cpp:225` replace; emit stubbed-decline. Negative fixtures for
+  **every** §22 row, incl. the four kill-shots (multi-phi C1, non-empty-default C5,
+  grouped-case C4, distinct-handle MUX-EXCH C8 — the data-mux fixtures FileCheck
+  that the **input retains `switch i32`**, not `@switch.table`).
+- **WI-2 — Phase-arm emit.** `emitSwitchPhaseRegion` + per-case folded-gate scrub.
+  Positive `control_swap_switch_phase.ll` (ordered + `CHECK-COUNT-N` flag/rail/free
+  pins — a mis-ordered N-way emit yields the identical symbol *multiset*, caught only
+  by `ORD`+`XCT`). Graduate any transitional decline fixture.
+- **WI-3 — Value-arm emit.** `emitSwitchValueRegion` (merge-default-edge anchor C2,
+  one copy-out, LIFO R†, method-B frees). Positive `control_swap_switch_value.ll`
+  + the §3c clobber decline (G7).
+- **WI-4 — Data-mux emit.** `emitSwitchDataMuxRegion` (preload + XOR-delta + N-flag
+  strip/free). Positive `control_swap_switch_datamux.ll`.
+- **WI-5 — Equality-folded diamond.** The `ArmClassify` additive clause: 1-case +
+  2-case-if/else (both orderings) + FALSE-successor polarity. Positives
+  `control_swap_eqfold_{diamond,ifelse,polarity}.ll`; negatives
+  `control_swap_reject_eqfold_{wrong_literal,cross_handle}.ll` (D4 / D3).
+- **WI-6 — e2e goldens.** ≥1 vertical slice per class
+  (`tests/e2e/slice_control_switch_{phase,value,datamux,eqfold}.c` + `.expected.log`)
+  through clang→opt→link→trace byte-diff with an explicit `add_test` (the only
+  layer that LINKS and proves every emitted symbol resolves + signature-matches).
+- **WI-7 — Rule-13 clearance.** Independent adversarial review (analytic/trace, **no
+  simulation** — owner decision 2026-06-10) of the lowering-core changes, focused on
+  the four kill-shots (C1/C2/C4/C5) and the two residual boundaries (value-arm
+  N-way coherence; data-mux N-ary coherent-operand gate). Artifact
+  `docs/design/rssa-swap-control/WI7_SWITCH_CLEARANCE.md`; ROADMAP/PRD/CLAUDE.md
+  flips; a `bd remember` capturing the const-fold re-anchor + the four kill-shots.
+
+Dependencies: `WI-{2,3,4,5} ← WI-1`; `WI-6 ← {WI-2..WI-5}`; `WI-7 ← WI-6`. Each
+core change is gated on §8 adversarial clearance, **not** a green suite alone
+(Rule 13). The full suite (`ctest`) + `gen_templates.py --check` stay green
+throughout (no YAML touched).
+
+### 21.5 New-ABI verdict: NONE
+
+| Needed | Exists | Where |
+|---|---|---|
+| `cqrt_alloc_<W>(init)` (rails, copy target, `out=v_default`, XOR-delta scratch) | YES | `cq_runtime.h` (alloc takes an initial value) |
+| `cqrt_copy_<W>(src,dst)` uncontrolled (value copy-out, no `_inv` twin) | YES | `WidthDispatch::copyFn` |
+| `cqrt_copy_<W>_controlled` (data-mux merge, 5 int widths, integer-guarded) | YES | `ControlledSymbols::copyControlledFn` (4.4 ABI) |
+| `cqrt_cswap` / `cqrt_x` (route + ¬flag bracket) | YES | `emitRoute` |
+| `cqrt_free` (rails + per-flag) | YES | `WidthDispatch::freeFn` |
+| `emitEqFlag(handle, c_i)` + `_inv` strip (per-case mint, 5 int widths) | YES | `CompareLowering.cpp:220` / `lowerCompareToFlag` |
+| `cq_template_<op>_<W>_hl/_lh` + `_inv` (value chain + reverse-play) | YES | `rewriteBinary` + `emitInverseChain` |
+
+---
+
+## 22. Out of scope / open questions (4.5)
+
+**Out of scope — each declines loudly (the §20.7 ladder fires the string):**
+
+- **Jump-table data/angle muxes** — fold to `gep`/`load`, decline via
+  `declineTaintEscapes` **before** switch detection. **Not** re-routed; the old
+  `normalizeJumpTableAngle` pre-pass is **not** revived (it would have to run before
+  the taint-escape guard — structurally invasive; the angle table is the f64 family).
+  Positive data-mux fixtures must assert the input retains `switch i32`.
+- **Distinct-handle / ≥2-base tainted data-mux** (MUX-EXCH no-cloning, §20.10) →
+  `control flow`. The coherent quantum multiplexer is a future `cqrt_cswap`/Fredkin
+  increment.
+- **Non-empty `default:` body** (§20.8) → `control flow`. Needs the sanctioned `¬OR`
+  default-flag, a future item (the only place a controlled `default` arm could be
+  lowered without `FlagConjunction` is a single-default-arm cswap route — deferred).
+- **Grouped fall-through labels** (≥2 case values → 1 label, §20.9) → `control flow`.
+  The per-value-flag routing is a deferred positive with its own mutual-exclusivity
+  fixture.
+- **Mixed arm classes** (phase+value in one switch) → `mixed phase/value arm`.
+- **fp-data / vector / `i128` / pointer merge** → `control flow` (G4).
+- **Nested tainted branch inside a case** (deeper than the 4.3 depth-2 nest) →
+  `control flow`.
+- **Value arm clobbering a scrutinee-read register** (`case 1: q=q+1`) →
+  `arm rewrites a condition operand` (G7, permanent — information-theoretic, §3c).
+
+**Open questions (resolved at IMPLEMENTATION-4.5 kickoff against the real tree, not
+assumed — the §20 Part-6 engineering TODOs):**
+
+1. **`soleMergePhi` → N-incoming lift (G1).** The exact RAUW-collapse predicate for
+   identity-only second `phi`s (which shapes are provably identity). Over-decline
+   (any 2nd content `phi`) is the safe v1 floor.
+2. **Value-arm routed-base derivation (G6/C2).** Confirm `valueChainBase` returns the
+   merge default-edge incoming for **every** case across all `-O1` forms, with the
+   assertion `valueChainBase == defaultEdgeIncoming && != SI->getCondition()`.
+   Resolve whether any clang form puts the routed base on a non-default case edge.
+3. **Eq-fold if/else `Routed` anchor ordering (D/§20.6).** Both clang arm orderings
+   (const-arm-first, handle-arm-first) must converge on the same `Routed`; confirm
+   the existing if/else `Routed`-set and the new anchor do not double-set.
+4. **Per-case scrub vs `RotationLowering` (§20.2/§20.12).** Verify the folded
+   `cq_phi(c_i,θ)` erase precedes `CQLoweringPass.cpp:110` for all N cases with no
+   block-pointer caching across erasures.
+5. **`emitEqFlag` vs `lowerCompareToFlag` parity.** Confirm `emitEqFlag(q, c_i)`
+   produces the byte-identical `icmp_eq_<Wq>_hl` + `_inv` strip pair the
+   strip-validity argument depends on, for all 5 widths (the switch has no live
+   per-case `CmpInst` to feed `lowerCompareToFlag`).
+6. **Data-mux delta-scratch lifetime.** `%d_i = cqrt_alloc(v_i^v_d)` left
+   untainted/unfreed (benign, mirroring 4.4 `materialize`); confirm it does not enter
+   `BirthOrder`/uncompute and N such allocs don't trip a leak-accounting assertion.
+7. **Two residual Rule-13 boundaries** (WI-7, must clear before emitter ships): the
+   value-arm method-B N-way coherent boundary (`%out` ever *wrong*, not merely
+   entangled?) and the data-mux N-ary coherent-operand gate (the §16.7 select
+   boundary, now N-ary).
