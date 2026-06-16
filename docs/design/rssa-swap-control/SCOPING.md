@@ -552,8 +552,8 @@ value if/else (WI-5); the value-diamond e2e golden (WI-6). `cqrt_copy_i32`
 links and signature-matches. Full `ctest` green; `gen_templates.py --check`
 clean.
 
-**Next: 4.3 — nested control** (a tainted `br` inside an arm; `computeFreePoint`
-+ block-lifetime discipline activate there), then 4.4 `select` → 4.5 `switch`.
+**Next: 4.5 — tainted `switch`** (4.3 nested control and 4.4 `select` are now DONE;
+this scoping note's original sequence was 4.3 → 4.4 `select` → 4.5 `switch`).
 Reverse-play stays the on-demand undo, not an eager step (§3a). The ROADMAP
 "Phase 4 — RSSA swap-routed control flow" block and
 [`docs/prd/phase-04-swap-route-control/PRD.md`](../../prd/phase-04-swap-route-control/PRD.md)

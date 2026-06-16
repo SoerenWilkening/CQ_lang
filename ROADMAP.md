@@ -509,8 +509,7 @@ after a statevector-checked design dialogue; see
   temporal misorder) and a linked e2e golden
   (`tests/e2e/slice_control_nested_phase.c`). Modules: `RegionTreeDetect`,
   `ArmHomogeneity`, `NestedRouteEmit`, `flattenRegionTree`; reused helpers
-  de-anonymized into `ControlShape.h`/`ArmAnalysis.h` (WI-0). **Next: 4.4
-  `select`.**
+  de-anonymized into `ControlShape.h`/`ArmAnalysis.h` (WI-0).
 
 - **4.4 — tainted `select` (controlled-XOR copy merge) [DONE 2026-06-16,
   branch `swap-route-control`, WI-1..WI-5 —
@@ -553,7 +552,7 @@ after a statevector-checked design dialogue; see
   misorder/stray-x) and a linked e2e golden (`tests/e2e/slice_control_select.c`).
   **The shipped default is the conservative form** (classical/basis-integer
   operands accept; coherent + fp-data decline); the clearance gates each future
-  widening.
+  widening. **Next: 4.5 `switch`.**
 
 - **4.5 — tainted `switch`.** Re-add (the old `SwitchNormalization` was removed):
   lower an N-way tainted `switch` via per-case routing / `icmp eq`-flag select

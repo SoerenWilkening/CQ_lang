@@ -1449,9 +1449,10 @@ a new mechanism.
    (design principle 10), not a compiler decline. **Net: the merge mechanism
    forces no rejection** — the SCOPING "P6 may relax for classical operands" hedge
    is resolved to "the *principle* is relaxation for all data operands." (The
-   *shipped* 4.4 default is still conservative — coherent operands decline pending
-   the §16.7 clearance; the rejections that remain come from the angle/width gates
-   and that conservative default, never from the merge itself.)
+   *shipped* 4.4 default is conservative — coherent operands decline; the §16.7
+   clearance (WI-5, §8.11, 2026-06-16) confirmed that default and authorized **no**
+   widening. The rejections that remain come from the angle/width gates and that
+   conservative default, never from the merge itself.)
 
 2. **The discriminator is the result's USE, not its type** — but the angle decline
    is a **NEW detection-time check 4.4 must add, not a pre-existing guard it
