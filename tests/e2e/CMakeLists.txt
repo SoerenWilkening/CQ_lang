@@ -123,6 +123,27 @@ add_test(NAME e2e-slice-control-cond-datause
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cond_datause.expected.log")
 
+# Phase 4.4 (WI-4, test_C_libtooling-polz.4): RSSA tainted-`select` controlled-XOR
+# copy merge. The only layer that LINKS — and 4.4 adds a NEW runtime symbol, so
+# this golden is the ONLY proof cqrt_copy_<W>_controlled (WI-2) resolves +
+# signature-matches against libcq_runtime (Rule 2/16). The canonical §15 shape
+# `sel = (q>5) ? q : x` SPECULATES at -O1 into a single `select` (no diamond, no
+# phi) and lowers to the §5a merge stream: flag mint -> |0> out rail alloc ->
+# cqrt_copy_i32_controlled the TRUE operand (q) on the flag -> X-bracket +
+# cqrt_copy_i32_controlled the FALSE operand (x, materialized via cqrt_alloc) on
+# ¬flag -> icmp_inv strip -> the ONE cqrt_free (the flag). q / out / the
+# materialized scratch are LEFT ALLOCATED (freeing an operand entangled with out
+# is a hidden measurement, Rule 6/8); ZERO cqrt_cswap, ZERO controlled rotations,
+# no surviving `phi i32`, EXACTLY ONE free (contrast the method-B value diamond's
+# two). control_swap_select_qc.ll is the pinned IR contract; IMPLEMENTATION-4.4 §5a.
+add_test(NAME e2e-slice-control-select
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select.expected.log")
+
 # test_C_libtooling-5j5: the ONE-REGISTER classical-mux lift. The natural
 # `if (classical_c) q = cq_phi(q, a);` survives -O1 as a merge phi over two
 # SSA names of one register; the lift RAUWs it away and the CLASSICAL branch
