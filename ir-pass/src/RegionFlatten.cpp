@@ -16,6 +16,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"  // llvm::reverse
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Instructions.h"
 
@@ -171,6 +172,49 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   //    `Merge` (branch-first lifetime, ET2).
   InnerArm->eraseFromParent();
   Mid->eraseFromParent();
+  Merge->eraseFromParent();
+}
+
+void flattenSwitchRegion(const ControlRegion &R, TaintSet &taint) {
+  // Capture EVERY block identity before the first erase (the block-lifetime
+  // hazard — a `BasicBlock*` re-read through freed memory is a SIGSEGV on valid
+  // input). `Pred` is the switch block (SURVIVES — it holds the emitted routed
+  // stream). The arm blocks (incl. empty passthrough arms whose merge incoming is
+  // just the scrutinee) and the merge block are doomed.
+  BasicBlock *Pred = R.Pred;
+  BasicBlock *Merge = R.MergeBB;
+  if (!Pred || !Merge)
+    return;  // malformed plan — leave the IR for the verifier rather than crash.
+  SmallVector<BasicBlock *, 4> Arms;
+  for (const SwitchArm &A : R.SwitchArms)
+    if (A.Block)
+      Arms.push_back(A.Block);
+  auto *SI = dyn_cast<SwitchInst>(Pred->getTerminator());
+
+  // 1. Drop the `switch` terminator — control is now straight-line. The switch is
+  //    a USER of the tainted scrutinee `q` (TaintPropagation put it in
+  //    taint.Tainted), so scrub before erase (§6.1 — else a later module walk
+  //    dereferences freed memory). This leaves Pred terminator-less for exactly
+  //    the next statement (the spliced merge tail; no verify runs in between).
+  if (SI) {
+    scrubTaint(SI, taint);
+    SI->eraseFromParent();
+  }
+
+  // 2. Splice the merge block's surviving instructions (the measure / ret that
+  //    consumed the now-RAUW'd phi — the phi was erased upstream) onto the end of
+  //    Pred. Pred's terminator becomes the merge's `ret`.
+  Pred->splice(Pred->end(), Merge);
+
+  // (No dead condition compare to erase: unlike the diamond's i1 `CmpInst`, the
+  //  switch scrutinee `q` is the LIVE quantum register — kept alive by the
+  //  emitted per-case eq-flags — so it is never use-empty and is NEVER erased.)
+
+  // 3. Delete the now-unreachable arm blocks, then the emptied merge block (each
+  //    arm's `br label %merge` was the last reference to the merge block, so the
+  //    arms must go first — branch-first lifetime).
+  for (BasicBlock *A : Arms)
+    A->eraseFromParent();
   Merge->eraseFromParent();
 }
 

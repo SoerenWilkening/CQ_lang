@@ -344,12 +344,36 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
                                 "condition data use neither escaped nor measured");
   }
 
-  // ACCEPT (would-be) — the whole switch is proven. WI-1 EMIT IS STUBBED: fire the
-  // transitional `switch` decline and push NOTHING (lowerControlRegions has no
-  // SwitchRegion branch until WI-2/3/4, which flip this to
-  // `R.Kind = SwitchRegion; R.SwitchCls = Cls; ...; plan.Regions.push_back(R);`).
-  (void)plan;
-  diagnoseUnderControl(SI, "switch");
+  // ACCEPT — the whole switch is proven. WI-2 lands the PHASE emitter
+  // (`emitSwitchPhaseRegion`): push the region for `lowerControlRegions`. The
+  // VALUE (WI-3) and DATA-MUX (WI-4) emitters are not yet landed, so a non-Phase
+  // accept still fires the TRANSITIONAL `switch` decline (its positive stays red
+  // until its WI graduates it) — never silently pass a tainted switch (Prime
+  // Directive).
+  if (Cls != SwitchClass::Phase)
+    return diagnoseUnderControl(SI, "switch");
+
+  ControlRegion R;
+  R.Kind = ControlRegion::SwitchRegion;
+  R.SwitchCls = Cls;
+  R.Condition = Q;            // the scrutinee = the routed base (§4A).
+  R.Merge = P;                // the sole N-incoming content merge phi.
+  R.Pred = SwitchBB;          // the switch block (survives the flatten).
+  R.MergeBB = MergeBB;
+  R.SwitchDefaultDirect = DefaultDirect;
+  // Capture every case-arm BLOCK (incl. an empty passthrough arm whose incoming
+  // is just the scrutinee) so `flattenSwitchRegion` erases them all; the emitter
+  // skips an arm with no folded gates (`collectArmPhis` empty). A straight-to-
+  // merge case has a null block — no block to route or flatten — so skip it.
+  for (const SwitchCase &C : S.Cases) {
+    if (!C.Block)
+      continue;
+    SwitchArm A;
+    A.Values.push_back(C.Value);
+    A.Block = C.Block;
+    R.SwitchArms.push_back(A);
+  }
+  plan.Regions.push_back(R);
 }
 
 }  // namespace cq

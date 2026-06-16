@@ -55,6 +55,21 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint);
 void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
                        llvm::ArrayRef<llvm::CallInst *> armPhis, TaintSet &taint);
 
+// N-way CFG flatten for an accepted tainted `switch` region (swap-route 4.5;
+// IMPLEMENTATION-4.5 §4/§5). Reads `R.Pred` (the switch block — SURVIVES, holds
+// the emitted routed stream), `R.SwitchArms[].Block` (the case-arm blocks —
+// doomed, incl. empty passthrough arms), and `R.MergeBB` (doomed). Assumes
+// `emitSwitchPhaseRegion` has already emitted the per-case stream, RAUW'd the
+// merge phi → the scrutinee, and scrubbed+erased the phi + folded arm gates.
+// Captures every block identity BEFORE the first erase (the block-lifetime
+// hazard), then: scrub+erase the `switch` terminator (a USER of the tainted
+// scrutinee — §6.1); splice the merge's surviving instructions into `Pred`;
+// delete the now-unreachable arm blocks, then the emptied merge block. Unlike
+// `flattenRegion`, the scrutinee `q` is the LIVE quantum register (kept alive by
+// the emitted eq-flags) and is NEVER erased — there is no dead i1 condition
+// compare to drop.
+void flattenSwitchRegion(const ControlRegion &R, TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_REGION_FLATTEN_H_

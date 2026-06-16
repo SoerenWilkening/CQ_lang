@@ -28,6 +28,7 @@
 #include "OpcodeSupport.h"       // abiWidthFromType (value-arm rail width)
 #include "RegionFlatten.h"       // flattenRegion
 #include "SelectMergeEmit.h"     // emitSelectRegion (the 4.4 select merge)
+#include "SwitchRouteEmit.h"     // emitSwitchPhaseRegion (the 4.5 switch phase)
 #include "TaintPropagation.h"    // TaintSet
 #include "WidthDispatch.h"       // allocFn / copyFn / rzRtFn / freeFn / abiWidthFor
 
@@ -769,6 +770,28 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       // `if (!Doomed) continue;` guard). Dispatch + continue BEFORE the Depth /
       // child-lookup branch, which keys on null CFG anchors.
       emitSelectRegion(R, wd, csyms, taint);
+      continue;
+    }
+    if (R.Kind == ControlRegion::SwitchRegion) {
+      // 4.5 — a tainted-condition `switch`. Its Pred (switch block) + MergeBB are
+      // set, so the pre-flight above covered the shared merge; the case-arm blocks
+      // are single-pred(switch) (resolveArm) and so cannot alias another region's
+      // Pred/Arm/Merge, so leaving them out of the pre-flight is safe (§6.4
+      // decision (a) — treat like select). Dispatch by content class BEFORE the
+      // Depth / child-lookup branch (a switch carries no `ParentIdx` nest link).
+      if (R.SwitchCls == SwitchClass::Phase) {
+        emitSwitchPhaseRegion(R, wd, csyms, taint);
+      } else {
+        // VALUE (WI-3) / DATA-MUX (WI-4) emitters are not yet landed. Detection
+        // pushes ONLY Phase switch regions today (non-Phase decline
+        // transitionally in `classifySwitchRegion`), so this is currently
+        // unreachable — but never silently skip a tainted switch (Prime
+        // Directive): bail LOUDLY.
+        if (auto *Anchor = dyn_cast_or_null<Instruction>(R.Merge))
+          diagnoseUnderControl(Anchor, "control flow");
+        else if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
+          diagnoseUnderControl(A, "control flow");
+      }
       continue;
     }
     if (R.Depth > 0)
