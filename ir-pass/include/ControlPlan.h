@@ -51,6 +51,16 @@ struct TaintSet;
 // the default so the 4.1 phase-arm paths need not write it.
 enum class ArmClass { Phase, Value };
 
+// 4.5 (PRD Part V §20.5) — the per-CONTENT-class discriminator for an accepted
+// `SwitchRegion`, parallel to `ArmClass`/`ClassArm` (a *content* class, NOT a
+// top-level `Kind`). `Phase` = homogeneous phase-arm switch (route + verbatim-Rz
+// replay + icmp_inv strip, zero controlled gates); `Value` = homogeneous value
+// chain on a base `p != q` (method-B route + chain replay + copy-out +
+// reverse-play); `DataMux` = all-`ConstantInt` merge incomings (preload + per-case
+// XOR-delta controlled-copy). Scoped (`enum class`) so its `Phase`/`Value`
+// enumerators do NOT collide with `ArmClass`'s in the `cq` namespace.
+enum class SwitchClass { Phase, Value, DataMux };
+
 // WP18 (PRD §8.5) — one case arm of a gated `SwitchRegion`: the case constant(s)
 // targeting it, its arm block, and the arm's in-shadow gate bodies (the `cq_phi`
 // calls that become `_controlled` on the arm's flag). The DEFAULT arm is carried
@@ -149,6 +159,12 @@ struct ControlRegion {
   // chain links live in `Shadow` / `ShadowFalse` above.
   ArmClass ClassArm = ArmClass::Phase;
   ArmClass ClassArmFalse = ArmClass::Phase;
+
+  // 4.5 (PRD Part V §20.5) — the per-content class of an accepted `SwitchRegion`
+  // (`SwitchClassify` writes it on accept). Meaningful only when
+  // `Kind == SwitchRegion`; `Phase` is the default. Picks the emit recipe in
+  // `lowerControlRegions` (WI-2/3/4: phase / value / data-mux).
+  SwitchClass SwitchCls = SwitchClass::Phase;
 
   // br-sourced CFG anchors (null for a select region). `Pred` holds the
   // outer `br i1`; `Arm` is the innermost guarded block (the gate body);

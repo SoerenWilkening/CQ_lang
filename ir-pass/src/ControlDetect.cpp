@@ -23,6 +23,7 @@
 #include "ControlShape.h"
 #include "RegionTreeDetect.h"
 #include "SelectClassify.h"
+#include "SwitchClassify.h"
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -221,8 +222,16 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
             !Claimed.count(BI))
           handleBranchRegion(BI, taint, plan, Claimed);
       } else if (auto *SI = dyn_cast<SwitchInst>(Term)) {
+        // 4.5 — prove-or-decline a tainted-scrutinee `switch` instead of the
+        // blanket decline (mirrors the 4.4 `classifySelectRegion` flip).
+        // `classifySwitchRegion` runs the G0-G11 ladder: a real off-pattern shape
+        // fires its precise per-shape string; a proven would-be-ACCEPT fires the
+        // transitional `switch` string (WI-1 emit is stubbed — WI-2/3/4 push the
+        // region + dispatch the emitter). The tainted-scrutinee entry guard is
+        // unchanged. Switch is a TERMINATOR, so this stays in the terminator
+        // dispatch (unlike the select scan's second instruction loop below).
         if (taint.Tainted.count(SI->getCondition()))
-          diagnoseUnderControl(SI, "switch");
+          classifySwitchRegion(SI, taint, plan);
       }
       // 4.4 — prove-or-decline a tainted-condition `select` instead of the
       // blanket decline. `classifySelectRegion` (SelectClassify) runs the §0
