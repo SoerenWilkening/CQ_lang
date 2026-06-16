@@ -302,7 +302,6 @@ bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
 // compile-time XOR delta, and freeing superposed sources needs cswap (Rule 8) —
 // decline generic.
 bool proveSwitchDataMux(const SwitchShape &S, TaintSet &Taint) {
-  (void)Taint;
   // (MUX-EXCH / G8 — distinct tainted-handle incomings — needs no operandsAlias
   // closure here: a tainted handle is not a ConstantInt, so caseArmClass classifies
   // such an arm PHASE and proveSwitchPhase declines it (base is not a case-literal
@@ -329,6 +328,48 @@ bool proveSwitchDataMux(const SwitchShape &S, TaintSet &Taint) {
           diagnoseUnderControl(S.SI, "control flow");
           return false;
         }
+  }
+
+  // The data-mux merge result lowers (RAUW) to a FRESH quantum handle %out that the
+  // ORIGINAL forward taint propagation never saw: the merge has all-ConstantInt
+  // incomings, so it is UNTAINTED by SSA data-flow (unlike the value/phase merge,
+  // whose TAINTED incomings let the L110 angle backstop `declineTaintedAngle` catch
+  // a downstream angle). The emitter re-taints %out but does NOT re-propagate, so
+  // ANY user of the merge beyond a measurement/escape is left CLASSICAL-OVER-QUANTUM:
+  //   - a `(double)(merge != k) ? a : b` angle reaching a `cq_phi`/`cq_theta` arg-1
+  //     through an `icmp` / select-condition / store-load / call carrier that G3's
+  //     forward walk (`mergeReachesRotationArg1`, casts+binops+phi+select-value only)
+  //     CANNOT cross — a verify-clean f64/angle silent miscompile (Rule 3); OR
+  //   - a stock `add %out, k` reading the i32 HANDLE as if it were the value.
+  // G3 is the SOLE pre-emit backstop for the untainted data-mux merge and it cannot
+  // enumerate every carrier, so require the merge result be consumed ONLY by a
+  // measurement sink or a `ret` (escape) — the conservative, carrier-independent gate
+  // (Prime Directive: over-decline is always safe). The DIRECT-angle case still fires
+  // the precise `rotation angle` via G3 first (it runs before this G6 proof).
+  //
+  // The sink test is EXACT-MEMBERSHIP (`Taint.MeasureCalls`, the recognized
+  // `@cq_measure_<sfx>` call sites), NOT a `starts_with("cq_measure_")` prefix match.
+  // Prefix-matching on the ACCEPT side is spoofable: an opaque extern named
+  // `cq_measure_evil` (or an unsupported-width `cq_measure_si128`) is treated by the
+  // rest of the pipeline as an UNKNOWN callee, yet a prefix check would mistake it for
+  // an owning sink and accept — leaking the live superposed rail %out to a classical
+  // function as a raw i32 handle (a confirmed verify-clean over-accept). This is the
+  // asymmetry vs the G10 scrutinee allowlist (SwitchClassify.cpp): there the operand
+  // `q` is ALWAYS tainted, so `declineTaintEscapes` (L64, pre-detection) has already
+  // rejected any unknown-callee user before G10 runs — so on a tainted operand the
+  // prefix check only ever sees KNOWN callees and is equivalent to membership. The
+  // data-mux merge result is UNTAINTED (all-ConstantInt incomings), so that escape-
+  // guard pre-filter NEVER fires here — the gate must do the exact check itself.
+  SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
+                                         Taint.MeasureCalls.end());
+  for (const User *U : S.Merge->users()) {
+    if (isa<ReturnInst>(U))
+      continue;
+    if (const auto *CI = dyn_cast<CallInst>(U))
+      if (Sinks.count(CI))
+        continue;
+    diagnoseUnderControl(S.SI, "control flow");
+    return false;
   }
   return true;  // clean constant data-mux (would-be-accept).
 }

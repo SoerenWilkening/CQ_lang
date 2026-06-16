@@ -60,6 +60,20 @@ void emitSwitchPhaseRegion(const ControlRegion &R, WidthDispatch &wd,
 void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
                            ControlledSymbols &csyms, TaintSet &taint);
 
+// Lower an accepted all-`ConstantInt` data-mux switch region
+// (`SwitchCls == DataMux`) — the preload + per-case XOR-delta controlled copy
+// (NO route, NO ¬-bracket, NO reverse-play; the N-way generalization of the 4.4
+// `select` controlled-XOR merge). `%out = cqrt_alloc_<W>(v_d)` preloads the
+// default literal; per content case `%d_i = cqrt_alloc_<W>(v_i ^ v_d)` is the
+// compile-time XOR-delta and `cqrt_copy_<W>_controlled(f_i, d_i, out)` writes it
+// iff `q == c_i` (distinct literals ⇒ at most one flag set ⇒ `out = v_k`, or the
+// preload `v_d` when none match). Mutates the module IR and `taint`. The shape is
+// detection-guaranteed; any residual mismatch bails LOUDLY (never a silent skip of
+// quantum-controlled flow — Prime Directive). Declared here (one header, three
+// `.cpp` — IMPLEMENTATION-4.5 §1); defined in `SwitchDataMuxEmit.cpp`.
+void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
+                             ControlledSymbols &csyms, TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_SWITCH_ROUTE_EMIT_H_

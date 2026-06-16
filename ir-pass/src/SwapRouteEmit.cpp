@@ -785,11 +785,14 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
         // 4.5 WI-3 — homogeneous value-chain switch: the N-way method-B over the
         // shared routed base `p` = the merge default-edge incoming (`p != q`).
         emitSwitchValueRegion(R, wd, csyms, taint);
+      } else if (R.SwitchCls == SwitchClass::DataMux) {
+        // 4.5 WI-4 — all-ConstantInt data-mux: PRELOAD %out=cqrt_alloc(v_d) +
+        // per content case the XOR-delta controlled copy (no route, no ¬-bracket;
+        // the default is the preload). IMPLEMENTATION-4.5 §4C.
+        emitSwitchDataMuxRegion(R, wd, csyms, taint);
       } else {
-        // DATA-MUX (WI-4) emitter is not yet landed. Detection pushes only Phase
-        // and Value switch regions today (DataMux declines transitionally in
-        // `classifySwitchRegion`), so this is currently unreachable — but never
-        // silently skip a tainted switch (Prime Directive): bail LOUDLY.
+        // An unknown future SwitchClass — never silently skip a tainted switch
+        // (Prime Directive): bail LOUDLY.
         if (auto *Anchor = dyn_cast_or_null<Instruction>(R.Merge))
           diagnoseUnderControl(Anchor, "control flow");
         else if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))

@@ -65,6 +65,7 @@ add_library(CQPass MODULE
   src/SwapRouteEmit.cpp
   src/SwitchArmProve.cpp
   src/SwitchClassify.cpp
+  src/SwitchDataMuxEmit.cpp
   src/SwitchRouteEmit.cpp
   src/SwitchValueEmit.cpp
   src/TaintPropagation.cpp
