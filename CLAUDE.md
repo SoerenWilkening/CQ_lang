@@ -20,9 +20,10 @@ class of bug.
 > file is the *operating manual*; the ROADMAP is the *plan of record* (Phases
 > 0–10 + the 10 cross-cutting design principles). **Current focus: Phase 4 —
 > RSSA swap-routed tainted control flow**; clean-slate `4.0`, the `4.1`
-> phase-arm emitter, `4.2` (value/permutation arms, method-B), and `4.3`
-> (depth-2 nested control) are **done** (branch `swap-route-control`); `4.4`
-> (tainted `select`) is next. Read
+> phase-arm emitter, `4.2` (value/permutation arms, method-B), `4.3`
+> (depth-2 nested control), and `4.4` (tainted `select` — controlled-XOR copy
+> merge) are **done** (branch `swap-route-control`); `4.5`
+> (tainted `switch`) is next. Read
 > `ROADMAP.md` and
 > `docs/design/rssa-swap-control/` *before* touching control flow. Phases 0–3
 > are done; 5–10 are not started (the early Phase-5 uncompute spine landed
@@ -245,8 +246,13 @@ controlled gates) and **value/permutation arms** by method-B (`R` →
 register the condition reads declines loudly — §3c); `RegionFlatten` erases the
 CFG diamond. `RegionTreeDetect` + `NestedRouteEmit` lower the **depth-2
 homogeneous-phase nest** (`if(a){…if(b){…}}`, flag-per-level routing — 4.3
-DONE); **every other tainted-control shape loudly declines** (deeper or
-non-homogeneous nests, select → 4.4, switch → 4.5).
+DONE). `SelectClassify` + `SelectMergeEmit` lower a tainted-condition
+**integer-data `select`** via the **controlled-XOR copy merge** (flag mint →
+`|0⟩` rail → two `cqrt_copy_<W>_controlled`, ¬flag `cqrt_x`-bracketed → `icmp_inv`
+strip → one `cqrt_free`; no cswap/route/flatten/reverse-play — 4.4 DONE; coherent
+`Ry`-phase / fp-data operands ride the conservative decline). **Every other
+tainted-control shape loudly declines** (deeper or non-homogeneous nests, switch
+→ 4.5).
 The enduring lessons — restructured, **not deleted** — that any control work
 must respect:
 
@@ -299,8 +305,8 @@ When you cannot *prove* the shape, **decline loudly** (Prime Directive).
 - **Phase 4 is only partially done — and the *old* "done" Phase 4 is a trap.**
   The controlled-op Phase 4 shipped and was **removed wholesale**; the current
   Phase 4 is the swap-route rebuild — `4.0` + `4.1` (phase arms) + `4.2` (value
-  arms, method-B) + `4.3` (depth-2 nested) done, `4.4`–`4.5` (select / switch)
-  not started. Old ROADMAP/issue references to a "finished" controlled-form
+  arms, method-B) + `4.3` (depth-2 nested) + `4.4` (tainted `select`) done, `4.5`
+  (switch) not started. Old ROADMAP/issue references to a "finished" controlled-form
   Phase 4 describe the deleted generation.
 - **Casts are representation changes, NEVER measurements.** The only path to a
   measurement gate is an explicit `cq_measure(...)`. There is no flag/syntax to

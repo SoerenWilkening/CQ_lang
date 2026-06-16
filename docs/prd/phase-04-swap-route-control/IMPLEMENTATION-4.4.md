@@ -748,17 +748,41 @@ the §16.7 coherent-operand boundary and the §3.2 angle gate.
 10. **e2e trace diff** (WI-4) — the linking proof that `cqrt_copy_<W>_controlled`
     resolves + signature-matches.
 
-**§8.x clearance verdict** *(added at WI-5 closeout)* — records the independent
-review outcome (lenses, confirmed defects, silent-miscompile count), per the 4.2
-§8.10 / 4.3 §8 precedent. **The shipped 4.4 default is the conservative form**
-(classical/basis integer operands accept; coherent + fp-data decline); the
-clearance gates each widening.
+### §8.11 Clearance verdict (WI-5 closeout, 2026-06-16) — **CLEARED, 0 silent miscompiles**
+
+Independent Rule-13 adversarial clearance of the shipped 4.4 build (analytic/trace +
+lowered-IR reading + structural probes; no backend, no statevector simulation —
+owner decision 2026-06-10). **Five lenses, each independently second-reviewed**
+(a 5-lens review pipeline + a per-lens skeptic refutation that re-derived from the
+actual IR/source before trusting the reviewer); the binding coherent-operand lens
+got a dedicated independent skeptic (20+ hostile probes). **Verdict: CLEARED on all
+five; 0 confirmed defects; 0 silent miscompiles.** The shipped 4.4 default stays the
+**conservative form** (classical/basis-integer operands accept; `cq_phi`-lineage /
+downstream-rotation coherent operands + fp-data decline); no widening is authorized.
+
+| Lens | Verdict | Key evidence |
+|---|---|---|
+| **1. ¬flag bracket-order (§8.1)** | CLEARED | Two-row truth table: correct stream `copy(f,a);x;copy(f,b);x` gives `out=f?a:b` (one write/branch); the same-multiset mis-bracket gives `out=f?0:(a^b)` (wrong). Emitter emits exactly `copy(140),x(146),copy(148),x(149)` — bracket on copy2 only. The §5a `ORD` FileCheck rejects all six same-multiset misorders (verified). |
+| **2. angle-gate airtightness (§8.2/§3.2)** | CLEARED | `selReachesRotationArg1` catches every `%sel`→rotation-arg1 path through the value-preserving carriers; value-changing ops are backstopped by `declineTaintEscapes` (L64) or `declineTaintedAngle` (L110); `rotation angle` actually fires on real `-O1` (not a leaked `declineTaintedAngle`). Phi-loop, aggregate, and gate-2-ordering probes all decline loudly. |
+| **3. coherent-operand boundary (§8.3/§16.7)** | CLEARED | For a `cq_theta` (Ry, real-amplitude) operand the CNOT-copy gives `a\|00⟩+b\|11⟩` — `%out` marginal `P(0)=a²,P(1)=b²` is the **correct** `c?a:b` distribution; no relative phase to lose, so no accepted case is wrong. The entangled flag does **not** corrupt the copy (joint-state walk: `f`/`¬f` complementary ⟹ exactly one copy fires; `x(f)` commutes; flag uncomputes to `\|0⟩` so the free is valid). `operandCarriesPhase`+`hasCoherentDownstreamUse` catch every `cq_phi`-lineage / downstream-rotation path incl. through arith/cast carriers, both operand positions — **no over-accept leak across 20+ hostile probes**. |
+| **4. emitter-fidelity (§8.4)** | CLEARED | Real lowered IR for §5a/§5b/§5c/i8/polarity/ret diffs exactly against §4: right ops, order, operands (control=arg0, src=arg1, dst=out=arg2); `materialize` allocs only for classical operands; `ret` variant emits **zero** measure (Rule 5); polarity maps true→f=1; no `cswap`/`_controlled` rotation/`phi i32`. |
+| **5. frees/width/ChainWalk (§8.5-9)** | CLEARED | Exactly **one** `cqrt_free` (the flag) on every accept; `q`/`%out`/scratch left allocated. `ChainWalk.cpp` is **unchanged** (no `isControlledCopyOut` exemption — the WI-3-amendment-correct state): `forwardConsumerCount` counts the controlled copy as a real consumer, so an entangled rail is never reverse-played/freed (no hidden measurement). i8-mux emits `cqrt_*_i8` (width read pre-RAUW). Full decline matrix fires the exact documented strings vs real `-O1`; classical-mux + nested untouched; §3c vacuous. |
+
+**Residuals (all non-blocking; no shipped defect):**
+- **(closed) Lit-count gap.** The `ORD`/structural CHECKs pinned bracket *order* but not the `cqrt_x` *count*, so a hypothetical regression adding a stray `cqrt_x` (the swapped/dirty-flag `out=f?b:a` unitary) would pass lit — caught only by the e2e byte-diff. Closed at WI-5 by the `XCT-COUNT-2`/`XCT-NOT` pin in `control_swap_select_qc.ll` (verified to fail on an injected 3rd `cqrt_x`).
+- **(defense-in-depth) Cross-module couplings, intact at HEAD:** (a) the angle-gate's no-leak guarantee for value-changing ops relies on the `declineTaintEscapes`/`declineTaintedAngle` backstops — a future taint-propagation opcode filter could open a hole; (b) gate 5 not flagging a classical-operand `cq_phi` relies on `RotationLowering` deleting it (now noted in the gate-5 comment); (c) the single-free guarantee relies on the name-prefix classification of `cqrt_copy_*_controlled` as non-benign in `isTerminalHandle`. Each holds today; each is flagged for re-review if the coupled module changes.
+
+Per the 4.2 §8.10 / 4.3 §8 precedent. Reviewer artifacts: this verdict + the per-lens
+structured reports (workflow `phase44-select-clearance`, 2026-06-16) + the detailed
+two-row bracket trace and entangled-flag joint-state walk in
+`docs/design/rssa-swap-control/WI5_SELECT_CLEARANCE.md`. **The shipped 4.4 default is
+the conservative form**; the clearance gates each future widening.
 
 ---
 
 ## 9. Done criteria (maps PRD §17)
 
-- [ ] A tainted-condition **integer-data `select`** lowers to the merge stream the
+- [x] A tainted-condition **integer-data `select`** lowers to the merge stream the
       `.ll` fixtures pin (`icmp_<Wc>_hl` flag → `alloc <Wd>(0)` →
       `copy_<Wd>_controlled` on flag → `cqrt_x` / `copy` / `cqrt_x` on ¬flag →
       `icmp_<Wc>_hl_inv` strip → `cqrt_free`), `%sel` RAUW'd to `%out`, with the
@@ -766,17 +790,17 @@ clearance gates each widening.
       `_controlled`), `CHECK-NOT: cqrt_cswap`, `CHECK-NOT: phi i32`, **exactly ONE
       `cqrt_free`** (`CNT-COUNT-1` + `CNT-NOT`), `%out`/operands/scratch never
       freed, `opt -verify` clean.
-- [ ] **The ordered FileCheck** pins the ¬flag bracket scope
+- [x] **The ordered FileCheck** pins the ¬flag bracket scope
       (`copy(f,a,out)` → `cqrt_x(f)` → `copy(f,b,out)` → `cqrt_x(f)`); the two-row
       trace (§8.1) is **written + cleared by independent review** before WI-3 ships.
-- [ ] `cqrt_copy_{i1,i8,i16,i32,i64}_controlled` land in the hand-written core ABI
+- [x] `cqrt_copy_{i1,i8,i16,i32,i64}_controlled` land in the hand-written core ABI
       with the pinned signature/trace; the new `WidthDispatch`/`ControlledSymbols`
       minter (integer-only via `llvmWidthType().isIntegerTy()`, **not** a clone of
       `copyFn`) mints them; `runtime_trace_test` covers them;
       `gen_templates.py --check` clean (YAML untouched). fp widths deferred (§16.4).
-- [ ] **`%out` carries no measurement and no `phi`** — the select step emits zero
+- [x] **`%out` carries no measurement and no `phi`** — the select step emits zero
       `cqrt_measure`; a `ret %sel` variant proves no measure appears (Rule 5).
-- [ ] **Decline fixtures** (each `not … | FileCheck`, mirroring the string that
+- [x] **Decline fixtures** (each `not … | FileCheck`, mirroring the string that
       ACTUALLY fires — confirmed against real `-O1`, one tainted region per file):
       angle-use → **re-pinned `rotation angle`** via the §3.2 detector
       (`+ CHECK-NOT cqrt_copy/cqrt_alloc`); transitive-cast angle → same;
@@ -784,18 +808,22 @@ clearance gates each widening.
       flow`; coherent operand → `control flow` (conservative default);
       aliasing → `control flow`; non-lowerable condition → `control flow`;
       classical-condition + nested-select → **UNCHANGED** strings, still green.
-- [ ] **§3c is structurally vacuous** — no §3c decline fixture; a `CHECK-NOT: arm
+- [x] **§3c is structurally vacuous** — no §3c decline fixture; a `CHECK-NOT: arm
       rewrites a condition operand` on the operand-is-condition accept (§16.6).
-- [ ] The §16.5 `isControlledCopyOut` ChainWalk exemption lands (`forwardConsumerCount`
-      only); the no-spurious-free probe proves an unrelated chain keeps its
-      uncompute; `isTerminalHandle` untouched (no-free is its default).
-- [ ] ≥1 **e2e trace golden** (C-sourced, linked) diffs clean — the only layer
+- [x] `ChainWalk.cpp` is **UNCHANGED** — the §16.5 `isControlledCopyOut` exemption was
+      **REJECTED, not added** (WI-3 amendment #1: it was a latent hidden-measurement —
+      a controlled copy IS a real fan-out consumer of its `src`, so exempting it would
+      drop `forwardConsumerCount` below 2, suppress the fan-out bail, and reverse-play +
+      free a rail entangled with `%out`). The DEFAULT (counting the copy) leaves the
+      entangled rail allocated; the no-spurious-free probe (`control_swap_select_fanout_alloc.ll`)
+      confirms it. `isTerminalHandle` untouched (no-free is its default).
+- [x] ≥1 **e2e trace golden** (C-sourced, linked) diffs clean — the only layer
       proving `cqrt_copy_<W>_controlled` resolves + signature-matches.
-- [ ] The **§16.7 coherent-operand boundary** (both channels) and the **§3.2 angle
+- [x] The **§16.7 coherent-operand boundary** (both channels) and the **§3.2 angle
       gate** are **cleared by independent Rule-13 review** (analytic/trace, no
       simulation) **before** any coherent/fp accept widens; a green suite alone
       does **not** clear it. **The shipped default is the conservative form.**
-- [ ] 4.1/4.2/4.3 regression floor green (diamond / if-else / nested / value
+- [x] 4.1/4.2/4.3 regression floor green (diamond / if-else / nested / value
       fixtures unchanged; no `cqrt_copy_<W>_controlled` leakage into non-`select`
       paths).
 - [ ] Full `ctest` green; bd memory updated: `swap-route-detect-known-limits`

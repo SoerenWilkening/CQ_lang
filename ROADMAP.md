@@ -335,7 +335,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.3 DONE · 4.4–4.5 pending]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.4 DONE · 4.5 pending]
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
 + [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
@@ -512,23 +512,48 @@ after a statevector-checked design dialogue; see
   de-anonymized into `ControlShape.h`/`ArmAnalysis.h` (WI-0). **Next: 4.4
   `select`.**
 
-- **4.4 — tainted `select` (controlled-XOR copy merge).** PRD Part IV
-  (`docs/prd/phase-04-swap-route-control/PRD.md` §§15–18, written 2026-06-15,
-  Rule-13 pre-cleared `CLEARED-WITH-AMENDMENTS`). Reimplement the tainted-condition
-  `select` merge as a controlled-XOR copy into a fresh `|0⟩` register — **no cswap
-  routing** (a `select` has no arm ops), but **one self-inverse `cqrt_x` bracket**
-  for the ¬flag false-value copy (reused from 4.1; supersedes the earlier "no flag
-  bracket" shorthand — the bracket is required because the copy fires on `f=1`).
-  New ABI: `cqrt_copy_<W>_controlled` (5 integer widths first; fp-data staged).
-  **No correctness decline is forced by the merge** (it is a valid unitary, §3c is
-  vacuous, operands are left allocated — never freed dirty). The old P6 rejection
-  was the teeth of *freeing* a dirty entangled rail, which never-free-dirty
-  removes; it relaxes for all **data** operands. The two genuine guards are the
-  **USE-not-type angle gate** (a `select` result transitively reaching a rotation
-  arg-1 declines — a NEW detector check, no downstream backstop) and the
-  **scalar-ABI-width gate**; coherent (`Ry`/phase-carrying) operands ride the
-  conservative-default decline until the §16.7 boundary clears. Classical-condition
-  tainted-data selects (a different `declineClassicalMuxes` path) stay declined.
+- **4.4 — tainted `select` (controlled-XOR copy merge) [DONE 2026-06-16,
+  branch `swap-route-control`, WI-1..WI-5 —
+  `docs/prd/phase-04-swap-route-control/IMPLEMENTATION-4.4.md` + PRD Part IV
+  §§15–18].** The blanket `select` decline is lifted for a tainted-condition
+  **integer-data** `select` (the `-O1`-folded ternary, one SSA instruction — the
+  simplest Phase-4 shape). The merge is a controlled-XOR copy into a fresh `|0⟩`
+  register — **no `cqrt_cswap` routing** (a `select` has no arm ops), **no
+  `RegionFlatten`, no reverse-play**: mint the flag from the icmp → `alloc` the
+  `|0⟩` out rail → `cqrt_copy_<Wd>_controlled` the TRUE operand on the flag →
+  **one self-inverse `cqrt_x` bracket** + `cqrt_copy_<Wd>_controlled` the FALSE
+  operand (materialized via `cqrt_alloc` if classical) on ¬flag → `icmp_inv`
+  strip → the **single** `cqrt_free` (the flag) → RAUW `%sel→%out`. New ABI:
+  `cqrt_copy_<W>_controlled` (5 integer widths; fp-data staged, §16.4). `%out` /
+  operands / scratch are **left allocated** (freeing an operand entangled with
+  `%out` via the copy is a hidden measurement — Rule 6/8); §3c is structurally
+  vacuous (a select writes nothing). Detection (`SelectClassify`, a 6-gate
+  prove-or-decline ladder by SSA identity before mutation) proves the shape or
+  declines loudly; the two load-bearing guards are the **USE-not-type angle gate**
+  (`selReachesRotationArg1` — a `select` result transitively reaching a rotation
+  arg-1 declines `rotation angle`; **no downstream backstop**, so it must fire at
+  detection) and the **conservative coherent-operand gate** (`operandCarriesPhase`
+  backward + `hasCoherentDownstreamUse` forward — a `cq_phi`/Rz-lineage or
+  downstream-rotation operand declines `control flow`, the basis CNOT-copy would
+  dephase it). Everything off-pattern declines (fp-data, vector/`i128`, aliasing,
+  Q+Q condition, non-`CmpInst` condition); classical-**condition** tainted-data
+  selects stay on the separate `declineClassicalMuxes` path. Modules:
+  `SelectClassify`, `SelectMergeEmit` (+ thin `ControlDetect`/`SwapRouteEmit`
+  dispatch, `ControlledSymbols::copyControlledFn`); `ChainWalk` **unchanged** (the
+  controlled copy counts as a real consumer, leaving entangled rails allocated —
+  the WI-3-amendment-correct state). **Cleared (Rule 13)** by two independent
+  adversarial reviews — the WI-3 4-lens emitter-physics clearance (caught a real
+  verify-clean dephasing over-accept — the forward-only coherent proxy missed an
+  `Rz`-lineage operand; fixed by adding `operandCarriesPhase`) and the WI-5 5-lens
+  shipped-build clearance (each lens independently second-reviewed; the binding
+  coherent-operand lens got a dedicated 20+-probe skeptic; **0 confirmed defects,
+  0 silent miscompiles**; IMPLEMENTATION-4.4 §8.11 +
+  `docs/design/rssa-swap-control/WI5_SELECT_CLEARANCE.md`) — plus the §5a
+  ordered+count FileCheck (`ORD`+`XCT`, the only lit layer catching a bracket
+  misorder/stray-x) and a linked e2e golden (`tests/e2e/slice_control_select.c`).
+  **The shipped default is the conservative form** (classical/basis-integer
+  operands accept; coherent + fp-data decline); the clearance gates each future
+  widening.
 
 - **4.5 — tainted `switch`.** Re-add (the old `SwitchNormalization` was removed):
   lower an N-way tainted `switch` via per-case routing / `icmp eq`-flag select

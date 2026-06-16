@@ -131,6 +131,15 @@ bool selReachesRotationArg1(SelectInst *Sel) {
 // operand whose lineage FEEDS a downstream rotation — channel B). Together they
 // enforce the §16.7 "decline coherent operands" intent that the forward-only
 // proxy alone missed. See [[select-merge-phase-operand-dephasing]].
+//
+// CROSS-MODULE INVARIANT (WI-5 Rule-13 clearance, the one non-material residual):
+// the walk only recurses through `taint.Tainted` operands, so a `cq_phi` on a
+// CLASSICAL operand (untainted result) is correctly NOT flagged — it carries no
+// real relative phase because `RotationLowering` deletes a classical-operand
+// `cq_phi` (Rz on a basis state is unobservable; Rule 3). If classical-`cq_phi`
+// handling ever changes (its result becomes tainted, or it stops being deleted),
+// this gate must be re-reviewed — a classical phase reaching the basis copy would
+// otherwise leak. Holds at HEAD; flagged here per the §8.3 second-review note.
 bool operandCarriesPhase(Value *Op, const TaintSet &Taint) {
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;

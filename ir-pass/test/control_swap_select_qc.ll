@@ -21,6 +21,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=ORD
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=XCT
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -64,6 +65,15 @@ entry:
 ; exactly ONE cqrt_free (the flag; uncompute adds none — q/%out/scratch leak):
 ; CNT-COUNT-1: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(
+
+; EXACTLY TWO cqrt_x — pins the bracket COUNT, not just its order (§8.1 / WI-5
+; adversarial finding): the ORD prefix above is order-correct but blind to a STRAY
+; cqrt_x (an unbalanced 3-x bracket computes the swapped/dirty-flag unitary
+; out=f?b:a yet still matches ORD; previously caught ONLY by the e2e byte-diff).
+; Its own RUN/prefix because the two x's PRECEDE cqrt_free in the stream — folding
+; this into CNT would scan past the free and fail. COUNT-2 then NOT pins the multiset.
+; XCT-COUNT-2: call void @cqrt_x(
+; XCT-NOT:     call void @cqrt_x(
 
 ; the select ACCEPTS (lowers) — no decline of any kind, in particular no §3c
 ; clobber (§16.6 vacuity); the only icmp is the mint/strip pair, not a leaked one:
