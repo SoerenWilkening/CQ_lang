@@ -141,6 +141,7 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
   CallInst *Out = B.CreateCall(Alloc, {Vd}, "out");
   stamp(Out);
   taint.Tainted.insert(Out);
+  taint.ControlOwnedRails.insert(Out);  // DD-4: Phase-4 owns this data-mux out-rail
   taint.BirthOrder[Out] = taint.NextBirth++;
 
   // 2. Per CONTENT case (incoming v_i ≠ v_d): mint eq-flag → XOR-delta alloc →

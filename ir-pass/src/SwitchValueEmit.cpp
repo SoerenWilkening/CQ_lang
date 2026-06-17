@@ -197,6 +197,7 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
     CS.Rail = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "rail");
     stamp(CS.Rail);
     taint.Tainted.insert(CS.Rail);
+    taint.ControlOwnedRails.insert(CS.Rail);  // DD-4: Phase-4 owns this work rail
 
     // 3. Route-in (split). Eq-flags are positive-polarity (mutually exclusive) —
     //    no ¬-bracket (Negated=false), so one cswap.
@@ -236,6 +237,7 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
   CallInst *CopyCall = B.CreateCall(Copy, {P, Out});
   stamp(CopyCall);
   taint.Tainted.insert(Out);
+  taint.ControlOwnedRails.insert(Out);  // DD-4: Phase-4 owns this merge out-rail
   taint.BirthOrder[Out] = taint.NextBirth++;
 
   // 7. Reverse-play R†, per case in REVERSE emission order (LIFO). Per case:

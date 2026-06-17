@@ -125,6 +125,22 @@ struct TaintSet {
   // diagnostic churn). Pointers stay valid — consumers are not erased before
   // the re-sweep.
   llvm::SmallPtrSet<llvm::Instruction *, 4> LiftedConsumers;
+
+  // Phase 5 WI-4 (DD-4). Pass-invented control SCRATCH rails the swap-route /
+  // select / switch emitters minted (`cqrt_alloc_<W>` work rails, merge / data-mux
+  // OUT-rails) and inserted into `Tainted` so downstream consumers keep
+  // classifying them as quantum handles. Phase 4 OWNS their reversal-or-leak
+  // (phase arms strip the flag + free a |0> rail; value arms reverse-play; an
+  // entangled merge out-rail is LEFT ALLOCATED, Rule 6/8). The whole-DAG uncompute
+  // driver subtracts this set BEFORE terminal selection so it never selects a
+  // Phase-4 rail as a data terminal — replacing the dead `ControlFlag`/`FlagImage`
+  // plumbing (which had zero writers) with a real, explicitly-populated image, and
+  // protecting a legitimately-Phase-4-owned dead out-rail from the WI-5 silent→loud
+  // flip (a `recoverDataDag` bottoming out at such an alloc would otherwise become a
+  // spurious loud decline). Populated by each control emitter at its
+  // `Tainted.insert(rail)` site; consumed by `uncompute`. Empty for a module with
+  // no tainted control flow.
+  llvm::SmallPtrSet<llvm::Value *, 8> ControlOwnedRails;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure

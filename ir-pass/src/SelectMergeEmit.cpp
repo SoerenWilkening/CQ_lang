@@ -133,6 +133,7 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   CallInst *Out = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "out");
   stamp(Out);
   taint.Tainted.insert(Out);
+  taint.ControlOwnedRails.insert(Out);  // DD-4: Phase-4 owns this merge out-rail
   taint.BirthOrder[Out] = taint.NextBirth++;
 
   // 3. COPY the TRUE value on the flag (materialize if classical) — fires on f=1.

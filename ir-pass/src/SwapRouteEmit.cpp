@@ -307,6 +307,7 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
     A.Rail = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "rail");
     stamp(A.Rail);
     taint.Tainted.insert(A.Rail);
+    taint.ControlOwnedRails.insert(A.Rail);  // DD-4: Phase-4 owns this work rail
   }
 
   // 3. Route-ins (split) — p -> each arm's rail, X-bracketed for a ¬flag arm.
@@ -357,6 +358,7 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   CallInst *CopyCall = B.CreateCall(Copy, {Q, Out});
   stamp(CopyCall);
   taint.Tainted.insert(Out);
+  taint.ControlOwnedRails.insert(Out);  // DD-4: Phase-4 owns this merge out-rail
   taint.BirthOrder[Out] = taint.NextBirth++;
 
   // 7. Reverse-play R†, per arm in REVERSE emission order (LIFO — the grouped
