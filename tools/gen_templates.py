@@ -2,17 +2,20 @@
 """tools/gen_templates.py - template-stub generator.
 
 Reads tools/opcode_table.yaml and emits:
-  - cq_templates.h          : extern "C" declarations (~780 symbols)
+  - cq_templates.h          : extern "C" declarations (1438 symbols)
   - cq_templates.c          : printf-trace stub bodies
 
 Each file embeds the YAML SHA-256 in its banner so consumers can detect
 drift. --check mode regenerates into a tempdir and diffs byte-for-byte
-against the on-disk artifacts.
+against the on-disk artifacts. C ABI emission (signature / stub_body) is
+split into tools/abi_codegen.py (DD-5).
 
-Naming ("_hl"/"_lh" shape, then "_inv" direction):
+Naming ("_hl"/"_lh" shape, then "_inv" direction; "_unc" is in-place void):
   fwd Q+Q:     cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>]
   fwd Q+C rhs: ..._hl    fwd C+Q lhs: ..._lh
   inv Q+Q:     ..._inv   inv Q+C rhs: ..._hl_inv   inv C+Q lhs: ..._lh_inv
+  unc Q+Q:     ..._qq_unc  unc Q+C rhs: ..._hl_unc  unc C+Q lhs: ..._lh_unc
+  unc arity-1: ..._unc   (void in-place; out is arg 0 — Phase 5, §2.3/DD-3)
 
 Trace format mirrors runtime/cq_templates.c.
 """
@@ -27,17 +30,10 @@ import tempfile
 
 import yaml
 
-# Per-width C type + printf format + (optional) cast for the Q+C trace body.
-# Mirrors the existing add/fadd stub format exactly.
-WIDTH_INFO = {
-    "i1":  {"ctype": "bool",    "fmt": "%d",   "cast": "(int)"},
-    "i8":  {"ctype": "int8_t",  "fmt": "%lld", "cast": "(long long)"},
-    "i16": {"ctype": "int16_t", "fmt": "%lld", "cast": "(long long)"},
-    "i32": {"ctype": "int32_t", "fmt": "%lld", "cast": "(long long)"},
-    "i64": {"ctype": "int64_t", "fmt": "%lld", "cast": "(long long)"},
-    "f32": {"ctype": "float",   "fmt": "%f",   "cast": "(double)"},
-    "f64": {"ctype": "double",  "fmt": "%f",   "cast": ""},
-}
+# C ABI emission (signature / stub_body, incl. the void `_unc` family) lives
+# in abi_codegen (DD-5 split). This module owns YAML load / enumeration /
+# write / --check / CLI; abi_codegen owns the per-symbol C surface.
+from abi_codegen import signature, stub_body
 
 TARGETS = ("h", "c")
 
@@ -54,6 +50,13 @@ TARGETS = ("h", "c")
 # suffix, `_inv` stays last (`…[_hl|_lh]_controlled[_inv]`). Every controlled
 # symbol prepends an `int32_t ctrl_flag` as argument 0 (§1.2); this is keyed
 # off the shape carrying a `c` prefix below, consumed by signature/stub_body.
+#
+# Uncompute axis (Phase 5, PRD §2.3 / DD-3): `unc[_qq|_hl|_lh]` tokens add the
+# VOID in-place uncompute family `cq_template_<op>_<W>[_<shape>]_unc(out, src…)`
+# - the shape token is ALWAYS spelled (including `_qq`), then `_unc` last. These
+# carry a `u` shape prefix, consumed by signature/stub_body to prepend `int32_t
+# out_handle` as argument 0 and return void. Arity-1 (unary/cast) uses the bare
+# `unc` token -> `_unc` suffix, shape `ua1`.
 CONTROLLED_SHAPES = {"cqq", "chl", "clh"}
 VARIANT_INFO = {
     "fwd_qq": ("",        "qq"),
@@ -70,6 +73,10 @@ VARIANT_INFO = {
     "controlled_inv_qq": ("_controlled_inv",    "cqq"),
     "controlled_inv_hl": ("_hl_controlled_inv", "chl"),
     "controlled_inv_lh": ("_lh_controlled_inv", "clh"),
+    "unc_qq": ("_qq_unc", "uqq"),
+    "unc_hl": ("_hl_unc", "uhl"),
+    "unc_lh": ("_lh_unc", "ulh"),
+    "unc":    ("_unc",    "ua1"),
 }
 
 
@@ -92,9 +99,12 @@ def enumerate_all(table):
             suffix, shape = VARIANT_INFO[v]
             row = {"sym": base + suffix, "kind": kind, "shape": shape, "variant": v}
             row.update(extra)
-            # hl/lh (and their controlled twins chl/clh) carry a classical
-            # operand whose C type comes from the symbol's width.
-            row["classical_w"] = extra.get("width") if shape in ("hl", "lh", "chl", "clh") else None
+            # hl/lh (and their controlled twins chl/clh, and the void
+            # uncompute twins uhl/ulh) carry a classical operand whose C type
+            # comes from the symbol's width.
+            row["classical_w"] = (extra.get("width")
+                                  if shape in ("hl", "lh", "chl", "clh", "uhl", "ulh")
+                                  else None)
             rows.append(row)
 
     # Binary: variant grid per (op, width).
@@ -120,69 +130,6 @@ def enumerate_all(table):
                  op["variants"], {"op": op["opcode"], "from": pair["from"], "to": pair["to"]})
     rows.sort(key=lambda r: r["sym"])
     return rows
-
-
-# -------------------- signature + body helpers --------------------
-
-def signature(row):
-    """Return the C declaration (no trailing ';').
-
-    Controlled shapes (cqq/chl/clh) mirror their uncontrolled twins
-    (qq/hl/lh) but prepend `int32_t ctrl_flag` as parameter 0 — the single
-    control wire (PRD §1.2). The control flag is always argument 0.
-    """
-    sym = row["sym"]
-    shape = row["shape"]
-    ctrl = "int32_t ctrl_flag, " if shape in CONTROLLED_SHAPES else ""
-    if shape == "a1":  # arity-1: cast / unary (never controlled)
-        return f"int32_t {sym}(int32_t a_handle)"
-    if shape in ("qq", "cqq"):  # Q+Q binary or compare
-        return f"int32_t {sym}({ctrl}int32_t a_handle, int32_t b_handle)"
-    ctype = WIDTH_INFO[row["classical_w"]]["ctype"]
-    if shape in ("hl", "chl"):  # handle on LHS, classical scalar on RHS
-        return f"int32_t {sym}({ctrl}int32_t a_handle, {ctype} b_classical)"
-    # shape lh/clh: classical scalar on LHS, handle on RHS
-    return f"int32_t {sym}({ctrl}{ctype} a_classical, int32_t b_handle)"
-
-
-def stub_body(row):
-    """Return the C body lines (without the signature braces).
-
-    Controlled shapes (cqq/chl/clh) prepend the control flag to the trace as
-    a leading `h%d` (the flag is an i32 handle, PRD §1.2); the rest of the
-    trace mirrors the uncontrolled twin exactly.
-    """
-    sym = row["sym"]
-    shape = row["shape"]
-    ctrl_fmt = "h%d, " if shape in CONTROLLED_SHAPES else ""
-    ctrl_arg = "ctrl_flag, " if shape in CONTROLLED_SHAPES else ""
-    if shape == "a1":  # arity-1: cast / unary (never controlled)
-        return (
-            "    int32_t h = cqrt_alloc_handle();\n"
-            f"    printf(\"{sym}(h%d) -> h%d\\n\", a_handle, h);\n"
-            "    fflush(stdout);\n    return h;\n"
-        )
-    if shape in ("qq", "cqq"):  # Q+Q binary or compare
-        return (
-            "    int32_t h = cqrt_alloc_handle();\n"
-            f"    printf(\"{sym}({ctrl_fmt}h%d, h%d) -> h%d\\n\", {ctrl_arg}a_handle, b_handle, h);\n"
-            "    fflush(stdout);\n    return h;\n"
-        )
-    info = WIDTH_INFO[row["classical_w"]]
-    if shape in ("hl", "chl"):  # handle on LHS, classical scalar on RHS
-        cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
-        return (
-            "    int32_t h = cqrt_alloc_handle();\n"
-            f"    printf(\"{sym}({ctrl_fmt}h%d, {info['fmt']}) -> h%d\\n\", {ctrl_arg}a_handle, {cast_expr}, h);\n"
-            "    fflush(stdout);\n    return h;\n"
-        )
-    # shape lh/clh: classical scalar on LHS, handle on RHS; trace order classical, handle.
-    cast_expr = f"{info['cast']}a_classical" if info["cast"] else "a_classical"
-    return (
-        "    int32_t h = cqrt_alloc_handle();\n"
-        f"    printf(\"{sym}({ctrl_fmt}{info['fmt']}, h%d) -> h%d\\n\", {ctrl_arg}{cast_expr}, b_handle, h);\n"
-        "    fflush(stdout);\n    return h;\n"
-    )
 
 
 # -------------------- emitters --------------------

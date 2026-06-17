@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""tools/abi_codegen.py - C ABI emission for the template generator.
+
+Split out of tools/gen_templates.py (DD-5: the generator crossed the
+300-LOC hand-written budget once the void `_unc` family landed). This
+module owns the per-symbol C surface - `signature()` (the extern decl)
+and `stub_body()` (the printf-trace body), keyed off the row `shape`.
+gen_templates.py keeps YAML load / enumeration / file write / `--check`.
+
+Shapes (set by gen_templates.enumerate_all from VARIANT_INFO):
+  a1            arity-1 unary / cast              sym(h)              -> i32
+  qq            two quantum handles               sym(h, h)           -> i32
+  hl / lh       handle+literal / literal+handle   sym(h, W) / (W, h)  -> i32
+  cqq/chl/clh   controlled twins (flag is arg 0)  sym(flag, ...)      -> i32
+  uqq/uhl/ulh   void in-place uncompute (binary)  sym(out, ...)       -> void
+  ua1           void in-place uncompute (arity-1) sym(out, h)         -> void
+
+`_unc` bodies are trace-only stubs; real zeroing is Phase 8+ bodies.
+The `_unc` family (Phase 5, PRD §2.3 / DD-3) is VOID and in-place: `out`
+is prepended as argument 0, the forward operands follow in their ORIGINAL
+order, and the stub only traces - it ZEROES the out rail by recomputing f
+from the still-live sources (Bennett uncompute), so it mints no handle and
+returns nothing. Reusing the fresh-minting `_inv` family for uncompute
+would free a dirty rail (a hidden measurement, Rule 6/8); `_unc` does not.
+"""
+from __future__ import annotations
+
+# Per-width C type + printf format + (optional) cast for the Q+C trace body.
+# Mirrors the existing add/fadd stub format exactly.
+WIDTH_INFO = {
+    "i1":  {"ctype": "bool",    "fmt": "%d",   "cast": "(int)"},
+    "i8":  {"ctype": "int8_t",  "fmt": "%lld", "cast": "(long long)"},
+    "i16": {"ctype": "int16_t", "fmt": "%lld", "cast": "(long long)"},
+    "i32": {"ctype": "int32_t", "fmt": "%lld", "cast": "(long long)"},
+    "i64": {"ctype": "int64_t", "fmt": "%lld", "cast": "(long long)"},
+    "f32": {"ctype": "float",   "fmt": "%f",   "cast": "(double)"},
+    "f64": {"ctype": "double",  "fmt": "%f",   "cast": ""},
+}
+
+# Controlled shapes prepend an i32 control flag as parameter 0 (PRD §1.2).
+CONTROLLED_SHAPES = {"cqq", "chl", "clh"}
+# Void in-place uncompute shapes prepend an i32 `out` rail as parameter 0
+# and return void (PRD §2.3 / DD-3).
+UNC_SHAPES = {"uqq", "uhl", "ulh", "ua1"}
+
+
+# -------------------- signature + body --------------------
+
+def signature(row):
+    """Return the C declaration (no trailing ';').
+
+    Controlled shapes (cqq/chl/clh) mirror their uncontrolled twins
+    (qq/hl/lh) but prepend `int32_t ctrl_flag` as parameter 0 - the single
+    control wire (PRD §1.2). The void `_unc` shapes (uqq/uhl/ulh/ua1) are
+    routed to `_unc_signature`.
+    """
+    shape = row["shape"]
+    if shape in UNC_SHAPES:
+        return _unc_signature(row)
+    sym = row["sym"]
+    ctrl = "int32_t ctrl_flag, " if shape in CONTROLLED_SHAPES else ""
+    if shape == "a1":  # arity-1: cast / unary (never controlled)
+        return f"int32_t {sym}(int32_t a_handle)"
+    if shape in ("qq", "cqq"):  # Q+Q binary or compare
+        return f"int32_t {sym}({ctrl}int32_t a_handle, int32_t b_handle)"
+    ctype = WIDTH_INFO[row["classical_w"]]["ctype"]
+    if shape in ("hl", "chl"):  # handle on LHS, classical scalar on RHS
+        return f"int32_t {sym}({ctrl}int32_t a_handle, {ctype} b_classical)"
+    # shape lh/clh: classical scalar on LHS, handle on RHS
+    return f"int32_t {sym}({ctrl}{ctype} a_classical, int32_t b_handle)"
+
+
+def stub_body(row):
+    """Return the C body lines (without the signature braces).
+
+    Controlled shapes (cqq/chl/clh) prepend the control flag to the trace as
+    a leading `h%d` (the flag is an i32 handle, PRD §1.2); the rest of the
+    trace mirrors the uncontrolled twin exactly. The void `_unc` shapes are
+    routed to `_unc_body`.
+    """
+    shape = row["shape"]
+    if shape in UNC_SHAPES:
+        return _unc_body(row)
+    sym = row["sym"]
+    ctrl_fmt = "h%d, " if shape in CONTROLLED_SHAPES else ""
+    ctrl_arg = "ctrl_flag, " if shape in CONTROLLED_SHAPES else ""
+    if shape == "a1":  # arity-1: cast / unary (never controlled)
+        return (
+            "    int32_t h = cqrt_alloc_handle();\n"
+            f"    printf(\"{sym}(h%d) -> h%d\\n\", a_handle, h);\n"
+            "    fflush(stdout);\n    return h;\n"
+        )
+    if shape in ("qq", "cqq"):  # Q+Q binary or compare
+        return (
+            "    int32_t h = cqrt_alloc_handle();\n"
+            f"    printf(\"{sym}({ctrl_fmt}h%d, h%d) -> h%d\\n\", {ctrl_arg}a_handle, b_handle, h);\n"
+            "    fflush(stdout);\n    return h;\n"
+        )
+    info = WIDTH_INFO[row["classical_w"]]
+    if shape in ("hl", "chl"):  # handle on LHS, classical scalar on RHS
+        cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
+        return (
+            "    int32_t h = cqrt_alloc_handle();\n"
+            f"    printf(\"{sym}({ctrl_fmt}h%d, {info['fmt']}) -> h%d\\n\", {ctrl_arg}a_handle, {cast_expr}, h);\n"
+            "    fflush(stdout);\n    return h;\n"
+        )
+    # shape lh/clh: classical scalar on LHS, handle on RHS; trace order classical, handle.
+    cast_expr = f"{info['cast']}a_classical" if info["cast"] else "a_classical"
+    return (
+        "    int32_t h = cqrt_alloc_handle();\n"
+        f"    printf(\"{sym}({ctrl_fmt}{info['fmt']}, h%d) -> h%d\\n\", {ctrl_arg}{cast_expr}, b_handle, h);\n"
+        "    fflush(stdout);\n    return h;\n"
+    )
+
+
+# -------------------- void in-place `_unc` family (Phase 5) --------------------
+
+def _unc_signature(row):
+    """Void in-place uncompute decl (PRD §2.3 / DD-3). `out_handle` is arg 0;
+    the forward operands follow in their ORIGINAL order. No return value -
+    the op zeroes the `out` rail, mints nothing.
+    """
+    sym = row["sym"]
+    shape = row["shape"]
+    if shape == "ua1":  # arity-1 (unary / cast): _unc(out, src)
+        return f"void {sym}(int32_t out_handle, int32_t a_handle)"
+    if shape == "uqq":  # forward (a_handle, b_handle) -> _unc(out, a_handle, b_handle)
+        return f"void {sym}(int32_t out_handle, int32_t a_handle, int32_t b_handle)"
+    ctype = WIDTH_INFO[row["classical_w"]]["ctype"]
+    if shape == "uhl":  # forward (a_handle, b_classical) -> _unc(out, a_handle, b_classical)
+        return f"void {sym}(int32_t out_handle, int32_t a_handle, {ctype} b_classical)"
+    # ulh: forward (a_classical, b_handle) -> _unc(out, a_classical, b_handle)
+    return f"void {sym}(int32_t out_handle, {ctype} a_classical, int32_t b_handle)"
+
+
+def _unc_body(row):
+    """Trace-only void body. Prints `out` first (DD-3 slot order), then the
+    forward operands in their original order. NO `cqrt_alloc_handle` (mints
+    nothing), NO `return`, NO `-> h` result suffix - the handle counter does
+    not advance. Real rail-zeroing arrives with the Phase 8+ template bodies.
+    """
+    sym = row["sym"]
+    shape = row["shape"]
+    if shape == "ua1":
+        return (
+            f"    printf(\"{sym}(h%d, h%d)\\n\", out_handle, a_handle);\n"
+            "    fflush(stdout);\n"
+        )
+    if shape == "uqq":
+        return (
+            f"    printf(\"{sym}(h%d, h%d, h%d)\\n\", out_handle, a_handle, b_handle);\n"
+            "    fflush(stdout);\n"
+        )
+    info = WIDTH_INFO[row["classical_w"]]
+    if shape == "uhl":
+        cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
+        return (
+            f"    printf(\"{sym}(h%d, h%d, {info['fmt']})\\n\", out_handle, a_handle, {cast_expr});\n"
+            "    fflush(stdout);\n"
+        )
+    # ulh: trace order out, classical, handle.
+    cast_expr = f"{info['cast']}a_classical" if info["cast"] else "a_classical"
+    return (
+        f"    printf(\"{sym}(h%d, {info['fmt']}, h%d)\\n\", out_handle, {cast_expr}, b_handle);\n"
+        "    fflush(stdout);\n"
+    )

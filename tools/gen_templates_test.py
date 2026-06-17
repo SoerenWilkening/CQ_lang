@@ -2,7 +2,7 @@
 """tools/gen_templates_test.py - self-test for tools/gen_templates.py.
 
 Asserts:
-  1. Total symbol count == 1172.
+  1. Total symbol count == 1438 (1172 value-returning + 266 void `_unc`).
   2. Per-kind breakdown matches YAML projection (derived at runtime).
   3. Every .h declaration has a matching .c definition.
   4. YAML SHA-256 banner appears in every emitted file (cq_templates.{h,c}).
@@ -10,6 +10,9 @@ Asserts:
   6. --check returns 0 on clean tree, 1 after a tampered byte.
   7. Every controlled symbol's first parameter is the i32 control flag
      (PRD §1.2: one control wire per op, prepended as argument 0).
+  8. The void in-place `_unc` uncompute family (Phase 5, PRD §2.3 / DD-3):
+     void return, `out` prepended as arg 0, forward operands following in
+     original order; trace-only bodies (no alloc, no return, no `-> h`).
 
 Run: python3 tools/gen_templates_test.py
 """
@@ -57,17 +60,79 @@ class GenTemplatesTest(unittest.TestCase):
         _generate(cls.out)
         cls.h_text = (cls.out / "cq_templates.h").read_text()
         cls.c_text = (cls.out / "cq_templates.c").read_text()
-        cls.h_decls = sorted(re.findall(r"^int32_t (cq_template_\w+)\(",
+        # Both return types: `int32_t` (fwd/inv/controlled, mint a handle) and
+        # `void` (the in-place `_unc` uncompute family, Phase 5 — zeroes a rail,
+        # mints nothing). cq_templates.h holds ONLY cq_template_* symbols, so a
+        # `^void ` line there is always an `_unc` decl (the cqrt_* void runtime
+        # symbols live in cq_runtime.h).
+        cls.h_decls = sorted(re.findall(r"^(?:int32_t|void) (cq_template_\w+)\(",
                                         cls.h_text, re.MULTILINE))
-        cls.c_defs = sorted(re.findall(r"^int32_t (cq_template_\w+)\([^)]*\)\s*\{",
+        cls.c_defs = sorted(re.findall(r"^(?:int32_t|void) (cq_template_\w+)\([^)]*\)\s*\{",
                                        cls.c_text, re.MULTILINE))
 
     @classmethod
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_1172(self):
-        self.assertEqual(len(self.h_decls), 1172)
+    def test_total_symbol_count_is_1438(self):
+        # 1172 value-returning templates (fwd/inv/controlled) + 266 void
+        # in-place `_unc` symbols (WI-2): binary 196 + unary 2 + cast 68.
+        # Compares carry no `_unc` (the PRD §2.3 uncompute surface is the
+        # binary + unary + cast primitives the spine emits).
+        self.assertEqual(len(self.h_decls), 1438)
+
+    def test_unc_family_is_void_in_place(self):
+        """PRD §2.3 / DD-3: the `_unc` uncompute family is VOID and in-place.
+        `out` is prepended as argument 0; the forward operands follow in
+        their ORIGINAL order. There is no `int32_t` return (the op zeroes a
+        rail by recomputing f from live sources — it mints nothing)."""
+        unc = re.findall(r"^(int32_t|void) (cq_template_\w+_unc)\(([^)]*)\)",
+                         self.h_text, re.MULTILINE)
+        self.assertTrue(unc, "no _unc symbols emitted")
+        for ret, sym, params in unc:
+            self.assertEqual(ret, "void",
+                             f"{sym}: return type {ret!r}, expected 'void' "
+                             "(the _unc family zeroes a rail, never mints)")
+            first = params.split(",")[0].strip()
+            self.assertEqual(first, "int32_t out_handle",
+                             f"{sym}: first parameter {first!r}, expected "
+                             "'int32_t out_handle' (DD-3: out is arg 0)")
+        sigs = {sym: params for _, sym, params in unc}
+        # DD-3 pinned slot mapping (out, then forward operands in order):
+        #   qq      -> (out, a_handle, b_handle)
+        #   hl      -> (out, a_handle, b_classical)
+        #   lh      -> (out, a_classical, b_handle)
+        #   unary   -> (out, a_handle)
+        #   cast    -> (out, a_handle)
+        self.assertEqual(sigs.get("cq_template_add_i32_qq_unc"),
+                         "int32_t out_handle, int32_t a_handle, int32_t b_handle")
+        self.assertEqual(sigs.get("cq_template_add_i32_hl_unc"),
+                         "int32_t out_handle, int32_t a_handle, int32_t b_classical")
+        self.assertEqual(sigs.get("cq_template_sub_i32_lh_unc"),
+                         "int32_t out_handle, int32_t a_classical, int32_t b_handle")
+        self.assertEqual(sigs.get("cq_template_fneg_f32_unc"),
+                         "int32_t out_handle, int32_t a_handle")
+        self.assertEqual(sigs.get("cq_template_sext_i1_to_i8_unc"),
+                         "int32_t out_handle, int32_t a_handle")
+
+    def test_unc_bodies_are_trace_only(self):
+        """PRD §2.3: `_unc` bodies are trace-only stubs — NO handle mint
+        (`cqrt_alloc_handle`), NO `return`, and the trace has NO `-> h`
+        result suffix (so the handle counter never advances). The out
+        handle prints first (DD-3 slot order)."""
+        bodies = re.findall(
+            r"^void (cq_template_\w+_unc)\([^)]*\)\s*\{(.*?)\n\}",
+            self.c_text, re.MULTILINE | re.DOTALL)
+        self.assertTrue(bodies, "no _unc definitions emitted")
+        for sym, body in bodies:
+            self.assertNotIn("cqrt_alloc_handle", body,
+                             f"{sym}: body mints a handle (must be in-place)")
+            self.assertNotIn("return", body,
+                             f"{sym}: body returns a value (must be void)")
+            self.assertNotIn("-> h", body,
+                             f"{sym}: trace carries a `-> h` result suffix")
+            self.assertIn(f'printf("{sym}(h%d', body,
+                          f"{sym}: trace does not lead with the out handle")
 
     def test_controlled_first_param_is_control_flag(self):
         """PRD §1.2: every controlled symbol prepends `int32_t ctrl_flag`

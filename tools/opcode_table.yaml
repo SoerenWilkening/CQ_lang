@@ -1,8 +1,8 @@
 # tools/opcode_table.yaml — opcode surface (single source of truth).
 #
-# Drives `tools/gen_templates.py`, which emits:
-#   - runtime/cq_templates.h           (~800 lines, ~780 declarations)
-#   - runtime/cq_templates.c           (~1600 lines, printf-name stubs)
+# Drives `tools/gen_templates.py` (+ tools/abi_codegen.py), which emits:
+#   - runtime/cq_templates.h           (1438 declarations)
+#   - runtime/cq_templates.c           (printf-name stubs)
 #
 # Policy: backend stays stubbed (memory `feedback-no-backend-until-frontend-done`).
 # This file declares SYMBOLS and DISPATCH METADATA only; never template bodies.
@@ -44,16 +44,24 @@
 #   cq_template_<op>[_<pred>]_<W>[_<from_to>][_hl|_lh]_controlled[_inv]
 # Controlled axis is BINARY-ops-only — compares get no controlled grid
 # (nesting combines flags via cqrt_toffoli, PRD §2.7).
+# Uncompute forms (Phase 5, §2.3/DD-3): the VOID in-place `_unc` family. The
+# shape token is ALWAYS spelled (incl. `_qq`), then `_unc` last; `out` is
+# prepended as argument 0 and the return is void:
+#   cq_template_<op>[_<pred>]_<W>[_<from_to>]_<qq|hl|lh>_unc(out, src…)   (binary)
+#   cq_template_<op>_<from_to>_unc(out, src)                              (cast)
+#   cq_template_fneg_<W>_unc(out, src)                                    (unary)
+# Uncompute axis is binary + unary + cast only — compares get no `_unc` grid.
 #
-# Acceptance count check:
+# Acceptance count check (total == 1438):
 #   binary_opcodes  == 18 (7 int_arith + 6 int_bitwise + 5 fp_arith). The
-#                          controlled axis mirrors fwd/inv across qq/hl/lh, so
-#                          the binary surface doubles (392 -> 784 symbols).
-#   unary_opcodes   == 1  (fneg)
+#                          controlled axis mirrors fwd/inv across qq/hl/lh
+#                          (392 -> 784 symbols); the uncompute axis adds one
+#                          void `_unc` per forward shape (+196 -> 980).
+#   unary_opcodes   == 1  (fneg; fwd/inv/unc -> 6)
 #   compare_opcodes == 2  (icmp x 10 preds x 5 widths; fcmp x 6 preds x 2 widths;
-#                          NO controlled axis — nesting uses cqrt_toffoli, §2.7)
+#                          NO controlled/uncompute axis — 248)
 #   cast_opcodes    == 9  (sext, zext, trunc, fpext, fptrunc, sitofp, uitofp,
-#                          fptosi, fptoui; total 68 cross-pairs)
+#                          fptosi, fptoui; 68 cross-pairs; fwd/inv/unc -> 204)
 # ============================================================================
 
 version: "1"
@@ -84,38 +92,39 @@ predicates:
 
 # -- Binary opcodes (18 = 7 int_arith + 6 int_bitwise + 5 fp_arith) -----------
 # Int widths: i1, i8, i16, i32, i64.  FP widths: f32, f64.
-# Commutative ops carry the 4-variant grid {fwd_qq, fwd_hl, inv_qq, inv_hl}.
-# Non-commutative ops additionally carry {fwd_lh, inv_lh} (classical-on-left,
-# distinct from classical-on-right `_hl` because operand order is observable).
+# Commutative ops carry the qq/hl grid across the fwd, inv, controlled[_inv],
+# and (Phase 5) void unc axes. Non-commutative ops additionally carry the lh
+# shape (classical-on-left, distinct from classical-on-right `_hl` because
+# operand order is observable) on every axis.
 # `c_operators` is informational (e2e generators).
 binary_opcodes:
   # Integer arithmetic (7)
-  - { opcode: add,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Add",  c_operators: ["+","+=","++"],                      variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl] }
-  - { opcode: sub,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Sub",  c_operators: ["-","-=","--","unary -"],            variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
-  - { opcode: mul,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Mul",  c_operators: ["*","*="],                           variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl] }
-  - { opcode: sdiv, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::SDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
-  - { opcode: udiv, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::UDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
-  - { opcode: srem, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::SRem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
-  - { opcode: urem, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::URem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
+  - { opcode: add,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Add",  c_operators: ["+","+=","++"],                      variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: sub,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Sub",  c_operators: ["-","-=","--","unary -"],            variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: mul,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Mul",  c_operators: ["*","*="],                           variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: sdiv, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::SDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: udiv, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::UDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: srem, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::SRem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: urem, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::URem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
   # Integer bitwise (6)
-  - { opcode: and,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::And",  c_operators: ["&","&="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl] }
-  - { opcode: or,   family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Or",   c_operators: ["|","|="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl] }
-  - { opcode: xor,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Xor",  c_operators: ["^","^=","unary ~"],                variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl] }
-  - { opcode: shl,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Shl",  c_operators: ["<<","<<="],                        variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
-  - { opcode: lshr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::LShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
-  - { opcode: ashr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::AShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
+  - { opcode: and,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::And",  c_operators: ["&","&="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: or,   family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Or",   c_operators: ["|","|="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: xor,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Xor",  c_operators: ["^","^=","unary ~"],                variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: shl,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Shl",  c_operators: ["<<","<<="],                        variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: lshr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::LShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: ashr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::AShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
   # Floating-point arithmetic (5; fneg is unary)
-  - { opcode: fadd, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FAdd", c_operators: ["+","+="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl] }
-  - { opcode: fsub, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FSub", c_operators: ["-","-="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
-  - { opcode: fmul, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FMul", c_operators: ["*","*="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl] }
-  - { opcode: fdiv, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FDiv", c_operators: ["/","/="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
-  - { opcode: frem, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FRem", c_operators: ["%","%="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh] }
+  - { opcode: fadd, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FAdd", c_operators: ["+","+="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: fsub, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FSub", c_operators: ["-","-="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: fmul, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FMul", c_operators: ["*","*="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: fdiv, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FDiv", c_operators: ["/","/="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: frem, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FRem", c_operators: ["%","%="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
 
 # -- Unary opcodes (1: fneg) ---------------------------------------------------
 # PRD §"Floating-point arithmetic": "the only genuinely new unary opcode".
 # Int unary -/~/!/++/-- lower to existing binary opcodes (sub/xor/add).
 unary_opcodes:
-  - { opcode: fneg, family: fp_arith, widths: [f32,f64], llvm_inst: "llvm::Instruction::FNeg", c_operators: ["unary -"], variants: [fwd, inv] }
+  - { opcode: fneg, family: fp_arith, widths: [f32,f64], llvm_inst: "llvm::Instruction::FNeg", c_operators: ["unary -"], variants: [fwd, inv, unc] }
 
 # -- Compare opcodes (2 families: icmp, fcmp) ----------------------------------
 # Result is a flag handle (i32 ABI, logical-1-bit). PRD §"Comparison contract".
@@ -136,7 +145,7 @@ cast_opcodes:
     kind: int_width
     llvm_inst: "llvm::Instruction::SExt"
     c_operators: ["(signed widen)"]
-    variants: [fwd, inv]
+    variants: [fwd, inv, unc]
     pairs:
       - { from: i1,  to: i8  }
       - { from: i1,  to: i16 }
@@ -152,7 +161,7 @@ cast_opcodes:
     kind: int_width
     llvm_inst: "llvm::Instruction::ZExt"
     c_operators: ["(unsigned widen)"]
-    variants: [fwd, inv]
+    variants: [fwd, inv, unc]
     pairs:
       - { from: i1,  to: i8  }
       - { from: i1,  to: i16 }
@@ -168,7 +177,7 @@ cast_opcodes:
     kind: int_width
     llvm_inst: "llvm::Instruction::Trunc"
     c_operators: ["(narrow)"]
-    variants: [fwd, inv]
+    variants: [fwd, inv, unc]
     pairs:
       - { from: i8,  to: i1  }
       - { from: i16, to: i1  }
@@ -185,20 +194,20 @@ cast_opcodes:
     kind: fp_width
     llvm_inst: "llvm::Instruction::FPExt"
     c_operators: ["(float widen)"]
-    variants: [fwd, inv]
+    variants: [fwd, inv, unc]
     pairs: [{ from: f32, to: f64 }]
   - opcode: fptrunc
     kind: fp_width
     llvm_inst: "llvm::Instruction::FPTrunc"
     c_operators: ["(float narrow)"]
-    variants: [fwd, inv]
+    variants: [fwd, inv, unc]
     pairs: [{ from: f64, to: f32 }]
   # Cross-domain casts (4 kinds, 8+10+8+10 = 36 pairs)
   - opcode: sitofp
     kind: int_to_fp
     llvm_inst: "llvm::Instruction::SIToFP"
     c_operators: ["(signed-int -> float)"]
-    variants: [fwd, inv]
+    variants: [fwd, inv, unc]
     pairs:
       - { from: i8,  to: f32 }
       - { from: i8,  to: f64 }
@@ -212,7 +221,7 @@ cast_opcodes:
     kind: int_to_fp
     llvm_inst: "llvm::Instruction::UIToFP"
     c_operators: ["(unsigned-int -> float)"]
-    variants: [fwd, inv]
+    variants: [fwd, inv, unc]
     pairs:
       - { from: i1,  to: f32 }
       - { from: i1,  to: f64 }
@@ -228,7 +237,7 @@ cast_opcodes:
     kind: fp_to_int
     llvm_inst: "llvm::Instruction::FPToSI"
     c_operators: ["(float -> signed-int)"]
-    variants: [fwd, inv]
+    variants: [fwd, inv, unc]
     pairs:
       - { from: f32, to: i8  }
       - { from: f32, to: i16 }
@@ -242,7 +251,7 @@ cast_opcodes:
     kind: fp_to_int
     llvm_inst: "llvm::Instruction::FPToUI"
     c_operators: ["(float -> unsigned-int)"]
-    variants: [fwd, inv]
+    variants: [fwd, inv, unc]
     pairs:
       - { from: f32, to: i1  }
       - { from: f32, to: i8  }
