@@ -143,9 +143,8 @@ Value *valueChainBase(ArrayRef<Instruction *> Chain, const TaintSet &taint) {
 struct ValueArmStream {
   bool Negated;
   ArrayRef<Instruction *> Chain;   // original IR links (erased in step 10)
-  CallInst *Rail = nullptr;             // the arm's |0> work rail
+  CallInst *Rail = nullptr;             // the arm's |0> work rail (chain head; freed)
   SmallVector<CallInst *, 6> Fwd = {};  // minted forward template calls (step 4)
-  Value *RailFinal = nullptr;      // FINAL threaded handle after R† (the free)
 };
 
 // Lower one accepted VALUE-arm region — a one-content-arm DIAMOND (§5d, WI-4)
@@ -170,13 +169,14 @@ struct ValueArmStream {
 //                      route-backs (the answer is on p only then), BEFORE any
 //                      route-back† (R† destroys it on p) — interlock §6.4
 //   7 reverse-play R†  per arm in REVERSE emission order (LIFO): route-back† ·
-//                      chain adjoint (_inv twins, emitInverseChain, BODY CHAIN
-//                      ONLY — the cswap arg-0 seam, PRD §8.5) · route-in†.
-//                      Arm blocks commute (disjoint rails; the route cswaps
-//                      fire on complementary flag values), so the grouped
-//                      per-arm order equals the literal global adjoint.
-//   8 rail frees       on the FINAL threaded _inv handles (interlock §6.5) —
-//                      provably |0> on BOTH branches only AFTER R† (§3b)
+//                      chain adjoint (void `_unc` forms, emitInverseChain, BODY
+//                      CHAIN ONLY — the cswap arg-0 seam, PRD §8.5) · route-in†
+//                      on the work rail. Arm blocks commute (disjoint rails; the
+//                      route cswaps fire on complementary flag values), so the
+//                      grouped per-arm order equals the literal global adjoint.
+//   8 rail frees       on each arm's WORK RAIL `A.Rail` (the route-in†'d chain
+//                      head) — provably |0> on BOTH branches only AFTER R† +
+//                      route-in† (§3b); the `_unc`-zeroed intermediates leak
 //   9 strip+flag free  icmp_inv(q) + cqrt_free(flag) — valid outright: the
 //                      condition register is disjoint from the routed register
 //                      in every accepted region (§0 criterion 4)
@@ -363,34 +363,39 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   //    blocks equal the literal global adjoint because arm streams commute:
   //    chains act on disjoint rails and route cswaps fire on complementary
   //    flag values). Per arm: route-back†, then the chain adjoint in exact
-  //    reverse with `_inv` twins — the BODY CHAIN ONLY through
+  //    reverse via the void in-place `_unc` forms — the BODY CHAIN ONLY through
   //    emitInverseChain (SCOPING §7.5): the route cswaps are bracketed by
-  //    emitRoute because emitInverseCall threads the involution handle into
-  //    Args[0], which for cqrt_cswap is the FLAG slot (the seam,
-  //    EmitInverse.cpp — feeding cswaps through the chain is a verify-clean
-  //    wrong unitary, PRD §8.5) — then route-in† with the THREADED handle.
+  //    emitRoute because emitInverseCall would thread a handle into Args[0],
+  //    which for cqrt_cswap is the FLAG slot (the seam, EmitInverse.cpp —
+  //    feeding cswaps through the chain is a verify-clean wrong unitary, PRD
+  //    §8.5) — then route-in† on the work rail (the chain head, restored to |0>).
   for (ValueArmStream &A : reverse(Arms)) {
     Value *ChainFinal = A.Fwd.back();
-    emitRoute(B, csyms, Flag, Q, ChainFinal, A.Negated, DL);
-    A.RailFinal = emitInverseChain(B, A.Fwd, wd, csyms, /*Flag=*/nullptr,
-                                   /*Terminal=*/ChainFinal);
-    if (!A.RailFinal) {
+    emitRoute(B, csyms, Flag, Q, ChainFinal, A.Negated, DL);  // route-back†
+    if (!emitInverseChain(B, A.Fwd, wd)) {                    // R† (void `_unc`)
       // Every link is a forward uncontrolled template (we just minted them),
       // so this is unreachable — but an un-invertible link must decline
       // LOUDLY, never leave a half-reversed stream (Rule 1).
       diagnoseUnderControl(Cond, "control flow");
       return;
     }
-    emitRoute(B, csyms, Flag, Q, A.RailFinal, A.Negated, DL);
+    // Route-in† on the arm's WORK RAIL (`A.Rail`): the void `_unc` chain zeroed
+    // the intermediate rails in place but never touched `A.Rail` (the chain head,
+    // read by the first link), which still holds the routed value p0. The cswap
+    // moves p0 back onto Q (Q == q0) AND returns `A.Rail` to |0> for a clean free
+    // (§3b). Under the old fresh-minting `_inv` this was the threaded `RailFinal`;
+    // the void ABI mints no handle, so the chain-head rail IS `A.Rail`.
+    emitRoute(B, csyms, Flag, Q, A.Rail, A.Negated, DL);     // route-in†
   }
 
-  // 8. Rail frees, same reverse order, each on its arm's FINAL threaded
-  //    handle — NOT the forward rail/chain handles (freeing a stale handle
-  //    version is trace-plausible but wrong, interlock §6.5). Provably |0> on
-  //    both branches only AFTER R† (§3b — earlier a rail is f(0)-vs-0 / p0
-  //    entangled with the flag: a dirty free is a hidden measurement).
+  // 8. Rail frees, same reverse order, each on its arm's WORK RAIL (`A.Rail`) —
+  //    provably |0> on both branches only AFTER its route-in† (§3b — earlier the
+  //    rail holds p0 / f(0)-vs-0 garbage entangled with the flag: a dirty free is
+  //    a hidden measurement). The intermediate forward-chain rails were zeroed by
+  //    the void `_unc` chain and are left allocated (the accepted leak until the
+  //    WI-4 whole-DAG per-rail free; NEVER freed dirty, Rule 6).
   for (ValueArmStream &A : reverse(Arms)) {
-    CallInst *RailFree = B.CreateCall(wd.freeFn(), {A.RailFinal});
+    CallInst *RailFree = B.CreateCall(wd.freeFn(), {A.Rail});
     stamp(RailFree);
   }
 

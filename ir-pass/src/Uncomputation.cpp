@@ -16,7 +16,6 @@
 #include "Uncomputation.h"
 
 #include "ChainWalk.h"
-#include "ControlledSymbols.h"
 #include "EmitInverse.h"
 #include "FreePoint.h"
 #include "TaintPropagation.h"
@@ -117,8 +116,6 @@ bool isStep2Emittable(const ForwardChain &Chain, const TaintSet &taint) {
 }  // namespace
 
 void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
-  ControlledSymbols csyms(M, wd);
-
   // Module-scoped walk. In the `runOnFunction` shim only the requested F's ops
   // were lowered, so only F yields candidates (IMPLEMENTATION §8 Q4: the target
   // set reads the module-wide taint).
@@ -170,14 +167,17 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
         continue;
 
       // Anchor the reversed adjoint at FreePoint's post-dominating last-use point
-      // (after φ-nodes for a φ-merge), then `cqrt_free` the final threaded handle
-      // at the SAME point (PRD §2.10).
+      // (after φ-nodes for a φ-merge). Each void `_unc` zeroes its rail in place
+      // (no fresh handle is minted), so after the whole chain reverses, the
+      // recovered ROOT rail (the `cqrt_alloc` mint the lineage bottoms out at) is
+      // back to |0> — `cqrt_free` THAT, not a threaded handle (DD-1; the
+      // intermediate rails are left zeroed-but-allocated until the WI-4 whole-DAG
+      // per-rail free). On an un-invertible link the chain emits no dangling free.
       B.SetInsertPoint(FP.At);
-      Value *Final = emitInverseChain(B, Chain.Calls, wd, csyms,
-                                      /*Flag=*/nullptr, /*Terminal=*/Term);
-      if (!Final)
+      if (!emitInverseChain(B, Chain.Calls, wd))
         continue;  // an un-invertible link bailed — emit no dangling free
-      CallInst *Free = B.CreateCall(wd.freeFn(), {Final});
+      Value *Root = Chain.AllocHandle ? Chain.AllocHandle : Term;
+      CallInst *Free = B.CreateCall(wd.freeFn(), {Root});
       if (DebugLoc DL = Term->getDebugLoc())
         Free->setDebugLoc(DL);
     }

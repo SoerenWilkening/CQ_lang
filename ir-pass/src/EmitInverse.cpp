@@ -1,57 +1,41 @@
 // EmitInverse.cpp — see header. The per-call adjoint dispatch (PRD §2.3).
 //
-// Step 1 implemented the two uncontrolled cases that need no symbol lookup: the
-// rotation-negate case (re-emit the forward `cqrt_ry/rz_<W>` with a negated
-// angle) and the self-adjoint involutions (`cqrt_x` / `cqrt_cswap`, emitted
-// as-is). Step 2 adds the uncontrolled DATA TEMPLATE case (`cq_template_*` →
-// its `_inv` twin), which mints a FRESH handle that must be threaded onward
-// (R-template-inv-fresh-handle). The controlled `_controlled_inv` path lands in
-// Step 4 (InShadowAdjoint).
+// Two cases need no symbol lookup: the rotation-negate case (re-emit the forward
+// `cqrt_ry/rz_<W>` with a negated angle) and the self-adjoint involutions
+// (`cqrt_x` / `cqrt_cswap`, emitted as-is). The uncontrolled DATA TEMPLATE case
+// emits the VOID `_unc` form (`cq_template_…_unc(out, src…)`) — the inverse STEP
+// (zero the rail in place by recomputing `f` from the live sources), NOT the
+// fresh-minting inverse OPERATION `_inv` (which frees a dirty rail = a hidden
+// measurement, Rule 6/8; DD-2). Any other primitive is un-invertible → `false`
+// (the loud-decline signal, PRD §2.12).
 
 #include "EmitInverse.h"
-
-#include "ControlledSymbols.h"
-#include "WidthDispatch.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
 
 using namespace llvm;
 
 namespace cq {
 
-namespace {
-
-// Operand index of the threaded data handle in a forward UNCONTROLLED data
-// template `cq_template_<op>_<W>[_hl|_lh]`. The `_lh` form is `(classical,
-// handle)` — handle at 1; every other shape (`_hl`, QQ, unary/cast) keeps the
-// handle (or the primary handle) at arg 0. Decoded from the name suffix, the
-// canonical source of the operand layout (TemplateName.cpp). Single-register
-// chains (the Step-2 scope) carry exactly one threaded handle per link.
-unsigned templateHandleIndex(StringRef Name) {
-  return Name.ends_with("_lh") ? 1 : 0;
-}
-
-}  // namespace
-
-Value *emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
-                       ControlledSymbols &csyms, Value *Flag, Value *CurHandle) {
-  (void)wd;     // template `_inv` mints from the forward type; no `wd` lookup.
-  (void)csyms;  // Step 4 (controlled `_controlled_inv`) mints via `csyms`.
-  (void)Flag;   // Step 4 supplies the control flag; unused for uncontrolled cases.
+bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
+                     Value *CurHandle) {
+  (void)wd;  // width is recovered from the forward call's own type; no lookup.
 
   Function *Callee = Forward ? Forward->getCalledFunction() : nullptr;
   if (!Callee)
-    return nullptr;
+    return false;
   StringRef Name = Callee->getName();
 
   // Uncontrolled rotation: `cqrt_ry_<W>(h, θ)` / `cqrt_rz_<W>(h, θ)`. The
   // inverse is the SAME forward symbol with a negated angle — there is no
-  // `cqrt_ry/rz_<W>_inv` symbol. Void / in-place: the "current handle" the next
-  // reversed link consumes is this gate's handle (the threaded `CurHandle` when
-  // a non-in-place link upstream produced a fresh one, else the forward arg 0).
+  // `cqrt_ry/rz_<W>_inv` symbol. Void / in-place: it acts on this gate's handle
+  // (a threaded `CurHandle` for a Phase-7 relabeled register, else forward arg 0).
   if ((Name.starts_with("cqrt_ry_") || Name.starts_with("cqrt_rz_")) &&
       !Name.contains("_controlled") && Forward->arg_size() == 2) {
     Value *Handle = CurHandle ? CurHandle : Forward->getArgOperand(0);
@@ -59,20 +43,20 @@ Value *emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *Inv = B.CreateCall(Callee, {Handle, NegAngle});
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
-    return Handle;
+    return true;
   }
 
   // Self-adjoint involutions: `cqrt_x` / `cqrt_cswap` are their own inverse, so
-  // emit AS-IS (no `_inv` lookup). Void; return the (threaded) handle operand.
+  // emit AS-IS (no `_inv` lookup). Void / in-place.
   //
   // GUARD — the swap-route seam (PRD Part II §8.5): `CurHandle` is threaded
   // into Args[0], and for `cqrt_cswap(flag, a, b)` arg 0 is the FLAG slot, not
   // a data operand. NEVER feed route cswaps through a threaded chain
-  // (`emitInverseChain`) — a rail handle would land in the flag slot: a
-  // verify-clean WRONG UNITARY. The swap-route value-arm emitter
-  // (SwapRouteEmit::emitValueDiamond) therefore brackets its R† route cswaps
-  // itself via `emitRoute` (cswap is self-inverse, so the adjoint bracket is
-  // the identical helper call) and hands this spine the BODY CHAIN only.
+  // (`emitInverseChain` passes CurHandle=nullptr, so this guard is moot for the
+  // uncompute driver) — a rail handle in the flag slot is a verify-clean WRONG
+  // UNITARY. The swap-route value-arm emitter brackets its R† route cswaps
+  // itself via `emitRoute` (cswap is self-inverse) and hands this spine the
+  // BODY CHAIN only.
   if (Name == "cqrt_x" || Name == "cqrt_cswap") {
     SmallVector<Value *, 3> Args(Forward->args());
     if (CurHandle && !Args.empty())
@@ -80,53 +64,57 @@ Value *emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *Inv = B.CreateCall(Callee, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
-    return CurHandle ? CurHandle : Forward->getArgOperand(0);
+    return true;
   }
 
-  // Uncontrolled data template: `cq_template_<op>_<W>[_hl|_lh]` → its declared
-  // `_inv` twin. The twin's FunctionType is BYTE-IDENTICAL to the forward (PRD
-  // §2.3); only the symbol flips, so mint it from the forward callee's name +
-  // type. Clone the forward operands, substitute the threaded handle for the
-  // data operand, and return the FRESH result handle (R-template-inv-fresh-handle)
-  // so the next reversed link threads it.
+  // Uncontrolled data template `cq_template_<op>_<W>[_hl|_lh|_qq]` → its VOID
+  // `_unc` form. DD-3 slot convention: `out` (the forward call's OWN result
+  // handle — the rail to zero) is arg 0, then the forward operands in their
+  // ORIGINAL order. The `_unc` FunctionType is `void(out_ty, <forward param
+  // types…>)`, matching the generated stub (e.g. forward `_hl(i32 h, iN lit)` →
+  // `_hl_unc(i32 out, i32 h, iN lit)`). The void uncompute reads the live
+  // sources directly and mints nothing — there is no handle to thread, so
+  // `CurHandle` is ignored here (it only relabels in-place gates for Phase 7).
   if (Name.starts_with("cq_template_") && !Name.contains("_controlled") &&
-      !Name.ends_with("_inv")) {
-    SmallVector<Value *, 3> Args(Forward->args());
-    unsigned HIdx = templateHandleIndex(Name);
-    if (CurHandle && HIdx < Args.size())
-      Args[HIdx] = CurHandle;
-    FunctionCallee Inv = Forward->getModule()->getOrInsertFunction(
-        (Name + "_inv").str(), Forward->getFunctionType());
-    CallInst *InvCall = B.CreateCall(Inv, Args, "h_inv");
+      !Name.ends_with("_inv") && !Name.ends_with("_unc")) {
+    SmallVector<Value *, 4> Args;
+    SmallVector<Type *, 4> ParamTys;
+    Args.push_back(Forward);              // out = the rail to zero in place.
+    ParamTys.push_back(Forward->getType());
+    for (Value *Op : Forward->args()) {   // forward operands, original order.
+      Args.push_back(Op);
+      ParamTys.push_back(Op->getType());
+    }
+    FunctionType *FT =
+        FunctionType::get(Type::getVoidTy(Forward->getContext()), ParamTys,
+                          /*isVarArg=*/false);
+    FunctionCallee Unc =
+        Forward->getModule()->getOrInsertFunction((Name + "_unc").str(), FT);
+    CallInst *UncCall = B.CreateCall(Unc, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
-      InvCall->setDebugLoc(DL);
-    return InvCall;
+      UncCall->setDebugLoc(DL);
+    return true;
   }
 
-  // Controlled `_controlled_inv` (Step 4) is not yet handled; returning nullptr
-  // keeps an un-invertible link loud rather than emitting a half-reversed chain.
-  return nullptr;
+  // Any other primitive (incl. controlled callees) has no correct in-place
+  // uncompute → the un-invertible signal. The driver declines LOUDLY rather than
+  // emitting a half-reversed chain (PRD §2.12, Rule 1).
+  return false;
 }
 
-Value *emitInverseChain(IRBuilder<> &B, ArrayRef<CallInst *> ForwardChain,
-                        WidthDispatch &wd, ControlledSymbols &csyms,
-                        Value *Flag, Value *Terminal) {
+bool emitInverseChain(IRBuilder<> &B, ArrayRef<CallInst *> ForwardChain,
+                      WidthDispatch &wd) {
   // Walk the chain in reverse program order: the adjoint of (g0 ∘ g1 ∘ … ∘ gN)
-  // is (gN⁻¹ ∘ … ∘ g1⁻¹ ∘ g0⁻¹). Thread the live handle through each link — the
-  // first inverse consumes the terminal handle; a template `_inv` mints a fresh
-  // result that feeds the next inverse, while in-place rotations pass it through.
-  // Returns the FINAL threaded handle (the one to free), or nullptr if a link
-  // was not invertible. Callers PRE-VALIDATE invertibility (Uncomputation only
-  // feeds uncontrolled single-register chains), so the nullptr path is a
-  // defensive backstop — the caller skips the `cqrt_free` when it fires.
-  Value *Cur = Terminal;
-  for (int i = (int)ForwardChain.size() - 1; i >= 0; --i) {
-    Value *Next = emitInverseCall(B, ForwardChain[i], wd, csyms, Flag, Cur);
-    if (!Next)
-      return nullptr;
-    Cur = Next;
-  }
-  return Cur;
+  // is (gN⁻¹ ∘ … ∘ g1⁻¹ ∘ g0⁻¹). Each void `_unc` reads its forward operands in
+  // place; SSA dominance guarantees those sources are still live (a leaf is
+  // zeroed before the source it reads — the source's own `_unc` follows). No
+  // handle is threaded (the void uncompute mints nothing). Returns `true` iff
+  // EVERY link inverted; `false` on the first un-invertible link (AND of all
+  // per-link results) so the caller owns the loud decline (DD-1).
+  bool OK = true;
+  for (int i = (int)ForwardChain.size() - 1; i >= 0; --i)
+    OK = emitInverseCall(B, ForwardChain[i], wd, /*CurHandle=*/nullptr) && OK;
+  return OK;
 }
 
 }  // namespace cq

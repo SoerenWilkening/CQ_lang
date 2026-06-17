@@ -22,11 +22,12 @@
 //
 // Correctness rests on the §8.2 register-threading trace, NOT on `opt -verify`
 // (Rule 2). THE §8.5 cswap-arg0 SEAM (verify-clean-invisible): the route cswaps are
-// NEVER fed to `emitInverseChain` — `emitInverseCall` threads the live handle into
-// Args[0], which for `cqrt_cswap` is the FLAG slot (a rail handle there is a wrong
-// unitary). The reverse-play hands the inverter the BODY CHAIN ONLY and brackets the
-// route cswaps itself via `emitRoute` (cswap is self-inverse), exactly as
-// `emitValueRegion` does at `SwapRouteEmit.cpp:374`.
+// NEVER fed to `emitInverseChain` — `emitInverseCall` may substitute a threaded
+// handle into Args[0] (its `CurHandle` path, reserved for Phase-7), which for
+// `cqrt_cswap` is the FLAG slot (a rail handle there is a wrong unitary). The
+// reverse-play hands the inverter the BODY CHAIN ONLY (void `_unc` forms) and
+// brackets the route cswaps itself via `emitRoute` (cswap is self-inverse), exactly
+// as `emitValueRegion` does in `SwapRouteEmit.cpp`.
 
 #include "SwitchRouteEmit.h"  // emitSwitchValueRegion (declared beside the phase emit)
 
@@ -94,9 +95,8 @@ struct CaseStream {
   ConstantInt *Val = nullptr;
   SmallVector<Instruction *, 6> Chain;
   Value *Flag = nullptr;
-  CallInst *Rail = nullptr;
+  CallInst *Rail = nullptr;        // the case's |0> work rail (chain head; freed)
   SmallVector<CallInst *, 6> Fwd;  // minted forward template calls (forward stage)
-  Value *RailFinal = nullptr;      // FINAL threaded handle after R† (the free)
 };
 
 }  // namespace
@@ -240,25 +240,31 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
 
   // 7. Reverse-play R†, per case in REVERSE emission order (LIFO). Per case:
   //    route-back† (cswap on the chain-final handle), then the chain adjoint in
-  //    exact reverse with `_inv` twins — the BODY CHAIN ONLY through
+  //    exact reverse via the void `_unc` forms — the BODY CHAIN ONLY through
   //    `emitInverseChain` (the §8.5 seam: never feed route cswaps to the inverter,
   //    which would thread a rail handle into cqrt_cswap's FLAG slot) — then
-  //    route-in† with the THREADED handle.
+  //    route-in† on the case's work rail (the chain head, restored to |0>).
   for (CaseStream &CS : reverse(Cases)) {
     Value *ChainFinal = CS.Fwd.back();
-    emitRoute(B, csyms, CS.Flag, P, ChainFinal, /*Negated=*/false, DL);
-    CS.RailFinal = emitInverseChain(B, CS.Fwd, wd, csyms, /*Flag=*/nullptr,
-                                    /*Terminal=*/ChainFinal);
-    if (!CS.RailFinal)
+    emitRoute(B, csyms, CS.Flag, P, ChainFinal, /*Negated=*/false, DL);  // route-back†
+    if (!emitInverseChain(B, CS.Fwd, wd))                               // R† (void `_unc`)
       return bailLoud(R);  // un-invertible link — never a half-reversed stream.
-    emitRoute(B, csyms, CS.Flag, P, CS.RailFinal, /*Negated=*/false, DL);
+    // Route-in† on the case's WORK RAIL (`CS.Rail`): the void `_unc` chain zeroed
+    // the intermediate rails in place but never touched `CS.Rail` (the chain head,
+    // read by the first link), which still holds the routed value p0. The cswap
+    // moves p0 back onto P (P == p0) AND returns `CS.Rail` to |0> for a clean free
+    // (§3b). Under the old fresh-minting `_inv` this was the threaded `RailFinal`;
+    // the void ABI mints no handle, so the chain-head rail IS `CS.Rail`.
+    emitRoute(B, csyms, CS.Flag, P, CS.Rail, /*Negated=*/false, DL);    // route-in†
   }
 
-  // 8. Rail frees, same reverse order, each on its case's FINAL threaded handle —
-  //    provably |0> on every case only AFTER R† (§3b: earlier a rail is f(0)/0 or
-  //    p0 entangled with its flag; a dirty free is a hidden measurement).
+  // 8. Rail frees, same reverse order, each on its case's WORK RAIL (`CS.Rail`) —
+  //    provably |0> on every case only AFTER its route-in† (§3b: earlier the rail
+  //    holds p0 / f(0) garbage entangled with its flag; a dirty free is a hidden
+  //    measurement). The void-`_unc`-zeroed intermediate rails are left allocated
+  //    (the accepted leak until the WI-4 whole-DAG per-rail free; Rule 6).
   for (CaseStream &CS : reverse(Cases)) {
-    CallInst *RailFree = B.CreateCall(wd.freeFn(), {CS.RailFinal});
+    CallInst *RailFree = B.CreateCall(wd.freeFn(), {CS.Rail});
     stamp(RailFree);
   }
 

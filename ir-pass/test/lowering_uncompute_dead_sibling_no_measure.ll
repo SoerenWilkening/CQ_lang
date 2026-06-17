@@ -7,17 +7,24 @@
 ; lineage-measure decline fires ONLY when a non-terminal lineage handle is
 ; measured, never for an ordinary dead chain.
 ;
+; The adjoint is the VOID in-place `_unc` form (WI-3, PRD §2.3): `add_i32_hl_unc(
+; out=%dead, src=%q, 7)` zeroes the dead rail by reading the still-live alloc root
+; `%q` (DD-3 slots: out, then forward operands) — NOT the fresh-minting `_inv`
+; OPERATION (which frees a dirty rail = a hidden measurement, Rule 6/8). The
+; `cqrt_free` then targets the |0> root `%q`.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
 ;
 ; Forward chain (theta → alloc + ry, then the dead reassignment):
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H:[a-zA-Z0-9_.]+]], double 2.500000e-01)
-; CHECK:     call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 7)
-; Reversed adjoint + free of the now-zeroed handle:
-; CHECK:     call i32 @cq_template_add_i32_hl_inv(i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
-; CHECK:     call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double -2.500000e-01)
-; CHECK:     call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:     %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 7)
+; Reversed adjoint (void in-place `_unc`, reading the live root) + free of the root:
+; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[D]], i32 %[[H]], i32 7)
+; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
+; CHECK:     call void @cqrt_free(i32 %[[H]])
 ;
+; CHECK-NOT: cq_template_add_i32_hl_inv
 ; CHECK-NOT: cq_theta_si32
 ;
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"

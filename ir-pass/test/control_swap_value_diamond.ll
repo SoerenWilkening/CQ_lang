@@ -6,10 +6,15 @@
 ; B-keep stream: flag mint -> |0> rail -> cswap route-in -> chain VERBATIM on
 ; the rail (HL templates) -> cswap route-back (p holds the muxed answer) ->
 ; alloc %out + cqrt_copy_i32 (the ONLY basis copy, AFTER route-back, BEFORE
-; R-dagger) -> reverse-play: route-back-dagger, chain adjoints in reverse with
-; _inv twins, route-in-dagger -> rail free (provably |0> ONLY after R-dagger,
-; §3b) -> icmp_inv flag-strip + flag free. EXACTLY TWO frees: %out and the
-; restored source %p are NEVER freed (either free is a hidden measurement).
+; R-dagger) -> reverse-play: route-back-dagger, chain adjoints in reverse via the
+; VOID in-place `_unc` forms (WI-3, PRD §2.3 — out=forward result, src=live
+; forward operand; DD-3 slots), route-in-dagger on the WORK RAIL (the chain head,
+; the void `_unc` never touched it, so it still holds p0 — the cswap restores p
+; and zeroes the rail) -> rail free (provably |0> ONLY after route-in-dagger, §3b)
+; -> icmp_inv flag-strip + flag free. EXACTLY TWO frees: %out and the restored
+; source %p are NEVER freed (either free is a hidden measurement). NOTE: the BODY
+; chain adjoints are `_unc` (void); the icmp flag-strip stays `_inv` (a direct
+; emitEqFlag mint, NOT the shared spine — the WI-3 audit boundary).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
@@ -48,14 +53,18 @@ merge:
 ; 6: B-keep copy-out (after route-back, before R-dagger — interlock §6.4)
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32(i32 %[[P]], i32 %[[OUT]])
-; 7: reverse-play R-dagger — route-back-dagger, chain adjoint (reverse, _inv), route-in-dagger
+; 7: reverse-play R-dagger — route-back-dagger, chain adjoint in reverse via the
+;    void `_unc` forms (out=forward result, src=live forward operand), route-in-
+;    dagger on the WORK RAIL %[[T]] (the chain head, restored to |0>).
 ; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[V2]])
-; CHECK:     %[[U1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl_inv(i32 %[[V2]], i32 15)
-; CHECK:     %[[U2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl_inv(i32 %[[U1]], i32 5)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[U2]])
-; 8: rail free consumes the FINAL threaded handle (interlock §6.5 — not %rail/%v2)
-; CHECK:     call void @cqrt_free(i32 %[[U2]])
-; 9: strip the boolean + reclaim the flag
+; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[V2]], i32 %[[V1]], i32 15)
+; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[V1]], i32 %[[T]], i32 5)
+; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[T]])
+; 8: rail free consumes the WORK RAIL %[[T]] (|0> after route-in-dagger; the
+;    `_unc`-zeroed intermediates leak — the accepted WI-3 leak, never freed dirty)
+; CHECK:     call void @cqrt_free(i32 %[[T]])
+; 9: strip the boolean + reclaim the flag (the flag-strip stays `_inv` — direct
+;    emitEqFlag, not the spine)
 ; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; the merge phi RAUWs to %out — the measure reads the copied answer

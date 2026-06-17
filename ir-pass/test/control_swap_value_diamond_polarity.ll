@@ -56,18 +56,20 @@ merge:
 ; 6: B-keep copy-out (after route-back, before R-dagger — interlock §6.4)
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32(i32 %[[P]], i32 %[[OUT]])
-; 7: reverse-play R-dagger — bracketed route-back-dagger, chain adjoint
-;    (reverse, _inv twins), bracketed route-in-dagger
+; 7: reverse-play R-dagger — bracketed route-back-dagger, chain adjoint in reverse
+;    via the void `_unc` forms (out=forward result, src=live forward operand),
+;    bracketed route-in-dagger on the WORK RAIL %[[T]] (the chain head → |0>)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
 ; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[V2]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     %[[U1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl_inv(i32 %[[V2]], i32 15)
-; CHECK:     %[[U2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl_inv(i32 %[[U1]], i32 5)
+; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[V2]], i32 %[[V1]], i32 15)
+; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[V1]], i32 %[[T]], i32 5)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[U2]])
+; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[T]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; 8: rail free consumes the FINAL threaded handle (interlock §6.5 — not %rail/%v2)
-; CHECK:     call void @cqrt_free(i32 %[[U2]])
+; 8: rail free consumes the WORK RAIL %[[T]] (|0> after route-in-dagger; the
+;    `_unc`-zeroed intermediates leak — accepted WI-3 leak, never freed dirty)
+; CHECK:     call void @cqrt_free(i32 %[[T]])
 ; 9: strip the boolean + reclaim the flag (polarity-independent: p untouched)
 ; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])

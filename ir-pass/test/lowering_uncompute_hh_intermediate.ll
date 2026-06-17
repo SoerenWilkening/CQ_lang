@@ -12,8 +12,8 @@
 ; CHECK:     call i32 @cq_template_mul_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ;
-; …but the measured terminal gets neither an adjoint twin nor a free:
-; CHECK-NOT: cq_template_mul_i32_inv
+; …but the measured terminal gets neither a void `_unc` adjoint nor a free:
+; CHECK-NOT: cq_template_mul_i32_unc
 ; CHECK-NOT: cqrt_free
 ;
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"

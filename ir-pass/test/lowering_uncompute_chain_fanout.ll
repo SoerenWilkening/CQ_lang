@@ -15,9 +15,11 @@
 ; CHECK:     call i32 @cq_template_add_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
 ; CHECK:     call i32 @cq_template_mul_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 2)
 ;
-; But Step 2 must NOT uncompute the shared chain: no adjoint twin, no free.
-; CHECK-NOT: cq_template_add_i32_hl_inv
-; CHECK-NOT: cq_template_mul_i32_hl_inv
+; But this conservative slice must NOT uncompute the shared chain: no void `_unc`
+; adjoint (the spine's uncompute form after WI-3), no free. (WI-4 replaces this
+; no-emit lock with a real reversed-DAG check.)
+; CHECK-NOT: cq_template_add_i32_hl_unc
+; CHECK-NOT: cq_template_mul_i32_hl_unc
 ; CHECK-NOT: cqrt_free
 ;
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"

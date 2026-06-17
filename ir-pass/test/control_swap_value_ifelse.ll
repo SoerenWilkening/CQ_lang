@@ -61,23 +61,24 @@ merge:
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[P]], i32 %[[OUT]])
 ; 7: R-dagger per arm in REVERSE emission order — ELSE block first (¬flag
-;    brackets throughout): route-back-dagger, chain adjoint (_inv twin),
-;    route-in-dagger on the THREADED handle
+;    brackets throughout): route-back-dagger, chain adjoint via the void `_unc`
+;    form (out=forward result, src=live rail), route-in-dagger on the ELSE WORK
+;    RAIL %[[EE]] (the chain head the void `_unc` never touched, restored to |0>)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[VE]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: %[[UE:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl_inv(i32 %[[VE]], i32 7)
+; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[VE]], i32 %[[EE]], i32 7)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[UE]])
+; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[EE]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-;    THEN block second (unbracketed)
+;    THEN block second (unbracketed), route-in-dagger on the THEN WORK RAIL %[[TT]]
 ; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[VT]])
-; CHECK-NEXT: %[[UT:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl_inv(i32 %[[VT]], i32 3)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[UT]])
-; 8: both rails provably |0> only after R-dagger — clean frees on the FINAL
-;    threaded handles (interlock §6.5), same reverse arm order
-; CHECK-NEXT: call void @cqrt_free(i32 %[[UE]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[UT]])
+; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[VT]], i32 %[[TT]], i32 3)
+; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[TT]])
+; 8: both rails provably |0> only after route-in-dagger — clean frees on the WORK
+;    RAILS (the `_unc`-zeroed intermediates leak), same reverse arm order
+; CHECK-NEXT: call void @cqrt_free(i32 %[[EE]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[TT]])
 ; 9: strip the boolean + reclaim the flag
 ; CHECK-NEXT: call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])

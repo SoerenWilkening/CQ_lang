@@ -9,11 +9,12 @@
 ; per case: mint f_i -> |0> rail -> cswap route-in (positive-polarity, NO ¬-bracket)
 ; -> chain VERBATIM on the rail (HL templates) -> cswap route-back (p holds the
 ; muxed answer). Then ONE cqrt_copy_i32(p,out) copy-out (after route-back, before
-; any R†), the LIFO reverse-play (route-back† · body-chain _inv adjoint · route-in†;
-; §8.5 seam — route cswaps are bracketed by emitRoute, NEVER fed to the inverter),
-; the clean rail frees, the icmp_inv flag strips (q==q0 — q is never routed), and
-; the flag frees. EXACTLY FOUR frees (2 rails + 2 flags); %p (restored to p0) and
-; %out (the result) are NEVER freed (either free is a hidden measurement).
+; any R†), the LIFO reverse-play (route-back† · body-chain void `_unc` adjoint ·
+; route-in† on the work rail; §8.5 seam — route cswaps are bracketed by emitRoute,
+; NEVER fed to the inverter), the clean rail frees, the icmp_inv flag strips (the
+; flag-strip stays `_inv` — direct emitEqFlag, not the spine; q==q0, q never
+; routed), and the flag frees. EXACTLY FOUR frees (2 rails + 2 flags); %p (restored
+; to p0) and %out (the result) are NEVER freed (either free is a hidden measurement).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
@@ -63,16 +64,17 @@ merge:
 ; --- ONE copy-out (after the route-backs, before any R†) ---
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32(i32 %[[P]], i32 %[[OUT]])
-; --- Reverse-play (LIFO: case1, then case0). route-back† · _inv chain · route-in† ---
+; --- Reverse-play (LIFO: case1, then case0). route-back† · void `_unc` body
+;     adjoint (out=forward result, src=live rail) · route-in† on the work rail ---
 ; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[P]], i32 %[[OP1]])
-; CHECK:     %[[U1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl_inv(i32 %[[OP1]], i32 2)
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[P]], i32 %[[U1]])
+; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP1]], i32 %[[R1]], i32 2)
+; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[P]], i32 %[[R1]])
 ; CHECK:     call void @cqrt_cswap(i32 %[[F0]], i32 %[[P]], i32 %[[OP0]])
-; CHECK:     %[[U0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl_inv(i32 %[[OP0]], i32 1)
-; CHECK:     call void @cqrt_cswap(i32 %[[F0]], i32 %[[P]], i32 %[[U0]])
-; --- Rail frees (reverse order, on the FINAL threaded handle — interlock §6.5) ---
-; CHECK:     call void @cqrt_free(i32 %[[U1]])
-; CHECK:     call void @cqrt_free(i32 %[[U0]])
+; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP0]], i32 %[[R0]], i32 1)
+; CHECK:     call void @cqrt_cswap(i32 %[[F0]], i32 %[[P]], i32 %[[R0]])
+; --- Rail frees (reverse order, on the WORK RAIL — |0> after route-in†) ---
+; CHECK:     call void @cqrt_free(i32 %[[R1]])
+; CHECK:     call void @cqrt_free(i32 %[[R0]])
 ; --- Flag strip + free (each reads pristine q == q0) ---
 ; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F0]])
