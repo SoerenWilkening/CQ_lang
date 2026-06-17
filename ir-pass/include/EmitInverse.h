@@ -47,6 +47,18 @@ namespace cq {
 
 class WidthDispatch;
 
+// Pure predicate (emits no IR): true iff `emitInverseCall` can emit a correct
+// in-place adjoint for `Forward` — an uncontrolled rotation, a self-adjoint
+// involution (`cqrt_x`/`cqrt_cswap`), or an uncontrolled `cq_template_*` whose
+// void `_unc` form it mints. False for ANY other primitive (a controlled callee,
+// a permutation gate like `cqrt_cnot`/`cqrt_toffoli` Phase 5 never emits for
+// data, an `_inv`/`_unc` twin, an indirect call). The whole-DAG driver PRE-SCANS
+// the recovered gates with this BEFORE emitting any adjoint, so an un-invertible
+// primitive declines LOUDLY with NO half-reversed chain and NO dangling free
+// (PRD §2.12, §2.10). It is the canonical ACCEPT set: `emitInverseCall` consults
+// it first, so the two can never drift (Rule 14).
+bool isInverseEmittable(const llvm::CallInst *Forward);
+
 // Emit the void in-place adjoint of a single forward call at `B`'s insertion
 // point. Returns `true` iff the callee is an invertible Phase-5 target (rotation,
 // involution, or a `cq_template_*` whose `_unc` form is emitted); `false` for any

@@ -23,13 +23,38 @@ using namespace llvm;
 
 namespace cq {
 
+bool isInverseEmittable(const CallInst *Forward) {
+  const Function *Callee = Forward ? Forward->getCalledFunction() : nullptr;
+  if (!Callee)
+    return false;
+  StringRef Name = Callee->getName();
+  // Uncontrolled rotation `cqrt_ry/rz_<W>(h, θ)` (arg_size 2): negated-angle
+  // re-emit. The 3-arg controlled forms fail the arity/`_controlled` test.
+  if ((Name.starts_with("cqrt_ry_") || Name.starts_with("cqrt_rz_")) &&
+      !Name.contains("_controlled") && Forward->arg_size() == 2)
+    return true;
+  // Self-adjoint involutions: emitted as-is.
+  if (Name == "cqrt_x" || Name == "cqrt_cswap")
+    return true;
+  // Uncontrolled data template: its void `_unc` form. The `_inv`/`_unc` twins
+  // and the `_controlled` forms are NOT re-invertible here.
+  if (Name.starts_with("cq_template_") && !Name.contains("_controlled") &&
+      !Name.ends_with("_inv") && !Name.ends_with("_unc"))
+    return true;
+  return false;
+}
+
 bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
                      Value *CurHandle) {
   (void)wd;  // width is recovered from the forward call's own type; no lookup.
 
-  Function *Callee = Forward ? Forward->getCalledFunction() : nullptr;
-  if (!Callee)
+  // Single ACCEPT gate (Rule 14): the branches below are guaranteed-reachable
+  // refinements of this predicate. An un-invertible primitive returns the
+  // loud-decline signal here; the driver pre-scans with the SAME predicate, so
+  // emit and decline can never drift.
+  if (!isInverseEmittable(Forward))
     return false;
+  Function *Callee = Forward->getCalledFunction();
   StringRef Name = Callee->getName();
 
   // Uncontrolled rotation: `cqrt_ry_<W>(h, θ)` / `cqrt_rz_<W>(h, θ)`. The

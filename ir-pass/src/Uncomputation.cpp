@@ -53,6 +53,26 @@ namespace {
 constexpr char kMsgLineageMeasured[] =
     "cq uncompute: dead chain would free a measured register";
 
+// WI-5 silent→loud flips (PRD §2.12; the Prime Directive — an unprovable shape
+// declines, never silently leaks a dirty rail). The negative fixtures mirror
+// each string CHARACTER-FOR-CHARACTER (Rule 12):
+//   * lowering_uncompute_uninvertible.ll   → kMsgUninvertible
+//   * lowering_uncompute_divergent_arm.ll  → kMsgDivergentArm
+//
+// A recovered gate Phase 5 has NO in-place adjoint for (a permutation primitive
+// like `cqrt_cnot`, a controlled callee — outside `isInverseEmittable`). Pre-WI-5
+// the driver IGNORED `emitInverseCall`'s `false` and still freed the rail =
+// a dirty free (a hidden collapse, Rule 6/8). DD-1: the driver owns this message.
+constexpr char kMsgUninvertible[] =
+    "cq uncompute: dead chain contains an un-invertible primitive";
+
+// A MUTATING gate that does not DOMINATE the single merge free point: it ran on
+// only some exclusive paths, so one unconditional adjoint at the merge would fire
+// on paths the forward gate never took (the reverted-543bd85 divergent-arm
+// miscompile). Per-arm reverse-play is Phase 4's job; Phase 5 declines (§2.4).
+constexpr char kMsgDivergentArm[] =
+    "cq uncompute: dead chain spans divergent control-flow arms";
+
 // Loud `DiagnosticInfoUnsupported(DS_Error)` on `Where`, with its `!dbg` so the
 // rejection is SOURCE-LOCATED (mirrors FreePoint::diagnose). `opt` exits non-zero,
 // which the negative LIT fixture inverts with `RUN: not`.
@@ -196,6 +216,25 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
     if (D.Escaped || D.NotClosed || D.Calls.empty())
       continue;
 
+    // Invertibility pre-scan (WI-5, PRD §2.12/§2.10): every recovered gate must
+    // have an in-place adjoint (`isInverseEmittable` — the SAME predicate the
+    // emitter consults). A primitive outside that surface (a permutation gate
+    // Phase 5 never emits for data, a controlled callee) declines LOUDLY here —
+    // BEFORE any emission — so no half-reversed chain and no dirty free of an
+    // un-reversed rail are ever produced (the pre-WI-5 silent skip emitted the
+    // `cqrt_free` of an un-adjointed rail = a hidden collapse, Rule 6/8). DD-1:
+    // the driver owns the message.
+    CallInst *Uninvertible = nullptr;
+    for (CallInst *G : D.Calls)
+      if (!isInverseEmittable(G)) {
+        Uninvertible = G;
+        break;
+      }
+    if (Uninvertible) {
+      diagnose(Uninvertible, kMsgUninvertible);
+      continue;
+    }
+
     // §2.9 acyclic backstop: Phase 5 reverses on acyclic CFGs only. A
     // loop-carried tainted live range is loudly declined UPSTREAM (the
     // classical-mux phi guard / FreePoint's per-terminal backedge guard, both
@@ -214,22 +253,33 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
       continue;
 
     // 4. Single insertion point: the common post-dominator of all anchors, after
-    //    the latest. Every gate must DOMINATE it — its operands are then in scope,
-    //    and (acyclic + dominating) it ran exactly once on every reaching path.
-    //    An unplaceable DAG is skipped (a safe leak), never miscompiled.
+    //    the latest. A non-reconverging multi-terminal shape has no common
+    //    post-dominator — left allocated (a safe leak), never miscompiled.
     Instruction *At = dagInsertPoint(InsertAts, PDT);
     if (!At)
       continue;
-    bool Placeable = true;
+
+    // Every gate must DOMINATE `At` — its operands are then in scope, and
+    // (acyclic + dominating) it ran exactly once on every reaching path. A gate
+    // that does NOT dominate `At` ran on only some exclusive paths (mutating
+    // gates split across the arms of a classical branch — the reverted-543bd85
+    // divergent-arm shape); one unconditional adjoint at the merge would fire on
+    // paths the forward gate never took. WI-5 declines this LOUDLY rather than
+    // silently leaking the register (PRD §2.4/§2.12): per-arm reverse-play is
+    // Phase 4's job, and Phase 5 defers to it.
+    CallInst *NonDominating = nullptr;
     for (CallInst *G : D.Calls)
       if (!DT.dominates(G, At)) {
-        Placeable = false;
+        NonDominating = G;
         break;
       }
-    if (!Placeable)
+    if (NonDominating) {
+      diagnose(NonDominating, kMsgDivergentArm);
       continue;
+    }
 
-    // 5. Reverse the whole DAG once at `At`.
+    // 5. Reverse the whole DAG once at `At` (every gate proven invertible and
+    //    dominating — `emitDagReversal`'s per-gate adjoint cannot fail).
     emitDagReversal(D, At, wd);
   }
 }
