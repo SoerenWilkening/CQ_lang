@@ -158,6 +158,59 @@ add_test(NAME e2e-slice-classical-if-gate
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_classical_if_gate.expected.log")
 
+# Phase 4.5 (WI-6, test_C_libtooling-bkpz.6): the RSSA swap-routed tainted SWITCH,
+# one golden per ACCEPT class — the only layer that LINKS, so the only proof every
+# symbol the four switch emit paths mint resolves + signature-matches against the
+# runtime (Rule 2, Rule 16). PHASE switch (N>=3 cases): per-case eq-flag mint ->
+# |0> rail -> cqrt_cswap route -> verbatim cqrt_rz arg-1 -> route back -> rail
+# free -> icmp_eq_inv strip + flag free; the N>=3 byte-diff exercises the N-way
+# folded-gate scrub + N-way flatten (the §5 const-fold re-anchor BLOCKER's only
+# downstream backstop). control_swap_switch_phase.ll is the pinned IR contract.
+add_test(NAME e2e-slice-control-switch-phase
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_phase.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_phase.expected.log")
+
+# Phase 4.5 (WI-6): VALUE switch (N-way method-B on a shared routed base p != q):
+# per-case route-in -> verbatim add chain -> route back, then ONE cqrt_copy_i32
+# copy-out + LIFO reverse-play (route-back† · add `_inv` · route-in†) + rail/flag
+# frees. control_swap_switch_value.ll is the pinned IR contract.
+add_test(NAME e2e-slice-control-switch-value
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_value.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_value.expected.log")
+
+# Phase 4.5 (WI-6): constant DATA-MUX switch (all-ConstantInt merge): preload
+# %out = cqrt_alloc(v_d) + per-case XOR-delta cqrt_alloc(v_i^v_d) +
+# cqrt_copy_i32_controlled. Non-contiguous cases + pre-init default keep the real
+# `switch` (clang -O1 folds the natural contiguous const-mux to a select chain).
+# control_swap_switch_datamux.ll is the pinned IR contract.
+add_test(NAME e2e-slice-control-switch-datamux
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_datamux.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_datamux.expected.log")
+
+# Phase 4.5 (WI-6): the equality-folded `br` diamond (`if (q==7) { phase arm }`) —
+# the regression FLOOR for emitRegion-reuse via the additive D1-D7 tryEqFoldArm
+# clause (§4D detection-only; re-tests the golden 4.1 diamond path end-to-end).
+# control_swap_eqfold_diamond.ll is the pinned IR contract.
+add_test(NAME e2e-slice-control-switch-eqfold
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_eqfold.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_eqfold.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
