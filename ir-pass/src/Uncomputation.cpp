@@ -119,14 +119,6 @@ bool isStep2Emittable(const ForwardChain &Chain, const TaintSet &taint) {
 void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
   ControlledSymbols csyms(M, wd);
 
-  // Control-flag IMAGE (the flag VALUES, not the in-shadow data keys — the §2.2
-  // direction trap): these are Phase-4 control scratch, never Phase-5 data
-  // targets. Subtracting the image (not the keys) is finalized in Step 5; doing
-  // it here keeps Step 2 from ever selecting a flag handle.
-  SmallPtrSet<Value *, 8> FlagImage;
-  for (auto &KV : taint.ControlFlag)
-    FlagImage.insert(KV.second);
-
   // Module-scoped walk. In the `runOnFunction` shim only the requested F's ops
   // were lowered, so only F yields candidates (IMPLEMENTATION §8 Q4: the target
   // set reads the module-wide taint).
@@ -142,8 +134,6 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
         auto *H = dyn_cast<CallInst>(&I);
         if (!H || !taint.Tainted.count(H) || !isDataProducer(H))
           continue;
-        if (FlagImage.count(H))
-          continue;  // control scratch, not a data target (§2.2)
         if (!isTerminalHandle(H, taint))
           continue;  // collapse the reassignment chain to one terminal (§2.1)
         Terminals.push_back(H);

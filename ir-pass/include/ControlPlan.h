@@ -103,7 +103,7 @@ struct ControlRegion {
   llvm::Value *CondB = nullptr;  // second sub-compare (`%fb`); a `CmpInst`.
   // The two forward sub-flags minted by `ControlFlag` from `CondA`/`CondB`
   // (the inputs to the `combineFlags` Toffoli). Stashed so the uncompute
-  // reuses the SAME flag handles for `cqrt_toffoli_inv` (rather than
+  // reuses the SAME flag handles for the conjunction uncompute (rather than
   // re-deriving them), then balances each with its own compare-uncompute.
   llvm::Value *FlagA = nullptr;
   llvm::Value *FlagB = nullptr;

@@ -2,8 +2,8 @@
  *
  * Declares the cqrt_* lowering targets used by the IR pass. The base
  * surface is 33 symbols (below); Phase 4 (PRD §2.8) adds the controlled
- * surface — cqrt_rz_<W>_controlled[_inv] (7 widths × 2), cqrt_toffoli_inv,
- * and cqrt_x/h/cnot_controlled — each prepending one i32 control-flag
+ * surface — cqrt_rz_<W>_controlled[_inv] (7 widths × 2) and
+ * cqrt_x/h/cnot_controlled — each prepending one i32 control-flag
  * handle as argument 0 (PRD §1.2). The 33 base symbols:
  *   - 7 allocators (one per width): cqrt_alloc_i{1,8,16,32,64} +
  *     cqrt_alloc_f{32,64}. Each takes an initial classical value and
@@ -188,15 +188,12 @@ void cqrt_cnot   (int32_t ctrl, int32_t tgt);
 void cqrt_toffoli(int32_t c1, int32_t c2, int32_t tgt);
 
 /* -----------------------------------------------------------------
- * Controlled gate primitives + Toffoli inverse (Phase 4, PRD §2.8).
- * `cqrt_toffoli_inv` uncomputes a flag conjunction (the && / || / nest
- * bracket, PRD §2.5/§2.7); `cqrt_toffoli` itself already exists above.
+ * Controlled gate primitives (Phase 4, PRD §2.8).
  * `cqrt_x/h/cnot_controlled` prepend one i32 control-flag handle as
  * argument 0 (PRD §1.2), rounding out the controlled gate surface for
  * Phase-8 completeness. Same no-arrow void trace convention as their
  * uncontrolled twins; the control flag prints as a leading h<N>.
  * ----------------------------------------------------------------- */
-void cqrt_toffoli_inv (int32_t c1, int32_t c2, int32_t tgt);
 void cqrt_x_controlled   (int32_t ctrl, int32_t q);
 void cqrt_h_controlled   (int32_t ctrl, int32_t q);
 void cqrt_cnot_controlled(int32_t ctrl, int32_t target_ctrl, int32_t tgt);

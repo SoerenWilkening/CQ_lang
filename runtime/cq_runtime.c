@@ -371,18 +371,12 @@ void cqrt_toffoli(int32_t c1, int32_t c2, int32_t tgt) {
 }
 
 /* ---------------------------------------------------------------------
- * Controlled gate primitives + Toffoli inverse (Phase 4, PRD §2.8).
- * cqrt_toffoli_inv uncomputes a flag conjunction (PRD §2.5/§2.7); the
- * controlled gate forms prepend one i32 control-flag handle as arg 0
+ * Controlled gate primitives (Phase 4, PRD §2.8).
+ * The controlled gate forms prepend one i32 control-flag handle as arg 0
  * (PRD §1.2). Same no-arrow void trace as their uncontrolled twins; the
  * control flag prints as a leading h<N>. Not emitted by the IR pass
- * yet — declared + defined for Phase-8 / flag-conjunction completeness.
+ * yet — declared + defined for Phase-8 completeness.
  * ------------------------------------------------------------------- */
-
-void cqrt_toffoli_inv(int32_t c1, int32_t c2, int32_t tgt) {
-    printf("cqrt_toffoli_inv(h%d, h%d, h%d)\n", c1, c2, tgt);
-    fflush(stdout);
-}
 
 void cqrt_x_controlled(int32_t ctrl, int32_t q) {
     printf("cqrt_x_controlled(h%d, h%d)\n", ctrl, q);

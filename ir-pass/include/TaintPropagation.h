@@ -78,14 +78,6 @@ struct TaintSet {
   // unrecoverable. Populated and consumed by later WPs; unread this WP.
   llvm::DenseMap<llvm::Value *, llvm::StringRef> HandleWidth;
 
-  // Phase 4 (PRD §2.10). Maps an in-shadow op result to its controlling i32
-  // flag handle. Built by the control-flag / flag-conjunction passes and
-  // consumed by controlled substitution and `OpcodeLowering`. The region
-  // list and in-shadow set are NOT here — they ride the `ControlPlan` struct
-  // returned by region detection (epic D4). Populated by later WPs; unread
-  // this WP.
-  llvm::DenseMap<llvm::Value *, llvm::Value *> ControlFlag;
-
   // ziov WI-1 (owner 2026-06-15). Maps a tainted condition compare that
   // `SwapRouteEmit::emitRegion` minted a SHARED control flag for — because the
   // compare is ALSO read as data (`int f = (q>5)`; clang -O1 CSEs the control and
@@ -102,19 +94,6 @@ struct TaintSet {
   // without a shared condition flag.
   llvm::DenseMap<llvm::Value * /*compare*/, llvm::Value * /*flag*/>
       SharedCondFlags;
-
-  // Phase 5 Step 0 (Phase-5 IMPLEMENTATION §2.4 / §4.0). Maps a control flag to
-  // the FIRST instruction of its Phase-4 teardown — the `_inv` compare (plain)
-  // or `cqrt_toffoli_inv`/`cqrt_x` bracket head (conjunction) minted by
-  // `emitUncompute` (`ControlledLowering.cpp`). That teardown is NOT discoverable
-  // by SSA dataflow: it runs over the condition's DATA handles, not the flag, and
-  // the merge block that anchored it is erased post-linearization. Phase 5's
-  // in-shadow keep-alive (PRD §2.7) reads `FlagTeardown[ControlFlag[handle]]` and
-  // anchors the controlled data-adjoint immediately before this instruction so
-  // the adjoint nests OUTSIDE the entire (LIFO) flag teardown. Populated by
-  // `emitUncompute`; unread until Phase 5 Step 4.
-  llvm::DenseMap<llvm::Value * /*flag*/, llvm::CallInst * /*firstTeardown*/>
-      FlagTeardown;
 
   // Straight-line stale-record guard (test_C_libtooling-uzb). Tainted PURE
   // producers (add/sub/mul/casts/data-position icmp) whose template, emitted
