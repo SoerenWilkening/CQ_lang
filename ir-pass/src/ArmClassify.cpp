@@ -24,6 +24,7 @@
 
 #include "ArmAnalysis.h"
 #include "ControlPlan.h"
+#include "EqFoldArm.h"
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WireWalk.h"
@@ -94,8 +95,6 @@ Value *walkPhaseSpine(Value *V, const BasicBlock *ArmBB) {
   return V;
 }
 
-namespace {
-
 // PURE ARM BODY (Rule 8 linearity + no stray ops). The arm block must contain
 // NOTHING beyond the linear phase spine that feeds the merge phi — i.e. every
 // non-terminator instruction in `ArmBB` is a `cq_phi` on the spine of
@@ -132,6 +131,8 @@ bool armBlockIsPureSpine(const BasicBlock *ArmBB, const Value *ArmIncoming) {
   }
   return true;
 }
+
+namespace {
 
 // Is `Base` a VALUE-changing op (changes the computational-basis value), as
 // opposed to a leaf quantum handle? Classified by OPCODE/kind, NEVER by defining
@@ -769,6 +770,20 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         diagnoseUnderControl(declAnchor(Region), "impure phase arm");
         return ArmDisposition::Declined;
       }
+      SawPhaseArm = true;
+      continue;
+    }
+
+    // 4.5 WI-5: equality-folded `br` diamond. `clang -O1` const-folds the
+    // `q==k`-true arm's gate to `cq_phi(i32 k, θ)`, so `walkPhaseSpine` bottoms
+    // at the literal `k` (≠ Routed) and this arm would otherwise decline
+    // `control flow`. `tryEqFoldArm` re-recognizes it as a pure PHASE arm over
+    // the icmp's tainted operand and re-anchors `Routed` (recording the handle
+    // in `Region.RoutedBase` for `emitRegion`'s eq-fold IF/ELSE routing).
+    // STRICTLY ADDITIVE: it fires AFTER the `Base == Routed` gate (so a real
+    // cross-handle mux still falls through to decline) and BEFORE the leaf-base
+    // path; a miss returns false and leaves `Routed`/`Region` untouched.
+    if (tryEqFoldArm(Region, ArmBB, ArmIncoming, Base, Routed, Taint)) {
       SawPhaseArm = true;
       continue;
     }

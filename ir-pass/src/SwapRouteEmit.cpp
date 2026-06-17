@@ -494,7 +494,18 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   // for an if/else, which has no Pred edge — the shared phase-spine base the arms
   // rotate. Never read width/identity off Q's SSA type (§4 width-source); Q is
   // only the cswap data operand.
-  Value *Q = MergePhi->getBasicBlockIndex(R.Pred) >= 0
+  //
+  // 4.5 WI-5 (eq-fold re-anchor): when `clang -O1` const-folds an `if(q==k)`
+  // arm's gate base to the literal `k`, classifyArms recorded the PROVEN routed
+  // handle in `R.RoutedBase` — PREFER it. The eq-fold IF/ELSE has no Pred edge
+  // AND its first arm's `phaseSpineBase` bottoms at the folded constant `k`, so
+  // the default derivation would route (and RAUW the merge to) a CONSTANT — a
+  // verify-clean wrong unitary (the measure-operand guard only catches it when
+  // the merge happens to feed a measure; an escaping merge would miscompile
+  // silently). `R.RoutedBase` is null for every non-eq-fold region, so the
+  // default path below is byte-identical there.
+  Value *Q = R.RoutedBase ? R.RoutedBase
+             : MergePhi->getBasicBlockIndex(R.Pred) >= 0
                  ? MergePhi->getIncomingValueForBlock(R.Pred)
                  : phaseSpineBase(MergePhi->getIncomingValueForBlock(R.Arm),
                                   R.Arm);

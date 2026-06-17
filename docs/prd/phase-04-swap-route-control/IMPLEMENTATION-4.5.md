@@ -418,12 +418,34 @@ so uncompute never selects it — confirm it does not enter `BirthOrder`, open-Q
 > `B.CreateCall(wd.allocFn(Abi), {delta})`; promoting `materialize` for one call site
 > is not worth the cross-TU coupling.
 
-### 4D. Equality-folded diamond — `emitRegion` verbatim
+### 4D. Equality-folded diamond — `emitRegion` (+ a one-line re-anchor for the if/else)
 
-No new emit code. Once `tryEqFoldArm` accepts (§3.2), the diamond is a normal
-`ControlRegion` and `emitRegion` (`SwapRouteEmit.cpp:440`) replays arg-1 θ on the rail
-exactly as the inequality diamond does. `flattenRegion` reuses verbatim
+Once `tryEqFoldArm` accepts (§3.2), the region is a normal `ControlRegion` and
+`emitRegion` (`SwapRouteEmit.cpp:440`) replays arg-1 θ on the rail exactly as the
+inequality diamond does (re-anchor BY PHYSICS — only the angle is read, the folded
+arg-0 constant is discarded), and `flattenRegion` reuses verbatim
 (`RegionFlatten.cpp:45`).
+
+> **CORRECTION (WI-5 implementation, 2026-06-17).** The DRAFT claim "**no new emit
+> code**" held only for the eq-fold **diamond**, **not** the **if/else**. A diamond's
+> routed handle `Q` is the Pred-edge merge incoming (`= q`, always correct). But an
+> if/else has **no** Pred-edge incoming, so `emitRegion` derives `Q` via
+> `phaseSpineBase(R.Arm)` — which on the `q==k`(true) arm **bottoms at the folded
+> constant `k`** and would route a CONSTANT into `cqrt_cswap` and RAUW the merge to
+> `k` (a verify-clean wrong unitary, caught only accidentally by the `cq_measure`
+> operand guard; an escaping/`ret` merge would miscompile silently — reproduced as
+> `cq_measure(7)`). This is the eq-fold analog of the §5 switch const-fold re-anchor,
+> which §4D missed. **Fix:** a gated field `ControlRegion::RoutedBase`
+> (`ControlPlan.h`) — `tryEqFoldArm` records the icmp's non-constant tainted operand
+> on accept, and `emitRegion`'s `Q`-derivation **prefers** `R.RoutedBase`.
+> `RoutedBase` is null for every non-eq-fold region, so the default
+> Pred-edge/`phaseSpineBase` path is byte-identical there (zero regression; full
+> suite green). The accept gates that make this safe are **D4** (icmp literal ==
+> folded const, by `APInt`+width — rejects the `if(q==7){x=9}` data-mux that would
+> else RAUW the merge to `q` and drop the mux) and **D3** (icmp non-const operand ==
+> routed handle — rejects the cross-handle mux). Cleared by a 20-probe independent
+> adversarial review (no silent miscompile, no regression). See bd
+> `4-5-wi5-eqfold-routedbase-reanchor`.
 
 ---
 

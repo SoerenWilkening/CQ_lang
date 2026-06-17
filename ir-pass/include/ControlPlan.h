@@ -160,6 +160,23 @@ struct ControlRegion {
   ArmClass ClassArm = ArmClass::Phase;
   ArmClass ClassArmFalse = ArmClass::Phase;
 
+  // 4.5 WI-5 (equality-folded `br` diamond) — the routed quantum handle the
+  // PHASE emitter (`emitRegion`) must CSWAP into the work rails, set by
+  // `tryEqFoldArm` to the icmp's non-constant tainted operand. Null for every
+  // non-eq-fold region (emitRegion then derives it as before: a diamond's
+  // Pred-edge incoming, or an if/else's first-arm phase-spine base).
+  //
+  // LOAD-BEARING for the eq-fold IF/ELSE: `clang -O1` const-folds the `q==k`
+  // (true) arm's gate to `cq_phi(i32 k, θ)` — arg-0 is the literal `k`, not the
+  // handle `q`. An if/else has NO Pred-edge merge incoming, so emitRegion would
+  // otherwise derive `Q` via `phaseSpineBase(R.Arm)`, which bottoms at that
+  // folded constant `k` and routes a CONSTANT instead of `q` (a verify-clean
+  // silent miscompile — the eq-fold analog of the §5 switch re-anchor; §4D's
+  // "reuse emitRegion verbatim" misses it). Recording the classifier-proven
+  // routed handle here re-anchors the emitter by SSA identity. Unused by the
+  // value/data-mux emitters (they derive their own routed base).
+  llvm::Value *RoutedBase = nullptr;
+
   // 4.5 (PRD Part V §20.5) — the per-content class of an accepted `SwitchRegion`
   // (`SwitchClassify` writes it on accept). Meaningful only when
   // `Kind == SwitchRegion`; `Phase` is the default. Picks the emit recipe in

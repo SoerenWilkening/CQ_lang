@@ -44,6 +44,17 @@ struct TaintSet;
 // theta source → double-collect/UAF; see the .cpp).
 llvm::Value *walkPhaseSpine(llvm::Value *V, const llvm::BasicBlock *ArmBB);
 
+// PURE PHASE ARM body check (Rule 8 linearity + no stray ops): every
+// non-terminator instruction in `ArmBB` must lie on the `cq_phi` (Rz) spine of
+// `ArmIncoming` — no fan-out sibling, no stray `cq_measure`/`cq_theta`/arithmetic
+// the swap-route emitter would silently drop or leave dangling in
+// `taint.PhiCalls`. De-anonymized from `ArmClassify.cpp` (WI-5) so `EqFoldArm`'s
+// D6 reuses the one predicate (Rule 14) rather than re-deriving it; the body
+// still lives in `ArmClassify.cpp`, only its linkage changed (anonymous → named
+// `cq`).
+bool armBlockIsPureSpine(const llvm::BasicBlock *ArmBB,
+                         const llvm::Value *ArmIncoming);
+
 // Backward taint provenance of the branch condition: every tainted value
 // reachable by walking operand edges back from `Cond`, stopping at `cq_theta`
 // sources. Replicates the per-use arg-1 angle exclusion verbatim — the angle

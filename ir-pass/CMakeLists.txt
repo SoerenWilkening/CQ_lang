@@ -51,6 +51,7 @@ add_library(CQPass MODULE
   src/ControlledSymbols.cpp
   src/CQLoweringPass.cpp
   src/EmitInverse.cpp
+  src/EqFoldArm.cpp
   src/FreePoint.cpp
   src/MeasureLowering.cpp
   src/NestedRouteEmit.cpp
