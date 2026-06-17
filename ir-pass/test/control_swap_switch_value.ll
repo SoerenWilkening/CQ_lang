@@ -21,6 +21,13 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
 ; Accept (no decline anywhere).
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=ACC
+; Whole-output stray-x scan (WI-7 §8.2 lit-robustness, 4.4 XCT precedent): the
+; value emitter is positive-polarity (NO ¬-bracket) — ZERO cqrt_x anywhere. The
+; default ordered CHECK's CHECK-NOT block only scans post-measure, so a stray
+; cqrt_x BEFORE the measure (swapped operands / dirty flag, an identical-multiset
+; miscompile) would slip the default prefix; this independent whole-file scan
+; closes it at the lit layer (was e2e-only).
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=XCT
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %p0) {
@@ -82,5 +89,9 @@ merge:
 ; Exact free count — four (2 rails + 2 flags), no fifth anywhere.
 ; CNT-COUNT-4: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(
+
+; No ¬-bracket: ZERO cqrt_x in the whole output (a stray x = swapped operands +
+; dirty flag, an identical-multiset wrong unitary the ordered prefix misses).
+; XCT-NOT: call void @cqrt_x(
 
 ; ACC-NOT: under quantum control

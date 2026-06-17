@@ -18,14 +18,14 @@ class of bug.
 
 > **Authoritative status lives in [`ROADMAP.md`](ROADMAP.md), not here.** This
 > file is the *operating manual*; the ROADMAP is the *plan of record* (Phases
-> 0–10 + the 10 cross-cutting design principles). **Current focus: Phase 4 —
-> RSSA swap-routed tainted control flow**; clean-slate `4.0`, the `4.1`
-> phase-arm emitter, `4.2` (value/permutation arms, method-B), `4.3`
-> (depth-2 nested control), and `4.4` (tainted `select` — controlled-XOR copy
-> merge) are **done** (branch `swap-route-control`); `4.5`
-> (tainted `switch`) is next. Read
+> 0–10 + the 10 cross-cutting design principles). **Phase 4 — RSSA swap-routed
+> tainted control flow — is DONE** (clean-slate `4.0`, the `4.1` phase-arm
+> emitter, `4.2` (value/permutation arms, method-B), `4.3` (depth-2 nested
+> control), `4.4` (tainted `select` — controlled-XOR copy merge), and `4.5`
+> (tainted `switch` — N-way eq-flag routing + const-fold re-anchor) all **done**
+> on branch `swap-route-control`). **Next: Phase 5 productionization.** Read
 > `ROADMAP.md` and
-> `docs/design/rssa-swap-control/` *before* touching control flow. Phases 0–3
+> `docs/design/rssa-swap-control/` *before* touching control flow. Phases 0–4
 > are done; 5–10 are not started (the early Phase-5 uncompute spine landed
 > alongside 4.1).
 
@@ -250,9 +250,20 @@ DONE). `SelectClassify` + `SelectMergeEmit` lower a tainted-condition
 **integer-data `select`** via the **controlled-XOR copy merge** (flag mint →
 `|0⟩` rail → two `cqrt_copy_<W>_controlled`, ¬flag `cqrt_x`-bracketed → `icmp_inv`
 strip → one `cqrt_free`; no cswap/route/flatten/reverse-play — 4.4 DONE; coherent
-`Ry`-phase / fp-data operands ride the conservative decline). **Every other
-tainted-control shape loudly declines** (deeper or non-homogeneous nests, switch
-→ 4.5).
+`Ry`-phase / fp-data operands ride the conservative decline). `SwitchClassify`
+(G0–G11) + `SwitchArmProve` + `SwitchRouteEmit`/`SwitchValueEmit`/
+`SwitchDataMuxEmit` + `EqFoldArm` lower a tainted-scrutinee `switch` (and the
+equality-folded `br` diamond) in **four** ACCEPT shapes — homogeneous **phase**
+(N-way eq-flag route + arg-1-only `cqrt_rz` + the **§5 const-fold re-anchor scrub**,
+the verify-clean-invisible blocker), homogeneous **value** (N-way method-B over the
+shared routed base `p != q`), all-`ConstantInt` **data-mux** (preload + XOR-delta
+controlled copy), and the **eq-folded diamond** (`tryEqFoldArm` D1–D7, additive,
+reuses `emitRegion`) — 4.5 DONE (16-reviewer Rule-13 clearance, 0 silent
+miscompiles; `WI7_SWITCH_CLEARANCE.md`). **Every other tainted-control shape loudly
+declines** (deeper or non-homogeneous nests; the switch off-pattern matrix: multi-phi
+C1, grouped C4, non-empty-default C5, MUX-EXCH C8/G8, mixed arms, fp/vector/`i128`
+G4, nested G11, `§3c` clobber G7, tainted angle G3, jump-table fold, impure/unowned-
+scrutinee G10).
 The enduring lessons — restructured, **not deleted** — that any control work
 must respect:
 
@@ -302,12 +313,13 @@ When you cannot *prove* the shape, **decline loudly** (Prime Directive).
   `RegionFlatten.cpp` (with `ControlPlan.h` populated — `Regions` is real now).
   The old controlled-op logic is recoverable from git history but is **not**
   the path forward.
-- **Phase 4 is only partially done — and the *old* "done" Phase 4 is a trap.**
-  The controlled-op Phase 4 shipped and was **removed wholesale**; the current
-  Phase 4 is the swap-route rebuild — `4.0` + `4.1` (phase arms) + `4.2` (value
-  arms, method-B) + `4.3` (depth-2 nested) + `4.4` (tainted `select`) done, `4.5`
-  (switch) not started. Old ROADMAP/issue references to a "finished" controlled-form
-  Phase 4 describe the deleted generation.
+- **The *old* controlled-form "done" Phase 4 is a trap.** The controlled-op Phase
+  4 shipped and was **removed wholesale**; the current Phase 4 is the swap-route
+  rebuild and is now **fully DONE** — `4.0` + `4.1` (phase arms) + `4.2` (value
+  arms, method-B) + `4.3` (depth-2 nested) + `4.4` (tainted `select`) + `4.5`
+  (tainted `switch` — N-way eq-flag routing + const-fold re-anchor) all done on
+  branch `swap-route-control`. Old ROADMAP/issue references to a "finished"
+  controlled-form Phase 4 describe the **deleted** generation, not this one.
 - **Casts are representation changes, NEVER measurements.** The only path to a
   measurement gate is an explicit `cq_measure(...)`. There is no flag/syntax to
   turn a cast into a measurement (this asymmetry is by design; it's what lets

@@ -660,54 +660,69 @@ simulation** — owner decision 2026-06-10).
     *tighten* G10 but the conservative-decline fixtures ship now (Rule 12; over-decline
     safe).
 
-### §8.11 Clearance verdict table (WI-7 artifact — `WI7_SWITCH_CLEARANCE.md`)
+### §8.11 Clearance verdict table — **WI-7 DONE** (`WI7_SWITCH_CLEARANCE.md`)
+
+**CLEARED on all 11 lenses + both residual coherence boundaries + 3 over-accept
+hunters; 16 independent adversarial reviewers, 0 confirmed defects, 0 silent
+miscompiles, 0 uncertain** (each extracted the real lowered IR via the live
+plugin + the full e2e pipeline and actively tried to construct a verify-clean
+wrong unitary). Full trace in
+[`docs/design/rssa-swap-control/WI7_SWITCH_CLEARANCE.md`](../../design/rssa-swap-control/WI7_SWITCH_CLEARANCE.md).
 
 | Lens | Verdict | Key evidence |
 |---|---|---|
-| Re-anchor (§5) | (filled at WI-7) | scrub+erase trace; `CHECK-NOT: cq_phi` |
-| N-way order/multiset | (filled at WI-7) | `ORD`+`XCT` reject reordered hand-build |
-| C1 multi-phi | (filled at WI-7) | decline `control flow` fixture |
-| C2 value-anchor | (filled at WI-7) | `…_value_swaproute.ll` decline fixture (`value-arm swap-route`) + `proveSwitchValue` `!= q` assert (defense-in-depth) |
-| C4 grouped-case | (filled at WI-7) | decline `control flow` fixture |
-| C5 non-empty-default | (filled at WI-7) | decline `control flow` fixture |
-| G8 MUX-EXCH | (filled at WI-7) | decline + `switch i32` retained |
-| cswap-arg0 seam | (filled at WI-7) | body-chain-only R† stream |
-| Uncompute non-selection | (filled at WI-7) | `%out` terminal-rejection assertion |
-| Jump-table pre-emption | (filled at WI-7) | `…_jumptable.ll` decline (`kMsgOther` at `:64`) + datamux retains `switch i32` |
-| Impure-arm / G10 scrutinee | (filled at WI-7) | `…_impure_{phase,value}.ll` + `…_datause.ll` + `…_predates_gate.ll` decline fixtures |
+| Re-anchor (§5) | **CLEARED** | scrub+erase + `PhiCalls` removal precede `lowerRotations`; `CHECK-NOT: cq_phi` + real-e2e golden clean; 6 escape vectors declined |
+| N-way order/multiset | **CLEARED** | SSA-captured `CHECK` rejects all 9 same-multiset reorders; whole-output `XCT-NOT: cqrt_x` added (lit gap closed) |
+| C1 multi-phi | **CLEARED** | `soleSwitchMergePhi` null-on-2nd content-agnostic, declines pre-push; 6 probes declined |
+| C2 value-anchor | **CLEARED** | `p != q` at 3 layers + `diagonalAliasHit` wire-identity; `…_value_swaproute.ll`; 5 probes declined; stale §4A comment fixed |
+| C4 grouped-case | **CLEARED** | G9 `>=2`-per-successor pre-emptive `control flow` decline; 4 probes declined |
+| C5 non-empty-default | **CLEARED** | `DefaultDirect` exact block-identity + 3 defense-in-depth layers; 5 probes declined |
+| G8 MUX-EXCH | **CLEARED** | `!BaseConst`/all-`ConstantInt` reject; input retains `switch i32`; 7 probes declined |
+| cswap-arg0 seam | **CLEARED** | body-chain-only R†; every cswap arg-0 a flag at len-1/len-3/3-case |
+| Uncompute non-selection | **CLEARED** | `isTerminalHandle` rejects `%out`/`p` even with no measure user; `%d_i` untainted; exact free counts |
+| Jump-table pre-emption | **CLEARED** | `…_jumptable.ll` decline (`kMsgOther` at `:64`, pre-detection) + datamux retains `switch i32`; `normalizeJumpTableAngle` not revived |
+| Impure-arm / G10 scrutinee | **CLEARED** | all 6 v1-floor strings; passthrough/empty-arm scans exhaustive; scrutinee-spoof pre-filtered by the escape guard |
 
-**Two residual coherence boundaries (must clear before the emitter ships, WI-7):**
-(a) the **value-arm method-B N-way coherent boundary** — is `%out` ever *wrong* (not
-merely entangled) for N>2 cases? (b) the **data-mux N-ary coherent-operand gate** — the
-§16.7 select coherent-operand boundary, now N-ary (a coherent / `Ry`-phase data operand
-must ride the conservative decline, as 4.4 did for the select).
+**Two residual coherence boundaries — CLEARED (WI-7):**
+(a) the **value-arm method-B N-way coherent boundary** — for N>2 over a superposed
+scrutinee each off-case rail's forward chain and `_inv` reverse-play are both
+uncontrolled, so `R∘R†=identity` returns it to `|0⟩` on **every** basis branch
+(provably `|0⟩` at free, not entangled); the one `copy(p,out)` after all route-backs
+gives the correct mux — **no N>2 failure mode beyond the N=2 trace**, `%out` never
+*wrong*. (b) the **data-mux N-ary coherent-operand gate** — a coherent/`Ry`-phase
+operand is kept out of DataMux by `caseArmClass` (tainted → Phase/Value) **and** the
+all-`ConstantInt` floor; the untainted `%out` is protected by the
+carrier-independent **exact-`MeasureCalls`-membership sink-or-ret gate**, closing the
+G3 `icmp`/`store`/`call`/`select-condition` carrier gap (rides the conservative
+decline, as 4.4 did for the select).
 
 ---
 
-## 9. Done criteria (maps PRD §21)
+## 9. Done criteria (maps PRD §21) — **ALL MET; 4.5 DONE (2026-06-17)**
 
-- [ ] **(A)** Phase-arm switch lowers to the §4A stream; `control_swap_switch_phase.ll`
+- [x] **(A)** Phase-arm switch lowers to the §4A stream; `control_swap_switch_phase.ll`
       green (CNT/ORD/XCT/ACC), verify-clean.
-- [ ] **(B)** Value-arm switch lowers to the §4B method-B stream;
+- [x] **(B)** Value-arm switch lowers to the §4B method-B stream;
       `control_swap_switch_value.ll` green; the G7 clobber declines
       (`…_value_clobber.ll`), the C2 mis-anchor declines (`…_value_swaproute.ll`), the
       G6 impure-value declines (`…_impure_value.ll`).
-- [ ] **(C)** Constant data-mux lowers to the §4C preload+XOR-delta stream;
+- [x] **(C)** Constant data-mux lowers to the §4C preload+XOR-delta stream;
       `control_swap_switch_datamux.ll` green; input retains `switch i32`.
-- [ ] **(D)** Equality-folded diamond accepts via `tryEqFoldArm` and reuses `emitRegion`;
+- [x] **(D)** Equality-folded diamond accepts via `tryEqFoldArm` and reuses `emitRegion`;
       `control_swap_eqfold_{diamond,ifelse,polarity}.ll` green; D3/D4 negatives decline.
-- [ ] Every §0/§22 off-pattern shape fires its **exact** diagnostic string, **each with
+- [x] Every §0/§22 off-pattern shape fires its **exact** diagnostic string, **each with
       its own named negative fixture** (no bundled rows): the **separate** G4 trio
       (`…_fpdata.ll` / `…_vector.ll` / `…_i128.ll`), G6 impure-phase/impure-value, the C2
       `…_value_swaproute.ll`, both G10 fixtures (`…_datause.ll`, `…_predates_gate.ll`),
       the jump-table pre-emption `…_jumptable.ll`, C1/C4/C5/C8/G3/G7/G11 — all negatives
       green; `control_swap_defer_switch.ll` repurposed (no dangling XFAIL).
-- [ ] ≥1 e2e golden per class (WI-6), byte-diff clean against real linked output.
-- [ ] No new `What` string; no new ABI symbol; `gen_templates.py --check` clean (no YAML
+- [x] ≥1 e2e golden per class (WI-6), byte-diff clean against real linked output.
+- [x] No new `What` string; no new ABI symbol; `gen_templates.py --check` clean (no YAML
       touched).
-- [ ] Full `ctest` green (`ir-pass-lit`, `frontend-lit`, `^e2e-`, `runtime`).
-- [ ] WI-7 Rule-13 clearance: `WI7_SWITCH_CLEARANCE.md` 0 silent miscompiles; ROADMAP/
-      PRD/CLAUDE.md flips; `bd remember` of the const-fold re-anchor + the four kill-shots.
+- [x] Full `ctest` green (`ir-pass-lit`, `frontend-lit`, `^e2e-`, `runtime`).
+- [x] WI-7 Rule-13 clearance: `WI7_SWITCH_CLEARANCE.md` 0 silent miscompiles (16
+      independent adversarial reviewers); ROADMAP/PRD/CLAUDE.md flips; `bd remember` of
+      the const-fold re-anchor + the four kill-shots — all landed.
 
 ---
 

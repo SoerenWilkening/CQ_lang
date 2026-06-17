@@ -27,6 +27,11 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=ORD
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
+; Whole-output stray-x/-cswap scan (WI-7 §8.2 lit-robustness): the §4C recipe is a
+; preload + XOR-delta controlled copy — NO route cswap, NO ¬-bracket cqrt_x. The
+; default CHECK-NOT block scans only post-measure; this independent whole-file scan
+; also rejects a stray x/cswap BEFORE the measure (an identical-multiset miscompile).
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=XCT
 ; The fixture exercises the real switch path (not the jump-table gep/load decline):
 ; RUN: %filecheck %s --check-prefix=INPUT < %s
 declare i32 @cq_theta_si32(i32, double)
@@ -96,6 +101,11 @@ merge:
 
 ; the switch ACCEPTS — no decline anywhere:
 ; ACC-NOT: under quantum control
+
+; No route, no ¬-bracket: ZERO cqrt_x AND ZERO cqrt_cswap in the whole output (a
+; stray x/cswap = a wrong unitary with the same default + a single extra symbol).
+; XCT-NOT: call void @cqrt_x(
+; XCT-NOT: call void @cqrt_cswap(
 
 ; INPUT (matched against the source): the fixture holds a REAL tainted switch, not a
 ; clang-folded select-chain / jump-table gep+load (which would decline pre-detection

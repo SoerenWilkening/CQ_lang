@@ -2346,6 +2346,17 @@ identities **before the first erase** — no block-pointer caching across erasur
 
 ## 21. Done criteria (4.5)
 
+> **STATUS: ALL MET — 4.5 DONE (2026-06-17, WI-1..WI-7, branch
+> `swap-route-control`).** All four ACCEPT shapes lower to their pinned §4
+> streams (`opt -verify` clean); the full §20.7/§22 decline matrix fires its exact
+> per-shape string with a named negative fixture each; ≥1 e2e golden per class
+> links + byte-diffs clean. No new `What` string, no new ABI symbol,
+> `gen_templates.py --check` clean. WI-7 Rule-13 clearance: **16 independent
+> adversarial reviewers, 0 silent miscompiles** (the 11 §8 lenses + the two
+> residual coherence boundaries + 3 over-accept hunters — see
+> `docs/design/rssa-swap-control/WI7_SWITCH_CLEARANCE.md` + §8.11 of
+> `IMPLEMENTATION-4.5.md`). Full `ctest` green.
+
 The increment is **DONE** when every shape in §19 lowers to the swap-route IR its
 `.ll` fixture pins — `opt -verify` clean — every off-pattern shape in the §20.7/§22
 decline matrix fires its **exact** diagnostic string, and the e2e trace smokes diff

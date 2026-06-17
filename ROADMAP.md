@@ -335,7 +335,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.4 DONE · 4.5 pending]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE]
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
 + [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
@@ -554,9 +554,53 @@ after a statevector-checked design dialogue; see
   operands accept; coherent + fp-data decline); the clearance gates each future
   widening. **Next: 4.5 `switch`.**
 
-- **4.5 — tainted `switch`.** Re-add (the old `SwitchNormalization` was removed):
-  lower an N-way tainted `switch` via per-case routing / `icmp eq`-flag select
-  chain into the same emitter — no N-way `phi` dissolution, no new control region.
+- **4.5 — tainted `switch` (N-way eq-flag routing + const-fold re-anchor) [DONE
+  2026-06-17, branch `swap-route-control`, WI-1..WI-7 —
+  `docs/prd/phase-04-swap-route-control/IMPLEMENTATION-4.5.md` + PRD Part V
+  §§19–22].** The blanket `switch` decline (the old `SwitchNormalization` was
+  removed) is lifted for a tainted-scrutinee `switch` in **four** ACCEPT shapes,
+  driven by a `classifySwitchRegion` G0–G11 prove-or-decline ladder (pure SSA
+  analysis by value identity, before any mutation) + per-class G6 proofs
+  (`SwitchArmProve`): **(A) homogeneous phase** (`SwitchRouteEmit`) — per content
+  case mint an `icmp eq`-flag → `|0⟩` rail → `cqrt_cswap` route the scrutinee in →
+  replay the folded gate's **arg-1 angle only** (`cqrt_rz`) → route back → free
+  rail → `icmp_inv` strip + free flag; **zero** controlled gates beyond the route
+  cswaps, `q` never freed, RAUW merge→`q`. **(B) homogeneous value**
+  (`SwitchValueEmit`) — N-way method-B over the **shared routed base** `p` = the
+  merge default-edge incoming (`p != q`, the C2 anchor; routing `q` would clobber
+  the eq-flags): route-in → verbatim chain replay → route-back → **one**
+  `cqrt_copy_<W>(p,out)` → LIFO reverse-play `R†` (body chain only — the §8.5
+  cswap-arg0 seam: route cswaps are bracketed by `emitRoute`, never fed to
+  `emitInverseChain`). **(C) all-`ConstantInt` data-mux** (`SwitchDataMuxEmit`) —
+  the N-way 4.4 `select` merge: preload `%out = cqrt_alloc(v_d)` + per content
+  case `cqrt_alloc(v_i⊕v_d)` XOR-delta + `cqrt_copy_<W>_controlled`; no route, no
+  ¬-bracket. **(D) equality-folded `br` diamond** (`EqFoldArm::tryEqFoldArm`,
+  D1–D7) — `clang -O1` folds `if(q==k){…}` to `cq_phi(i32 k, θ)`; an **additive,
+  detection-only** clause re-anchors `Routed` to the icmp's tainted handle and
+  reuses `emitRegion` verbatim. **The load-bearing, verify-clean-invisible blocker
+  is the §5 const-fold re-anchor:** the folded `cq_phi(c_i,θ)` (arg-0 = the case
+  literal, not `q`) must be re-anchored by physics (replay arg-1 only) **and**
+  scrubbed+erased (incl. `taint.PhiCalls` removal) **during emit, before
+  `RotationLowering`** — else the merge degenerates into a verify-clean wrong
+  data-mux with **no downstream backstop**. Everything off-pattern declines loudly
+  (the §20.7/§22 matrix): multi-phi (C1), grouped-case (C4), non-empty-default
+  (C5), distinct-handle MUX-EXCH (C8/G8), mixed arm classes, fp-data/vector/`i128`
+  (G4), nested (G11), `§3c` clobber (G7), tainted angle (G3), jump-table fold
+  (pre-detection escape), impure arm / unowned-scrutinee-use (G10). **No new
+  `What` string, no new ABI symbol, no YAML edit** (`gen_templates.py --check`
+  clean — every need reused: `emitEqFlag`, `emitRoute`, `emitInverseChain`,
+  `copyControlledFn`, `flattenSwitchRegion`). **Cleared (Rule 13)** by **16
+  independent adversarial reviewers** (the 11 §8 lenses + the two residual
+  coherence boundaries — value-arm method-B N-way; data-mux N-ary
+  coherent-operand — + 3 over-accept hunters), each extracting the real lowered IR
+  and actively constructing miscompile attempts: **0 confirmed defects, 0 silent
+  miscompiles** (IMPLEMENTATION-4.5 §8.11 +
+  `docs/design/rssa-swap-control/WI7_SWITCH_CLEARANCE.md`); plus SSA-captured
+  ordered + `XCT` FileCheck (the lit layer catching same-multiset reorders / a
+  stray `cqrt_x`) and ≥1 linked e2e golden per class
+  (`tests/e2e/slice_control_switch_{phase,value,datamux,eqfold}.c`). **Next: Phase
+  5 productionization** (the uncompute spine is already reused by the swap-route
+  emitter).
 
 **Deferred to later increments (coherent — NOT measurement-restricted):**
 - **Controlled `return` / `break`** (§4): per-site return registers + an

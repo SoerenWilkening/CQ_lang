@@ -351,7 +351,11 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
   ControlRegion R;
   R.Kind = ControlRegion::SwitchRegion;
   R.SwitchCls = Cls;
-  R.Condition = Q;            // the scrutinee = the routed base (§4A).
+  R.Condition = Q;            // the scrutinee. For PHASE it IS the routed base
+                              // (§4A); for VALUE/DATA-MUX it is ONLY the eq-flag
+                              // source — the routed base is `p` = the merge
+                              // straight-through, recovered in the emitter, NOT
+                              // R.Condition (WI-7 Lens-4 clarification).
   R.Merge = P;                // the sole N-incoming content merge phi.
   R.Pred = SwitchBB;          // the switch block (survives the flatten).
   R.MergeBB = MergeBB;
