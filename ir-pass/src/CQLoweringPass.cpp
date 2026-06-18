@@ -10,6 +10,9 @@
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
 #include "RotationLowering.h"
+#include "SpecializeDetect.h"
+#include "SpecializePlan.h"
+#include "Specialization.h"
 #include "SwapRouteEmit.h"
 #include "TaintPropagation.h"
 #include "Uncomputation.h"
@@ -55,13 +58,23 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
+  // Phase 6 specialization PRE-PASS (C-Plan, DD-1): pure analysis by SSA
+  // identity, BEFORE `declineTaintEscapes`, so the carve-out's membership test
+  // (`shouldSpecialize` / `plan6.Diagnosed`) is populated when the escape guard
+  // runs. It enters ONLY proven-Accept sites into `plan6.Pending` and loud-
+  // declines classified rejects (recording them in `plan6.Diagnosed`); every
+  // candidate-shaped-but-unproven site is left for the carve-out to decline.
+  SpecPlan plan6;
+  detectSpecializations(M, taint, wd, plan6);
+
   // Taint-escape guard (test_C_libtooling-bxv): pure analysis, FIRST — before
   // any mutation — because the escape is only diagnosable on pre-RAUW SSA
   // identity (after rotation lowering every tainted value IS the i32 handle
   // and an unknown call reading it is verify-clean). Declines loudly any
   // consumer of a tainted value the lowering does not own (unknown callee /
-  // store / unsupported instruction).
-  declineTaintEscapes(M, taint);
+  // store / unsupported instruction), EXCEPT a site the Phase 6 pre-pass owns
+  // (clone-on-taint) or already loud-declined (carve-out, C-Plan).
+  declineTaintEscapes(M, taint, plan6);
 
   // Straight-line stale-record guard (test_C_libtooling-uzb): pure analysis,
   // FIRST — before any mutation — because it needs SSA-record identity
@@ -105,6 +118,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // no-op when nothing was lifted.
   declineLiftedStaleRecordOps(M, taint);
 
+  // Phase 6 specialization DRIVER (step 14, DD-1): drains `plan6.Pending`,
+  // cloning each visible pure-classical callee, lowering it under a disjoint
+  // `cloneTaint`, and Bennett-wrapping it — strictly BEFORE `lowerRotations`
+  // (the clone must be theta-free before the RAUW-to-handle at :110). The clone
+  // bodies are invisible to the single module-wide `uncompute` below because
+  // `cloneTaint` is never unioned into `taint` (C-Taint); `specialize` re-marks
+  // each retargeted call result into `taint` per its post-lowering return-taint.
+  specialize(M, wd, taint, plan6);
+
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
   lowerRotations(M, wd, taint, &plan);
@@ -147,11 +169,17 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.MeasureCalls.empty())
     return false;
 
+  // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point
+  // too (twin-pipeline parity is MANDATORY — a pre-pass wired in `run()` but not
+  // here would silently diverge, WI-1.12). See run() for the rationale.
+  SpecPlan plan6;
+  detectSpecializations(M, taint, wd, plan6);
+
   // Taint-escape + stale-record guards run FIRST here too (twin-pipeline
   // trap, IMPLEMENTATION §6.5) — see run(). Both are module-scoped like
   // `lowerOps`, which also walks all of `M` (only the rotation/measure work
   // lists above are F-restricted).
-  declineTaintEscapes(M, taint);
+  declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);
 
   // See run() — `detectControlRegions` pushes accepted phase-arm diamonds and
@@ -166,6 +194,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   declineClassicalMuxes(M, taint);
   // Post-lift stale-record re-check (test_C_libtooling-2qyz) — see run().
   declineLiftedStaleRecordOps(M, taint);
+  // Phase 6 specialization driver (step 14) — mirrored from run() (twin-pipeline
+  // parity, WI-1.12).
+  specialize(M, wd, taint, plan6);
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);

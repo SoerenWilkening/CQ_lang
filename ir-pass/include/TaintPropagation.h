@@ -33,6 +33,7 @@
 namespace cq {
 
 class WidthDispatch;
+struct SpecPlan;
 
 struct TaintSet {
   // Front-end intrinsic call sites collected during the propagation walk,
@@ -165,7 +166,18 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 // the list and the per-owner diagnostic split). Lowering still proceeds —
 // the diagnostic makes `opt` exit non-zero, so nothing consumes the output
 // (same surface as RotationLowering::declineTaintedAngle).
-void declineTaintEscapes(llvm::Module &M, const TaintSet &taint);
+//
+// Phase 6 carve-out (C-Plan): `plan6` is the proven-Accept plan
+// `detectSpecializations` populated as a pre-pass BEFORE this guard. The
+// `:419` in-module-body decline is SUPPRESSED for a site in `plan6.Pending`
+// (`shouldSpecialize`) — clone-on-taint owns it — and for a site in
+// `plan6.Diagnosed` (detection already loud-declined it with a specialization
+// message, so the generic `kMsgUnknownCallee` would be a confusing second
+// message). Every other tainted-arg call (declaration-only / indirect / invoke /
+// opaque extern) is absent from both and STILL fires `kMsgUnknownCallee`
+// (decline-by-default). `plan6` is otherwise read-only here.
+void declineTaintEscapes(llvm::Module &M, const TaintSet &taint,
+                         const SpecPlan &plan6);
 
 // Classical-condition value-mux guard (test_C_libtooling-wi5) + the
 // one-register merge-phi lift (test_C_libtooling-5j5). Wired in BOTH pipeline

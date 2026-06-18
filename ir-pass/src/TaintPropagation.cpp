@@ -8,6 +8,8 @@
 
 #include "TaintPropagation.h"
 
+#include "SpecializePlan.h"
+#include "Specialization.h"
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -354,7 +356,8 @@ bool readsTaintedValue(const Instruction &I, const TaintSet &taint) {
 
 }  // namespace
 
-void declineTaintEscapes(Module &M, const TaintSet &taint) {
+void declineTaintEscapes(Module &M, const TaintSet &taint,
+                         const SpecPlan &plan6) {
   // Exact membership for the collected front-end intrinsic call sites —
   // never name-prefix matching on the ACCEPT side (a user function named
   // `cq_theta_evil` must not slip through). `propagate` collected precisely
@@ -409,12 +412,28 @@ void declineTaintEscapes(Module &M, const TaintSet &taint) {
           if (N.starts_with("cqrt_") || N.starts_with("cq_template_") ||
               N.starts_with("cq_invert_"))
             continue;
-          // 1d. Everything else — opaque extern, in-module body (Phase 6
-          //     clone-on-taint is NOT implemented; a visible body is exactly
-          //     as un-lowered as a declaration), llvm.* intrinsic (e.g. the
-          //     -O1 `llvm.smin` min/max idiom), or indirect (null callee) —
-          //     is an UNKNOWN callee: after RAUW it would read the i32
-          //     runtime handle tag, verify-clean.
+          // 1d-Phase6. Carve-out (C-Plan, decline-by-default). A direct
+          //     `CallInst` to a visible body that `detectSpecializations`
+          //     proved liftable (in `plan6.Pending`) is OWNED by clone-on-taint
+          //     (step 14) — suppress its escape decline. A site detection
+          //     already loud-declined with a SPECIALIZATION message
+          //     (`plan6.Diagnosed`: a `cq_*` body, a measurement, in-body
+          //     control, recursion, an fp/i128 ABI, an over-wide arity) is
+          //     suppressed too, so it renders exactly one message, not also the
+          //     generic `kMsgUnknownCallee`. This is a pure membership test — no
+          //     re-classification, no `wd` (none in scope, C6). Every other
+          //     candidate-shaped site (invoke/callbr → not a `CallInst`;
+          //     indirect → null callee; declaration-only → no IR) is in NEITHER
+          //     set and falls through to the decline below (DD-2 no-IR contract).
+          if (auto *CI = dyn_cast<CallInst>(CB)) {
+            if (shouldSpecialize(CI, plan6) || plan6.Diagnosed.count(CI))
+              continue;
+          }
+          // 1d. Everything else — opaque extern, an in-module body the
+          //     specializer declined, llvm.* intrinsic (e.g. the -O1
+          //     `llvm.smin` min/max idiom), or indirect (null callee) — is an
+          //     UNKNOWN callee: after RAUW it would read the i32 runtime handle
+          //     tag, verify-clean.
           if (readsTaintedValue(I, taint))
             diagnoseEscape(&I, kMsgUnknownCallee);
           continue;

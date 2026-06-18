@@ -54,6 +54,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseMapInfo.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <cstdint>
@@ -155,6 +156,18 @@ namespace cq {
 struct SpecPlan {
   llvm::SmallVector<SpecCandidate, 4> Pending;
   llvm::DenseMap<SpecKey, SpecRecord> Cache;
+
+  // Call sites that `detectSpecializations` already LOUDLY declined with a
+  // specialization-specific message (a `cq_*` body, a measurement, in-body
+  // tainted control, recursion, an fp/i128 ABI, an over-wide arity — every
+  // shape that passed the direct-`CallInst` + non-null + `!isDeclaration()`
+  // SHAPE filter yet failed `classifyCandidate`). The `:419` carve-out
+  // suppresses its generic `kMsgUnknownCallee` for these too, so a classified
+  // reject renders exactly ONE diagnostic (its precise specialization message),
+  // not a confusing pair. A SHAPE reject (declaration-only / indirect / invoke /
+  // callbr) is NEVER recorded here — it is "not a candidate", stays silent in
+  // detection, and the carve-out fires `kMsgUnknownCallee` for it (DD-2, C6).
+  llvm::SmallPtrSet<const llvm::CallInst *, 4> Diagnosed;
 };
 
 // `__cq_q_<callee>_<binary>` (DD-5): `<binary>` is `Mask` rendered MSB-first,

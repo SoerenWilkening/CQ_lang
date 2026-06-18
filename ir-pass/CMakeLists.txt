@@ -44,6 +44,7 @@ add_library(CQPass MODULE
   src/ArithLowering.cpp
   src/ArmClassify.cpp
   src/ArmHomogeneity.cpp
+  src/BennettWrap.cpp
   src/CastLowering.cpp
   src/ChainWalk.cpp
   src/CompareLowering.cpp
@@ -64,6 +65,11 @@ add_library(CQPass MODULE
   src/RotationLowering.cpp
   src/SelectClassify.cpp
   src/SelectMergeEmit.cpp
+  src/Specialization.cpp
+  src/SpecializeClone.cpp
+  src/SpecializeDetect.cpp
+  src/SpecializeReject.cpp
+  src/SpecializeSeed.cpp
   src/SwapRouteEmit.cpp
   src/SwitchArmProve.cpp
   src/SwitchClassify.cpp
