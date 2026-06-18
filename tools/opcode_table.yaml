@@ -44,10 +44,13 @@
 #   cq_template_<op>[_<pred>]_<W>[_<from_to>][_hl|_lh]_controlled[_inv]
 # Controlled axis is BINARY-ops-only — compares get no controlled grid
 # (nesting combines flags via cqrt_toffoli, PRD §2.7).
-# Uncompute forms (Phase 5, §2.3/DD-3): the VOID in-place `_unc` family. The
-# shape token is ALWAYS spelled (incl. `_qq`), then `_unc` last; `out` is
-# prepended as argument 0 and the return is void:
-#   cq_template_<op>[_<pred>]_<W>[_<from_to>]_<qq|hl|lh>_unc(out, src…)   (binary)
+# Uncompute forms (Phase 5, §2.3/DD-3): the VOID in-place `_unc` family. Only
+# the `_hl`/`_lh` shape tokens are spelled, then `_unc` last; QQ is the BARE
+# base symbol + `_unc` (exactly as the forward/inv/controlled QQ forms are bare —
+# the forward QQ template is `cq_template_<op>_<W>`, NOT `..._qq`, so the
+# uncompute twin must match it to link against the emitter's bare-QQ name). `out`
+# is prepended as argument 0 and the return is void:
+#   cq_template_<op>[_<pred>]_<W>[_<from_to>][_hl|_lh]_unc(out, src…)      (binary)
 #   cq_template_<op>_<from_to>_unc(out, src)                              (cast)
 #   cq_template_fneg_<W>_unc(out, src)                                    (unary)
 # Uncompute axis is binary + unary + cast only — compares get no `_unc` grid.

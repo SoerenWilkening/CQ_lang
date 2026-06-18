@@ -14,7 +14,7 @@ Naming ("_hl"/"_lh" shape, then "_inv" direction; "_unc" is in-place void):
   fwd Q+Q:     cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>]
   fwd Q+C rhs: ..._hl    fwd C+Q lhs: ..._lh
   inv Q+Q:     ..._inv   inv Q+C rhs: ..._hl_inv   inv C+Q lhs: ..._lh_inv
-  unc Q+Q:     ..._qq_unc  unc Q+C rhs: ..._hl_unc  unc C+Q lhs: ..._lh_unc
+  unc Q+Q:     ..._unc   unc Q+C rhs: ..._hl_unc  unc C+Q lhs: ..._lh_unc
   unc arity-1: ..._unc   (void in-place; out is arg 0 — Phase 5, §2.3/DD-3)
 
 Trace format mirrors runtime/cq_templates.c.
@@ -52,11 +52,14 @@ TARGETS = ("h", "c")
 # off the shape carrying a `c` prefix below, consumed by signature/stub_body.
 #
 # Uncompute axis (Phase 5, PRD §2.3 / DD-3): `unc[_qq|_hl|_lh]` tokens add the
-# VOID in-place uncompute family `cq_template_<op>_<W>[_<shape>]_unc(out, src…)`
-# - the shape token is ALWAYS spelled (including `_qq`), then `_unc` last. These
-# carry a `u` shape prefix, consumed by signature/stub_body to prepend `int32_t
-# out_handle` as argument 0 and return void. Arity-1 (unary/cast) uses the bare
-# `unc` token -> `_unc` suffix, shape `ua1`.
+# VOID in-place uncompute family `cq_template_<op>_<W>[_hl|_lh]_unc(out, src…)`.
+# QQ carries NO shape token — the `_unc` suffix attaches to the BARE base symbol,
+# exactly as `fwd_qq`/`inv_qq`/`controlled_qq` are bare (the forward QQ form is
+# `cq_template_<op>_<W>`, not `..._qq`; the uncompute twin must match it so the
+# emitter's bare-QQ name — TemplateName shapeSuffix(QQ)="" — links). Only `_hl`/
+# `_lh` are spelled, then `_unc` last. These carry a `u` shape prefix, consumed
+# by signature/stub_body to prepend `int32_t out_handle` as argument 0 and return
+# void. Arity-1 (unary/cast) uses the bare `unc` token -> `_unc` suffix, shape `ua1`.
 CONTROLLED_SHAPES = {"cqq", "chl", "clh"}
 VARIANT_INFO = {
     "fwd_qq": ("",        "qq"),
@@ -73,7 +76,7 @@ VARIANT_INFO = {
     "controlled_inv_qq": ("_controlled_inv",    "cqq"),
     "controlled_inv_hl": ("_hl_controlled_inv", "chl"),
     "controlled_inv_lh": ("_lh_controlled_inv", "clh"),
-    "unc_qq": ("_qq_unc", "uqq"),
+    "unc_qq": ("_unc",    "uqq"),
     "unc_hl": ("_hl_unc", "uhl"),
     "unc_lh": ("_lh_unc", "ulh"),
     "unc":    ("_unc",    "ua1"),

@@ -42,12 +42,19 @@ engineering choice (no user-facing behavior fork), so they are recorded, not ask
   Phase 7 if unused.
 
 - **DD-3 — `_unc` operand-slot convention: `out` is always arg 0; the remaining args
-  are the forward operands in their original order.** Forward
-  `out = cq_template_<op>_<W>_qq(lhs, rhs)` → `cq_template_<op>_<W>_qq_unc(out, lhs,
-  rhs)`; `_hl(h, lit)` → `_hl_unc(out, h, lit)`; `_lh(lit, h)` → `_lh_unc(out, lit,
-  h)`. `out` is zeroed; all sources are read-and-preserved. This single rule
-  (prepend `out`, keep forward order) minimizes the QQ-slot-swap miscompile surface
-  and is the **pinned mapping** the Rule-13 review checks (PRD §6 hazard).
+  are the forward operands in their original order.** Forward QQ
+  `out = cq_template_<op>_<W>(lhs, rhs)` → `cq_template_<op>_<W>_unc(out, lhs, rhs)`;
+  `_hl(h, lit)` → `_hl_unc(out, h, lit)`; `_lh(lit, h)` → `_lh_unc(out, lit, h)`.
+  `out` is zeroed; all sources are read-and-preserved. This single rule (prepend
+  `out`, keep forward order) minimizes the QQ-slot-swap miscompile surface and is
+  the **pinned mapping** the Rule-13 review checks (PRD §6 hazard).
+  **(WI-6 correction, was `_qq_unc`):** the QQ form is **bare** — `cq_template_<op>_<W>_unc`,
+  NOT `..._qq_unc`. The forward QQ template carries no `_qq` token (it is the bare
+  base symbol, like the `_inv`/`_controlled` QQ forms), and the emitter mints the
+  bare name (`TemplateName.cpp shapeSuffix(QQ)=""`). WI-2 generated `_qq_unc`,
+  which never linked against the emitter's bare name; the divergence was invisible
+  to the .ll FileCheck fixtures (they don't link) and was caught only by the WI-6
+  e2e link. Only `_hl`/`_lh` spell a shape token.
 
 - **DD-4 — `ControlOwnedRails` *replaces* the dead `FlagImage`, it does not extend
   it.** `FlagImage` is built from `taint.ControlFlag`, which has **zero writers**
@@ -152,7 +159,8 @@ follow-up issue.
 `tools/gen_templates.py` → **split** to `tools/abi_codegen.py`; regenerates
 `runtime/cq_templates.{h,c}`. **PRD:** §2.3, §3; Rule 15.
 - **Tests-first:** extend `tools/gen_templates_test.py` with assertions for the new
-  variants (red): a `void cq_template_<op>_<W>_qq_unc(int32_t,int32_t,int32_t)` exists,
+  variants (red): a `void cq_template_<op>_<W>_unc(int32_t,int32_t,int32_t)` exists (QQ is
+  the **bare** base symbol + `_unc`, NOT `_qq_unc` — WI-6 correction, see DD-3),
   signature is `void` (no `int32_t` return, no `cqrt_alloc_handle` in the body), trace
   format is `cq_template_..._unc(h%d, h%d, h%d)` with **no `-> h` suffix** and **no
   handle-counter advance**, `_hl_unc`/`_lh_unc` carry the classical literal in the
@@ -211,8 +219,8 @@ regenerate affected fixtures + Phase-4 goldens. **PRD:** §2.3, §6; DD-1, DD-3.
 core silent-miscompile zone.**
 - **Tests-first (positives, red):**
   - `lowering_uncompute_qq_both_parents.ll` — `prod = mul_qq(q1,q2)` dead: assert
-    `mul_qq_unc(prod, q1, q2)` reads **both** parents, then `q2` reversed+freed, then
-    `q1` (DD-3 slots).
+    `cq_template_mul_i32_unc(prod, q1, q2)` (bare QQ, NOT `_qq_unc` — DD-3) reads
+    **both** parents, then `q2` reversed+freed, then `q1` (DD-3 slots).
   - `lowering_uncompute_fanout_dag.ll` — **replaces** `chain_fanout.ll`'s NO-EMIT lock:
     `h1` fans to `h2,h3`; assert each gate's `_unc` appears **exactly once**, LIFO
     order, and `h1` is freed **only after** its last consumer's `_unc` (the

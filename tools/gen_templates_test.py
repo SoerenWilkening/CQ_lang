@@ -99,12 +99,13 @@ class GenTemplatesTest(unittest.TestCase):
                              "'int32_t out_handle' (DD-3: out is arg 0)")
         sigs = {sym: params for _, sym, params in unc}
         # DD-3 pinned slot mapping (out, then forward operands in order):
-        #   qq      -> (out, a_handle, b_handle)
+        #   qq      -> (out, a_handle, b_handle)   [BARE — QQ carries no shape token,
+        #                                           matching the bare forward QQ form]
         #   hl      -> (out, a_handle, b_classical)
         #   lh      -> (out, a_classical, b_handle)
         #   unary   -> (out, a_handle)
         #   cast    -> (out, a_handle)
-        self.assertEqual(sigs.get("cq_template_add_i32_qq_unc"),
+        self.assertEqual(sigs.get("cq_template_add_i32_unc"),
                          "int32_t out_handle, int32_t a_handle, int32_t b_handle")
         self.assertEqual(sigs.get("cq_template_add_i32_hl_unc"),
                          "int32_t out_handle, int32_t a_handle, int32_t b_classical")

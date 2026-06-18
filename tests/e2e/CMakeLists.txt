@@ -211,6 +211,27 @@ add_test(NAME e2e-slice-control-switch-eqfold
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_eqfold.expected.log")
 
+# Phase 5 (WI-6, test_C_libtooling-p2s2.6): the whole-DAG uncompute spine — the
+# FIRST end-to-end proof of the void in-place `_unc` family + `cqrt_free`. The
+# only layer that LINKS, so the only proof every `_unc` symbol the emitter mints
+# (WI-3/WI-4) resolves AND signature-matches against the generated runtime ABI
+# (WI-2) — the ir-pass fixtures assert IR text and never link. This slice caught
+# the QQ `_unc` name disagreement (generator `..._qq_unc` vs emitter/bare-forward
+# `..._unc`), invisible to FileCheck. TWO dead, unmeasured handles in a
+# `noinline` helper (`noinline` is load-bearing: Phase-5 uncompute is gated OFF in
+# `main`, and `-O1` would otherwise inline `slice` away so the uncompute never
+# runs). `cq_phi` keeps the dead arithmetic alive past `-O1` DCE. Reverses the
+# whole DAG ONCE in reverse program order: mul_qq `_unc` (bare, DD-3 slots) +
+# two `_hl_unc` + Rz keep-alive undo (negated angle); SIX frees, one per rail,
+# each after its last reverse-use; ZERO `_inv`, ZERO added measure, ZERO cswap.
+add_test(NAME e2e-slice-uncompute-dead-dag
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_dead_dag.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_dead_dag.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
