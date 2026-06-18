@@ -2,7 +2,7 @@
 """tools/gen_templates_test.py - self-test for tools/gen_templates.py.
 
 Asserts:
-  1. Total symbol count == 1438 (1172 value-returning + 266 void `_unc`).
+  1. Total symbol count == 1562 (1172 value-returning + 390 void `_unc`).
   2. Per-kind breakdown matches YAML projection (derived at runtime).
   3. Every .h declaration has a matching .c definition.
   4. YAML SHA-256 banner appears in every emitted file (cq_templates.{h,c}).
@@ -74,12 +74,14 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_1438(self):
-        # 1172 value-returning templates (fwd/inv/controlled) + 266 void
-        # in-place `_unc` symbols (WI-2): binary 196 + unary 2 + cast 68.
-        # Compares carry no `_unc` (the PRD §2.3 uncompute surface is the
-        # binary + unary + cast primitives the spine emits).
-        self.assertEqual(len(self.h_decls), 1438)
+    def test_total_symbol_count_is_1562(self):
+        # 1172 value-returning templates (fwd/inv/controlled) + 390 void
+        # in-place `_unc` symbols: binary 196 + unary 2 + cast 68 + compare 124.
+        # WI-0 (§6.0) added the compare `_unc` axis (unc_qq + unc_hl; no _lh —
+        # compares canonicalize lhs-literals by predicate flip): icmp 10 preds x
+        # 5 widths x 2 + fcmp 6 preds x 2 widths x 2 = 124, mirroring the
+        # commutative binary ops so a compare-as-data flag reverses in place.
+        self.assertEqual(len(self.h_decls), 1562)
 
     def test_unc_family_is_void_in_place(self):
         """PRD §2.3 / DD-3: the `_unc` uncompute family is VOID and in-place.
@@ -115,6 +117,19 @@ class GenTemplatesTest(unittest.TestCase):
                          "int32_t out_handle, int32_t a_handle")
         self.assertEqual(sigs.get("cq_template_sext_i1_to_i8_unc"),
                          "int32_t out_handle, int32_t a_handle")
+        # Compare `_unc` (WI-0 / §6.0): qq -> (out, a_handle, b_handle);
+        # hl -> (out, a_handle, b_classical). A compare-as-data flag reverses
+        # in place by recompute-and-XOR, identical slot mapping to add/mul.
+        self.assertEqual(sigs.get("cq_template_icmp_slt_i32_unc"),
+                         "int32_t out_handle, int32_t a_handle, int32_t b_handle")
+        self.assertEqual(sigs.get("cq_template_icmp_slt_i32_hl_unc"),
+                         "int32_t out_handle, int32_t a_handle, int32_t b_classical")
+        self.assertEqual(sigs.get("cq_template_fcmp_olt_f64_hl_unc"),
+                         "int32_t out_handle, int32_t a_handle, double b_classical")
+        # No `_lh` compare uncompute exists — compares canonicalize an lhs
+        # literal by predicate flip (`5<x` ⇒ `x>5`), so they NEVER emit `_lh`
+        # on any axis (CompareLowering.cpp / TemplateName.cpp).
+        self.assertIsNone(sigs.get("cq_template_icmp_slt_i32_lh_unc"))
 
     def test_unc_bodies_are_trace_only(self):
         """PRD §2.3: `_unc` bodies are trace-only stubs — NO handle mint

@@ -1,7 +1,7 @@
 # tools/opcode_table.yaml — opcode surface (single source of truth).
 #
 # Drives `tools/gen_templates.py` (+ tools/abi_codegen.py), which emits:
-#   - runtime/cq_templates.h           (1438 declarations)
+#   - runtime/cq_templates.h           (1562 declarations)
 #   - runtime/cq_templates.c           (printf-name stubs)
 #
 # Policy: backend stays stubbed (memory `feedback-no-backend-until-frontend-done`).
@@ -53,16 +53,21 @@
 #   cq_template_<op>[_<pred>]_<W>[_<from_to>][_hl|_lh]_unc(out, src…)      (binary)
 #   cq_template_<op>_<from_to>_unc(out, src)                              (cast)
 #   cq_template_fneg_<W>_unc(out, src)                                    (unary)
-# Uncompute axis is binary + unary + cast only — compares get no `_unc` grid.
+# Uncompute axis (WI-0, §6.0): binary + unary + cast + COMPARES. Compares carry
+# only unc_qq/unc_hl — a lhs-literal compare canonicalizes by predicate flip
+# (`5<x` ⇒ `x>5`, CompareLowering.cpp / TemplateName.cpp), so compares have NO
+# `_lh` on ANY axis, exactly like the commutative binary ops (add/mul/and/or/xor).
 #
-# Acceptance count check (total == 1438):
+# Acceptance count check (total == 1562):
 #   binary_opcodes  == 18 (7 int_arith + 6 int_bitwise + 5 fp_arith). The
 #                          controlled axis mirrors fwd/inv across qq/hl/lh
 #                          (392 -> 784 symbols); the uncompute axis adds one
 #                          void `_unc` per forward shape (+196 -> 980).
 #   unary_opcodes   == 1  (fneg; fwd/inv/unc -> 6)
 #   compare_opcodes == 2  (icmp x 10 preds x 5 widths; fcmp x 6 preds x 2 widths;
-#                          NO controlled/uncompute axis — 248)
+#                          NO controlled axis; uncompute axis (WI-0) adds unc_qq +
+#                          unc_hl only — no _lh, compares canonicalize lhs-literals
+#                          by predicate flip — so 6 variants total -> 372)
 #   cast_opcodes    == 9  (sext, zext, trunc, fpext, fptrunc, sitofp, uitofp,
 #                          fptosi, fptoui; 68 cross-pairs; fwd/inv/unc -> 204)
 # ============================================================================
@@ -132,10 +137,15 @@ unary_opcodes:
 # -- Compare opcodes (2 families: icmp, fcmp) ----------------------------------
 # Result is a flag handle (i32 ABI, logical-1-bit). PRD §"Comparison contract".
 # _hl variants carry handle on LHS, classical scalar on RHS; operand-swap
-# canonicalization handles classical-on-lhs at lowering time.
+# canonicalization handles classical-on-lhs at lowering time (so NO _lh form).
+# WI-0 (§6.0) adds the void in-place unc_qq/unc_hl axis — the embedded compare
+# |a,b,c> -> |a,b, c XOR (a<b)> is a self-inverse permutation, uncomputed by
+# recompute-and-XOR from the live sources, exactly like add/mul. No _lh on the
+# uncompute axis either (compares never emit _lh), mirroring the commutative
+# binary ops.
 compare_opcodes:
-  - { opcode: icmp, family: int_compare, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::ICmp", predicate_set: icmp, result_type: flag_handle, variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
-  - { opcode: fcmp, family: fp_compare,  widths: [f32,f64],           llvm_inst: "llvm::Instruction::FCmp", predicate_set: fcmp, result_type: flag_handle, variants: [fwd_qq, fwd_hl, inv_qq, inv_hl] }
+  - { opcode: icmp, family: int_compare, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::ICmp", predicate_set: icmp, result_type: flag_handle, variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, unc_qq, unc_hl] }
+  - { opcode: fcmp, family: fp_compare,  widths: [f32,f64],           llvm_inst: "llvm::Instruction::FCmp", predicate_set: fcmp, result_type: flag_handle, variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, unc_qq, unc_hl] }
 
 # -- Cast opcodes (9 kinds, 68 cross-pairs) ------------------------------------
 # Casts are unary at the IR level — no Q+C variants. PRD §"Integer width

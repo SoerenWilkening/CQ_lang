@@ -23,16 +23,15 @@ using namespace llvm;
 
 namespace cq {
 
-// A `cq_template_icmp_*` / `cq_template_fcmp_*` compare flag-handle producer.
-// The uncompute axis is deliberately binary + unary + cast ONLY — compares get
-// NO void `_unc` grid (tools/opcode_table.yaml:56). So a recovered compare gate
-// has no in-place adjoint the emitter can mint: it must DECLINE LOUDLY (routed to
-// `kMsgUninvertible` by the WI-5 pre-scan), never `getOrInsertFunction`-mint a
-// nonexistent `cq_template_<cmp>_…_unc` symbol (verify-clean / FileCheck-clean,
-// but a link-time dangling reference — the WI-7 Rule-13 over-accept blocker).
-static bool isCompareTemplate(StringRef N) {
-  return N.starts_with("cq_template_icmp_") || N.starts_with("cq_template_fcmp_");
-}
+// WI-0 (§6.0): the compare-as-data flag producers `cq_template_icmp_*` /
+// `cq_template_fcmp_*` are now part of the reversibilizable data-template family.
+// The embedded compare `|a,b,c⟩ → |a,b, c ⊕ (a<b)⟩` is a self-inverse permutation;
+// its void `_unc` recomputes-and-XORs the flag from the still-live sources, exactly
+// like every other binary op's `_unc`. The `tools/opcode_table.yaml` compare grid
+// now carries `unc_qq`/`unc_hl` (no `_lh` — a lhs-literal compare canonicalizes by
+// predicate flip), so the generic mint path below resolves a real symbol, NOT a
+// dangling one. Pre-WI-0 these were excluded and declined loudly; that exclusion is
+// gone.
 
 bool isInverseEmittable(const CallInst *Forward) {
   const Function *Callee = Forward ? Forward->getCalledFunction() : nullptr;
@@ -47,13 +46,13 @@ bool isInverseEmittable(const CallInst *Forward) {
   // Self-adjoint involutions: emitted as-is.
   if (Name == "cqrt_x" || Name == "cqrt_cswap")
     return true;
-  // Uncontrolled data template: its void `_unc` form. The `_inv`/`_unc` twins
-  // and the `_controlled` forms are NOT re-invertible here. COMPARES are excluded
-  // (no `_unc` grid — `isCompareTemplate`): a recovered compare gate declines
-  // loudly via the WI-5 pre-scan rather than minting a dangling symbol.
+  // Uncontrolled data template (incl. compares post-WI-0): its void `_unc` form.
+  // The `_inv`/`_unc` twins and the `_controlled` forms are NOT re-invertible
+  // here. A compare-as-data flag (`cq_template_icmp_*`/`fcmp_*`) IS now
+  // reversibilizable — the §6.0 compare `_unc` grid recomputes-and-XORs from the
+  // live sources, so it is no longer excluded.
   if (Name.starts_with("cq_template_") && !Name.contains("_controlled") &&
-      !Name.ends_with("_inv") && !Name.ends_with("_unc") &&
-      !isCompareTemplate(Name))
+      !Name.ends_with("_inv") && !Name.ends_with("_unc"))
     return true;
   return false;
 }
@@ -106,17 +105,18 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     return true;
   }
 
-  // Uncontrolled data template `cq_template_<op>_<W>[_hl|_lh|_qq]` → its VOID
-  // `_unc` form. DD-3 slot convention: `out` (the forward call's OWN result
-  // handle — the rail to zero) is arg 0, then the forward operands in their
-  // ORIGINAL order. The `_unc` FunctionType is `void(out_ty, <forward param
-  // types…>)`, matching the generated stub (e.g. forward `_hl(i32 h, iN lit)` →
-  // `_hl_unc(i32 out, i32 h, iN lit)`). The void uncompute reads the live
-  // sources directly and mints nothing — there is no handle to thread, so
-  // `CurHandle` is ignored here (it only relabels in-place gates for Phase 7).
+  // Uncontrolled data template `cq_template_<op>_<W>[_hl|_lh]` (incl. compares
+  // post-WI-0, §6.0) → its VOID `_unc` form. DD-3 slot convention: `out` (the
+  // forward call's OWN result handle — the rail to zero) is arg 0, then the
+  // forward operands in their ORIGINAL order. The `_unc` FunctionType is
+  // `void(out_ty, <forward param types…>)`, matching the generated stub (e.g.
+  // forward `_hl(i32 h, iN lit)` → `_hl_unc(i32 out, i32 h, iN lit)`; a compare
+  // `icmp_slt_i32_hl(i32 h, i32 lit)` → `icmp_slt_i32_hl_unc(i32 out, i32 h, i32
+  // lit)`). The void uncompute reads the live sources directly and mints nothing
+  // — there is no handle to thread, so `CurHandle` is ignored here (it only
+  // relabels in-place gates for Phase 7).
   if (Name.starts_with("cq_template_") && !Name.contains("_controlled") &&
-      !Name.ends_with("_inv") && !Name.ends_with("_unc") &&
-      !isCompareTemplate(Name)) {
+      !Name.ends_with("_inv") && !Name.ends_with("_unc")) {
     SmallVector<Value *, 4> Args;
     SmallVector<Type *, 4> ParamTys;
     Args.push_back(Forward);              // out = the rail to zero in place.

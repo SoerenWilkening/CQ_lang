@@ -2,7 +2,7 @@
 """tools/gen_templates.py - template-stub generator.
 
 Reads tools/opcode_table.yaml and emits:
-  - cq_templates.h          : extern "C" declarations (1438 symbols)
+  - cq_templates.h          : extern "C" declarations (1562 symbols)
   - cq_templates.c          : printf-trace stub bodies
 
 Each file embeds the YAML SHA-256 in its banner so consumers can detect
