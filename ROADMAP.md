@@ -694,12 +694,27 @@ caught and the fix closed a verify-clean compare-uncompute over-accept).
 
 ---
 
-## Phase 6 — IR pass: call-graph specialization (function lifting)
+## Phase 6 — IR pass: call-graph specialization (function lifting) [6.0–6.3 DONE]
 
 **Goal.** Productionize the prototype's `cq-specialize` slice into a
 full worklist-driven specialization synthesizer with both lifting paths
 (curated symbol substitution + clone-on-taint) and the rejection-set
 classifier.
+
+**Increment status** (branch `phase-6.3-transitive`, predecessors on
+`phase-6-specialize`/`main`): **6.0** (compare `_unc` grid — compares are
+reversibilizable), **6.1** (clone-on-taint core: `SpecializeDetect`/`Reject`/
+`Clone`/`Seed` + `BennettWrap` + the `(callee,mask)` cache + the `:418`
+carve-out), **6.2** (signature masks / cache / multiplicity), and **6.3**
+(transitive worklist: a clone's inner tainted-arg call is specialized depth-first
+and reversed in the outer wrap via a synthesized void uncompute **twin**
+`@__cq_q_<inner>_<mask>_unc`; recursion / call-graph cycles + varargs loudly
+rejected) are **DONE** (Rule-13 cleared, incl. the latent stale-classical-attr
+fix — clones inheriting `memory(none)`/i32 return attrs would let the backend
+delete the side-effecting void twin call / crash `opt -verify`). **Remaining:**
+**6.4** (rejection-set hardening + over-accept probe family), **6.5** (classical
+call under quantum control — route result, no clone). Path 1 (curated libm
+substitution) stays deferred (owner).
 
 **Reconciliation with swap-route Phase 4.** A **quantum-controlled call** no
 longer needs a controlled specialization of the callee: swap-route routes the

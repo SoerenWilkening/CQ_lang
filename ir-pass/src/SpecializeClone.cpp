@@ -6,13 +6,50 @@
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
 
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/Support/ModRef.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
 using namespace llvm;
 
 namespace cq {
+
+// Strip the function/return attributes the ORIGINAL pure-classical body carried
+// but the quantum-lowered body INVALIDATES. The lowered clone calls side-
+// effecting trace-runtime primitives (`cqrt_*` print, `cq_template_*` print,
+// `cqrt_free` deallocates a rail) and returns a freshly-allocated `i32` handle —
+// so `memory(none)`/`willreturn`/`nofree` (purity) and the return-value `range`
+// are now LIES the backend would exploit. The load-bearing case: a void
+// uncompute-twin call (`@__cq_q_..._unc`, Phase 6.3) whose result is unused would
+// be deleted as a dead "pure willreturn" call, leaving the entangled inner rail
+// freed DIRTY — a hidden measurement that collapses the borrowed qubit (Rule
+// 6/8). Latent since 6.1 (a forward clone's result is always used, so its call
+// survived); the void twin is the first unused-result clone call. Applied to
+// every clone AND its twin.
+void stripStaleClassicalAttrs(Function *F) {
+  F->setMemoryEffects(MemoryEffects::unknown());
+  F->removeFnAttr(Attribute::WillReturn);
+  F->removeFnAttr(Attribute::NoFree);
+  // The uncompute twin retypes the return to VOID, on which NO return attribute
+  // is valid — a leaked i32-only `noundef`/`signext`/`zeroext`/`range` (which
+  // `CloneFunctionInto` copies verbatim from the forward clone) is a malformed
+  // module that aborts `opt -verify` (exit 134) on any inner whose clang return
+  // carries one (e.g. `a & 255` → `noundef range`). For a non-void clone the
+  // return is a freshly-allocated i32 handle: `noundef`/`signext`/`zeroext` stay
+  // valid, but the original value `range` is a lie, so drop just that.
+  if (F->getReturnType()->isVoidTy())
+    F->setAttributes(F->getAttributes().removeAttributesAtIndex(
+        F->getContext(), AttributeList::ReturnIndex));
+  else
+    F->removeRetAttr(Attribute::Range);
+  // A clone returns a fresh copy-out (or void), never literally a borrowed
+  // param, so a `returned` param attr is stale — at worst a lie the optimizer
+  // would use to substitute the borrowed input handle for the basis copy.
+  for (Argument &A : F->args())
+    F->removeParamAttr(A.getArgNo(), Attribute::Returned);
+}
 
 // `__cq_q_<callee>_<binary>` (DD-5). `<binary>` is `Mask` rendered MSB-first,
 // zero-padded to `Callee->arg_size()`, param 0 the RIGHTMOST char — so a 1-arg
@@ -55,6 +92,7 @@ Function *cloneFor(const SpecCandidate &Cand) {
   Function *Clone = CloneFunction(Cand.Callee, VMap);
   Clone->setName(mangleSpecName(Cand.Callee, Cand.Mask));
   Clone->setLinkage(GlobalValue::InternalLinkage);
+  stripStaleClassicalAttrs(Clone);
   return Clone;
 }
 

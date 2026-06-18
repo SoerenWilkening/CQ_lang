@@ -54,6 +54,16 @@ bool isInverseEmittable(const CallInst *Forward) {
   if (Name.starts_with("cq_template_") && !Name.contains("_controlled") &&
       !Name.ends_with("_inv") && !Name.ends_with("_unc"))
     return true;
+  // Phase 6.3 transitive: a call to a specialization CLONE `@__cq_q_<callee>_<mask>`
+  // (a Bennett-wrapped reversible body `|x⟩|0⟩ → |x⟩|f(x)⟩`) is inverted by its
+  // void `_unc` twin `@__cq_q_..._unc(out, args…)` (`out ^= f(args)` zeroes the
+  // out rail and restores the borrowed inputs). The twin is synthesized by the
+  // specializer BEFORE the enclosing clone's wrap reverses this call, so the
+  // symbol resolves to a real definition (DD-2 nested-wrap; the two clone bodies'
+  // `cloneTaint` sets stay disjoint, so no gate is double-adjointed). The twin
+  // itself ends `_unc` and is excluded — it is never a forward link.
+  if (Name.starts_with("__cq_q_") && !Name.ends_with("_unc"))
+    return true;
   return false;
 }
 
@@ -117,6 +127,36 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // relabels in-place gates for Phase 7).
   if (Name.starts_with("cq_template_") && !Name.contains("_controlled") &&
       !Name.ends_with("_inv") && !Name.ends_with("_unc")) {
+    SmallVector<Value *, 4> Args;
+    SmallVector<Type *, 4> ParamTys;
+    Args.push_back(Forward);              // out = the rail to zero in place.
+    ParamTys.push_back(Forward->getType());
+    for (Value *Op : Forward->args()) {   // forward operands, original order.
+      Args.push_back(Op);
+      ParamTys.push_back(Op->getType());
+    }
+    FunctionType *FT =
+        FunctionType::get(Type::getVoidTy(Forward->getContext()), ParamTys,
+                          /*isVarArg=*/false);
+    FunctionCallee Unc =
+        Forward->getModule()->getOrInsertFunction((Name + "_unc").str(), FT);
+    CallInst *UncCall = B.CreateCall(Unc, Args);
+    if (DebugLoc DL = Forward->getDebugLoc())
+      UncCall->setDebugLoc(DL);
+    return true;
+  }
+
+  // Phase 6.3 transitive: a specialization CLONE call `@__cq_q_<callee>_<mask>`
+  // → its void `_unc` twin `@__cq_q_..._unc(out, args…)`. Slot convention mirrors
+  // the data-template case: `out` (this forward call's OWN result handle — the
+  // entangled rail to zero) is arg 0, then the forward operands in their original
+  // order. The twin runs `out ^= f(args)`, zeroing `out` (it held `f(args)`) and
+  // leaving the borrowed inputs pristine. Its FunctionType is
+  // `void(i32 out, <forward arg types…>)`, matching the specializer-synthesized
+  // body, so `getOrInsertFunction` resolves the existing definition (never a
+  // dangling decl — the twin is synthesized first, depth-first). `CurHandle` is
+  // ignored: the twin reads the live sources and mints nothing.
+  if (Name.starts_with("__cq_q_") && !Name.ends_with("_unc")) {
     SmallVector<Value *, 4> Args;
     SmallVector<Type *, 4> ParamTys;
     Args.push_back(Forward);              // out = the rail to zero in place.

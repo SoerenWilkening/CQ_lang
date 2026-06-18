@@ -29,6 +29,12 @@
 //     it frees a dirty/entangled rail = a hidden measurement, Rule 6/8) — it is
 //     never emitted here (DD-2; `_inv` generation survives only for Phase-7).
 //
+//   * Specialization clone `@__cq_q_<callee>_<mask>(args…)` (Phase 6.3 transitive):
+//     emit its void `_unc` twin `@__cq_q_..._unc(out, args…)` (`out ^= f(args)`
+//     zeroes the entangled out rail and restores the borrowed inputs). Same slot
+//     convention as a data template (`out` is arg 0). The twin is specializer-
+//     synthesized BEFORE the enclosing clone's wrap reverses this call.
+//
 //   * Any other primitive (incl. the controlled callees) → no correct uncompute →
 //     return the un-invertible signal (`false`) so the driver declines LOUDLY
 //     (PRD §2.12) rather than leaving a half-reversed chain.

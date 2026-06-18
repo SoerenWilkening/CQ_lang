@@ -26,10 +26,19 @@ class of bug.
 > on branch `swap-route-control`). **Phase 5 — whole-DAG LIFO uncomputation over
 > the void `_unc` ABI — is also DONE** (all 7 WIs; the per-terminal `_inv` slice
 > productionized to whole-DAG reversal of dead source-derived data handles,
-> Rule-13 cleared incl. the WI-7 compare-uncompute over-accept fix). **Next:
-> Phase 6 — call-graph specialization (function lifting).** Read `ROADMAP.md` and
-> `docs/design/rssa-swap-control/` *before* touching control flow. Phases 0–5 are
-> done; 6–10 are not started.
+> Rule-13 cleared incl. the WI-7 compare-uncompute over-accept fix). **Phase 6 —
+> call-graph specialization (function lifting) — is IN PROGRESS: `6.0`
+> (compare `_unc` grid), `6.1` (clone-on-taint core + Bennett wrap +
+> `(callee,mask)` cache + carve-out), `6.2` (signature masks / cache /
+> multiplicity), and `6.3` (transitive worklist — depth-first inner
+> specialization reversed in the outer wrap via a synthesized void uncompute
+> twin `@__cq_q_<inner>_<mask>_unc`; recursion/cycle + varargs loud reject;
+> the stale-classical-attr fix) are DONE (branch `phase-6.3-transitive`,
+> Rule-13 cleared). **Next: 6.4** (rejection-set hardening + over-accept probe
+> family), then **6.5** (classical call under quantum control — route result, no
+> clone).** Read `ROADMAP.md` and `docs/design/rssa-swap-control/` *before*
+> touching control flow. Phases 0–5 done; 6.0–6.3 done; 6.4–6.5 + 7–10 not
+> started.
 
 ---
 

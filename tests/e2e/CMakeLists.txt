@@ -343,6 +343,30 @@ add_test(NAME e2e-slice-specialize-multiarg
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/specialize_multiarg_caller.expected.log")
 
+# Phase 6.3 (WI-3.5, test_C_libtooling-mvna.9): the TRANSITIVE worklist. One
+# theta-tainted `x` flows through a TWO-LEVEL classical call chain crossing THREE
+# TUs — specialize_transitive_caller.c (CQ) calls `outer`
+# (specialize_transitive_outer_lib.c), which calls `inner`
+# (specialize_transitive_inner_lib.c). Both libs compile WITHOUT CQ.h (C18). After
+# llvm-link, the ONE cq-lowering pass lifts `outer` into @__cq_q_outer_1, then
+# re-scans that clone, finds the post-seed-tainted inner call, and lifts `inner`
+# into @__cq_q_inner_1 + synthesizes the void uncompute twin @__cq_q_inner_1_unc.
+# The outer Bennett wrap's reverse CALLS that twin to zero the entangled inner
+# rail (the trace's second `cq_template_mul_i32_hl(h0,7)` + `cqrt_copy(h5,h2)`)
+# BEFORE freeing it — so the borrowed quantum input h0 is restored to pristine
+# (Rule 6/8), never freed dirty. This is the ONLY layer that LINK-proves the
+# nested clones + the uncompute twin all resolve and signature-match across the
+# three modules through llvm-link; the twin call's executed body in the trace is
+# the contract that the transitive reverse is real, not a verify-clean omission.
+add_test(NAME e2e-slice-specialize-transitive
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_transitive_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_transitive_outer_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/specialize_transitive_inner_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_transitive_caller.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
