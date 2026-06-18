@@ -323,6 +323,26 @@ add_test(NAME e2e-slice-specialize-2file
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/specialize_caller.expected.log")
 
+# Phase 6.2 (WI-2.6, test_C_libtooling-mvna.8): signatures / cache / multiplicity.
+# specialize_multiarg_caller.c routes ONE theta-tainted `x` through the separate-TU
+# helper `combine` (specialize_multiarg_lib.c) at THREE sites with TWO distinct
+# taint signatures + one repeat: combine(x,k) [mask 01], combine(k,x) [mask 10],
+# combine(x,k) [mask 01 again, CACHE HIT]. The specializer synthesizes exactly two
+# DISTINCT clones — __cq_q_combine_01 (arg0 the handle: the reused arg0 lowers the
+# second op QQ) and __cq_q_combine_10 (arg1 the handle: the second op lowers HL) —
+# and reuses _01 for the third site. This link-proves that BOTH distinct clones and
+# the shared one resolve and signature-match through llvm-link; the golden's two
+# different gate streams (QQ-mul in _01 vs HL-mul in _10) plus the _01-shaped third
+# call are the trace contract for the (callee,mask) cache earning its keep (C7).
+add_test(NAME e2e-slice-specialize-multiarg
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_multiarg_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_multiarg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_multiarg_caller.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
