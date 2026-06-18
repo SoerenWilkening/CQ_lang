@@ -7,6 +7,11 @@
 # tracks the just-built artifacts.
 set(_E2E_CLANG "${LLVM_TOOLS_BINARY_DIR}/clang")
 set(_E2E_OPT   "${LLVM_TOOLS_BINARY_DIR}/opt")
+# Phase 6 (DD-6 §7.2): llvm-link for the multi-file harness run_slice_multi.sh,
+# mirroring _E2E_CLANG/_E2E_OPT (C19). Resolves to the same LLVM-19 toolchain
+# (/usr/local/opt/llvm@19/bin/llvm-link). NOTE: new add_test entries require a
+# cmake re-configure — e2e does not auto-discover (unlike the lit .ll fixtures).
+set(_E2E_LLVM_LINK "${LLVM_TOOLS_BINARY_DIR}/llvm-link")
 
 # Phase 2 canonical slice: theta -> add_hl -> measure.
 add_test(NAME e2e-slice-theta-add-measure
@@ -253,6 +258,46 @@ add_test(NAME e2e-slice-uncompute-dead-shapes
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_dead_shapes.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_dead_shapes.expected.log")
+
+# Phase 6 (DD-6 §7.1, test_C_libtooling-mvna.3): the ZERO-LIB smoke for the new
+# multi-file harness. Drives the EXISTING single-TU theta->add->measure slice
+# through run_slice_multi.sh with EMPTY LIBSRCS (the "" 7th positional), so the
+# llvm-link is over just cq.ll — an identity on the runtime trace. It byte-diffs
+# the SAME golden as e2e-slice-theta-add-measure, which makes it a pure harness
+# check of EXACTLY the empty-LIBSRCS branch (Stage 1b never runs) and the
+# single-module identity-link, plus -include CQ.h on CQSRC, templates-before-
+# runtime link order, and -O1. The lib-isolation invariant (no CQ.h on libs) and
+# multi-module llvm-link are NOT exercised here — e2e-slice-multi-2file (below)
+# guards those. Spec pins a zero-lib path as a fixture (IMPLEMENTATION_PLAN §7.1).
+add_test(NAME e2e-slice-multi-zerolib
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_theta_add_measure.c"
+    ""
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_theta_add_measure.expected.log")
+
+# Phase 6 (DD-6 §7.1, test_C_libtooling-mvna.3): the NON-EMPTY-LIBSRCS smoke —
+# the permanent ctest guard for the C18 lib-isolation invariant + multi-module
+# llvm-link, ahead of the specializer's tainted-arg golden (.7). slice_multi_caller.c
+# (a CQ TU whose quantum core matches theta-add-measure, additionally calling a
+# CLASSICAL helper) + slice_multi_lib.c (the helper, passed as the single LIBSRCS
+# word). This exercises Stage 1b (per-lib clang, NO -include CQ.h) and the
+# llvm-link of TWO modules. The helper is called with classical data and used
+# only post-measure, so no taint escapes (specializer-independent — a pure harness
+# test). slice_multi_lib.c carries a baked-in `#ifdef cq_theta / #error` tripwire:
+# if the harness ever force-includes CQ.h into a lib TU, this test fails LOUDLY at
+# the lib compile, not silently. lib_bias() returns 0 so the trace matches the
+# theta-add-measure golden; the dedicated golden keeps the two slices decoupled.
+add_test(NAME e2e-slice-multi-2file
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_multi_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_multi_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_multi.expected.log")
 
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old

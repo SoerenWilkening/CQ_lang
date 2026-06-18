@@ -1,0 +1,165 @@
+#!/usr/bin/env bash
+# tools/cqc — CQ user-facing driver (Phase 6 multi-file, DD-6 §7.3).
+#
+# Orchestrates the taint-driven CQ pipeline over one CQ translation unit plus
+# zero or more classical C libraries:
+#   1. clang -O1 -emit-llvm per .c   (ONLY the CQ TU gets -include CQ.h — C18)
+#   2. llvm-link the per-TU IR        (un-inlined bodies for the specializer)
+#   3. opt -passes=cq-lowering        (the single lowering pass; no inliner before)
+#   4. clang link                     (templates BEFORE runtime — load-bearing, C18)
+#
+# There is NO AST rewriter / transpiler / cq_mid.h stage: the frontend is the
+# CQ.h header lowered entirely in the IR pass (taint-driven design — Key
+# Prohibitions, C21). cqc never emits -O2/-O3 and never runs an inlining pass
+# before opt (Rule 9); -O1 per TU plus llvm-link-before-opt structurally preserve
+# the visible callee body that call-graph specialization depends on.
+#
+# Usage:
+#   cqc <cq_input.c> [lib.c ...] -o <output> [options]
+#     --keep-intermediates    keep <output>.{combined,lowered}.<ext> next to <output>
+#     --emit-ll               textual .ll intermediates instead of .bc (implies keep)
+#     --cq-prefix=<dir>       install/source prefix (default: $(dirname $0)/..)
+#     --opt=<binary>          opt binary        (default: opt-19 / $LLVM_PREFIX)
+#     --clang=<binary>        clang binary      (default: clang-19 / $LLVM_PREFIX)
+#     --link=<binary>         llvm-link binary  (default: llvm-link-19 / $LLVM_PREFIX)
+#     -o <output>             output executable
+#     -h, --help              this message
+#
+# The FIRST positional is the CQ source (compiled with -include CQ.h); every
+# later positional is a plain classical C library (compiled WITHOUT CQ.h).
+
+set -euo pipefail
+
+usage() {
+    cat <<EOF
+usage: cqc <cq_input.c> [lib.c ...] -o <output> [options]
+  --keep-intermediates    keep <output>.{combined,lowered}.<ext> next to <output>
+  --emit-ll               emit intermediates as textual .ll instead of .bc
+                          (implies --keep-intermediates)
+  --cq-prefix=<dir>       install/source prefix (default: $(dirname "$0")/..)
+  --opt=<binary>          opt binary        (default: opt-19)
+  --clang=<binary>        clang binary      (default: clang-19)
+  --link=<binary>         llvm-link binary  (default: llvm-link-19)
+  -o <output>             output executable
+  -h, --help              this message
+
+The first positional is the CQ source (compiled with -include CQ.h); every later
+positional is a plain classical C library (compiled WITHOUT CQ.h).
+EOF
+}
+
+inputs=(); output=""; keep=0; emit_ll=0
+prefix="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Pick LLVM tool binaries with the same priority chain as archive/cqc:
+#   1. $LLVM_PREFIX/bin/<tool> — the README's macOS setup (brew llvm@19 is
+#      keg-only, so LLVM_PREFIX is set but not on PATH).
+#   2. `<name>-19` on PATH — Debian/Ubuntu llvm-19 layout.
+#   3. `<name>` on PATH — Homebrew on PATH / generic LLVM.
+#   4. Fall back to `<name>-19` so the missing-tool error names a concrete tool.
+# --opt= / --clang= / --link= overrides bypass this chain entirely.
+pick_bin() {
+    local versioned="$1" unversioned="$2"
+    if [[ -n "${LLVM_PREFIX:-}" && -x "$LLVM_PREFIX/bin/$unversioned" ]]; then
+        printf '%s' "$LLVM_PREFIX/bin/$unversioned"
+    elif command -v "$versioned" >/dev/null 2>&1; then printf '%s' "$versioned"
+    elif command -v "$unversioned" >/dev/null 2>&1; then printf '%s' "$unversioned"
+    else printf '%s' "$versioned"  # let the stage error surface the missing tool
+    fi
+}
+opt_bin="$(pick_bin opt-19 opt)"
+clang_bin="$(pick_bin clang-19 clang)"
+link_bin="$(pick_bin llvm-link-19 llvm-link)"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)              usage; exit 0 ;;
+        -o)                     output="$2"; shift 2 ;;
+        --keep-intermediates)   keep=1; shift ;;
+        --emit-ll)              keep=1; emit_ll=1; shift ;;
+        --cq-prefix=*)          prefix="${1#*=}"; shift ;;
+        --cq-prefix)            prefix="$2"; shift 2 ;;
+        --opt=*)                opt_bin="${1#*=}"; shift ;;
+        --opt)                  opt_bin="$2"; shift 2 ;;
+        --clang=*)              clang_bin="${1#*=}"; shift ;;
+        --clang)                clang_bin="$2"; shift 2 ;;
+        --link=*)               link_bin="${1#*=}"; shift ;;
+        --link)                 link_bin="$2"; shift 2 ;;
+        -*) echo "cqc: unknown flag: $1" >&2; usage >&2; exit 2 ;;
+        *)  inputs+=("$1"); shift ;;
+    esac
+done
+
+[[ ${#inputs[@]} -gt 0 ]] || { echo "cqc: missing <cq_input.c>" >&2; usage >&2; exit 2; }
+[[ -n "$output"       ]] || { echo "cqc: missing -o <output>" >&2; usage >&2; exit 2; }
+for f in "${inputs[@]}"; do
+    [[ -f "$f" ]] || { echo "cqc: input not found: $f" >&2; exit 2; }
+done
+
+# Resolve an artifact: first try the install layout, then the in-tree build.
+find_artifact() {
+    local install_rel="$1" build_rel="$2" name="$3"
+    if [[ -e "$prefix/$install_rel" ]]; then printf '%s' "$prefix/$install_rel"
+    elif [[ -e "$prefix/$build_rel" ]]; then printf '%s' "$prefix/$build_rel"
+    else echo "cqc: cannot locate $name (looked under $prefix/$install_rel, $prefix/$build_rel)" >&2
+        return 1
+    fi
+}
+
+pass_so="$(find_artifact lib/libCQPass.so      build/ir-pass/libCQPass.so      libCQPass.so)"      || exit 3
+rt_lib="$(find_artifact  lib/libcq_runtime.a   build/runtime/libcq_runtime.a   libcq_runtime.a)"   || exit 3
+tpl_lib="$(find_artifact lib/libcq_templates.a build/runtime/libcq_templates.a libcq_templates.a)" || exit 3
+[[ -d "$prefix/include" ]] || { echo "cqc: missing $prefix/include (CQ.h)" >&2; exit 3; }
+
+# Intermediate IR format: --emit-ll switches .bc bitcode to .ll text and toggles
+# -S on clang stage 1 / opt stage 3 / llvm-link stage 2 (each accepts either as
+# input transparently). Empty *_emit_flag arrays are expanded with the bash-3.2
+# safe "${arr[@]+...}" idiom (macOS /bin/bash is 3.2; a bare "${arr[@]}" on an
+# empty array under set -u is an unbound-variable error there).
+ir_ext="bc"; clang_emit_flag="-c"; link_emit_flag=(); opt_emit_flag=()
+if [[ "$emit_ll" == "1" ]]; then
+    ir_ext="ll"; clang_emit_flag="-S"; link_emit_flag=(-S); opt_emit_flag=(-S)
+fi
+
+out_base="$(basename "$output")"
+if [[ "$keep" == "1" ]]; then
+    work="$(dirname "$output")"
+else
+    work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
+fi
+combined="$work/$out_base.combined.$ir_ext"
+lowered="$work/$out_base.lowered.$ir_ext"
+
+run_stage() {
+    local label="$1"; shift
+    if ! "$@"; then echo "cqc: stage $label failed" >&2; exit 4; fi
+}
+
+# Stage 1: per-TU clang -O1 -emit-llvm. The FIRST input is the CQ TU and gets
+# -include CQ.h; every later input is a classical C library and does NOT (C18).
+tu_irs=()
+idx=0
+for src in "${inputs[@]}"; do
+    tu_ir="$work/$out_base.tu_$idx.$ir_ext"
+    if [[ "$idx" == "0" ]]; then
+        run_stage compile "$clang_bin" -O1 -emit-llvm "$clang_emit_flag" "$src" \
+            -include CQ.h -I"$prefix/include" -o "$tu_ir"
+    else
+        run_stage compile "$clang_bin" -O1 -emit-llvm "$clang_emit_flag" "$src" \
+            -I"$prefix/include" -o "$tu_ir"
+    fi
+    tu_irs+=("$tu_ir")
+    idx=$((idx + 1))
+done
+
+# Stage 2: llvm-link the per-TU IR into one module — gives the specializer the
+# un-inlined callee bodies (llvm-link, not a multi-input clang invocation).
+run_stage link-ir "$link_bin" "${link_emit_flag[@]+"${link_emit_flag[@]}"}" \
+    "${tu_irs[@]}" -o "$combined"
+
+# Stage 3: opt cq-lowering over the combined module (no inliner before it).
+run_stage lower "$opt_bin" -load-pass-plugin "$pass_so" \
+    -passes=cq-lowering "${opt_emit_flag[@]+"${opt_emit_flag[@]}"}" "$combined" -o "$lowered"
+
+# Stage 4: link. Templates BEFORE runtime (load-bearing, C18).
+run_stage link "$clang_bin" "$lowered" "$tpl_lib" "$rt_lib" -o "$output"
