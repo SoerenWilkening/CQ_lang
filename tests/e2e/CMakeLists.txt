@@ -299,6 +299,30 @@ add_test(NAME e2e-slice-multi-2file
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_multi.expected.log")
 
+# Phase 6.1 (WI-1.11, test_C_libtooling-mvna.7): the call-graph-specialization
+# golden — the FIRST e2e slice where taint genuinely ESCAPES into a separate-TU
+# callee body and the specializer fires. specialize_caller.c (a CQ TU whose
+# theta-tainted `x` is passed to `helper`) + specialize_lib.c (the pure i32
+# `helper`, the single LIBSRCS word, compiled WITHOUT CQ.h). After llvm-link
+# merges them, the ONE cq-lowering pass clones `helper` into the reversible
+# `__cq_q_helper_1`, lowers its body to templates, Bennett-wraps it (compute ->
+# cqrt_copy_i32 -> reverse-play `_unc` -> cqrt_free), and retargets the call.
+# This is the ONLY layer that LINK-proves @__cq_q_helper_1 + cqrt_copy_i32 + the
+# `_unc` data-template adjoints (cq_template_mul_i32_unc / add_i32_hl_unc) all
+# resolve and signature-match through the multi-module pipeline; the golden's
+# LIFO reverse order (mul_unc before add_unc, then both frees) is the trace
+# contract for the Bennett core every later Phase-6 increment reuses. The
+# borrowed quantum input `x` (h0) is preserved and left allocated (a Rule-6 safe
+# leak — no caller-side uncompute fires, the lineage reaches the measure sink).
+add_test(NAME e2e-slice-specialize-2file
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_caller.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
