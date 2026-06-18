@@ -203,7 +203,7 @@ NestDisposition recoverRegionTree(
     auto *Cond = dyn_cast<Instruction>(CondV);
     if (!Cond || !condHasDataUse(Cond))
       return false;
-    switch (condDataUseDisposition(Cond, Route)) {
+    switch (condDataUseDisposition(Cond, Route, Taint)) {
     case CondDataDisp::ShareOk:
       // A shareable cond-data-use, but `NestedRouteEmit` has no shared-flag path
       // yet — decline (the flat VALUE-arm path declines a `ShareCondFlag` region

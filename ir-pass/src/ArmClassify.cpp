@@ -513,9 +513,28 @@ bool comparePredLowerable(const CmpInst *Cmp) {
 }
 
 CondDataDisp condDataUseDisposition(Instruction *Cond,
-                                    const BasicBlock *RouteBlock) {
+                                    const BasicBlock *RouteBlock,
+                                    const TaintSet &Taint) {
   if (!RouteBlock)
     return CondDataDisp::Unowned;  // no route anchor — cannot prove ordering.
+  // The measurement allowlist is EXACT-MEMBERSHIP against `Taint.MeasureCalls`
+  // (the recognized `@cq_measure_<sfx>` call sites), NOT a `starts_with(
+  // "cq_measure_") || starts_with("cqrt_measure_")` prefix match — mirrors the G10
+  // (SwitchClassify.cpp) / SelectClassify allowlists and `proveSwitchDataMux`.
+  // Prefix-on-accept is spoofable: an opaque `cq_measure_evil` would confer false
+  // ownership of a live flag lineage. For the `cq_measure_` family the check is
+  // EQUIVALENT on reachable inputs (the lineage walked here is ALWAYS tainted, so
+  // `declineTaintEscapes` (L64, pre-detection) has already rejected any unknown-
+  // callee `cq_measure_evil` before this runs — the masking coincidence). It is
+  // STRICTLY STRICTER on the dropped `cqrt_measure_` arm: a `cqrt_`-named callee is
+  // whitelisted by `declineTaintEscapes` (not pre-masked), so a HAND-AUTHORED
+  // `@cqrt_measure_<W>` on the lineage reaches here and now DECLINES (Unowned)
+  // where the old prefix accepted (ShareOk) — the SAFE over-decline direction; the
+  // frontend never emits `cqrt_measure_` pre-detection, so no legitimate input is
+  // affected (control_swap_reject_cond_datause_cqrt_measure_spoof.ll). Defense-in-
+  // depth + consistency (Rule 14, not re-derive the masking coincidence).
+  SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
+                                         Taint.MeasureCalls.end());
   SmallVector<Instruction *, 8> Work;
   SmallPtrSet<Instruction *, 16> Seen;
   for (User *U : Cond->users())
@@ -530,9 +549,7 @@ CondDataDisp condDataUseDisposition(Instruction *Cond,
       continue;  // escape — a terminator, never in RouteBlock, always after the
                  // route; the caller owns the handle.
     if (auto *CI = dyn_cast<CallInst>(I)) {
-      const Function *F = CI->getCalledFunction();
-      if (F && (F->getName().starts_with("cq_measure_") ||
-                F->getName().starts_with("cqrt_measure_"))) {
+      if (Sinks.count(CI)) {
         if (CI->getParent() == RouteBlock)
           return CondDataDisp::MeasuredEarly;  // collapses the flag pre-route.
         continue;  // measured downstream of the route — the measurement owns it.
@@ -646,7 +663,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
     }
   if (HasDataUse) {
     switch (condDataUseDisposition(cast<Instruction>(Region.Condition),
-                                   Region.Pred)) {
+                                   Region.Pred, Taint)) {
     case CondDataDisp::ShareOk:
       Region.ShareCondFlag = true;
       break;

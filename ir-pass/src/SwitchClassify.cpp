@@ -331,15 +331,28 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
   // An UNOWNED data use of the scrutinee (not the switch, not the merge phi, not
   // an escape `ret`, not a measurement) leaves a dirty/entangled rail with no
   // owner; decline conservatively.
+  //
+  // The measurement allowlist is EXACT-MEMBERSHIP against `taint.MeasureCalls`
+  // (the recognized `@cq_measure_<sfx>` call sites), NOT a `starts_with(
+  // "cq_measure_")` prefix match — mirrors `proveSwitchDataMux`'s sink test and
+  // `isMeasureSink`/`declineTaintEscapes`. Prefix-on-accept is spoofable: an
+  // opaque `cq_measure_evil` would confer false ownership of a live scrutinee
+  // use. Here `Q` is ALWAYS tainted, so `declineTaintEscapes` (L64, pre-
+  // detection) has already rejected any unknown-callee user before G10 runs — on
+  // this tainted operand the two tests are equivalent, so the exact check is
+  // consistency + defense-in-depth (Rule 14, not re-derive the masking
+  // coincidence). The runtime `cqrt_measure_` prefix is correctly NOT matched
+  // either — it is a compiler-emitted symbol absent pre-detection.
+  SmallPtrSet<const CallInst *, 8> Sinks(taint.MeasureCalls.begin(),
+                                         taint.MeasureCalls.end());
   for (User *X : Q->users()) {
     if (X == SI || X == P)
       continue;
-    // Owned: escapes via `ret` (the caller owns it) or is the genuine source-level
-    // sink `cq_measure_`. NOT the runtime `cqrt_measure_` prefix — that is a
-    // compiler-emitted ABI symbol that cannot legitimately appear pre-detection
-    // and must not confer ownership of a user-authored scrutinee use.
-    if (isa<ReturnInst>(X) || isCallToPrefix(X, "cq_measure_"))
-      continue;
+    if (isa<ReturnInst>(X))
+      continue;  // escapes via `ret` — the caller owns it.
+    if (const auto *CI = dyn_cast<CallInst>(X))
+      if (Sinks.count(CI))
+        continue;  // a recognized measurement sink owns the handle.
     return diagnoseUnderControl(SI,
                                 "condition data use neither escaped nor measured");
   }

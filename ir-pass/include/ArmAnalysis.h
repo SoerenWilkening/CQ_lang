@@ -129,7 +129,8 @@ llvm::CallInst *taintedAngleGate(llvm::Value *ArmIncoming,
 enum class CondDataDisp { ShareOk, MeasuredEarly, Unowned, Unlowerable };
 
 CondDataDisp condDataUseDisposition(llvm::Instruction *Cond,
-                                    const llvm::BasicBlock *RouteBlock);
+                                    const llvm::BasicBlock *RouteBlock,
+                                    const TaintSet &Taint);
 
 // Whether a control/data `CmpInst`'s predicate has a lowering template — the
 // predicate axis of `compareInScope`, with the icmp/fcmp family derived from the

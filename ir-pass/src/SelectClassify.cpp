@@ -44,10 +44,6 @@ bool isPhiCall(const Value *V) { return isCallToPrefix(V, "cq_phi_"); }
 bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 bool isRotationCall(const Value *V) { return isPhiCall(V) || isThetaCall(V); }
 
-bool isMeasureCall(const Value *V) {
-  return isCallToPrefix(V, "cq_measure_") || isCallToPrefix(V, "cqrt_measure_");
-}
-
 // GATE 3 (the §3.2 BLOCKER) — does `%sel`'s value reach a rotation's arg-1 ANGLE
 // slot through value-preserving carriers? A NEW forward worklist walk: no
 // existing helper walks FORWARD from a value to a rotation arg-1
@@ -173,6 +169,21 @@ bool operandCarriesPhase(Value *Op, const TaintSet &Taint) {
 // the binding Rule-13 clearance item (§8) — re-pin here if it moves.
 bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
   Value *Cond = Sel->getCondition();
+  // The downstream-measurement allowlist is EXACT-MEMBERSHIP against
+  // `Taint.MeasureCalls` (the recognized `@cq_measure_<sfx>` call sites), NOT the
+  // old `starts_with("cq_measure_") || starts_with("cqrt_measure_")` prefix match
+  // — mirrors `proveSwitchDataMux`'s sink test and the G10 scrutinee allowlist
+  // (SwitchClassify.cpp). Prefix-on-accept is spoofable: an opaque `cq_measure_evil`
+  // would confer false ownership of a live rail. For the `cq_measure_` family the
+  // check is EQUIVALENT on reachable inputs: `Op` is ALWAYS tainted (the caller
+  // gates on `taint.Tainted.count(Op)`), so `declineTaintEscapes` (L64, pre-
+  // detection) has already rejected any unknown-callee `cq_measure_evil`. It is
+  // STRICTLY STRICTER on the dropped `cqrt_measure_` arm (whitelisted by the escape
+  // guard, so a hand-authored runtime-symbol measure reaches here) — the SAFE
+  // over-decline direction; the frontend never emits `cqrt_measure_` pre-detection.
+  // Consistency + defense-in-depth (Rule 14).
+  SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
+                                         Taint.MeasureCalls.end());
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;
   Work.push_back(Op);
@@ -183,8 +194,8 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
       if (X == Sel || X == Cond)
         continue;  // the select's own copy / the flag mint — owned.
       if (auto *CI = dyn_cast<CallInst>(X)) {
-        if (isMeasureCall(CI))
-          continue;  // measured downstream — the measurement owns the handle.
+        if (Sinks.count(CI))
+          continue;  // a recognized measurement sink owns the handle.
         if (isRotationCall(CI)) {
           if (CI->arg_size() >= 1 && CI->getArgOperand(0) == U)
             return true;  // a rotation ON the operand's wire — coherent.
@@ -203,7 +214,6 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
           Work.push_back(I);
     }
   }
-  (void)Taint;
   return false;
 }
 
