@@ -23,6 +23,17 @@ using namespace llvm;
 
 namespace cq {
 
+// A `cq_template_icmp_*` / `cq_template_fcmp_*` compare flag-handle producer.
+// The uncompute axis is deliberately binary + unary + cast ONLY — compares get
+// NO void `_unc` grid (tools/opcode_table.yaml:56). So a recovered compare gate
+// has no in-place adjoint the emitter can mint: it must DECLINE LOUDLY (routed to
+// `kMsgUninvertible` by the WI-5 pre-scan), never `getOrInsertFunction`-mint a
+// nonexistent `cq_template_<cmp>_…_unc` symbol (verify-clean / FileCheck-clean,
+// but a link-time dangling reference — the WI-7 Rule-13 over-accept blocker).
+static bool isCompareTemplate(StringRef N) {
+  return N.starts_with("cq_template_icmp_") || N.starts_with("cq_template_fcmp_");
+}
+
 bool isInverseEmittable(const CallInst *Forward) {
   const Function *Callee = Forward ? Forward->getCalledFunction() : nullptr;
   if (!Callee)
@@ -37,9 +48,12 @@ bool isInverseEmittable(const CallInst *Forward) {
   if (Name == "cqrt_x" || Name == "cqrt_cswap")
     return true;
   // Uncontrolled data template: its void `_unc` form. The `_inv`/`_unc` twins
-  // and the `_controlled` forms are NOT re-invertible here.
+  // and the `_controlled` forms are NOT re-invertible here. COMPARES are excluded
+  // (no `_unc` grid — `isCompareTemplate`): a recovered compare gate declines
+  // loudly via the WI-5 pre-scan rather than minting a dangling symbol.
   if (Name.starts_with("cq_template_") && !Name.contains("_controlled") &&
-      !Name.ends_with("_inv") && !Name.ends_with("_unc"))
+      !Name.ends_with("_inv") && !Name.ends_with("_unc") &&
+      !isCompareTemplate(Name))
     return true;
   return false;
 }
@@ -101,7 +115,8 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // sources directly and mints nothing — there is no handle to thread, so
   // `CurHandle` is ignored here (it only relabels in-place gates for Phase 7).
   if (Name.starts_with("cq_template_") && !Name.contains("_controlled") &&
-      !Name.ends_with("_inv") && !Name.ends_with("_unc")) {
+      !Name.ends_with("_inv") && !Name.ends_with("_unc") &&
+      !isCompareTemplate(Name)) {
     SmallVector<Value *, 4> Args;
     SmallVector<Type *, 4> ParamTys;
     Args.push_back(Forward);              // out = the rail to zero in place.

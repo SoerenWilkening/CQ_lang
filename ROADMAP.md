@@ -626,69 +626,71 @@ loudly — and the e2e trace smokes diff clean against goldens captured from rea
 linked output (the layer that proves every emitted symbol resolves +
 signature-matches).
 
-## Phase 5 — IR pass: per-op uncomputation
+## Phase 5 — IR pass: whole-DAG uncomputation [DONE]
 
-**Design (archived, old-gen).** The original PRD was written against the
-controlled-form Phase 4 and is archived at
+**Design.** Plan of record:
+[`docs/prd/phase-05-uncomputation/PRD.md`](docs/prd/phase-05-uncomputation/PRD.md)
+(§2.1–§2.13) +
+[`docs/prd/phase-05-uncomputation/IMPLEMENTATION_PLAN.md`](docs/prd/phase-05-uncomputation/IMPLEMENTATION_PLAN.md)
+(7 WIs, design decisions DD-1..DD-5). Design-of-record:
+[`docs/backend.md`](docs/backend.md) §9–10. The original old-gen PRD (written
+against the controlled-form Phase 4) is archived at
 [`docs/archive/old-design/phases/phase05-uncomputation/PRD.md`](docs/archive/old-design/phases/phase05-uncomputation/PRD.md);
-its control-coupled mechanics are dead post-`7cde677`. The surviving uncompute
-spine (`EmitInverse`/`ChainWalk`/`FreePoint`/`Uncomputation`, reused by the
-swap-route emitter) has its design-of-record in
-[`docs/backend.md`](docs/backend.md) §9–10. The old-gen Phase 5 bd issues were
-erased 2026-06-08 (divergent-arm soundness lesson kept in `bd remember`).
+its control-coupled mechanics are dead post-`7cde677`. The old-gen Phase 5 bd
+issues were erased 2026-06-08 (divergent-arm soundness lesson kept in
+`bd remember`).
 
-**Goal.** Productionize the prototype's `cq-uncompute` slice past the
-`cqrt_free`-placeholder stage; emit the adjoint of each tainted **data**
-handle's gate chain at the SSA last-use point. Phase 5 owns *source-derived
-data* handles; *pass-invented control scratch* (flags, conjunction
-`toffoli`, MUX-EXCH non-selected sources) is already uncomputed by Phase 4
-(PRD §2.2).
+**Done (branch `swap-route-control`, 7 WIs).** The conservative shipped slice
+(uncontrolled, single-register, single-block linear chains over the
+fresh-minting `_inv` ABI) was productionized to **whole-DAG LIFO reversal** of
+dead source-derived tainted **data** handles over a new **void in-place `_unc`**
+ABI. Two pillars:
 
-**Reconciliation with swap-route Phase 4.** The controlled-op flag/conjunction
-scratch that PRD §2.2 referenced no longer exists (that path was removed). Under
-swap-route, Phase 5's machinery is *reused, not bypassed*: `emit_inverse` is the
-engine for Phase 4's region-local **reverse-play** (rail cleanup), and the
-`FreePoint` last-use / escape analysis computes the §3b "free a rail only after it
-is `|0⟩`" point. The "data handle last-use uncompute" Phase 5 productionizes and
-the "rail reverse-play" Phase 4 emits share the same `emit_inverse` + `FreePoint`
-spine — Phase 5 stays largely as written; only the cross-reference to control
-scratch is restated as the swap-route rail discipline.
+1. **Void in-place `_unc` ABI** (WI-2/WI-3) replaces fresh-minting `_inv`:
+   `void cq_template_<op>_<W>…_unc(out, src…)` **zeroes the rail by recomputing
+   `f` from the still-live sources** (Bennett), instead of returning a fresh
+   handle. Threading the old `_inv` would free a dirty / entangled rail — a
+   hidden measurement (Rule 6/8). `_inv` is still **generated** (DD-2) but no
+   longer emitted. DD-3 pins the slot convention (`out` arg 0, then forward
+   operands in order) — the Q+Q operand-swap miscompile guard.
+2. **Whole-DAG, not per-terminal** (WI-4): one reverse-topological pass adjoints
+   each gate **exactly once** (`Seen` dedup), handling fan-out and Q+Q (two
+   tainted parents) — the shapes the conservative slice bailed on. SSA dominance
+   makes reverse-program-order a valid reverse-topo order. Each rail freed after
+   its last reverse-use. No `cqrt_cswap` (PRD §2.11).
 
-**Scope.**
-- Last-use computation: per the validated Phase 5 prototype mechanism —
-  `Value::users()` → user-block set → `PostDominatorTree`-derived
-  nearest common dominator → `getFirstInsertionPt()` of the resulting
-  block.
-- Adjoint emission: `emit_inverse` walks the lowered gate sequence
-  backward, emits inverse templates per [`docs/backend.md`](docs/backend.md)
-  §10.1. While template bodies remain stubs, `emit_inverse` walks at
-  the *template-call* granularity (`cq_template_<op>_<W>_inv`); once
-  bodies are real, the same `emit_inverse` walks at gate granularity.
-- `cqrt_free(handle)` emitted after the adjoint sequence at the same
-  insertion point.
-- Escape detection: skip emission if `%h` is consumed by a `ReturnInst`
-  (caller owns it), if enclosing function is `main`, or if `%h` is
-  inside an explicit `cq_invert_*` region (Phase 7 supersedes).
-- Diagnostics: source-location-preserved error at use-site when
-  uncomputation is required of a non-adjointable result.
-- **Acyclic-CFG assumption; loops deferred.** Phase 5 reverses on
-  straight-line / diamond CFGs (no backedges); a tainted handle whose live
-  range crosses a loop backedge is **diagnosed loudly**, not miscompiled.
-  Loop uncomputation (loop-carried registers, per-iteration reversal)
-  **extends** this mechanism when loops land — it does not replace it (see
-  the loop section under "Beyond the freeze"; PRD §2.9).
+Plus **WI-5** (abolish silent skips — every unprovable shape declines
+**loudly**; the un-invertible / divergent-arm / post-measure / loop-backedge /
+unrecognized-user / measured-lineage families), **WI-1** (excised the dead
+controlled-op scaffolding), and **WI-6/WI-7** (e2e link-completeness goldens —
+the `_hl`/Q+Q/`_lh`/cast/`fneg` `_unc` shapes are all permanently link-proven).
 
-**Components touched:**
-- New `Uncomputation` module in `ir-pass/src/` (the prototype's
-  `cq-uncompute` slice, lifted into the production pass-plugin module
-  layout).
-- `runtime/cq_templates.h`: `_inv` variants for every forward template
-  (already declared per the autogenerator).
+**Reconciliation with swap-route Phase 4.** The control scratch the old PRD §2.2
+referenced no longer exists. Phase 5's machinery is *reused, not bypassed*:
+`emit_inverse` (now emitting void `_unc`) is the engine for Phase 4's region-local
+**reverse-play** (value-arm method-B rail cleanup), and Phase-4-owned control
+rails are subtracted from the data-uncompute target set up front (DD-4 —
+`ControlOwnedRails`), so a flag / work / merge out-rail is never walked by this
+spine.
 
-**Done when:** programs producing tainted handles with mid-function
-non-`main` last-use points emit inverse-template-call sequences at the
-correct post-dominator block; multi-BB CFG case green (Phase 5
-prototype's `input_phase5_branch.ll` trajectory).
+**Modules:** `ir-pass/src/{ChainWalk,DagTraversal,FreePoint,EmitInverse,
+Uncomputation}.cpp` (the per-op slice lifted and split for the whole-DAG driver);
+`tools/opcode_table.yaml` → `tools/gen_templates.py` (split out `abi_codegen.py`)
+→ `runtime/cq_templates.{h,c}` (the generated `_unc` family).
+
+**Acyclic-CFG assumption; loops deferred.** Phase 5 reverses on straight-line /
+diamond CFGs (no backedges); a tainted handle whose live range crosses a loop
+backedge is **diagnosed loudly**, not miscompiled. Loop uncomputation
+(loop-carried registers, per-iteration reversal) **extends** this mechanism when
+loops land — it does not replace it (see "Beyond the freeze"; PRD §2.9).
+
+**Done criteria met:** the ir-pass LIT suite (positive `CHECK` + negative
+`RUN: not` decline probes, including the WI-7 compare-decline pair
+`lowering_uncompute_compare_{icmp,fcmp}.ll`) + the 2 e2e link-proof goldens
+(`slice_uncompute_dead_dag` = `_hl`/Q+Q, `slice_uncompute_dead_shapes` =
+`_lh`/cast/`fneg`) green; the core whole-DAG reversal + void-`_unc` ABI cleared
+by independent adversarial Rule-13 review (WI-3/WI-4/WI-7 — the WI-7 review
+caught and the fix closed a verify-clean compare-uncompute over-accept).
 
 ---
 

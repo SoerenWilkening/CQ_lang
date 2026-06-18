@@ -232,6 +232,28 @@ add_test(NAME e2e-slice-uncompute-dead-dag
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_dead_dag.expected.log")
 
+# Phase 5 (WI-7, test_C_libtooling-p2s2.7): the permanent `_unc` LINK-COMPLETENESS
+# guard for the shapes slice_uncompute_dead_dag does NOT exercise. WI-6 linked only
+# the bare-QQ + `_hl` `_unc` forms; the `_lh`, tainted-cast, and `fneg` `_unc`
+# symbols were link-probed ad-hoc during WI-6 but never committed, so a
+# generator/emitter name or signature drift in any of those three families would be
+# invisible to every test (the .ll fixtures assert IR text and never link — Rule
+# 2/16). Three independent dead lineages in a `noinline` helper, each kept alive by
+# a `(void) cq_phi`: (A) `100 - a` / `5 << s` -> sub_i32_lh_unc + shl_i32_lh_unc;
+# (B) `(long) b` -> sext_i32_to_i64_unc; (C) `-fc` -> fneg_f32_unc. Whole-DAG LIFO
+# reversal (chain C, then B, then A): each gate adjointed via its void `_unc` form
+# (DD-3 slots: out first, then forward operands in original order), 7 frees (one per
+# rail), Rz/Ry undone with negated angles; ZERO `_inv`, ZERO added measure, ZERO
+# cqrt_cswap. Together with dead-dag, every `_unc` shape the emitter can mint is now
+# permanently link-proven by SOME golden.
+add_test(NAME e2e-slice-uncompute-dead-shapes
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_dead_shapes.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_dead_shapes.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
