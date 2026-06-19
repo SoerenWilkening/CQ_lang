@@ -27,18 +27,22 @@ class of bug.
 > the void `_unc` ABI — is also DONE** (all 7 WIs; the per-terminal `_inv` slice
 > productionized to whole-DAG reversal of dead source-derived data handles,
 > Rule-13 cleared incl. the WI-7 compare-uncompute over-accept fix). **Phase 6 —
-> call-graph specialization (function lifting) — is IN PROGRESS: `6.0`
+> call-graph specialization (function lifting) — is DONE: `6.0`
 > (compare `_unc` grid), `6.1` (clone-on-taint core + Bennett wrap +
 > `(callee,mask)` cache + carve-out), `6.2` (signature masks / cache /
-> multiplicity), and `6.3` (transitive worklist — depth-first inner
+> multiplicity), `6.3` (transitive worklist — depth-first inner
 > specialization reversed in the outer wrap via a synthesized void uncompute
 > twin `@__cq_q_<inner>_<mask>_unc`; recursion/cycle + varargs loud reject;
-> the stale-classical-attr fix) are DONE (branch `phase-6.3-transitive`,
-> Rule-13 cleared). **Next: 6.4** (rejection-set hardening + over-accept probe
-> family), then **6.5** (classical call under quantum control — route result, no
-> clone).** Read `ROADMAP.md` and `docs/design/rssa-swap-control/` *before*
-> touching control flow. Phases 0–5 done; 6.0–6.3 done; 6.4–6.5 + 7–10 not
-> started.
+> the stale-classical-attr fix), `6.4` (rejection-set hardening — full decline
+> matrix + over-accept probe family), and `6.5` (classical call under quantum
+> control — a pure all-classical-args call inside a tainted-condition DIAMOND arm
+> runs classically, its i32 result route-merged into the controlled register via
+> the 4.4 controlled-XOR copy mechanics over a flattened diamond; the call is
+> HOISTED into the pred since it is pure; clone-ORTHOGONAL — `ClassicalCallArm`
+> Kind + `classifyClassicalCallArm` + `emitClassicalCallArmRegion`, NO clone) are
+> ALL DONE (branch `phase-6.5-classical-call`, each Rule-13 cleared). Read
+> `ROADMAP.md` and `docs/design/rssa-swap-control/` *before* touching control
+> flow. Phases 0–6 done; 7–10 not started.
 
 ---
 
@@ -520,7 +524,7 @@ bd close <id>         # Complete work
 | `ir-pass/src/OpcodeLowering.cpp` + `Arith/Compare/Cast` | Tainted `add/mul/icmp/fcmp/cast/fneg → cq_template_*`; up-front cast-width capture before RAUW |
 | `ir-pass/src/OpcodeSupport.cpp` · `TemplateName.cpp` · `WidthDispatch.cpp` | Supported-set/commutativity/predicate policy · symbol-string grammar · suffix→width + lazy `FunctionCallee` minting |
 | `ir-pass/src/MeasureLowering.cpp` | `@cq_measure_<sfx> → cqrt_measure_<W>` |
-| `ir-pass/src/ControlDetect.cpp` · `ArmClassify.cpp` · `SwapRouteEmit.cpp` · `RegionFlatten.cpp` · `include/ControlPlan.h` | Swap-route control: region detection (declines what it can't prove) · arm/condition classification + tainted-angle/stale-condition guards · routed phase-arm emission · CFG flattening · populated region plan |
+| `ir-pass/src/ControlDetect.cpp` · `ArmClassify.cpp` · `SwapRouteEmit.cpp` · `RegionFlatten.cpp` · `ClassicalCallArmEmit.cpp` · `include/ControlPlan.h` | Swap-route control: region detection (declines what it can't prove) · arm/condition classification + tainted-angle/stale-condition guards + the 6.5 `classifyClassicalCallArm` · routed phase-arm emission · CFG flattening · the 6.5 hoist+controlled-copy merge (`emitClassicalCallArmRegion`) · populated region plan |
 | `ir-pass/src/OpcodeLowering.cpp` (`declineStaleRecordOps`) · `WireWalk.{h,cpp}` | Pass-wide stale-record guard (tainted pure op scheduled past a non-diagonal wire gate → loud decline) · shared forward in-place-gate wire walk (position-free and position-aware modes) |
 | `ir-pass/src/Uncomputation.cpp` · `ChainWalk.cpp` · `DagTraversal.cpp` · `FreePoint.cpp` · `EmitInverse.cpp` | Whole-DAG LIFO uncompute spine (runs last): terminal selection · whole-DAG recovery · post-dom free point · reverse-program-order void `_unc` adjoint + `cqrt_free`; compares decline loudly (no `_unc` grid) |
 | `runtime/cq_runtime.{h,c}` | Hand-written `cqrt_*` core ABI (trace-only) |

@@ -1,0 +1,196 @@
+// ClassicalCallArmEmit.cpp — see header. The mutating emitter for an accepted
+// 6.5 classical-call-under-quantum-control region (DD-7, PRD §2.13): a pure
+// classical call inside a tainted-condition diamond arm runs classically and its
+// i32 result routes into the controlled register via the 4.4 controlled-XOR copy
+// merge over a FLATTENED diamond. NO clone, NO cswap/route, NO reverse-play.
+//
+// Correctness rests on analytic state reasoning, NOT on `opt -verify` (Rule 2),
+// and is the diamond twin of `SelectMergeEmit`'s argument: with `%out`
+// allocated to |0>, `copy_c(f, True, out)` writes True iff f=1 and the
+// X-bracketed `copy_c(f, False, out)` writes False iff f=0, so `%out = f ? True :
+// False` with no double-write on either basis branch — provided the `cqrt_x`
+// encloses ONLY the second copy (the §16.3 bracket-order hazard, invisible to a
+// count-only CHECK). The flag is stripped by `icmp_inv` (q is untouched — the
+// copies write `out`, never q — so q == q0) and freed; q, `%out`, the
+// materialized scratch, and the hoisted call are left allocated (Rule 6/8).
+// Because the callee is PURE (the §2.13 / WI-5.4 rejection set), hoisting it into
+// `Pred` so it runs unconditionally is observationally inert — its result on the
+// inactive branch is computed-and-discarded.
+
+#include "ClassicalCallArmEmit.h"
+
+#include "CompareLowering.h"    // lowerCompareToFlag (mint + _inv strip)
+#include "ControlPlan.h"        // ControlRegion / diagnoseUnderControl
+#include "ControlledSymbols.h"  // copyControlledFn / xFn
+#include "OpcodeSupport.h"      // abiWidthFromType
+#include "RegionFlatten.h"      // flattenRegion
+#include "SelectMergeEmit.h"    // materializeCopySource (shared, WI-5.1)
+#include "TaintPropagation.h"   // TaintSet
+#include "WidthDispatch.h"      // allocFn / freeFn / llvmWidthType
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DebugLoc.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Instructions.h"
+
+#include <algorithm>
+
+using namespace llvm;
+
+namespace cq {
+
+namespace {
+
+// Drop an erased instruction from every taint work-list that might still hold it
+// so a later module walk (`lowerRotations` / `lowerOps` / `uncompute`) never
+// dereferences freed memory (§6.1 — the dangling-work-list SIGSEGV). A per-TU
+// mirror of `SwapRouteEmit::scrubTaint` (the house style for trivial taint-set
+// maintenance). Idempotent.
+void scrubTaint(Instruction *I, TaintSet &taint) {
+  taint.Tainted.erase(I);
+  taint.BirthOrder.erase(I);
+  taint.StaleDeclined.erase(I);
+  if (auto *CI = dyn_cast<CallInst>(I)) {
+    auto &PC = taint.PhiCalls;
+    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+  }
+}
+
+// Loud bail for a detection-guaranteed shape that did not hold at emit time. A
+// silently skipped accepted region would hand the tainted `br` to the backend as
+// classical control over quantum state (the one unforgivable bug, Rule 1).
+void bailLoud(const ControlRegion &R) {
+  if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
+    diagnoseUnderControl(A, "control flow");
+  else if (R.Merge)
+    diagnoseUnderControl(R.Merge, "control flow");
+}
+
+}  // namespace
+
+void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
+                                ControlledSymbols &csyms, TaintSet &taint) {
+  auto *MergePhi = dyn_cast_or_null<PHINode>(R.Merge);
+  auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
+  if (!MergePhi || !Cond || !R.Pred || !R.Arm || !R.MergeBB)
+    return bailLoud(R);
+  auto *BI = dyn_cast<BranchInst>(R.Pred->getTerminator());
+  if (!BI)
+    return bailLoud(R);
+  if (MergePhi->getBasicBlockIndex(R.Pred) < 0 ||
+      MergePhi->getBasicBlockIndex(R.Arm) < 0)
+    return bailLoud(R);
+
+  // The diamond's two merge incomings (re-derived — a pure consumer of the
+  // by-identity plan): the tainted straight-through `q` (Pred edge) and the
+  // classical call result (Arm edge). `classifyClassicalCallArm` proved the Arm
+  // incoming is a direct, pure, all-classical-args, non-intrinsic CallInst with a
+  // classical (non-tainted) result; re-validate the CallInst shape and bail
+  // loudly otherwise (never a silent skip, Rule 1).
+  Value *StraightThrough = MergePhi->getIncomingValueForBlock(R.Pred);
+  Value *ArmIncoming = MergePhi->getIncomingValueForBlock(R.Arm);
+  auto *Call = dyn_cast_or_null<CallInst>(ArmIncoming);
+  if (!Call || Call->getParent() != R.Arm)
+    return bailLoud(R);
+
+  // ONE width for the rail / copy, from the merge phi's SSA type — reliable
+  // pre-RAUW (emit precedes `lowerRotations`; the phi still carries its real
+  // logical type). The fp/i128 RESULT gate (DD-7, the f64 trap): `copyControlledFn`
+  // is non-null ONLY for an INTEGER ABI width — an fp merge (valid `abiWidthFromType`
+  // yet null `copyControlledFn`) or an unsupported width DECLINES LOUDLY here,
+  // before any mutation (never mint dead ABI; never key on `abiWidthFromType`
+  // non-empty). Same gate as `SelectMergeEmit`.
+  StringRef Abi = abiWidthFromType(MergePhi->getType());
+  Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
+  FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
+  FunctionCallee Copy =
+      Abi.empty() ? FunctionCallee() : csyms.copyControlledFn(Abi);
+  if (!RailTy || !Alloc || !Copy)
+    return bailLoud(R);
+
+  // True/False = the merge values on the cond-TRUE / cond-FALSE edges (the flag
+  // is the live condition). Oriented by `ArmNegated` (Rule 9): un-negated diamond
+  // ⇒ the Arm is the TRUE successor, so True = the call result, False = `q`;
+  // negated ⇒ the Arm is the FALSE successor (clang -O1 swapped them for
+  // `if(q!=k)`), so True = `q`, False = the call result.
+  Value *TrueSrc = R.ArmNegated ? StraightThrough : ArmIncoming;
+  Value *FalseSrc = R.ArmNegated ? ArmIncoming : StraightThrough;
+
+  const DebugLoc DL = Cond->getDebugLoc();
+
+  // 0. HOIST the pure call to just before the conditional `br` (it runs
+  //    unconditionally — inert, the callee is pure). Moving it OUT of the arm is
+  //    mandatory: `flattenRegion` (step 6) erases the arm block, which would
+  //    otherwise drop the call (and its result). Its args are all classical and
+  //    external to the arm (the arm is exactly call + br, by classification), so
+  //    they dominate this insertion point. `materializeCopySource(call)` below
+  //    then reads the hoisted result.
+  Call->moveBefore(BI);
+
+  IRBuilder<> B(BI);  // every emitted call lands before the conditional br.
+  auto stamp = [&DL](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+  };
+
+  // 1. MINT the flag — cq_template_icmp_<pred>_<Wc>_hl(q, k).
+  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
+                                   /*inverse=*/false, /*before=*/BI);
+  if (!Flag)
+    return;  // lowerCompareToFlag already diagnosed (unsupported width / Q+Q).
+
+  // 2. ALLOC the |0> result rail (Wd). It joins `taint.Tainted` (+BirthOrder) so
+  //    downstream consumers of the RAUW'd phi keep classifying it as a quantum
+  //    handle; its users are cqrt_*/template calls, so `uncompute` never selects
+  //    it (isTerminalHandle false) and it is never freed (the live result, owned
+  //    by the user's measure / ret). DD-4: Phase-4 owns this merge out-rail.
+  CallInst *Out = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "out");
+  stamp(Out);
+  taint.Tainted.insert(Out);
+  taint.ControlOwnedRails.insert(Out);
+  taint.BirthOrder[Out] = taint.NextBirth++;
+
+  // 3. COPY the TRUE value on the flag (materialize if classical) — fires on f=1.
+  //    The classical call result materializes to a fresh `cqrt_alloc_<Wd>` handle
+  //    (an UNTAINTED basis-valued classical copy-source, not a qubit — Rule 6/8);
+  //    the tainted `q` materializes to itself (the identity).
+  Value *TrueMat = materializeCopySource(TrueSrc, Alloc, taint, B, DL);
+  stamp(B.CreateCall(Copy, {Flag, TrueMat, Out}));
+
+  // 4. COPY the FALSE value on ¬flag, X-bracketed (the 4.1 self-inverse cqrt_x
+  //    convention). The bracket encloses ONLY this second copy: a mis-bracket
+  //    (x before BOTH copies) yields the identical symbol multiset yet writes
+  //    True then False on one basis branch = wrong %out (§16.3, load-bearing).
+  stamp(B.CreateCall(csyms.xFn(), {Flag}));
+  Value *FalseMat = materializeCopySource(FalseSrc, Alloc, taint, B, DL);
+  stamp(B.CreateCall(Copy, {Flag, FalseMat, Out}));
+  stamp(B.CreateCall(csyms.xFn(), {Flag}));
+
+  // 5. STRIP the flag + the SINGLE free. Structurally valid outright — and the
+  //    real invariant is general (NOT "the straight-through must be q"): the copy
+  //    DESTINATION is the fresh `%out` alloc, never any operand of `Cond`, so
+  //    EVERY value `Cond` reads is pristine at strip time (q == q0 in the
+  //    canonical case; equally valid when the straight-through incoming is a
+  //    classical constant or any non-`q` value). The `_inv` therefore un-computes
+  //    the flag to |0> (provably free-able). Reads Cond's operands — MUST precede
+  //    the erase of Cond (in flattenRegion). See [[6-5-classical-call-arm]].
+  lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                     /*before=*/BI);
+  stamp(B.CreateCall(wd.freeFn(), {Flag}));
+
+  // 6. REWIRE — RAUW %phi -> %out, scrub, erase the phi, then FLATTEN the diamond
+  //    (value-arm discipline: block identities are captured before the first
+  //    erase inside flattenRegion; the hoisted call already left the arm, so the
+  //    now-empty arm block erases cleanly). The user's measure/ret on the phi
+  //    becomes one on %out (no measurement is added — Rule 5).
+  MergePhi->replaceAllUsesWith(Out);
+  scrubTaint(MergePhi, taint);
+  MergePhi->eraseFromParent();
+  flattenRegion(R, taint);
+}
+
+}  // namespace cq

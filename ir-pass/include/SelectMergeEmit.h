@@ -40,12 +40,42 @@
 #ifndef CQ_IRPASS_SELECT_MERGE_EMIT_H_
 #define CQ_IRPASS_SELECT_MERGE_EMIT_H_
 
+#include "llvm/ADT/Twine.h"        // llvm::Twine (default-arg conversion)
+#include "llvm/IR/DerivedTypes.h"  // llvm::FunctionCallee
+#include "llvm/IR/IRBuilder.h"     // llvm::IRBuilder
+
+namespace llvm {
+class DebugLoc;
+class Value;
+}  // namespace llvm
+
 namespace cq {
 
 class ControlledSymbols;
 class WidthDispatch;
 struct ControlRegion;
 struct TaintSet;
+
+// Materialize a copy SOURCE operand into an i32 handle for a controlled-copy
+// merge (the shared 4.4 select / 4.5 switch-datamux / 6.5 classical-call helper,
+// C17 / Rule 14). A QUANTUM operand is already an i32 register — return it
+// UNCHANGED (the identity, the §5b Q+Q case). A CLASSICAL operand (a compile-time
+// constant OR a runtime classical value) is materialized `%h = cqrt_alloc_<Wd>(v)`
+// (option A, PRD §16.4 — all-core ABI, no `_controlled` template). The caller's
+// operand type equals the rail-width type (LLVM select/phi-incoming invariant), so
+// `v` is already well-typed for the alloc. The scratch is left UNTAINTED so
+// `uncompute` never selects it (a benign classical-valued leak, §16.5) — its only
+// user is the copy and it is never freed. `Name` only spells the SSA name (the
+// callers' fixtures capture it, so it is cosmetic): the select/classical-call path
+// uses the default `selop`; the switch-datamux delta passes `delta`.
+//
+// Promoted from the file-local `static materialize` in SelectMergeEmit.cpp so the
+// select emitter, `SwitchDataMuxEmit`, and `ClassicalCallArmEmit` share ONE
+// implementation (Rule 14 — retires the SwitchDataMuxEmit:176 inline duplication).
+llvm::Value *materializeCopySource(llvm::Value *V, llvm::FunctionCallee Alloc,
+                                   const TaintSet &taint, llvm::IRBuilder<> &B,
+                                   const llvm::DebugLoc &DL,
+                                   const llvm::Twine &Name = "selop");
 
 // Lower one accepted `SelectRegion` (`R.Merge` is the `SelectInst`, `R.Condition`
 // its `CmpInst`) to the controlled-XOR copy merge stream above. Mutates the

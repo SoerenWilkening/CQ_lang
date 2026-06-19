@@ -184,6 +184,21 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     return;
   case RegionShape::Diamond:
   case RegionShape::IfElse:
+    // 6.5 (DD-7) — try the classical-call-under-control shape FIRST. A pure
+    // classical call (all-classical-args) whose i32 result feeds the diamond
+    // merge is route-merged by `ClassicalCallArmEmit` (no clone). On Accept it
+    // set `R.Kind = ClassicalCallArm`; push it. On Declined it already fired the
+    // precise diagnostic. NotApplicable falls through to `classifyArms` (the
+    // phase/value/§3c classifier owns every other shape).
+    switch (classifyClassicalCallArm(R, Taint)) {
+    case ClassicalCallDisp::Accept:
+      Plan.Regions.push_back(R);
+      return;
+    case ClassicalCallDisp::Declined:
+      return;
+    case ClassicalCallDisp::NotApplicable:
+      break;
+    }
     if (classifyArms(R, Taint) == ArmDisposition::Declined)
       return;  // ArmClassify already fired the precise diagnostic (§3c / value).
     // ACCEPT: a pure phase region over ONE tainted handle — a one-content-arm

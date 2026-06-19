@@ -694,27 +694,33 @@ caught and the fix closed a verify-clean compare-uncompute over-accept).
 
 ---
 
-## Phase 6 — IR pass: call-graph specialization (function lifting) [6.0–6.3 DONE]
+## Phase 6 — IR pass: call-graph specialization (function lifting) [6.0–6.5 DONE]
 
 **Goal.** Productionize the prototype's `cq-specialize` slice into a
 full worklist-driven specialization synthesizer with both lifting paths
 (curated symbol substitution + clone-on-taint) and the rejection-set
 classifier.
 
-**Increment status** (branch `phase-6.3-transitive`, predecessors on
-`phase-6-specialize`/`main`): **6.0** (compare `_unc` grid — compares are
-reversibilizable), **6.1** (clone-on-taint core: `SpecializeDetect`/`Reject`/
-`Clone`/`Seed` + `BennettWrap` + the `(callee,mask)` cache + the `:418`
-carve-out), **6.2** (signature masks / cache / multiplicity), and **6.3**
-(transitive worklist: a clone's inner tainted-arg call is specialized depth-first
-and reversed in the outer wrap via a synthesized void uncompute **twin**
-`@__cq_q_<inner>_<mask>_unc`; recursion / call-graph cycles + varargs loudly
-rejected) are **DONE** (Rule-13 cleared, incl. the latent stale-classical-attr
-fix — clones inheriting `memory(none)`/i32 return attrs would let the backend
-delete the side-effecting void twin call / crash `opt -verify`). **Remaining:**
-**6.4** (rejection-set hardening + over-accept probe family), **6.5** (classical
-call under quantum control — route result, no clone). Path 1 (curated libm
-substitution) stays deferred (owner).
+**Increment status** (branch `phase-6.5-classical-call`, predecessors on
+`phase-6.3-transitive`/`phase-6-specialize`/`main`): **6.0** (compare `_unc` grid
+— compares are reversibilizable), **6.1** (clone-on-taint core:
+`SpecializeDetect`/`Reject`/`Clone`/`Seed` + `BennettWrap` + the `(callee,mask)`
+cache + the `:418` carve-out), **6.2** (signature masks / cache / multiplicity),
+**6.3** (transitive worklist: a clone's inner tainted-arg call is specialized
+depth-first and reversed in the outer wrap via a synthesized void uncompute
+**twin** `@__cq_q_<inner>_<mask>_unc`; recursion / call-graph cycles + varargs
+loudly rejected; incl. the latent stale-classical-attr fix — clones inheriting
+`memory(none)`/i32 return attrs would let the backend delete the side-effecting
+void twin call / crash `opt -verify`), **6.4** (rejection-set hardening — full
+decline matrix + over-accept probe family), and **6.5** (classical call under
+quantum CONTROL — a pure all-classical-args call inside a tainted-condition
+DIAMOND arm runs classically, its i32 result route-merged into the controlled
+register via the 4.4 controlled-XOR copy mechanics over a flattened diamond;
+clone-ORTHOGONAL — `classifyClassicalCallArm` + `emitClassicalCallArmRegion`,
+NO clone, the call HOISTED into the pred since it is pure) are **ALL DONE**
+(each Rule-13 cleared). **Phase 6 is COMPLETE.** Path 1 (curated libm
+substitution) stays deferred (owner); the quantum-DATA-under-quantum-control
+clone×route composition stays OUT (deferred Phase 4×6).
 
 **Reconciliation with swap-route Phase 4.** A **quantum-controlled call** no
 longer needs a controlled specialization of the callee: swap-route routes the

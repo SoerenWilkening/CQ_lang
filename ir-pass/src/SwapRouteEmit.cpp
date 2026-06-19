@@ -21,6 +21,7 @@
 
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "CompareLowering.h"     // lowerCompareToFlag
+#include "ClassicalCallArmEmit.h" // emitClassicalCallArmRegion (the 6.5 merge)
 #include "ControlPlan.h"         // ControlRegion / ControlPlan
 #include "ControlledSymbols.h"   // cswapFn / xFn
 #include "EmitInverse.h"         // emitInverseChain (the value-arm reverse-play)
@@ -816,6 +817,17 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
         else if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
           diagnoseUnderControl(A, "control flow");
       }
+      continue;
+    }
+    if (R.Kind == ControlRegion::ClassicalCallArm) {
+      // 6.5 (DD-7) — a pure classical call inside a tainted-condition diamond
+      // arm: hoist the call into Pred, then the 4.4-style controlled-copy merge
+      // over the FLATTENED diamond (no clone, no cswap/route, no reverse-play).
+      // Its Pred/Arm/MergeBB are set (a real diamond), so the cross-region
+      // pre-flight above already covered the block-lifetime hazard (WI-5.8). It
+      // carries no `ParentIdx` nest link, so dispatch + continue BEFORE the
+      // Depth / child-lookup branch.
+      emitClassicalCallArmRegion(R, wd, csyms, taint);
       continue;
     }
     if (R.Depth > 0)

@@ -40,6 +40,7 @@
 #include "ControlledSymbols.h" // copyControlledFn
 #include "OpcodeSupport.h"     // abiWidthFromType
 #include "RegionFlatten.h"     // flattenSwitchRegion
+#include "SelectMergeEmit.h"   // materializeCopySource (shared, WI-5.1)
 #include "TaintPropagation.h"  // TaintSet
 #include "WidthDispatch.h"     // allocFn / freeFn / llvmWidthType
 
@@ -172,12 +173,14 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
     // b. XOR-delta scratch %d_i = cqrt_alloc_<W>(v_i ^ v_d), a COMPILE-TIME
     //    constant (both APInts share the merge-phi width). Left UNTAINTED so
     //    `uncompute` never selects it (a benign classical leak; never freed — §4C,
-    //    open-Q-6). The trivial alloc is re-implemented inline rather than promoting
-    //    `SelectMergeEmit::materialize` for one call site (§4C, recommend (b)).
+    //    open-Q-6). Materialized through the SHARED `materializeCopySource`
+    //    (WI-5.1 promotion — retires the §4C inline duplication, Rule 14): a
+    //    `ConstantInt` is never tainted, so it always takes the alloc path; the
+    //    `delta` name preserves the byte-for-byte fixture stream.
     Constant *Delta =
         ConstantInt::get(RailTy->getContext(), Vi->getValue() ^ Vd->getValue());
-    CallInst *DeltaRail = B.CreateCall(Alloc, {Delta}, "delta");
-    stamp(DeltaRail);
+    Value *DeltaRail =
+        materializeCopySource(Delta, Alloc, taint, B, DL, "delta");
 
     // c. Controlled XOR copy — cqrt_copy_<W>_controlled(f_i, d_i, out): out ^= d_i
     //    iff f_i = 1 (flag arg-0, src arg-1, dst arg-2 — PRD §1.2).

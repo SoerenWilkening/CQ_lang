@@ -126,11 +126,22 @@ struct ControlRegion {
   // `Arm`/`Shadow` the DEFAULT arm. Lowered by `lowerGatedSwitch`: per-case
   // `icmp eq` flags, each arm controlled on the OR of its cases' flags, the
   // default on the ¬(f_1∨…∨f_n) flag, the N-way φ dissolved, switch linearized.
+  // ClassicalCallArm (6.5, DD-7) — a tainted-condition `br`-diamond whose single
+  // content arm computes a PURE CLASSICAL call (all-classical-args) whose i32
+  // result `c` feeds the 2-incoming merge `φ` (the other incoming the tainted
+  // straight-through `q`). NOT a clone-on-taint site (mask 0 / `readsTaintedValue`
+  // false — no SpecPlan membership). Lowered by `ClassicalCallArmEmit`: hoist the
+  // pure call into `Pred` (inert), then the 4.4-style controlled-copy merge over
+  // the FLATTENED diamond — no cswap/route, no reverse-play, no clone. `Pred`/`Arm`/
+  // `MergeBB`/`Merge` and `ArmNegated` (Rule 9 polarity) carry the shape exactly as
+  // a `BranchRegion` diamond does; the call is re-derived as the `Arm`-edge merge
+  // incoming (the emitter is a pure consumer of the by-identity plan).
   enum Kind {
     SelectRegion,
     BranchRegion,
     AngleSelectRegion,
-    SwitchRegion
+    SwitchRegion,
+    ClassicalCallArm
   } Kind = BranchRegion;
 
   // The merge node: a `SelectInst` (select-sourced) or the merge-block

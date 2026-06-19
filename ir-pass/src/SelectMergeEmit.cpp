@@ -58,26 +58,21 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
   }
 }
 
-// Materialize a copy SOURCE operand into an i32 handle. A QUANTUM operand is
-// already a register — return it unchanged (the identity, the §5b Q+Q case). A
-// CLASSICAL operand (a compile-time constant OR a runtime classical value) is
-// materialized `%h = cqrt_alloc_<Wd>(v)` (option A, PRD §16.4 — all-core ABI, no
-// `_controlled` template). The select's operand type equals its result type (LLVM
-// invariant), so `v` is already the rail-width type and the alloc is well-typed.
-// The scratch is left UNTAINTED so `uncompute` never selects it (a benign
-// classical-valued leak, §16.5) — it has exactly one user (the copy) and is never
-// freed.
-Value *materialize(Value *V, FunctionCallee Alloc, const TaintSet &taint,
-                   IRBuilder<> &B, const DebugLoc &DL) {
+}  // namespace
+
+// Shared copy-source materializer (promoted from the former file-local `static
+// materialize`; see SelectMergeEmit.h for the contract). Now consumed by the
+// select merge below, `SwitchDataMuxEmit`, and `ClassicalCallArmEmit` (Rule 14).
+Value *materializeCopySource(Value *V, FunctionCallee Alloc,
+                             const TaintSet &taint, IRBuilder<> &B,
+                             const DebugLoc &DL, const Twine &Name) {
   if (taint.Tainted.count(V))
     return V;  // already an i32 quantum handle.
-  CallInst *H = B.CreateCall(Alloc, {V}, "selop");
+  CallInst *H = B.CreateCall(Alloc, {V}, Name);
   if (DL)
     H->setDebugLoc(DL);
   return H;
 }
-
-}  // namespace
 
 void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
                       ControlledSymbols &csyms, TaintSet &taint) {
@@ -137,7 +132,7 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   taint.BirthOrder[Out] = taint.NextBirth++;
 
   // 3. COPY the TRUE value on the flag (materialize if classical) — fires on f=1.
-  Value *TrueSrc = materialize(Tru, Alloc, taint, B, DL);
+  Value *TrueSrc = materializeCopySource(Tru, Alloc, taint, B, DL);
   stamp(B.CreateCall(Copy, {Flag, TrueSrc, Out}));
 
   // 4. COPY the FALSE value on ¬flag, X-bracketed (the 4.1 self-inverse cqrt_x
@@ -145,7 +140,7 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   //    (x before BOTH copies) yields the identical symbol multiset yet writes a
   //    then b on one basis branch = wrong %out (§16.3, the load-bearing hazard).
   stamp(B.CreateCall(csyms.xFn(), {Flag}));
-  Value *FalseSrc = materialize(Fls, Alloc, taint, B, DL);
+  Value *FalseSrc = materializeCopySource(Fls, Alloc, taint, B, DL);
   stamp(B.CreateCall(Copy, {Flag, FalseSrc, Out}));
   stamp(B.CreateCall(csyms.xFn(), {Flag}));
 

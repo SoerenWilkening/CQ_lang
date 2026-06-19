@@ -47,6 +47,7 @@ add_library(CQPass MODULE
   src/BennettWrap.cpp
   src/CastLowering.cpp
   src/ChainWalk.cpp
+  src/ClassicalCallArmEmit.cpp
   src/CompareLowering.cpp
   src/ControlDetect.cpp
   src/ControlledSymbols.cpp

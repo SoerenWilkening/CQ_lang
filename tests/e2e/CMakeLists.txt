@@ -367,6 +367,33 @@ add_test(NAME e2e-slice-specialize-transitive
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/specialize_transitive_caller.expected.log")
 
+# Phase 6.5 (WI-5.7, test_C_libtooling-mvna.11): a PURE CLASSICAL call under
+# QUANTUM CONTROL with CLASSICAL inputs (DD-7 / PRD §2.13) — the clone-ORTHOGONAL
+# Phase-6 capability (it reuses the cleared swap-route Phase-4 path, NOT clone-on-
+# taint). classical_call_under_control_caller.c (a CQ TU whose theta-tainted `q`
+# gates `if (q>5) y = ext_f(7);`) + classical_call_under_control_lib.c (the pure
+# i32 `ext_f`, the single LIBSRCS word, compiled WITHOUT CQ.h). After llvm-link,
+# the ONE cq-lowering pass recognizes the diamond's merge phi [q (tainted),
+# ext_f(7) (a direct classical call result)], HOISTS the pure call into the pred
+# (inert), and route-merges its i32 result via the 4.4 controlled-XOR copy merge
+# over the FLATTENED diamond: flag mint -> |0> out rail -> cqrt_alloc of the call
+# result -> cqrt_copy_i32_controlled (the result, on the flag) -> cqrt_x + the
+# ¬flag controlled copy of q -> icmp_inv strip -> the ONE cqrt_free (the flag).
+# This is the ONLY layer that LINK-proves the hoisted classical call (ext_f, run
+# classically — no trace line, its 107 result feeds cqrt_alloc_i32(107)) +
+# cqrt_copy_i32_controlled all resolve and signature-match through the multi-file
+# pipeline (Rule 2). NO @__cq_q_ clone (clone-orthogonal), NO cqrt_cswap, ZERO
+# controlled rotations, no surviving diamond phi, EXACTLY ONE free.
+# control_classical_call_arm_accept.ll is the pinned IR contract.
+add_test(NAME e2e-slice-classical-call-under-control
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_caller.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route

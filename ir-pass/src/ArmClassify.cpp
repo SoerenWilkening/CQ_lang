@@ -1053,4 +1053,123 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   return ArmDisposition::Accept;
 }
 
+// 6.5 — recognize the §2.13 classical-call-under-control shape (DD-7). Pure SSA
+// analysis, before any mutation (Rule 9). See ArmClassify.h for the disposition
+// contract. This runs BEFORE `classifyArms`: a positive match short-circuits the
+// phase/value classifier (whose `isValueChangingOp(call)`-true path would
+// otherwise decline the same shape as a §3c clobber — a safe over-decline, but
+// not the 6.5 lowering).
+ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
+                                           TaintSet &Taint) {
+  auto *MergePhi = dyn_cast_or_null<PHINode>(Region.Merge);
+  if (!MergePhi)
+    return ClassicalCallDisp::NotApplicable;  // classifyArms diagnoses.
+
+  // The flag is minted (and `_inv`-stripped) from a SINGLE lowerable compare. A
+  // compound condition (clang's `select i1` for `&&`/`||`) or an out-of-scope
+  // predicate has no `lowerCompareToFlag` template — defer to `classifyArms`,
+  // which owns those condition declines (`control flow` / `control condition has
+  // no template`) at DETECTION. Checking here keeps detect-before-mutate (Rule 9):
+  // the emitter calls `lowerCompareToFlag` only AFTER hoisting the call, so a
+  // post-hoist mint failure would be a mutate-then-decline. Mirror the
+  // `classifyArms` gates so a bad-condition classical-call diamond never reaches
+  // the emitter.
+  if (!isa<CmpInst>(Region.Condition) ||
+      !comparePredLowerable(cast<CmpInst>(Region.Condition)))
+    return ClassicalCallDisp::NotApplicable;
+
+  // DIAMOND only — one content arm (`Region.Arm`) plus the straight-through
+  // Pred edge (the tainted routed base `q`). An if/else (both arms content,
+  // `Region.ArmFalse` set, no Pred edge) is out of 6.5 scope — defer to
+  // `classifyArms` (over-decline is safe; the §2.13 e2e/accept shape is the
+  // `if (q>k) y = f(args);` diamond).
+  if (Region.ArmFalse || !Region.Arm || !Region.Pred)
+    return ClassicalCallDisp::NotApplicable;
+  if (MergePhi->getBasicBlockIndex(Region.Pred) < 0 ||
+      MergePhi->getBasicBlockIndex(Region.Arm) < 0)
+    return ClassicalCallDisp::NotApplicable;
+
+  Value *StraightThrough = MergePhi->getIncomingValueForBlock(Region.Pred);
+  Value *ArmIncoming = MergePhi->getIncomingValueForBlock(Region.Arm);
+
+  // The arm's merge contribution must be a DIRECT call DEFINED IN the arm whose
+  // result is CLASSICAL (not in `taint.Tainted`). The non-tainted-RESULT gate is
+  // load-bearing on TWO axes:
+  //   * it keeps a phase gate (`cq_phi`, tainted) and a value chain (`add`,
+  //     tainted) OUT of this path — they classify in `classifyArms`;
+  //   * it IS the all-classical-INPUTS check (§2.13 / WI-5.6 / Rule 3). `propagate`
+  //     taints EVERY non-measure, non-angle user of a tainted value
+  //     (TaintPropagation.cpp:307), and a generic (non-`cq_`) call has no
+  //     angle-operand exclusion — so ANY tainted operand (an argument OR the
+  //     called operand, an indirect call through a tainted pointer) taints the
+  //     result. A CLASSICAL result therefore proves every input is classical:
+  //     the clone × route composition (quantum data under quantum control) is OUT
+  //     of 6.5 (deferred Phase 4×6) and is excluded HERE — it declines via
+  //     `classifyArms` (a tainted call result is value-changing → `arm rewrites a
+  //     condition operand`, WI-5.6) rather than being mis-claimed as a 6.5 site.
+  auto *Call = dyn_cast<CallInst>(ArmIncoming);
+  if (!Call || Call->getParent() != Region.Arm ||
+      Taint.Tainted.count(Call))
+    return ClassicalCallDisp::NotApplicable;
+
+  // A front-end intrinsic (`cq_theta`/`cq_phi`/`cq_measure`) is NEVER a 6.5
+  // classical call — a `cq_measure` arm is a measurement under control (Rule 5),
+  // owned by `classifyArms`'s `impure phase arm` / the FreePoint net, never
+  // route-merged here. Exclude by name; an indirect call (null callee) is also
+  // not a provable-pure classical call — defer to `classifyArms` (over-decline).
+  Function *Callee = Call->getCalledFunction();
+  if (!Callee || Callee->getName().starts_with("cq_"))
+    return ClassicalCallDisp::NotApplicable;
+
+  // From here the shape IS a classical-call arm; a failed precondition DECLINES
+  // loudly (owning the diagnostic) rather than deferring — `classifyArms` would
+  // otherwise mislabel it `arm rewrites a condition operand`.
+
+  // The arm block must be EXACTLY the call + its unconditional terminator. A
+  // larger arm hides a second instruction the flatten would ERASE: a side
+  // effect dropped (a silent miscompile) or a value-changing op the hoist
+  // cannot carry. `recoverRegion` already proved the terminator is the single
+  // unconditional `br` to the merge. (WI-5.8 multi-instruction probe.)
+  if (Region.Arm->size() != 2 || &Region.Arm->front() != Call) {
+    diagnoseUnderControl(Call, "control flow");
+    return ClassicalCallDisp::Declined;
+  }
+
+  // The call result feeds ONLY the merge phi — a second user (in- or out-of-arm)
+  // means routing the result into `%out` leaves that user reading the wrong (or
+  // a freed) value. (WI-5.8 multi-user probe.)
+  if (!Call->hasOneUse()) {
+    diagnoseUnderControl(Call, "control flow");
+    return ClassicalCallDisp::Declined;
+  }
+
+  // PURITY (§2.13 / WI-5.4): the unconditional hoist into `Pred` is observationally
+  // inert ONLY for a side-effect-free, memory-independent, will-return callee.
+  // `doesNotAccessMemory()` (readnone) makes the result depend solely on its args;
+  // `!mayHaveSideEffects()` adds nounwind + willreturn (no throw, no infinite loop).
+  // A readonly / writing / throwing / non-returning callee DECLINES (over-decline
+  // is safe; the rejection set is load-bearing for the inert-hoist claim).
+  if (!Call->doesNotAccessMemory() || Call->mayHaveSideEffects()) {
+    diagnoseUnderControl(Call, "control flow");
+    return ClassicalCallDisp::Declined;
+  }
+
+  // §3c (DD-7) — the call result `Call` and (by the classical-result gate above)
+  // EVERY input are NON-TAINTED, hence disjoint from the condition's all-tainted
+  // provenance by construction: the classical-call analog of the select §16.6
+  // §3c-vacuity (a controlled-copy merge writes only `%out`, never the condition
+  // register `q`, so the `icmp_inv` flag-strip stays valid). A merge contribution
+  // that value-CHANGES a condition operand (`q2 = add q, Call`) is NOT a
+  // direct-call merge incoming — it never reaches here, declining instead via
+  // `classifyArms`' value-arm §3c (`arm rewrites a condition operand`).
+  // `StraightThrough` (the tainted routed base) names that obligation's subject.
+  (void)StraightThrough;
+
+  // ACCEPT — the route-merged classical-call arm (the fp/i128 RESULT gate is the
+  // emitter's `copyControlledFn` non-null check, DD-7). The emitter re-derives the
+  // call as the `Arm`-edge merge incoming (a pure consumer of the plan).
+  Region.Kind = ControlRegion::ClassicalCallArm;
+  return ClassicalCallDisp::Accept;
+}
+
 }  // namespace cq

@@ -56,6 +56,36 @@ enum class ArmDisposition { Accept, Declined };
 // Fires at most one diagnostic. See `ArmDisposition`.
 ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint);
 
+// Outcome of the 6.5 classical-call-arm recognizer (DD-7), tried by
+// `ControlDetect::handleBranchRegion` BEFORE `classifyArms`:
+//   * Accept        — the §2.13 shape (a tainted-condition diamond whose single
+//                     content arm is a PURE CLASSICAL call with all-classical
+//                     args whose i32 result feeds the 2-incoming merge). The
+//                     caller sets `Region.Kind = ClassicalCallArm` and pushes it
+//                     for `ClassicalCallArmEmit`. NO diagnostic fired.
+//   * Declined      — structurally a classical-call arm (a direct, non-intrinsic,
+//                     classical-result call is the arm's merge incoming) but a
+//                     precondition failed (impure callee / tainted argument /
+//                     multi-user / unclean arm block). A loud, source-located
+//                     diagnostic was fired; lower nothing (Rule 1).
+//   * NotApplicable — not this shape at all (the arm incoming is not a direct
+//                     classical call, or it is an if/else, or the merge is
+//                     malformed). The caller falls through to `classifyArms`
+//                     (the phase / value / §3c-clobber classifier), which owns
+//                     its own diagnostics.
+//
+// The fp/i128 RESULT gate is deliberately NOT here — an Accept'd region whose
+// merge width has no `cqrt_copy_<W>_controlled` declines at EMIT
+// (`copyControlledFn` non-null, the f64-trap gate, DD-7), exactly as
+// `SelectMergeEmit` does. §3c (DD-7) is established by the all-non-tainted
+// requirement on the result + every arg (the classical-call analog of the select
+// §16.6 §3c-vacuity); a value-changing clobber (`q2 = add q, c`) is not a
+// direct-call merge incoming and so declines via `classifyArms` instead.
+enum class ClassicalCallDisp { Accept, Declined, NotApplicable };
+
+ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
+                                           TaintSet &Taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_ARM_CLASSIFY_H_
