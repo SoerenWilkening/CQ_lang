@@ -155,6 +155,16 @@ bool CQLoweringPass::runOnFunction(Function &F) {
 
   // Restrict the work lists to the requested function. Callers of
   // runOnFunction expect side-effects only on F.
+  //
+  // AXIS-F HAZARD (WI-4.6): runOnFunction is a DEAD SHIM — Plugin.cpp registers
+  // only run() (a ModulePassManager pass), so this entry point has ZERO callers.
+  // The restriction below scopes ONLY the rotation/measure work lists to F; the
+  // Phase-6 specialization pre-pass (`detectSpecializations`), the carve-out
+  // (`declineTaintEscapes`), and the driver (`specialize`) below all walk the
+  // WHOLE module M. On a genuine multi-function module that would specialize
+  // calls in functions OTHER than F — DIVERGING from the per-F intent. Harmless
+  // while unreachable; a future reviver MUST either restrict `plan6` to sites in
+  // F or accept (and document) module-wide specialization here.
   auto onlyInF = [&F](auto &Calls) {
     Calls.erase(std::remove_if(Calls.begin(), Calls.end(),
                                [&F](CallInst *CI) {

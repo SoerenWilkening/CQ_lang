@@ -14,6 +14,7 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -61,6 +62,37 @@ bool touchesVector(const Instruction &I) {
   return false;
 }
 
+// The first exception-handling construct in `F` (an `invoke`, a landing pad, a
+// `resume`, or a Windows funclet pad/return), or null if `F` is EH-free. EH
+// unwinding splits the body across blocks and threads a non-value control edge
+// the straight-line Bennett reverse has no story for. Detected BEFORE the
+// `size() != 1` gate so the diagnostic names "exception handling" rather than
+// the generic in-body-control message (PRD §2.11).
+Instruction *firstEHConstruct(Function &F) {
+  for (BasicBlock &BB : F)
+    for (Instruction &I : BB)
+      if (isa<InvokeInst>(I) || isa<LandingPadInst>(I) || isa<ResumeInst>(I) ||
+          isa<CatchSwitchInst>(I) || isa<CatchPadInst>(I) ||
+          isa<CleanupPadInst>(I) || isa<CatchReturnInst>(I) ||
+          isa<CleanupReturnInst>(I))
+        return &I;
+  // A vestigial personality with no EH instruction (defensive): still EH intent.
+  if (F.hasPersonalityFn())
+    return F.getEntryBlock().getTerminator();
+  return nullptr;
+}
+
+// Is `T` a scalar whose width has NO reversible template — i128 / half / fp80 /
+// fp128 / ppc_fp128 / a pointer / any other non-(i1/i8/i16/i32/i64/f32/f64) data
+// type (`abiWidthFromType` empty)? Vectors are EXCLUDED (handled earlier with the
+// more specific "vector SIMD" kind). This is the body-op analog of the lowerOps
+// width gate (`abiWidthFromType().empty()` → `diagnoseNoTemplate`): catching it
+// at DETECTION moves the decline to the offending body op's `!dbg` rather than
+// the late, clone-named lowerOps backstop (the WI-1.13 over-accept finding).
+bool unsupportedWidth(Type *T) {
+  return !T->isVectorTy() && abiWidthFromType(T).empty();
+}
+
 // The Callee-only body-shape verdict (arity cap, straight-line value shape, no
 // `cq_*`/measure/non-reversibilizable construct, integer-i32 return), recursing
 // through nested calls (Phase 6.3 transitive). `OnStack` is the DFS recursion
@@ -94,6 +126,16 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
   if (Callee->arg_size() > kSpecMaxArity) {
     WhereOut = &*Callee->getEntryBlock().begin();
     return SpecReject::ArityOverflow;
+  }
+
+  // (0c) Exception handling (PRD §2.11). An `invoke` / landing-pad / funclet body
+  //      unwinds via a non-value control edge spanning multiple blocks; detected
+  //      BEFORE the single-block gate below so the diagnostic names "exception
+  //      handling" rather than the generic "tainted control flow".
+  if (Instruction *EH = firstEHConstruct(*Callee)) {
+    WhereOut = EH;
+    KindOut = "exception handling";
+    return SpecReject::NonReversibilizable;
   }
 
   // (1) Straight-line value bodies only (the open Rule-13 item, §8). A body with
@@ -157,7 +199,29 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
           pop();
           return SpecReject::Measurement;
         }
+        // setjmp/longjmp: a `returns_twice` callee can re-enter the body
+        // mid-stream, breaking the single-entry straight-line assumption the
+        // Bennett reverse needs. Keyed on the ATTRIBUTE clang stamps on
+        // setjmp/sigsetjmp (its longjmp twin is `noreturn`), NOT the name —
+        // Rule 11/C7.
+        if (CI->hasFnAttr(Attribute::ReturnsTwice)) {
+          WhereOut = &I;
+          KindOut = "setjmp/longjmp";
+          pop();
+          return SpecReject::NonReversibilizable;
+        }
         Function *Inner = CI->getCalledFunction();
+        // syscall: a direct call to the libc `syscall` trap is an irreversible
+        // kernel side effect. The ONE exact-name match in the classifier — an
+        // external libc SYMBOL we lower nothing for, never a taint-identity
+        // decision (the no-name-prefix discipline of C7 governs `cq_*` intrinsic
+        // identification, a different axis).
+        if (Inner && Inner->getName() == "syscall") {
+          WhereOut = &I;
+          KindOut = "syscall";
+          pop();
+          return SpecReject::NonReversibilizable;
+        }
         // Call-graph cycle (self OR mutual): the convergence argument needs the
         // accepted subset acyclic, so a recursive callee has no static depth
         // bound and is declined loudly (§2.8, §2.11).
@@ -225,6 +289,70 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
         pop();
         return SpecReject::NonReversibilizable;
       }
+      // Pointer / bit-reinterpret casts (`bitcast`/`ptrtoint`/`inttoptr`/
+      // `addrspacecast`) cross the pointer domain or reinterpret bits and have
+      // no reversible template — reject precisely at the cast (the WI-1.13
+      // over-accept finding; previously slipped into the clone and was caught
+      // only LATE at lowerOps, naming the clone not the source op).
+      if (auto *CA = dyn_cast<CastInst>(&I)) {
+        switch (CA->getOpcode()) {
+        case Instruction::BitCast:
+        case Instruction::PtrToInt:
+        case Instruction::IntToPtr:
+        case Instruction::AddrSpaceCast:
+          WhereOut = &I;
+          KindOut = "pointer cast";
+          pop();
+          return SpecReject::NonReversibilizable;
+        default:
+          break;
+        }
+      }
+      // Intermediate-width scope (the WI-1.13 over-accept finding): a result or
+      // operand at a width with no reversible template (i128/half/fp80/fp128/
+      // pointer) is over-accepted into the clone today and only backstopped LATE
+      // at lowerOps (naming the CLONE, not source-located). Reject it HERE, at the
+      // offending body op, with its precise `!dbg`. Taint-agnostic: detection has
+      // no clone taint yet, and over-declining a classical wide op is always safe
+      // (Prime Directive).
+      if (unsupportedWidth(I.getType())) {
+        WhereOut = &I;
+        KindOut = "unsupported width";
+        pop();
+        return SpecReject::NonReversibilizable;
+      }
+      for (const Value *Op : I.operands())
+        if (unsupportedWidth(Op->getType())) {
+          WhereOut = &I;
+          KindOut = "unsupported width";
+          pop();
+          return SpecReject::NonReversibilizable;
+        }
+      // Predicate / cast-direction scope — the SAME over-accept class as the
+      // width gate, completed (Rule 14: detection-time accept must MIRROR the
+      // lowerOps accept predicate). An out-of-scope `fcmp` predicate (anything
+      // outside {oeq,une,olt,ogt,ole,oge}) or an out-of-scope arithmetic cast
+      // (e.g. signed `sitofp` from `i1`) has no template; without these it slips
+      // into the clone and only backstops LATE at lowerOps' `diagnoseNoTemplate`
+      // (naming the CLONE, not source-located). The width-empty / pointer-cast
+      // shapes already returned above, so the operands here carry valid ABI
+      // widths and these calls read the true (pre-RAUW) types.
+      if (auto *Cmp = dyn_cast<CmpInst>(&I))
+        if (!compareInScope(Cmp->getOpcodeName(),
+                            CmpInst::getPredicateName(Cmp->getPredicate()))) {
+          WhereOut = &I;
+          KindOut = "unsupported compare predicate";
+          pop();
+          return SpecReject::NonReversibilizable;
+        }
+      if (auto *CA = dyn_cast<CastInst>(&I))
+        if (!castInScope(CA->getOpcodeName(), abiWidthFromType(CA->getSrcTy()),
+                         abiWidthFromType(CA->getDestTy()))) {
+          WhereOut = &I;
+          KindOut = "unsupported cast";
+          pop();
+          return SpecReject::NonReversibilizable;
+        }
       continue;  // accepted data op.
     }
     // Anything else (getelementptr, freeze, va_arg, extract/insert, …) is an

@@ -76,8 +76,11 @@ constexpr char kMsgArityOverflow[] =
 // `Cand` is provably liftable; otherwise the rejecting reason and, in
 // `WhereOut`, the offending instruction (for the loud diagnostic's `!dbg`). For
 // a `NonReversibilizable` reject, `KindOut` carries the construct-kind string
-// (`inline assembly` / `atomic` / `volatile` / `vector SIMD` / `nested call` /
-// …) the `(<kind>)` message suffix renders; it is empty for every other reason.
+// (`inline assembly` / `atomic` / `volatile` / `exception handling` /
+// `setjmp/longjmp` / `syscall` / `vector SIMD` / `pointer cast` /
+// `unsupported width` / `unsupported cast` / `unsupported compare predicate` /
+// `nested call` / …) the `(<kind>)` message suffix renders; it is empty for
+// every other reason.
 // Pure analysis — no IR mutation. `Cand.Callee` is assumed non-null and a
 // definition (`!isDeclaration()`); a declaration-only / indirect / non-`CallInst`
 // site is filtered earlier (it is "not a candidate", never reaches the
