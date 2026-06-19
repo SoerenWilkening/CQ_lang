@@ -42,7 +42,14 @@ class of bug.
 > Kind + `classifyClassicalCallArm` + `emitClassicalCallArmRegion`, NO clone) are
 > ALL DONE (branch `phase-6.5-classical-call`, each Rule-13 cleared). Read
 > `ROADMAP.md` and `docs/design/rssa-swap-control/` *before* touching control
-> flow. Phases 0–6 done; 7–10 not started.
+> flow. Phases 0–6 done; 7–11 not started. **Roadmap resequenced 2026-06-19:**
+> Phase 7 is now **pre-freeze expressiveness completion** (7.1 opcode-surface
+> completion incl. Q+Q data compare + wide integers `__int128`/`_BitInt`; 7.2
+> controlled function-`return`; 7.3 bounded loops; 7.4 `break`; 7.5 QRAM full
+> Shadow model); manual inversion (`cq_invert`) moved to **Phase 8**; runtime
+> templates / integration / freeze are **9 / 10 / 11**. The freeze is gated only
+> on the 7.5 QRAM memory ABI and the 7.1 wide-integer widths — the control/loop
+> work adds no frozen symbols. See `ROADMAP.md` for the authoritative plan.
 
 ---
 

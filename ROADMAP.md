@@ -88,7 +88,7 @@ phase, not in advance.
 
 9. **No LLVM fork, no MLIR dialect.** Validated 2026-05-22 by working
    prototype against stock LLVM 19.1.7. MLIR re-evaluation explicitly
-   deferred to Phase 10 freeze gate.
+   deferred to Phase 11 freeze gate.
 
 10. **C philosophy: no foot-gun protection.** The language does not stop
     the user from writing nonsense. Enforced errors are physics-imposed
@@ -395,7 +395,7 @@ after a statevector-checked design dialogue; see
 - **Reverse-play is the on-demand coherence mechanism, not an eager step.** The
   full-region adjoint (via `emit_inverse`) restores `q0` and zeros every ancilla
   exactly, for *any* arm; it is emitted when the user inverts the region
-  (`cq_invert`, Phase 7) or an oracle uncomputes — **not** by the forward
+  (`cq_invert`, Phase 8) or an oracle uncomputes — **not** by the forward
   lowering. (Supersedes the 2026-06-08 "reverse-play mandatory in every
   increment.")
 - **The one rejection — clobbering the control's own data.** Reject (loud
@@ -461,7 +461,7 @@ after a statevector-checked design dialogue; see
   ABI**: the per-width reversible copy `cqrt_copy_<W>` — **§7.6 resolved (PRD
   §8.1): the 5 integer widths only** (an FP merge φ is an angle, never data),
   hand-written `cqrt_*` core ABI (the `cqrt_cswap` precedent), keep-sources-live
-  transversal-CNOT involution, no `_inv` twin. This re-opens the Phase-8/10
+  transversal-CNOT involution, no `_inv` twin. This re-opens the Phase-9/11
   freeze for exactly that one 5-symbol family. The **clobber-the-condition
   reject becomes active here**: a value arm that rewrites a quantum variable the
   branch condition reads is declined loudly (it cannot be both kept and
@@ -608,7 +608,7 @@ after a statevector-checked design dialogue; see
   measurement, no overhead**). Lifts the permanent P2/P3 rejections for the
   **bounded + reconverging (D4)** subset only; non-reconverging exits stay
   rejected by physics (QCM injectivity). Coherent return *values* ride the same
-  §3a reverse-play obligation.
+  §3a reverse-play obligation. **(Now scheduled: Phase 7.2 `return`, 7.4 `break`.)**
 - **Control-in-place peephole** (§6a): for genuinely-in-place single-target
   unitaries (`R_z`/`R_y`/Pauli), control in place (no work rail) — a footprint
   optimization, not a correctness requirement.
@@ -772,11 +772,119 @@ reachable function vs. opt-in only); concrete mangling scheme;
 
 ---
 
-## Phase 7 — IR pass: manual inversion + adjoint generation
+## Phase 7 — Pre-freeze expressiveness completion
+
+**Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
+almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
+are plain C `for`/`while`, controlled early-exit is plain C `return`/`break`, QRAM is
+plain C `a[i]` with a tainted index. Of the five increments, **only 7.1's
+wide-integer widths and 7.5's QRAM templates add new *frozen* runtime ABI**; the rest
+reuse the existing `cqrt_*` / `cq_template_*` surface. That is the load-bearing reason
+the freeze (now Phase 11) moves back: the ABI is gated on the QRAM memory model and
+the integer-width decision, **not** on the control-flow work — which could in
+principle evolve even post-freeze. This phase consolidates the items Phase 4
+explicitly deferred (controlled `return`/`break`) plus the loop / memory / opcode work
+the prior roadmap parked under "Beyond the freeze." Each increment carries its PRD at
+its start (Rule 16); the breakdown below fixes scope and sequence only.
+
+**Why manual inversion (now Phase 8) lands *after* this phase.** `emit_inverse`
+(`EmitInverse.cpp`) is a **closed per-call adjoint dispatch table with a loud-decline
+default**, not an extensible framework. Loops, controlled-return, and QRAM each must
+register their **own** adjoint rule into that spine **regardless of Phase 8** —
+because the live Phase-5 whole-DAG uncompute driver needs the same rule to reverse
+them at scope exit. `cq_invert` (Phase 8) is a thin consumer that *composes* over
+whatever the spine already inverts, so it lands against the **settled** accept set:
+smaller, lower-risk, and it avoids prematurely fixing the `_inv`-vs-`_unc` threading
+decision against an incomplete surface. The dependency runs **feature → spine**, not
+inversion → feature.
+
+**Increments.**
+
+- **7.1 — Opcode-surface completion.** Close the cheap, currently-declined-but-
+  reversible gaps (the genuinely-un-executable-under-quantum-control set is tiny —
+  irreversibility enters through source-chosen *operations*, never an arithmetic
+  opcode):
+  - **Q+Q data-position compare** (`q1 < q2` *as data*): the `_qq` templates already
+    exist; thread the Phase-4 control-path `HandleWidth` side-table (captured by SSA
+    identity **before** rotation lowering RAUWs operands to `i32` handles) into the
+    data-path `rewriteCompare`. Highest value, lowest risk, **no new ABI**. Hazard: a
+    stale/wrong-operand width → wrong `_<W>_qq` symbol (verify-clean); mirror the
+    proven control-path discipline exactly.
+  - **`freeze`** on a tainted value: basis-level identity (taint passthrough),
+    **decline-fixture-first** (Rule 12); must **not** become a path to launder an
+    escaped value back into the taint domain.
+  - **N-ary classical-condition merge**: generalize the existing one-register merge-φ
+    lift (`declineClassicalMuxes`).
+  - **Wide / intermediate integer widths** (`__int128`, `_BitInt(N)`, `_Float16`) —
+    **IN for v1** (owner decision 2026-06-19). Extends the YAML widths-map +
+    `WidthDispatch`. **Record at implementation:** a non-power-of-2 `_BitInt(N)`
+    rounded up to the next ABI width changes overflow/wraparound semantics (`add nsw`
+    on `i24` vs `i32`) — the lowering must mask the high bits — **and** it widens the
+    **frozen** template surface, so it must land before the Phase-11 freeze, never
+    after.
+
+- **7.2 — Controlled function-`return`** (reconverging early-exit). Lift the permanent
+  reject for a tainted-condition `if` whose one arm exits early via `return`, **for
+  the bounded + reconverging (D4) subset only** — QCM injectivity + synchronization; a
+  non-reconverging exit stays physics-rejected **forever**. Mechanism: per-site return
+  register + a fixed **exit-priority cascade** (`SCOPING.md §4`) — no done-flag
+  ancilla, no measurement, **no new ABI** (reuses `cqrt_cswap` / `cqrt_copy_<W>` /
+  `emit_inverse`). This is a **core control change** (`ControlDetect` / `SwapRouteEmit`
+  / `FreePoint` / `EmitInverse` — the modules where every silent miscompile has lived)
+  with three documented-**unsolved** hazards the PRD must clear under Rule 13: (i)
+  **tail-garbage reverse-play** (real gates run uncontrolled on parked-to-`|0⟩` rails,
+  leaving branch-correlated garbage on the live register), (ii) **coherent return
+  *values*** (the design's statevector sketch validated only basis bodies), (iii)
+  **FreePoint's whole-function `ret`-as-Escaped** assumption vs. multiple parked exit
+  registers. Ships with a dedicated decline diagnostic + fixture replacing today's
+  generic "control flow under quantum control" catch-all.
+
+- **7.3 — Bounded loops** (static-trip-count unroll). The pass unrolls a
+  provably-bounded loop (Bennett's `max_loop_iterations` model; `-O1` does not reliably
+  unroll constant-trip loops), after which the body reduces to already-solved
+  straight-line lowering. **Discharges the Phase-5 obligation:** extend `emit_inverse`
+  + last-use uncomputation to **loop-carried** tainted registers (per-iteration
+  compute/uncompute), lifting Phase 5's loud loop-backedge reject for exactly the
+  proven-bounded shape. **No new ABI.** Data-dependent / quantum-bounded (unbounded)
+  `while` stays deferred (post-freeze). Hazard: a wrong static trip count is a
+  verify-clean miscompile — the bound must be **proven**, not inferred.
+
+- **7.4 — Controlled `break`** (loop-exit cascade). Once 7.2 + 7.3 exist, `break` is
+  the 7.2 exit-priority cascade with the unrolled loop's exit as the merge point —
+  near-free reuse. Bounded + reconverging only.
+
+- **7.5 — QRAM, full Shadow model** (owner decision 2026-06-19). Lower `load` /
+  `store` / `getelementptr` over a tainted index/address via the **Shadow** memory
+  strategy (Bennett's reversible-memory family). New taint rules (memory ops currently
+  hit `declineTaintEscapes`) **and new frozen runtime ABI** — this is the
+  **freeze-gating** increment. The uncompute spine must **own** the write rails: a
+  freed entangled write rail is a hidden measurement (Rules 6/8). MUX-EXCH / QROM /
+  Feistel strategies and pointer aliasing stay deferred as post-freeze optimizations;
+  Shadow is the v1 strategy.
+
+**Done when:** programs using Q+Q data compares, wide integers, controlled
+early-`return`, bounded `for`/`while`, `break`, and tainted-index array access lower to
+the expected `cqrt_*` / `cq_template_*` sequences — `opt -verify` clean, golden e2e
+trace diffs clean — while every off-pattern shape (non-reconverging exit, unbounded
+loop, aliasing memory, unprovable trip count) declines loudly with a source-located
+diagnostic; each core-lowering increment is cleared by independent adversarial Rule-13
+review (a green suite alone does not clear it).
+
+---
+
+## Phase 8 — IR pass: manual inversion + adjoint generation
 
 **Goal.** `cq_invert_begin` / `cq_invert_end` brackets lowered to the
 adjoint of the bracketed sequence; reuses §5's `emit_inverse`. Closes
-the user-facing inversion surface.
+the user-facing inversion surface. Sequenced **after** Phase 7 so it composes
+over the **full** invertible surface (the controlled-return, bounded-loop, and
+QRAM adjoint rules Phase 7 registers into `emit_inverse`) in one pass — see
+Phase 7's dependency note. `cq_invert` is a thin consumer of the shared adjoint
+spine, not a new control mechanism; its one real subtlety is the
+forward-threaded `_inv` operation vs. the void rail-zeroing `_unc` step (the
+`CurHandle` hook in `EmitInverse.h` is the seam reserved for it), which is
+resolved once against the settled accept set rather than re-litigated as each
+feature widens the inversion domain.
 
 **Scope.**
 - Bracket identification: `@cq_invert_begin` / `@cq_invert_end` marker
@@ -807,12 +915,14 @@ so its inversion composes with the region's reverse-play.
 
 ---
 
-## Phase 8 — Runtime template library completion
+## Phase 9 — Runtime template library completion
 
 **Goal.** Lock the runtime ABI (declarations + trace-only bodies) for
 the full 38-opcode × applicable widths × `{HH, HL, inv}` cross-product,
-plus the swap-route control primitives. Bodies remain stubs through the
-Phase 10 freeze; only the declared symbol set + the trace format need to
+plus the swap-route control primitives, **the Phase-7.1 wide-integer widths
+(`__int128` / `_BitInt` / `_Float16`), and the Phase-7.5 QRAM Shadow memory
+templates** (the two new frozen ABI families). Bodies remain stubs through the
+Phase 11 freeze; only the declared symbol set + the trace format need to
 be stable.
 
 **Reconciliation with swap-route Phase 4 (principle 7).** Control no longer rides
@@ -844,18 +954,18 @@ supplies every adjoint, so `inv` stays derived, not shipped.
   §12.4: `.bc` (LTO) + `.a` (native) shipped; pass-internal IRBuilder
   remains an option.
 
-**Done when:** every symbol the IR pass emits in Phases 2–7 resolves
-against the runtime; the trace runtime can replay any Phase 2–7 test
+**Done when:** every symbol the IR pass emits in Phases 2–8 resolves
+against the runtime; the trace runtime can replay any Phase 2–8 test
 fixture without missing-symbol errors. Symbol-version preamble in
-place; ABI surface frozen for Phase 10 gate.
+place; ABI surface frozen for Phase 11 gate.
 
 ---
 
-## Phase 9 — Integration test harness
+## Phase 10 — Integration test harness
 
-**Goal.** End-to-end CQ programs covering the full Phases 1–7 feature
+**Goal.** End-to-end CQ programs covering the full Phases 1–8 feature
 surface, each producing the expected trace-runtime call log. The
-harness becomes the regression suite for both the Phase 10 freeze and
+harness becomes the regression suite for both the Phase 11 freeze and
 any post-freeze backend-implementation work.
 
 **Scope.**
@@ -869,7 +979,12 @@ any post-freeze backend-implementation work.
   - Function lifting (Phase 6): curated symbol substitution path
     (libm); clone-on-taint path (user-defined); recursive
     specialization; rejection diagnostics.
-  - Manual inversion (Phase 7) inside and outside tainted-branch
+  - Expressiveness completion (Phase 7): Q+C compares incl. Q+Q data
+    position, wide integers (`__int128`/`_BitInt`); controlled
+    early-`return` + `break`; bounded `for`/`while`; tainted-index QRAM
+    `load`/`store`; the matching off-pattern decline fixtures
+    (non-reconverging exit, unbounded loop, aliasing memory).
+  - Manual inversion (Phase 8) inside and outside tainted-branch
     shadows.
 - Diagnostic fixtures: each rejection-set entry from
   [`docs/backend.md`](docs/backend.md) §7.4 has a fixture asserting the
@@ -884,15 +999,19 @@ any post-freeze backend-implementation work.
 
 **Done when:** the harness covers every user-visible behavior the
 frontend / backend docs specify, and a green run is the precondition
-for Phase 10.
+for Phase 11.
 
 ---
 
-## Phase 10 — Frontend + ABI freeze + handoff to backend implementation
+## Phase 11 — Frontend + ABI freeze + handoff to backend implementation
 
 **Goal.** Lock the frontend surface and the runtime ABI; explicit gate
 before any post-freeze work (real gate-sequence template bodies,
-simulator runtime, quantum-while semantics, dynamic circuits).
+simulator runtime, unbounded quantum-while semantics, dynamic circuits).
+Now deferred behind the Phase-7 expressiveness work; the freeze is gated
+specifically on the QRAM Shadow memory ABI (Phase 7.5) and the
+wide-integer width decision (Phase 7.1) — the only two pre-freeze items
+that add new frozen symbols.
 
 **Deliverables.**
 - **CQ.h freeze.** Semver pinned; future additions versioned per the
@@ -900,19 +1019,21 @@ simulator runtime, quantum-while semantics, dynamic circuits).
   macros plus the `cq_invert_*` pair are the v1.0 frontend surface.
 - **`libcq_runtime` + `libcq_templates` ABI freeze.** Symbol versioning
   per [`docs/backend.md`](docs/backend.md) §11.6; `cqrt_abi_version()`
-  query function; documented deprecation policy. The 15 `cqrt_*`
-  runtime symbols + the autogenerated template surface are the v1.0
-  backend ABI.
+  query function; documented deprecation policy. The core `cqrt_*`
+  runtime symbols (allocators + measure + `cqrt_free` + the Phase-4
+  routing/copy primitives `cqrt_cswap`/`cqrt_copy_<W>` + the Phase-7.5
+  QRAM memory symbols) + the autogenerated template surface (incl. the
+  Phase-7.1 wide-integer widths) are the v1.0 backend ABI.
 - **Diagnostic-fidelity audit.** Which `-O1` passes the `!dbg` metadata
   survives; baseline acceptable for the diagnostic story established in
-  Phases 5 / 6 / 7.
+  Phases 5–8.
 - **MLIR re-evaluation gate.** Explicit decision against re-trigger
-  conditions: did any IR-pass mechanism in Phases 2–7 demand an
+  conditions: did any IR-pass mechanism in Phases 2–8 demand an
   intra-dialect transformation the new PassManager cannot express
   cleanly? If yes, post-freeze scope expands to evaluate MLIR adoption
   for a future v2; if no, the intrinsic + stock-LLVM approach is locked
   for v1.
-- **Phase 9 regression harness green.** The integration suite is the
+- **Phase 10 regression harness green.** The integration suite is the
   freeze gate's pass/fail signal.
 
 **Done when:** all deliverables ship, the regression harness is green,
@@ -926,7 +1047,7 @@ optimization passes) is sequenced under a post-freeze roadmap revision.
 ## Beyond the freeze (out of scope for this roadmap)
 
 Sketched here only as pointers; phasing for these is the subject of the
-post-Phase-10 roadmap revision.
+post-Phase-11 roadmap revision.
 
 - **Real template bodies.** Reversible-circuit implementations for the
   38-opcode surface ([`docs/backend.md`](docs/backend.md) §12.3):
@@ -940,15 +1061,15 @@ post-Phase-10 roadmap revision.
   template-call granularity under stubs (adjacent inverse cancellation
   `cq_template_X_inv ∘ cq_template_X`); the full set needs real
   template bodies.
-- **Quantum-conditioned `while` loops.** Surface + semantics (amplitude
-  amplification, transform-to-bounded-for, bounded-iteration, etc.)
-  designed at PRD time. Punted past the freeze to keep v1.0 narrow.
-  **Carries a Phase 5 obligation:** this phase must **extend** Phase 5's
-  per-op uncomputation (the `emit_inverse` + last-use machinery) to loop
-  semantics — loop-carried tainted registers and per-iteration
-  compute/uncompute. Phase 5 assumes an acyclic CFG and diagnoses
-  backedge-crossing tainted live ranges; lifting that guard into correct
-  loop uncomputation is part of this phase, not a rewrite of Phase 5 (see
+- **Unbounded / quantum-conditioned `while` loops.** Data-dependent or
+  amplitude-amplification iteration whose trip count is **not** statically
+  provable. **Bounded** static-trip loops moved **into Phase 7.3**, which
+  discharges the Phase-5 uncompute-extension obligation (extend the
+  `emit_inverse` + last-use machinery to loop-carried tainted registers and
+  per-iteration compute/uncompute, lifting Phase 5's backedge reject) for the
+  proven-bounded shape. What remains here is the genuinely unbounded case
+  (amplitude amplification, transform-to-bounded-for, measurement-derived
+  bounds), punted past the freeze to keep v1.0 narrow (see
   [`docs/archive/old-design/phases/phase05-uncomputation/PRD.md`](docs/archive/old-design/phases/phase05-uncomputation/PRD.md)
   §2.9).
 - **Dynamic circuits.** Measurement-derived loop bounds; mid-circuit
@@ -956,11 +1077,12 @@ post-Phase-10 roadmap revision.
 - **Cross-language input.** `rustc --emit=llvm-bc`, `flang -emit-llvm`,
   etc. participate in `clone-on-taint` once their bitcode is in the LTO
   link. The frontend-language surface for these is post-freeze polish.
-- **Memory model.** `load`/`store`/`getelementptr` lowering; QRAM
-  templates; pointer aliasing for quantum data. Each stock LLVM
-  memory opcode needs its template the same way arith opcodes do; the
-  design choices (Shadow / MUX / QROM selection) are non-trivial
-  enough to warrant their own phase post-freeze.
+- **Memory model beyond Shadow.** The **Shadow** strategy for
+  `load`/`store`/`getelementptr` over a tainted index moved **into Phase 7.5**
+  (the v1 QRAM strategy). What remains post-freeze is the **alternative
+  strategies** (MUX-EXCH / QROM / Feistel selection, cost-modelled per access)
+  and **pointer aliasing** for quantum data — optimizations over the frozen
+  Shadow ABI, not a precondition for it.
 
 ---
 
@@ -979,12 +1101,23 @@ post-Phase-10 roadmap revision.
 - Phase 6 (function lifting) is the largest IR-pass workstream and
   benefits from having Phases 3–5 done so it can reuse their lowering
   pipeline inside cloned bodies.
-- Phase 7 (manual inversion) is small and depends on Phase 5's
-  `emit_inverse` helper.
-- Phase 8 (runtime templates) is mostly autogenerated and can land
-  alongside Phases 3–7 incrementally; the freeze in Phase 10 is the
-  hard deadline.
-- Phase 9 (integration harness) accumulates fixtures alongside Phases
-  2–7 and concludes at the Phase 10 freeze.
-- Phase 10 (freeze) is a gate; nothing else lands before it. Post-Phase-10
-  work is designed under a future roadmap revision.
+- Phase 7 (pre-freeze expressiveness completion) is the live workstream
+  after Phase 6. Internal order: **7.1 opcodes** (independent,
+  parallelizable, lowest risk) → **7.2 controlled-return** (proves the
+  exit-cascade + uncompute coupling on a backedge-free substrate) →
+  **7.3 bounded loops** (forces the Phase-5 uncompute extension) →
+  **7.4 break** (needs 7.2 + 7.3) → **7.5 QRAM Shadow** (heaviest; new ABI;
+  gates the freeze). 7.1 can run in parallel with the rest.
+- Phase 8 (manual inversion) is small and lands **after** Phase 7 so it
+  composes over the full invertible surface in one pass; it depends on
+  Phase 5's `emit_inverse` plus the per-construct adjoint rules Phase 7
+  registers (the dependency runs feature → spine, not inversion → feature).
+- Phase 9 (runtime templates) is mostly autogenerated and can land
+  alongside Phases 3–8 incrementally; it must absorb the 7.1 wide-integer
+  widths and 7.5 QRAM symbols before the freeze.
+- Phase 10 (integration harness) accumulates fixtures alongside Phases
+  2–8 and concludes at the Phase 11 freeze.
+- Phase 11 (freeze) is a gate, now deferred behind the Phase-7 capability
+  work; nothing else lands before it, and it is gated specifically on the
+  QRAM memory ABI and the wide-integer width decision. Post-Phase-11 work
+  is designed under a future roadmap revision.
