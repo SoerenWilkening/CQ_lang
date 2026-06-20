@@ -3,6 +3,7 @@
 #include "Specialization.h"
 
 #include "BennettWrap.h"
+#include "IntrinsicLowering.h"
 #include "OpcodeLowering.h"
 #include "OpcodeSupport.h"
 #include "SpecializeClone.h"
@@ -208,6 +209,21 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
     Function *InnerCallee = Inner->getCalledFunction();
     if (!InnerCallee)
       continue;  // indirect call with classical args — left as a classical subcall.
+    // A curated reversible llvm.* idiom intrinsic (Phase 7.1-E) is a tainted
+    // DATA OP lowered IN PLACE by the `lowerOps(M, …)` below (to a
+    // `cq_template_<op>_<W>` producer the wrap then captures via
+    // `isForwardTemplate`), NEVER a nested specialization candidate. Its callee
+    // is an llvm INTRINSIC DECLARATION with no body, so it must be skipped here
+    // BEFORE `classifyCandidate`/`scanBody` — those require a visible definition
+    // (`!isDeclaration()`, see the SpecializeReject.h contract) and would
+    // dereference a null entry block on the bodiless intrinsic. This is the FIRST
+    // place a declaration-callee inner call can appear: pre-7.1-E-follow-up,
+    // `scanBody` rejected any body containing a declaration-only call, so the
+    // clone never held one; now that detection accepts a curated intrinsic in the
+    // body, this loop must mirror that — lower it in place, do not recurse.
+    // [[7-1-E-intrinsics-frozen-clearance]]
+    if (isCuratedReversibleIntrinsic(Inner))
+      continue;
     // The inner's taint mask is read from THIS clone's seeded `cloneTaint`, after
     // any earlier sibling's classical-result scrub (process in program order so a
     // downstream inner sees the corrected taint).

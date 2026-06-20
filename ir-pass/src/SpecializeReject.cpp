@@ -7,6 +7,7 @@
 
 #include "SpecializeReject.h"
 
+#include "IntrinsicLowering.h"
 #include "OpcodeSupport.h"
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
@@ -199,6 +200,38 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
           pop();
           return SpecReject::Measurement;
         }
+        // Curated reversible llvm.* idiom intrinsic (Phase 7.1-E): a pure total
+        // function lowered to a FROZEN `cq_template_<op>_<W>` additive producer
+        // with an `_unc` twin (`bswap`/`bitreverse`/`fshl`-`fshr` rotation/
+        // `ctpop`/`ctlz`/`cttz`/`abs`/`smin`/`smax`/`umin`/`umax`/`*.sat`). An
+        // intrinsic call is a `CallInst` to an llvm INTRINSIC DECLARATION, so
+        // without this it falls through to the declaration-only "nested call"
+        // decline below (the safe over-decline this follow-up lifts). Inside a
+        // specialized clone it is a reversibilizable data op exactly like the
+        // `BinaryOperator`/`CastInst` whitelist further down: `seedClone`'s
+        // transitive-user closure taints it, `lowerOps` (taint-gated) lowers it
+        // via `rewriteIntrinsic` to the producer, the Bennett wrap captures that
+        // producer in its forward stream, copies out only the i32 clone result,
+        // and `emitInverseChain` reverses it through the generic `cq_template_`
+        // `_unc` branch (EmitInverse.cpp:128) — clone-internal source liveness is
+        // held because every scratch rail is freed only AFTER the complete
+        // reverse (`emitBennettWrap` step e), so a Class-2 `_unc`'s recompute
+        // reads still-live sources. ZERO new lowering/uncompute code; adds NO
+        // frozen symbol (the templates are frozen by 7.1-E regardless).
+        // Membership is EXACT `Intrinsic::ID` + table width + rotation-form,
+        // NEVER a `starts_with("llvm.")` (the cq_theta_evil hazard, C7) —
+        // symmetric with `declineTaintEscapes`' top-level acceptance
+        // (TaintPropagation.cpp:530). A non-curated id, a non-table width
+        // (`bswap.i8`, `abs.i128`), or a dynamic/general funnel shift fails the
+        // predicate and rides the loud "nested call" decline below. A curated
+        // intrinsic's result width is in-table (i8/i16/i32/i64) by the predicate,
+        // and for every curated shape its tainted operands share that result
+        // width, so the data-op width gate below is already satisfied — accept it
+        // as a data op (`continue`, advancing the body scan, NOT a `pop()+return`
+        // — this frame stays on `OnStack` for the rest of the callee).
+        // [[7-1-E-intrinsics-frozen-clearance]]
+        if (isCuratedReversibleIntrinsic(CI))
+          continue;
         // setjmp/longjmp: a `returns_twice` callee can re-enter the body
         // mid-stream, breaking the single-entry straight-line assumption the
         // Bennett reverse needs. Keyed on the ATTRIBUTE clang stamps on

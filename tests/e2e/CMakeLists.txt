@@ -406,6 +406,27 @@ add_test(NAME e2e-slice-specialize-2file
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/specialize_caller.expected.log")
 
+# Phase 7.1-E follow-up (test_C_libtooling-mvjc): a CURATED reversible llvm.* idiom
+# intrinsic INSIDE a specialized clone. specialize_intrinsic_caller.c routes a
+# theta-tainted `x` through the separate-TU classical helper popcount_helper
+# (specialize_intrinsic_lib.c), whose body is `__builtin_popcount(a) + 1` →
+# `@llvm.ctpop.i32` + add. Pre-follow-up the specializer loud-declined (the
+# intrinsic read as a declaration-only nested call); now it lifts the helper into
+# __cq_q_popcount_helper_1, lowers the ctpop to the frozen cq_template_ctpop_i32
+# producer, and Bennett-wraps it. This LINK-proves the clone + cq_template_ctpop_i32
+# + its void `_unc` twin resolve and signature-match across llvm-link, and the
+# golden's LIFO reverse (add_unc before ctpop_unc, the ctpop_unc reading the
+# still-live source, then both frees AFTER the complete reverse) is the trace
+# contract for a Class-2 intrinsic under quantum specialization (Rules 2, 13, 16).
+add_test(NAME e2e-slice-specialize-intrinsic
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_intrinsic_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_intrinsic_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_intrinsic_caller.expected.log")
+
 # Phase 6.2 (WI-2.6, test_C_libtooling-mvna.8): signatures / cache / multiplicity.
 # specialize_multiarg_caller.c routes ONE theta-tainted `x` through the separate-TU
 # helper `combine` (specialize_multiarg_lib.c) at THREE sites with TWO distinct
