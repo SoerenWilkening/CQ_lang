@@ -176,7 +176,12 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 // message). Every other tainted-arg call (declaration-only / indirect / invoke /
 // opaque extern) is absent from both and STILL fires `kMsgUnknownCallee`
 // (decline-by-default). `plan6` is otherwise read-only here.
-void declineTaintEscapes(llvm::Module &M, const TaintSet &taint,
+//
+// `taint` is taken by mutable reference because the ONE Phase-7.1 Increment-B
+// accept (a basis-level identity `freeze iN %handle`) is FOLDED away here
+// (RAUW + erase + scrub from `taint.Tainted`); every other path is pure analysis
+// (the decline diagnostics still key on pre-RAUW SSA identity).
+void declineTaintEscapes(llvm::Module &M, TaintSet &taint,
                          const SpecPlan &plan6);
 
 // Classical-condition value-mux guard (test_C_libtooling-wi5) + the

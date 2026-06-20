@@ -54,23 +54,27 @@ bool isRotationCall(const Value *V) { return isPhiCall(V) || isThetaCall(V); }
 // `TaintPropagation.cpp:300-303` (`getArgOperand(1)==V && getArgOperand(0)!=V`).
 //
 // The carriers are exactly the VALUE-PRESERVING subset of the ops
-// `declineTaintEscapes` (L64, BEFORE this runs at L83) WHITELISTS as benign
-// tainted-value users (`isa<CastInst>`/`PHINode`/`SelectInst`, TaintPropagation.cpp
-// :426-440): `fpext`/`fptrunc`/`bitcast` (value-preserving casts) + nested
-// `select`/`phi`. This set need not — and must not — be larger, because every
-// OTHER path to a rotation arg-1 is already backstopped LOUDLY before a silent
-// miscompile can form (adversarial review 2026-06-15, the freeze finding —
-// confirmed refuted by empirical test, the escape-guard backstop is real):
-//   * a `freeze` (or any non-whitelisted op) consuming the tainted select result
-//     is declined at L64 as `cq taint escape: tainted value reaches an
-//     unsupported instruction` (kMsgOther) — it never reaches this walk, so
-//     adding `isa<FreezeInst>` here would be untestable dead code
-//     (control_swap_reject_select_freeze.ll pins that backstop); and
+// `declineTaintEscapes` WHITELISTS as benign tainted-value users
+// (`isa<CastInst>`/`PHINode`/`SelectInst`, plus — as of Phase-7.1 Increment B —
+// `FreezeInst`): `fpext`/`fptrunc`/`bitcast` (value-preserving casts) + nested
+// `select`/`phi` + `freeze`. This set need not — and must not — be larger:
+//   * `freeze` is a VALUE-PRESERVING carrier (freeze of an already-defined value
+//     is identity). Phase-7.1 Increment B makes `declineTaintEscapes` SKIP an
+//     FP-typed tainted `freeze` (the integer case is folded as a basis identity)
+//     so an `(q>5)?θa:θb`-style angle routed THROUGH a `freeze` no longer hits
+//     the blunt kMsgOther backstop — it must reach a rotation arg-1 here and be
+//     declined `rotation angle`. Hence the walk MUST cross `freeze`
+//     (control_swap_reject_select_freeze.ll, now flipped to the GATE-3 brand,
+//     pins exactly this). Omitting it would re-open the FP-angle leak the escape
+//     guard no longer catches — a silent miscompile, not dead code. (This
+//     supersedes the pre-7.1 "adding `isa<FreezeInst>` would be untestable dead
+//     code" note, which was true only while the escape guard still declined every
+//     freeze at kMsgOther.)
 //   * a value-CHANGING op (arithmetic, an int<->fp domain cast `sitofp`/…) RE-
 //     REALIZES the value into a NEW tainted SSA value, which `declineTaintedAngle`
-//     (L110, `taint.Tainted.count(arg1)`) catches when it lands in a rotation
-//     arg-1 — so those are correctly NOT crossed (crossing them would only change
-//     a loud WI-3 decline's string, never prevent a miscompile).
+//     (`taint.Tainted.count(arg1)`) catches when it lands in a rotation arg-1 —
+//     so those are correctly NOT crossed (crossing them would only change a loud
+//     WI-3 decline's string, never prevent a miscompile).
 // A nested `select`/`phi` carries `%sel` onward only as a VALUE operand, never as
 // the condition (the `CompareLowering.cpp:54-56` discriminator).
 //
@@ -96,8 +100,10 @@ bool selReachesRotationArg1(SelectInst *Sel) {
           return true;  // angle — decline the WHOLE select (fan-out rule).
 
       // value-preserving carriers only (do NOT cross arithmetic/compare).
+      // `freeze` is value-preserving (Phase-7.1 Increment B); the escape guard no
+      // longer backstops an FP-routed angle through it, so this walk must cross it.
       if (isa<FPExtInst>(X) || isa<FPTruncInst>(X) || isa<BitCastInst>(X) ||
-          isa<PHINode>(X)) {
+          isa<FreezeInst>(X) || isa<PHINode>(X)) {
         if (Visited.insert(X).second)
           Work.push_back(X);
       } else if (auto *Inner = dyn_cast<SelectInst>(X)) {

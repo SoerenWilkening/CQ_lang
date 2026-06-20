@@ -354,10 +354,96 @@ bool readsTaintedValue(const Instruction &I, const TaintSet &taint) {
   return false;
 }
 
+// ── Phase-7.1 Increment B: the freeze-passthrough R-B narrowing ─────────────
+// A tainted `freeze` is, semantically, a basis-level identity (freeze of an
+// already-defined value is the value itself). But a BLANKET `isa<FreezeInst>`
+// skip would re-launder an Escaped/Measured value: `freeze i32 %h; ret i32 %f`
+// would slip `%h` into the ACCEPTED i32-ret Escaped case (`:482-487`), and
+// `freeze` of a fanned-out / independently-measured handle would mis-route the
+// whole-DAG uncompute's free (Rule 8 linear-lineage). So the accept is NARROW
+// (Prime Directive: any unproven ownership ⇒ decline).
+//
+// `isLocalIntegerIdentityFreeze` returns true ONLY for the pure local case we
+// fold away: an INTEGER freeze whose
+//   (a) tainted operand has no INDEPENDENT escape/sink user — no `ret`/`store`/
+//       `cq_invert_*`/measure user OTHER than through this freeze (linear
+//       lineage on the operand: the operand's only forward consumers are the
+//       freeze plus benign in-place/template/measure users in THIS lineage), and
+//   (b) freeze RESULT has no user that would become an escape after the fold —
+//       no `ret`/`store`/`cq_invert_*`/unknown-or-opaque call (those must stay
+//       declined: the R-B blocker). A `cq_measure`/`cqrt_*`/`cq_template_*`
+//       consumer, or another value-preserving carrier, is fine.
+// An FP freeze is NOT folded here — it rides the GATE-3 carrier fence
+// (SelectClassify::selReachesRotationArg1 now crosses `freeze`), so an FP-angle
+// route is declined `rotation angle` at detection rather than laundered. The
+// caller therefore handles FP and integer separately.
+bool freezeOperandIndependentlyEscapes(const Value *Op, const FreezeInst *Self) {
+  for (const User *U : Op->users()) {
+    if (U == Self)
+      continue;  // the freeze itself is the in-lineage consumer.
+    const auto *I = dyn_cast<Instruction>(U);
+    if (!I)
+      continue;
+    if (isa<ReturnInst>(I) || isa<StoreInst>(I))
+      return true;  // operand independently leaves the SSA/return domain.
+    if (const auto *CI = dyn_cast<CallInst>(I)) {
+      const Function *Callee = CI->getCalledFunction();
+      StringRef N = Callee ? Callee->getName() : StringRef();
+      // A measure of the operand (a SECOND sink — fan-out) or a manual-inversion
+      // handoff makes the operand's record path-dependent. Recognized in-place /
+      // template consumers are in-lineage and benign.
+      if (N.starts_with("cq_measure_") || N.starts_with("cqrt_measure_") ||
+          N.starts_with("cq_invert_"))
+        return true;
+    }
+  }
+  return false;
+}
+
+bool freezeResultWouldEscape(const FreezeInst *FI) {
+  for (const User *U : FI->users()) {
+    const auto *I = dyn_cast<Instruction>(U);
+    if (!I)
+      continue;
+    if (isa<ReturnInst>(I) || isa<StoreInst>(I))
+      return true;  // the R-B blocker: folding would create a tainted escape.
+    if (const auto *CI = dyn_cast<CallInst>(I)) {
+      const Function *Callee = CI->getCalledFunction();
+      StringRef N = Callee ? Callee->getName() : StringRef();
+      // Only EXPLICITLY recognized consumers are benign post-fold; an unknown /
+      // opaque / indirect callee would read the laundered handle verify-clean.
+      if (N.starts_with("cq_measure_") || N.starts_with("cqrt_") ||
+          N.starts_with("cq_template_"))
+        continue;
+      return true;  // unknown callee — decline-by-default.
+    }
+    // A non-call, non-ret/store user (another carrier, a downstream op) is left
+    // for its own guard; it is not an escape created by this fold.
+  }
+  return false;
+}
+
+bool isLocalIntegerIdentityFreeze(const FreezeInst *FI, const TaintSet &taint) {
+  if (!FI->getType()->isIntegerTy())
+    return false;  // FP/vector/aggregate freeze is not the folded case.
+  Value *Op = FI->getOperand(0);
+  if (!taint.Tainted.count(Op))
+    return false;  // only a tainted-handle identity is in scope.
+  if (freezeOperandIndependentlyEscapes(Op, FI))
+    return false;  // operand independently escaped/measured ⇒ decline (R-B).
+  if (freezeResultWouldEscape(FI))
+    return false;  // folding would launder into an escape ⇒ decline (R-B).
+  return true;
+}
+
 }  // namespace
 
-void declineTaintEscapes(Module &M, const TaintSet &taint,
-                         const SpecPlan &plan6) {
+void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
+  // Phase-7.1 Increment B: basis-level identity freezes proven foldable during
+  // the walk below; folded (RAUW + erase + taint-scrub) AFTER the walk so no
+  // erasure invalidates the in-flight BB iterator (the diagnostics still see
+  // pre-RAUW SSA identity — the fold removes only no-ops).
+  SmallVector<FreezeInst *, 4> FoldFreezes;
   // Exact membership for the collected front-end intrinsic call sites —
   // never name-prefix matching on the ACCEPT side (a user function named
   // `cq_theta_evil` must not slip through). `propagate` collected precisely
@@ -490,6 +576,28 @@ void declineTaintEscapes(Module &M, const TaintSet &taint,
           continue;
         if (!readsTaintedValue(I, taint))
           continue;
+        // 4b. `freeze` (Phase-7.1 Increment B) — a basis-level identity. The
+        //     accept is NARROW (R-B): an FP freeze is SKIPPED so the GATE-3
+        //     carrier fence (SelectClassify, runs at detection) catches an angle
+        //     routed through it (`control_swap_reject_select_freeze.ll`); a pure
+        //     LOCAL INTEGER identity freeze is FOLDED away below (no standing
+        //     freeze ⇒ no FreePoint `unrecognized-user` reject, no whole-DAG
+        //     uncompute interaction). ANY OTHER freeze — an integer freeze whose
+        //     operand is independently Escaped/Measured or whose result would
+        //     escape after the fold (the laundering hazard), or a vector/
+        //     aggregate freeze — falls through to the kMsgOther decline
+        //     (`lowering_reject_freeze_escaped_return.ll`,
+        //     `lowering_reject_freeze_measured_fanout.ll`). Default-to-decline
+        //     (Prime Directive) on every unproven shape.
+        if (auto *FI = dyn_cast<FreezeInst>(&I)) {
+          if (FI->getType()->isFPOrFPVectorTy())
+            continue;  // rides the GATE-3 carrier fence (no escape, no fold).
+          if (isLocalIntegerIdentityFreeze(FI, taint)) {
+            FoldFreezes.push_back(FI);
+            continue;
+          }
+          // integer-but-escaping / vector / aggregate ⇒ fall through to decline.
+        }
         // 5. Unowned readers of a tainted value. A store exits the SSA-only
         //    taint domain into memory (a later load reads the handle tag,
         //    untainted); everything else (getelementptr, atomicrmw, freeze,
@@ -500,6 +608,21 @@ void declineTaintEscapes(Module &M, const TaintSet &taint,
         diagnoseEscape(&I, isa<StoreInst>(I) ? kMsgStore : kMsgOther);
       }
     }
+  }
+
+  // Phase-7.1 Increment B: fold the proven basis-level identity freezes. RAUW
+  // each `%f = freeze iN %h` to its `%h` (the freeze of a defined runtime i32
+  // handle is the handle), scrub it from the taint set (`SwapRouteEmit::scrubTaint`
+  // precedent — a freed Instruction* must not linger in `Tainted` where a later
+  // allocation could alias it), and erase. The downstream measure/return/uncompute
+  // analyses then see the TRUE handle lineage (the standing freeze would otherwise
+  // read as an unrecognized FreePoint user). Done AFTER the walk so no erasure
+  // invalidates the BB iterator above.
+  for (FreezeInst *FI : FoldFreezes) {
+    Value *H = FI->getOperand(0);
+    FI->replaceAllUsesWith(H);
+    taint.Tainted.erase(FI);
+    FI->eraseFromParent();
   }
 }
 
