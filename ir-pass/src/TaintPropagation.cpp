@@ -642,7 +642,8 @@ constexpr char kMsgClassicalPhi[] =
     "cq taint escape: tainted value muxed by a classical-condition phi";
 
 // ───────────────────────────────────────────────────────────────────────────
-// One-register merge-phi lift (test_C_libtooling-5j5).
+// One-register merge-phi lift (test_C_libtooling-5j5; N-ary generalized in
+// test_C_libtooling-sbt1.3, Phase 7.1 Increment C).
 //
 // The natural "classical if around a quantum gate" program
 //     if (classical_c) q = cq_phi(q, theta);  ...use(q)...
@@ -651,7 +652,12 @@ constexpr char kMsgClassicalPhi[] =
 //     merge: %p = phi i32 [ %q2, %arm ], [ %q, %entry ]   ; %q2 = cq_phi(%q,θ)
 // (verified 2026-06-10 on both the `if` and the ternary form — clang cannot
 // speculate the opaque cq_phi call, so BOTH compile to this branch+phi shape,
-// never to a select). Rotation lowering is IN PLACE: `RotationLowering` emits
+// never to a select). The N-ary classical `switch` around an in-place gate on
+// the SAME register is the same shape at higher arity — N>2 incomings, each a
+// distinct SSA name of the one register's per-path record, reconverging at one
+// merge phi; Increment C lifts it by the IDENTICAL per-edge argument, with the
+// (7a) reachability proof carried against EVERY other edge (not just the single
+// 2-way complement). Rotation lowering is IN PLACE: `RotationLowering` emits
 // the gate at the call's position ON THE OPERAND HANDLE and RAUWs the result
 // to that same operand (cqrt_rz for cq_phi; ry-only on the existing handle for
 // a tainted-operand chained cq_theta). So after lowering, EVERY incoming of
@@ -679,10 +685,12 @@ constexpr char kMsgClassicalPhi[] =
 //       — a derived-value arm stays declined;
 //   (6) every chain gate sits in ITS edge's incoming block, so entering via
 //       that edge implies the chain ran, this traversal, in order;
-//   (7a) no chain gate can reach the OTHER edge's terminator — kills every
-//       path that fires the gate and then enters the merge claiming a record
-//       without it (the loop-iteration-2 stale-base path, fixture
-//       lowering_reject_classical_mux_phi_loop.ll);
+//   (7a) no chain gate can reach ANY OTHER edge's terminator — kills every
+//       path that fires the gate and then enters the merge through a different
+//       edge claiming a record without it (the loop-iteration-2 stale-base
+//       path, fixture lowering_reject_classical_mux_phi_loop.ll; at N>2 the
+//       check spans ALL j != i, closing the third-edge hole a naive `1-i`-only
+//       extension would leave — lowering_reject_classical_mux_phi_onereg_nway_loop.ll);
 //   (7b) the gate's own edge, once taken, can never lead back to the gate —
 //       every cycle through the gate exits its block through the checked
 //       terminator, so no path applies the chain twice while the incoming
@@ -752,11 +760,18 @@ bool terminatorIsClassical(const Instruction *T, const TaintSet &taint) {
 bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
                              const SmallPtrSetImpl<CallInst *> &GateCalls,
                              std::optional<DominatorTree> &DT) {
-  // (1) Exactly the canonical 2-incoming diamond/if-else join (the -O1 shape;
-  //     ControlDetect's `soleMergePhi` carries the same discipline). N-ary
-  //     classical switch merges are per-edge provable by the same argument
-  //     but unfixtured — deliberate conservatism, lift later if needed.
-  if (Phi->getNumIncomingValues() != 2)
+  // (1) At least the canonical 2-incoming diamond/if-else join (the -O1 shape;
+  //     ControlDetect's `soleMergePhi` carries the same discipline). Phase-7.1
+  //     Increment C generalizes to N>2: the natural classical N-way `switch`
+  //     around an in-place gate on ONE register reconverges at a single merge
+  //     phi whose every incoming is the same register's per-path current
+  //     record. Each edge is per-edge provable by the SAME argument as the
+  //     2-way case — the only delta is that (7a) must hold against ALL other
+  //     edges, not just the single complement (see the per-edge loop below).
+  //     N==2 reduces EXACTLY to the prior `1-i` logic. A degenerate <2 phi is
+  //     not a mux — decline (nothing to lift).
+  unsigned N = Phi->getNumIncomingValues();
+  if (N < 2)
     return false;
   // (2) Every incoming tainted. A mixed tainted/untainted mux
   //     ("handle-or-literal-5") is a real data mux on the handle domain and
@@ -764,14 +779,23 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   for (Value *V : Phi->incoming_values())
     if (!taint.Tainted.count(V))
       return false;
-  // (3) Both incomings resolve to ONE base. Taint only ever holds
-  //     Instructions, so a matching base is an Instruction; the Phi-as-its-own
-  //     -base degenerate (self-incoming cycle) is rejected explicitly.
-  WireChain C0 = resolveWireBase(Phi->getIncomingValue(0), GateCalls, taint);
-  WireChain C1 = resolveWireBase(Phi->getIncomingValue(1), GateCalls, taint);
-  if (C0.Base != C1.Base || C0.Base == Phi)
-    return false;  // two registers (or a derived fresh rail) — real mux.
-  auto *BaseI = dyn_cast<Instruction>(C0.Base);
+  // (3) Every incoming resolves to ONE common base. Build all N WireChains up
+  //     front (pure analysis — no mutation), then require every
+  //     `Chains[k].Base == Chains[0].Base`; a SINGLE off-base edge among N
+  //     (distinct register, derived fresh rail) sinks the whole accept — it is
+  //     a real data mux, not a renaming. Taint only ever holds Instructions, so
+  //     a matching base is an Instruction; the Phi-as-its-own-base degenerate
+  //     (self-incoming cycle) is rejected explicitly.
+  SmallVector<WireChain, 4> Chains;
+  Chains.reserve(N);
+  for (Value *V : Phi->incoming_values())
+    Chains.push_back(resolveWireBase(V, GateCalls, taint));
+  for (unsigned k = 1; k < N; ++k)
+    if (Chains[k].Base != Chains[0].Base)
+      return false;  // a distinct register or derived fresh rail — real mux.
+  if (Chains[0].Base == Phi)
+    return false;     // self-incoming cycle — no base register to rename to.
+  auto *BaseI = dyn_cast<Instruction>(Chains[0].Base);
   if (!BaseI)
     return false;
   // (4) Dominator tree — built lazily, once per function (same idiom as
@@ -780,15 +804,16 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   if (!DT)
     DT.emplace(F);
   // (5) Defensive ownership: the join's deciding branch (the merge's
-  //     immediate dominator) and both incoming preds' terminators must be
-  //     classical (see terminatorIsClassical). Unreachable merge → decline.
+  //     immediate dominator) and EVERY incoming pred's terminator must be
+  //     classical (see terminatorIsClassical — already accepts a classical
+  //     `switch`). Unreachable merge → decline.
   DomTreeNode *Node = DT->getNode(Phi->getParent());
   if (!Node || !Node->getIDom())
     return false;
   if (!terminatorIsClassical(Node->getIDom()->getBlock()->getTerminator(),
                              taint))
     return false;
-  for (unsigned i = 0; i < 2; ++i)
+  for (unsigned i = 0; i < N; ++i)
     if (!terminatorIsClassical(Phi->getIncomingBlock(i)->getTerminator(),
                                taint))
       return false;
@@ -797,25 +822,37 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   // path into the merge), but the explicit check is cheap insurance.
   if (!DT->dominates(BaseI, Phi))
     return false;
-  // (6)+(7) Per-edge conditional-execution proof — see the block comment.
-  const WireChain *Chains[2] = {&C0, &C1};
-  for (unsigned i = 0; i < 2; ++i) {
+  // (6)+(7) Per-edge conditional-execution proof — see the block comment. All
+  // chains were built above; this loop is still pure analysis (no mutation).
+  for (unsigned i = 0; i < N; ++i) {
     BasicBlock *Self = Phi->getIncomingBlock(i);
-    BasicBlock *Other = Phi->getIncomingBlock(1 - i);
-    for (CallInst *G : Chains[i]->Gates) {
+    for (CallInst *G : Chains[i].Gates) {
       // (6) Single-block arm: the whole chain lives in this edge's pred, so
       //     taking the edge implies the chain ran (block-local SSA order).
       //     A chain call OUTSIDE the pred (a pre-branch gate on the wire)
-      //     makes the other edge's base record stale — decline (pinned:
-      //     lowering_reject_classical_mux_phi_crossblock_chain.ll).
+      //     makes the other edges' base records stale — decline (pinned:
+      //     lowering_reject_classical_mux_phi_crossblock_chain.ll and its
+      //     N-ary sibling _onereg_nway_crossblock_chain.ll).
       if (G->getParent() != Self)
         return false;
-      // (7a) No path may fire this gate and then enter the merge through the
-      //      OTHER edge, whose incoming claims a record without it (the
-      //      classical-loop iteration-2 staleness; pinned:
-      //      lowering_reject_classical_mux_phi_loop.ll).
-      if (isPotentiallyReachable(G, Other->getTerminator(), nullptr, &*DT))
-        return false;
+      // (7a) GENERALIZED to ALL other edges (Increment C): no path may fire
+      //      this gate and then enter the merge through ANY OTHER edge `j`,
+      //      whose phi-incoming record omits G. With N>2 there is more than one
+      //      "other" edge, so checking only the single `1-i` complement (the
+      //      naive 2-way extension) leaves a hole — a gate fired in arm-i could
+      //      reach the merge through a THIRD edge j (j!=i, j!=1-i) whose record
+      //      lacks it, double-applying / mis-recording after the lift. This is
+      //      the primary silent-miscompile guard (pinned:
+      //      _onereg_nway_loop.ll — a classical back edge routes arm-i's gate to
+      //      the default edge). N==2 reduces this to exactly the prior `1-i`
+      //      check (the single j != i IS the complement).
+      for (unsigned j = 0; j < N; ++j) {
+        if (j == i)
+          continue;
+        if (isPotentiallyReachable(G, Phi->getIncomingBlock(j)->getTerminator(),
+                                   nullptr, &*DT))
+          return false;
+      }
       // (7b) Once this edge is taken the gate must never re-fire: every cycle
       //      through G leaves its block via this terminator, so this check
       //      closes the applied-twice/recorded-once path.
@@ -846,7 +883,7 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   for (User *U : Phi->users())
     if (auto *I = dyn_cast<Instruction>(U))
       taint.LiftedConsumers.insert(I);
-  Phi->replaceAllUsesWith(C0.Base);
+  Phi->replaceAllUsesWith(Chains[0].Base);
   taint.Tainted.erase(Phi);
   Phi->eraseFromParent();
   return true;

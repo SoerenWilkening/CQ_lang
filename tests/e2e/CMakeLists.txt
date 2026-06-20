@@ -163,6 +163,28 @@ add_test(NAME e2e-slice-classical-if-gate
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_classical_if_gate.expected.log")
 
+# Phase 7.1 Increment C (test_C_libtooling-sbt1.3): the N-ARY (N>2) one-register
+# classical-mux lift. The natural classical N-way `switch` around an in-place
+# quantum gate on ONE register survives -O1 as a `switch` with a single merge phi
+# whose >2 incomings are distinct SSA names of the one register; the generalized
+# lift (the (7a) reachability proof carried against ALL j != i, not just the 2-way
+# complement) RAUWs it away and the CLASSICAL switch stays byte-untouched, so each
+# case's cqrt_rz fires iff that case ran this shot. DISTINCT per-case gate-chain
+# lengths (1/2/1/0) keep clang from merging the cases into one angle-selected
+# block, preserving the N>2 phi; the executed case is the 2-gate chain
+# (sel=(argc+1)%4=2), goldening the single-block-chain proof (condition (6)) for a
+# REAL chain. A second register on the DEFAULT arm goldens the no-case-fires path.
+# The only layer that LINKS — it re-proves the lifted N-ary form lowers to the
+# phi-less rz-inside-the-case stream the pipeline already accepts (Increment C
+# adds NO new symbol).
+add_test(NAME e2e-slice-classical-switch-gate
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_classical_switch_gate.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_classical_switch_gate.expected.log")
+
 # Phase 4.5 (WI-6, test_C_libtooling-bkpz.6): the RSSA swap-routed tainted SWITCH,
 # one golden per ACCEPT class — the only layer that LINKS, so the only proof every
 # symbol the four switch emit paths mint resolves + signature-matches against the
