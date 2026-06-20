@@ -34,10 +34,21 @@ namespace {
 // replacement for `orig` (the i1 compare), drop `orig`, and give `repl` the
 // next BirthOrder slot. Exact Phase-2/ArithLowering bookkeeping. The driver
 // erases `orig` afterward (we only RAUW + bookkeep here).
-void promote(Value *repl, Instruction *orig, TaintSet &taint) {
+//
+// Phase 7.1 Increment A R-A scrub: `HandleWidth.erase(orig)` mirrors the
+// `Tainted.erase` so no stale width survives at the erased compare's address
+// (verify-clean if a reused `Value*` kept it). A compare result is an i1 flag
+// handle, NOT a data-width value, so NO width is recorded for `repl` (the
+// `handleWidth` arg defaults empty); only arith/cast results record a logical
+// data width. See ArithLowering::promote for the rationale.
+void promote(Value *repl, Instruction *orig, TaintSet &taint,
+             StringRef handleWidth = {}) {
   taint.Tainted.insert(repl);
   taint.Tainted.erase(orig);
   taint.BirthOrder[repl] = taint.NextBirth++;
+  taint.HandleWidth.erase(orig);
+  if (!handleWidth.empty())
+    taint.HandleWidth[repl] = handleWidth;
 }
 
 }  // namespace
@@ -269,7 +280,30 @@ bool rewriteCompare(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint) {
     promote(Shared, cmp, taint);
     return true;
   }
-  Value *Flag = lowerCompareToFlag(cmp, wd, taint);
+  // Phase 7.1 Increment A: a tainted Q+Q (both-operands-tainted) DATA-position
+  // compare. After rotation lowering both operands are i32-laundered handles,
+  // so the logical width is unrecoverable from their SSA type — it is recovered
+  // from the `HandleWidth` side-table (recorded at each operand's rotation /
+  // arith / cast mint). AGREEMENT-OR-DECLINE (Prime Directive): pass `qqWidth`
+  // to the already-built `Shape::QQ` branch ONLY when both operands carry a
+  // non-empty recorded width AND the two widths AGREE. On disagreement, or any
+  // missing entry, leave `qqWidth` empty — `lowerCompareImpl`'s existing loud
+  // Q+Q bail fires (`diagnoseNoTemplate`). NEVER pick one width on disagreement
+  // (a wrong-width symbol, verify-clean), NEVER default empty -> i32 (the same
+  // class of silent miscompile). A Q+C compare is untouched here (`qqWidth`
+  // empty is the HL path's normal state); only when BOTH are tainted is the
+  // recovered width consulted.
+  StringRef QqWidth;
+  Value *A = cmp->getOperand(0);
+  Value *B = cmp->getOperand(1);
+  if (taint.Tainted.count(A) && taint.Tainted.count(B)) {
+    StringRef WA = taint.HandleWidth.lookup(A);
+    StringRef WB = taint.HandleWidth.lookup(B);
+    if (!WA.empty() && WA == WB)
+      QqWidth = WA;  // agreement: feed the recovered logical width.
+    // else QqWidth stays empty -> the Q+Q loud decline (disagreement / absent).
+  }
+  Value *Flag = lowerCompareToFlag(cmp, wd, taint, QqWidth);
   if (!Flag)
     return false;
   cmp->replaceAllUsesWith(Flag);

@@ -259,6 +259,29 @@ add_test(NAME e2e-slice-uncompute-dead-shapes
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_dead_shapes.expected.log")
 
+# Phase 7.1 Increment A (test_C_libtooling-sbt1.1): the Q+Q (both-operands-
+# tainted) DATA-position compare. The only layer that LINKS, so the only proof
+# that BOTH the bare-QQ forward `cq_template_icmp_<pred>_i32(i32, i32)` AND its
+# void `_unc` twin `cq_template_icmp_<pred>_i32_unc(out, a, b)` resolve and
+# signature-match against the generated runtime ABI (Rule 2, Rule 16; the .ll
+# fixtures assert IR text and never link). Increment A adds NO new symbol — the
+# QQ compare machinery (fwd/_unc, DagTraversal two-parent recovery, WidthDispatch
+# QQ resolver) already existed end-to-end; A only feeds it a width recovered from
+# `HandleWidth`, so this golden re-proves the bare-QQ compare grid composes. Two
+# independent Q+Q lineages in a `noinline` helper (`noinline` is LOAD-BEARING —
+# whole-DAG uncompute is gated OFF in `main`): (A) a MEASURED `xi < yi`
+# (icmp_slt QQ -> zext bridge -> measure) proves the forward symbol; (B) a DEAD,
+# `cq_phi`-kept-alive `pi == qi` (icmp_eq QQ) proves the `_unc` twin — the spine
+# reverses it ONCE (zext_unc -> icmp_eq_unc -> ry undos) and frees each rail,
+# with NO added measure, NO `_inv`, NO cqrt_cswap.
+add_test(NAME e2e-slice-compare-qq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_compare_qq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_compare_qq.expected.log")
+
 # Phase 6 (DD-6 §7.1, test_C_libtooling-mvna.3): the ZERO-LIB smoke for the new
 # multi-file harness. Drives the EXISTING single-TU theta->add->measure slice
 # through run_slice_multi.sh with EMPTY LIBSRCS (the "" 7th positional), so the

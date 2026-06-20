@@ -441,7 +441,8 @@ void declineTaintEscapes(Module &M, const TaintSet &taint,
         // 2. The four lowerOps instruction classes — owned by Arith/Compare/
         //    CastLowering, whose drivers diagnose their own unsupported
         //    members loudly ("no template for opcode ... in tainted context",
-        //    e.g. the inttoptr probe; fixture lowering_icmp_qq_negative.ll).
+        //    e.g. the inttoptr probe; fixture
+        //    lowering_icmp_qq_no_width_reject.ll, an unsupported Q+Q compare).
         if (isa<BinaryOperator>(I) || isa<UnaryOperator>(I) ||
             isa<CmpInst>(I) || isa<CastInst>(I))
           continue;

@@ -25,10 +25,24 @@ namespace {
 // drop `orig` from the set, and give `repl` the next BirthOrder slot. This
 // is the exact Phase-2 bookkeeping, shared by the binary and unary paths.
 // The driver erases `orig` afterward (we only RAUW + bookkeep here).
-void promote(Value *repl, Instruction *orig, TaintSet &taint) {
+//
+// Phase 7.1 Increment A: `handleWidth` records the lowered handle's LOGICAL
+// ABI width on `repl` (the data result width — Increment A's first reader is
+// the Q+Q data-position compare, which recovers it from `HandleWidth`). Empty
+// ⇒ no record (the pre-7.1 behavior; a genuinely-missing entry rides the Q+Q
+// decline rather than defaulting to i32). R-A scrub: `HandleWidth.erase(orig)`
+// mirrors the `Tainted.erase` — with `Value*` pointer reuse a stale entry at
+// `orig`'s reused address would otherwise feed a wrong width into a later Q+Q
+// compare (a verify-clean miscompile). The erase happens UNCONDITIONALLY (even
+// when `handleWidth` is empty) so no stale `orig` record survives.
+void promote(Value *repl, Instruction *orig, TaintSet &taint,
+             StringRef handleWidth = {}) {
   taint.Tainted.insert(repl);
   taint.Tainted.erase(orig);
   taint.BirthOrder[repl] = taint.NextBirth++;
+  taint.HandleWidth.erase(orig);
+  if (!handleWidth.empty())
+    taint.HandleWidth[repl] = handleWidth;
 }
 
 }  // namespace
@@ -120,7 +134,10 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   if (DebugLoc DL = bo->getDebugLoc())
     T->setDebugLoc(DL);
   bo->replaceAllUsesWith(T);
-  promote(T, bo, taint);
+  // Record the result handle's LOGICAL width (the binary op's own ABI width,
+  // already validated non-empty at :45) so a downstream Q+Q data compare can
+  // recover it (Increment A). The i32-laundered handle type loses this width.
+  promote(T, bo, taint, AbiWidth);
   return true;
 }
 
@@ -149,7 +166,9 @@ bool rewriteUnary(UnaryOperator *uo, WidthDispatch &wd, TaintSet &taint) {
   if (DebugLoc DL = uo->getDebugLoc())
     T->setDebugLoc(DL);
   uo->replaceAllUsesWith(T);
-  promote(T, uo, taint);
+  // Record the fneg result handle's LOGICAL fp width (validated non-empty at
+  // :134) for a downstream Q+Q fp data compare (Increment A).
+  promote(T, uo, taint, AbiWidth);
   return true;
 }
 

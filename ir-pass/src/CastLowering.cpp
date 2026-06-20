@@ -28,10 +28,21 @@ namespace {
 // BirthOrder slot. Exact Phase-2/ArithLowering/CompareLowering bookkeeping.
 // Casts are unary, so there is no operand-ordering concern. The driver erases
 // `orig` afterward (we only RAUW + bookkeep here).
-void promote(Value *repl, Instruction *orig, TaintSet &taint) {
+//
+// Phase 7.1 Increment A: `handleWidth` records the lowered handle's LOGICAL
+// ABI width on `repl`. For a cast this is the DEST width (`cw.To`) — the
+// produced handle logically holds the cast's result, never `cw.From`/i32. R-A
+// scrub: `HandleWidth.erase(orig)` mirrors the `Tainted.erase` (stale-on-erase
+// guard; verify-clean if a reused address kept the old width). See
+// ArithLowering::promote for the rationale.
+void promote(Value *repl, Instruction *orig, TaintSet &taint,
+             StringRef handleWidth = {}) {
   taint.Tainted.insert(repl);
   taint.Tainted.erase(orig);
   taint.BirthOrder[repl] = taint.NextBirth++;
+  taint.HandleWidth.erase(orig);
+  if (!handleWidth.empty())
+    taint.HandleWidth[repl] = handleWidth;
 }
 
 }  // namespace
@@ -112,7 +123,12 @@ bool rewriteCast(CastInst *cast, CastWidths cw, WidthDispatch &wd,
   // cast result) still violates the invariant, but fails LOUDLY at the
   // verifier (mistyped surviving call), never silently.
   cast->replaceAllUsesWith(T);
-  promote(T, cast, taint);
+  // Record the result handle's LOGICAL width = the cast DEST width (`cw.To`,
+  // captured up-front at OpcodeLowering, validated non-empty at :54), NEVER
+  // `cw.From` and NEVER the laundered i32 — a downstream Q+Q data compare
+  // recovers it (Increment A). E.g. `zext i8->i32` records "i32"; the produced
+  // handle logically holds the i32 result.
+  promote(T, cast, taint, cw.To);
   return true;
 }
 
