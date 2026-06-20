@@ -767,8 +767,11 @@ template-call sequences. Rejection diagnostics fire with correct
 source locations on the standard rejection set.
 
 **Open items (defer to Phase 6 PRD):** auto-specialization scope (every
-reachable function vs. opt-in only); concrete mangling scheme;
-`-fcq-measurement-bridge` opt-in for measurement-at-rejected-boundary.
+reachable function vs. opt-in only); concrete mangling scheme. (The
+`-fcq-measurement-bridge` "measurement-at-rejected-boundary" opt-in once floated here is
+**rejected permanently** — owner 2026-06-19: a transparent auto-measure silently
+collapses the user's state, Rule 5. A tainted I/O sink is instead lowered **coherently**
+via the §7.6 reversible output tape.)
 
 ---
 
@@ -777,15 +780,17 @@ reachable function vs. opt-in only); concrete mangling scheme;
 **Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
 almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
 are plain C `for`/`while`, controlled early-exit is plain C `return`/`break`, QRAM is
-plain C `a[i]` with a tainted index. Of the five increments, **only 7.1's
-wide-integer widths and 7.5's QRAM templates add new *frozen* runtime ABI**; the rest
-reuse the existing `cqrt_*` / `cq_template_*` surface. That is the load-bearing reason
-the freeze (now Phase 11) moves back: the ABI is gated on the QRAM memory model and
-the integer-width decision, **not** on the control-flow work — which could in
-principle evolve even post-freeze. This phase consolidates the items Phase 4
-explicitly deferred (controlled `return`/`break`) plus the loop / memory / opcode work
-the prior roadmap parked under "Beyond the freeze." Each increment carries its PRD at
-its start (Rule 16); the breakdown below fixes scope and sequence only.
+plain C `a[i]` with a tainted index, and I/O is plain C `printf`. Of the six
+increments, **only 7.1's wide-integer widths + curated `llvm.*` intrinsic table and
+7.5's QRAM templates add new *frozen* runtime ABI**; the rest (control flow, the I/O
+output tape) reuse the existing `cqrt_*` / `cq_template_*` surface. That is the
+load-bearing reason the freeze (now Phase 11) moves back: the ABI is gated on the QRAM
+memory model and the integer-width + intrinsic-surface decisions, **not** on the
+control-flow / I/O work — which could in principle evolve even post-freeze. This phase
+consolidates the items Phase 4 explicitly deferred (controlled `return`/`break`, plus
+the `abort`/`exit` non-reconverging exit) and the loop / memory / opcode / I/O work the
+prior roadmap parked under "Beyond the freeze." Each increment carries its PRD at its
+start (Rule 16); the breakdown below fixes scope and sequence only.
 
 **Why manual inversion (now Phase 8) lands *after* this phase.** `emit_inverse`
 (`EmitInverse.cpp`) is a **closed per-call adjoint dispatch table with a loud-decline
@@ -806,10 +811,18 @@ inversion → feature.
   opcode):
   - **Q+Q data-position compare** (`q1 < q2` *as data*): the `_qq` templates already
     exist; thread the Phase-4 control-path `HandleWidth` side-table (captured by SSA
-    identity **before** rotation lowering RAUWs operands to `i32` handles) into the
-    data-path `rewriteCompare`. Highest value, lowest risk, **no new ABI**. Hazard: a
-    stale/wrong-operand width → wrong `_<W>_qq` symbol (verify-clean); mirror the
-    proven control-path discipline exactly.
+    identity at `RotationLowering.cpp:164`, **before** rotation lowering RAUWs operands
+    to `i32` handles) into the data-path `rewriteCompare` (today the width is handed only
+    to the control path, so the data path's Q+Q branch loud-declines rather than guess
+    `i32` — `CompareLowering.cpp`). **Scope detail (don't miss it):** `HandleWidth` is
+    populated for *theta* handles only, so a **derived** operand (`q1+q2 < q3`, whose
+    operand is an arith/cast-template result) has **no entry** — `ArithLowering` /
+    `CastLowering` must also record their output width into `HandleWidth` when they mint
+    a handle (each knows it from its own result type; pure bookkeeping, still no ABI).
+    The compare's `i1` result is why this side-table is needed at all (unlike arith,
+    which recovers its width from its own result type). Highest value, lowest risk,
+    **no new ABI**. Hazard: a stale/wrong-operand width → wrong `_<W>_qq` symbol
+    (verify-clean); mirror the proven control-path discipline exactly.
   - **`freeze`** on a tainted value: basis-level identity (taint passthrough),
     **decline-fixture-first** (Rule 12); must **not** become a path to launder an
     escaped value back into the taint domain.
@@ -822,6 +835,23 @@ inversion → feature.
     on `i24` vs `i32`) — the lowering must mask the high bits — **and** it widens the
     **frozen** template surface, so it must land before the Phase-11 freeze, never
     after.
+  - **Curated reversible `llvm.*` idiom intrinsics** (finding 2026-06-19, evidence-
+    backed; see `bd memories llvm-idiom-intrinsics-reversible`). `clang -O1`
+    **synthesizes** `@llvm.*` intrinsic calls for ordinary integer C idioms, and a
+    tainted one currently hits `declineTaintEscapes` `kMsgUnknownCallee` (the
+    `TaintPropagation.cpp` comment already cites the `llvm.smin` case) — yet they are
+    **pure total functions, hence reversibilizable**, not decline-forever.
+    **Confirmed at `-O1`** (re-derivable from `a<b?a:b` / `abs()` / `__builtin_*`):
+    `@llvm.smin`/`smax`/`umin`, `@llvm.abs`, `@llvm.ctpop`, `@llvm.ctlz`/`cttz`,
+    `@llvm.bswap`, `@llvm.uadd.sat`. Two classes — **bijections** (`bswap`,
+    `bitreverse`, `fshl`/`fshr` rotate) lower in-place, 7.1-cheap; **non-injective but
+    pure** (`smin`/`smax`/`umin`/`umax`, `abs`, `ctpop`, `ctlz`/`cttz`, `*.sat`,
+    `*.with.overflow`) reuse **exactly** the compare/`_unc` Bennett recompute-from-
+    live-sources model Phase 5 already ships. A **curated reversible-intrinsic YAML
+    table** (sibling of `tools/opcode_table.yaml`); it **adds frozen template symbols**,
+    so — like the wide-int widths — it must land **pre-freeze**. (fp transcendentals
+    `@llvm.sqrt`/`sin`/… are SEPARATE = Phase-6 Path-1 curated libm substitution, not
+    this; `*.with.overflow` additionally drags in `extractvalue` aggregate routing.)
 
 - **7.2 — Controlled function-`return`** (reconverging early-exit). Lift the permanent
   reject for a tainted-condition `if` whose one arm exits early via `return`, **for
@@ -838,6 +868,19 @@ inversion → feature.
   **FreePoint's whole-function `ret`-as-Escaped** assumption vs. multiple parked exit
   registers. Ships with a dedicated decline diagnostic + fixture replacing today's
   generic "control flow under quantum control" catch-all.
+  - **Non-reconverging exit — `abort`/`exit`/noreturn sinks** (owner discussion
+    2026-06-19; `bd memories abort-exit-park-cascade`) join this same **park
+    cascade** as its *no-value-select* member. `-O1` shape is a tainted-condition `br`
+    into an arm of `tail call void @abort()` + `unreachable` (no merge `phi` → never
+    reconverges). Mechanism: mint the abort flag, `cqrt_cswap` the live registers into a
+    graveyard under it (pre-abort state **preserved + inspectable**), let downstream run
+    **uncontrolled**, record the flag → **truncate the output tape** (7.6) at the abort
+    point at inspection. The crucial asymmetry vs. controlled-`return`: abort
+    **terminates**, so there is **no coherent downstream** → the branch-correlated
+    tail-garbage (hazard (i)) is never observed and never dephases — **harmless**, and
+    cheaper than gating every downstream op (which is reserved for the *non-terminating*
+    conditional-output case, 7.6 Tier 0). Because abort never selects a value back, it
+    **sidesteps** hazards (ii)/(iii) that controlled-`return` must clear.
 
 - **7.3 — Bounded loops** (static-trip-count unroll). The pass unrolls a
   provably-bounded loop (Bennett's `max_loop_iterations` model; `-O1` does not reliably
@@ -858,15 +901,54 @@ inversion → feature.
   strategy (Bennett's reversible-memory family). New taint rules (memory ops currently
   hit `declineTaintEscapes`) **and new frozen runtime ABI** — this is the
   **freeze-gating** increment. The uncompute spine must **own** the write rails: a
-  freed entangled write rail is a hidden measurement (Rules 6/8). MUX-EXCH / QROM /
-  Feistel strategies and pointer aliasing stay deferred as post-freeze optimizations;
-  Shadow is the v1 strategy.
+  freed entangled write rail is a hidden measurement (Rules 6/8). **Shadow is the v1
+  strategy**; MUX-EXCH / QROM / Feistel and pointer aliasing stay deferred as post-freeze
+  optimizations. **The whole memory model is validated against the sibling `Bennett.jl`**
+  (advisor T. Osborne's classical→reversible compiler; `bd memories
+  pointer-boundary-linearity-bennett`), which lowers `alloca`/`load`/`store`/`gep` with
+  dynamic (quantum) indices via **five per-allocation strategies — Shadow, MUX-EXCH,
+  QROM, Feistel, Persistent-DS** — and so supplies CQ's **concrete post-7.5 roadmap**
+  (Shadow now; the rest as named post-freeze cost-tiers). The load-bearing precondition,
+  shared with Bennett, is that **every allocation has a known shape (width × count) at
+  compile time**: dynamic-index access into managed, known-shape memory is reversible
+  (Bennett-OK), but arbitrary aliasing / no-provenance pointers (`inttoptr`/`ptrtoint`),
+  heap escape, and runtime-unshaped containers stay rejected — **not as a CQ shortcut but
+  because reversibility ⟺ linearity ⟺ no-cloning** (triangulated: Bennett's pebble game,
+  the Axelsen–Glück linear reversible heap, and `Bennett.jl`'s own reject set all draw
+  this exact line). Reversible **linked lists / dynamic structures** are reachable, but
+  only as *managed, shaped, opt-in* structures (Bennett's Persistent-DS), never raw
+  pointers. CQ ingests **C** (which emits `inttoptr`/aliasing readily, unlike Bennett's
+  memory-safe Julia), so it trips the loud memory-reject far more often — make those
+  diagnostics **precise** (Bennett's "signpost naming the offending pattern" is the
+  model).
 
-**Done when:** programs using Q+Q data compares, wide integers, controlled
-early-`return`, bounded `for`/`while`, `break`, and tainted-index array access lower to
-the expected `cqrt_*` / `cq_template_*` sequences — `opt -verify` clean, golden e2e
-trace diffs clean — while every off-pattern shape (non-reconverging exit, unbounded
-loop, aliasing memory, unprovable trip count) declines loudly with a source-located
+- **7.6 — Reversible I/O (output tape)** (owner discussion 2026-06-19; `bd memories
+  reversible-output-tape-io`). Lower a tainted I/O sink — `printf`/`puts`/`putchar` —
+  **coherently, never by measurement**: replace each tainted `i32` scalar arg with an
+  XOR-copy (`cqrt_copy_<W>`) into a **fresh `|0⟩` output rail**, **one rail per emitted
+  value** (an append-only **tape**, never a single XOR-accumulator — that loses the
+  transcript). The format string + literal text stay **classical** (replayed at
+  inspection); **integer scalars only** (`%f`/`%s`/pointer args are OUT — fp-data is the
+  angle hazard). Output rails are **Escaped** — never uncomputed, never freed (the
+  Bennett output-tape = kept output qubits). The win: a `printf` no longer forces a
+  measurement **at** the print site; it is **deferred** to tape inspection, so `q` stays
+  coherent. Composes with control (`if(q) printf` = one **controlled** `cqrt_copy`,
+  Tier 0) and supplies the truncation hook 7.2's `abort`/`exit` reads. Fixed tape size
+  from the static site count (dynamic growth only for unbounded loops, post-freeze);
+  `-O1` evidence: `printf("%d", x)` → `@printf(ptr @.str, i32 %x)` — the tainted scalar
+  is a **positional** `i32` arg, so varargs is no obstacle (intercept by name+position,
+  **no clone**). **Likely no new ABI** (reuses `cqrt_alloc` + `cqrt_copy_<W>` + the
+  Escaped marker). This is the **coherent replacement for the permanently-rejected
+  `-fcq-measurement-bridge`** (owner: *never* — a transparent auto-measure silently
+  collapses the user's state, Rule 5).
+
+**Done when:** programs using Q+Q data compares, wide integers, the `llvm.*` idiom
+intrinsics, controlled early-`return`, `abort`/`exit`, bounded `for`/`while`, `break`,
+tainted `printf`/`puts`/`putchar` output, and tainted-index array access lower to the
+expected `cqrt_*` / `cq_template_*` sequences — `opt -verify` clean, golden e2e trace
+diffs clean — while every off-pattern shape (a **value-carrying** non-reconverging exit,
+unbounded loop, aliasing / no-provenance pointers, runtime-unshaped memory, unprovable
+trip count, fp/string/pointer I/O args) declines loudly with a source-located
 diagnostic; each core-lowering increment is cleared by independent adversarial Rule-13
 review (a green suite alone does not clear it).
 
@@ -920,8 +1002,9 @@ so its inversion composes with the region's reverse-play.
 **Goal.** Lock the runtime ABI (declarations + trace-only bodies) for
 the full 38-opcode × applicable widths × `{HH, HL, inv}` cross-product,
 plus the swap-route control primitives, **the Phase-7.1 wide-integer widths
-(`__int128` / `_BitInt` / `_Float16`), and the Phase-7.5 QRAM Shadow memory
-templates** (the two new frozen ABI families). Bodies remain stubs through the
+(`__int128` / `_BitInt` / `_Float16`) + curated `llvm.*` idiom-intrinsic table, and
+the Phase-7.5 QRAM Shadow memory templates** (the three new frozen ABI families; the
+Phase-7.6 I/O output tape reuses `cqrt_copy_<W>`, adding none). Bodies remain stubs through the
 Phase 11 freeze; only the declared symbol set + the trace format need to
 be stable.
 
@@ -980,10 +1063,12 @@ any post-freeze backend-implementation work.
     (libm); clone-on-taint path (user-defined); recursive
     specialization; rejection diagnostics.
   - Expressiveness completion (Phase 7): Q+C compares incl. Q+Q data
-    position, wide integers (`__int128`/`_BitInt`); controlled
-    early-`return` + `break`; bounded `for`/`while`; tainted-index QRAM
-    `load`/`store`; the matching off-pattern decline fixtures
-    (non-reconverging exit, unbounded loop, aliasing memory).
+    position, wide integers (`__int128`/`_BitInt`), `llvm.*` idiom
+    intrinsics (min/max/abs/popcount/bswap/…); controlled early-`return`,
+    `abort`/`exit`, `break`; bounded `for`/`while`; tainted `printf`/`puts`
+    output tape; tainted-index QRAM `load`/`store`; the matching off-pattern
+    decline fixtures (value-carrying non-reconverging exit, unbounded loop,
+    aliasing / no-provenance pointers, fp/string I/O args).
   - Manual inversion (Phase 8) inside and outside tainted-branch
     shadows.
 - Diagnostic fixtures: each rejection-set entry from
@@ -1009,9 +1094,10 @@ for Phase 11.
 before any post-freeze work (real gate-sequence template bodies,
 simulator runtime, unbounded quantum-while semantics, dynamic circuits).
 Now deferred behind the Phase-7 expressiveness work; the freeze is gated
-specifically on the QRAM Shadow memory ABI (Phase 7.5) and the
-wide-integer width decision (Phase 7.1) — the only two pre-freeze items
-that add new frozen symbols.
+specifically on the QRAM Shadow memory ABI (Phase 7.5), the wide-integer width
+decision (Phase 7.1), and the curated `llvm.*` idiom-intrinsic table (Phase 7.1) —
+the only pre-freeze items that add new frozen symbols (the 7.2/7.4/7.6 control + I/O
+work reuses existing `cqrt_*` / `cq_template_*`).
 
 **Deliverables.**
 - **CQ.h freeze.** Semver pinned; future additions versioned per the
@@ -1023,7 +1109,8 @@ that add new frozen symbols.
   runtime symbols (allocators + measure + `cqrt_free` + the Phase-4
   routing/copy primitives `cqrt_cswap`/`cqrt_copy_<W>` + the Phase-7.5
   QRAM memory symbols) + the autogenerated template surface (incl. the
-  Phase-7.1 wide-integer widths) are the v1.0 backend ABI.
+  Phase-7.1 wide-integer widths + curated `llvm.*` idiom-intrinsic table) are
+  the v1.0 backend ABI.
 - **Diagnostic-fidelity audit.** Which `-O1` passes the `!dbg` metadata
   survives; baseline acceptable for the diagnostic story established in
   Phases 5–8.
@@ -1080,9 +1167,16 @@ post-Phase-11 roadmap revision.
 - **Memory model beyond Shadow.** The **Shadow** strategy for
   `load`/`store`/`getelementptr` over a tainted index moved **into Phase 7.5**
   (the v1 QRAM strategy). What remains post-freeze is the **alternative
-  strategies** (MUX-EXCH / QROM / Feistel selection, cost-modelled per access)
-  and **pointer aliasing** for quantum data — optimizations over the frozen
-  Shadow ABI, not a precondition for it.
+  strategies** the sibling `Bennett.jl` already ships — **MUX-EXCH** (small dynamic
+  arrays), **QROM** (const tables), **Feistel** (bijective key-hash), and
+  **Persistent-DS** (runtime-unbounded but known-shape mutable memory; the path to
+  reversible **linked lists / dynamic structures**) — cost-modelled per access, as
+  optimizations over the frozen Shadow ABI. Two things are **not** deferrals but
+  permanent rejections: memory whose **shape is unknown at compile time**
+  (runtime-sized / `Dict`-like) and **arbitrary aliasing / no-provenance pointers**
+  (`inttoptr`/`ptrtoint`, heap escape) stay rejected **forever** — reversibility ⟺
+  linearity ⟺ no-cloning, the exact line `Bennett.jl` draws (`bd memories
+  pointer-boundary-linearity-bennett`).
 
 ---
 
@@ -1102,12 +1196,15 @@ post-Phase-11 roadmap revision.
   benefits from having Phases 3–5 done so it can reuse their lowering
   pipeline inside cloned bodies.
 - Phase 7 (pre-freeze expressiveness completion) is the live workstream
-  after Phase 6. Internal order: **7.1 opcodes** (independent,
-  parallelizable, lowest risk) → **7.2 controlled-return** (proves the
-  exit-cascade + uncompute coupling on a backedge-free substrate) →
-  **7.3 bounded loops** (forces the Phase-5 uncompute extension) →
-  **7.4 break** (needs 7.2 + 7.3) → **7.5 QRAM Shadow** (heaviest; new ABI;
-  gates the freeze). 7.1 can run in parallel with the rest.
+  after Phase 6. Internal order: **7.1 opcodes + `llvm.*` intrinsics**
+  (independent, parallelizable, lowest risk) → **7.6 I/O output tape**
+  (independent, low-risk; supplies the abort tape-truncation hook) →
+  **7.2 controlled-return + `abort`/`exit`** (proves the exit-cascade +
+  uncompute coupling on a backedge-free substrate; the `abort` half reads
+  7.6's tape) → **7.3 bounded loops** (forces the Phase-5 uncompute
+  extension) → **7.4 break** (needs 7.2 + 7.3) → **7.5 QRAM Shadow**
+  (heaviest; new ABI; gates the freeze). 7.1 and 7.6 can run in parallel
+  with the rest.
 - Phase 8 (manual inversion) is small and lands **after** Phase 7 so it
   composes over the full invertible surface in one pass; it depends on
   Phase 5's `emit_inverse` plus the per-construct adjoint rules Phase 7
