@@ -69,6 +69,19 @@ class GenTemplatesTest(unittest.TestCase):
                                         cls.h_text, re.MULTILINE))
         cls.c_defs = sorted(re.findall(r"^(?:int32_t|void) (cq_template_\w+)\([^)]*\)\s*\{",
                                        cls.c_text, re.MULTILINE))
+        # Phase 7.1 Increment E: the curated reversible-intrinsic SIBLING surface
+        # (cq_intrinsic_templates.{h,c}), a SEPARATE artifact with its own SHA
+        # banner. The opcode-table count above is untouched.
+        itable_path = REPO / "tools" / "intrinsic_table.yaml"
+        cls.itable_bytes = itable_path.read_bytes()
+        cls.itable = yaml.safe_load(cls.itable_bytes)
+        cls.itable_sha = hashlib.sha256(cls.itable_bytes).hexdigest()
+        cls.ih_text = (cls.out / "cq_intrinsic_templates.h").read_text()
+        cls.ic_text = (cls.out / "cq_intrinsic_templates.c").read_text()
+        cls.ih_decls = sorted(re.findall(r"^(?:int32_t|void) (cq_template_\w+)\(",
+                                         cls.ih_text, re.MULTILINE))
+        cls.ic_defs = sorted(re.findall(r"^(?:int32_t|void) (cq_template_\w+)\([^)]*\)\s*\{",
+                                        cls.ic_text, re.MULTILINE))
 
     @classmethod
     def tearDownClass(cls):
@@ -179,6 +192,26 @@ class GenTemplatesTest(unittest.TestCase):
 
     def test_decl_def_pairing(self):
         self.assertEqual(self.h_decls, self.c_defs)
+
+    def test_intrinsic_sibling_count_is_221(self):
+        # Phase 7.1 Increment E (FROZEN). Curated reversible llvm.* idioms in the
+        # SEPARATE sibling artifact; the 1732 opcode-table count is untouched.
+        # Derived from the table: Sum over rows of widths x variants. 221 =
+        # Class-1 45 (bswap 9 + bitreverse 12 + fshl 12 + fshr 12) + Class-2
+        # unary 32 (ctpop/ctlz/cttz/abs x 4w x 2v) + min/max 64 (4 ops x 4w x 4v)
+        # + add.sat 32 (2 ops x 4w x 4v) + sub.sat 48 (2 ops x 4w x 6v).
+        expected = sum(len(o["widths"]) * len(o["variants"])
+                       for o in self.itable["intrinsics"])
+        self.assertEqual(expected, 221)
+        self.assertEqual(len(self.ih_decls), 221)
+
+    def test_intrinsic_decl_def_pairing(self):
+        self.assertEqual(self.ih_decls, self.ic_defs)
+
+    def test_intrinsic_sibling_sha_banner(self):
+        # The sibling files carry the INTRINSIC table's SHA (not the opcode SHA).
+        self.assertIn(self.itable_sha, self.ih_text)
+        self.assertIn(self.itable_sha, self.ic_text)
 
     def test_yaml_sha_banner_in_all_files(self):
         for rel in ("cq_templates.h", "cq_templates.c"):

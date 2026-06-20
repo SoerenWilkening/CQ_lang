@@ -1,0 +1,13 @@
+cqrt_alloc_i32(252645135) -> h0
+cqrt_ry_i32(h0, 0.250000)
+cq_template_ctpop_i32(h0) -> h1
+cqrt_measure_i32(h1) -> 0
+cqrt_alloc_i32(252645135) -> h2
+cqrt_ry_i32(h2, 0.100000)
+cq_template_ctpop_i32(h2) -> h3
+cqrt_rz_i32(h3, 0.300000)
+cqrt_rz_i32(h3, -0.300000)
+cq_template_ctpop_i32_unc(h3, h2)
+cqrt_free(h3)
+cqrt_ry_i32(h2, -0.100000)
+cqrt_free(h2)

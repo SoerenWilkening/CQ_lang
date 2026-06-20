@@ -320,6 +320,28 @@ add_test(NAME e2e-slice-f16
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_f16.expected.log")
 
+# Phase 7.1 Increment E (FROZEN ABI): curated reversible llvm.* idiom intrinsics.
+# The only layer that LINKS, so the only proof the SIBLING symbols
+# (cq_template_<op>_<W> + their `_unc`/`_inv` twins in cq_intrinsic_templates,
+# in libcq_templates.a) resolve and signature-match. bswap = Class-1 involution;
+# ctpop = Class-2 non-injective whose golden proves the R-E source stays live
+# through its own `_unc` (recompute-from-live-source).
+add_test(NAME e2e-slice-intrinsic-bswap
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_bswap.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_bswap.expected.log")
+
+add_test(NAME e2e-slice-intrinsic-ctpop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_ctpop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_ctpop.expected.log")
+
 # Phase 6 (DD-6 §7.1, test_C_libtooling-mvna.3): the ZERO-LIB smoke for the new
 # multi-file harness. Drives the EXISTING single-TU theta->add->measure slice
 # through run_slice_multi.sh with EMPTY LIBSRCS (the "" 7th positional), so the

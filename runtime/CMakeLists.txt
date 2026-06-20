@@ -14,6 +14,7 @@ target_include_directories(cq_runtime PUBLIC
 
 add_library(cq_templates STATIC
     cq_templates.c
+    cq_intrinsic_templates.c   # Phase 7.1 Increment E — curated reversible llvm.* idioms
 )
 
 target_include_directories(cq_templates PUBLIC

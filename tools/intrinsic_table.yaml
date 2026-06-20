@@ -1,0 +1,96 @@
+# tools/intrinsic_table.yaml — curated reversible llvm.* idiom intrinsics
+# (Phase 7.1 Increment E). SIBLING of opcode_table.yaml; the 1732 opcode-table
+# symbol count is UNTOUCHED. Drives the same generator
+# (tools/gen_templates.py::enumerate_intrinsics) into a SEPARATE artifact:
+#   - runtime/cq_intrinsic_templates.h   (extern "C" declarations)
+#   - runtime/cq_intrinsic_templates.c   (printf-trace stubs)
+# with its OWN yaml-sha256 banner, compiled into the SAME libcq_templates.a.
+#
+# Every emitted symbol is `cq_template_<op>_<W>[...]` (the SAME prefix as the
+# opcode templates) so the whole-DAG uncompute spine recognizes them by prefix
+# with ZERO new code: DagTraversal::isTemplateProducer / isDataProducer (producer
+# recovery), EmitInverse's `_unc` branch (whole-DAG reversal), the Uncomputation
+# invertibility pre-scan, and the WidthDispatch Shape::{Unary,QQ,HL,LH} callees.
+# Each intrinsic is lowered as an ADDITIVE PRODUCER (fresh out rail, sources kept
+# live) so the generic `_unc(out, srcs…)` zeros the out rail by recomputing
+# f(sources) — never recovering the input (R-E source-liveness, Rule 8).
+#
+# ----------------------------------------------------------------------------
+# CURATION GUARD (Prime Directive): a row enters ONLY with a written analytic
+# adjoint proof. See docs/prd/phase-07-expressiveness/INTRINSIC_TABLE_CLEARANCE.md.
+#   class 1 — bijection: fwd + inv + unc.
+#       self_inverse  — involution, f⁻¹ = f (bswap, bitreverse). `_inv` re-applies.
+#       rotate_back   — fshl/fshr rotation (arg0==arg1, constant amount n):
+#                       (fshl by n)⁻¹ = rotate by (W−n). `_inv` rotates back.
+#   class 2 — non-injective but pure total: fwd + unc only (NO inv — not
+#       invertible). Reversibilizable PRECISELY because `_unc` recomputes
+#       f(sources) from the still-LIVE source operands and XORs the out rail to
+#       |0⟩ — it never recovers the input. The fence is SOURCE-LIVENESS.
+#
+# SHAPES (reuse VARIANT_INFO + abi_codegen a1/ua1/qq/hl/lh/uqq/uhl/ulh; NO
+# abi_codegen edit). `arity`:
+#   unary   — one data handle: shape a1 (fwd/inv) / ua1 (unc). Width from the
+#             intrinsic RESULT type (a real iN). For abs/ctlz/cttz the trailing
+#             i1 immarg flag (poison-on-INT_MIN / zero-is-undef) is a CONSTANT
+#             dropped at lowering — the lowered op is the TOTAL reversible
+#             function; both fwd and `_unc` use the same total f, so the rail
+#             zeroes correctly (poison-on-edge-input is a valid refinement of the
+#             source UB). bswap requires a 16-bit-multiple width (no bswap.i8).
+#   binary  — two operands: QQ/HL/LH exactly like add/mul. Commutative ops carry
+#             qq+hl only; non-commutative add the lh shape.
+#   rotate  — fshl/fshr: a single data handle + a constant rotation amount n,
+#             lowered as the _hl shape (handle, iN n). A dynamic (tainted) n or
+#             arg0!=arg1 is NOT this idiom and declines.
+#
+# ----------------------------------------------------------------------------
+# EXCLUDED (still decline loudly): *.with.overflow ({iN,i1} aggregate — needs
+# extractvalue), fp transcendentals (Phase-6 Path-1 libm), the general (x!=y)
+# funnel shift. Curation is by EXACT Intrinsic::ID — NEVER by name prefix.
+# ============================================================================
+
+version: "1"
+phase: "phase7.1-E"
+
+# Widths reference (subset of opcode_table widths; intrinsics use INT only).
+widths:
+  i1:  { bits: 1,  c_type: "bool",    domain: "int" }
+  i8:  { bits: 8,  c_type: "int8_t",  domain: "int" }
+  i16: { bits: 16, c_type: "int16_t", domain: "int" }
+  i32: { bits: 32, c_type: "int32_t", domain: "int" }
+  i64: { bits: 64, c_type: "int64_t", domain: "int" }
+
+# Curated intrinsics. `op` is the symbol stem; `llvm_id` documents the
+# Intrinsic:: name the TaintPropagation accept-list keys on (exact ID, never
+# prefix). `commutative` (binary only) selects the qq+hl vs qq+hl+lh grid.
+intrinsics:
+  # ---- Class 1: bijections (fwd / inv / unc) -------------------------------
+  # bswap — byte reversal, an INVOLUTION (bswap(bswap(x))==x). 16-bit-multiple
+  # widths only (llvm.bswap rejects i8). Adjoint: self-inverse.
+  - { op: bswap, llvm_id: bswap, class: 1, reversibility: self_inverse, arity: unary, widths: [i16,i32,i64], variants: [fwd, inv, unc] }
+  # bitreverse — bit reversal, an INVOLUTION (bitreverse(bitreverse(x))==x); any
+  # width. Adjoint: self-inverse.
+  - { op: bitreverse, llvm_id: bitreverse, class: 1, reversibility: self_inverse, arity: unary, widths: [i8,i16,i32,i64], variants: [fwd, inv, unc] }
+  # fshl/fshr — funnel shift in the ROTATION case (arg0==arg1, constant amount).
+  # A bijection; adjoint rotates back ((fshl by n)⁻¹ = fshr by n = fshl by W−n).
+  - { op: fshl, llvm_id: fshl, class: 1, reversibility: rotate_back, arity: rotate, widths: [i8,i16,i32,i64], variants: [fwd_hl, inv_hl, unc_hl] }
+  - { op: fshr, llvm_id: fshr, class: 1, reversibility: rotate_back, arity: rotate, widths: [i8,i16,i32,i64], variants: [fwd_hl, inv_hl, unc_hl] }
+
+  # ---- Class 2: non-injective but pure total (fwd / unc only) --------------
+  # popcount / count-leading-zeros / count-trailing-zeros / absolute value —
+  # unary, non-injective. Reversible via recompute-from-live-source `_unc`.
+  - { op: ctpop, llvm_id: ctpop, class: 2, reversibility: pure_noninjective, arity: unary, widths: [i8,i16,i32,i64], variants: [fwd, unc] }
+  - { op: ctlz,  llvm_id: ctlz,  class: 2, reversibility: pure_noninjective, arity: unary, widths: [i8,i16,i32,i64], variants: [fwd, unc] }
+  - { op: cttz,  llvm_id: cttz,  class: 2, reversibility: pure_noninjective, arity: unary, widths: [i8,i16,i32,i64], variants: [fwd, unc] }
+  - { op: abs,   llvm_id: abs,   class: 2, reversibility: pure_noninjective, arity: unary, widths: [i8,i16,i32,i64], variants: [fwd, unc] }
+  # min/max — binary, COMMUTATIVE, non-injective. Reversible via recompute `_unc`.
+  - { op: smin, llvm_id: smin, class: 2, reversibility: pure_noninjective, arity: binary, commutative: true,  widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, unc_qq, unc_hl] }
+  - { op: smax, llvm_id: smax, class: 2, reversibility: pure_noninjective, arity: binary, commutative: true,  widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, unc_qq, unc_hl] }
+  - { op: umin, llvm_id: umin, class: 2, reversibility: pure_noninjective, arity: binary, commutative: true,  widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, unc_qq, unc_hl] }
+  - { op: umax, llvm_id: umax, class: 2, reversibility: pure_noninjective, arity: binary, commutative: true,  widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, unc_qq, unc_hl] }
+  # saturating add/sub — binary, non-injective. add.sat COMMUTATIVE; sub.sat NOT
+  # (a-b != b-a) so it adds the lh shape.
+  - { op: uadd_sat, llvm_id: uadd_sat, class: 2, reversibility: pure_noninjective, arity: binary, commutative: true,  widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, unc_qq, unc_hl] }
+  - { op: sadd_sat, llvm_id: sadd_sat, class: 2, reversibility: pure_noninjective, arity: binary, commutative: true,  widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, unc_qq, unc_hl] }
+  - { op: usub_sat, llvm_id: usub_sat, class: 2, reversibility: pure_noninjective, arity: binary, commutative: false, widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, fwd_lh, unc_qq, unc_hl, unc_lh] }
+  - { op: ssub_sat, llvm_id: ssub_sat, class: 2, reversibility: pure_noninjective, arity: binary, commutative: false, widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, fwd_lh, unc_qq, unc_hl, unc_lh] }
+# -- End of intrinsic table ----------------------------------------------------

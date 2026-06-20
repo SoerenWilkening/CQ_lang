@@ -32,6 +32,7 @@
 #include "ArithLowering.h"
 #include "CastLowering.h"
 #include "CompareLowering.h"
+#include "IntrinsicLowering.h"
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -76,6 +77,17 @@ bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
     return true;
   if (auto *Cmp = dyn_cast<CmpInst>(&I))
     return isDataPositionCompare(Cmp);
+  // Phase 7.1 Increment E: a curated reversible intrinsic is a tainted pure
+  // producer lowered in Phase 2, so it is subject to the SAME stale-record
+  // precondition as add/mul/cast — its handle operand must not predate a
+  // non-diagonal wire gate (a chained `theta` re-rotating the same wire), or
+  // the template reads the post-Ry basis while the SSA operand denotes the
+  // pre-Ry record (the verify-clean stale-record miscompile). Without this the
+  // intrinsic would bypass declineStaleRecordOps where the add-shaped program
+  // declines. checkStaleOp walks each tainted operand's wire; the constant i1
+  // flag / rotation amount are untainted and skipped.
+  if (auto *CI = dyn_cast<CallInst>(&I))
+    return isCuratedReversibleIntrinsic(CI);
   return false;
 }
 
@@ -248,6 +260,15 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
             FromW = R;
           CastW[Cast] = {FromW, abiWidthFromType(Cast->getDestTy())};
           Work.push_back(&I);
+        } else if (auto *CI = dyn_cast<CallInst>(&I);
+                   CI && isCuratedReversibleIntrinsic(CI)) {
+          // Phase 7.1 Increment E: a curated reversible llvm.* idiom intrinsic
+          // (recognized by exact Intrinsic::ID + table width + rotation-form
+          // guard). Lowered by IntrinsicLowering to a cq_template_<op>_<W>
+          // additive producer in Phase 2. A NON-curated tainted call already
+          // declined loudly at declineTaintEscapes (kMsgUnknownCallee), so it is
+          // not in the taint set's lowerable shapes here.
+          Work.push_back(&I);
         }
       }
     }
@@ -271,6 +292,11 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
       Rewritten = rewriteCompare(Cmp, wd, taint);
     } else if (auto *Cast = dyn_cast<CastInst>(I)) {
       Rewritten = rewriteCast(Cast, CastW[Cast], wd, taint);
+    } else if (auto *CI = dyn_cast<CallInst>(I);
+               CI && isCuratedReversibleIntrinsic(CI)) {
+      // Phase 7.1 Increment E: only curated intrinsics are enqueued as calls
+      // (the predicate is the SAME at enqueue and here — no drift).
+      Rewritten = rewriteIntrinsic(CI, wd, taint);
     }
     if (Rewritten)
       ToErase.push_back(I);

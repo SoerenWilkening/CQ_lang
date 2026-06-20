@@ -8,6 +8,7 @@
 
 #include "TaintPropagation.h"
 
+#include "IntrinsicLowering.h"
 #include "SpecializePlan.h"
 #include "Specialization.h"
 #include "WidthDispatch.h"
@@ -514,12 +515,25 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           if (auto *CI = dyn_cast<CallInst>(CB)) {
             if (shouldSpecialize(CI, plan6) || plan6.Diagnosed.count(CI))
               continue;
+            // 1d-Phase7.1-E. Curated reversible llvm.* idiom intrinsics
+            //     (bswap/bitreverse/fshl-fshr rotation/ctpop/ctlz/cttz/abs/
+            //     smin/smax/umin/umax/*.sat at a table width) are OWNED by
+            //     IntrinsicLowering (enqueued in OpcodeLowering, lowered to a
+            //     cq_template_<op>_<W> additive producer the whole-DAG uncompute
+            //     spine reverses). EXACT Intrinsic::ID membership — NEVER a
+            //     `starts_with("llvm.")` accept (the cq_theta_evil hazard) — and
+            //     fshl/fshr require the rotation form (arg0==arg1, constant
+            //     amount). A non-curated id, an unsupported width, or the general
+            //     funnel shift fails the predicate and falls through to the loud
+            //     kMsgUnknownCallee decline below (`*.with.overflow`,
+            //     transcendentals, general funnel shift stay declined).
+            if (isCuratedReversibleIntrinsic(CI))
+              continue;
           }
-          // 1d. Everything else — opaque extern, an in-module body the
-          //     specializer declined, llvm.* intrinsic (e.g. the -O1
-          //     `llvm.smin` min/max idiom), or indirect (null callee) — is an
-          //     UNKNOWN callee: after RAUW it would read the i32 runtime handle
-          //     tag, verify-clean.
+          // 1e. Everything else — opaque extern, an in-module body the
+          //     specializer declined, a NON-curated llvm.* intrinsic, or
+          //     indirect (null callee) — is an UNKNOWN callee: after RAUW it
+          //     would read the i32 runtime handle tag, verify-clean.
           if (readsTaintedValue(I, taint))
             diagnoseEscape(&I, kMsgUnknownCallee);
           continue;

@@ -13,5 +13,6 @@
  */
 #include "cq_runtime.h"
 #include "cq_templates.h"
+#include "cq_intrinsic_templates.h"  /* Phase 7.1 Increment E sibling surface */
 
 int main(void) { return 0; }
