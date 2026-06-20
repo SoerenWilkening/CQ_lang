@@ -4,7 +4,16 @@
  * surface is 33 symbols (below); Phase 4 (PRD §2.8) adds the controlled
  * surface — cqrt_rz_<W>_controlled[_inv] (7 widths × 2) and
  * cqrt_x/h/cnot_controlled — each prepending one i32 control-flag
- * handle as argument 0 (PRD §1.2). The 33 base symbols:
+ * handle as argument 0 (PRD §1.2).
+ *
+ * Phase 7.1 Increment D (FROZEN) adds the half-precision fp width f16 to
+ * the rotation-lowering path — cqrt_alloc_f16 / cqrt_measure_f16 /
+ * cqrt_ry_f16 / cqrt_rz_f16 (+ the controlled-rz f16 twins for ABI
+ * symmetry) — but NO cqrt_copy_f16: like every fp width, an f16 merge phi
+ * under tainted control is an angle, never data (the f64 miscompile
+ * family), so copyFn null-guards on isIntegerTy (WidthDispatch.cpp). The
+ * sibling i128 int width is deferred (its C ABI shreds __int128 to
+ * {i64,i64}; tracked as a pre-freeze follow-up). The 33 base symbols:
  *   - 7 allocators (one per width): cqrt_alloc_i{1,8,16,32,64} +
  *     cqrt_alloc_f{32,64}. Each takes an initial classical value and
  *     returns a fresh monotonically-increasing handle.
@@ -81,6 +90,7 @@ int32_t cqrt_alloc_i32(int32_t value);   /* serves int / unsigned int */
 int32_t cqrt_alloc_i64(int64_t value);   /* serves (u)long / (u)long long on 64-bit targets */
 int32_t cqrt_alloc_f32(float   value);
 int32_t cqrt_alloc_f64(double  value);
+int32_t cqrt_alloc_f16(_Float16 value);  /* Phase 7.1 Increment D — half-precision */
 
 /* -----------------------------------------------------------------
  * Measurement — one per width. Takes a handle; returns a value of
@@ -94,6 +104,7 @@ int32_t cqrt_measure_i32(int32_t handle);
 int64_t cqrt_measure_i64(int32_t handle);
 float   cqrt_measure_f32(int32_t handle);
 double  cqrt_measure_f64(int32_t handle);
+_Float16 cqrt_measure_f16(int32_t handle);  /* Phase 7.1 Increment D */
 
 /* -----------------------------------------------------------------
  * Ry rotation — one per width. Takes a handle + double angle; void.
@@ -108,6 +119,7 @@ void cqrt_ry_i32(int32_t handle, double angle);
 void cqrt_ry_i64(int32_t handle, double angle);
 void cqrt_ry_f32(int32_t handle, double angle);
 void cqrt_ry_f64(int32_t handle, double angle);
+void cqrt_ry_f16(int32_t handle, double angle);  /* Phase 7.1 Increment D */
 
 /* -----------------------------------------------------------------
  * Rz rotation — one per width. Same shape as Ry; the lowered phi
@@ -121,6 +133,7 @@ void cqrt_rz_i32(int32_t handle, double angle);
 void cqrt_rz_i64(int32_t handle, double angle);
 void cqrt_rz_f32(int32_t handle, double angle);
 void cqrt_rz_f64(int32_t handle, double angle);
+void cqrt_rz_f16(int32_t handle, double angle);  /* Phase 7.1 Increment D */
 
 /* -----------------------------------------------------------------
  * Controlled Rz rotation (Phase 4, PRD §2.8) — the controlled form of
@@ -141,6 +154,7 @@ void cqrt_rz_i32_controlled(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_i64_controlled(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f32_controlled(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f64_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_f16_controlled(int32_t ctrl, int32_t handle, double angle);  /* Phase 7.1 Increment D */
 
 void cqrt_rz_i1_controlled_inv (int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_i8_controlled_inv (int32_t ctrl, int32_t handle, double angle);
@@ -149,6 +163,7 @@ void cqrt_rz_i32_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_i64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
+void cqrt_rz_f16_controlled_inv(int32_t ctrl, int32_t handle, double angle);  /* Phase 7.1 Increment D */
 
 /* -----------------------------------------------------------------
  * Controlled Ry inverse (npu.6) — the controlled inverse of the

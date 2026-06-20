@@ -154,5 +154,20 @@ int main(void) {
     cqrt_copy_i32_controlled(h_c, h_a, h_b);
     cqrt_copy_i64_controlled(h_c, h_i64, h_i64_b);
 
+    /* --- Phase 7.1 Increment D smoke: half-precision (f16). f16 rides the
+     * fp rotation-lowering path — alloc / measure / ry / rz + the fadd Q+Q
+     * and Q+C templates — but has NO cqrt_copy_f16 (an f16 merge phi under
+     * tainted control is an angle, never data; the fp-angle fence). Appended
+     * at the end so every existing handle ID (h0..h32) is unchanged; the
+     * monotonic counter resumes at h33. 1.5 and 0.5 are exactly representable
+     * in f16, so the (double)-promoted %f prints byte-stable. */
+    int32_t h_f16   = cqrt_alloc_f16((_Float16)1.5);   /* h33 */
+    (void) cqrt_measure_f16(h_f16);
+    int32_t h_f16_b = cqrt_alloc_f16((_Float16)0.5);   /* h34 */
+    (void) cq_template_fadd_f16(h_f16, h_f16_b);        /* h35 */
+    (void) cq_template_fadd_f16_hl(h_f16, (_Float16)1.5); /* h36 */
+    cqrt_ry_f16(h_f16, 0.785398);
+    cqrt_rz_f16(h_f16, 0.785398);
+
     return 0;
 }

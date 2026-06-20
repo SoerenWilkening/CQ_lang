@@ -1,7 +1,7 @@
 # tools/opcode_table.yaml — opcode surface (single source of truth).
 #
 # Drives `tools/gen_templates.py` (+ tools/abi_codegen.py), which emits:
-#   - runtime/cq_templates.h           (1562 declarations)
+#   - runtime/cq_templates.h           (1732 declarations)
 #   - runtime/cq_templates.c           (printf-name stubs)
 #
 # Policy: backend stays stubbed (memory `feedback-no-backend-until-frontend-done`).
@@ -18,7 +18,7 @@
 #   binary_opcodes   : list    — every binary data opcode (18).
 #   unary_opcodes    : list    — every unary data opcode (1: fneg).
 #   compare_opcodes  : list    — comparator opcodes (2: icmp, fcmp).
-#   cast_opcodes     : list    — width / domain casts (9 kinds, 68 pairs).
+#   cast_opcodes     : list    — width / domain casts (9 kinds, 90 pairs).
 #
 # Required keys per `binary_opcodes` entry:
 #   opcode, family, widths, llvm_inst, c_operators, variants
@@ -58,18 +58,23 @@
 # (`5<x` ⇒ `x>5`, CompareLowering.cpp / TemplateName.cpp), so compares have NO
 # `_lh` on ANY axis, exactly like the commutative binary ops (add/mul/and/or/xor).
 #
-# Acceptance count check (total == 1562):
-#   binary_opcodes  == 18 (7 int_arith + 6 int_bitwise + 5 fp_arith). The
-#                          controlled axis mirrors fwd/inv across qq/hl/lh
-#                          (392 -> 784 symbols); the uncompute axis adds one
-#                          void `_unc` per forward shape (+196 -> 980).
-#   unary_opcodes   == 1  (fneg; fwd/inv/unc -> 6)
-#   compare_opcodes == 2  (icmp x 10 preds x 5 widths; fcmp x 6 preds x 2 widths;
+# Acceptance count check (total == 1732). Phase 7.1 Increment D added the f16
+# (IEEE half) fp width to every fp row + the f16 cast pairs (+170 vs the 1562
+# baseline); the sibling i128 int width is DEFERRED (its C ABI shreds __int128
+# to {i64,i64}; tracked as a pre-freeze follow-up), so the INT rows keep 5
+# widths {i1,i8,i16,i32,i64} and the fp rows now carry 3 {f16,f32,f64}:
+#   binary_opcodes  == 18 (7 int_arith + 6 int_bitwise + 5 fp_arith). int rows
+#                          5 widths, fp rows 3 widths (f16 added). controlled axis
+#                          mirrors fwd/inv across qq/hl/lh; uncompute axis adds one
+#                          void `_unc` per forward shape -> 1045 (was 980, +65 fp).
+#   unary_opcodes   == 1  (fneg; 3 fp widths; fwd/inv/unc -> 9)
+#   compare_opcodes == 2  (icmp x 10 preds x 5 widths; fcmp x 6 preds x 3 widths;
 #                          NO controlled axis; uncompute axis (WI-0) adds unc_qq +
 #                          unc_hl only — no _lh, compares canonicalize lhs-literals
-#                          by predicate flip — so 6 variants total -> 372)
+#                          by predicate flip — so 6 variants total -> 408)
 #   cast_opcodes    == 9  (sext, zext, trunc, fpext, fptrunc, sitofp, uitofp,
-#                          fptosi, fptoui; 68 cross-pairs; fwd/inv/unc -> 204)
+#                          fptosi, fptoui; 90 cross-pairs (68 + 22 f16);
+#                          fwd/inv/unc -> 270)
 # ============================================================================
 
 version: "1"
@@ -77,13 +82,15 @@ phase: "phase3"
 
 # -- Widths --------------------------------------------------------------------
 # Symbolic names map to ABI metadata. Runtime ABI is signedness-agnostic
-# (PRD §"Width unification"). 7 widths total.
+# (PRD §"Width unification"). 8 widths total (Phase 7.1 Increment D added f16;
+# the sibling i128 is deferred — its C ABI shreds __int128 to {i64,i64}).
 widths:
   i1:  { bits: 1,  c_type: "bool",    domain: "int" }
   i8:  { bits: 8,  c_type: "int8_t",  domain: "int" }
   i16: { bits: 16, c_type: "int16_t", domain: "int" }
   i32: { bits: 32, c_type: "int32_t", domain: "int" }
   i64: { bits: 64, c_type: "int64_t", domain: "int" }
+  f16: { bits: 16, c_type: "_Float16", domain: "fp" }
   f32: { bits: 32, c_type: "float",   domain: "fp"  }
   f64: { bits: 64, c_type: "double",  domain: "fp"  }
 
@@ -122,17 +129,17 @@ binary_opcodes:
   - { opcode: lshr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::LShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
   - { opcode: ashr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::AShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
   # Floating-point arithmetic (5; fneg is unary)
-  - { opcode: fadd, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FAdd", c_operators: ["+","+="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
-  - { opcode: fsub, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FSub", c_operators: ["-","-="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
-  - { opcode: fmul, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FMul", c_operators: ["*","*="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
-  - { opcode: fdiv, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FDiv", c_operators: ["/","/="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
-  - { opcode: frem, family: fp_arith,    widths: [f32,f64], llvm_inst: "llvm::Instruction::FRem", c_operators: ["%","%="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: fadd, family: fp_arith,    widths: [f16,f32,f64], llvm_inst: "llvm::Instruction::FAdd", c_operators: ["+","+="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: fsub, family: fp_arith,    widths: [f16,f32,f64], llvm_inst: "llvm::Instruction::FSub", c_operators: ["-","-="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: fmul, family: fp_arith,    widths: [f16,f32,f64], llvm_inst: "llvm::Instruction::FMul", c_operators: ["*","*="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: fdiv, family: fp_arith,    widths: [f16,f32,f64], llvm_inst: "llvm::Instruction::FDiv", c_operators: ["/","/="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: frem, family: fp_arith,    widths: [f16,f32,f64], llvm_inst: "llvm::Instruction::FRem", c_operators: ["%","%="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
 
 # -- Unary opcodes (1: fneg) ---------------------------------------------------
 # PRD §"Floating-point arithmetic": "the only genuinely new unary opcode".
 # Int unary -/~/!/++/-- lower to existing binary opcodes (sub/xor/add).
 unary_opcodes:
-  - { opcode: fneg, family: fp_arith, widths: [f32,f64], llvm_inst: "llvm::Instruction::FNeg", c_operators: ["unary -"], variants: [fwd, inv, unc] }
+  - { opcode: fneg, family: fp_arith, widths: [f16,f32,f64], llvm_inst: "llvm::Instruction::FNeg", c_operators: ["unary -"], variants: [fwd, inv, unc] }
 
 # -- Compare opcodes (2 families: icmp, fcmp) ----------------------------------
 # Result is a flag handle (i32 ABI, logical-1-bit). PRD §"Comparison contract".
@@ -145,9 +152,9 @@ unary_opcodes:
 # binary ops.
 compare_opcodes:
   - { opcode: icmp, family: int_compare, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::ICmp", predicate_set: icmp, result_type: flag_handle, variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, unc_qq, unc_hl] }
-  - { opcode: fcmp, family: fp_compare,  widths: [f32,f64],           llvm_inst: "llvm::Instruction::FCmp", predicate_set: fcmp, result_type: flag_handle, variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, unc_qq, unc_hl] }
+  - { opcode: fcmp, family: fp_compare,  widths: [f16,f32,f64],       llvm_inst: "llvm::Instruction::FCmp", predicate_set: fcmp, result_type: flag_handle, variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, unc_qq, unc_hl] }
 
-# -- Cast opcodes (9 kinds, 68 cross-pairs) ------------------------------------
+# -- Cast opcodes (9 kinds, 90 cross-pairs) ------------------------------------
 # Casts are unary at the IR level — no Q+C variants. PRD §"Integer width
 # casts", §"Floating-point width casts", §"Cross-domain casts".
 # sitofp/fptosi exclude i1 (signed bool is meaningless; Clang uses
@@ -202,32 +209,42 @@ cast_opcodes:
       - { from: i64, to: i8  }
       - { from: i64, to: i16 }
       - { from: i64, to: i32 }
-  # FP width casts (2 kinds, 1 pair each)
+  # FP width casts (2 kinds, 3 pairs each: f16<->{f32,f64} + f32<->f64)
   - opcode: fpext
     kind: fp_width
     llvm_inst: "llvm::Instruction::FPExt"
     c_operators: ["(float widen)"]
     variants: [fwd, inv, unc]
-    pairs: [{ from: f32, to: f64 }]
+    pairs:
+      - { from: f16, to: f32 }
+      - { from: f16, to: f64 }
+      - { from: f32, to: f64 }
   - opcode: fptrunc
     kind: fp_width
     llvm_inst: "llvm::Instruction::FPTrunc"
     c_operators: ["(float narrow)"]
     variants: [fwd, inv, unc]
-    pairs: [{ from: f64, to: f32 }]
-  # Cross-domain casts (4 kinds, 8+10+8+10 = 36 pairs)
+    pairs:
+      - { from: f64, to: f32 }
+      - { from: f32, to: f16 }
+      - { from: f64, to: f16 }
+  # Cross-domain casts (4 kinds, 12+15+12+15 = 54 pairs; +18 touching f16)
   - opcode: sitofp
     kind: int_to_fp
     llvm_inst: "llvm::Instruction::SIToFP"
     c_operators: ["(signed-int -> float)"]
     variants: [fwd, inv, unc]
     pairs:
+      - { from: i8,  to: f16 }
       - { from: i8,  to: f32 }
       - { from: i8,  to: f64 }
+      - { from: i16, to: f16 }
       - { from: i16, to: f32 }
       - { from: i16, to: f64 }
+      - { from: i32, to: f16 }
       - { from: i32, to: f32 }
       - { from: i32, to: f64 }
+      - { from: i64, to: f16 }
       - { from: i64, to: f32 }
       - { from: i64, to: f64 }
   - opcode: uitofp
@@ -236,14 +253,19 @@ cast_opcodes:
     c_operators: ["(unsigned-int -> float)"]
     variants: [fwd, inv, unc]
     pairs:
+      - { from: i1,  to: f16 }
       - { from: i1,  to: f32 }
       - { from: i1,  to: f64 }
+      - { from: i8,  to: f16 }
       - { from: i8,  to: f32 }
       - { from: i8,  to: f64 }
+      - { from: i16, to: f16 }
       - { from: i16, to: f32 }
       - { from: i16, to: f64 }
+      - { from: i32, to: f16 }
       - { from: i32, to: f32 }
       - { from: i32, to: f64 }
+      - { from: i64, to: f16 }
       - { from: i64, to: f32 }
       - { from: i64, to: f64 }
   - opcode: fptosi
@@ -252,6 +274,10 @@ cast_opcodes:
     c_operators: ["(float -> signed-int)"]
     variants: [fwd, inv, unc]
     pairs:
+      - { from: f16, to: i8  }
+      - { from: f16, to: i16 }
+      - { from: f16, to: i32 }
+      - { from: f16, to: i64 }
       - { from: f32, to: i8  }
       - { from: f32, to: i16 }
       - { from: f32, to: i32 }
@@ -266,6 +292,11 @@ cast_opcodes:
     c_operators: ["(float -> unsigned-int)"]
     variants: [fwd, inv, unc]
     pairs:
+      - { from: f16, to: i1  }
+      - { from: f16, to: i8  }
+      - { from: f16, to: i16 }
+      - { from: f16, to: i32 }
+      - { from: f16, to: i64 }
       - { from: f32, to: i1  }
       - { from: f32, to: i8  }
       - { from: f32, to: i16 }

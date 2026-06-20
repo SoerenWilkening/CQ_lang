@@ -95,6 +95,13 @@ int32_t cqrt_alloc_f64(double value) {
     return h;
 }
 
+int32_t cqrt_alloc_f16(_Float16 value) {
+    int32_t h = cqrt_alloc_handle();
+    printf("cqrt_alloc_f16(%f) -> h%d\n", (double)value, h);
+    fflush(stdout);
+    return h;
+}
+
 /* ---------------------------------------------------------------------
  * Measure bodies — one per width. Return zero of the matching width
  * (the runtime is trace-only, no simulation). Zero is printed as
@@ -145,6 +152,12 @@ double cqrt_measure_f64(int32_t handle) {
     return 0.0;
 }
 
+_Float16 cqrt_measure_f16(int32_t handle) {
+    printf("cqrt_measure_f16(h%d) -> 0.000000\n", handle);
+    fflush(stdout);
+    return (_Float16)0;
+}
+
 /* ---------------------------------------------------------------------
  * Ry rotation bodies — one per width. Void; like cqrt_free, no "-> "
  * arrow (nothing to return). The handle prints as h<N>, the angle as
@@ -186,6 +199,11 @@ void cqrt_ry_f64(int32_t handle, double angle) {
     fflush(stdout);
 }
 
+void cqrt_ry_f16(int32_t handle, double angle) {
+    printf("cqrt_ry_f16(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
 /* ---------------------------------------------------------------------
  * Rz rotation bodies — one per width. Same shape as Ry.
  * ------------------------------------------------------------------- */
@@ -222,6 +240,11 @@ void cqrt_rz_f32(int32_t handle, double angle) {
 
 void cqrt_rz_f64(int32_t handle, double angle) {
     printf("cqrt_rz_f64(h%d, %f)\n", handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_f16(int32_t handle, double angle) {
+    printf("cqrt_rz_f16(h%d, %f)\n", handle, angle);
     fflush(stdout);
 }
 
@@ -268,6 +291,11 @@ void cqrt_rz_f64_controlled(int32_t ctrl, int32_t handle, double angle) {
     fflush(stdout);
 }
 
+void cqrt_rz_f16_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_f16_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
 void cqrt_rz_i1_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
     printf("cqrt_rz_i1_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
     fflush(stdout);
@@ -300,6 +328,11 @@ void cqrt_rz_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
 
 void cqrt_rz_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
     printf("cqrt_rz_f64_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_rz_f16_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_rz_f16_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 

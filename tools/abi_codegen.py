@@ -33,6 +33,12 @@ WIDTH_INFO = {
     "i16": {"ctype": "int16_t", "fmt": "%lld", "cast": "(long long)"},
     "i32": {"ctype": "int32_t", "fmt": "%lld", "cast": "(long long)"},
     "i64": {"ctype": "int64_t", "fmt": "%lld", "cast": "(long long)"},
+    # _Float16: the explicit (double) cast is MANDATORY — a bare _Float16 passed
+    # to printf("%f") trips -Wdouble-promotion / a format-arg type mismatch under
+    # -Werror. f16 is fp-domain; it has a runtime template surface (fadd_f16 etc.)
+    # but, like all fp widths, NO cqrt_copy_f16 (copyFn null-guards on isIntegerTy
+    # — the f16-angle-vs-data fence; see WidthDispatch.cpp).
+    "f16": {"ctype": "_Float16", "fmt": "%f",   "cast": "(double)"},
     "f32": {"ctype": "float",   "fmt": "%f",   "cast": "(double)"},
     "f64": {"ctype": "double",  "fmt": "%f",   "cast": ""},
 }

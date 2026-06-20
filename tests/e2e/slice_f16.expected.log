@@ -1,0 +1,19 @@
+cqrt_alloc_f16(1.500000) -> h0
+cqrt_ry_f16(h0, 0.250000)
+cqrt_alloc_f16(2.500000) -> h1
+cqrt_ry_f16(h1, 0.500000)
+cq_template_fadd_f16(h0, h1) -> h2
+cqrt_measure_f16(h2) -> 0.000000
+cqrt_alloc_f16(1.500000) -> h3
+cqrt_ry_f16(h3, 0.100000)
+cqrt_alloc_f16(2.500000) -> h4
+cqrt_ry_f16(h4, 0.200000)
+cq_template_fadd_f16(h3, h4) -> h5
+cqrt_rz_f16(h5, 0.300000)
+cqrt_rz_f16(h5, -0.300000)
+cq_template_fadd_f16_unc(h5, h3, h4)
+cqrt_free(h5)
+cqrt_ry_f16(h4, -0.200000)
+cqrt_free(h4)
+cqrt_ry_f16(h3, -0.100000)
+cqrt_free(h3)

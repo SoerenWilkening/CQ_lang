@@ -304,6 +304,22 @@ add_test(NAME e2e-slice-compare-qq
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_compare_qq.expected.log")
 
+# Phase 7.1 Increment D (FROZEN ABI): the half-precision (f16) e2e link proof.
+# The only layer that LINKS, so the only proof that the new frozen f16 symbols
+# (cqrt_alloc/ry/rz/measure_f16, cq_template_fadd_f16 + its `_unc` twin) resolve
+# and signature-match the hand-written core ABI and the generated template ABI
+# at the `half` width. (A) a measured Q+Q fadd proves the forward symbol; (B) a
+# dead Q+Q fadd kept alive by a cq_phi proves the `_unc` twin reverses once and
+# frees every rail — no cqrt_copy_f16 (an f16 carrier is an angle, never data).
+# i128 is deferred (its C ABI shreds __int128 to {i64,i64}); see the follow-up.
+add_test(NAME e2e-slice-f16
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_f16.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_f16.expected.log")
+
 # Phase 6 (DD-6 §7.1, test_C_libtooling-mvna.3): the ZERO-LIB smoke for the new
 # multi-file harness. Drives the EXISTING single-TU theta->add->measure slice
 # through run_slice_multi.sh with EMPTY LIBSRCS (the "" 7th positional), so the

@@ -74,14 +74,16 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_1562(self):
-        # 1172 value-returning templates (fwd/inv/controlled) + 390 void
-        # in-place `_unc` symbols: binary 196 + unary 2 + cast 68 + compare 124.
-        # WI-0 (§6.0) added the compare `_unc` axis (unc_qq + unc_hl; no _lh —
-        # compares canonicalize lhs-literals by predicate flip): icmp 10 preds x
-        # 5 widths x 2 + fcmp 6 preds x 2 widths x 2 = 124, mirroring the
-        # commutative binary ops so a compare-as-data flag reverses in place.
-        self.assertEqual(len(self.h_decls), 1562)
+    def test_total_symbol_count_is_1732(self):
+        # 1294 value-returning templates (fwd/inv/controlled) + 438 void
+        # in-place `_unc` symbols: binary 209 + unary 3 + cast 90 + compare 136.
+        # Phase 7.1 Increment D added the **f16** fp width (i128 deferred — its
+        # C ABI shreds __int128 to {i64,i64}; see the i128 follow-up issue). f16
+        # rides every fp row: 5 fp binary ops (+65), fneg (+3), fcmp (6 preds x
+        # 2 variants = +12 unc, +36 total), and 22 new cast pairs touching f16
+        # (fpext/fptrunc f16<->{f32,f64}, sitofp/uitofp ints->f16, fptosi/fptoui
+        # f16->ints; x3 fwd/inv/unc = +66). Net +170 over the 1562 baseline.
+        self.assertEqual(len(self.h_decls), 1732)
 
     def test_unc_family_is_void_in_place(self):
         """PRD §2.3 / DD-3: the `_unc` uncompute family is VOID and in-place.

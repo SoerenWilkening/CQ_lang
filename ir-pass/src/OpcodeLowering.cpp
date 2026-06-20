@@ -215,13 +215,38 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
           if (isDataPositionCompare(Cmp))
             Work.push_back(&I);
         } else if (auto *Cast = dyn_cast<CastInst>(&I)) {
-          // Capture widths NOW, before any rewrite RAUWs the operand and
-          // makes `getSrcTy()` read the i32 handle (risk R1). `rewriteCast`
-          // consumes exactly this captured pair — never the live operand
-          // type. This up-front capture is what makes the measured-compare
-          // zext bridge emit `cq_template_zext_i1_to_i32` instead of garbage.
-          CastW[Cast] = {abiWidthFromType(Cast->getSrcTy()),
-                         abiWidthFromType(Cast->getDestTy())};
+          // Capture widths NOW, before any sibling Phase-2 rewrite RAUWs the
+          // operand and makes `getSrcTy()` read the i32 handle (risk R1).
+          // `rewriteCast` consumes exactly this captured pair — never the live
+          // operand type. This up-front capture is what makes the measured-
+          // compare zext bridge emit `cq_template_zext_i1_to_i32` not garbage.
+          StringRef FromW = abiWidthFromType(Cast->getSrcTy());
+          // BUT a cast directly off a tainted THETA handle is already
+          // laundered: RotationLowering (which runs BEFORE lowerOps) RAUW'd the
+          // possibly-non-i32 theta result to its i32 handle, so `getSrcTy()`
+          // here reads the laundered i32, not the logical source width. Recover
+          // it from HandleWidth — the same Increment-A side-table the Q+Q
+          // compare path reads, recorded at the theta mint (RotationLowering)
+          // and on every arith/cast handle output. For a sibling Phase-2 source
+          // (a compare/arith/cast result not yet rewritten at this point)
+          // `getSrcTy()` still reads the correct pre-rewrite type and the
+          // lookup is empty, so the recovery is inert. That inertness is
+          // LOAD-BEARING and rests on an ordering invariant: every Arith/Cast/
+          // Compare HandleWidth write happens in Phase 2 (promote(), after
+          // RAUW), strictly AFTER this whole Phase-1 capture loop — so no
+          // sibling result is in HandleWidth yet here. (Even if one were, its
+          // recorded width equals its own result width == this cast's
+          // getSrcTy(), so an override would coincide, never give a wrong
+          // width.) Only RotationLowering, which runs BEFORE lowerOps,
+          // pre-populates HandleWidth for a theta handle — exactly the laundered
+          // case this recovery fixes. Without it, a cast off a non-i32 tainted
+          // source — `fpext f16->f32`, `sext i8->i32`, `fptosi f16->i32`, ... —
+          // captured "i32" and declined (the f16 cast surface, and the latent
+          // non-i32-source-cast gap, were unreachable).
+          if (StringRef R = taint.HandleWidth.lookup(Cast->getOperand(0));
+              !R.empty())
+            FromW = R;
+          CastW[Cast] = {FromW, abiWidthFromType(Cast->getDestTy())};
           Work.push_back(&I);
         }
       }

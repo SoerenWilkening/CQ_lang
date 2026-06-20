@@ -30,6 +30,7 @@ void use(void) {
     unsigned long long  v_ull = 0;
     float               v_f32 = 0;
     double              v_f64 = 0;
+    _Float16            v_f16 = 0;   // Phase 7.1 Increment D
 
     (void) cq_measure(v_i1);    // CHECK: call {{.*}} @cq_measure_i1(
     (void) cq_measure(v_c);     // CHECK: call {{.*}} @cq_measure_c(
@@ -45,4 +46,5 @@ void use(void) {
     (void) cq_measure(v_ull);   // CHECK: call {{.*}} @cq_measure_ull(
     (void) cq_measure(v_f32);   // CHECK: call {{.*}} @cq_measure_f32(
     (void) cq_measure(v_f64);   // CHECK: call {{.*}} @cq_measure_f64(
+    (void) cq_measure(v_f16);   // CHECK: call {{.*}} @cq_measure_f16(
 }

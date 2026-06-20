@@ -32,6 +32,7 @@ long long           cq_theta_sll (long long          x, double angle);
 unsigned long long  cq_theta_ull (unsigned long long x, double angle);
 float               cq_theta_f32 (float              x, double angle);
 double              cq_theta_f64 (double             x, double angle);
+_Float16            cq_theta_f16 (_Float16           x, double angle);  /* Phase 7.1 Inc D */
 
 /* cq_phi — Rz(φ) phase rotation; propagates taint, never a source. */
 bool                cq_phi_i1  (bool               x, double angle);
@@ -48,6 +49,7 @@ long long           cq_phi_sll (long long          x, double angle);
 unsigned long long  cq_phi_ull (unsigned long long x, double angle);
 float               cq_phi_f32 (float              x, double angle);
 double              cq_phi_f64 (double             x, double angle);
+_Float16            cq_phi_f16 (_Float16           x, double angle);  /* Phase 7.1 Inc D */
 
 /* cq_measure — measurement; the sole sink. Return is classical
    (operand only, no angle). */
@@ -65,6 +67,7 @@ long long           cq_measure_sll (long long          x);
 unsigned long long  cq_measure_ull (unsigned long long x);
 float               cq_measure_f32 (float              x);
 double              cq_measure_f64 (double             x);
+_Float16            cq_measure_f16 (_Float16           x);  /* Phase 7.1 Inc D */
 
 /* Inversion markers — bare extern, no attributes. LLVM cannot prove an
    unknown extern is side-effect-free, so calls survive elimination at
@@ -92,10 +95,11 @@ void __cq_invert_end  (void);
     long long:          cq_theta_sll,              \
     unsigned long long: cq_theta_ull,              \
     float:              cq_theta_f32,              \
-    double:             cq_theta_f64               \
+    double:             cq_theta_f64,              \
+    _Float16:           cq_theta_f16               \
 )(x, angle)
 
-/* cq_phi — Rz phase-rotation dispatch (same 14 widths as cq_theta). */
+/* cq_phi — Rz phase-rotation dispatch (same 15 widths as cq_theta). */
 #define cq_phi(x, angle) _Generic((x),             \
     bool:               cq_phi_i1,                 \
     char:               cq_phi_c,                  \
@@ -110,7 +114,8 @@ void __cq_invert_end  (void);
     long long:          cq_phi_sll,                \
     unsigned long long: cq_phi_ull,                \
     float:              cq_phi_f32,                \
-    double:             cq_phi_f64                 \
+    double:             cq_phi_f64,                \
+    _Float16:           cq_phi_f16                 \
 )(x, angle)
 
 /* cq_measure — measurement dispatch (operand only; no angle). */
@@ -128,7 +133,8 @@ void __cq_invert_end  (void);
     long long:          cq_measure_sll,            \
     unsigned long long: cq_measure_ull,            \
     float:              cq_measure_f32,            \
-    double:             cq_measure_f64             \
+    double:             cq_measure_f64,            \
+    _Float16:           cq_measure_f16             \
 )(x)
 
 /* Manual inversion bracket. The asm-volatile memory barrier pins the

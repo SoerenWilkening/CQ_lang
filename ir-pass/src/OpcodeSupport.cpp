@@ -32,6 +32,7 @@ unsigned intBits(StringRef w) {
 
 // Float ABI widths in bits, or 0 if `w` is not an in-scope fp width.
 unsigned fpBits(StringRef w) {
+  if (w == "f16") return 16;  // Phase 7.1 Increment D — half-precision
   if (w == "f32") return 32;
   if (w == "f64") return 64;
   return 0;
@@ -155,9 +156,11 @@ StringRef abiWidthFromType(Type *ty) {
     case 16: return "i16";
     case 32: return "i32";
     case 64: return "i64";
-    default: return {};
+    default: return {};  // i128 deferred (its C ABI shreds __int128 to
+                         // {i64,i64}); non-power-of-2 _BitInt(N) declines here.
     }
   }
+  if (ty->isHalfTy())   return "f16";  // Phase 7.1 Increment D — _Float16
   if (ty->isFloatTy())  return "f32";
   if (ty->isDoubleTy()) return "f64";
   return {};

@@ -28,6 +28,7 @@ void use(void) {
     unsigned long long  v_ull = 0;
     float               v_f32 = 0;
     double              v_f64 = 0;
+    _Float16            v_f16 = 0;   // Phase 7.1 Increment D
 
     (void) cq_theta(v_i1,   0.1);   // CHECK: call {{.*}} @cq_theta_i1(
     (void) cq_theta(v_c,    0.1);   // CHECK: call {{.*}} @cq_theta_c(
@@ -43,4 +44,5 @@ void use(void) {
     (void) cq_theta(v_ull,  0.1);   // CHECK: call {{.*}} @cq_theta_ull(
     (void) cq_theta(v_f32,  0.1);   // CHECK: call {{.*}} @cq_theta_f32(
     (void) cq_theta(v_f64,  0.1);   // CHECK: call {{.*}} @cq_theta_f64(
+    (void) cq_theta(v_f16,  0.1);   // CHECK: call {{.*}} @cq_theta_f16(
 }
