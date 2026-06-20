@@ -459,7 +459,40 @@ recognized width with **no** matching hand-written `cqrt_alloc_<W>` is an
   silent-dephasing miscompile (the f64 family at a new width).
 
 ### D5 — `_BitInt(N)` round-up + visible mask — **FOLLOW-UP, out of 7.1**
-Owner decision 2026-06-20: this is a **tracked pre-freeze follow-up**, not part of
+
+> **RESOLVED 2026-06-21 (test_C_libtooling-m0yi) — NO new frozen ABI needed; the
+> frozen-mask-family design below is SUPERSEDED.** The design below rested on the
+> premise that clang emits a *raw* `add i40` (→ `abiWidthFromType` empty → "no
+> template"), so CQ would have to round up to i64 *and insert its own* masked-op
+> family. **That premise is false for `-O1` (verified against clang 19.1.7,
+> darwin+linux).** clang **itself** rounds `_BitInt(N≤64)` up to the ABI storage
+> width *and emits the wraparound mask as a stock op*:
+> - unsigned `_BitInt(40)`: `add i64` then `and i64 %s, 1099511627775` (= 2⁴⁰−1);
+> - signed `_BitInt(40)`: `add i64` then `shl i64 %s, 24` + `ashr i64 %sh, 24`
+>   (sign-extend from bit 40).
+>
+> Every one of these is a stock op with an **existing frozen template**
+> (`cq_template_add_i64`, `cq_template_and_i64_hl`, `cq_template_shl_i64_hl`,
+> `cq_template_ashr_i64_hl`), so `_BitInt(N≤64)` **already lowers end-to-end today**
+> (`opt -verify` clean, links, runs) with **zero** new symbols. The mask even
+> reverses correctly in the whole-DAG `_unc` via the ordinary
+> `cq_template_and_i64_hl_unc(out, src, lit)` — no masking-specific uncompute.
+> `_BitInt(N)` for `64 < N ≤ 128` rounds to **i128** and declines via the existing
+> i128 gap (ties to `test_C_libtooling-n0ui`).
+>
+> The `lowering_reject_bitint_intermediate_unmasked.ll` "standing decline" named
+> below **was never created**; clang does not emit a raw non-ABI `iN` at `-O1`. The
+> realistic non-ABI gate is a **cast** to the width, so the safety-net guard is
+> `lowering_reject_bitint_raw_iN.ll` (tainted `trunc i64 → i40` → loud
+> `no template for opcode 'trunc i40' in tainted context`). **Shipped instead of
+> the frozen family:** positive `lowering_bitint_intermediate_masked_i40.ll`
+> (unsigned, incl. the and-mask `_unc`) + `lowering_bitint_signed_i40.ll` (shl/ashr)
+> + the safety-net decline + the `e2e-slice-bitint` golden round-trip. This
+> **removes D5 from the freeze-gating set** (it adds no frozen symbol). The
+> superseded design is retained below for history. See memory
+> `bitint-already-lowers-clang-rounds-and-masks`.
+
+Owner decision 2026-06-20 (superseded above): this is a **tracked pre-freeze follow-up**, not part of
 Increment D. **Within 7.1, `_BitInt(N)` for non-ABI N permanently declines:** keep
 `abiWidthFromType` empty for non-power-of-2 `iN` → loud `no template`. The decline
 fixture `lowering_reject_bitint_intermediate_unmasked.ll` (`add i40` → `no

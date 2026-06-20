@@ -342,6 +342,23 @@ add_test(NAME e2e-slice-intrinsic-ctpop
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_ctpop.expected.log")
 
+# Phase 7.1 follow-up D5 (test_C_libtooling-m0yi): a non-power-of-2 _BitInt(N)
+# INTERMEDIATE round-trips with NO new ABI. clang -O1 rounds the i40 up to i64 and
+# emits the i40 wraparound as a stock `and i64 ..., 0xFFFFFFFFFF` (= 2^40-1), so
+# the existing cq_template_add_i64 / cq_template_and_i64_hl (+ its _unc) templates
+# lower it — the proposed cq_template_mask_<W> frozen family is unnecessary. This
+# link-proves the round+mask forward stream AND the and-mask void _unc twin resolve
+# and signature-match through the runtime; the golden's lineage (B) (a dead mask
+# uncomputed via cq_template_and_i64_hl_unc reading the live source, then freed)
+# is the trace contract for the mask's whole-DAG reversal (Rules 2, 16).
+add_test(NAME e2e-slice-bitint
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_bitint.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_bitint.expected.log")
+
 # Phase 6 (DD-6 §7.1, test_C_libtooling-mvna.3): the ZERO-LIB smoke for the new
 # multi-file harness. Drives the EXISTING single-TU theta->add->measure slice
 # through run_slice_multi.sh with EMPTY LIBSRCS (the "" 7th positional), so the
