@@ -359,6 +359,22 @@ add_test(NAME e2e-slice-bitint
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_bitint.expected.log")
 
+# Phase 7.1 follow-up n0ui (Tier-1): a 128-bit INTERMEDIATE round-trips with NO
+# new core ABI. slice_i128_mulhi.c squares a quantum unsigned long and observes
+# the high 64 bits of the 128-bit product: clang -O1 keeps the source/sink at i64
+# and emits the wide work as single clean i128 ops (zext/mul/lshr/trunc) lowered
+# to the FROZEN cq_template_*_i128 producers. This LINK-proves the i128 templates
+# (incl. the __int128 _hl literal param) resolve and signature-match through the
+# runtime, with NO cqrt_alloc_i128/measure_i128/copy_i128 (source/sink stay i64 —
+# the __int128 {i64,i64} source/sink shred is Tier-2, deferred). Rules 2, 16.
+add_test(NAME e2e-slice-i128-mulhi
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_i128_mulhi.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_i128_mulhi.expected.log")
+
 # Phase 6 (DD-6 §7.1, test_C_libtooling-mvna.3): the ZERO-LIB smoke for the new
 # multi-file harness. Drives the EXISTING single-TU theta->add->measure slice
 # through run_slice_multi.sh with EMPTY LIBSRCS (the "" 7th positional), so the

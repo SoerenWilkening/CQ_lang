@@ -48,6 +48,7 @@ Type *typeForAbiWidth(StringRef W, LLVMContext &Ctx) {
   if (W == "i16") return Type::getInt16Ty(Ctx);
   if (W == "i32") return Type::getInt32Ty(Ctx);
   if (W == "i64") return Type::getInt64Ty(Ctx);
+  if (W == "i128") return Type::getInt128Ty(Ctx);  // n0ui Tier-1 — wide-int width
   if (W == "f16") return Type::getHalfTy(Ctx);   // Phase 7.1 Increment D — _Float16
   if (W == "f32") return Type::getFloatTy(Ctx);
   if (W == "f64") return Type::getDoubleTy(Ctx);
@@ -129,7 +130,15 @@ FunctionCallee WidthDispatch::copyFn(StringRef abiWidth) const {
   // null callee (caller diagnoses) rather than minting dead ABI.
   LLVMContext &Ctx = M.getContext();
   Type *Ty = typeForAbiWidth(abiWidth, Ctx);
-  if (!Ty || !Ty->isIntegerTy())
+  // i128 no-clone fence (n0ui Tier-1): i128 is now a recognized template width,
+  // so `Ty` is a valid integer type — but there is NO `cqrt_copy_i128` (i128 is
+  // an INTERMEDIATE-only width; source/sink stay i64). A tainted i128 value-mux /
+  // select / switch / merge therefore has no reversible copy and must DECLINE
+  // (the control classifiers null-check this callee), never mint a phantom
+  // `cqrt_copy_i128`. Gate on bit-width > 64 (not a name compare) so any future
+  // >64-bit width inherits the fence. Generalizes the f16-angle fence: fp widths
+  // (and now wide ints) have no data-copy under tainted control.
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
     return FunctionCallee();
   return M.getOrInsertFunction(
       ("cqrt_copy_" + abiWidth).str(),
@@ -194,6 +203,16 @@ FunctionCallee WidthDispatch::dataTemplateFn(StringRef stem, StringRef abiWidth,
   // the `_inv` twin (Phase 5, PRD §2.3) — same FunctionType, name flipped.
   LLVMContext &Ctx = M.getContext();
   Type *Handle = Type::getInt32Ty(Ctx);
+  // Phantom-mint fence (n0ui Tier-1): QQ/Unary mint unconditionally via
+  // getOrInsertFunction, so a width with NO generated template would create an
+  // UNRESOLVED extern (verify-clean, exit 0, LINK-FAILS). Gate on a known ABI
+  // type: a width `typeForAbiWidth` does not recognize returns null and the
+  // caller declines loudly. HL/LH already guard below via `llvmWidthType`; this
+  // covers QQ/Unary symmetrically (belt-and-suspenders behind the upstream
+  // `abiWidthFromType().empty()` gate — converts any stray unsupported-width
+  // call from a silent phantom mint to a loud null-callee decline).
+  if (!typeForAbiWidth(abiWidth, Ctx))
+    return FunctionCallee();
   std::string Name = dataName(stem, abiWidth, shape, /*controlled=*/false,
                               inverse);
   switch (shape) {

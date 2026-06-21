@@ -143,6 +143,19 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
     ShapeSel = Shape::HL;
   }
 
+  // i128 compare fence (n0ui Tier-1): `icmp` is OUT of the i128 frozen surface
+  // (no `cq_template_icmp_*_i128` — over-decline is safe, Prime Directive). Now
+  // that `abiWidthFromType` recognizes i128, BOTH the Q+Q data-compare (`qqWidth`)
+  // and the `_hl` classical-operand paths can land `AbiWidth == "i128"`; without
+  // this explicit gate they would `getOrInsertFunction` a phantom unresolved
+  // compare template (verify-clean, exit 0, LINK-FAILS at Stage 3). Decline
+  // LOUDLY and leave `cmp` standing (well-typed i1, verify-clean), exactly like
+  // the unsupported-width / out-of-scope-predicate bails.
+  if (AbiWidth == "i128") {
+    diagnoseNoTemplate(cmp);
+    return nullptr;
+  }
+
   // Swap-route inner condition (§4/§12.2): the parent-routed operand's
   // amplitude physically lives on `railBase` after the outer route-in — the
   // original SSA register holds |0> on the f1=1 path — so the inner flag must

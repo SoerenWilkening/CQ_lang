@@ -289,7 +289,12 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   // is an angle — caught above). `isFPOrFPVectorTy`, not the scalar-only
   // `isFloatingPointTy` (which misses `<2 x double>`).
   Type *T = Sel->getType();
-  if (T->isFPOrFPVectorTy() || !T->isIntegerTy() || abiWidthFromType(T).empty())
+  // n0ui Tier-1: gate on `widthHasReversibleCopy`, NOT `abiWidthFromType(T).empty()`
+  // — i128 is now a recognized (intermediate) width so `.empty()` is FALSE for it,
+  // but it has NO `cqrt_copy_i128` (source/sink stay i64), so a tainted i128 data
+  // select must still DECLINE here, not slip through and mint a phantom copy.
+  if (T->isFPOrFPVectorTy() || !T->isIntegerTy() ||
+      !widthHasReversibleCopy(abiWidthFromType(T)))
     return diagnoseUnderControl(Sel, "control flow");
 
   // GATE 5 — conservative coherent-operand default (§16.7), BOTH halves. A

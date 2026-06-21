@@ -289,7 +289,11 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
   // is an angle, so never key on width alone). `isFPOrFPVectorTy`, not the
   // scalar-only `isFloatingPointTy` (which misses `<2 x double>`).
   Type *T = P->getType();
-  if (T->isFPOrFPVectorTy() || !T->isIntegerTy() || abiWidthFromType(T).empty())
+  // n0ui Tier-1: `widthHasReversibleCopy`, NOT `.empty()` — i128 is a recognized
+  // intermediate width with no `cqrt_copy_i128`, so a tainted i128 switch data-mux
+  // must still DECLINE here (the same fence as SelectClassify GATE 4).
+  if (T->isFPOrFPVectorTy() || !T->isIntegerTy() ||
+      !widthHasReversibleCopy(abiWidthFromType(T)))
     return diagnoseUnderControl(SI, "control flow");
 
   // G5 — homogeneity: every CONTENT arm shares one content class. Mixed declines.

@@ -90,6 +90,13 @@ widths:
   i16: { bits: 16, c_type: "int16_t", domain: "int" }
   i32: { bits: 32, c_type: "int32_t", domain: "int" }
   i64: { bits: 64, c_type: "int64_t", domain: "int" }
+  # i128 (Phase 7.1 follow-up n0ui, Tier-1 INTERMEDIATE only): a wide-int width
+  # for mid-computation i128 arithmetic (i64 theta -> zext i128 -> i128 arith ->
+  # trunc i64 -> i64 measure). NOT a theta/phi/measure source/sink suffix (the C
+  # ABI shreds a __int128 param/return to {i64,i64}; Tier-2 source/sink deferred
+  # post-freeze). Carries the int_arith/int_bitwise binary rows + zext/sext/trunc
+  # cast pairs ONLY; NO icmp (declines), NO fp casts, NO cqrt_* core symbol.
+  i128: { bits: 128, c_type: "__int128", domain: "int" }
   f16: { bits: 16, c_type: "_Float16", domain: "fp" }
   f32: { bits: 32, c_type: "float",   domain: "fp"  }
   f64: { bits: 64, c_type: "double",  domain: "fp"  }
@@ -114,20 +121,20 @@ predicates:
 # `c_operators` is informational (e2e generators).
 binary_opcodes:
   # Integer arithmetic (7)
-  - { opcode: add,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Add",  c_operators: ["+","+=","++"],                      variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
-  - { opcode: sub,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Sub",  c_operators: ["-","-=","--","unary -"],            variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
-  - { opcode: mul,  family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Mul",  c_operators: ["*","*="],                           variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
-  - { opcode: sdiv, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::SDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
-  - { opcode: udiv, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::UDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
-  - { opcode: srem, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::SRem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
-  - { opcode: urem, family: int_arith,  widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::URem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: add,  family: int_arith,  widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::Add",  c_operators: ["+","+=","++"],                      variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: sub,  family: int_arith,  widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::Sub",  c_operators: ["-","-=","--","unary -"],            variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: mul,  family: int_arith,  widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::Mul",  c_operators: ["*","*="],                           variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: sdiv, family: int_arith,  widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::SDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: udiv, family: int_arith,  widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::UDiv", c_operators: ["/","/="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: srem, family: int_arith,  widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::SRem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: urem, family: int_arith,  widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::URem", c_operators: ["%","%="], signed_variant: true,     variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
   # Integer bitwise (6)
-  - { opcode: and,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::And",  c_operators: ["&","&="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
-  - { opcode: or,   family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Or",   c_operators: ["|","|="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
-  - { opcode: xor,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Xor",  c_operators: ["^","^=","unary ~"],                variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
-  - { opcode: shl,  family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::Shl",  c_operators: ["<<","<<="],                        variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
-  - { opcode: lshr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::LShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
-  - { opcode: ashr, family: int_bitwise, widths: [i1,i8,i16,i32,i64], llvm_inst: "llvm::Instruction::AShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: and,  family: int_bitwise, widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::And",  c_operators: ["&","&="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: or,   family: int_bitwise, widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::Or",   c_operators: ["|","|="],                          variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: xor,  family: int_bitwise, widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::Xor",  c_operators: ["^","^=","unary ~"],                variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
+  - { opcode: shl,  family: int_bitwise, widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::Shl",  c_operators: ["<<","<<="],                        variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: lshr, family: int_bitwise, widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::LShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
+  - { opcode: ashr, family: int_bitwise, widths: [i1,i8,i16,i32,i64,i128], llvm_inst: "llvm::Instruction::AShr", c_operators: [">>",">>="], signed_variant: true,  variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
   # Floating-point arithmetic (5; fneg is unary)
   - { opcode: fadd, family: fp_arith,    widths: [f16,f32,f64], llvm_inst: "llvm::Instruction::FAdd", c_operators: ["+","+="], variants: [fwd_qq, fwd_hl, inv_qq, inv_hl, controlled_qq, controlled_hl, controlled_inv_qq, controlled_inv_hl, unc_qq, unc_hl] }
   - { opcode: fsub, family: fp_arith,    widths: [f16,f32,f64], llvm_inst: "llvm::Instruction::FSub", c_operators: ["-","-="], variants: [fwd_qq, fwd_hl, fwd_lh, inv_qq, inv_hl, inv_lh, controlled_qq, controlled_hl, controlled_lh, controlled_inv_qq, controlled_inv_hl, controlled_inv_lh, unc_qq, unc_hl, unc_lh] }
@@ -177,6 +184,14 @@ cast_opcodes:
       - { from: i16, to: i32 }
       - { from: i16, to: i64 }
       - { from: i32, to: i64 }
+      # i128 (n0ui Tier-1): COMPLETE the widen grid to i128 from every source
+      # intBits accepts (i1..i64), so castInScope's generic width compare never
+      # accepts a pair with no template (phantom mint) nor creates a decline cliff.
+      - { from: i1,  to: i128 }
+      - { from: i8,  to: i128 }
+      - { from: i16, to: i128 }
+      - { from: i32, to: i128 }
+      - { from: i64, to: i128 }
   - opcode: zext
     kind: int_width
     llvm_inst: "llvm::Instruction::ZExt"
@@ -193,6 +208,13 @@ cast_opcodes:
       - { from: i16, to: i32 }
       - { from: i16, to: i64 }
       - { from: i32, to: i64 }
+      # i128 (n0ui Tier-1): COMPLETE the widen grid to i128 (i1..i64 -> i128) so
+      # castInScope's generic width compare matches the shipped templates exactly.
+      - { from: i1,  to: i128 }
+      - { from: i8,  to: i128 }
+      - { from: i16, to: i128 }
+      - { from: i32, to: i128 }
+      - { from: i64, to: i128 }
   - opcode: trunc
     kind: int_width
     llvm_inst: "llvm::Instruction::Trunc"
@@ -209,6 +231,13 @@ cast_opcodes:
       - { from: i64, to: i8  }
       - { from: i64, to: i16 }
       - { from: i64, to: i32 }
+      # i128 (n0ui Tier-1): COMPLETE the narrow grid from i128 (i128 -> i1..i64) so
+      # castInScope's generic width compare matches the shipped templates exactly.
+      - { from: i128, to: i1  }
+      - { from: i128, to: i8  }
+      - { from: i128, to: i16 }
+      - { from: i128, to: i32 }
+      - { from: i128, to: i64 }
   # FP width casts (2 kinds, 3 pairs each: f16<->{f32,f64} + f32<->f64)
   - opcode: fpext
     kind: fp_width

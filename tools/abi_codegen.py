@@ -33,6 +33,13 @@ WIDTH_INFO = {
     "i16": {"ctype": "int16_t", "fmt": "%lld", "cast": "(long long)"},
     "i32": {"ctype": "int32_t", "fmt": "%lld", "cast": "(long long)"},
     "i64": {"ctype": "int64_t", "fmt": "%lld", "cast": "(long long)"},
+    # i128 (n0ui Tier-1): __int128 is a valid C type but printf has NO 128-bit
+    # specifier, so the trace-only body prints the classical operand via the same
+    # (long long)/%lld path as the other int widths. A literal that does not fit in
+    # 64 bits is TRUNCATED in the trace label (deterministic; the trace is a gate-
+    # sequence contract, not a value simulation). Tier-1 literals (shift amounts,
+    # small masks) fit; a genuine >64-bit literal prints its low 64 bits.
+    "i128": {"ctype": "__int128", "fmt": "%lld", "cast": "(long long)"},
     # _Float16: the explicit (double) cast is MANDATORY — a bare _Float16 passed
     # to printf("%f") trips -Wdouble-promotion / a format-arg type mismatch under
     # -Werror. f16 is fp-domain; it has a runtime template surface (fadd_f16 etc.)

@@ -1,9 +1,19 @@
 # Design — i128 wide-integer support (test_C_libtooling-n0ui)
 
-**Status:** design pass, 2026-06-21. Awaiting owner scope decision before
-implementation. Supersedes the IMPLEMENTATION-PLAN-7.1 §6 i128 mechanism (which
-**guessed** `__int128 → i128 @cq_theta_si128(i128, double)` and was empirically
-disproved — see memory `7-1-D-i128-abi-shred`).
+**Status:** **Tier-1 IMPLEMENTED + Rule-13 cleared 2026-06-21** (owner chose
+"Tier-1 + safety fence"); **Tier-2 DEFERRED post-freeze** (filed as
+test_C_libtooling-akb0). The Tier-1 frozen surface, fences, and fixtures below
+shipped as designed (+215 symbols 1732→1947, no `cqrt_*_i128` core); see memory
+`n0ui-i128-tier1-implemented` for the as-built fence inventory. The "safety fence"
+(§4.1) resolved differently than drafted: the proposed runtime decline of a
+misdeclared aggregate `cq_theta_si128` conflicts with the documented
+unrecognized-suffix passthrough boundary (`cq_measure_xyz999`) AND is unnecessary
+— the CQ.h `_Generic` already blocks an i128 source at COMPILE time (pinned by
+`tests/frontend/cq_theta_i128_nonabi_reject.c`), so that existing protection was
+pinned with a regression test instead of adding a conflicting decline.
+Supersedes the IMPLEMENTATION-PLAN-7.1 §6 i128 mechanism (which **guessed**
+`__int128 → i128 @cq_theta_si128(i128, double)` and was empirically disproved —
+see memory `7-1-D-i128-abi-shred`).
 
 This doc is grounded in **real clang 19.1.7 `-O1` codegen** and a 4-axis parallel
 investigation (frozen-surface map · `-O1` hazard probe · decline-site inventory ·

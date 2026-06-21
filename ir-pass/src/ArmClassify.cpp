@@ -863,8 +863,12 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // check is NECESSARY-not-sufficient and runs only AFTER the FP
         // decline above — never key the DECISION on abiWidthFromType()
         // validity (f64 has a valid width yet is an angle, the f64 trap).
+        // n0ui Tier-1: `widthHasReversibleCopy`, NOT `.empty()` — i128 is a
+        // recognized intermediate width with no `cqrt_copy_i128`, so a tainted
+        // i128 value-merge phi must still DECLINE here (same fence as the
+        // Select/Switch data-mux gates).
         if (!MergePhi->getType()->isIntegerTy() ||
-            abiWidthFromType(MergePhi->getType()).empty()) {
+            !widthHasReversibleCopy(abiWidthFromType(MergePhi->getType()))) {
           diagnoseUnderControl(declAnchor(Region), "control flow");
           return ArmDisposition::Declined;
         }

@@ -1,8 +1,12 @@
-; control_swap_reject_switch_i128.ll — DECLINE: i128 merge (G4). i128 IS isIntegerTy
-; but abiWidthFromType is empty (the supported set is {1,8,16,32,64}); empty-width
-; null-callee trap.
+; control_swap_reject_switch_i128.ll — DECLINE: i128 data-mux (G4). i128 IS
+; isIntegerTy and (since the n0ui Tier-1 follow-up) a RECOGNIZED intermediate
+; width, so abiWidthFromType(i128) is NON-empty — the decline now rides
+; `widthHasReversibleCopy(abiWidthFromType(T))` == false (i128 has no cqrt_copy_i128:
+; intermediate-only, source/sink stay i64), NOT the legacy `.empty()` arm. NEVER
+; key the data-mux decision on the type-class or width-presence alone.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}control flow under quantum control
+; CHECK-NOT: cqrt_copy
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0) {

@@ -67,7 +67,11 @@ FunctionCallee ControlledSymbols::copyControlledFn(StringRef abiWidth) const {
   // unreachable here); the null check also covers an unknown abiWidth.
   LLVMContext &Ctx = M.getContext();
   Type *Ty = Wd.llvmWidthType(abiWidth);
-  if (!Ty || !Ty->isIntegerTy())
+  // i128 no-clone fence (n0ui Tier-1): mirror copyFn — i128 is a recognized
+  // integer width but has NO `cqrt_copy_i128_controlled` (intermediate-only),
+  // so a tainted i128 controlled data-mux returns null and the caller declines,
+  // never minting a phantom. Gate on width > 64 (not a name compare).
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
     return FunctionCallee();
   Type *I32 = Type::getInt32Ty(Ctx);
   return M.getOrInsertFunction(

@@ -27,6 +27,7 @@ unsigned intBits(StringRef w) {
   if (w == "i16") return 16;
   if (w == "i32") return 32;
   if (w == "i64") return 64;
+  if (w == "i128") return 128;  // n0ui Tier-1 — INTERMEDIATE wide-int width
   return 0;
 }
 
@@ -119,15 +120,20 @@ bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
     return ff && tf && ff > tf;
   // Cross-domain casts. sitofp/fptosi exclude i1 (no signed bool; Clang
   // uses uitofp/fptoui for _Bool); uitofp/fptoui include i1 (PRD §"Cross-
-  // domain casts").
+  // domain casts"). i128 is EXCLUDED from every cross-domain cast (n0ui Tier-1):
+  // i128 ships the integer WIDTH casts (zext/sext/trunc) ONLY — i128<->fp is a
+  // distinct, un-shipped feature (and fp-data is the angle hazard), so a tainted
+  // `sitofp i128`/`fptoui ... to i128`/etc. must DECLINE, never mint a phantom
+  // cq_template_sitofp_i128_* the YAML does not carry. (intBits now knows i128,
+  // so without these guards the generic `fi && tf` would wrongly accept it.)
   if (op == "sitofp")
-    return fi && tf && fromW != "i1";
+    return fi && tf && fromW != "i1" && fromW != "i128";
   if (op == "uitofp")
-    return fi && tf;
+    return fi && tf && fromW != "i128";
   if (op == "fptosi")
-    return ff && ti && toW != "i1";
+    return ff && ti && toW != "i1" && toW != "i128";
   if (op == "fptoui")
-    return ff && ti;
+    return ff && ti && toW != "i128";
   return false;
 }
 
@@ -156,14 +162,28 @@ StringRef abiWidthFromType(Type *ty) {
     case 16: return "i16";
     case 32: return "i32";
     case 64: return "i64";
-    default: return {};  // i128 deferred (its C ABI shreds __int128 to
-                         // {i64,i64}); non-power-of-2 _BitInt(N) declines here.
+    case 128: return "i128";  // n0ui Tier-1 — INTERMEDIATE wide-int width. NOT a
+                              // theta/measure suffix (the C ABI shreds a __int128
+                              // source/sink to {i64,i64} — Tier-2, deferred). The
+                              // dependent fences (copyFn>64, CompareLowering icmp,
+                              // castInScope cross-domain) keep i128 control-mux /
+                              // compare / fp-cast declining despite this.
+    default: return {};  // non-power-of-2 _BitInt(N) / i256+ decline here.
     }
   }
   if (ty->isHalfTy())   return "f16";  // Phase 7.1 Increment D — _Float16
   if (ty->isFloatTy())  return "f32";
   if (ty->isDoubleTy()) return "f64";
   return {};
+}
+
+bool widthHasReversibleCopy(StringRef w) {
+  // {i1,i8,i16,i32,i64} have a `cqrt_copy_<W>` / `_controlled`; i128 (now a
+  // recognized INTERMEDIATE width) and any wider int do NOT (n0ui Tier-1). An
+  // empty/unknown width (intBits 0) and the fp widths (intBits 0) also fail —
+  // exactly the set a tainted data-mux must decline.
+  const unsigned b = intBits(w);
+  return b >= 1 && b <= 64;
 }
 
 void diagnoseNoTemplate(Instruction *inst, StringRef detail) {

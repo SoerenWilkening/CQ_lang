@@ -83,13 +83,18 @@ Instruction *firstEHConstruct(Function &F) {
   return nullptr;
 }
 
-// Is `T` a scalar whose width has NO reversible template — i128 / half / fp80 /
-// fp128 / ppc_fp128 / a pointer / any other non-(i1/i8/i16/i32/i64/f32/f64) data
-// type (`abiWidthFromType` empty)? Vectors are EXCLUDED (handled earlier with the
-// more specific "vector SIMD" kind). This is the body-op analog of the lowerOps
-// width gate (`abiWidthFromType().empty()` → `diagnoseNoTemplate`): catching it
-// at DETECTION moves the decline to the offending body op's `!dbg` rather than
-// the late, clone-named lowerOps backstop (the WI-1.13 over-accept finding).
+// Is `T` a scalar whose width has NO reversible template — i256+ / fp80 / fp128 /
+// ppc_fp128 / a pointer / a non-power-of-2 _BitInt(N) / any other width
+// `abiWidthFromType` does not recognize? Vectors are EXCLUDED (handled earlier
+// with the more specific "vector SIMD" kind). NOTE (n0ui Tier-1): i128 is now a
+// RECOGNIZED intermediate width (abiWidthFromType non-empty), so an i128 arith/
+// cast intermediate inside a clone is ACCEPTED here (it lowers to cq_template_*_i128
+// + reverses via the _unc twins; cf. spec_accept_i128_body.ll). The icmp-i128
+// surface is NOT covered by this gate (the i1 result has a valid width) — it is
+// declined by the dedicated compare-width fence in scanBody (mirrors
+// CompareLowering's i128 fence). This is the body-op analog of the lowerOps width
+// gate, catching the decline at the offending body op's `!dbg` rather than the
+// late, clone-named lowerOps backstop (the WI-1.13 over-accept finding).
 bool unsupportedWidth(Type *T) {
   return !T->isVectorTy() && abiWidthFromType(T).empty();
 }
@@ -370,7 +375,7 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       // (naming the CLONE, not source-located). The width-empty / pointer-cast
       // shapes already returned above, so the operands here carry valid ABI
       // widths and these calls read the true (pre-RAUW) types.
-      if (auto *Cmp = dyn_cast<CmpInst>(&I))
+      if (auto *Cmp = dyn_cast<CmpInst>(&I)) {
         if (!compareInScope(Cmp->getOpcodeName(),
                             CmpInst::getPredicateName(Cmp->getPredicate()))) {
           WhereOut = &I;
@@ -378,6 +383,23 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
           pop();
           return SpecReject::NonReversibilizable;
         }
+        // i128 compare fence (n0ui Tier-1): icmp is OUT of the i128 frozen
+        // surface. EXACT mirror of CompareLowering's `AbiWidth == "i128"` decline
+        // (NOT `widthHasReversibleCopy`, which would also wrongly reject a
+        // legitimate `fcmp f32/f64` — fp widths have intBits 0). The compare's
+        // data width is its OPERAND width, NOT the i1 result; the unsupportedWidth
+        // gate above tests the i1 result (supported) and the i128 OPERAND is now a
+        // recognized width (`abiWidthFromType` non-empty), so without this a
+        // clone-body `icmp i128` over-accepts and declines LATE at lowerOps naming
+        // the CLONE (the WI-1.13 detect-mirrors-lowerOps gap). fcmp f16/f32/f64 and
+        // icmp i1..i64 stay accepted; i128 (the only recognized >64 width) declines.
+        if (abiWidthFromType(Cmp->getOperand(0)->getType()) == "i128") {
+          WhereOut = &I;
+          KindOut = "unsupported width";
+          pop();
+          return SpecReject::NonReversibilizable;
+        }
+      }
       if (auto *CA = dyn_cast<CastInst>(&I))
         if (!castInScope(CA->getOpcodeName(), abiWidthFromType(CA->getSrcTy()),
                          abiWidthFromType(CA->getDestTy()))) {

@@ -76,12 +76,22 @@ bool castInScope(llvm::StringRef op, llvm::StringRef fromW,
 // test_C_libtooling-jvun).
 bool compareInScope(llvm::StringRef op, llvm::StringRef pred);
 
-// A value's LLVM type → its ABI-width string ("i1"/…/"i64"/"f32"/"f64").
-// Returns "" for an unsupported width (`half`, `i128`, `fp128`, vectors);
-// the caller then diagnoses. Integer widths are restricted to the 5
-// supported {1,8,16,32,64}. Moved here from `OpcodeLowering` so every
-// instruction-class lowerer shares one width-resolution policy.
+// A value's LLVM type → its ABI-width string ("i1"/…/"i64"/"i128"/"f16"/…).
+// Returns "" for an unsupported width (`fp128`, i256+, vectors, pointers); the
+// caller then diagnoses. As of n0ui Tier-1 the int set is {1,8,16,32,64,128}
+// — but i128 is an INTERMEDIATE-only data width with NO reversible copy, so a
+// data-mux gate must use `widthHasReversibleCopy` below, NEVER plain `.empty()`.
 llvm::StringRef abiWidthFromType(llvm::Type *ty);
+
+// True iff `w` is an integer ABI width that has a reversible data-copy
+// (`cqrt_copy_<W>` / `_controlled`) — i.e. {i1,i8,i16,i32,i64}. i128 (and any
+// future >64-bit width) is recognized by `abiWidthFromType` for INTERMEDIATE
+// arithmetic but has NO copy (n0ui Tier-1, source/sink stay i64), so a tainted
+// data-mux / select / switch / value-merge over it must DECLINE. The control
+// classifiers gate on `!widthHasReversibleCopy(abiWidthFromType(T))` rather than
+// the now-defunct `abiWidthFromType(T).empty()` (which i128 no longer satisfies).
+// Pure predicate (no WidthDispatch) so the classifiers can call it directly.
+bool widthHasReversibleCopy(llvm::StringRef w);
 
 // "No template for opcode" diagnostic, generalized from the original
 // `BinaryOperator`-only helper to any `Instruction*`. Same
