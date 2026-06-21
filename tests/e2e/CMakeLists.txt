@@ -550,6 +550,25 @@ add_test(NAME e2e-slice-io
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_io.expected.log")
 
+# Phase 7.6 Increment 2 (test_C_libtooling-9x4z.2): the CONTROLLED Tier-0
+# conditional output `if(q)printf` / `if(q)putchar`. The only layer that LINKS —
+# and Increment 2 adds the NEW frozen hand-written symbol
+# cqrt_tape_write_<W>_controlled, so this golden is the ONLY proof it resolves and
+# signature-matches against libcq_runtime (Rule 2/16). `emit_sgt` is the
+# un-negated polarity (gate arm = TRUE successor, write fires on the flag);
+# `emit_ne` is the negated polarity (clang -O1 -> icmp eq + swapped successors, so
+# the write is ¬flag-bracketed by a self-inverse cqrt_x pair, Rule 9). Each lowers
+# to ONE cqrt_tape_write_i32_controlled (entry ALWAYS appended, content gated); q
+# stays coherent for the user's measure; ZERO compiler-inserted measurement, ZERO
+# controlled rotations / cswap (Rule 5).
+add_test(NAME e2e-slice-io-controlled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_io_controlled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_io_controlled.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route

@@ -570,6 +570,51 @@ int32_t cqrt_tape_write_i64(int32_t tape, int32_t src) {
 }
 
 /* ---------------------------------------------------------------------
+ * Controlled reversible I/O output tape (Phase 7.6 Increment 2, PRD-7.6
+ * §2.8) — Tier-0 `if(q)printf`. The appended entry's CONTENT is committed
+ * under the i32 control flag `ctrl` (arg 0; `ctrl` prints as a leading
+ * h<N>, mirroring cqrt_copy_<W>_controlled). The entry is ALWAYS appended
+ * (classical/deterministic tape length); only its content is conditional.
+ * Handle-RETURNING like its uncontrolled twin (the kept out-rail). Same
+ * monotonic handle counter; trace-only (no simulation, no measurement).
+ * ------------------------------------------------------------------- */
+
+int32_t cqrt_tape_write_i1_controlled(int32_t ctrl, int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i1_controlled(h%d, t%d, h%d) -> h%d\n", ctrl, tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_tape_write_i8_controlled(int32_t ctrl, int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i8_controlled(h%d, t%d, h%d) -> h%d\n", ctrl, tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_tape_write_i16_controlled(int32_t ctrl, int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i16_controlled(h%d, t%d, h%d) -> h%d\n", ctrl, tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_tape_write_i32_controlled(int32_t ctrl, int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i32_controlled(h%d, t%d, h%d) -> h%d\n", ctrl, tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_tape_write_i64_controlled(int32_t ctrl, int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i64_controlled(h%d, t%d, h%d) -> h%d\n", ctrl, tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+/* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */
 

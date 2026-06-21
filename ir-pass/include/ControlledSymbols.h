@@ -73,6 +73,20 @@ public:
   // §16.4 staged), guarded via the PUBLIC `WidthDispatch::llvmWidthType`.
   llvm::FunctionCallee copyControlledFn(llvm::StringRef abiWidth) const;
 
+  // Controlled reversible I/O output-tape write (Phase 7.6 Increment 2,
+  // PRD-7.6 §2.8 — the Tier-0 `if(q)printf` primitive):
+  // `i32 cqrt_tape_write_<W>_controlled(i32 ctrl, i32 tape, i32 src)` appends
+  // `src` to `tape` as a fresh kept |0> output rail whose CONTENT is committed
+  // iff the i32 control flag `ctrl` is set; the flag is PREPENDED as arg 0
+  // (PRD §1.2), so `tape`/`src` follow at args 1/2 and the kept out-handle is
+  // RETURNED (unlike void `cqrt_copy_<W>_controlled`). The width selects only
+  // the symbol name (all three args are i32 handles). The SAME integer-only
+  // > 64 fence as `copyControlledFn`/`tapeWriteFn`: an fp arg in a rail is the
+  // f64/angle family, and there is no `cqrt_tape_write_i128_controlled`, so an
+  // unsupported width returns a null FunctionCallee (caller declines) rather
+  // than minting a phantom extern that link-fails.
+  llvm::FunctionCallee tapeWriteControlledFn(llvm::StringRef abiWidth) const;
+
 private:
   llvm::Module &M;
   WidthDispatch &Wd;

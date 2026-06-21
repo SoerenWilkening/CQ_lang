@@ -36,6 +36,20 @@ struct TaintSet;
 // any unprovable shape.
 void lowerIOSinks(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
+// Phase 7.6 Increment 2 — the CONTROLLED Tier-0 conditional output `if (q > k)
+// printf("%d", x)`. Recognize a tainted-condition void-arm diamond whose arm is
+// a SINGLE recognized I/O sink and lower each tainted integer-scalar arg to ONE
+// `cqrt_tape_write_<W>_controlled(flag, tape, src)` under the minted comparison
+// flag (a `cqrt_x` bracket for the ¬flag / clang-`-O1`-swapped polarity), then
+// flatten the diamond. The tape entry is ALWAYS appended (classical tape length,
+// PRD-7.6 §2.4); only its CONTENT is committed under the flag. Shares the
+// `taint.IOTapeForFn` registry with `lowerIOSinks`. Runs BEFORE
+// `detectControlRegions` (which otherwise loud-declines the void-arm diamond as
+// OffPattern) so detection never sees an accepted I/O-sink branch; an off-pattern
+// I/O-under-control shape (compound condition, nested / non-2-pred merge, extra
+// arm instructions, fp/i128/used-result/fan-out arg) declines LOUDLY.
+void lowerControlledIOSinks(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_IO_SINK_LOWERING_H_

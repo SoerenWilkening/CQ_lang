@@ -79,4 +79,24 @@ FunctionCallee ControlledSymbols::copyControlledFn(StringRef abiWidth) const {
       FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
 }
 
+FunctionCallee ControlledSymbols::tapeWriteControlledFn(StringRef abiWidth) const {
+  // `i32 cqrt_tape_write_<W>_controlled(i32 ctrl, i32 tape, i32 src)`. Mirrors
+  // cqrt_tape_write_<W>_controlled in runtime/cq_runtime.h (Phase 7.6 Increment
+  // 2 — the Tier-0 `if(q)printf` write). The control flag is arg 0 (PRD §1.2);
+  // tape/src follow. UNLIKE the void `copyControlledFn`, this RETURNS an i32
+  // (the kept out-rail handle), matching the uncontrolled `tapeWriteFn`. All
+  // three args are i32 handles for every ABI width. SAME integer-only > 64
+  // fence as `copyControlledFn`/`tapeWriteFn`: an fp arg in a rail is the
+  // f64/angle family, and there is no `cqrt_tape_write_i128_controlled`, so an
+  // unsupported width returns null (caller declines) — never a phantom mint.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = Wd.llvmWidthType(abiWidth);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_tape_write_" + abiWidth + "_controlled").str(),
+      FunctionType::get(I32, {I32, I32, I32}, false));
+}
+
 }  // namespace cq

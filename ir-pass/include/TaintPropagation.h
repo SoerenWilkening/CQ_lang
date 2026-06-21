@@ -158,6 +158,18 @@ struct TaintSet {
   // `out_handle` is. Populated by `lowerIOSinks`; consumed by `uncompute`.
   // Empty for a module with no tainted I/O output.
   llvm::SmallPtrSet<llvm::Value *, 8> OutputRails;
+
+  // Phase 7.6 (PRD-7.6 §2.4). One lazy `cqrt_tape_alloc()` per function — the
+  // stream→tape registry (v1 has a single stdout stream). SHARED across the two
+  // I/O-lowering steps so a function with BOTH a controlled `if(q)printf`
+  // (lowered before control detection) AND an uncontrolled `printf` (lowered
+  // after control lowering) appends to ONE tape, never two separate tapes (a
+  // split transcript is a verify-clean lost-output bug, PRD-7.6 risk #2). The
+  // tape handle is a CLASSICAL resource token — NOT tainted, NOT an output rail.
+  // Keyed by Function so each function owns its own stdout tape. Populated lazily
+  // by `lowerControlledIOSinks` / `lowerIOSinks`; empty for a module with no
+  // tainted I/O output.
+  llvm::DenseMap<llvm::Function *, llvm::Value *> IOTapeForFn;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure

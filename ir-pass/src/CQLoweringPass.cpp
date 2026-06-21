@@ -84,6 +84,18 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // diagnoses loudly and marks `taint.StaleDeclined` for `lowerOps` to skip.
   declineStaleRecordOps(M, taint);
 
+  // Controlled Tier-0 conditional output (Phase 7.6 Increment 2): a tainted
+  // `if (q > k) printf("%d", x)` lowers to ONE `cqrt_tape_write_<W>_controlled`
+  // under the minted flag. Runs BEFORE `detectControlRegions` — the void-arm
+  // `if(q)printf` diamond has NO merge phi, so `recoverRegion` would otherwise
+  // loud-decline it as OffPattern ("control flow under quantum control"). This
+  // step recognizes that I/O-sink shape, emits the controlled write, and flattens
+  // the diamond, so detection only ever sees real phase/value control regions; an
+  // off-pattern I/O-under-control shape declines loudly here. Also pre-
+  // `lowerRotations` (the still-present `@cq_theta` src; the RAUW-to-handle
+  // rewrites every emitted operand later).
+  lowerControlledIOSinks(M, wd, taint);
+
   // Tainted control flow: `detectControlRegions` (ControlDetect.cpp) recognizes
   // the swap-route phase-arm diamond/if-else shape by SSA identity (Rule 9, no
   // mutation), pushes each accepted phase-arm DIAMOND onto `plan.Regions`, and
@@ -201,6 +213,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // lists above are F-restricted).
   declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);
+
+  // Controlled Tier-0 conditional output (Phase 7.6 Increment 2) mirrored in
+  // this entry point too (twin-pipeline parity is MANDATORY, WI-1.12) — see
+  // run() for the pre-`detectControlRegions` ordering rationale.
+  lowerControlledIOSinks(M, wd, taint);
 
   // See run() — `detectControlRegions` pushes accepted phase-arm diamonds and
   // declines the rest; `lowerControlRegions` emits the routed stream. BOTH must

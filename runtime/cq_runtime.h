@@ -321,10 +321,23 @@ void cqrt_copy_i64_controlled(int32_t ctrl, int32_t src, int32_t dst);
  *       reversible gate (PRD-7.6 §2.4). Handles are always i32; the
  *       width only selects the symbol name.
  *
+ *   cqrt_tape_write_<W>_controlled(ctrl, tape, src) -> out
+ *       Tier-0 CONDITIONAL output (`if(q)printf`, Phase 7.6 Increment 2). The
+ *       appended entry's CONTENT is committed under the i32 control flag
+ *       `ctrl` (PREPENDED as argument 0, the control-flag-as-arg-0 invariant —
+ *       mirrors `cqrt_copy_<W>_controlled`); `tape` is arg 1, `src` arg 2. The
+ *       entry is ALWAYS appended (tape length is classical/deterministic, so
+ *       there is never a superposition over "the tape has N vs N+1 entries") —
+ *       only its content is conditional. A controlled-CNOT involution that
+ *       preserves `src`; returns the new kept output-rail handle. Same 5
+ *       INTEGER widths and the same SINK-class spine treatment as the
+ *       uncontrolled write (recognized by the `cqrt_tape_write_` prefix).
+ *
  * Trace (the golden contract, PRD-7.6 §2.8): the tape handle prints as
- * `t<N>`, every rail handle as `h<N>`:
+ * `t<N>`, every rail handle (incl. the control flag) as `h<N>`:
  *     "cqrt_tape_alloc() -> t<N>"
- *     "cqrt_tape_write_<W>(t<tape>, h<src>) -> h<out>".
+ *     "cqrt_tape_write_<W>(t<tape>, h<src>) -> h<out>"
+ *     "cqrt_tape_write_<W>_controlled(h<ctrl>, t<tape>, h<src>) -> h<out>".
  * ----------------------------------------------------------------- */
 int32_t cqrt_tape_alloc(void);
 int32_t cqrt_tape_write_i1 (int32_t tape, int32_t src);
@@ -332,6 +345,11 @@ int32_t cqrt_tape_write_i8 (int32_t tape, int32_t src);
 int32_t cqrt_tape_write_i16(int32_t tape, int32_t src);
 int32_t cqrt_tape_write_i32(int32_t tape, int32_t src);
 int32_t cqrt_tape_write_i64(int32_t tape, int32_t src);
+int32_t cqrt_tape_write_i1_controlled (int32_t ctrl, int32_t tape, int32_t src);
+int32_t cqrt_tape_write_i8_controlled (int32_t ctrl, int32_t tape, int32_t src);
+int32_t cqrt_tape_write_i16_controlled(int32_t ctrl, int32_t tape, int32_t src);
+int32_t cqrt_tape_write_i32_controlled(int32_t ctrl, int32_t tape, int32_t src);
+int32_t cqrt_tape_write_i64_controlled(int32_t ctrl, int32_t tape, int32_t src);
 
 /* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;
