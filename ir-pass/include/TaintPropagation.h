@@ -142,6 +142,22 @@ struct TaintSet {
   // `Tainted.insert(rail)` site; consumed by `uncompute`. Empty for a module with
   // no tainted control flow.
   llvm::SmallPtrSet<llvm::Value *, 8> ControlOwnedRails;
+
+  // Phase 7.6 (PRD-7.6 §2.5). Kept I/O output rails — the `out_handle` each
+  // `cqrt_tape_write_<W>` returns (a Bennett output tape entry). They are a
+  // SINK's product, never uncomputed and never freed: routing one through the
+  // FreePoint / uncompute spine would collapse the very output the user asked
+  // to emit (Rule 6/8). The whole-DAG uncompute driver subtracts this set at
+  // BOTH spine sites — terminal selection (`Uncomputation`) and the DAG
+  // closure scan (`DagTraversal`) — the SAME discipline as `ControlOwnedRails`
+  // (the explicit image is load-bearing; do NOT rely on the closure scan
+  // incidentally skipping the rail). A SIBLING of `ControlOwnedRails`, NOT a
+  // reuse: the semantics differ (an output sink, not a Phase-4 control rail).
+  // The tape HANDLE from `cqrt_tape_alloc` is a classical resource token — not
+  // tainted, not a rail — so it is NEVER in this set; only the per-entry
+  // `out_handle` is. Populated by `lowerIOSinks`; consumed by `uncompute`.
+  // Empty for a module with no tainted I/O output.
+  llvm::SmallPtrSet<llvm::Value *, 8> OutputRails;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure

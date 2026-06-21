@@ -57,6 +57,7 @@ add_library(CQPass MODULE
   src/EqFoldArm.cpp
   src/FreePoint.cpp
   src/IntrinsicLowering.cpp
+  src/IOSinkLowering.cpp
   src/MeasureLowering.cpp
   src/NestedRouteEmit.cpp
   src/OpcodeLowering.cpp

@@ -79,6 +79,17 @@ public:
   // (method-B) swap-route lowering.
   llvm::FunctionCallee copyFn(llvm::StringRef abiWidth) const;        // @cqrt_copy_<W>
 
+  // Reversible I/O output-tape resolvers (Phase 7.6, PRD-7.6 §2.8 — FROZEN
+  // core ABI). `tapeAllocFn` is width-agnostic `i32 cqrt_tape_alloc(void)`
+  // (the tape handle is a classical resource token). `tapeWriteFn` is
+  // `i32 cqrt_tape_write_<W>(i32 tape, i32 src)` — the kept output rail and
+  // both inputs are i32 (the width only selects the symbol name), gated to
+  // the INTEGER widths {i1,i8,i16,i32,i64} EXACTLY as `copyFn`: an fp arg is
+  // an angle and there is no `cqrt_tape_write_i128`, so an unsupported width
+  // returns a null callee (caller declines) rather than minting a phantom.
+  llvm::FunctionCallee tapeAllocFn() const;                          // @cqrt_tape_alloc
+  llvm::FunctionCallee tapeWriteFn(llvm::StringRef abiWidth) const;  // @cqrt_tape_write_<W>
+
   // Rotation runtime resolvers. Both signatures are `void(i32, double)`
   // (handle, angle) — the handle is always i32 across every ABI width
   // (PRD §"Width unification"). Names `@cqrt_ry_<W>` / `@cqrt_rz_<W>`.

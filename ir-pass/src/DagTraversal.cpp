@@ -108,6 +108,15 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
       D.NotClosed = true;
       continue;
     }
+    // A kept I/O output rail (7.6, PRD-7.6 §2.5) — never reverse/free it. The
+    // `out_handle` of a `cqrt_tape_write_<W>` is not a data producer, so it is
+    // never a DAG root or template-producer rail here, but the explicit
+    // OutputRails subtraction is the SAME load-bearing discipline as
+    // ControlOwnedRails above (do NOT rest on that incidental exclusion).
+    if (taint.OutputRails.count(R)) {
+      D.NotClosed = true;
+      continue;
+    }
     for (User *U : R->users()) {
       if (auto *CU = dyn_cast<CallInst>(U)) {
         if (isInPlaceGateOn(CU, R))
@@ -118,6 +127,13 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
             D.UpstreamMeasure = CU;
           continue;
         }
+        if (isOutputSink(CU))
+          continue;  // 7.6: a `cqrt_tape_write_<W>` SINK on R — it READS R (a
+                     // CNOT-class copy that PRESERVES R; the kept out_handle is
+                     // an OutputRails member, subtracted above), so it is NOT a
+                     // forward data consumer and does NOT mark the DAG NotClosed:
+                     // R's lineage uncomputes normally (Bennett, PRD-7.6 §2.4).
+                     // Unlike a measure it is NOT a collapse (no MeasuredUpstream).
         if (isInvertEscape(CU)) {
           D.Escaped = true;
           continue;

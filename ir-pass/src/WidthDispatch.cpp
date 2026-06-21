@@ -147,6 +147,34 @@ FunctionCallee WidthDispatch::copyFn(StringRef abiWidth) const {
                         false));
 }
 
+FunctionCallee WidthDispatch::tapeAllocFn() const {
+  // Width-agnostic `i32 cqrt_tape_alloc(void)` (Phase 7.6, PRD-7.6 §2.8).
+  // Returns a tape handle (a classical resource token); takes no width and
+  // no args. Idempotent / lazy like the other runtime resolvers.
+  LLVMContext &Ctx = M.getContext();
+  return M.getOrInsertFunction(
+      "cqrt_tape_alloc",
+      FunctionType::get(Type::getInt32Ty(Ctx), {}, false));
+}
+
+FunctionCallee WidthDispatch::tapeWriteFn(StringRef abiWidth) const {
+  // Signature: i32(i32 tape, i32 src) — the kept output-rail handle and both
+  // inputs are i32 (the width only selects the symbol name). Mirrors
+  // cqrt_tape_write_<W> in runtime/cq_runtime.h (Phase 7.6). INTEGER widths
+  // only, gated EXACTLY as copyFn (the > 64 / non-integer fence): an fp arg
+  // in a rail is the f64/angle miscompile family, and there is NO
+  // cqrt_tape_write_i128 (i128 is an intermediate-only width, n0ui Tier-1),
+  // so an unsupported width returns a null callee (caller diagnoses) rather
+  // than minting a phantom extern that link-fails.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(("cqrt_tape_write_" + abiWidth).str(),
+                               FunctionType::get(I32, {I32, I32}, false));
+}
+
 FunctionCallee WidthDispatch::measureRtFn(StringRef abiWidth) const {
   // Signature: takes an i32 handle, returns a value of the ABI-width
   // type. Mirrors cqrt_measure_<W> in runtime/cq_runtime.h.

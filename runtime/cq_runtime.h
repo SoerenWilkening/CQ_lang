@@ -286,6 +286,54 @@ void cqrt_copy_i32_controlled(int32_t ctrl, int32_t src, int32_t dst);
 void cqrt_copy_i64_controlled(int32_t ctrl, int32_t src, int32_t dst);
 
 /* -----------------------------------------------------------------
+ * Reversible I/O output tape (Phase 7.6, PRD-7.6 §2.8 — FROZEN core
+ * ABI, hand-written here, NOT a `cq_template_*` generated symbol).
+ * The coherent replacement for a print-site measurement (Rule 5): a
+ * tainted `printf`/`putchar` integer-scalar argument is APPENDED to an
+ * output tape as a fresh |0> output rail that is KEPT — never freed,
+ * never uncomputed (the Bennett output tape). The measurement is
+ * DEFERRED to tape inspection (a backend concern), so the user's
+ * register stays coherent.
+ *
+ *   cqrt_tape_alloc() -> tape
+ *       Register a tape; the backend allocates the physical tape and
+ *       returns its handle — a CLASSICAL resource token (like a file
+ *       descriptor), NOT a qubit and NOT tainted, so the uncompute
+ *       spine ignores it. Width-agnostic (a tape holds mixed-width
+ *       entries, e.g. `printf("%d%c")`) — ONE symbol. The handle is
+ *       drawn from the same monotonic `cqrt_alloc_handle()` counter as
+ *       every qubit handle but PRINTS with a `t` prefix to distinguish
+ *       a tape from a rail.
+ *
+ *   cqrt_tape_write_<W>(tape, src) -> out
+ *       APPEND `src` to `tape` as a fresh |0> output rail (a CNOT-class
+ *       basis copy — `src` is PRESERVED, so `src`'s own lineage still
+ *       uncomputes normally through the Phase-5 spine; only the kept
+ *       `out` rail is special). The backend owns the append cursor, so
+ *       there is NO per-write index. Returns the new kept output-rail
+ *       handle. The 5 INTEGER widths only ({i1,i8,i16,i32,i64}, the
+ *       `widthHasReversibleCopy` set): an fp `%f` arg in a rail is the
+ *       f64/angle miscompile family, and there is no `cqrt_tape_write_
+ *       i128` — both DECLINE in the IR pass, never minting a phantom.
+ *       Distinct from `cqrt_copy_<W>` so the backend can always tell an
+ *       output qubit from a scratch copy AND so the uncompute spine
+ *       recognizes it as SINK-class and never recovers it as a
+ *       reversible gate (PRD-7.6 §2.4). Handles are always i32; the
+ *       width only selects the symbol name.
+ *
+ * Trace (the golden contract, PRD-7.6 §2.8): the tape handle prints as
+ * `t<N>`, every rail handle as `h<N>`:
+ *     "cqrt_tape_alloc() -> t<N>"
+ *     "cqrt_tape_write_<W>(t<tape>, h<src>) -> h<out>".
+ * ----------------------------------------------------------------- */
+int32_t cqrt_tape_alloc(void);
+int32_t cqrt_tape_write_i1 (int32_t tape, int32_t src);
+int32_t cqrt_tape_write_i8 (int32_t tape, int32_t src);
+int32_t cqrt_tape_write_i16(int32_t tape, int32_t src);
+int32_t cqrt_tape_write_i32(int32_t tape, int32_t src);
+int32_t cqrt_tape_write_i64(int32_t tape, int32_t src);
+
+/* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;
  * reserved for later lifetime work.
  * Trace: "cqrt_free(h<handle>)" (no return-value suffix).

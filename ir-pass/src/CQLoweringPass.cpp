@@ -7,6 +7,7 @@
 #include "CQLoweringPass.h"
 
 #include "ControlPlan.h"
+#include "IOSinkLowering.h"
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
 #include "RotationLowering.h"
@@ -95,6 +96,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // emitted call (Rule 9). A classical-condition branch stays byte-untouched.
   ControlPlan plan = detectControlRegions(M, taint);
   lowerControlRegions(M, wd, taint, plan);
+
+  // Reversible I/O output tape (Phase 7.6): a tainted `printf`/`putchar` lowers
+  // to `cqrt_tape_alloc` + `cqrt_tape_write_<W>` append sequences instead of
+  // declining at the escape guard above (Rule 5 — NO measurement). Runs BEFORE
+  // `lowerRotations` so the sink operand is still the pre-RAUW `@cq_theta`-
+  // derived value (the later RAUW-to-handle rewrites every emitted `src` arg);
+  // capturing the i32 handle instead would be the opaque-call silent
+  // miscompile. A classical-only `printf` stays byte-untouched.
+  lowerIOSinks(M, wd, taint);
 
   // Classical-condition mux guard (test_C_libtooling-wi5): a LIVE select/phi
   // reading tainted data that SURVIVES control lowering is classically
@@ -199,6 +209,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // IMPLEMENTATION §6.5).
   ControlPlan plan = detectControlRegions(M, taint);
   lowerControlRegions(M, wd, taint, plan);
+  // Reversible I/O output tape (Phase 7.6) mirrored in this entry point too
+  // (twin-pipeline parity is MANDATORY — a stage wired in run() but not here
+  // silently diverges, WI-1.12). See run() for the pre-`lowerRotations`
+  // ordering rationale.
+  lowerIOSinks(M, wd, taint);
   // Classical-condition mux guard in this entry point too (twin-pipeline
   // trap, IMPLEMENTATION §6.5) — see run() for the ordering rationale.
   declineClassicalMuxes(M, taint);

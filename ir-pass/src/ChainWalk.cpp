@@ -36,6 +36,11 @@ bool isMeasureSink(const CallInst *CI) {
   return Callee && Callee->getName().starts_with("cqrt_measure_");
 }
 
+bool isOutputSink(const CallInst *CI) {
+  const Function *Callee = CI->getCalledFunction();
+  return Callee && Callee->getName().starts_with("cqrt_tape_write_");
+}
+
 bool isTerminalHandle(Value *Handle, const TaintSet &taint) {
   if (!taint.Tainted.count(Handle))
     return false;
@@ -48,8 +53,8 @@ bool isTerminalHandle(Value *Handle, const TaintSet &taint) {
     auto *CI = dyn_cast<CallInst>(U);
     if (!CI)
       continue;  // a classical/non-call read does not extend the quantum chain
-    if (isInPlaceGateOn(CI, Handle) || isMeasureSink(CI))
-      continue;  // in-place rotation (no new handle) or measurement sink
+    if (isInPlaceGateOn(CI, Handle) || isMeasureSink(CI) || isOutputSink(CI))
+      continue;  // in-place rotation, measurement sink, or I/O output sink (7.6)
     return false;  // any other gate consumes `Handle` ⇒ not the chain terminal
   }
   return true;

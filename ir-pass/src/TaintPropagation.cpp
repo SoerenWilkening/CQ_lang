@@ -530,6 +530,34 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             if (isCuratedReversibleIntrinsic(CI))
               continue;
           }
+          // 1d-Phase7.6. Recognized I/O output sinks (`printf` / `putchar`)
+          //     consuming a tainted INTEGER-SCALAR arg are OWNED by
+          //     `lowerIOSinks` (the reversible output tape — `cqrt_tape_alloc`
+          //     + `cqrt_tape_write_<W>`, PRD-7.6). EXACT-name membership —
+          //     NEVER a `starts_with("printf")` accept (a user `printf_helper`
+          //     must still escape; the cq_theta_evil hazard, line ~448-451).
+          //     Restricted to a DIRECT `CallInst`: an `invoke @printf` (a
+          //     CallBase that is not a CallInst) and an indirect call (null
+          //     callee, empty `N`) both fall through to the loud
+          //     kMsgUnknownCallee decline below. `lowerIOSinks` runs later
+          //     (after control lowering, BEFORE `lowerRotations`) and STILL
+          //     fires its OWN loud decline for any arg shape it cannot prove
+          //     (fp `%f`, i128, non-scalar, a used sink result, a non-constant
+          //     classical co-arg) — so this carve suppresses ONLY the generic
+          //     unknown-callee decline, it NEVER accepts an unlowerable sink.
+          //     The callee must be a DECLARATION (the libc extern) — a user's
+          //     own in-module printf/putchar body is owned by the specializer /
+          //     escape path, NOT taped (Rule-13 R5) — and the call must carry no
+          //     OPERAND BUNDLES (a tainted bundle operand is read by
+          //     readsTaintedValue but not by lowerIOSinks's CI->args() scan, so
+          //     carving without lowering it is the opaque-call miscompile,
+          //     Rule-13 R3). These two predicates match isRecognizedIOSink
+          //     EXACTLY so the carve and the emitter can never diverge.
+          if (auto *CIio = dyn_cast<CallInst>(CB))
+            if (Callee && Callee->isDeclaration() &&
+                !CIio->hasOperandBundles() &&
+                (N == "printf" || N == "putchar"))
+              continue;
           // 1e. Everything else — opaque extern, an in-module body the
           //     specializer declined, a NON-curated llvm.* intrinsic, or
           //     indirect (null callee) — is an UNKNOWN callee: after RAUW it

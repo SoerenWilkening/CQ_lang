@@ -35,6 +35,17 @@ bool isAllocMint(const llvm::Value *V);
 // handle is a quantum→classical sink, not a forward data consumer.
 bool isMeasureSink(const llvm::CallInst *CI);
 
+// A `@cqrt_tape_write_<W>` I/O output-tape sink (Phase 7.6). Like a measure, it
+// is a SINK on its `src` arg — it READS the handle (a CNOT-class basis copy that
+// PRESERVES src) but is NOT a forward data consumer that extends src's chain, so
+// the whole-DAG spine must treat a tape-write user as benign: src stays a
+// terminal candidate and its lineage uncomputes normally (Bennett copy-out), the
+// tape write itself is never recovered as a reversible gate. Distinct from
+// `isMeasureSink`: a tape write is NOT a quantum→classical collapse (it sets no
+// MeasuredUpstream), and the kept `out_handle` it returns is an `OutputRails`
+// member the spine subtracts separately (TaintSet::OutputRails).
+bool isOutputSink(const llvm::CallInst *CI);
+
 // Is `Handle` the TERMINAL of its register's def-use DAG? True when no OTHER
 // tainted instruction consumes it as a forward data operand — its only remaining
 // users are non-producers (a measurement sink, a `ret` escape, classical reads,

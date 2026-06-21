@@ -517,6 +517,59 @@ void cqrt_copy_i64_controlled(int32_t ctrl, int32_t src, int32_t dst) {
 }
 
 /* ---------------------------------------------------------------------
+ * Reversible I/O output tape (Phase 7.6, PRD-7.6 §2.8) — FROZEN core
+ * ABI. `cqrt_tape_alloc` mints a tape handle (printed `t<N>`); each
+ * `cqrt_tape_write_<W>` appends `src` as a fresh kept |0> output rail
+ * and returns its handle (printed `h<N>`). Both draw from the shared
+ * monotonic `cqrt_alloc_handle()` counter so tape and rail handles stay
+ * globally ordered; only the print prefix (`t` vs `h`) differs. The
+ * write is handle-RETURNING (the kept out-rail), unlike void cqrt_copy.
+ * Trace-only: no simulation, no measurement (see cq_runtime.h).
+ * ------------------------------------------------------------------- */
+
+int32_t cqrt_tape_alloc(void) {
+    int32_t t = cqrt_alloc_handle();
+    printf("cqrt_tape_alloc() -> t%d\n", t);
+    fflush(stdout);
+    return t;
+}
+
+int32_t cqrt_tape_write_i1(int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i1(t%d, h%d) -> h%d\n", tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_tape_write_i8(int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i8(t%d, h%d) -> h%d\n", tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_tape_write_i16(int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i16(t%d, h%d) -> h%d\n", tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_tape_write_i32(int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i32(t%d, h%d) -> h%d\n", tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_tape_write_i64(int32_t tape, int32_t src) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_tape_write_i64(t%d, h%d) -> h%d\n", tape, src, out);
+    fflush(stdout);
+    return out;
+}
+
+/* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */
 

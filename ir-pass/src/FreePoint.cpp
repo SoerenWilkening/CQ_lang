@@ -60,6 +60,20 @@ bool isMeasureSink(const CallInst *CI) {
   return Callee && Callee->getName().starts_with("cqrt_measure_");
 }
 
+// A `@cqrt_tape_write_<W>` I/O output-tape sink (Phase 7.6; FreePoint's local
+// mirror of ChainWalk::isOutputSink, matching the local isMeasureSink above). A
+// tape write READS-and-PRESERVES its src register — it is NOT a collapsing gate.
+// It is therefore EXEMPT from the post-measure-use reject below (writing a
+// measured, now-classical value to the tape is legitimate, not a gate after
+// measurement). It is NOT excluded from the post-dom Users set, though: it stays
+// an ordinary `cqrt_` use so a DEAD source's free lands AFTER the write — the
+// load-bearing Bennett ordering (excluding it would place the free before the
+// write, a use-after-free for tape-then-dead).
+bool isOutputSink(const CallInst *CI) {
+  const Function *Callee = CI->getCalledFunction();
+  return Callee && Callee->getName().starts_with("cqrt_tape_write_");
+}
+
 // Does `U` consume `Terminal` as a RECOGNIZED escape that Phase 5 silently skips
 // (no adjoint, no free, no diagnostic — PRD §2.6)?
 //   * a `ReturnInst` — the caller owns the handle;
@@ -166,6 +180,12 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
   // a measure in a later merge block — is NOT post-measure.
   if (Measure)
     for (Instruction *G : Users) {
+      // A 7.6 tape write reads-and-preserves a measured (now-classical) value —
+      // it is not a gate applied after measurement, so it is exempt from this
+      // reject (it stays in Users for the dead-source placement above).
+      if (auto *CI = dyn_cast<CallInst>(G))
+        if (isOutputSink(CI))
+          continue;
       bool After = (G->getParent() == Measure->getParent())
                        ? Measure->comesBefore(G)
                        : DT.dominates(Measure, G);

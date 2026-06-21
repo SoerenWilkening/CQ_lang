@@ -174,6 +174,11 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
           continue;
         if (taint.ControlOwnedRails.count(H))
           continue;  // DD-4: Phase-4 owns this rail
+        if (taint.OutputRails.count(H))
+          continue;  // 7.6: kept I/O output rail — never a data terminal
+                     // (PRD-7.6 §2.5). Defensive: a tape-write out_handle is not
+                     // a data producer, so it never reaches here, but the
+                     // explicit image is load-bearing, like ControlOwnedRails.
         if (!isTerminalHandle(H, taint))
           continue;  // collapse the reassignment DAG to its terminals (§2.1)
         Terminals.push_back(H);

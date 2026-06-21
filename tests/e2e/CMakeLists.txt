@@ -531,6 +531,25 @@ add_test(NAME e2e-slice-classical-call-under-control
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_caller.expected.log")
 
+# Phase 7.6 (test_C_libtooling-9x4z.1): the reversible I/O output tape. The only
+# layer that LINKS — and 7.6 adds NEW frozen hand-written core symbols, so this
+# golden is the ONLY proof cqrt_tape_alloc + cqrt_tape_write_<W> resolve and
+# signature-match against libcq_runtime (Rule 2/16; the .ll fixtures assert IR
+# text and never link). A theta-tainted `x` is APPENDED to the output tape twice
+# (printf + putchar -> ONE cqrt_tape_alloc t0, TWO cqrt_tape_write_i32 appends
+# with distinct out-handles h2/h3); x is then dead + UNMEASURED, so the source
+# lineage uncomputes through the Phase-5 spine (ry adjoint + cqrt_free of h1,
+# AFTER the tape captured the value — Bennett copy-out). The kept output rails are
+# never freed/reversed, and ZERO measurement is emitted (Rule 5). `noinline` is
+# load-bearing (uncompute is gated off in `main`, and -O1 would inline `emit`).
+add_test(NAME e2e-slice-io
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_io.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_io.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
