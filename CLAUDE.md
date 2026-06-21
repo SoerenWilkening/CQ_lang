@@ -49,7 +49,7 @@ class of bug.
 > Shadow model); manual inversion (`cq_invert`) moved to **Phase 8**; runtime
 > templates / integration / freeze are **9 / 10 / 11**. The freeze is gated only
 > on the 7.5 QRAM memory ABI, the 7.1 wide-integer widths, and the 7.6 I/O
-> output-tape ABI (`cqrt_tape_alloc` / `cqrt_tape_write_<W>`) — the control/loop work (7.2–7.4)
+> output-tape ABI (`cqrt_tape_alloc` / `cqrt_tape_write_<W>` (+ `_controlled`)) — the control/loop work (7.2–7.4)
 > adds no frozen symbols. See `ROADMAP.md` for the authoritative plan.
 
 ---
