@@ -1,0 +1,32 @@
+; control_swap_reject_nonreconverging_value_exit.ll — Phase 7.2 Inc 4 DECLINE:
+; a tainted-condition `br` that muxes TWO un-merged value `ret`s (the §2.11-C-i
+; "two un-merged value rets / musttail" survivor). `clang -O1` reconverges every
+; *mergeable* early return to one `select` / merge-φ (already 4.4-accepted), so
+; this shape essentially never survives for non-`musttail` code — it is HAND-
+; CONSTRUCTED to exercise the OffPattern partition (IMPLEMENTATION-PLAN-7.2 §6 RED
+; note: "use musttail or a hand-written .ll").
+;
+; recoverRegion sees both arms end in `ret` (uncondSucc==null, no merge φ) →
+; OffPattern; `offPatternDisposition` sees BOTH arms are value `ret`s → the
+; dedicated `non-reconverging value exit` decline. Requiring BOTH arms is what
+; keeps the abort lookalike (one `unreachable` arm + a `ret` sibling) on the
+; generic `control flow` path (§2.11 mutual-exclusivity). 7.2 does NOT synthesize
+; the merge (reopenable tooling boundary, §2.10/§5). Over-declining is safe.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error{{.*}}non-reconverging value exit under quantum control
+; CHECK-NOT: cqrt_copy
+; CHECK-NOT: cqrt_cswap
+declare i32 @cq_theta_si32(i32, double)
+define i32 @example(i32 %u0) {
+entry:
+  %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
+  %c = icmp sgt i32 %q, 5
+  br i1 %c, label %a, label %b
+a:
+  %ra = add i32 %q, 1
+  ret i32 %ra
+b:
+  %rb = add i32 %q, 2
+  ret i32 %rb
+}

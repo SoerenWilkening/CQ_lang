@@ -28,6 +28,7 @@
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
@@ -164,6 +165,118 @@ RegionShape recoverRegion(BranchInst *BI, TaintSet &Taint, ControlRegion &R) {
 
 namespace {
 
+// ── 7.2 Inc 4 — OffPattern decline-diagnostic partition (PRD-7.2 §2.10/§2.11-C) ──
+// Replace the single generic `control flow` at the structural OffPattern site
+// with a per-disposition, source-located `What`. PURE SSA, NO mutation — keyed on
+// arm-terminator KIND by value identity before any lowering (Rule 9). SCOPED to
+// THIS site: `control flow` is the `What` at ~60 other decline sites, so the
+// partition keys on the OffPattern PATH, never on the message string (§2-F). The
+// abort park (`classifyAbortPark`, run first) and `recoverRegion`'s three accept
+// shapes have already filtered out everything that parks or reconverges, so an
+// OffPattern `br` is a genuinely non-reconverging tainted-condition branch.
+
+// The value returned by `Arm`'s terminator iff it ends in a value-bearing `ret`;
+// null for a `ret void` / a non-`ret` terminator (`br`/`switch`/`unreachable`).
+Value *armReturnValue(BasicBlock *Arm) {
+  auto *Ret = dyn_cast<ReturnInst>(Arm->getTerminator());
+  return Ret ? Ret->getReturnValue() : nullptr;
+}
+
+// Is `Arm` a self-`br` infinite loop (`br label %<itself>`)? The §2.11-C-ii
+// divergent-arm signature, deferred to 7.3/7.4. Pure structural — the recognized
+// noreturn sinks were already parked/declined by `classifyAbortPark`, so a
+// divergent arm surviving here has no recognized terminating sink.
+bool isSelfLoopArm(BasicBlock *Arm) {
+  auto *BI = dyn_cast<BranchInst>(Arm->getTerminator());
+  return BI && BI->isUnconditional() && BI->getSuccessor(0) == Arm;
+}
+
+// Backward "does this value's lineage carry a relative phase (an Rz / `cq_phi`)?"
+// walk — the §2.6/§2.11-C-iii phase fence. A per-TU mirror of AbortParkEmit's and
+// SelectClassify's identical walks (the house style permits the trivial duplicate
+// — keeping the partition self-contained, no cross-TU mechanism, Rule 14). A
+// `cq_theta` (Ry) basis superposition has no relative phase and STOPS the walk; a
+// `cq_phi` in the lineage is the phase carrier. Over-decline-safe (any phi flags
+// it). The caller gates entry on `Taint.Tainted.count(Op)` so a MEASURED ret
+// operand (the taint sink — phase already collapsed to a basis outcome) is never
+// walked into (the `cq_measure` result is untainted).
+bool retLineageCarriesPhase(Value *Op, const TaintSet &Taint) {
+  SmallVector<Value *, 8> Work;
+  SmallPtrSet<Value *, 16> Visited;
+  Work.push_back(Op);
+  Visited.insert(Op);
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (auto *CI = dyn_cast<CallInst>(V)) {
+      const Function *F = CI->getCalledFunction();
+      if (F && F->getName().starts_with("cq_phi_"))
+        return true;  // an Rz (cq_phi) in the lineage — a relative-phase carrier.
+    }
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;  // an argument / constant root — basis, not a phase.
+    for (Value *In : I->operands())
+      if (Taint.Tainted.count(In) && Visited.insert(In).second)
+        Work.push_back(In);
+  }
+  return false;
+}
+
+// Pick the precise PRD-7.2 §2.10 `What` for an OffPattern tainted `br`. Pure
+// analysis; returns the message string only (the caller fires the one shared
+// `diagnoseUnderControl`). Priority is most-specific-physics-first; each branch is
+// mutually exclusive on the verified-fixture corpus (control_swap_reject_abort_
+// nonnoreturn.ll + control_swap_reject_nested_switch.ll are the ONLY two fixtures
+// that reach this site, and both correctly stay generic — see the per-row notes).
+StringRef offPatternDisposition(BranchInst *BI, TaintSet &Taint) {
+  BasicBlock *S0 = BI->getSuccessor(0), *S1 = BI->getSuccessor(1);
+
+  // (C-iii) PHASE-CLASS value escaping — checked FIRST (the most specific hazard:
+  // a phase reaching a data/exit path is the Rule-7 dephasing leak, P0 0.585→
+  // 0.500). A value-`ret` arm whose returned operand is TAINTED and carries an Rz
+  // (`cq_phi`) lineage. Single-arm scan — the phase may escape beside an
+  // `unreachable`/exit sibling (§2.11-C-iii "incl. an abort sibling"). The TAINTED
+  // gate is load-bearing: it excludes a MEASURED return (`ret %m`, `%m =
+  // cq_measure …`, whose pre-measure lineage carried a phase but has collapsed) —
+  // exactly control_swap_reject_nested_switch.ll's merge arm, which must stay
+  // generic. A RECOGNIZED-sink abort+phase is `classifyAbortPark`'s own Declined
+  // `phase-class value escaping`, never reaching here. SCOPED to the DIRECT
+  // escaping `ret` operand (§2.11-C-iii's exact wording): a phase reaching the
+  // exit through a longer `br`→downstream-`ret` chain is a best-effort labeling
+  // gap that falls to the generic `control flow` — still a DECLINE (no miscompile,
+  // no accept, Prime Directive), this partition is a source-locator over an
+  // already-declining path, not an exhaustive phase detector (Rule-13 residual).
+  for (BasicBlock *Arm : {S0, S1})
+    if (Value *RV = armReturnValue(Arm))
+      if (Taint.Tainted.count(RV) && retLineageCarriesPhase(RV, Taint))
+        return "phase-class value escaping";
+
+  // (C-ii) LOOP — a self-`br` divergent arm (no recognized noreturn sink; abort-
+  // park already handled the sinks). Deferred to 7.3/7.4. Checked before the
+  // value-exit row so a divergent arm beside a value-`ret` sibling reports the
+  // divergence, not the sibling's exit.
+  if (isSelfLoopArm(S0) || isSelfLoopArm(S1))
+    return "loop";
+
+  // (C-i) NON-RECONVERGING VALUE EXIT — the two-way value-exit mux clang did NOT
+  // reconverge: BOTH arms end in a value `ret` (the two-un-merged-rets / `musttail`
+  // survivors; 7.2 does NOT synthesize the merge — reopenable tooling boundary,
+  // §2.10). REQUIRING BOTH arms is LOAD-BEARING for the §2.11 mutual-exclusivity:
+  // an abort LOOKALIKE (an `unreachable` arm beside the ordinary uncontrolled
+  // `ret` sibling — control_swap_reject_abort_nonnoreturn.ll) has ONE `unreachable`
+  // arm, so it is NEVER a `non-reconverging value exit` (its `ret` sibling is the
+  // normal return, not a second mux arm), and stays the generic `control flow`. A
+  // RECOGNIZED abort+value is the park (handled upstream), never this row.
+  if (armReturnValue(S0) && armReturnValue(S1))
+    return "non-reconverging value exit";
+
+  // Everything else (an `unreachable`/`switch`/cond-`br`-terminated arm beside a
+  // non-value sibling — e.g. the nested_switch outer branch, the abort lookalike —
+  // or a failed-merge-φ shape) keeps the generic catch-all (Prime Directive over-
+  // decline; behavior unchanged from pre-7.2-Inc-4).
+  return "control flow";
+}
+
 // Recognize and classify one tainted-condition `br`, firing the precise
 // decline or PUSHING an accepted region onto `Plan` for `SwapRouteEmit`.
 void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
@@ -187,7 +300,11 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
   }
   switch (recoverRegion(BI, Taint, R)) {
   case RegionShape::OffPattern:
-    diagnoseUnderControl(BI, "control flow");
+    // 7.2 Inc 4 — partition the generic decline into a per-disposition, source-
+    // located `What` (PRD-7.2 §2.10/§2.11-C). Same `diagnoseUnderControl`
+    // mechanism (Rule 14), pure-SSA `offPatternDisposition` just selects a
+    // precise message; non-partitioned shapes keep the generic `control flow`.
+    diagnoseUnderControl(BI, offPatternDisposition(BI, Taint));
     return;
   case RegionShape::Nested:
     // 4.3 — prove-or-decline the depth-2 nest instead of the blanket decline. On
