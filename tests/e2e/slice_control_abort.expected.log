@@ -1,0 +1,8 @@
+cqrt_tape_alloc() -> t0
+cqrt_alloc_i32(5) -> h1
+cqrt_ry_i32(h1, 0.500000)
+cq_template_icmp_sgt_i32_hl(h1, 5) -> h2
+cqrt_alloc_i32(0) -> h3
+cqrt_cswap(h2, h1, h3)
+cqrt_tape_write_i1(t0, h2) -> h4
+cqrt_measure_i32(h1) -> 0

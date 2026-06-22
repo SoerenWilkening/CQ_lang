@@ -117,6 +117,17 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
       D.NotClosed = true;
       continue;
     }
+    // A parked abort/exit graveyard rail (7.2 Inc 3, plan §2-A) reached as a DAG
+    // ancestor — kept frozen + entangled, never reverse-played/freed (Rule 6).
+    // Missing THIS site (subtracting only at terminal selection) would let a
+    // graveyard rail reached as an upstream operand be reversed/freed = a hidden
+    // collapse of the parked superposition; the explicit image is load-bearing
+    // (the SAME discipline as ControlOwnedRails / OutputRails above — do NOT rest
+    // on the closure scan's incidental controlled-cswap-user exclusion).
+    if (taint.GraveyardRails.count(R)) {
+      D.NotClosed = true;
+      continue;
+    }
     for (User *U : R->users()) {
       if (auto *CU = dyn_cast<CallInst>(U)) {
         if (isInPlaceGateOn(CU, R))

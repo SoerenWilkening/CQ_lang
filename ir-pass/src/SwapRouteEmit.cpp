@@ -19,6 +19,7 @@
 
 #include "SwapRouteEmit.h"
 
+#include "AbortParkEmit.h"       // emitAbortParkRegion (the 7.2 Inc 3 park cascade)
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "CompareLowering.h"     // lowerCompareToFlag
 #include "ClassicalCallArmEmit.h" // emitClassicalCallArmRegion (the 6.5 merge)
@@ -817,6 +818,18 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
         else if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
           diagnoseUnderControl(A, "control flow");
       }
+      continue;
+    }
+    if (R.Kind == ControlRegion::AbortPark) {
+      // 7.2 Inc 3 — abort/exit park cascade: mint the flag, `cqrt_cswap` the
+      // routed handle into a KEPT graveyard rail (self-bracketed), record the
+      // abort flag on the tape, and run the sibling/downstream UNCONTROLLED. Its
+      // Pred/Arm/Condition are set (Merge/MergeBB/ArmFalse null — the sink arm has
+      // nothing to merge and the sibling SURVIVES), so the cross-region pre-flight
+      // above covered the sole doomed block (the sink Arm) and the non-null
+      // Condition kept its diagnose arm live. No nest link — dispatch + continue
+      // BEFORE the Depth / child-lookup branch (which keys on CFG anchors).
+      emitAbortParkRegion(R, wd, csyms, taint);
       continue;
     }
     if (R.Kind == ControlRegion::ClassicalCallArm) {

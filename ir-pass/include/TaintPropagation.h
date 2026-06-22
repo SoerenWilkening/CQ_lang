@@ -159,6 +159,25 @@ struct TaintSet {
   // Empty for a module with no tainted I/O output.
   llvm::SmallPtrSet<llvm::Value *, 8> OutputRails;
 
+  // Phase 7.2 Increment 3 (PRD-7.2 §2.8 / §2.11-B, plan §2-A). Parked GRAVEYARD
+  // rails — the freshly-`cqrt_alloc`'d rail the abort/exit park `cqrt_cswap`s the
+  // pre-abort routed handle into (under the abort flag), plus the abort flag
+  // itself. The flag=1 (would-abort) component of the live register is moved aside
+  // so the uncontrolled downstream never observes (and so never dephases) it; the
+  // graveyard is kept frozen + inspectable forever. A parked rail is ENTANGLED
+  // (with the flag / the scrutinee), so reverse-playing or `cqrt_free`-ing it is a
+  // hidden projective collapse (Rule 6) — exactly the hazard `OutputRails` /
+  // `ControlOwnedRails` guard against, but with a distinct semantics (a parked
+  // graveyard, not a control rail or an output-tape entry). The whole-DAG
+  // uncompute driver subtracts this set at BOTH spine sites — terminal selection
+  // (`Uncomputation`) AND the DAG closure scan (`DagTraversal`) — the SAME
+  // load-bearing-explicit-image discipline as `OutputRails` (do NOT rely on the
+  // closure scan / `isTerminalHandle` incidentally skipping a parked rail: a
+  // graveyard reached as a DAG ancestor must still be left allocated, never
+  // reversed/freed). Populated by `AbortParkEmit`; consumed by `uncompute`. Empty
+  // for a module with no controlled abort/exit.
+  llvm::SmallPtrSet<llvm::Value *, 8> GraveyardRails;
+
   // Phase 7.6 (PRD-7.6 §2.4). One lazy `cqrt_tape_alloc()` per function — the
   // stream→tape registry (v1 has a single stdout stream). SHARED across the two
   // I/O-lowering steps so a function with BOTH a controlled `if(q)printf`

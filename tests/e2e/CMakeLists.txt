@@ -149,6 +149,20 @@ add_test(NAME e2e-slice-control-select
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select.expected.log")
 
+# Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
+# CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
+# cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.
+# The ONLY layer that links the park sequence; the golden proves the graveyard +
+# flag are KEPT (NO cqrt_free anywhere — the §2-A GraveyardRails do-not-uncompute
+# set, subtracted at both spine sites) and the abort call is erased.
+add_test(NAME e2e-slice-control-abort
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_abort.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_abort.expected.log")
+
 # test_C_libtooling-5j5: the ONE-REGISTER classical-mux lift. The natural
 # `if (classical_c) q = cq_phi(q, a);` survives -O1 as a merge phi over two
 # SSA names of one register; the lift RAUWs it away and the CLASSICAL branch

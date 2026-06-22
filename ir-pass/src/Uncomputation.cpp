@@ -179,6 +179,12 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
                      // (PRD-7.6 §2.5). Defensive: a tape-write out_handle is not
                      // a data producer, so it never reaches here, but the
                      // explicit image is load-bearing, like ControlOwnedRails.
+        if (taint.GraveyardRails.count(H))
+          continue;  // 7.2 Inc 3: a parked abort/exit graveyard rail (or the
+                     // abort flag) — kept frozen + entangled, NEVER reversed or
+                     // freed (Rule 6, plan §2-A). The cswap-into-graveyard already
+                     // makes `isTerminalHandle` false, but the explicit image is
+                     // load-bearing — the SAME discipline as OutputRails above.
         if (!isTerminalHandle(H, taint))
           continue;  // collapse the reassignment DAG to its terminals (§2.1)
         Terminals.push_back(H);

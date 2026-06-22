@@ -136,12 +136,26 @@ struct ControlRegion {
   // `MergeBB`/`Merge` and `ArmNegated` (Rule 9 polarity) carry the shape exactly as
   // a `BranchRegion` diamond does; the call is re-derived as the `Arm`-edge merge
   // incoming (the emitter is a pure consumer of the by-identity plan).
+  // AbortPark (7.2 Inc 3, PRD-7.2 §2.8 / §2.11-B) — a tainted-condition `br`
+  // whose one arm is a recognized NORETURN SINK (`@abort`/`@exit`/…/`@llvm.trap`
+  // + `unreachable`, NO value, NO merge φ), the sibling being the ordinary
+  // uncontrolled remainder. `Pred` is the branch block, `Arm` the sink arm (the
+  // ONLY block the emitter erases), `Condition` the tainted compare, `ArmNegated`
+  // the Rule-9 polarity (the sink arm is the FALSE successor). `Merge`/`MergeBB`/
+  // `ArmFalse` stay null (the sink arm has nothing to merge; the sibling SURVIVES
+  // — it is NOT doomed, so it is deliberately absent from the pre-flight's doomed
+  // set). Lowered by `AbortParkEmit`: mint the flag → `cqrt_cswap` the routed
+  // handle into a kept graveyard rail (self-bracketed) → record the flag on the
+  // tape → run the sibling/downstream UNCONTROLLED (abort terminates, so the
+  // branch-correlated tail-garbage never dephases). The graveyard + flag join the
+  // new `taint.GraveyardRails` (kept, NEVER reversed/freed — Rule 6).
   enum Kind {
     SelectRegion,
     BranchRegion,
     AngleSelectRegion,
     SwitchRegion,
-    ClassicalCallArm
+    ClassicalCallArm,
+    AbortPark
   } Kind = BranchRegion;
 
   // The merge node: a `SelectInst` (select-sourced) or the merge-block

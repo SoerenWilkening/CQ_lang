@@ -19,6 +19,7 @@
 
 #include "ControlPlan.h"
 
+#include "AbortParkEmit.h"
 #include "ArmClassify.h"
 #include "ControlShape.h"
 #include "RegionTreeDetect.h"
@@ -168,6 +169,22 @@ namespace {
 void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
                         SmallPtrSetImpl<BranchInst *> &Claimed) {
   ControlRegion R;
+  // 7.2 Inc 3 — abort/exit park FIRST: a recognized noreturn-sink arm ends in
+  // `unreachable`, so `recoverRegion` would label it `OffPattern` and decline
+  // generically. Recognize it BEFORE that fall-through (parallel to how
+  // `lowerControlledIOSinks` pre-peels the merge-φ-less void-I/O diamond). On
+  // Accept push the `AbortPark` region for `emitAbortParkRegion`; on Declined it
+  // already fired the precise diagnostic; NotApplicable falls through to the
+  // ordinary shape recovery (`R` is untouched, so it is reused below).
+  switch (classifyAbortPark(BI, Taint, R)) {
+  case AbortParkDisp::Accept:
+    Plan.Regions.push_back(R);
+    return;
+  case AbortParkDisp::Declined:
+    return;
+  case AbortParkDisp::NotApplicable:
+    break;
+  }
   switch (recoverRegion(BI, Taint, R)) {
   case RegionShape::OffPattern:
     diagnoseUnderControl(BI, "control flow");
