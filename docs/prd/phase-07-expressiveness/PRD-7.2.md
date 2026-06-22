@@ -123,10 +123,22 @@ applied on"). The multi-register park cascade survives **only** as the
 inspected after termination, never selected back.
 
 ### 2.3 The `exp2` gap → the data-mux emitter, not 4.2
-The currently-declining core case is a `br`-diamond whose merge-φ has **two
-independent computed value arms with no shared base** (e.g.
-`if(q>5) return q+1; return 3*q+7;` when clang keeps the diamond instead of
-folding to `select`). It does **not** fit 4.2's route-a-base model (there is no
+> **[Correction — 2026-06-22 persisting-`ret` review.]** The example below
+> (`if(q>5) return q+1; return 3*q+7;`) does **not** decline today: `clang -O1`
+> folds it to a `select` and the existing 4.4 `SelectMergeEmit` path already
+> **accepts** it (verified, `opt` exit 0). The genuinely-new `br`-diamond surface
+> is **narrow and optimizer-cost-fragile** — it survives as a `br`-diamond only
+> when an arm exceeds clang's branch-speculation cost budget or carries a
+> non-escaping side effect (a `q`-consuming call arm taint-escape-declines
+> regardless of return shape). Deliverable-1 fixtures (§3) must therefore use a
+> shape **verified to survive as a `br`-diamond at `-O1`**, not one that
+> folds-to-`select` (already handled) or taint-escapes (declined upstream). The
+> data-mux disposition below remains physically correct for the surviving shape.
+
+The (formerly described as currently-declining) core case is a `br`-diamond whose
+merge-φ has **two independent computed value arms with no shared base** (e.g.
+`if(q>5) return q+1; return 3*q+7;` *only* on the rare path where clang keeps the
+diamond instead of folding to `select`). It does **not** fit 4.2's route-a-base model (there is no
 incoming base to `cqrt_cswap`). **Decision:** detection recognizes this shape and
 routes it to the **data-mux / controlled-XOR-copy** emitter (the 4.4/4.5 path,
 generalized from a literal `select`/`switch` operand to a `br`-diamond with
@@ -162,6 +174,16 @@ copy mechanisms (`cqrt_copy_<W>(_controlled)` / `cqrt_cswap`). **A phase-class
 value that would reach a data-copy path is a loud decline** (Rule 7) — never a
 silent XOR-copy that dephases. This is an arm-class guard at classification time,
 reusing the existing phase-vs-value split in `ArmClassify`.
+
+**Deferred interaction (2026-06-22 review).** A phase-class value escaping via
+`ret` **beside an `abort`/park arm** (`p = cq_phi(q); if(q>5) return p; abort();`)
+is an **unproven** park-vs-dephasing interaction: whether the §2.8 `cqrt_cswap`
+park of the live registers preserves the relative phase on the surviving arm's
+escaping `ret` is **not yet shown**. 7.2 therefore **conservatively declines** this
+case (over-decline is safe; Prime Directive) rather than asserting an outcome;
+accept-vs-permanent-decline is resolved under Rule-13 (§2.11 C-iii). Do **not**
+silently route it onto the in-place phase-escape path until the park interaction is
+proven coherence-preserving.
 
 ### 2.7 Single escaping handle — discharges hazard (iii)
 ROADMAP hazard (iii) is FreePoint's whole-function `ret`-as-Escaped assumption
@@ -207,25 +229,96 @@ case. In the `abort` case the tail-garbage exists but is **harmless** (§2.8,
 abort terminates). Hazard (i) therefore reduces to "reuse the proven region-local
 reverse-play" — no new control-aware adjoint, no change to the spine.
 
-### 2.10 Dedicated decline diagnostic — partition the dispositions (Rule 12)
-Replace the generic `"control flow under quantum control"` catch-all
-(`ControlDetect.cpp:172-173`) for early-exit shapes with **distinct, source-located
-messages** for each disposition, so each ships a mirror-exact negative fixture:
-1. **accept** — reconverging D4 (no diagnostic).
-2. **permanent reject — non-reconverging *value* exit** (a value-returning arm
-   that cannot rejoin the single exit).
-3. **permanent reject — §3c clobber** (an arm value-overwrites a quantum register
-   the branch condition transitively reads — non-injective, `icmp_inv` cannot
-   recompute; `swap_route_reject_clobber.ll`).
-4. **permanent reject — measurement / escape under control** (`cq_measure` in a
-   tainted arm; `store` to untracked memory; an impure non-output external call —
-   the `declineTaintEscapes` family).
-5. **accept — `abort`/`exit` park** (§2.8; no diagnostic).
+### 2.10 Disposition matrix + dedicated decline diagnostics (Rule 12) — revised by the 2026-06-22 persisting-`ret` review
+**Empirical correction (15+ adversarial `-O1` probes — see the tracking bd
+issue).** `clang -O1` reconverges **every mergeable value early-return** to a single
+exit (`select` or one merge-φ): confirmed across if-returns, switch-returns (all 5
+variants collapsed to one `ret`, incl. side-effect and fall-through/`break`),
+nested-if, struct/sret, and non-sinkable side-effect arms. A `ret` therefore
+**persists in a conditional arm only for a *genuine* non-reconvergence reason** —
+it is **never** a mergeable value-mux the pass would have to merge itself. The
+dispositions are keyed on **which reason**, decided by the structural predicate in
+§2.11, evaluated by **SSA identity before any mutation** (Rule 9). Each replaces
+the generic `"control flow under quantum control"` catch-all
+(`ControlDetect.cpp:172-173`) with a distinct, source-located message + a
+mirror-exact negative fixture:
 
-Width-dependent fall-through must be reconciled: a non-i32 tainted early-exit
-`ret` is already declined earlier by `declineTaintEscapes`'s `kMsgNonI32Return`
-(`TaintPropagation.cpp`, runs before `ControlDetect`); 7.2 must not double-own
-that decline — i32-width is the only width that reaches the 7.2 recognizer.
+| shape (post-`-O1`) | structural signature (§2.11) | disposition + message |
+|---|---|---|
+| reconverging value/data diamond/switch | every arm `br`s to a common merge with a `soleMergePhi`; merge value is **basis/data** | **accept** — reused 4.2/4.4/4.5 emitter (no diagnostic) |
+| recognized noreturn sink arm + **value sibling** | sink arm = `@abort`/`@exit`/`@_exit`/`@__assert_fail`/`@llvm.trap`/`@llvm.ubsantrap`/`noreturn` call + `unreachable`, **no value, no merge φ**; sibling is the ordinary uncontrolled `ret` | **accept** — §2.8 park (no diagnostic) |
+| persisting **value** `ret` in an arm, not a noreturn sink (`musttail` return; two un-merged value rets) | arm ends in `ret` / `musttail call;ret` → `uncondSucc==null`, no merge φ | **decline** — `"non-reconverging value exit under quantum control"` |
+| **phase-class** value escaping beside an exit (incl. an abort sibling) | escaping `ret` operand is Rz/phase-tainted (`cq_phi` lineage) | **decline (conservative)** — `"phase-class value escaping under quantum control"` (§2.6 deferred, §2.11 C-iii) |
+| infinite-loop / non-`abort` divergence arm + value sibling | divergent arm = self-`br` loop, **no** recognized noreturn sink | **decline → defer 7.3/7.4** — `"loop under quantum control"` |
+| §3c clobber | an arm value-overwrites a register the condition transitively reads | **permanent decline** — `"arm rewrites a condition operand under quantum control"` (`swap_route_reject_clobber.ll`) |
+| `cq_measure` / `store` / impure non-output call in a tainted arm | the `declineTaintEscapes` family | **decline** — existing escape messages (runs **before** ControlDetect) |
+| non-i32 / sret value exit | `declineTaintEscapes` width / `store` guard | **decline** — `kMsgNonI32Return` / `kMsgStore` (runs **before** ControlDetect; 7.2 must **not** double-own — i32 is the only width reaching the recognizer) |
+
+**Reframing of "non-reconverging value exit" (corrects the §5/§2.10-disp-2
+over-statement).** A persisting value `ret` that reaches the recognizer (not a
+noreturn sink, not a phase, not an escape) declines because **clang did not
+reconverge it and 7.2 deliberately does not synthesize the merge** (§2.11 A) — a
+*tooling / canonicalization* boundary, **reopenable** if a real-world `-O1`
+survivor is found, **not** the information-theoretic impossibility "rejected
+forever." Empirically the only such survivors are `musttail` (the `ret` is glued to
+a tail call by language rule, and is additionally a conditional tail-escape) and
+two un-merged value rets, which non-`musttail` code essentially never produces at
+`-O1`. This honors the user's correct intuition (a mergeable value-`ret` is the
+*same program* as the accepted merge form) **without** an unsafe CFG-rewrite
+prepass (§2.11 A rationale).
+
+### 2.11 The structural accept + park predicate (resolves the §6 Risk-2 boundary; new)
+The 2026-06-22 review found §6 Risk-2's mitigation ("reconvergence proven by SSA /
+post-dominator identity") had **no implementing analysis** (there is **no**
+`PostDominatorTree` in the detection path), and that several real `-O1` shapes
+matched **two** dispositions at once — `abort`+value matched both §2.8 (accept) and
+§2.10-disp-2 (decline); the *same* source `if(f) return foo1(); return foo2();`
+matched deliverable-1 **accept** when plain but the **decline** class when written
+`musttail`. 7.2 therefore pins **explicit, mutually-exclusive** predicates,
+evaluated on SSA identity **before any mutation** (Rule 9), reusing the existing
+`uncondSucc` / `soleMergePhi` machinery — **no new pass, no CFG rewrite**:
+
+**(A) Value-reconverging → ACCEPT (reuse 4.2/4.4/4.5).** ALL of:
+1. every arm block is single-pred(`Pred`) and ends in an **unconditional `br`** to
+   one common merge `M` (`uncondSucc(arm) == M`) — **no** arm ends in `ret`,
+   `unreachable`, `switch`, or a conditional `br`;
+2. `soleMergePhi(M)` exists; `M`'s terminator is **unconstrained** (`ret %φ` /
+   `br %cont` / `measure;ret`) — `flattenRegion` is terminator-agnostic (**verified**:
+   `control_swap_ifelse_escape.ll`'s merge ends in `ret i32 %qm` and flattens green);
+3. the merged value is **basis/data-class**, not phase (else (C-iii));
+4. no arm clobbers a condition operand (§3c).
+This is *exactly* today's `recoverRegion` shape test, which **already** declines a
+`ret`-terminated arm (`uncondSucc==null`). **Rationale for not auto-merging
+persisting rets:** the accept set is precisely "what `clang -O1` already
+tail-merged for us," and 7.2 adds **no** ret-merging of its own — a synthesize-the-
+merge prepass would insert blocks / RAUW **before** taint analysis, violating
+"detection is pure analysis by SSA identity, before any mutation" (the merge-block
+use-after-free family). Empirically there is no surviving mergeable-value
+population to serve.
+
+**(B) Noreturn-sink park → ACCEPT (§2.8), structurally distinct from a value exit.**
+Exactly one arm is a **recognized noreturn terminator sink** — a `call`/`invoke` to
+{`@abort`,`@exit`,`@_exit`,`@__assert_fail`,`@llvm.trap`,`@llvm.ubsantrap`, or any
+`noreturn`-attributed callee} immediately followed by `unreachable`, **carrying no
+returned value and no merge φ** — and the sibling is the ordinary uncontrolled
+remainder (which may itself `ret` a basis/data value). **Discriminator that kills
+the §2.8↔§2.10 collision:** the sink arm has **nothing to merge** (no value, ends
+in `unreachable`), so `abort`+value is a **park**, *never* a "non-reconverging value
+exit"; the sibling's `ret` is the normal return, not a second mux arm.
+
+**(C) Everything else → DECLINE** per the §2.10 matrix. An arm ending in `ret` that
+is **not** a (B) sink is **never** silently folded into an (A) merge — (A) requires
+an unconditional `br`, so the Risk-2 mis-accept **cannot occur structurally**.
+Named rows: (C-i) `musttail` / un-merged value rets; (C-ii) non-`abort` divergence
+(infinite loop) → defer 7.3/7.4; (C-iii) a phase-class value escaping beside an
+exit → **conservative** decline pending the §2.6 park-coherence proof.
+
+**Owner decisions to confirm (each flips a disposition):** (i) noreturn-sink +
+value sibling = **park-accept**, not decline; (ii) `musttail` / un-merged value
+rets = **decline** (reopenable tooling boundary), 7.2 does **not** synthesize a
+merge; (iii) a phase value escaping beside a park arm = **conservative decline**
+(unproven park coherence, §2.6); (iv) non-`abort` divergence = **defer to 7.3/7.4**,
+not a park member.
 
 ---
 
@@ -282,8 +375,13 @@ that decline — i32-width is the only width that reaches the 7.2 recognizer.
 
 ## 5. Out of scope (declines, or other phases)
 
-- **Non-reconverging *value* exits** — physics-rejected forever (only the
-  no-value `abort`/`exit` member is accepted).
+- **Non-reconverging *value* exits** — declined (only the no-value noreturn-sink
+  member is accepted, §2.11 B). **Not** "physics-rejected forever": a persisting
+  value `ret` is the *same program* as the accepted merge form, so this is a
+  *tooling / canonicalization* boundary (clang did not reconverge it and 7.2 does
+  not synthesize the merge — §2.11 A), **reopenable** if a real `-O1` survivor
+  appears. Empirically the only survivors are `musttail` and un-merged value rets,
+  which non-`musttail` code essentially never produces at `-O1`.
 - **Phase-carrying / superposition return values** — not returned; a phase escape
   stays on the in-place flag-strip path (§2.6); a phase value into a data path
   declines.
@@ -311,9 +409,13 @@ that decline — i32-width is the only width that reaches the 7.2 recognizer.
    that a phase escape is *never* routed to `cqrt_copy`.
 2. **A non-reconverging exit mis-classified as reconverging** — accepting a shape
    whose tail does not actually rejoin the single exit would emit an unbalanced
-   route (verify-clean). Mitigation: reconvergence proven by SSA/post-dominator
-   identity **before** mutation (Rule 9); the dedicated decline (§2.10) is the
-   default; over-decline is safe.
+   route (verify-clean). Mitigation **(revised — there is NO `PostDominatorTree` in
+   detection; the original "post-dominator identity" mitigation was unbacked)**:
+   the §2.11 A accept predicate is **purely structural** — every arm must end in an
+   **unconditional `br`** to a `soleMergePhi` merge, which a `ret`/`unreachable`-
+   terminated arm fails (`uncondSucc==null`), so a non-reconverging exit **cannot
+   structurally match** the accept path. The §2.10 decline is the default;
+   over-decline is safe.
 3. **A mixed-kind arm mis-dispatched** (e.g. an I/O arm fed to the value-merge, or
    an impure non-output call treated as a pure call-arm) — Mitigation: the
    arm-by-arm classifier reuses the existing recognizers' guards verbatim
