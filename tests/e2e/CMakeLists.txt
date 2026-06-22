@@ -569,6 +569,40 @@ add_test(NAME e2e-slice-io-controlled
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_io_controlled.expected.log")
 
+# Phase 7.2 Increment 2 (test_C_libtooling-65wb.2): BOTH-ARM controlled I/O
+# `if (q > 5) printf("%d", q); else putchar(q);`. clang -O1 keeps a br-diamond
+# (distinct unspeculatable sinks) with two single-pred sole-sink arms converging on
+# one 2-pred no-phi merge. Both polarities ride the ONE flag minted from the ONE
+# compare: the TRUE arm (printf) on `flag`, the FALSE arm (putchar) ¬flag-bracketed
+# by a self-inverse cqrt_x pair. Both writes append to the SAME tape (one
+# cqrt_tape_alloc); tape length is deterministic (exactly 2 entries, only content
+# gated). q stays coherent for the user's measure; ZERO compiler-inserted
+# measurement, ZERO controlled rotations / cswap (Rule 5).
+add_test(NAME e2e-slice-io-both-arm
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_io_both_arm.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_io_both_arm.expected.log")
+
+# Phase 7.2 Increment 2 (test_C_libtooling-65wb.2): a MIXED value+I/O diamond —
+# `if (q > 5) printf("%d", q);` plus a value select `r = (q>5)?q+1:q+2`. clang -O1
+# merges both into one br-diamond with a CONSTANT data-mux φ. Both effects ride the
+# ONE flag minted from the ONE compare: the I/O → one cqrt_tape_write_i32_controlled
+# (TRUE arm, on flag); the value → the 4.4 controlled-XOR copy data-mux (out=|0>;
+# const 1 on flag; const 2 on the cqrt_x-bracketed ¬flag) feeding `add q, out` (Q+Q)
+# → measure. The constant data-mux is the safe subset (no phase to dephase, Rule 7);
+# a computed two-base φ declines (= 65wb.5 exp2). ZERO compiler-inserted measurement,
+# ZERO controlled rotations / cswap (Rule 5).
+add_test(NAME e2e-slice-mixed-value-io
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_mixed_value_io.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_mixed_value_io.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route
