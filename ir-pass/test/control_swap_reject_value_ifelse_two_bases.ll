@@ -9,8 +9,15 @@
 ; select-family), not a routable value if/else (§0 criterion 3: the arms'
 ; SHARED base).
 ;
+; Phase 7.2 Inc 1 (65wb.1): this two-base value multiplexer declines with the
+; DEDICATED `non-routable value multiplexer` string (ArmClassify.cpp base-
+; identity site), not the old generic `control flow`. It is the `exp2` surface,
+; conservatively DECLINED (owner 65wb.5); reopenable per PRD-7.2 §2.10/§5. NOTE
+; this LINEAR-arm shape folds to `select` at real `-O1` (already 4.4-accepted) —
+; the captured real survivor is control_swap_reject_branch_datamux_exp2.ll.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}non-routable value multiplexer under quantum control
 ; CHECK-NOT: value-arm swap-route
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

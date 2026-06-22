@@ -1,7 +1,8 @@
 ; control_swap_reject_value_readcond.ll — fresh-value mux READING the condition
-; register declines 'control flow', NEVER the §3c string (4.2 WI-3; PRD Part II
-; §8.3: "p=q+1 must NEVER get the §3c string" — the bd memory
-; swap-route-detect-known-limits warning, honored structurally).
+; register declines as a `non-routable value multiplexer`, NEVER the §3c string
+; (4.2 WI-3; PRD Part II §8.3: "p=q+1 must NEVER get the §3c string" — the bd
+; memory swap-route-detect-known-limits warning, honored structurally). The
+; dedicated mux string is Phase 7.2 Inc 1 / 65wb.1 (was generic `control flow`).
 ;
 ; `if (q > 5) { p = q + 1; }` — the arm READS the condition register %q and
 ; writes a fresh value muxed against the unrelated straight-through %p. Reading
@@ -14,7 +15,7 @@
 ; permanent-reject this legitimate read).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}non-routable value multiplexer under quantum control
 ; CHECK-NOT: arm rewrites a condition operand
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

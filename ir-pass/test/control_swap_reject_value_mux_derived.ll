@@ -10,12 +10,14 @@
 ; compute add(t,3), not the source's add(q,3) — a verify-clean wrong unitary.
 ; The condition register q is never overwritten here (it stays live; the flag is
 ; strippable), so this is NOT a §3c clobber either — it is the 4.4 select-family
-; data mux, declined with the generic string until a mux-capable increment.
-; Defect-2 was the old 'value-arm swap-route' label on this shape: with 4.2
-; un-deferring value arms, that label would have become an over-accept hazard.
+; data mux, declined with the DEDICATED `non-routable value multiplexer` string
+; (Phase 7.2 Inc 1 / 65wb.1; was the generic `control flow` pre-7.2) until a
+; mux-capable increment. Defect-2 was the old 'value-arm swap-route' label on
+; this shape: with 4.2 un-deferring value arms, that label would have become an
+; over-accept hazard.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}non-routable value multiplexer under quantum control
 ; CHECK-NOT: arm rewrites a condition operand
 ; CHECK-NOT: value-arm swap-route
 declare i32 @cq_theta_si32(i32, double)

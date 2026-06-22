@@ -886,10 +886,21 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // condition READ). Replaying such a chain on the routed rail would
         // compute f(routed), not the source's f(base): a verify-clean wrong
         // unitary. Not routable, not a §3c clobber (the condition register is
-        // never overwritten) — the 4.4 select-family mux, declined generic.
+        // never overwritten) — the 4.4 select-family mux. Declined with the
+        // dedicated `non-routable value multiplexer` string (Phase 7.2 Inc 1 /
+        // 65wb.1): a value if/else (or derived-base diamond) whose two arms
+        // bottom at DIFFERENT bases reconverges structurally but has no single
+        // routable base — it is the `exp2` two-base value-multiplexer surface,
+        // conservatively DECLINED (owner decision 65wb.5; over-decline is safe).
+        // REOPENABLE per PRD-7.2 §2.10/§5 (a tooling/canonicalization boundary,
+        // not information-theoretic) — the data-mux emitter design is retained
+        // as reference in IMPLEMENTATION-PLAN-7.2.md §3. The dedicated string is
+        // distinct from §2.10's `non-reconverging value exit` (reserved for the
+        // truly non-reconverging persisting-`ret`/`musttail` row, uncondSucc==
+        // null); this shape DOES reconverge, so it gets its own `What`.
         if (Routed) {
           if (Chain.Base != Routed) {
-            diagnoseUnderControl(declAnchor(Region), "control flow");
+            diagnoseUnderControl(declAnchor(Region), "non-routable value multiplexer");
             return ArmDisposition::Declined;
           }
         } else {
