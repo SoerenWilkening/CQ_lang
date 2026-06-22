@@ -175,7 +175,7 @@ auto-discovered). Link order is load-bearing: `cq_templates` **before** `cq_runt
 ## 1. Landing order
 
 ```
-Inc 1  exp2 br-diamond data-mux detection + emitter        (no ABI)   ─┐
+Inc 1  exp2 br-diamond conservative DECLINE + dedicated diag (no ABI) ─┐  (65wb.5 = DECLINE)
        (shared-base reconverging return = regression-pin, already works)│
 Inc 2  mixed-kind arm-by-arm dispatch + both-arm I/O        (no ABI)  ─┤── all four
 Inc 3  abort/exit park cascade  (NEW emission; new do-not-uncompute set)│   touch
@@ -293,13 +293,54 @@ WI-1.12 convention, any new step wired into `run()` must be mirrored into
 
 ---
 
-## 3. Increment 1 — exp2 br-diamond data-mux detection + dispatch
+## 3. Increment 1 — exp2 br-diamond conservative DECLINE + dedicated diagnostic
 
-**Objective.** Accept the reconverging early-return diamond whose `soleMergePhi` has
-**two independent computed value arms with no shared base** (the exp2 gap), lowering it
-via a new br-diamond controlled-XOR-copy data-mux emitter. Confirm (regression-pin) the
-shared-base reconverging return already lowers via the reused 4.2 route. Maps to PRD
-Deliverable 1.
+> **RESOLVED 2026-06-22 — owner decision `65wb.5` = DECLINE (§8 flag 1).** The exp2
+> `br`-diamond is **conservatively declined**, not built. The actual Inc-1 deliverable is
+> a **dedicated `non-reconverging value exit` decline diagnostic + one mirror-exact
+> negative fixture** — **no** `BranchDataMux` Kind/classifier/emitter, **no** 5 detection
+> fences, **no** hoist-before-flatten.
+>
+> **Diagnostic-string precision (finalize at impl time).** The exp2 `br`-diamond *does*
+> structurally reconverge (a `soleMergePhi` over two computed incomings → one `ret`); it
+> declines because it is a **non-routable two-base value multiplexer** (no single base for
+> 4.2; not a literal `select`/`ConstantInt` for 4.4/4.5 — cf.
+> `control_swap_reject_value_ifelse_two_bases.ll`'s own comment). §2.10 reserves
+> `non-reconverging value exit` for the *truly* non-reconverging persisting-`ret`/`musttail`
+> row (`uncondSucc==null`). **Prefer a distinct dedicated `What` for exp2** (e.g.
+> `two-base value multiplexer` / `non-routable value multiplexer`) over reusing the
+> persisting-`ret` string, keeping the two §2.10 rows distinct; coordinate the final
+> wording with Inc 4 (`65wb.4`).
+>
+> **The full BUILD design that follows (change-points,
+> fences, emitter ordering) is retained below as REOPENABLE REFERENCE only** (the decline
+> is a reopenable tooling/canonicalization boundary per PRD §2.10/§5, not
+> information-theoretic) — implement it only if a real-world `-O1` survivor is ever found
+> and the owner reopens this flag. The reduced deliverable overlaps Inc 4's
+> decline-diagnostic partition (`65wb.4`): the `non-reconverging value exit` string is one
+> row of the §2.10/§6 partition and may be folded into Inc 4 if landing order makes that
+> cleaner.
+>
+> **Reduced (DECLINE) Inc-1 spec.** RED: `control_swap_reject_branch_datamux_exp2.ll`,
+> captured/derived from a real `-O1` surviving exp2 diamond (two independent computed
+> tainted arms, no shared base; `select`-count 0 / cond-`br` ≥ 1 / φ 1), with
+> `RUN: not …` + `CHECK: error{{.*}}non-reconverging value exit under quantum control` +
+> `CHECK-NOT: cqrt_cswap` + `CHECK-NOT: cqrt_copy`. IMPL: at the OffPattern partition
+> (`ControlDetect.cpp:173`), select the `non-reconverging value exit` `What` for this
+> structural shape via `diagnoseUnderControl(BI, …)` — pure SSA before any mutation
+> (Rule 9), pass a new `What`, **add no mechanism**. REGRESSION-PINS (confirm-it-works, no
+> code change): the short same-base early return folds to `select` → accepted by 4.4
+> (`opt` exit 0); the shared-base value diamond rides 4.2 `emitValueRegion`;
+> `control_swap_reject_value_ifelse_two_bases.ll` stays declining. VERIFY: `ir-pass-lit`
+> green, the 4.4/4.2/escape accept fixtures stay green, the new message fires **only** on
+> the exp2 OffPattern site (not the ~60 generic `control flow` sites).
+
+**[REOPENABLE-REFERENCE — the original BUILD design, NOT the Inc-1 deliverable per the
+banner above.] Objective.** Accept the reconverging early-return diamond whose
+`soleMergePhi` has **two independent computed value arms with no shared base** (the exp2
+gap), lowering it via a new br-diamond controlled-XOR-copy data-mux emitter. Confirm
+(regression-pin) the shared-base reconverging return already lowers via the reused 4.2
+route. Maps to PRD Deliverable 1.
 
 ### Change-points
 
@@ -388,11 +429,12 @@ verify-clean-invisible); 6. `icmp_inv` strip + one `cqrt_free(flag)`; 7. RAUW
   decline fixture for a 3-incoming/multi-phi merge.
 - Pinning a shape clang no longer emits → capture from real `-O1`, re-verify (§2-D).
 
-> **§8 owner flag:** given the exp2 surface is narrow and optimizer-cost-fragile,
-> building a whole new emitter vs. **conservatively declining** the surviving surface
-> with a dedicated `non-reconverging value exit`/`exp2` diagnostic is a genuine
-> cost/benefit choice (over-decline is always safe). PRD §2.3 commits to building it;
-> flag for confirmation before Inc-1 code lands.
+> **§8 owner flag — RESOLVED 2026-06-22: DECLINE (`65wb.5`).** Given the exp2 surface is
+> narrow and optimizer-cost-fragile, the owner chose to **conservatively decline** the
+> surviving surface with a dedicated `non-reconverging value exit` diagnostic rather than
+> build the emitter above (over-decline is always safe; the BUILD design here is
+> reopenable reference only). See the RESOLVED banner at the top of §3 for the reduced
+> deliverable.
 
 ---
 
@@ -609,9 +651,11 @@ Disposition logic at the partition (each → `diagnoseUnderControl(BI, <What>)`)
 
 - [ ] Shared-base reconverging early-`return` lowers via the reused 4.2 route
   (regression-pin, `opt -verify` clean, golden e2e clean). *(Inc 1 — confirm-it-works.)*
-- [ ] exp2 two-independent-computed-arm `br`-diamond lowers via the new data-mux emitter
-  (`cqrt_copy_<W>_controlled` + `¬flag` bracket + `icmp_inv` strip + one `cqrt_free`,
-  CFG flattened), captured-from-`-O1` fixture + e2e. *(Inc 1.)*
+- [ ] ~~exp2 two-independent-computed-arm `br`-diamond lowers via the new data-mux
+  emitter~~ **— STRUCK (owner `65wb.5` = DECLINE, 2026-06-22).** Replaced by: the surviving
+  exp2 `br`-diamond **declines loudly** with a dedicated `non-reconverging value exit`
+  diagnostic + a captured-from-`-O1` mirror-exact negative fixture; no new emitter.
+  *(Inc 1; reopenable per PRD §2.10/§5.)*
 - [ ] Mixed value+I/O diamond dispatches arm-by-arm; `if/else`-both-`printf` lowers to
   two `cqrt_tape_write_<W>_controlled` into one shared tape, deterministic length.
   *(Inc 2.)*
@@ -636,10 +680,22 @@ Disposition logic at the partition (each → `diagnoseUnderControl(BI, <What>)`)
 
 ## 8. Open owner-decision flags
 
-1. **exp2 build vs. decline (Inc 1).** The surviving `br`-diamond surface is narrow and
-   optimizer-cost-fragile (§2-D). PRD §2.3 commits to building the new data-mux emitter;
-   the cheaper, always-safe alternative is to **conservatively decline** it with a
-   dedicated diagnostic. Confirm before Inc-1 code lands.
+1. **exp2 build vs. decline (Inc 1). — RESOLVED 2026-06-22: DECLINE (bd `65wb.5`).**
+   The surviving `br`-diamond surface is narrow and optimizer-cost-fragile (§2-D). PRD
+   §2.3 had committed to building the new data-mux emitter; the owner chose the cheaper,
+   always-safe **conservative decline** with a dedicated diagnostic. **Evidence
+   (re-confirmed on the live plugin 2026-06-22):** the PRD headline early return folds to
+   `select` and is **already accepted** by 4.4 (`opt` exit 0); the genuine
+   two-independent-base survivor (long cost-budget-busting arms) **already declines**
+   today (`opt` exit ≠ 0). So Option B keeps today's safe decline and only gives it a
+   cleaner dedicated message; building a whole new classifier+emitter on the core control
+   path (re-opening the P0 0.585→0.500 phase-dephasing leak if the φ-rooted fence is
+   wrong) buys near-zero real-world coverage. **Consequence:** Inc 1 (§3) reduces to a
+   dedicated `non-reconverging value exit` diagnostic + one mirror-exact negative fixture
+   (no new emitter); §7 done-criterion 2 is **struck**. The decline is **reopenable** (PRD
+   §2.10/§5: a tooling/canonicalization boundary, not information-theoretic) if a
+   real-world `-O1` survivor is ever found; the full BUILD design is retained below in §3
+   as reopenable reference.
 2. **PRD §2.11 confirmations (verbatim from PRD).** (i) noreturn-sink + value sibling =
    **park-accept** (not decline); (ii) `musttail`/un-merged value rets = **decline**,
    7.2 does not synthesize a merge; (iii) phase value escaping beside a park arm =

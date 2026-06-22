@@ -122,7 +122,22 @@ applied on"). The multi-register park cascade survives **only** as the
 `abort`/`exit` mechanism (§2.8), where the parked registers are a *graveyard*
 inspected after termination, never selected back.
 
-### 2.3 The `exp2` gap → the data-mux emitter, not 4.2
+### 2.3 The `exp2` gap → ~~the data-mux emitter, not 4.2~~ **conservatively DECLINED (owner `65wb.5`)**
+> **[RESOLVED — 2026-06-22, owner decision `65wb.5` = DECLINE.]** This section had
+> committed to **building** a `br`-diamond data-mux emitter for the surviving exp2 shape.
+> The owner instead chose to **conservatively decline** it with a dedicated
+> `non-reconverging value exit` diagnostic (over-decline is always safe; Prime Directive).
+> **Why:** the surviving surface is narrow and optimizer-cost-fragile, and — re-confirmed
+> on the live plugin 2026-06-22 — the common early return folds to `select` and is
+> **already accepted** by 4.4, while the genuine two-independent-base survivor **already
+> declines** today; building a new classifier+emitter on the core control path (which
+> re-opens the P0 0.585→0.500 phase-dephasing leak if the φ-rooted fence is wrong) buys
+> near-zero real-world coverage. The decline is **reopenable** (§2.10/§5 tooling boundary,
+> not information-theoretic). The data-mux disposition described below remains the
+> physically-correct lowering **if** the flag is ever reopened — it is retained as design
+> reference, **not** a 7.2 deliverable. See the implementation plan §3 (RESOLVED banner)
+> and §8 flag 1.
+
 > **[Correction — 2026-06-22 persisting-`ret` review.]** The example below
 > (`if(q>5) return q+1; return 3*q+7;`) does **not** decline today: `clang -O1`
 > folds it to a `select` and the existing 4.4 `SelectMergeEmit` path already
@@ -324,13 +339,16 @@ not a park member.
 
 ## 3. Deliverables
 
-1. **Reconverging value-merge detection** — widen `recoverRegion` /
-   arm-classification to accept the early-return reconverging diamond, including
-   the `exp2` two-independent-computed-arm shape, dispatched to the data-mux
-   emitter (§2.3) and the shared-base shape dispatched to the reused 4.2 route
-   (§2.1). Positive lit fixtures (single early return; two early returns kept as a
-   diamond; `if(f)return foo1();return foo2();` reconverged call-result merge) +
-   the matching negative decline fixtures.
+1. **Reconverging value-merge detection** — confirm the early-return reconverging
+   diamond lowers via the reused emitters: the **shared-base** shape rides the 4.2
+   route (§2.1) and the common short early return folds to `select` → 4.4 (both
+   regression-pins, already work). The **`exp2` two-independent-computed-arm shape
+   conservatively DECLINES** with a dedicated `non-reconverging value exit`
+   diagnostic (owner `65wb.5` = DECLINE, §2.3 RESOLVED — the data-mux emitter is
+   **not** built). Positive lit fixtures (single early return; two early returns
+   folded to `select`; `if(f)return foo1();return foo2();` reconverged call-result
+   merge) + the matching negative decline fixtures, **including** the mirror-exact
+   `control_swap_reject_branch_datamux_exp2.ll` captured from a real `-O1` survivor.
 2. **Mixed-kind + both-arm I/O dispatch** — arm-by-arm dispatcher (§2.4); both-arm
    I/O generalization of `lowerControlledIOSinks` (§2.5). Positive fixture for a
    value+I/O mixed diamond and an `if/else`-both-`printf` diamond.
