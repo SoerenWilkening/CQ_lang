@@ -775,7 +775,7 @@ via the §7.6 reversible output tape.)
 
 ---
 
-## Phase 7 — Pre-freeze expressiveness completion
+## Phase 7 — Pre-freeze expressiveness completion [7.1/7.2/7.6 DONE; 7.3–7.5 remaining]
 
 **Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
 almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
@@ -806,7 +806,7 @@ inversion → feature.
 
 **Increments.**
 
-- **7.1 — Opcode-surface completion.** Close the cheap, currently-declined-but-
+- **7.1 — Opcode-surface completion [DONE 2026-06-20].** Close the cheap, currently-declined-but-
   reversible gaps (the genuinely-un-executable-under-quantum-control set is tiny —
   irreversibility enters through source-chosen *operations*, never an arithmetic
   opcode):
@@ -854,7 +854,7 @@ inversion → feature.
     `@llvm.sqrt`/`sin`/… are SEPARATE = Phase-6 Path-1 curated libm substitution, not
     this; `*.with.overflow` additionally drags in `extractvalue` aggregate routing.)
 
-- **7.2 — Controlled function-`return`** (reconverging early-exit). Lift the permanent
+- **7.2 — Controlled function-`return`** (reconverging early-exit) **[DONE 2026-06-23, epic `65wb`; 4 increments + owner decision `65wb.5`]**. Lift the permanent
   reject for a tainted-condition `if` whose one arm exits early via `return`, **for
   the bounded + reconverging (D4) subset only** — QCM injectivity + synchronization; a
   non-reconverging exit stays physics-rejected **forever**. Mechanism: per-site return
@@ -923,7 +923,7 @@ inversion → feature.
   diagnostics **precise** (Bennett's "signpost naming the offending pattern" is the
   model).
 
-- **7.6 — Reversible I/O (output tape)** (owner discussion 2026-06-19; `bd memories
+- **7.6 — Reversible I/O (output tape) [DONE 2026-06-21]** (owner discussion 2026-06-19; `bd memories
   reversible-output-tape-io`). Lower a tainted I/O sink — `printf`/`puts`/`putchar` —
   **coherently, never by measurement**: replace each tainted `i32` scalar arg with an
   XOR-copy (`cqrt_copy_<W>`) into a **fresh `|0⟩` output rail**, **one rail per emitted
@@ -1203,15 +1203,14 @@ post-Phase-11 roadmap revision.
   benefits from having Phases 3–5 done so it can reuse their lowering
   pipeline inside cloned bodies.
 - Phase 7 (pre-freeze expressiveness completion) is the live workstream
-  after Phase 6. Internal order: **7.1 opcodes + `llvm.*` intrinsics**
-  (independent, parallelizable, lowest risk) → **7.6 I/O output tape**
+  after Phase 6. Internal order: **7.1 opcodes + `llvm.*` intrinsics** ✓ DONE
+  (independent, parallelizable, lowest risk) → **7.6 I/O output tape** ✓ DONE
   (independent, low-risk; supplies the abort tape-truncation hook) →
-  **7.2 controlled-return + `abort`/`exit`** (proves the exit-cascade +
+  **7.2 controlled-return + `abort`/`exit`** ✓ DONE (proved the exit-cascade +
   uncompute coupling on a backedge-free substrate; the `abort` half reads
-  7.6's tape) → **7.3 bounded loops** (forces the Phase-5 uncompute
+  7.6's tape) → **7.3 bounded loops** ← NEXT (forces the Phase-5 uncompute
   extension) → **7.4 break** (needs 7.2 + 7.3) → **7.5 QRAM Shadow**
-  (heaviest; new ABI; gates the freeze). 7.1 and 7.6 can run in parallel
-  with the rest.
+  (heaviest; new ABI; gates the freeze). Remaining: 7.3 → 7.4 → 7.5.
 - Phase 8 (manual inversion) is small and lands **after** Phase 7 so it
   composes over the full invertible surface in one pass; it depends on
   Phase 5's `emit_inverse` plus the per-construct adjoint rules Phase 7
