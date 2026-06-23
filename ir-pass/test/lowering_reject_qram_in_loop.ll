@@ -1,11 +1,11 @@
-; lowering_reject_qram_in_loop.ll — DECLINE (Phase 7.5 Inc 1): a tainted-index READ
-; of a const-global table INSIDE a loop. 7.5 lowers STRAIGHT-LINE tainted-index
-; memory only (§2.11); a QRAM access in a loop needs the 7.3 bounded-loop unroll
-; (not yet done), so it is NOT carved by the QROM accept predicate and keeps
-; declining at the generic taint-escape guard. The loop bound here is CLASSICAL and
-; there is NO tainted loop-carried phi (the loaded value is measured each iteration),
-; so it is the LOOP gate — not the tainted-control or classical-mux guards — that
-; declines this. PRD-7.5 §5/§6 (the 7.3 boundary).
+; lowering_reject_qram_in_loop.ll — DECLINE (Phase 7.5 Inc 3, the §2.8(iv)
+; pattern-naming decline matrix): a tainted-index READ of a const-global table
+; INSIDE a loop. 7.5 lowers STRAIGHT-LINE tainted-index memory only (§2.11); a QRAM
+; access in a loop needs the 7.3 bounded-loop unroll (not yet done), so the carve
+; loud-declines NAMING the loop boundary. The loop bound here is CLASSICAL and there
+; is NO tainted loop-carried phi (the loaded value is measured each iteration), so it
+; is the LOOP gate — not the tainted-control or classical-mux guards — that declines
+; this. PRD-7.5 §5/§6 (the 7.3 boundary).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 @tbl = internal unnamed_addr constant [8 x i32] [i32 3, i32 1, i32 4, i32 1, i32 5, i32 9, i32 2, i32 6]
@@ -29,4 +29,4 @@ exit:
   ret void
 }
 
-; CHECK: error{{.*}}cq taint escape: tainted value reaches an unsupported instruction
+; CHECK: error{{.*}}cq QRAM access: tainted-index memory access inside a loop

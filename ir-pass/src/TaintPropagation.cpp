@@ -625,45 +625,42 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           continue;
         if (!readsTaintedValue(I, taint))
           continue;
-        // 4a-Phase7.5. QRAM tainted-index const-global READ (QROM-shaped). An
-        //    accepted straight-line read — a `getelementptr` directly off a
-        //    `constant` array + its `load` — is OWNED by `lowerQramReads`
-        //    (emitted before `lowerRotations`). Skip BOTH the gep's and the
-        //    load's escape decline by the EXACT shared predicate the emitter
-        //    consults (`isAcceptedQromGep`/`isAcceptedQromLoad`, QramLowering) —
-        //    a STRUCTURAL accept. The emitter STILL loud-declines an accepted-
-        //    shape read whose element width has no reversible copy (fp/i128
-        //    cell), so this carve suppresses ONLY the generic decline; it NEVER
-        //    accepts an unlowerable read (§6.9, the I/O-sink carve discipline).
-        //    A read UNDER tainted control (a clang-folded jump-table gep/load —
-        //    control_swap_reject_switch_jumptable.ll) is NOT straight-line, so
-        //    the predicate rejects it and it keeps declining below.
-        //    Phase 7.5 Inc 2 extends the carve to the alloca-backed Shadow shape:
-        //    a tainted-index `store`/`load` (and its array-decay gep) through an
-        //    `alloca [N x iW]` is OWNED by `lowerShadowMemory` — carve it by the
-        //    EXACT shared per-access predicate (`isAcceptedShadow*`, QramLowering),
-        //    a STRUCTURAL accept. The emitter STILL loud-declines the alloca-WIDE
-        //    failures (fp/i128 cell, aliasing/escape, mixed access, mid-sequence
-        //    observation), so this carve suppresses ONLY the generic decline; it
-        //    NEVER accepts an unlowerable access (§6.9). A dynamic-N / flat-gep /
-        //    classical-index access fails the structural predicate and keeps
-        //    declining below (kMsgStore / kMsgOther).
+        // 4a-Phase7.5. QRAM tainted-index memory. A tainted-pointer
+        //    `getelementptr`/`load`/`store` is QRAM's domain, adjudicated by the
+        //    SINGLE shared verdict `qramCarveVerdict` (QramLowering) — the same
+        //    `matchQramAccess` the emitters (`lowerQramReads`/`lowerShadowMemory`)
+        //    consult, so the carve and the emit can never diverge (Inc 1
+        //    discipline). The verdict is one of:
+        //      * Accept  — a QRAM-shaped access the emitter lowers (const-global
+        //        QROM read OR alloca-backed Shadow store/load). The emitter STILL
+        //        loud-declines an accepted-shape access whose element width has no
+        //        reversible copy (fp/i128) and the alloca-WIDE failures (mixed /
+        //        escape / mid-sequence observation), so the carve suppresses ONLY
+        //        the generic decline — it NEVER accepts an unlowerable access (§6.9).
+        //      * Decline — a QRAM-shaped access that fails a PER-ACCESS precondition
+        //        (Inc 3 §2.8(iv) decline matrix: multi-origin, inttoptr/ptrtoint,
+        //        addrspacecast, dynamic-N, heap, aliasing fan-out, in-loop). Fire
+        //        the pattern-naming, source-located diagnostic the verdict owns
+        //        (`Msg`, a QramLowering string the negative fixtures mirror).
+        //      * NotQram — a classical-address / value-tainted store, or a read
+        //        UNDER tainted control (a clang-folded jump-table gep/load,
+        //        control_swap_reject_switch_jumptable.ll) — fall through to the
+        //        GENERIC decline below (kMsgStore / kMsgOther). Over-declining a
+        //        clean-origin-but-unclean-offset access is safe (never silent).
         if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I)) {
           if (!DT) {
             DT.emplace(F);
             LInfo.emplace(*DT);
           }
-          if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
-            if (isAcceptedQromGep(GEP, taint, *DT, *LInfo) ||
-                isAcceptedShadowGep(GEP, taint, *DT, *LInfo))
-              continue;
-          } else if (auto *LI = dyn_cast<LoadInst>(&I)) {
-            if (isAcceptedQromLoad(LI, taint, *DT, *LInfo) ||
-                isAcceptedShadowLoad(LI, taint, *DT, *LInfo))
-              continue;
-          } else if (auto *SI = dyn_cast<StoreInst>(&I)) {
-            if (isAcceptedShadowStore(SI, taint, *DT, *LInfo))
-              continue;
+          const char *QMsg = nullptr;
+          switch (qramCarveVerdict(&I, taint, *DT, *LInfo, QMsg)) {
+          case QramCarve::Accept:
+            continue;  // emitter owns it (accept or alloca-wide/width decline).
+          case QramCarve::Decline:
+            diagnoseEscape(&I, QMsg);  // Inc 3 pattern-naming decline; opt non-zero.
+            continue;
+          case QramCarve::NotQram:
+            break;  // fall through to the generic kMsgStore / kMsgOther decline.
           }
         }
         // 4b. `freeze` (Phase-7.1 Increment B) — a basis-level identity. The

@@ -21,11 +21,9 @@
 
 namespace llvm {
 class DominatorTree;
-class GetElementPtrInst;
-class LoadInst;
+class Instruction;
 class LoopInfo;
 class Module;
-class StoreInst;
 }  // namespace llvm
 
 namespace cq {
@@ -33,23 +31,30 @@ namespace cq {
 class WidthDispatch;
 struct TaintSet;
 
-// Is `LI` an accepted straight-line const-global tainted-index READ (Inc 1)? A
-// simple `load` whose pointer is a single-use `getelementptr` directly off a
-// `constant` GlobalVariable of array type `[N x iW]`, canonical array-decay form
-// (exactly two indices: a constant-zero then the tainted element index), with the
-// load NOT control-dependent on a tainted-condition branch (straight-line, §2.11)
-// and NOT inside a natural loop (a QRAM access in a loop needs 7.3 bounded-loop
-// unroll — it declines until then, §5/§6). The element width may be unsupported
-// (fp/i128) — the STRUCTURAL shape still matches; the emitter performs the width
-// gate and loud-declines.
-bool isAcceptedQromLoad(const llvm::LoadInst *LI, const TaintSet &taint,
-                        llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
+// ── Phase 7.5 Increment 3: the single carve verdict ─────────────────────────────
+//
+// `declineTaintEscapes` consults ONE entry point for a tainted-pointer
+// `load`/`store`/`gep` (replacing the per-family `isAccepted*` predicates):
+//   * `Accept`  — a QRAM-shaped access the emitter (`lowerQramReads` /
+//     `lowerShadowMemory`) lowers (or width-gates to a loud cell decline);
+//   * `Decline` — a QRAM-shaped access that fails a PER-ACCESS precondition; the
+//     caller fires `outMsg` (a pattern-naming, source-located diagnostic — the
+//     §2.8(iv) decline matrix: multi-origin, inttoptr/ptrtoint, addrspacecast,
+//     dynamic-N, heap, aliasing fan-out, in-loop). The alloca-WIDE declines
+//     (mixed access / escape / mid-sequence observation) stay in the emitter.
+//   * `NotQram` — not a tainted-index access (a classical-address / value-tainted
+//     store, or a control-region access): fall through to the GENERIC taint-escape
+//     decline (`kMsgStore` / `kMsgOther`).
+// The emitter classifiers share the SAME `matchQramAccess`, so the carve and the
+// emit can never diverge (the Inc 1 discipline). The single-PtrOrigin provenance
+// walk proves single-origin through gep chains + pointer phi/select; multi-origin
+// declines (the over-accept surface — what stays rejected is forbidden by
+// no-cloning / linearity, [[pointer-boundary-linearity-bennett]], not a shortcut).
+enum class QramCarve { Accept, Decline, NotQram };
 
-// Is `GEP` the address-gen of an accepted QROM read (its sole user is an accepted
-// QROM `load`)? Used by the `declineTaintEscapes` carve to skip the gep's escape
-// decline alongside its load.
-bool isAcceptedQromGep(const llvm::GetElementPtrInst *GEP, const TaintSet &taint,
-                       llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
+QramCarve qramCarveVerdict(const llvm::Instruction *I, const TaintSet &taint,
+                           llvm::DominatorTree &DT, llvm::LoopInfo &LInfo,
+                           const char *&outMsg);
 
 // Lower every accepted const-global tainted-index READ in `M`. Runs BEFORE
 // `lowerRotations` (pre-RAUW SSA identity, the control/IO precedent): the emitted
@@ -68,22 +73,10 @@ void lowerQramReads(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // `cqrt_qram_load_<W>` (Toffoli-copy-out). A dead scratch array's stores reverse in
 // strict LIFO (`cqrt_qram_store_<W>_unc`); an escaped/measured array reverses
 // nothing (§2.7). The array handle is a classical resource token, never freed
-// (§2.9). Static-index memory is SROA'd away by clang (PRD-7.5 §1).
+// (§2.9). Static-index memory is SROA'd away by clang (PRD-7.5 §1). Inc 3 widens
+// the accepted pointer shape to flat element geps and single-origin pointer
+// phi/select (the realistic indirected-access form) via `qramCarveVerdict`.
 //
-// These accept predicates are the SHARED truth consulted by BOTH the
-// `declineTaintEscapes` carve-out AND the emitter (carve and emit can never
-// diverge). They are PER-ACCESS structural (array-decay off an `alloca [N x iW]`,
-// tainted index, straight-line, not in a loop); the alloca-WIDE invariants
-// (element width, no-aliasing escape, mixed-access, mid-sequence observation) are
-// the emitter's, which loud-declines an unhealthy alloca — opt then exits non-zero
-// regardless (§6.9).
-bool isAcceptedShadowGep(const llvm::GetElementPtrInst *GEP, const TaintSet &taint,
-                         llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
-bool isAcceptedShadowLoad(const llvm::LoadInst *LI, const TaintSet &taint,
-                          llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
-bool isAcceptedShadowStore(const llvm::StoreInst *SI, const TaintSet &taint,
-                           llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
-
 // Lower every accepted alloca-backed Shadow array in `M`. Runs BEFORE
 // `lowerRotations` (pre-RAUW SSA identity, like `lowerQramReads`): the emitted
 // index/value operands are still the tainted source values, which the

@@ -1,11 +1,11 @@
-; lowering_reject_qram_inttoptr.ll — DECLINE (Phase 7.5 Inc 1): a tainted-index
-; read with NO pointer provenance — the address is forged from the tainted index
-; via `inttoptr`, not a `getelementptr` off a known-shape const global. With no
-; single `PtrOrigin` and no compile-time shape, reversibility is impossible
-; (no-cloning / linearity, [[pointer-boundary-linearity-bennett]]): the QROM accept
-; predicate does NOT match, so the load keeps declining at the generic taint-escape
-; guard. PERMANENT decline (PRD-7.5 §0, §5). The full pattern-naming decline matrix
-; (inttoptr/ptrtoint/addrspacecast/multi-origin) lands in Increment 3.
+; lowering_reject_qram_inttoptr.ll — DECLINE (Phase 7.5 Inc 3, the §2.8(iv)
+; pattern-naming decline matrix): a tainted-index read with NO pointer provenance —
+; the address is FORGED from the tainted index via `inttoptr`, not a
+; `getelementptr` off a known-shape origin. With no single `PtrOrigin` and no
+; compile-time shape, reversibility is impossible (no-cloning / linearity,
+; [[pointer-boundary-linearity-bennett]]): the provenance walk hits the `inttoptr`
+; and loud-declines NAMING the pattern (the Bennett signpost model). PERMANENT
+; decline (PRD-7.5 §0, §5).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
@@ -20,4 +20,4 @@ entry:
   ret void
 }
 
-; CHECK: error{{.*}}cq taint escape: tainted value reaches an unsupported instruction
+; CHECK: error{{.*}}cq QRAM access: pointer has no static array provenance

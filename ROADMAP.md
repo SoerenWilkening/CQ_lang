@@ -775,7 +775,7 @@ via the §7.6 reversible output tape.)
 
 ---
 
-## Phase 7 — Pre-freeze expressiveness completion [7.1/7.2/7.6 DONE; 7.5 Inc 1+2 DONE (Inc 3 remaining); 7.3/7.4 remaining]
+## Phase 7 — Pre-freeze expressiveness completion [7.1/7.2/7.5/7.6 DONE; 7.3/7.4 remaining]
 
 **Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
 almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
@@ -933,12 +933,20 @@ inversion → feature.
     scratch array's stores reverse in strict LIFO; an escaped/observed array reverses
     nothing) and is NEVER freed (§2.9); off-pattern shapes (mixed same-array access,
     pointer escape, mid-sequence observation, dynamic-N, fp/i128 cell) decline loudly.
-    Both increments INDEPENDENT-Rule-13-CLEARED. **Inc 3 remaining** — the fuller
-    single-origin provenance walk (gep chains, pointer phi/select) + the complete
-    over-accept decline matrix; carries two Inc-2 over-decline follow-ups (extend the
-    mid-sequence-observation guard to I/O-output sinks for a clean diagnostic; the
-    straight-line dead-load-then-store `arr[p]=arr[q]` accept). See
-    `docs/prd/phase-07-expressiveness/PRD-7.5.md`.
+    Both increments INDEPENDENT-Rule-13-CLEARED. **Inc 3 DONE 2026-06-24** — the
+    fuller single-origin provenance walk (`matchQramAccess`/`walkPtrOrigin`/
+    `isDirectOriginPtr`: flat element geps + gep chains + pointer phi/select proved
+    to a single statically-shaped origin with a zero offset; multi-origin declines)
+    + the complete pattern-naming over-accept decline matrix (multi-origin,
+    inttoptr/ptrtoint, addrspacecast, dynamic-N, heap, aliasing fan-out, in-loop,
+    non-zero initializer, fp/i128 cell), each a mirrored negative fixture; plus the
+    two Inc-2 over-decline follow-ups (the §2.8(iii) mid-seq guard now recognizes
+    `cqrt_tape_write_` output sinks → clean `kMsgQramMidSeq`; the straight-line
+    dead-load-then-store `arr[p]=arr[q]` accept, fixing a latent Inc-2 stale-operand
+    crash). INDEPENDENT-Rule-13-CLEARED (~40 adversarial probes; the review FOUND
+    and the fix CLOSED a non-zero-`memset` silent-miscompile over-accept — PRD §6
+    risk #5 — now `kMsgQramInit`). **Phase 7.5 epic `7z9k` COMPLETE.** See
+    `docs/prd/phase-07-expressiveness/PRD-7.5.md` + `INC-7.5.3-DESIGN.md`.
 
 - **7.6 — Reversible I/O (output tape) [DONE 2026-06-21]** (owner discussion 2026-06-19; `bd memories
   reversible-output-tape-io`). Lower a tainted I/O sink — `printf`/`puts`/`putchar` —
