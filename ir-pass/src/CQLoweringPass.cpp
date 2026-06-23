@@ -10,6 +10,7 @@
 #include "IOSinkLowering.h"
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
+#include "QramLowering.h"
 #include "RotationLowering.h"
 #include "SpecializeDetect.h"
 #include "SpecializePlan.h"
@@ -117,6 +118,16 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // capturing the i32 handle instead would be the opaque-call silent
   // miscompile. A classical-only `printf` stays byte-untouched.
   lowerIOSinks(M, wd, taint);
+
+  // QRAM tainted-index memory (Phase 7.5 Inc 1): a STRAIGHT-LINE tainted-index
+  // READ of a const-global table (`return tbl[q]`) lowers to `cqrt_qram_alloc_<W>`
+  // + `cqrt_qram_load_<W>` instead of loud-declining at the escape guard above
+  // (the matching carve in `declineTaintEscapes`). Runs BEFORE `lowerRotations`
+  // so the index operand is still the pre-RAUW `@cq_theta`-derived value (the
+  // later RAUW-to-handle rewrites the emitted `idx`); the loaded value joins
+  // `Tainted` as an ordinary reversible producer the Phase-5 spine uncomputes.
+  // An accepted-shape read with an fp/i128 cell declines LOUDLY here.
+  lowerQramReads(M, wd, taint);
 
   // Classical-condition mux guard (test_C_libtooling-wi5): a LIVE select/phi
   // reading tainted data that SURVIVES control lowering is classically
@@ -231,6 +242,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // silently diverges, WI-1.12). See run() for the pre-`lowerRotations`
   // ordering rationale.
   lowerIOSinks(M, wd, taint);
+  // QRAM tainted-index memory (Phase 7.5 Inc 1) mirrored in this entry point too
+  // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the pre-
+  // `lowerRotations` ordering rationale.
+  lowerQramReads(M, wd, taint);
   // Classical-condition mux guard in this entry point too (twin-pipeline
   // trap, IMPLEMENTATION §6.5) — see run() for the ordering rationale.
   declineClassicalMuxes(M, taint);

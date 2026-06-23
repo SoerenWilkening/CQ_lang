@@ -64,6 +64,7 @@ add_library(CQPass MODULE
   src/OpcodeLowering.cpp
   src/OpcodeSupport.cpp
   src/Plugin.cpp
+  src/QramLowering.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
   src/RotationLowering.cpp

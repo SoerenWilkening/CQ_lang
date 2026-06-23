@@ -54,6 +54,12 @@ bool isInverseEmittable(const CallInst *Forward) {
   if (Name.starts_with("cq_template_") && !Name.contains("_controlled") &&
       !Name.ends_with("_inv") && !Name.ends_with("_unc"))
     return true;
+  // Phase 7.5 QRAM load `cqrt_qram_load_<W>(arr, idx)` — an ordinary reversible
+  // data producer (Toffoli-copy-out): inverted by its void `_unc` twin, the SAME
+  // out-first slot convention as a data template. The `_unc` form ends `_unc` and
+  // is excluded (never a forward link).
+  if (Name.starts_with("cqrt_qram_load_") && !Name.ends_with("_unc"))
+    return true;
   // Phase 6.3 transitive: a call to a specialization CLONE `@__cq_q_<callee>_<mask>`
   // (a Bennett-wrapped reversible body `|x⟩|0⟩ → |x⟩|f(x)⟩`) is inverted by its
   // void `_unc` twin `@__cq_q_..._unc(out, args…)` (`out ^= f(args)` zeroes the
@@ -132,6 +138,34 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     Args.push_back(Forward);              // out = the rail to zero in place.
     ParamTys.push_back(Forward->getType());
     for (Value *Op : Forward->args()) {   // forward operands, original order.
+      Args.push_back(Op);
+      ParamTys.push_back(Op->getType());
+    }
+    FunctionType *FT =
+        FunctionType::get(Type::getVoidTy(Forward->getContext()), ParamTys,
+                          /*isVarArg=*/false);
+    FunctionCallee Unc =
+        Forward->getModule()->getOrInsertFunction((Name + "_unc").str(), FT);
+    CallInst *UncCall = B.CreateCall(Unc, Args);
+    if (DebugLoc DL = Forward->getDebugLoc())
+      UncCall->setDebugLoc(DL);
+    return true;
+  }
+
+  // Phase 7.5 QRAM load `cqrt_qram_load_<W>(arr, idx)` → its void `_unc` twin
+  // `cqrt_qram_load_<W>_unc(out, arr, idx)`. SAME out-first slot convention as the
+  // data-template case: `out` (this load's OWN result handle — the dead value rail
+  // to zero) is arg 0, then the forward operands (arr, idx) in order. The `_unc`
+  // un-copies `out` back to |0> using the (preserved) cell; the borrowed inputs
+  // (the classical array handle, the still-live index) are untouched. The minted
+  // FunctionType `void(i32 out, i32 arr, i32 idx)` matches the hand-written runtime
+  // body (cq_runtime.c) and WidthDispatch::qramLoadUncFn. `CurHandle` is ignored.
+  if (Name.starts_with("cqrt_qram_load_") && !Name.ends_with("_unc")) {
+    SmallVector<Value *, 4> Args;
+    SmallVector<Type *, 4> ParamTys;
+    Args.push_back(Forward);              // out = the rail to zero in place.
+    ParamTys.push_back(Forward->getType());
+    for (Value *Op : Forward->args()) {   // forward operands (arr, idx), in order.
       Args.push_back(Op);
       ParamTys.push_back(Op->getType());
     }

@@ -617,6 +617,18 @@ add_test(NAME e2e-slice-mixed-value-io
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_mixed_value_io.expected.log")
 
+# Phase 7.5 Increment 1: a tainted-index READ of a const-global table (QROM-shaped).
+# `tbl[q]` lowers to cqrt_qram_alloc_i32 (array-handle birth) + cqrt_qram_load_i32
+# (Toffoli-copy-out); no getelementptr/load survives and NO measurement is inserted
+# that the user did not write (Rule 5). The array handle prints `a<N>`.
+add_test(NAME e2e-slice-qram-read
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_read.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_read.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route

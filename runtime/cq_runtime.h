@@ -352,6 +352,69 @@ int32_t cqrt_tape_write_i32_controlled(int32_t ctrl, int32_t tape, int32_t src);
 int32_t cqrt_tape_write_i64_controlled(int32_t ctrl, int32_t tape, int32_t src);
 
 /* -----------------------------------------------------------------
+ * QRAM — tainted-index memory (Phase 7.5, PRD-7.5 §2.3 — FROZEN core
+ * ABI, hand-written here, NOT a `cq_template_*` generated symbol). The
+ * coherent lowering of a dynamic/tainted-index array access `a[i]` (a
+ * static index is SROA'd away by clang -O1 and never reaches the pass).
+ * STUB-ONLY: the Shadow/MUX-EXCH/QROM gate mechanics live in the
+ * (deferred) backend; these stubs record only the (array, index) ABI the
+ * backend implements. The strategy choice (Shadow vs MUX vs QROM) is a
+ * backend detail and NEVER leaks into these signatures (PRD-7.5 §2.1).
+ *
+ *   cqrt_qram_alloc_<W>(count) -> arr
+ *       Register a KNOWN-SHAPE array of `count` width-`W` cells; the
+ *       backend allocates the physical register block and returns the
+ *       ARRAY HANDLE — an i32 resource token (like a tape handle: a
+ *       classical token, NOT a qubit and NOT tainted, so the uncompute
+ *       spine ignores it). The cell CONTENTS are classical metadata
+ *       (a const table / a memset-0 initializer), replayed at inspection,
+ *       not passed here — only the count (PRD-7.5 §2.6, §2.12). The handle
+ *       is drawn from the shared monotonic `cqrt_alloc_handle()` counter
+ *       but PRINTS with an `a` prefix to distinguish an array from a rail.
+ *
+ *   cqrt_qram_load_<W>(arr, idx) -> out
+ *       Read the cell at the (quantum) index `idx` into a FRESH i32 value
+ *       handle (Toffoli-copy-out — the cell is PRESERVED). An ordinary
+ *       reversible data producer: the whole-DAG uncompute spine reverses
+ *       a dead loaded value via the `_unc` twin below. The index handle is
+ *       ALWAYS i32 (Rule 15; the -O1 `sext …to i64` is stripped). The 5
+ *       INTEGER widths only ({i1,i8,i16,i32,i64}, `widthHasReversibleCopy`):
+ *       an fp cell is the f64/angle hazard and there is no
+ *       `cqrt_qram_load_i128` — both DECLINE in the IR pass, never minting
+ *       a phantom.
+ *
+ *   cqrt_qram_load_<W>_unc(out, arr, idx)
+ *       Adjoint of a load: un-copy the dead loaded value `out` back to |0>
+ *       using the (preserved) cell at `idx`. Void, in-place on `out`. The
+ *       `_unc(out, src…)` slot convention mirrors `cq_template_*_unc`
+ *       (out first, then the forward operands in order).
+ *
+ * Trace (the golden contract, PRD-7.5 §2.3): the array handle prints as
+ * `a<N>`, every rail handle as `h<N>`:
+ *     "cqrt_qram_alloc_<W>(<count>) -> a<N>"
+ *     "cqrt_qram_load_<W>(a<arr>, h<idx>) -> h<out>"
+ *     "cqrt_qram_load_<W>_unc(h<out>, a<arr>, h<idx>)"   (void, no arrow).
+ * The store path (`cqrt_qram_store_<W>` (+ `_unc`)) lands in Increment 2.
+ * ----------------------------------------------------------------- */
+int32_t cqrt_qram_alloc_i1 (int32_t count);
+int32_t cqrt_qram_alloc_i8 (int32_t count);
+int32_t cqrt_qram_alloc_i16(int32_t count);
+int32_t cqrt_qram_alloc_i32(int32_t count);
+int32_t cqrt_qram_alloc_i64(int32_t count);
+
+int32_t cqrt_qram_load_i1 (int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_i8 (int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_i16(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_i32(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_i64(int32_t arr, int32_t idx);
+
+void cqrt_qram_load_i1_unc (int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_i8_unc (int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_i16_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_i32_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_i64_unc(int32_t out, int32_t arr, int32_t idx);
+
+/* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;
  * reserved for later lifetime work.
  * Trace: "cqrt_free(h<handle>)" (no return-value suffix).

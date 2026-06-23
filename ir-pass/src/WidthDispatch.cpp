@@ -175,6 +175,53 @@ FunctionCallee WidthDispatch::tapeWriteFn(StringRef abiWidth) const {
                                FunctionType::get(I32, {I32, I32}, false));
 }
 
+FunctionCallee WidthDispatch::qramAllocFn(StringRef abiWidth) const {
+  // Signature: i32(i32 count) — the array handle and the count are both i32
+  // (the width only selects the symbol name). Mirrors cqrt_qram_alloc_<W> in
+  // runtime/cq_runtime.h (Phase 7.5, PRD-7.5 §2.3). INTEGER cell widths only,
+  // gated EXACTLY as copyFn/tapeWriteFn (the >64 / non-integer fence): an fp
+  // cell is the f64/angle miscompile family and there is no
+  // cqrt_qram_alloc_i128, so an unsupported width returns a null callee
+  // (caller declines) rather than minting a phantom.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(("cqrt_qram_alloc_" + abiWidth).str(),
+                               FunctionType::get(I32, {I32}, false));
+}
+
+FunctionCallee WidthDispatch::qramLoadFn(StringRef abiWidth) const {
+  // Signature: i32(i32 arr, i32 idx) — array handle, index handle, and the
+  // fresh loaded-value handle are all i32. Mirrors cqrt_qram_load_<W> in
+  // runtime/cq_runtime.h. Same INTEGER-width fence as qramAllocFn.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(("cqrt_qram_load_" + abiWidth).str(),
+                               FunctionType::get(I32, {I32, I32}, false));
+}
+
+FunctionCallee WidthDispatch::qramLoadUncFn(StringRef abiWidth) const {
+  // Signature: void(i32 out, i32 arr, i32 idx) — the adjoint of a load. The
+  // out-first slot convention mirrors cq_template_*_unc (EmitInverse). Mirrors
+  // cqrt_qram_load_<W>_unc in runtime/cq_runtime.h. Same INTEGER-width fence.
+  // NOTE: EmitInverse mints this `_unc` decl inline (out-first) from the
+  // forward call's own type; this resolver exists for symmetry / direct callers
+  // and produces a byte-identical FunctionType so the two never diverge.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(("cqrt_qram_load_" + abiWidth + "_unc").str(),
+                               FunctionType::get(Type::getVoidTy(Ctx),
+                                                 {I32, I32, I32}, false));
+}
+
 FunctionCallee WidthDispatch::measureRtFn(StringRef abiWidth) const {
   // Signature: takes an i32 handle, returns a value of the ABI-width
   // type. Mirrors cqrt_measure_<W> in runtime/cq_runtime.h.

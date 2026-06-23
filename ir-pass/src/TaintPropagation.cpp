@@ -9,6 +9,7 @@
 #include "TaintPropagation.h"
 
 #include "IntrinsicLowering.h"
+#include "QramLowering.h"
 #include "SpecializePlan.h"
 #include "Specialization.h"
 #include "WidthDispatch.h"
@@ -19,6 +20,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -463,6 +465,11 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
+    // Phase-7.5 QRAM: built lazily, only when a tainted gep/load candidate is
+    // seen in `F` (same idiom as declineClassicalMuxes' DT). Needed by the
+    // straight-line (not-under-tainted-control) + not-in-loop carve predicate.
+    std::optional<DominatorTree> DT;
+    std::optional<LoopInfo> LInfo;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
         // 1. Calls/invokes FIRST (an InvokeInst is also a terminator — it must
@@ -618,6 +625,32 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           continue;
         if (!readsTaintedValue(I, taint))
           continue;
+        // 4a-Phase7.5. QRAM tainted-index const-global READ (QROM-shaped). An
+        //    accepted straight-line read — a `getelementptr` directly off a
+        //    `constant` array + its `load` — is OWNED by `lowerQramReads`
+        //    (emitted before `lowerRotations`). Skip BOTH the gep's and the
+        //    load's escape decline by the EXACT shared predicate the emitter
+        //    consults (`isAcceptedQromGep`/`isAcceptedQromLoad`, QramLowering) —
+        //    a STRUCTURAL accept. The emitter STILL loud-declines an accepted-
+        //    shape read whose element width has no reversible copy (fp/i128
+        //    cell), so this carve suppresses ONLY the generic decline; it NEVER
+        //    accepts an unlowerable read (§6.9, the I/O-sink carve discipline).
+        //    A read UNDER tainted control (a clang-folded jump-table gep/load —
+        //    control_swap_reject_switch_jumptable.ll) is NOT straight-line, so
+        //    the predicate rejects it and it keeps declining below.
+        if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I)) {
+          if (!DT) {
+            DT.emplace(F);
+            LInfo.emplace(*DT);
+          }
+          if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
+            if (isAcceptedQromGep(GEP, taint, *DT, *LInfo))
+              continue;
+          } else if (auto *LI = dyn_cast<LoadInst>(&I)) {
+            if (isAcceptedQromLoad(LI, taint, *DT, *LInfo))
+              continue;
+          }
+        }
         // 4b. `freeze` (Phase-7.1 Increment B) — a basis-level identity. The
         //     accept is NARROW (R-B): an FP freeze is SKIPPED so the GATE-3
         //     carrier fence (SelectClassify, runs at detection) catches an angle

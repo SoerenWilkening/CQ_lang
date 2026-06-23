@@ -90,6 +90,21 @@ public:
   llvm::FunctionCallee tapeAllocFn() const;                          // @cqrt_tape_alloc
   llvm::FunctionCallee tapeWriteFn(llvm::StringRef abiWidth) const;  // @cqrt_tape_write_<W>
 
+  // QRAM tainted-index memory resolvers (Phase 7.5, PRD-7.5 §2.3 — FROZEN
+  // core ABI). `qramAllocFn` is `i32 cqrt_qram_alloc_<W>(i32 count)` (the
+  // array handle is a classical i32 resource token; the width selects only
+  // the symbol). `qramLoadFn` is `i32 cqrt_qram_load_<W>(i32 arr, i32 idx)`
+  // (Toffoli-copy-out; all handles i32). `qramLoadUncFn` is its void adjoint
+  // `void cqrt_qram_load_<W>_unc(i32 out, i32 arr, i32 idx)` (out-first slot
+  // convention, like `cq_template_*_unc`). All three are gated to the INTEGER
+  // widths {i1,i8,i16,i32,i64} EXACTLY as `copyFn`/`tapeWriteFn` (the >64 /
+  // non-integer fence): an fp cell is the angle hazard and there is no
+  // `cqrt_qram_load_i128`, so an unsupported width returns a null callee
+  // (caller declines) rather than minting a phantom extern.
+  llvm::FunctionCallee qramAllocFn(llvm::StringRef abiWidth) const;    // @cqrt_qram_alloc_<W>
+  llvm::FunctionCallee qramLoadFn(llvm::StringRef abiWidth) const;     // @cqrt_qram_load_<W>
+  llvm::FunctionCallee qramLoadUncFn(llvm::StringRef abiWidth) const;  // @cqrt_qram_load_<W>_unc
+
   // Rotation runtime resolvers. Both signatures are `void(i32, double)`
   // (handle, angle) — the handle is always i32 across every ABI width
   // (PRD §"Width unification"). Names `@cqrt_ry_<W>` / `@cqrt_rz_<W>`.

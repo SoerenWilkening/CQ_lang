@@ -34,6 +34,12 @@ bool isTemplateProducer(const CallInst *G) {
   if (!Callee)
     return false;
   StringRef N = Callee->getName();
+  // Phase 7.5: a QRAM load result is also a fresh rail the DAG must zero (via its
+  // `_unc`) and free — and, crucially, must be CLOSURE-CHECKED here so a load whose
+  // value fans out to a consumer OUTSIDE the recovered DAG marks the DAG NotClosed
+  // (a Rule-8 safe-leak), never a use-after-free of a freed cell-copy.
+  if (N.starts_with("cqrt_qram_load_") && !N.ends_with("_unc"))
+    return true;
   return N.starts_with("cq_template_") && !N.contains("_controlled") &&
          !N.ends_with("_inv") && !N.ends_with("_unc");
 }

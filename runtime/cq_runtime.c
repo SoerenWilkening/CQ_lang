@@ -615,6 +615,112 @@ int32_t cqrt_tape_write_i64_controlled(int32_t ctrl, int32_t tape, int32_t src) 
 }
 
 /* ---------------------------------------------------------------------
+ * QRAM — tainted-index memory (Phase 7.5, PRD-7.5 §2.3) — FROZEN core
+ * ABI. `cqrt_qram_alloc_<W>` mints an array handle (printed `a<N>`) from
+ * the shared monotonic counter; only the `count` is recorded (cell
+ * contents are classical metadata, §2.6). `cqrt_qram_load_<W>` copies the
+ * cell at `idx` out into a fresh kept value handle (printed `h<N>`); the
+ * `_unc` twin un-copies a dead loaded value back to |0> (void, no arrow).
+ * Trace-only: no simulation, no measurement (Rule 5; see cq_runtime.h).
+ * The store path lands in Increment 2.
+ * ------------------------------------------------------------------- */
+
+int32_t cqrt_qram_alloc_i1(int32_t count) {
+    int32_t a = cqrt_alloc_handle();
+    printf("cqrt_qram_alloc_i1(%d) -> a%d\n", count, a);
+    fflush(stdout);
+    return a;
+}
+
+int32_t cqrt_qram_alloc_i8(int32_t count) {
+    int32_t a = cqrt_alloc_handle();
+    printf("cqrt_qram_alloc_i8(%d) -> a%d\n", count, a);
+    fflush(stdout);
+    return a;
+}
+
+int32_t cqrt_qram_alloc_i16(int32_t count) {
+    int32_t a = cqrt_alloc_handle();
+    printf("cqrt_qram_alloc_i16(%d) -> a%d\n", count, a);
+    fflush(stdout);
+    return a;
+}
+
+int32_t cqrt_qram_alloc_i32(int32_t count) {
+    int32_t a = cqrt_alloc_handle();
+    printf("cqrt_qram_alloc_i32(%d) -> a%d\n", count, a);
+    fflush(stdout);
+    return a;
+}
+
+int32_t cqrt_qram_alloc_i64(int32_t count) {
+    int32_t a = cqrt_alloc_handle();
+    printf("cqrt_qram_alloc_i64(%d) -> a%d\n", count, a);
+    fflush(stdout);
+    return a;
+}
+
+int32_t cqrt_qram_load_i1(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i1(a%d, h%d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_qram_load_i8(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i8(a%d, h%d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_qram_load_i16(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i16(a%d, h%d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_qram_load_i32(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i32(a%d, h%d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_qram_load_i64(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_i64(a%d, h%d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+
+void cqrt_qram_load_i1_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i1_unc(h%d, a%d, h%d)\n", out, arr, idx);
+    fflush(stdout);
+}
+
+void cqrt_qram_load_i8_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i8_unc(h%d, a%d, h%d)\n", out, arr, idx);
+    fflush(stdout);
+}
+
+void cqrt_qram_load_i16_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i16_unc(h%d, a%d, h%d)\n", out, arr, idx);
+    fflush(stdout);
+}
+
+void cqrt_qram_load_i32_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i32_unc(h%d, a%d, h%d)\n", out, arr, idx);
+    fflush(stdout);
+}
+
+void cqrt_qram_load_i64_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_i64_unc(h%d, a%d, h%d)\n", out, arr, idx);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */
 

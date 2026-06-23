@@ -91,6 +91,12 @@ bool isDataProducer(const CallInst *H) {
   StringRef N = Callee->getName();
   if (N.starts_with("cqrt_alloc_"))
     return true;
+  // Phase 7.5: a QRAM load result is a reversible data producer (copy-out) — a
+  // dead loaded value is a data terminal the spine reverses via its `_unc`
+  // (EmitInverse) exactly like a `cq_template_*` producer. The `_unc` twin is not
+  // a forward producer.
+  if (N.starts_with("cqrt_qram_load_") && !N.ends_with("_unc"))
+    return true;
   return N.starts_with("cq_template_") && !N.contains("_controlled");
 }
 
