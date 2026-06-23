@@ -389,12 +389,34 @@ int32_t cqrt_tape_write_i64_controlled(int32_t ctrl, int32_t tape, int32_t src);
  *       `_unc(out, src…)` slot convention mirrors `cq_template_*_unc`
  *       (out first, then the forward operands in order).
  *
+ *   cqrt_qram_store_<W>(arr, idx, val)   (Phase 7.5 Increment 2)
+ *       Write the (i32 handle) `val` into the cell at the (quantum) index
+ *       `idx`. VOID and IN-PLACE on the arg-0 array handle — structurally
+ *       the same shape as `cqrt_rz_<W>` (a void mutation that mints no new
+ *       value and keeps the handle live), so the uncompute spine treats it
+ *       as an in-place gate on `arr`. The backend stashes the displaced old
+ *       cell value on ITS OWN per-store tape (never in the IR or the ABI —
+ *       owner decision 1, §2.4); the IR pass owns only the reversal ORDER.
+ *       `val` is ALWAYS a handle (a tainted value is its own handle; a
+ *       classical store value is materialized into a basis-state handle via
+ *       `cqrt_alloc_<W>` so the (arr, idx, val) trace stays all-handles).
+ *
+ *   cqrt_qram_store_<W>_unc(arr, idx, val)   (Phase 7.5 Increment 2)
+ *       Adjoint of a store: the backend POPS its tape, restoring the cell's
+ *       old value. SAME args as the forward store (NOT out-first — a store
+ *       mints no rail); `_unc` selects pop over push. The spine fires the
+ *       `_unc` twins in STRICT reverse program order of the forward stores
+ *       to one array (LIFO), so the backend's tape stack pops in push order
+ *       (§2.8(ii)). A void mutation on one handle is totally ordered and a
+ *       quantum-index store touches every cell, so the stores never commute.
+ *
  * Trace (the golden contract, PRD-7.5 §2.3): the array handle prints as
  * `a<N>`, every rail handle as `h<N>`:
  *     "cqrt_qram_alloc_<W>(<count>) -> a<N>"
  *     "cqrt_qram_load_<W>(a<arr>, h<idx>) -> h<out>"
  *     "cqrt_qram_load_<W>_unc(h<out>, a<arr>, h<idx>)"   (void, no arrow).
- * The store path (`cqrt_qram_store_<W>` (+ `_unc`)) lands in Increment 2.
+ *     "cqrt_qram_store_<W>(a<arr>, h<idx>, h<val>)"      (void, no arrow).
+ *     "cqrt_qram_store_<W>_unc(a<arr>, h<idx>, h<val>)"  (void, no arrow).
  * ----------------------------------------------------------------- */
 int32_t cqrt_qram_alloc_i1 (int32_t count);
 int32_t cqrt_qram_alloc_i8 (int32_t count);
@@ -413,6 +435,18 @@ void cqrt_qram_load_i8_unc (int32_t out, int32_t arr, int32_t idx);
 void cqrt_qram_load_i16_unc(int32_t out, int32_t arr, int32_t idx);
 void cqrt_qram_load_i32_unc(int32_t out, int32_t arr, int32_t idx);
 void cqrt_qram_load_i64_unc(int32_t out, int32_t arr, int32_t idx);
+
+void cqrt_qram_store_i1 (int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i8 (int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i16(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i32(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i64(int32_t arr, int32_t idx, int32_t val);
+
+void cqrt_qram_store_i1_unc (int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i8_unc (int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i16_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i32_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i64_unc(int32_t arr, int32_t idx, int32_t val);
 
 /* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;

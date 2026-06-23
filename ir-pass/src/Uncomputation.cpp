@@ -91,6 +91,14 @@ bool isDataProducer(const CallInst *H) {
   StringRef N = Callee->getName();
   if (N.starts_with("cqrt_alloc_"))
     return true;
+  // Phase 7.5 Inc 2: a QRAM array handle (`cqrt_qram_alloc_<W>`) backing an
+  // ALLOCA mutable array is an in-place-mutated register the spine reverses — a
+  // DEAD scratch array (its only users are stores) is a data terminal whose
+  // stores reverse in LIFO (EmitInverse `cqrt_qram_store_<W>_unc`), the array
+  // handle itself left allocated (never freed; §2.9). A const-global QROM array
+  // handle (Inc 1) is NOT tainted, so it never reaches terminal selection here.
+  if (N.starts_with("cqrt_qram_alloc_"))
+    return true;
   // Phase 7.5: a QRAM load result is a reversible data producer (copy-out) — a
   // dead loaded value is a data terminal the spine reverses via its `_unc`
   // (EmitInverse) exactly like a `cq_template_*` producer. The `_unc` twin is not
@@ -100,6 +108,17 @@ bool isDataProducer(const CallInst *H) {
   return N.starts_with("cq_template_") && !N.contains("_controlled");
 }
 
+// A QRAM array handle (`cqrt_qram_alloc_<W>` result) — a CLASSICAL resource token
+// the reversal NEVER frees (its stores reverse, but a `cqrt_free` on it would be a
+// hidden measurement of the restored cells; §2.9, Inc 1 "array-handle-never-freed").
+bool isQramArrayHandle(const Value *V) {
+  const auto *CI = dyn_cast<CallInst>(V);
+  if (!CI)
+    return false;
+  const Function *Callee = CI->getCalledFunction();
+  return Callee && Callee->getName().starts_with("cqrt_qram_alloc_");
+}
+
 // The RAIL a gate creates — the value the gate's adjoint zeroes, then the driver
 // frees. An in-place rotation (`cqrt_ry/rz`, self-adjoint `cqrt_x`) acts on its
 // arg-0 handle; a template producer's result IS the rail. (PRD §2.11.)
@@ -107,6 +126,12 @@ Value *railOf(CallInst *G) {
   const Function *Callee = G->getCalledFunction();
   StringRef N = Callee ? Callee->getName() : StringRef();
   if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_") || N == "cqrt_x") &&
+      G->arg_size() >= 1)
+    return G->getArgOperand(0);
+  // Phase 7.5 Inc 2: a QRAM store mutates its arg-0 ARRAY handle in place (like a
+  // rotation) — that handle is its rail. The `_unc` twin never reaches here (it is
+  // never recovered as a forward gate).
+  if (N.starts_with("cqrt_qram_store_") && !N.ends_with("_unc") &&
       G->arg_size() >= 1)
     return G->getArgOperand(0);
   return G;
@@ -150,7 +175,11 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
       continue;  // a shared-prefix gate already adjointed (once-per-gate)
     emitInverseCall(B, G, wd, /*CurHandle=*/nullptr);
     Value *R = railOf(G);
-    if (Earliest.lookup(R) == G) {  // R fully reversed → free it
+    if (Earliest.lookup(R) == G && !isQramArrayHandle(R)) {
+      // R fully reversed → free it, UNLESS R is a QRAM array handle: that is a
+      // classical resource token whose stores reverse (LIFO) but which is NEVER
+      // freed — a `cqrt_free` on it would be a hidden measurement of the
+      // (now-restored) classical cells (§2.9, Inc 1 "array-handle-never-freed").
       CallInst *Free = B.CreateCall(wd.freeFn(), {R});
       if (DebugLoc DL = G->getDebugLoc())
         Free->setDebugLoc(DL);

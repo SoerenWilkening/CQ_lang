@@ -25,6 +25,7 @@ class GetElementPtrInst;
 class LoadInst;
 class LoopInfo;
 class Module;
+class StoreInst;
 }  // namespace llvm
 
 namespace cq {
@@ -56,6 +57,40 @@ bool isAcceptedQromGep(const llvm::GetElementPtrInst *GEP, const TaintSet &taint
 // later rewrites to its i32 handle. An accepted-shape read whose element width has
 // no reversible copy (fp/i128) declines LOUDLY here.
 void lowerQramReads(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+
+// ── Phase 7.5 Increment 2: alloca-backed mutable array (Shadow-shaped) ──────────
+//
+// Lowers a STRAIGHT-LINE tainted-index store/load through an `alloca [N x iW]`
+// (const N) — the `arr[q]=v` / `arr[p]` shape clang -O1 leaves once a dynamic
+// access forces the alloca to survive — to one `cqrt_qram_alloc_<W>` (a TAINTED
+// in-place-mutated register the uncompute spine reverses) + `cqrt_qram_store_<W>`
+// (void in-place on the array handle; the backend owns the per-store tape) +
+// `cqrt_qram_load_<W>` (Toffoli-copy-out). A dead scratch array's stores reverse in
+// strict LIFO (`cqrt_qram_store_<W>_unc`); an escaped/measured array reverses
+// nothing (§2.7). The array handle is a classical resource token, never freed
+// (§2.9). Static-index memory is SROA'd away by clang (PRD-7.5 §1).
+//
+// These accept predicates are the SHARED truth consulted by BOTH the
+// `declineTaintEscapes` carve-out AND the emitter (carve and emit can never
+// diverge). They are PER-ACCESS structural (array-decay off an `alloca [N x iW]`,
+// tainted index, straight-line, not in a loop); the alloca-WIDE invariants
+// (element width, no-aliasing escape, mixed-access, mid-sequence observation) are
+// the emitter's, which loud-declines an unhealthy alloca — opt then exits non-zero
+// regardless (§6.9).
+bool isAcceptedShadowGep(const llvm::GetElementPtrInst *GEP, const TaintSet &taint,
+                         llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
+bool isAcceptedShadowLoad(const llvm::LoadInst *LI, const TaintSet &taint,
+                          llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
+bool isAcceptedShadowStore(const llvm::StoreInst *SI, const TaintSet &taint,
+                           llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
+
+// Lower every accepted alloca-backed Shadow array in `M`. Runs BEFORE
+// `lowerRotations` (pre-RAUW SSA identity, like `lowerQramReads`): the emitted
+// index/value operands are still the tainted source values, which the
+// rotation/opcode RAUW later rewrites to their i32 handles. An accepted-shape
+// alloca whose element width has no reversible copy, that aliases/escapes, mixes a
+// classical access, or is observed mid-sequence declines LOUDLY here.
+void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
 }  // namespace cq
 

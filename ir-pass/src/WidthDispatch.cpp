@@ -222,6 +222,40 @@ FunctionCallee WidthDispatch::qramLoadUncFn(StringRef abiWidth) const {
                                                  {I32, I32, I32}, false));
 }
 
+FunctionCallee WidthDispatch::qramStoreFn(StringRef abiWidth) const {
+  // Signature: void(i32 arr, i32 idx, i32 val) — the VOID in-place store
+  // mutator (Phase 7.5 Inc 2). All three are i32 handles; the array handle is
+  // arg 0 (mutated in place), the index and the value handles are borrowed
+  // (preserved) inputs. Mirrors cqrt_qram_store_<W> in runtime/cq_runtime.h.
+  // Same INTEGER-width fence as qramAllocFn/qramLoadFn.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_qram_store_" + abiWidth).str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
+}
+
+FunctionCallee WidthDispatch::qramStoreUncFn(StringRef abiWidth) const {
+  // Signature: void(i32 arr, i32 idx, i32 val) — the adjoint of a store, with
+  // the SAME args as the forward store (NOT out-first; a store mints no rail
+  // to zero). `_unc` pops the backend's tape, restoring the cell's old value.
+  // Mirrors cqrt_qram_store_<W>_unc in runtime/cq_runtime.h. NOTE: EmitInverse
+  // mints this `_unc` decl inline from the forward store's own type; this
+  // resolver exists for symmetry and produces a byte-identical FunctionType so
+  // the two never diverge. Same INTEGER-width fence.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_qram_store_" + abiWidth + "_unc").str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
+}
+
 FunctionCallee WidthDispatch::measureRtFn(StringRef abiWidth) const {
   // Signature: takes an i32 handle, returns a value of the ABI-width
   // type. Mirrors cqrt_measure_<W> in runtime/cq_runtime.h.

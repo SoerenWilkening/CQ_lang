@@ -775,7 +775,7 @@ via the §7.6 reversible output tape.)
 
 ---
 
-## Phase 7 — Pre-freeze expressiveness completion [7.1/7.2/7.6 DONE; 7.3–7.5 remaining]
+## Phase 7 — Pre-freeze expressiveness completion [7.1/7.2/7.6 DONE; 7.5 Inc 1+2 DONE (Inc 3 remaining); 7.3/7.4 remaining]
 
 **Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
 almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
@@ -922,6 +922,23 @@ inversion → feature.
   memory-safe Julia), so it trips the loud memory-reject far more often — make those
   diagnostics **precise** (Bennett's "signpost naming the offending pattern" is the
   model).
+
+  - **7.5 status (epic `7z9k`, 3 increments):** **Inc 1 DONE 2026-06-23** —
+    const-global tainted-index READ (QROM-shaped): frozen `cqrt_qram_alloc_<W>` +
+    `cqrt_qram_load_<W>` (+ `_unc`), `W ∈ {i1,i8,i16,i32,i64}`. **Inc 2 DONE 2026-06-23**
+    — alloca-backed tainted-index STORE/LOAD (Shadow-shaped): frozen
+    `cqrt_qram_store_<W>` (+ `_unc`, void in-place on the array handle; the backend
+    owns the per-store tape, the IR pass owns only the reversal ORDER); the array
+    handle is a TAINTED in-place-mutated register the whole-DAG spine reverses (a dead
+    scratch array's stores reverse in strict LIFO; an escaped/observed array reverses
+    nothing) and is NEVER freed (§2.9); off-pattern shapes (mixed same-array access,
+    pointer escape, mid-sequence observation, dynamic-N, fp/i128 cell) decline loudly.
+    Both increments INDEPENDENT-Rule-13-CLEARED. **Inc 3 remaining** — the fuller
+    single-origin provenance walk (gep chains, pointer phi/select) + the complete
+    over-accept decline matrix; carries two Inc-2 over-decline follow-ups (extend the
+    mid-sequence-observation guard to I/O-output sinks for a clean diagnostic; the
+    straight-line dead-load-then-store `arr[p]=arr[q]` accept). See
+    `docs/prd/phase-07-expressiveness/PRD-7.5.md`.
 
 - **7.6 — Reversible I/O (output tape) [DONE 2026-06-21]** (owner discussion 2026-06-19; `bd memories
   reversible-output-tape-io`). Lower a tainted I/O sink — `printf`/`puts`/`putchar` —

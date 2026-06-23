@@ -638,16 +638,31 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
         //    A read UNDER tainted control (a clang-folded jump-table gep/load —
         //    control_swap_reject_switch_jumptable.ll) is NOT straight-line, so
         //    the predicate rejects it and it keeps declining below.
-        if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I)) {
+        //    Phase 7.5 Inc 2 extends the carve to the alloca-backed Shadow shape:
+        //    a tainted-index `store`/`load` (and its array-decay gep) through an
+        //    `alloca [N x iW]` is OWNED by `lowerShadowMemory` — carve it by the
+        //    EXACT shared per-access predicate (`isAcceptedShadow*`, QramLowering),
+        //    a STRUCTURAL accept. The emitter STILL loud-declines the alloca-WIDE
+        //    failures (fp/i128 cell, aliasing/escape, mixed access, mid-sequence
+        //    observation), so this carve suppresses ONLY the generic decline; it
+        //    NEVER accepts an unlowerable access (§6.9). A dynamic-N / flat-gep /
+        //    classical-index access fails the structural predicate and keeps
+        //    declining below (kMsgStore / kMsgOther).
+        if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I)) {
           if (!DT) {
             DT.emplace(F);
             LInfo.emplace(*DT);
           }
           if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
-            if (isAcceptedQromGep(GEP, taint, *DT, *LInfo))
+            if (isAcceptedQromGep(GEP, taint, *DT, *LInfo) ||
+                isAcceptedShadowGep(GEP, taint, *DT, *LInfo))
               continue;
           } else if (auto *LI = dyn_cast<LoadInst>(&I)) {
-            if (isAcceptedQromLoad(LI, taint, *DT, *LInfo))
+            if (isAcceptedQromLoad(LI, taint, *DT, *LInfo) ||
+                isAcceptedShadowLoad(LI, taint, *DT, *LInfo))
+              continue;
+          } else if (auto *SI = dyn_cast<StoreInst>(&I)) {
+            if (isAcceptedShadowStore(SI, taint, *DT, *LInfo))
               continue;
           }
         }

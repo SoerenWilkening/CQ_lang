@@ -720,6 +720,63 @@ void cqrt_qram_load_i64_unc(int32_t out, int32_t arr, int32_t idx) {
     fflush(stdout);
 }
 
+/* Store path (Phase 7.5 Increment 2). `cqrt_qram_store_<W>` writes the value
+ * handle `val` into the cell at the (quantum) index `idx`; it is VOID and
+ * in-place on the arg-0 array handle (the displaced old value goes on the
+ * backend's own tape, never recorded here — only the (arr, idx, val) ABI).
+ * The `_unc` twin pops the backend's tape (same args; no arrow). Trace-only:
+ * no simulation, no measurement (Rule 5). */
+
+void cqrt_qram_store_i1(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i1(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i8(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i8(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i16(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i16(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i32(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i32(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i64(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i64(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i1_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i1_unc(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i8_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i8_unc(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i16_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i16_unc(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i32_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i32_unc(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i64_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i64_unc(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
 /* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */

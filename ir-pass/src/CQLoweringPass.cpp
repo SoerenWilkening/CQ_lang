@@ -129,6 +129,18 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // An accepted-shape read with an fp/i128 cell declines LOUDLY here.
   lowerQramReads(M, wd, taint);
 
+  // QRAM tainted-index memory (Phase 7.5 Inc 2): a STRAIGHT-LINE tainted-index
+  // STORE/LOAD through an `alloca [N x iW]` (`arr[q]=v; … arr[p] …`, Shadow-shaped)
+  // lowers to `cqrt_qram_alloc_<W>` (a TAINTED in-place-mutated register) +
+  // `cqrt_qram_store_<W>` + `cqrt_qram_load_<W>`. Runs right after `lowerQramReads`
+  // and (like it) BEFORE `lowerRotations` (pre-RAUW SSA identity — the emitted
+  // index/value operands are the still-tainted source values the later
+  // RAUW-to-handle rewrites). A dead scratch array's stores reverse in LIFO via the
+  // Phase-5 spine; an escaped/measured array reverses nothing. An aliasing/escaping,
+  // dynamic-N, mixed-access, fp/i128-cell, or mid-sequence-observed alloca declines
+  // LOUDLY here (the matching carve in `declineTaintEscapes`).
+  lowerShadowMemory(M, wd, taint);
+
   // Classical-condition mux guard (test_C_libtooling-wi5): a LIVE select/phi
   // reading tainted data that SURVIVES control lowering is classically
   // conditioned (ControlDetect adjudicated every tainted condition above —
@@ -246,6 +258,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the pre-
   // `lowerRotations` ordering rationale.
   lowerQramReads(M, wd, taint);
+  // QRAM alloca-backed Shadow store/load (Phase 7.5 Inc 2) mirrored here too
+  // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the ordering.
+  lowerShadowMemory(M, wd, taint);
   // Classical-condition mux guard in this entry point too (twin-pipeline
   // trap, IMPLEMENTATION §6.5) — see run() for the ordering rationale.
   declineClassicalMuxes(M, taint);

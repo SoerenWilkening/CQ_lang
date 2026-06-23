@@ -63,8 +63,20 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
       continue;
     for (User *U : H->users())
       if (auto *G = dyn_cast<CallInst>(U))
-        if (isInPlaceGateOn(G, H) && SeenGates.insert(G).second)
+        if (isInPlaceGateOn(G, H) && SeenGates.insert(G).second) {
           D.Calls.push_back(G);
+          // A multi-input in-place gate — a Phase 7.5 QRAM store
+          // `cqrt_qram_store_<W>(arr=H, idx, val)` — carries additional TAINTED
+          // borrowed operands (idx, val) that are its parents in the DAG. Enqueue
+          // them so their producers (the index rotation; a tainted store value's
+          // chain) are recovered and reverse AFTER this gate's `_unc` (SSA
+          // dominance: the gate `_unc` reads them, so it is emitted before their
+          // own adjoints/frees). A rotation's only non-handle operand is a
+          // classical angle (untainted), so this loop is a no-op for rotations.
+          for (Value *Op : G->args())
+            if (Op != H && taint.Tainted.count(Op))
+              Work.push_back(Op);
+        }
     auto *CI = dyn_cast<CallInst>(H);
     if (CI && !isAllocMint(CI)) {
       if (SeenGates.insert(CI).second)

@@ -104,6 +104,16 @@ public:
   llvm::FunctionCallee qramAllocFn(llvm::StringRef abiWidth) const;    // @cqrt_qram_alloc_<W>
   llvm::FunctionCallee qramLoadFn(llvm::StringRef abiWidth) const;     // @cqrt_qram_load_<W>
   llvm::FunctionCallee qramLoadUncFn(llvm::StringRef abiWidth) const;  // @cqrt_qram_load_<W>_unc
+  // Store path (Phase 7.5 Increment 2). `qramStoreFn` is the VOID in-place
+  // mutator `void cqrt_qram_store_<W>(i32 arr, i32 idx, i32 val)` (arg-0 array
+  // handle mutated; the backend owns the per-store tape). `qramStoreUncFn` is
+  // its adjoint `void cqrt_qram_store_<W>_unc(i32 arr, i32 idx, i32 val)` —
+  // SAME args (NOT out-first; a store mints no rail), `_unc` selects pop over
+  // push. Same INTEGER-width fence as the load resolvers. NOTE: EmitInverse
+  // mints the `_unc` decl inline from the forward store's own type; this
+  // resolver exists for symmetry / direct callers and is byte-identical.
+  llvm::FunctionCallee qramStoreFn(llvm::StringRef abiWidth) const;     // @cqrt_qram_store_<W>
+  llvm::FunctionCallee qramStoreUncFn(llvm::StringRef abiWidth) const;  // @cqrt_qram_store_<W>_unc
 
   // Rotation runtime resolvers. Both signatures are `void(i32, double)`
   // (handle, angle) — the handle is always i32 across every ABI width

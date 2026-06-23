@@ -629,6 +629,19 @@ add_test(NAME e2e-slice-qram-read
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_read.expected.log")
 
+# Phase 7.5 Increment 2: an alloca-backed tainted-index STORE + LOAD (Shadow-shaped).
+# `arr[q]=7; v=arr[p]` lowers to cqrt_qram_alloc_i32 + cqrt_qram_store_i32 (void
+# in-place on the array handle) + cqrt_qram_load_i32; the classical store value is
+# materialized into a basis-state handle so the (arr,idx,val) trace stays
+# all-handles, and NO measurement is inserted that the user did not write (Rule 5).
+add_test(NAME e2e-slice-qram-store
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route

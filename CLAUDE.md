@@ -43,7 +43,11 @@ class of bug.
 > ALL DONE (branch `phase-6.5-classical-call`, each Rule-13 cleared). Read
 > `ROADMAP.md` and `docs/design/rssa-swap-control/` *before* touching control
 > flow. Phases 0–6 done; **7.1/7.2/7.6 done** (incl. controlled `return`/`abort`
-> via epic `65wb`, closed 2026-06-23); 7.3–7.5 + 8–11 remaining. **Roadmap resequenced 2026-06-19:**
+> via epic `65wb`, closed 2026-06-23); **7.5 Inc 1+2 done** (epic `7z9k`: the frozen
+> `cqrt_qram_alloc/load/store_<W>` (+ `_unc`) ABI + const-global QROM reads + alloca
+> Shadow store/load with whole-DAG LIFO store reversal, both Rule-13-cleared
+> 2026-06-23; Inc 3 — provenance hardening + full decline matrix — remaining);
+> 7.3/7.4 + 8–11 remaining. **Roadmap resequenced 2026-06-19:**
 > Phase 7 is now **pre-freeze expressiveness completion** (7.1 opcode-surface
 > completion incl. Q+Q data compare + wide integers `__int128`/`_BitInt`; 7.2
 > controlled function-`return`; 7.3 bounded loops; 7.4 `break`; 7.5 QRAM full

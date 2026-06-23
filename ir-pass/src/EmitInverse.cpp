@@ -60,6 +60,13 @@ bool isInverseEmittable(const CallInst *Forward) {
   // is excluded (never a forward link).
   if (Name.starts_with("cqrt_qram_load_") && !Name.ends_with("_unc"))
     return true;
+  // Phase 7.5 QRAM store `cqrt_qram_store_<W>(arr, idx, val)` — a VOID in-place
+  // mutation on the array handle (Inc 2): inverted by its void `_unc` twin, which
+  // POPS the backend's per-store tape. UNLIKE every other `_unc` above, the store
+  // `_unc` takes the SAME args (arr, idx, val), NOT out-first — a store mints no
+  // rail to zero. The `_unc` form is excluded (never a forward link).
+  if (Name.starts_with("cqrt_qram_store_") && !Name.ends_with("_unc"))
+    return true;
   // Phase 6.3 transitive: a call to a specialization CLONE `@__cq_q_<callee>_<mask>`
   // (a Bennett-wrapped reversible body `|x⟩|0⟩ → |x⟩|f(x)⟩`) is inverted by its
   // void `_unc` twin `@__cq_q_..._unc(out, args…)` (`out ^= f(args)` zeroes the
@@ -169,6 +176,31 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
       Args.push_back(Op);
       ParamTys.push_back(Op->getType());
     }
+    FunctionType *FT =
+        FunctionType::get(Type::getVoidTy(Forward->getContext()), ParamTys,
+                          /*isVarArg=*/false);
+    FunctionCallee Unc =
+        Forward->getModule()->getOrInsertFunction((Name + "_unc").str(), FT);
+    CallInst *UncCall = B.CreateCall(Unc, Args);
+    if (DebugLoc DL = Forward->getDebugLoc())
+      UncCall->setDebugLoc(DL);
+    return true;
+  }
+
+  // Phase 7.5 QRAM store `cqrt_qram_store_<W>(arr, idx, val)` → its void `_unc`
+  // twin `cqrt_qram_store_<W>_unc(arr, idx, val)`. UNLIKE the data-template / load
+  // cases, the store `_unc` takes the SAME args in the SAME order (NOT out-first):
+  // a store is a void in-place mutation that mints NO rail to zero, so there is no
+  // `out` handle to prepend. The `_unc` body POPS the backend's per-store tape,
+  // restoring the cell's old value (the IR pass owns only that the `_unc` twins
+  // fire in strict reverse program order — LIFO — §2.8(ii)). The minted
+  // FunctionType `void(i32 arr, i32 idx, i32 val)` matches the hand-written
+  // runtime body and WidthDispatch::qramStoreUncFn. `CurHandle` is ignored.
+  if (Name.starts_with("cqrt_qram_store_") && !Name.ends_with("_unc")) {
+    SmallVector<Value *, 3> Args(Forward->args());  // (arr, idx, val), as-is.
+    SmallVector<Type *, 3> ParamTys;
+    for (Value *Op : Forward->args())
+      ParamTys.push_back(Op->getType());
     FunctionType *FT =
         FunctionType::get(Type::getVoidTy(Forward->getContext()), ParamTys,
                           /*isVarArg=*/false);
