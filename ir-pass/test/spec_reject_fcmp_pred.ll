@@ -1,6 +1,9 @@
 ; spec_reject_fcmp_pred.ll — Phase 6.4 (WI-1.13 over-accept hardening, completed):
-; a tainted body containing an OUT-OF-SCOPE fcmp predicate (`one` — outside the
-; lowerable set {oeq,une,olt,ogt,ole,oge}) has no reversible template. Before this
+; a tainted body containing an OUT-OF-SCOPE fcmp predicate (`false` — the
+; degenerate always-0, outside the lowerable fcmp set) has no reversible template.
+; (After 8rvn / Phase 7.1 iw81.4 §4.4 broadened the fcmp set to the full ordered/
+; unordered comparison family, `true`/`false` are the only out-of-set fcmp
+; predicates left, so `false` is the standing residual probe here.) Before this
 ; the body whitelist accepted any `CmpInst` of valid width, so the clone
 ; `__cq_q_helper_01` was created and the predicate only backstopped LATE at
 ; lowerOps' `diagnoseNoTemplate` (naming the CLONE: "no template for opcode
@@ -16,7 +19,7 @@ declare i32 @cq_measure_si32(i32)
 define i32 @helper(i32 %x, float %c) {
 entry:
   %f = sitofp i32 %x to float
-  %p = fcmp one float %f, %c
+  %p = fcmp false float %f, %c
   %z = zext i1 %p to i32
   ret i32 %z
 }

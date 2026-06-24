@@ -1,0 +1,17 @@
+cqrt_alloc_f32(2.000000) -> h0
+cqrt_ry_f32(h0, 0.250000)
+cq_template_fcmp_ult_f32_hl(h0, 1.000000) -> h1
+cq_template_zext_i1_to_i32(h1) -> h2
+cq_template_fcmp_uge_f32_hl(h0, 1.000000) -> h3
+cq_template_zext_i1_to_i32(h3) -> h4
+cq_template_fcmp_ule_f32_hl(h0, 1.000000) -> h5
+cq_template_zext_i1_to_i32(h5) -> h6
+cq_template_fcmp_ugt_f32_hl(h0, 1.000000) -> h7
+cq_template_zext_i1_to_i32(h7) -> h8
+cq_template_fcmp_uno_f32_hl(h0, 0.000000) -> h9
+cq_template_zext_i1_to_i32(h9) -> h10
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h4) -> 0
+cqrt_measure_i32(h6) -> 0
+cqrt_measure_i32(h8) -> 0
+cqrt_measure_i32(h10) -> 0

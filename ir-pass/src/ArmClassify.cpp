@@ -579,8 +579,8 @@ CondDataDisp condDataUseDisposition(Instruction *Cond,
       continue;
     }
     // A data COMPARE carries the lineage onward only if its predicate is
-    // LOWERABLE: an out-of-scope fcmp predicate (outside {oeq,une,olt,ogt,ole,
-    // oge}) has no template, so `lowerOps`/`rewriteCompare` would mint a
+    // LOWERABLE: an out-of-scope fcmp predicate (after 8rvn, only the degenerate
+    // `true`/`false`) has no template, so `lowerOps`/`rewriteCompare` would mint a
     // non-existent symbol (it does NOT even decline — jvun) AFTER the diamond is
     // routed+flattened. Gate the predicate here (the same `compareInScope`
     // `rewriteCompare` now consults) and decline PRE-mutation. Width needs no
@@ -631,8 +631,9 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   }
 
   // The flag is minted FROM this compare's predicate; an out-of-scope fcmp
-  // predicate (outside {oeq,une,olt,ogt,ole,oge}) has no template, so the mint
-  // would emit a non-existent symbol. SwapRouteEmit's flag-null bail catches it
+  // predicate (after 8rvn, only the degenerate `true`/`false` — see
+  // `compareInScope`) has no template, so the mint would emit a non-existent
+  // symbol. SwapRouteEmit's flag-null bail catches it
   // loudly, but only the FLAT mint is its emit step 1 — decline in DETECTION so
   // the posture is uniform with the nested path (whose inner mint follows the
   // outer route) and the reason is precise (test_C_libtooling-jvun).

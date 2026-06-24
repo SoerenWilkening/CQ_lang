@@ -368,8 +368,8 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
         }
       // Predicate / cast-direction scope — the SAME over-accept class as the
       // width gate, completed (Rule 14: detection-time accept must MIRROR the
-      // lowerOps accept predicate). An out-of-scope `fcmp` predicate (anything
-      // outside {oeq,une,olt,ogt,ole,oge}) or an out-of-scope arithmetic cast
+      // lowerOps accept predicate). An out-of-scope `fcmp` predicate (after
+      // 8rvn, only the degenerate `true`/`false`) or an out-of-scope arithmetic cast
       // (e.g. signed `sitofp` from `i1`) has no template; without these it slips
       // into the clone and only backstops LATE at lowerOps' `diagnoseNoTemplate`
       // (naming the CLONE, not source-located). The width-empty / pointer-cast

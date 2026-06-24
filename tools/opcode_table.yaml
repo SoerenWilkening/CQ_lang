@@ -103,14 +103,22 @@ widths:
 
 # -- Predicate sets ------------------------------------------------------------
 # `icmp`: 10 LLVM predicates Clang emits from C source.
-# `fcmp`: 6 preds Clang emits for C float comparisons at -O1
-# (PRD §"Floating-point comparison"). C `!=` lowers to `une`
-# (unordered-not-equal), not `one`; the remaining five are ordered.
-# Other unordered preds are out of scope until fast-math support lands
-# (PRD §"Known soft-failure modes").
+# `fcmp`: 14 of LLVM's 16 fp predicates — the full ordered/unordered comparison
+# family. The 6 Clang emits from plain C float `== != < > <= >=` at -O1 are the
+# five ordered (`oeq,olt,ogt,ole,oge`) + `une` (C `!=` lowers to unordered-not-
+# equal, NOT `one`). 8rvn (Phase 7.1 iw81.4) adds the remaining comparison
+# predicates: the unordered twins `ueq,ugt,uge,ult,ule` and the order-test trio
+# `one,ord,uno` (reached via `__builtin_isunordered`, `!`-negated ordered
+# compares, and fast-math). These are fp-DATA compares whose i1 result is a flag,
+# NEVER a rotation angle (the ArmClassify/RotationLowering angle fence is keyed on
+# arg-1 taint, independent of this set). The only two LLVM fcmp predicates left
+# OUT are the degenerate `true`/`false` (always-1/always-0; no comparison, never
+# emitted) — an out-of-set predicate has no generated template and MUST loud-
+# decline, never mint a phantom symbol (the ziov4 hazard). `compareInScope`
+# (OpcodeSupport.cpp) mirrors this list character-for-character.
 predicates:
   icmp: [eq, ne, slt, sgt, sle, sge, ult, ugt, ule, uge]
-  fcmp: [oeq, une, olt, ogt, ole, oge]
+  fcmp: [oeq, une, olt, ogt, ole, oge, one, ord, uno, ueq, ugt, uge, ult, ule]
 
 # -- Binary opcodes (18 = 7 int_arith + 6 int_bitwise + 5 fp_arith) -----------
 # Int widths: i1, i8, i16, i32, i64.  FP widths: f32, f64.

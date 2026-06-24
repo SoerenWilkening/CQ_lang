@@ -144,11 +144,24 @@ bool compareInScope(StringRef op, StringRef pred) {
            pred == "ult" || pred == "ule" || pred == "sgt" || pred == "sge" ||
            pred == "slt" || pred == "sle";
   if (op == "fcmp")
-    // Only the 6 predicates Clang emits for C float `== != < > <= >=`
-    // (`oeq, une, olt, ogt, ole, oge`); every other fcmp predicate
-    // (`one`/`ord`/`uno`/`ueq`/unordered `u*`/`true`/`false`) is out of scope.
+    // The full ordered/unordered comparison family (14 of LLVM's 16 fp
+    // predicates; YAML `fcmp` predicate set — MUST mirror it character-for-
+    // character, the ziov4 hazard). The 6 Clang emits from plain C
+    // `== != < > <= >=` (`oeq,une,olt,ogt,ole,oge`) plus 8rvn's unordered twins
+    // (`ueq,ugt,uge,ult,ule`) and the order-test trio (`one,ord,uno`). The
+    // degenerate `true`/`false` (always-1/always-0; no comparison) stay OUT —
+    // an out-of-set predicate has no generated template, so it must loud-decline
+    // (`diagnoseNoTemplate`), never `getOrInsertFunction` a phantom symbol. The
+    // unordered `u*` names overlap icmp's UNSIGNED predicates, but the `op`
+    // family stem disambiguates the symbol (`cq_template_fcmp_ugt_*` vs
+    // `cq_template_icmp_ugt_*`). `flipPredicate`/`getSwappedPredicate` keeps the
+    // set CLOSED under operand-swap (ugt<->ult, uge<->ule; one/ord/uno/ueq and
+    // oeq/une self-map) so the classical-on-left flip never moves an in-scope
+    // predicate out of scope.
     return pred == "oeq" || pred == "une" || pred == "olt" || pred == "ogt" ||
-           pred == "ole" || pred == "oge";
+           pred == "ole" || pred == "oge" || pred == "one" || pred == "ord" ||
+           pred == "uno" || pred == "ueq" || pred == "ugt" || pred == "uge" ||
+           pred == "ult" || pred == "ule";
   return false;
 }
 

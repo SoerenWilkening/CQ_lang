@@ -42,6 +42,19 @@ add_test(NAME e2e-slice-compare-measure
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_compare_measure.expected.log")
 
+# Phase 7.1 (8rvn, iw81.4 §4.4): the UNORDERED fcmp predicates lower, link, and
+# trace end-to-end. Negated relational compares (`!(x>=k)`->ult, etc.) and
+# `__builtin_isunordered`->uno, which Clang -O1 folds straight to the unordered
+# twins, now resolve against the regenerated `cq_template_fcmp_<pred>_f32_hl`
+# surface (this is the only layer that LINKS).
+add_test(NAME e2e-slice-fcmp-unordered
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_fcmp_unordered.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_fcmp_unordered.expected.log")
+
 # Phase 4.1 (WI-4): RSSA swap-routed PHASE-arm diamond. The only layer that
 # LINKS — it proves every symbol the swap-route emitter mints (the icmp flag
 # template + its `_hl_inv` strip, cqrt_cswap, the |0> rail alloc/free, the

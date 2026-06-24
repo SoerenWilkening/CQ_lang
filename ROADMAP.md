@@ -280,9 +280,11 @@ shape fan-out covered.
 - Integer bitwise: `and`, `or`, `xor`, `shl`, `lshr`, `ashr`.
 - Integer compare: `icmp` × 10 predicates.
 - FP arith: `fadd`, `fsub`, `fmul`, `fdiv`, `frem`, `fneg`.
-- FP compare: `fcmp` × 6 ordered predicates `{oeq, une, olt, ogt, ole, oge}`
-  (the realized `-O1` no-fast-math surface — see the reconciliation note below;
-  supersedes "× 14 predicates").
+- FP compare: `fcmp` × 14 predicates — the full ordered/unordered comparison
+  family `{oeq, une, olt, ogt, ole, oge, one, ord, uno, ueq, ugt, uge, ult, ule}`
+  (Phase 3 shipped the 6 `-O1` ordered preds; **8rvn (Phase 7.1 iw81.4 §4.4)**
+  added the remaining 8 — see the reconciliation note below). The degenerate
+  `true`/`false` stay out (no comparison).
 - Int casts: `sext`, `zext`, `trunc` × applicable width pairs.
 - FP casts: `fptrunc`, `fpext` × applicable width pairs.
 - Mixed casts: `sitofp`, `uitofp`, `fptosi`, `fptoui` × int×fp pairs.
@@ -320,11 +322,16 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 **Reconciliations vs [`docs/backend.md`](docs/backend.md) §6.3** (the planned
 38-opcode surface, narrowed to what stage-1 `-O1` actually emits — PRD §2.9):
-- **`fcmp`: 6 ordered predicates, not 14.** `clang -O1` (no fast-math) emits
-  exactly `{oeq, une, olt, ogt, ole, oge}`; the yaml's `one` was a bug (clang
-  emits `fcmp une` for `!=`, never `one`), fixed to `une` and closing
-  `test_C_libtooling-7ws`. The 8 unordered / fast-math-only predicates (incl.
-  `one`) stay out of scope until fast-math enters the floor (PRD §2.7, §5).
+- **`fcmp`: now the full 14 predicates (8rvn).** Phase 3 shipped only the 6
+  `clang -O1` (no fast-math) ordered preds `{oeq, une, olt, ogt, ole, oge}` — and
+  fixed the yaml's `one`→`une` bug (clang emits `fcmp une` for `!=`, never `one`;
+  closed `test_C_libtooling-7ws`). **8rvn (Phase 7.1 iw81.4 §4.4)** then restored
+  the planned full family — the unordered twins `{ueq, ugt, uge, ult, ule}` and
+  the order-test trio `{one, ord, uno}` — for pre-freeze opcode-surface
+  completeness. They do NOT require fast-math: `__builtin_isunordered` emits
+  `uno`, and negated relational compares fold straight to the unordered twins
+  (`!(a>=b)`→`ult`, etc.). Only the degenerate `true`/`false` stay out (no
+  comparison; an out-of-set predicate still loud-declines — the ziov4 hazard).
 - **`frem` has no C-operator source.** Float `%` is illegal C; `frem` arrives
   only via `fmod()` (a Phase 6 libm substitution), so its lowering is pinned by
   a hand-written `.ll` fixture rather than a C-sourced e2e smoke (PRD §2.6).

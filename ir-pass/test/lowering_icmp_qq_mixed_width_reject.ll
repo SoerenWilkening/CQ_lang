@@ -17,11 +17,14 @@
 ; This fixture therefore guards the CONSTRUCTABLE over-accept that is reachable
 ; ON the SAME QQ branch once width agreement HAS passed: two same-width (f64)
 ; thetas WITH AGREEMENT (`QqWidth`="f64" → QQ branch entered), but an OUT-OF-SCOPE
-; fcmp predicate (`ord`). The QQ-branch `compareInScope` predicate gate then
-; declines LOUDLY — proving the QQ path mints NO `cq_template_fcmp_ord_f64` for an
-; unsupported predicate (a verify-clean link-fail otherwise). LOAD-BEARING for the
-; predicate gate: removing `compareInScope` would `getOrInsertFunction` the
-; non-existent `cq_template_fcmp_ord_f64` symbol and emit it, flipping the
+; fcmp predicate (`false` — the degenerate always-0; after 8rvn / Phase 7.1
+; iw81.4 §4.4 broadened the fcmp set to the full ordered/unordered comparison
+; family, `true`/`false` are the only out-of-set fcmp predicates left). The
+; QQ-branch `compareInScope` predicate gate then declines LOUDLY — proving the QQ
+; path mints NO `cq_template_fcmp_false_f64` for an unsupported predicate (a
+; verify-clean link-fail otherwise). LOAD-BEARING for the predicate gate: removing
+; `compareInScope` would `getOrInsertFunction` the non-existent
+; `cq_template_fcmp_false_f64` symbol and emit it, flipping the
 ; `CHECK-NOT: cq_template_fcmp` below. The diagnostic is `fcmp i1` (the compare's
 ; i1 result type), pinning that it is the COMPARE — not an upstream producer —
 ; that declines. (Note: this fixture does not by itself distinguish the QQ-path
@@ -50,9 +53,9 @@ define i1 @example() {
 entry:
   %a = call double @cq_theta_f64(double 2.0, double 5.000000e-01)
   %b = call double @cq_theta_f64(double 3.0, double 2.500000e-01)
-  ; Both tainted, widths AGREE (f64) → QQ branch entered; `ord` is out of the
-  ; {oeq,une,olt,ogt,ole,oge} scope → `compareInScope` declines loudly.
-  %c = fcmp ord double %a, %b
+  ; Both tainted, widths AGREE (f64) → QQ branch entered; `false` is out of the
+  ; fcmp scope → `compareInScope` declines loudly.
+  %c = fcmp false double %a, %b
   %m = call i1 @cq_measure_i1(i1 %c)
   ret i1 %m
 }

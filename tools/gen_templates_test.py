@@ -87,7 +87,7 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_1947(self):
+    def test_total_symbol_count_is_2091(self):
         # 1562 baseline; Phase 7.1 Increment D added f16 (+170 -> 1732); the n0ui
         # i128 Tier-1 follow-up adds the **i128** INTERMEDIATE int width (+215 ->
         # 1947). i128 rides the int binary rows ONLY (NO icmp, NO fp casts, NO
@@ -99,7 +99,12 @@ class GenTemplatesTest(unittest.TestCase):
         # = +45 (complete so castInScope's generic width compare never mints a
         # phantom). Net +215 over 1732. NO cross-domain i128<->fp casts (excluded
         # in castInScope), NO icmp_i128.
-        self.assertEqual(len(self.h_decls), 1947)
+        # 8rvn (Phase 7.1 iw81.4 §4.4) broadens the fcmp predicate set from 6 to
+        # the full 14-predicate ordered/unordered comparison family (+8 preds:
+        # one/ord/uno/ueq/ugt/uge/ult/ule): 8 preds x 3 fp widths (f16/f32/f64)
+        # x 6 compare variants (fwd/inv/unc x qq/hl) = +144 -> 2091. (true/false
+        # stay out — degenerate, no template.)
+        self.assertEqual(len(self.h_decls), 2091)
 
     def test_unc_family_is_void_in_place(self):
         """PRD §2.3 / DD-3: the `_unc` uncompute family is VOID and in-place.

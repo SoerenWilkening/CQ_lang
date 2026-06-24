@@ -404,8 +404,8 @@ int arith    add sub mul sdiv udiv srem urem            × {i1,i8,i16,i32,i64}
 int bitwise  and or xor shl lshr ashr                    × {i1,i8,i16,i32,i64}
 int compare  icmp {eq,ne,slt,sgt,sle,sge,ult,ugt,ule,uge} × {i1,i8,i16,i32,i64}
 fp arith     fadd fsub fmul fdiv frem fneg              × {f32,f64}
-fp compare   fcmp {oeq,one,olt,ogt,ole,oge,ueq,une,
-                  ult,ugt,ule,uge,ord,uno}              × {f32,f64}
+fp compare   fcmp {oeq,one,olt,ogt,ole,oge,ueq,une,     (full 14-pred family,
+                  ult,ugt,ule,uge,ord,uno}               8rvn) × {f16,f32,f64}
 int casts    sext zext trunc                             × applicable width pairs
 fp casts     fptrunc fpext                               × applicable width pairs
 mixed casts  sitofp uitofp fptosi fptoui                 × int×fp pairs
