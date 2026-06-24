@@ -716,6 +716,26 @@ add_test(NAME e2e-slice-loop-phase-accum
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum.expected.log")
 
+# Phase 7.3 Increment 2 (test_C_libtooling-799w.2): the per-iteration in-body
+# uncompute Case B. Each iteration mints a FRESH rail, derives an iteration-local
+# temp (xor_hl), keeps it alive with a dead cq_phi, and drops both. The Phase-5
+# spine lifts its two backedge guards for the proven iteration-local DAG and
+# places the whole-DAG reversal (rz⁻¹ -> xor `_unc` reading the live mint -> free
+# t-rail -> ry⁻¹ -> free q-rail) IN-BODY, once per iteration. The golden (n=3)
+# shows THREE balanced compute/uncompute pairs over distinct handle pairs (h0/h1,
+# h2/h3, h4/h5) with SIX frees — the per-iteration handle progression proves the
+# free runs once per trip, never a function-scope free over a K-times-reallocated
+# rail (use-after-free + double-free, the Rule-13 hazard). `noinline` is
+# load-bearing (uncompute gated off in main). No new frozen runtime ABI (reuses
+# the `_unc` spine).
+add_test(NAME e2e-slice-loop-iter-local
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_iter_local.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_iter_local.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route

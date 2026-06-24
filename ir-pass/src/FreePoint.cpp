@@ -115,7 +115,18 @@ bool blockInLoop(BasicBlock *BB, LoopInfo &LI) { return LI.getLoopFor(BB); }
 
 FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
                            const TaintSet &taint) {
-  (void)taint;  // measure recognition keys on the lowered `cqrt_measure_` name.
+  // Phase 7.3 Inc 2 (799w.2): is `Terminal` an ITERATION-LOCAL temp — a tainted
+  // value born AND dead within one iteration of a recognized Case-B loop (its
+  // def block ∈ `IterationLocalBlocks`, the loop `lowerLoops` proved sound-rolled)?
+  // If so, the per-iteration in-body recovery is placed AFTER its last
+  // in-iteration use, before the backedge — the loop-backedge guard below is
+  // lifted for it, BUT the computed insertion point is re-checked to be in-body
+  // (a free that escaped the loop would run once-per-function over a register
+  // re-allocated each iteration — the central Rule-13 hazard, §2.5/Risk 1).
+  const bool TermIterLocal =
+      !taint.IterationLocalBlocks.empty() &&
+      isa<Instruction>(Terminal) &&
+      taint.IterationLocalBlocks.count(cast<Instruction>(Terminal)->getParent());
 
   // `main` resident → no caller, process exit reclaims the registers: a
   // RECOGNIZED escape for EVERY handle in the function, silently skipped (§2.6).
@@ -237,9 +248,17 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
   // (§2.9) Loop-backedge guard: a use inside a natural loop means the handle's
   // live range crosses a backedge — out of scope for the acyclic phase, loud
   // reject rather than silent miscompile. `LoopInfo` reuses `DT` built above.
+  // Phase 7.3 Inc 2 EXCEPTION: an ITERATION-LOCAL temp's every use is, by the
+  // `lowerLoops` proof, confined to its recognized Case-B loop body — its DAG is
+  // recovered + freed IN-BODY (once per iteration), so a use in that loop is NOT
+  // a live range crossing a backedge but the intended per-iteration scratch. The
+  // guard still fires for any use NOT in an `IterationLocalBlocks` block (the
+  // residual net — a non-iteration-local handle still declines).
   LoopInfo LI(DT);
   for (Instruction *G : UseSites)
     if (blockInLoop(G->getParent(), LI)) {
+      if (TermIterLocal && taint.IterationLocalBlocks.count(G->getParent()))
+        continue;  // 7.3 Inc 2: an iteration-local use is recovered in-body.
       diagnose(G, kMsgLoopBackedge);
       return {FreePointKind::Escaped, nullptr};
     }
@@ -270,6 +289,17 @@ FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
       Latest ? Latest->getNextNode() : &*Common->getFirstInsertionPt();
   if (!At)
     return {FreePointKind::Escaped, nullptr};
+  // (§2.5/Risk 1) For an iteration-local temp the insertion point MUST land
+  // inside the recognized Case-B loop body (`IterationLocalBlocks`). If the
+  // common post-dominator escaped the loop (e.g. a use that does not reconverge
+  // in-body), placing the free there would run it ONCE PER FUNCTION over a rail
+  // re-allocated each iteration — a use-after-free + (K−1) double-frees. The
+  // recognizer proves in-body confinement, but this is the defense-in-depth
+  // backstop: a non-in-body point declines loudly rather than mis-place.
+  if (TermIterLocal && !taint.IterationLocalBlocks.count(At->getParent())) {
+    diagnose(At, kMsgLoopBackedge);
+    return {FreePointKind::Escaped, nullptr};
+  }
   return {FreePointKind::Insert, At};
 }
 

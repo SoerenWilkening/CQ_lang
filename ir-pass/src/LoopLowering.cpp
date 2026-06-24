@@ -336,6 +336,91 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   return true;
 }
 
+// Increment 2 (799w.2) — Case B: mark a loop whose every tainted value is an
+// ITERATION-LOCAL born-and-dies temporary, so the Phase-5 uncompute spine
+// recovers each temp's DAG IN-BODY (once per iteration) instead of declining
+// (FreePoint kMsgLoopBackedge) or leaking. Pure analysis; the ONLY effect is
+// inserting `L`'s blocks into `taint.IterationLocalBlocks` (no mutation). Called
+// only when `tryCaseA` left the loop unclaimed.
+//
+// A loop qualifies iff: classical exit (L1 — a tainted exit was already declined
+// Q1 by `tryCaseA`); no tainted control (L2) / tainted-index memory (L3) in the
+// body; and every tainted value is iteration-local — NO tainted header phi (no
+// loop-carried persistent rail; that is Case A or X1), every tainted value
+// DEFINED in L is USED only in L (nothing escapes the loop), and every tainted
+// OPERAND of an in-L instruction is DEFINED in L (no loop-invariant tainted input
+// minted outside, whose register would accumulate across iterations — the
+// `lowering_uncompute_loop_backedge` residual). The spine then PROVES per-DAG
+// closure/measure/escape; this predicate only certifies the loop is a sound place
+// to lift the backedge guard (Prime Directive: not-marking is always safe).
+void markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
+  if (taintedExit(L, taint))
+    return;  // Q1 quantum-bounded — never Case B.
+  BasicBlock *Header = L->getHeader();
+  bool AnyTainted = false;
+  for (BasicBlock *BB : L->blocks()) {
+    // (L2) tainted control in the body ⇒ the existing ControlDetect owner's.
+    Instruction *T = BB->getTerminator();
+    if (auto *BI = dyn_cast<BranchInst>(T)) {
+      if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
+        return;
+    } else if (auto *SI = dyn_cast<SwitchInst>(T)) {
+      if (taint.Tainted.count(SI->getCondition()))
+        return;
+    }
+    if (LI.getLoopFor(BB) != L) {
+      // A strictly-deeper SUBLOOP with quantum content is a NESTED quantum loop,
+      // not a single-level iteration-local loop: a value rotated by the subloop
+      // runs the subloop-trip-count times PER outer iteration, but the spine
+      // would reverse it ONCE (a dirty free of an under-reversed rail — a SILENT
+      // miscompile, confirmed on a do-while inner loop whose body dominates the
+      // outer recovery point, so the divergent-arm backstop does not catch it).
+      // Decline to mark (Prime Directive: over-declining is safe — the value's
+      // terminal then keeps FreePoint's `kMsgLoopBackedge` reject). 7.3 does not
+      // lower nested quantum loops; the subloop is handled (or declined) on its
+      // own, never folded into the outer iteration-local set.
+      for (Instruction &I : *BB)
+        if (taint.Tainted.count(&I))
+          return;
+      continue;
+    }
+    for (Instruction &I : *BB) {
+      // (L3) tainted-index memory in the body ⇒ the existing kMsgQramLoop owner's.
+      if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I))
+        for (Value *Op : I.operands())
+          if (taint.Tainted.count(Op))
+            return;
+      const bool TI = taint.Tainted.count(&I);
+      // A tainted HEADER phi is a loop-carried persistent rail (Case A / X1),
+      // not an iteration-local temp.
+      if (TI && isa<PHINode>(I) && BB == Header)
+        return;
+      if (TI) {
+        AnyTainted = true;
+        // Every tainted value defined in L must be used ONLY in L (nothing
+        // escapes the loop — the last iteration's value never reads downstream).
+        for (User *U : I.users())
+          if (auto *UI = dyn_cast<Instruction>(U))
+            if (!L->contains(UI->getParent()))
+              return;
+      }
+      // Every tainted OPERAND must be defined in L — a tainted value minted
+      // OUTSIDE L and read inside (loop-invariant) is a persistent register that
+      // accumulates across iterations, NOT iteration-local.
+      for (Value *Op : I.operands())
+        if (taint.Tainted.count(Op)) {
+          auto *OpI = dyn_cast<Instruction>(Op);
+          if (!OpI || !L->contains(OpI->getParent()))
+            return;
+        }
+    }
+  }
+  if (!AnyTainted)
+    return;  // a purely-classical loop — leave it byte-identical.
+  for (BasicBlock *BB : L->blocks())
+    taint.IterationLocalBlocks.insert(BB);
+}
+
 }  // namespace
 
 void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
@@ -366,9 +451,13 @@ void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
       continue;
     // Recognition is pure analysis on the still-unmutated IR; the only mutation
     // is the Case-A phi collapse inside `tryCaseA`, which erases phis (the CFG —
-    // blocks + edges — is untouched, so `LI`/`DT` stay valid across loops).
+    // blocks + edges — is untouched, so `LI`/`DT` stay valid across loops). A
+    // loop `tryCaseA` does not claim (Case A collapse / Q1 / X1) is offered to
+    // the Case-B iteration-local recognizer (Increment 2), which only marks
+    // blocks for the spine — never mutates.
     for (Loop *L : LI.getLoopsInPreorder())
-      tryCaseA(L, F, taint, GateCalls, DT, LI);
+      if (!tryCaseA(L, F, taint, GateCalls, DT, LI))
+        markIfIterationLocal(L, taint, LI);
   }
 }
 

@@ -178,6 +178,23 @@ struct TaintSet {
   // for a module with no controlled abort/exit.
   llvm::SmallPtrSet<llvm::Value *, 8> GraveyardRails;
 
+  // Phase 7.3 Inc 2 (799w.2, PRD-7.3 §2.5). Blocks of recognized Case-B
+  // "iteration-local" loops — a classically-bounded loop (untainted exit, no
+  // tainted control/memory in the body) every one of whose tainted values is
+  // BORN AND DIES within a single iteration (no loop-carried/loop-invariant
+  // tainted value: no tainted header phi, every tainted value defined in the
+  // loop is used ONLY in the loop, and every tainted operand of an in-loop
+  // instruction is defined in the loop). The Phase-5 uncompute spine LIFTS its
+  // two backedge guards — FreePoint's `kMsgLoopBackedge` per-terminal reject and
+  // Uncomputation's §2.9 acyclic backstop — ONLY for a terminal whose whole DAG
+  // lies within these blocks, placing the per-iteration recovery + `cqrt_free`
+  // IN-BODY (after the temp's last in-iteration use, before the backedge — proven
+  // to execute exactly once per iteration) instead of declining or leaking. A
+  // block NOT in this set keeps both guards (the residual net). Populated by
+  // `lowerLoops`; consumed by `FreePoint` + `Uncomputation`. Empty for a module
+  // with no Case-B loop.
+  llvm::SmallPtrSet<const llvm::BasicBlock *, 8> IterationLocalBlocks;
+
   // Phase 7.6 (PRD-7.6 §2.4). One lazy `cqrt_tape_alloc()` per function — the
   // stream→tape registry (v1 has a single stdout stream). SHARED across the two
   // I/O-lowering steps so a function with BOTH a controlled `if(q)printf`

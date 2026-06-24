@@ -187,6 +187,110 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
   }
 }
 
+// Classify + recover + reverse ONE group of data terminals at a single insertion
+// point (PRD §2.11; the body of the per-function driver, factored out so the
+// regular straight-line group and each Phase-7.3 ITERATION-LOCAL loop group are
+// reversed independently — a shared union insertion point across a loop boundary
+// would place an in-body free at a function-scope point, the Risk-1 hazard).
+//
+// `IterLocal` ⇒ the group's terminals were proven by `lowerLoops` to be
+// iteration-local temps of ONE recognized Case-B loop (FreePoint already lifted
+// its backedge guard for them, returning an IN-BODY insertion point). The §2.9
+// acyclic InLoop backstop is then lifted — BUT only after re-confirming every
+// recovered gate sits in an `IterationLocalBlocks` block (defense-in-depth: a DAG
+// that escaped the loop is leaked, never reversed once over a K-times rail). For
+// the regular group (`IterLocal=false`) the backstop stands exactly as before —
+// a loop-resident gate leaves the whole DAG allocated (a safe leak).
+void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
+                          TaintSet &taint, WidthDispatch &wd, DominatorTree &DT,
+                          PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal) {
+  if (Terminals.empty())
+    return;
+
+  // 2. Classify each terminal (FreePoint owns measure/escape/loud diagnostics).
+  SmallVector<Value *, 8> InsertTerms;
+  SmallVector<Instruction *, 8> InsertAts;
+  for (CallInst *Term : Terminals) {
+    FreePoint FP = computeFreePoint(Term, F, PDT, taint);
+    if (FP.Kind != FreePointKind::Insert)
+      continue;
+    InsertTerms.push_back(Term);
+    InsertAts.push_back(FP.At);
+  }
+  if (InsertTerms.empty())
+    return;
+
+  // 3. Recover the whole forward DAG (union over all Insert terminals).
+  DataDag D = recoverDataDag(InsertTerms, taint, DT);
+  if (D.MeasuredUpstream) {
+    diagnose(D.UpstreamMeasure, kMsgLineageMeasured);
+    return;
+  }
+  if (D.Escaped || D.NotClosed || D.Calls.empty())
+    return;
+
+  // Invertibility pre-scan (WI-5, PRD §2.12/§2.10).
+  CallInst *Uninvertible = nullptr;
+  for (CallInst *G : D.Calls)
+    if (!isInverseEmittable(G)) {
+      Uninvertible = G;
+      break;
+    }
+  if (Uninvertible) {
+    diagnose(Uninvertible, kMsgUninvertible);
+    return;
+  }
+
+  // §2.9 acyclic backstop. A loop-carried tainted live range is loudly declined
+  // UPSTREAM; defense-in-depth here: a single adjoint cannot undo a gate that ran
+  // once per iteration, so if ANY recovered gate sits inside a natural loop,
+  // leave the DAG allocated (a safe leak) — UNLESS this is an affirmatively-
+  // recognized Phase-7.3 ITERATION-LOCAL group, whose gates all sit in
+  // `IterationLocalBlocks` and whose recovery point is IN-BODY (once per
+  // iteration). The explicit re-confirmation that every gate is in an
+  // iteration-local block is the Rule-13 backstop (a DAG that walked outside the
+  // loop is leaked, never reversed).
+  bool InLoop = false;
+  for (CallInst *G : D.Calls)
+    if (LI.getLoopFor(G->getParent())) {
+      InLoop = true;
+      break;
+    }
+  if (InLoop) {
+    if (!IterLocal)
+      return;  // safe leak (acyclic backstop stands)
+    for (CallInst *G : D.Calls)
+      if (!taint.IterationLocalBlocks.count(G->getParent()))
+        return;  // a gate escaped the loop body — leak, never reverse once.
+  }
+
+  // 4. Single insertion point (in-body for an iteration-local group — FreePoint
+  //    returned the per-iteration anchor; for the regular group, the function
+  //    post-dominator).
+  Instruction *At = dagInsertPoint(InsertAts, PDT);
+  if (!At)
+    return;
+
+  // Every gate must DOMINATE `At` (acyclic + dominating ⇒ ran exactly once on
+  // every reaching path). For an iteration-local group this holds WITHIN the
+  // iteration (no value crosses the backedge by construction of L4b); a gate that
+  // does not dominate the in-body `At` (a split across a classical in-body
+  // diamond) declines LOUDLY rather than reverse a partial chain.
+  CallInst *NonDominating = nullptr;
+  for (CallInst *G : D.Calls)
+    if (!DT.dominates(G, At)) {
+      NonDominating = G;
+      break;
+    }
+  if (NonDominating) {
+    diagnose(NonDominating, kMsgDivergentArm);
+    return;
+  }
+
+  // 5. Reverse the whole DAG once at `At`.
+  emitDagReversal(D, At, wd);
+}
+
 }  // namespace
 
 void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
@@ -229,104 +333,35 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
 
     DominatorTree DT(F);
     PostDominatorTree PDT(F);
-
-    // 2. Classify each terminal (FreePoint owns measure/escape/loud diagnostics):
-    //    measure / escape (`ret` / `main` / `cq_invert_*`) skip with no emit; a
-    //    post-measure gate / unrecognized user / backedge live range is diagnosed
-    //    LOUDLY inside `computeFreePoint`. Only `Insert` terminals reach reversal;
-    //    collect their last-use anchors for the single insertion point.
-    SmallVector<Value *, 8> InsertTerms;
-    SmallVector<Instruction *, 8> InsertAts;
-    for (CallInst *Term : Terminals) {
-      FreePoint FP = computeFreePoint(Term, F, PDT, taint);
-      if (FP.Kind != FreePointKind::Insert)
-        continue;
-      InsertTerms.push_back(Term);
-      InsertAts.push_back(FP.At);
-    }
-    if (InsertTerms.empty())
-      continue;
-
-    // 3. Recover the whole forward DAG (union over all Insert terminals — a shared
-    //    fan-out prefix is recovered once).
-    DataDag D = recoverDataDag(InsertTerms, taint, DT);
-
-    // Measured intermediate → LOUD (a free of a measured register is a hidden
-    // collapse, Rule 5/6). Escaped / not-closed rails are owned elsewhere (a
-    // returned handle; a Phase-4 controlled-copy-entangled operand — §16.5) —
-    // leave the whole DAG allocated (Rule 6/8 safe-leak; never a dirty free).
-    if (D.MeasuredUpstream) {
-      diagnose(D.UpstreamMeasure, kMsgLineageMeasured);
-      continue;
-    }
-    if (D.Escaped || D.NotClosed || D.Calls.empty())
-      continue;
-
-    // Invertibility pre-scan (WI-5, PRD §2.12/§2.10): every recovered gate must
-    // have an in-place adjoint (`isInverseEmittable` — the SAME predicate the
-    // emitter consults). A primitive outside that surface (a permutation gate
-    // Phase 5 never emits for data, a controlled callee) declines LOUDLY here —
-    // BEFORE any emission — so no half-reversed chain and no dirty free of an
-    // un-reversed rail are ever produced (the pre-WI-5 silent skip emitted the
-    // `cqrt_free` of an un-adjointed rail = a hidden collapse, Rule 6/8). DD-1:
-    // the driver owns the message.
-    CallInst *Uninvertible = nullptr;
-    for (CallInst *G : D.Calls)
-      if (!isInverseEmittable(G)) {
-        Uninvertible = G;
-        break;
-      }
-    if (Uninvertible) {
-      diagnose(Uninvertible, kMsgUninvertible);
-      continue;
-    }
-
-    // §2.9 acyclic backstop: Phase 5 reverses on acyclic CFGs only. A
-    // loop-carried tainted live range is loudly declined UPSTREAM (the
-    // classical-mux phi guard / FreePoint's per-terminal backedge guard, both
-    // before this point), but defense-in-depth: a single adjoint cannot undo a
-    // gate that ran once per iteration, so if ANY recovered gate sits inside a
-    // natural loop, leave the DAG allocated rather than reverse it once (a safe
-    // leak, never a miscompile). No positive acyclic shape trips this.
     LoopInfo LI(DT);
-    bool InLoop = false;
-    for (CallInst *G : D.Calls)
-      if (LI.getLoopFor(G->getParent())) {
-        InLoop = true;
-        break;
-      }
-    if (InLoop)
-      continue;
 
-    // 4. Single insertion point: the common post-dominator of all anchors, after
-    //    the latest. A non-reconverging multi-terminal shape has no common
-    //    post-dominator — left allocated (a safe leak), never miscompiled.
-    Instruction *At = dagInsertPoint(InsertAts, PDT);
-    if (!At)
-      continue;
-
-    // Every gate must DOMINATE `At` — its operands are then in scope, and
-    // (acyclic + dominating) it ran exactly once on every reaching path. A gate
-    // that does NOT dominate `At` ran on only some exclusive paths (mutating
-    // gates split across the arms of a classical branch — the reverted-543bd85
-    // divergent-arm shape); one unconditional adjoint at the merge would fire on
-    // paths the forward gate never took. WI-5 declines this LOUDLY rather than
-    // silently leaking the register (PRD §2.4/§2.12): per-arm reverse-play is
-    // Phase 4's job, and Phase 5 defers to it.
-    CallInst *NonDominating = nullptr;
-    for (CallInst *G : D.Calls)
-      if (!DT.dominates(G, At)) {
-        NonDominating = G;
-        break;
+    // Partition the terminals into the REGULAR straight-line group and one group
+    // per recognized Phase-7.3 ITERATION-LOCAL loop (a terminal whose def block
+    // ∈ `IterationLocalBlocks`). The groups are reversed at INDEPENDENT insertion
+    // points: a regular straight-line terminal at the function post-dominator, an
+    // iteration-local temp IN-BODY (once per iteration). A single union point
+    // across that boundary would place an in-body free at a function-scope point
+    // (the Risk-1 hazard). Loops are kept in first-seen (BB) order for
+    // FileCheck-stable emission.
+    SmallVector<CallInst *, 8> Regular;
+    SmallVector<Loop *, 4> IterLoops;
+    DenseMap<Loop *, SmallVector<CallInst *, 4>> IterByLoop;
+    for (CallInst *Term : Terminals) {
+      Loop *L = LI.getLoopFor(Term->getParent());
+      if (L && !taint.IterationLocalBlocks.empty() &&
+          taint.IterationLocalBlocks.count(Term->getParent())) {
+        if (!IterByLoop.count(L))
+          IterLoops.push_back(L);
+        IterByLoop[L].push_back(Term);
+      } else {
+        Regular.push_back(Term);
       }
-    if (NonDominating) {
-      diagnose(NonDominating, kMsgDivergentArm);
-      continue;
     }
 
-    // 5. Reverse the whole DAG once at `At` (every gate proven invertible and
-    //    dominating — `emitDagReversal`'s per-gate adjoint cannot fail).
-    emitDagReversal(D, At, wd);
+    reverseTerminalGroup(F, Regular, taint, wd, DT, PDT, LI, /*IterLocal=*/false);
+    for (Loop *L : IterLoops)
+      reverseTerminalGroup(F, IterByLoop[L], taint, wd, DT, PDT, LI,
+                           /*IterLocal=*/true);
   }
 }
 
