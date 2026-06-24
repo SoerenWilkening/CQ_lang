@@ -14,6 +14,11 @@ Shapes (set by gen_templates.enumerate_all from VARIANT_INFO):
   cqq/chl/clh   controlled twins (flag is arg 0)  sym(flag, ...)      -> i32
   uqq/uhl/ulh   void in-place uncompute (binary)  sym(out, ...)       -> void
   ua1           void in-place uncompute (arity-1) sym(out, h)         -> void
+  qqq/qql/      ternary fma a*b+c (wd2p): the      sym(h,h,h)/(h,h,W)/
+   qlq/qll       product's first slot is always a   (h,W,h)/(h,W,W)    -> i32
+                a handle (canonicalized); the addend is positional.
+  uqqq/uqql/    void in-place ternary uncompute   sym(out, a,b,c)     -> void
+   uqlq/uqll
 
 `_unc` bodies are trace-only stubs; real zeroing is Phase 8+ bodies.
 The `_unc` family (Phase 5, PRD §2.3 / DD-3) is VOID and in-place: `out`
@@ -53,8 +58,9 @@ WIDTH_INFO = {
 # Controlled shapes prepend an i32 control flag as parameter 0 (PRD §1.2).
 CONTROLLED_SHAPES = {"cqq", "chl", "clh"}
 # Void in-place uncompute shapes prepend an i32 `out` rail as parameter 0
-# and return void (PRD §2.3 / DD-3).
-UNC_SHAPES = {"uqq", "uhl", "ulh", "ua1"}
+# and return void (PRD §2.3 / DD-3). The ternary fma twins (uqqq/uqql/uqlq/uqll)
+# follow the same out-first convention (wd2p).
+UNC_SHAPES = {"uqq", "uhl", "ulh", "ua1", "uqqq", "uqql", "uqlq", "uqll"}
 
 
 # -------------------- signature + body --------------------
@@ -76,9 +82,17 @@ def signature(row):
         return f"int32_t {sym}(int32_t a_handle)"
     if shape in ("qq", "cqq"):  # Q+Q binary or compare
         return f"int32_t {sym}({ctrl}int32_t a_handle, int32_t b_handle)"
+    if shape == "qqq":  # ternary fma, all-handle (no classical operand)
+        return f"int32_t {sym}(int32_t a_handle, int32_t b_handle, int32_t c_handle)"
     ctype = WIDTH_INFO[row["classical_w"]]["ctype"]
     if shape in ("hl", "chl"):  # handle on LHS, classical scalar on RHS
         return f"int32_t {sym}({ctrl}int32_t a_handle, {ctype} b_classical)"
+    if shape == "qql":  # ternary fma: handle*handle + literal
+        return f"int32_t {sym}(int32_t a_handle, int32_t b_handle, {ctype} c_classical)"
+    if shape == "qlq":  # ternary fma: handle*literal + handle
+        return f"int32_t {sym}(int32_t a_handle, {ctype} b_classical, int32_t c_handle)"
+    if shape == "qll":  # ternary fma: handle*literal + literal
+        return f"int32_t {sym}(int32_t a_handle, {ctype} b_classical, {ctype} c_classical)"
     # shape lh/clh: classical scalar on LHS, handle on RHS
     return f"int32_t {sym}({ctrl}{ctype} a_classical, int32_t b_handle)"
 
@@ -109,12 +123,30 @@ def stub_body(row):
             f"    printf(\"{sym}({ctrl_fmt}h%d, h%d) -> h%d\\n\", {ctrl_arg}a_handle, b_handle, h);\n"
             "    fflush(stdout);\n    return h;\n"
         )
+    if shape == "qqq":  # ternary fma, all-handle
+        return (
+            "    int32_t h = cqrt_alloc_handle();\n"
+            f"    printf(\"{sym}(h%d, h%d, h%d) -> h%d\\n\", a_handle, b_handle, c_handle, h);\n"
+            "    fflush(stdout);\n    return h;\n"
+        )
     info = WIDTH_INFO[row["classical_w"]]
     if shape in ("hl", "chl"):  # handle on LHS, classical scalar on RHS
         cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
         return (
             "    int32_t h = cqrt_alloc_handle();\n"
             f"    printf(\"{sym}({ctrl_fmt}h%d, {info['fmt']}) -> h%d\\n\", {ctrl_arg}a_handle, {cast_expr}, h);\n"
+            "    fflush(stdout);\n    return h;\n"
+        )
+    if shape in ("qql", "qlq", "qll"):  # ternary fma, mixed handle/literal
+        b_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
+        c_expr = f"{info['cast']}c_classical" if info["cast"] else "c_classical"
+        b_slot = info["fmt"] if shape in ("qlq", "qll") else "h%d"
+        c_slot = info["fmt"] if shape in ("qql", "qll") else "h%d"
+        b_arg = b_expr if shape in ("qlq", "qll") else "b_handle"
+        c_arg = c_expr if shape in ("qql", "qll") else "c_handle"
+        return (
+            "    int32_t h = cqrt_alloc_handle();\n"
+            f"    printf(\"{sym}(h%d, {b_slot}, {c_slot}) -> h%d\\n\", a_handle, {b_arg}, {c_arg}, h);\n"
             "    fflush(stdout);\n    return h;\n"
         )
     # shape lh/clh: classical scalar on LHS, handle on RHS; trace order classical, handle.
@@ -139,9 +171,21 @@ def _unc_signature(row):
         return f"void {sym}(int32_t out_handle, int32_t a_handle)"
     if shape == "uqq":  # forward (a_handle, b_handle) -> _unc(out, a_handle, b_handle)
         return f"void {sym}(int32_t out_handle, int32_t a_handle, int32_t b_handle)"
+    if shape == "uqqq":  # ternary all-handle -> _unc(out, a, b, c)
+        return (f"void {sym}(int32_t out_handle, int32_t a_handle, "
+                "int32_t b_handle, int32_t c_handle)")
     ctype = WIDTH_INFO[row["classical_w"]]["ctype"]
     if shape == "uhl":  # forward (a_handle, b_classical) -> _unc(out, a_handle, b_classical)
         return f"void {sym}(int32_t out_handle, int32_t a_handle, {ctype} b_classical)"
+    if shape == "uqql":  # ternary h*h+lit -> _unc(out, a, b, c_classical)
+        return (f"void {sym}(int32_t out_handle, int32_t a_handle, "
+                f"int32_t b_handle, {ctype} c_classical)")
+    if shape == "uqlq":  # ternary h*lit+h -> _unc(out, a, b_classical, c)
+        return (f"void {sym}(int32_t out_handle, int32_t a_handle, "
+                f"{ctype} b_classical, int32_t c_handle)")
+    if shape == "uqll":  # ternary h*lit+lit -> _unc(out, a, b_classical, c_classical)
+        return (f"void {sym}(int32_t out_handle, int32_t a_handle, "
+                f"{ctype} b_classical, {ctype} c_classical)")
     # ulh: forward (a_classical, b_handle) -> _unc(out, a_classical, b_handle)
     return f"void {sym}(int32_t out_handle, {ctype} a_classical, int32_t b_handle)"
 
@@ -164,11 +208,27 @@ def _unc_body(row):
             f"    printf(\"{sym}(h%d, h%d, h%d)\\n\", out_handle, a_handle, b_handle);\n"
             "    fflush(stdout);\n"
         )
+    if shape == "uqqq":  # ternary all-handle: out, a, b, c
+        return (
+            f"    printf(\"{sym}(h%d, h%d, h%d, h%d)\\n\", out_handle, a_handle, b_handle, c_handle);\n"
+            "    fflush(stdout);\n"
+        )
     info = WIDTH_INFO[row["classical_w"]]
     if shape == "uhl":
         cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
         return (
             f"    printf(\"{sym}(h%d, h%d, {info['fmt']})\\n\", out_handle, a_handle, {cast_expr});\n"
+            "    fflush(stdout);\n"
+        )
+    if shape in ("uqql", "uqlq", "uqll"):  # ternary mixed: out, a, then b/c by shape
+        b_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
+        c_expr = f"{info['cast']}c_classical" if info["cast"] else "c_classical"
+        b_slot = info["fmt"] if shape in ("uqlq", "uqll") else "h%d"
+        c_slot = info["fmt"] if shape in ("uqql", "uqll") else "h%d"
+        b_arg = b_expr if shape in ("uqlq", "uqll") else "b_handle"
+        c_arg = c_expr if shape in ("uqql", "uqll") else "c_handle"
+        return (
+            f"    printf(\"{sym}(h%d, h%d, {b_slot}, {c_slot})\\n\", out_handle, a_handle, {b_arg}, {c_arg});\n"
             "    fflush(stdout);\n"
         )
     # ulh: trace order out, classical, handle.

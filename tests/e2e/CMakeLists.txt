@@ -384,6 +384,17 @@ add_test(NAME e2e-slice-intrinsic-fpmath
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_fpmath.expected.log")
 
+# Phase 7.1 wd2p: the ternary fma family (FIRST 3-operand template). Proves the
+# QQQ forward (contracted a*b+c -> @llvm.fmuladd.f64) + the QLQ forward/`_unc`
+# twin (a dead __builtin_fma(d,3.0,e)) all LINK and signature-match at f64.
+add_test(NAME e2e-slice-intrinsic-fma
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_fma.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_fma.expected.log")
+
 # Phase 7.1 follow-up D5 (test_C_libtooling-m0yi): a non-power-of-2 _BitInt(N)
 # INTERMEDIATE round-trips with NO new ABI. clang -O1 rounds the i40 up to i64 and
 # emits the i40 wraparound as a stock `and i64 ..., 0xFFFFFFFFFF` (= 2^40-1), so

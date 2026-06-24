@@ -23,7 +23,7 @@ namespace cq {
 
 namespace {
 
-enum class IntrinKind { Unary, Rotate, Binary };
+enum class IntrinKind { Unary, Rotate, Binary, Ternary };
 
 // Curated Intrinsic::ID -> symbol stem (matches the intrinsic_table.yaml `op`,
 // dots -> underscores for the saturating family). Empty StringRef = NOT curated.
@@ -49,7 +49,9 @@ StringRef intrinsicStem(Intrinsic::ID id) {
   // iw81.4.b fp-math family. 22 unary transcendental / round / fabs (stem ==
   // the llvm name) + binary pow/fmin/fmax/copysign. minnum/maxnum carry the
   // C99 spelling fmin/fmax (the symbol stem matches the intrinsic_table `op`).
-  // fma/fmuladd (ternary) are NOT here — deferred to wd2p.
+  // wd2p: ternary fma/fmuladd BOTH carry the `fma` stem (the trace does not
+  // distinguish the `fmuladd` may-fuse rounding from `fma` must-fuse — a Phase-9
+  // backend concern).
   case Intrinsic::sin:        return "sin";
   case Intrinsic::cos:        return "cos";
   case Intrinsic::tan:        return "tan";
@@ -76,14 +78,16 @@ StringRef intrinsicStem(Intrinsic::ID id) {
   case Intrinsic::minnum:     return "fmin";
   case Intrinsic::maxnum:     return "fmax";
   case Intrinsic::copysign:   return "copysign";
+  case Intrinsic::fma:        return "fma";
+  case Intrinsic::fmuladd:    return "fma";
   default:                    return {};
   }
 }
 
-// The 26 curated fp-math IDs (iw81.4.b): 22 unary + pow/fmin/fmax/copysign.
-// Used ONLY by widthInTableSet to admit {f16,f32,f64} PER-ID — never a blanket
-// fp open, so every NON-curated fp path keeps the full f64 angle/data fence.
-// fma/fmuladd are intentionally absent (deferred to wd2p) and stay declined.
+// The 28 curated fp-math IDs (iw81.4.b + wd2p): 22 unary + pow/fmin/fmax/copysign
+// + fma/fmuladd (ternary). Used ONLY by widthInTableSet to admit {f16,f32,f64}
+// PER-ID — never a blanket fp open, so every NON-curated fp path keeps the full
+// f64 angle/data fence.
 bool isCuratedFpIntrinsic(Intrinsic::ID id) {
   switch (id) {
   case Intrinsic::sin:   case Intrinsic::cos:    case Intrinsic::tan:
@@ -97,6 +101,7 @@ bool isCuratedFpIntrinsic(Intrinsic::ID id) {
   case Intrinsic::fabs:
   case Intrinsic::pow:   case Intrinsic::minnum: case Intrinsic::maxnum:
   case Intrinsic::copysign:
+  case Intrinsic::fma:   case Intrinsic::fmuladd:
     return true;
   default:
     return false;
@@ -125,9 +130,14 @@ IntrinKind intrinsicKind(Intrinsic::ID id) {
   case Intrinsic::fshl:
   case Intrinsic::fshr:
     return IntrinKind::Rotate;
+  case Intrinsic::fma:
+  case Intrinsic::fmuladd:
+    // wd2p: a*b + c. The product pair (arg0,arg1) is commutative; the addend
+    // (arg2) is positional. Three data operands, no immarg flag.
+    return IntrinKind::Ternary;
   default:
     // smin/smax/umin/umax + *.sat + iw81.4.b binary fp (pow/minnum/maxnum/
-    // copysign). fma/fmuladd are NOT curated (no stem) so never reach here.
+    // copysign).
     return IntrinKind::Binary;
   }
 }
@@ -256,6 +266,73 @@ bool rewriteIntrinsic(CallInst *CI, WidthDispatch &wd, TaintSet &taint) {
     }
     CallInst *T = Builder.CreateCall(
         Callee, {CI->getArgOperand(0), CI->getArgOperand(2)}, "h_intr");
+    if (DebugLoc DL = CI->getDebugLoc())
+      T->setDebugLoc(DL);
+    CI->replaceAllUsesWith(T);
+    promote(T, CI, taint, W);
+    return true;
+  }
+
+  if (K == IntrinKind::Ternary) {
+    // fma(a,b,c) = a*b + c (and fmuladd — the default -O1 contraction of
+    // `a*b+c`). The product pair (arg0,arg1) is COMMUTATIVE; the addend (arg2) is
+    // POSITIONAL. Same additive-producer / source-liveness discipline as the
+    // binary arm: a fresh out rail is minted; a,b,c stay live so the void
+    // `_unc(out,a,b,c)` recomputes a*b+c and XORs the rail to |0⟩ (Rule 8). The
+    // angle fence — a tainted fma result reaching a rotation arg-1 — is positional
+    // and already declined upstream by declineTaintedAngle (lowerRotations runs
+    // before lowerOps), so it never reaches here.
+    Value *P0 = CI->getArgOperand(0);
+    Value *P1 = CI->getArgOperand(1);
+    Value *Add = CI->getArgOperand(2);
+    const bool P0T = taint.Tainted.count(P0) != 0;
+    const bool P1T = taint.Tainted.count(P1) != 0;
+    const bool AddT = taint.Tainted.count(Add) != 0;
+    // The product pair must carry >=1 handle — every curated shape (qqq/qql/qlq/
+    // qll) begins with a handle in slot A. An all-classical product (both literal,
+    // taint reaching ONLY via the addend) has NO ternary shape: decline loudly
+    // rather than mint a phantom `llq` symbol. Defensive — clang const-folds a
+    // literal*literal product, so a real fma never lands here.
+    if (!P0T && !P1T) {
+      diagnoseNoTemplate(CI);
+      return false;
+    }
+    // Canonicalize the commutative product pair so slot A is ALWAYS a handle: a
+    // literal factor moves to slot B; two handles order by BirthOrder (lower → A)
+    // for a FileCheck-stable trace (mirrors the binary QQ commutative case). The
+    // addend is NEVER folded into the product — it is positional (operand order is
+    // semantic for the `+ c` term, exactly like a non-commutative binary).
+    Value *A = P0;
+    Value *B = P1;
+    if (!P0T) {
+      A = P1;  // product = (literal, handle) → put the handle first.
+      B = P0;
+    } else if (P1T) {
+      const unsigned BA = taint.BirthOrder.lookup(P0);
+      const unsigned BB = taint.BirthOrder.lookup(P1);
+      if (BA != 0 && BB != 0 && BB < BA) {
+        A = P1;
+        B = P0;
+      }
+    }
+    const bool BTainted = taint.Tainted.count(B) != 0;  // B is handle | literal.
+    // Shape by (B) × (addend): A is a handle; B/Add are each handle (q) or lit (l).
+    Shape ShapeSel;
+    if (BTainted && AddT)
+      ShapeSel = Shape::TernaryQQQ;
+    else if (BTainted && !AddT)
+      ShapeSel = Shape::TernaryQQL;
+    else if (!BTainted && AddT)
+      ShapeSel = Shape::TernaryQLQ;
+    else
+      ShapeSel = Shape::TernaryQLL;
+
+    FunctionCallee Callee = wd.dataTemplateFn(Stem, W, ShapeSel);
+    if (!Callee) {
+      diagnoseNoTemplate(CI);
+      return false;
+    }
+    CallInst *T = Builder.CreateCall(Callee, {A, B, Add}, "h_intr");
     if (DebugLoc DL = CI->getDebugLoc())
       T->setDebugLoc(DL);
     CI->replaceAllUsesWith(T);

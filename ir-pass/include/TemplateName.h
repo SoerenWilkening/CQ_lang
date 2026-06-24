@@ -44,7 +44,23 @@ namespace cq {
 //   * LH    — classical literal on the left, handle on the right (`_lh`).
 //             Non-commutative binary ops only; never compares.
 //   * Unary — single operand (fneg / casts). No shape suffix.
-enum class Shape { QQ, HL, LH, Unary };
+//   * Ternary{QQQ,QQL,QLQ,QLL} — the fma `a*b + c` family (wd2p). The product's
+//             first slot is ALWAYS a handle (the recognizer canonicalizes the
+//             commutative pair handle-before-literal); the second product slot
+//             and the positional addend are each handle (`q`) or literal (`l`).
+//             `QQQ` carries no shape suffix (bare base, like binary QQ); the
+//             mixed forms spell `_qql`/`_qlq`/`_qll`. Data ops only — never
+//             compares/casts.
+enum class Shape {
+  QQ,
+  HL,
+  LH,
+  Unary,
+  TernaryQQQ,
+  TernaryQQL,
+  TernaryQLQ,
+  TernaryQLL,
+};
 
 // Controlled / inverse axis (Phase 4, PRD §2.8). Both default to the
 // no-control forward form, so every existing caller stays byte-identical.

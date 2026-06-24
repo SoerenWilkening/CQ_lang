@@ -27,8 +27,8 @@
 #       f(sources) from the still-LIVE source operands and XORs the out rail to
 #       |0⟩ — it never recovers the input. The fence is SOURCE-LIVENESS.
 #
-# SHAPES (reuse VARIANT_INFO + abi_codegen a1/ua1/qq/hl/lh/uqq/uhl/ulh; NO
-# abi_codegen edit). `arity`:
+# SHAPES (reuse VARIANT_INFO + abi_codegen a1/ua1/qq/hl/lh/uqq/uhl/ulh; the
+# ternary fma shapes qqq/qql/qlq/qll add the ONE abi_codegen edit, wd2p). `arity`:
 #   unary   — one data handle: shape a1 (fwd/inv) / ua1 (unc). Width from the
 #             intrinsic RESULT type (a real iN). For abs/ctlz/cttz the trailing
 #             i1 immarg flag (poison-on-INT_MIN / zero-is-undef) is a CONSTANT
@@ -41,6 +41,12 @@
 #   rotate  — fshl/fshr: a single data handle + a constant rotation amount n,
 #             lowered as the _hl shape (handle, iN n). A dynamic (tainted) n or
 #             arg0!=arg1 is NOT this idiom and declines.
+#   ternary — fma/fmuladd: a*b + c. The product pair (a,b) is COMMUTATIVE
+#             (canonicalized handle-before-literal so the first slot is always a
+#             handle); the addend c is POSITIONAL. 4 shapes qqq/qql/qlq/qll keyed
+#             by (pair) x (addend) — the all-literal product folds to a constant
+#             (never an fma). The void `_unc` twin (uqqq/uqql/uqlq/uqll) prepends
+#             `out` and recomputes f(sources) — the SAME Class-2 model as binary.
 #
 # ----------------------------------------------------------------------------
 # fp-MATH family (iw81.4.b, Phase 7.1): the 22 unary transcendental / round /
@@ -49,13 +55,13 @@
 # rotation arg-1 STILL loud-declines — the angle fence is positional, enforced
 # upstream by declineTaintedAngle, NOT here; see bd [fp-angle-fence-ordering-
 # invariant]). fp admission is PER-ID in widthInTableSet — NEVER a blanket fp
-# open (the f64 angle/data miscompile family). fma/fmuladd (ternary) and the
-# fcmp predicate fill are SIBLING increments (wd2p / 8rvn), not this table cut.
+# open (the f64 angle/data miscompile family). The ternary fma/fmuladd family
+# (wd2p) is curated below; the fcmp predicate fill is a SIBLING increment (8rvn).
 #
 # EXCLUDED (still decline loudly): *.with.overflow ({iN,i1} aggregate — needs
 # extractvalue), direct-libm @calls (cbrt/expm1/log1p/atan2/hypot → Path-1 nyww,
-# deferred), fma/fmuladd (until wd2p), vector/`i128`-fp widths, the general
-# (x!=y) funnel shift. Curation is by EXACT Intrinsic::ID — NEVER by name prefix.
+# deferred), vector/`i128`-fp widths, the general (x!=y) funnel shift. Curation
+# is by EXACT Intrinsic::ID — NEVER by name prefix.
 # ============================================================================
 
 version: "1"
@@ -148,4 +154,17 @@ intrinsics:
   # binary NON-commutative fp (pow/copysign — operand order is semantic), qq+hl+lh:
   - { op: pow,      llvm_id: pow,      class: 2, reversibility: pure_noninjective, arity: binary, commutative: false, widths: [f16,f32,f64], variants: [fwd_qq, fwd_hl, fwd_lh, unc_qq, unc_hl, unc_lh] }
   - { op: copysign, llvm_id: copysign, class: 2, reversibility: pure_noninjective, arity: binary, commutative: false, widths: [f16,f32,f64], variants: [fwd_qq, fwd_hl, fwd_lh, unc_qq, unc_hl, unc_lh] }
+
+  # ---- wd2p: ternary fp fma/fmuladd (Class 2, fwd / unc only) --------------
+  # fma(a,b,c) = a*b + c. BOTH llvm.fma (must-fuse) and llvm.fmuladd (may-fuse,
+  # the default -O1 contraction of `a*b+c`) map to this single `fma` stem — the
+  # trace-only runtime does not distinguish the rounding mode (a Phase-9 backend
+  # concern). The product pair (a,b) is COMMUTATIVE; the addend c is POSITIONAL.
+  # The recognizer canonicalizes the pair handle-before-literal, so the first slot
+  # is ALWAYS a handle → exactly 4 shapes qqq/qql/qlq/qll (the all-literal product
+  # folds to a constant, no fma). Class-2 recompute-from-live-source: the void
+  # `_unc(out,a,b,c)` recomputes a*b+c from the still-LIVE sources and XORs the out
+  # rail to |0> (it NEVER recovers an input — source-liveness, Rule 8). This is the
+  # FIRST 3-operand template shape (the one abi_codegen edit, PRD-iw81.4 §4.3).
+  - { op: fma, llvm_id: fma, class: 2, reversibility: pure_noninjective, arity: ternary, widths: [f16,f32,f64], variants: [fwd_qqq, fwd_qql, fwd_qlq, fwd_qll, unc_qqq, unc_qql, unc_qlq, unc_qll] }
 # -- End of intrinsic table ----------------------------------------------------

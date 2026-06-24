@@ -344,6 +344,24 @@ FunctionCallee WidthDispatch::dataTemplateFn(StringRef stem, StringRef abiWidth,
     return M.getOrInsertFunction(
         Name, FunctionType::get(Handle, {Classical, Handle}, false));
   }
+  case Shape::TernaryQQQ:
+    // fma a*b+c, all-handle: (i32, i32, i32) -> i32.
+    return M.getOrInsertFunction(
+        Name, FunctionType::get(Handle, {Handle, Handle, Handle}, false));
+  case Shape::TernaryQQL:
+  case Shape::TernaryQLQ:
+  case Shape::TernaryQLL: {
+    // fma mixed handle/literal. The first slot is always a handle; the second
+    // product slot (QLQ/QLL) and/or the addend (QQL/QLL) are classical scalars at
+    // the real fp width, so the IR call matches the generated C signature.
+    Type *Classical = llvmWidthType(abiWidth);
+    if (!Classical)
+      return FunctionCallee();
+    Type *B = (shape == Shape::TernaryQQL) ? Handle : Classical;
+    Type *C = (shape == Shape::TernaryQLQ) ? Handle : Classical;
+    return M.getOrInsertFunction(
+        Name, FunctionType::get(Handle, {Handle, B, C}, false));
+  }
   }
   return FunctionCallee();
 }

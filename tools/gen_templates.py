@@ -80,6 +80,20 @@ VARIANT_INFO = {
     "unc_hl": ("_hl_unc", "uhl"),
     "unc_lh": ("_lh_unc", "ulh"),
     "unc":    ("_unc",    "ua1"),
+    # Ternary (fma/fmuladd, wd2p): a*b + c. The product's first slot is always a
+    # handle (canonicalized handle-before-literal), so 4 shapes qqq/qql/qlq/qll.
+    # `qqq` is the BARE base symbol (no shape token, like the binary QQ form) so
+    # its `_unc` twin attaches to the bare base (`..._unc`); the mixed shapes spell
+    # `_qql`/`_qlq`/`_qll`, then `_unc` last. The `u`-prefixed shapes prepend the
+    # void `out` rail (consumed by abi_codegen, like uqq/uhl/ulh).
+    "fwd_qqq": ("",         "qqq"),
+    "fwd_qql": ("_qql",     "qql"),
+    "fwd_qlq": ("_qlq",     "qlq"),
+    "fwd_qll": ("_qll",     "qll"),
+    "unc_qqq": ("_unc",     "uqqq"),
+    "unc_qql": ("_qql_unc", "uqql"),
+    "unc_qlq": ("_qlq_unc", "uqlq"),
+    "unc_qll": ("_qll_unc", "uqll"),
 }
 
 
@@ -95,9 +109,13 @@ def _emit_variants(rows, base, kind, variants, extra):
         row.update(extra)
         # hl/lh (and their controlled twins chl/clh, and the void uncompute
         # twins uhl/ulh) carry a classical operand whose C type comes from the
-        # symbol's width.
+        # symbol's width. The ternary mixed shapes (qql/qlq/qll + their unc twins)
+        # carry 1-2 classical operands of the SAME width — a single classical_w
+        # types them all (the product addend and/or the literal factor).
         row["classical_w"] = (extra.get("width")
-                              if shape in ("hl", "lh", "chl", "clh", "uhl", "ulh")
+                              if shape in ("hl", "lh", "chl", "clh", "uhl", "ulh",
+                                           "qql", "qlq", "qll",
+                                           "uqql", "uqlq", "uqll")
                               else None)
         rows.append(row)
 
@@ -156,7 +174,10 @@ def enumerate_intrinsics(itable):
         # variants are exclusively the *_hl tokens). The classical operand C type
         # of an hl/lh form comes from the row width (an iN), exactly like a binary
         # opcode — for a rotation that operand IS the constant shift amount n.
-        kind = "unary" if op["arity"] == "unary" else "binary"
+        arity = op["arity"]
+        kind = ("unary" if arity == "unary"
+                else "ternary" if arity == "ternary"
+                else "binary")  # binary | rotate → "binary"
         for w in op["widths"]:
             _emit_variants(rows, f"cq_template_{op['op']}_{w}", kind,
                            op["variants"], {"op": op["op"], "width": w})

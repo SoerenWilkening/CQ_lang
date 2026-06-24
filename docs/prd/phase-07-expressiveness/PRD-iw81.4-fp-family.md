@@ -242,7 +242,7 @@ Rule 12) and clears Rule-13 (independent adversarial review).
 | **iw81.4.a** | Carve precondition: formalize "tainted fp = data", lock the 5 fence sites, add decline probes. NO templates. | §3 | GREEN: fp arith still lowers. NEW negatives D1 (`lowering_reject_math_result_as_angle.ll`), D11 (`…_math_double_realize.ll`); confirm D2 fp-merge declines stay green. | MED | none |
 | **iw81.4.b** | Unary fp intrinsics (22) + binary `pow/fmin/fmax/copysign`. YAML rows + 4 switch edits + `widthInTableSet` fp admit. | §3 + EXACT fp `Intrinsic::ID` at f16/f32/f64; Class-2 additive producer + `_unc`. | RED→GREEN: flip `lowering_reject_intrinsic_transcendental_sqrt.ll`. NEW positives `lowering_intrinsic_sin_f64.ll`, `…_pow_f64_hl.ll`, `…_fmin_f64_qq.ll`; NEW negative `…_fp_vector.ll`. ≥1 e2e golden. | **HIGH** (first fp into the recognizer; the f64 family). | YES |
 | **iw81.4-8rvn** ✅ **DONE** (2026-06-24) | 8 missing fcmp predicates (`one ord uno ueq ugt uge ult ule`; full 14-pred family, `true`/`false` out). | §4.4 (fp-data, i1 result, in curated set). | FLIPPED `lowering_fcmp_one_negative.ll`→`…_one_hl_f32.ll`; 8 positives (one per pred, f16/f32/f64 × HL/QQ) + flip-closure `…_flip_ugt_to_ult…`; residual `lowering_fcmp_false_negative.ll`; boundary `lowering_reject_fcmp_result_as_angle.ll`; e2e `slice_fcmp_unordered`. 4 control/spec decline probes re-pointed `one`→`false`. +144 templates (→2091). | LOW | YES |
-| **iw81.4-wd2p** | fma/fmuladd ternary + the one `abi_codegen` shape. | §4.3; product pair canonicalized, addend positional. | NEW positive `lowering_intrinsic_fma_f64_qqq.ll` + the mixed shapes attempted; e2e golden for `a*b+c` (contracted fmuladd). NEW negative non-curated ternary. | **MED-HIGH** (3-operand order; first ternary template). | YES |
+| **iw81.4-wd2p** ✅ **DONE** (2026-06-24) | fma/fmuladd ternary + the one `abi_codegen` shape (the FIRST 3-operand template). | §4.3; product pair canonicalized handle-before-literal, addend positional → 4 shapes qqq/qql/qlq/qll. | Positives `lowering_intrinsic_fma_f64_{qqq,qlq}.ll` + `lowering_intrinsic_fmuladd_f64_qql.ll` (stem-merge + canonicalization probes); negatives `lowering_reject_fma_{result_as_angle,literal_product}.ll` + `lowering_reject_intrinsic_fma_vector.ll`; e2e `slice_intrinsic_fma` (contracted `a*b+c` QQQ forward + dead QLQ fma `_unc`). +24 templates (→437). Whole-DAG uncompute spine + EmitInverse `_unc` reconstruction are arity-agnostic — ZERO new spine code. | **MED-HIGH** (3-operand order; first ternary template). Rule-13 CLEARED (5-lens adversarial workflow + refutation-default verify + synthesis judge; 0 findings, severity ceiling none). | YES |
 
 **Done-criteria (Rule 16):** both lit fixtures **and** ≥1 e2e golden smoke per
 increment; full `ctest` green; `gen_templates.py --check` clean; each core change
@@ -319,9 +319,16 @@ generator shape (`abi_codegen` edit). All land before the Phase-11 freeze.
 shipped `abs`-on-INT_MIN precedent), |0⟩-rail domain proof deferred to the Phase-9
 backend; errno-form libm over-declines; fp-as-bitpattern cell deferred.
 
+**Resolved at wd2p implementation (2026-06-24):**
+- fma mixed-shape coverage — **shipped all 4 canonical shapes** (qqq/qql/qlq/qll +
+  their `_unc` twins) at f16/f32/f64. Verified empirically: the literal product
+  factor relocates to slot B (handle-before-literal canon), the addend stays
+  positional, and all FunctionTypes byte-match the generated stubs.
+- f16 fma emission — clang 19.1.7 emits a genuine `@llvm.fma.f16` (NOT promoted to
+  f32), so the f16 rows ARE exercised; lowering + the per-ID width admit hold.
+
 **Remaining (confirm at implementation):**
-- f16 transcendental emission — does clang emit `@llvm.sin.f16` or promote to f32?
-  (Decline-safe either way; affects whether f16 rows are exercised.)
+- f16 transcendental emission (the iw81.4.b unary family) — does clang emit
+  `@llvm.sin.f16` or promote to f32? (Decline-safe either way; affects whether the
+  unary f16 rows are exercised. fma is settled above.)
 - `lround` family fp→int routing (§6.5) — fold into a cast follow-up or its own row.
-- fma mixed-shape coverage — ship all 4 canonical shapes, or stage `qqq` first and
-  let mixed forms decline initially (both safe).

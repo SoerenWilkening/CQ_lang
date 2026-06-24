@@ -20,8 +20,14 @@ StringRef shapeSuffix(Shape shape) {
   switch (shape) {
   case Shape::HL: return "_hl";
   case Shape::LH: return "_lh";
+  // Ternary fma (wd2p): the all-handle QQQ form is the bare base symbol (no
+  // suffix, like binary QQ); the mixed forms carry a 3-letter shape token.
+  case Shape::TernaryQQL: return "_qql";
+  case Shape::TernaryQLQ: return "_qlq";
+  case Shape::TernaryQLL: return "_qll";
   case Shape::QQ:
   case Shape::Unary:
+  case Shape::TernaryQQQ:
     break;
   }
   return "";

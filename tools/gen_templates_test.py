@@ -201,7 +201,7 @@ class GenTemplatesTest(unittest.TestCase):
     def test_decl_def_pairing(self):
         self.assertEqual(self.h_decls, self.c_defs)
 
-    def test_intrinsic_sibling_count_is_413(self):
+    def test_intrinsic_sibling_count_is_437(self):
         # Phase 7.1 (FROZEN). Curated reversible llvm.* idioms in the SEPARATE
         # sibling artifact; the 1732 opcode-table count is untouched. Derived from
         # the table: Sum over rows of widths x variants.
@@ -211,11 +211,12 @@ class GenTemplatesTest(unittest.TestCase):
         #   48 (2 ops x 4w x 6v).
         #   iw81.4.b (fp-math family) = 192: unary 132 (22 fns x 3w x 2v) + fmin/fmax
         #   24 (2 ops x 3w x 4v) + pow/copysign 36 (2 ops x 3w x 6v).
-        # 221 + 192 = 413.
+        #   wd2p (ternary fma) = 24: fma (1 op x 3w x 8v — qqq/qql/qlq/qll fwd+unc).
+        # 221 + 192 + 24 = 437.
         expected = sum(len(o["widths"]) * len(o["variants"])
                        for o in self.itable["intrinsics"])
-        self.assertEqual(expected, 413)
-        self.assertEqual(len(self.ih_decls), 413)
+        self.assertEqual(expected, 437)
+        self.assertEqual(len(self.ih_decls), 437)
 
     def test_intrinsic_decl_def_pairing(self):
         self.assertEqual(self.ih_decls, self.ic_defs)
