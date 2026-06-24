@@ -8,6 +8,7 @@
 
 #include "ControlPlan.h"
 #include "IOSinkLowering.h"
+#include "LoopPlan.h"
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
 #include "QramLowering.h"
@@ -96,6 +97,22 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // `lowerRotations` (the still-present `@cq_theta` src; the RAUW-to-handle
   // rewrites every emitted operand later).
   lowerControlledIOSinks(M, wd, taint);
+
+  // Bounded loops (Phase 7.3, epic 799w): a classically-bounded loop over a
+  // tainted body lowers ROLLED IN PLACE. `lowerLoops` (LoopLowering.cpp)
+  // recognizes the §2.2 sound-rolled invariant by pure LoopInfo/SSA analysis
+  // (Rule 9) and collapses each Case-A in-place persistent-rail phi (the
+  // loop-carried header phi + the zero-trip/exit merge phi) to its single rail,
+  // so the body lowers to `cqrt_rz(%h, angle_i)` over a loop-invariant handle.
+  // Runs BEFORE `detectControlRegions` so a quantum/measurement-bounded loop
+  // (Q1) is partitioned out with the dedicated `loop under quantum control`
+  // message before ControlDetect declines it generically; BEFORE
+  // `declineClassicalMuxes` so the collapsed header phi never reaches
+  // `kMsgClassicalPhi`; and BEFORE `lowerRotations` (the still-present
+  // `@cq_theta`/`@cq_phi` SSA values). A cross-iteration dirty rail (X1) and a
+  // tainted-exit loop (Q1) decline LOUDLY here; every other loop is left for its
+  // existing owner. A purely-classical loop is untouched.
+  lowerLoops(M, wd, taint);
 
   // Tainted control flow: `detectControlRegions` (ControlDetect.cpp) recognizes
   // the swap-route phase-arm diamond/if-else shape by SSA identity (Rule 9, no
@@ -241,6 +258,12 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // this entry point too (twin-pipeline parity is MANDATORY, WI-1.12) — see
   // run() for the pre-`detectControlRegions` ordering rationale.
   lowerControlledIOSinks(M, wd, taint);
+
+  // Bounded loops (Phase 7.3, epic 799w) mirrored in this entry point too
+  // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the pre-
+  // `detectControlRegions` / pre-`declineClassicalMuxes` / pre-`lowerRotations`
+  // ordering rationale.
+  lowerLoops(M, wd, taint);
 
   // See run() — `detectControlRegions` pushes accepted phase-arm diamonds and
   // declines the rest; `lowerControlRegions` emits the routed stream. BOTH must

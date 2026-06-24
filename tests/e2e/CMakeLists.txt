@@ -696,6 +696,26 @@ add_test(NAME e2e-slice-qram-local-uncompute
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_uncompute.expected.log")
 
+# Phase 7.3 Increment 1 (test_C_libtooling-799w.1): the rolled-in-place Case A
+# phase accumulator. A classically-bounded loop over an in-place persistent rail
+# `for (i<n) q = cq_phi(q, 0.1)` lowers ROLLED — the loop CFG is preserved, the
+# body emits `cqrt_rz_f64` in place over the loop-invariant handle, the
+# loop-carried header phi AND the zero-trip/exit merge phi collapse to the single
+# rail. The bound is a RUNTIME param (the A2 shape: zero-trip guard + exit phi)
+# passed a fixed 3 so the trace is deterministic; the golden (alloc + ry + 3×rz +
+# measure) is BYTE-IDENTICAL to the manually-unrolled 3-iteration form — the PRD
+# §4 done-criterion. ZERO measurements inserted, ZERO in-body frees (the rail is
+# measured after L); the classical induction + loop CFG survive. 7.3 adds no new
+# runtime ABI — this re-proves the existing alloc/ry/rz/measure symbols compose
+# over a rolled loop.
+add_test(NAME e2e-slice-loop-phase-accum
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route

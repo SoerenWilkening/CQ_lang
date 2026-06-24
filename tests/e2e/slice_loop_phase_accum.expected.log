@@ -1,0 +1,6 @@
+cqrt_alloc_f64(0.250000) -> h0
+cqrt_ry_f64(h0, 0.500000)
+cqrt_rz_f64(h0, 0.100000)
+cqrt_rz_f64(h0, 0.100000)
+cqrt_rz_f64(h0, 0.100000)
+cqrt_measure_f64(h0) -> 0.000000
