@@ -46,7 +46,60 @@ StringRef intrinsicStem(Intrinsic::ID id) {
   case Intrinsic::usub_sat:   return "usub_sat";
   case Intrinsic::sadd_sat:   return "sadd_sat";
   case Intrinsic::ssub_sat:   return "ssub_sat";
+  // iw81.4.b fp-math family. 22 unary transcendental / round / fabs (stem ==
+  // the llvm name) + binary pow/fmin/fmax/copysign. minnum/maxnum carry the
+  // C99 spelling fmin/fmax (the symbol stem matches the intrinsic_table `op`).
+  // fma/fmuladd (ternary) are NOT here — deferred to wd2p.
+  case Intrinsic::sin:        return "sin";
+  case Intrinsic::cos:        return "cos";
+  case Intrinsic::tan:        return "tan";
+  case Intrinsic::asin:       return "asin";
+  case Intrinsic::acos:       return "acos";
+  case Intrinsic::atan:       return "atan";
+  case Intrinsic::sinh:       return "sinh";
+  case Intrinsic::cosh:       return "cosh";
+  case Intrinsic::tanh:       return "tanh";
+  case Intrinsic::exp:        return "exp";
+  case Intrinsic::exp2:       return "exp2";
+  case Intrinsic::log:        return "log";
+  case Intrinsic::log2:       return "log2";
+  case Intrinsic::log10:      return "log10";
+  case Intrinsic::sqrt:       return "sqrt";
+  case Intrinsic::floor:      return "floor";
+  case Intrinsic::ceil:       return "ceil";
+  case Intrinsic::trunc:      return "trunc";
+  case Intrinsic::round:      return "round";
+  case Intrinsic::rint:       return "rint";
+  case Intrinsic::nearbyint:  return "nearbyint";
+  case Intrinsic::fabs:       return "fabs";
+  case Intrinsic::pow:        return "pow";
+  case Intrinsic::minnum:     return "fmin";
+  case Intrinsic::maxnum:     return "fmax";
+  case Intrinsic::copysign:   return "copysign";
   default:                    return {};
+  }
+}
+
+// The 26 curated fp-math IDs (iw81.4.b): 22 unary + pow/fmin/fmax/copysign.
+// Used ONLY by widthInTableSet to admit {f16,f32,f64} PER-ID — never a blanket
+// fp open, so every NON-curated fp path keeps the full f64 angle/data fence.
+// fma/fmuladd are intentionally absent (deferred to wd2p) and stay declined.
+bool isCuratedFpIntrinsic(Intrinsic::ID id) {
+  switch (id) {
+  case Intrinsic::sin:   case Intrinsic::cos:    case Intrinsic::tan:
+  case Intrinsic::asin:  case Intrinsic::acos:   case Intrinsic::atan:
+  case Intrinsic::sinh:  case Intrinsic::cosh:   case Intrinsic::tanh:
+  case Intrinsic::exp:   case Intrinsic::exp2:
+  case Intrinsic::log:   case Intrinsic::log2:   case Intrinsic::log10:
+  case Intrinsic::sqrt:
+  case Intrinsic::floor: case Intrinsic::ceil:   case Intrinsic::trunc:
+  case Intrinsic::round: case Intrinsic::rint:   case Intrinsic::nearbyint:
+  case Intrinsic::fabs:
+  case Intrinsic::pow:   case Intrinsic::minnum: case Intrinsic::maxnum:
+  case Intrinsic::copysign:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -58,12 +111,24 @@ IntrinKind intrinsicKind(Intrinsic::ID id) {
   case Intrinsic::ctlz:
   case Intrinsic::cttz:
   case Intrinsic::abs:
+  // iw81.4.b unary fp-math (one fp data handle, no immarg flag).
+  case Intrinsic::sin:   case Intrinsic::cos:    case Intrinsic::tan:
+  case Intrinsic::asin:  case Intrinsic::acos:   case Intrinsic::atan:
+  case Intrinsic::sinh:  case Intrinsic::cosh:   case Intrinsic::tanh:
+  case Intrinsic::exp:   case Intrinsic::exp2:
+  case Intrinsic::log:   case Intrinsic::log2:   case Intrinsic::log10:
+  case Intrinsic::sqrt:
+  case Intrinsic::floor: case Intrinsic::ceil:   case Intrinsic::trunc:
+  case Intrinsic::round: case Intrinsic::rint:   case Intrinsic::nearbyint:
+  case Intrinsic::fabs:
     return IntrinKind::Unary;
   case Intrinsic::fshl:
   case Intrinsic::fshr:
     return IntrinKind::Rotate;
   default:
-    return IntrinKind::Binary;  // smin/smax/umin/umax + *.sat
+    // smin/smax/umin/umax + *.sat + iw81.4.b binary fp (pow/minnum/maxnum/
+    // copysign). fma/fmuladd are NOT curated (no stem) so never reach here.
+    return IntrinKind::Binary;
   }
 }
 
@@ -77,18 +142,28 @@ bool intrinsicCommutative(Intrinsic::ID id) {
   case Intrinsic::umax:
   case Intrinsic::uadd_sat:
   case Intrinsic::sadd_sat:
+  // iw81.4.b: fmin/fmax (llvm.minnum/maxnum) commute (carry qq+hl). pow and
+  // copysign are order-sensitive (fall to the default → carry qq+hl+lh).
+  case Intrinsic::minnum:
+  case Intrinsic::maxnum:
     return true;
   default:
-    return false;  // usub_sat / ssub_sat (order-sensitive)
+    return false;  // usub_sat / ssub_sat / pow / copysign (order-sensitive)
   }
 }
 
-// The intrinsic's result width must be in its table set. All curated rows use
-// {i8,i16,i32,i64}; bswap additionally excludes i8 (llvm.bswap needs a 16-bit
-// multiple). i1, the deferred i128, and every fp/vector width are out (a
-// non-curated width => the predicate is false => the call rides the loud
-// kMsgUnknownCallee escape decline, never an unresolved cq_template_<op>_<W>).
+// The intrinsic's result width must be in its table set. The integer idiom rows
+// use {i8,i16,i32,i64} (bswap additionally excludes i8 — llvm.bswap needs a
+// 16-bit multiple); the iw81.4.b fp-math rows use {f16,f32,f64}. Admission is
+// PER-ID: an fp ID admits ONLY fp widths and an integer ID ONLY integer widths —
+// NEVER a blanket fp open (that would reopen the f64 angle/data miscompile family
+// on every soft-float path). i1, the deferred i128, vector widths, and any
+// fp ID outside the curated set are out (a non-curated width => the predicate is
+// false => the call rides the loud kMsgUnknownCallee escape decline, never an
+// unresolved cq_template_<op>_<W>).
 bool widthInTableSet(Intrinsic::ID id, StringRef W) {
+  if (isCuratedFpIntrinsic(id))
+    return W == "f16" || W == "f32" || W == "f64";
   const bool base = (W == "i8" || W == "i16" || W == "i32" || W == "i64");
   if (id == Intrinsic::bswap)
     return base && W != "i8";
@@ -148,10 +223,14 @@ bool rewriteIntrinsic(CallInst *CI, WidthDispatch &wd, TaintSet &taint) {
   const IntrinKind K = intrinsicKind(id);
 
   if (K == IntrinKind::Unary) {
-    // bswap/bitreverse/ctpop/ctlz/cttz/abs — one data handle (arg 0). The
-    // trailing i1 immarg flag of abs/ctlz/cttz (arg 1) is a CONSTANT dropped
-    // here: the lowered op is the TOTAL reversible function; both fwd and `_unc`
-    // use the same total f, so the rail zeroes correctly.
+    // bswap/bitreverse/ctpop/ctlz/cttz/abs + the iw81.4.b unary fp-math family
+    // (sin/cos/.../sqrt/floor/.../fabs) — one data handle (arg 0). The trailing
+    // i1 immarg flag of abs/ctlz/cttz (arg 1) is a CONSTANT dropped here (the fp
+    // unary intrinsics have no immarg); the lowered op is the TOTAL reversible
+    // function, so both fwd and `_unc` use the same total f and the rail zeroes
+    // correctly. The angle fence (a tainted fp result reaching a rotation arg-1)
+    // is positional and already enforced upstream by declineTaintedAngle, which
+    // runs BEFORE lowerOps — see bd [fp-angle-fence-ordering-invariant].
     FunctionCallee Callee = wd.dataTemplateFn(Stem, W, Shape::Unary);
     if (!Callee) {
       diagnoseNoTemplate(CI);

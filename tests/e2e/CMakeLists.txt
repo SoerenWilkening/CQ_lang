@@ -356,6 +356,21 @@ add_test(NAME e2e-slice-intrinsic-ctpop
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_ctpop.expected.log")
 
+# Phase 7.1 iw81.4.b (FROZEN ABI): the fp-math intrinsic family. The only layer
+# that LINKS, so the only proof the new generated fp symbols resolve and
+# signature-match: (A) a measured unary @llvm.floor.f64 proves the forward
+# cq_template_floor_f64; (B) a dead binary @llvm.minnum.f64 kept alive by a cq_phi
+# proves the binary forward cq_template_fmin_f64 AND its void `_unc` twin
+# cq_template_fmin_f64_unc(out, c, d) reverse once from the still-live f64 sources
+# and free every rail — no cqrt_copy_f64 (an fp carrier is an angle, never data).
+add_test(NAME e2e-slice-intrinsic-fpmath
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_fpmath.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_fpmath.expected.log")
+
 # Phase 7.1 follow-up D5 (test_C_libtooling-m0yi): a non-power-of-2 _BitInt(N)
 # INTERMEDIATE round-trips with NO new ABI. clang -O1 rounds the i40 up to i64 and
 # emits the i40 wraparound as a stock `and i64 ..., 0xFFFFFFFFFF` (= 2^40-1), so

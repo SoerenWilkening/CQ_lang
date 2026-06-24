@@ -69,10 +69,13 @@ NEVER a `starts_with("llvm.")` name match (the `cq_theta_evil` hazard).
 ## Frozen sibling symbol surface (PERMANENT at Phase 11)
 
 `tools/intrinsic_table.yaml` → `runtime/cq_intrinsic_templates.{h,c}` (own
-yaml-sha256 banner), compiled into `libcq_templates.a`. **221** symbols (the 1732
-opcode-table count is UNTOUCHED): Class-1 45 (bswap 9 + bitreverse 12 + fshl 12 +
-fshr 12) + Class-2 unary 32 (ctpop/ctlz/cttz/abs × 4w × {fwd,unc}) + min/max 64 +
-add.sat 32 + sub.sat 48. Derived assertion in `gen_templates_test.py`.
+yaml-sha256 banner), compiled into `libcq_templates.a`. **413** symbols (the 1732
+opcode-table count is UNTOUCHED). Increment-E integer idioms = **221**: Class-1 45
+(bswap 9 + bitreverse 12 + fshl 12 + fshr 12) + Class-2 unary 32 (ctpop/ctlz/cttz/
+abs × 4w × {fwd,unc}) + min/max 64 + add.sat 32 + sub.sat 48. iw81.4.b fp-math
+family = **192**: unary 132 (22 fns × 3w × {fwd,unc}) + fmin/fmax 24 (2 × 3w ×
+{fwd_qq,fwd_hl,unc_qq,unc_hl}) + pow/copysign 36 (2 × 3w × +{fwd_lh,unc_lh}).
+Derived assertion in `gen_templates_test.py`.
 
 ## Rule-13 findings & resolutions (6 adversarial lenses)
 

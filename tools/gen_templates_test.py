@@ -196,17 +196,21 @@ class GenTemplatesTest(unittest.TestCase):
     def test_decl_def_pairing(self):
         self.assertEqual(self.h_decls, self.c_defs)
 
-    def test_intrinsic_sibling_count_is_221(self):
-        # Phase 7.1 Increment E (FROZEN). Curated reversible llvm.* idioms in the
-        # SEPARATE sibling artifact; the 1732 opcode-table count is untouched.
-        # Derived from the table: Sum over rows of widths x variants. 221 =
-        # Class-1 45 (bswap 9 + bitreverse 12 + fshl 12 + fshr 12) + Class-2
-        # unary 32 (ctpop/ctlz/cttz/abs x 4w x 2v) + min/max 64 (4 ops x 4w x 4v)
-        # + add.sat 32 (2 ops x 4w x 4v) + sub.sat 48 (2 ops x 4w x 6v).
+    def test_intrinsic_sibling_count_is_413(self):
+        # Phase 7.1 (FROZEN). Curated reversible llvm.* idioms in the SEPARATE
+        # sibling artifact; the 1732 opcode-table count is untouched. Derived from
+        # the table: Sum over rows of widths x variants.
+        #   Increment E (integer idioms) = 221: Class-1 45 (bswap 9 + bitreverse 12
+        #   + fshl 12 + fshr 12) + Class-2 unary 32 (ctpop/ctlz/cttz/abs x 4w x 2v)
+        #   + min/max 64 (4 ops x 4w x 4v) + add.sat 32 (2 ops x 4w x 4v) + sub.sat
+        #   48 (2 ops x 4w x 6v).
+        #   iw81.4.b (fp-math family) = 192: unary 132 (22 fns x 3w x 2v) + fmin/fmax
+        #   24 (2 ops x 3w x 4v) + pow/copysign 36 (2 ops x 3w x 6v).
+        # 221 + 192 = 413.
         expected = sum(len(o["widths"]) * len(o["variants"])
                        for o in self.itable["intrinsics"])
-        self.assertEqual(expected, 221)
-        self.assertEqual(len(self.ih_decls), 221)
+        self.assertEqual(expected, 413)
+        self.assertEqual(len(self.ih_decls), 413)
 
     def test_intrinsic_decl_def_pairing(self):
         self.assertEqual(self.ih_decls, self.ic_defs)

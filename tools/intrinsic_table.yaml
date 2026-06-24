@@ -43,21 +43,37 @@
 #             arg0!=arg1 is NOT this idiom and declines.
 #
 # ----------------------------------------------------------------------------
+# fp-MATH family (iw81.4.b, Phase 7.1): the 22 unary transcendental / round /
+# fabs intrinsics + binary pow/fmin/fmax/copysign are curated at f16/f32/f64 as
+# Class-2 recompute-from-live-source producers (a tainted math result reaching a
+# rotation arg-1 STILL loud-declines — the angle fence is positional, enforced
+# upstream by declineTaintedAngle, NOT here; see bd [fp-angle-fence-ordering-
+# invariant]). fp admission is PER-ID in widthInTableSet — NEVER a blanket fp
+# open (the f64 angle/data miscompile family). fma/fmuladd (ternary) and the
+# fcmp predicate fill are SIBLING increments (wd2p / 8rvn), not this table cut.
+#
 # EXCLUDED (still decline loudly): *.with.overflow ({iN,i1} aggregate — needs
-# extractvalue), fp transcendentals (Phase-6 Path-1 libm), the general (x!=y)
-# funnel shift. Curation is by EXACT Intrinsic::ID — NEVER by name prefix.
+# extractvalue), direct-libm @calls (cbrt/expm1/log1p/atan2/hypot → Path-1 nyww,
+# deferred), fma/fmuladd (until wd2p), vector/`i128`-fp widths, the general
+# (x!=y) funnel shift. Curation is by EXACT Intrinsic::ID — NEVER by name prefix.
 # ============================================================================
 
 version: "1"
 phase: "phase7.1-E"
 
-# Widths reference (subset of opcode_table widths; intrinsics use INT only).
+# Widths reference (subset of opcode_table widths). INT widths drive the
+# Increment-E idiom intrinsics; the fp widths (f16/f32/f64) drive the iw81.4.b
+# fp-math family. abi_codegen.py already carries the _Float16/float/double
+# ctypes (the f64/angle fence lives in the IR pass, not the C ABI).
 widths:
-  i1:  { bits: 1,  c_type: "bool",    domain: "int" }
-  i8:  { bits: 8,  c_type: "int8_t",  domain: "int" }
-  i16: { bits: 16, c_type: "int16_t", domain: "int" }
-  i32: { bits: 32, c_type: "int32_t", domain: "int" }
-  i64: { bits: 64, c_type: "int64_t", domain: "int" }
+  i1:  { bits: 1,  c_type: "bool",     domain: "int" }
+  i8:  { bits: 8,  c_type: "int8_t",   domain: "int" }
+  i16: { bits: 16, c_type: "int16_t",  domain: "int" }
+  i32: { bits: 32, c_type: "int32_t",  domain: "int" }
+  i64: { bits: 64, c_type: "int64_t",  domain: "int" }
+  f16: { bits: 16, c_type: "_Float16", domain: "fp"  }
+  f32: { bits: 32, c_type: "float",    domain: "fp"  }
+  f64: { bits: 64, c_type: "double",   domain: "fp"  }
 
 # Curated intrinsics. `op` is the symbol stem; `llvm_id` documents the
 # Intrinsic:: name the TaintPropagation accept-list keys on (exact ID, never
@@ -93,4 +109,43 @@ intrinsics:
   - { op: sadd_sat, llvm_id: sadd_sat, class: 2, reversibility: pure_noninjective, arity: binary, commutative: true,  widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, unc_qq, unc_hl] }
   - { op: usub_sat, llvm_id: usub_sat, class: 2, reversibility: pure_noninjective, arity: binary, commutative: false, widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, fwd_lh, unc_qq, unc_hl, unc_lh] }
   - { op: ssub_sat, llvm_id: ssub_sat, class: 2, reversibility: pure_noninjective, arity: binary, commutative: false, widths: [i8,i16,i32,i64], variants: [fwd_qq, fwd_hl, fwd_lh, unc_qq, unc_hl, unc_lh] }
+
+  # ---- iw81.4.b: fp-math family (Class 2, fwd / unc only) ------------------
+  # 22 unary transcendental / round / fabs intrinsics. All non-injective pure
+  # total fp functions (sqrt is injective on its domain but is uniformly Class-2
+  # — its `_unc` recomputes sqrt(live source) and XORs the out rail to |0⟩, never
+  # recovering the input). The arg is a single fp data handle; the angle fence is
+  # positional and enforced upstream (declineTaintedAngle), never in this table.
+  # Domain-restricted fns (log/sqrt/asin) are curated at recognition (the trace
+  # computes no NaN; |0⟩-rail domain proof is a deferred Phase-9 backend concern,
+  # mirroring the shipped abs-on-INT_MIN precedent). f16 rows ride decline-safe if
+  # clang promotes _Float16 transcendentals to f32 (the f16 form simply never arises).
+  - { op: sin,       llvm_id: sin,       class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: cos,       llvm_id: cos,       class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: tan,       llvm_id: tan,       class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: asin,      llvm_id: asin,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: acos,      llvm_id: acos,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: atan,      llvm_id: atan,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: sinh,      llvm_id: sinh,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: cosh,      llvm_id: cosh,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: tanh,      llvm_id: tanh,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: exp,       llvm_id: exp,       class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: exp2,      llvm_id: exp2,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: log,       llvm_id: log,       class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: log2,      llvm_id: log2,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: log10,     llvm_id: log10,     class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: sqrt,      llvm_id: sqrt,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: floor,     llvm_id: floor,     class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: ceil,      llvm_id: ceil,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: trunc,     llvm_id: trunc,     class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: round,     llvm_id: round,     class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: rint,      llvm_id: rint,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: nearbyint, llvm_id: nearbyint, class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  - { op: fabs,      llvm_id: fabs,      class: 2, reversibility: pure_noninjective, arity: unary, widths: [f16,f32,f64], variants: [fwd, unc] }
+  # binary COMMUTATIVE fp (fmin/fmax = llvm.minnum/maxnum), qq+hl:
+  - { op: fmin, llvm_id: minnum, class: 2, reversibility: pure_noninjective, arity: binary, commutative: true,  widths: [f16,f32,f64], variants: [fwd_qq, fwd_hl, unc_qq, unc_hl] }
+  - { op: fmax, llvm_id: maxnum, class: 2, reversibility: pure_noninjective, arity: binary, commutative: true,  widths: [f16,f32,f64], variants: [fwd_qq, fwd_hl, unc_qq, unc_hl] }
+  # binary NON-commutative fp (pow/copysign — operand order is semantic), qq+hl+lh:
+  - { op: pow,      llvm_id: pow,      class: 2, reversibility: pure_noninjective, arity: binary, commutative: false, widths: [f16,f32,f64], variants: [fwd_qq, fwd_hl, fwd_lh, unc_qq, unc_hl, unc_lh] }
+  - { op: copysign, llvm_id: copysign, class: 2, reversibility: pure_noninjective, arity: binary, commutative: false, widths: [f16,f32,f64], variants: [fwd_qq, fwd_hl, fwd_lh, unc_qq, unc_hl, unc_lh] }
 # -- End of intrinsic table ----------------------------------------------------
