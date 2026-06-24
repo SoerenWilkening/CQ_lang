@@ -783,7 +783,7 @@ via the §7.6 reversible output tape.)
 
 ---
 
-## Phase 7 — Pre-freeze expressiveness completion [7.1/7.2/7.5/7.6 DONE; 7.3/7.4 remaining]
+## Phase 7 — Pre-freeze expressiveness completion [7.1/7.2/7.3/7.5/7.6 DONE; 7.4 remaining]
 
 **Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
 almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
@@ -891,13 +891,15 @@ inversion → feature.
     conditional-output case, 7.6 Tier 0). Because abort never selects a value back, it
     **sidesteps** hazards (ii)/(iii) that controlled-`return` must clear.
 
-- **7.3 — Bounded loops** (rolled-in-place; **PRD** `docs/prd/phase-07-expressiveness/PRD-7.3.md`).
+- **7.3 — Bounded loops** (rolled-in-place; **DONE** 2026-06-25, epic `799w` — Inc 1
+  `799w.1` + Inc 2 `799w.2`, each Rule-13-cleared; deferred static-K unroll fallback
+  filed `799w.3`; **PRD** `docs/prd/phase-07-expressiveness/PRD-7.3.md`).
   **Model superseded 2026-06-24** (owner decision `bd memories owner-dynamic-circuits-in-model`):
   loops lower **rolled in place** — the loop CFG is **preserved** and the body's tainted
   ops lower to the same `cqrt_*`/`cq_template_*` stream the straight-line form produces;
   a **classical (untainted) trip/exit condition** is the gate, and the trip count need
   **not** be a compile-time constant (dynamic/runtime-classical bounds lower identically).
-  **Static-K unroll is demoted to a deferred optional fallback** (`bd rkg1`) for the
+  **Static-K unroll is demoted to a deferred optional fallback** (`bd 799w.3`) for the
   cross-iteration-dirty-rail case only; `-O1` never unrolls a `cq_*` body, so 7.3 lowers
   the rolled shape directly. The accept set is the **sound-rolled invariant** — Case A
   (in-place persistent accumulator: collapse the loop-carried header phi to its single

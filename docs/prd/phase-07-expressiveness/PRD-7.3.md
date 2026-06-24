@@ -1,7 +1,17 @@
-# Phase 7.3 PRD — Bounded loops (rolled-in-place) (DRAFT)
+# Phase 7.3 PRD — Bounded loops (rolled-in-place)
 
-> **Status:** DRAFT, written at the start of Phase 7.3 (2026-06-24) to memorialize
-> the design decisions for epic `799w`. Does not duplicate
+> **Status: Inc 1 + Inc 2 DONE (2026-06-25).** Increment 1 — Case A in-place
+> persistent-rail collapse — and Increment 2 — Case B per-iteration in-body
+> uncompute — are both landed and Rule-13-cleared (independent adversarial
+> review each; Inc-2 review additionally surfaced + fixed a do-while-nested-loop
+> silent miscompile now pinned by `lowering_reject_loop_nested_quantum.ll`). New
+> stage `lowerLoops` (`ir-pass/src/LoopLowering.cpp` / `include/LoopPlan.h`) +
+> the `taint.IterationLocalBlocks` spine hook; 6 positive/negative lit fixtures +
+> 2 e2e goldens (`slice_loop_phase_accum`, `slice_loop_iter_local`); NO new
+> frozen runtime ABI. The deferred **static-K unroll fallback** for X1
+> cross-iteration dirty rails (§2.7, Deliverable 6) is filed as `799w.3` and is
+> NOT part of this phase's done-criteria. Originally written 2026-06-24 to
+> memorialize the design decisions for epic `799w`. Does not duplicate
 > [`ROADMAP.md`](../../../ROADMAP.md) §"Phase 7 — 7.3" or
 > [`docs/design/rssa-swap-control/SCOPING.md`](../../../docs/design/rssa-swap-control/SCOPING.md)
 > §4/§5; captures the 7.3-specific decisions, deliverables, and done criteria.

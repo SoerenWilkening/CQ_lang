@@ -49,7 +49,10 @@ class of bug.
 > single-origin provenance walk (flat geps + gep chains + pointer phi/select) + the
 > full pattern-naming over-accept decline matrix, all Rule-13-cleared — the Inc-3
 > review FOUND+FIXED a non-zero-`memset` silent-miscompile over-accept, now
-> `kMsgQramInit`; 2026-06-23/24); 7.3/7.4 + 8–11 remaining. **Roadmap resequenced 2026-06-19:**
+> `kMsgQramInit`; 2026-06-23/24); **7.3 DONE** (epic `799w`: rolled-in-place bounded
+> loops — Inc 1 `799w.1` Case A in-place persistent-rail collapse + Inc 2 `799w.2` Case B
+> per-iteration in-body uncompute, each Rule-13-cleared; deferred static-K unroll
+> `799w.3`; 2026-06-25); 7.4 + 8–11 remaining. **Roadmap resequenced 2026-06-19:**
 > Phase 7 is now **pre-freeze expressiveness completion** (7.1 opcode-surface
 > completion incl. Q+Q data compare + wide integers `__int128`/`_BitInt`; 7.2
 > controlled function-`return`; 7.3 bounded loops; 7.4 `break`; 7.5 QRAM full
