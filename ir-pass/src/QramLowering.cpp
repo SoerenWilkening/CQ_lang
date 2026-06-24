@@ -102,6 +102,27 @@ constexpr char kMsgQramAlias[] =
     "cq QRAM access: array address has aliasing fan-out";
 constexpr char kMsgQramLoop[] =
     "cq QRAM access: tainted-index memory access inside a loop";
+// The coherent-return no-cloning fence (bug test_C_libtooling-l6xk + the sxuk
+// direct-return / Inc-1 QROM-return regressions; VERIFIED physics 2026-06-24,
+// memory 7-5-qram-coherent-return-nocloning). A qRAM LOAD at a superposed index
+// produces a value ENTANGLED with that index (`arr[p] = [p==q]·v`, a function of
+// the load AND store addresses). When such a value flows COHERENTLY (through
+// tainted reversible ops, NOT through a measure/tape collapse sink) into a
+// `ret` / `cq_invert` of a NON-`main` function, the whole-DAG reversal uncomputes
+// and FREES the LOCAL (`cq_theta`) index rails it is entangled with — a dirty free
+// (= hidden measurement, Rule 6) that DEPHASES the returned carrier to a classical
+// mixture (off-diagonal coherence exactly 0; reduced ρ = diag(2c²s², c⁴+s⁴)). By
+// no-cloning/monogamy NO reversible circuit can return a clean coherent `arr[p]`
+// once its local address is erased — leaving the index allocated only DEFERS the
+// collapse (the carrier is mixed the instant the copy-out fires). So the ONLY
+// correct action is a LOUD DECLINE. A MEASURE collapses the value first (immune —
+// the index-free is unobservable and the diagonal IS the correct distribution);
+// `main`'s `ret` is the process-exit observation. The negative LIT fixtures mirror
+// this CHARACTER-FOR-CHARACTER:
+//   * lowering_reject_qram_coherent_return.ll       → kMsgQramCohEscape (Shadow)
+//   * lowering_reject_qram_read_coherent_return.ll  → kMsgQramCohEscape (QROM)
+constexpr char kMsgQramCohEscape[] =
+    "cq QRAM load: coherently escaping value is entangled with a local index (no-cloning)";
 
 // Loud `DiagnosticInfoUnsupported(DS_Error)` with the offending load's `!dbg`
 // (source-located; `opt` exits non-zero, which the negative fixtures invert with
@@ -536,6 +557,47 @@ bool isObservedValue(Value *V) {
   return false;
 }
 
+// Does the loaded value `V` flow COHERENTLY into a `ret` / `cq_invert` escape —
+// i.e. through tainted reversible ops, WITHOUT first passing a collapse/observe
+// sink? This is the precondition for the kMsgQramCohEscape decline (the no-cloning
+// fence above). The walk STOPS at a `@cq_measure_*` measurement sink or a
+// `@cqrt_tape_write_*` I/O sink (both COLLAPSE/observe the value — its coherence is
+// already gone, so anything downstream is classical, not a coherent escape); it
+// returns true the moment it reaches a `ret` or a `@cq_invert_*` escape by any
+// other path. CONSERVATIVE (Prime Directive): following every SSA user can only
+// over-detect an escape, which over-declines (safe), never under-declines. Runs at
+// emitter time (after `lowerIOSinks`, before `lowerMeasures`/`lowerOps`), so the
+// arithmetic chain is still raw LLVM and `cq_measure_` is still the front-end form.
+bool coherentlyEscapesToReturn(Value *V) {
+  SmallVector<Value *, 8> Work{V};
+  SmallPtrSet<Value *, 16> Seen;
+  while (!Work.empty()) {
+    Value *X = Work.pop_back_val();
+    if (!Seen.insert(X).second)
+      continue;
+    for (User *U : X->users()) {
+      if (isa<ReturnInst>(U))
+        return true;  // a coherent return of the (transformed) loaded value.
+      if (auto *CI = dyn_cast<CallInst>(U)) {
+        const Function *Callee = CI->getCalledFunction();
+        StringRef N = Callee ? Callee->getName() : StringRef();
+        if (N.starts_with("cq_invert_"))
+          return true;  // manual-inversion escape (Phase 8) — same no-cloning wall.
+        if (N.starts_with("cq_measure_") || N.starts_with("cqrt_tape_write_"))
+          continue;  // a COLLAPSE/observe sink — coherence already gone; do not
+                     // descend through its (void/classical) result. This `continue`
+                     // only skips THIS user; the loop still examines the value's
+                     // OTHER users, so a value that is BOTH taped/measured AND
+                     // coherently returned still trips the `ret` below (verified) —
+                     // the stop cannot hide a coherent escape.
+      }
+      if (auto *I = dyn_cast<Instruction>(U))
+        Work.push_back(I);  // follow the forward tainted-reversible chain.
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 // The single carve entry point for `declineTaintEscapes` (Inc 3, replacing the
@@ -590,6 +652,18 @@ void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
   SmallVector<Instruction *, 16> ToErase;
 
   for (Accepted &R : Reads) {
+    // Coherent-return no-cloning fence (Inc-1 QROM regression; memory
+    // 7-5-qram-coherent-return-nocloning): `return tbl[q]` (non-`main`) returns a
+    // value entangled with the LOCAL index `q`; with `q` uncomputed/leaked the
+    // returned carrier is dephased to a classical mixture (verify-clean silent
+    // miscompile). DECLINE — a coherent qRAM-load value cannot escape once its
+    // local address is erased. A MEASURE collapses it first (immune); `main`'s ret
+    // is the process-exit observation.
+    if (R.Load->getFunction()->getName() != "main" &&
+        coherentlyEscapesToReturn(R.Load)) {
+      diagnose(R.Load, kMsgQramCohEscape);
+      continue;
+    }
     // Element-width gate — the carve accepted the structural shape; an fp/i128
     // cell has no reversible copy and DECLINES LOUDLY here, so the carve is never
     // a silent accept (§6.9). `widthHasReversibleCopy` is the {i1,i8,i16,i32,i64}
@@ -662,36 +736,40 @@ void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
 
 namespace {
 
-// Phase 7.5 (bug sxuk): method-B copy-out for a load result that DIRECTLY escapes
-// a non-`main` function via `ret` / `cq_measure`. WITHOUT it the load result is
-// the SOLE tainted data terminal, FreePoint classifies it Escaped/Measured, and
-// the whole-DAG reversal — INCLUDING the LOCAL array's stores — is skipped (the
-// `InsertTerms.empty()` bail): the returned value stays entangled with the leaked
-// local scratch array (a dephasing silent miscompile). The copy makes `Out` a
-// NON-escaped terminal whose load+store chain uncomputes via the EXISTING dead-
-// array reversal (the spine treats `cqrt_copy` reading src as a source-preserving
-// sink, ChainWalk::isCopyOutSink), while the copy DESTINATION is the kept
-// escaped/measured carrier — and the local array's stores reverse to |0>.
+// Phase 7.5 (bug sxuk): method-B copy-out for a load result whose SOLE, DIRECT user
+// is a `cq_measure_*` sink in a non-`main` function. WITHOUT it the load result is
+// the SOLE tainted data terminal, FreePoint classifies it Measured, and the
+// whole-DAG reversal — INCLUDING the LOCAL array's stores — is skipped (the
+// `InsertTerms.empty()` bail): the measured value stays entangled with the leaked
+// local scratch array. The copy makes `Out` a NON-escaped terminal whose load+store
+// chain uncomputes via the EXISTING dead-array reversal (the spine treats
+// `cqrt_copy` reading src as a source-preserving sink, ChainWalk::isCopyOutSink),
+// while the copy DESTINATION is the kept measured carrier — and the local array's
+// stores reverse to |0>. The reversal frees the LOCAL index rails, which is sound
+// HERE precisely because the value is MEASURED: the collapse makes the index-free
+// unobservable and the diagonal is the correct measurement distribution (memory
+// 7-5-qram-coherent-return-nocloning). A COHERENT `ret`/`cq_invert` escape is NOT
+// handled here — it is loud-declined upstream (kMsgQramCohEscape) since no-cloning
+// forbids returning a clean coherent `arr[p]` once its local index is erased.
 //
-// Scope (inc 1): `Out`'s SOLE, DIRECT user is a `ret` or a `cq_measure_*`. A taped
-// load (cqrt_tape_write) already uncomputes (isOutputSink), so its sole user is
-// not a ret/measure here; `main` escapes anyway (process exit reclaims); an
-// indirect (cast/arith-then-return) or fan-out escape is left as-is (status quo,
-// no regression). Runs AFTER the load's RAUW so `Out` carries the original users.
-void emitCopyOutIfDirectEscape(CallInst *Out, StringRef ElemAbi, WidthDispatch &wd,
-                               TaintSet &taint) {
+// Scope: `Out`'s SOLE, DIRECT user is a `cq_measure_*`. A taped load
+// (cqrt_tape_write) already uncomputes (isOutputSink), so its sole user is not a
+// measure here; `main` escapes anyway (process exit reclaims); an indirect
+// (cast/arith-then-measure) or fan-out measure is left as-is (a Rule-6 safe leak —
+// correct under measurement immunity, just not resource-cleaned). Runs AFTER the
+// load's RAUW so `Out` carries the original users.
+void emitCopyOutIfDirectMeasure(CallInst *Out, StringRef ElemAbi, WidthDispatch &wd,
+                                TaintSet &taint) {
   if (Out->getFunction()->getName() == "main" || !Out->hasOneUse())
     return;
-  auto *U = dyn_cast<Instruction>(*Out->user_begin());
-  if (!U)
-    return;
-  bool DirectEscape = isa<ReturnInst>(U);
-  if (auto *CI = dyn_cast<CallInst>(U)) {
-    const Function *Callee = CI->getCalledFunction();
-    DirectEscape = Callee && Callee->getName().starts_with("cq_measure_");
-  }
-  if (!DirectEscape)
-    return;
+  auto *CI = dyn_cast<CallInst>(*Out->user_begin());
+  if (!CI)
+    return;  // a coherent `ret` user is declined upstream (kMsgQramCohEscape).
+  const Function *Callee = CI->getCalledFunction();
+  if (!Callee || !Callee->getName().starts_with("cq_measure_"))
+    return;  // only a direct measure sink — measurement immunity makes the reversal
+             // (and its index frees) sound; everything else leaks safely.
+  Instruction *U = CI;
   FunctionCallee Alloc = wd.allocFn(ElemAbi);
   FunctionCallee Copy = wd.copyFn(ElemAbi);
   Type *RailTy = wd.llvmWidthType(ElemAbi);
@@ -814,6 +892,26 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
     }
   }
 
+  // Coherent-return no-cloning fence (bug test_C_libtooling-l6xk + the sxuk
+  // direct-return regression; VERIFIED physics, memory
+  // 7-5-qram-coherent-return-nocloning). A loaded value that flows COHERENTLY
+  // (`coherentlyEscapesToReturn` — through tainted reversible ops, NOT through a
+  // measure/tape collapse sink) into a `ret`/`cq_invert` of a NON-`main` function
+  // is entangled with this array's LOCAL (`cq_theta`) index. The whole-DAG reversal
+  // would uncompute and FREE that index rail — a dirty free (hidden measurement,
+  // Rule 6) that DEPHASES the returned carrier (verify-clean silent miscompile). By
+  // no-cloning a clean coherent `arr[p]` is impossible once its local address is
+  // erased, and leaving the index allocated only DEFERS the collapse — so DECLINE
+  // the whole alloca. A MEASURE collapses the value first (immune — the load+store
+  // DAG still uncomputes via the direct-measure copy-out below); `main`'s `ret` is
+  // the process-exit observation. (Mirrors the §2.8(iii) mid-seq guard structure.)
+  if (AI->getFunction()->getName() != "main")
+    for (const ShadowAccess &A : Accesses)
+      if (!A.IsStore && coherentlyEscapesToReturn(A.MemOp)) {
+        diagnose(A.MemOp, kMsgQramCohEscape);
+        return;
+      }
+
   // All invariants hold → emit. Array-handle birth: ONE `cqrt_qram_alloc_<W>(N)` at
   // entry. TAINTED — an alloca-backed mutable array is an in-place-mutated register
   // the whole-DAG uncompute spine reverses (a dead scratch array's stores reverse
@@ -884,11 +982,11 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
       taint.HandleWidth[Out] = ElemAbi;
       taint.BirthOrder[Out] = taint.NextBirth++;
       A.MemOp->replaceAllUsesWith(Out);
-      // sxuk: if this loaded value directly escapes (ret/measure) a non-main fn,
-      // copy it out to a kept carrier so the LOCAL array's stores uncompute (else
-      // the returned value leaks entangled with dirty scratch — a dephasing
-      // miscompile). No-op for the dead / taped / main / indirect cases.
-      emitCopyOutIfDirectEscape(Out, ElemAbi, wd, taint);
+      // sxuk: if this loaded value's sole direct user is a `cq_measure` in a
+      // non-main fn, copy it out to a kept carrier so the LOCAL array's stores
+      // uncompute (measurement immunity makes the index frees sound). No-op for the
+      // dead / taped / main / indirect cases; a COHERENT return was declined above.
+      emitCopyOutIfDirectMeasure(Out, ElemAbi, wd, taint);
       ToErase.push_back(A.MemOp);  // the load
     }
     ToErase.push_back(A.Gep);  // the now-dead address-gen

@@ -42,11 +42,30 @@ reads-and-preserves its source, so the source stays a non-escaped terminal and
 its lineage "uncomputes normally (Bennett copy-out)" while the kept output rail
 carries the answer out. We do the same with a `cqrt_copy`:
 
+> **CORRECTION 2026-06-24 (bug `l6xk`; VERIFIED physics, supersedes the framing
+> below for the *coherent return* case).** The copy-out + whole-DAG reversal is
+> correct **only for a MEASURED** loaded value. For a **coherent `ret`/`cq_invert`**
+> escape it is a *silent dephasing miscompile*: `arr[p]` at a superposed address is
+> entangled with the **local index** `p` (and the store index `q`); the reversal
+> uncomputes and **frees those index rails**, a dirty free (Rule 6) that dephases the
+> returned carrier to a classical mixture (off-diagonal coherence **exactly 0**;
+> `ρ = diag(2c²s², c⁴+s⁴)`). No-cloning forbids returning a clean coherent `arr[p]`
+> once its local address is erased — and *leaving the index allocated does not help*
+> (the carrier is already mixed the instant the copy fires; it only defers the
+> collapse). So a coherent qRAM-load escape now **loud-declines** (`kMsgQramCohEscape`),
+> across **both** the Shadow store/load path **and** the Inc-1 QROM read path
+> (`return tbl[q]` was the same latent bug). The copy-out below fires **only for the
+> direct `cq_measure` sink** (`emitCopyOutIfDirectMeasure`), where measurement
+> immunity makes the index frees sound and the diagonal is the correct distribution.
+> See `bd memory 7-5-qram-coherent-return-nocloning`. The original "disentangled
+> escaped return" claim (step 1 / the end of this section) is TRUE for the measure
+> sink and FALSE for a coherent return.
+
 1. **`QramLowering` (the integration point).** In `processShadowAlloca`'s **load
    branch**, right after `A.MemOp->replaceAllUsesWith(Out)`, if `Out` (the
-   `cqrt_qram_load` result) is the **sole, direct** operand of a `ret` or a
-   `cq_measure_*` in a **non-`main`** function, emit the copy-out and redirect the
-   escape:
+   `cqrt_qram_load` result) is the **sole, direct** operand of a `cq_measure_*` in a
+   **non-`main`** function (the coherent-`ret` case is loud-declined upstream), emit
+   the copy-out and redirect the measurement:
    ```
    %qret = call i32 @cqrt_alloc_<W>(0)        ; fresh |0> carrier
    call void @cqrt_copy_<W>(%v, %qret)        ; CNOT-class copy, PRESERVES %v
@@ -87,12 +106,26 @@ returned `%qret`.
 
 ## Scope of increment 1 / follow-ups
 
-Inc 1 handles the **direct** sole-user `ret`/`cq_measure` escape (the reported
-bug). A load result consumed by arithmetic *then* returned (`return a[i]+a[j]`)
-is the escaped terminal one level up; it still leaks (status quo, not a
-regression) and is a follow-up — the copy-out would move to the actual escaped
-terminal. A fan-out load result is left as-is. The mid-sequence-observation guard
-(`kMsgQramMidSeq`) is unchanged: a store *after* an observed load still declines.
+Inc 1 handled the **direct** sole-user escape. The arith-then-escape / fan-out
+follow-up (bug `l6xk`) is resolved **NOT** by extending the copy-out (that was the
+wrong instinct — see the correction above) but by **splitting on the sink type**:
+
+- **arith-then-MEASURE** (`cq_measure(a[p]+1)`) — **accepts**, immune. The escaped
+  terminal is the arith result whose forward sink is a measure; the load's direct
+  user is the `add`, so the direct-measure copy-out does not fire — the array/index
+  rails are **left allocated (a Rule-6 safe leak)**, which is correct under
+  measurement immunity (the measured distribution is right; resource cleanup is the
+  only thing skipped). Fixture `lowering_qram_store_arith_measure.ll`.
+- **arith-then-RETURN / fan-out-then-RETURN** (`return a[p]+a[r]`) — **loud
+  declines** (`kMsgQramCohEscape`). The forward walk `coherentlyEscapesToReturn`
+  follows the load result through tainted arithmetic to a `ret`/`cq_invert` (stopping
+  at any measure/tape collapse sink) and rejects: no-cloning forbids the coherent
+  return once the local index is uncomputed. Fixtures
+  `lowering_reject_qram_coherent_return{,_arith}.ll` (Shadow, direct + arith) and
+  `lowering_reject_qram_read_coherent_return.ll` (QROM).
+
+The mid-sequence-observation guard (`kMsgQramMidSeq`) is unchanged. `main`'s `ret`
+is the process-exit observation (immune; not declined).
 
 ## Red-green
 
@@ -100,10 +133,15 @@ terminal. A fan-out load result is left as-is. The mid-sequence-observation guar
   (`lowering_qram_store_alloca_i32.ll`, `lowering_qram_store_flat_gep.ll`:
   `CHECK-NOT: cqrt_qram_store_i32_unc` → assert `cqrt_copy` + `..._store_..._unc`
   + `..._load_..._unc`).
-- **Add** a return-form fixture (`lowering_qram_store_return_load.ll`) — the
-  reported bug, now copy-out + reversal.
 - `lowering_qram_store_dead_lifo.ll` (dead load) and `..._load_copy.ll`
   (load-into-store) are unaffected (load result not observed).
+
+> **`l6xk` update:** the sxuk return-form ACCEPT fixture was renamed and **flipped to
+> a DECLINE** (`lowering_reject_qram_coherent_return.ll`) — a coherent return is the
+> no-cloning miscompile, not a copy-out target. The Inc-1 QROM accept fixture
+> `lowering_qram_read_const_global_i32.ll` was switched to the **measure form** (the
+> direct `return tbl[q]` it used to assert is now declined:
+> `lowering_reject_qram_read_coherent_return.ll`).
 
 ## Clearance
 
