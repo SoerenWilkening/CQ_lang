@@ -382,10 +382,19 @@ is the design path to lifting them, not a shipped capability.)*
   §3, not a classical-data problem.
 - **Untouched:** classical (untainted) control flow — compiled exactly as C does,
   at runtime. Only tainted `br i1` is rewritten.
-- **Loops:** still require a static upper bound; a loop bounded by quantum data
-  must be unrolled (no runtime branch on a qubit). Note unrolled iterations are
-  *sequential* (no parallel-arm depth win) and accumulate rails — the one place the
-  regime's space cost is paid without the §6 depth payoff.
+- **Loops:** *(superseded 2026-06-24 — owner decision `bd memories
+  owner-dynamic-circuits-in-model`; see Phase 7.3 PRD
+  `docs/prd/phase-07-expressiveness/PRD-7.3.md`.)* The original framing below
+  (loops need a static upper bound and must be **unrolled**) no longer holds.
+  Classically-bounded loops lower **rolled in place** — the loop CFG is preserved
+  and the body lowers to the usual `cqrt_*`/`cq_template_*` stream; the trip count
+  need only be **classical** (untainted), not a static constant. Static-K unroll is
+  demoted to a deferred fallback for cross-iteration dirty rails. A loop whose
+  trip/exit condition is **quantum/measurement-derived** still declines (no runtime
+  branch on a qubit). *Original (historical) framing:* loops still require a static
+  upper bound; a loop bounded by quantum data must be unrolled; unrolled iterations
+  are *sequential* (no parallel-arm depth win) and accumulate rails — the one place
+  the regime's space cost is paid without the §6 depth payoff.
 - **Phase 5 uncompute:** **not deleted** — reused as the on-demand full-region
   reverse-play (the verbatim forward stream played backward via `EmitInverse`:
   classical inverses for the classical bulk, `rz/ry(θ) → rz/ry(-θ)` for rotations

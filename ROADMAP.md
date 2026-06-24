@@ -735,7 +735,8 @@ argument into the callee's input iff the condition holds, calls the function
 **unconditionally**, and routes the result back (`OVERVIEW.md`). So the
 controlled-call branch of specialization is **dropped** — only the
 tainted-**data**-argument clone-on-taint (Path 2) and curated substitution
-(Path 1) remain in scope here. Bounded recursion is still the unrolled form.
+(Path 1) remain in scope here. Bounded recursion becomes a **loop** at `-O1`
+(Phase 7.3, lowered **rolled in place**), not a specializer call cycle.
 
 **Scope.**
 - Path 1 — curated symbol substitution: maintained table mapping
@@ -890,18 +891,27 @@ inversion → feature.
     conditional-output case, 7.6 Tier 0). Because abort never selects a value back, it
     **sidesteps** hazards (ii)/(iii) that controlled-`return` must clear.
 
-- **7.3 — Bounded loops** (static-trip-count unroll). The pass unrolls a
-  provably-bounded loop (Bennett's `max_loop_iterations` model; `-O1` does not reliably
-  unroll constant-trip loops), after which the body reduces to already-solved
-  straight-line lowering. **Discharges the Phase-5 obligation:** extend `emit_inverse`
-  + last-use uncomputation to **loop-carried** tainted registers (per-iteration
-  compute/uncompute), lifting Phase 5's loud loop-backedge reject for exactly the
-  proven-bounded shape. **No new ABI.** Data-dependent / quantum-bounded (unbounded)
-  `while` stays deferred (post-freeze). Hazard: a wrong static trip count is a
-  verify-clean miscompile — the bound must be **proven**, not inferred.
+- **7.3 — Bounded loops** (rolled-in-place; **PRD** `docs/prd/phase-07-expressiveness/PRD-7.3.md`).
+  **Model superseded 2026-06-24** (owner decision `bd memories owner-dynamic-circuits-in-model`):
+  loops lower **rolled in place** — the loop CFG is **preserved** and the body's tainted
+  ops lower to the same `cqrt_*`/`cq_template_*` stream the straight-line form produces;
+  a **classical (untainted) trip/exit condition** is the gate, and the trip count need
+  **not** be a compile-time constant (dynamic/runtime-classical bounds lower identically).
+  **Static-K unroll is demoted to a deferred optional fallback** (`bd rkg1`) for the
+  cross-iteration-dirty-rail case only; `-O1` never unrolls a `cq_*` body, so 7.3 lowers
+  the rolled shape directly. The accept set is the **sound-rolled invariant** — Case A
+  (in-place persistent accumulator: collapse the loop-carried header phi to its single
+  rail) **and** Case B (iteration-local born-and-dies temporaries, the per-iteration
+  in-body uncompute). **Discharges the Phase-5 obligation:** extend `emit_inverse` +
+  last-use uncomputation to **per-iteration in-body** recovery, lifting Phase 5's loud
+  loop-backedge reject for exactly the proven iteration-local shape. **No new ABI.**
+  Quantum/measurement-bounded (tainted-condition) loops **decline** (different model);
+  cross-iteration dirty rails **decline** (→ deferred unroll). Hazard: a per-iteration
+  free placed at a once-per-function point runs K times (use-after-free + double-free) —
+  the in-body free point must be **proven** once-per-iteration, not inferred.
 
 - **7.4 — Controlled `break`** (loop-exit cascade). Once 7.2 + 7.3 exist, `break` is
-  the 7.2 exit-priority cascade with the unrolled loop's exit as the merge point —
+  the 7.2 exit-priority cascade with the rolled loop's exit as the merge point —
   near-free reuse. Bounded + reconverging only.
 
 - **7.5 — QRAM, full Shadow model** (owner decision 2026-06-19). Lower `load` /
@@ -1188,14 +1198,16 @@ post-Phase-11 roadmap revision.
   `cq_template_X_inv ∘ cq_template_X`); the full set needs real
   template bodies.
 - **Unbounded / quantum-conditioned `while` loops.** Data-dependent or
-  amplitude-amplification iteration whose trip count is **not** statically
-  provable. **Bounded** static-trip loops moved **into Phase 7.3**, which
-  discharges the Phase-5 uncompute-extension obligation (extend the
-  `emit_inverse` + last-use machinery to loop-carried tainted registers and
-  per-iteration compute/uncompute, lifting Phase 5's backedge reject) for the
-  proven-bounded shape. What remains here is the genuinely unbounded case
+  amplitude-amplification iteration whose **trip/exit condition is tainted**
+  (quantum/measurement-derived). **Classically-bounded** loops moved **into Phase
+  7.3** — lowered **rolled in place** (not unrolled; superseded 2026-06-24,
+  `bd owner-dynamic-circuits-in-model`), which discharges the Phase-5
+  uncompute-extension obligation (extend the `emit_inverse` + last-use machinery to
+  **per-iteration in-body** recovery, lifting Phase 5's backedge reject) for the
+  sound-rolled shape. What remains here is the genuinely **quantum-bounded** case
   (amplitude amplification, transform-to-bounded-for, measurement-derived
-  bounds), punted past the freeze to keep v1.0 narrow (see
+  bounds) — a tainted-condition loop branch, which 7.3 loud-declines — punted past
+  the freeze to keep v1.0 narrow (see
   [`docs/archive/old-design/phases/phase05-uncomputation/PRD.md`](docs/archive/old-design/phases/phase05-uncomputation/PRD.md)
   §2.9).
 - **Dynamic circuits.** Measurement-derived loop bounds; mid-circuit
