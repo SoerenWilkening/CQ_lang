@@ -64,6 +64,21 @@ bool isOutputSink(const CallInst *CI) {
   return Callee && Callee->getName().starts_with("cqrt_tape_write_");
 }
 
+bool isCopyOutSink(const CallInst *G, const Value *H) {
+  const Function *Callee = G->getCalledFunction();
+  if (!Callee)
+    return false;
+  StringRef N = Callee->getName();
+  // The UNCONTROLLED 2-arg basis copy `cqrt_copy_<W>(src, dst)` reading `H` as its
+  // SOURCE (arg 0). Like a measure / tape-write sink it READS-and-PRESERVES H, so
+  // the spine treats it as a benign terminal user (H's lineage uncomputes normally
+  // — Bennett copy-out, sxuk); the copy DESTINATION (dst) is the kept carrier. The
+  // 3-arg `_controlled` data-mux copy (4.4/6.5) and any `_inv`/`_unc` twin fail.
+  return N.starts_with("cqrt_copy_") && !N.contains("_controlled") &&
+         !N.ends_with("_inv") && !N.ends_with("_unc") && G->arg_size() == 2 &&
+         G->getArgOperand(0) == H;
+}
+
 bool isTerminalHandle(Value *Handle, const TaintSet &taint) {
   if (!taint.Tainted.count(Handle))
     return false;
@@ -76,8 +91,10 @@ bool isTerminalHandle(Value *Handle, const TaintSet &taint) {
     auto *CI = dyn_cast<CallInst>(U);
     if (!CI)
       continue;  // a classical/non-call read does not extend the quantum chain
-    if (isInPlaceGateOn(CI, Handle) || isMeasureSink(CI) || isOutputSink(CI))
-      continue;  // in-place rotation, measurement sink, or I/O output sink (7.6)
+    if (isInPlaceGateOn(CI, Handle) || isMeasureSink(CI) || isOutputSink(CI) ||
+        isCopyOutSink(CI, Handle))
+      continue;  // in-place rotation, measurement/output sink (7.6), or a method-B
+                 // copy-out reading Handle as src (sxuk — preserves it)
     return false;  // any other gate consumes `Handle` ⇒ not the chain terminal
   }
   return true;

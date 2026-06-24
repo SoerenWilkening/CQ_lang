@@ -1,15 +1,21 @@
-; lowering_qram_store_alloca_i32.ll — ACCEPT (Phase 7.5 Inc 2): an alloca-backed
-; tainted-index STORE + LOAD (Shadow-shaped) `arr[q]=v; … arr[p] …; measure`. Once a
-; dynamic access forces the `alloca [8 x i32]` to survive clang -O1 (a static-index
-; array is SROA'd away, §1), the tainted store/load survive. Lowers to one
-; `cqrt_qram_alloc_i32` (a TAINTED in-place-mutated array register) + a materialized
-; basis-state value handle (`cqrt_alloc_i32(7)`, so the store's (arr,idx,val) trace
-; stays all-handles) + `cqrt_qram_store_i32` (void in-place on the array handle) +
-; `cqrt_qram_load_i32` (Toffoli-copy-out). The memset initializer + lifetime markers
-; + alloca + geps + index sexts are all absorbed/erased. The loaded value is the
-; user's measurement (an ESCAPED/observed array) — so NOTHING is reversed (no
-; `_unc`, no `cqrt_free`); the residual rails leak (§2.9). NO measurement is inserted
-; that the user did not write (Rule 5).
+; lowering_qram_store_alloca_i32.ll — ACCEPT (Phase 7.5 Inc 2 + bug sxuk): an
+; alloca-backed tainted-index STORE + LOAD (Shadow-shaped) `arr[q]=v; … arr[p] …;
+; measure`. Once a dynamic access forces the `alloca [8 x i32]` to survive clang -O1
+; (a static-index array is SROA'd away, §1), the tainted store/load survive. Lowers
+; to one `cqrt_qram_alloc_i32` (a TAINTED in-place-mutated array register) + a
+; materialized basis-state value handle (`cqrt_alloc_i32(7)`) + `cqrt_qram_store_i32`
+; (void in-place on the array handle) + `cqrt_qram_load_i32` (Toffoli-copy-out).
+;
+; sxuk: the loaded value DIRECTLY escapes (the user measures it) in a non-main fn —
+; a LOCAL scratch array. WITHOUT the fix the loaded value is the sole data terminal,
+; FreePoint classifies it Measured, and the whole reversal — including the array's
+; STORES — is skipped, leaving the measured value entangled with the leaked dirty
+; array (a dephasing silent miscompile). The fix copies the loaded value out to a
+; kept carrier (`cqrt_alloc_i32(0)` + `cqrt_copy_i32`), which the user measures, so
+; the load+store chain uncomputes (method-B): `cqrt_qram_load_i32_unc` then
+; `cqrt_qram_store_i32_unc`, the index rotation rails reverse-play and free, and the
+; array handle is left allocated but CLEAN |0> (a classical resource, never freed,
+; §2.9). NO measurement is inserted that the user did not write (Rule 5).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
@@ -38,18 +44,25 @@ entry:
 }
 
 ; The array handle is born once at entry (count 8); the classical store value is
-; materialized into a basis-state handle; the store is void in-place on the array
-; handle; the load copies the cell out into a fresh value handle, which is measured:
+; materialized into a basis-state handle; the store is void in-place; the load copies
+; the cell out into a fresh value handle:
 ; CHECK:     %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
 ; CHECK:     %[[VAL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
-; CHECK:     call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[VAL]])
-; CHECK:     %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[ARR]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[V]])
+; CHECK:     call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %[[IQ:[a-zA-Z0-9_.]+]], i32 %[[VAL]])
+; CHECK:     %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[ARR]], i32 %[[IP:[a-zA-Z0-9_.]+]])
+; sxuk method-B copy-out: the loaded value is copied to a kept |0> carrier, which is
+; what the user measures (so the load+store chain can uncompute):
+; CHECK:     %[[RET:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK:     call void @cqrt_copy_i32(i32 %[[V]], i32 %[[RET]])
+; The local array uncomputes: the load + store reverse (cells back to |0>); the array
+; handle is NEVER freed (a classical resource, §2.9):
+; CHECK:     call void @cqrt_qram_load_i32_unc(i32 %[[V]], i32 %[[ARR]], i32 %[[IP]])
+; CHECK:     call void @cqrt_qram_store_i32_unc(i32 %[[ARR]], i32 %[[IQ]], i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call void @cqrt_free(i32 %[[ARR]])
+; The carrier — NOT the loaded value — is what gets measured:
+; CHECK:     call i32 @cqrt_measure_i32(i32 %[[RET]])
 ; CHECK-NOT: alloca
 ; CHECK-NOT: getelementptr
 ; CHECK-NOT: = load
 ; CHECK-NOT: llvm.memset
-; An ESCAPED/observed array reverses nothing: no store `_unc`, no free.
-; CHECK-NOT: cqrt_qram_store_i32_unc
-; CHECK-NOT: cqrt_free
 ; CHECK-NOT: cq taint escape

@@ -642,6 +642,21 @@ add_test(NAME e2e-slice-qram-store
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store.expected.log")
 
+# Phase 7.5 bug sxuk: a LOCAL alloca array built+loaded in a NON-main helper whose
+# loaded value is measured INSIDE the helper. Unlike slice_qram_store (main-resident,
+# no reversal), the local scratch MUST uncompute: the loaded value is copied out to a
+# kept carrier (cqrt_alloc_i32(0) + cqrt_copy_i32) which is measured, then the
+# load+store chain reverses (cqrt_qram_load_i32_unc + cqrt_qram_store_i32_unc) and the
+# index rails reverse-play+free; the array handle is left clean |0> (never freed).
+# Without the fix the stores leak, entangling the measured value with dirty scratch.
+add_test(NAME e2e-slice-qram-local-uncompute
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_uncompute.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_uncompute.expected.log")
+
 # NOTE: the Phase-4 controlled-form e2e slices (control-gate / control-merge /
 # control-mux-mixed / control-mux-handles) were removed with the old
 # controlled-op lowering on the `swap-route-control` branch. The RSSA swap-route

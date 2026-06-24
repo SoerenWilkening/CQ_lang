@@ -46,6 +46,15 @@ bool isMeasureSink(const llvm::CallInst *CI);
 // member the spine subtracts separately (TaintSet::OutputRails).
 bool isOutputSink(const llvm::CallInst *CI);
 
+// A method-B copy-out `cqrt_copy_<W>(src, dst)` reading `H` as its SOURCE (arg 0).
+// Like a measure / tape-write SINK it READS-and-PRESERVES H (a CNOT-class basis
+// copy), so the whole-DAG spine treats it as a benign terminal user: H stays a
+// terminal candidate and its lineage uncomputes normally (Bennett copy-out, the
+// `sxuk` local-array fix), while the copy DESTINATION (dst, arg 1) is the kept
+// escaped/measured carrier. The 3-arg `_controlled` data-mux copy (4.4/6.5) and
+// any `_inv`/`_unc` twin fail this predicate.
+bool isCopyOutSink(const llvm::CallInst *G, const llvm::Value *H);
+
 // Is `Handle` the TERMINAL of its register's def-use DAG? True when no OTHER
 // tainted instruction consumes it as a forward data operand — its only remaining
 // users are non-producers (a measurement sink, a `ret` escape, classical reads,

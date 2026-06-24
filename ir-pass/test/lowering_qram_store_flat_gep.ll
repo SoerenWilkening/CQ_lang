@@ -1,10 +1,12 @@
-; lowering_qram_store_flat_gep.ll — ACCEPT (Phase 7.5 Inc 3): a tainted-index
-; store+load through a FLAT element gep (`getelementptr i32, ptr %a, %idx`), the
-; shape clang -O1 emits for a POINTER-indirected access (`int *b = arr; b[q]`) —
+; lowering_qram_store_flat_gep.ll — ACCEPT (Phase 7.5 Inc 3 + bug sxuk): a tainted-
+; index store+load through a FLAT element gep (`getelementptr i32, ptr %a, %idx`),
+; the shape clang -O1 emits for a POINTER-indirected access (`int *b = arr; b[q]`) —
 ; distinct from the array-decay `[N x iW], 0, %idx` form Inc 1/2 handled. The Inc 3
 ; provenance walk resolves the flat gep's single origin (the `alloca [8 x i32]`)
 ; with a provable zero offset and lowers it on the Shadow path exactly like the
-; array-decay form. NO measurement inserted beyond the user's (Rule 5).
+; array-decay form. The loaded value is directly measured in a non-main fn, so the
+; sxuk method-B copy-out fires (copy to a kept carrier, then the local array's
+; load+store uncompute). NO measurement inserted beyond the user's (Rule 5).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
@@ -28,9 +30,15 @@ entry:
   ret i32 %m
 }
 
-; CHECK:     call i32 @cqrt_qram_alloc_i32(i32 8)
-; CHECK:     call void @cqrt_qram_store_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:     call i32 @cqrt_qram_load_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:     %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
+; CHECK:     call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:     %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[ARR]], i32 %{{[a-zA-Z0-9_.]+}})
+; sxuk copy-out + local-array uncompute (flat-gep origin is a local alloca scratch):
+; CHECK:     %[[RET:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK:     call void @cqrt_copy_i32(i32 %[[V]], i32 %[[RET]])
+; CHECK:     call void @cqrt_qram_load_i32_unc(i32 %[[V]], i32 %[[ARR]], i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:     call void @cqrt_qram_store_i32_unc(i32 %[[ARR]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:     call i32 @cqrt_measure_i32(i32 %[[RET]])
 ; CHECK-NOT: getelementptr
 ; CHECK-NOT: cq taint escape
 ; CHECK-NOT: cq QRAM access

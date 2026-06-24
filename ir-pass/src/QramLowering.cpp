@@ -662,6 +662,55 @@ void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
 
 namespace {
 
+// Phase 7.5 (bug sxuk): method-B copy-out for a load result that DIRECTLY escapes
+// a non-`main` function via `ret` / `cq_measure`. WITHOUT it the load result is
+// the SOLE tainted data terminal, FreePoint classifies it Escaped/Measured, and
+// the whole-DAG reversal — INCLUDING the LOCAL array's stores — is skipped (the
+// `InsertTerms.empty()` bail): the returned value stays entangled with the leaked
+// local scratch array (a dephasing silent miscompile). The copy makes `Out` a
+// NON-escaped terminal whose load+store chain uncomputes via the EXISTING dead-
+// array reversal (the spine treats `cqrt_copy` reading src as a source-preserving
+// sink, ChainWalk::isCopyOutSink), while the copy DESTINATION is the kept
+// escaped/measured carrier — and the local array's stores reverse to |0>.
+//
+// Scope (inc 1): `Out`'s SOLE, DIRECT user is a `ret` or a `cq_measure_*`. A taped
+// load (cqrt_tape_write) already uncomputes (isOutputSink), so its sole user is
+// not a ret/measure here; `main` escapes anyway (process exit reclaims); an
+// indirect (cast/arith-then-return) or fan-out escape is left as-is (status quo,
+// no regression). Runs AFTER the load's RAUW so `Out` carries the original users.
+void emitCopyOutIfDirectEscape(CallInst *Out, StringRef ElemAbi, WidthDispatch &wd,
+                               TaintSet &taint) {
+  if (Out->getFunction()->getName() == "main" || !Out->hasOneUse())
+    return;
+  auto *U = dyn_cast<Instruction>(*Out->user_begin());
+  if (!U)
+    return;
+  bool DirectEscape = isa<ReturnInst>(U);
+  if (auto *CI = dyn_cast<CallInst>(U)) {
+    const Function *Callee = CI->getCalledFunction();
+    DirectEscape = Callee && Callee->getName().starts_with("cq_measure_");
+  }
+  if (!DirectEscape)
+    return;
+  FunctionCallee Alloc = wd.allocFn(ElemAbi);
+  FunctionCallee Copy = wd.copyFn(ElemAbi);
+  Type *RailTy = wd.llvmWidthType(ElemAbi);
+  if (!Alloc || !Copy || !RailTy)
+    return;  // no reversible copy at this width — leave as-is (the caller already
+             // proved widthHasReversibleCopy, so this is a defensive guard).
+  IRBuilder<> B(U);  // the carrier alloc + copy land right before the escape.
+  CallInst *Ret = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "qret");
+  CallInst *Cp = B.CreateCall(Copy, {Out, Ret});
+  if (DebugLoc DL = U->getDebugLoc()) {
+    Ret->setDebugLoc(DL);
+    Cp->setDebugLoc(DL);
+  }
+  taint.Tainted.insert(Ret);
+  taint.HandleWidth[Ret] = ElemAbi;
+  taint.BirthOrder[Ret] = taint.NextBirth++;
+  U->replaceUsesOfWith(Out, Ret);  // the escape now carries the copy, not Out.
+}
+
 // Lower (or loud-decline) ONE candidate alloca-backed array and all its accepted
 // tainted-index accesses (Phase 7.5 Inc 2). `Accesses` are in program order. The
 // alloca-WIDE invariants — element width (§2.10), single-origin / no aliasing
@@ -835,6 +884,11 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
       taint.HandleWidth[Out] = ElemAbi;
       taint.BirthOrder[Out] = taint.NextBirth++;
       A.MemOp->replaceAllUsesWith(Out);
+      // sxuk: if this loaded value directly escapes (ret/measure) a non-main fn,
+      // copy it out to a kept carrier so the LOCAL array's stores uncompute (else
+      // the returned value leaks entangled with dirty scratch — a dephasing
+      // miscompile). No-op for the dead / taped / main / indirect cases.
+      emitCopyOutIfDirectEscape(Out, ElemAbi, wd, taint);
       ToErase.push_back(A.MemOp);  // the load
     }
     ToErase.push_back(A.Gep);  // the now-dead address-gen

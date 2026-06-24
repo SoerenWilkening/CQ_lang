@@ -163,6 +163,13 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
                      // forward data consumer and does NOT mark the DAG NotClosed:
                      // R's lineage uncomputes normally (Bennett, PRD-7.6 §2.4).
                      // Unlike a measure it is NOT a collapse (no MeasuredUpstream).
+        if (isCopyOutSink(CU, R))
+          continue;  // sxuk: a method-B copy-out READS R as src (a CNOT-class copy
+                     // that PRESERVES R) — like a tape write it is a benign source-
+                     // preserving sink, NOT a forward data consumer, so it does NOT
+                     // mark the DAG NotClosed: R's lineage uncomputes normally
+                     // (Bennett copy-out); the copy DESTINATION is the kept
+                     // escaped/measured carrier and is never recovered as a gate.
         if (isInvertEscape(CU)) {
           D.Escaped = true;
           continue;
