@@ -29,14 +29,22 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/TargetParser/Triple.h"
+
+#include <optional>
+#include <utility>
 
 using namespace llvm;
 
@@ -52,6 +60,37 @@ namespace {
 // quantum control" (lowering_reject_loop_quantum_bound.ll).
 constexpr char kMsgCrossIter[] =
     "cq loop lowering: loop-carried tainted value crosses iterations";
+
+// Phase 7.4 (epic y05j) — the `tryBreak` decline partition (PRD-7.4 §2.10). Each
+// is source-located (`!dbg`) and mirrored CHARACTER-FOR-CHARACTER by a negative
+// fixture (Rule 12). The genuinely-quantum-bounded loop is NOT one of these — it
+// is left for `tryCaseA`'s existing L1 `diagnoseUnderControl(_, "loop")` (a fused
+// exit with no classical bound is not a `break`, PRD-7.4 §2.5 B1 / Risk 4).
+//
+//  * kMsgBreakPending — the RECOGNIZED single value-arm break. INTERIM (Inc 1):
+//    recognition is complete but emission (the index-gated copy-not-move capture
+//    + whole-loop reverse-play, §2.2/§2.3) lands in Inc 2 (y05j.2), where this
+//    flips to an ACCEPT (no diagnostic). Emitting it here proves the value-arm-
+//    vs-quantum-bounded partition (this loop is NOT mis-declined as the L1
+//    `loop under quantum control`). Mirrors the §2.10 multiple-site interim form.
+//  * kMsgBreakPhase — a phase-class escaping answer (Rule 7: a CNOT copy-out
+//    dephases; the data-comparison phase break is degenerate). PERMANENT (§2.6).
+//  * kMsgBreakNonReconv — the break edge and the natural exit reach distinct
+//    blocks / no single merge phi. DEFER (§2.7).
+//  * kMsgBreakMultiSite — >1 tainted exiting block. INTERIM → accept in Inc 3
+//    (§2.7; the index latch subsumes any cascade), not a deferral.
+//  * kMsgBreakNested — `L` is an inner/outer of another tainted loop; the break
+//    crosses loops. DEFER, blocked-on the nested-quantum-loop substrate (§2.7).
+constexpr char kMsgBreakPending[] =
+    "cq loop lowering: early break emission not yet implemented";
+constexpr char kMsgBreakPhase[] =
+    "cq loop lowering: early break preserves a phase answer";
+constexpr char kMsgBreakNonReconv[] =
+    "cq loop lowering: early break does not reconverge";
+constexpr char kMsgBreakMultiSite[] =
+    "cq loop lowering: multiple early-break sites";
+constexpr char kMsgBreakNested[] =
+    "cq loop lowering: early break across nested loops";
 
 void diagnose(Instruction *Where, StringRef Msg) {
   Where->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
@@ -123,6 +162,328 @@ Instruction *taintedExit(Loop *L, const TaintSet &taint) {
     }
   }
   return nullptr;
+}
+
+// ── Phase 7.4 (epic y05j) — single value-arm `break` recognition ────────────
+//
+// All analysis below is PURE SSA/CFG identity on the still-unmutated IR (Rule 9);
+// `tryBreak` never mutates in Increment 1 (recognition + decline partition only).
+
+// "Does this value's lineage carry a relative phase (an Rz / `cq_phi`)?" — the
+// §2.6 phase fence over the escaping answer (B3). A per-TU mirror of
+// `ControlDetect`'s `retLineageCarriesPhase` and the AbortPark/SelectClassify
+// twins (the house style sanctions the trivial duplicate — keeping the loop
+// partition self-contained, Rule 14). A `cq_theta` (Ry) basis superposition has
+// no relative phase and STOPS the walk; a `cq_phi` (Rz) in the lineage is the
+// phase carrier. Over-decline-safe (any phi flags it).
+bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint) {
+  SmallVector<Value *, 8> Work;
+  SmallPtrSet<Value *, 16> Visited;
+  Work.push_back(Op);
+  Visited.insert(Op);
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (auto *CI = dyn_cast<CallInst>(V)) {
+      const Function *F = CI->getCalledFunction();
+      if (F && F->getName().starts_with("cq_phi_"))
+        return true;  // an Rz (cq_phi) — a relative-phase carrier.
+    }
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;  // an argument / constant root — basis, not a phase.
+    for (Value *In : I->operands())
+      if (taint.Tainted.count(In) && Visited.insert(In).second)
+        Work.push_back(In);
+  }
+  return false;
+}
+
+// Decompose the `-O1` FUSED loop-exit condition (PRD-7.4 §1.1) into its two
+// candidate disjunct operands {break flag, classical bound}. `clang -O1` fuses
+// the tainted break flag with the classical loop bound into ONE i1 value; this
+// recovers the pair so the caller can taint-partition it (B1). Recognized forms
+// (and their successor-swapped continue-polarity twins, Rule 9 — verified in the
+// IR spike, /tmp/spike):
+//   * `select(%a, i1 true,  %b)`   = %a ∨ %b   (exit-polarity, v1_value)
+//   * `select(%a, %b, i1 false)`   = %a ∧ %b   (continue-polarity, v6 inner)
+//   * `or  i1 %a, %b`              = %a ∨ %b
+//   * `and i1 %a, %b`              = %a ∧ %b   (continue-polarity)
+// Taint is predicate/polarity-independent (`taint(icmp) == taint(operands)`), so
+// the same {tainted=brk, classical=bound} partition holds for both polarities.
+// A 3-non-constant `select` (a genuine i1 data-mux) or any other shape returns
+// nullopt ⇒ NOT a recognized fused break (the caller rides L1 / declines —
+// over-declining is safe, Prime Directive).
+std::optional<std::pair<Value *, Value *>> decomposeFusedExit(Value *C) {
+  if (auto *SI = dyn_cast<SelectInst>(C)) {
+    Value *Cnd = SI->getCondition();
+    Value *TV = SI->getTrueValue();
+    Value *FV = SI->getFalseValue();
+    auto *TC = dyn_cast<ConstantInt>(TV);
+    auto *FC = dyn_cast<ConstantInt>(FV);
+    if (TC && TC->isOne() && !isa<Constant>(FV))
+      return std::make_pair(Cnd, FV);  // select(a, true, b) = a ∨ b
+    if (FC && FC->isZero() && !isa<Constant>(TV))
+      return std::make_pair(Cnd, TV);  // select(a, b, false) = a ∧ b
+    return std::nullopt;               // 3-operand mux / both-const — not fused.
+  }
+  if (auto *BO = dyn_cast<BinaryOperator>(C)) {
+    if ((BO->getOpcode() == Instruction::Or ||
+         BO->getOpcode() == Instruction::And) &&
+        BO->getType()->isIntegerTy(1)) {
+      Value *A = BO->getOperand(0), *B = BO->getOperand(1);
+      if (!isa<Constant>(A) && !isa<Constant>(B))
+        return std::make_pair(A, B);
+    }
+  }
+  return std::nullopt;
+}
+
+// The exiting block's terminator condition is tainted (a `br`/`switch` on a
+// q-derived value). The unit of the multi-site count (B1) and of `taintedExit`.
+bool isTaintedExitingTerminator(const Instruction *T, const TaintSet &taint) {
+  if (const auto *BI = dyn_cast<BranchInst>(T))
+    return BI->isConditional() && taint.Tainted.count(BI->getCondition());
+  if (const auto *SI = dyn_cast<SwitchInst>(T))
+    return taint.Tainted.count(SI->getCondition());
+  return false;
+}
+
+// Does any strictly-deeper subloop of `L` contain a tainted value? Such a loop
+// is a NESTED quantum loop; a break alongside it crosses loops (B4 — nested-loop
+// break is deferred, blocked-on the nested-quantum-loop substrate, §2.7).
+bool subloopHasTaintedValue(Loop *L, const TaintSet &taint, LoopInfo &LI) {
+  for (BasicBlock *BB : L->blocks()) {
+    if (LI.getLoopFor(BB) == L)
+      continue;  // a block of L itself — not a subloop block.
+    for (Instruction &I : *BB)
+      if (taint.Tainted.count(&I))
+        return true;
+  }
+  return false;
+}
+
+// (B5, Risk 4) Does `L` have a real, FINITE CLASSICAL TRIP-COUNT bound — i.e. a
+// bound that PROVABLY TERMINATES the loop independent of the quantum break?
+// ScalarEvolution answers it: `getSymbolicMaxBackedgeTakenCount` is a computable
+// SCEV iff SOME exit gives a finite trip count. The quantum break is an opaque
+// `SCEVUnknown` (derived from the `cq_*` call results), so SCEV NEVER manufactures
+// a finite bound from it — a computable symbolic max therefore means the loop is
+// bounded by its CLASSICAL exit (the induction-driven trip count). It correctly
+// handles the `-O1` fused `select(brk, true, bound)` / `and`/`or` exit (verified:
+// v1_value's select-fused `i != n` bound yields `(-1 + n)`).
+//
+// This SUBSUMES the earlier UNSOUND structural "the bound *references* the
+// induction counter" check (which proved reference, not termination, and so
+// mis-recognized a loop-invariant guard `while((q&1)&&(m!=0))` with a dead
+// counter, and the clang-realistic wrong-direction `for(i=0;(q&1)&&(i>=start);i++)`
+// — the adversarial-review R4 false-accept family 2026-06-25, the seed of an Inc-2
+// silent miscompile). SCEV gives those an Unpredictable max ⇒ they ride L1.
+//
+// RESIDUAL (documented, decline-safe): SCEV can still bound a loop by the
+// COUNTER'S OWN nsw/nuw OVERFLOW (e.g. a hand-written always-true `i>=0` gets max
+// = INT_MAX) or report a degenerate 0-trip — so a NON-canonical hand-written loop
+// with such a vacuous bound could still be recognized. This is NOT reachable on
+// the validated `-O1` floor (Rule 9): `clang -O1` FOLDS every such vacuous guard
+// before the pass runs (verified: the C source `while((q&1)&&(i>=0))` lowers to a
+// BARE quantum exit ⇒ L1). And even if reached, Inc-1 only emits a LOUD decline;
+// Inc-2 emission must independently materialize the finite trip count for the
+// reverse-play loop, a natural second gate. Over-declining is safe (Prime
+// Directive): if SCEV cannot prove a finite bound, decline.
+bool hasFiniteClassicalTripBound(Loop *L, ScalarEvolution &SE) {
+  const SCEV *Max = SE.getSymbolicMaxBackedgeTakenCount(L);
+  return Max && !isa<SCEVCouldNotCompute>(Max);
+}
+
+// Try to recognize one natural loop `L` as a single value-arm `break` loop
+// (Phase 7.4, epic y05j). Returns true iff `tryBreak` CLAIMS `L` — either the
+// recognized value-arm break (interim decline in Inc 1) or one of the off-pattern
+// break declines (phase / non-reconverging / multiple-site / nested, §2.10).
+// Returns false ⇒ `L` is NOT a recognized break (genuinely quantum-bounded, a
+// bare tainted exit, a both-tainted fused exit, or an unproven body) and is left
+// for `tryCaseA` — whose L1 `taintedExit` then gives it the existing
+// `loop under quantum control` decline (Prime Directive: not-claiming is safe).
+//
+// Tried BEFORE `tryCaseA` (PRD-7.4 §2.4): a break loop's value-mutating rail is
+// NOT a pure in-place persistent accumulator, so `tryCaseA` would otherwise
+// X1/L1-decline it before the partition runs. NO mutation, NO emission (Inc 1).
+bool tryBreak(Loop *L, Function &F, TaintSet &taint, DominatorTree &DT,
+              LoopInfo &LI, ScalarEvolution &SE) {
+  (void)F;
+  (void)DT;
+  // Only a loop with a tainted EXIT is a break/quantum-bounded candidate; a
+  // classical-exit loop is `tryCaseA`/Case-B territory (leave it).
+  if (!taintedExit(L, taint))
+    return false;
+
+  // (Multi-site, B1) Count tainted exiting blocks. >1 ⇒ multiple early-break
+  // sites (v3_multi) — INTERIM decline, accepted in Inc 3 (§2.7). Checked first:
+  // the index-latch generalization is orthogonal to the single-break mechanism.
+  SmallVector<BasicBlock *, 4> Exiting;
+  L->getExitingBlocks(Exiting);
+  unsigned TaintedExiting = 0;
+  Instruction *TheExitT = nullptr;
+  BasicBlock *TheExitB = nullptr;
+  for (BasicBlock *EB : Exiting)
+    if (isTaintedExitingTerminator(EB->getTerminator(), taint)) {
+      ++TaintedExiting;
+      TheExitT = EB->getTerminator();
+      TheExitB = EB;
+    }
+  if (TaintedExiting > 1) {
+    diagnose(TheExitT, kMsgBreakMultiSite);
+    return true;
+  }
+
+  // Exactly one tainted exiting block. Inc-1 lowers only the FUSED conditional
+  // branch (a tainted `switch` break is not in the proven set — ride L1).
+  auto *BI = dyn_cast<BranchInst>(TheExitT);
+  if (!BI || !BI->isConditional())
+    return false;
+  BasicBlock *S0 = BI->getSuccessor(0), *S1 = BI->getSuccessor(1);
+  bool In0 = L->contains(S0), In1 = L->contains(S1);
+  if (In0 == In1)
+    return false;  // not exactly one in-loop / one exit successor — unproven.
+  bool ExitTakenOnTrue = !In0;  // the exit successor is the false edge iff In0.
+
+  // (Non-reconverging, B2) The break and the natural exit must converge to ONE
+  // loop-exit block. `getUniqueExitBlock()` is null when the loop has multiple
+  // DISTINCT exit blocks (v4_nonreconv: the break edge and the bound edge reach
+  // different blocks) ⇒ DEFER decline (§2.7). NB: `getUniqueExitBlock` (not
+  // `getExitBlock`) — the latter returns null even for repeat exit EDGES to one
+  // shared block, over-declining genuinely-reconverging two-edge loops (the
+  // adversarial-review getExitBlock-vs-getUniqueExitBlock note 2026-06-25).
+  BasicBlock *ExitBlk = L->getUniqueExitBlock();
+  if (!ExitBlk) {
+    diagnose(TheExitT, kMsgBreakNonReconv);
+    return true;
+  }
+
+  // (B1) Decompose the `-O1` fused exit into {break flag, classical bound}. A
+  // bare tainted icmp (no fused classical bound — v5_qbound) or a 3-operand mux
+  // returns nullopt ⇒ NOT a break: leave it for L1 (genuinely quantum-bounded).
+  auto Pair = decomposeFusedExit(BI->getCondition());
+  if (!Pair)
+    return false;
+  Value *A = Pair->first, *B = Pair->second;
+  bool TA = taint.Tainted.count(A), TB = taint.Tainted.count(B);
+  // The load-bearing partition (Risk 4): EXACTLY one disjunct tainted (the break
+  // flag) and the other CLASSICAL (the loop bound). Both tainted ⇒ no classical
+  // fall-through ⇒ genuinely quantum-bounded; neither ⇒ not a tainted exit. Both
+  // ride L1 (return false).
+  if (TA == TB)
+    return false;
+  Value *BreakFlag = TA ? A : B;
+  Value *BoundFlag = TA ? B : A;
+  // The break flag must be a stock comparison on a tainted value (a clean
+  // single-condition break); a compound tainted disjunct (a nested select/or)
+  // is not in the Inc-1 proven set — ride L1.
+  if (!isa<ICmpInst>(BreakFlag) && !isa<FCmpInst>(BreakFlag))
+    return false;
+  Instruction *BreakI = cast<Instruction>(BreakFlag);  // source-locator anchor.
+
+  // (B4, nested) `L` inside another loop, or wrapping a tainted subloop ⇒ the
+  // break crosses loops (v6_nested) — DEFER, blocked-on the nested-quantum-loop
+  // substrate (§2.7). Checked once the break shape is confirmed (a quantum-
+  // bounded nested loop must stay L1, not be relabeled "nested break").
+  if (L->getParentLoop() || subloopHasTaintedValue(L, taint, LI)) {
+    diagnose(BreakI, kMsgBreakNested);
+    return true;
+  }
+
+  // (B2) The single exit block must carry exactly one TAINTED merge phi — the
+  // escaping answer. Zero / multiple tainted phis is not the clean single-answer
+  // reconvergence (ride L1).
+  PHINode *EscapePhi = nullptr;
+  for (PHINode &P : ExitBlk->phis())
+    if (taint.Tainted.count(&P)) {
+      if (EscapePhi)
+        return false;  // >1 tainted exit phi — unproven.
+      EscapePhi = &P;
+    }
+  if (!EscapePhi)
+    return false;
+
+  // (B3) Value-class answer. A phase-class escaping answer (an Rz/`cq_phi` in any
+  // incoming lineage — v2_phase) cannot be CNOT-copied out (Rule 7 dephases) and
+  // the data-comparison phase break is degenerate ⇒ PERMANENT decline (§2.6).
+  for (Value *In : EscapePhi->incoming_values())
+    if (taint.Tainted.count(In) && breakLineageCarriesPhase(In, taint)) {
+      diagnose(BreakI, kMsgBreakPhase);
+      return true;
+    }
+
+  // (B5, Risk 4) A proven 7.3 rolled loop with a REAL, PROVABLY-FINITE CLASSICAL
+  // TRIP-COUNT bound: single latch, and ScalarEvolution must prove the loop
+  // terminates classically (a computable symbolic max backedge-taken count). A
+  // loop whose only real termination is the quantum break — whether via a
+  // loop-invariant guard (`while((q&1)&&(m!=0))`, dead counter) or a non-bounding
+  // counter comparison (always-true `i>=0`, wrong-direction `i>k`, unreachable
+  // `i==-1`, identity `i+=0`) — has an UNPREDICTABLE max and must ride L1, NOT be
+  // recognized as a value-arm break (the adversarial-review R4 false-accept family
+  // 2026-06-25 — the seed of an Inc-2 silent miscompile; the proof lands here in
+  // Inc-1 recognition, not Inc 2). SCEV's termination reasoning is the sound proof
+  // a structural "bound references the counter" check cannot give.
+  BasicBlock *Latch = L->getLoopLatch();
+  if (!Latch)
+    return false;
+  BasicBlock *Header = L->getHeader();
+  if (!hasFiniteClassicalTripBound(L, SE))
+    return false;
+
+  // (B4, body) No OTHER tainted control (a nested diamond/switch beyond the break
+  // exit) and no tainted-index memory in the body — those are the existing 7.3
+  // L2/L3 owners' (ControlDetect / kMsgQramLoop). Their presence means the body
+  // is not the proven invertible single-break shape (ride L1).
+  for (BasicBlock *BB : L->blocks()) {
+    Instruction *T = BB->getTerminator();
+    if (T != TheExitT && isTaintedExitingTerminator(T, taint))
+      return false;  // a second tainted br/switch (non-exiting control) in body.
+    if (auto *BrI = dyn_cast<BranchInst>(T))
+      if (T != TheExitT && BrI->isConditional() &&
+          taint.Tainted.count(BrI->getCondition()))
+        return false;
+    if (auto *SwI = dyn_cast<SwitchInst>(T))
+      if (T != TheExitT && taint.Tainted.count(SwI->getCondition()))
+        return false;
+    for (Instruction &I : *BB)
+      if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I))
+        for (Value *Op : I.operands())
+          if (taint.Tainted.count(Op))
+            return false;  // tainted-index memory — the kMsgQramLoop owner's.
+  }
+
+  // KNOWN Inc-1 coverage limitations (DECLINE-SAFE — both ride L1, neither is a
+  // miscompile; surfaced by the adversarial review 2026-06-25, for Inc 2 to widen,
+  // NOT bugs to mistake for a quantum-bound classification error):
+  //   * CONSTANT-bound break (`for(i<8)…break`): `clang -O1` drops the zero-trip
+  //     guard for a provably-≥1-trip constant bound, so the exit block has one
+  //     predecessor and NO merge phi — the (B2) `EscapePhi==null` check declines.
+  //     (A runtime bound keeps the guard ⇒ the merge phi ⇒ recognized — the v1
+  //     canonical case.) Inc 2 may fall back to the directly-escaping value.
+  //   * NON-UNIT UPWARD stride (`for(i<n;i+=2)…break`): clang emits the bound as
+  //     `icmp slt (i+k), n`, which `-O1` short-circuit-fuses into a SCEV
+  //     `(brk umin_seq bound)` that `getSymbolicMaxBackedgeTakenCount` cannot bound
+  //     ⇒ (B5) declines. Unit stride (any direction) and downward non-unit stride
+  //     are recognized.
+  //
+  // RECOGNIZED single value-arm break. Populate the region (consumed by Inc 2)
+  // and emit the INTERIM decline — emission (the index-gated copy-not-move
+  // capture + whole-loop reverse-play) is Inc 2 (y05j.2). This decline proves the
+  // partition: this loop is recognized as a value-arm break, NOT mis-declined as
+  // the genuinely-quantum-bounded L1 `loop under quantum control` (Risk 4).
+  LoopBreakRegion R;
+  R.L = L;
+  R.Header = Header;
+  R.Latch = Latch;
+  R.ExitMerge = ExitBlk;
+  R.ExitingBlock = TheExitB;
+  R.BreakFlag = BreakFlag;
+  R.BoundFlag = BoundFlag;
+  R.EscapePhi = EscapePhi;
+  R.ExitTakenOnTrue = ExitTakenOnTrue;
+  (void)R;  // Inc 1: no emission — the region drives only the interim decline.
+  diagnose(BreakI, kMsgBreakPending);
+  return true;
 }
 
 // Try to recognize + collapse one natural loop `L` as Case A (in-place
@@ -449,15 +810,32 @@ void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
     LoopInfo LI(DT);
     if (LI.empty())
       continue;
+    // ScalarEvolution (built standalone from DT/LI, the same direct-construction
+    // idiom as DT/LI) proves the §2.5 B5 finite classical trip bound for the
+    // `tryBreak` recognizer (Risk 4). A default `TargetLibraryInfoImpl` is a
+    // conservative TLI — sufficient for SCEV's trip-count reasoning.
+    AssumptionCache AC(F);
+    TargetLibraryInfoImpl TLII(Triple(M.getTargetTriple()));
+    TargetLibraryInfo TLI(TLII);
+    ScalarEvolution SE(F, TLI, AC, DT, LI);
     // Recognition is pure analysis on the still-unmutated IR; the only mutation
     // is the Case-A phi collapse inside `tryCaseA`, which erases phis (the CFG —
     // blocks + edges — is untouched, so `LI`/`DT` stay valid across loops). A
     // loop `tryCaseA` does not claim (Case A collapse / Q1 / X1) is offered to
     // the Case-B iteration-local recognizer (Increment 2), which only marks
     // blocks for the spine — never mutates.
-    for (Loop *L : LI.getLoopsInPreorder())
+    //
+    // `tryBreak` (Phase 7.4, epic y05j) is tried FIRST (§2.4): a single value-arm
+    // break loop's value-mutating rail is not a pure in-place accumulator, so
+    // `tryCaseA` would X1/L1-decline it before the value-arm-vs-quantum-bounded
+    // partition runs. Inc-1 `tryBreak` is pure analysis (recognition + decline),
+    // no mutation — so `LI`/`DT` stay valid for the `tryCaseA` fallthrough.
+    for (Loop *L : LI.getLoopsInPreorder()) {
+      if (tryBreak(L, F, taint, DT, LI, SE))
+        continue;
       if (!tryCaseA(L, F, taint, GateCalls, DT, LI))
         markIfIterationLocal(L, taint, LI);
+    }
   }
 }
 

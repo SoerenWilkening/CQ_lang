@@ -34,12 +34,43 @@
 
 namespace llvm {
 class Module;
+class Loop;
+class BasicBlock;
+class Value;
+class PHINode;
 }  // namespace llvm
 
 namespace cq {
 
 class WidthDispatch;
 struct TaintSet;
+
+// Phase 7.4 (epic y05j) — the recognized single value-arm `break` loop, the
+// fruit of the `tryBreak` recognizer (LoopLowering.cpp). Pure-analysis output:
+// Increment 1 (y05j.1) only POPULATES this from the `-O1` fused-exit
+// decomposition and uses it to drive the interim "emission not yet implemented"
+// decline (proving the value-arm-vs-quantum-bounded partition); Increment 2
+// (y05j.2) consumes it to emit the index-gated copy-not-move capture +
+// whole-loop reverse-play (PRD-7.4 §2.2/§2.3). NO emission, NO ABI in Inc 1.
+//
+// All fields are SSA/CFG identities captured BEFORE any mutation (Rule 9). The
+// `-O1` break fuses the tainted break flag and the classical loop bound into one
+// `select(%brk, true, %bound)` / `or %brk, %bound` (and the successor-swapped
+// continue-polarity `select(¬%brk, ¬%bound, false)` / `and`); `BreakFlag` is the
+// single TAINTED disjunct, `BoundFlag` the CLASSICAL one — the load-bearing
+// partition (a fused exit with BOTH operands tainted is a genuinely
+// quantum-bounded loop and is NOT a LoopBreakRegion, PRD-7.4 §2.5 B1 / Risk 4).
+struct LoopBreakRegion {
+  llvm::Loop *L = nullptr;
+  llvm::BasicBlock *Header = nullptr;
+  llvm::BasicBlock *Latch = nullptr;
+  llvm::BasicBlock *ExitMerge = nullptr;     // the single loop-exit block (B2)
+  llvm::BasicBlock *ExitingBlock = nullptr;  // block whose tainted br fuses brk+bound
+  llvm::Value *BreakFlag = nullptr;          // the tainted disjunct (%brk, an icmp/fcmp)
+  llvm::Value *BoundFlag = nullptr;          // the classical disjunct (%bound)
+  llvm::PHINode *EscapePhi = nullptr;        // value-class exit merge phi (the answer)
+  bool ExitTakenOnTrue = false;              // polarity: exit successor is the br's true edge
+};
 
 // Recognize + lower classically-bounded loops over tainted state (Phase 7.3,
 // epic 799w). For each natural loop containing tainted values:
