@@ -15,19 +15,34 @@
 ; alone from a genuinely quantum-bounded `while(q<k)`, and both decline identically
 ; via the L1 `loop under quantum control` (PRD-7.4 §1.1).
 ;
-; Inc-1 `tryBreak` DECOMPOSES that fused select to PARTITION the value-arm break
-; (one tainted disjunct + one classical bound, value-class escaping answer,
-; reconverging single exit, non-nested) from the quantum-bounded loop. Recognition
-; is COMPLETE here; EMISSION (the index-gated copy-not-move capture + whole-loop
-; reverse-play, §2.2/§2.3) lands in Increment 2 (y05j.2), where this interim
-; decline FLIPS to an ACCEPT (no diagnostic). The interim decline is the proof of
-; the partition: this loop is recognized as a value-arm break, NOT mis-declined as
-; the L1 `loop under quantum control` (cf. lowering_reject_loop_quantum_bound.ll).
-; Decline-safe today (Prime Directive: nothing lowers yet). Mirror-exact (Rule 12).
+; Increment 2 (y05j.2) — the EMISSION (the index-gated copy-not-move capture +
+; whole-loop reverse-play, §2.2/§2.3). `tryBreak`/`emitBreakForward` collapses the
+; rail to ONE in-place handle (`cqrt_xorc_i32(%h, 9)`), strips the loop terminator
+; to the CLASSICAL bound (the rolled loop runs its full trip count — the break is
+; virtual), mints `R`/`idx`/`out`, and RAUWs the exit phi → `out`. The post-lowering
+; `lowerBreakReversePlay` then emits, in the body, the index-gated capture
+; (`fire = brk ∧ (idx==0)` via `cqrt_toffoli`; `cqrt_copy_i32_controlled(fire, %h,
+; R)` — rail INTACT) with the per-iteration scratch uncomputed in-iteration; at the
+; exit, the `idx==0` consolidation + `cqrt_copy_i32(R, out)` copy-out; and a
+; BACKWARD-counted reverse-play companion loop (`cq.brk.rev`) — the whole-loop
+; adjoint (note the inverse rail-mut `cqrt_xorc_i32(%h, 9)` at its tail) that
+; returns `R`/`idx`/rail to their pre-capture state — then `cqrt_free` of `R`/`idx`
+; and the measure of the disentangled `out`. ZERO measurements inserted; the rail is
+; left allocated (Rule 6). Partition still holds: NOT the L1 quantum-bounded decline.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq loop lowering: early break emission not yet implemented
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
+; CHECK: call void @cqrt_xorc_i32(i32 %[[H:[a-z0-9]+]], i32 9)
+; CHECK: call void @cqrt_toffoli(
+; CHECK: call void @cqrt_copy_i32_controlled(i32 %{{.*}}, i32 %[[H]], i32 %cq.brk.R)
+; CHECK: call void @cqrt_copy_i32(i32 %cq.brk.R, i32 %cq.brk.out)
+; CHECK: cq.brk.rev:
+; CHECK: call void @cqrt_xorc_i32(i32 %[[H]], i32 9)
+; CHECK: cq.brk.tail:
+; CHECK: call void @cqrt_free(i32 %cq.brk.R)
+; CHECK: call void @cqrt_free(i32 %cq.brk.idx)
+; CHECK: call i32 @cqrt_measure_i32(i32 %cq.brk.out)
 ; CHECK-NOT: cq controlled lowering: loop under quantum control
+; CHECK-NOT: cq loop lowering: early break emission not yet implemented
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"

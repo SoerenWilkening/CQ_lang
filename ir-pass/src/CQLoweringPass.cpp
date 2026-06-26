@@ -194,6 +194,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
+  // Phase 7.4 Inc 2 (y05j.2): the value-arm `break` capture + whole-loop
+  // reverse-play, on the now-LOWERED body (i32 handles). Runs AFTER `lowerOps`
+  // (it reuses `emitInverseChain`, which consumes lowered `cqrt_*` calls) and
+  // BEFORE `uncompute` (it excludes the break construct from the whole-DAG spine).
+  // No-op when no value-arm break was recognized (`taint.BreakRegions` empty).
+  lowerBreakReversePlay(M, wd, taint);
   // Phase 5 (PRD §2.8): per-op uncomputation runs LAST, after every other
   // mutation has settled `taint` into its final post-lowering state.
   uncompute(M, wd, taint);
@@ -295,6 +301,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
+  // Phase 7.4 Inc 2 (y05j.2) — twin-pipeline parity (WI-1.12): miss this and
+  // unit-level callers diverge from `run()`. See run() for the staging rationale.
+  lowerBreakReversePlay(M, wd, taint);
   // Phase 5 (PRD §2.8): uncomputation runs LAST in this entry point too — miss
   // one and unit-level callers diverge from `run()`.
   uncompute(M, wd, taint);

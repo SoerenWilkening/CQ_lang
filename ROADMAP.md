@@ -783,7 +783,7 @@ via the §7.6 reversible output tape.)
 
 ---
 
-## Phase 7 — Pre-freeze expressiveness completion [7.1/7.2/7.3/7.5/7.6 DONE; 7.4 remaining]
+## Phase 7 — Pre-freeze expressiveness completion [7.1–7.6 DONE]
 
 **Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
 almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
@@ -912,9 +912,25 @@ inversion → feature.
   free placed at a once-per-function point runs K times (use-after-free + double-free) —
   the in-body free point must be **proven** once-per-iteration, not inferred.
 
-- **7.4 — Controlled `break`** (loop-exit cascade). Once 7.2 + 7.3 exist, `break` is
-  the 7.2 exit-priority cascade with the rolled loop's exit as the merge point —
-  near-free reuse. Bounded + reconverging only.
+- **7.4 — Controlled `break`** (value-arm, rolled-in-place) — **DONE** (`y05j`,
+  2026-06-26). A classically-bounded data-mutating loop with a single tainted
+  value-arm `break` lowers **rolled**: the rail collapses to one in-place handle, the
+  loop terminator is stripped to the **classical bound** (the loop runs its full trip
+  count — the break is virtual, no measurement), and the break is realized by an
+  **index-gated copy-not-move capture + whole-loop reverse-play** (forward body ×n,
+  capture into `R` under `fire = brk ∧ (idx==0)`, exit consolidation + `cqrt_copy`
+  copy-out into `out`, a backward companion loop replaying the per-iteration adjoint
+  `C†` to return `R`/`idx`/rail to |0>/q0, then `cqrt_free`). NOT the 7.2 cascade
+  (the framing correction, `bd memories 7.4-break-design-crux`): a rolled loop
+  re-executes its break site K times, so the sound lowering is Bennett
+  compute→copy→uncompute over the whole loop, **O(1)** carried ancilla, **dynamic-K**.
+  No new frozen ABI (reuses `cqrt_alloc`/`cqrt_copy[_controlled]`/`cqrt_toffoli`/the
+  `emitInverseChain` spine, extended with the dtzb `cqrt_xorc`/`cqrt_addc` adjoints).
+  Cleared by **three** adversarial Rule-13 rounds (7 over-accept holes found+fixed as
+  the E1–E11 decline preconditions; the canonical capture+reverse-play verified
+  correct by reversible-semantics sim-replay). Phase-arm break, multiple-site,
+  nested-loop break, `continue`, and the genuinely quantum-bounded `while` decline
+  loudly (the §2.10 partition). Bounded + reconverging only.
 
 - **7.5 — QRAM, full Shadow model** (owner decision 2026-06-19). Lower `load` /
   `store` / `getelementptr` over a tainted index/address via the **Shadow** memory
@@ -1254,9 +1270,10 @@ post-Phase-11 roadmap revision.
   (independent, low-risk; supplies the abort tape-truncation hook) →
   **7.2 controlled-return + `abort`/`exit`** ✓ DONE (proved the exit-cascade +
   uncompute coupling on a backedge-free substrate; the `abort` half reads
-  7.6's tape) → **7.3 bounded loops** ← NEXT (forces the Phase-5 uncompute
-  extension) → **7.4 break** (needs 7.2 + 7.3) → **7.5 QRAM Shadow**
-  (heaviest; new ABI; gates the freeze). Remaining: 7.3 → 7.4 → 7.5.
+  7.6's tape) → **7.3 bounded loops** ✓ DONE (forces the Phase-5 uncompute
+  extension) → **7.4 break** ✓ DONE (needs 7.2 + 7.3; value-arm capture +
+  whole-loop reverse-play) → **7.5 QRAM Shadow** ✓ DONE
+  (heaviest; new ABI; gates the freeze). Phase 7 complete (7.1–7.6 DONE).
 - Phase 8 (manual inversion) is small and lands **after** Phase 7 so it
   composes over the full invertible surface in one pass; it depends on
   Phase 5's `emit_inverse` plus the per-construct adjoint rules Phase 7

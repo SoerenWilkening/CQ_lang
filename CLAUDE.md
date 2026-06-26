@@ -52,7 +52,14 @@ class of bug.
 > `kMsgQramInit`; 2026-06-23/24); **7.3 DONE** (epic `799w`: rolled-in-place bounded
 > loops — Inc 1 `799w.1` Case A in-place persistent-rail collapse + Inc 2 `799w.2` Case B
 > per-iteration in-body uncompute, each Rule-13-cleared; deferred static-K unroll
-> `799w.3`; 2026-06-25); 7.4 + 8–11 remaining. **Roadmap resequenced 2026-06-19:**
+> `799w.3`; 2026-06-25); **7.4 DONE** (epic `y05j`: value-arm `break` — `y05j.1`
+> the `tryBreak` recognizer + decline partition, `y05j.2` the index-gated
+> copy-not-move capture + whole-loop reverse-play EMISSION over a new post-lowering
+> `lowerBreakReversePlay` stage + the dtzb `cqrt_xorc`/`cqrt_addc` `EmitInverse`
+> adjoints; the canonical capture+reverse-play sim-replay-verified, 7 over-accept
+> holes found+fixed as the E1–E11 decline preconditions across **three** adversarial
+> Rule-13 rounds; 2026-06-26). **Phase 7 complete (7.1–7.6 DONE);** 8–11 remaining.
+> **Roadmap resequenced 2026-06-19:**
 > Phase 7 is now **pre-freeze expressiveness completion** (7.1 opcode-surface
 > completion incl. Q+Q data compare + wide integers `__int128`/`_BitInt`; 7.2
 > controlled function-`return`; 7.3 bounded loops; 7.4 `break`; 7.5 QRAM full

@@ -46,6 +46,20 @@ bool isInverseEmittable(const CallInst *Forward) {
   // Self-adjoint involutions: emitted as-is.
   if (Name == "cqrt_x" || Name == "cqrt_cswap")
     return true;
+  // Phase 7.4 / issue dtzb (reachable ONLY via the 7.4 break whole-loop
+  // reverse-play, y05j.2): the in-place value rail self-update
+  // `cqrt_xorc_<W>(h, imm)` / `cqrt_addc_<W>(h, imm)` (arg_size 2, arg0 = the i32
+  // handle, arg1 = the classical immediate). `xor` is self-inverse (re-emit as
+  // is, like `cqrt_x`); `add` inverts by NEGATING the immediate (the integer twin
+  // of the rotation-negate case). There is no `_controlled` / `_inv` twin — the
+  // dtzb forward strategy mints only the void 2-arg gate. The `arg_size() == 2` is a
+  // defensive arity check on the xorc/addc branch; the synthetic `cqrt_cnot`
+  // uninvertible probe (lowering_uncompute_uninvertible.ll) declines because its
+  // name fails the `cqrt_xorc_`/`cqrt_addc_` prefix test (it never reaches here),
+  // NOT because of the arity gate.
+  if ((Name.starts_with("cqrt_xorc_") || Name.starts_with("cqrt_addc_")) &&
+      Forward->arg_size() == 2)
+    return true;
   // Uncontrolled data template (incl. compares post-WI-0): its void `_unc` form.
   // The `_inv`/`_unc` twins and the `_controlled` forms are NOT re-invertible
   // here. A compare-as-data flag (`cq_template_icmp_*`/`fcmp_*`) IS now
@@ -102,6 +116,24 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     Value *Handle = CurHandle ? CurHandle : Forward->getArgOperand(0);
     Value *NegAngle = B.CreateFNeg(Forward->getArgOperand(1));
     CallInst *Inv = B.CreateCall(Callee, {Handle, NegAngle});
+    if (DebugLoc DL = Forward->getDebugLoc())
+      Inv->setDebugLoc(DL);
+    return true;
+  }
+
+  // Phase 7.4 / issue dtzb in-place value rail self-update (reachable only via
+  // the 7.4 break whole-loop reverse-play). `cqrt_xorc_<W>(h, imm)` is self-inverse
+  // → re-emit AS-IS (like `cqrt_x`, but it carries the immediate). `cqrt_addc_<W>
+  // (h, imm)` inverts by NEGATING the immediate (`CreateNeg` — the integer twin of
+  // the rotation `CreateFNeg`). Void / in-place on the arg-0 handle (a threaded
+  // `CurHandle` relabels it for a Phase-7 caller; `emitInverseChain` passes null).
+  if ((Name.starts_with("cqrt_xorc_") || Name.starts_with("cqrt_addc_")) &&
+      Forward->arg_size() == 2) {
+    Value *Handle = CurHandle ? CurHandle : Forward->getArgOperand(0);
+    Value *Imm = Forward->getArgOperand(1);
+    if (Name.starts_with("cqrt_addc_"))
+      Imm = B.CreateNeg(Imm);  // add(-imm) is the adjoint of add(imm).
+    CallInst *Inv = B.CreateCall(Callee, {Handle, Imm});
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
     return true;

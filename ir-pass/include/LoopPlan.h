@@ -32,6 +32,8 @@
 #ifndef CQ_IRPASS_LOOP_PLAN_H_
 #define CQ_IRPASS_LOOP_PLAN_H_
 
+#include "llvm/ADT/StringRef.h"  // LoopBreakRegion::RailWidth (by-value member)
+
 namespace llvm {
 class Module;
 class Loop;
@@ -70,6 +72,29 @@ struct LoopBreakRegion {
   llvm::Value *BoundFlag = nullptr;          // the classical disjunct (%bound)
   llvm::PHINode *EscapePhi = nullptr;        // value-class exit merge phi (the answer)
   bool ExitTakenOnTrue = false;              // polarity: exit successor is the br's true edge
+
+  // ── Increment 2 (y05j.2) persisted record — the FORWARD-transform output the
+  // post-lowering `lowerBreakReversePlay` stage consumes (PRD-7.4 §2.4 staging:
+  // the reverse-play needs ALREADY-LOWERED `cqrt_*`/`cq_template_*` calls, so it
+  // runs AFTER `lowerOps`; `tryBreak`/`emitBreakForward` runs PRE-lowering). All
+  // fields below are pointers that SURVIVE rotation/opcode lowering (the rail
+  // mint + break-cond are RE-DERIVED post-lowering by a structural scan of the
+  // proven single-block body — `Loop *L`, `BreakFlag`, `EscapePhi` are STALE
+  // post-lowering and must NOT be read by the reverse-play stage):
+  llvm::PHINode *CounterPhi = nullptr;       // the classical induction phi (untainted — survives)
+  llvm::Value *BoundLimit = nullptr;         // the loop-invariant trip limit `n` (bound's invariant operand)
+  llvm::Value *RReg = nullptr;               // the |0> capture register `R` (cqrt_alloc result)
+  llvm::Value *IdxReg = nullptr;             // the |0> first-break index `idx` (cqrt_alloc result)
+  llvm::Value *OutReg = nullptr;             // the |0> escaping answer `out` (cqrt_alloc result; RAUW'd into the measure)
+  llvm::StringRef RailWidth;                 // the rail's ABI width (`i8`/`i16`/`i32`/`i64`) for copy/alloc symbol selection
+  llvm::StringRef IdxWidth;                   // the counter's ABI width — the `idx` register width (PRD §2.8)
+  // The forward loop's zero-trip ENTRY guard (the rail phi's external predecessor's
+  // conditional branch). The reverse-play companion loop reuses it VERBATIM so the
+  // backward loop enters iff the forward did — for ANY bound signedness (a re-
+  // invented signed `sgt(n,0)` guard would skip the reverse-play for an unsigned
+  // `n ≥ 2^31`, leaving R/idx dirty at `cqrt_free`; the Rule-13 FINAL review).
+  llvm::Value *GuardCond = nullptr;          // the guard condition (loop-invariant, dominates the exit)
+  bool GuardLoopOnTrue = false;              // the loop (Header) is the guard branch's TRUE successor
 };
 
 // Recognize + lower classically-bounded loops over tainted state (Phase 7.3,
@@ -95,6 +120,20 @@ struct LoopBreakRegion {
 // values) is left byte-identical. Wired in BOTH pipeline entry points
 // (twin-pipeline parity is mandatory, WI-1.12).
 void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+
+// Phase 7.4 Increment 2 (epic y05j) — the POST-LOWERING reverse-play stage.
+// Wired AFTER `lowerOps`/`lowerRotations` in BOTH pipeline entry points (PRD-7.4
+// §2.4): for each `LoopBreakRegion` the forward transform (`tryBreak`) recorded
+// in `taint.BreakRegions`, emit — on the now-LOWERED `cqrt_*`/`cq_template_*`
+// body (i32 handles throughout) — (a) the index-gated copy-not-move capture +
+// in-iteration scratch uncompute INTO the forward body, (b) the loop-exit
+// consolidation + the `cqrt_copy_<W>` copy-out into `out`, and (c) the
+// backward-counted reverse-play companion loop (the whole-loop adjoint that
+// returns `R`/`idx`/rail to their pre-capture state), then the `cqrt_free` of
+// `R`/`idx`. The break-owned handles are inserted into `taint.ControlOwnedRails`
+// so the whole-DAG `uncompute` spine never double-reverses them. No-op when
+// `taint.BreakRegions` is empty (every module with no recognized value-arm break).
+void lowerBreakReversePlay(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
 }  // namespace cq
 

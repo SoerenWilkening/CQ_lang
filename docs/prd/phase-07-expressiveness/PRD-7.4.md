@@ -16,9 +16,40 @@
 > a loop-invariant limit), cleared across i8–i128 (a 57-probe sweep, 0 false-accepts).
 > DECLINE-SAFE gaps deferred to Inc 2 (owner 2026-06-26): constant-bound-no-merge-phi
 > and multiplicative/non-AddRec counters; plus an Inc-2 single-classical-exit
-> precondition note (E2). Increment 2 (`y05j.2`, capture + whole-loop reverse-play
-> EMISSION) not yet implemented. PRD drafted 2026-06-25 (epic `y05j`), design
-> owner-confirmed (AskUserQuestion 2026-06-25/26).** Builds directly on Phase
+> precondition note (E2). **Increment 2 DONE 2026-06-26 (`y05j.2`) — the capture +
+> whole-loop reverse-play EMISSION.** Staging owner-confirmed (AskUserQuestion): the
+> reverse-play is a NEW POST-LOWERING stage `lowerBreakReversePlay`
+> (`BreakReversePlay.cpp`) on the lowered body (`emitInverseChain` consumes lowered
+> calls), with `emitBreakForward` (pre-lowering) doing the forward transform (rail
+> collapse, terminator strip to the classical bound, `R`/`idx`/`out` mint, exit-phi
+> RAUW); the adjoint spine is extended with `cqrt_xorc` (re-emit) / `cqrt_addc`
+> (immediate-negate) branches. The CANONICAL xor capture+reverse-play was cleared
+> CORRECT by independent adversarial review (reversible-semantics sim-replay over
+> every amplitude branch n=0–6 + line-by-line hand-trace: `out` = first-break answer,
+> `R`/`idx`/rail → |0>/q0, clean frees, `out` disentangled, O(1) scratch, first-fire
+> idempotent, n=0 zero-trip clean). THREE adversarial Rule-13 rounds found + fixed
+> SEVEN over-accept holes, each now a conservative `emitBreakForward` precondition
+> E1–E11 (decline `kMsgBreakUnemittable`): E6 PreB dominates the exit; E7 counter
+> start == 0; **E8** every non-final rail value consumed only by the mutation chain
+> (closes the add strength-reduction AND multi-op intermediate-read silent
+> miscompiles); E9 break-cond reads only rail+invariants (closes counter-read); E10
+> rail-op immediate loop-invariant; E11 body coverage (closes the stray-taint
+> half-transform). A FOURTH (FINAL) adversarial round (2026-06-26) added two more
+> (NINE holes total): **E12** — the reverse-play companion loop REUSES the forward
+> zero-trip ENTRY guard (`Rgn.GuardCond`/`GuardLoopOnTrue`, captured pre-lowering)
+> rather than a re-invented signed `sgt(n,0)`; for an UNSIGNED `n ≥ 2^31` the
+> `-O1` entry guard is `icmp eq n,0` (enter iff `n != 0`) so a signed `sgt(n,0)`
+> would skip the WHOLE reverse-play while the forward captures into `R`/`idx`,
+> freeing them DIRTY (a Rule-6 hidden measurement — a silent miscompile; positive
+> fixture `lowering_loop_break_unsigned.ll`); and the in-body **side-effect guard**
+> — `tryBreak`'s body scan declines any `mayHaveSideEffects()` op (a `cq_measure` /
+> side-effecting call / volatile store), since the rolled break replays the body
+> ~2n times (full-trip forward + reverse-play) and an observable/irreversible op
+> there violates Rule 5 + is unrecoverable (rides L1; reject fixture
+> `lowering_reject_break_measure_in_body.ll`). DECLINE-SAFE over-declines (filed): transparent const-comparison
+> strength-reduction (`q<0`), narrow i8/i16 trunc rails. Full suite 49 ctest / 534
+> lit green; e2e golden `slice_loop_break.c` byte-clean. PRD drafted 2026-06-25 (epic
+> `y05j`), design owner-confirmed (AskUserQuestion 2026-06-25/26).** Builds directly on Phase
 > 7.3 (rolled-in-place bounded loops, epic `799w`, DONE) and reuses the Phase-7.2
 > exit-cascade vocabulary (epic `65wb`) **conceptually only** — the actual
 > mechanism is the **O(1)-carried copy-not-move capture (index-gated) + whole-loop

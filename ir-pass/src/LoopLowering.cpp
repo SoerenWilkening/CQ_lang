@@ -23,7 +23,10 @@
 
 #include "TaintPropagation.h"
 #include "ControlPlan.h"  // diagnoseUnderControl (Q1 reuses the control dialect)
+#include "OpcodeSupport.h"  // abiWidthFromType (rail width for the capture allocs)
 #include "WidthDispatch.h"
+
+#include "llvm/IR/IRBuilder.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -76,12 +79,10 @@ constexpr char kMsgRailFanout[] =
 // is left for `tryCaseA`'s existing L1 `diagnoseUnderControl(_, "loop")` (a fused
 // exit with no classical bound is not a `break`, PRD-7.4 §2.5 B1 / Risk 4).
 //
-//  * kMsgBreakPending — the RECOGNIZED single value-arm break. INTERIM (Inc 1):
-//    recognition is complete but emission (the index-gated copy-not-move capture
-//    + whole-loop reverse-play, §2.2/§2.3) lands in Inc 2 (y05j.2), where this
-//    flips to an ACCEPT (no diagnostic). Emitting it here proves the value-arm-
-//    vs-quantum-bounded partition (this loop is NOT mis-declined as the L1
-//    `loop under quantum control`). Mirrors the §2.10 multiple-site interim form.
+//  * (the recognized value-arm break is now EMITTED, Inc 2 — `emitBreakForward`
+//    transforms it and records a `LoopBreakRegion`; the `kMsgBreakPending` interim
+//    decline is retired. A recognized-but-non-canonical sub-shape declines via
+//    `kMsgBreakUnemittable` below.)
 //  * kMsgBreakPhase — a phase-class escaping answer (Rule 7: a CNOT copy-out
 //    dephases; the data-comparison phase break is degenerate). PERMANENT (§2.6).
 //  * kMsgBreakNonReconv — the break edge and the natural exit reach distinct
@@ -90,8 +91,18 @@ constexpr char kMsgRailFanout[] =
 //    (§2.7; the index latch subsumes any cascade), not a deferral.
 //  * kMsgBreakNested — `L` is an inner/outer of another tainted loop; the break
 //    crosses loops. DEFER, blocked-on the nested-quantum-loop substrate (§2.7).
-constexpr char kMsgBreakPending[] =
-    "cq loop lowering: early break emission not yet implemented";
+// Increment 2 (y05j.2) — the EMITTER sub-shape decline. A loop the recognizer
+// accepted as a value-arm break but whose body is NOT the proven, emittable
+// canonical rolled shape (single-block `header == latch`; ONE in-place value
+// rail with a clean `cq_theta`-rooted self-cycle and linear in-place lineage;
+// a UNIT-stride up-counting classical induction with the canonical
+// `select(brk, true, bound)` fused `icmp eq i.next, n` exit). Non-canonical
+// shapes (multi-block body, non-unit / down stride, phase/dirty rail, fan-out)
+// are decline-safe near-term widenings — the index-gated capture + whole-loop
+// reverse-play is proven only on the canonical shape in this increment (Prime
+// Directive: over-declining is safe). Mirror-exact (Rule 12).
+constexpr char kMsgBreakUnemittable[] =
+    "cq loop lowering: early break body is not a provable rolled single-rail loop";
 constexpr char kMsgBreakPhase[] =
     "cq loop lowering: early break preserves a phase answer";
 constexpr char kMsgBreakNonReconv[] =
@@ -457,6 +468,379 @@ bool boundProvablyTerminates(Value *Bound, bool IsOr, bool ExitTakenOnTrue,
                                                            : !BoundExitValue;
 }
 
+// ── Increment 2 (y05j.2) — the FORWARD TRANSFORM (pre-lowering) ─────────────
+//
+// A recognized value-arm break loop, EMITTABLE iff it is the proven canonical
+// rolled shape, is rewired here (PRE-lowering — it needs pre-RAUW SSA identity
+// and must run before `detectControlRegions`/`declineClassicalMuxes`): the rail
+// phi collapses to its in-place handle (dtzb), the loop terminator is stripped to
+// the CLASSICAL bound (so the rolled loop runs its FULL trip count — never branch
+// the CFG on the quantum `%brk`, PRD §2.9), `R`/`idx`/`out` are minted, and the
+// exit merge phi is RAUW'd to `out`. The capture + whole-loop reverse-play is
+// EMITTED LATER (post-lowering, `lowerBreakReversePlay`) on the lowered body; this
+// records the `LoopBreakRegion` it consumes. Returns true iff the transform ran;
+// on a non-canonical sub-shape emits `kMsgBreakUnemittable` and returns false
+// (the caller still claims the loop — over-declining is safe, Prime Directive).
+bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
+                      const SmallPtrSetImpl<CallInst *> &GateCalls,
+                      DominatorTree &DT, bool IsOr) {
+  BasicBlock *Header = Rgn.Header;
+  BasicBlock *Latch = Rgn.Latch;
+  auto *BreakI = cast<Instruction>(Rgn.BreakFlag);  // source-locator anchor.
+  auto bail = [&]() {
+    diagnose(BreakI, kMsgBreakUnemittable);
+    return false;
+  };
+
+  // (E1) The proven canonical rolled body is a SINGLE block (the `-O1` rotated
+  // loop with `header == latch`). A multi-block body is a near-term widening.
+  if (Header != Latch)
+    return bail();
+  // (E2) The canonical fused exit polarity (`select(brk, true, bound)`, exit on
+  // true). The continue-polarity / AND-fused twins are recognizer-accepted but
+  // not in this increment's proven emission set.
+  if (!IsOr || !Rgn.ExitTakenOnTrue)
+    return bail();
+
+  // ── Locate the rail header phi (tainted) + the classical counter phi ──────
+  // The canonical body carries EXACTLY one tainted (rail) and one untainted
+  // (counter) header phi. Anything else is off-shape.
+  PHINode *RailPhi = nullptr, *CounterPhi = nullptr;
+  for (PHINode &P : Header->phis()) {
+    if (taint.Tainted.count(&P)) {
+      if (RailPhi)
+        return bail();
+      RailPhi = &P;
+    } else {
+      if (CounterPhi)
+        return bail();
+      CounterPhi = &P;
+    }
+  }
+  if (!RailPhi || !CounterPhi)
+    return bail();
+
+  // ── (E3) The counter is a UNIT up-stride induction: latch-incoming = add(i,1)
+  Value *CntLat = CounterPhi->getIncomingValueForBlock(Latch);
+  auto *CntAdd = dyn_cast_or_null<BinaryOperator>(CntLat);
+  if (!CntAdd || CntAdd->getOpcode() != Instruction::Add)
+    return bail();
+  Value *StepV = CntAdd->getOperand(0) == CounterPhi   ? CntAdd->getOperand(1)
+                 : CntAdd->getOperand(1) == CounterPhi ? CntAdd->getOperand(0)
+                                                       : nullptr;
+  auto *StepCI = dyn_cast_or_null<ConstantInt>(StepV);
+  if (!StepCI || !StepCI->isOne())
+    return bail();
+  Value *INext = CntAdd;  // `i.next` — the bound compares against this.
+
+  // ── (E4) BoundFlag is the canonical `icmp eq i.next, n` (n loop-invariant) ──
+  auto *BoundCmp = dyn_cast<ICmpInst>(Rgn.BoundFlag);
+  if (!BoundCmp || BoundCmp->getPredicate() != ICmpInst::ICMP_EQ)
+    return bail();
+  Value *BoundLimit = BoundCmp->getOperand(0) == INext   ? BoundCmp->getOperand(1)
+                      : BoundCmp->getOperand(1) == INext ? BoundCmp->getOperand(0)
+                                                         : nullptr;
+  if (!BoundLimit)
+    return bail();
+  // The limit `n` must be loop-invariant (not defined in the single body block).
+  if (auto *BLI = dyn_cast<Instruction>(BoundLimit))
+    if (BLI->getParent() == Header)
+      return bail();
+
+  // ── (E5) The rail is a clean in-place VALUE self-cycle rooted at a mint ────
+  if (RailPhi->getNumIncomingValues() != 2)
+    return bail();
+  Value *RailLat = RailPhi->getIncomingValueForBlock(Latch);
+  Value *RailPre = nullptr;
+  BasicBlock *PreB = nullptr;
+  for (unsigned i = 0; i < 2; ++i)
+    if (RailPhi->getIncomingBlock(i) != Latch) {
+      RailPre = RailPhi->getIncomingValue(i);
+      PreB = RailPhi->getIncomingBlock(i);
+    }
+  if (!RailPre || !PreB)
+    return bail();
+  if (peelInPlaceBase(RailLat, GateCalls, taint) != RailPhi)
+    return bail();  // latch incoming is not a clean self-cycle (X1 dirty rail).
+  Value *Root = peelInPlaceBase(RailPre, GateCalls, taint);
+  auto *Mint = dyn_cast<CallInst>(Root);
+  if (!Mint || !GateCalls.count(Mint) ||
+      taint.Tainted.count(Mint->getArgOperand(0)))
+    return bail();  // preheader incoming is not a clean classical-operand mint.
+  if (!DT.dominates(Mint, Header))
+    return bail();
+
+  // ── (E6) `PreB` (the rail phi's external/entry predecessor — where R/idx/out are
+  // minted) MUST dominate the exit merge. R/idx/out are read in the loop AND in the
+  // exit merge (the consolidation/copy-out/reverse-play), so their defs must
+  // dominate those uses. This holds for the canonical zero-trip guard block (which
+  // dominates the bypassing exit edge) but FAILS for a clang-materialized DEDICATED
+  // preheader that the zero-trip guard edge bypasses — minting there yields an
+  // ill-dominated module (`opt -verify` aborts on valid C; the Rule-13 review
+  // 2026-06-26). Decline (Prime Directive — over-declining is safe).
+  if (!DT.dominates(PreB, Rgn.ExitMerge))
+    return bail();
+
+  // ── (E12) Capture the forward loop's zero-trip ENTRY guard (PreB's conditional
+  // branch into the Header) so the reverse-play companion loop can REUSE it. A
+  // re-invented signed `sgt(n, 0)` backward guard would be WRONG for an
+  // unsigned-bounded loop (`for (unsigned i=0; i<n; i++)`, whose `-O1` entry guard
+  // is `icmp eq n, 0` → enter iff `n != 0`): for `n ≥ 2^31` the forward enters +
+  // captures while the signed `sgt(n,0)` skips the whole reverse-play → R/idx freed
+  // DIRTY (a Rule-6 hidden measurement; the CRITICAL Rule-13 FINAL finding
+  // 2026-06-26). Reusing the forward guard makes the backward loop enter iff the
+  // forward did, for ANY signedness. Require PreB to end in a conditional branch
+  // with the Header as one successor (the canonical guard shape); decline otherwise.
+  auto *GuardBr = dyn_cast<BranchInst>(PreB->getTerminator());
+  if (!GuardBr || !GuardBr->isConditional())
+    return bail();
+  bool LoopOnTrue = GuardBr->getSuccessor(0) == Header;
+  if (!LoopOnTrue && GuardBr->getSuccessor(1) != Header)
+    return bail();  // PreB does not branch directly to the loop header.
+  Rgn.GuardCond = GuardBr->getCondition();
+  Rgn.GuardLoopOnTrue = LoopOnTrue;
+
+  // ── (E7) The classical counter must START at the constant 0. The reverse-play
+  // companion loop replays the body `BoundLimit` (= `n`) times — which equals the
+  // forward trip count ONLY when the rolled loop (now bounded by `icmp eq i.next,
+  // n`) runs exactly `n` iterations, i.e. the counter starts at 0. A NON-ZERO start
+  // (`for (i = 2; i < n; i++)`) makes the forward run `n - start` iterations while
+  // the backward runs `n` — an OVER-REPLAY that leaves `fire`/the rail DIRTY at the
+  // `cqrt_free` (a hidden measurement, Rule 6 — the CRITICAL Rule-13 finding
+  // 2026-06-26). Tie the two trip counts by requiring start == 0; decline otherwise.
+  Value *CntStart = CounterPhi->getIncomingValueForBlock(PreB);
+  auto *CntStartC = dyn_cast_or_null<ConstantInt>(CntStart);
+  if (!CntStartC || !CntStartC->isZero())
+    return bail();
+
+  // Collect the rail self-update VALUE ops (the latch→phi chain). Each must be an
+  // in-place value bijection (`inPlaceValueRailOperand`); a rotation gate here is
+  // a PHASE rail (B3 should have declined — belt-and-suspenders).
+  //
+  // (E10) Each rail op's CLASSICAL immediate (the non-rail operand) must be
+  // loop-INVARIANT (dominate the exit merge — hence the downstream reverse-play
+  // block). `dtzb` (commit 32f63df) accepts ANY untainted immediate — incl. a
+  // LOOP-VARIANT one (`q ^= i`, or `q = (i&1) ? q^5 : q^3`). The whole-loop
+  // reverse-play re-emits the rail-mut adjoint (`cqrt_{xorc,addc}` /
+  // `emitInverseCall`) in the post-loop companion block, reusing the FORWARD
+  // immediate — a loop-body value there is undefined (a dominance violation /
+  // broken module; the Rule-13 review 2026-06-26). A `ConstantInt` / function-arg
+  // immediate is not a body Instruction ⇒ passes; a counter-derived immediate
+  // declines (Prime Directive — over-declining is safe).
+  SmallVector<BinaryOperator *, 4> RailOps;
+  for (Value *V = RailLat; V != RailPhi;) {
+    auto *BO = dyn_cast<BinaryOperator>(V);
+    if (!BO)
+      return bail();
+    Value *Base = inPlaceValueRailOperand(BO, taint);
+    if (!Base)
+      return bail();
+    Value *Imm = BO->getOperand(0) == Base ? BO->getOperand(1) : BO->getOperand(0);
+    if (auto *ImmI = dyn_cast<Instruction>(Imm))
+      if (!DT.dominates(ImmI, Rgn.ExitMerge))
+        return bail();  // loop-variant immediate — undefined in the reverse-play.
+    RailOps.push_back(BO);
+    V = Base;
+  }
+  // Fan-out / linear-lineage (Rule 8): every rail value has AT MOST ONE in-place
+  // consumer (else the collapse serializes two mutators onto the one handle — the
+  // verify-clean miscompile `loop-rail-inplace-fanout-miscompile`).
+  SmallPtrSet<Value *, 8> RailVals;
+  RailVals.insert(Root);
+  RailVals.insert(RailPhi);
+  for (BinaryOperator *BO : RailOps)
+    RailVals.insert(BO);
+  for (Value *V : RailVals) {
+    unsigned InPlace = 0;
+    for (User *U : V->users())
+      if (auto *BO = dyn_cast<BinaryOperator>(U))
+        if (inPlaceValueRailOperand(BO, taint) == V)
+          ++InPlace;
+    if (InPlace > 1)
+      return bail();
+  }
+
+  // ── (E8) The break-cond must read the POST-mutation rail value — NOT the rail
+  // HEADER PHI (the pre-mutation value). `clang -O1` strength-reduces a relational
+  // ADD-rail break (`q = q + c; if (q > K) break;`) into `icmp sgt(headerphi, K-c)`
+  // — the break-cond consumes the PRE-increment rail phi directly, while the answer
+  // (escape phi) carries the POST value. The dtzb collapse RAUWs the header phi onto
+  // the ONE in-place handle, and the `cqrt_addc` mutation runs BEFORE the break-cond
+  // template in program order, so the break-cond would read the POST value — firing
+  // one iteration early (a verify-clean WRONG UNITARY, off by the stride; the
+  // CRITICAL Rule-13 finding 2026-06-26). The pre/post distinction is unrecoverable
+  // after the collapse. GUARD: every NON-FINAL rail value — the header phi AND every
+  // intermediate mutation result (all but `RailLat = RailOps.front()`, the
+  // post-ALL-mutations latch value) — must be consumed ONLY by the in-place
+  // mutation chain (`RailOps`). A non-mutation consumer reads the rail at a
+  // PRE-FINAL program point; after the collapse RAUWs every rail value onto the ONE
+  // handle and the mutations run in order, that consumer reads the FINAL value —
+  // covering BOTH the add-relational strength-reduction (break-cond reads the
+  // pre-increment header phi) AND a multi-op-chain intermediate read (break-cond
+  // reads `q1` of `q1 = q^9; q2 = q1+3`; the Rule-13 RE-review 2026-06-26). ONLY
+  // `RailLat` — the value the escape phi carries — may be read by the break-cond.
+  // The canonical single-op xor passes (RailPhi's only user is the one mutation).
+  SmallPtrSet<const Value *, 4> RailOpSet(RailOps.begin(), RailOps.end());
+  auto consumedOnlyByMutations = [&](Value *RV) {
+    for (User *U : RV->users())
+      if (!RailOpSet.count(U))
+        return false;
+    return true;
+  };
+  if (!consumedOnlyByMutations(RailPhi))
+    return bail();
+  for (BinaryOperator *BO : RailOps)
+    if (BO != RailLat && !consumedOnlyByMutations(BO))
+      return bail();
+
+  // ── (E9) The break-cond must read ONLY the (post-mutation) rail + loop-INVARIANTS
+  // / constants — never the loop counter or another loop-VARIANT value. The backward
+  // reverse-play CLONES the break-cond verbatim; a loop-variant operand (the forward
+  // counter `%i`, a loop-variant temp) is undefined in the backward companion loop —
+  // a dominance violation / broken module (the Rule-13 review 2026-06-26: a
+  // `if ((q & i) == 0) break` clone references `%i`, which `opt -verify` rejects).
+  // Walk the break flag's lineage: every Header-defined operand must be a rail value
+  // (`RailPhi` / a `RailOp` — incl. the post-mutation `RailLat`) or a tainted
+  // break-cond op (recurse); an UNTAINTED Header-defined operand (the counter / a
+  // loop-variant classical) declines (Prime Directive — over-declining is safe).
+  SmallPtrSet<const Value *, 8> BreakCondOps;  // the tainted break-cond chain (E11).
+  {
+    SmallVector<Value *, 8> Work;
+    SmallPtrSet<Value *, 16> Seen;
+    Work.push_back(Rgn.BreakFlag);
+    Seen.insert(Rgn.BreakFlag);
+    while (!Work.empty()) {
+      auto *I = dyn_cast<Instruction>(Work.pop_back_val());
+      if (!I || I->getParent() != Header)
+        continue;  // constant / argument / loop-invariant (defined outside the body).
+      if (I == RailPhi || RailOpSet.count(I))
+        continue;  // a rail value — the break-cond reads the rail (fine; stop here).
+      if (!taint.Tainted.count(I))
+        return bail();  // a loop-variant CLASSICAL operand (the counter) — its clone
+                        // is undefined in the backward companion loop.
+      BreakCondOps.insert(I);  // a tainted break-cond op (recorded for E11 coverage).
+      for (Value *Op : I->operands())
+        if (Seen.insert(Op).second)
+          Work.push_back(Op);
+    }
+  }
+
+  // ── (E11) BODY COVERAGE — every TAINTED value defined in the body block is a rail
+  // value (`RailPhi` / a `RailOp`) or a break-cond op (`BreakCondOps`). A STRAY
+  // tainted value (a second compare, an extra tainted producer) is off the proven
+  // single-rail-single-break shape AND would break the post-lowering structural
+  // re-scan (`discoverLoweredBreak`, BreakReversePlay.cpp), whose single-break-flag
+  // invariant a second tainted compare violates — leaving the forward-transformed
+  // `out` = |0> (a silent wrong answer; the Rule-13 RE-review 2026-06-26). Declining
+  // here, BEFORE any mutation, keeps the forward transform and the post-lowering
+  // emission in lock-step (Prime Directive — over-declining is safe). The FUSED EXIT
+  // condition (`select(brk, true, bound)` / `or`) is tainted (it uses the break flag)
+  // and is the loop terminator the forward transform strips — it is part of the
+  // recognized shape, NOT a stray (allowed below). A measure of the rail is not a
+  // body value (it lives in the exit block).
+  Value *FusedCond = cast<BranchInst>(Header->getTerminator())->getCondition();
+  for (Instruction &I : *Header) {
+    if (I.isTerminator())
+      continue;  // the loop's (tainted-condition) exit branch — loop control the
+                 // forward transform rewrites, not a stray data value.
+    if (!taint.Tainted.count(&I))
+      continue;
+    if (&I == RailPhi || RailOpSet.count(&I) || BreakCondOps.count(&I) ||
+        &I == FusedCond)
+      continue;
+    return bail();  // a stray tainted body value — not the proven clean shape.
+  }
+
+  // ── Width fences (the in-place / copy ABI serves ≤64-bit integers only) ────
+  StringRef RailWidth = abiWidthFromType(RailPhi->getType());
+  StringRef IdxWidth = abiWidthFromType(CounterPhi->getType());
+  if (!wd.allocFn(RailWidth) || !wd.copyFn(RailWidth) || !wd.allocFn(IdxWidth) ||
+      !wd.copyFn(IdxWidth))
+    return bail();
+
+  // ── ALL preconditions met — MUTATE (the forward transform) ────────────────
+  DebugLoc DL = BreakI->getDebugLoc();
+  auto stamp = [&](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+  };
+
+  // (1) Mark the rail self-update ops in-place (dtzb) so `lowerOps` emits the
+  //     `cqrt_{addc,xorc}_<W>` in-place gate (one rail handle) rather than the
+  //     out-of-place template (the X1 fresh-rail-per-iteration dirty rail).
+  for (BinaryOperator *BO : RailOps)
+    taint.InPlaceRailOps.insert(BO);
+
+  // (2) Mint R / idx / out = |0> before the loop (in the rail phi's external
+  //     predecessor, which dominates both the loop and the exit).
+  IRBuilder<> PB(PreB->getTerminator());
+  Type *RailTy = RailPhi->getType();
+  Type *IdxTy = CounterPhi->getType();
+  CallInst *RReg =
+      PB.CreateCall(wd.allocFn(RailWidth), {ConstantInt::get(RailTy, 0)}, "cq.brk.R");
+  CallInst *IdxReg =
+      PB.CreateCall(wd.allocFn(IdxWidth), {ConstantInt::get(IdxTy, 0)}, "cq.brk.idx");
+  CallInst *OutReg =
+      PB.CreateCall(wd.allocFn(RailWidth), {ConstantInt::get(RailTy, 0)}, "cq.brk.out");
+  stamp(RReg);
+  stamp(IdxReg);
+  stamp(OutReg);
+  // R/idx/out are pass-invented control scratch (Phase-7.4 owns reversal/leak):
+  // join `Tainted` (so downstream keeps them classified as quantum handles) AND
+  // `ControlOwnedRails` (so the whole-DAG `uncompute` spine never selects them as
+  // terminals — the reverse-play frees R/idx; out escapes via the measure). The
+  // rail Root is likewise break-owned (the reverse-play restores it to its
+  // pre-loop state, then LEAVES it allocated — a dirty rail is never freed,
+  // Rule 6).
+  for (Value *H : {static_cast<Value *>(RReg), static_cast<Value *>(IdxReg),
+                   static_cast<Value *>(OutReg)}) {
+    taint.Tainted.insert(H);
+    taint.ControlOwnedRails.insert(H);
+  }
+  // NB: the rail Root (`cq_theta`) is RAUW'd to its `cqrt_alloc` handle by
+  // `lowerRotations`, so inserting it here would go STALE. The rail handle (and
+  // every break-body scratch handle) is excluded from the whole-DAG uncompute
+  // spine LATER, in the post-lowering `lowerBreakReversePlay`, where the LOWERED
+  // i32 handles are live.
+
+  // (3) RAUW the exit merge phi → out, erase it (BEFORE `declineClassicalMuxes`
+  //     would flag a tainted merge phi). `out` is |0> now; the post-lowering
+  //     copy-out writes the answer into it before the measure reads it.
+  Rgn.EscapePhi->replaceAllUsesWith(OutReg);
+  taint.Tainted.erase(Rgn.EscapePhi);
+  Rgn.EscapePhi->eraseFromParent();
+
+  // (4) Collapse the rail phi → Root (dtzb Case-A style: RAUW + scrub + erase).
+  RailPhi->replaceAllUsesWith(Root);
+  taint.Tainted.erase(RailPhi);
+  RailPhi->eraseFromParent();
+
+  // (5) Strip the quantum break flag from the loop terminator: branch on the
+  //     CLASSICAL bound alone, so the rolled loop runs its full trip count (the
+  //     break is realized virtually by `idx`, PRD §2.9). Canonical polarity
+  //     (IsOr && ExitTakenOnTrue): exit when bound==true. The successor layout is
+  //     unchanged (exit at the true edge). Erase the now-dead fused select; the
+  //     break-cond compare stays (use-empty now, but `lowerOps` lowers it by
+  //     taint membership and the post-lowering capture consumes its handle).
+  auto *Term = cast<BranchInst>(Rgn.ExitingBlock->getTerminator());
+  Value *Fused = Term->getCondition();
+  Term->setCondition(Rgn.BoundFlag);
+  if (auto *FusedI = dyn_cast<Instruction>(Fused))
+    if (FusedI != Rgn.BoundFlag && FusedI->use_empty())
+      FusedI->eraseFromParent();
+
+  // (6) Record the post-lowering-stable region for `lowerBreakReversePlay`.
+  Rgn.CounterPhi = CounterPhi;
+  Rgn.BoundLimit = BoundLimit;
+  Rgn.RReg = RReg;
+  Rgn.IdxReg = IdxReg;
+  Rgn.OutReg = OutReg;
+  Rgn.RailWidth = RailWidth;
+  Rgn.IdxWidth = IdxWidth;
+  taint.BreakRegions.push_back(Rgn);
+  return true;
+}
+
 // Try to recognize one natural loop `L` as a single value-arm `break` loop
 // (Phase 7.4, epic y05j). Returns true iff `tryBreak` CLAIMS `L` — either the
 // recognized value-arm break (interim decline in Inc 1) or one of the off-pattern
@@ -469,10 +853,10 @@ bool boundProvablyTerminates(Value *Bound, bool IsOr, bool ExitTakenOnTrue,
 // Tried BEFORE `tryCaseA` (PRD-7.4 §2.4): a break loop's value-mutating rail is
 // NOT a pure in-place persistent accumulator, so `tryCaseA` would otherwise
 // X1/L1-decline it before the partition runs. NO mutation, NO emission (Inc 1).
-bool tryBreak(Loop *L, Function &F, TaintSet &taint, DominatorTree &DT,
+bool tryBreak(Loop *L, Function &F, TaintSet &taint, WidthDispatch &wd,
+              const SmallPtrSetImpl<CallInst *> &GateCalls, DominatorTree &DT,
               LoopInfo &LI, ScalarEvolution &SE) {
   (void)F;
-  (void)DT;
   // Only a loop with a tainted EXIT is a break/quantum-bounded candidate; a
   // classical-exit loop is `tryCaseA`/Case-B territory (leave it).
   if (!taintedExit(L, taint))
@@ -621,11 +1005,25 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, DominatorTree &DT,
     if (auto *SwI = dyn_cast<SwitchInst>(T))
       if (T != TheExitT && taint.Tainted.count(SwI->getCondition()))
         return false;
-    for (Instruction &I : *BB)
+    for (Instruction &I : *BB) {
       if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I))
         for (Value *Op : I.operands())
           if (taint.Tainted.count(Op))
             return false;  // tainted-index memory — the kMsgQramLoop owner's.
+      // An OBSERVABLE / IRREVERSIBLE body op — a `cq_measure` (Rule 5: the
+      // compiler must NEVER emit a measurement the user did not write — and the
+      // rolled break runs the body its FULL trip count AND the reverse-play
+      // replays it, so an in-body measure would fire ~2n times at the wrong
+      // place), or any side-effecting call / volatile-atomic store (a global /
+      // I/O effect the full-trip + reverse-play replay would multiply). The
+      // break virtualization (PRD §2.9) is sound ONLY for a pure-coherent body;
+      // such an op rides L1 (`loop under quantum control`). The canonical
+      // value-arm break body is pure arithmetic + phis (the rail mint lives in
+      // the preheader), so this never over-declines it (the Rule-13 FINAL review
+      // 2026-06-26).
+      if (!I.isTerminator() && I.mayHaveSideEffects())
+        return false;
+    }
   }
 
   // KNOWN Inc-1 coverage limitation (DECLINE-SAFE — rides L1, not a miscompile;
@@ -638,11 +1036,14 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, DominatorTree &DT,
   // the directly-escaping value when the exit block has one predecessor.
   // (The earlier non-unit-stride gap is CLOSED by the §B5 increment widening above.)
   //
-  // RECOGNIZED single value-arm break. Populate the region (consumed by Inc 2)
-  // and emit the INTERIM decline — emission (the index-gated copy-not-move
-  // capture + whole-loop reverse-play) is Inc 2 (y05j.2). This decline proves the
-  // partition: this loop is recognized as a value-arm break, NOT mis-declined as
-  // the genuinely-quantum-bounded L1 `loop under quantum control` (Risk 4).
+  // RECOGNIZED single value-arm break. Run the FORWARD TRANSFORM (Inc 2, y05j.2):
+  // collapse the rail, strip the terminator to the classical bound, mint
+  // `R`/`idx`/`out`, RAUW the exit phi → `out`, and record the `LoopBreakRegion`
+  // the post-lowering `lowerBreakReversePlay` consumes to emit the index-gated
+  // capture + whole-loop reverse-play. `emitBreakForward` declines LOUDLY
+  // (`kMsgBreakUnemittable`) for a recognized-but-non-canonical sub-shape; either
+  // way the loop is CLAIMED here (NOT mis-declined as the L1 quantum-bounded loop,
+  // Risk 4). `kMsgBreakPending` is retired (emission now lands).
   LoopBreakRegion R;
   R.L = L;
   R.Header = Header;
@@ -653,8 +1054,7 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, DominatorTree &DT,
   R.BoundFlag = BoundFlag;
   R.EscapePhi = EscapePhi;
   R.ExitTakenOnTrue = ExitTakenOnTrue;
-  (void)R;  // Inc 1: no emission — the region drives only the interim decline.
-  diagnose(BreakI, kMsgBreakPending);
+  emitBreakForward(R, taint, wd, GateCalls, DT, Pair->IsOr);
   return true;
 }
 
@@ -1009,7 +1409,6 @@ void markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
 }  // namespace
 
 void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
-  (void)wd;
   // The collected rotation call sites — the in-place-gate wire vocabulary the
   // peel + closure consult (same seed as `declineClassicalMuxes`).
   SmallPtrSet<CallInst *, 32> GateCalls;
@@ -1055,7 +1454,7 @@ void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
     // partition runs. Inc-1 `tryBreak` is pure analysis (recognition + decline),
     // no mutation — so `LI`/`DT` stay valid for the `tryCaseA` fallthrough.
     for (Loop *L : LI.getLoopsInPreorder()) {
-      if (tryBreak(L, F, taint, DT, LI, SE))
+      if (tryBreak(L, F, taint, wd, GateCalls, DT, LI, SE))
         continue;
       if (!tryCaseA(L, F, taint, GateCalls, DT, LI))
         markIfIterationLocal(L, taint, LI);

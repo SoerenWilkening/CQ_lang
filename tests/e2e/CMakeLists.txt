@@ -730,6 +730,20 @@ add_test(NAME e2e-slice-loop-value-accum
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_value_accum.expected.log")
 
+# Phase 7.4 Increment 2 (test_C_libtooling-y05j.2): a classically-bounded,
+# data-mutating loop with a SINGLE tainted value-arm `break`, measured after.
+# Lowers ROLLED: the rail collapses to one in-place handle, the terminator is
+# stripped to the classical bound (full trip count), and the break is realized by
+# an index-gated copy-not-move capture + whole-loop reverse-play (forward body ×4,
+# capture, copy-out, backward body ×4, balanced R/idx frees, ZERO measurements).
+add_test(NAME e2e-slice-loop-break
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break.expected.log")
+
 # Phase 7.3 Increment 2 (test_C_libtooling-799w.2): the per-iteration in-body
 # uncompute Case B. Each iteration mints a FRESH rail, derives an iteration-local
 # temp (xor_hl), keeps it alive with a dead cq_phi, and drops both. The Phase-5

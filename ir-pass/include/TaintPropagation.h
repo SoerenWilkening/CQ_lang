@@ -22,6 +22,8 @@
 #ifndef CQ_IRPASS_TAINT_PROPAGATION_H_
 #define CQ_IRPASS_TAINT_PROPAGATION_H_
 
+#include "LoopPlan.h"  // LoopBreakRegion (by-value in BreakRegions, Phase 7.4 y05j.2)
+
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -220,6 +222,15 @@ struct TaintSet {
   // by `lowerControlledIOSinks` / `lowerIOSinks`; empty for a module with no
   // tainted I/O output.
   llvm::DenseMap<llvm::Function *, llvm::Value *> IOTapeForFn;
+
+  // Phase 7.4 Increment 2 (epic y05j) — value-arm `break` loops the FORWARD
+  // transform (`tryBreak`/`emitBreakForward`, pre-lowering) recognized and rewired
+  // (rail collapsed, terminator stripped to the classical bound, `R`/`idx`/`out`
+  // minted, exit-phi RAUW'd to `out`). Each carries the post-lowering-stable
+  // record (`LoopBreakRegion`, LoopPlan.h) the POST-LOWERING `lowerBreakReversePlay`
+  // stage consumes to emit the capture + whole-loop reverse-play on the lowered
+  // body. Empty for a module with no recognized value-arm break.
+  llvm::SmallVector<LoopBreakRegion, 2> BreakRegions;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure
