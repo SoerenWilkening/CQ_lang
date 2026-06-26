@@ -285,7 +285,12 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
   for (Instruction *I : Work) {
     bool Rewritten = false;
     if (auto *BO = dyn_cast<BinaryOperator>(I)) {
-      Rewritten = rewriteBinary(BO, wd, taint);
+      // Issue dtzb: a `lowerLoops`-marked loop-rail self-update lowers to the
+      // IN-PLACE `cqrt_{addc,xorc}` (one rail handle), NOT the out-of-place data
+      // template (which mints a fresh per-iteration rail — the X1 dirty rail).
+      Rewritten = taint.InPlaceRailOps.count(BO)
+                      ? rewriteInPlaceValueRail(BO, wd, taint)
+                      : rewriteBinary(BO, wd, taint);
     } else if (auto *UO = dyn_cast<UnaryOperator>(I)) {
       Rewritten = rewriteUnary(UO, wd, taint);
     } else if (auto *Cmp = dyn_cast<CmpInst>(I)) {

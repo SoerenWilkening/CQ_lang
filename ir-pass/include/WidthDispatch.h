@@ -79,6 +79,16 @@ public:
   // (method-B) swap-route lowering.
   llvm::FunctionCallee copyFn(llvm::StringRef abiWidth) const;        // @cqrt_copy_<W>
 
+  // In-place reversible arithmetic — immediate operand (issue dtzb). Signature
+  // `void cqrt_{addc,xorc}_<W>(i32 h, <iW> imm)`: the handle is i32 for every
+  // width (Rule 15), the immediate carries the logical width type. INTEGER
+  // widths only, gated EXACTLY as copyFn (non-integer / > 64-bit returns a null
+  // FunctionCallee — caller declines). The in-place-gate twin of the
+  // out-of-place data-template family, emitted only for a recognized loop-rail
+  // self-update (LoopLowering.cpp).
+  llvm::FunctionCallee addcFn(llvm::StringRef abiWidth) const;        // @cqrt_addc_<W>
+  llvm::FunctionCallee xorcFn(llvm::StringRef abiWidth) const;        // @cqrt_xorc_<W>
+
   // Reversible I/O output-tape resolvers (Phase 7.6, PRD-7.6 §2.8 — FROZEN
   // core ABI). `tapeAllocFn` is width-agnostic `i32 cqrt_tape_alloc(void)`
   // (the tape handle is a classical resource token). `tapeWriteFn` is

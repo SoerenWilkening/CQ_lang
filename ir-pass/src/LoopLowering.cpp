@@ -62,6 +62,14 @@ namespace {
 constexpr char kMsgCrossIter[] =
     "cq loop lowering: loop-carried tainted value crosses iterations";
 
+// The fan-out / linear-lineage decline (Rule 8 no-cloning; the Rule-13 review
+// 2026-06-26). A rail value read by >1 in-place consumer (value self-update OR
+// rotation gate) cannot be lowered by in-place collapse — both mutations would
+// serialize onto the one handle (a verify-clean wrong unitary). Mirrored
+// CHARACTER-FOR-CHARACTER by lowering_reject_loop_rail_fanout{,_rot}.ll (Rule 12).
+constexpr char kMsgRailFanout[] =
+    "cq loop lowering: loop-carried rail has multiple in-place consumers";
+
 // Phase 7.4 (epic y05j) — the `tryBreak` decline partition (PRD-7.4 §2.10). Each
 // is source-located (`!dbg`) and mirrored CHARACTER-FOR-CHARACTER by a negative
 // fixture (Rule 12). The genuinely-quantum-bounded loop is NOT one of these — it
@@ -98,22 +106,62 @@ void diagnose(Instruction *Where, StringRef Msg) {
       *Where->getFunction(), Msg, Where->getDebugLoc()));
 }
 
-// Peel in-place rotation gates (`cq_theta`/`cq_phi` whose arg-0 handle is
-// tainted ⇒ an in-place mutation, its result RAUWs to the operand at lowering)
-// off the front of a value's wire, returning the underlying base. Parallels
-// `TaintPropagation::resolveWireBase` (the one-register-mux lift) but returns
-// only the base — 7.3 keeps the gate list implicit. Stops at a classical-operand
-// `cq_theta` (the rail MINT), at any non-gate value (a phi / template producer /
-// argument), and never steps through another value op.
+// Issue dtzb — is `BO` a recognized IN-PLACE value rail self-update? An `add` or
+// `xor` (a reversible bijection of the rail GIVEN a classical immediate) with
+// EXACTLY ONE tainted operand (the rail) and a CLASSICAL other operand (the
+// immediate), of an integer width the in-place ABI serves (≤ 64 bits — there is
+// no `cqrt_{addc,xorc}_i128`). Returns the tainted rail operand (the base the
+// wire peels to), or null. This is the value analogue of an in-place rotation
+// gate: `cqrt_{addc,xorc}_<W>` mutates the one rail handle in place, so its
+// result belongs to that rail. The exclusions are the over-accept partition
+// (Rule 12): `mul`/`and`/`or`/`shl`/`lshr` are information-LOSING (no in-place
+// reversible form), and a TWO-quantum `acc + q` (both operands tainted) has no
+// classical immediate — both return null and stay the X1 cross-iteration decline
+// (the general two-quantum Cuccaro-adder case is a deferred follow-on). An `fadd`
+// is opcode `FAdd`, not `Add`, so fp never reaches here.
+Value *inPlaceValueRailOperand(BinaryOperator *BO, const TaintSet &taint) {
+  Instruction::BinaryOps Op = BO->getOpcode();
+  if (Op != Instruction::Add && Op != Instruction::Xor)
+    return nullptr;  // owner scope (dtzb): the add/xor bijection family only.
+  Type *Ty = BO->getType();
+  if (!Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return nullptr;  // i128 has no in-place ABI (the copyFn > 64 fence twin).
+  Value *L = BO->getOperand(0), *R = BO->getOperand(1);
+  bool TL = taint.Tainted.count(L) != 0, TR = taint.Tainted.count(R) != 0;
+  if (TL == TR)
+    return nullptr;  // need EXACTLY one tainted (rail) + one classical (imm).
+  return TL ? L : R;
+}
+
+// Peel in-place gates off the front of a value's wire, returning the underlying
+// base. Two gate kinds peel (both are in-place mutations of the one rail handle,
+// their result RAUWs to the operand at lowering): (1) rotation gates
+// (`cq_theta`/`cq_phi` whose arg-0 handle is tainted — the 7.3 vocabulary), and
+// (2, issue dtzb) value rail self-updates (`q = q OP c`, add/xor + classical
+// immediate — `inPlaceValueRailOperand`). Parallels
+// `TaintPropagation::resolveWireBase` but returns only the base. Stops at a
+// classical-operand `cq_theta` (the rail MINT), at any non-gate value (a phi /
+// template producer / argument), and at a two-quantum / non-bijection op (a dirty
+// rail → X1).
 Value *peelInPlaceBase(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls,
                        const TaintSet &taint) {
-  while (auto *CI = dyn_cast<CallInst>(V)) {
-    if (!GateCalls.count(CI))
-      break;  // not a collected rotation call — V is the base.
-    Value *Handle = CI->getArgOperand(0);
-    if (!taint.Tainted.count(Handle))
-      break;  // classical-operand theta: the mint point IS the base.
-    V = Handle;
+  for (;;) {
+    if (auto *CI = dyn_cast<CallInst>(V)) {
+      if (!GateCalls.count(CI))
+        break;  // not a collected rotation call — V is the base.
+      Value *Handle = CI->getArgOperand(0);
+      if (!taint.Tainted.count(Handle))
+        break;  // classical-operand theta: the mint point IS the base.
+      V = Handle;
+      continue;
+    }
+    if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+      if (Value *Base = inPlaceValueRailOperand(BO, taint)) {
+        V = Base;  // dtzb: peel the in-place value self-update to its rail.
+        continue;
+      }
+    }
+    break;
   }
   return V;
 }
@@ -720,21 +768,31 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
     Work.push_back(KV.first);
   bool PhiAdded = true;
   while (PhiAdded) {
-    // (a) drain the in-place-gate worklist.
+    // (a) drain the in-place-gate worklist. An in-place gate on a rail value V
+    // joins V's rail: a rotation gate (`isInPlaceGateOnArg0`, the 7.3 vocabulary)
+    // OR a value self-update (`inPlaceValueRailOperand(BO) == V`, issue dtzb —
+    // `cqrt_{addc,xorc}` mutates the one rail handle in place, so its result is
+    // the same rail).
     while (!Work.empty()) {
       Value *V = Work.pop_back_val();
       Value *R = railRoot[V];
-      for (User *U : V->users())
+      for (User *U : V->users()) {
+        bool InPlace = false;
         if (auto *CI = dyn_cast<CallInst>(U))
-          if (isInPlaceGateOnArg0(CI, V, GateCalls, taint)) {
-            auto It = railRoot.find(CI);
-            if (It == railRoot.end()) {
-              railRoot[CI] = R;
-              Work.push_back(CI);
-            } else if (It->second != R) {
-              return false;  // a gate result claimed by two rails — not clean.
-            }
-          }
+          InPlace = isInPlaceGateOnArg0(CI, V, GateCalls, taint);
+        else if (auto *BO = dyn_cast<BinaryOperator>(U))
+          InPlace = inPlaceValueRailOperand(BO, taint) == V;
+        if (!InPlace)
+          continue;
+        auto *I = cast<Instruction>(U);
+        auto It = railRoot.find(I);
+        if (It == railRoot.end()) {
+          railRoot[I] = R;
+          Work.push_back(I);
+        } else if (It->second != R) {
+          return false;  // a gate result claimed by two rails — not clean.
+        }
+      }
     }
     // (b) one phi-scan pass: add any tainted phi now fully resolved to one root.
     PhiAdded = false;
@@ -765,6 +823,35 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
           PhiAdded = true;
         }
       }
+  }
+
+  // FAN-OUT / linear-lineage guard (Rule 8 no-cloning; the Rule-13 adversarial
+  // review 2026-06-26 found this verify-clean over-accept). A rail value may have
+  // AT MOST ONE forward IN-PLACE consumer (a single linear chain). MORE than one
+  // is FAN-OUT: the rail value is read by two in-place mutators that the collapse
+  // would both serialize onto the ONE rail handle — corrupting both (e.g. `%qn =
+  // q^9` carried + `%qm = q^3` escaping ⇒ `xorc(h,9); xorc(h,3)` ⇒ measures
+  // `q^9^3`, not the source's `q^3`; the rotation twin `rz(h,1); rz(h,2)` = Rz(3)
+  // ≠ the source's Rz(2)). In-place mutation needs LINEAR lineage; a fan-out of a
+  // superposed source needs an ancilla/`cqrt_cswap`, not in-place collapse. The
+  // count covers BOTH gate kinds — value self-updates (dtzb add/xor) AND rotations
+  // (cq_phi/rz, the SHARED pre-dtzb gap) — so the same guard closes both. Loud
+  // decline (claimed), never a silent serialized collapse (Prime Directive).
+  for (auto &KV : railRoot) {
+    SmallVector<Instruction *, 2> InPlaceUsers;
+    for (User *U : KV.first->users()) {
+      if (auto *CI = dyn_cast<CallInst>(U)) {
+        if (isInPlaceGateOnArg0(CI, KV.first, GateCalls, taint))
+          InPlaceUsers.push_back(CI);
+      } else if (auto *BO = dyn_cast<BinaryOperator>(U)) {
+        if (inPlaceValueRailOperand(BO, taint) == KV.first)
+          InPlaceUsers.push_back(BO);
+      }
+    }
+    if (InPlaceUsers.size() > 1) {
+      diagnose(InPlaceUsers.front(), kMsgRailFanout);
+      return true;  // recognized but unlowerable fan-out — loud decline.
+    }
   }
 
   // COVERAGE: every tainted value whose innermost loop is exactly `L` must be on
@@ -803,7 +890,20 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
     }
   }
 
-  // ACCEPT — collapse every rail PHINode to its root. RAUW to the root mint (the
+  // ACCEPT. Issue dtzb — mark each IN-PLACE VALUE rail self-update so `lowerOps`
+  // emits the in-place `cqrt_{addc,xorc}_<W>(handle, imm)` (not the out-of-place
+  // `cq_template_<op>_<W>_hl` that mints a fresh per-iteration rail). Rotation
+  // gates need NO marking: `lowerRotations` already lowers them in place. Only
+  // BinaryOperator rail members exist via `inPlaceValueRailOperand`, so every one
+  // is a proven value self-update; mark before the phi collapse erases nothing it
+  // depends on (marking only records the op, never mutates it). The op's result
+  // goes use-empty after the collapse, but `lowerOps` collects it by taint
+  // membership (not use-count) and emits the side-effecting in-place gate.
+  for (auto &KV : railRoot)
+    if (auto *BO = dyn_cast<BinaryOperator>(KV.first))
+      taint.InPlaceRailOps.insert(BO);
+
+  // Collapse every rail PHINode to its root. RAUW to the root mint (the
   // still-pre-lowering `cq_theta` SSA value, SAME type as the phi — no ill-typed
   // `phi double` survives, Risk 5; rotation lowering later maps root→%h). Scrub
   // each erased phi from `Tainted` (the `scrubTaint` precedent) and erase after

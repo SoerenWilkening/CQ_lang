@@ -517,6 +517,54 @@ void cqrt_copy_i64_controlled(int32_t ctrl, int32_t src, int32_t dst) {
 }
 
 /* ---------------------------------------------------------------------
+ * In-place reversible arithmetic — immediate operand (issue dtzb). The
+ * rail register `h` is MUTATED in place by the classical immediate; the
+ * handle is unchanged (no fresh rail), matching Bennett.jl's in-place
+ * adder. Trace-only: print the symbol, the handle as h<N>, and the
+ * immediate as a decimal literal (cast to long long like cqrt_alloc).
+ * --------------------------------------------------------------------- */
+void cqrt_addc_i1(int32_t h, bool imm) {
+    printf("cqrt_addc_i1(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_addc_i8(int32_t h, int8_t imm) {
+    printf("cqrt_addc_i8(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_addc_i16(int32_t h, int16_t imm) {
+    printf("cqrt_addc_i16(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_addc_i32(int32_t h, int32_t imm) {
+    printf("cqrt_addc_i32(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_addc_i64(int32_t h, int64_t imm) {
+    printf("cqrt_addc_i64(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i1(int32_t h, bool imm) {
+    printf("cqrt_xorc_i1(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i8(int32_t h, int8_t imm) {
+    printf("cqrt_xorc_i8(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i16(int32_t h, int16_t imm) {
+    printf("cqrt_xorc_i16(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i32(int32_t h, int32_t imm) {
+    printf("cqrt_xorc_i32(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+void cqrt_xorc_i64(int32_t h, int64_t imm) {
+    printf("cqrt_xorc_i64(h%d, %lld)\n", h, (long long)imm);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Reversible I/O output tape (Phase 7.6, PRD-7.6 §2.8) — FROZEN core
  * ABI. `cqrt_tape_alloc` mints a tape handle (printed `t<N>`); each
  * `cqrt_tape_write_<W>` appends `src` as a fresh kept |0> output rail

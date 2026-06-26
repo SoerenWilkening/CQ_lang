@@ -195,6 +195,20 @@ struct TaintSet {
   // with no Case-B loop.
   llvm::SmallPtrSet<const llvm::BasicBlock *, 8> IterationLocalBlocks;
 
+  // Issue dtzb — the in-place reversible arithmetic strategy. A recognized
+  // loop-carried VALUE rail self-update (`q = q OP c`, OP ∈ {add, xor}, one
+  // tainted operand + a CLASSICAL immediate — a reversible bijection of the
+  // rail) whose rail phi `lowerLoops` collapsed Case-A style. `lowerLoops`
+  // RECOGNIZES + collapses + marks the op here; `lowerOps` then emits the
+  // IN-PLACE `cqrt_{addc,xorc}_<W>(handle, imm)` (the rail is one handle by
+  // then, the cross-type theta→i32-handle RAUW already done) instead of the
+  // out-of-place `cq_template_<op>_<W>_hl` data template (which would mint a
+  // fresh rail per iteration — the X1 cross-iteration dirty rail). The set
+  // carries ONLY ops `lowerLoops` proved are clean in-place rail self-updates;
+  // any unproven value rail stays the X1 decline. Empty for a module with no
+  // recognized value-accumulator loop.
+  llvm::SmallPtrSet<llvm::Instruction *, 4> InPlaceRailOps;
+
   // Phase 7.6 (PRD-7.6 §2.4). One lazy `cqrt_tape_alloc()` per function — the
   // stream→tape registry (v1 has a single stdout stream). SHARED across the two
   // I/O-lowering steps so a function with BOTH a controlled `if(q)printf`

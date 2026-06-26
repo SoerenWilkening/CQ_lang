@@ -172,4 +172,44 @@ bool rewriteUnary(UnaryOperator *uo, WidthDispatch &wd, TaintSet &taint) {
   return true;
 }
 
+bool rewriteInPlaceValueRail(BinaryOperator *bo, WidthDispatch &wd,
+                             TaintSet &taint) {
+  // `bo` is a `lowerLoops`-proven rail self-update (issue dtzb). Pick the
+  // in-place symbol by opcode; the logical width is the op's OWN result type
+  // (the rail operand was RAUW'd to the i32 handle by rotation lowering, but
+  // `bo`'s result type still carries the width — the cross-type-laundered
+  // operand never changes `bo`'s type).
+  StringRef AbiWidth = abiWidthFromType(bo->getType());
+  FunctionCallee Callee = bo->getOpcode() == Instruction::Xor
+                              ? wd.xorcFn(AbiWidth)
+                              : wd.addcFn(AbiWidth);
+  if (!Callee) {
+    // Unsupported width — `inPlaceValueRailOperand` applies the SAME ≤64-integer
+    // fence, so this is unreachable; never mint a phantom symbol or leave an
+    // ill-typed op (Rule 1). Loud decline.
+    diagnoseNoTemplate(bo);
+    return false;
+  }
+  // Exactly one operand is tainted (the rail handle, i32 by now — handles join
+  // `Tainted` at the theta mint); the other is the classical immediate at the
+  // rail's logical width. The recognizer proved this (one tainted operand), so
+  // the selection is unambiguous.
+  Value *L = bo->getOperand(0), *R = bo->getOperand(1);
+  bool TL = taint.Tainted.count(L) != 0;
+  Value *Handle = TL ? L : R;
+  Value *Imm = TL ? R : L;
+  IRBuilder<> Builder(bo);
+  CallInst *C = Builder.CreateCall(Callee, {Handle, Imm});
+  if (DebugLoc DL = bo->getDebugLoc())
+    C->setDebugLoc(DL);
+  // In-place: the result IS the rail handle (same register, mutated state). RAUW
+  // to the handle — a no-op when the Case-A phi collapse already left `bo`
+  // use-empty (the single-op value accumulator), and the correct rewire for a
+  // chained self-update (`q1 = q ^ 9; q2 = q1 ^ 3` — `q1`'s RAUW feeds `q2`). The
+  // void in-place gate is not itself a tainted producer; the handle stays
+  // tainted. The driver erases `bo`.
+  bo->replaceAllUsesWith(Handle);
+  return true;
+}
+
 }  // namespace cq

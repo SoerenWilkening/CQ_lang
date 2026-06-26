@@ -147,6 +147,37 @@ FunctionCallee WidthDispatch::copyFn(StringRef abiWidth) const {
                         false));
 }
 
+FunctionCallee WidthDispatch::addcFn(StringRef abiWidth) const {
+  // Signature: void(i32 h, <iW> imm) — in-place add of a classical immediate
+  // (issue dtzb). The handle is i32 for every width (Rule 15); the immediate
+  // carries the logical width type `Ty` (so the trace prints it at width, and
+  // the FunctionType matches the hand-written cqrt_addc_<W> in cq_runtime.h).
+  // INTEGER widths only, gated EXACTLY as copyFn (the > 64 / non-integer fence:
+  // no in-place arithmetic on an fp angle / intermediate-only i128).
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  return M.getOrInsertFunction(
+      ("cqrt_addc_" + abiWidth).str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {Type::getInt32Ty(Ctx), Ty},
+                        false));
+}
+
+FunctionCallee WidthDispatch::xorcFn(StringRef abiWidth) const {
+  // Signature: void(i32 h, <iW> imm) — in-place xor of a classical immediate
+  // (issue dtzb), self-inverse. Same i32-handle / width-typed-immediate /
+  // integer-only-fence contract as addcFn above.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  return M.getOrInsertFunction(
+      ("cqrt_xorc_" + abiWidth).str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {Type::getInt32Ty(Ctx), Ty},
+                        false));
+}
+
 FunctionCallee WidthDispatch::tapeAllocFn() const {
   // Width-agnostic `i32 cqrt_tape_alloc(void)` (Phase 7.6, PRD-7.6 §2.8).
   // Returns a tape handle (a classical resource token); takes no width and

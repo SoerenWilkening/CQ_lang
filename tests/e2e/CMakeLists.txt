@@ -716,6 +716,20 @@ add_test(NAME e2e-slice-loop-phase-accum
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum.expected.log")
 
+# Issue dtzb (the in-place reversible arithmetic strategy): the VALUE twin of the
+# phase accumulator above. A classically-bounded loop over an in-place-mutated
+# value rail `q = q ^ 9` lowers ROLLED — `cqrt_xorc_i32(h0, 9)` rolled in place,
+# the loop-carried + zero-trip/exit rail phis collapse to the one handle, ZERO
+# out-of-place templates, ZERO uncompute/frees. The golden (running the rolled
+# loop a FIXED 4 times) is byte-identical to the manually-unrolled 4×cqrt_xorc.
+add_test(NAME e2e-slice-loop-value-accum
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_value_accum.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_value_accum.expected.log")
+
 # Phase 7.3 Increment 2 (test_C_libtooling-799w.2): the per-iteration in-body
 # uncompute Case B. Each iteration mints a FRESH rail, derives an iteration-local
 # temp (xor_hl), keeps it alive with a dead cq_phi, and drops both. The Phase-5

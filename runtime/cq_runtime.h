@@ -286,6 +286,39 @@ void cqrt_copy_i32_controlled(int32_t ctrl, int32_t src, int32_t dst);
 void cqrt_copy_i64_controlled(int32_t ctrl, int32_t src, int32_t dst);
 
 /* -----------------------------------------------------------------
+ * In-place reversible arithmetic — immediate operand (issue dtzb,
+ * the missing arithmetic-STRATEGY axis; Bennett.jl's in-place Cuccaro
+ * adder, src/adder.jl: (a,b)->(a,a+b) with b OVERWRITTEN). UNLIKE the
+ * out-of-place `cq_template_<op>_<W>_hl(q, c) -> FRESH handle` family
+ * (which mints a new rail per call and so cannot be rolled-reverse-
+ * played in a loop — the X1 cross-iteration dirty rail), these MUTATE
+ * the rail register `h` IN PLACE by a CLASSICAL immediate `imm`:
+ *     cqrt_addc_<W>:  h := (h + imm) mod 2^W      (inverse: imm -> -imm)
+ *     cqrt_xorc_<W>:  h := h ^ imm                (self-inverse)
+ * Void, one handle (+ the iW immediate) — the SAME in-place-gate
+ * category as cqrt_rz / cqrt_x (NOT a fresh-rail data template, so NO
+ * out arg, NO `_unc`/`_inv` twin: EmitInverse re-emits xorc as-is and
+ * addc with a negated immediate, exactly the cqrt_x-involution /
+ * cqrt_ry-negate adjoint patterns). Emitted ONLY for a recognized
+ * loop-carried rail SELF-UPDATE `q = q op c` whose old `q` is dead
+ * through the cycle (LoopLowering.cpp); a straight-line value op with a
+ * live operand stays OUT-OF-PLACE. The handle is i32 for every width
+ * (Rule 15); `imm` carries the logical width. INTEGER widths only.
+ * Trace (handle as h<N>, immediate as a decimal literal):
+ *     "cqrt_addc_<W>(h<h>, <imm>)" / "cqrt_xorc_<W>(h<h>, <imm>)".
+ * ----------------------------------------------------------------- */
+void cqrt_addc_i1 (int32_t h, bool    imm);
+void cqrt_addc_i8 (int32_t h, int8_t  imm);
+void cqrt_addc_i16(int32_t h, int16_t imm);
+void cqrt_addc_i32(int32_t h, int32_t imm);
+void cqrt_addc_i64(int32_t h, int64_t imm);
+void cqrt_xorc_i1 (int32_t h, bool    imm);
+void cqrt_xorc_i8 (int32_t h, int8_t  imm);
+void cqrt_xorc_i16(int32_t h, int16_t imm);
+void cqrt_xorc_i32(int32_t h, int32_t imm);
+void cqrt_xorc_i64(int32_t h, int64_t imm);
+
+/* -----------------------------------------------------------------
  * Reversible I/O output tape (Phase 7.6, PRD-7.6 §2.8 — FROZEN core
  * ABI, hand-written here, NOT a `cq_template_*` generated symbol).
  * The coherent replacement for a print-site measurement (Rule 5): a

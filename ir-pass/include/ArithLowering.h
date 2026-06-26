@@ -55,6 +55,19 @@ bool rewriteBinary(llvm::BinaryOperator *bo, WidthDispatch &wd,
 // Same return contract as `rewriteBinary`. FP widths only.
 bool rewriteUnary(llvm::UnaryOperator *uo, WidthDispatch &wd, TaintSet &taint);
 
+// Issue dtzb — lower a recognized loop-rail SELF-UPDATE (`bo` ∈
+// `taint.InPlaceRailOps`, a `lowerLoops`-proven `q = q OP c` with OP ∈
+// {add, xor} and a classical immediate) to the IN-PLACE
+// `cqrt_{addc,xorc}_<W>(handle, imm)` instead of the out-of-place data template
+// `rewriteBinary` would emit (which mints a fresh per-iteration rail — the X1
+// dirty rail). By this stage the rail operand is the i32 handle (rotation
+// lowering already ran); `imm` is the classical operand at the rail's logical
+// width. The result is RAUW'd to the handle (in-place keeps the same register).
+// Same return contract as `rewriteBinary`; only reached for a proven in-place
+// rail op (the caller gates on `InPlaceRailOps` membership).
+bool rewriteInPlaceValueRail(llvm::BinaryOperator *bo, WidthDispatch &wd,
+                             TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_ARITH_LOWERING_H_
