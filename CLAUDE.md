@@ -231,6 +231,23 @@ done-criteria (both lit fixtures **and** ≥1 e2e golden smoke). The bd tracker
 spans **two design generations** — closed old AST-frontend / transpiler issues
 do **not** indicate new-design progress.
 
+**Rule 17 — Build the intent; a decline is not the development escape hatch.**
+When the task is to *implement* support for a construct, attempt the real
+lowering — do **not** substitute a loud decline for the hard work we set out to
+do. This does **not** weaken the Prime Directive at **runtime**: a genuinely
+off-pattern, unprovable *input* still declines loudly (over-accepting is still
+the one unforgivable silent miscompile, and an over-safe decline of a shape we
+were **not** trying to support is still correct). What changes is **development
+posture**: when implementing a feature, do not reach for a decline as the
+convenient way out of a difficult lowering, and do not reflexively gate the
+intended shape behind an over-safe decline check. If the implementation proves
+genuinely difficult, ambiguous, or off-pattern in a way that tempts a decline of
+the very thing we aimed to build, **stop and bring questions / a discussion back
+to the owner** rather than silently shipping a decline-only stub and calling it
+done. Over-declining what we set out to build is a punt, not a feature — the
+decline belongs to the inputs outside the target shape, not to the target shape
+itself.
+
 ---
 
 ## Pipeline Architecture
