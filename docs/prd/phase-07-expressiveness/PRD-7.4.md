@@ -8,11 +8,17 @@
 > loop-invariant guard / non-terminating bound mis-recognized as a value-arm
 > break), now closed by a ScalarEvolution finite-classical-trip-bound proof (B5
 > `hasFiniteClassicalTripBound`, superseding an unsound structural "bound
-> references the counter" check). Two DECLINE-SAFE coverage gaps deferred to Inc 2
-> (constant-bound-no-merge-phi; non-unit upward stride — see §2.5/LoopLowering.cpp).
-> Increment 2 (`y05j.2`, capture + whole-loop reverse-play EMISSION) not yet
-> implemented. PRD drafted 2026-06-25 (epic `y05j`), design owner-confirmed
-> (AskUserQuestion 2026-06-25).** Builds directly on Phase
+> references the counter" check). A 2026-06-26 coverage widening (owner ask) then
+> added general CLASSICAL non-unit strides (`for(i<n;i+=2)…break`) via a structural
+> constant-step termination proof (`boundProvablyTerminates`); a further adversarial
+> round found + fixed a clang-reachable two-counter-diverging overflow false-accept
+> (`boundComparesInductionToInvariant` — the bound must compare the induction against
+> a loop-invariant limit), cleared across i8–i128 (a 57-probe sweep, 0 false-accepts).
+> DECLINE-SAFE gaps deferred to Inc 2 (owner 2026-06-26): constant-bound-no-merge-phi
+> and multiplicative/non-AddRec counters; plus an Inc-2 single-classical-exit
+> precondition note (E2). Increment 2 (`y05j.2`, capture + whole-loop reverse-play
+> EMISSION) not yet implemented. PRD drafted 2026-06-25 (epic `y05j`), design
+> owner-confirmed (AskUserQuestion 2026-06-25/26).** Builds directly on Phase
 > 7.3 (rolled-in-place bounded loops, epic `799w`, DONE) and reuses the Phase-7.2
 > exit-cascade vocabulary (epic `65wb`) **conceptually only** — the actual
 > mechanism is the **O(1)-carried copy-not-move capture (index-gated) + whole-loop

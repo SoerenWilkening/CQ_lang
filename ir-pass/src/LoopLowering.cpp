@@ -32,6 +32,7 @@
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -212,8 +213,15 @@ bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint) {
 // the same {tainted=brk, classical=bound} partition holds for both polarities.
 // A 3-non-constant `select` (a genuine i1 data-mux) or any other shape returns
 // nullopt ⇒ NOT a recognized fused break (the caller rides L1 / declines —
-// over-declining is safe, Prime Directive).
-std::optional<std::pair<Value *, Value *>> decomposeFusedExit(Value *C) {
+// over-declining is safe, Prime Directive). `IsOr` records the fusion logic
+// (OR = `a ∨ b`, AND = `a ∧ b`) — needed to derive which bound value forces a
+// standalone loop exit (the §B5 increment-widening termination proof).
+struct FusedExit {
+  Value *A;
+  Value *B;
+  bool IsOr;
+};
+std::optional<FusedExit> decomposeFusedExit(Value *C) {
   if (auto *SI = dyn_cast<SelectInst>(C)) {
     Value *Cnd = SI->getCondition();
     Value *TV = SI->getTrueValue();
@@ -221,18 +229,18 @@ std::optional<std::pair<Value *, Value *>> decomposeFusedExit(Value *C) {
     auto *TC = dyn_cast<ConstantInt>(TV);
     auto *FC = dyn_cast<ConstantInt>(FV);
     if (TC && TC->isOne() && !isa<Constant>(FV))
-      return std::make_pair(Cnd, FV);  // select(a, true, b) = a ∨ b
+      return FusedExit{Cnd, FV, /*IsOr=*/true};   // select(a, true, b) = a ∨ b
     if (FC && FC->isZero() && !isa<Constant>(TV))
-      return std::make_pair(Cnd, TV);  // select(a, b, false) = a ∧ b
+      return FusedExit{Cnd, TV, /*IsOr=*/false};  // select(a, b, false) = a ∧ b
     return std::nullopt;               // 3-operand mux / both-const — not fused.
   }
   if (auto *BO = dyn_cast<BinaryOperator>(C)) {
-    if ((BO->getOpcode() == Instruction::Or ||
-         BO->getOpcode() == Instruction::And) &&
+    bool IsOr = BO->getOpcode() == Instruction::Or;
+    if ((IsOr || BO->getOpcode() == Instruction::And) &&
         BO->getType()->isIntegerTy(1)) {
       Value *A = BO->getOperand(0), *B = BO->getOperand(1);
       if (!isa<Constant>(A) && !isa<Constant>(B))
-        return std::make_pair(A, B);
+        return FusedExit{A, B, IsOr};
     }
   }
   return std::nullopt;
@@ -279,19 +287,126 @@ bool subloopHasTaintedValue(Loop *L, const TaintSet &taint, LoopInfo &LI) {
 // — the adversarial-review R4 false-accept family 2026-06-25, the seed of an Inc-2
 // silent miscompile). SCEV gives those an Unpredictable max ⇒ they ride L1.
 //
-// RESIDUAL (documented, decline-safe): SCEV can still bound a loop by the
-// COUNTER'S OWN nsw/nuw OVERFLOW (e.g. a hand-written always-true `i>=0` gets max
-// = INT_MAX) or report a degenerate 0-trip — so a NON-canonical hand-written loop
-// with such a vacuous bound could still be recognized. This is NOT reachable on
-// the validated `-O1` floor (Rule 9): `clang -O1` FOLDS every such vacuous guard
-// before the pass runs (verified: the C source `while((q&1)&&(i>=0))` lowers to a
-// BARE quantum exit ⇒ L1). And even if reached, Inc-1 only emits a LOUD decline;
-// Inc-2 emission must independently materialize the finite trip count for the
-// reverse-play loop, a natural second gate. Over-declining is safe (Prime
-// Directive): if SCEV cannot prove a finite bound, decline.
+// HAZARD (the adversarial-review P3 finding 2026-06-26): when the classical bound
+// is VACUOUS (always-true), `getSymbolicMaxBackedgeTakenCount` still returns a
+// finite max by bounding the loop via the COUNTER'S OWN nsw/nuw OVERFLOW (under
+// `llvm.loop.mustprogress`), NOT via any real classical bound — so a genuinely
+// quantum-bounded loop is mis-accepted. The single-counter form (`i>=0`) `clang
+// -O1` folds away, but a TWO-COUNTER DIVERGING bound (`while((q&1)&&(i<m))` with
+// `m` outrunning `i`, so `i<m` is always true) is NOT folded and reaches the pass
+// (SCEV max = INT_MAX). This is therefore guarded at the CALL SITE by
+// `boundComparesInductionToInvariant` (the bound must compare the counter against a
+// loop-INVARIANT limit — a vacuous two-counter / loop-invariant "bound" has none),
+// which is the necessary precondition that makes this query sound. Over-declining
+// is safe (Prime Directive): if SCEV cannot prove a finite bound, decline.
 bool hasFiniteClassicalTripBound(Loop *L, ScalarEvolution &SE) {
   const SCEV *Max = SE.getSymbolicMaxBackedgeTakenCount(L);
   return Max && !isa<SCEVCouldNotCompute>(Max);
+}
+
+// (B5, Risk 4) Is the classical bound a REAL counter-vs-fixed-limit comparison —
+// exactly ONE operand loop-invariant? This is the necessary precondition that
+// closes the `hasFiniteClassicalTripBound` overflow hazard above AND backstops
+// `boundProvablyTerminates`. A genuine trip bound compares the induction against a
+// loop-INVARIANT limit (`i < n`). A VACUOUS bound that SCEV bounds only by counter
+// overflow has either NO loop-invariant operand (a two-counter diverging `i < m`,
+// the P3 false-accept) or TWO (a loop-invariant guard `m != 0`, the dead-counter
+// family) — both rejected here. Two-counter CONVERGING bounds (rare, e.g.
+// `i < j` with `i++`/`j--`) are conservatively declined too (safe — over-declining
+// is always safe; distinguishing converging from diverging needs the same
+// unreliable two-counter SCEV reasoning the hazard stems from).
+bool boundComparesInductionToInvariant(Value *Bound, Loop *L,
+                                       ScalarEvolution &SE) {
+  auto *Cmp = dyn_cast<ICmpInst>(Bound);
+  if (!Cmp)
+    return false;
+  bool Inv0 = SE.isLoopInvariant(SE.getSCEV(Cmp->getOperand(0)), L);
+  bool Inv1 = SE.isLoopInvariant(SE.getSCEV(Cmp->getOperand(1)), L);
+  return Inv0 != Inv1;  // exactly one loop-invariant operand (the fixed limit).
+}
+
+// (B5 widening — general CLASSICAL increment) A structural termination proof for
+// the value-arm break loops `hasFiniteClassicalTripBound` cannot bound. SCEV's
+// `getSymbolicMaxBackedgeTakenCount` is INCOMPLETE on the `-O1` `slt`-with-non-unit
+// stride fused exit (e.g. `for(i<n;i+=2)` — verified Unpredictable even standalone,
+// no quantum break), so a perfectly classically-bounded non-unit-stride break loop
+// over-declines. This proves termination directly for a CLASSICAL CONSTANT step
+// (the owner's "purely classical increments" scope, 2026-06-26): the bound
+// compares a no-wrap induction AddRec (constant non-zero step) against a
+// loop-invariant value, and SCEV's own monotonicity oracle (which requires the
+// matching no-wrap flag, so a wrapping counter is rejected) proves the bound moves
+// the counter toward the loop-exit value.
+//
+// SOUNDNESS (the Risk-4 boundary — never accept a genuinely quantum-bounded loop):
+//   1. The bound must be a STANDALONE terminator — it forces the loop to exit
+//      INDEPENDENT of the quantum break. For the `-O1` OR-fused exit (exit-on-true)
+//      a true bound forces exit; for the AND-fused continue (exit-on-false) a false
+//      bound forces exit (the §1.1 polarity pairing). Any other pairing means the
+//      exit depends on the break ⇒ genuinely quantum-bounded ⇒ reject. This makes
+//      `BoundExitValue` (the bound value that forces exit) well-defined.
+//   2. The bound must monotonically REACH that exit value: `getMonotonicPredicateType`
+//      Increasing ⇒ reaches true, Decreasing ⇒ reaches false; terminates iff the
+//      reached value IS the exit value (so an always-true `i>=0` exit-on-false, or a
+//      wrong-direction compare, is rejected).
+// Used only as an OR-fallback to `hasFiniteClassicalTripBound`, so it can only WIDEN
+// acceptance — and both disjuncts are independently sound (each proves a finite
+// classical trip bound), so the union never accepts a quantum-bounded loop.
+bool boundProvablyTerminates(Value *Bound, bool IsOr, bool ExitTakenOnTrue,
+                             Loop *L, ScalarEvolution &SE,
+                             const TaintSet &taint) {
+  auto *Cmp = dyn_cast<ICmpInst>(Bound);
+  if (!Cmp)
+    return false;
+  // The bound value that STANDALONE forces a loop exit (§soundness 1).
+  bool BoundExitValue;
+  if (IsOr && ExitTakenOnTrue)
+    BoundExitValue = true;
+  else if (!IsOr && !ExitTakenOnTrue)
+    BoundExitValue = false;
+  else
+    return false;  // exit depends on the break ⇒ not a standalone classical bound.
+  // The induction AddRec (constant non-zero step) vs a loop-invariant limit;
+  // normalize so the AddRec is the predicate LHS (as getMonotonicPredicateType wants).
+  const SCEV *S0 = SE.getSCEV(Cmp->getOperand(0));
+  const SCEV *S1 = SE.getSCEV(Cmp->getOperand(1));
+  ICmpInst::Predicate Pred = Cmp->getPredicate();
+  const auto *AR = dyn_cast<SCEVAddRecExpr>(S0);
+  if (AR && AR->getLoop() == L && SE.isLoopInvariant(S1, L)) {
+    // AR is already the LHS.
+  } else if ((AR = dyn_cast<SCEVAddRecExpr>(S1)) && AR->getLoop() == L &&
+             SE.isLoopInvariant(S0, L)) {
+    Pred = ICmpInst::getSwappedPredicate(Pred);
+  } else {
+    return false;  // not a counter-vs-loop-invariant comparison.
+  }
+  const SCEV *StepS = AR->getStepRecurrence(SE);
+  const auto *Step = dyn_cast<SCEVConstant>(StepS);
+  if (!Step || Step->getAPInt().isZero())
+    return false;  // non-constant or zero (stuck) step — not a classical counter.
+  // SCEV strips no-wrap flags from a SHIFTED induction operand (e.g. `i+2` =
+  // {2,+,2}<nuw> loses <nsw>), which defeats the signed-predicate monotonicity
+  // check; the canonical header induction phi retains both flags. Recover it (the
+  // untainted header phi whose AddRec has the SAME step — monotonic direction is
+  // step-determined, so any same-step recurrence gives the same answer), falling
+  // back to `AR` itself.
+  const SCEVAddRecExpr *MonoAR = AR;
+  for (PHINode &P : L->getHeader()->phis()) {
+    if (taint.Tainted.count(&P))
+      continue;
+    if (const auto *PAR = dyn_cast<SCEVAddRecExpr>(SE.getSCEV(&P)))
+      if (PAR->getLoop() == L && PAR->getStepRecurrence(SE) == StepS) {
+        MonoAR = PAR;
+        break;
+      }
+  }
+  // SCEV's monotonicity oracle (internally gated on the matching no-wrap flag).
+  auto Mono = SE.getMonotonicPredicateType(MonoAR, Pred);
+  if (!Mono)
+    return false;
+  // Increasing ⇒ bound reaches true; Decreasing ⇒ reaches false. Terminates iff
+  // the reached value is the exit value (§soundness 2).
+  return *Mono == ScalarEvolution::MonotonicallyIncreasing ? BoundExitValue
+                                                           : !BoundExitValue;
 }
 
 // Try to recognize one natural loop `L` as a single value-arm `break` loop
@@ -364,7 +479,7 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, DominatorTree &DT,
   auto Pair = decomposeFusedExit(BI->getCondition());
   if (!Pair)
     return false;
-  Value *A = Pair->first, *B = Pair->second;
+  Value *A = Pair->A, *B = Pair->B;
   bool TA = taint.Tainted.count(A), TB = taint.Tainted.count(B);
   // The load-bearing partition (Risk 4): EXACTLY one disjunct tainted (the break
   // flag) and the other CLASSICAL (the loop bound). Both tainted ⇒ no classical
@@ -427,7 +542,20 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, DominatorTree &DT,
   if (!Latch)
     return false;
   BasicBlock *Header = L->getHeader();
-  if (!hasFiniteClassicalTripBound(L, SE))
+  // The classical bound must compare the induction against a loop-INVARIANT limit
+  // (Risk 4 — the necessary precondition that makes the SCEV symbolic-max proof
+  // sound against the P3 two-counter-diverging / vacuous-bound overflow hazard).
+  if (!boundComparesInductionToInvariant(BoundFlag, L, SE))
+    return false;
+  // Then EITHER the SCEV symbolic-max proof (fast path; handles eq/unit-stride/
+  // downward, incl. the select-fused exit) OR the structural classical-constant-step
+  // termination proof (the increment widening — covers the `slt`-non-unit-stride
+  // shapes SCEV's symbolic-max leaves Unpredictable). Both prove a finite classical
+  // trip bound; with the loop-invariant-limit guard the union never accepts a
+  // genuinely quantum-bounded loop (Risk 4).
+  if (!hasFiniteClassicalTripBound(L, SE) &&
+      !boundProvablyTerminates(BoundFlag, Pair->IsOr, ExitTakenOnTrue, L, SE,
+                               taint))
     return false;
 
   // (B4, body) No OTHER tainted control (a nested diamond/switch beyond the break
@@ -452,19 +580,15 @@ bool tryBreak(Loop *L, Function &F, TaintSet &taint, DominatorTree &DT,
             return false;  // tainted-index memory — the kMsgQramLoop owner's.
   }
 
-  // KNOWN Inc-1 coverage limitations (DECLINE-SAFE — both ride L1, neither is a
-  // miscompile; surfaced by the adversarial review 2026-06-25, for Inc 2 to widen,
-  // NOT bugs to mistake for a quantum-bound classification error):
-  //   * CONSTANT-bound break (`for(i<8)…break`): `clang -O1` drops the zero-trip
-  //     guard for a provably-≥1-trip constant bound, so the exit block has one
-  //     predecessor and NO merge phi — the (B2) `EscapePhi==null` check declines.
-  //     (A runtime bound keeps the guard ⇒ the merge phi ⇒ recognized — the v1
-  //     canonical case.) Inc 2 may fall back to the directly-escaping value.
-  //   * NON-UNIT UPWARD stride (`for(i<n;i+=2)…break`): clang emits the bound as
-  //     `icmp slt (i+k), n`, which `-O1` short-circuit-fuses into a SCEV
-  //     `(brk umin_seq bound)` that `getSymbolicMaxBackedgeTakenCount` cannot bound
-  //     ⇒ (B5) declines. Unit stride (any direction) and downward non-unit stride
-  //     are recognized.
+  // KNOWN Inc-1 coverage limitation (DECLINE-SAFE — rides L1, not a miscompile;
+  // for Inc 2 to widen, NOT a bug to mistake for a quantum-bound classification
+  // error): a CONSTANT-bound break (`for(i<8)…break`). `clang -O1` drops the
+  // zero-trip guard for a provably-≥1-trip constant bound, so the exit block has a
+  // SINGLE predecessor and NO merge phi — the escaping value is consumed directly,
+  // and the (B2) `EscapePhi==null` check declines. (A runtime bound keeps the guard
+  // ⇒ the merge phi ⇒ recognized — the v1 canonical case.) Inc 2 may fall back to
+  // the directly-escaping value when the exit block has one predecessor.
+  // (The earlier non-unit-stride gap is CLOSED by the §B5 increment widening above.)
   //
   // RECOGNIZED single value-arm break. Populate the region (consumed by Inc 2)
   // and emit the INTERIM decline — emission (the index-gated copy-not-move
