@@ -570,6 +570,38 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   if (!DT.dominates(Mint, Header))
     return bail();
 
+  // ── (E13) The escaping/measured answer MUST be the loop RAIL ITSELF on BOTH exit
+  // edges — `RailLat` (the rail's post-all-mutations value) on the loop-exit/latch edge
+  // AND `RailPre` (the rail's pre-loop value) on the zero-trip bypass edge. The
+  // post-lowering capture (BreakReversePlay.cpp captureRailToR + emitExitConsolidation)
+  // unconditionally copies the in-place RAIL handle into `R` and then into `out` (the
+  // RAUW'd escape phi) — for BOTH the broke branches (capture) and the never-broke /
+  // zero-trip branches (the `idx==0` consolidation). Nothing upstream ties the escape
+  // phi to the rail: E8 PERMITS `RailLat` to have a non-mutation consumer, and E9/E11
+  // ADMIT a break-cond-DERIVED value (`t = f(rail)`, e.g. `t = q*7` — `mul` is
+  // information-losing so it is NOT a rail op) as a legitimate body value the escape phi
+  // may carry; and the phi's zero-trip incoming is entirely unconstrained. If the
+  // program measures/returns a derived `t ≠ RailLat` on the loop edge, or a value
+  // `≠ RailPre` on the zero-trip edge (`int ans = 999; for(…){…; ans = q; …} measure(ans)`
+  // — n==0 returns 999 but the consolidation yields the rail's initial value), `out` is
+  // filled with the RAIL instead of the asked-for answer — a VERIFY-CLEAN WRONG UNITARY
+  // (the escape≠rail silent miscompile; BOTH edges idiomatic-C-reachable; found by the
+  // y05j.2 Rule-13 re-review 2026-06-27, MISSED originally because every fixture/e2e
+  // measures `q` itself so escape == rail held by luck on both edges, never by check).
+  // Require the escape phi to be exactly two incomings — `RailLat` from `Latch` and
+  // `RailPre` from `PreB`; decline otherwise (Prime Directive — over-declining is safe;
+  // capturing a derived answer rather than the rail is a near-term widening, not this
+  // increment's proven shape). The canonical `return measure(q)` carries `RailLat`/
+  // `RailPre` themselves and still lowers (lowering_loop_break_*).
+  {
+    int LatchIdx = Rgn.EscapePhi->getBasicBlockIndex(Latch);
+    int PreBIdx = Rgn.EscapePhi->getBasicBlockIndex(PreB);
+    if (Rgn.EscapePhi->getNumIncomingValues() != 2 || LatchIdx < 0 || PreBIdx < 0 ||
+        Rgn.EscapePhi->getIncomingValue(LatchIdx) != RailLat ||
+        Rgn.EscapePhi->getIncomingValue(PreBIdx) != RailPre)
+      return bail();
+  }
+
   // ── (E6) `PreB` (the rail phi's external/entry predecessor — where R/idx/out are
   // minted) MUST dominate the exit merge. R/idx/out are read in the loop AND in the
   // exit merge (the consolidation/copy-out/reverse-play), so their defs must
