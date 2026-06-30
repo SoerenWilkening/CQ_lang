@@ -744,6 +744,25 @@ add_test(NAME e2e-slice-loop-break
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break.expected.log")
 
+# Phase 7.4 coverage lock (test_C_libtooling-x1t1): the Q==Q value-arm break —
+# the break condition compares the rail against a SECOND loop-invariant QUBIT
+# (`if (q == p) break;`) rather than a CONSTANT (the e2e-slice-loop-break case).
+# The only layer that LINKS the bare-QQ `cq_template_icmp_eq_i32(h_rail, h_p)`
+# forward + its void `cq_template_icmp_eq_i32_unc(out, h_rail, h_p)` adjoint for
+# the BREAK reverse-play path (a DISTINCT code path from the `_hl` form every
+# other break slice exercises; slice_compare_qq.c links the QQ grid only for the
+# straight-line/uncompute path). The reverse-play clone reads the SAME invariant
+# `p` handle, so `fire'` matches `fire` on every branch; `p` is never mutated and
+# never freed (left allocated-clean, Rule 6 — the golden shows NO cqrt_free(h0)).
+# No new frozen runtime ABI (reuses the bare-QQ compare grid + the break spine).
+add_test(NAME e2e-slice-loop-break-qq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq.expected.log")
+
 # Phase 7.3 Increment 2 (test_C_libtooling-799w.2): the per-iteration in-body
 # uncompute Case B. Each iteration mints a FRESH rail, derives an iteration-local
 # temp (xor_hl), keeps it alive with a dead cq_phi, and drops both. The Phase-5
