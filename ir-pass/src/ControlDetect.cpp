@@ -30,6 +30,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
@@ -69,6 +70,51 @@ BasicBlock *uncondSucc(BasicBlock *BB) {
 bool hasTaintedCondBranch(BasicBlock *BB, TaintSet &Taint) {
   auto *BI = dyn_cast<BranchInst>(BB->getTerminator());
   return BI && BI->isConditional() && Taint.Tainted.count(BI->getCondition());
+}
+
+// d8jl — is `Term`'s block on a CFG CYCLE (i.e., the tainted-control region it
+// opens — a flat `br` diamond/if-else or a `switch` — sits inside a loop body)?
+// A COMPLETE forward reachability walk from the block's successors back to the
+// block itself.
+//
+// Why not `LoopInfo`: it recognizes only NATURAL/reducible loops, so an
+// IRREDUCIBLE cycle (a `goto` into a loop body / Duff's device — reachable from
+// real clang -O1) has `getLoopFor == null` and would slip through. Why not
+// `llvm::isPotentiallyReachable`: it bails `true` once its 32-block scan limit
+// is hit, which would over-DECLINE a legitimate NON-loop diamond buried in a
+// large function. This walk is reducibility-independent AND unbounded-but-finite
+// (each block visited once), so it is exact for our purpose.
+//
+// A flat tainted-control region on a cycle has NO sound swap-route lowering: the
+// merge feeds the backedge / the routed base is a loop-carried phi, so
+// `RegionFlatten` would erase the merge — the loop latch / backedge source —
+// leaving the loop's header phi dangling (a BROKEN MODULE, verified on the
+// clang-O1 iteration-local `for(){ q=cq_theta; if(q>5) q=cq_phi(q);
+// acc+=cq_measure(q); }` shape) OR, when a loop-carried header phi survives,
+// deferring to `declineClassicalMuxes` whose `classical-condition phi` string
+// MISLABELS the QUANTUM condition. We decline HERE, before any mutation
+// (Rule 9), with an accurate source-located message. A region whose entry is NOT
+// on a cycle (a non-loop diamond, or a loop-EXIT diamond whose successors all
+// leave the loop) returns false and keeps its current disposition. Pure
+// analysis. Wired into THREE dispatch arms, each at the point where the relevant
+// CFG-flattening emitter would otherwise run: the flat `br` Diamond/IfElse arm
+// and the `switch` dispatch (message `control flow inside a loop body`), and the
+// depth-2 `RegionShape::Nested` arm BEFORE `recoverRegionTree` (message
+// `nested control flow`, matching that path's own backedge-guard string — no
+// fixture churn).
+bool regionEntryInLoop(Instruction *Term) {
+  BasicBlock *Entry = Term->getParent();
+  SmallPtrSet<BasicBlock *, 16> Seen;
+  SmallVector<BasicBlock *, 16> Work(succ_begin(Entry), succ_end(Entry));
+  while (!Work.empty()) {
+    BasicBlock *BB = Work.pop_back_val();
+    if (BB == Entry)
+      return true;  // control returns to the region entry — it is in a loop.
+    if (!Seen.insert(BB).second)
+      continue;
+    Work.append(succ_begin(BB), succ_end(BB));
+  }
+  return false;
 }
 
 // The sole 2-incoming merge `φ` of block `M`. Null if `M` has not exactly one
@@ -307,6 +353,22 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     diagnoseUnderControl(BI, offPatternDisposition(BI, Taint));
     return;
   case RegionShape::Nested:
+    // d8jl (Rule-13 round 2) — a depth-2 nest whose entry is on a CFG cycle
+    // (inside a loop body) has no sound NestedRouteEmit lowering: its
+    // `flattenRegionTree` erases the shared merge — a backedge source — dangling
+    // the loop's re-entry phi (a BROKEN MODULE on the IRREDUCIBLE iteration-local
+    // nest, reachable from a clang-O1 `goto`-into-loop). `recoverRegionTree`'s
+    // own `DominatorTree` backedge guard MISSES that case — in an irreducible
+    // loop neither cycle-entry block dominates the other, so no edge tests as a
+    // backedge (the same reason `LoopInfo` reports no loop). Decline HERE, before
+    // `recoverRegionTree`, with the reducibility-independent `regionEntryInLoop`
+    // walk, firing the SAME `nested control flow` message that guard already uses
+    // for the reducible in-loop nest (no nested-fixture churn). The internal DT
+    // guard stays as an acyclic-only defense-in-depth backstop.
+    if (regionEntryInLoop(BI)) {
+      diagnoseUnderControl(BI, "nested control flow");
+      return;
+    }
     // 4.3 — prove-or-decline the depth-2 nest instead of the blanket decline. On
     // ACCEPT, `recoverRegionTree` has pushed the Outer (Depth 0) + Inner (Depth 1)
     // regions onto `Plan` and recorded the inner `br` in `Claimed`;
@@ -318,6 +380,21 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     return;
   case RegionShape::Diamond:
   case RegionShape::IfElse:
+    // d8jl — a FLAT tainted-condition control region whose entry is on a CFG
+    // cycle (inside a loop body) has no sound swap-route lowering (see
+    // `regionEntryInLoop`). Decline HERE, before `classifyArms` accepts and
+    // `lowerControlRegions`/`RegionFlatten` mutates the CFG — accepting +
+    // emitting it corrupts the loop's header phi (a BROKEN MODULE on the
+    // iteration-local-measured shape) or relies on the surviving loop-header phi
+    // tripping `declineClassicalMuxes` (whose `classical-condition phi` string
+    // mislabels the QUANTUM condition). The depth-2 in-loop NEST never reaches
+    // here — it recovered as `RegionShape::Nested` and was dispatched to
+    // `recoverRegionTree` above, so its `nested control flow` message is
+    // unchanged.
+    if (regionEntryInLoop(BI)) {
+      diagnoseUnderControl(BI, "control flow inside a loop body");
+      return;
+    }
     // 6.5 (DD-7) — try the classical-call-under-control shape FIRST. A pure
     // classical call (all-classical-args) whose i32 result feeds the diamond
     // merge is route-merged by `ClassicalCallArmEmit` (no clone). On Accept it
@@ -379,8 +456,18 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
         // region + dispatch the emitter). The tainted-scrutinee entry guard is
         // unchanged. Switch is a TERMINATOR, so this stays in the terminator
         // dispatch (unlike the select scan's second instruction loop below).
-        if (taint.Tainted.count(SI->getCondition()))
-          classifySwitchRegion(SI, taint, plan);
+        if (taint.Tainted.count(SI->getCondition())) {
+          // d8jl — a flat tainted-scrutinee `switch` whose block is on a CFG
+          // cycle (inside a loop body) declines with the accurate loop message
+          // (mirrors the `br` Diamond/IfElse guard) before the G-ladder fires its
+          // generic `control flow`; no in-loop switch is ever soundly ACCEPTED
+          // (the N-way route + merge would flatten across the backedge), so this
+          // only sharpens an already-declining path.
+          if (regionEntryInLoop(SI))
+            diagnoseUnderControl(SI, "control flow inside a loop body");
+          else
+            classifySwitchRegion(SI, taint, plan);
+        }
       }
       // 4.4 — prove-or-decline a tainted-condition `select` instead of the
       // blanket decline. `classifySelectRegion` (SelectClassify) runs the §0
