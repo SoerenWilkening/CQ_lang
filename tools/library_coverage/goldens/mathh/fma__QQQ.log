@@ -1,0 +1,8 @@
+cqrt_alloc_f64(1.500000) -> h0
+cqrt_ry_f64(h0, 0.500000)
+cqrt_alloc_f64(1.500000) -> h1
+cqrt_ry_f64(h1, 0.600000)
+cqrt_alloc_f64(1.500000) -> h2
+cqrt_ry_f64(h2, 0.700000)
+cq_template_fma_f64(h0, h1, h2) -> h3
+cqrt_measure_f64(h3) -> 0.000000

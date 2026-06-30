@@ -1,0 +1,6 @@
+cqrt_alloc_f64(1.500000) -> h0
+cqrt_ry_f64(h0, 0.500000)
+cq_template_fabs_f64(h0) -> h1
+cq_template_fcmp_one_f64_hl(h1, inf) -> h2
+cq_template_zext_i1_to_i32(h2) -> h3
+cqrt_measure_i32(h3) -> 0

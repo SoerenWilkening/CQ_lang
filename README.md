@@ -37,6 +37,39 @@ qubit allocation at the first `cq_theta`, lowers tainted opcodes to
 runtime template calls, and links against `libcq_runtime`. There is no
 AST rewriter and no LLVM fork.
 
+## Demonstrator — standard-library coverage under tainted inputs
+
+The headline demonstrator for CQ is **how much of the C standard library the IR pass
+lowers to reversible quantum templates** when its inputs are **tainted** — automatically,
+with no source changes. Coverage is measured empirically and per-library by
+[`tools/library_coverage/probe.py`](tools/library_coverage/probe.py), which runs every
+function through every applicable classical/quantum argument **mixture** (`HL`, `LH`, `QQ`,
+…) over the full pipeline and records, per cell, whether it lowers, links, runs, and matches
+a committed golden trace.
+
+`math.h` is the flagship (pure numerical functions); `stdlib.h`'s integer `abs` island is the
+second. The format is **adaptable** — a new library is one `Lib(...)` entry plus its spec
+(see [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) §"Adding a
+library"; scouted-but-unwired headers like `ctype.h`/`string.h`/`complex.h` are in
+[`SCOPED-CANDIDATES.md`](tools/library_coverage/SCOPED-CANDIDATES.md)).
+
+A function counts as **Covered** only when *every* applicable mixture is **golden-verified** —
+exit-zero is not verification, and a loud decline is a *correct* (just uncovered) outcome,
+never papered over to inflate the number (the Prime Directive). The tables separate
+**cannot-compile-at-the-moment** (fixable future work — e.g. `long double` needs an f80/f128
+width) from **cannot-compile-at-all** (by design — e.g. `nan(const char*)` has no quantum input).
+
+<!-- LIBRARY-COVERAGE:START -->
+**Standard-library quantum-coverage — compiles: 61/177 (34.5%)** &nbsp;·&nbsp; golden-verified: 61/177 (34.5%).
+
+| Library | Compiles | Golden-verified | Cannot-yet (fixable) | By-design |
+|---|---|---|---|---|
+| [`math.h`](tools/library_coverage/coverage/mathh.md) | 58/174 (33%) | 58/174 (33%) | 113 | 3 |
+| [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/3 (100%) | 3/3 (100%) | 0 | 0 |
+
+Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
+<!-- LIBRARY-COVERAGE:END -->
+
 ## Documentation
 
 - [`ROADMAP.md`](ROADMAP.md) — phase-by-phase trajectory and

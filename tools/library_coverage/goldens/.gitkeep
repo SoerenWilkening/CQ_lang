@@ -1,0 +1,3 @@
+# Committed golden traces live here, one per <name>__<mixture>.log.
+# probe.py auto-promotes a cell from accepted -> verified when its golden matches.
+# Goldens are reviewed (Rule 13), never bulk-captured (over-accept trap). See bd 3c6m.1.

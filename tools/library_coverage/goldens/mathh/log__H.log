@@ -1,0 +1,4 @@
+cqrt_alloc_f64(1.500000) -> h0
+cqrt_ry_f64(h0, 0.500000)
+cq_template_log_f64(h0) -> h1
+cqrt_measure_f64(h1) -> 0.000000
