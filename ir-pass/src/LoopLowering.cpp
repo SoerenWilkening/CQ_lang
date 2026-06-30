@@ -783,6 +783,24 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
       auto *I = dyn_cast<Instruction>(Work.pop_back_val());
       if (!I || I->getParent() != Header)
         continue;  // constant / argument / loop-invariant (defined outside the body).
+                   // A loop-INVARIANT comparand (`q == p`, p defined pre-loop) STOPS
+                   // the walk here — its lineage is deliberately NOT inspected, and
+                   // that is SOUND even when p carries a RELATIVE PHASE (`p =
+                   // cq_phi(p0,θ)`, mvrb) or is a DERIVED tainted handle (`p = p0 + 5`,
+                   // 1784). The whole break construct (capture + consolidation +
+                   // reverse-play, BreakReversePlay.cpp) emits ONLY basis-PERMUTATION
+                   // gates — NO Ry/Rz/H inside it (any phase/derivation on p is built
+                   // PRE-LOOP, outside the construct). So the construct is a fixed
+                   // permutation π: p's amplitudes (incl. its phase) ride INERT, and p
+                   // is consumed EXCLUSIVELY as a QQ-compare control (+matched `_unc`)
+                   // — never rotated, copied into `out`, measured, or freed. p is
+                   // restored exactly and LEFT ALLOCATED (the Rule-6 safe leak;
+                   // `isTerminalHandle(p)` is false, so the whole-DAG spine never
+                   // recovers it). Cleared by a 5-lens adversarial Rule-13 sign-off
+                   // 2026-06-30 (0 holes). CONTRAST B3 (line ~1027), which DOES fence a
+                   // phase ESCAPING ANSWER (the rail itself) — there method-B copies
+                   // the rail out, and Rule 7's CNOT-copies-a-label-not-a-phase bites;
+                   // a phase on the COMPARAND is never copied out, so it does not.
       if (I == RailPhi || RailOpSet.count(I))
         continue;  // a rail value — the break-cond reads the rail (fine; stop here).
       if (!taint.Tainted.count(I))

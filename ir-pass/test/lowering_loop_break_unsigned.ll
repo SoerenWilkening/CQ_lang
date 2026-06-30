@@ -45,8 +45,13 @@
 ; CHECK: call void @cqrt_free(i32 %cq.brk.R)
 ; CHECK: call void @cqrt_free(i32 %cq.brk.idx)
 ; CHECK: call i32 @cqrt_measure_i32(i32 %cq.brk.out)
+; The two CHECK-NOTs mirror LIVE diagnostics (rxx8: the second was the retired
+; kMsgBreakPending, swapped for the live break-emit decline kMsgBreakUnemittable).
+; Documentary here — diagnostics land on stderr, not this -S stdout stream — but a
+; regression to either decline is still caught: the positive CHECKs fail on the
+; empty stdout opt emits on a loud decline.
 ; CHECK-NOT: cq controlled lowering: loop under quantum control
-; CHECK-NOT: cq loop lowering: early break emission not yet implemented
+; CHECK-NOT: cq loop lowering: early break body is not a provable rolled single-rail loop
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"

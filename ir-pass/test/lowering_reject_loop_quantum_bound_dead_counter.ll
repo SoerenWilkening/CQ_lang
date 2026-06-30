@@ -18,7 +18,7 @@
 ;
 ; A naive recognizer (accept ANY non-tainted fused disjunct as "the classical
 ; bound" + ANY untainted header phi as "induction") MIS-RECOGNIZES this as a
-; value-arm break ("emission not yet implemented") — which in Inc 2 would EMIT a
+; value-arm break — which (now that emission lands, y05j.2) would EMIT a
 ; WRONG UNITARY for a genuinely quantum-bounded loop (the verify-clean silent
 ; miscompile). The B5 fix REQUIRES the classical bound to compare a value derived
 ; from the loop's SELF-INCREMENTING induction variable (a real trip-count bound):
@@ -29,7 +29,10 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq controlled lowering: loop under quantum control
-; CHECK-NOT: cq loop lowering: early break emission not yet implemented
+; The genuinely-quantum-bounded loop must ride L1 — NOT be mis-claimed by the break
+; emit path, which would surface kMsgBreakUnemittable on this same 2>&1 stream (rxx8:
+; the retired kMsgBreakPending CHECK-NOT swapped for the LIVE break-emit diagnostic).
+; CHECK-NOT: cq loop lowering: early break body is not a provable rolled single-rail loop
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"

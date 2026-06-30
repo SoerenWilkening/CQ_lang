@@ -763,6 +763,57 @@ add_test(NAME e2e-slice-loop-break-qq
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq.expected.log")
 
+# Phase 7.4 coverage lock (test_C_libtooling-mvrb): a Q==Q value-arm break whose
+# loop-invariant comparand `p` carries a RELATIVE PHASE (an Rz / cq_phi in p's
+# lineage). The accept is CLEARED by a 5-lens adversarial Rule-13 sign-off
+# (2026-06-30, 0 concrete holes): the break construct emits ONLY basis-permutation
+# gates (no Ry/Rz/H inside — the only cqrt_rz is PRE-LOOP, preparing p), so it is a
+# fixed permutation and p's phase rides inert; p is consumed only as a QQ-compare
+# control (+matched _unc), never copied into out / measured / freed, and is restored
+# exactly + left allocated (Rule-6 safe leak). The golden shows the pre-loop
+# cqrt_rz_i32(h0, 0.3) and NO cqrt_free(h0). Distinct from the B3 phase fence (which
+# declines a phase ESCAPING ANSWER, where copy-out would dephase, Rule 7). No new ABI.
+add_test(NAME e2e-slice-loop-break-qq-phase
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_phase.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_phase.expected.log")
+
+# Phase 7.4 coverage lock (test_C_libtooling-1784): a Q==Q value-arm break whose
+# comparand is a DERIVED (non-mint) loop-invariant tainted value — `p = p0 + 5`
+# (producer chain p0 -> p, the deriving cq_template_add_i32_hl strictly PRE-LOOP).
+# Same Rule-13 clearance: the construct is permutation-only, so the p0 -> p chain (and
+# p0's Ry superposition) rides inert. Both p AND p0 are consumed only as QQ-compare
+# operands (+matched _unc), never rotated / copied into out / measured / freed;
+# isTerminalHandle is false for both and the spine never enqueues them — the deriving
+# add is NEVER reversed and NEITHER is freed dirty. The golden shows
+# cq_template_add_i32_hl(h0, 5) with NO _unc and NO cqrt_free(h0)/(h1) (two entangled
+# rails left allocated, the Rule-6 safe leak). The symmetric-XOR fold `p = p0 ^ 3`
+# with an xor rail is a DIFFERENT shape (E8 kMsgBreakUnemittable decline). No new ABI.
+add_test(NAME e2e-slice-loop-break-qq-derived
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_derived.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_derived.expected.log")
+
+# Phase 7.4 coverage smoke (test_C_libtooling-rxx8): the i64-RAIL Q==Q value-arm
+# break. The only layer that LINKS the i64 break-path capture symbols (cqrt_alloc_i64,
+# cqrt_copy_i64[_controlled], cqrt_xorc_i64, cq_template_icmp_eq_i64 + its _unc) — a
+# missing one fails LOUDLY at LINK, invisible to the .ll fixtures. Also exercises the
+# MIXED-width capture (i64 rail + i32 idx counter). `p` is loop-invariant and never
+# freed (left allocated-clean, Rule 6). No new frozen runtime ABI.
+add_test(NAME e2e-slice-loop-break-qq-i64
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_i64.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_i64.expected.log")
+
 # Phase 7.3 Increment 2 (test_C_libtooling-799w.2): the per-iteration in-body
 # uncompute Case B. Each iteration mints a FRESH rail, derives an iteration-local
 # temp (xor_hl), keeps it alive with a dead cq_phi, and drops both. The Phase-5
