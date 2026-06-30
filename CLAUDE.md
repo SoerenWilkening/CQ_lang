@@ -49,16 +49,22 @@ class of bug.
 > single-origin provenance walk (flat geps + gep chains + pointer phi/select) + the
 > full pattern-naming over-accept decline matrix, all Rule-13-cleared — the Inc-3
 > review FOUND+FIXED a non-zero-`memset` silent-miscompile over-accept, now
-> `kMsgQramInit`; 2026-06-23/24); **7.3 DONE** (epic `799w`: rolled-in-place bounded
-> loops — Inc 1 `799w.1` Case A in-place persistent-rail collapse + Inc 2 `799w.2` Case B
-> per-iteration in-body uncompute, each Rule-13-cleared; deferred static-K unroll
-> `799w.3`; 2026-06-25); **7.4 DONE** (epic `y05j`: value-arm `break` — `y05j.1`
-> the `tryBreak` recognizer + decline partition, `y05j.2` the index-gated
-> copy-not-move capture + whole-loop reverse-play EMISSION over a new post-lowering
-> `lowerBreakReversePlay` stage + the dtzb `cqrt_xorc`/`cqrt_addc` `EmitInverse`
-> adjoints; the canonical capture+reverse-play sim-replay-verified, 7 over-accept
-> holes found+fixed as the E1–E11 decline preconditions across **three** adversarial
-> Rule-13 rounds; 2026-06-26). **Phase 7 complete (7.1–7.6 DONE);** 8–11 remaining.
+> `kMsgQramInit`; 2026-06-23/24); **7.3 core DONE** (epic `799w`, CLOSED: rolled-in-place
+> bounded loops — Inc 1 `799w.1` Case A in-place persistent-rail collapse + Inc 2 `799w.2`
+> Case B per-iteration in-body uncompute, each Rule-13-cleared; 2026-06-25); **7.4 core
+> DONE** (epic `y05j`, CLOSED: value-arm `break` — `y05j.1` the `tryBreak` recognizer +
+> decline partition, `y05j.2` the index-gated copy-not-move capture + whole-loop
+> reverse-play EMISSION over a new post-lowering `lowerBreakReversePlay` stage + the dtzb
+> `cqrt_xorc`/`cqrt_addc` `EmitInverse` adjoints; the canonical capture+reverse-play
+> sim-replay-verified, 7 over-accept holes found+fixed as the E1–E11 decline
+> preconditions across **three** adversarial Rule-13 rounds; 2026-06-26). **"DONE" here
+> means the scoped CORE increments shipped + Rule-13-cleared; everything outside the
+> shipped accept-shape declines loudly (Prime Directive), so the open follow-ons are
+> additive coverage / deferred separate capabilities, NOT correctness debt.** The
+> post-core break/loop widenings (multi-break, nested-loop break, `continue`, mixed
+> break+return, static-K unroll, value-arm widening) live under the open 7.x-widenings
+> tracker `8h7d` — freeze-orthogonal (7.2–7.4 add no frozen symbols). **Phase 7 core
+> complete (7.1–7.6 core DONE; widenings tracked under `8h7d`);** 8–11 remaining.
 > **Roadmap resequenced 2026-06-19:**
 > Phase 7 is now **pre-freeze expressiveness completion** (7.1 opcode-surface
 > completion incl. Q+Q data compare + wide integers `__int128`/`_BitInt`; 7.2

@@ -783,7 +783,16 @@ via the §7.6 reversible output tape.)
 
 ---
 
-## Phase 7 — Pre-freeze expressiveness completion [7.1–7.6 DONE]
+## Phase 7 — Pre-freeze expressiveness completion [7.1–7.6 core DONE]
+
+> **"DONE" = the scoped CORE increments shipped + Rule-13-cleared.** It does **not**
+> mean the accepted-C subset is maximal: everything outside each sub-phase's shipped
+> accept-shape **declines loudly** (Prime Directive), so the open follow-ons are
+> *additive coverage / deferred separate capabilities*, **not** correctness debt. The
+> post-core **break/loop** widenings (multi-break, nested-loop break, `continue`, mixed
+> break+return, static-K unroll, value-arm widening) were re-parented out of the
+> now-closed 7.3 (`799w`) / 7.4 (`y05j`) core epics into the open **7.x-widenings
+> tracker `8h7d`** (2026-06-30) — all freeze-orthogonal (7.2–7.4 add no frozen symbols).
 
 **Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
 almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
@@ -891,9 +900,10 @@ inversion → feature.
     conditional-output case, 7.6 Tier 0). Because abort never selects a value back, it
     **sidesteps** hazards (ii)/(iii) that controlled-`return` must clear.
 
-- **7.3 — Bounded loops** (rolled-in-place; **DONE** 2026-06-25, epic `799w` — Inc 1
-  `799w.1` + Inc 2 `799w.2`, each Rule-13-cleared; deferred static-K unroll fallback
-  filed `799w.3`; **PRD** `docs/prd/phase-07-expressiveness/PRD-7.3.md`).
+- **7.3 — Bounded loops** (rolled-in-place; **core DONE** 2026-06-25, epic `799w` CLOSED
+  — Inc 1 `799w.1` + Inc 2 `799w.2`, each Rule-13-cleared; deferred static-K unroll
+  fallback `799w.3` re-parented to the 7.x-widenings tracker `8h7d`;
+  **PRD** `docs/prd/phase-07-expressiveness/PRD-7.3.md`).
   **Model superseded 2026-06-24** (owner decision `bd memories owner-dynamic-circuits-in-model`):
   loops lower **rolled in place** — the loop CFG is **preserved** and the body's tainted
   ops lower to the same `cqrt_*`/`cq_template_*` stream the straight-line form produces;
@@ -912,8 +922,8 @@ inversion → feature.
   free placed at a once-per-function point runs K times (use-after-free + double-free) —
   the in-body free point must be **proven** once-per-iteration, not inferred.
 
-- **7.4 — Controlled `break`** (value-arm, rolled-in-place) — **DONE** (`y05j`,
-  2026-06-26). A classically-bounded data-mutating loop with a single tainted
+- **7.4 — Controlled `break`** (value-arm, rolled-in-place) — **core DONE** (`y05j`
+  CLOSED, 2026-06-26). A classically-bounded data-mutating loop with a single tainted
   value-arm `break` lowers **rolled**: the rail collapses to one in-place handle, the
   loop terminator is stripped to the **classical bound** (the loop runs its full trip
   count — the break is virtual, no measurement), and the break is realized by an
@@ -930,7 +940,9 @@ inversion → feature.
   the E1–E11 decline preconditions; the canonical capture+reverse-play verified
   correct by reversible-semantics sim-replay). Phase-arm break, multiple-site,
   nested-loop break, `continue`, and the genuinely quantum-bounded `while` decline
-  loudly (the §2.10 partition). Bounded + reconverging only.
+  loudly (the §2.10 partition). Bounded + reconverging only. The decline-safe
+  multiple-site / nested-loop / `continue` / mixed break+return widenings are tracked
+  under the 7.x-widenings epic `8h7d`.
 
 - **7.5 — QRAM, full Shadow model** (owner decision 2026-06-19). Lower `load` /
   `store` / `getelementptr` over a tainted index/address via the **Shadow** memory
@@ -1273,7 +1285,9 @@ post-Phase-11 roadmap revision.
   7.6's tape) → **7.3 bounded loops** ✓ DONE (forces the Phase-5 uncompute
   extension) → **7.4 break** ✓ DONE (needs 7.2 + 7.3; value-arm capture +
   whole-loop reverse-play) → **7.5 QRAM Shadow** ✓ DONE
-  (heaviest; new ABI; gates the freeze). Phase 7 complete (7.1–7.6 DONE).
+  (heaviest; new ABI; gates the freeze). Phase 7 **core** complete (7.1–7.6 core DONE
+  — scoped increments shipped + Rule-13-cleared; post-core break/loop widenings tracked
+  under the decline-safe, freeze-orthogonal 7.x-widenings epic `8h7d`).
 - Phase 8 (manual inversion) is small and lands **after** Phase 7 so it
   composes over the full invertible surface in one pass; it depends on
   Phase 5's `emit_inverse` plus the per-construct adjoint rules Phase 7
