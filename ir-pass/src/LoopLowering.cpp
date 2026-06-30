@@ -570,6 +570,76 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   if (!DT.dominates(Mint, Header))
     return bail();
 
+  // ── (E14) NO pre-loop in-place rail mutation: the rail value ENTERING the loop
+  // (`RailPre`, the rail phi's PreB-incoming) must BE the bare mint (`Root`). The dtzb
+  // collapse RAUWs the rail phi to `Root = peelInPlaceBase(RailPre)`, which peels
+  // THROUGH any pre-loop in-place value/rotation mutation (`q = q ^ 7;` or a pre-loop
+  // `cq_phi` between the `cq_theta` mint and the loop), and only the IN-LOOP `RailOps`
+  // are marked `InPlaceRailOps`. So a pre-loop mutation orphans to a DEAD out-of-place
+  // template handle and is NEVER applied to the in-place rail handle — the post-lowering
+  // capture (BreakReversePlay.cpp) then copies a rail handle MISSING that mutation into
+  // `out` (a VERIFY-CLEAN WRONG UNITARY, off by the pre-loop mutation; on BOTH edges).
+  // E13 does NOT catch it (the escape phi legitimately carries `RailPre`, so escape ==
+  // rail by VALUE; the divergence is `Root` ≠ `RailPre` at the HANDLE level). Found by
+  // the y05j.2 Rule-13 sign-off 2026-06-28. `Root == RailPre` ⟺ `RailPre` is itself the
+  // mint (no peel happened). Decline otherwise (Prime Directive — over-declining is
+  // safe; applying the pre-loop mutation in-place to the rail handle is a near-term
+  // widening, not this increment's proven shape — the canonical `q = cq_theta(); for(…)`
+  // has `RailPre == Root == the mint` and still lowers, lowering_loop_break_*).
+  if (Root != RailPre)
+    return bail();
+
+  // ── (E13) The escaping/measured answer MUST be the loop RAIL ITSELF on BOTH exit
+  // edges — `RailLat` (the rail's post-all-mutations value) on the loop-exit/latch edge
+  // AND `RailPre` (the rail's pre-loop value) on the zero-trip bypass edge. The
+  // post-lowering capture (BreakReversePlay.cpp captureRailToR + emitExitConsolidation)
+  // unconditionally copies the in-place RAIL handle into `R` and then into `out` (the
+  // RAUW'd escape phi) — for BOTH the broke branches (capture) and the never-broke /
+  // zero-trip branches (the `idx==0` consolidation). Nothing upstream ties the escape
+  // phi to the rail: E8 PERMITS `RailLat` to have a non-mutation consumer, and E9/E11
+  // ADMIT a break-cond-DERIVED value (`t = f(rail)`, e.g. `t = q*7` — `mul` is
+  // information-losing so it is NOT a rail op) as a legitimate body value the escape phi
+  // may carry; and the phi's zero-trip incoming is entirely unconstrained. If the
+  // program measures/returns a derived `t ≠ RailLat` on the loop edge, or a value
+  // `≠ RailPre` on the zero-trip edge (`int ans = 999; for(…){…; ans = q; …} measure(ans)`
+  // — n==0 returns 999 but the consolidation yields the rail's initial value), `out` is
+  // filled with the RAIL instead of the asked-for answer — a VERIFY-CLEAN WRONG UNITARY
+  // (the escape≠rail silent miscompile; BOTH edges idiomatic-C-reachable; found by the
+  // y05j.2 Rule-13 re-review 2026-06-27, MISSED originally because every fixture/e2e
+  // measures `q` itself so escape == rail held by luck on both edges, never by check).
+  // Require the escape phi to be exactly two incomings — `RailLat` from `Latch` and
+  // `RailPre` from `PreB`; decline otherwise (Prime Directive — over-declining is safe;
+  // capturing a derived answer rather than the rail is a near-term widening, not this
+  // increment's proven shape). The canonical `return measure(q)` carries `RailLat`/
+  // `RailPre` themselves and still lowers (lowering_loop_break_*).
+  {
+    int LatchIdx = Rgn.EscapePhi->getBasicBlockIndex(Latch);
+    int PreBIdx = Rgn.EscapePhi->getBasicBlockIndex(PreB);
+    if (Rgn.EscapePhi->getNumIncomingValues() != 2 || LatchIdx < 0 || PreBIdx < 0 ||
+        Rgn.EscapePhi->getIncomingValue(LatchIdx) != RailLat ||
+        Rgn.EscapePhi->getIncomingValue(PreBIdx) != RailPre)
+      return bail();
+  }
+
+  // ── (E15) The rail MINT (`Root`, == `RailPre` after E14) must be read ONLY by the
+  // rail phi and the escape phi. After the dtzb collapse RAUWs `RailPhi` → `Root` and
+  // lowers the in-loop mutations as in-place gates on `Root`'s handle, `Root` IS the
+  // LIVE in-place rail handle at every program point — no longer the frozen initial
+  // value. So a break-cond that reads the mint (`int q0 = q; … if (q == q0) break;`)
+  // lowers to `icmp_eq(h, h)` (rail vs ITSELF, unconditionally true) — a VERIFY-CLEAN
+  // WRONG UNITARY decoupling the break decision from the user predicate (found by the
+  // y05j.2 Rule-13 sign-off round 3, 2026-06-28). E8 forbids reading `RailPhi` /
+  // intermediate `RailOps` and E9 forbids an UNTAINTED header operand, but the mint is
+  // TAINTED and preheader-defined, so both skip it. The ONLY legitimate readers of the
+  // mint are `RailPhi` (loop-entry incoming) and `Rgn.EscapePhi` (zero-trip incoming —
+  // n==0, the rail is unmutated so reading the mint is correct). Any other user (the
+  // break-cond, a separate measure of the snapshot) reads the LIVE rail where it means
+  // the frozen mint ⇒ decline (Prime Directive — a frozen-mint snapshot needs a
+  // separately allocated copy, a near-term widening, not this increment's proven shape).
+  for (User *U : Root->users())
+    if (U != RailPhi && U != Rgn.EscapePhi)
+      return bail();
+
   // ── (E6) `PreB` (the rail phi's external/entry predecessor — where R/idx/out are
   // minted) MUST dominate the exit merge. R/idx/out are read in the loop AND in the
   // exit merge (the consolidation/copy-out/reverse-play), so their defs must
