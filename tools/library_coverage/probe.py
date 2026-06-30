@@ -152,14 +152,87 @@ MATHH_SPEC = [
 def Lib(name, include, slug, blurb, fit, spec):
     return dict(name=name, include=include, slug=slug, blurb=blurb, fit=fit, spec=spec)
 
+# A STATIC spec entry: a function the prober cannot meaningfully run (non-measurable
+# return — struct/pointer/void — or a buffer/string operation), classified by a
+# STRUCTURAL fact about its signature. This is honest: it never claims the function
+# compiles (the dangerous direction); it records *why it cannot yet*, with the gap named.
+# status ∈ {needs-shadow, needs-aggregate, by-design}; the first two are fixable future
+# work (the QRAM/Shadow memory model, aggregate decomposition), by-design is "no quantum
+# meaning" (noreturn / nondeterministic / callback registration).
+def St(name, cat, sig, status, reason):
+    return dict(static=True, name=name, cat=cat, sig=sig, status=status, reason=reason)
+
 STDLIB_SPEC = [
-    # The numeric island of <stdlib.h>: integer absolute value lowers to @llvm.abs.iN,
-    # which CQ's curated reversible-intrinsic path already handles (the integer analog of
-    # math.h's fabs). The rest of <stdlib.h> (alloc / strto* / env / qsort / div_t struct
-    # returns) is pointer/struct/stateful — see SCOPED-CANDIDATES.md, deliberately not wired.
-    B("abs", "integer_abs", ["int"], ret="int", variants=("",)),
-    B("labs", "integer_abs", ["long"], ret="long", variants=("",)),
-    B("llabs", "integer_abs", ["llong"], ret="llong", variants=("",)),
+    # PROBED (empirical): the integer-abs island -> @llvm.abs.iN -> curated reversible
+    # template (the integer analog of math.h's fabs).
+    B("abs", "integer", ["int"], ret="int", variants=("",)),
+    B("labs", "integer", ["long"], ret="long", variants=("",)),
+    B("llabs", "integer", ["llong"], ret="llong", variants=("",)),
+    St("div", "integer", "div_t div(int, int)", "needs-aggregate",
+       "returns a struct (div_t) — needs aggregate (NTuple/extractvalue) decomposition"),
+    St("ldiv", "integer", "ldiv_t ldiv(long, long)", "needs-aggregate",
+       "returns a struct (ldiv_t) — needs aggregate decomposition"),
+    St("lldiv", "integer", "lldiv_t lldiv(long long, long long)", "needs-aggregate",
+       "returns a struct (lldiv_t) — needs aggregate decomposition"),
+    # string -> number conversion: the meaningful input is a char* buffer (Shadow territory)
+    St("atof", "conversion", "double atof(const char *)", "needs-shadow",
+       "string input (const char*) — needs the Shadow memory model"),
+    St("atoi", "conversion", "int atoi(const char *)", "needs-shadow", "string input — needs Shadow"),
+    St("atol", "conversion", "long atol(const char *)", "needs-shadow", "string input — needs Shadow"),
+    St("atoll", "conversion", "long long atoll(const char *)", "needs-shadow", "string input — needs Shadow"),
+    St("strtod", "conversion", "double strtod(const char *, char **)", "needs-shadow",
+       "string input + char** out-param — needs Shadow"),
+    St("strtof", "conversion", "float strtof(const char *, char **)", "needs-shadow",
+       "string input + char** out-param — needs Shadow"),
+    St("strtold", "conversion", "long double strtold(const char *, char **)", "needs-shadow",
+       "string input; long double result (also needs f80/f128) — needs Shadow"),
+    St("strtol", "conversion", "long strtol(const char *, char **, int)", "needs-shadow",
+       "string parser; meaningful input is the char* (needs Shadow) — only the int base is a scalar"),
+    St("strtoll", "conversion", "long long strtoll(const char *, char **, int)", "needs-shadow",
+       "string parser — needs Shadow"),
+    St("strtoul", "conversion", "unsigned long strtoul(const char *, char **, int)", "needs-shadow",
+       "string parser — needs Shadow"),
+    St("strtoull", "conversion", "unsigned long long strtoull(const char *, char **, int)", "needs-shadow",
+       "string parser — needs Shadow"),
+    # pseudo-random
+    St("rand", "random", "int rand(void)", "by-design",
+       "no input and nondeterministic — not a reversible function"),
+    St("srand", "random", "void srand(unsigned)", "by-design",
+       "void; seeds global RNG state (stateful) — no quantum meaning"),
+    # memory management -> the Shadow memory model
+    St("malloc", "memory", "void *malloc(size_t)", "needs-shadow",
+       "returns a pointer — needs the Shadow memory model"),
+    St("calloc", "memory", "void *calloc(size_t, size_t)", "needs-shadow", "returns a pointer — needs Shadow"),
+    St("realloc", "memory", "void *realloc(void *, size_t)", "needs-shadow", "pointer in/out — needs Shadow"),
+    St("aligned_alloc", "memory", "void *aligned_alloc(size_t, size_t)", "needs-shadow",
+       "returns a pointer — needs Shadow"),
+    St("free", "memory", "void free(void *)", "needs-shadow",
+       "void; frees a pointer — part of the Shadow memory model"),
+    # environment / process control
+    St("getenv", "environment", "char *getenv(const char *)", "needs-shadow",
+       "string key -> string value (pointers) — needs Shadow"),
+    St("system", "environment", "int system(const char *)", "needs-shadow",
+       "string command (pointer) — needs Shadow"),
+    St("abort", "environment", "void abort(void)", "by-design", "noreturn control; no input, no result"),
+    St("exit", "environment", "void exit(int)", "by-design",
+       "noreturn; terminates the program — no measurable quantum result"),
+    St("_Exit", "environment", "void _Exit(int)", "by-design", "noreturn — no measurable result"),
+    St("quick_exit", "environment", "void quick_exit(int)", "by-design", "noreturn — no measurable result"),
+    St("atexit", "environment", "int atexit(void (*)(void))", "by-design",
+       "registers a callback (function pointer) — no taintable data"),
+    St("at_quick_exit", "environment", "int at_quick_exit(void (*)(void))", "by-design",
+       "registers a callback — no taintable data"),
+    # search / sort -> array/pointer operations
+    St("bsearch", "search_sort", "void *bsearch(const void *, const void *, size_t, size_t, ...)",
+       "needs-shadow", "array search over pointers; returns a pointer — needs Shadow"),
+    St("qsort", "search_sort", "void qsort(void *, size_t, size_t, ...)", "needs-shadow",
+       "in-place array sort over pointers — needs Shadow"),
+    # multibyte / wide character
+    St("mblen", "multibyte", "int mblen(const char *, size_t)", "needs-shadow", "string/buffer op — needs Shadow"),
+    St("mbtowc", "multibyte", "int mbtowc(wchar_t *, const char *, size_t)", "needs-shadow", "buffer op — needs Shadow"),
+    St("wctomb", "multibyte", "int wctomb(char *, wchar_t)", "needs-shadow", "buffer op — needs Shadow"),
+    St("mbstowcs", "multibyte", "size_t mbstowcs(wchar_t *, const char *, size_t)", "needs-shadow", "buffer op — needs Shadow"),
+    St("wcstombs", "multibyte", "size_t wcstombs(char *, const char *, size_t)", "needs-shadow", "buffer op — needs Shadow"),
 ]
 
 LIBRARIES = [
@@ -168,9 +241,11 @@ LIBRARIES = [
         "numerical functions with clean scalar in/out, ideal for taint-driven reversible lowering.",
         "good-early", MATHH_SPEC),
     Lib("stdlib.h", "stdlib.h", "stdlib",
-        "The numeric island of the C general-utilities header: integer `abs`/`labs`/`llabs` "
-        "(the integer analog of `fabs`). The pointer/alloc/env/struct-returning remainder is a "
-        "scoped later candidate (SCOPED-CANDIDATES.md), deliberately not wired.",
+        "The C general-utilities header, full surface. Only the integer-`abs` island "
+        "(`abs`/`labs`/`llabs`, the integer analog of `fabs`) lowers and golden-verifies today; "
+        "the rest is classified by structural disposition — `div_t` struct returns need aggregate "
+        "decomposition, the alloc/string/buffer families need the Shadow memory model, and the "
+        "noreturn/RNG/callback functions have no quantum meaning by design.",
         "mixed", STDLIB_SPEC),
 ]
 
@@ -380,11 +455,26 @@ def rollup(cells):
 # ---------------------------------------------------------------------------
 # Run + render  (multi-library)
 # ---------------------------------------------------------------------------
+def static_row(spec):
+    """A row for a non-probed function, classified by a structural signature fact."""
+    return {
+        "name": spec["name"], "base": spec["name"], "cat": spec["cat"], "suf": "",
+        "ret": "", "sig": spec["sig"], "flags": [],
+        "cells": [{"mixture": "—", "res": {"status": spec["status"],
+                                           "reason": spec["reason"], "raw": "", "trace": ""}}],
+        "rollup": spec["status"],
+    }
+
 def probe_library(lib, filter_names=None, keep=False):
     gdir = GOLDENS / lib["slug"]
     gdir.mkdir(parents=True, exist_ok=True)
     rows = []
     for spec in lib["spec"]:
+        if spec.get("static"):
+            if not filter_names or spec["name"] in filter_names:
+                print(f"  [{lib['name']}] {spec['name']:14s} [—] ... {spec['status']} (static)")
+                rows.append(static_row(spec))
+            continue
         for variant in expand_variants(spec):
             base = variant["base"]
             if filter_names and base not in filter_names and variant["name"] not in filter_names:
@@ -433,14 +523,18 @@ def run(lib_filter=None, filter_names=None, keep=False):
 
 EMOJI = {"verified": "✅", "accepted": "🟢", "partial": "🟠", "declined": "🟡",
          "blocked": "🟡", "linkfail": "🟡", "runfail": "⚠️", "trace-mismatch": "⚠️",
-         "no-taintable-input": "⛔"}
+         "needs-shadow": "🟡", "needs-aggregate": "🟡",
+         "no-taintable-input": "⛔", "by-design": "⛔"}
+
+# Statuses that count as "cannot at all (by design)" — no quantum meaning, never fixable.
+BY_DESIGN = ("no-taintable-input", "by-design")
 
 def summarize(rows):
     total = len(rows)
     verified = sum(1 for r in rows if r["rollup"] == "verified")
     accepted = sum(1 for r in rows if r["rollup"] == "accepted")
     partial = sum(1 for r in rows if r["rollup"] == "partial")
-    out_design = sum(1 for r in rows if r["rollup"] == "no-taintable-input")
+    out_design = sum(1 for r in rows if r["rollup"] in BY_DESIGN)
     # "cannot at the moment" (fixable) = everything not verified/accepted/by-design
     not_yet = total - verified - accepted - out_design
     longdouble = sum(1 for r in rows if r["suf"] == "l" and r["rollup"] == "blocked")

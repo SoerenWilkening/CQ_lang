@@ -69,7 +69,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_cosl_H_0f0b75in/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_cosl_H_o1ng_3_w/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -138,7 +138,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sinl_H_nzqrfd0r/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sinl_H_bqtqynmt/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -207,7 +207,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tanl_H_cedqde3c/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tanl_H_i1ax87hi/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -276,7 +276,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_acosl_H_ata8f5o3/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_acosl_H_av2gc7zv/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -345,7 +345,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_asinl_H_d5x8i3ru/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_asinl_H_oduxg0jj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -408,7 +408,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atanl_H_5431ravi/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atanl_H_0mi8k7n9/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -513,7 +513,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_HL_mt5elktq/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_HL_7u9zksqc/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -522,7 +522,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_LH_lc5xunq4/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_LH_cera9xhb/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -531,7 +531,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_QQ_v2z05f6i/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_QQ_qnhg12tr/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -600,7 +600,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_coshl_H_c15fizbs/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_coshl_H_yhjszgh9/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -669,7 +669,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sinhl_H_lmmf_vn3/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sinhl_H_h0p759kj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -732,7 +732,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tanhl_H_esn3s3x2/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tanhl_H_d_yttfuk/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -801,7 +801,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_acoshl_H_e9yip3fy/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_acoshl_H_i812uh2v/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -864,7 +864,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_asinhl_H_zsy8hwy_/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_asinhl_H_npj4aal_/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -933,7 +933,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atanhl_H_m692_zo0/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atanhl_H_ff1jvq_1/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1002,7 +1002,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_expl_H_zkmokf9c/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_expl_H_w7e3u23t/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1071,7 +1071,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_exp2l_H_4sfhlala/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_exp2l_H_1xbpzk_y/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1140,7 +1140,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_expm1l_H_7986rnrb/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_expm1l_H_gyrtcxyt/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1209,7 +1209,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_logl_H_hjgy725x/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_logl_H_yrvq7dey/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1278,7 +1278,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log10l_H_kqgj42oh/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log10l_H_25swuvjv/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1347,7 +1347,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log2l_H_fgx745iy/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log2l_H_jpkuks6a/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1416,7 +1416,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log1pl_H_g69pl64a/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log1pl_H_cua0vh8b/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1479,7 +1479,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_logbl_H_zqcgvshb/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_logbl_H_d67w9x3v/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1542,7 +1542,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ilogbl_H_d8yxkwly/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ilogbl_H_m71tsn58/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1641,7 +1641,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_HL_fknd34uf/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_HL_hk_69fbr/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1650,7 +1650,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_LH_gtn60b9t/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_LH__u1yh0w_/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1659,7 +1659,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_QQ_ommlgncf/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_QQ_4s6jy7jb/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1758,7 +1758,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_HL_054hsblp/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_HL_dbc9uzc5/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1767,7 +1767,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_LH_bqup35rd/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_LH_irn7b6en/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1776,7 +1776,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_QQ_8n9nunpo/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_QQ_1rceg2rm/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1875,7 +1875,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_HL_z3jp_2zk/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_HL_7c095u1x/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1884,7 +1884,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_LH_57j_k037/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_LH_wlpl89h8/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1893,7 +1893,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_QQ_2oc3glab/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_QQ_ol57r8nl/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1962,7 +1962,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_frexpl_H_nhh7aslm/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_frexpl_H_g6w9anoe/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2031,7 +2031,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_modfl_H_iudtuhhf/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_modfl_H_2p1vsavb/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2136,7 +2136,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_HL_ox4v7fxt/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_HL_y0ulxs3v/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -2145,7 +2145,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_LH_l59h0ldu/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_LH_81vshlvb/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -2154,7 +2154,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_QQ_ttjy_au_/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_QQ_3jcxfspl/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2223,7 +2223,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sqrtl_H_wx0aycwj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sqrtl_H_cygvrv7w/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2286,7 +2286,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_cbrtl_H_386ujilc/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_cbrtl_H_68l8qaxg/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2385,7 +2385,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_HL_u7b588gw/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_HL_vc1n669i/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -2394,7 +2394,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_LH_hhz55bkt/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_LH_w4jiwdxs/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -2403,7 +2403,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_QQ_4yklccbh/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_QQ_28ii59lf/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2466,7 +2466,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_erfl_H_gtungj9k/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_erfl_H_y24xw87_/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2535,7 +2535,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_erfcl_H_wih3v6pa/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_erfcl_H_s900_1si/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2604,7 +2604,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tgammal_H_0xw4l3zk/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tgammal_H_gznw2z3a/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2673,7 +2673,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lgammal_H_id4b8131/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lgammal_H_ilmb3t9o/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2736,7 +2736,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ceill_H_phu3sssu/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ceill_H_29un7i7g/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2799,7 +2799,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_floorl_H_mngsdh61/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_floorl_H_9w5c4hbp/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2862,7 +2862,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_truncl_H_qo137ro5/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_truncl_H_52jfehao/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2925,7 +2925,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_roundl_H_3pnei268/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_roundl_H_ur3k9t10/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2988,7 +2988,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nearbyintl_H_xpgm6eby/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nearbyintl_H_mb76lcot/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3051,7 +3051,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_rintl_H_l1fczmlv/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_rintl_H_g1n_lq49/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3114,7 +3114,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lrintl_H_fdrjs6tr/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lrintl_H_qs6mwfgh/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3177,7 +3177,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_llrintl_H_yok5_rr8/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_llrintl_H_jl25_1g9/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3240,7 +3240,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lroundl_H_zelrebrc/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lroundl_H_p7dr2u10/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3303,7 +3303,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_llroundl_H_8p3d8mni/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_llroundl_H_cxeivobj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3408,7 +3408,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_HL_0g8ylttq/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_HL_pdevoyk1/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3417,7 +3417,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_LH_9g2j9kax/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_LH_4x1wcxv3/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3426,7 +3426,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_QQ_py2du3d0/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_QQ_ov8hz12x/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3531,7 +3531,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_HL_kl1sraxl/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_HL_d1tdsaa4/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3540,7 +3540,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_LH_i8xd0tzu/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_LH_l6we27xm/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3549,7 +3549,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_QQ_6z4ee_4d/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_QQ_zpxdyz7v/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3654,7 +3654,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_HL_l5z76vp1/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_HL_hz3tqwpg/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3663,7 +3663,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_LH_yxxz58nn/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_LH_1jfu3hx2/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3672,7 +3672,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_QQ_tzas72zu/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_QQ_6nwe0us8/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3771,7 +3771,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_HL_qzndedwo/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_HL_0lpr4trz/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3780,7 +3780,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_LH_dyxepx4m/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_LH_5y1wkpf4/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3789,7 +3789,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_QQ__8do0p0j/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_QQ_vroo9v3d/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3894,7 +3894,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_HL_70p22beq/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_HL_myn7ct1u/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3903,7 +3903,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_LH_jty6te95/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_LH_5982ponw/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3912,7 +3912,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_QQ_caeqh897/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_QQ_benyv_tn/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -4017,7 +4017,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_HL_1j9vv7pc/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_HL_wmd92qfs/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4026,7 +4026,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_LH_u2n1mbys/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_LH_zbb2p6vx/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4035,7 +4035,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_QQ_sprlj_u1/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_QQ_vd9vdpbp/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -4134,7 +4134,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_HL_pdnc7bo3/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_HL_v643siy3/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4143,7 +4143,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_LH_abjf7tps/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_LH_ln1nhnlz/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4152,7 +4152,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_QQ_dgc1skk6/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_QQ_ld7uyt_8/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -4251,7 +4251,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_HL_m282uib5/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_HL_t64koqzo/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4260,7 +4260,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_LH_gwnj9f8x/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_LH_8qeu9ov5/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4269,7 +4269,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_QQ_o7x7gwxv/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_QQ_zccc92yk/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -4440,7 +4440,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HLL_gewasjt5/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HLL_r6kvoaey/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4449,7 +4449,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LHL_2n9zuprm/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LHL_do3m9osx/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4458,7 +4458,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HHL_u0ypdomo/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HHL_nt_xe39k/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4467,7 +4467,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LLH_b1w3zrxq/probe.c:7:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LLH_0h_n9thd/probe.c:7:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4476,7 +4476,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HLH_azbmqxl7/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HLH_5hgypiox/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4485,7 +4485,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LHH_rpte46g5/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LHH_e711xaf4/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4494,7 +4494,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_QQQ_eg13lnxw/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_QQQ_s3p37olt/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -4801,13 +4801,13 @@
       "name": "stdlib.h",
       "include": "stdlib.h",
       "slug": "stdlib",
-      "blurb": "The numeric island of the C general-utilities header: integer `abs`/`labs`/`llabs` (the integer analog of `fabs`). The pointer/alloc/env/struct-returning remainder is a scoped later candidate (SCOPED-CANDIDATES.md), deliberately not wired.",
+      "blurb": "The C general-utilities header, full surface. Only the integer-`abs` island (`abs`/`labs`/`llabs`, the integer analog of `fabs`) lowers and golden-verifies today; the rest is classified by structural disposition \u2014 `div_t` struct returns need aggregate decomposition, the alloc/string/buffer families need the Shadow memory model, and the noreturn/RNG/callback functions have no quantum meaning by design.",
       "fit": "mixed",
       "rows": [
         {
           "name": "abs",
           "base": "abs",
-          "cat": "integer_abs",
+          "cat": "integer",
           "suf": "",
           "ret": "int",
           "sig": "int abs(int)",
@@ -4828,7 +4828,7 @@
         {
           "name": "labs",
           "base": "labs",
-          "cat": "integer_abs",
+          "cat": "integer",
           "suf": "",
           "ret": "long",
           "sig": "long labs(long)",
@@ -4849,7 +4849,7 @@
         {
           "name": "llabs",
           "base": "llabs",
-          "cat": "integer_abs",
+          "cat": "integer",
           "suf": "",
           "ret": "long long",
           "sig": "long long llabs(long long)",
@@ -4866,6 +4866,762 @@
             }
           ],
           "rollup": "verified"
+        },
+        {
+          "name": "div",
+          "base": "div",
+          "cat": "integer",
+          "suf": "",
+          "ret": "",
+          "sig": "div_t div(int, int)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-aggregate",
+                "reason": "returns a struct (div_t) \u2014 needs aggregate (NTuple/extractvalue) decomposition",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-aggregate"
+        },
+        {
+          "name": "ldiv",
+          "base": "ldiv",
+          "cat": "integer",
+          "suf": "",
+          "ret": "",
+          "sig": "ldiv_t ldiv(long, long)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-aggregate",
+                "reason": "returns a struct (ldiv_t) \u2014 needs aggregate decomposition",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-aggregate"
+        },
+        {
+          "name": "lldiv",
+          "base": "lldiv",
+          "cat": "integer",
+          "suf": "",
+          "ret": "",
+          "sig": "lldiv_t lldiv(long long, long long)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-aggregate",
+                "reason": "returns a struct (lldiv_t) \u2014 needs aggregate decomposition",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-aggregate"
+        },
+        {
+          "name": "atof",
+          "base": "atof",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "double atof(const char *)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string input (const char*) \u2014 needs the Shadow memory model",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "atoi",
+          "base": "atoi",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "int atoi(const char *)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string input \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "atol",
+          "base": "atol",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "long atol(const char *)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string input \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "atoll",
+          "base": "atoll",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "long long atoll(const char *)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string input \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "strtod",
+          "base": "strtod",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "double strtod(const char *, char **)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string input + char** out-param \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "strtof",
+          "base": "strtof",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "float strtof(const char *, char **)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string input + char** out-param \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "strtold",
+          "base": "strtold",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "long double strtold(const char *, char **)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string input; long double result (also needs f80/f128) \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "strtol",
+          "base": "strtol",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "long strtol(const char *, char **, int)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string parser; meaningful input is the char* (needs Shadow) \u2014 only the int base is a scalar",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "strtoll",
+          "base": "strtoll",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "long long strtoll(const char *, char **, int)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string parser \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "strtoul",
+          "base": "strtoul",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "unsigned long strtoul(const char *, char **, int)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string parser \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "strtoull",
+          "base": "strtoull",
+          "cat": "conversion",
+          "suf": "",
+          "ret": "",
+          "sig": "unsigned long long strtoull(const char *, char **, int)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string parser \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "rand",
+          "base": "rand",
+          "cat": "random",
+          "suf": "",
+          "ret": "",
+          "sig": "int rand(void)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "by-design",
+                "reason": "no input and nondeterministic \u2014 not a reversible function",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "by-design"
+        },
+        {
+          "name": "srand",
+          "base": "srand",
+          "cat": "random",
+          "suf": "",
+          "ret": "",
+          "sig": "void srand(unsigned)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "by-design",
+                "reason": "void; seeds global RNG state (stateful) \u2014 no quantum meaning",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "by-design"
+        },
+        {
+          "name": "malloc",
+          "base": "malloc",
+          "cat": "memory",
+          "suf": "",
+          "ret": "",
+          "sig": "void *malloc(size_t)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "returns a pointer \u2014 needs the Shadow memory model",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "calloc",
+          "base": "calloc",
+          "cat": "memory",
+          "suf": "",
+          "ret": "",
+          "sig": "void *calloc(size_t, size_t)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "returns a pointer \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "realloc",
+          "base": "realloc",
+          "cat": "memory",
+          "suf": "",
+          "ret": "",
+          "sig": "void *realloc(void *, size_t)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "pointer in/out \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "aligned_alloc",
+          "base": "aligned_alloc",
+          "cat": "memory",
+          "suf": "",
+          "ret": "",
+          "sig": "void *aligned_alloc(size_t, size_t)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "returns a pointer \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "free",
+          "base": "free",
+          "cat": "memory",
+          "suf": "",
+          "ret": "",
+          "sig": "void free(void *)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "void; frees a pointer \u2014 part of the Shadow memory model",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "getenv",
+          "base": "getenv",
+          "cat": "environment",
+          "suf": "",
+          "ret": "",
+          "sig": "char *getenv(const char *)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string key -> string value (pointers) \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "system",
+          "base": "system",
+          "cat": "environment",
+          "suf": "",
+          "ret": "",
+          "sig": "int system(const char *)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string command (pointer) \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "abort",
+          "base": "abort",
+          "cat": "environment",
+          "suf": "",
+          "ret": "",
+          "sig": "void abort(void)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "by-design",
+                "reason": "noreturn control; no input, no result",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "by-design"
+        },
+        {
+          "name": "exit",
+          "base": "exit",
+          "cat": "environment",
+          "suf": "",
+          "ret": "",
+          "sig": "void exit(int)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "by-design",
+                "reason": "noreturn; terminates the program \u2014 no measurable quantum result",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "by-design"
+        },
+        {
+          "name": "_Exit",
+          "base": "_Exit",
+          "cat": "environment",
+          "suf": "",
+          "ret": "",
+          "sig": "void _Exit(int)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "by-design",
+                "reason": "noreturn \u2014 no measurable result",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "by-design"
+        },
+        {
+          "name": "quick_exit",
+          "base": "quick_exit",
+          "cat": "environment",
+          "suf": "",
+          "ret": "",
+          "sig": "void quick_exit(int)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "by-design",
+                "reason": "noreturn \u2014 no measurable result",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "by-design"
+        },
+        {
+          "name": "atexit",
+          "base": "atexit",
+          "cat": "environment",
+          "suf": "",
+          "ret": "",
+          "sig": "int atexit(void (*)(void))",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "by-design",
+                "reason": "registers a callback (function pointer) \u2014 no taintable data",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "by-design"
+        },
+        {
+          "name": "at_quick_exit",
+          "base": "at_quick_exit",
+          "cat": "environment",
+          "suf": "",
+          "ret": "",
+          "sig": "int at_quick_exit(void (*)(void))",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "by-design",
+                "reason": "registers a callback \u2014 no taintable data",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "by-design"
+        },
+        {
+          "name": "bsearch",
+          "base": "bsearch",
+          "cat": "search_sort",
+          "suf": "",
+          "ret": "",
+          "sig": "void *bsearch(const void *, const void *, size_t, size_t, ...)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "array search over pointers; returns a pointer \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "qsort",
+          "base": "qsort",
+          "cat": "search_sort",
+          "suf": "",
+          "ret": "",
+          "sig": "void qsort(void *, size_t, size_t, ...)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "in-place array sort over pointers \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "mblen",
+          "base": "mblen",
+          "cat": "multibyte",
+          "suf": "",
+          "ret": "",
+          "sig": "int mblen(const char *, size_t)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "string/buffer op \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "mbtowc",
+          "base": "mbtowc",
+          "cat": "multibyte",
+          "suf": "",
+          "ret": "",
+          "sig": "int mbtowc(wchar_t *, const char *, size_t)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "buffer op \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "wctomb",
+          "base": "wctomb",
+          "cat": "multibyte",
+          "suf": "",
+          "ret": "",
+          "sig": "int wctomb(char *, wchar_t)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "buffer op \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "mbstowcs",
+          "base": "mbstowcs",
+          "cat": "multibyte",
+          "suf": "",
+          "ret": "",
+          "sig": "size_t mbstowcs(wchar_t *, const char *, size_t)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "buffer op \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
+        },
+        {
+          "name": "wcstombs",
+          "base": "wcstombs",
+          "cat": "multibyte",
+          "suf": "",
+          "ret": "",
+          "sig": "size_t wcstombs(char *, const char *, size_t)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "\u2014",
+              "res": {
+                "status": "needs-shadow",
+                "reason": "buffer op \u2014 needs Shadow",
+                "raw": "",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "needs-shadow"
         }
       ]
     }

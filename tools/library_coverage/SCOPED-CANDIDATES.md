@@ -21,7 +21,7 @@ Everything else is honest future work, gated on a named capability — never pap
 
 | Header | Fit | Disposition tally | Verdict |
 |---|---|---|---|
-| `stdlib.h` | mixed | 3 intrinsic · 7 decline · 15 shadow · 14 by-design | **WIRED** (abs/labs/llabs island); rest deferred |
+| `stdlib.h` | mixed | 3 verified · 3 needs-aggregate · 25 needs-shadow · 8 by-design | **WIRED** (full 39-fn surface; `abs` island verified, rest classified) |
 | `ctype.h` | later | 1 intrinsic · 2 decline · 11 shadow | LATER — memory-model gated |
 | `string.h` | later | 1 decline · 11 shadow · 10 by-design | LATER — the polar opposite of `math.h` |
 | `complex.h` | later | 22 needs-`_Complex`-source | LATER — needs a `_Complex` taint source first |
@@ -36,13 +36,15 @@ const-global QROM read. `tolower`/`toupper` stay direct `@__tolower`/`@__toupper
 = stock `add`/`icmp ult`/`zext` on CQ's existing path). **Wire it only to exercise QRAM table
 reads**, not to grow intrinsic coverage.
 
-### `stdlib.h` — a small high-value `abs` island (WIRED)
-The conversion (`atoi`/`strto*`), allocation, env, and search/sort families are all
-pointer/struct/stateful. The one clean scalar island is **`abs`/`labs`/`llabs`** → `@llvm.abs.iN`,
-which CQ's curated reversible-intrinsic path already handles (the integer analog of `fabs`).
-`div`/`ldiv`/`lldiv` take taintable int pairs but return a `div_t` **struct** (CQ cannot taint/
-produce aggregates) and stay opaque `@div` calls → decline. The abs island is wired; the rest
-is deferred.
+### `stdlib.h` — full surface wired (WIRED)
+The whole ~39-function header is modeled so the denominator is honest (not a cherry-picked
+island). Only **`abs`/`labs`/`llabs`** lower and golden-verify today (→ `@llvm.abs.iN`, the
+integer analog of `fabs`). The rest is classified by a structural signature fact, never a
+compile claim: `div`/`ldiv`/`lldiv` return a `div_t` **struct** → *needs-aggregate*; the
+`atoi`/`strto*` parsers, `malloc`/`free` family, `getenv`/`system`, `qsort`/`bsearch`, and the
+multibyte routines are pointer/buffer operations → *needs-shadow*; `rand`/`srand`,
+`exit`/`abort`/`_Exit`/`quick_exit`, and `atexit`/`at_quick_exit` have no quantum meaning →
+*by-design*. Net: **3/39 golden-verified**, 28 fixable (3 aggregate + 25 Shadow), 8 by-design.
 
 ### `string.h` — pointer/Shadow demonstrator (LATER)
 Every function's meaning is carried by `char*`/`void*` buffers CQ cannot taint. The only

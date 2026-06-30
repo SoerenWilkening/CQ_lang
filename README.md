@@ -60,12 +60,12 @@ never papered over to inflate the number (the Prime Directive). The tables separ
 width) from **cannot-compile-at-all** (by design — e.g. `nan(const char*)` has no quantum input).
 
 <!-- LIBRARY-COVERAGE:START -->
-**Standard-library quantum-coverage — compiles: 61/177 (34.5%)** &nbsp;·&nbsp; golden-verified: 61/177 (34.5%).
+**Standard-library quantum-coverage — compiles: 61/213 (28.6%)** &nbsp;·&nbsp; golden-verified: 61/213 (28.6%).
 
 | Library | Compiles | Golden-verified | Cannot-yet (fixable) | By-design |
 |---|---|---|---|---|
 | [`math.h`](tools/library_coverage/coverage/mathh.md) | 58/174 (33%) | 58/174 (33%) | 113 | 3 |
-| [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/3 (100%) | 3/3 (100%) | 0 | 0 |
+| [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 28 | 8 |
 
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->
