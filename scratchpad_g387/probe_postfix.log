@@ -1,0 +1,326 @@
+
+=== math.h ===
+  [math.h] cosf           [H] ... verified
+  [math.h] cos            [H] ... verified
+  [math.h] cosl           [H] ... verified
+  [math.h] sinf           [H] ... verified
+  [math.h] sin            [H] ... verified
+  [math.h] sinl           [H] ... verified
+  [math.h] tanf           [H] ... verified
+  [math.h] tan            [H] ... verified
+  [math.h] tanl           [H] ... verified
+  [math.h] acosf          [H] ... verified
+  [math.h] acos           [H] ... verified
+  [math.h] acosl          [H] ... verified
+  [math.h] asinf          [H] ... verified
+  [math.h] asin           [H] ... verified
+  [math.h] asinl          [H] ... verified
+  [math.h] atanf          [H] ... verified
+  [math.h] atan           [H] ... verified
+  [math.h] atanl          [H] ... verified
+  [math.h] atan2f         [HL] ... verified
+  [math.h] atan2f         [LH] ... verified
+  [math.h] atan2f         [QQ] ... verified
+  [math.h] atan2          [HL] ... verified
+  [math.h] atan2          [LH] ... verified
+  [math.h] atan2          [QQ] ... verified
+  [math.h] atan2l         [HL] ... verified
+  [math.h] atan2l         [LH] ... verified
+  [math.h] atan2l         [QQ] ... verified
+  [math.h] coshf          [H] ... verified
+  [math.h] cosh           [H] ... verified
+  [math.h] coshl          [H] ... verified
+  [math.h] sinhf          [H] ... verified
+  [math.h] sinh           [H] ... verified
+  [math.h] sinhl          [H] ... verified
+  [math.h] tanhf          [H] ... verified
+  [math.h] tanh           [H] ... verified
+  [math.h] tanhl          [H] ... verified
+  [math.h] acoshf         [H] ... verified
+  [math.h] acosh          [H] ... verified
+  [math.h] acoshl         [H] ... verified
+  [math.h] asinhf         [H] ... verified
+  [math.h] asinh          [H] ... verified
+  [math.h] asinhl         [H] ... verified
+  [math.h] atanhf         [H] ... verified
+  [math.h] atanh          [H] ... verified
+  [math.h] atanhl         [H] ... verified
+  [math.h] expf           [H] ... verified
+  [math.h] exp            [H] ... verified
+  [math.h] expl           [H] ... verified
+  [math.h] exp2f          [H] ... verified
+  [math.h] exp2           [H] ... verified
+  [math.h] exp2l          [H] ... verified
+  [math.h] expm1f         [H] ... verified
+  [math.h] expm1          [H] ... verified
+  [math.h] expm1l         [H] ... verified
+  [math.h] logf           [H] ... verified
+  [math.h] log            [H] ... verified
+  [math.h] logl           [H] ... verified
+  [math.h] log10f         [H] ... verified
+  [math.h] log10          [H] ... verified
+  [math.h] log10l         [H] ... verified
+  [math.h] log2f          [H] ... verified
+  [math.h] log2           [H] ... verified
+  [math.h] log2l          [H] ... verified
+  [math.h] log1pf         [H] ... verified
+  [math.h] log1p          [H] ... verified
+  [math.h] log1pl         [H] ... verified
+  [math.h] logbf          [H] ... verified
+  [math.h] logb           [H] ... verified
+  [math.h] logbl          [H] ... verified
+  [math.h] ilogbf         [H] ... verified
+  [math.h] ilogb          [H] ... verified
+  [math.h] ilogbl         [H] ... verified
+  [math.h] ldexpf         [HL] ... verified
+  [math.h] ldexpf         [LH] ... verified
+  [math.h] ldexpf         [QQ] ... verified
+  [math.h] ldexp          [HL] ... verified
+  [math.h] ldexp          [LH] ... verified
+  [math.h] ldexp          [QQ] ... verified
+  [math.h] ldexpl         [HL] ... verified
+  [math.h] ldexpl         [LH] ... verified
+  [math.h] ldexpl         [QQ] ... verified
+  [math.h] scalbnf        [HL] ... verified
+  [math.h] scalbnf        [LH] ... verified
+  [math.h] scalbnf        [QQ] ... verified
+  [math.h] scalbn         [HL] ... verified
+  [math.h] scalbn         [LH] ... verified
+  [math.h] scalbn         [QQ] ... verified
+  [math.h] scalbnl        [HL] ... verified
+  [math.h] scalbnl        [LH] ... verified
+  [math.h] scalbnl        [QQ] ... verified
+  [math.h] scalblnf       [HL] ... verified
+  [math.h] scalblnf       [LH] ... verified
+  [math.h] scalblnf       [QQ] ... verified
+  [math.h] scalbln        [HL] ... verified
+  [math.h] scalbln        [LH] ... verified
+  [math.h] scalbln        [QQ] ... verified
+  [math.h] scalblnl       [HL] ... verified
+  [math.h] scalblnl       [LH] ... verified
+  [math.h] scalblnl       [QQ] ... verified
+  [math.h] frexpf         [H] ... accepted
+  [math.h] frexp          [H] ... accepted
+  [math.h] frexpl         [H] ... accepted
+  [math.h] modff          [H] ... accepted
+  [math.h] modf           [H] ... accepted
+  [math.h] modfl          [H] ... accepted
+  [math.h] powf           [HL] ... verified
+  [math.h] powf           [LH] ... verified
+  [math.h] powf           [QQ] ... verified
+  [math.h] pow            [HL] ... verified
+  [math.h] pow            [LH] ... verified
+  [math.h] pow            [QQ] ... verified
+  [math.h] powl           [HL] ... verified
+  [math.h] powl           [LH] ... verified
+  [math.h] powl           [QQ] ... verified
+  [math.h] sqrtf          [H] ... verified
+  [math.h] sqrt           [H] ... verified
+  [math.h] sqrtl          [H] ... verified
+  [math.h] cbrtf          [H] ... verified
+  [math.h] cbrt           [H] ... verified
+  [math.h] cbrtl          [H] ... verified
+  [math.h] hypotf         [HL] ... verified
+  [math.h] hypotf         [LH] ... verified
+  [math.h] hypotf         [QQ] ... verified
+  [math.h] hypot          [HL] ... verified
+  [math.h] hypot          [LH] ... verified
+  [math.h] hypot          [QQ] ... verified
+  [math.h] hypotl         [HL] ... verified
+  [math.h] hypotl         [LH] ... verified
+  [math.h] hypotl         [QQ] ... verified
+  [math.h] erff           [H] ... verified
+  [math.h] erf            [H] ... verified
+  [math.h] erfl           [H] ... verified
+  [math.h] erfcf          [H] ... verified
+  [math.h] erfc           [H] ... verified
+  [math.h] erfcl          [H] ... verified
+  [math.h] tgammaf        [H] ... verified
+  [math.h] tgamma         [H] ... verified
+  [math.h] tgammal        [H] ... verified
+  [math.h] lgammaf        [H] ... verified
+  [math.h] lgamma         [H] ... verified
+  [math.h] lgammal        [H] ... verified
+  [math.h] ceilf          [H] ... verified
+  [math.h] ceil           [H] ... verified
+  [math.h] ceill          [H] ... verified
+  [math.h] floorf         [H] ... verified
+  [math.h] floor          [H] ... verified
+  [math.h] floorl         [H] ... verified
+  [math.h] truncf         [H] ... verified
+  [math.h] trunc          [H] ... verified
+  [math.h] truncl         [H] ... verified
+  [math.h] roundf         [H] ... verified
+  [math.h] round          [H] ... verified
+  [math.h] roundl         [H] ... verified
+  [math.h] nearbyintf     [H] ... verified
+  [math.h] nearbyint      [H] ... verified
+  [math.h] nearbyintl     [H] ... verified
+  [math.h] rintf          [H] ... verified
+  [math.h] rint           [H] ... verified
+  [math.h] rintl          [H] ... verified
+  [math.h] lrintf         [H] ... verified
+  [math.h] lrint          [H] ... verified
+  [math.h] lrintl         [H] ... verified
+  [math.h] llrintf        [H] ... verified
+  [math.h] llrint         [H] ... verified
+  [math.h] llrintl        [H] ... verified
+  [math.h] lroundf        [H] ... verified
+  [math.h] lround         [H] ... verified
+  [math.h] lroundl        [H] ... verified
+  [math.h] llroundf       [H] ... verified
+  [math.h] llround        [H] ... verified
+  [math.h] llroundl       [H] ... verified
+  [math.h] fmodf          [HL] ... verified
+  [math.h] fmodf          [LH] ... verified
+  [math.h] fmodf          [QQ] ... verified
+  [math.h] fmod           [HL] ... verified
+  [math.h] fmod           [LH] ... verified
+  [math.h] fmod           [QQ] ... verified
+  [math.h] fmodl          [HL] ... verified
+  [math.h] fmodl          [LH] ... verified
+  [math.h] fmodl          [QQ] ... verified
+  [math.h] remainderf     [HL] ... verified
+  [math.h] remainderf     [LH] ... verified
+  [math.h] remainderf     [QQ] ... verified
+  [math.h] remainder      [HL] ... verified
+  [math.h] remainder      [LH] ... verified
+  [math.h] remainder      [QQ] ... verified
+  [math.h] remainderl     [HL] ... verified
+  [math.h] remainderl     [LH] ... verified
+  [math.h] remainderl     [QQ] ... verified
+  [math.h] remquof        [HL] ... accepted
+  [math.h] remquof        [LH] ... accepted
+  [math.h] remquof        [QQ] ... accepted
+  [math.h] remquo         [HL] ... accepted
+  [math.h] remquo         [LH] ... accepted
+  [math.h] remquo         [QQ] ... accepted
+  [math.h] remquol        [HL] ... accepted
+  [math.h] remquol        [LH] ... accepted
+  [math.h] remquol        [QQ] ... accepted
+  [math.h] copysignf      [HL] ... verified
+  [math.h] copysignf      [LH] ... verified
+  [math.h] copysignf      [QQ] ... verified
+  [math.h] copysign       [HL] ... verified
+  [math.h] copysign       [LH] ... verified
+  [math.h] copysign       [QQ] ... verified
+  [math.h] copysignl      [HL] ... verified
+  [math.h] copysignl      [LH] ... verified
+  [math.h] copysignl      [QQ] ... verified
+  [math.h] nextafterf     [HL] ... verified
+  [math.h] nextafterf     [LH] ... verified
+  [math.h] nextafterf     [QQ] ... verified
+  [math.h] nextafter      [HL] ... verified
+  [math.h] nextafter      [LH] ... verified
+  [math.h] nextafter      [QQ] ... verified
+  [math.h] nextafterl     [HL] ... verified
+  [math.h] nextafterl     [LH] ... verified
+  [math.h] nextafterl     [QQ] ... verified
+  [math.h] fdimf          [HL] ... verified
+  [math.h] fdimf          [LH] ... verified
+  [math.h] fdimf          [QQ] ... verified
+  [math.h] fdim           [HL] ... verified
+  [math.h] fdim           [LH] ... verified
+  [math.h] fdim           [QQ] ... verified
+  [math.h] fdiml          [HL] ... verified
+  [math.h] fdiml          [LH] ... verified
+  [math.h] fdiml          [QQ] ... verified
+  [math.h] fmaxf          [HL] ... verified
+  [math.h] fmaxf          [LH] ... verified
+  [math.h] fmaxf          [QQ] ... verified
+  [math.h] fmax           [HL] ... verified
+  [math.h] fmax           [LH] ... verified
+  [math.h] fmax           [QQ] ... verified
+  [math.h] fmaxl          [HL] ... verified
+  [math.h] fmaxl          [LH] ... verified
+  [math.h] fmaxl          [QQ] ... verified
+  [math.h] fminf          [HL] ... verified
+  [math.h] fminf          [LH] ... verified
+  [math.h] fminf          [QQ] ... verified
+  [math.h] fmin           [HL] ... verified
+  [math.h] fmin           [LH] ... verified
+  [math.h] fmin           [QQ] ... verified
+  [math.h] fminl          [HL] ... verified
+  [math.h] fminl          [LH] ... verified
+  [math.h] fminl          [QQ] ... verified
+  [math.h] fmaf           [HLL] ... verified
+  [math.h] fmaf           [LHL] ... verified
+  [math.h] fmaf           [HHL] ... verified
+  [math.h] fmaf           [LLH] ... declined
+  [math.h] fmaf           [HLH] ... verified
+  [math.h] fmaf           [LHH] ... verified
+  [math.h] fmaf           [QQQ] ... verified
+  [math.h] fma            [HLL] ... verified
+  [math.h] fma            [LHL] ... verified
+  [math.h] fma            [HHL] ... verified
+  [math.h] fma            [LLH] ... declined
+  [math.h] fma            [HLH] ... verified
+  [math.h] fma            [LHH] ... verified
+  [math.h] fma            [QQQ] ... verified
+  [math.h] fmal           [HLL] ... verified
+  [math.h] fmal           [LHL] ... verified
+  [math.h] fmal           [HHL] ... verified
+  [math.h] fmal           [LLH] ... declined
+  [math.h] fmal           [HLH] ... verified
+  [math.h] fmal           [LHH] ... verified
+  [math.h] fmal           [QQQ] ... verified
+  [math.h] fpclassify     [H] ... declined
+  [math.h] isfinite       [H] ... verified
+  [math.h] isinf          [H] ... verified
+  [math.h] isnan          [H] ... verified
+  [math.h] isnormal       [H] ... declined
+  [math.h] signbit        [H] ... declined
+  [math.h] isgreater      [HL] ... verified
+  [math.h] isgreater      [LH] ... verified
+  [math.h] isgreater      [QQ] ... verified
+  [math.h] isless         [HL] ... verified
+  [math.h] isless         [LH] ... verified
+  [math.h] isless         [QQ] ... verified
+  [math.h] isunordered    [HL] ... verified
+  [math.h] isunordered    [LH] ... verified
+  [math.h] isunordered    [QQ] ... verified
+
+=== stdlib.h ===
+  [stdlib.h] abs            [H] ... verified
+  [stdlib.h] labs           [H] ... verified
+  [stdlib.h] llabs          [H] ... verified
+  [stdlib.h] div            [—] ... needs-aggregate (static)
+  [stdlib.h] ldiv           [—] ... needs-aggregate (static)
+  [stdlib.h] lldiv          [—] ... needs-aggregate (static)
+  [stdlib.h] atof           [—] ... needs-shadow (static)
+  [stdlib.h] atoi           [—] ... needs-shadow (static)
+  [stdlib.h] atol           [—] ... needs-shadow (static)
+  [stdlib.h] atoll          [—] ... needs-shadow (static)
+  [stdlib.h] strtod         [—] ... needs-shadow (static)
+  [stdlib.h] strtof         [—] ... needs-shadow (static)
+  [stdlib.h] strtold        [—] ... needs-shadow (static)
+  [stdlib.h] strtol         [—] ... needs-shadow (static)
+  [stdlib.h] strtoll        [—] ... needs-shadow (static)
+  [stdlib.h] strtoul        [—] ... needs-shadow (static)
+  [stdlib.h] strtoull       [—] ... needs-shadow (static)
+  [stdlib.h] rand           [—] ... by-design (static)
+  [stdlib.h] srand          [—] ... by-design (static)
+  [stdlib.h] malloc         [—] ... needs-shadow (static)
+  [stdlib.h] calloc         [—] ... needs-shadow (static)
+  [stdlib.h] realloc        [—] ... needs-shadow (static)
+  [stdlib.h] aligned_alloc  [—] ... needs-shadow (static)
+  [stdlib.h] free           [—] ... needs-shadow (static)
+  [stdlib.h] getenv         [—] ... needs-shadow (static)
+  [stdlib.h] system         [—] ... needs-shadow (static)
+  [stdlib.h] abort          [—] ... by-design (static)
+  [stdlib.h] exit           [—] ... by-design (static)
+  [stdlib.h] _Exit          [—] ... by-design (static)
+  [stdlib.h] quick_exit     [—] ... by-design (static)
+  [stdlib.h] atexit         [—] ... by-design (static)
+  [stdlib.h] at_quick_exit  [—] ... by-design (static)
+  [stdlib.h] bsearch        [—] ... needs-shadow (static)
+  [stdlib.h] qsort          [—] ... needs-shadow (static)
+  [stdlib.h] mblen          [—] ... needs-shadow (static)
+  [stdlib.h] mbtowc         [—] ... needs-shadow (static)
+  [stdlib.h] wctomb         [—] ... needs-shadow (static)
+  [stdlib.h] mbstowcs       [—] ... needs-shadow (static)
+  [stdlib.h] wcstombs       [—] ... needs-shadow (static)
+
+wrote /Users/sorenwilkening/Desktop/CQ_lang/tools/library_coverage/results.json
+updated README badge
+wrote /Users/sorenwilkening/Desktop/CQ_lang/tools/library_coverage/COVERAGE.md + 2 library page(s)

@@ -22,7 +22,9 @@
 #include "Uncomputation.h"
 #include "WidthDispatch.h"
 
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
 #include <algorithm>
@@ -77,9 +79,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // analysis. Taint is a pure SSA property that does NOT cross the out-cell's
   // memory, so the read-back load and its downstream are untainted until the
   // markers replace them; re-propagate so the markers' downstream is re-tainted
-  // via the normal mechanism. The markers are curated libm calls (carved in
-  // `declineTaintEscapes`); off-pattern cells already declined loudly here.
-  if (lowerByRefMath(M, wd, taint))
+  // via the normal mechanism. Iterate to a FIXPOINT (re-propagate between passes)
+  // so CHAINED by-ref math of any depth/linkage is lowered rather than stranded
+  // (Rule-13 DEFECT C); `byRefDeclined` carries loud-declined calls across passes
+  // so an unlowerable one is diagnosed exactly once. The markers are curated libm
+  // calls (carved in `declineTaintEscapes`).
+  SmallPtrSet<const CallInst *, 8> byRefDeclined;
+  while (lowerByRefMath(M, wd, taint, byRefDeclined))
     taint = propagate(M, wd);
 
   // Phase 6 specialization PRE-PASS (C-Plan, DD-1): pure analysis by SSA
@@ -271,9 +277,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // bd g387 by-ref math canonicalization, mirrored here for twin-pipeline parity
   // (MANDATORY — a step wired in run() but not here would silently diverge,
   // WI-1.12). Like the specialization pre-pass below, it walks the WHOLE module
-  // (the AXIS-F dead-shim caveat above applies); re-propagate on change so the
-  // markers' downstream is re-tainted. See run() for the rationale.
-  if (lowerByRefMath(M, wd, taint))
+  // (the AXIS-F dead-shim caveat above applies); iterate to a FIXPOINT, see run().
+  SmallPtrSet<const CallInst *, 8> byRefDeclined;
+  while (lowerByRefMath(M, wd, taint, byRefDeclined))
     taint = propagate(M, wd);
 
   // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point

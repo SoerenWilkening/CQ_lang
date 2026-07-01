@@ -17,6 +17,8 @@
 #ifndef CQ_BYREF_MATH_H
 #define CQ_BYREF_MATH_H
 
+#include "llvm/ADT/SmallPtrSet.h"
+
 namespace llvm {
 class Module;
 class CallInst;
@@ -36,9 +38,18 @@ bool isByRefMathCall(const llvm::CallInst *CI);
 
 // Canonicalize every QUANTUM by-ref math call (fp arg tainted per `taint`) with
 // a valid out-cell shape into `@cq_byref_*` marker calls; erase the cell.
-// Off-pattern cells decline loudly. Returns true iff the IR changed — the caller
-// MUST then re-run `propagate` so the markers' downstream is re-tainted.
-bool lowerByRefMath(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+// Off-pattern (unlowerable) name-matched tainted calls decline LOUDLY and are
+// recorded in `Declined` so a fixpoint re-run does not re-fire the diagnostic.
+//
+// Returns true iff it REWROTE ≥1 call (so the caller re-`propagate`s and calls
+// again — a FIXPOINT). Re-running with a re-derived taint set is what lowers
+// CHAINED by-ref math of ANY depth or linkage (outer fp source derived from an
+// inner out-cell / marker, or a reversed block layout): each pass sees the prior
+// pass's markers newly tainted. The fixpoint converges (a rewrite erases a raw
+// by-ref call; a decline is recorded and skipped next pass), and it guarantees no
+// tainted by-ref call is ever stranded to the backend (Rule 1 / Prime Directive).
+bool lowerByRefMath(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
+                    llvm::SmallPtrSetImpl<const llvm::CallInst *> &Declined);
 
 }  // namespace cq
 

@@ -206,7 +206,8 @@ StringRef analyzeCell(CallInst *CI, const ByRefDesc &D, Type *FpTy,
 
 bool isByRefMathCall(const CallInst *CI) { return lookupByRef(CI) != nullptr; }
 
-bool lowerByRefMath(Module &M, WidthDispatch &wd, TaintSet &taint) {
+bool lowerByRefMath(Module &M, WidthDispatch &wd, TaintSet &taint,
+                    SmallPtrSetImpl<const CallInst *> &Declined) {
   (void)wd;
   bool Changed = false;
 
@@ -228,19 +229,51 @@ bool lowerByRefMath(Module &M, WidthDispatch &wd, TaintSet &taint) {
     LoopInfo LI(DT);
 
     for (CallInst *CI : Sites) {
+      if (Declined.count(CI))
+        continue;  // already loud-declined in a prior fixpoint pass.
       const ByRefDesc *D = lookupByRef(CI);
-      Type *FpTy = validSignature(CI, *D);
-      if (!FpTy)  // not the expected (fp…, ptr)→fp shape — leave alone.
+
+      // Does this by-ref-NAMED call consume ANY tainted value in the CURRENT
+      // (re-derived) taint set? A fully-classical by-ref call is an ordinary
+      // libc call — leave it untouched (passthrough; declineTaintEscapes won't
+      // flag it either). Iterate ALL operands: a chained call becomes tainted
+      // across fixpoint passes once the inner producer's downstream is
+      // re-propagated (DEFECT C — handled by the fixpoint, not by seeding).
+      bool ReadsTainted = false;
+      for (Use &Op : CI->args())
+        if (taint.Tainted.count(Op.get())) {
+          ReadsTainted = true;
+          break;
+        }
+      if (!ReadsTainted)
         continue;
 
-      // Quantum iff ANY fp value arg is tainted; a fully-classical by-ref call
-      // is a normal libc call — leave it untouched (passthrough).
-      bool AnyTainted = false;
+      // From here the call is QUANTUM. The `isByRefMathCall` escape carve
+      // (name-only) suppresses the generic kMsgUnknownCallee, so lowerByRefMath
+      // MUST now either lower it or LOUD-DECLINE it (recording it in `Declined`)
+      // — a silent skip would strand the call (verify-clean SILENT MISCOMPILE on
+      // an i32 operand, or a broken module on an fp operand — g387 Rule-13
+      // DEFECT A/B/C). Rule 1 / Prime Directive: off-pattern declines loudly,
+      // never crashes the backend.
+      Type *FpTy = validSignature(CI, *D);
+      if (!FpTy) {
+        diagnoseByRef(CI, "unsupported by-ref math signature");
+        Declined.insert(CI);
+        continue;
+      }
+      bool AnyFpTainted = false;
       for (unsigned i = 0; i < D->numFp; ++i)
         if (taint.Tainted.count(CI->getArgOperand(i)))
-          AnyTainted = true;
-      if (!AnyTainted)
+          AnyFpTainted = true;
+      if (!AnyFpTainted) {
+        // Reads a tainted value but no fp value arg is tainted → the tainted
+        // operand is the out-POINTER (a quantum address/index), off the
+        // straight-line scalar-cell model. Decline (never route a quantum
+        // pointer through the scalar-promotion path).
+        diagnoseByRef(CI, "tainted by-ref out-pointer");
+        Declined.insert(CI);
         continue;
+      }
 
       AllocaInst *Cell = nullptr;
       SmallVector<LoadInst *, 4> Loads;
@@ -250,6 +283,7 @@ bool lowerByRefMath(Module &M, WidthDispatch &wd, TaintSet &taint) {
                                      Stores, Lifetimes);
       if (!Reason.empty()) {  // off-pattern — loud decline, lower nothing.
         diagnoseByRef(CI, Reason);
+        Declined.insert(CI);
         continue;
       }
 
@@ -273,6 +307,9 @@ bool lowerByRefMath(Module &M, WidthDispatch &wd, TaintSet &taint) {
       CI->replaceAllUsesWith(PrimCall);
 
       // Secondary marker: (fp…) -> cell type. Replaces every out-cell load.
+      // (No taint seeding here — the caller's fixpoint re-`propagate` re-derives
+      // taint over the markers and their whole downstream, which is what lowers
+      // CHAINED by-ref math regardless of how the linkage is expressed.)
       if (!Loads.empty()) {
         Type *CellTy = Cell->getAllocatedType();
         std::string SecName = (D->sec + "_" + W).str();

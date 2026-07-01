@@ -1914,14 +1914,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_frexp_f32(h0) -> h1\ncq_template_frexpexp_f32_to_i32(h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "accepted"
         },
         {
           "name": "frexp",
@@ -1937,14 +1937,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_frexp_f64(h0) -> h1\ncq_template_frexpexp_f64_to_i32(h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "accepted"
         },
         {
           "name": "frexpl",
@@ -1960,14 +1960,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_frexp_f80(h0) -> h1\ncq_template_frexpexp_f80_to_i32(h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f80(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "accepted"
         },
         {
           "name": "modff",
@@ -1983,14 +1983,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_modf_f32(h0) -> h1\ncq_template_modfint_f32(h0) -> h2\ncqrt_measure_f32(h2) -> 0.000000\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "accepted"
         },
         {
           "name": "modf",
@@ -2006,14 +2006,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_modf_f64(h0) -> h1\ncq_template_modfint_f64(h0) -> h2\ncqrt_measure_f64(h2) -> 0.000000\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "accepted"
         },
         {
           "name": "modfl",
@@ -2029,14 +2029,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_modf_f80(h0) -> h1\ncq_template_modfint_f80(h0) -> h2\ncqrt_measure_f80(h2) -> 0.000000\ncqrt_measure_f80(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "accepted"
         },
         {
           "name": "powf",
@@ -3570,32 +3570,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_remquo_f32_hl(h0, 1.500000) -> h1\ncq_template_remquoquo_f32_to_i32_hl(h0, 1.500000) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_remquo_f32_lh(1.500000, h0) -> h1\ncq_template_remquoquo_f32_to_i32_lh(1.500000, h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_remquo_f32(h0, h1) -> h2\ncq_template_remquoquo_f32_to_i32(h0, h1) -> h3\ncqrt_measure_i32(h3) -> 0\ncqrt_measure_f32(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "accepted"
         },
         {
           "name": "remquo",
@@ -3611,32 +3611,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_remquo_f64_hl(h0, 1.500000) -> h1\ncq_template_remquoquo_f64_to_i32_hl(h0, 1.500000) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_remquo_f64_lh(1.500000, h0) -> h1\ncq_template_remquoquo_f64_to_i32_lh(1.500000, h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_remquo_f64(h0, h1) -> h2\ncq_template_remquoquo_f64_to_i32(h0, h1) -> h3\ncqrt_measure_i32(h3) -> 0\ncqrt_measure_f64(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "accepted"
         },
         {
           "name": "remquol",
@@ -3652,32 +3652,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_remquo_f80_hl(h0, 1.500000) -> h1\ncq_template_remquoquo_f80_to_i32_hl(h0, 1.500000) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f80(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_remquo_f80_lh(1.500000, h0) -> h1\ncq_template_remquoquo_f80_to_i32_lh(1.500000, h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f80(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "by-ref out-param \u2192 needs 7.5 Shadow routing",
-                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_remquo_f80(h0, h1) -> h2\ncq_template_remquoquo_f80_to_i32(h0, h1) -> h3\ncqrt_measure_i32(h3) -> 0\ncqrt_measure_f80(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "accepted"
         },
         {
           "name": "copysignf",
