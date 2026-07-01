@@ -313,11 +313,16 @@ def gen_program(variant, combo, include):
     lines = [f"#include <{include}>", "", f"{ret_c} probe(void) {{"]
     call_args = []
     byref_decls = []
+    byref_cells = []  # (index, pointee C type) — the SECOND results to measure
     angle = 0.5
     for i, (k, ct) in enumerate(zip(args_kind, args_c)):
         if k in ("fp*", "int*"):
-            pointee = "double" if k == "fp*" else "int"
+            # Pointee C type per VARIANT (int* -> int; fp* -> float/double/long
+            # double), taken from args_c so f32/f80 spellings pass the right
+            # pointer type (a hardcoded `double` mis-typed modff/frexpl).
+            pointee = ct.rsplit("*", 1)[0].strip()
             byref_decls.append(f"    {pointee} _br{i} = 0;")
+            byref_cells.append((i, pointee))
             call_args.append(f"&_br{i}")
         elif k == "str":
             call_args.append('""')
@@ -329,6 +334,14 @@ def gen_program(variant, combo, include):
             call_args.append(f"a{i}")
     lines.extend(byref_decls)
     lines.append(f"    {ret_c} r = {name}({', '.join(call_args)});")
+    # bd g387: measure each by-ref out-param (the SECOND result) in its NATIVE
+    # type, so a by-ref fn is COVERED only when its secondary producer is actually
+    # exercised — never ignored (an unread out-param would inflate coverage to the
+    # primary result alone; Prime Directive, honest coverage). Native type also
+    # sidesteps the orthogonal f80<->int cross-domain cast (bd 3c6m.5).
+    for i, pointee in byref_cells:
+        lines.append(f"    volatile {pointee} _s{i} = cq_measure(_br{i});")
+        lines.append(f"    (void) _s{i};")
     lines.append("    return cq_measure(r);")
     lines.append("}")
     lines.append("int main(void) {")

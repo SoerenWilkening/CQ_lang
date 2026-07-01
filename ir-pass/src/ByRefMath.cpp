@@ -120,6 +120,7 @@ StringRef analyzeCell(CallInst *CI, const ByRefDesc &D, Type *FpTy,
                       const TaintSet &taint, DominatorTree &DT, LoopInfo &LI,
                       AllocaInst *&CellOut,
                       SmallVectorImpl<LoadInst *> &Loads,
+                      SmallVectorImpl<StoreInst *> &Stores,
                       SmallVectorImpl<Instruction *> &Lifetimes) {
   Value *PtrArg = CI->getArgOperand(D.numFp);
   auto *Cell = dyn_cast<AllocaInst>(PtrArg->stripPointerCasts());
@@ -158,6 +159,21 @@ StringRef analyzeCell(CallInst *CI, const ByRefDesc &D, Type *FpTy,
       if (!DT.dominates(CI, LD))
         return "out-param cell load not dominated by the call";
       Loads.push_back(LD);
+      continue;
+    }
+    if (auto *ST = dyn_cast<StoreInst>(UI)) {
+      // A store to the cell is allowed ONLY as a DEAD pre-call whole-cell write
+      // the by-ref call overwrites (e.g. clang's `int e = 0;` zero-init before
+      // frexp). It must dominate the call — a store the call does NOT dominate
+      // (a POST-call write) could be observed by a later load, which would then
+      // read a value OTHER than the by-ref result: RAUW-ing that load to the
+      // secondary producer would be a silent miscompile. Decline that.
+      if (!ST->isSimple() || ST->getPointerOperand() != Cell ||
+          ST->getValueOperand()->getType() != CellTy)
+        return "out-param cell store is not a simple whole-cell write";
+      if (!DT.dominates(ST, CI))
+        return "out-param cell written after the by-ref call";
+      Stores.push_back(ST);
       continue;
     }
     if (auto *II = dyn_cast<IntrinsicInst>(UI)) {
@@ -228,9 +244,10 @@ bool lowerByRefMath(Module &M, WidthDispatch &wd, TaintSet &taint) {
 
       AllocaInst *Cell = nullptr;
       SmallVector<LoadInst *, 4> Loads;
+      SmallVector<StoreInst *, 4> Stores;
       SmallVector<Instruction *, 4> Lifetimes;
-      StringRef Reason =
-          analyzeCell(CI, *D, FpTy, taint, DT, LI, Cell, Loads, Lifetimes);
+      StringRef Reason = analyzeCell(CI, *D, FpTy, taint, DT, LI, Cell, Loads,
+                                     Stores, Lifetimes);
       if (!Reason.empty()) {  // off-pattern — loud decline, lower nothing.
         diagnoseByRef(CI, Reason);
         continue;
@@ -268,9 +285,12 @@ bool lowerByRefMath(Module &M, WidthDispatch &wd, TaintSet &taint) {
           LD->replaceAllUsesWith(SecCall);
       }
 
-      // ---- Tear down the memory cell (loads, call, lifetimes, alloca). -------
+      // ---- Tear down the memory cell (loads, dead pre-call stores, call,
+      //      lifetimes, alloca). -------------------------------------------
       for (LoadInst *LD : Loads)
         LD->eraseFromParent();
+      for (StoreInst *ST : Stores)
+        ST->eraseFromParent();
       CI->eraseFromParent();
       for (Instruction *LT : Lifetimes)
         LT->eraseFromParent();

@@ -463,6 +463,16 @@ add_test(NAME e2e-slice-i128-mulhi
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_i128_mulhi.expected.log")
 
+# bd g387 — by-ref math out-params (frexp/modf/remquo): forward producers + the
+# fan-out `_unc` twins + the NEW cross_binary remquoquo. The link-proof layer.
+add_test(NAME e2e-slice-byref
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_byref.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_byref.expected.log")
+
 # Phase 6 (DD-6 §7.1, test_C_libtooling-mvna.3): the ZERO-LIB smoke for the new
 # multi-file harness. Drives the EXISTING single-TU theta->add->measure slice
 # through run_slice_multi.sh with EMPTY LIBSRCS (the "" 7th positional), so the

@@ -1,0 +1,7 @@
+cqrt_alloc_f64(0.000000) -> h0
+cqrt_ry_f64(h0, 0.300000)
+cq_template_remquo_f64_lh(7.000000, h0) -> h1
+cq_template_remquoquo_f64_to_i32_lh(7.000000, h0) -> h2
+cq_template_fptosi_f64_to_i32(h1) -> h3
+cqrt_measure_i32(h3) -> 0
+cqrt_measure_i32(h2) -> 0

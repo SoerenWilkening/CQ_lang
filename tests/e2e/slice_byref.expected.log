@@ -1,0 +1,48 @@
+cqrt_alloc_f64(1.500000) -> h0
+cqrt_ry_f64(h0, 0.250000)
+cq_template_frexp_f64(h0) -> h1
+cq_template_frexpexp_f64_to_i32(h0) -> h2
+cq_template_fptosi_f64_to_i32(h1) -> h3
+cqrt_measure_i32(h3) -> 0
+cqrt_measure_i32(h2) -> 0
+cqrt_alloc_f64(2.500000) -> h4
+cqrt_ry_f64(h4, 0.350000)
+cq_template_modf_f64(h4) -> h5
+cq_template_modfint_f64(h4) -> h6
+cq_template_fptosi_f64_to_i32(h5) -> h7
+cqrt_measure_i32(h7) -> 0
+cq_template_fptosi_f64_to_i32(h6) -> h8
+cqrt_measure_i32(h8) -> 0
+cqrt_alloc_f64(1.500000) -> h9
+cqrt_ry_f64(h9, 0.450000)
+cqrt_alloc_f64(2.500000) -> h10
+cqrt_ry_f64(h10, 0.550000)
+cq_template_remquo_f64(h9, h10) -> h11
+cq_template_remquoquo_f64_to_i32(h9, h10) -> h12
+cq_template_fptosi_f64_to_i32(h11) -> h13
+cqrt_measure_i32(h13) -> 0
+cqrt_measure_i32(h12) -> 0
+cqrt_alloc_f64(1.500000) -> h14
+cqrt_ry_f64(h14, 0.650000)
+cq_template_remquo_f64_hl(h14, 2.000000) -> h15
+cq_template_remquoquo_f64_to_i32_hl(h14, 2.000000) -> h16
+cq_template_fptosi_f64_to_i32(h15) -> h17
+cqrt_measure_i32(h17) -> 0
+cqrt_measure_i32(h16) -> 0
+cqrt_alloc_f64(2.500000) -> h18
+cqrt_ry_f64(h18, 0.100000)
+cq_template_frexp_f64(h18) -> h19
+cq_template_frexpexp_f64_to_i32(h18) -> h20
+cq_template_fptosi_f64_to_i32(h19) -> h21
+cqrt_rz_i32(h21, 0.200000)
+cqrt_rz_i32(h20, 0.300000)
+cqrt_rz_i32(h20, -0.300000)
+cqrt_rz_i32(h21, -0.200000)
+cq_template_fptosi_f64_to_i32_unc(h21, h19)
+cqrt_free(h21)
+cq_template_frexpexp_f64_to_i32_unc(h20, h18)
+cqrt_free(h20)
+cq_template_frexp_f64_unc(h19, h18)
+cqrt_free(h19)
+cqrt_ry_f64(h18, -0.100000)
+cqrt_free(h18)
