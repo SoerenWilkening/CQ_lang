@@ -215,6 +215,21 @@ def enumerate_libm(ltable):
             for wa in op["was"]:
                 _emit_mixed_variants(rows, f"cq_template_{stem}_{wa}_{wb}",
                                      variants, wa, wb, stem)
+        elif kind == "cross_binary":
+            # (fp,fp) -> INTEGER (bd g387 remquo quotient). Signatures are
+            # byte-identical to same_binary (all handles i32; result i32) — only
+            # the NAME encodes <from>_to_<to>, and the classical operand (hl/lh)
+            # is the fp `from` width. NO new abi_codegen shape: reuse qq/hl/lh
+            # (+ unc twins), with `width` = `from` so classical_w types the fp
+            # scalar operand correctly.
+            to = op["to"]
+            variants = (["fwd_qq", "fwd_hl", "unc_qq", "unc_hl"]
+                        if op["commutative"] else
+                        ["fwd_qq", "fwd_hl", "fwd_lh",
+                         "unc_qq", "unc_hl", "unc_lh"])
+            for fr in op["froms"]:
+                _emit_variants(rows, f"cq_template_{stem}_{fr}_to_{to}", "binary",
+                               variants, {"op": stem, "width": fr})
         else:
             raise ValueError(f"unknown libm kind {kind!r} for op {stem!r}")
     rows.sort(key=lambda r: r["sym"])

@@ -47,6 +47,7 @@ add_library(CQPass MODULE
   src/ArmHomogeneity.cpp
   src/BennettWrap.cpp
   src/BreakReversePlay.cpp
+  src/ByRefMath.cpp
   src/CastLowering.cpp
   src/ChainWalk.cpp
   src/ClassicalCallArmEmit.cpp

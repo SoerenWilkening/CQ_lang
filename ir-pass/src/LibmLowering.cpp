@@ -23,7 +23,7 @@ namespace cq {
 
 namespace {
 
-enum class LibmKind { SameUnary, SameBinary, CrossUnary, MixedBinary };
+enum class LibmKind { SameUnary, SameBinary, CrossUnary, MixedBinary, CrossBinary };
 
 // One curated libm function. `stem` is the SYMBOL stem (matches the
 // libm_table.yaml `op`). `nameF64`/`nameF32` are the EXACT C spellings the
@@ -70,6 +70,19 @@ const LibmDesc kLibmTable[] = {
     {"ldexp",   "ldexpf",   "ldexpl",   "ldexp",   LibmKind::MixedBinary, false, "i32"},
     {"scalbn",  "scalbnf",  "scalbnl",  "scalbn",  LibmKind::MixedBinary, false, "i32"},
     {"scalbln", "scalblnf", "scalblnl", "scalbln", LibmKind::MixedBinary, false, "i64"},
+    // by-ref math markers (bd g387) — SYNTHETIC `@cq_byref_*` calls minted by
+    // ByRefMath.cpp for the primary + secondary results of frexp/modf/remquo.
+    // Explicit-width names (three distinct declarations per marker) since one
+    // global name carries one FunctionType; the authoritative width still comes
+    // from that FunctionType (paramW/retW), like every other row. These lower to
+    // the g387 producers (cq_template_frexp/frexpexp/modf/modfint/remquo/
+    // remquoquo). See tools/libm_table.yaml and docs/prd/.../g387-byref-math.
+    {"cq_byref_frexp_f64",     "cq_byref_frexp_f32",     "cq_byref_frexp_f80",     "frexp",     LibmKind::SameUnary,   false, ""},
+    {"cq_byref_frexpexp_f64",  "cq_byref_frexpexp_f32",  "cq_byref_frexpexp_f80",  "frexpexp",  LibmKind::CrossUnary,  false, "i32"},
+    {"cq_byref_modf_f64",      "cq_byref_modf_f32",      "cq_byref_modf_f80",      "modf",      LibmKind::SameUnary,   false, ""},
+    {"cq_byref_modfint_f64",   "cq_byref_modfint_f32",   "cq_byref_modfint_f80",   "modfint",   LibmKind::SameUnary,   false, ""},
+    {"cq_byref_remquo_f64",    "cq_byref_remquo_f32",    "cq_byref_remquo_f80",    "remquo",    LibmKind::SameBinary,  false, ""},
+    {"cq_byref_remquoquo_f64", "cq_byref_remquoquo_f32", "cq_byref_remquoquo_f80", "remquoquo", LibmKind::CrossBinary, false, "i32"},
 };
 
 // The curated descriptor for `CI`, or nullptr. Requires a DIRECT call to a
@@ -157,6 +170,11 @@ bool isLibmCall(const CallInst *CI) {
     // (fp, int) → fp: arg0 the fp (result width `wa`), arg1 the integer `wb`.
     return FT->getNumParams() == 2 && isFpWidth(RW) && paramW(CI, 0) == RW &&
            paramW(CI, 1) == D->intW;
+  case LibmKind::CrossBinary:
+    // (fp,fp) → integer `to` width (bd g387 remquo quotient). Both fp operands
+    // the SAME width `from`. Names `cq_template_<op>_<from>_to_<to>[_hl|_lh]`.
+    return FT->getNumParams() == 2 && RW == D->intW &&
+           isFpWidth(paramW(CI, 0)) && paramW(CI, 0) == paramW(CI, 1);
   }
   return false;
 }
@@ -242,6 +260,45 @@ bool rewriteLibmCall(CallInst *CI, WidthDispatch &wd, TaintSet &taint) {
       T->setDebugLoc(DL);
     CI->replaceAllUsesWith(T);
     promote(T, CI, taint, ResultW);
+    return true;
+  }
+
+  if (D->kind == LibmKind::CrossBinary) {
+    // (fp,fp) → int (bd g387 remquo quotient). Like MixedBinary, the name is
+    // built inline and the FunctionType comes from the ACTUAL operand types → i32
+    // result — but the name is CROSS-style `cq_template_<stem>_<from>_to_<to>
+    // [_hl|_lh]` (the `from` fp width and the `to`=intW), and the classical
+    // operand (hl/lh) is the fp `from` width. NON-commutative — operand ORDER
+    // preserved (the quotient of x/y is order-sensitive). Class-2 additive
+    // producer; both fp sources kept live for the recompute `_unc`.
+    Value *A = CI->getArgOperand(0);  // fp x.
+    Value *B = CI->getArgOperand(1);  // fp y.
+    const bool AT = taint.Tainted.count(A) != 0;
+    const bool BT = taint.Tainted.count(B) != 0;
+    StringRef Suffix;
+    if (AT && BT)
+      Suffix = "";  // QQ (bare base symbol).
+    else if (AT)
+      Suffix = "_hl";  // fp handle, fp literal.
+    else if (BT)
+      Suffix = "_lh";  // fp literal, fp handle.
+    else {  // neither tainted — not a lowerable shape (defensive; not enqueued).
+      diagnoseNoTemplate(CI);
+      return false;
+    }
+    const StringRef FromW = paramW(CI, 0);  // fp operand width — callee FT.
+    std::string Name =
+        ("cq_template_" + D->stem + "_" + FromW + "_to_" + D->intW + Suffix)
+            .str();
+    FunctionType *FT = FunctionType::get(
+        Type::getInt32Ty(CI->getContext()), {A->getType(), B->getType()},
+        /*isVarArg=*/false);
+    FunctionCallee Callee = CI->getModule()->getOrInsertFunction(Name, FT);
+    CallInst *T = Builder.CreateCall(Callee, {A, B}, "h_libm");
+    if (DebugLoc DL = CI->getDebugLoc())
+      T->setDebugLoc(DL);
+    CI->replaceAllUsesWith(T);
+    promote(T, CI, taint, ResultW);  // ResultW == D->intW (i32) — the handle's width.
     return true;
   }
 

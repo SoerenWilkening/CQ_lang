@@ -8,6 +8,7 @@
 
 #include "TaintPropagation.h"
 
+#include "ByRefMath.h"
 #include "IntrinsicLowering.h"
 #include "LibmLowering.h"
 #include "QramLowering.h"
@@ -551,6 +552,17 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             //     declines — the angle fence is upstream (declineTaintedAngle),
             //     producer-agnostic (bd [fp-angle-fence-ordering-invariant]).
             if (isLibmCall(CI))
+              continue;
+            // 1d-g387. A by-ref math call (frexp/modf/remquo) is OWNED by
+            //     `lowerByRefMath` (which ran already, right after the first
+            //     propagate): on a valid out-cell it was rewritten to
+            //     `@cq_byref_*` producer markers (carved above via `isLibmCall`);
+            //     on an off-pattern cell it ALREADY emitted the loud
+            //     `kMsgByRefMath` decline and left the call in place. Skip it
+            //     here either way so the generic `kMsgUnknownCallee` never
+            //     double-fires (a classical by-ref call reads no tainted value
+            //     and would not reach here).
+            if (isByRefMathCall(CI))
               continue;
           }
           // 1d-Phase7.6. Recognized I/O output sinks (`printf` / `putchar`)

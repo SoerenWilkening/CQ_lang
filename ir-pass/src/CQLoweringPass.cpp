@@ -6,6 +6,7 @@
 
 #include "CQLoweringPass.h"
 
+#include "ByRefMath.h"
 #include "ControlPlan.h"
 #include "IOSinkLowering.h"
 #include "LoopPlan.h"
@@ -44,6 +45,16 @@ void eraseDeadDecls(Module &M, WidthDispatch &wd) {
         FE->eraseFromParent();
     }
   }
+  // bd g387: erase the synthetic `@cq_byref_*` marker declarations now that
+  // `lowerOps` has rewritten every marker call to its `cq_template_*` producer.
+  // They are pass-invented (unlike the user's libc `@frexp` decl, left dead like
+  // any lowered libm call), so cleaning them keeps the output tidy.
+  SmallVector<Function *, 8> DeadMarkers;
+  for (Function &F : M)
+    if (F.getName().starts_with("cq_byref_") && F.use_empty())
+      DeadMarkers.push_back(&F);
+  for (Function *F : DeadMarkers)
+    F->eraseFromParent();
 }
 
 }  // namespace
@@ -60,6 +71,16 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
+
+  // bd g387: canonicalize tainted by-ref math (frexp/modf/remquo) into
+  // `@cq_byref_*` producer markers + erase the out-cell, BEFORE any downstream
+  // analysis. Taint is a pure SSA property that does NOT cross the out-cell's
+  // memory, so the read-back load and its downstream are untainted until the
+  // markers replace them; re-propagate so the markers' downstream is re-tainted
+  // via the normal mechanism. The markers are curated libm calls (carved in
+  // `declineTaintEscapes`); off-pattern cells already declined loudly here.
+  if (lowerByRefMath(M, wd, taint))
+    taint = propagate(M, wd);
 
   // Phase 6 specialization PRE-PASS (C-Plan, DD-1): pure analysis by SSA
   // identity, BEFORE `declineTaintEscapes`, so the carve-out's membership test
@@ -246,6 +267,14 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.MeasureCalls.empty())
     return false;
+
+  // bd g387 by-ref math canonicalization, mirrored here for twin-pipeline parity
+  // (MANDATORY — a step wired in run() but not here would silently diverge,
+  // WI-1.12). Like the specialization pre-pass below, it walks the WHOLE module
+  // (the AXIS-F dead-shim caveat above applies); re-propagate on change so the
+  // markers' downstream is re-tainted. See run() for the rationale.
+  if (lowerByRefMath(M, wd, taint))
+    taint = propagate(M, wd);
 
   // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY — a pre-pass wired in `run()` but not

@@ -115,4 +115,29 @@ libm:
   - { op: ldexp,   kind: mixed_binary, commutative: false, was: [f32, f64, f80], wb: i32 }
   - { op: scalbn,  kind: mixed_binary, commutative: false, was: [f32, f64, f80], wb: i32 }
   - { op: scalbln, kind: mixed_binary, commutative: false, was: [f32, f64, f80], wb: i64 }
+
+  # ---- by-ref math out-params (bd g387) ------------------------------------
+  # frexp/modf/remquo each return one value AND write a SECOND result through a
+  # pointer out-param. ByRefMath.cpp canonicalizes the (alloca, call, load)
+  # triple into two synthetic `@cq_byref_*` marker CALLS (primary + secondary)
+  # over the SAME live fp source(s); the markers are recognized as curated libm
+  # calls (LibmLowering kLibmTable) and lowered to these templates. Each output
+  # is an INDEPENDENT deterministic function of the input(s) (frexp: x <-> (m,e)
+  # is a bijection), so each is its own Class-2 additive producer with a `_unc`
+  # twin — two producers fan out from the shared source (whole-DAG spine).
+  #   frexp : mantissa  cq_template_frexp_<W>            (same_unary,  fp -> fp)
+  #           exponent  cq_template_frexpexp_<W>_to_i32  (cross_unary, fp -> int)
+  #   modf  : fraction  cq_template_modf_<W>             (same_unary,  fp -> fp)
+  #           int part  cq_template_modfint_<W>          (same_unary,  fp -> fp)
+  #   remquo: remainder cq_template_remquo_<W>           (same_binary, non-comm)
+  #           quotient  cq_template_remquoquo_<W>_to_i32 (cross_binary NEW)
+  - { op: frexp,     kind: same_unary,  widths: [f32, f64, f80] }
+  - { op: frexpexp,  kind: cross_unary, froms: [f32, f64, f80], to: i32 }
+  - { op: modf,      kind: same_unary,  widths: [f32, f64, f80] }
+  - { op: modfint,   kind: same_unary,  widths: [f32, f64, f80] }
+  - { op: remquo,    kind: same_binary, commutative: false, widths: [f32, f64, f80] }
+  # cross_binary: (fp,fp) -> INTEGER. Signatures byte-identical to same_binary
+  # (all handles i32; result i32) — only the NAME encodes <from>_to_<to>. No new
+  # abi_codegen shape; reuses qq/hl/lh + unc twins with classical_w = `from`.
+  - { op: remquoquo, kind: cross_binary, commutative: false, froms: [f32, f64, f80], to: i32 }
 # -- End of libm table ---------------------------------------------------------

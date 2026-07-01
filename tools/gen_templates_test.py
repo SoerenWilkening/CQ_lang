@@ -229,18 +229,21 @@ class GenTemplatesTest(unittest.TestCase):
     def test_intrinsic_decl_def_pairing(self):
         self.assertEqual(self.ih_decls, self.ic_defs)
 
-    def test_libm_sibling_count_is_234(self):
-        # bd 3c6m.2 (FROZEN) + bd 3c6m.4 (f80). Curated DIRECT-libm math.h
-        # functions in the SEPARATE sibling artifact; the opcode + intrinsic counts
-        # are untouched. Now 3 fp widths (f32,f64,f80; f128 deferred). Derived:
-        #   same_unary  66: 11 fns x 3 widths x 2 variants (fwd,unc).
-        #   same_binary 84: hypot (comm) 1 x 3w x 4v = 12; atan2/remainder/
-        #     nextafter/fdim (non-comm) 4 x 3w x 6v = 72.
-        #   cross_unary 30: ilogb (to i32) + lrint/llrint/lround/llround (to i64)
-        #     = 5 fns x 3 froms (f32,f64,f80) x 2 variants (fwd,unc).
+    def test_libm_sibling_count_is_294(self):
+        # bd 3c6m.2 (FROZEN) + bd 3c6m.4 (f80) + bd g387 (by-ref frexp/modf/
+        # remquo). Curated DIRECT-libm math.h functions in the SEPARATE sibling
+        # artifact; the opcode + intrinsic counts are untouched. 3 fp widths
+        # (f32,f64,f80; f128 deferred). Derived:
+        #   same_unary  84: 14 fns x 3 widths x 2 variants (fwd,unc). (11 base +
+        #     g387 frexp/modf/modfint.)
+        #   same_binary 102: hypot (comm) 1 x 3w x 4v = 12; atan2/remainder/
+        #     nextafter/fdim/remquo (non-comm) 5 x 3w x 6v = 90. (g387 remquo.)
+        #   cross_unary 36: ilogb (to i32) + lrint/llrint/lround/llround (to i64)
+        #     + g387 frexpexp (to i32) = 6 fns x 3 froms x 2 variants.
         #   mixed_binary 54: ldexp/scalbn (wb i32) + scalbln (wb i64) = 3 fns x 3
         #     was (f32,f64,f80) x 6 variants (qq/hl/lh fwd+unc).
-        # 66 + 84 + 30 + 54 = 234 (was 156; the `…l` long-double variants).
+        #   cross_binary 18: g387 remquoquo (non-comm) 1 x 3 froms x 6 variants.
+        # 84 + 102 + 36 + 54 + 18 = 294 (was 234; the g387 by-ref producers).
         def _count(op):
             k = op["kind"]
             if k == "same_unary":
@@ -251,10 +254,12 @@ class GenTemplatesTest(unittest.TestCase):
                 return len(op["froms"]) * 2
             if k == "mixed_binary":
                 return len(op["was"]) * 6
+            if k == "cross_binary":
+                return len(op["froms"]) * (4 if op["commutative"] else 6)
             raise AssertionError(op["kind"])
         expected = sum(_count(op) for op in self.ltable["libm"])
-        self.assertEqual(expected, 234)
-        self.assertEqual(len(self.lh_decls), 234)
+        self.assertEqual(expected, 294)
+        self.assertEqual(len(self.lh_decls), 294)
 
     def test_libm_decl_def_pairing(self):
         self.assertEqual(self.lh_decls, self.lc_defs)
