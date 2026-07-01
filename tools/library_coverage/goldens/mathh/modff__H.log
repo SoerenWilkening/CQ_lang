@@ -1,0 +1,6 @@
+cqrt_alloc_f32(1.500000) -> h0
+cqrt_ry_f32(h0, 0.500000)
+cq_template_modf_f32(h0) -> h1
+cq_template_modfint_f32(h0) -> h2
+cqrt_measure_f32(h2) -> 0.000000
+cqrt_measure_f32(h1) -> 0.000000

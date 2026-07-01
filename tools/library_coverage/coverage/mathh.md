@@ -4,12 +4,12 @@
 
 The C standard math library — the flagship demonstrator: pure, mostly-total numerical functions with clean scalar in/out, ideal for taint-driven reversible lowering.
 
-**Compiles: 165/174 (94.8%)** — of which **golden-verified: 156/174 (89.7%)**.
+**Compiles: 165/174 (94.8%)** — of which **golden-verified: 165/174 (94.8%)**.
 
 | Bucket | Count | Meaning |
 |---|---|---|
-| ✅ Verified | 156 | lowers + links + runs + matches a committed golden trace |
-| 🟢 Compiles (golden pending) | 9 | lowers + links + runs; golden not yet blessed |
+| ✅ Verified | 165 | lowers + links + runs + matches a committed golden trace |
+| 🟢 Compiles (golden pending) | 0 | lowers + links + runs; golden not yet blessed |
 | 🟠 Partial | 3 | some C/Q mixtures compile, others decline (not fully covered) |
 | 🟡 Cannot **at the moment** (fixable) | 6 | declines loudly today; future work (0 are `long double` → one f80/f128 width gap) |
 | ⛔ Cannot **at all** (by design) | 3 | no taintable quantum input |
@@ -105,12 +105,12 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `scalblnf` | `float scalblnf(float, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `scalbln` | `double scalbln(double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `scalblnl` | `long double scalblnl(long double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `frexpf` `byref` | `float frexpf(float, int *)` | H:🟢 | 🟢 accepted | lowers+links+runs; golden pending |
-| `frexp` `byref` | `double frexp(double, int *)` | H:🟢 | 🟢 accepted | lowers+links+runs; golden pending |
-| `frexpl` `byref` | `long double frexpl(long double, int *)` | H:🟢 | 🟢 accepted | lowers+links+runs; golden pending |
-| `modff` `byref` | `float modff(float, float *)` | H:🟢 | 🟢 accepted | lowers+links+runs; golden pending |
-| `modf` `byref` | `double modf(double, double *)` | H:🟢 | 🟢 accepted | lowers+links+runs; golden pending |
-| `modfl` `byref` | `long double modfl(long double, long double *)` | H:🟢 | 🟢 accepted | lowers+links+runs; golden pending |
+| `frexpf` `byref` | `float frexpf(float, int *)` | H:✅ | ✅ verified |  |
+| `frexp` `byref` | `double frexp(double, int *)` | H:✅ | ✅ verified |  |
+| `frexpl` `byref` | `long double frexpl(long double, int *)` | H:✅ | ✅ verified |  |
+| `modff` `byref` | `float modff(float, float *)` | H:✅ | ✅ verified |  |
+| `modf` `byref` | `double modf(double, double *)` | H:✅ | ✅ verified |  |
+| `modfl` `byref` | `long double modfl(long double, long double *)` | H:✅ | ✅ verified |  |
 
 ### power
 
@@ -191,9 +191,9 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `remainderf` `errno` | `float remainderf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `remainder` `errno` | `double remainder(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `remainderl` `errno` | `long double remainderl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `remquof` `byref` | `float remquof(float, float, int *)` | HL:🟢 LH:🟢 QQ:🟢 | 🟢 accepted | lowers+links+runs; golden pending |
-| `remquo` `byref` | `double remquo(double, double, int *)` | HL:🟢 LH:🟢 QQ:🟢 | 🟢 accepted | lowers+links+runs; golden pending |
-| `remquol` `byref` | `long double remquol(long double, long double, int *)` | HL:🟢 LH:🟢 QQ:🟢 | 🟢 accepted | lowers+links+runs; golden pending |
+| `remquof` `byref` | `float remquof(float, float, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `remquo` `byref` | `double remquo(double, double, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `remquol` `byref` | `long double remquol(long double, long double, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 
 ### manipulation
 

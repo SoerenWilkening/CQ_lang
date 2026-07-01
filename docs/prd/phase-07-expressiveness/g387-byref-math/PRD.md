@@ -1,6 +1,6 @@
 # PRD — g387: by-ref math out-params (frexp / modf / remquo)
 
-**Status:** in progress (branch `g387-byref-math`, 2026-07-01).
+**Status:** DONE + Rule-13 CLEARED (branch `g387-byref-math`, 2026-07-01).
 **Scope (owner decision 2026-07-01):** all three families, in one increment,
 including the new `cross_binary` ABI shape for remquo's quotient.
 **Tracker:** `test_C_libtooling-g387`. Design memory: `bd memories g387-byref-math-design`.
@@ -144,3 +144,31 @@ arg classical (leave as a normal libc call — passthrough); `f128`/vector cell;
 - library coverage probe: frexp/modf/remquo flip 🟡 → ✅; bless goldens.
 - **Rule 13**: independent adversarial review of the two-producer fan-out
   uncompute + the accept-shape miss-safety + the cross_binary shape, before commit.
+
+## 8. Rule-13 outcome (2026-07-01)
+
+Three adversarial rounds. The CORE design (two-producer fan-out uncompute,
+cross_binary ABI, single-call angle fence, cell read/write miss-safety) was
+cleared **clean** in round 1; two plumbing defects were found + fixed:
+
+- **Round 1** (6-lens + adjudicator): found **DEFECT A/B** — the name-only
+  `isByRefMathCall` escape carve diverged from the `validSignature`-gated
+  lowering, so a wrong-signature by-ref call was carved but silently skipped →
+  verify-clean **silent miscompile** (i32 operand) / **broken module** (fp). Also
+  **DEFECT C** — chained by-ref stranded (broken module).
+- **Round 2** (skeptic): confirmed A/B fixed; found the **C residual** — a chain
+  whose outer fp source is *derived* from the inner out-cell (`modf(i+1.0)`) or a
+  reversed block layout still stranded.
+- **Round 3** (skeptic on the fixpoint): **CLEAR** — no defects; termination
+  linear to 30-deep chains; declined-set fires once; classical untouched; angle +
+  mux fences hold.
+
+**Fixes:** (1) `lowerByRefMath` now loud-declines (`kMsgByRefMath`) *any*
+name-matched tainted call it cannot lower (bad signature / tainted out-pointer /
+off-pattern cell), recorded in a `Declined` set — making the carve invariant
+true. (2) the orchestrator iterates `lowerByRefMath` to a **fixpoint**
+(re-propagate between passes) so chains of any depth/linkage lower; `Declined`
+carries loud-declined calls across passes. See `bd memories g387-byref-rule13-defects`
+and the carve-invariant note `g387-byref-carve-invariant`. Regression fixtures:
+`lowering_reject_byref_wrong_sig.ll`, `lowering_byref_chained.ll`,
+`lowering_byref_chained_derived.ll`.
