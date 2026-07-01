@@ -14,223 +14,236 @@ The C standard math library — the flagship demonstrator: pure, mostly-total nu
 | 🟡 Cannot **at the moment** (fixable) | 6 | declines loudly today; future work (0 are `long double` → one f80/f128 width gap) |
 | ⛔ Cannot **at all** (by design) | 3 | no taintable quantum input |
 
-Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 not-yet (fixable) · ⚠️ error · ⛔ out-by-design
+---
+
+**Backend tiers** (a STATIC per-fn judgment of whether a correct *reversible implementation* of the emitted templates exists — a level ABOVE "does it lower"; the trace-only runtime never runs a real unitary):
+
+**Backend-available (🟩 standard ∩ lowers): 39/174 (22.4%)** — the functions that could actually run correctly on a real reversible backend today (modulo backend-CORRECTNESS, which needs simulation and is deferred).
+
+| Backend tier | Count | Meaning |
+|---|---|---|
+| 🟩 standard | 42 | reduces to stock reversible arithmetic / bit-ops (sign·exponent bit-field, compare-select, modulo, integer abs) — a correct reversible routine is directly obtainable (Bennett-copyable) |
+| 🟨 synthesizable | 45 | a well-defined, finite, exact IEEE bit-field / rounding circuit (frexp/modf split, the rounding family, fma) — buildable, not off-the-shelf |
+| 🟥 open | 84 | no known elementary reversible circuit — transcendentals, algebraic-irrationals (sqrt/cbrt/hypot), powers, special functions |
+| ▫️ n/a | 3 | no reversible-function question (no taintable input / non-numeric) |
+
+Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 not-yet (fixable) · ⚠️ error · ⛔ out-by-design. **Backend**: 🟩 standard · 🟨 synth · 🟥 open · ▫️ n/a (orthogonal axis — see the backend-tier table above).
 
 ### trig
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `cosf` `errno` | `float cosf(float)` | H:✅ | ✅ verified |  |
-| `cos` `errno` | `double cos(double)` | H:✅ | ✅ verified |  |
-| `cosl` `errno` | `long double cosl(long double)` | H:✅ | ✅ verified |  |
-| `sinf` `errno` | `float sinf(float)` | H:✅ | ✅ verified |  |
-| `sin` `errno` | `double sin(double)` | H:✅ | ✅ verified |  |
-| `sinl` `errno` | `long double sinl(long double)` | H:✅ | ✅ verified |  |
-| `tanf` `errno` | `float tanf(float)` | H:✅ | ✅ verified |  |
-| `tan` `errno` | `double tan(double)` | H:✅ | ✅ verified |  |
-| `tanl` `errno` | `long double tanl(long double)` | H:✅ | ✅ verified |  |
-| `acosf` `errno` | `float acosf(float)` | H:✅ | ✅ verified |  |
-| `acos` `errno` | `double acos(double)` | H:✅ | ✅ verified |  |
-| `acosl` `errno` | `long double acosl(long double)` | H:✅ | ✅ verified |  |
-| `asinf` `errno` | `float asinf(float)` | H:✅ | ✅ verified |  |
-| `asin` `errno` | `double asin(double)` | H:✅ | ✅ verified |  |
-| `asinl` `errno` | `long double asinl(long double)` | H:✅ | ✅ verified |  |
-| `atanf` | `float atanf(float)` | H:✅ | ✅ verified |  |
-| `atan` | `double atan(double)` | H:✅ | ✅ verified |  |
-| `atanl` | `long double atanl(long double)` | H:✅ | ✅ verified |  |
-| `atan2f` `errno` | `float atan2f(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `atan2` `errno` | `double atan2(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `atan2l` `errno` | `long double atan2l(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `cosf` `errno` | `float cosf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `cos` `errno` | `double cos(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `cosl` `errno` | `long double cosl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `sinf` `errno` | `float sinf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `sin` `errno` | `double sin(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `sinl` `errno` | `long double sinl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `tanf` `errno` | `float tanf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `tan` `errno` | `double tan(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `tanl` `errno` | `long double tanl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `acosf` `errno` | `float acosf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `acos` `errno` | `double acos(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `acosl` `errno` | `long double acosl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `asinf` `errno` | `float asinf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `asin` `errno` | `double asin(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `asinl` `errno` | `long double asinl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `atanf` | `float atanf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `atan` | `double atan(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `atanl` | `long double atanl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `atan2f` `errno` | `float atan2f(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `atan2` `errno` | `double atan2(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `atan2l` `errno` | `long double atan2l(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
 
 ### hyperbolic
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `coshf` `errno` | `float coshf(float)` | H:✅ | ✅ verified |  |
-| `cosh` `errno` | `double cosh(double)` | H:✅ | ✅ verified |  |
-| `coshl` `errno` | `long double coshl(long double)` | H:✅ | ✅ verified |  |
-| `sinhf` `errno` | `float sinhf(float)` | H:✅ | ✅ verified |  |
-| `sinh` `errno` | `double sinh(double)` | H:✅ | ✅ verified |  |
-| `sinhl` `errno` | `long double sinhl(long double)` | H:✅ | ✅ verified |  |
-| `tanhf` | `float tanhf(float)` | H:✅ | ✅ verified |  |
-| `tanh` | `double tanh(double)` | H:✅ | ✅ verified |  |
-| `tanhl` | `long double tanhl(long double)` | H:✅ | ✅ verified |  |
-| `acoshf` `errno` | `float acoshf(float)` | H:✅ | ✅ verified |  |
-| `acosh` `errno` | `double acosh(double)` | H:✅ | ✅ verified |  |
-| `acoshl` `errno` | `long double acoshl(long double)` | H:✅ | ✅ verified |  |
-| `asinhf` | `float asinhf(float)` | H:✅ | ✅ verified |  |
-| `asinh` | `double asinh(double)` | H:✅ | ✅ verified |  |
-| `asinhl` | `long double asinhl(long double)` | H:✅ | ✅ verified |  |
-| `atanhf` `errno` | `float atanhf(float)` | H:✅ | ✅ verified |  |
-| `atanh` `errno` | `double atanh(double)` | H:✅ | ✅ verified |  |
-| `atanhl` `errno` | `long double atanhl(long double)` | H:✅ | ✅ verified |  |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `coshf` `errno` | `float coshf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `cosh` `errno` | `double cosh(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `coshl` `errno` | `long double coshl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `sinhf` `errno` | `float sinhf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `sinh` `errno` | `double sinh(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `sinhl` `errno` | `long double sinhl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `tanhf` | `float tanhf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `tanh` | `double tanh(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `tanhl` | `long double tanhl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `acoshf` `errno` | `float acoshf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `acosh` `errno` | `double acosh(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `acoshl` `errno` | `long double acoshl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `asinhf` | `float asinhf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `asinh` | `double asinh(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `asinhl` | `long double asinhl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `atanhf` `errno` | `float atanhf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `atanh` `errno` | `double atanh(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `atanhl` `errno` | `long double atanhl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
 
 ### exp_log
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `expf` `errno` | `float expf(float)` | H:✅ | ✅ verified |  |
-| `exp` `errno` | `double exp(double)` | H:✅ | ✅ verified |  |
-| `expl` `errno` | `long double expl(long double)` | H:✅ | ✅ verified |  |
-| `exp2f` `errno` | `float exp2f(float)` | H:✅ | ✅ verified |  |
-| `exp2` `errno` | `double exp2(double)` | H:✅ | ✅ verified |  |
-| `exp2l` `errno` | `long double exp2l(long double)` | H:✅ | ✅ verified |  |
-| `expm1f` `errno` | `float expm1f(float)` | H:✅ | ✅ verified |  |
-| `expm1` `errno` | `double expm1(double)` | H:✅ | ✅ verified |  |
-| `expm1l` `errno` | `long double expm1l(long double)` | H:✅ | ✅ verified |  |
-| `logf` `errno` | `float logf(float)` | H:✅ | ✅ verified |  |
-| `log` `errno` | `double log(double)` | H:✅ | ✅ verified |  |
-| `logl` `errno` | `long double logl(long double)` | H:✅ | ✅ verified |  |
-| `log10f` `errno` | `float log10f(float)` | H:✅ | ✅ verified |  |
-| `log10` `errno` | `double log10(double)` | H:✅ | ✅ verified |  |
-| `log10l` `errno` | `long double log10l(long double)` | H:✅ | ✅ verified |  |
-| `log2f` `errno` | `float log2f(float)` | H:✅ | ✅ verified |  |
-| `log2` `errno` | `double log2(double)` | H:✅ | ✅ verified |  |
-| `log2l` `errno` | `long double log2l(long double)` | H:✅ | ✅ verified |  |
-| `log1pf` `errno` | `float log1pf(float)` | H:✅ | ✅ verified |  |
-| `log1p` `errno` | `double log1p(double)` | H:✅ | ✅ verified |  |
-| `log1pl` `errno` | `long double log1pl(long double)` | H:✅ | ✅ verified |  |
-| `logbf` | `float logbf(float)` | H:✅ | ✅ verified |  |
-| `logb` | `double logb(double)` | H:✅ | ✅ verified |  |
-| `logbl` | `long double logbl(long double)` | H:✅ | ✅ verified |  |
-| `ilogbf` | `int ilogbf(float)` | H:✅ | ✅ verified |  |
-| `ilogb` | `int ilogb(double)` | H:✅ | ✅ verified |  |
-| `ilogbl` | `int ilogbl(long double)` | H:✅ | ✅ verified |  |
-| `ldexpf` | `float ldexpf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `ldexp` | `double ldexp(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `ldexpl` | `long double ldexpl(long double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `scalbnf` | `float scalbnf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `scalbn` | `double scalbn(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `scalbnl` | `long double scalbnl(long double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `scalblnf` | `float scalblnf(float, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `scalbln` | `double scalbln(double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `scalblnl` | `long double scalblnl(long double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `frexpf` `byref` | `float frexpf(float, int *)` | H:✅ | ✅ verified |  |
-| `frexp` `byref` | `double frexp(double, int *)` | H:✅ | ✅ verified |  |
-| `frexpl` `byref` | `long double frexpl(long double, int *)` | H:✅ | ✅ verified |  |
-| `modff` `byref` | `float modff(float, float *)` | H:✅ | ✅ verified |  |
-| `modf` `byref` | `double modf(double, double *)` | H:✅ | ✅ verified |  |
-| `modfl` `byref` | `long double modfl(long double, long double *)` | H:✅ | ✅ verified |  |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `expf` `errno` | `float expf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `exp` `errno` | `double exp(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `expl` `errno` | `long double expl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `exp2f` `errno` | `float exp2f(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `exp2` `errno` | `double exp2(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `exp2l` `errno` | `long double exp2l(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `expm1f` `errno` | `float expm1f(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `expm1` `errno` | `double expm1(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `expm1l` `errno` | `long double expm1l(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `logf` `errno` | `float logf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log` `errno` | `double log(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `logl` `errno` | `long double logl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log10f` `errno` | `float log10f(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log10` `errno` | `double log10(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log10l` `errno` | `long double log10l(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log2f` `errno` | `float log2f(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log2` `errno` | `double log2(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log2l` `errno` | `long double log2l(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log1pf` `errno` | `float log1pf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log1p` `errno` | `double log1p(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `log1pl` `errno` | `long double log1pl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `logbf` | `float logbf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `logb` | `double logb(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `logbl` | `long double logbl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `ilogbf` | `int ilogbf(float)` | H:✅ | ✅ verified | 🟩 standard |  |
+| `ilogb` | `int ilogb(double)` | H:✅ | ✅ verified | 🟩 standard |  |
+| `ilogbl` | `int ilogbl(long double)` | H:✅ | ✅ verified | 🟩 standard |  |
+| `ldexpf` | `float ldexpf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `ldexp` | `double ldexp(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `ldexpl` | `long double ldexpl(long double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `scalbnf` | `float scalbnf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `scalbn` | `double scalbn(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `scalbnl` | `long double scalbnl(long double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `scalblnf` | `float scalblnf(float, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `scalbln` | `double scalbln(double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `scalblnl` | `long double scalblnl(long double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `frexpf` `byref` | `float frexpf(float, int *)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `frexp` `byref` | `double frexp(double, int *)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `frexpl` `byref` | `long double frexpl(long double, int *)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `modff` `byref` | `float modff(float, float *)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `modf` `byref` | `double modf(double, double *)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `modfl` `byref` | `long double modfl(long double, long double *)` | H:✅ | ✅ verified | 🟨 synth |  |
 
 ### power
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `powf` `errno` | `float powf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `pow` `errno` | `double pow(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `powl` `errno` | `long double powl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `sqrtf` `errno` | `float sqrtf(float)` | H:✅ | ✅ verified |  |
-| `sqrt` `errno` | `double sqrt(double)` | H:✅ | ✅ verified |  |
-| `sqrtl` `errno` | `long double sqrtl(long double)` | H:✅ | ✅ verified |  |
-| `cbrtf` | `float cbrtf(float)` | H:✅ | ✅ verified |  |
-| `cbrt` | `double cbrt(double)` | H:✅ | ✅ verified |  |
-| `cbrtl` | `long double cbrtl(long double)` | H:✅ | ✅ verified |  |
-| `hypotf` | `float hypotf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `hypot` | `double hypot(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `hypotl` | `long double hypotl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `powf` `errno` | `float powf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `pow` `errno` | `double pow(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `powl` `errno` | `long double powl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `sqrtf` `errno` | `float sqrtf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `sqrt` `errno` | `double sqrt(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `sqrtl` `errno` | `long double sqrtl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `cbrtf` | `float cbrtf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `cbrt` | `double cbrt(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `cbrtl` | `long double cbrtl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `hypotf` | `float hypotf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `hypot` | `double hypot(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `hypotl` | `long double hypotl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
 
 ### error_gamma
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `erff` | `float erff(float)` | H:✅ | ✅ verified |  |
-| `erf` | `double erf(double)` | H:✅ | ✅ verified |  |
-| `erfl` | `long double erfl(long double)` | H:✅ | ✅ verified |  |
-| `erfcf` `errno` | `float erfcf(float)` | H:✅ | ✅ verified |  |
-| `erfc` `errno` | `double erfc(double)` | H:✅ | ✅ verified |  |
-| `erfcl` `errno` | `long double erfcl(long double)` | H:✅ | ✅ verified |  |
-| `tgammaf` `errno` | `float tgammaf(float)` | H:✅ | ✅ verified |  |
-| `tgamma` `errno` | `double tgamma(double)` | H:✅ | ✅ verified |  |
-| `tgammal` `errno` | `long double tgammal(long double)` | H:✅ | ✅ verified |  |
-| `lgammaf` `errno` | `float lgammaf(float)` | H:✅ | ✅ verified |  |
-| `lgamma` `errno` | `double lgamma(double)` | H:✅ | ✅ verified |  |
-| `lgammal` `errno` | `long double lgammal(long double)` | H:✅ | ✅ verified |  |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `erff` | `float erff(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `erf` | `double erf(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `erfl` | `long double erfl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `erfcf` `errno` | `float erfcf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `erfc` `errno` | `double erfc(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `erfcl` `errno` | `long double erfcl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `tgammaf` `errno` | `float tgammaf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `tgamma` `errno` | `double tgamma(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `tgammal` `errno` | `long double tgammal(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `lgammaf` `errno` | `float lgammaf(float)` | H:✅ | ✅ verified | 🟥 open |  |
+| `lgamma` `errno` | `double lgamma(double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `lgammal` `errno` | `long double lgammal(long double)` | H:✅ | ✅ verified | 🟥 open |  |
 
 ### nearest_int
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `ceilf` | `float ceilf(float)` | H:✅ | ✅ verified |  |
-| `ceil` | `double ceil(double)` | H:✅ | ✅ verified |  |
-| `ceill` | `long double ceill(long double)` | H:✅ | ✅ verified |  |
-| `floorf` | `float floorf(float)` | H:✅ | ✅ verified |  |
-| `floor` | `double floor(double)` | H:✅ | ✅ verified |  |
-| `floorl` | `long double floorl(long double)` | H:✅ | ✅ verified |  |
-| `truncf` | `float truncf(float)` | H:✅ | ✅ verified |  |
-| `trunc` | `double trunc(double)` | H:✅ | ✅ verified |  |
-| `truncl` | `long double truncl(long double)` | H:✅ | ✅ verified |  |
-| `roundf` | `float roundf(float)` | H:✅ | ✅ verified |  |
-| `round` | `double round(double)` | H:✅ | ✅ verified |  |
-| `roundl` | `long double roundl(long double)` | H:✅ | ✅ verified |  |
-| `nearbyintf` | `float nearbyintf(float)` | H:✅ | ✅ verified |  |
-| `nearbyint` | `double nearbyint(double)` | H:✅ | ✅ verified |  |
-| `nearbyintl` | `long double nearbyintl(long double)` | H:✅ | ✅ verified |  |
-| `rintf` | `float rintf(float)` | H:✅ | ✅ verified |  |
-| `rint` | `double rint(double)` | H:✅ | ✅ verified |  |
-| `rintl` | `long double rintl(long double)` | H:✅ | ✅ verified |  |
-| `lrintf` | `long lrintf(float)` | H:✅ | ✅ verified |  |
-| `lrint` | `long lrint(double)` | H:✅ | ✅ verified |  |
-| `lrintl` | `long lrintl(long double)` | H:✅ | ✅ verified |  |
-| `llrintf` | `long llrintf(float)` | H:✅ | ✅ verified |  |
-| `llrint` | `long llrint(double)` | H:✅ | ✅ verified |  |
-| `llrintl` | `long llrintl(long double)` | H:✅ | ✅ verified |  |
-| `lroundf` | `long lroundf(float)` | H:✅ | ✅ verified |  |
-| `lround` | `long lround(double)` | H:✅ | ✅ verified |  |
-| `lroundl` | `long lroundl(long double)` | H:✅ | ✅ verified |  |
-| `llroundf` | `long llroundf(float)` | H:✅ | ✅ verified |  |
-| `llround` | `long llround(double)` | H:✅ | ✅ verified |  |
-| `llroundl` | `long llroundl(long double)` | H:✅ | ✅ verified |  |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `ceilf` | `float ceilf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `ceil` | `double ceil(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `ceill` | `long double ceill(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `floorf` | `float floorf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `floor` | `double floor(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `floorl` | `long double floorl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `truncf` | `float truncf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `trunc` | `double trunc(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `truncl` | `long double truncl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `roundf` | `float roundf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `round` | `double round(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `roundl` | `long double roundl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `nearbyintf` | `float nearbyintf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `nearbyint` | `double nearbyint(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `nearbyintl` | `long double nearbyintl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `rintf` | `float rintf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `rint` | `double rint(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `rintl` | `long double rintl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `lrintf` | `long lrintf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `lrint` | `long lrint(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `lrintl` | `long lrintl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `llrintf` | `long llrintf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `llrint` | `long llrint(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `llrintl` | `long llrintl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `lroundf` | `long lroundf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `lround` | `long lround(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `lroundl` | `long lroundl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `llroundf` | `long llroundf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `llround` | `long llround(double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `llroundl` | `long llroundl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
 
 ### remainder
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `fmodf` `errno` | `float fmodf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fmod` `errno` | `double fmod(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fmodl` `errno` | `long double fmodl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `remainderf` `errno` | `float remainderf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `remainder` `errno` | `double remainder(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `remainderl` `errno` | `long double remainderl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `remquof` `byref` | `float remquof(float, float, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `remquo` `byref` | `double remquo(double, double, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `remquol` `byref` | `long double remquol(long double, long double, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `fmodf` `errno` | `float fmodf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `fmod` `errno` | `double fmod(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `fmodl` `errno` | `long double fmodl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `remainderf` `errno` | `float remainderf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `remainder` `errno` | `double remainder(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `remainderl` `errno` | `long double remainderl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `remquof` `byref` | `float remquof(float, float, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `remquo` `byref` | `double remquo(double, double, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `remquol` `byref` | `long double remquol(long double, long double, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 
 ### manipulation
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `copysignf` | `float copysignf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `copysign` | `double copysign(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `copysignl` | `long double copysignl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `nextafterf` `errno` | `float nextafterf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `nextafter` `errno` | `double nextafter(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `nextafterl` `errno` | `long double nextafterl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fdimf` `errno` | `float fdimf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fdim` `errno` | `double fdim(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fdiml` `errno` | `long double fdiml(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fmaxf` | `float fmaxf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fmax` | `double fmax(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fmaxl` | `long double fmaxl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fminf` | `float fminf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fmin` | `double fmin(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fminl` | `long double fminl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fmaf` | `float fmaf(float, float, float)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | needs curated libm entry + Phase 9 template |
-| `fma` | `double fma(double, double, double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | needs curated libm entry + Phase 9 template |
-| `fmal` | `long double fmal(long double, long double, long double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | needs curated libm entry + Phase 9 template |
-| `nanf` | `float nanf(const char *)` | — | ⛔ no-taintable-input | no taintable scalar input |
-| `nan` | `double nan(const char *)` | — | ⛔ no-taintable-input | no taintable scalar input |
-| `nanl` | `long double nanl(const char *)` | — | ⛔ no-taintable-input | no taintable scalar input |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `copysignf` | `float copysignf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `copysign` | `double copysign(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `copysignl` | `long double copysignl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `nextafterf` `errno` | `float nextafterf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `nextafter` `errno` | `double nextafter(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `nextafterl` `errno` | `long double nextafterl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `fdimf` `errno` | `float fdimf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟨 synth |  |
+| `fdim` `errno` | `double fdim(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟨 synth |  |
+| `fdiml` `errno` | `long double fdiml(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟨 synth |  |
+| `fmaxf` | `float fmaxf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `fmax` | `double fmax(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `fmaxl` | `long double fmaxl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `fminf` | `float fminf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `fmin` | `double fmin(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `fminl` | `long double fminl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `fmaf` | `float fmaf(float, float, float)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | 🟨 synth | needs curated libm entry + Phase 9 template |
+| `fma` | `double fma(double, double, double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | 🟨 synth | needs curated libm entry + Phase 9 template |
+| `fmal` | `long double fmal(long double, long double, long double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | 🟨 synth | needs curated libm entry + Phase 9 template |
+| `nanf` | `float nanf(const char *)` | — | ⛔ no-taintable-input | ▫️ n/a | no taintable scalar input |
+| `nan` | `double nan(const char *)` | — | ⛔ no-taintable-input | ▫️ n/a | no taintable scalar input |
+| `nanl` | `long double nanl(const char *)` | — | ⛔ no-taintable-input | ▫️ n/a | no taintable scalar input |
 
 ### classify_macro
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `fpclassify` `macro` | `int fpclassify(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `isfinite` `macro` | `int isfinite(double)` | H:✅ | ✅ verified |  |
-| `isinf` `macro` | `int isinf(double)` | H:✅ | ✅ verified |  |
-| `isnan` `macro` | `int isnan(double)` | H:✅ | ✅ verified |  |
-| `isnormal` `macro` | `int isnormal(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `signbit` `macro` | `int signbit(double)` | H:🟡 | 🟡 declined | needs opcode/template support for this expansion |
-| `isgreater` `macro` | `int isgreater(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `isless` `macro` | `int isless(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `isunordered` `macro` | `int isunordered(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `fpclassify` `macro` | `int fpclassify(double)` | H:🟡 | 🟡 declined | 🟩 standard | needs curated libm entry + Phase 9 template |
+| `isfinite` `macro` | `int isfinite(double)` | H:✅ | ✅ verified | 🟩 standard |  |
+| `isinf` `macro` | `int isinf(double)` | H:✅ | ✅ verified | 🟩 standard |  |
+| `isnan` `macro` | `int isnan(double)` | H:✅ | ✅ verified | 🟩 standard |  |
+| `isnormal` `macro` | `int isnormal(double)` | H:🟡 | 🟡 declined | 🟩 standard | needs curated libm entry + Phase 9 template |
+| `signbit` `macro` | `int signbit(double)` | H:🟡 | 🟡 declined | 🟩 standard | needs opcode/template support for this expansion |
+| `isgreater` `macro` | `int isgreater(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `isless` `macro` | `int isless(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `isunordered` `macro` | `int isunordered(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |

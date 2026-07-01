@@ -28,7 +28,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "cos",
@@ -51,7 +52,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "cosl",
@@ -74,7 +76,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "sinf",
@@ -97,7 +100,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "sin",
@@ -120,7 +124,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "sinl",
@@ -143,7 +148,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "tanf",
@@ -166,7 +172,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "tan",
@@ -189,7 +196,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "tanl",
@@ -212,7 +220,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "acosf",
@@ -235,7 +244,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "acos",
@@ -258,7 +268,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "acosl",
@@ -281,7 +292,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "asinf",
@@ -304,7 +316,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "asin",
@@ -327,7 +340,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "asinl",
@@ -350,7 +364,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "atanf",
@@ -371,7 +386,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "atan",
@@ -392,7 +408,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "atanl",
@@ -413,7 +430,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "atan2f",
@@ -454,7 +472,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "atan2",
@@ -495,7 +514,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "atan2l",
@@ -536,7 +556,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "coshf",
@@ -559,7 +580,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "cosh",
@@ -582,7 +604,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "coshl",
@@ -605,7 +628,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "sinhf",
@@ -628,7 +652,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "sinh",
@@ -651,7 +676,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "sinhl",
@@ -674,7 +700,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "tanhf",
@@ -695,7 +722,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "tanh",
@@ -716,7 +744,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "tanhl",
@@ -737,7 +766,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "acoshf",
@@ -760,7 +790,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "acosh",
@@ -783,7 +814,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "acoshl",
@@ -806,7 +838,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "asinhf",
@@ -827,7 +860,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "asinh",
@@ -848,7 +882,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "asinhl",
@@ -869,7 +904,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "atanhf",
@@ -892,7 +928,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "atanh",
@@ -915,7 +952,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "atanhl",
@@ -938,7 +976,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "expf",
@@ -961,7 +1000,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "exp",
@@ -984,7 +1024,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "expl",
@@ -1007,7 +1048,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "exp2f",
@@ -1030,7 +1072,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "exp2",
@@ -1053,7 +1096,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "exp2l",
@@ -1076,7 +1120,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "expm1f",
@@ -1099,7 +1144,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "expm1",
@@ -1122,7 +1168,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "expm1l",
@@ -1145,7 +1192,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "logf",
@@ -1168,7 +1216,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log",
@@ -1191,7 +1240,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "logl",
@@ -1214,7 +1264,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log10f",
@@ -1237,7 +1288,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log10",
@@ -1260,7 +1312,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log10l",
@@ -1283,7 +1336,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log2f",
@@ -1306,7 +1360,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log2",
@@ -1329,7 +1384,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log2l",
@@ -1352,7 +1408,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log1pf",
@@ -1375,7 +1432,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log1p",
@@ -1398,7 +1456,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "log1pl",
@@ -1421,7 +1480,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "logbf",
@@ -1442,7 +1502,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "logb",
@@ -1463,7 +1524,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "logbl",
@@ -1484,7 +1546,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "ilogbf",
@@ -1505,7 +1568,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "ilogb",
@@ -1526,7 +1590,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "ilogbl",
@@ -1547,7 +1612,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "ldexpf",
@@ -1586,7 +1652,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "ldexp",
@@ -1625,7 +1692,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "ldexpl",
@@ -1664,7 +1732,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "scalbnf",
@@ -1703,7 +1772,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "scalbn",
@@ -1742,7 +1812,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "scalbnl",
@@ -1781,7 +1852,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "scalblnf",
@@ -1820,7 +1892,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "scalbln",
@@ -1859,7 +1932,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "scalblnl",
@@ -1898,7 +1972,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "frexpf",
@@ -1921,7 +1996,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "frexp",
@@ -1944,7 +2020,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "frexpl",
@@ -1967,7 +2044,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "modff",
@@ -1990,7 +2068,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "modf",
@@ -2013,7 +2092,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "modfl",
@@ -2036,7 +2116,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "powf",
@@ -2077,7 +2158,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "pow",
@@ -2118,7 +2200,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "powl",
@@ -2159,7 +2242,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "sqrtf",
@@ -2182,7 +2266,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "sqrt",
@@ -2205,7 +2290,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "sqrtl",
@@ -2228,7 +2314,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "cbrtf",
@@ -2249,7 +2336,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "cbrt",
@@ -2270,7 +2358,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "cbrtl",
@@ -2291,7 +2380,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "hypotf",
@@ -2330,7 +2420,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "hypot",
@@ -2369,7 +2460,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "hypotl",
@@ -2408,7 +2500,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "erff",
@@ -2429,7 +2522,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "erf",
@@ -2450,7 +2544,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "erfl",
@@ -2471,7 +2566,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "erfcf",
@@ -2494,7 +2590,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "erfc",
@@ -2517,7 +2614,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "erfcl",
@@ -2540,7 +2638,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "tgammaf",
@@ -2563,7 +2662,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "tgamma",
@@ -2586,7 +2686,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "tgammal",
@@ -2609,7 +2710,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "lgammaf",
@@ -2632,7 +2734,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "lgamma",
@@ -2655,7 +2758,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "lgammal",
@@ -2678,7 +2782,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "open"
         },
         {
           "name": "ceilf",
@@ -2699,7 +2804,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "ceil",
@@ -2720,7 +2826,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "ceill",
@@ -2741,7 +2848,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "floorf",
@@ -2762,7 +2870,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "floor",
@@ -2783,7 +2892,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "floorl",
@@ -2804,7 +2914,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "truncf",
@@ -2825,7 +2936,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "trunc",
@@ -2846,7 +2958,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "truncl",
@@ -2867,7 +2980,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "roundf",
@@ -2888,7 +3002,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "round",
@@ -2909,7 +3024,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "roundl",
@@ -2930,7 +3046,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "nearbyintf",
@@ -2951,7 +3068,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "nearbyint",
@@ -2972,7 +3090,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "nearbyintl",
@@ -2993,7 +3112,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "rintf",
@@ -3014,7 +3134,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "rint",
@@ -3035,7 +3156,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "rintl",
@@ -3056,7 +3178,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "lrintf",
@@ -3077,7 +3200,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "lrint",
@@ -3098,7 +3222,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "lrintl",
@@ -3119,7 +3244,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "llrintf",
@@ -3140,7 +3266,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "llrint",
@@ -3161,7 +3288,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "llrintl",
@@ -3182,7 +3310,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "lroundf",
@@ -3203,7 +3332,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "lround",
@@ -3224,7 +3354,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "lroundl",
@@ -3245,7 +3376,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "llroundf",
@@ -3266,7 +3398,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "llround",
@@ -3287,7 +3420,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "llroundl",
@@ -3308,7 +3442,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "fmodf",
@@ -3349,7 +3484,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "fmod",
@@ -3390,7 +3526,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "fmodl",
@@ -3431,7 +3568,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "remainderf",
@@ -3472,7 +3610,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "remainder",
@@ -3513,7 +3652,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "remainderl",
@@ -3554,7 +3694,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "remquof",
@@ -3595,7 +3736,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "remquo",
@@ -3636,7 +3778,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "remquol",
@@ -3677,7 +3820,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "copysignf",
@@ -3716,7 +3860,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "copysign",
@@ -3755,7 +3900,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "copysignl",
@@ -3794,7 +3940,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "nextafterf",
@@ -3835,7 +3982,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "nextafter",
@@ -3876,7 +4024,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "nextafterl",
@@ -3917,7 +4066,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "fdimf",
@@ -3958,7 +4108,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "fdim",
@@ -3999,7 +4150,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "fdiml",
@@ -4040,7 +4192,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "synthesizable"
         },
         {
           "name": "fmaxf",
@@ -4079,7 +4232,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "fmax",
@@ -4118,7 +4272,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "fmaxl",
@@ -4157,7 +4312,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "fminf",
@@ -4196,7 +4352,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "fmin",
@@ -4235,7 +4392,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "fminl",
@@ -4274,7 +4432,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "fmaf",
@@ -4349,7 +4508,8 @@
               }
             }
           ],
-          "rollup": "partial"
+          "rollup": "partial",
+          "backend": "synthesizable"
         },
         {
           "name": "fma",
@@ -4424,7 +4584,8 @@
               }
             }
           ],
-          "rollup": "partial"
+          "rollup": "partial",
+          "backend": "synthesizable"
         },
         {
           "name": "fmal",
@@ -4499,7 +4660,8 @@
               }
             }
           ],
-          "rollup": "partial"
+          "rollup": "partial",
+          "backend": "synthesizable"
         },
         {
           "name": "nanf",
@@ -4510,7 +4672,8 @@
           "sig": "float nanf(const char *)",
           "flags": [],
           "cells": [],
-          "rollup": "no-taintable-input"
+          "rollup": "no-taintable-input",
+          "backend": "n/a"
         },
         {
           "name": "nan",
@@ -4521,7 +4684,8 @@
           "sig": "double nan(const char *)",
           "flags": [],
           "cells": [],
-          "rollup": "no-taintable-input"
+          "rollup": "no-taintable-input",
+          "backend": "n/a"
         },
         {
           "name": "nanl",
@@ -4532,7 +4696,8 @@
           "sig": "long double nanl(const char *)",
           "flags": [],
           "cells": [],
-          "rollup": "no-taintable-input"
+          "rollup": "no-taintable-input",
+          "backend": "n/a"
         },
         {
           "name": "fpclassify",
@@ -4555,7 +4720,8 @@
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "declined",
+          "backend": "standard"
         },
         {
           "name": "isfinite",
@@ -4578,7 +4744,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "isinf",
@@ -4601,7 +4768,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "isnan",
@@ -4624,7 +4792,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "isnormal",
@@ -4647,7 +4816,8 @@
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "declined",
+          "backend": "standard"
         },
         {
           "name": "signbit",
@@ -4670,7 +4840,8 @@
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "declined",
+          "backend": "standard"
         },
         {
           "name": "isgreater",
@@ -4711,7 +4882,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "isless",
@@ -4752,7 +4924,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "isunordered",
@@ -4793,7 +4966,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         }
       ]
     },
@@ -4823,7 +4997,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "labs",
@@ -4844,7 +5019,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "llabs",
@@ -4865,7 +5041,8 @@
               }
             }
           ],
-          "rollup": "verified"
+          "rollup": "verified",
+          "backend": "standard"
         },
         {
           "name": "div",
@@ -4886,7 +5063,8 @@
               }
             }
           ],
-          "rollup": "needs-aggregate"
+          "rollup": "needs-aggregate",
+          "backend": "standard"
         },
         {
           "name": "ldiv",
@@ -4907,7 +5085,8 @@
               }
             }
           ],
-          "rollup": "needs-aggregate"
+          "rollup": "needs-aggregate",
+          "backend": "standard"
         },
         {
           "name": "lldiv",
@@ -4928,7 +5107,8 @@
               }
             }
           ],
-          "rollup": "needs-aggregate"
+          "rollup": "needs-aggregate",
+          "backend": "standard"
         },
         {
           "name": "atof",
@@ -4949,7 +5129,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "atoi",
@@ -4970,7 +5151,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "atol",
@@ -4991,7 +5173,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "atoll",
@@ -5012,7 +5195,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "strtod",
@@ -5033,7 +5217,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "strtof",
@@ -5054,7 +5239,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "strtold",
@@ -5075,7 +5261,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "strtol",
@@ -5096,7 +5283,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "strtoll",
@@ -5117,7 +5305,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "strtoul",
@@ -5138,7 +5327,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "strtoull",
@@ -5159,7 +5349,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "rand",
@@ -5180,7 +5371,8 @@
               }
             }
           ],
-          "rollup": "by-design"
+          "rollup": "by-design",
+          "backend": "n/a"
         },
         {
           "name": "srand",
@@ -5201,7 +5393,8 @@
               }
             }
           ],
-          "rollup": "by-design"
+          "rollup": "by-design",
+          "backend": "n/a"
         },
         {
           "name": "malloc",
@@ -5222,7 +5415,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "calloc",
@@ -5243,7 +5437,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "realloc",
@@ -5264,7 +5459,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "aligned_alloc",
@@ -5285,7 +5481,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "free",
@@ -5306,7 +5503,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "getenv",
@@ -5327,7 +5525,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "system",
@@ -5348,7 +5547,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "abort",
@@ -5369,7 +5569,8 @@
               }
             }
           ],
-          "rollup": "by-design"
+          "rollup": "by-design",
+          "backend": "n/a"
         },
         {
           "name": "exit",
@@ -5390,7 +5591,8 @@
               }
             }
           ],
-          "rollup": "by-design"
+          "rollup": "by-design",
+          "backend": "n/a"
         },
         {
           "name": "_Exit",
@@ -5411,7 +5613,8 @@
               }
             }
           ],
-          "rollup": "by-design"
+          "rollup": "by-design",
+          "backend": "n/a"
         },
         {
           "name": "quick_exit",
@@ -5432,7 +5635,8 @@
               }
             }
           ],
-          "rollup": "by-design"
+          "rollup": "by-design",
+          "backend": "n/a"
         },
         {
           "name": "atexit",
@@ -5453,7 +5657,8 @@
               }
             }
           ],
-          "rollup": "by-design"
+          "rollup": "by-design",
+          "backend": "n/a"
         },
         {
           "name": "at_quick_exit",
@@ -5474,7 +5679,8 @@
               }
             }
           ],
-          "rollup": "by-design"
+          "rollup": "by-design",
+          "backend": "n/a"
         },
         {
           "name": "bsearch",
@@ -5495,7 +5701,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "qsort",
@@ -5516,7 +5723,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "mblen",
@@ -5537,7 +5745,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "mbtowc",
@@ -5558,7 +5767,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "wctomb",
@@ -5579,7 +5789,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "mbstowcs",
@@ -5600,7 +5811,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         },
         {
           "name": "wcstombs",
@@ -5621,7 +5833,8 @@
               }
             }
           ],
-          "rollup": "needs-shadow"
+          "rollup": "needs-shadow",
+          "backend": "n/a"
         }
       ]
     }

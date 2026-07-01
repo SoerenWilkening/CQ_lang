@@ -60,12 +60,14 @@ never papered over to inflate the number (the Prime Directive). The tables separ
 width) from **cannot-compile-at-all** (by design — e.g. `nan(const char*)` has no quantum input).
 
 <!-- LIBRARY-COVERAGE:START -->
-**Standard-library quantum-coverage — compiles: 168/213 (78.9%)** &nbsp;·&nbsp; golden-verified: 168/213 (78.9%).
+**Standard-library quantum-coverage — lowering-verified: 168/213 (78.9%)** &nbsp;·&nbsp; backend-available: 42/213 (19.7%).
 
-| Library | Compiles | Golden-verified | Cannot-yet (fixable) | By-design |
-|---|---|---|---|---|
-| [`math.h`](tools/library_coverage/coverage/mathh.md) | 165/174 (95%) | 165/174 (95%) | 6 | 3 |
-| [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 28 | 8 |
+Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches the reversible-template sequence. **Backend-available** = 🟩 `standard` (a correct reversible routine is directly obtainable) **and** it lowers — vs 🟨 `synthesizable` / 🟥 `open` (no known elementary reversible circuit — the transcendentals). The trace-only runtime proves the lowering, not the backend.
+
+| Library | Lowers | Verified | Backend-avail | 🟩 std | 🟨 syn | 🟥 open | By-design |
+|---|---|---|---|---|---|---|---|
+| [`math.h`](tools/library_coverage/coverage/mathh.md) | 165/174 (95%) | 165/174 (95%) | 39/174 (22%) | 42 | 45 | 84 | 3 |
+| [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 3/39 (8%) | 6 | 0 | 0 | 8 |
 
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->

@@ -51,6 +51,42 @@ README = ROOT / "README.md"
 TIMEOUT = 40
 
 # ---------------------------------------------------------------------------
+# The BACKEND axis (bd e4jv). Three static tiers classifying whether a correct
+# REVERSIBLE IMPLEMENTATION of a function's emitted templates exists / is
+# obtainable — a level ABOVE "does it lower" (the trace-only runtime never runs
+# a real unitary, so the golden proves the lowering, not the backend). Ordered
+# most- to least-available. `n/a` is the fourth, non-tier value: a function with
+# no reversible-function question at all (no taintable input / non-numeric).
+#   standard      — reduces to stock reversible arithmetic / bit-ops that the
+#                   existing runtime templates already conceptually cover
+#                   (sign/exponent bit-field manip, compare-select, modulo,
+#                   integer abs). A correct reversible routine is DIRECTLY
+#                   obtainable — a Bennett compute→copy→uncompute wrap of a
+#                   textbook reversible integer/bit circuit. THIS is the honest
+#                   "backend-available today" set.
+#   synthesizable — a well-defined, finite, exact IEEE bit-level algorithm
+#                   (mantissa/exponent split: frexp/modf; the rounding family:
+#                   ceil/floor/trunc/round/rint/nearbyint/lrint/llrint/lround/
+#                   llround; logb's int→fp re-encode; the single-rounding fma).
+#                   Buildable, but not off-the-shelf — no library routine to copy.
+#   open          — no known ELEMENTARY reversible circuit: the transcendentals
+#                   (sin/cos/tan/exp/log/…), algebraic-irrationals (sqrt/cbrt/
+#                   hypot), powers (pow) and special functions (erf/tgamma/lgamma).
+#                   A real reversible backend needs large polynomial / CORDIC /
+#                   iterative-approximation circuits — an OPEN engineering effort,
+#                   not "obtainable". The bulk of the math.h "90%".
+# The tier is a JUDGMENT, deliberately conservative: a borderline fn tiers DOWN
+# (toward less-available) so the "available" count never overclaims (Prime
+# Directive — over-declining availability is safe, over-claiming it is the soft
+# analog of a silent miscompile). Default (an unclassified B()) is `open` — the
+# least-available tier — so an omission under-claims, never over-claims.
+# ---------------------------------------------------------------------------
+BACKEND_TIERS = ("standard", "synthesizable", "open")   # n/a is the non-tier value
+BACKEND_EMOJI = {"standard": "🟩", "synthesizable": "🟨", "open": "🟥", "n/a": "▫️"}
+BACKEND_LABEL = {"standard": "standard", "synthesizable": "synth",
+                 "open": "open", "n/a": "n/a"}
+
+# ---------------------------------------------------------------------------
 # The authoritative <math.h> spec.  EDIT THIS LIST to change what "all of
 # math.h" means.  Each base entry expands into its real-floating variants
 # (f / (double) / l) unless `variants` overrides it.
@@ -62,85 +98,106 @@ TIMEOUT = 40
 # flags:  errno   sets errno (clang -O1 may keep it a direct call as an errno fence)
 #         byref   writes a second result through a pointer (needs 7.5 Shadow routing)
 #         macro   a <math.h> macro, not a real call (expands to builtins/bitops)
+#
+# backend — the SECOND axis (bd e4jv). "Verified" above certifies the LOWERING
+# only (the right reversible-template call sequence emits, links, signature-
+# matches) — the runtime is TRACE-ONLY (each cq_template_* just prints its symbol;
+# measure returns 0), so it does NOT certify that a correct reversible IMPLEMENTA-
+# TION of those templates exists. The `backend` tier is a STATIC per-fn judgment
+# (never measured) of whether such an implementation is obtainable, keyed on the
+# NATURE of the emitted templates (see BACKEND_TIERS). It is ORTHOGONAL to the
+# lowering column: a fn can lower yet have an `open` backend (most transcendentals),
+# or have a `standard` backend yet NOT lower yet (signbit — declines today). Making
+# the 1-vs-2 gap explicit stops the single-number overclaim that a compilable fn
+# has a working reversible backend (Prime Directive).
 # ---------------------------------------------------------------------------
-def B(base, cat, args, ret="fp", flags=(), variants=("f", "", "l")):
+def B(base, cat, args, ret="fp", flags=(), variants=("f", "", "l"), backend="open"):
     return dict(base=base, cat=cat, args=list(args), ret=ret,
-                flags=set(flags), variants=list(variants))
+                flags=set(flags), variants=list(variants), backend=backend)
 
+# backend tier per fn (bd e4jv) — see BACKEND_TIERS. Keyed on the NATURE of the
+# emitted templates, NOT on whether the fn lowers (that is the orthogonal
+# Lowering column). Conservative: borderline fns tier toward less-available.
 MATHH_SPEC = [
-    # --- trigonometric ---
-    B("cos", "trig", ["fp"], flags=("errno",)),
-    B("sin", "trig", ["fp"], flags=("errno",)),
-    B("tan", "trig", ["fp"], flags=("errno",)),
-    B("acos", "trig", ["fp"], flags=("errno",)),
-    B("asin", "trig", ["fp"], flags=("errno",)),
-    B("atan", "trig", ["fp"]),
-    B("atan2", "trig", ["fp", "fp"], flags=("errno",)),
-    # --- hyperbolic ---
-    B("cosh", "hyperbolic", ["fp"], flags=("errno",)),
-    B("sinh", "hyperbolic", ["fp"], flags=("errno",)),
-    B("tanh", "hyperbolic", ["fp"]),
-    B("acosh", "hyperbolic", ["fp"], flags=("errno",)),
-    B("asinh", "hyperbolic", ["fp"]),
-    B("atanh", "hyperbolic", ["fp"], flags=("errno",)),
+    # --- trigonometric --- (open: transcendental — no elementary reversible circuit)
+    B("cos", "trig", ["fp"], flags=("errno",), backend="open"),
+    B("sin", "trig", ["fp"], flags=("errno",), backend="open"),
+    B("tan", "trig", ["fp"], flags=("errno",), backend="open"),
+    B("acos", "trig", ["fp"], flags=("errno",), backend="open"),
+    B("asin", "trig", ["fp"], flags=("errno",), backend="open"),
+    B("atan", "trig", ["fp"], backend="open"),
+    B("atan2", "trig", ["fp", "fp"], flags=("errno",), backend="open"),
+    # --- hyperbolic --- (open: transcendental)
+    B("cosh", "hyperbolic", ["fp"], flags=("errno",), backend="open"),
+    B("sinh", "hyperbolic", ["fp"], flags=("errno",), backend="open"),
+    B("tanh", "hyperbolic", ["fp"], backend="open"),
+    B("acosh", "hyperbolic", ["fp"], flags=("errno",), backend="open"),
+    B("asinh", "hyperbolic", ["fp"], backend="open"),
+    B("atanh", "hyperbolic", ["fp"], flags=("errno",), backend="open"),
     # --- exponential / logarithmic ---
-    B("exp", "exp_log", ["fp"], flags=("errno",)),
-    B("exp2", "exp_log", ["fp"], flags=("errno",)),
-    B("expm1", "exp_log", ["fp"], flags=("errno",)),
-    B("log", "exp_log", ["fp"], flags=("errno",)),
-    B("log10", "exp_log", ["fp"], flags=("errno",)),
-    B("log2", "exp_log", ["fp"], flags=("errno",)),
-    B("log1p", "exp_log", ["fp"], flags=("errno",)),
-    B("logb", "exp_log", ["fp"]),
-    B("ilogb", "exp_log", ["fp"], ret="int"),
-    B("ldexp", "exp_log", ["fp", "int"]),
-    B("scalbn", "exp_log", ["fp", "int"]),
-    B("scalbln", "exp_log", ["fp", "long"]),
-    B("frexp", "exp_log", ["fp", "int*"], flags=("byref",)),
-    B("modf", "exp_log", ["fp", "fp*"], flags=("byref",)),
-    # --- power ---
-    B("pow", "power", ["fp", "fp"], flags=("errno",)),
-    B("sqrt", "power", ["fp"], flags=("errno",)),
-    B("cbrt", "power", ["fp"]),
-    B("hypot", "power", ["fp", "fp"]),
-    # --- error / gamma ---
-    B("erf", "error_gamma", ["fp"]),
-    B("erfc", "error_gamma", ["fp"], flags=("errno",)),
-    B("tgamma", "error_gamma", ["fp"], flags=("errno",)),
-    B("lgamma", "error_gamma", ["fp"], flags=("errno",)),
-    # --- nearest integer ---
-    B("ceil", "nearest_int", ["fp"]),
-    B("floor", "nearest_int", ["fp"]),
-    B("trunc", "nearest_int", ["fp"]),
-    B("round", "nearest_int", ["fp"]),
-    B("nearbyint", "nearest_int", ["fp"]),
-    B("rint", "nearest_int", ["fp"]),
-    B("lrint", "nearest_int", ["fp"], ret="long"),
-    B("llrint", "nearest_int", ["fp"], ret="long"),
-    B("lround", "nearest_int", ["fp"], ret="long"),
-    B("llround", "nearest_int", ["fp"], ret="long"),
-    # --- remainder ---
-    B("fmod", "remainder", ["fp", "fp"], flags=("errno",)),
-    B("remainder", "remainder", ["fp", "fp"], flags=("errno",)),
-    B("remquo", "remainder", ["fp", "fp", "int*"], flags=("byref",)),
+    B("exp", "exp_log", ["fp"], flags=("errno",), backend="open"),        # transcendental
+    B("exp2", "exp_log", ["fp"], flags=("errno",), backend="open"),
+    B("expm1", "exp_log", ["fp"], flags=("errno",), backend="open"),
+    B("log", "exp_log", ["fp"], flags=("errno",), backend="open"),
+    B("log10", "exp_log", ["fp"], flags=("errno",), backend="open"),
+    B("log2", "exp_log", ["fp"], flags=("errno",), backend="open"),
+    B("log1p", "exp_log", ["fp"], flags=("errno",), backend="open"),
+    B("logb", "exp_log", ["fp"], backend="synthesizable"),                # exponent extract + int→fp re-encode
+    B("ilogb", "exp_log", ["fp"], ret="int", backend="standard"),         # exponent bit-field extract → int
+    B("ldexp", "exp_log", ["fp", "int"], backend="standard"),             # x·2^n = add n to exponent field
+    B("scalbn", "exp_log", ["fp", "int"], backend="standard"),            # (same as ldexp, radix FLT_RADIX)
+    B("scalbln", "exp_log", ["fp", "long"], backend="standard"),
+    B("frexp", "exp_log", ["fp", "int*"], flags=("byref",), backend="synthesizable"),  # IEEE mantissa/exp split
+    B("modf", "exp_log", ["fp", "fp*"], flags=("byref",), backend="synthesizable"),    # IEEE int/frac split
+    # --- power --- (open: algebraic-irrational / transcendental, no elementary circuit)
+    B("pow", "power", ["fp", "fp"], flags=("errno",), backend="open"),
+    B("sqrt", "power", ["fp"], flags=("errno",), backend="open"),
+    B("cbrt", "power", ["fp"], backend="open"),
+    B("hypot", "power", ["fp", "fp"], backend="open"),
+    # --- error / gamma --- (open: special functions)
+    B("erf", "error_gamma", ["fp"], backend="open"),
+    B("erfc", "error_gamma", ["fp"], flags=("errno",), backend="open"),
+    B("tgamma", "error_gamma", ["fp"], flags=("errno",), backend="open"),
+    B("lgamma", "error_gamma", ["fp"], flags=("errno",), backend="open"),
+    # --- nearest integer --- (synthesizable: IEEE rounding = finite bit-field manip)
+    B("ceil", "nearest_int", ["fp"], backend="synthesizable"),
+    B("floor", "nearest_int", ["fp"], backend="synthesizable"),
+    B("trunc", "nearest_int", ["fp"], backend="synthesizable"),
+    B("round", "nearest_int", ["fp"], backend="synthesizable"),
+    B("nearbyint", "nearest_int", ["fp"], backend="synthesizable"),
+    B("rint", "nearest_int", ["fp"], backend="synthesizable"),
+    B("lrint", "nearest_int", ["fp"], ret="long", backend="synthesizable"),
+    B("llrint", "nearest_int", ["fp"], ret="long", backend="synthesizable"),
+    B("lround", "nearest_int", ["fp"], ret="long", backend="synthesizable"),
+    B("llround", "nearest_int", ["fp"], ret="long", backend="synthesizable"),
+    # --- remainder --- (standard: modulo = stock reversible integer-style arithmetic)
+    B("fmod", "remainder", ["fp", "fp"], flags=("errno",), backend="standard"),        # frem opcode
+    B("remainder", "remainder", ["fp", "fp"], flags=("errno",), backend="standard"),
+    B("remquo", "remainder", ["fp", "fp", "int*"], flags=("byref",), backend="standard"),  # remainder + integer quotient bits
     # --- manipulation ---
-    B("copysign", "manipulation", ["fp", "fp"]),
-    B("nextafter", "manipulation", ["fp", "fp"], flags=("errno",)),
-    B("fdim", "manipulation", ["fp", "fp"], flags=("errno",)),
-    B("fmax", "manipulation", ["fp", "fp"]),
-    B("fmin", "manipulation", ["fp", "fp"]),
-    B("fma", "manipulation", ["fp", "fp", "fp"]),
-    B("nan", "manipulation", ["str"]),
-    # --- classification / comparison macros ---
-    B("fpclassify", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",)),
-    B("isfinite", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",)),
-    B("isinf", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",)),
-    B("isnan", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",)),
-    B("isnormal", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",)),
-    B("signbit", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",)),
-    B("isgreater", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",)),
-    B("isless", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",)),
-    B("isunordered", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",)),
+    B("copysign", "manipulation", ["fp", "fp"], backend="standard"),                   # sign-bit copy
+    B("nextafter", "manipulation", ["fp", "fp"], flags=("errno",), backend="standard"),# bit-pattern ±1
+    # fdim(x,y)=max(x−y,0): the compare-select is standard, but the RESULT is a
+    # genuine IEEE fp subtraction (align + subtract + normalize + round-to-nearest-
+    # even) — the SAME rounding machinery as fma / the rounding family, NOT a
+    # directly-obtainable bit-field/modulo circuit. It is the lone manipulation fn
+    # whose core operation rounds; tier DOWN to synthesizable (adversarial audit,
+    # bd e4jv Rule-13 pass — over-claiming availability is the hazard).
+    B("fdim", "manipulation", ["fp", "fp"], flags=("errno",), backend="synthesizable"),
+    B("fmax", "manipulation", ["fp", "fp"], backend="standard"),                       # compare-select
+    B("fmin", "manipulation", ["fp", "fp"], backend="standard"),                       # compare-select
+    B("fma", "manipulation", ["fp", "fp", "fp"], backend="synthesizable"),             # fused mul-add: one IEEE round
+    B("nan", "manipulation", ["str"], backend="n/a"),                                  # no taintable input
+    # --- classification / comparison macros --- (standard: bit-field extract / fp compare)
+    B("fpclassify", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("isfinite", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("isinf", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("isnan", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("isnormal", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("signbit", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("isgreater", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("isless", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("isunordered", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -159,21 +216,34 @@ def Lib(name, include, slug, blurb, fit, spec):
 # status ∈ {needs-shadow, needs-aggregate, by-design}; the first two are fixable future
 # work (the QRAM/Shadow memory model, aggregate decomposition), by-design is "no quantum
 # meaning" (noreturn / nondeterministic / callback registration).
-def St(name, cat, sig, status, reason):
-    return dict(static=True, name=name, cat=cat, sig=sig, status=status, reason=reason)
+#
+# `backend` (bd e4jv) defaults to "n/a": a static, non-lowering fn emits no
+# quantum template, so it usually has no reversible-backend question. The one
+# honest exception is a fn blocked ONLY at lowering whose numeric core is
+# unambiguous stock reversible arithmetic — div/ldiv/lldiv (integer quotient +
+# remainder), blocked solely by their div_t struct return (an aggregate-
+# decomposition LOWERING gap), get backend="standard". This is exactly the
+# two-axis point: the backend is standard even though the lowering is not yet
+# there. The string parsers / alloc / RNG / noreturn / sort / mb families stay
+# n/a — their difficulty is the memory/source model or they are by-design non-
+# numeric, so there is no reversible-arithmetic backend to name.
+def St(name, cat, sig, status, reason, backend="n/a"):
+    return dict(static=True, name=name, cat=cat, sig=sig, status=status, reason=reason,
+                backend=backend)
 
 STDLIB_SPEC = [
     # PROBED (empirical): the integer-abs island -> @llvm.abs.iN -> curated reversible
     # template (the integer analog of math.h's fabs).
-    B("abs", "integer", ["int"], ret="int", variants=("",)),
-    B("labs", "integer", ["long"], ret="long", variants=("",)),
-    B("llabs", "integer", ["llong"], ret="llong", variants=("",)),
+    B("abs", "integer", ["int"], ret="int", variants=("",), backend="standard"),   # integer abs (analog of fabs)
+    B("labs", "integer", ["long"], ret="long", variants=("",), backend="standard"),
+    B("llabs", "integer", ["llong"], ret="llong", variants=("",), backend="standard"),
     St("div", "integer", "div_t div(int, int)", "needs-aggregate",
-       "returns a struct (div_t) — needs aggregate (NTuple/extractvalue) decomposition"),
+       "returns a struct (div_t) — needs aggregate (NTuple/extractvalue) decomposition",
+       backend="standard"),   # integer quotient+remainder = stock reversible arithmetic; only the struct return blocks lowering
     St("ldiv", "integer", "ldiv_t ldiv(long, long)", "needs-aggregate",
-       "returns a struct (ldiv_t) — needs aggregate decomposition"),
+       "returns a struct (ldiv_t) — needs aggregate decomposition", backend="standard"),
     St("lldiv", "integer", "lldiv_t lldiv(long long, long long)", "needs-aggregate",
-       "returns a struct (lldiv_t) — needs aggregate decomposition"),
+       "returns a struct (lldiv_t) — needs aggregate decomposition", backend="standard"),
     # string -> number conversion: the meaningful input is a char* buffer (Shadow territory)
     St("atof", "conversion", "double atof(const char *)", "needs-shadow",
        "string input (const char*) — needs the Shadow memory model"),
@@ -278,7 +348,8 @@ def expand_variants(spec):
         ret_c = c_type(spec["ret"], fpty) if spec["ret"] == "fp" else \
             {"int": "int", "long": "long", "llong": "long long"}[spec["ret"]]
         yield dict(name=name, args_kind=spec["args"], args_c=args_c, ret_c=ret_c,
-                   flags=spec["flags"], cat=spec["cat"], base=spec["base"], suf=suf)
+                   flags=spec["flags"], cat=spec["cat"], base=spec["base"], suf=suf,
+                   backend=spec["backend"])
 
 def mixtures(args_kind):
     """All non-all-classical H/L assignments over mixable positions (>=1 H).
@@ -476,6 +547,7 @@ def static_row(spec):
         "cells": [{"mixture": "—", "res": {"status": spec["status"],
                                            "reason": spec["reason"], "raw": "", "trace": ""}}],
         "rollup": spec["status"],
+        "backend": spec.get("backend", "n/a"),
     }
 
 def probe_library(lib, filter_names=None, keep=False):
@@ -505,6 +577,7 @@ def probe_library(lib, filter_names=None, keep=False):
                 "sig": f"{variant['ret_c']} {variant['name']}({', '.join(variant['args_c'])})",
                 "flags": sorted(variant["flags"]),
                 "cells": cells, "rollup": rollup(cells),
+                "backend": variant["backend"],
             })
     return rows
 
@@ -542,6 +615,16 @@ EMOJI = {"verified": "✅", "accepted": "🟢", "partial": "🟠", "declined": "
 # Statuses that count as "cannot at all (by design)" — no quantum meaning, never fixable.
 BY_DESIGN = ("no-taintable-input", "by-design")
 
+# A row counts as "lowers" (its templates are actually emitted+linked+run) iff its
+# rollup reached compile — verified, accepted, or partial (≥1 mixture lowered).
+# The backend-AVAILABLE gate is (backend == standard) AND (lowers): a standard
+# backend that does not lower yet (signbit) is NOT available; an open backend that
+# does lower (sin) is NOT available either. Only their intersection is "runnable
+# correctly on a real reversible backend today" (modulo BACKEND-CORRECTNESS, the
+# third level, which needs simulation and is deferred).
+def _lowers(r):
+    return r["rollup"] in ("verified", "accepted", "partial")
+
 def summarize(rows):
     total = len(rows)
     verified = sum(1 for r in rows if r["rollup"] == "verified")
@@ -554,9 +637,23 @@ def summarize(rows):
     compiles = verified + accepted  # lowers + links + runs (golden-verified or pending)
     pct_verified = (100.0 * verified / total) if total else 0.0
     pct_compiles = (100.0 * compiles / total) if total else 0.0
+    # bd e4jv — the BACKEND axis (static per-fn tiers, orthogonal to lowering).
+    be_standard = sum(1 for r in rows if r.get("backend") == "standard")
+    be_synth = sum(1 for r in rows if r.get("backend") == "synthesizable")
+    be_open = sum(1 for r in rows if r.get("backend") == "open")
+    be_na = sum(1 for r in rows if r.get("backend", "n/a") == "n/a")
+    # Self-consistency (Prime-Directive flavored): every row lands in exactly one
+    # tier, so the four tiers MUST partition the total. A mis-typed or omitted
+    # backend tier fails LOUDLY here rather than silently skewing the count.
+    assert be_standard + be_synth + be_open + be_na == total, \
+        f"backend tiers {be_standard}+{be_synth}+{be_open}+{be_na} != total {total}"
+    backend_available = sum(1 for r in rows if r.get("backend") == "standard" and _lowers(r))
+    pct_backend = (100.0 * backend_available / total) if total else 0.0
     return dict(total=total, verified=verified, accepted=accepted, partial=partial,
                 compiles=compiles, not_yet=not_yet, out_design=out_design,
-                longdouble=longdouble, pct_verified=pct_verified, pct_compiles=pct_compiles)
+                longdouble=longdouble, pct_verified=pct_verified, pct_compiles=pct_compiles,
+                be_standard=be_standard, be_synth=be_synth, be_open=be_open, be_na=be_na,
+                backend_available=backend_available, pct_backend=pct_backend)
 
 def bucket_table(s):
     return [
@@ -570,16 +667,40 @@ def bucket_table(s):
         f"| ⛔ Cannot **at all** (by design) | {s['out_design']} | no taintable quantum input |",
     ]
 
+# bd e4jv — the backend-tier distribution as a bucket table (the SECOND axis).
+def backend_bucket_table(s):
+    return [
+        "**Backend tiers** (a STATIC per-fn judgment of whether a correct *reversible "
+        "implementation* of the emitted templates exists — a level ABOVE \"does it lower\"; "
+        "the trace-only runtime never runs a real unitary):", "",
+        f"**Backend-available (🟩 standard ∩ lowers): {s['backend_available']}/{s['total']} "
+        f"({s['pct_backend']:.1f}%)** — the functions that could actually run correctly on a "
+        "real reversible backend today (modulo backend-CORRECTNESS, which needs simulation "
+        "and is deferred).", "",
+        "| Backend tier | Count | Meaning |",
+        "|---|---|---|",
+        f"| 🟩 standard | {s['be_standard']} | reduces to stock reversible arithmetic / bit-ops "
+        "(sign·exponent bit-field, compare-select, modulo, integer abs) — a correct reversible "
+        "routine is directly obtainable (Bennett-copyable) |",
+        f"| 🟨 synthesizable | {s['be_synth']} | a well-defined, finite, exact IEEE bit-field / "
+        "rounding circuit (frexp/modf split, the rounding family, fma) — buildable, not off-the-shelf |",
+        f"| 🟥 open | {s['be_open']} | no known elementary reversible circuit — transcendentals, "
+        "algebraic-irrationals (sqrt/cbrt/hypot), powers, special functions |",
+        f"| ▫️ n/a | {s['be_na']} | no reversible-function question (no taintable input / non-numeric) |",
+    ]
+
 def category_tables(rows):
-    out = ["Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · "
-           "🟡 not-yet (fixable) · ⚠️ error · ⛔ out-by-design", ""]
+    out = ["Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · "
+           "🟡 not-yet (fixable) · ⚠️ error · ⛔ out-by-design. "
+           "**Backend**: 🟩 standard · 🟨 synth · 🟥 open · ▫️ n/a "
+           "(orthogonal axis — see the backend-tier table above).", ""]
     by_cat = {}
     for r in rows:
         by_cat.setdefault(r["cat"], []).append(r)
     for cat in dict.fromkeys(r["cat"] for r in rows):
         out += [f"### {cat}", "",
-                "| Function | Signature | Mixtures (C/Q) | Status | Reason |",
-                "|---|---|---|---|---|"]
+                "| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |",
+                "|---|---|---|---|---|---|"]
         for r in by_cat[cat]:
             cell_str = " ".join(f"{c['mixture']}:{EMOJI.get(c['res']['status'], '?')}"
                                 for c in r["cells"]) or "—"
@@ -593,8 +714,10 @@ def category_tables(rows):
             if not reason and r["rollup"] == "accepted":
                 reason = "lowers+links+runs; golden pending"
             flag_str = (" `" + "` `".join(r["flags"]) + "`") if r["flags"] else ""
+            be = r.get("backend", "open")
+            be_str = f"{BACKEND_EMOJI.get(be, '?')} {BACKEND_LABEL.get(be, be)}"
             out.append(f"| `{r['name']}`{flag_str} | `{r['sig']}` | {cell_str} | "
-                       f"{EMOJI.get(r['rollup'], '?')} {r['rollup']} | {reason} |")
+                       f"{EMOJI.get(r['rollup'], '?')} {r['rollup']} | {be_str} | {reason} |")
         out.append("")
     return out
 
@@ -605,21 +728,48 @@ def write_library_page(lib, s):
              f"**Compiles: {s['compiles']}/{s['total']} ({s['pct_compiles']:.1f}%)** — of which "
              f"**golden-verified: {s['verified']}/{s['total']} ({s['pct_verified']:.1f}%)**.", ""]
     lines += bucket_table(s)
+    lines += ["", "---", ""]
+    lines += backend_bucket_table(s)
     lines.append("")
     lines += category_tables(lib["rows"])
     (COVERAGE_DIR / f"{lib['slug']}.md").write_text("\n".join(lines))
 
 def aggregate(per_lib):
-    keys = ("total", "verified", "accepted", "partial", "compiles", "not_yet", "out_design")
+    keys = ("total", "verified", "accepted", "partial", "compiles", "not_yet", "out_design",
+            "be_standard", "be_synth", "be_open", "be_na", "backend_available")
     agg = {k: sum(s[k] for _, s in per_lib) for k in keys}
     agg["pct_verified"] = 100.0 * agg["verified"] / agg["total"] if agg["total"] else 0.0
     agg["pct_compiles"] = 100.0 * agg["compiles"] / agg["total"] if agg["total"] else 0.0
+    agg["pct_backend"] = 100.0 * agg["backend_available"] / agg["total"] if agg["total"] else 0.0
     return agg
+
+# bd e4jv — the backend tier is a STATIC per-fn property carried by the spec.
+# render() backfills it into any row from an OLDER results.json that predates the
+# field (so `render` alone regenerates correct pages without a full re-probe);
+# a fresh `run` writes it directly. Keyed by (slug, name) — names are unique per
+# library. Missing → the safe under-claiming default (`open` for a probed fn).
+def _spec_backend_map():
+    m = {}
+    for lib in LIBRARIES:
+        d = {}
+        for spec in lib["spec"]:
+            if spec.get("static"):
+                d[spec["name"]] = spec.get("backend", "n/a")
+            else:
+                for suf in spec["variants"]:
+                    d[spec["base"] + suf] = spec.get("backend", "open")
+        m[lib["slug"]] = d
+    return m
 
 def render(data=None):
     if data is None:
         data = json.loads(RESULTS.read_text())
     libs = data["libraries"]
+    bmap = _spec_backend_map()
+    for lib in libs:
+        for r in lib["rows"]:
+            if "backend" not in r:
+                r["backend"] = bmap.get(lib["slug"], {}).get(r["name"], "open")
     COVERAGE_DIR.mkdir(parents=True, exist_ok=True)
     per_lib = []
     for lib in libs:
@@ -635,17 +785,30 @@ def write_index(per_lib, agg):
     L = ["# Standard-library Quantum-Coverage — CQ demonstrators", "",
          "> Auto-generated by `tools/library_coverage/probe.py` — **do not edit by hand.**",
          "> Regenerate: `python3 tools/library_coverage/probe.py run`", "",
-         f"**All libraries — compiles: {agg['compiles']}/{agg['total']} ({agg['pct_compiles']:.1f}%)** "
-         f"· golden-verified: {agg['verified']}/{agg['total']} ({agg['pct_verified']:.1f}%).", "",
-         "**Covered** = *every* applicable classical/quantum (C/Q) argument mixture lowers, links, "
-         "runs, **and** matches a committed golden trace. A loud decline is a *correct* (uncovered) "
-         "outcome — never papered over to inflate the number (Prime Directive). Exit-zero is not "
-         "verification (Rule 2).", "",
-         "| Library | Fit | Compiles | Verified | Cannot-yet | By-design | Detail |",
-         "|---|---|---|---|---|---|---|"]
+         f"**All libraries — lowering-verified: {agg['verified']}/{agg['total']} "
+         f"({agg['pct_verified']:.1f}%)** &nbsp;·&nbsp; backend-available: "
+         f"{agg['backend_available']}/{agg['total']} ({agg['pct_backend']:.1f}%).", "",
+         "Coverage has **two orthogonal axes** (bd e4jv). **Lowering** = *every* applicable "
+         "classical/quantum (C/Q) argument mixture lowers, links, runs, **and** matches a committed "
+         "golden trace — the compiler emits the right reversible-template call sequence. But the "
+         "runtime is **trace-only** (each `cq_template_*` just prints its symbol; measure returns 0), "
+         "so \"verified\" certifies the lowering, **not** that a correct reversible *implementation* "
+         "of those templates exists. **Backend** is that second axis: a static per-fn tier — 🟩 "
+         "`standard` (reversible routine directly obtainable), 🟨 `synthesizable` (buildable IEEE "
+         "bit-field circuit, not off-the-shelf), 🟥 `open` (no known elementary reversible circuit: "
+         "the transcendentals — the bulk of the math.h count). **Backend-available** = 🟩 standard "
+         "**and** it lowers. A third level, backend-*correctness* (does it compute the right unitary), "
+         "needs simulation and is deferred (owner, 2026-06-10). A loud decline is a *correct* "
+         "(uncovered) outcome — never papered over to inflate a number (Prime Directive); the "
+         "backend column exists to stop the single-number overclaim that a *compilable* fn has a "
+         "*working reversible backend*.", "",
+         "| Library | Fit | Lowers | Verified | Backend-avail | 🟩 std | 🟨 syn | 🟥 open | Cannot-yet | By-design | Detail |",
+         "|---|---|---|---|---|---|---|---|---|---|---|"]
     for lib, s in per_lib:
         L.append(f"| `{lib['name']}` | {lib['fit']} | {s['compiles']}/{s['total']} ({s['pct_compiles']:.0f}%) "
-                 f"| {s['verified']}/{s['total']} ({s['pct_verified']:.0f}%) | {s['not_yet']} | "
+                 f"| {s['verified']}/{s['total']} ({s['pct_verified']:.0f}%) "
+                 f"| {s['backend_available']}/{s['total']} ({s['pct_backend']:.0f}%) "
+                 f"| {s['be_standard']} | {s['be_synth']} | {s['be_open']} | {s['not_yet']} | "
                  f"{s['out_design']} | [detail](coverage/{lib['slug']}.md) |")
     L += ["", "## Adding a library", "",
           "Append a `Lib(name, include, slug, blurb, fit, SPEC)` entry to `LIBRARIES` in "
@@ -654,6 +817,11 @@ def write_index(per_lib, agg):
           "detail page, the `goldens/<slug>/` dir, and the README badge all regenerate "
           "automatically. After an adversarial correctness audit (Rule 13), commit goldens with "
           "`python3 tools/library_coverage/probe.py bless --lib <name>`.", "",
+          "Each `B(...)`/`St(...)` also carries a **`backend=`** tier (🟩 `standard` · 🟨 "
+          "`synthesizable` · 🟥 `open` · `n/a`) — a static per-fn judgment of the emitted "
+          "templates' reversible-backend availability, orthogonal to whether the fn lowers. "
+          "Omitting it defaults to the safe under-claiming `open`; the four tiers must partition "
+          "the total or `summarize()` asserts loudly.", "",
           "Scoped-but-not-yet-wired candidate headers are in "
           "[`SCOPED-CANDIDATES.md`](SCOPED-CANDIDATES.md)."]
     COVERAGE_MD.write_text("\n".join(L))
@@ -664,15 +832,22 @@ README_END = "<!-- LIBRARY-COVERAGE:END -->"
 def update_readme(per_lib, agg):
     if not README.exists():
         return
-    L = [f"**Standard-library quantum-coverage — compiles: {agg['compiles']}/{agg['total']} "
-         f"({agg['pct_compiles']:.1f}%)** &nbsp;·&nbsp; golden-verified: {agg['verified']}/{agg['total']} "
-         f"({agg['pct_verified']:.1f}%).", "",
-         "| Library | Compiles | Golden-verified | Cannot-yet (fixable) | By-design |",
-         "|---|---|---|---|---|"]
+    L = [f"**Standard-library quantum-coverage — lowering-verified: {agg['verified']}/{agg['total']} "
+         f"({agg['pct_verified']:.1f}%)** &nbsp;·&nbsp; backend-available: "
+         f"{agg['backend_available']}/{agg['total']} ({agg['pct_backend']:.1f}%).", "",
+         "Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches the "
+         "reversible-template sequence. **Backend-available** = 🟩 `standard` (a correct reversible "
+         "routine is directly obtainable) **and** it lowers — vs 🟨 `synthesizable` / 🟥 `open` "
+         "(no known elementary reversible circuit — the transcendentals). The trace-only runtime "
+         "proves the lowering, not the backend.", "",
+         "| Library | Lowers | Verified | Backend-avail | 🟩 std | 🟨 syn | 🟥 open | By-design |",
+         "|---|---|---|---|---|---|---|---|"]
     for lib, s in per_lib:
         L.append(f"| [`{lib['name']}`](tools/library_coverage/coverage/{lib['slug']}.md) "
                  f"| {s['compiles']}/{s['total']} ({s['pct_compiles']:.0f}%) "
-                 f"| {s['verified']}/{s['total']} ({s['pct_verified']:.0f}%) | {s['not_yet']} | {s['out_design']} |")
+                 f"| {s['verified']}/{s['total']} ({s['pct_verified']:.0f}%) "
+                 f"| {s['backend_available']}/{s['total']} ({s['pct_backend']:.0f}%) "
+                 f"| {s['be_standard']} | {s['be_synth']} | {s['be_open']} | {s['out_design']} |")
     L += ["", "Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) "
           "(regenerate: `python3 tools/library_coverage/probe.py run`)."]
     badge = README_START + "\n" + "\n".join(L) + "\n" + README_END

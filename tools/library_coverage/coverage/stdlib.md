@@ -14,78 +14,91 @@ The C general-utilities header, full surface. Only the integer-`abs` island (`ab
 | 🟡 Cannot **at the moment** (fixable) | 28 | declines loudly today; future work (0 are `long double` → one f80/f128 width gap) |
 | ⛔ Cannot **at all** (by design) | 8 | no taintable quantum input |
 
-Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 not-yet (fixable) · ⚠️ error · ⛔ out-by-design
+---
+
+**Backend tiers** (a STATIC per-fn judgment of whether a correct *reversible implementation* of the emitted templates exists — a level ABOVE "does it lower"; the trace-only runtime never runs a real unitary):
+
+**Backend-available (🟩 standard ∩ lowers): 3/39 (7.7%)** — the functions that could actually run correctly on a real reversible backend today (modulo backend-CORRECTNESS, which needs simulation and is deferred).
+
+| Backend tier | Count | Meaning |
+|---|---|---|
+| 🟩 standard | 6 | reduces to stock reversible arithmetic / bit-ops (sign·exponent bit-field, compare-select, modulo, integer abs) — a correct reversible routine is directly obtainable (Bennett-copyable) |
+| 🟨 synthesizable | 0 | a well-defined, finite, exact IEEE bit-field / rounding circuit (frexp/modf split, the rounding family, fma) — buildable, not off-the-shelf |
+| 🟥 open | 0 | no known elementary reversible circuit — transcendentals, algebraic-irrationals (sqrt/cbrt/hypot), powers, special functions |
+| ▫️ n/a | 33 | no reversible-function question (no taintable input / non-numeric) |
+
+Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 not-yet (fixable) · ⚠️ error · ⛔ out-by-design. **Backend**: 🟩 standard · 🟨 synth · 🟥 open · ▫️ n/a (orthogonal axis — see the backend-tier table above).
 
 ### integer
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `abs` | `int abs(int)` | H:✅ | ✅ verified |  |
-| `labs` | `long labs(long)` | H:✅ | ✅ verified |  |
-| `llabs` | `long long llabs(long long)` | H:✅ | ✅ verified |  |
-| `div` | `div_t div(int, int)` | —:🟡 | 🟡 needs-aggregate | returns a struct (div_t) — needs aggregate (NTuple/extractvalue) decomposition |
-| `ldiv` | `ldiv_t ldiv(long, long)` | —:🟡 | 🟡 needs-aggregate | returns a struct (ldiv_t) — needs aggregate decomposition |
-| `lldiv` | `lldiv_t lldiv(long long, long long)` | —:🟡 | 🟡 needs-aggregate | returns a struct (lldiv_t) — needs aggregate decomposition |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `abs` | `int abs(int)` | H:✅ | ✅ verified | 🟩 standard |  |
+| `labs` | `long labs(long)` | H:✅ | ✅ verified | 🟩 standard |  |
+| `llabs` | `long long llabs(long long)` | H:✅ | ✅ verified | 🟩 standard |  |
+| `div` | `div_t div(int, int)` | —:🟡 | 🟡 needs-aggregate | 🟩 standard | returns a struct (div_t) — needs aggregate (NTuple/extractvalue) decomposition |
+| `ldiv` | `ldiv_t ldiv(long, long)` | —:🟡 | 🟡 needs-aggregate | 🟩 standard | returns a struct (ldiv_t) — needs aggregate decomposition |
+| `lldiv` | `lldiv_t lldiv(long long, long long)` | —:🟡 | 🟡 needs-aggregate | 🟩 standard | returns a struct (lldiv_t) — needs aggregate decomposition |
 
 ### conversion
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `atof` | `double atof(const char *)` | —:🟡 | 🟡 needs-shadow | string input (const char*) — needs the Shadow memory model |
-| `atoi` | `int atoi(const char *)` | —:🟡 | 🟡 needs-shadow | string input — needs Shadow |
-| `atol` | `long atol(const char *)` | —:🟡 | 🟡 needs-shadow | string input — needs Shadow |
-| `atoll` | `long long atoll(const char *)` | —:🟡 | 🟡 needs-shadow | string input — needs Shadow |
-| `strtod` | `double strtod(const char *, char **)` | —:🟡 | 🟡 needs-shadow | string input + char** out-param — needs Shadow |
-| `strtof` | `float strtof(const char *, char **)` | —:🟡 | 🟡 needs-shadow | string input + char** out-param — needs Shadow |
-| `strtold` | `long double strtold(const char *, char **)` | —:🟡 | 🟡 needs-shadow | string input; long double result (also needs f80/f128) — needs Shadow |
-| `strtol` | `long strtol(const char *, char **, int)` | —:🟡 | 🟡 needs-shadow | string parser; meaningful input is the char* (needs Shadow) — only the int base is a scalar |
-| `strtoll` | `long long strtoll(const char *, char **, int)` | —:🟡 | 🟡 needs-shadow | string parser — needs Shadow |
-| `strtoul` | `unsigned long strtoul(const char *, char **, int)` | —:🟡 | 🟡 needs-shadow | string parser — needs Shadow |
-| `strtoull` | `unsigned long long strtoull(const char *, char **, int)` | —:🟡 | 🟡 needs-shadow | string parser — needs Shadow |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `atof` | `double atof(const char *)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string input (const char*) — needs the Shadow memory model |
+| `atoi` | `int atoi(const char *)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string input — needs Shadow |
+| `atol` | `long atol(const char *)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string input — needs Shadow |
+| `atoll` | `long long atoll(const char *)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string input — needs Shadow |
+| `strtod` | `double strtod(const char *, char **)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string input + char** out-param — needs Shadow |
+| `strtof` | `float strtof(const char *, char **)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string input + char** out-param — needs Shadow |
+| `strtold` | `long double strtold(const char *, char **)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string input; long double result (also needs f80/f128) — needs Shadow |
+| `strtol` | `long strtol(const char *, char **, int)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string parser; meaningful input is the char* (needs Shadow) — only the int base is a scalar |
+| `strtoll` | `long long strtoll(const char *, char **, int)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string parser — needs Shadow |
+| `strtoul` | `unsigned long strtoul(const char *, char **, int)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string parser — needs Shadow |
+| `strtoull` | `unsigned long long strtoull(const char *, char **, int)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string parser — needs Shadow |
 
 ### random
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `rand` | `int rand(void)` | —:⛔ | ⛔ by-design | no input and nondeterministic — not a reversible function |
-| `srand` | `void srand(unsigned)` | —:⛔ | ⛔ by-design | void; seeds global RNG state (stateful) — no quantum meaning |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `rand` | `int rand(void)` | —:⛔ | ⛔ by-design | ▫️ n/a | no input and nondeterministic — not a reversible function |
+| `srand` | `void srand(unsigned)` | —:⛔ | ⛔ by-design | ▫️ n/a | void; seeds global RNG state (stateful) — no quantum meaning |
 
 ### memory
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `malloc` | `void *malloc(size_t)` | —:🟡 | 🟡 needs-shadow | returns a pointer — needs the Shadow memory model |
-| `calloc` | `void *calloc(size_t, size_t)` | —:🟡 | 🟡 needs-shadow | returns a pointer — needs Shadow |
-| `realloc` | `void *realloc(void *, size_t)` | —:🟡 | 🟡 needs-shadow | pointer in/out — needs Shadow |
-| `aligned_alloc` | `void *aligned_alloc(size_t, size_t)` | —:🟡 | 🟡 needs-shadow | returns a pointer — needs Shadow |
-| `free` | `void free(void *)` | —:🟡 | 🟡 needs-shadow | void; frees a pointer — part of the Shadow memory model |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `malloc` | `void *malloc(size_t)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | returns a pointer — needs the Shadow memory model |
+| `calloc` | `void *calloc(size_t, size_t)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | returns a pointer — needs Shadow |
+| `realloc` | `void *realloc(void *, size_t)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | pointer in/out — needs Shadow |
+| `aligned_alloc` | `void *aligned_alloc(size_t, size_t)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | returns a pointer — needs Shadow |
+| `free` | `void free(void *)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | void; frees a pointer — part of the Shadow memory model |
 
 ### environment
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `getenv` | `char *getenv(const char *)` | —:🟡 | 🟡 needs-shadow | string key -> string value (pointers) — needs Shadow |
-| `system` | `int system(const char *)` | —:🟡 | 🟡 needs-shadow | string command (pointer) — needs Shadow |
-| `abort` | `void abort(void)` | —:⛔ | ⛔ by-design | noreturn control; no input, no result |
-| `exit` | `void exit(int)` | —:⛔ | ⛔ by-design | noreturn; terminates the program — no measurable quantum result |
-| `_Exit` | `void _Exit(int)` | —:⛔ | ⛔ by-design | noreturn — no measurable result |
-| `quick_exit` | `void quick_exit(int)` | —:⛔ | ⛔ by-design | noreturn — no measurable result |
-| `atexit` | `int atexit(void (*)(void))` | —:⛔ | ⛔ by-design | registers a callback (function pointer) — no taintable data |
-| `at_quick_exit` | `int at_quick_exit(void (*)(void))` | —:⛔ | ⛔ by-design | registers a callback — no taintable data |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `getenv` | `char *getenv(const char *)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string key -> string value (pointers) — needs Shadow |
+| `system` | `int system(const char *)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string command (pointer) — needs Shadow |
+| `abort` | `void abort(void)` | —:⛔ | ⛔ by-design | ▫️ n/a | noreturn control; no input, no result |
+| `exit` | `void exit(int)` | —:⛔ | ⛔ by-design | ▫️ n/a | noreturn; terminates the program — no measurable quantum result |
+| `_Exit` | `void _Exit(int)` | —:⛔ | ⛔ by-design | ▫️ n/a | noreturn — no measurable result |
+| `quick_exit` | `void quick_exit(int)` | —:⛔ | ⛔ by-design | ▫️ n/a | noreturn — no measurable result |
+| `atexit` | `int atexit(void (*)(void))` | —:⛔ | ⛔ by-design | ▫️ n/a | registers a callback (function pointer) — no taintable data |
+| `at_quick_exit` | `int at_quick_exit(void (*)(void))` | —:⛔ | ⛔ by-design | ▫️ n/a | registers a callback — no taintable data |
 
 ### search_sort
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `bsearch` | `void *bsearch(const void *, const void *, size_t, size_t, ...)` | —:🟡 | 🟡 needs-shadow | array search over pointers; returns a pointer — needs Shadow |
-| `qsort` | `void qsort(void *, size_t, size_t, ...)` | —:🟡 | 🟡 needs-shadow | in-place array sort over pointers — needs Shadow |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `bsearch` | `void *bsearch(const void *, const void *, size_t, size_t, ...)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | array search over pointers; returns a pointer — needs Shadow |
+| `qsort` | `void qsort(void *, size_t, size_t, ...)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | in-place array sort over pointers — needs Shadow |
 
 ### multibyte
 
-| Function | Signature | Mixtures (C/Q) | Status | Reason |
-|---|---|---|---|---|
-| `mblen` | `int mblen(const char *, size_t)` | —:🟡 | 🟡 needs-shadow | string/buffer op — needs Shadow |
-| `mbtowc` | `int mbtowc(wchar_t *, const char *, size_t)` | —:🟡 | 🟡 needs-shadow | buffer op — needs Shadow |
-| `wctomb` | `int wctomb(char *, wchar_t)` | —:🟡 | 🟡 needs-shadow | buffer op — needs Shadow |
-| `mbstowcs` | `size_t mbstowcs(wchar_t *, const char *, size_t)` | —:🟡 | 🟡 needs-shadow | buffer op — needs Shadow |
-| `wcstombs` | `size_t wcstombs(char *, const char *, size_t)` | —:🟡 | 🟡 needs-shadow | buffer op — needs Shadow |
+| Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
+|---|---|---|---|---|---|
+| `mblen` | `int mblen(const char *, size_t)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | string/buffer op — needs Shadow |
+| `mbtowc` | `int mbtowc(wchar_t *, const char *, size_t)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | buffer op — needs Shadow |
+| `wctomb` | `int wctomb(char *, wchar_t)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | buffer op — needs Shadow |
+| `mbstowcs` | `size_t mbstowcs(wchar_t *, const char *, size_t)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | buffer op — needs Shadow |
+| `wcstombs` | `size_t wcstombs(char *, const char *, size_t)` | —:🟡 | 🟡 needs-shadow | ▫️ n/a | buffer op — needs Shadow |
