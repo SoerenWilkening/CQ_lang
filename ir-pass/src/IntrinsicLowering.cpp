@@ -198,7 +198,10 @@ bool intrinsicCommutative(Intrinsic::ID id) {
 // unresolved cq_template_<op>_<W>).
 bool widthInTableSet(Intrinsic::ID id, StringRef W) {
   if (isCuratedFpIntrinsic(id))
-    return W == "f16" || W == "f32" || W == "f64";
+    // bd 3c6m.4 admits the long-double width f80 (the `…l` math.h variants:
+    // sinl/sqrtl/powl/fmal/… lower to `@llvm.<fn>.f80` on x86-64). f128 (the
+    // AArch64 `.f128` form) is deferred — not shipped. Still PER-ID and fp-only.
+    return W == "f16" || W == "f32" || W == "f64" || W == "f80";
   const bool base = (W == "i8" || W == "i16" || W == "i32" || W == "i64");
   if (id == Intrinsic::bswap)
     return base && W != "i8";
@@ -236,10 +239,12 @@ bool isCuratedReversibleIntrinsic(const CallInst *CI) {
   // i32 result, or an f16/f128 arg, has no generated template → declines
   // (a phantom-mint fence, Prime Directive).
   if (isCrossWidthLibmIntrinsic(id)) {
+    // bd 3c6m.4: lrintl/llrintl/lroundl/llroundl add the long-double source
+    // (`@llvm.lrint.i64.f80` on x86-64) alongside f32/f64. f128 deferred.
     const StringRef FromW =
         abiWidthFromType(CI->getFunctionType()->getParamType(0));
     return abiWidthFromType(CI->getType()) == "i64" &&
-           (FromW == "f32" || FromW == "f64");
+           (FromW == "f32" || FromW == "f64" || FromW == "f80");
   }
   // Width from the RESULT type (a real iN, never i1-flag) — so E is independent
   // of Increment A's HandleWidth (a compare result is the only i1).
@@ -282,7 +287,7 @@ bool rewriteIntrinsic(CallInst *CI, WidthDispatch &wd, TaintSet &taint) {
     // source-liveness model, cross-width and all (bd [libm-namematcher-3c6m2]).
     const StringRef FromW =
         abiWidthFromType(CI->getFunctionType()->getParamType(0));
-    if (!(FromW == "f32" || FromW == "f64") || W != "i64") {
+    if (!(FromW == "f32" || FromW == "f64" || FromW == "f80") || W != "i64") {
       diagnoseNoTemplate(CI);
       return false;
     }

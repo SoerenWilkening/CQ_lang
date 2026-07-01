@@ -1,0 +1,6 @@
+cqrt_alloc_f80(1.500000) -> h0
+cqrt_ry_f80(h0, 0.500000)
+cqrt_alloc_f80(1.500000) -> h1
+cqrt_ry_f80(h1, 0.600000)
+cq_template_fmin_f80(h0, h1) -> h2
+cqrt_measure_f80(h2) -> 0.000000

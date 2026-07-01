@@ -69,6 +69,38 @@ float               cq_measure_f32 (float              x);
 double              cq_measure_f64 (double             x);
 _Float16            cq_measure_f16 (_Float16           x);  /* Phase 7.1 Inc D */
 
+/* long double family (Phase 7.1 / bd 3c6m.4) — TARGET-DEPENDENT width.
+   `long double` maps to a DIFFERENT ABI width per target, so the C token
+   binds to exactly ONE runtime suffix selected by __LDBL_MANT_DIG__ at
+   preprocess time:
+     * x86_fp80  (x86-64: mantissa 64) → f80 (SHIPPED). Only this width is
+       DECLARED, so the pass never sees a per-target-wrong prototype; the
+       `l`-suffixed math.h variants (sqrtl/erfl/…) source through it.
+     * IEEE-quad (AArch64 Linux: 113) → f128 is NOT shipped (its sound
+       runtime c_type is a real 128-bit fp this x86-64 build cannot compile;
+       `long double` == fp80 here would ABI-miscompile an fp128 value). With
+       no association, `cq_theta((long double)…)` is a clean COMPILE ERROR
+       ("unsupported type") rather than a wrong lowering — a deferred,
+       must-be-built-on-AArch64 follow-up.
+     * double (Apple Silicon / MSVC: 53) → NO distinct symbol; the existing
+       `double:` _Generic arm already matches (long double IS double there,
+       so a separate arm would be a duplicate-type error).
+   The angle operand stays `double` at every width (Rule 3). */
+#if __LDBL_MANT_DIG__ == 64
+long double         cq_theta_f80 (long double         x, double angle);
+long double         cq_phi_f80   (long double         x, double angle);
+long double         cq_measure_f80 (long double        x);
+#  define CQ_THETA_LDBL_   long double: cq_theta_f80,
+#  define CQ_PHI_LDBL_     long double: cq_phi_f80,
+#  define CQ_MEASURE_LDBL_ long double: cq_measure_f80,
+#else  /* long double == double (dispatched by the double: arm) OR fp128
+          (AArch64, deferred — no association → compile error, not a wrong
+          lowering). */
+#  define CQ_THETA_LDBL_
+#  define CQ_PHI_LDBL_
+#  define CQ_MEASURE_LDBL_
+#endif
+
 /* Inversion markers — bare extern, no attributes. LLVM cannot prove an
    unknown extern is side-effect-free, so calls survive elimination at
    every -O level (PRD §2.4). The IR pass detects the bracket via these
@@ -82,6 +114,7 @@ void __cq_invert_end  (void);
 
 /* User-facing dispatch — type-driven via C11 _Generic. */
 #define cq_theta(x, angle) _Generic((x),           \
+    CQ_THETA_LDBL_                                  \
     bool:               cq_theta_i1,               \
     char:               cq_theta_c,                \
     signed char:        cq_theta_si8,              \
@@ -101,6 +134,7 @@ void __cq_invert_end  (void);
 
 /* cq_phi — Rz phase-rotation dispatch (same 15 widths as cq_theta). */
 #define cq_phi(x, angle) _Generic((x),             \
+    CQ_PHI_LDBL_                                    \
     bool:               cq_phi_i1,                 \
     char:               cq_phi_c,                  \
     signed char:        cq_phi_si8,                \
@@ -120,6 +154,7 @@ void __cq_invert_end  (void);
 
 /* cq_measure — measurement dispatch (operand only; no angle). */
 #define cq_measure(x) _Generic((x),                \
+    CQ_MEASURE_LDBL_                               \
     bool:               cq_measure_i1,             \
     char:               cq_measure_c,              \
     signed char:        cq_measure_si8,            \

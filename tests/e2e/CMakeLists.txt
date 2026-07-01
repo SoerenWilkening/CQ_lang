@@ -347,6 +347,25 @@ add_test(NAME e2e-slice-f16
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_f16.expected.log")
 
+# bd 3c6m.4 (FROZEN ABI): the long-double (f80 / x86_fp80) e2e link proof — the
+# width behind the 54 `…l` math.h variants. The only layer that LINKS, so the
+# only proof that the new frozen f80 symbols (cqrt_alloc/ry/rz/measure_f80,
+# cq_template_fadd_f80 + its `_unc` twin, and the intrinsic-backed
+# cq_template_sqrt_f80) resolve and signature-match the hand-written core ABI and
+# the generated template ABI at the long-double width. (A) a measured sqrtl over
+# a Q+Q fadd proves the forward symbols + the headline `…l` intrinsic shape; (B) a
+# dead Q+Q fadd kept alive by a cq_phi proves the fadd_f80 `_unc` twin reverses
+# once and frees every rail — no cqrt_copy_f80 (an f80 carrier is an angle, never
+# data). On this x86-64 host `long double` == x86_fp80, so CQ.h's _Generic seeds
+# the f80 suffix (__LDBL_MANT_DIG__ == 64).
+add_test(NAME e2e-slice-f80
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_f80.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_f80.expected.log")
+
 # Phase 7.1 Increment E (FROZEN ABI): curated reversible llvm.* idiom intrinsics.
 # The only layer that LINKS, so the only proof the SIBLING symbols
 # (cq_template_<op>_<W> + their `_unc`/`_inv` twins in cq_intrinsic_templates,

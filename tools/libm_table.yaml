@@ -61,6 +61,10 @@ widths:
   i64: { bits: 64, c_type: "int64_t", domain: "int" }
   f32: { bits: 32, c_type: "float",   domain: "fp"  }
   f64: { bits: 64, c_type: "double",  domain: "fp"  }
+  # f80 (bd 3c6m.4): the long-double width for the `…l` libm variants
+  # (cbrtl/erfl/atan2l/ldexpl/ilogbl/lrintl/…), == `long double` on x86-64.
+  # c_type `long double`. f128 (AArch64) deferred — not shipped.
+  f80:  { bits: 80,  c_type: "long double", domain: "fp" }
 
 libm:
   # ---- same-width unary fp -> fp (Class 2, fwd/unc) ------------------------
@@ -71,26 +75,26 @@ libm:
   # dropped by the reversible embedding of the mathematical function (the trace
   # model has no errno/signgam), which is why exact-name curation (not the
   # memory(none) attribute) is the semantic guarantee.
-  - { op: cbrt,   kind: same_unary, widths: [f32, f64] }
-  - { op: erf,    kind: same_unary, widths: [f32, f64] }
-  - { op: erfc,   kind: same_unary, widths: [f32, f64] }
-  - { op: tgamma, kind: same_unary, widths: [f32, f64] }
-  - { op: lgamma, kind: same_unary, widths: [f32, f64] }
-  - { op: expm1,  kind: same_unary, widths: [f32, f64] }
-  - { op: log1p,  kind: same_unary, widths: [f32, f64] }
-  - { op: logb,   kind: same_unary, widths: [f32, f64] }
-  - { op: acosh,  kind: same_unary, widths: [f32, f64] }
-  - { op: asinh,  kind: same_unary, widths: [f32, f64] }
-  - { op: atanh,  kind: same_unary, widths: [f32, f64] }
+  - { op: cbrt,   kind: same_unary, widths: [f32, f64, f80] }
+  - { op: erf,    kind: same_unary, widths: [f32, f64, f80] }
+  - { op: erfc,   kind: same_unary, widths: [f32, f64, f80] }
+  - { op: tgamma, kind: same_unary, widths: [f32, f64, f80] }
+  - { op: lgamma, kind: same_unary, widths: [f32, f64, f80] }
+  - { op: expm1,  kind: same_unary, widths: [f32, f64, f80] }
+  - { op: log1p,  kind: same_unary, widths: [f32, f64, f80] }
+  - { op: logb,   kind: same_unary, widths: [f32, f64, f80] }
+  - { op: acosh,  kind: same_unary, widths: [f32, f64, f80] }
+  - { op: asinh,  kind: same_unary, widths: [f32, f64, f80] }
+  - { op: atanh,  kind: same_unary, widths: [f32, f64, f80] }
 
   # ---- same-width binary (fp,fp) -> fp (Class 2, fwd/unc) ------------------
   # hypot(x,y)=sqrt(x^2+y^2) is COMMUTATIVE (qq+hl). atan2/remainder/nextafter/
   # fdim are order-sensitive (qq+hl+lh) — operand order is semantic.
-  - { op: hypot,     kind: same_binary, commutative: true,  widths: [f32, f64] }
-  - { op: atan2,     kind: same_binary, commutative: false, widths: [f32, f64] }
-  - { op: remainder, kind: same_binary, commutative: false, widths: [f32, f64] }
-  - { op: nextafter, kind: same_binary, commutative: false, widths: [f32, f64] }
-  - { op: fdim,      kind: same_binary, commutative: false, widths: [f32, f64] }
+  - { op: hypot,     kind: same_binary, commutative: true,  widths: [f32, f64, f80] }
+  - { op: atan2,     kind: same_binary, commutative: false, widths: [f32, f64, f80] }
+  - { op: remainder, kind: same_binary, commutative: false, widths: [f32, f64, f80] }
+  - { op: nextafter, kind: same_binary, commutative: false, widths: [f32, f64, f80] }
+  - { op: fdim,      kind: same_binary, commutative: false, widths: [f32, f64, f80] }
 
   # ---- cross-width unary fp -> int (Class 2, fwd/unc) ----------------------
   # ilogb (extract the unbiased exponent) is a DIRECT libm call at -O1;
@@ -98,17 +102,17 @@ libm:
   # `@llvm.<fn>.i64.f<W>` INTRINSICS (recognized in IntrinsicLowering) that share
   # this cross-width template surface. `to` is the integer result width on the
   # supported LP64 target (int→i32, long/long long→i64).
-  - { op: ilogb,   kind: cross_unary, froms: [f32, f64], to: i32 }
-  - { op: lrint,   kind: cross_unary, froms: [f32, f64], to: i64 }
-  - { op: llrint,  kind: cross_unary, froms: [f32, f64], to: i64 }
-  - { op: lround,  kind: cross_unary, froms: [f32, f64], to: i64 }
-  - { op: llround, kind: cross_unary, froms: [f32, f64], to: i64 }
+  - { op: ilogb,   kind: cross_unary, froms: [f32, f64, f80], to: i32 }
+  - { op: lrint,   kind: cross_unary, froms: [f32, f64, f80], to: i64 }
+  - { op: llrint,  kind: cross_unary, froms: [f32, f64, f80], to: i64 }
+  - { op: lround,  kind: cross_unary, froms: [f32, f64, f80], to: i64 }
+  - { op: llround, kind: cross_unary, froms: [f32, f64, f80], to: i64 }
 
   # ---- mixed-arg binary (fp, int) -> fp (Class 2, fwd/unc) -----------------
   # ldexp(x,n)=x*2^n and scalbn (same, radix FLT_RADIX) take an `int` exponent
   # (wb=i32); scalbln takes a `long` (wb=i64). arg0 is the fp (wa from the
   # result), arg1 the integer exponent. Non-commutative (distinct types).
-  - { op: ldexp,   kind: mixed_binary, commutative: false, was: [f32, f64], wb: i32 }
-  - { op: scalbn,  kind: mixed_binary, commutative: false, was: [f32, f64], wb: i32 }
-  - { op: scalbln, kind: mixed_binary, commutative: false, was: [f32, f64], wb: i64 }
+  - { op: ldexp,   kind: mixed_binary, commutative: false, was: [f32, f64, f80], wb: i32 }
+  - { op: scalbn,  kind: mixed_binary, commutative: false, was: [f32, f64, f80], wb: i32 }
+  - { op: scalbln, kind: mixed_binary, commutative: false, was: [f32, f64, f80], wb: i64 }
 # -- End of libm table ---------------------------------------------------------

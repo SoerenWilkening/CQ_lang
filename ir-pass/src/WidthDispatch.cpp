@@ -28,13 +28,18 @@ struct SuffixRow {
   StringRef AbiWidth;
 };
 
-// Phase 7.1 Increment D adds the f16 fp suffix (15 rows). i128 is deferred
-// (its C ABI shreds __int128 to {i64,i64}), so no si128/ui128 rows here yet.
+// Phase 7.1 Increment D adds the f16 fp suffix; bd 3c6m.4 adds the long-double
+// suffix f80 (x86_fp80 == `long double` on x86-64). f128 (IEEE quad, == long
+// double on AArch64) is NOT shipped in this x86-64 build — its only sound
+// runtime c_type is a real 128-bit fp this host cannot compile, so it is deferred
+// (a tainted fp128 declines; see OpcodeSupport fpBits/abiWidthFromType). i128 is
+// deferred as a theta/measure suffix (its C ABI shreds __int128 to {i64,i64}), so
+// no si128/ui128 rows here (16 rows).
 constexpr SuffixRow kRows[] = {
     {"i1",   "i1"},  {"c",    "i8"},  {"si8",  "i8"},  {"ui8",  "i8"},
     {"si16", "i16"}, {"ui16", "i16"}, {"si32", "i32"}, {"ui32", "i32"},
     {"sl",   ""},    {"ul",   ""},    {"sll",  "i64"}, {"ull",  "i64"},
-    {"f16",  "f16"}, {"f32",  "f32"}, {"f64",  "f64"},
+    {"f16",  "f16"}, {"f32",  "f32"}, {"f64",  "f64"}, {"f80",  "f80"},
 };
 
 // ABI-width string → LLVM Type. The 7 supported widths cover the entire
@@ -52,6 +57,8 @@ Type *typeForAbiWidth(StringRef W, LLVMContext &Ctx) {
   if (W == "f16") return Type::getHalfTy(Ctx);   // Phase 7.1 Increment D — _Float16
   if (W == "f32") return Type::getFloatTy(Ctx);
   if (W == "f64") return Type::getDoubleTy(Ctx);
+  if (W == "f80") return Type::getX86_FP80Ty(Ctx);  // bd 3c6m.4 — long double (x86-64)
+  // f128 deferred (not shipped in this x86-64 build; see OpcodeSupport).
   return nullptr;
 }
 
@@ -75,7 +82,7 @@ ArrayRef<StringRef> WidthDispatch::allSuffixes() const {
       kRows[0].Sfx,  kRows[1].Sfx,  kRows[2].Sfx,  kRows[3].Sfx,
       kRows[4].Sfx,  kRows[5].Sfx,  kRows[6].Sfx,  kRows[7].Sfx,
       kRows[8].Sfx,  kRows[9].Sfx,  kRows[10].Sfx, kRows[11].Sfx,
-      kRows[12].Sfx, kRows[13].Sfx, kRows[14].Sfx,
+      kRows[12].Sfx, kRows[13].Sfx, kRows[14].Sfx, kRows[15].Sfx,
   };
   return Names;
 }
@@ -455,27 +462,31 @@ FunctionCallee WidthDispatch::addTemplate(StringRef abiWidth,
 }
 
 ArrayRef<StringRef> WidthDispatch::frontEndIntrinsicNames() const {
-  // 45 entries: cq_theta_<sfx>, then cq_phi_<sfx>, then cq_measure_<sfx>
-  // for all 15 suffixes in canonical order (Phase 7.1 Increment D adds the
-  // f16 triple). Used by CQLoweringPass's end-of-pass dead-decl sweep;
-  // decl-only entries (use_empty()) get erased so a quantum-touched module
-  // leaves no front-end intrinsic decls behind.
+  // 48 entries: cq_theta_<sfx>, then cq_phi_<sfx>, then cq_measure_<sfx>
+  // for all 16 suffixes in canonical order (Phase 7.1 Increment D adds the
+  // f16 triple; bd 3c6m.4 adds the f80 long-double triple — f128 is deferred,
+  // not shipped). Used by CQLoweringPass's end-of-pass dead-decl sweep; decl-only
+  // entries (use_empty()) get erased so a quantum-touched module leaves no
+  // front-end intrinsic decls behind.
   static const StringRef Names[] = {
       "cq_theta_i1",     "cq_theta_c",      "cq_theta_si8",
       "cq_theta_ui8",    "cq_theta_si16",   "cq_theta_ui16",
       "cq_theta_si32",   "cq_theta_ui32",   "cq_theta_sl",
       "cq_theta_ul",     "cq_theta_sll",    "cq_theta_ull",
       "cq_theta_f16",    "cq_theta_f32",    "cq_theta_f64",
+      "cq_theta_f80",
       "cq_phi_i1",       "cq_phi_c",        "cq_phi_si8",
       "cq_phi_ui8",      "cq_phi_si16",     "cq_phi_ui16",
       "cq_phi_si32",     "cq_phi_ui32",     "cq_phi_sl",
       "cq_phi_ul",       "cq_phi_sll",      "cq_phi_ull",
       "cq_phi_f16",      "cq_phi_f32",      "cq_phi_f64",
+      "cq_phi_f80",
       "cq_measure_i1",   "cq_measure_c",    "cq_measure_si8",
       "cq_measure_ui8",  "cq_measure_si16", "cq_measure_ui16",
       "cq_measure_si32", "cq_measure_ui32", "cq_measure_sl",
       "cq_measure_ul",   "cq_measure_sll",  "cq_measure_ull",
       "cq_measure_f16",  "cq_measure_f32",  "cq_measure_f64",
+      "cq_measure_f80",
   };
   return Names;
 }

@@ -2,7 +2,7 @@
 """tools/gen_templates_test.py - self-test for tools/gen_templates.py.
 
 Asserts:
-  1. Total symbol count == 1562 (1172 value-returning + 390 void `_unc`).
+  1. Total symbol count == 2261 (opcode table; bd 3c6m.4 added f80; f128 deferred).
   2. Per-kind breakdown matches YAML projection (derived at runtime).
   3. Every .h declaration has a matching .c definition.
   4. YAML SHA-256 banner appears in every emitted file (cq_templates.{h,c}).
@@ -100,24 +100,18 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_2091(self):
-        # 1562 baseline; Phase 7.1 Increment D added f16 (+170 -> 1732); the n0ui
-        # i128 Tier-1 follow-up adds the **i128** INTERMEDIATE int width (+215 ->
-        # 1947). i128 rides the int binary rows ONLY (NO icmp, NO fp casts, NO
-        # cqrt_* core — source/sink stay i64): 5 commutative int ops
-        # (add/mul/and/or/xor) x 10 variants = +50, 8 non-commutative
-        # (sub/sdiv/udiv/srem/urem/shl/lshr/ashr) x 15 variants = +120 (binary
-        # +170), plus the COMPLETE i128 width-cast grid — 15 pairs (zext & sext
-        # i1/i8/i16/i32/i64->i128 + trunc i128->i1/i8/i16/i32/i64) x 3 fwd/inv/unc
-        # = +45 (complete so castInScope's generic width compare never mints a
-        # phantom). Net +215 over 1732. NO cross-domain i128<->fp casts (excluded
-        # in castInScope), NO icmp_i128.
-        # 8rvn (Phase 7.1 iw81.4 §4.4) broadens the fcmp predicate set from 6 to
-        # the full 14-predicate ordered/unordered comparison family (+8 preds:
-        # one/ord/uno/ueq/ugt/uge/ult/ule): 8 preds x 3 fp widths (f16/f32/f64)
-        # x 6 compare variants (fwd/inv/unc x qq/hl) = +144 -> 2091. (true/false
-        # stay out — degenerate, no template.)
-        self.assertEqual(len(self.h_decls), 2091)
+    def test_total_symbol_count_is_2261(self):
+        # 1562 baseline -> 1732 (f16, Increment D) -> 1947 (i128 Tier-1 +215) ->
+        # 2091 (8rvn fcmp predicate fill +144). bd 3c6m.4 adds ONE long-double fp
+        # width f80 to EVERY fp row + the fp-WIDTH cast grid (NOT the cross-domain
+        # int<->fp casts — fenced in castInScope, parallel to the i128<->fp
+        # deferral; f128 is deferred, not shipped — its only sound c_type is a real
+        # 128-bit fp this x86-64 build cannot compile):
+        #   fp_arith +1 width: fadd 10v + fmul 10v + fsub/fdiv/frem 15v each = 65
+        #     -> +65; fneg 3v -> +3; fcmp 14 preds x 6v = 84 -> +84; fpext +3 pairs
+        #     (f16/f32/f64->f80) & fptrunc +3 pairs (f80->f16/f32/f64) x 3 -> +18.
+        #   +65 + 3 + 84 + 18 = +170 over 2091 -> 2261.
+        self.assertEqual(len(self.h_decls), 2261)
 
     def test_unc_family_is_void_in_place(self):
         """PRD §2.3 / DD-3: the `_unc` uncompute family is VOID and in-place.
@@ -214,38 +208,39 @@ class GenTemplatesTest(unittest.TestCase):
     def test_decl_def_pairing(self):
         self.assertEqual(self.h_decls, self.c_defs)
 
-    def test_intrinsic_sibling_count_is_437(self):
-        # Phase 7.1 (FROZEN). Curated reversible llvm.* idioms in the SEPARATE
-        # sibling artifact; the 1732 opcode-table count is untouched. Derived from
-        # the table: Sum over rows of widths x variants.
+    def test_intrinsic_sibling_count_is_509(self):
+        # Phase 7.1 (FROZEN) + bd 3c6m.4. Curated reversible llvm.* idioms in the
+        # SEPARATE sibling artifact; the opcode-table count is untouched. Derived
+        # from the table: Sum over rows of widths x variants.
         #   Increment E (integer idioms) = 221: Class-1 45 (bswap 9 + bitreverse 12
         #   + fshl 12 + fshr 12) + Class-2 unary 32 (ctpop/ctlz/cttz/abs x 4w x 2v)
         #   + min/max 64 (4 ops x 4w x 4v) + add.sat 32 (2 ops x 4w x 4v) + sub.sat
         #   48 (2 ops x 4w x 6v).
-        #   iw81.4.b (fp-math family) = 192: unary 132 (22 fns x 3w x 2v) + fmin/fmax
-        #   24 (2 ops x 3w x 4v) + pow/copysign 36 (2 ops x 3w x 6v).
-        #   wd2p (ternary fma) = 24: fma (1 op x 3w x 8v — qqq/qql/qlq/qll fwd+unc).
-        # 221 + 192 + 24 = 437.
+        #   iw81.4.b + 3c6m.4 (fp-math family, now 4 fp widths f16/f32/f64/f80;
+        #   f128 deferred) = 248: unary 176 (22 fns x 4w x 2v) + fmin/fmax 32 (2 ops
+        #   x 4w x 4v) + pow/copysign 48 (2 ops x 4w x 6v).
+        #   wd2p (ternary fma) = 32: fma (1 op x 4w x 8v — qqq/qql/qlq/qll fwd+unc).
+        # 221 + 248 + 32 = 509 (was 437; +72 from f80 on the fp rows).
         expected = sum(len(o["widths"]) * len(o["variants"])
                        for o in self.itable["intrinsics"])
-        self.assertEqual(expected, 437)
-        self.assertEqual(len(self.ih_decls), 437)
+        self.assertEqual(expected, 509)
+        self.assertEqual(len(self.ih_decls), 509)
 
     def test_intrinsic_decl_def_pairing(self):
         self.assertEqual(self.ih_decls, self.ic_defs)
 
-    def test_libm_sibling_count_is_156(self):
-        # bd 3c6m.2 (FROZEN). Curated DIRECT-libm math.h functions in the SEPARATE
-        # sibling artifact; the 1732 opcode + 437 intrinsic counts are untouched.
-        # Derived from the table:
-        #   same_unary  44: 11 fns x 2 widths (f32,f64) x 2 variants (fwd,unc).
-        #   same_binary 56: hypot (comm) 1 x 2w x 4v = 8; atan2/remainder/nextafter/
-        #     fdim (non-comm) 4 x 2w x 6v = 48.
-        #   cross_unary 20: ilogb (to i32) + lrint/llrint/lround/llround (to i64)
-        #     = 5 fns x 2 froms (f32,f64) x 2 variants (fwd,unc).
-        #   mixed_binary 36: ldexp/scalbn (wb i32) + scalbln (wb i64) = 3 fns x 2
-        #     was (f32,f64) x 6 variants (qq/hl/lh fwd+unc).
-        # 44 + 56 + 20 + 36 = 156.
+    def test_libm_sibling_count_is_234(self):
+        # bd 3c6m.2 (FROZEN) + bd 3c6m.4 (f80). Curated DIRECT-libm math.h
+        # functions in the SEPARATE sibling artifact; the opcode + intrinsic counts
+        # are untouched. Now 3 fp widths (f32,f64,f80; f128 deferred). Derived:
+        #   same_unary  66: 11 fns x 3 widths x 2 variants (fwd,unc).
+        #   same_binary 84: hypot (comm) 1 x 3w x 4v = 12; atan2/remainder/
+        #     nextafter/fdim (non-comm) 4 x 3w x 6v = 72.
+        #   cross_unary 30: ilogb (to i32) + lrint/llrint/lround/llround (to i64)
+        #     = 5 fns x 3 froms (f32,f64,f80) x 2 variants (fwd,unc).
+        #   mixed_binary 54: ldexp/scalbn (wb i32) + scalbln (wb i64) = 3 fns x 3
+        #     was (f32,f64,f80) x 6 variants (qq/hl/lh fwd+unc).
+        # 66 + 84 + 30 + 54 = 234 (was 156; the `…l` long-double variants).
         def _count(op):
             k = op["kind"]
             if k == "same_unary":
@@ -258,8 +253,8 @@ class GenTemplatesTest(unittest.TestCase):
                 return len(op["was"]) * 6
             raise AssertionError(op["kind"])
         expected = sum(_count(op) for op in self.ltable["libm"])
-        self.assertEqual(expected, 156)
-        self.assertEqual(len(self.lh_decls), 156)
+        self.assertEqual(expected, 234)
+        self.assertEqual(len(self.lh_decls), 234)
 
     def test_libm_decl_def_pairing(self):
         self.assertEqual(self.lh_decls, self.lc_defs)

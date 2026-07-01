@@ -36,6 +36,13 @@ unsigned fpBits(StringRef w) {
   if (w == "f16") return 16;  // Phase 7.1 Increment D — half-precision
   if (w == "f32") return 32;
   if (w == "f64") return 64;
+  if (w == "f80") return 80;    // bd 3c6m.4 — x86 extended (long double on x86-64)
+  // f128 (IEEE quad) is NOT shipped: its only sound runtime c_type is a genuine
+  // 128-bit fp, which this x86-64 build cannot compile (`_Float128`/`__float128`
+  // unsupported here) — using `long double` (= fp80) would be an fp128-into-fp80
+  // ABI silent miscompile. A tainted fp128 therefore DECLINES (abiWidthFromType
+  // returns "" for it). f128==long double on AArch64 is a deferred, must-be-
+  // built-on-AArch64 follow-up (Prime Directive: over-decline, never over-accept).
   return 0;
 }
 
@@ -113,7 +120,11 @@ bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
     return fi && ti && fi < ti;            // strict widen
   if (op == "trunc")
     return fi && ti && fi > ti;            // strict narrow
-  // Floating-point width casts.
+  // Floating-point width casts. The full fp-width grid {f16,f32,f64,f80,f128}
+  // is shipped (opcode_table.yaml fpext/fptrunc pairs) — the generic width
+  // compare admits every strict widen/narrow among them, and each admitted pair
+  // has a template (bd 3c6m.4; the same "COMPLETE the grid so the generic
+  // compare never mints a phantom" discipline the i128 int-width casts follow).
   if (op == "fpext")
     return ff && tf && ff < tf;
   if (op == "fptrunc")
@@ -126,14 +137,22 @@ bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
   // `sitofp i128`/`fptoui ... to i128`/etc. must DECLINE, never mint a phantom
   // cq_template_sitofp_i128_* the YAML does not carry. (intBits now knows i128,
   // so without these guards the generic `fi && tf` would wrongly accept it.)
+  // f80 is EXCLUDED from cross-domain the SAME way (bd 3c6m.4): it ships the
+  // fp-WIDTH grid (fpext/fptrunc) ONLY — long double <-> int is a distinct,
+  // un-shipped feature (parallel to the i128<->fp deferral). fpBits now knows
+  // f80, so without these guards the generic `fi && tf` / `ff && ti` would
+  // wrongly accept `sitofp i32 to f80`, `fptosi f80 to i32`, etc. and mint a
+  // phantom cq_template_sitofp_i32_to_f80_* the YAML does not carry. (f128 is
+  // not in fpBits at all, so it can never reach these branches.)
+  auto isWideFp = [](StringRef w) { return w == "f80"; };
   if (op == "sitofp")
-    return fi && tf && fromW != "i1" && fromW != "i128";
+    return fi && tf && fromW != "i1" && fromW != "i128" && !isWideFp(toW);
   if (op == "uitofp")
-    return fi && tf && fromW != "i128";
+    return fi && tf && fromW != "i128" && !isWideFp(toW);
   if (op == "fptosi")
-    return ff && ti && toW != "i1" && toW != "i128";
+    return ff && ti && toW != "i1" && toW != "i128" && !isWideFp(fromW);
   if (op == "fptoui")
-    return ff && ti && toW != "i128";
+    return ff && ti && toW != "i128" && !isWideFp(fromW);
   return false;
 }
 
@@ -184,9 +203,14 @@ StringRef abiWidthFromType(Type *ty) {
     default: return {};  // non-power-of-2 _BitInt(N) / i256+ decline here.
     }
   }
-  if (ty->isHalfTy())   return "f16";  // Phase 7.1 Increment D — _Float16
-  if (ty->isFloatTy())  return "f32";
-  if (ty->isDoubleTy()) return "f64";
+  if (ty->isHalfTy())     return "f16";  // Phase 7.1 Increment D — _Float16
+  if (ty->isFloatTy())    return "f32";
+  if (ty->isDoubleTy())   return "f64";
+  if (ty->isX86_FP80Ty()) return "f80";   // bd 3c6m.4 — long double on x86-64
+  // fp128 is intentionally NOT mapped (returns "" → tainted fp128 declines): the
+  // only sound runtime c_type for it is a real 128-bit fp, which this x86-64
+  // build cannot compile, so `long double` (fp80) would silently miscompile an
+  // fp128 value. f128==long double on AArch64 is deferred (see fpBits).
   return {};
 }
 

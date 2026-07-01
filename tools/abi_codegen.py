@@ -53,6 +53,14 @@ WIDTH_INFO = {
     "f16": {"ctype": "_Float16", "fmt": "%f",   "cast": "(double)"},
     "f32": {"ctype": "float",   "fmt": "%f",   "cast": "(double)"},
     "f64": {"ctype": "double",  "fmt": "%f",   "cast": ""},
+    # f80 (bd 3c6m.4): the long-double width on x86-64, where `long double` IS
+    # x86_fp80. c_type `long double`, printed with the `%Lf` specifier (no cast;
+    # %Lf takes a bare long double). Cast templates are handle-only (i32→i32), so
+    # `long double` appears only in _hl/_lh classical-operand slots. f128 (IEEE
+    # quad, == long double on AArch64) is NOT shipped here: `long double` == fp80
+    # on x86-64, so an fp128 c_type of `long double` would be an fp128-into-fp80
+    # ABI miscompile — a tainted fp128 declines instead (deferred to AArch64).
+    "f80":  {"ctype": "long double", "fmt": "%Lf", "cast": ""},
 }
 
 # Controlled shapes prepend an i32 control flag as parameter 0 (PRD §1.2).

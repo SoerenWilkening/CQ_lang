@@ -4,14 +4,14 @@
 
 The C standard math library — the flagship demonstrator: pure, mostly-total numerical functions with clean scalar in/out, ideal for taint-driven reversible lowering.
 
-**Compiles: 106/174 (60.9%)** — of which **golden-verified: 106/174 (60.9%)**.
+**Compiles: 156/174 (89.7%)** — of which **golden-verified: 156/174 (89.7%)**.
 
 | Bucket | Count | Meaning |
 |---|---|---|
-| ✅ Verified | 106 | lowers + links + runs + matches a committed golden trace |
+| ✅ Verified | 156 | lowers + links + runs + matches a committed golden trace |
 | 🟢 Compiles (golden pending) | 0 | lowers + links + runs; golden not yet blessed |
-| 🟠 Partial | 2 | some C/Q mixtures compile, others decline (not fully covered) |
-| 🟡 Cannot **at the moment** (fixable) | 65 | declines loudly today; future work (54 are `long double` → one f80/f128 width gap) |
+| 🟠 Partial | 3 | some C/Q mixtures compile, others decline (not fully covered) |
+| 🟡 Cannot **at the moment** (fixable) | 15 | declines loudly today; future work (0 are `long double` → one f80/f128 width gap) |
 | ⛔ Cannot **at all** (by design) | 3 | no taintable quantum input |
 
 Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 not-yet (fixable) · ⚠️ error · ⛔ out-by-design
@@ -22,25 +22,25 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 |---|---|---|---|---|
 | `cosf` `errno` | `float cosf(float)` | H:✅ | ✅ verified |  |
 | `cos` `errno` | `double cos(double)` | H:✅ | ✅ verified |  |
-| `cosl` `errno` | `long double cosl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `cosl` `errno` | `long double cosl(long double)` | H:✅ | ✅ verified |  |
 | `sinf` `errno` | `float sinf(float)` | H:✅ | ✅ verified |  |
 | `sin` `errno` | `double sin(double)` | H:✅ | ✅ verified |  |
-| `sinl` `errno` | `long double sinl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `sinl` `errno` | `long double sinl(long double)` | H:✅ | ✅ verified |  |
 | `tanf` `errno` | `float tanf(float)` | H:✅ | ✅ verified |  |
 | `tan` `errno` | `double tan(double)` | H:✅ | ✅ verified |  |
-| `tanl` `errno` | `long double tanl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `tanl` `errno` | `long double tanl(long double)` | H:✅ | ✅ verified |  |
 | `acosf` `errno` | `float acosf(float)` | H:✅ | ✅ verified |  |
 | `acos` `errno` | `double acos(double)` | H:✅ | ✅ verified |  |
-| `acosl` `errno` | `long double acosl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `acosl` `errno` | `long double acosl(long double)` | H:✅ | ✅ verified |  |
 | `asinf` `errno` | `float asinf(float)` | H:✅ | ✅ verified |  |
 | `asin` `errno` | `double asin(double)` | H:✅ | ✅ verified |  |
-| `asinl` `errno` | `long double asinl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `asinl` `errno` | `long double asinl(long double)` | H:✅ | ✅ verified |  |
 | `atanf` | `float atanf(float)` | H:✅ | ✅ verified |  |
 | `atan` | `double atan(double)` | H:✅ | ✅ verified |  |
-| `atanl` | `long double atanl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `atanl` | `long double atanl(long double)` | H:✅ | ✅ verified |  |
 | `atan2f` `errno` | `float atan2f(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `atan2` `errno` | `double atan2(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `atan2l` `errno` | `long double atan2l(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `atan2l` `errno` | `long double atan2l(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 
 ### hyperbolic
 
@@ -48,22 +48,22 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 |---|---|---|---|---|
 | `coshf` `errno` | `float coshf(float)` | H:✅ | ✅ verified |  |
 | `cosh` `errno` | `double cosh(double)` | H:✅ | ✅ verified |  |
-| `coshl` `errno` | `long double coshl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `coshl` `errno` | `long double coshl(long double)` | H:✅ | ✅ verified |  |
 | `sinhf` `errno` | `float sinhf(float)` | H:✅ | ✅ verified |  |
 | `sinh` `errno` | `double sinh(double)` | H:✅ | ✅ verified |  |
-| `sinhl` `errno` | `long double sinhl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `sinhl` `errno` | `long double sinhl(long double)` | H:✅ | ✅ verified |  |
 | `tanhf` | `float tanhf(float)` | H:✅ | ✅ verified |  |
 | `tanh` | `double tanh(double)` | H:✅ | ✅ verified |  |
-| `tanhl` | `long double tanhl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `tanhl` | `long double tanhl(long double)` | H:✅ | ✅ verified |  |
 | `acoshf` `errno` | `float acoshf(float)` | H:✅ | ✅ verified |  |
 | `acosh` `errno` | `double acosh(double)` | H:✅ | ✅ verified |  |
-| `acoshl` `errno` | `long double acoshl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `acoshl` `errno` | `long double acoshl(long double)` | H:✅ | ✅ verified |  |
 | `asinhf` | `float asinhf(float)` | H:✅ | ✅ verified |  |
 | `asinh` | `double asinh(double)` | H:✅ | ✅ verified |  |
-| `asinhl` | `long double asinhl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `asinhl` | `long double asinhl(long double)` | H:✅ | ✅ verified |  |
 | `atanhf` `errno` | `float atanhf(float)` | H:✅ | ✅ verified |  |
 | `atanh` `errno` | `double atanh(double)` | H:✅ | ✅ verified |  |
-| `atanhl` `errno` | `long double atanhl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `atanhl` `errno` | `long double atanhl(long double)` | H:✅ | ✅ verified |  |
 
 ### exp_log
 
@@ -71,46 +71,46 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 |---|---|---|---|---|
 | `expf` `errno` | `float expf(float)` | H:✅ | ✅ verified |  |
 | `exp` `errno` | `double exp(double)` | H:✅ | ✅ verified |  |
-| `expl` `errno` | `long double expl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `expl` `errno` | `long double expl(long double)` | H:✅ | ✅ verified |  |
 | `exp2f` `errno` | `float exp2f(float)` | H:✅ | ✅ verified |  |
 | `exp2` `errno` | `double exp2(double)` | H:✅ | ✅ verified |  |
-| `exp2l` `errno` | `long double exp2l(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `exp2l` `errno` | `long double exp2l(long double)` | H:✅ | ✅ verified |  |
 | `expm1f` `errno` | `float expm1f(float)` | H:✅ | ✅ verified |  |
 | `expm1` `errno` | `double expm1(double)` | H:✅ | ✅ verified |  |
-| `expm1l` `errno` | `long double expm1l(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `expm1l` `errno` | `long double expm1l(long double)` | H:✅ | ✅ verified |  |
 | `logf` `errno` | `float logf(float)` | H:✅ | ✅ verified |  |
 | `log` `errno` | `double log(double)` | H:✅ | ✅ verified |  |
-| `logl` `errno` | `long double logl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `logl` `errno` | `long double logl(long double)` | H:✅ | ✅ verified |  |
 | `log10f` `errno` | `float log10f(float)` | H:✅ | ✅ verified |  |
 | `log10` `errno` | `double log10(double)` | H:✅ | ✅ verified |  |
-| `log10l` `errno` | `long double log10l(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `log10l` `errno` | `long double log10l(long double)` | H:✅ | ✅ verified |  |
 | `log2f` `errno` | `float log2f(float)` | H:✅ | ✅ verified |  |
 | `log2` `errno` | `double log2(double)` | H:✅ | ✅ verified |  |
-| `log2l` `errno` | `long double log2l(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `log2l` `errno` | `long double log2l(long double)` | H:✅ | ✅ verified |  |
 | `log1pf` `errno` | `float log1pf(float)` | H:✅ | ✅ verified |  |
 | `log1p` `errno` | `double log1p(double)` | H:✅ | ✅ verified |  |
-| `log1pl` `errno` | `long double log1pl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `log1pl` `errno` | `long double log1pl(long double)` | H:✅ | ✅ verified |  |
 | `logbf` | `float logbf(float)` | H:✅ | ✅ verified |  |
 | `logb` | `double logb(double)` | H:✅ | ✅ verified |  |
-| `logbl` | `long double logbl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `logbl` | `long double logbl(long double)` | H:✅ | ✅ verified |  |
 | `ilogbf` | `int ilogbf(float)` | H:✅ | ✅ verified |  |
 | `ilogb` | `int ilogb(double)` | H:✅ | ✅ verified |  |
-| `ilogbl` | `int ilogbl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `ilogbl` | `int ilogbl(long double)` | H:✅ | ✅ verified |  |
 | `ldexpf` | `float ldexpf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `ldexp` | `double ldexp(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `ldexpl` | `long double ldexpl(long double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `ldexpl` | `long double ldexpl(long double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `scalbnf` | `float scalbnf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `scalbn` | `double scalbn(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `scalbnl` | `long double scalbnl(long double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `scalbnl` | `long double scalbnl(long double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `scalblnf` | `float scalblnf(float, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `scalbln` | `double scalbln(double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `scalblnl` | `long double scalblnl(long double, long)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `scalblnl` | `long double scalblnl(long double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `frexpf` `byref` | `float frexpf(float, int *)` | H:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
 | `frexp` `byref` | `double frexp(double, int *)` | H:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
-| `frexpl` `byref` | `long double frexpl(long double, int *)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `frexpl` `byref` | `long double frexpl(long double, int *)` | H:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
 | `modff` `byref` | `float modff(float, float *)` | H:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
 | `modf` `byref` | `double modf(double, double *)` | H:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
-| `modfl` `byref` | `long double modfl(long double, long double *)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `modfl` `byref` | `long double modfl(long double, long double *)` | H:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
 
 ### power
 
@@ -118,16 +118,16 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 |---|---|---|---|---|
 | `powf` `errno` | `float powf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `pow` `errno` | `double pow(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `powl` `errno` | `long double powl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `powl` `errno` | `long double powl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `sqrtf` `errno` | `float sqrtf(float)` | H:✅ | ✅ verified |  |
 | `sqrt` `errno` | `double sqrt(double)` | H:✅ | ✅ verified |  |
-| `sqrtl` `errno` | `long double sqrtl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `sqrtl` `errno` | `long double sqrtl(long double)` | H:✅ | ✅ verified |  |
 | `cbrtf` | `float cbrtf(float)` | H:✅ | ✅ verified |  |
 | `cbrt` | `double cbrt(double)` | H:✅ | ✅ verified |  |
-| `cbrtl` | `long double cbrtl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `cbrtl` | `long double cbrtl(long double)` | H:✅ | ✅ verified |  |
 | `hypotf` | `float hypotf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `hypot` | `double hypot(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `hypotl` | `long double hypotl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `hypotl` | `long double hypotl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 
 ### error_gamma
 
@@ -135,16 +135,16 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 |---|---|---|---|---|
 | `erff` | `float erff(float)` | H:✅ | ✅ verified |  |
 | `erf` | `double erf(double)` | H:✅ | ✅ verified |  |
-| `erfl` | `long double erfl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `erfl` | `long double erfl(long double)` | H:✅ | ✅ verified |  |
 | `erfcf` `errno` | `float erfcf(float)` | H:✅ | ✅ verified |  |
 | `erfc` `errno` | `double erfc(double)` | H:✅ | ✅ verified |  |
-| `erfcl` `errno` | `long double erfcl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `erfcl` `errno` | `long double erfcl(long double)` | H:✅ | ✅ verified |  |
 | `tgammaf` `errno` | `float tgammaf(float)` | H:✅ | ✅ verified |  |
 | `tgamma` `errno` | `double tgamma(double)` | H:✅ | ✅ verified |  |
-| `tgammal` `errno` | `long double tgammal(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `tgammal` `errno` | `long double tgammal(long double)` | H:✅ | ✅ verified |  |
 | `lgammaf` `errno` | `float lgammaf(float)` | H:✅ | ✅ verified |  |
 | `lgamma` `errno` | `double lgamma(double)` | H:✅ | ✅ verified |  |
-| `lgammal` `errno` | `long double lgammal(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `lgammal` `errno` | `long double lgammal(long double)` | H:✅ | ✅ verified |  |
 
 ### nearest_int
 
@@ -152,34 +152,34 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 |---|---|---|---|---|
 | `ceilf` | `float ceilf(float)` | H:✅ | ✅ verified |  |
 | `ceil` | `double ceil(double)` | H:✅ | ✅ verified |  |
-| `ceill` | `long double ceill(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `ceill` | `long double ceill(long double)` | H:✅ | ✅ verified |  |
 | `floorf` | `float floorf(float)` | H:✅ | ✅ verified |  |
 | `floor` | `double floor(double)` | H:✅ | ✅ verified |  |
-| `floorl` | `long double floorl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `floorl` | `long double floorl(long double)` | H:✅ | ✅ verified |  |
 | `truncf` | `float truncf(float)` | H:✅ | ✅ verified |  |
 | `trunc` | `double trunc(double)` | H:✅ | ✅ verified |  |
-| `truncl` | `long double truncl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `truncl` | `long double truncl(long double)` | H:✅ | ✅ verified |  |
 | `roundf` | `float roundf(float)` | H:✅ | ✅ verified |  |
 | `round` | `double round(double)` | H:✅ | ✅ verified |  |
-| `roundl` | `long double roundl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `roundl` | `long double roundl(long double)` | H:✅ | ✅ verified |  |
 | `nearbyintf` | `float nearbyintf(float)` | H:✅ | ✅ verified |  |
 | `nearbyint` | `double nearbyint(double)` | H:✅ | ✅ verified |  |
-| `nearbyintl` | `long double nearbyintl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `nearbyintl` | `long double nearbyintl(long double)` | H:✅ | ✅ verified |  |
 | `rintf` | `float rintf(float)` | H:✅ | ✅ verified |  |
 | `rint` | `double rint(double)` | H:✅ | ✅ verified |  |
-| `rintl` | `long double rintl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `rintl` | `long double rintl(long double)` | H:✅ | ✅ verified |  |
 | `lrintf` | `long lrintf(float)` | H:✅ | ✅ verified |  |
 | `lrint` | `long lrint(double)` | H:✅ | ✅ verified |  |
-| `lrintl` | `long lrintl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `lrintl` | `long lrintl(long double)` | H:✅ | ✅ verified |  |
 | `llrintf` | `long llrintf(float)` | H:✅ | ✅ verified |  |
 | `llrint` | `long llrint(double)` | H:✅ | ✅ verified |  |
-| `llrintl` | `long llrintl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `llrintl` | `long llrintl(long double)` | H:✅ | ✅ verified |  |
 | `lroundf` | `long lroundf(float)` | H:✅ | ✅ verified |  |
 | `lround` | `long lround(double)` | H:✅ | ✅ verified |  |
-| `lroundl` | `long lroundl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `lroundl` | `long lroundl(long double)` | H:✅ | ✅ verified |  |
 | `llroundf` | `long llroundf(float)` | H:✅ | ✅ verified |  |
 | `llround` | `long llround(double)` | H:✅ | ✅ verified |  |
-| `llroundl` | `long llroundl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `llroundl` | `long llroundl(long double)` | H:✅ | ✅ verified |  |
 
 ### remainder
 
@@ -187,13 +187,13 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 |---|---|---|---|---|
 | `fmodf` `errno` | `float fmodf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fmod` `errno` | `double fmod(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fmodl` `errno` | `long double fmodl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `fmodl` `errno` | `long double fmodl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `remainderf` `errno` | `float remainderf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `remainder` `errno` | `double remainder(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `remainderl` `errno` | `long double remainderl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `remainderl` `errno` | `long double remainderl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `remquof` `byref` | `float remquof(float, float, int *)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
 | `remquo` `byref` | `double remquo(double, double, int *)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
-| `remquol` `byref` | `long double remquol(long double, long double, int *)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `remquol` `byref` | `long double remquol(long double, long double, int *)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
 
 ### manipulation
 
@@ -201,22 +201,22 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 |---|---|---|---|---|
 | `copysignf` | `float copysignf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `copysign` | `double copysign(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `copysignl` | `long double copysignl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `copysignl` | `long double copysignl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `nextafterf` `errno` | `float nextafterf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `nextafter` `errno` | `double nextafter(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `nextafterl` `errno` | `long double nextafterl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `nextafterl` `errno` | `long double nextafterl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fdimf` `errno` | `float fdimf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fdim` `errno` | `double fdim(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fdiml` `errno` | `long double fdiml(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `fdiml` `errno` | `long double fdiml(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fmaxf` | `float fmaxf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fmax` | `double fmax(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fmaxl` | `long double fmaxl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `fmaxl` | `long double fmaxl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fminf` | `float fminf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fmin` | `double fmin(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
-| `fminl` | `long double fminl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `fminl` | `long double fminl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fmaf` | `float fmaf(float, float, float)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | needs curated libm entry + Phase 9 template |
 | `fma` | `double fma(double, double, double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | needs curated libm entry + Phase 9 template |
-| `fmal` | `long double fmal(long double, long double, long double)` | HLL:🟡 LHL:🟡 HHL:🟡 LLH:🟡 HLH:🟡 LHH:🟡 QQQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
+| `fmal` | `long double fmal(long double, long double, long double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | needs curated libm entry + Phase 9 template |
 | `nanf` | `float nanf(const char *)` | — | ⛔ no-taintable-input | no taintable scalar input |
 | `nan` | `double nan(const char *)` | — | ⛔ no-taintable-input | no taintable scalar input |
 | `nanl` | `long double nanl(const char *)` | — | ⛔ no-taintable-input | no taintable scalar input |

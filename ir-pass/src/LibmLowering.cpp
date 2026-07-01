@@ -34,6 +34,7 @@ enum class LibmKind { SameUnary, SameBinary, CrossUnary, MixedBinary };
 struct LibmDesc {
   StringRef nameF64;
   StringRef nameF32;
+  StringRef nameLd;  // the `…l` long-double spelling (bd 3c6m.4). f80 on x86-64.
   StringRef stem;
   LibmKind kind;
   bool commutative;
@@ -46,29 +47,29 @@ struct LibmDesc {
 // name against `nameF64` OR `nameF32`, never a prefix.
 const LibmDesc kLibmTable[] = {
     // same_unary (fp → fp):
-    {"cbrt",   "cbrtf",   "cbrt",   LibmKind::SameUnary, false, ""},
-    {"erf",    "erff",    "erf",    LibmKind::SameUnary, false, ""},
-    {"erfc",   "erfcf",   "erfc",   LibmKind::SameUnary, false, ""},
-    {"tgamma", "tgammaf", "tgamma", LibmKind::SameUnary, false, ""},
-    {"lgamma", "lgammaf", "lgamma", LibmKind::SameUnary, false, ""},
-    {"expm1",  "expm1f",  "expm1",  LibmKind::SameUnary, false, ""},
-    {"log1p",  "log1pf",  "log1p",  LibmKind::SameUnary, false, ""},
-    {"logb",   "logbf",   "logb",   LibmKind::SameUnary, false, ""},
-    {"acosh",  "acoshf",  "acosh",  LibmKind::SameUnary, false, ""},
-    {"asinh",  "asinhf",  "asinh",  LibmKind::SameUnary, false, ""},
-    {"atanh",  "atanhf",  "atanh",  LibmKind::SameUnary, false, ""},
+    {"cbrt",   "cbrtf",   "cbrtl",   "cbrt",   LibmKind::SameUnary, false, ""},
+    {"erf",    "erff",    "erfl",    "erf",    LibmKind::SameUnary, false, ""},
+    {"erfc",   "erfcf",   "erfcl",   "erfc",   LibmKind::SameUnary, false, ""},
+    {"tgamma", "tgammaf", "tgammal", "tgamma", LibmKind::SameUnary, false, ""},
+    {"lgamma", "lgammaf", "lgammal", "lgamma", LibmKind::SameUnary, false, ""},
+    {"expm1",  "expm1f",  "expm1l",  "expm1",  LibmKind::SameUnary, false, ""},
+    {"log1p",  "log1pf",  "log1pl",  "log1p",  LibmKind::SameUnary, false, ""},
+    {"logb",   "logbf",   "logbl",   "logb",   LibmKind::SameUnary, false, ""},
+    {"acosh",  "acoshf",  "acoshl",  "acosh",  LibmKind::SameUnary, false, ""},
+    {"asinh",  "asinhf",  "asinhl",  "asinh",  LibmKind::SameUnary, false, ""},
+    {"atanh",  "atanhf",  "atanhl",  "atanh",  LibmKind::SameUnary, false, ""},
     // same_binary (fp,fp → fp):
-    {"hypot",     "hypotf",     "hypot",     LibmKind::SameBinary, true,  ""},
-    {"atan2",     "atan2f",     "atan2",     LibmKind::SameBinary, false, ""},
-    {"remainder", "remainderf", "remainder", LibmKind::SameBinary, false, ""},
-    {"nextafter", "nextafterf", "nextafter", LibmKind::SameBinary, false, ""},
-    {"fdim",      "fdimf",      "fdim",      LibmKind::SameBinary, false, ""},
+    {"hypot",     "hypotf",     "hypotl",     "hypot",     LibmKind::SameBinary, true,  ""},
+    {"atan2",     "atan2f",     "atan2l",     "atan2",     LibmKind::SameBinary, false, ""},
+    {"remainder", "remainderf", "remainderl", "remainder", LibmKind::SameBinary, false, ""},
+    {"nextafter", "nextafterf", "nextafterl", "nextafter", LibmKind::SameBinary, false, ""},
+    {"fdim",      "fdimf",      "fdiml",      "fdim",      LibmKind::SameBinary, false, ""},
     // cross_unary (fp → int):
-    {"ilogb", "ilogbf", "ilogb", LibmKind::CrossUnary, false, "i32"},
+    {"ilogb", "ilogbf", "ilogbl", "ilogb", LibmKind::CrossUnary, false, "i32"},
     // mixed_binary ((fp, int) → fp):
-    {"ldexp",   "ldexpf",   "ldexp",   LibmKind::MixedBinary, false, "i32"},
-    {"scalbn",  "scalbnf",  "scalbn",  LibmKind::MixedBinary, false, "i32"},
-    {"scalbln", "scalblnf", "scalbln", LibmKind::MixedBinary, false, "i64"},
+    {"ldexp",   "ldexpf",   "ldexpl",   "ldexp",   LibmKind::MixedBinary, false, "i32"},
+    {"scalbn",  "scalbnf",  "scalbnl",  "scalbn",  LibmKind::MixedBinary, false, "i32"},
+    {"scalbln", "scalblnf", "scalblnl", "scalbln", LibmKind::MixedBinary, false, "i64"},
 };
 
 // The curated descriptor for `CI`, or nullptr. Requires a DIRECT call to a
@@ -83,7 +84,7 @@ const LibmDesc *lookupLibm(const CallInst *CI) {
     return nullptr;
   const StringRef N = Callee->getName();
   for (const LibmDesc &D : kLibmTable)
-    if (N == D.nameF64 || N == D.nameF32)
+    if (N == D.nameF64 || N == D.nameF32 || N == D.nameLd)
       return &D;
   return nullptr;
 }
@@ -107,7 +108,14 @@ StringRef retW(const CallInst *CI) {
   return abiWidthFromType(CI->getFunctionType()->getReturnType());
 }
 
-bool isFpWidth(StringRef W) { return W == "f32" || W == "f64"; }
+// bd 3c6m.4 admits the long-double width f80 (the `…l` spellings). A
+// same/cross/mixed libm call at long-double width lowers exactly like its
+// f32/f64 sibling — the width only NAMES the template symbol. f128 (AArch64
+// long double) is deferred; a tainted fp128 libm call declines upstream
+// (abiWidthFromType returns "" for fp128, so retW/paramW here are "").
+bool isFpWidth(StringRef W) {
+  return W == "f32" || W == "f64" || W == "f80";
+}
 
 // Promote `repl` as the lowered replacement for `orig`. Mirrors
 // IntrinsicLowering::promote / ArithLowering::promote EXACTLY (the duplicated

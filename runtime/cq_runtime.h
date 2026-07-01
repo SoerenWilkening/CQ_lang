@@ -91,6 +91,7 @@ int32_t cqrt_alloc_i64(int64_t value);   /* serves (u)long / (u)long long on 64-
 int32_t cqrt_alloc_f32(float   value);
 int32_t cqrt_alloc_f64(double  value);
 int32_t cqrt_alloc_f16(_Float16 value);  /* Phase 7.1 Increment D — half-precision */
+int32_t cqrt_alloc_f80 (long double value);  /* bd 3c6m.4 — long double (x86-64) */
 
 /* -----------------------------------------------------------------
  * Measurement — one per width. Takes a handle; returns a value of
@@ -105,6 +106,7 @@ int64_t cqrt_measure_i64(int32_t handle);
 float   cqrt_measure_f32(int32_t handle);
 double  cqrt_measure_f64(int32_t handle);
 _Float16 cqrt_measure_f16(int32_t handle);  /* Phase 7.1 Increment D */
+long double cqrt_measure_f80 (int32_t handle);  /* bd 3c6m.4 — long double (x86-64) */
 
 /* -----------------------------------------------------------------
  * Ry rotation — one per width. Takes a handle + double angle; void.
@@ -120,6 +122,7 @@ void cqrt_ry_i64(int32_t handle, double angle);
 void cqrt_ry_f32(int32_t handle, double angle);
 void cqrt_ry_f64(int32_t handle, double angle);
 void cqrt_ry_f16(int32_t handle, double angle);  /* Phase 7.1 Increment D */
+void cqrt_ry_f80 (int32_t handle, double angle);  /* bd 3c6m.4 — long double (x86-64) */
 
 /* -----------------------------------------------------------------
  * Rz rotation — one per width. Same shape as Ry; the lowered phi
@@ -134,6 +137,7 @@ void cqrt_rz_i64(int32_t handle, double angle);
 void cqrt_rz_f32(int32_t handle, double angle);
 void cqrt_rz_f64(int32_t handle, double angle);
 void cqrt_rz_f16(int32_t handle, double angle);  /* Phase 7.1 Increment D */
+void cqrt_rz_f80 (int32_t handle, double angle);  /* bd 3c6m.4 — long double (x86-64) */
 
 /* -----------------------------------------------------------------
  * Controlled Rz rotation (Phase 4, PRD §2.8) — the controlled form of
@@ -155,6 +159,7 @@ void cqrt_rz_i64_controlled(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f32_controlled(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f64_controlled(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f16_controlled(int32_t ctrl, int32_t handle, double angle);  /* Phase 7.1 Increment D */
+void cqrt_rz_f80_controlled (int32_t ctrl, int32_t handle, double angle);  /* bd 3c6m.4 */
 
 void cqrt_rz_i1_controlled_inv (int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_i8_controlled_inv (int32_t ctrl, int32_t handle, double angle);
@@ -164,6 +169,7 @@ void cqrt_rz_i64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
 void cqrt_rz_f16_controlled_inv(int32_t ctrl, int32_t handle, double angle);  /* Phase 7.1 Increment D */
+void cqrt_rz_f80_controlled_inv (int32_t ctrl, int32_t handle, double angle);  /* bd 3c6m.4 */
 
 /* -----------------------------------------------------------------
  * Controlled Ry inverse (npu.6) — the controlled inverse of the
