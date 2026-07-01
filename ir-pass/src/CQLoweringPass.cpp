@@ -6,6 +6,7 @@
 
 #include "CQLoweringPass.h"
 
+#include "ByRefInline.h"
 #include "ByRefMath.h"
 #include "ControlPlan.h"
 #include "IOSinkLowering.h"
@@ -86,6 +87,21 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // calls (carved in `declineTaintEscapes`).
   SmallPtrSet<const CallInst *, 8> byRefDeclined;
   while (lowerByRefMath(M, wd, taint, byRefDeclined))
+    taint = propagate(M, wd);
+
+  // bd g7ip: by-ref out-param on a VISIBLE user function. Where g387 curates an
+  // OPAQUE libm declaration, this INLINES the pure store-value producer of a
+  // visible user body `void f(v…, T* out){ *out = g(v…); }` into the caller and
+  // RAUWs the read-back load — Architecture A (owner decision 2026-07-01), sound
+  // because the out-cell is a single-write/single-read fresh scalar with a
+  // CLASSICAL address, so the reversible store→load round-trip collapses (== the
+  // IR clang -O1 emits when the helper inlines; see `bd memories
+  // g7ip-inline-producer-design`). Runs after the g387 fixpoint and BEFORE
+  // detectSpecializations so a provable shape is canonicalized to plain SSA before
+  // the specializer/escape guard see it; an off-pattern shape is left untouched
+  // and falls through to the existing loud declines (ACCEPT-ONLY). Re-`propagate`
+  // to taint the inlined producer's downstream; FIXPOINT for nested producers.
+  while (lowerByRefInline(M, taint))
     taint = propagate(M, wd);
 
   // Phase 6 specialization PRE-PASS (C-Plan, DD-1): pure analysis by SSA

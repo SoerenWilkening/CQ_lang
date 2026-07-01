@@ -473,6 +473,18 @@ add_test(NAME e2e-slice-byref
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_byref.expected.log")
 
+# bd g7ip — by-ref out-param on a VISIBLE user function: ByRefInline inlines the
+# `noinline` helper's pure store-value producer into the caller (Architecture A),
+# so the read-back load lowers to a genuine quantum handle (theta -> add_hl ->
+# measure). The link-proof that the inlined stream resolves + signature-matches.
+add_test(NAME e2e-slice-byref-inline
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_byref_inline.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_byref_inline.expected.log")
+
 # Phase 6 (DD-6 §7.1, test_C_libtooling-mvna.3): the ZERO-LIB smoke for the new
 # multi-file harness. Drives the EXISTING single-TU theta->add->measure slice
 # through run_slice_multi.sh with EMPTY LIBSRCS (the "" 7th positional), so the
