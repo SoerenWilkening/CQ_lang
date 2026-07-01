@@ -4,14 +4,14 @@
 
 The C standard math library — the flagship demonstrator: pure, mostly-total numerical functions with clean scalar in/out, ideal for taint-driven reversible lowering.
 
-**Compiles: 58/174 (33.3%)** — of which **golden-verified: 58/174 (33.3%)**.
+**Compiles: 106/174 (60.9%)** — of which **golden-verified: 106/174 (60.9%)**.
 
 | Bucket | Count | Meaning |
 |---|---|---|
-| ✅ Verified | 58 | lowers + links + runs + matches a committed golden trace |
+| ✅ Verified | 106 | lowers + links + runs + matches a committed golden trace |
 | 🟢 Compiles (golden pending) | 0 | lowers + links + runs; golden not yet blessed |
 | 🟠 Partial | 2 | some C/Q mixtures compile, others decline (not fully covered) |
-| 🟡 Cannot **at the moment** (fixable) | 113 | declines loudly today; future work (54 are `long double` → one f80/f128 width gap) |
+| 🟡 Cannot **at the moment** (fixable) | 65 | declines loudly today; future work (54 are `long double` → one f80/f128 width gap) |
 | ⛔ Cannot **at all** (by design) | 3 | no taintable quantum input |
 
 Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 not-yet (fixable) · ⚠️ error · ⛔ out-by-design
@@ -38,8 +38,8 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `atanf` | `float atanf(float)` | H:✅ | ✅ verified |  |
 | `atan` | `double atan(double)` | H:✅ | ✅ verified |  |
 | `atanl` | `long double atanl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `atan2f` `errno` | `float atan2f(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `atan2` `errno` | `double atan2(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `atan2f` `errno` | `float atan2f(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `atan2` `errno` | `double atan2(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `atan2l` `errno` | `long double atan2l(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
 
 ### hyperbolic
@@ -55,14 +55,14 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `tanhf` | `float tanhf(float)` | H:✅ | ✅ verified |  |
 | `tanh` | `double tanh(double)` | H:✅ | ✅ verified |  |
 | `tanhl` | `long double tanhl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `acoshf` `errno` | `float acoshf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `acosh` `errno` | `double acosh(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `acoshf` `errno` | `float acoshf(float)` | H:✅ | ✅ verified |  |
+| `acosh` `errno` | `double acosh(double)` | H:✅ | ✅ verified |  |
 | `acoshl` `errno` | `long double acoshl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `asinhf` | `float asinhf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `asinh` | `double asinh(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `asinhf` | `float asinhf(float)` | H:✅ | ✅ verified |  |
+| `asinh` | `double asinh(double)` | H:✅ | ✅ verified |  |
 | `asinhl` | `long double asinhl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `atanhf` `errno` | `float atanhf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `atanh` `errno` | `double atanh(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `atanhf` `errno` | `float atanhf(float)` | H:✅ | ✅ verified |  |
+| `atanh` `errno` | `double atanh(double)` | H:✅ | ✅ verified |  |
 | `atanhl` `errno` | `long double atanhl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
 
 ### exp_log
@@ -75,8 +75,8 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `exp2f` `errno` | `float exp2f(float)` | H:✅ | ✅ verified |  |
 | `exp2` `errno` | `double exp2(double)` | H:✅ | ✅ verified |  |
 | `exp2l` `errno` | `long double exp2l(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `expm1f` `errno` | `float expm1f(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `expm1` `errno` | `double expm1(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `expm1f` `errno` | `float expm1f(float)` | H:✅ | ✅ verified |  |
+| `expm1` `errno` | `double expm1(double)` | H:✅ | ✅ verified |  |
 | `expm1l` `errno` | `long double expm1l(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
 | `logf` `errno` | `float logf(float)` | H:✅ | ✅ verified |  |
 | `log` `errno` | `double log(double)` | H:✅ | ✅ verified |  |
@@ -87,23 +87,23 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `log2f` `errno` | `float log2f(float)` | H:✅ | ✅ verified |  |
 | `log2` `errno` | `double log2(double)` | H:✅ | ✅ verified |  |
 | `log2l` `errno` | `long double log2l(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `log1pf` `errno` | `float log1pf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `log1p` `errno` | `double log1p(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `log1pf` `errno` | `float log1pf(float)` | H:✅ | ✅ verified |  |
+| `log1p` `errno` | `double log1p(double)` | H:✅ | ✅ verified |  |
 | `log1pl` `errno` | `long double log1pl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `logbf` | `float logbf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `logb` | `double logb(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `logbf` | `float logbf(float)` | H:✅ | ✅ verified |  |
+| `logb` | `double logb(double)` | H:✅ | ✅ verified |  |
 | `logbl` | `long double logbl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `ilogbf` | `int ilogbf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `ilogb` | `int ilogb(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `ilogbf` | `int ilogbf(float)` | H:✅ | ✅ verified |  |
+| `ilogb` | `int ilogb(double)` | H:✅ | ✅ verified |  |
 | `ilogbl` | `int ilogbl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `ldexpf` | `float ldexpf(float, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `ldexp` | `double ldexp(double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `ldexpf` | `float ldexpf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `ldexp` | `double ldexp(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `ldexpl` | `long double ldexpl(long double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `scalbnf` | `float scalbnf(float, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `scalbn` | `double scalbn(double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `scalbnf` | `float scalbnf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `scalbn` | `double scalbn(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `scalbnl` | `long double scalbnl(long double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `scalblnf` | `float scalblnf(float, long)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `scalbln` | `double scalbln(double, long)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `scalblnf` | `float scalblnf(float, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `scalbln` | `double scalbln(double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `scalblnl` | `long double scalblnl(long double, long)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
 | `frexpf` `byref` | `float frexpf(float, int *)` | H:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
 | `frexp` `byref` | `double frexp(double, int *)` | H:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
@@ -122,28 +122,28 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `sqrtf` `errno` | `float sqrtf(float)` | H:✅ | ✅ verified |  |
 | `sqrt` `errno` | `double sqrt(double)` | H:✅ | ✅ verified |  |
 | `sqrtl` `errno` | `long double sqrtl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `cbrtf` | `float cbrtf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `cbrt` | `double cbrt(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `cbrtf` | `float cbrtf(float)` | H:✅ | ✅ verified |  |
+| `cbrt` | `double cbrt(double)` | H:✅ | ✅ verified |  |
 | `cbrtl` | `long double cbrtl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `hypotf` | `float hypotf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `hypot` | `double hypot(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `hypotf` | `float hypotf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `hypot` | `double hypot(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `hypotl` | `long double hypotl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
 
 ### error_gamma
 
 | Function | Signature | Mixtures (C/Q) | Status | Reason |
 |---|---|---|---|---|
-| `erff` | `float erff(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `erf` | `double erf(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `erff` | `float erff(float)` | H:✅ | ✅ verified |  |
+| `erf` | `double erf(double)` | H:✅ | ✅ verified |  |
 | `erfl` | `long double erfl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `erfcf` `errno` | `float erfcf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `erfc` `errno` | `double erfc(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `erfcf` `errno` | `float erfcf(float)` | H:✅ | ✅ verified |  |
+| `erfc` `errno` | `double erfc(double)` | H:✅ | ✅ verified |  |
 | `erfcl` `errno` | `long double erfcl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `tgammaf` `errno` | `float tgammaf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `tgamma` `errno` | `double tgamma(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `tgammaf` `errno` | `float tgammaf(float)` | H:✅ | ✅ verified |  |
+| `tgamma` `errno` | `double tgamma(double)` | H:✅ | ✅ verified |  |
 | `tgammal` `errno` | `long double tgammal(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `lgammaf` `errno` | `float lgammaf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `lgamma` `errno` | `double lgamma(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `lgammaf` `errno` | `float lgammaf(float)` | H:✅ | ✅ verified |  |
+| `lgamma` `errno` | `double lgamma(double)` | H:✅ | ✅ verified |  |
 | `lgammal` `errno` | `long double lgammal(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
 
 ### nearest_int
@@ -168,17 +168,17 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `rintf` | `float rintf(float)` | H:✅ | ✅ verified |  |
 | `rint` | `double rint(double)` | H:✅ | ✅ verified |  |
 | `rintl` | `long double rintl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `lrintf` | `long lrintf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `lrint` | `long lrint(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `lrintf` | `long lrintf(float)` | H:✅ | ✅ verified |  |
+| `lrint` | `long lrint(double)` | H:✅ | ✅ verified |  |
 | `lrintl` | `long lrintl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `llrintf` | `long llrintf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `llrint` | `long llrint(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `llrintf` | `long llrintf(float)` | H:✅ | ✅ verified |  |
+| `llrint` | `long llrint(double)` | H:✅ | ✅ verified |  |
 | `llrintl` | `long llrintl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `lroundf` | `long lroundf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `lround` | `long lround(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `lroundf` | `long lroundf(float)` | H:✅ | ✅ verified |  |
+| `lround` | `long lround(double)` | H:✅ | ✅ verified |  |
 | `lroundl` | `long lroundl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `llroundf` | `long llroundf(float)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `llround` | `long llround(double)` | H:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `llroundf` | `long llroundf(float)` | H:✅ | ✅ verified |  |
+| `llround` | `long llround(double)` | H:✅ | ✅ verified |  |
 | `llroundl` | `long llroundl(long double)` | H:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
 
 ### remainder
@@ -188,8 +188,8 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `fmodf` `errno` | `float fmodf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fmod` `errno` | `double fmod(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fmodl` `errno` | `long double fmodl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `remainderf` `errno` | `float remainderf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `remainder` `errno` | `double remainder(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `remainderf` `errno` | `float remainderf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `remainder` `errno` | `double remainder(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `remainderl` `errno` | `long double remainderl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
 | `remquof` `byref` | `float remquof(float, float, int *)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
 | `remquo` `byref` | `double remquo(double, double, int *)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | by-ref out-param → needs 7.5 Shadow routing |
@@ -202,11 +202,11 @@ Legend: ✅ verified · 🟢 accepted (golden pending) · 🟠 partial · 🟡 n
 | `copysignf` | `float copysignf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `copysign` | `double copysign(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `copysignl` | `long double copysignl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `nextafterf` `errno` | `float nextafterf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `nextafter` `errno` | `double nextafter(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `nextafterf` `errno` | `float nextafterf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `nextafter` `errno` | `double nextafter(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `nextafterl` `errno` | `long double nextafterl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
-| `fdimf` `errno` | `float fdimf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
-| `fdim` `errno` | `double fdim(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | needs curated libm entry + Phase 9 template |
+| `fdimf` `errno` | `float fdimf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
+| `fdim` `errno` | `double fdim(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fdiml` `errno` | `long double fdiml(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 blocked | needs long double (f80/f128) source — future gap |
 | `fmaxf` | `float fmaxf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |
 | `fmax` | `double fmax(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified |  |

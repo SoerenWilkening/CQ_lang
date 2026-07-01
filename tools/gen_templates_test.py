@@ -82,6 +82,19 @@ class GenTemplatesTest(unittest.TestCase):
                                          cls.ih_text, re.MULTILINE))
         cls.ic_defs = sorted(re.findall(r"^(?:int32_t|void) (cq_template_\w+)\([^)]*\)\s*\{",
                                         cls.ic_text, re.MULTILINE))
+        # bd 3c6m.2: the curated DIRECT-libm math.h SIBLING surface
+        # (cq_libm_templates.{h,c}), a THIRD artifact with its own SHA banner.
+        # The opcode-table and intrinsic-sibling counts above are untouched.
+        ltable_path = REPO / "tools" / "libm_table.yaml"
+        cls.ltable_bytes = ltable_path.read_bytes()
+        cls.ltable = yaml.safe_load(cls.ltable_bytes)
+        cls.ltable_sha = hashlib.sha256(cls.ltable_bytes).hexdigest()
+        cls.lh_text = (cls.out / "cq_libm_templates.h").read_text()
+        cls.lc_text = (cls.out / "cq_libm_templates.c").read_text()
+        cls.lh_decls = sorted(re.findall(r"^(?:int32_t|void) (cq_template_\w+)\(",
+                                         cls.lh_text, re.MULTILINE))
+        cls.lc_defs = sorted(re.findall(r"^(?:int32_t|void) (cq_template_\w+)\([^)]*\)\s*\{",
+                                        cls.lc_text, re.MULTILINE))
 
     @classmethod
     def tearDownClass(cls):
@@ -220,6 +233,41 @@ class GenTemplatesTest(unittest.TestCase):
 
     def test_intrinsic_decl_def_pairing(self):
         self.assertEqual(self.ih_decls, self.ic_defs)
+
+    def test_libm_sibling_count_is_156(self):
+        # bd 3c6m.2 (FROZEN). Curated DIRECT-libm math.h functions in the SEPARATE
+        # sibling artifact; the 1732 opcode + 437 intrinsic counts are untouched.
+        # Derived from the table:
+        #   same_unary  44: 11 fns x 2 widths (f32,f64) x 2 variants (fwd,unc).
+        #   same_binary 56: hypot (comm) 1 x 2w x 4v = 8; atan2/remainder/nextafter/
+        #     fdim (non-comm) 4 x 2w x 6v = 48.
+        #   cross_unary 20: ilogb (to i32) + lrint/llrint/lround/llround (to i64)
+        #     = 5 fns x 2 froms (f32,f64) x 2 variants (fwd,unc).
+        #   mixed_binary 36: ldexp/scalbn (wb i32) + scalbln (wb i64) = 3 fns x 2
+        #     was (f32,f64) x 6 variants (qq/hl/lh fwd+unc).
+        # 44 + 56 + 20 + 36 = 156.
+        def _count(op):
+            k = op["kind"]
+            if k == "same_unary":
+                return len(op["widths"]) * 2
+            if k == "same_binary":
+                return len(op["widths"]) * (4 if op["commutative"] else 6)
+            if k == "cross_unary":
+                return len(op["froms"]) * 2
+            if k == "mixed_binary":
+                return len(op["was"]) * 6
+            raise AssertionError(op["kind"])
+        expected = sum(_count(op) for op in self.ltable["libm"])
+        self.assertEqual(expected, 156)
+        self.assertEqual(len(self.lh_decls), 156)
+
+    def test_libm_decl_def_pairing(self):
+        self.assertEqual(self.lh_decls, self.lc_defs)
+
+    def test_libm_sibling_sha_banner(self):
+        # The sibling files carry the LIBM table's SHA (not the opcode/intrinsic SHA).
+        self.assertIn(self.ltable_sha, self.lh_text)
+        self.assertIn(self.ltable_sha, self.lc_text)
 
     def test_intrinsic_sibling_sha_banner(self):
         # The sibling files carry the INTRINSIC table's SHA (not the opcode SHA).

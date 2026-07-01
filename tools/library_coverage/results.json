@@ -69,7 +69,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_cosl_H_o1ng_3_w/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_cosl_H_pfledjrj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -138,7 +138,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sinl_H_bqtqynmt/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sinl_H_8gz4ubd6/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -207,7 +207,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tanl_H_i1ax87hi/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tanl_H_0ksprgj6/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -276,7 +276,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_acosl_H_av2gc7zv/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_acosl_H_8o03u5bl/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -345,7 +345,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_asinl_H_oduxg0jj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_asinl_H_lo5ots57/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -408,7 +408,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atanl_H_0mi8k7n9/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atanl_H_srvqc4tv/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -429,32 +429,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_atan2_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_atan2_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_atan2_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "atan2",
@@ -470,32 +470,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_atan2_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_atan2_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_atan2_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "atan2l",
@@ -513,7 +513,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_HL_7u9zksqc/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_HL_9kmh7ibu/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -522,7 +522,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_LH_cera9xhb/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_LH_5sj5034s/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -531,7 +531,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_QQ_qnhg12tr/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atan2l_QQ_7heuzw2j/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -600,7 +600,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_coshl_H_yhjszgh9/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_coshl_H_gl0udav_/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -669,7 +669,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sinhl_H_h0p759kj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sinhl_H_dyzeqbqa/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -732,7 +732,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tanhl_H_d_yttfuk/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tanhl_H_96q7co29/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -753,14 +753,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_acosh_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "acosh",
@@ -776,14 +776,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_acosh_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "acoshl",
@@ -801,7 +801,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_acoshl_H_i812uh2v/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_acoshl_H_2cqcu86v/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -820,14 +820,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_asinh_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "asinh",
@@ -841,14 +841,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_asinh_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "asinhl",
@@ -864,7 +864,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_asinhl_H_npj4aal_/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_asinhl_H_qfx2pfes/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -885,14 +885,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_atanh_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "atanh",
@@ -908,14 +908,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_atanh_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "atanhl",
@@ -933,7 +933,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atanhl_H_ff1jvq_1/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_atanhl_H_0tdbfg4p/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1002,7 +1002,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_expl_H_w7e3u23t/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_expl_H_n4ze_8jh/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1071,7 +1071,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_exp2l_H_1xbpzk_y/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_exp2l_H_ey4edlnz/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1092,14 +1092,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_expm1_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "expm1",
@@ -1115,14 +1115,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_expm1_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "expm1l",
@@ -1140,7 +1140,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_expm1l_H_gyrtcxyt/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_expm1l_H_j5_g_ukx/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1209,7 +1209,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_logl_H_yrvq7dey/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_logl_H_ivsx9c8g/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1278,7 +1278,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log10l_H_25swuvjv/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log10l_H_2q780koo/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1347,7 +1347,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log2l_H_jpkuks6a/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log2l_H_5nx2b9gt/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1368,14 +1368,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_log1p_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "log1p",
@@ -1391,14 +1391,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_log1p_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "log1pl",
@@ -1416,7 +1416,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log1pl_H_cua0vh8b/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_log1pl_H_yiwehu1g/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1435,14 +1435,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_logb_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "logb",
@@ -1456,14 +1456,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_logb_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "logbl",
@@ -1479,7 +1479,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_logbl_H_d67w9x3v/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_logbl_H_6yqfr_pb/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1498,14 +1498,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i32 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_ilogb_f32_to_i32(h0) -> h1\ncqrt_measure_i32(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "ilogb",
@@ -1519,14 +1519,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i32 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_ilogb_f64_to_i32(h0) -> h1\ncqrt_measure_i32(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "ilogbl",
@@ -1542,7 +1542,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ilogbl_H_m71tsn58/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ilogbl_H_d4q4k3uj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1561,32 +1561,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_ldexp_f32_i32_hl(h0, 2) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_ldexp_f32_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_ldexp_f32_i32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "ldexp",
@@ -1600,32 +1600,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_ldexp_f64_i32_hl(h0, 2) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_ldexp_f64_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_ldexp_f64_i32(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "ldexpl",
@@ -1641,7 +1641,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_HL_hk_69fbr/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_HL_uouqt3v1/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1650,7 +1650,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_LH__u1yh0w_/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_LH_q2dg32_f/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1659,7 +1659,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_QQ_4s6jy7jb/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ldexpl_QQ_fwnk5fnc/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1678,32 +1678,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_scalbn_f32_i32_hl(h0, 2) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_scalbn_f32_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_scalbn_f32_i32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "scalbn",
@@ -1717,32 +1717,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_scalbn_f64_i32_hl(h0, 2) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_scalbn_f64_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_scalbn_f64_i32(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "scalbnl",
@@ -1758,7 +1758,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_HL_dbc9uzc5/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_HL_psb9x5rl/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1767,7 +1767,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_LH_irn7b6en/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_LH_83315rh2/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1776,7 +1776,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_QQ_1rceg2rm/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalbnl_QQ__8x9b97m/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1795,32 +1795,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_scalbln_f32_i64_hl(h0, 2) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_i64(2) -> h0\ncqrt_ry_i64(h0, 0.500000)\ncq_template_scalbln_f32_i64_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_i64(2) -> h1\ncqrt_ry_i64(h1, 0.600000)\ncq_template_scalbln_f32_i64(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "scalbln",
@@ -1834,32 +1834,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_scalbln_f64_i64_hl(h0, 2) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_i64(2) -> h0\ncqrt_ry_i64(h0, 0.500000)\ncq_template_scalbln_f64_i64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_i64(2) -> h1\ncqrt_ry_i64(h1, 0.600000)\ncq_template_scalbln_f64_i64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "scalblnl",
@@ -1875,7 +1875,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_HL_7c095u1x/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_HL_pyahgjpq/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1884,7 +1884,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_LH_wlpl89h8/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_LH_fk402s_m/probe.c:8:12: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -1893,7 +1893,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_QQ_ol57r8nl/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_scalblnl_QQ_0quepucn/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -1962,7 +1962,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_frexpl_H_g6w9anoe/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_frexpl_H_2rcjrwzv/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2031,7 +2031,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_modfl_H_2p1vsavb/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_modfl_H_muvcxqnm/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2136,7 +2136,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_HL_y0ulxs3v/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_HL_37vj15mo/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -2145,7 +2145,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_LH_81vshlvb/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_LH_xrv_p2bc/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -2154,7 +2154,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_QQ_3jcxfspl/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_powl_QQ_t1g0ncn1/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2223,7 +2223,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sqrtl_H_cygvrv7w/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_sqrtl_H_0daixbcv/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2242,14 +2242,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_cbrt_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "cbrt",
@@ -2263,14 +2263,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_cbrt_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "cbrtl",
@@ -2286,7 +2286,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_cbrtl_H_68l8qaxg/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_cbrtl_H_lknc2z7r/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2305,32 +2305,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_hypot_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_hypot_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_hypot_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "hypot",
@@ -2344,32 +2344,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_hypot_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_hypot_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_hypot_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "hypotl",
@@ -2385,7 +2385,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_HL_vc1n669i/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_HL_ezy7rjoh/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -2394,7 +2394,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_LH_w4jiwdxs/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_LH_y583fns8/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -2403,7 +2403,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_QQ_28ii59lf/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_hypotl_QQ_69m10mys/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2422,14 +2422,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_erf_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "erf",
@@ -2443,14 +2443,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_erf_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "erfl",
@@ -2466,7 +2466,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_erfl_H_y24xw87_/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_erfl_H_0jbg59rj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2487,14 +2487,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_erfc_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "erfc",
@@ -2510,14 +2510,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_erfc_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "erfcl",
@@ -2535,7 +2535,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_erfcl_H_s900_1si/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_erfcl_H_mjitftug/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2556,14 +2556,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_tgamma_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "tgamma",
@@ -2579,14 +2579,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_tgamma_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "tgammal",
@@ -2604,7 +2604,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tgammal_H_gznw2z3a/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_tgammal_H_s9iju_rc/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2625,14 +2625,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_lgamma_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "lgamma",
@@ -2648,14 +2648,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_lgamma_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "lgammal",
@@ -2673,7 +2673,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lgammal_H_ilmb3t9o/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lgammal_H_8mbo22d2/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2736,7 +2736,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ceill_H_29un7i7g/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_ceill_H_6jm15yb5/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2799,7 +2799,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_floorl_H_9w5c4hbp/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_floorl_H_46nybvdt/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2862,7 +2862,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_truncl_H_52jfehao/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_truncl_H_jgxyuy_a/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2925,7 +2925,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_roundl_H_ur3k9t10/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_roundl_H_v4ft67lm/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -2988,7 +2988,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nearbyintl_H_mb76lcot/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nearbyintl_H_d_f6wq2f/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3051,7 +3051,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_rintl_H_g1n_lq49/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_rintl_H_cxr0qtuq/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3070,14 +3070,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_lrint_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "lrint",
@@ -3091,14 +3091,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_lrint_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "lrintl",
@@ -3114,7 +3114,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lrintl_H_qs6mwfgh/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lrintl_H_x5ggwvvq/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3133,14 +3133,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_llrint_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "llrint",
@@ -3154,14 +3154,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_llrint_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "llrintl",
@@ -3177,7 +3177,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_llrintl_H_jl25_1g9/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_llrintl_H_1xkt4490/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3196,14 +3196,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_lround_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "lround",
@@ -3217,14 +3217,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_lround_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "lroundl",
@@ -3240,7 +3240,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lroundl_H_p7dr2u10/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_lroundl_H_0qkdf7lj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3259,14 +3259,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_llround_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "llround",
@@ -3280,14 +3280,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_llround_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "llroundl",
@@ -3303,7 +3303,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_llroundl_H_cxeivobj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_llroundl_H_gmfccsmu/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3408,7 +3408,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_HL_pdevoyk1/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_HL_52iyecgu/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3417,7 +3417,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_LH_4x1wcxv3/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_LH_hzsessfj/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3426,7 +3426,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_QQ_ov8hz12x/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmodl_QQ_z28g4vbr/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3447,32 +3447,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_remainder_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_remainder_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_remainder_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "remainder",
@@ -3488,32 +3488,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_remainder_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_remainder_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_remainder_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "remainderl",
@@ -3531,7 +3531,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_HL_d1tdsaa4/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_HL_gx5pw1nr/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3540,7 +3540,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_LH_l6we27xm/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_LH_xv2ygkhk/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3549,7 +3549,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_QQ_zpxdyz7v/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remainderl_QQ_olgk_fqh/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3654,7 +3654,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_HL_hz3tqwpg/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_HL_t_6g5p_i/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3663,7 +3663,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_LH_1jfu3hx2/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_LH_kmmyhwic/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3672,7 +3672,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_QQ_6nwe0us8/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_remquol_QQ_fuxqxwzp/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3771,7 +3771,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_HL_0lpr4trz/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_HL_jysm7avc/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3780,7 +3780,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_LH_5y1wkpf4/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_LH_qqr9t9dg/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3789,7 +3789,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_QQ_vroo9v3d/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_copysignl_QQ_wzaumwsm/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3810,32 +3810,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_nextafter_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_nextafter_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_nextafter_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "nextafter",
@@ -3851,32 +3851,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_nextafter_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_nextafter_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_nextafter_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "nextafterl",
@@ -3894,7 +3894,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_HL_myn7ct1u/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_HL_9tdobfkz/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3903,7 +3903,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_LH_5982ponw/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_LH_wnt372cn/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -3912,7 +3912,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_QQ_benyv_tn/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_nextafterl_QQ_e6zvwdp4/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -3933,32 +3933,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fdim_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fdim_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_fdim_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "fdim",
@@ -3974,32 +3974,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fdim_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fdim_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
-                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-                "trace": ""
+                "status": "verified",
+                "reason": "",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fdim_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
               }
             }
           ],
-          "rollup": "declined"
+          "rollup": "verified"
         },
         {
           "name": "fdiml",
@@ -4017,7 +4017,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_HL_wmd92qfs/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_HL__hyzv2ho/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4026,7 +4026,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_LH_zbb2p6vx/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_LH_8txuc1gf/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4035,7 +4035,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_QQ_vd9vdpbp/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fdiml_QQ_jywplqoj/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -4134,7 +4134,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_HL_v643siy3/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_HL_fl6p1hlf/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4143,7 +4143,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_LH_ln1nhnlz/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_LH_ez8i7ng_/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4152,7 +4152,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_QQ_ld7uyt_8/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmaxl_QQ_lrehb0ie/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -4251,7 +4251,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_HL_t64koqzo/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_HL_t0kg7pqh/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4260,7 +4260,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_LH_8qeu9ov5/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_LH_s_3xkf54/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4269,7 +4269,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_QQ_zccc92yk/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fminl_QQ_2j8xtg2m/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }
@@ -4440,7 +4440,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HLL_r6kvoaey/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HLL_doig4i2d/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4449,7 +4449,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LHL_do3m9osx/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LHL_ya45s9it/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4458,7 +4458,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HHL_nt_xe39k/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HHL_lwm_do1s/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4467,7 +4467,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LLH_0h_n9thd/probe.c:7:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LLH_29ka5gwj/probe.c:7:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4476,7 +4476,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HLH_5hgypiox/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_HLH_xli5ae5i/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4485,7 +4485,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LHH_e711xaf4/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_LHH_vosnc06n/probe.c:6:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             },
@@ -4494,7 +4494,7 @@
               "res": {
                 "status": "blocked",
                 "reason": "needs long double (f80/f128) source \u2014 future gap",
-                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_QQQ_s3p37olt/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
+                "raw": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cqlib_fmal_QQQ_ixx5sgro/probe.c:5:10: error: controlling expression type 'long double' not compatible with any generic association type",
                 "trace": ""
               }
             }

@@ -9,6 +9,7 @@
 #include "TaintPropagation.h"
 
 #include "IntrinsicLowering.h"
+#include "LibmLowering.h"
 #include "QramLowering.h"
 #include "SpecializePlan.h"
 #include "Specialization.h"
@@ -535,6 +536,21 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             //     kMsgUnknownCallee decline below (`*.with.overflow`,
             //     transcendentals, general funnel shift stay declined).
             if (isCuratedReversibleIntrinsic(CI))
+              continue;
+            // 1d-3c6m.2. Curated DIRECT-libm math.h calls (cbrt/erf/atan2/hypot/
+            //     ilogb/ldexp/scalbn/…) are OWNED by LibmLowering (enqueued in
+            //     OpcodeLowering, lowered to a cq_template_<…> additive producer
+            //     the whole-DAG uncompute spine reverses). EXACT-name membership
+            //     over a DECLARATION-only libc extern with NO operand bundles —
+            //     NEVER a name prefix (the cq_theta_evil hazard) — with the
+            //     arity/result-type/operand-width shape validated (isLibmCall is
+            //     the SAME predicate the emitter re-checks, so the carve can never
+            //     accept an unlowerable call). A user's own in-module `cbrt` body
+            //     (not a declaration) is NOT carved (owned by the specializer /
+            //     escape path). The fp result reaching a rotation arg-1 STILL
+            //     declines — the angle fence is upstream (declineTaintedAngle),
+            //     producer-agnostic (bd [fp-angle-fence-ordering-invariant]).
+            if (isLibmCall(CI))
               continue;
           }
           // 1d-Phase7.6. Recognized I/O output sinks (`printf` / `putchar`)

@@ -1,0 +1,114 @@
+# tools/libm_table.yaml — curated DIRECT-libm math.h functions (bd 3c6m.2).
+# THIRD sibling of opcode_table.yaml / intrinsic_table.yaml; the 1732 opcode
+# and 437 intrinsic symbol counts are UNTOUCHED. Drives the SAME generator
+# (tools/gen_templates.py::enumerate_libm) into a SEPARATE artifact:
+#   - runtime/cq_libm_templates.h   (extern "C" declarations)
+#   - runtime/cq_libm_templates.c   (printf-trace stubs)
+# with its OWN yaml-sha256 banner, compiled into the SAME libcq_templates.a.
+#
+# Every emitted symbol is `cq_template_<...>` (the SAME prefix as the opcode /
+# intrinsic templates) so the whole-DAG uncompute spine reverses them with ZERO
+# new code: DagTraversal::isTemplateProducer / Uncomputation::isDataProducer
+# recognize them by prefix, and EmitInverse mints each `_unc` twin by
+# string-appending `_unc` to the forward symbol and copying the forward call's
+# operand types out-first (so cross-width / mixed-arg round-trip for free).
+#
+# WHY A DISTINCT TABLE FROM intrinsic_table.yaml: these are DIRECT `@<name>`
+# libm CALLS at clang -O1 (NOT `@llvm.*` intrinsics) — they carry no
+# `Intrinsic::ID`, so the recognizer keys on the EXACT function NAME
+# (LibmLowering::isLibmCall), never an `Intrinsic::ID`. The one exception is the
+# cross-width `lrint/llrint/lround/llround` family, which clang DOES lower to
+# `@llvm.lrint.i64.f64` intrinsics — those are recognized in IntrinsicLowering
+# but share this table's cross-width TEMPLATE surface (a template is just a
+# symbol; generation is independent of recognition).
+#
+# ----------------------------------------------------------------------------
+# CURATION GUARD (Prime Directive): every row is a pure, mostly-total libm
+# function lowered as a Class-2 ADDITIVE PRODUCER (fresh out rail, sources kept
+# LIVE) so the generic `_unc(out, srcs…)` zeroes the out rail by recomputing
+# f(sources) — it NEVER recovers an input (R-E source-liveness, Rule 8). The
+# fp result is DATA, never an angle: a tainted libm result reaching a rotation
+# arg-1 STILL loud-declines, enforced UPSTREAM by declineTaintedAngle
+# (RotationLowering runs BEFORE lowerOps), NOT here — the angle fence is
+# positional and producer-agnostic (see bd [fp-angle-fence-ordering-invariant]).
+#
+# ----------------------------------------------------------------------------
+# SHAPES (reuse VARIANT_INFO + abi_codegen a1/ua1/qq/hl/lh/uqq/uhl/ulh — NO new
+# abi_codegen shape). `kind`:
+#   same_unary   — fp -> fp of the SAME width. Symbol `cq_template_<op>_<W>`;
+#                  shapes a1 (fwd) / ua1 (unc). Width from the RESULT type (the
+#                  f32 `…f` spelling → f32, the double spelling → f64). No f16
+#                  libm spelling exists, so widths are {f32,f64} only.
+#   same_binary  — (fp,fp) -> fp, SAME width. Shapes qq/hl/lh (+ unc twins), the
+#                  classical operand at width W. `commutative` selects qq+hl vs
+#                  qq+hl+lh, exactly like pow (non-comm) / fmin (comm).
+#   cross_unary  — fp -> INTEGER of a DIFFERENT width. Reuses the CAST naming
+#                  grammar `cq_template_<op>_<from>_to_<to>` (a1/ua1 — the handle
+#                  is i32 on both sides, so the signature is byte-identical to a
+#                  same-width unary; only the NAME preserves both widths for a
+#                  future real backend). `from` ∈ {f32,f64}; `to` is the integer
+#                  result width. NON-injective (round/exponent-extract) → fwd+unc.
+#   mixed_binary — (fp, int) -> fp: arg0 is the fp (width `wa`, from the result),
+#                  arg1 an INTEGER of a FIXED width `wb`. Symbol
+#                  `cq_template_<op>_<wa>_<wb>[_hl|_lh]` — BOTH widths preserved.
+#                  NON-commutative (distinct operand types) → qq/hl/lh. The
+#                  classical operand's C type is PER-SHAPE: `_hl` carries the RHS
+#                  int (`wb`), `_lh` carries the LHS fp (`wa`).
+#
+# ----------------------------------------------------------------------------
+widths:
+  i32: { bits: 32, c_type: "int32_t", domain: "int" }
+  i64: { bits: 64, c_type: "int64_t", domain: "int" }
+  f32: { bits: 32, c_type: "float",   domain: "fp"  }
+  f64: { bits: 64, c_type: "double",  domain: "fp"  }
+
+libm:
+  # ---- same-width unary fp -> fp (Class 2, fwd/unc) ------------------------
+  # cbrt is injective but is uniformly Class-2 (its `_unc` recomputes cbrt(live
+  # source) and XORs the out rail to |0>, never recovering the input); the rest
+  # are non-injective pure total. lgamma writes the global `signgam` and the
+  # errno-flagged fns may write errno — both are auxiliary CLASSICAL side effects
+  # dropped by the reversible embedding of the mathematical function (the trace
+  # model has no errno/signgam), which is why exact-name curation (not the
+  # memory(none) attribute) is the semantic guarantee.
+  - { op: cbrt,   kind: same_unary, widths: [f32, f64] }
+  - { op: erf,    kind: same_unary, widths: [f32, f64] }
+  - { op: erfc,   kind: same_unary, widths: [f32, f64] }
+  - { op: tgamma, kind: same_unary, widths: [f32, f64] }
+  - { op: lgamma, kind: same_unary, widths: [f32, f64] }
+  - { op: expm1,  kind: same_unary, widths: [f32, f64] }
+  - { op: log1p,  kind: same_unary, widths: [f32, f64] }
+  - { op: logb,   kind: same_unary, widths: [f32, f64] }
+  - { op: acosh,  kind: same_unary, widths: [f32, f64] }
+  - { op: asinh,  kind: same_unary, widths: [f32, f64] }
+  - { op: atanh,  kind: same_unary, widths: [f32, f64] }
+
+  # ---- same-width binary (fp,fp) -> fp (Class 2, fwd/unc) ------------------
+  # hypot(x,y)=sqrt(x^2+y^2) is COMMUTATIVE (qq+hl). atan2/remainder/nextafter/
+  # fdim are order-sensitive (qq+hl+lh) — operand order is semantic.
+  - { op: hypot,     kind: same_binary, commutative: true,  widths: [f32, f64] }
+  - { op: atan2,     kind: same_binary, commutative: false, widths: [f32, f64] }
+  - { op: remainder, kind: same_binary, commutative: false, widths: [f32, f64] }
+  - { op: nextafter, kind: same_binary, commutative: false, widths: [f32, f64] }
+  - { op: fdim,      kind: same_binary, commutative: false, widths: [f32, f64] }
+
+  # ---- cross-width unary fp -> int (Class 2, fwd/unc) ----------------------
+  # ilogb (extract the unbiased exponent) is a DIRECT libm call at -O1;
+  # lrint/llrint (round-to-nearest-even) / lround/llround (round-half-away) are
+  # `@llvm.<fn>.i64.f<W>` INTRINSICS (recognized in IntrinsicLowering) that share
+  # this cross-width template surface. `to` is the integer result width on the
+  # supported LP64 target (int→i32, long/long long→i64).
+  - { op: ilogb,   kind: cross_unary, froms: [f32, f64], to: i32 }
+  - { op: lrint,   kind: cross_unary, froms: [f32, f64], to: i64 }
+  - { op: llrint,  kind: cross_unary, froms: [f32, f64], to: i64 }
+  - { op: lround,  kind: cross_unary, froms: [f32, f64], to: i64 }
+  - { op: llround, kind: cross_unary, froms: [f32, f64], to: i64 }
+
+  # ---- mixed-arg binary (fp, int) -> fp (Class 2, fwd/unc) -----------------
+  # ldexp(x,n)=x*2^n and scalbn (same, radix FLT_RADIX) take an `int` exponent
+  # (wb=i32); scalbln takes a `long` (wb=i64). arg0 is the fp (wa from the
+  # result), arg1 the integer exponent. Non-commutative (distinct types).
+  - { op: ldexp,   kind: mixed_binary, commutative: false, was: [f32, f64], wb: i32 }
+  - { op: scalbn,  kind: mixed_binary, commutative: false, was: [f32, f64], wb: i32 }
+  - { op: scalbln, kind: mixed_binary, commutative: false, was: [f32, f64], wb: i64 }
+# -- End of libm table ---------------------------------------------------------

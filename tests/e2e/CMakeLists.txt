@@ -395,6 +395,22 @@ add_test(NAME e2e-slice-intrinsic-fma
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_fma.expected.log")
 
+# bd 3c6m.2: the curated DIRECT-libm math.h family (FROZEN sibling ABI,
+# cq_libm_templates). LINK-proves the new libm symbols resolve and signature-match
+# through the runtime across all four novel shapes — same-width unary/binary
+# forwards, the CROSS-WIDTH producers cq_template_ilogb_f64_to_i32 (direct libm) /
+# cq_template_lrint_f64_to_i64 (intrinsic), the MIXED-ARG producers
+# cq_template_ldexp_f64_i32[_hl|_lh] — AND their void `_unc` twins reverse the
+# dead cross-width / mixed-arg lineages once from the still-live sources and free
+# every rail (Rules 2, 16). The one layer that links; the .ll FileCheck is not.
+add_test(NAME e2e-slice-libm
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm.expected.log")
+
 # Phase 7.1 follow-up D5 (test_C_libtooling-m0yi): a non-power-of-2 _BitInt(N)
 # INTERMEDIATE round-trips with NO new ABI. clang -O1 rounds the i40 up to i64 and
 # emits the i40 wraparound as a stock `and i64 ..., 0xFFFFFFFFFF` (= 2^40-1), so

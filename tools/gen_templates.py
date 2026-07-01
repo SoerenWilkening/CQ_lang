@@ -160,6 +160,67 @@ def enumerate_all(table):
     return rows
 
 
+def _emit_mixed_variants(rows, base, variants, wa, wb, stem):
+    """Expand a mixed-arg binary (fp arg0 at width `wa`, integer arg1 at width
+    `wb`) into row dicts. IDENTICAL to _emit_variants EXCEPT the classical
+    operand's C type is PER-SHAPE: an `_hl`/`_uhl` form carries the RHS integer
+    (`wb`), an `_lh`/`_ulh` form carries the LHS fp (`wa`). The qq/uqq forms have
+    no classical operand. Everything else (sym/shape/variant) matches, so
+    abi_codegen emits the correct signatures with ZERO shape changes."""
+    for v in variants:
+        suffix, shape = VARIANT_INFO[v]
+        row = {"sym": base + suffix, "kind": "binary", "shape": shape,
+               "variant": v, "op": stem}
+        if shape in ("hl", "uhl"):
+            row["classical_w"] = wb   # RHS int (the exponent literal).
+        elif shape in ("lh", "ulh"):
+            row["classical_w"] = wa   # LHS fp (the mantissa literal).
+        else:                          # qq / uqq — both operands are handles.
+            row["classical_w"] = None
+        rows.append(row)
+
+
+def enumerate_libm(ltable):
+    """Return lex-sorted row dicts for the curated DIRECT-libm math.h sibling
+    table (bd 3c6m.2). Four `kind`s, all Class-2 additive producers emitting the
+    `cq_template_<...>` prefix (reversed by the whole-DAG uncompute spine with no
+    new code). Reuses _emit_variants / _emit_mixed_variants — no new abi_codegen
+    shape. See tools/libm_table.yaml for the per-kind naming grammar."""
+    rows = []
+    for op in ltable["libm"]:
+        stem = op["op"]
+        kind = op["kind"]
+        if kind == "same_unary":
+            for w in op["widths"]:
+                _emit_variants(rows, f"cq_template_{stem}_{w}", "unary",
+                               ["fwd", "unc"], {"op": stem, "width": w})
+        elif kind == "same_binary":
+            variants = (["fwd_qq", "fwd_hl", "unc_qq", "unc_hl"]
+                        if op["commutative"] else
+                        ["fwd_qq", "fwd_hl", "fwd_lh",
+                         "unc_qq", "unc_hl", "unc_lh"])
+            for w in op["widths"]:
+                _emit_variants(rows, f"cq_template_{stem}_{w}", "binary",
+                               variants, {"op": stem, "width": w})
+        elif kind == "cross_unary":
+            to = op["to"]
+            for fr in op["froms"]:
+                # Cast-style name (a1/ua1 shapes — handle is i32 both sides).
+                _emit_variants(rows, f"cq_template_{stem}_{fr}_to_{to}", "unary",
+                               ["fwd", "unc"], {"op": stem, "width": to})
+        elif kind == "mixed_binary":
+            wb = op["wb"]
+            variants = ["fwd_qq", "fwd_hl", "fwd_lh",
+                        "unc_qq", "unc_hl", "unc_lh"]  # always non-commutative.
+            for wa in op["was"]:
+                _emit_mixed_variants(rows, f"cq_template_{stem}_{wa}_{wb}",
+                                     variants, wa, wb, stem)
+        else:
+            raise ValueError(f"unknown libm kind {kind!r} for op {stem!r}")
+    rows.sort(key=lambda r: r["sym"])
+    return rows
+
+
 def enumerate_intrinsics(itable):
     """Return lex-sorted row dicts for the curated reversible-intrinsic sibling
     table (Phase 7.1 Increment E). Each row carries `arity` (unary/binary/
@@ -230,6 +291,8 @@ ARTIFACTS = [
     ("intrinsic_yaml", enumerate_intrinsics, "tools/intrinsic_table.yaml",
      "cq_intrinsic_templates.h", "cq_intrinsic_templates.c",
      "CQ_INTRINSIC_TEMPLATES_H_"),
+    ("libm_yaml", enumerate_libm, "tools/libm_table.yaml",
+     "cq_libm_templates.h", "cq_libm_templates.c", "CQ_LIBM_TEMPLATES_H_"),
 ]
 
 
@@ -281,6 +344,8 @@ def main():
     p.add_argument("--yaml", default=str(here / "opcode_table.yaml"))
     p.add_argument("--intrinsic-yaml", default=str(here / "intrinsic_table.yaml"),
                    help="curated reversible-intrinsic sibling table (Phase 7.1 E)")
+    p.add_argument("--libm-yaml", default=str(here / "libm_table.yaml"),
+                   help="curated direct-libm math.h sibling table (bd 3c6m.2)")
     p.add_argument("--output-dir", required=True)
     p.add_argument("--check", action="store_true",
                    help="diff against on-disk artifacts; nonzero exit on drift")
@@ -288,7 +353,8 @@ def main():
                    help="comma-separated subset of " + ",".join(TARGETS))
     args = p.parse_args()
     targets = tuple(t.strip() for t in args.targets.split(",") if t.strip())
-    paths = {"yaml": args.yaml, "intrinsic_yaml": args.intrinsic_yaml}
+    paths = {"yaml": args.yaml, "intrinsic_yaml": args.intrinsic_yaml,
+             "libm_yaml": args.libm_yaml}
     if args.check:
         sys.exit(check_mode(args.output_dir, paths, targets))
     write_artifacts(args.output_dir, paths, targets)

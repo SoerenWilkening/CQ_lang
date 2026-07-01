@@ -80,7 +80,32 @@ StringRef intrinsicStem(Intrinsic::ID id) {
   case Intrinsic::copysign:   return "copysign";
   case Intrinsic::fma:        return "fma";
   case Intrinsic::fmuladd:    return "fma";
+  // bd 3c6m.2 cross-width libm rounding: fp -> i64. clang -O1 lowers
+  // lrint/llrint (round-to-nearest-even) and lround/llround (round-half-away)
+  // to `@llvm.<fn>.i64.f<W>` intrinsics (NOT direct libm calls), so they are
+  // recognized here by Intrinsic::ID but share the DIRECT-libm cross-width
+  // TEMPLATE surface (cq_template_<stem>_<from>_to_<to>, the libm_table sibling).
+  case Intrinsic::lrint:      return "lrint";
+  case Intrinsic::llrint:     return "llrint";
+  case Intrinsic::lround:     return "lround";
+  case Intrinsic::llround:    return "llround";
   default:                    return {};
+  }
+}
+
+// bd 3c6m.2: the cross-width libm rounding family — fp arg → INTEGER result of a
+// DIFFERENT width (unlike every same-width fp/idiom row). Lowered to the
+// `cq_template_<stem>_<from>_to_<to>` cross-width producer (the CAST naming
+// grammar reused, a1/ua1 shapes). EXACT id membership.
+bool isCrossWidthLibmIntrinsic(Intrinsic::ID id) {
+  switch (id) {
+  case Intrinsic::lrint:
+  case Intrinsic::llrint:
+  case Intrinsic::lround:
+  case Intrinsic::llround:
+    return true;
+  default:
+    return false;
   }
 }
 
@@ -201,6 +226,21 @@ bool isCuratedReversibleIntrinsic(const CallInst *CI) {
   const Intrinsic::ID id = II->getIntrinsicID();
   if (intrinsicStem(id).empty())
     return false;  // not a curated id (e.g. *.with.overflow, sqrt, memcpy).
+  // bd 3c6m.2 cross-width libm rounding (lrint/llrint/lround/llround): fp → int.
+  // Accept ONLY the generated cross-width surface — result width i64 (the LP64
+  // to-width) AND arg width f32/f64 (the generated `from`s). The arg width is
+  // read from the CALLEE'S declared param type (the intrinsic's fixed
+  // FunctionType), NEVER the operand value — RotationLowering RAUWs the operand
+  // to an i32 handle, but the FunctionType is untouched, so this is laundering-
+  // proof and identical at both phases (escape carve + enqueue). A 32-bit-`long`
+  // i32 result, or an f16/f128 arg, has no generated template → declines
+  // (a phantom-mint fence, Prime Directive).
+  if (isCrossWidthLibmIntrinsic(id)) {
+    const StringRef FromW =
+        abiWidthFromType(CI->getFunctionType()->getParamType(0));
+    return abiWidthFromType(CI->getType()) == "i64" &&
+           (FromW == "f32" || FromW == "f64");
+  }
   // Width from the RESULT type (a real iN, never i1-flag) — so E is independent
   // of Increment A's HandleWidth (a compare result is the only i1).
   if (!widthInTableSet(id, abiWidthFromType(CI->getType())))
@@ -230,6 +270,31 @@ bool rewriteIntrinsic(CallInst *CI, WidthDispatch &wd, TaintSet &taint) {
   }
 
   IRBuilder<> Builder(CI);
+
+  if (isCrossWidthLibmIntrinsic(id)) {
+    // bd 3c6m.2 cross-width libm rounding (lrint/llrint/lround/llround): fp → i64.
+    // Reuse the CAST naming grammar cq_template_<stem>_<from>_to_<to> (a1/ua1
+    // shapes — the handle is i32 on both sides). `from` is the intrinsic's
+    // declared fp param width (laundering-proof — the operand VALUE is a
+    // post-RAUW i32 handle, but the FunctionType is not); `to` is the i64 result
+    // width `W`. The `_unc` twin (EmitInverse string-append) recomputes
+    // round(live fp source) and XORs the i64 out rail to |0> — the Class-2
+    // source-liveness model, cross-width and all (bd [libm-namematcher-3c6m2]).
+    const StringRef FromW =
+        abiWidthFromType(CI->getFunctionType()->getParamType(0));
+    if (!(FromW == "f32" || FromW == "f64") || W != "i64") {
+      diagnoseNoTemplate(CI);
+      return false;
+    }
+    FunctionCallee Callee = wd.castTemplateFn(Stem, FromW, W);
+    CallInst *T = Builder.CreateCall(Callee, {CI->getArgOperand(0)}, "h_intr");
+    if (DebugLoc DL = CI->getDebugLoc())
+      T->setDebugLoc(DL);
+    CI->replaceAllUsesWith(T);
+    promote(T, CI, taint, W);
+    return true;
+  }
+
   const IntrinKind K = intrinsicKind(id);
 
   if (K == IntrinKind::Unary) {
