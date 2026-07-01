@@ -529,6 +529,29 @@ add_test(NAME e2e-slice-specialize-intrinsic
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/specialize_intrinsic_caller.expected.log")
 
+# bd 3c6m.3 (Rule-13 finding on bd 3c6m.2): a curated DIRECT-libm math.h call
+# INSIDE a specialized clone — the EXACT-name analog of the mvjc intrinsic golden
+# above. specialize_libm_caller.c routes a theta-tainted `x` through the
+# separate-TU classical helper ilogb_helper (specialize_libm_lib.c), whose body is
+# `ilogb((double) n)` → `sitofp i32→f64` + a direct `@ilogb` call. Pre-fix the
+# specializer loud-declined (the libm call read as a declaration-only nested call,
+# then FpAbi'd on the fp operand in the transitive worklist); now it lifts the
+# helper into __cq_q_ilogb_helper_1, lowers the sitofp + ilogb to their frozen
+# cq_template_* producers, and Bennett-wraps it. This LINK-proves the clone +
+# cq_template_ilogb_f64_to_i32 + its void `_unc` twin (and the cross-width sitofp
+# cast + its `_unc`) resolve and signature-match across llvm-link, and the golden's
+# LIFO reverse (ilogb_unc before sitofp_unc, each reading its still-live source,
+# then both frees AFTER the complete reverse) is the trace contract for a Class-2
+# libm producer under quantum specialization (Rules 2, 13, 16).
+add_test(NAME e2e-slice-specialize-libm
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_libm_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_libm_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_libm_caller.expected.log")
+
 # Phase 6.2 (WI-2.6, test_C_libtooling-mvna.8): signatures / cache / multiplicity.
 # specialize_multiarg_caller.c routes ONE theta-tainted `x` through the separate-TU
 # helper `combine` (specialize_multiarg_lib.c) at THREE sites with TWO distinct

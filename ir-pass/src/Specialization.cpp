@@ -4,6 +4,7 @@
 
 #include "BennettWrap.h"
 #include "IntrinsicLowering.h"
+#include "LibmLowering.h"
 #include "OpcodeLowering.h"
 #include "OpcodeSupport.h"
 #include "SpecializeClone.h"
@@ -223,6 +224,19 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
     // body, this loop must mirror that — lower it in place, do not recurse.
     // [[7-1-E-intrinsics-frozen-clearance]]
     if (isCuratedReversibleIntrinsic(Inner))
+      continue;
+    // A curated DIRECT-libm math.h call (bd 3c6m.3) is the EXACT-name analog of
+    // the intrinsic skip above: it is a tainted DATA OP lowered IN PLACE by the
+    // `lowerOps(M, …)` below (to a `cq_template_<…>` producer the wrap captures
+    // via `isForwardTemplate`), NEVER a nested specialization candidate. Its
+    // callee is a declaration-only libc extern with no body, so it must be skipped
+    // here BEFORE `classifyCandidate`/`scanBody` — those require a visible
+    // definition (`!isDeclaration()`) and step (A) would misread the call's fp
+    // operand (a libm arg is fp, not an i32 handle) as an FpAbi reject NAMING THIS
+    // clone. This mirrors `SpecializeReject::scanBody`, which now accepts a libm
+    // call in the body exactly like a curated intrinsic — lower it in place, do
+    // not recurse. [[7-1-E-intrinsics-frozen-clearance]]
+    if (isLibmCall(Inner))
       continue;
     // The inner's taint mask is read from THIS clone's seeded `cloneTaint`, after
     // any earlier sibling's classical-result scrub (process in program order so a

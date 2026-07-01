@@ -8,6 +8,7 @@
 #include "SpecializeReject.h"
 
 #include "IntrinsicLowering.h"
+#include "LibmLowering.h"
 #include "OpcodeSupport.h"
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
@@ -236,6 +237,40 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
         // — this frame stays on `OnStack` for the rest of the callee).
         // [[7-1-E-intrinsics-frozen-clearance]]
         if (isCuratedReversibleIntrinsic(CI))
+          continue;
+        // Curated DIRECT-libm math.h call (bd 3c6m.3): the EXACT-name analog of
+        // the intrinsic whitelist above. clang -O1 leaves cbrt/atan2/ilogb/ldexp/
+        // hypot/… as a DIRECT `@<name>` call to a declaration-only libc extern (no
+        // `Intrinsic::ID`), so without this it falls through to the declaration-
+        // only "nested call" decline below — the SAFE over-decline this follow-up
+        // lifts (the Rule-13 finding on bd 3c6m.2). A libm call is a tainted pure
+        // additive producer lowered in Phase 2 exactly like a curated intrinsic:
+        // `seedClone`'s transitive-user closure taints it (its fp operand arriving
+        // from an in-clone `sitofp` off the i32-handle arg — the tainted clone-arg
+        // ABI is i32, so the fp domain is always reached by a cast), `lowerOps`
+        // (taint-gated) lowers it via `rewriteLibmCall` to a FROZEN
+        // `cq_template_<…>` producer (adds NO frozen symbol — the templates are
+        // frozen by 3c6m.2 regardless), the Bennett wrap captures that producer in
+        // its forward stream and copies out ONLY the i32 clone result, and
+        // `emitInverseChain` reverses it through the SAME generic `cq_template_`
+        // `_unc` branch (EmitInverse) — the `_unc` twin minted by string-append +
+        // operand-type copy, so cross-width (ilogb f64→i32) and mixed-arg (ldexp
+        // fp,int) round-trip for free; clone-internal source liveness is held
+        // because every scratch rail is freed only AFTER the complete reverse
+        // (`emitBennettWrap` step e), so a Class-2 `_unc`'s recompute reads
+        // still-live sources. `isLibmCall` is PURELY STRUCTURAL and is the SAME
+        // predicate `rewriteLibmCall` re-checks (the accept set == the lowered
+        // set, no drift), so the accept can never admit an unlowerable call.
+        // Membership is EXACT NAME over a declaration-only libc extern with the
+        // curated arity/result-type/operand-width shape, NEVER a `starts_with`
+        // (the cq_theta_evil hazard, C7) — symmetric with `declineTaintEscapes`'
+        // top-level acceptance (TaintPropagation.cpp) and OpcodeLowering's enqueue.
+        // A non-curated name, a wrong signature, or a user's own in-module `cbrt`
+        // BODY (not a declaration) fails the predicate and rides the loud "nested
+        // call" decline below. Accept it as a data op (`continue`, NOT a
+        // `pop()+return` — this frame stays on `OnStack` for the rest of the
+        // callee). [[7-1-E-intrinsics-frozen-clearance]]
+        if (isLibmCall(CI))
           continue;
         // setjmp/longjmp: a `returns_twice` callee can re-enter the body
         // mid-stream, breaking the single-entry straight-line assumption the
