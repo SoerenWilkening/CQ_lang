@@ -104,6 +104,19 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   while (lowerByRefInline(M, taint))
     taint = propagate(M, wd);
 
+  // bd iw81.1: fold same-width int<->int `bitcast` identity FIRST, right after
+  // taint settles and BEFORE any analysis. A folded bitcast is `result===operand`
+  // (ONE physical wire); folding it away up front means every downstream bespoke
+  // provenance/lineage/stale/control walk sees the operand's true wire directly —
+  // never an opaque identity node it would have to special-case (the Rule-13
+  // finding: three distinct consumers — the stale-record chained-theta hop,
+  // SelectClassify's coherent-use gate, the I/O tape lineage check — each blind to
+  // a re-rotation hidden behind a standing fold). The module reduces to the exact
+  // DIRECT-operand form the pass already adjudicates correctly. A pure taint-
+  // preserving RAUW+erase (the freeze-fold precedent), so NO re-propagate is
+  // needed. fp<->int / vector bitcasts are left standing to decline at castInScope.
+  foldIdentityBitcasts(M, taint);
+
   // Phase 6 specialization PRE-PASS (C-Plan, DD-1): pure analysis by SSA
   // identity, BEFORE `declineTaintEscapes`, so the carve-out's membership test
   // (`shouldSpecialize` / `plan6.Diagnosed`) is populated when the escape guard
@@ -297,6 +310,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   SmallPtrSet<const CallInst *, 8> byRefDeclined;
   while (lowerByRefMath(M, wd, taint, byRefDeclined))
     taint = propagate(M, wd);
+
+  // bd iw81.1: fold same-width int<->int bitcast identity, mirrored in this entry
+  // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
+  // fold-before-any-analysis rationale.
+  foldIdentityBitcasts(M, taint);
 
   // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY — a pre-pass wired in `run()` but not

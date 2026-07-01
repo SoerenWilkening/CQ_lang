@@ -239,6 +239,26 @@ struct TaintSet {
 // suffix's natural ABI scalar — plain SSA, no struct wrapper).
 TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 
+// bd iw81.1 — fold same-width int<->int `bitcast` identity EARLY (before ANY
+// wire / lineage / control / stale-record analysis runs), so the whole pass sees
+// the operand's true wire directly and never an opaque identity node it must
+// special-case. A same-width int bitcast is a zero-gate reversible IDENTITY
+// (`result === operand`, ONE physical wire); leaving it STANDING would blind each
+// of the pass's many BESPOKE provenance walks (stale-record, SelectClassify
+// coherent-use, IOSink lineage, ArmClassify/SwitchArmProve condition, …) to an
+// in-place re-rotation hidden behind it — a whack-a-mole class of verify-clean
+// silent miscompile (the Rule-13 review confirmed three distinct such consumers).
+// Folding it away up front (the FREEZE-fold precedent, `declineTaintEscapes`)
+// reduces the program to the DIRECT-operand form the base pass already adjudicates
+// correctly — a downstream DATA op reading a re-rotated wire declines, a MEASURE
+// reads the wire in place (accepted) — with ZERO new per-consumer analysis. Only
+// TAINTED same-width int<->int bitcasts are folded (RAUW result->operand, scrub
+// `Tainted`/`HandleWidth`, erase); fp<->int reinterprets, vectors, and pointer
+// bitcasts are NOT identities and are LEFT STANDING to decline loudly at
+// `castInScope` ("no template for opcode 'bitcast …'") — unchanged. Wired FIRST,
+// right after taint settles, in BOTH pipeline entry points (twin-pipeline trap).
+void foldIdentityBitcasts(llvm::Module &M, TaintSet &taint);
+
 // Pre-lowering taint-escape guard (test_C_libtooling-bxv). Pure analysis on
 // the still-unmutated IR, wired FIRST in BOTH pipeline entry points (the
 // twin-pipeline trap, IMPLEMENTATION §6.5) — it needs pre-RAUW SSA identity,

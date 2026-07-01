@@ -317,6 +317,50 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
   return out;
 }
 
+void foldIdentityBitcasts(Module &M, TaintSet &taint) {
+  // See TaintPropagation.h for the full rationale. A same-width int<->int
+  // `bitcast` is a zero-gate reversible IDENTITY that `rewriteCast` would fold to
+  // `result === operand`; folding it HERE — before ANY analysis — means the whole
+  // pass sees the operand's true wire directly and never an opaque identity node.
+  // Every downstream provenance/lineage/stale walk (the pass has several bespoke
+  // ones that do NOT share a single walker) is thereby automatically correct: the
+  // module is reduced to the exact DIRECT-operand form the base pass adjudicates,
+  // so a downstream DATA op over a re-rotated wire declines and a MEASURE reads the
+  // wire in place — with no per-consumer crossing logic (the Rule-13 finding).
+  //
+  // Collect first, then RAUW+erase (no in-flight iterator invalidation). A CHAIN
+  // (`%b2 = bitcast %b1`) folds correctly regardless of order: RAUW propagates the
+  // operand through, and each collected bitcast is erased exactly once. Only a
+  // TAINTED, BOTH-sides-scalar-integer bitcast is folded — the fold-eligibility
+  // test mirrors `castInScope`'s `bitcast` accept (same-width int, `intBits` equal)
+  // exactly, so nothing folds here that `rewriteCast` would not have. fp<->int /
+  // vector / pointer bitcasts fail the scalar-integer test, are LEFT STANDING, and
+  // decline loudly at `castInScope` downstream (unchanged). An UNTAINTED bitcast is
+  // classical scaffolding — never folded, never lowered.
+  SmallVector<BitCastInst *, 8> Fold;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB)
+        if (auto *BC = dyn_cast<BitCastInst>(&I))
+          if (taint.Tainted.count(BC) && BC->getType()->isIntegerTy() &&
+              BC->getOperand(0)->getType()->isIntegerTy())
+            Fold.push_back(BC);
+  }
+  for (BitCastInst *BC : Fold) {
+    Value *Src = BC->getOperand(0);
+    BC->replaceAllUsesWith(Src);
+    // Scrub the freed Instruction* from the taint side-tables (SwapRouteEmit::
+    // scrubTaint / freeze-fold precedent — a later allocation could alias the
+    // address). The operand keeps its own BirthOrder/HandleWidth; a fold mints no
+    // new handle. BirthOrder is not populated for a raw pre-lowering bitcast.
+    taint.Tainted.erase(BC);
+    taint.HandleWidth.erase(BC);
+    BC->eraseFromParent();
+  }
+}
+
 namespace {
 
 // The exact diagnostic strings the taint-escape guard owns
