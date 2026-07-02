@@ -9,6 +9,20 @@
 > `cqrt_copy_f<W>_controlled` primitives) — owner decision 2026-07-02.
 > **A Rule-13 core change** (the f64 angle/data silent-miscompile family).
 > Implementing issue: `test_C_libtooling-kjd1`.
+>
+> **IMPLEMENTED + Rule-13 cleared 2026-07-02** — see
+> [`FP_SELECT_CLEARANCE.md`](FP_SELECT_CLEARANCE.md). The implementation
+> clearance (6 adversarial lenses, probe-driven) found three pre-existing
+> select-classifier holes that became fp-reachable through the §4.4 accept and
+> FIXED them for both type families as strictly decline-monotone
+> strengthenings: a **GATE 2c stale-condition wire guard** (the ArmClassify
+> mirror the select path lacked), **wire-anchored GATE 5 walks** (sibling-alias
+> phase/interference via rotation-arg-0 wire edges + a `rotationAncestry`
+> exemption), and **call-crossing** in the forward coherence walk (curated
+> producers). The "§4.4 preserves gate order / §4.5 no structural change"
+> statements below describe the spec as reviewed; the shipped classifier is
+> the spec PLUS those three guards (accept surface unchanged except the
+> newly-declined adjacent shapes).
 
 ## 1. Motivation
 

@@ -466,10 +466,16 @@ after a statevector-checked design dialogue; see
   register → reverse-play `R†` to restore `q0` and zero the rail (§3a-B),
   targeting `swap_route_if_diamond_uncompute.ll`. Adds the design's **only new
   ABI**: the per-width reversible copy `cqrt_copy_<W>` — **§7.6 resolved (PRD
-  §8.1): the 5 integer widths only** (an FP merge φ is an angle, never data),
-  hand-written `cqrt_*` core ABI (the `cqrt_cswap` precedent), keep-sources-live
-  transversal-CNOT involution, no `_inv` twin. This re-opens the Phase-9/11
-  freeze for exactly that one 5-symbol family. The **clobber-the-condition
+  §8.1): the 5 integer widths only for the UNCONTROLLED copy** (no consumer for
+  an fp one exists — dead ABI is forbidden), hand-written `cqrt_*` core ABI
+  (the `cqrt_cswap` precedent), keep-sources-live transversal-CNOT involution,
+  no `_inv` twin. This re-opens the Phase-9/11 freeze for that 5-symbol family
+  — later grown to 5+5+4 with 4.4's `_controlled` twins and the fp-DATA select
+  un-staging's `cqrt_copy_f{16,32,64,80}_controlled`
+  (`docs/prd/phase-04-swap-route-control/fp-data-select-PRD.md`, issue kjd1:
+  the "an FP merge φ is an angle, never data" rule is retired **for the
+  tainted-`select` merge only**, where the three-legged angle fence proves the
+  value is data; every other fp-under-control path still declines). The **clobber-the-condition
   reject becomes active here**: a value arm that rewrites a quantum variable the
   branch condition reads is declined loudly (it cannot be both kept and
   disentangled — §3c), while a value arm on any other register lowers normally.
@@ -530,7 +536,16 @@ after a statevector-checked design dialogue; see
   **one self-inverse `cqrt_x` bracket** + `cqrt_copy_<Wd>_controlled` the FALSE
   operand (materialized via `cqrt_alloc` if classical) on ¬flag → `icmp_inv`
   strip → the **single** `cqrt_free` (the flag) → RAUW `%sel→%out`. New ABI:
-  `cqrt_copy_<W>_controlled` (5 integer widths; fp-data staged, §16.4). `%out` /
+  `cqrt_copy_<W>_controlled` (shipped as the 5 integer widths with fp-data
+  staged, §16.4; the staging was **lifted 2026-07-02** by the fp-DATA select
+  un-staging — `fp-data-select-PRD.md`, issue kjd1 — adding the 4 fp twins
+  `cqrt_copy_f{16,32,64,80}_controlled`, minted only by the select-local
+  `copyControlledFpFn`; the shared `copyControlledFn` integer fence is
+  untouched — it is the 6.5 classical-call arm's live fp classifier. The kjd1
+  Rule-13 clearance — `FP_SELECT_CLEARANCE.md` — also hardened the select
+  classifier for BOTH type families: the gate-2c stale-condition wire guard,
+  wire-anchored gate-5 walks, and curated-call crossing, closing three
+  pre-existing 4.4-era holes that the fp accept made newly reachable). `%out` /
   operands / scratch are **left allocated** (freeing an operand entangled with
   `%out` via the copy is a hidden measurement — Rule 6/8); §3c is structurally
   vacuous (a select writes nothing). Detection (`SelectClassify`, a 6-gate
@@ -541,8 +556,10 @@ after a statevector-checked design dialogue; see
   detection) and the **conservative coherent-operand gate** (`operandCarriesPhase`
   backward + `hasCoherentDownstreamUse` forward — a `cq_phi`/Rz-lineage or
   downstream-rotation operand declines `control flow`, the basis CNOT-copy would
-  dephase it). Everything off-pattern declines (fp-data, vector/`i128`, aliasing,
-  Q+Q condition, non-`CmpInst` condition); classical-**condition** tainted-data
+  dephase it). Everything off-pattern declines (fp vector / `fp128`, integer
+  vector / `i128`, aliasing, Q+Q condition, non-`CmpInst` condition; scalar
+  fp-DATA — originally in this list — accepts since the 2026-07-02 kjd1
+  un-staging above); classical-**condition** tainted-data
   selects stay on the separate `declineClassicalMuxes` path. Modules:
   `SelectClassify`, `SelectMergeEmit` (+ thin `ControlDetect`/`SwapRouteEmit`
   dispatch, `ControlledSymbols::copyControlledFn`); `ChainWalk` **unchanged** (the
@@ -792,7 +809,11 @@ via the §7.6 reversible output tape.)
 > post-core **break/loop** widenings (multi-break, nested-loop break, `continue`, mixed
 > break+return, static-K unroll, value-arm widening) were re-parented out of the
 > now-closed 7.3 (`799w`) / 7.4 (`y05j`) core epics into the open **7.x-widenings
-> tracker `8h7d`** (2026-06-30) — all freeze-orthogonal (7.2–7.4 add no frozen symbols).
+> tracker `8h7d`** (2026-06-30). The 7.2–7.4 control work itself adds no frozen
+> symbols, but `8h7d` is **no longer wholly freeze-orthogonal**: the fp-DATA
+> select un-staging under it (kjd1, DONE 2026-07-02) added the
+> `cqrt_copy_f{16,32,64,80}_controlled` family, designated frozen at the
+> Phase-11 gate (`fp-data-select-PRD.md` §7).
 
 **Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
 almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
@@ -801,7 +822,9 @@ plain C `a[i]` with a tainted index, and I/O is plain C `printf`. Of the six
 increments, **only 7.1's wide-integer widths + curated `llvm.*` intrinsic table,
 7.5's QRAM templates, and 7.6's I/O output-tape symbols (`cqrt_tape_alloc` / `cqrt_tape_write_<W>` (+ `_controlled`)) add new
 *frozen* runtime ABI**; the rest (control flow) reuses the existing `cqrt_*` /
-`cq_template_*` surface. That is the load-bearing reason the freeze (now Phase 11)
+`cq_template_*` surface. (The post-core `8h7d` widening kjd1 — fp-DATA select,
+2026-07-02 — later added one more frozen-designate family:
+`cqrt_copy_f{16,32,64,80}_controlled`, `fp-data-select-PRD.md` §7.) That is the load-bearing reason the freeze (now Phase 11)
 moves back: the ABI is gated on the QRAM memory model, the integer-width +
 intrinsic-surface decisions, and the I/O tape ABI, **not** on the control-flow
 work — which could in principle evolve even post-freeze. This phase
@@ -1172,8 +1195,10 @@ before any post-freeze work (real gate-sequence template bodies,
 simulator runtime, unbounded quantum-while semantics, dynamic circuits).
 Now deferred behind the Phase-7 expressiveness work; the freeze is gated
 specifically on the QRAM Shadow memory ABI (Phase 7.5), the wide-integer width
-decision (Phase 7.1), the curated `llvm.*` idiom-intrinsic table (Phase 7.1), and the
-I/O output-tape ABI (`cqrt_tape_alloc` / `cqrt_tape_write_<W>` (+ `_controlled`), Phase 7.6) — the only pre-freeze items
+decision (Phase 7.1), the curated `llvm.*` idiom-intrinsic table (Phase 7.1), the
+I/O output-tape ABI (`cqrt_tape_alloc` / `cqrt_tape_write_<W>` (+ `_controlled`), Phase 7.6), and the
+fp-DATA select controlled-copy family (`cqrt_copy_f{16,32,64,80}_controlled`,
+the `8h7d` widening kjd1 — `fp-data-select-PRD.md` §7) — the pre-freeze items
 that add new frozen symbols (the 7.2/7.4 control work reuses existing `cqrt_*` /
 `cq_template_*`).
 

@@ -6,6 +6,7 @@
 
 #include "ControlledSymbols.h"
 
+#include "OpcodeSupport.h"  // abiWidthHasControlledFpCopy (the fp select fence)
 #include "TemplateName.h"
 
 #include "llvm/IR/DerivedTypes.h"
@@ -59,12 +60,16 @@ FunctionCallee ControlledSymbols::copyControlledFn(StringRef abiWidth) const {
   // tainted-`select` controlled-XOR copy merge). The control flag is
   // arg 0 (PRD §1.2); src/dst follow. The width only selects the symbol
   // name — all three args are i32 handles for every ABI width. INTEGER
-  // widths only: an FP merge phi under tainted control is categorically
-  // an angle, never data (the f64 miscompile family), so f32/f64 — and
-  // any unknown width — return a null callee (caller diagnoses) rather
-  // than minting dead ABI. The integer guard goes through the PUBLIC
-  // `Wd.llvmWidthType` (WidthDispatch's file-local `typeForAbiWidth` is
-  // unreachable here); the null check also covers an unknown abiWidth.
+  // widths only, and this null-on-fp fence is a LIVE CLASSIFIER, not
+  // plumbing: the 6.5 classical-call arm's ONLY fp/i128 gate is this null
+  // (DD-7, ClassicalCallArmEmit/ArmClassify defer to it — the
+  // minter-null-is-a-classifier hazard). The fp SELECT merge mints through
+  // `copyControlledFpFn` below instead (fp-data-select-PRD §4.2); keep this
+  // fence byte-identical. Unknown widths return a null callee (caller
+  // diagnoses) rather than minting dead ABI. The integer guard goes through
+  // the PUBLIC `Wd.llvmWidthType` (WidthDispatch's file-local
+  // `typeForAbiWidth` is unreachable here); the null check also covers an
+  // unknown abiWidth.
   LLVMContext &Ctx = M.getContext();
   Type *Ty = Wd.llvmWidthType(abiWidth);
   // i128 no-clone fence (n0ui Tier-1): mirror copyFn — i128 is a recognized
@@ -79,16 +84,39 @@ FunctionCallee ControlledSymbols::copyControlledFn(StringRef abiWidth) const {
       FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
 }
 
+FunctionCallee
+ControlledSymbols::copyControlledFpFn(StringRef abiWidth) const {
+  // `void cqrt_copy_f<W>_controlled(i32 ctrl, i32 src, i32 dst)` for the fp
+  // widths {f16,f32,f64,f80} (fp-data-select-PRD §4.2 — Option B; mirrors the
+  // new decls in runtime/cq_runtime.h). SELECT-LOCAL: SelectMergeEmit is the
+  // sole caller (see the header contract) — the shared integer minter above
+  // keeps classifying for every other consumer. The fence is the pure
+  // `abiWidthHasControlledFpCopy` predicate (OpcodeSupport), NOT a type-class
+  // test: f128 (valid LLVM type, no sound c_type on this build) and any
+  // unknown/integer width return null so the caller declines, never minting a
+  // phantom extern that link-fails (the jvun class). Same symbol grammar and
+  // all-i32-handle signature as the integer family (Rule 15).
+  LLVMContext &Ctx = M.getContext();
+  if (!abiWidthHasControlledFpCopy(abiWidth))
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_copy_" + abiWidth + "_controlled").str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
+}
+
 FunctionCallee ControlledSymbols::tapeWriteControlledFn(StringRef abiWidth) const {
   // `i32 cqrt_tape_write_<W>_controlled(i32 ctrl, i32 tape, i32 src)`. Mirrors
   // cqrt_tape_write_<W>_controlled in runtime/cq_runtime.h (Phase 7.6 Increment
   // 2 — the Tier-0 `if(q)printf` write). The control flag is arg 0 (PRD §1.2);
   // tape/src follow. UNLIKE the void `copyControlledFn`, this RETURNS an i32
   // (the kept out-rail handle), matching the uncontrolled `tapeWriteFn`. All
-  // three args are i32 handles for every ABI width. SAME integer-only > 64
-  // fence as `copyControlledFn`/`tapeWriteFn`: an fp arg in a rail is the
-  // f64/angle family, and there is no `cqrt_tape_write_i128_controlled`, so an
-  // unsupported width returns null (caller declines) — never a phantom mint.
+  // three args are i32 handles for every ABI width. Integer-only > 64 fence,
+  // matching `tapeWriteFn`: tape KEEPS integer-only even though the select
+  // copy family gained fp twins via `copyControlledFpFn` (fp-data-select-PRD
+  // §4.1 — the fences legitimately diverge; no `cqrt_tape_write_f<W>` exists).
+  // There is no `cqrt_tape_write_i128_controlled` either, so an unsupported
+  // width returns null (caller declines) — never a phantom mint.
   LLVMContext &Ctx = M.getContext();
   Type *Ty = Wd.llvmWidthType(abiWidth);
   if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)

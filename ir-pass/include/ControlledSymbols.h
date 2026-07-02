@@ -67,11 +67,30 @@ public:
   // into the |0> `dst` rail iff the i32 control flag is set; the flag is
   // PREPENDED as arg 0 (PRD §1.2), so src/dst follow at args 1/2. The
   // width selects only the symbol name (all three args are i32 handles).
-  // INTEGER widths only — an FP merge phi under tainted control is
-  // categorically an angle, never data (the f64 family) — so f32/f64 (and
-  // any unknown width) return a null FunctionCallee (caller declines,
-  // §16.4 staged), guarded via the PUBLIC `WidthDispatch::llvmWidthType`.
+  // INTEGER widths only, and the null-on-fp fence is LOAD-BEARING beyond
+  // this minter: for the 6.5 classical-call arm it IS the live fp/i128
+  // classifier (DD-7 — `classifyClassicalCallArm` has no type gate of its
+  // own and defers to this null; the minter-null-is-a-classifier hazard).
+  // The fp SELECT merge therefore mints via the SEPARATE `copyControlledFpFn`
+  // below (fp-data-select-PRD §4.2); this fence stays byte-identical so no
+  // other consumer's accept surface can move by construction. f32/f64 (and
+  // any unknown width) return a null FunctionCallee (caller declines),
+  // guarded via the PUBLIC `WidthDispatch::llvmWidthType`.
   llvm::FunctionCallee copyControlledFn(llvm::StringRef abiWidth) const;
+
+  // Controlled reversible basis copy, fp widths (fp-data-select-PRD §4.2,
+  // issue test_C_libtooling-kjd1 — Option B): `void
+  // cqrt_copy_f<W>_controlled(i32 ctrl, i32 src, i32 dst)` for
+  // W ∈ {f16,f32,f64,f80}, gated by `abiWidthHasControlledFpCopy` (null for
+  // f128 / unknown / anything non-fp). SELECT-LOCAL BY DESIGN: called ONLY
+  // from `SelectMergeEmit`, where SelectClassify gate 3 has already proven
+  // the fp value is DATA (not a rotation angle) and gate 5 that it carries
+  // no phase — the §2 three-legged angle fence. Every other consumer of a
+  // controlled copy keeps minting through `copyControlledFn` above so its
+  // integer-only null keeps classifying for them. Same shape/involution
+  // story as the integer family (all three args i32 handles, the fp width
+  // tags the symbol name only — Rule 15; no `_controlled_inv` can exist).
+  llvm::FunctionCallee copyControlledFpFn(llvm::StringRef abiWidth) const;
 
   // Controlled reversible I/O output-tape write (Phase 7.6 Increment 2,
   // PRD-7.6 §2.8 — the Tier-0 `if(q)printf` primitive):
@@ -80,11 +99,14 @@ public:
   // iff the i32 control flag `ctrl` is set; the flag is PREPENDED as arg 0
   // (PRD §1.2), so `tape`/`src` follow at args 1/2 and the kept out-handle is
   // RETURNED (unlike void `cqrt_copy_<W>_controlled`). The width selects only
-  // the symbol name (all three args are i32 handles). The SAME integer-only
-  // > 64 fence as `copyControlledFn`/`tapeWriteFn`: an fp arg in a rail is the
-  // f64/angle family, and there is no `cqrt_tape_write_i128_controlled`, so an
-  // unsupported width returns a null FunctionCallee (caller declines) rather
-  // than minting a phantom extern that link-fails.
+  // the symbol name (all three args are i32 handles). Integer-only > 64
+  // fence, matching `tapeWriteFn`: tape KEEPS integer-only even though the
+  // select copy family gained fp twins (fp-data-select-PRD §4.1 — the two
+  // fences legitimately diverge; a tainted fp printf arg has no
+  // `cqrt_tape_write_f<W>` and still declines in IOSinkLowering). There is no
+  // `cqrt_tape_write_i128_controlled` either, so an unsupported width returns
+  // a null FunctionCallee (caller declines) rather than minting a phantom
+  // extern that link-fails.
   llvm::FunctionCallee tapeWriteControlledFn(llvm::StringRef abiWidth) const;
 
 private:

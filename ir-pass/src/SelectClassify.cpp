@@ -10,10 +10,11 @@
 
 #include "SelectClassify.h"
 
-#include "ArmAnalysis.h"     // comparePredLowerable, diagonalAliasHit
+#include "ArmAnalysis.h"     // comparePredLowerable, diagonalAliasHit, condProvenance
 #include "ControlPlan.h"     // diagnoseUnderControl, ControlPlan, ControlRegion
 #include "OpcodeSupport.h"   // abiWidthFromType
 #include "TaintPropagation.h"  // TaintSet
+#include "WireWalk.h"        // findNonDiagonalWireGate (gate 2c stale condition)
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -142,7 +143,68 @@ bool selReachesRotationArg1(SelectInst *Sel) {
 // handling ever changes (its result becomes tainted, or it stops being deleted),
 // this gate must be re-reviewed — a classical phase reaching the basis copy would
 // otherwise leak. Holds at HEAD; flagged here per the §8.3 second-review note.
+// Op's ROTATION ANCESTRY: Op itself plus the backward rotation-arg-0 chain —
+// the in-place gates that PRODUCE Op's record (a chained `cq_theta`/`cq_phi`
+// result denotes a record on its parent's physical wire; rotation lowering
+// RAUWs the whole chain to ONE handle). Mirrors WireWalk's per-seed backward
+// closure + on-ancestry exemption (WireWalk.h): the producing rotations
+// precede the record and can never dephase/stale it, so gate 5 exempts them —
+// flagging them would over-decline every chained-prep consumer.
+void rotationAncestry(Value *Op, SmallPtrSetImpl<Value *> &A) {
+  for (Value *V = Op;;) {
+    A.insert(V);
+    auto *CI = dyn_cast<CallInst>(V);
+    if (!CI || !isRotationCall(CI) || CI->arg_size() < 1)
+      break;  // the wire origin (template result / argument / classical seed).
+    V = CI->getArgOperand(0);
+  }
+}
+
+// E2 fence (kjd1 post-fix refute-default round; FP_SELECT_CLEARANCE.md
+// addendum): does the tainted operand's backward lineage contain a
+// FreezeInst? A tainted fp `freeze` survives the escape guard (7.1 Inc B
+// skips it; the integer case is folded, the fp case is NOT) yet is
+// UN-LAUNDERABLE by the emitter: rotation lowering later RAUWs the frozen
+// theta result to its i32 handle, leaving `freeze double %h` ill-typed, and
+// `opt` ABORTS on the broken module (SIGABRT — a crash on valid input, not a
+// loud decline; Rule 1). Newly fp-reachable through the gate-4 un-staging
+// (pre-kjd1 every fp select declined at the type gate). Over-decline-safe and
+// type-agnostic (the sub-i32 integer widths have the same RAUW shape).
+bool taintedLineageHasFreeze(Value *Op, const TaintSet &Taint) {
+  SmallVector<Value *, 8> Work;
+  SmallPtrSet<Value *, 16> Visited;
+  Work.push_back(Op);
+  Visited.insert(Op);
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (isa<FreezeInst>(V))
+      return true;  // un-launderable under the RAUW-to-handle discipline.
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;
+    for (Value *In : I->operands())
+      if (Taint.Tainted.count(In) && Visited.insert(In).second)
+        Work.push_back(In);
+  }
+  return false;
+}
+
 bool operandCarriesPhase(Value *Op, const TaintSet &Taint) {
+  // WIRE-ANCHORED since the kjd1 Rule-13 implementation clearance (coherence-
+  // lens blocker; FP_SELECT_CLEARANCE.md): the original walk was SSA-anchored
+  // (backward through tainted OPERANDS only), so a `cq_phi` hanging off a
+  // SIBLING SSA alias of the same physical wire — reachable after a chained
+  // cq_theta rebased the wire onto a new SSA name — was invisible, and the
+  // merge CNOT-copied a phased wire (the WI-3 dephasing family, verify-clean;
+  // pinned by control_swap_reject_select_{fp_,}phase_sibling_alias*.ll). The
+  // fix adds FORWARD WIRE EDGES: for each visited value V, a rotation-call
+  // user r with r.arg0 == V continues V's physical wire (post-lowering RAUW
+  // collapses the chain to one handle), so a phi user ANYWHERE on the wire —
+  // ancestor or sibling, before or after the select (phase before the copy
+  // dephases the copy; phase after is channel-B coherence) — declines.
+  // Sibling thetas are WALKED (their users may hang phis); flagging an
+  // OFF-ancestry theta itself (interference) is hasCoherentDownstreamUse's
+  // job below.
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;
   Work.push_back(Op);
@@ -151,6 +213,16 @@ bool operandCarriesPhase(Value *Op, const TaintSet &Taint) {
     Value *V = Work.pop_back_val();
     if (isPhiCall(V))
       return true;  // an Rz (cq_phi) in the lineage — a relative-phase carrier.
+    // forward wire edges: rotation users of V share V's physical register.
+    for (User *U : V->users())
+      if (auto *CI = dyn_cast<CallInst>(U))
+        if (isRotationCall(CI) && CI->arg_size() >= 1 &&
+            CI->getArgOperand(0) == V) {
+          if (isPhiCall(CI))
+            return true;  // sibling Rz — phase on the operand's wire.
+          if (Visited.insert(CI).second)
+            Work.push_back(CI);  // sibling/chained theta: the wire continues.
+        }
     auto *I = dyn_cast<Instruction>(V);
     if (!I)
       continue;  // an argument / constant root — basis, not a phase.
@@ -190,10 +262,39 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
   // Consistency + defense-in-depth (Rule 14).
   SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
                                          Taint.MeasureCalls.end());
+  // Rotation-ancestry exemption + LINEAGE-WIDE seeding (both kjd1 Rule-13
+  // implementation clearance findings; FP_SELECT_CLEARANCE.md). Seeding: the
+  // original walk started at Op alone, so a rotation (or a rotation on a
+  // derived value) hanging off an ANCESTOR SSA alias of Op's wire — sibling
+  // branches created by the chained-theta rebase — was invisible
+  // (control_swap_reject_select_fp_theta_fork.ll). The walk now seeds from
+  // Op's whole backward tainted lineage (the same closure operandCarriesPhase
+  // visits), so every sibling branch of every ancestor is scanned. Exemption:
+  // a rotation user that IS on Op's own producer chain (`rotationAncestry`)
+  // precedes the record and cannot observe the copy — it is walked THROUGH,
+  // not flagged, keeping the sanctioned chained-prep accept
+  // (`select(c, theta(theta(q)), x)`).
+  SmallPtrSet<Value *, 8> Ancestry;
+  rotationAncestry(Op, Ancestry);
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;
   Work.push_back(Op);
   Visited.insert(Op);
+  // backward tainted lineage as additional seeds (data inputs + wire parents).
+  {
+    SmallVector<Value *, 8> Back;
+    Back.push_back(Op);
+    while (!Back.empty()) {
+      auto *I = dyn_cast<Instruction>(Back.pop_back_val());
+      if (!I)
+        continue;
+      for (Value *In : I->operands())
+        if (Taint.Tainted.count(In) && Visited.insert(In).second) {
+          Work.push_back(In);
+          Back.push_back(In);
+        }
+    }
+  }
   while (!Work.empty()) {
     Value *U = Work.pop_back_val();
     for (User *X : U->users()) {
@@ -203,13 +304,24 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
         if (Sinks.count(CI))
           continue;  // a recognized measurement sink owns the handle.
         if (isRotationCall(CI)) {
-          if (CI->arg_size() >= 1 && CI->getArgOperand(0) == U)
-            return true;  // a rotation ON the operand's wire — coherent.
+          if (CI->arg_size() >= 1 && CI->getArgOperand(0) == U) {
+            if (!Ancestry.count(CI))
+              return true;  // a rotation ON a wire of the lineage — coherent.
+            if (Visited.insert(CI).second)
+              Work.push_back(CI);  // Op's own producer — exempt, walk through.
+          }
           continue;  // arg-1 angle use is gate 3's domain, not coherence here.
         }
-        // Any other call: `declineTaintEscapes` (L64, before detection at L83)
-        // already declined unknown callees module-wide, so a surviving tainted
-        // call user is benign here. (void) — keep scanning the rest.
+        // Any other surviving call: `declineTaintEscapes` (pre-detection)
+        // declined unknown callees, so what survives is a CURATED producer
+        // (libm / curated intrinsic / by-ref marker) whose result CONTINUES
+        // the coherence lineage exactly like an arithmetic instruction — walk
+        // its result (kjd1 clearance, angle-fence-lens major: the old bare
+        // `continue` let `cbrt(%q)`'s result take a downstream Rz unseen —
+        // control_swap_reject_select_fp_coherent_call_derived.ll). A void
+        // result has no users; the push is then a no-op.
+        if (Visited.insert(CI).second)
+          Work.push_back(CI);
         continue;
       }
       if (isa<ReturnInst>(X))
@@ -276,25 +388,97 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
       taint.Tainted.count(Cond->getOperand(1)))
     return diagnoseUnderControl(Sel, "control flow");
 
+  // GATE 2c — STALE-CONDITION wire guard (kjd1 Rule-13 implementation
+  // clearance, fcmp-lens BLOCKER; FP_SELECT_CLEARANCE.md). SelectMergeEmit
+  // mints the flag AT THE SELECT, so the flag reads the condition wire's basis
+  // AFTER any gate between the compare and the select. A chained cq_theta (an
+  // IN-PLACE, NON-DIAGONAL Ry on an existing handle — RotationLowering) in
+  // that gap makes the minted flag encode the POST-Ry predicate while the SSA
+  // condition denotes the pre-Ry record: the copies route %out on the wrong
+  // predicate, verify-clean (the strip still cleans the flag). Both sibling
+  // classifiers carry this guard (ArmClassify::nonDiagonalGateBeforeBranch,
+  // SwitchClassify); 4.4 shipped the select without it, and the hole became
+  // fp-reachable through the kjd1 gate-4 un-staging. The select mirror, same
+  // three prongs (Rule 14 — condProvenance + the shared WireWalk):
+  //   (a) position-free: any OFF-ancestry theta on the condition's tainted
+  //       provenance wire declines (the mint point is unrelated to the
+  //       compare's own schedule, so no positional accept is possible).
+  //       CrossValueRouting=TRUE — unlike the ArmClassify caller: the
+  //       post-fix refute-default round (E1, FP_SELECT_CLEARANCE.md addendum)
+  //       showed a chained theta whose arg-0 reaches the condition wire only
+  //       through a one-register value-routing phi (the sanctioned lift
+  //       shape, plain-C-reachable at -O1) evades the router-blind walk while
+  //       sitting BEFORE the compare (outside prong (c)); a router forwards
+  //       the same physical handle, so the walk must cross it. The
+  //       pass-wide stale-record guard deliberately excludes select-condition
+  //       compares (OpcodeLowering inLowerOpsScope), so there is NO backstop;
+  //   (b) an unbounded cross-block gap between compare and select declines
+  //       conservatively (cannot bound the scan — Prime Directive);
+  //   (c) positional: any tainted-operand cq_theta between the compare and
+  //       the select declines, even on another wire (over-decline is safe).
+  // A diagonal gate (cq_phi/Rz) preserves the basis, so the mint still equals
+  // the source compare — phase on the condition wire is gate 5's concern for
+  // OPERANDS only, never a staleness (the rz-diag-flag-strip invariant).
+  // Additionally (E2, same addendum): a tainted FreezeInst anywhere in the
+  // condition's provenance declines — an fp freeze survives the escape guard
+  // (7.1 Inc B skips it) but is un-launderable: the theta RAUW-to-handle
+  // leaves `freeze double %h` ill-typed and opt ABORTS on the broken module
+  // (a crash on valid input, not a loud decline). Newly fp-reachable through
+  // the gate-4 un-staging; fenced here at detection, before any mutation.
+  {
+    SmallPtrSet<Value *, 16> Prov;
+    condProvenance(Cond, taint, Prov);
+    for (Value *P : Prov)
+      if (isa<FreezeInst>(P))
+        return diagnoseUnderControl(Sel, "control flow");
+    SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
+    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true))
+      return diagnoseUnderControl(Sel,
+                                  "condition predates a non-diagonal gate");
+    if (Cond->getParent() != Sel->getParent())
+      return diagnoseUnderControl(Sel,
+                                  "condition predates a non-diagonal gate");
+    for (const Instruction *I = Cond->getNextNode(); I && I != Sel;
+         I = I->getNextNode()) {
+      const auto *CI = dyn_cast<CallInst>(I);
+      if (!CI)
+        continue;
+      const Function *F = CI->getCalledFunction();
+      if (F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
+          taint.Tainted.count(CI->getArgOperand(0)))
+        return diagnoseUnderControl(Sel,
+                                    "condition predates a non-diagonal gate");
+    }
+  }
+
   // GATE 3 — the §3.2 BLOCKER: NOT an angle. FIRST among the type gates (the
   // FP-use fence precedes the width gate, exactly as ArmClassify.cpp:820 precedes
   // :834). There is NO downstream backstop, so the angle MUST be caught here.
   if (selReachesRotationArg1(Sel))
     return diagnoseUnderControl(Sel, "rotation angle");
 
-  // GATE 4 — ABI-width scalar-integer result (§16.9), AFTER the FP-use fence.
-  // Rejects fp-as-DATA (staged out, §16.4) + integer vector / i128 / pointer /
-  // aggregate (empty width — the null-callee trap). Necessary-not-sufficient;
-  // NEVER key the decision on `abiWidthFromType` alone (f64 has a valid width yet
-  // is an angle — caught above). `isFPOrFPVectorTy`, not the scalar-only
-  // `isFloatingPointTy` (which misses `<2 x double>`).
+  // GATE 4 — ABI-width scalar result with a controlled copy (§16.9), AFTER the
+  // FP-use fence. Accepts scalar integer {i1..i64} (`widthHasReversibleCopy`)
+  // and — the §16.4 un-staging, fp-data-select-PRD §4.4 — scalar fp
+  // {f16,f32,f64,f80} (`abiWidthHasControlledFpCopy`). The fp accept is safe
+  // ONLY because gate 3 above already proved the select is DATA along every
+  // value-preserving carrier, the escape guards own the memory/call routes,
+  // and `declineTaintedAngle` backstops value-changing re-realizations (the §2
+  // three-legged fence); gate ORDER (3 before 4) is the load-bearing
+  // invariant. The fp accept is deliberately `isFloatingPointTy` (SCALAR-only
+  // — fp vectors like `<2 x double>` keep declining; `isFPOrFPVectorTy` would
+  // be wrong on the accept side). Still declines: fp vector, f128 (empty
+  // width), pointer/aggregate, integer vector, and i128.
+  // n0ui Tier-1: gate on the copy predicates, NOT `abiWidthFromType(T).empty()`
+  // — i128 is a recognized (intermediate) width so `.empty()` is FALSE for it,
+  // but it has NO `cqrt_copy_i128` (source/sink stay i64), so a tainted i128
+  // data select must still DECLINE here, not slip through and mint a phantom.
   Type *T = Sel->getType();
-  // n0ui Tier-1: gate on `widthHasReversibleCopy`, NOT `abiWidthFromType(T).empty()`
-  // — i128 is now a recognized (intermediate) width so `.empty()` is FALSE for it,
-  // but it has NO `cqrt_copy_i128` (source/sink stay i64), so a tainted i128 data
-  // select must still DECLINE here, not slip through and mint a phantom copy.
-  if (T->isFPOrFPVectorTy() || !T->isIntegerTy() ||
-      !widthHasReversibleCopy(abiWidthFromType(T)))
+  const bool IntData =
+      T->isIntegerTy() && widthHasReversibleCopy(abiWidthFromType(T));
+  const bool FpData =
+      T->isFloatingPointTy() && abiWidthHasControlledFpCopy(abiWidthFromType(T));
+  if (!IntData && !FpData)
     return diagnoseUnderControl(Sel, "control flow");
 
   // GATE 5 — conservative coherent-operand default (§16.7), BOTH halves. A
@@ -305,7 +489,8 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   // until the §8 Rule-13 clearance widens this.
   for (Value *Op : {Sel->getTrueValue(), Sel->getFalseValue()})
     if (taint.Tainted.count(Op) &&
-        (operandCarriesPhase(Op, taint) ||
+        (taintedLineageHasFreeze(Op, taint) ||
+         operandCarriesPhase(Op, taint) ||
          hasCoherentDownstreamUse(Op, Sel, taint)))
       return diagnoseUnderControl(Sel, "control flow");
 

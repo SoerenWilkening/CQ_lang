@@ -70,3 +70,9 @@ cq_template_fadd_f16(h33, h34) -> h35
 cq_template_fadd_f16_hl(h33, 1.500000) -> h36
 cqrt_ry_f16(h33, 0.785398)
 cqrt_rz_f16(h33, 0.785398)
+cqrt_copy_f16_controlled(h2, h33, h34)
+cqrt_copy_f32_controlled(h2, h7, h22)
+cqrt_copy_f64_controlled(h2, h8, h25)
+cqrt_alloc_f80(1.500000) -> h37
+cqrt_alloc_f80(0.500000) -> h38
+cqrt_copy_f80_controlled(h2, h37, h38)

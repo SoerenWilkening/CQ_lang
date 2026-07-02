@@ -218,9 +218,19 @@ bool widthHasReversibleCopy(StringRef w) {
   // {i1,i8,i16,i32,i64} have a `cqrt_copy_<W>` / `_controlled`; i128 (now a
   // recognized INTERMEDIATE width) and any wider int do NOT (n0ui Tier-1). An
   // empty/unknown width (intBits 0) and the fp widths (intBits 0) also fail —
-  // exactly the set a tainted data-mux must decline.
+  // exactly the set a tainted data-mux must decline. (The fp SELECT accept
+  // rides `abiWidthHasControlledFpCopy` below, never this predicate.)
   const unsigned b = intBits(w);
   return b >= 1 && b <= 64;
+}
+
+bool abiWidthHasControlledFpCopy(StringRef w) {
+  // {f16,f32,f64,f80} have a `cqrt_copy_f<W>_controlled` (fp-data-select-PRD
+  // §4.1/§4.3 — Option B, the select-merge's sole consumer). fp128 stays out
+  // (abiWidthFromType already returns "" for it — no sound c_type on this
+  // x86-64 build), as do all integer/empty/unknown widths. Select-local: see
+  // the header note before widening the consumer set.
+  return w == "f16" || w == "f32" || w == "f64" || w == "f80";
 }
 
 void diagnoseNoTemplate(Instruction *inst, StringRef detail) {

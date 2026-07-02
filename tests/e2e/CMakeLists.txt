@@ -162,6 +162,22 @@ add_test(NAME e2e-slice-control-select
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select.expected.log")
 
+# fp-DATA select un-staging (fp-data-select-PRD §8, issue kjd1): the branchless
+# fp ternary `(q > 0.5) ? q+1.0 : 0.25` -> `select` over an fcmp-ogt condition,
+# the FIRST fcmp-minted merge (cq_template_fcmp_ogt_f64_hl / _inv, not icmp).
+# The only layer that LINKS the new frozen-designate cqrt_copy_f64_controlled.
+# The golden ALSO asserts the §6 uncompute shape: the copied theta-derived fadd
+# chain is deliberately LEAKED (its _controlled user marks the DAG NotClosed) —
+# NO `_unc` line, EXACTLY ONE cqrt_free (the flag); out / q / t / the
+# materialized 0.25 scratch stay allocated (Rules 6/8).
+add_test(NAME e2e-slice-control-select-fp
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_fp.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_fp.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.

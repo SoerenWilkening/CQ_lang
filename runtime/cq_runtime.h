@@ -9,11 +9,17 @@
  * Phase 7.1 Increment D (FROZEN) adds the half-precision fp width f16 to
  * the rotation-lowering path — cqrt_alloc_f16 / cqrt_measure_f16 /
  * cqrt_ry_f16 / cqrt_rz_f16 (+ the controlled-rz f16 twins for ABI
- * symmetry) — but NO cqrt_copy_f16: like every fp width, an f16 merge phi
- * under tainted control is an angle, never data (the f64 miscompile
- * family), so copyFn null-guards on isIntegerTy (WidthDispatch.cpp). The
- * sibling i128 int width is deferred (its C ABI shreds __int128 to
- * {i64,i64}; tracked as a pre-freeze follow-up). The 33 base symbols:
+ * symmetry). There is still NO UNCONTROLLED cqrt_copy_f<W> (no consumer —
+ * dead ABI is forbidden), but the CONTROLLED fp copy family
+ * cqrt_copy_f{16,32,64,80}_controlled now EXISTS (fp-data-select-PRD,
+ * issue kjd1): the old "fp under tainted control is categorically an
+ * angle" rule is retired FOR THE TAINTED-`select` MERGE ONLY, where the
+ * three-legged angle fence (SelectClassify gate-3 carrier walk + the
+ * escape guards + declineTaintedAngle) proves the value is data. Every
+ * other fp-under-control path still declines; the uncontrolled copyFn
+ * still null-guards on isIntegerTy (WidthDispatch.cpp). The sibling i128
+ * int width is deferred (its C ABI shreds __int128 to {i64,i64}; tracked
+ * as a pre-freeze follow-up). The 33 base symbols:
  *   - 7 allocators (one per width): cqrt_alloc_i{1,8,16,32,64} +
  *     cqrt_alloc_f{32,64}. Each takes an initial classical value and
  *     returns a fresh monotonically-increasing handle.
@@ -250,10 +256,14 @@ void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b);
  * |0> — so there is NO cqrt_copy_<W>_inv twin (same class as cqrt_x /
  * cqrt_cswap). It NEVER frees, consumes, or disentangles its source
  * (Rule 8: freeing a superposed source stays cqrt_cswap-only).
- * The 5 INTEGER widths only — an FP merge phi under tainted control
- * is categorically an angle, never data (the f64 miscompile family),
- * so no f32/f64 twins exist (for the plain copy here nor the
- * `_controlled` merge twin below). Emitted by the IR pass as the
+ * The 5 INTEGER widths only FOR THIS PLAIN COPY: no uncontrolled fp
+ * twin exists because nothing consumes one (dead ABI is forbidden) —
+ * the fp `_controlled` merge twins DO exist below since the fp-DATA
+ * select un-staging (fp-data-select-PRD, issue kjd1), where the
+ * three-legged angle fence proves the merged fp value is data, not an
+ * angle. Adding an uncontrolled cqrt_copy_f<W> later must re-audit
+ * ChainWalk's isCopyOutSink prefix test and LoopLowering's copyFn
+ * null-fence (the §3 tripwire). Emitted by the IR pass as the
  * copy-out step of the 4.2 value-arm (method-B) swap-route lowering.
  * Same no-arrow void trace convention as cqrt_cswap; both handle args
  * print as h<N>:
@@ -279,10 +289,22 @@ void cqrt_copy_i64(int32_t src, int32_t dst);
  * sibling it copies a computational-basis *label*, not a state (WRONG
  * for any phase/superposition carrier — Rule 7), it NEVER frees,
  * consumes, or disentangles its source (Rule 8), and a controlled-CNOT
- * is an involution, so there is NO cqrt_copy_<W>_controlled_inv twin.
- * The 5 INTEGER widths only — same FP-is-an-angle reasoning as the
- * plain copy above. Same no-arrow void trace convention as cqrt_cswap;
- * all three handle args print as h<N>:
+ * is an involution, so there is NO cqrt_copy_<W>_controlled_inv twin
+ * (its inverse is re-emission of the same call — the cqrt_x class).
+ * The 5 integer widths PLUS the 4 fp widths f16/f32/f64/f80
+ * (fp-data-select-PRD, issue kjd1 — Option B, designated frozen at the
+ * Phase-11 gate): fp-DATA is legitimate for the tainted-`select` merge
+ * because the three-legged angle fence (SelectClassify gate-3 carrier
+ * walk + the escape guards + declineTaintedAngle) proves the value is
+ * data — a theta-derived fp value is a real-amplitude basis
+ * superposition of fp BIT PATTERNS, and the CNOT copies that basis
+ * label faithfully (bits are bits; handles are i32, Rule 15). The fp
+ * twins are minted ONLY by the select-local copyControlledFpFn; every
+ * other fp-under-control path (switch, br-diamond value arms, the 6.5
+ * classical-call arm, IOSink, AbortPark, QRAM) still declines fp. No
+ * fp128 (no sound c_type on this x86-64 build) and no fp UNCONTROLLED
+ * copy (no consumer). Same no-arrow void trace convention as
+ * cqrt_cswap; all three handle args print as h<N>:
  *     "cqrt_copy_<W>_controlled(h<ctrl>, h<src>, h<dst>)".
  * ----------------------------------------------------------------- */
 void cqrt_copy_i1_controlled (int32_t ctrl, int32_t src, int32_t dst);
@@ -290,6 +312,10 @@ void cqrt_copy_i8_controlled (int32_t ctrl, int32_t src, int32_t dst);
 void cqrt_copy_i16_controlled(int32_t ctrl, int32_t src, int32_t dst);
 void cqrt_copy_i32_controlled(int32_t ctrl, int32_t src, int32_t dst);
 void cqrt_copy_i64_controlled(int32_t ctrl, int32_t src, int32_t dst);
+void cqrt_copy_f16_controlled(int32_t ctrl, int32_t src, int32_t dst);
+void cqrt_copy_f32_controlled(int32_t ctrl, int32_t src, int32_t dst);
+void cqrt_copy_f64_controlled(int32_t ctrl, int32_t src, int32_t dst);
+void cqrt_copy_f80_controlled(int32_t ctrl, int32_t src, int32_t dst);
 
 /* -----------------------------------------------------------------
  * In-place reversible arithmetic — immediate operand (issue dtzb,

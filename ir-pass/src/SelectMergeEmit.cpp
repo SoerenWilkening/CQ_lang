@@ -94,13 +94,22 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // Result-width (Wd) source (§4, the resolved gotcha): read at emit time, which
   // runs BEFORE `lowerRotations` launders handles to i32 — so the select still
   // carries its real logical type. NEVER a post-RAUW i32 read. Detection's gate 4
-  // already proved a scalar-integer ABI width, so a null here is a malformed plan
-  // — decline LOUDLY, lower nothing (Rule 1).
+  // already proved a scalar ABI width with a reversible/controlled copy (integer
+  // {i1..i64} or, since the §16.4 un-staging, scalar fp {f16..f80} —
+  // fp-data-select-PRD §4.4), so a null here is a malformed plan — decline
+  // LOUDLY, lower nothing (Rule 1). The copy minter is selected by result type:
+  // integer → the shared `copyControlledFn` (whose integer-only null is the 6.5
+  // classical-call arm's live classifier and must not be relaxed — DD-7), scalar
+  // fp → the select-local `copyControlledFpFn` (§4.2). The fp rail alloc
+  // `Constant::getNullValue(RailTy)` yields `double 0.0`/`half 0xH0000`/…,
+  // matching the fp `cqrt_alloc_f<W>` signatures.
   StringRef Abi = abiWidthFromType(Sel->getType());
   Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
   FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
-  FunctionCallee Copy =
-      Abi.empty() ? FunctionCallee() : csyms.copyControlledFn(Abi);
+  FunctionCallee Copy = Abi.empty() ? FunctionCallee()
+                        : Sel->getType()->isFloatingPointTy()
+                            ? csyms.copyControlledFpFn(Abi)
+                            : csyms.copyControlledFn(Abi);
   if (!RailTy || !Alloc || !Copy) {
     diagnoseUnderControl(Sel, "control flow");
     return;

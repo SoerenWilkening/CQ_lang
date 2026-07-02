@@ -156,8 +156,9 @@ int main(void) {
 
     /* --- Phase 7.1 Increment D smoke: half-precision (f16). f16 rides the
      * fp rotation-lowering path — alloc / measure / ry / rz + the fadd Q+Q
-     * and Q+C templates — but has NO cqrt_copy_f16 (an f16 merge phi under
-     * tainted control is an angle, never data; the fp-angle fence). Appended
+     * and Q+C templates. There is still NO UNCONTROLLED cqrt_copy_f16 (no
+     * consumer — dead ABI is forbidden), but the CONTROLLED fp copy family
+     * exists since the fp-DATA select un-staging (next block). Appended
      * at the end so every existing handle ID (h0..h32) is unchanged; the
      * monotonic counter resumes at h33. 1.5 and 0.5 are exactly representable
      * in f16, so the (double)-promoted %f prints byte-stable. */
@@ -168,6 +169,23 @@ int main(void) {
     (void) cq_template_fadd_f16_hl(h_f16, (_Float16)1.5); /* h36 */
     cqrt_ry_f16(h_f16, 0.785398);
     cqrt_rz_f16(h_f16, 0.785398);
+
+    /* --- fp-DATA select un-staging smoke (fp-data-select-PRD §4.1/§8, issue
+     * kjd1 — Option B): the controlled fp reversible basis copy,
+     * cqrt_copy_f<W>_controlled for f16/f32/f64/f80, the tainted-`select`
+     * merge primitive minted by the select-local copyControlledFpFn. Void,
+     * mints no handle; the control flag (arg-0) reuses h_c and src/dst reuse
+     * the first/second alloc of each fp width, mirroring the integer
+     * controlled-copy block above. f80 has no earlier handles, so two are
+     * allocated HERE (h37/h38 — appended after every existing handle so all
+     * prior h-IDs stay stable, the f16 precedent); 1.5/0.5 are exact in
+     * x86_fp80, so the %Lf print is byte-stable. */
+    cqrt_copy_f16_controlled(h_c, h_f16, h_f16_b);
+    cqrt_copy_f32_controlled(h_c, h_f32, h_f32_b);
+    cqrt_copy_f64_controlled(h_c, h_f64, h_f64_b);
+    int32_t h_f80   = cqrt_alloc_f80(1.5L);            /* h37 */
+    int32_t h_f80_b = cqrt_alloc_f80(0.5L);            /* h38 */
+    cqrt_copy_f80_controlled(h_c, h_f80, h_f80_b);
 
     return 0;
 }

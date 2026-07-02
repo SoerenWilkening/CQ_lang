@@ -63,7 +63,13 @@ class of bug.
 > additive coverage / deferred separate capabilities, NOT correctness debt.** The
 > post-core break/loop widenings (multi-break, nested-loop break, `continue`, mixed
 > break+return, static-K unroll, value-arm widening) live under the open 7.x-widenings
-> tracker `8h7d` — freeze-orthogonal (7.2–7.4 add no frozen symbols). **Phase 7 core
+> tracker `8h7d` (7.2–7.4 themselves add no frozen symbols, but `8h7d` is no longer
+> wholly freeze-orthogonal: the **fp-DATA select un-staging** under it — kjd1, DONE
+> 2026-07-02, `docs/prd/phase-04-swap-route-control/fp-data-select-PRD.md` — added the
+> frozen-designate `cqrt_copy_f{16,32,64,80}_controlled` family, minted ONLY by the
+> select-local `copyControlledFpFn`; the shared `copyControlledFn` integer null-fence
+> is untouched — it IS the 6.5 classical-call arm's live fp classifier, and every
+> non-select fp-under-control path still declines). **Phase 7 core
 > complete (7.1–7.6 core DONE; widenings tracked under `8h7d`);** 8–11 remaining.
 > **Roadmap resequenced 2026-06-19:**
 > Phase 7 is now **pre-freeze expressiveness completion** (7.1 opcode-surface
@@ -71,8 +77,9 @@ class of bug.
 > controlled function-`return`; 7.3 bounded loops; 7.4 `break`; 7.5 QRAM full
 > Shadow model); manual inversion (`cq_invert`) moved to **Phase 8**; runtime
 > templates / integration / freeze are **9 / 10 / 11**. The freeze is gated only
-> on the 7.5 QRAM memory ABI, the 7.1 wide-integer widths, and the 7.6 I/O
-> output-tape ABI (`cqrt_tape_alloc` / `cqrt_tape_write_<W>` (+ `_controlled`)) — the control/loop work (7.2–7.4)
+> on the 7.5 QRAM memory ABI, the 7.1 wide-integer widths, the 7.6 I/O
+> output-tape ABI (`cqrt_tape_alloc` / `cqrt_tape_write_<W>` (+ `_controlled`)), and the kjd1 fp select
+> copy family (`cqrt_copy_f{16,32,64,80}_controlled`) — the control/loop work (7.2–7.4)
 > adds no frozen symbols. See `ROADMAP.md` for the authoritative plan.
 
 ---
@@ -310,10 +317,18 @@ register the condition reads declines loudly — §3c); `RegionFlatten` erases t
 CFG diamond. `RegionTreeDetect` + `NestedRouteEmit` lower the **depth-2
 homogeneous-phase nest** (`if(a){…if(b){…}}`, flag-per-level routing — 4.3
 DONE). `SelectClassify` + `SelectMergeEmit` lower a tainted-condition
-**integer-data `select`** via the **controlled-XOR copy merge** (flag mint →
-`|0⟩` rail → two `cqrt_copy_<W>_controlled`, ¬flag `cqrt_x`-bracketed → `icmp_inv`
-strip → one `cqrt_free`; no cswap/route/flatten/reverse-play — 4.4 DONE; coherent
-`Ry`-phase / fp-data operands ride the conservative decline). `SwitchClassify`
+**integer- or scalar-fp-data `select`** via the **controlled-XOR copy merge** (flag
+mint — icmp or, since kjd1, fcmp → `|0⟩` rail → two `cqrt_copy_<W>_controlled`
+(fp widths minted only by the select-local `copyControlledFpFn`), ¬flag
+`cqrt_x`-bracketed → compare-`_inv` strip → one `cqrt_free`; no
+cswap/route/flatten/reverse-play — 4.4 DONE, fp-DATA un-staged 2026-07-02
+(kjd1) behind the three-legged angle fence; the kjd1 Rule-13 clearance also
+added — both type families — the gate-2c **stale-condition wire guard** (a
+chained Ry between compare and select declines, the ArmClassify mirror) and
+**wire-anchored gate-5** walks (sibling-alias phase/interference + curated-call
+crossing; `FP_SELECT_CLEARANCE.md`); coherent `Rz`-lineage /
+downstream-rotation operands, fp vectors, and `fp128` ride the conservative
+decline, and fp stays declined at every NON-select consumer). `SwitchClassify`
 (G0–G11) + `SwitchArmProve` + `SwitchRouteEmit`/`SwitchValueEmit`/
 `SwitchDataMuxEmit` + `EqFoldArm` lower a tainted-scrutinee `switch` (and the
 equality-folded `br` diamond) in **four** ACCEPT shapes — homogeneous **phase**

@@ -91,7 +91,23 @@ llvm::StringRef abiWidthFromType(llvm::Type *ty);
 // classifiers gate on `!widthHasReversibleCopy(abiWidthFromType(T))` rather than
 // the now-defunct `abiWidthFromType(T).empty()` (which i128 no longer satisfies).
 // Pure predicate (no WidthDispatch) so the classifiers can call it directly.
+// Deliberately INTEGER-only: the fp select accept goes through the SEPARATE
+// `abiWidthHasControlledFpCopy` below — this predicate's 7 call sites in 6
+// files (Select/Switch/Arm/AbortPark/IOSink/Qram) must not move together
+// (fp-data-select-PRD §3/§4.3).
 bool widthHasReversibleCopy(llvm::StringRef w);
+
+// True iff `w` is an fp ABI width that has a CONTROLLED reversible data-copy
+// (`cqrt_copy_f<W>_controlled`) — i.e. {f16,f32,f64,f80} (fp-data-select-PRD
+// §4.3, issue test_C_libtooling-kjd1). Consumed ONLY by the tainted-`select`
+// path (SelectClassify gate 4 + the select-local
+// `ControlledSymbols::copyControlledFpFn` minter): the fp-DATA un-staging is
+// select-NARROW, so every other fp-under-control consumer keeps its own fence
+// and this predicate must not migrate into them. f128 / unknown / integer
+// widths are false. There is NO uncontrolled `cqrt_copy_f<W>` (no consumer —
+// dead ABI is forbidden); when one is added, re-audit LoopLowering's copyFn
+// null-fence and ChainWalk's `isCopyOutSink` prefix test (the §3 tripwire).
+bool abiWidthHasControlledFpCopy(llvm::StringRef w);
 
 // "No template for opcode" diagnostic, generalized from the original
 // `BinaryOperator`-only helper to any `Instruction*`. Same

@@ -1529,7 +1529,10 @@ copy merge into a fresh `|0⟩` result register. The merge is width-parametric w
 that set. **fp-data widths (`f32`/`f64`) are staged out of this increment** (decline
 until the §16.2 angle gate is cleared — §16.4 amendment d); the *principle* is
 fp-as-data (type ≠ use), but the implementation ships integer-first for the
-Prime-Directive-safe surface. The `select` arises from a C ternary `?:` or from an
+Prime-Directive-safe surface. *(UN-STAGED 2026-07-02 — the staging condition is
+met and scalar fp `{f16,f32,f64,f80}` now accepts, per
+[`fp-data-select-PRD.md`](fp-data-select-PRD.md) (issue kjd1); this section is
+kept as the shipped-4.4 record.)* The `select` arises from a C ternary `?:` or from an
 `if/else` whose arms have **no side effects** and SimplifyCFG flattened to a `select`
 (the dominant small-arm shape — §8.4, the 4.2-deferred "select-folded" form, §18).
 
@@ -1571,7 +1574,9 @@ runtime-classical-operand, polarity, quantum-operand) and ≥1 C-sourced e2e gol
 
 **Out of scope (4.4) — see §18, each declines loudly:** angle-use `select`
 (result transitively reaches a rotation arg-1 — the f64/angle family, §16.2);
-**fp-data widths** (`f32`/`f64`, staged — §16.4); **vector / `i128` / pointer /
+**fp-data widths** (`f32`/`f64`, staged — §16.4; **un-staged 2026-07-02** as
+scalar `{f16,f32,f64,f80}` per [`fp-data-select-PRD.md`](fp-data-select-PRD.md),
+issue kjd1); **vector / `i128` / pointer /
 aggregate** result types (the width gate, §16.9); classical-**condition**
 tainted-data `select` (the `declineClassicalMuxes` path, untouched); tainted
 `switch` (4.5); a `select` operand that **aliases** the other's post-lowering
@@ -1699,6 +1704,11 @@ defensible *only* once the §16.2 transitive arg-1 gate is proven airtight (an f
 `select` that is data, not a leaked angle); until then fp-data declines, keeping the
 two copy families width-symmetric and shrinking the false-accept surface. fp widths
 are added in a follow-on once the fp-data accept path is independently cleared.
+*(That follow-on SHIPPED 2026-07-02: [`fp-data-select-PRD.md`](fp-data-select-PRD.md)
+(issue kjd1, Option B) added `cqrt_copy_f{16,32,64,80}_controlled` — controlled
+only, minted by the select-local `copyControlledFpFn`; the shared
+`copyControlledFn` integer fence is untouched because its null IS the 6.5
+classical-call arm's fp classifier.)*
 
 **The IR-side minter is genuinely new (amendment c).** `WidthDispatch::copyFn`
 (`WidthDispatch.cpp:119–136`) is `void(i32 src, i32 dst)` — **no ctrl** — and
@@ -1887,7 +1897,10 @@ fixture (distinct closures) and decline fixture (intersecting closures).
   - **dual-use fan-out** (`%sel` feeds a `cq_phi` arg-1 **and** a `measure`) →
     declines the whole select (§16.2 fan-out rule — never split);
   - **fp-data `select`** (`f64` result feeding `fadd`/`measure`) → declines
-    (staged out, §16.4) — re-pinned to accept once fp is cleared;
+    (staged out, §16.4) — re-pinned to accept once fp is cleared *(DONE
+    2026-07-02: `control_swap_reject_select_fpdata.ll` re-pinned as the accept
+    `control_swap_select_fpdata.ll`, plus the f16/f64/f80 accepts and the §5
+    fp decline matrix of [`fp-data-select-PRD.md`](fp-data-select-PRD.md))*;
   - **vector / `i128` / aggregate** result → the width-gate string (§16.9);
   - **classical-condition tainted-data `select`** → the `declineClassicalMuxes`
     string, untouched (`lowering_reject_classical_mux_select_*.ll` stay green —

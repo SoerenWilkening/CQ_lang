@@ -515,13 +515,17 @@ void cqrt_copy_i64(int32_t src, int32_t dst) {
 
 /* ---------------------------------------------------------------------
  * Controlled reversible basis copy (Phase 4.4, PRD Part IV §16.3) — one
- * per integer width. Copies src into the |0> dst rail iff the i32
- * control flag ctrl is set (control flag arg-0); the tainted-`select`
- * controlled-XOR copy merge primitive emitted by SelectMergeEmit. A
- * controlled-CNOT involution (no _inv twin); never frees its source.
- * Same no-arrow void trace convention as cqrt_cswap; all three handle
- * args print as h<N>. Integer widths only — an FP merge phi under
- * tainted control is an angle, never data (see cq_runtime.h).
+ * per width. Copies src into the |0> dst rail iff the i32 control flag
+ * ctrl is set (control flag arg-0); the tainted-`select` controlled-XOR
+ * copy merge primitive emitted by SelectMergeEmit. A controlled-CNOT
+ * involution (no _inv twin); never frees its source. Same no-arrow void
+ * trace convention as cqrt_cswap; all three handle args print as h<N>.
+ * The 5 integer widths plus — since the fp-DATA select un-staging
+ * (fp-data-select-PRD, issue kjd1) — the 4 fp widths f16/f32/f64/f80:
+ * the select merge's angle fence proves the fp value is data, and the
+ * copy moves basis bit-pattern labels, so the fp width tags the symbol
+ * name only (all args stay i32 handles; see cq_runtime.h). Every other
+ * fp-under-control path still declines fp.
  * ------------------------------------------------------------------- */
 
 void cqrt_copy_i1_controlled(int32_t ctrl, int32_t src, int32_t dst) {
@@ -546,6 +550,26 @@ void cqrt_copy_i32_controlled(int32_t ctrl, int32_t src, int32_t dst) {
 
 void cqrt_copy_i64_controlled(int32_t ctrl, int32_t src, int32_t dst) {
     printf("cqrt_copy_i64_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_f16_controlled(int32_t ctrl, int32_t src, int32_t dst) {
+    printf("cqrt_copy_f16_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_f32_controlled(int32_t ctrl, int32_t src, int32_t dst) {
+    printf("cqrt_copy_f32_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_f64_controlled(int32_t ctrl, int32_t src, int32_t dst) {
+    printf("cqrt_copy_f64_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_f80_controlled(int32_t ctrl, int32_t src, int32_t dst) {
+    printf("cqrt_copy_f80_controlled(h%d, h%d, h%d)\n", ctrl, src, dst);
     fflush(stdout);
 }
 
