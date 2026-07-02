@@ -72,6 +72,15 @@ Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches t
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->
 
+The table above is the **template-recognition** strategy (one frozen `cq_template_<fn>` per
+function). A separate baseline — [`INJECTION-CENSUS.md`](tools/library_coverage/INJECTION-CENSUS.md) —
+measures the **source-injection** strategy (inject an existing libm's source so LLVM inlines it
+to stock opcodes *before* the pass, no per-function template). Off-the-shelf openlibm baseline:
+**3 / 44 `math.h` functions compile** (`fabs`, `nearbyint`, `copysign` — the straight-line
+bit-ops); every other declines on **tainted control flow** or **scratch memory**, and *not one*
+on a missing opcode — the opcode surface is already sufficient; branchy/memory-heavy libm bodies
+are the blocker.
+
 ## Documentation
 
 - [`ROADMAP.md`](ROADMAP.md) — phase-by-phase trajectory and
