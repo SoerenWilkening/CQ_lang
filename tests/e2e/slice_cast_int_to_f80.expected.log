@@ -1,0 +1,5 @@
+cqrt_alloc_i32(5) -> h0
+cqrt_ry_i32(h0, 0.500000)
+cq_template_sitofp_i32_to_f80(h0) -> h1
+cq_template_fmul_f80_hl(h1, 1.500000) -> h2
+cqrt_measure_f80(h2) -> 0.000000

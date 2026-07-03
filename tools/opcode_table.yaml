@@ -58,15 +58,18 @@
 # (`5<x` ⇒ `x>5`, CompareLowering.cpp / TemplateName.cpp), so compares have NO
 # `_lh` on ANY axis, exactly like the commutative binary ops (add/mul/and/or/xor).
 #
-# Acceptance count check (total == 2261). Baselines: 1562 (pre-f16) -> 1732 (f16,
+# Acceptance count check (total == 2315). Baselines: 1562 (pre-f16) -> 1732 (f16,
 # Increment D) -> 2091 (i128 Tier-1 +215, 8rvn fcmp +144). bd 3c6m.4 adds ONE
-# long-double fp width f80 to EVERY fp row + the fp-WIDTH cast grid (NOT the
-# cross-domain int<->fp casts — fenced in castInScope, parallel to i128<->fp;
-# f128 is deferred, not shipped):
+# long-double fp width f80 to EVERY fp row + the fp-WIDTH cast grid (NOT then the
+# cross-domain int<->fp casts — fenced in castInScope; f128 deferred, not shipped):
 #   +1 fp width on fp_arith (fadd 10v + fmul 10v + fsub/fdiv/frem 15v each = 65)
 #      -> +65; fneg (3v) -> +3; fcmp (14 preds x 6v = 84) -> +84; fpext +3 pairs
 #      (f16/f32/f64 -> f80) & fptrunc +3 pairs (f80 -> f16/f32/f64) x 3 -> +18.
 #   +65 + 3 + 84 + 18 = +170 over 2091 -> 2261.
+# bd 3c6m.5 LIFTS the cross-domain int<->f80 fence (i128<->fp stays fenced):
+#   sitofp +4 ({i8,i16,i32,i64}->f80) + uitofp +5 (i1 too) + fptosi +4
+#   (f80->{i8,i16,i32,i64}) + fptoui +5 (i1 too) = 18 pairs x {fwd,inv,unc}
+#   = +54 over 2261 -> 2315.
 #   binary_opcodes  == 18 (7 int_arith + 6 int_bitwise + 5 fp_arith). int rows
 #                          5 widths (+i128 on int_arith/bitwise), fp rows 4 widths
 #                          {f16,f32,f64,f80}.
@@ -74,9 +77,9 @@
 #   compare_opcodes == 2  (icmp x 10 preds x 5 int widths; fcmp x 14 preds x 4 fp
 #                          widths; NO controlled axis; unc_qq + unc_hl only)
 #   cast_opcodes    == 9  (sext, zext, trunc, fpext, fptrunc, sitofp, uitofp,
-#                          fptosi, fptoui; fpext/fptrunc now a COMPLETE fp-width
-#                          grid over {f16,f32,f64,f80}; cross-domain int<->fp
-#                          still excludes i128 AND f80)
+#                          fptosi, fptoui; fpext/fptrunc a COMPLETE fp-width grid
+#                          over {f16,f32,f64,f80}; cross-domain int<->fp now ships
+#                          f80 (bd 3c6m.5) and still excludes i128)
 # ============================================================================
 
 version: "1"
@@ -104,8 +107,9 @@ widths:
   f64: { bits: 64, c_type: "double",  domain: "fp"  }
   # f80 (bd 3c6m.4): the long-double width on x86-64, where `long double` IS
   # x86_fp80. c_type `long double` (printed with `%Lf`). The fp arith/compare rows
-  # and the fpext/fptrunc grid carry it; cross-domain int<->fp casts do NOT
-  # (fenced in castInScope, parallel to the i128<->fp deferral). f128 (IEEE quad,
+  # and the fpext/fptrunc grid carry it; cross-domain int<->f80 casts now ship too
+  # (bd 3c6m.5) — casts are arity-1 (i32 handle in/out) so the c_type never
+  # materializes in a cast body; i128<->fp stays fenced. f128 (IEEE quad,
   # == long double on AArch64) is NOT shipped: `long double` == fp80 here, so an
   # fp128 c_type of `long double` would be an fp128-into-fp80 ABI miscompile; a
   # tainted fp128 declines (abiWidthFromType returns "" for it). f128 is a
@@ -307,6 +311,14 @@ cast_opcodes:
       - { from: i64, to: f16 }
       - { from: i64, to: f32 }
       - { from: i64, to: f64 }
+      # f80 (bd 3c6m.5): int → long-double cross-domain, mirroring int→{f16,f32,
+      # f64}. sitofp excludes i1 (Clang uses uitofp for _Bool). castInScope drops
+      # the isWideFp fence once these pairs exist. Casts are arity-1 (i32 handle
+      # in/out, Rule 15) so f80's `long double` c_type never materializes here.
+      - { from: i8,  to: f80 }
+      - { from: i16, to: f80 }
+      - { from: i32, to: f80 }
+      - { from: i64, to: f80 }
   - opcode: uitofp
     kind: int_to_fp
     llvm_inst: "llvm::Instruction::UIToFP"
@@ -328,6 +340,12 @@ cast_opcodes:
       - { from: i64, to: f16 }
       - { from: i64, to: f32 }
       - { from: i64, to: f64 }
+      # f80 (bd 3c6m.5): unsigned int → long-double. uitofp INCLUDES i1.
+      - { from: i1,  to: f80 }
+      - { from: i8,  to: f80 }
+      - { from: i16, to: f80 }
+      - { from: i32, to: f80 }
+      - { from: i64, to: f80 }
   - opcode: fptosi
     kind: fp_to_int
     llvm_inst: "llvm::Instruction::FPToSI"
@@ -346,6 +364,12 @@ cast_opcodes:
       - { from: f64, to: i16 }
       - { from: f64, to: i32 }
       - { from: f64, to: i64 }
+      # f80 (bd 3c6m.5): long-double → signed int, mirroring {f16,f32,f64}→int.
+      # fptosi excludes i1 (no signed bool). The f80 SOURCE is a tainted handle.
+      - { from: f80, to: i8  }
+      - { from: f80, to: i16 }
+      - { from: f80, to: i32 }
+      - { from: f80, to: i64 }
   - opcode: fptoui
     kind: fp_to_int
     llvm_inst: "llvm::Instruction::FPToUI"
@@ -367,4 +391,10 @@ cast_opcodes:
       - { from: f64, to: i16 }
       - { from: f64, to: i32 }
       - { from: f64, to: i64 }
+      # f80 (bd 3c6m.5): long-double → unsigned int. fptoui INCLUDES i1 target.
+      - { from: f80, to: i1  }
+      - { from: f80, to: i8  }
+      - { from: f80, to: i16 }
+      - { from: f80, to: i32 }
+      - { from: f80, to: i64 }
 # -- End of opcode table -------------------------------------------------------

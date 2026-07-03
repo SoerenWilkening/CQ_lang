@@ -192,6 +192,26 @@ add_test(NAME e2e-slice-control-select-loop
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_loop.expected.log")
 
+# bd 3c6m.5: cross-domain int<->long-double casts. Two direction slices — the
+# LINK-proof that the 18 new int<->f80 cast symbols resolve + signature-match the
+# runtime. A non-integer f80 factor (1.5L) keeps clang -O1 from folding the cast
+# away (a ×2.0 round-trip collapses to `shl`, Rule 9).
+add_test(NAME e2e-slice-cast-int-to-f80
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_cast_int_to_f80.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_cast_int_to_f80.expected.log")
+
+add_test(NAME e2e-slice-cast-f80-to-int
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_cast_f80_to_int.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_cast_f80_to_int.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.

@@ -100,18 +100,21 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_2261(self):
+    def test_total_symbol_count_is_2315(self):
         # 1562 baseline -> 1732 (f16, Increment D) -> 1947 (i128 Tier-1 +215) ->
         # 2091 (8rvn fcmp predicate fill +144). bd 3c6m.4 adds ONE long-double fp
         # width f80 to EVERY fp row + the fp-WIDTH cast grid (NOT the cross-domain
-        # int<->fp casts — fenced in castInScope, parallel to the i128<->fp
-        # deferral; f128 is deferred, not shipped — its only sound c_type is a real
-        # 128-bit fp this x86-64 build cannot compile):
+        # int<->fp casts — then fenced in castInScope; f128 stays deferred — its
+        # only sound c_type is a real 128-bit fp this x86-64 build cannot compile):
         #   fp_arith +1 width: fadd 10v + fmul 10v + fsub/fdiv/frem 15v each = 65
         #     -> +65; fneg 3v -> +3; fcmp 14 preds x 6v = 84 -> +84; fpext +3 pairs
         #     (f16/f32/f64->f80) & fptrunc +3 pairs (f80->f16/f32/f64) x 3 -> +18.
         #   +65 + 3 + 84 + 18 = +170 over 2091 -> 2261.
-        self.assertEqual(len(self.h_decls), 2261)
+        # bd 3c6m.5 LIFTS the cross-domain int<->f80 fence (i128<->fp stays fenced):
+        #   sitofp +4 pairs ({i8,i16,i32,i64}->f80), uitofp +5 (i1 too), fptosi +4
+        #   (f80->{i8,i16,i32,i64}), fptoui +5 (i1 too) = 18 pairs x {fwd,inv,unc}
+        #   = +54 over 2261 -> 2315.
+        self.assertEqual(len(self.h_decls), 2315)
 
     def test_unc_family_is_void_in_place(self):
         """PRD §2.3 / DD-3: the `_unc` uncompute family is VOID and in-place.

@@ -824,7 +824,15 @@ increments, **only 7.1's wide-integer widths + curated `llvm.*` intrinsic table,
 *frozen* runtime ABI**; the rest (control flow) reuses the existing `cqrt_*` /
 `cq_template_*` surface. (The post-core `8h7d` widening kjd1 — fp-DATA select,
 2026-07-02 — later added one more frozen-designate family:
-`cqrt_copy_f{16,32,64,80}_controlled`, `fp-data-select-PRD.md` §7.) That is the load-bearing reason the freeze (now Phase 11)
+`cqrt_copy_f{16,32,64,80}_controlled`, `fp-data-select-PRD.md` §7.) (The
+math-demo epic `3c6m` grows the **generated** `cq_template_*` surface — 3c6m.4
+added the long-double f80 fp-width rows + fpext/fptrunc grid, and 3c6m.5
+(2026-07-03) added the cross-domain int↔f80 casts (`cq_template_{sitofp,uitofp,
+fptosi,fptoui}_*_f80`, 2261→2315 symbols) — but adds **no new hand-written
+`cqrt_*` family**: casts are arity-1 `i32`-handle-in/out, so f80's `long double`
+c_type never materializes, and the surface is gated by the `opcode_table.yaml`
+SHA + the `gen_templates_test` count, not a new ABI family. i128↔fp and f128
+stay fenced/deferred.) That is the load-bearing reason the freeze (now Phase 11)
 moves back: the ABI is gated on the QRAM memory model, the integer-width +
 intrinsic-surface decisions, and the I/O tape ABI, **not** on the control-flow
 work — which could in principle evolve even post-freeze. This phase

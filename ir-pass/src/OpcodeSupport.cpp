@@ -137,22 +137,22 @@ bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
   // `sitofp i128`/`fptoui ... to i128`/etc. must DECLINE, never mint a phantom
   // cq_template_sitofp_i128_* the YAML does not carry. (intBits now knows i128,
   // so without these guards the generic `fi && tf` would wrongly accept it.)
-  // f80 is EXCLUDED from cross-domain the SAME way (bd 3c6m.4): it ships the
-  // fp-WIDTH grid (fpext/fptrunc) ONLY — long double <-> int is a distinct,
-  // un-shipped feature (parallel to the i128<->fp deferral). fpBits now knows
-  // f80, so without these guards the generic `fi && tf` / `ff && ti` would
-  // wrongly accept `sitofp i32 to f80`, `fptosi f80 to i32`, etc. and mint a
-  // phantom cq_template_sitofp_i32_to_f80_* the YAML does not carry. (f128 is
-  // not in fpBits at all, so it can never reach these branches.)
-  auto isWideFp = [](StringRef w) { return w == "f80"; };
+  // f80 (long double on x86-64) IS in scope for cross-domain since bd 3c6m.5:
+  // the YAML now carries int<->f80 pairs ({i8,i16,i32,i64}<->f80 for the signed
+  // forms, +i1 for the unsigned forms). Casts are arity-1 (i32 handle in/out,
+  // Rule 15), so f80's `long double` c_type NEVER materializes in a cast body —
+  // the f128 c_type hazard (long double != fp128 off-x86) categorically cannot
+  // reach a cast. f128 itself is NOT in fpBits (abiWidthFromType returns "" =>
+  // ff/tf are 0), so it can never reach these branches; the i128 guards keep
+  // i128<->fp declining (i128 ships integer WIDTH casts only, n0ui Tier-1).
   if (op == "sitofp")
-    return fi && tf && fromW != "i1" && fromW != "i128" && !isWideFp(toW);
+    return fi && tf && fromW != "i1" && fromW != "i128";
   if (op == "uitofp")
-    return fi && tf && fromW != "i128" && !isWideFp(toW);
+    return fi && tf && fromW != "i128";
   if (op == "fptosi")
-    return ff && ti && toW != "i1" && toW != "i128" && !isWideFp(fromW);
+    return ff && ti && toW != "i1" && toW != "i128";
   if (op == "fptoui")
-    return ff && ti && toW != "i128" && !isWideFp(fromW);
+    return ff && ti && toW != "i128";
   return false;
 }
 
