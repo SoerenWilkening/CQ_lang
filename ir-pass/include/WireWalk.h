@@ -15,21 +15,33 @@
 // is the only reliable evidence.
 //
 // Two consumers, two modes:
-//   * ArmClassify::wireGainsNonDiagonalGate — POSITION-FREE (`EmitPoint`
-//     null): ANY theta user on the condition's provenance wire declines the
-//     region (the flag mint at the branch would read a post-Ry basis;
-//     over-decline accepted as safe — Prime Directive). Does NOT cross
-//     PHINodes/selects, preserving the documented ArmClassify boundary (a
-//     PHI-mediated post-region theta is unreachable by design there).
-//   * OpcodeLowering::declineStaleRecordOps — POSITION-AWARE (`EmitPoint` +
-//     `DT` given): a theta is harmless iff it is PROVABLY emitted after every
-//     execution of the op's template (`DT->dominates(EmitPoint, T)` — every
-//     path to T already executed the template — AND
-//     `!isPotentiallyReachable(T, EmitPoint)` — once T fired, the template
-//     never re-executes, closing the loop-iteration-2 staleness). This mode
-//     DOES cross PHINodes and select value-operands (`CrossValueRouting`):
-//     they route the same physical handle, so a theta behind them is still an
-//     in-place gate on a wire the operand may denote.
+//   * POSITION-FREE (`EmitPoint` null) — the detection-time guards
+//     (ArmClassify::wireGainsNonDiagonalGate + the value-arm routed-base
+//     check, SwitchClassify G10, SwitchArmProve's routed base, SelectClassify
+//     GATE 2c): ANY theta user on the guarded wire declines the region (the
+//     flag/route mint would read a post-Ry basis; over-decline accepted as
+//     safe — Prime Directive).
+//   * POSITION-AWARE (`EmitPoint` + `DT` given) —
+//     OpcodeLowering::declineStaleRecordOps: a theta is harmless iff it is
+//     PROVABLY emitted after every execution of the op's template
+//     (`DT->dominates(EmitPoint, T)` — every path to T already executed the
+//     template — AND `!isPotentiallyReachable(T, EmitPoint)` — once T fired,
+//     the template never re-executes, closing the loop-iteration-2
+//     staleness).
+//
+// `CrossValueRouting` (PHINode / select value-operand edges — they route the
+// SAME physical handle, so a theta behind them is still an in-place gate on a
+// wire the seed may denote) is TRUE at EVERY caller since bd tayx
+// (2026-07-03). The old router-blind detection mode was justified by "a
+// PHI-mediated post-region theta is unreachable by design", which covered
+// post-region routing only: a chained theta reaching the wire through a
+// PRE-compare one-register router phi was probe-proven to evade the
+// position-free guards on the phase-diamond, phase-switch, and select paths
+// (verify-clean stale flag mints; kjd1 clearance E1/E4 + bd tayx; fixtures
+// control_swap_reject_stalecond_router_diamond.ll,
+// control_swap_reject_switch_stalecond_router.ll,
+// control_swap_reject_select_stalecond_phi_routed.ll). The flag is retained
+// in the signature for the walk's semantics, not as a live policy choice.
 
 #ifndef CQ_IRPASS_WIRE_WALK_H_
 #define CQ_IRPASS_WIRE_WALK_H_

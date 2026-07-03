@@ -412,10 +412,26 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   //       the same physical handle, so the walk must cross it. The
   //       pass-wide stale-record guard deliberately excludes select-condition
   //       compares (OpcodeLowering inLowerOpsScope), so there is NO backstop;
-  //   (b) an unbounded cross-block gap between compare and select declines
-  //       conservatively (cannot bound the scan — Prime Directive);
-  //   (c) positional: any tainted-operand cq_theta between the compare and
-  //       the select declines, even on another wire (over-decline is safe).
+  //   (b) REVISED (9ymx owner decision 2026-07-03 — conditionals in loops are
+  //       allowed): a cross-block compare no longer blanket-declines. The
+  //       -O1-natural in-loop ternary LICM-hoists its loop-invariant compare
+  //       into the guard/preheader block while the select stays in the body,
+  //       so the first-cut "cannot bound the positional scan" decline
+  //       mis-branded every theta-free loop conditional as stale. Dropping it
+  //       is SOUND: prong (a) is position-free with NO window — any
+  //       off-ancestry theta on the condition's provenance wire declines
+  //       wherever it sits — and the positional prong only ever added
+  //       OTHER-wire conservatism, which cannot stale this flag (a gate on
+  //       another register does not move the condition wire's basis, so the
+  //       per-iteration mint still equals the source compare). SSA dominance
+  //       guarantees the compare executes before the select on every path;
+  //       operand staleness is gate 5's (wire-anchored, position-free).
+  //       Pinned by control_swap_select_inloop_hoisted_cond.ll + the
+  //       slice_control_select_loop e2e golden;
+  //   (c) positional, SAME-BLOCK only (the ArmClassify-mirror conservatism,
+  //       kept where its window is bounded): any tainted-operand cq_theta
+  //       between the compare and the select declines, even on another wire
+  //       (over-decline is safe).
   // A diagonal gate (cq_phi/Rz) preserves the basis, so the mint still equals
   // the source compare — phase on the condition wire is gate 5's concern for
   // OPERANDS only, never a staleness (the rz-diag-flag-strip invariant).
@@ -435,20 +451,18 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
     if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true))
       return diagnoseUnderControl(Sel,
                                   "condition predates a non-diagonal gate");
-    if (Cond->getParent() != Sel->getParent())
-      return diagnoseUnderControl(Sel,
-                                  "condition predates a non-diagonal gate");
-    for (const Instruction *I = Cond->getNextNode(); I && I != Sel;
-         I = I->getNextNode()) {
-      const auto *CI = dyn_cast<CallInst>(I);
-      if (!CI)
-        continue;
-      const Function *F = CI->getCalledFunction();
-      if (F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
-          taint.Tainted.count(CI->getArgOperand(0)))
-        return diagnoseUnderControl(Sel,
-                                    "condition predates a non-diagonal gate");
-    }
+    if (Cond->getParent() == Sel->getParent())
+      for (const Instruction *I = Cond->getNextNode(); I && I != Sel;
+           I = I->getNextNode()) {
+        const auto *CI = dyn_cast<CallInst>(I);
+        if (!CI)
+          continue;
+        const Function *F = CI->getCalledFunction();
+        if (F && F->getName().starts_with("cq_theta_") &&
+            CI->arg_size() >= 1 && taint.Tainted.count(CI->getArgOperand(0)))
+          return diagnoseUnderControl(
+              Sel, "condition predates a non-diagonal gate");
+      }
   }
 
   // GATE 3 — the §3.2 BLOCKER: NOT an angle. FIRST among the type gates (the

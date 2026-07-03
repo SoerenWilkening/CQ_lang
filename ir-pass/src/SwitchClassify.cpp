@@ -330,7 +330,15 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
   // G10 — scrutinee data-use discipline (v1 floor, IMPLEMENTATION-4.5 open-Q-9).
   // A non-diagonal (Ry/theta) gate on the scrutinee's wire would change `q`'s
   // basis around the switch, so the eq-flags read a stale value.
-  if (findNonDiagonalWireGate({Q}, /*CrossValueRouting=*/false))
+  // CrossValueRouting=TRUE since bd tayx (2026-07-03): a chained theta whose
+  // arg-0 reaches the scrutinee's wire only through a one-register router phi
+  // ON AN OLD ALIAS (`q = theta(q0)`; router of `q0`) evaded the router-blind
+  // walk AND the unowned-data-use scan below (which covers users of `q` only,
+  // never `q0`'s) — the phase switch was accepted and every eq-flag minted
+  // AFTER the hidden Ry (verify-clean stale scrutinee; pinned by
+  // control_swap_reject_switch_stalecond_router.ll). A router forwards the
+  // same physical handle; cross it.
+  if (findNonDiagonalWireGate({Q}, /*CrossValueRouting=*/true))
     return diagnoseUnderControl(SI, "condition predates a non-diagonal gate");
   // An UNOWNED data use of the scrutinee (not the switch, not the merge phi, not
   // an escape `ret`, not a measurement) leaves a dirty/entangled rail with no

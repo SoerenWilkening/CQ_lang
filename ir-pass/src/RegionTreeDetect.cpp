@@ -15,6 +15,7 @@
 #include "ControlPlan.h"
 #include "ControlShape.h"
 #include "TaintPropagation.h"
+#include "WireWalk.h"        // findNonDiagonalWireGate (per-level stale guard)
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/BasicBlock.h"
@@ -328,6 +329,49 @@ NestDisposition recoverRegionTree(
   const Value *RailOperand = LhsT ? InnerCmp->getOperand(0) : InnerCmp->getOperand(1);
   if (!RailClosure.count(RailOperand))
     return diagnoseUnderControl(OuterBI, "nested control flow"),
+           NestDisposition::Declined;
+
+  // Per-level STALE-CONDITION wire guard (bd tayx Rule-13 clearance, the p16
+  // probe family — a REAL verify-clean hole this path carried since 4.3): the
+  // nested dispatch BYPASSES classifyArms, so neither condition ever reached
+  // nonDiagonalGateBeforeBranch, and the criteria above walk the inner
+  // provenance only against the RAIL closure — no wire is checked for a
+  // non-diagonal gate. A chained cq_theta re-rotating a condition's wire
+  // before its compare (DIRECT or hidden behind a one-register router phi)
+  // let that level's flag mint read the post-Ry basis while the SSA condition
+  // denoted the pre-Ry record: the routed nested stream emitted verify-clean,
+  // plain-C-reachable at -O1 (control_swap_reject_nested_stalecond_*.ll).
+  // Mirror the flat guard PER LEVEL (Rule 14): the position-free,
+  // router-crossing wire walk over the condition's tainted provenance (any
+  // off-ancestry theta on the wire declines, no window — routers forward the
+  // same physical handle, the tayx posture) plus the bounded positional
+  // compare->branch scan for tainted-operand thetas (same-block; a
+  // cross-block compare declines conservatively, exactly as ArmClassify).
+  const auto staleCond = [&Taint](Value *CondV, BranchInst *BI) -> bool {
+    SmallPtrSet<Value *, 16> Prov;
+    condProvenance(CondV, Taint, Prov);
+    SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
+    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true))
+      return true;  // theta on the condition's wire — the mint would be stale.
+    auto *Cond = dyn_cast<Instruction>(CondV);
+    if (!Cond || Cond->getParent() != BI->getParent())
+      return true;  // cannot bound the positional scan — conservative decline.
+    for (const Instruction *I = Cond->getNextNode(); I && I != BI;
+         I = I->getNextNode()) {
+      const auto *CI = dyn_cast<CallInst>(I);
+      if (!CI)
+        continue;
+      const Function *F = CI->getCalledFunction();
+      if (F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
+          Taint.Tainted.count(CI->getArgOperand(0)))
+        return true;  // chained Ry between the compare and its branch.
+    }
+    return false;
+  };
+  if (staleCond(OuterBI->getCondition(), OuterBI) ||
+      staleCond(InnerCond, InnerBI))
+    return diagnoseUnderControl(OuterBI,
+                                "condition predates a non-diagonal gate"),
            NestDisposition::Declined;
 
   // ACCEPT — the proven depth-2 homogeneous-phase nest. Push the Outer (Depth 0)

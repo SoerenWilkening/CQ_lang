@@ -417,8 +417,24 @@ namespace {
 // the compare's own schedule, so no positional accept is possible here — any
 // theta on the wire declines.
 bool wireGainsNonDiagonalGate(const SmallPtrSetImpl<Value *> &Prov) {
+  // CrossValueRouting=TRUE since bd tayx (2026-07-03): the router-blind walk
+  // was EVADED by a chained theta whose arg-0 reaches the condition's
+  // provenance wire only through a one-register value-routing phi positioned
+  // BEFORE the compare — outside nonDiagonalGateBeforeBranch's positional
+  // window and invisible to the router-blind forward walk, so the phase-arm
+  // diamond was ACCEPTED and emitted its routed stream over a stale flag
+  // (verify-clean wrong unitary; kjd1 post-fix round probe p11, pinned by
+  // control_swap_reject_stalecond_router_diamond.ll). A router forwards the
+  // same physical handle, so the walk must cross it — the identical fix as
+  // the select mirror's GATE 2c (SelectClassify). This supersedes the old
+  // "PHI-mediated post-region theta is unreachable by design" boundary note:
+  // that rationale covered POST-region routing only and never considered the
+  // pre-compare router; crossing also aligns the two SSA spellings of one
+  // unitary (the DIRECT post-region theta already declined — over-decline,
+  // safe — so the phi-mediated spelling declining too is consistency, not a
+  // regression; no shipped accept fixture routes a theta through a phi).
   SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
-  return findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/false) !=
+  return findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true) !=
          nullptr;
 }
 
@@ -973,8 +989,16 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // WireWalk core itself since test_C_libtooling-6j1 (the straight-line
         // twin of this guard) — `Routed` alone seeds the full backward
         // `cq_phi` chain.
+        // CrossValueRouting=TRUE since bd tayx (uniform router posture; Rule
+        // 14): a router phi forwards the same physical handle. For THIS value
+        // path the flip is belt-and-braces — the router spelling's arm ops
+        // read the stale wire and the PRE-detect `declineStaleRecordOps`
+        // (position-aware, router-crossing) declines it first (pinned by
+        // control_swap_reject_value_diamond_router_base_backstop.ll) — but
+        // detection must not depend on that backstop coincidence (the same
+        // principle the SwitchArmProve twin records).
         if (CallInst *Gate = findNonDiagonalWireGate(
-                Routed, /*CrossValueRouting=*/false)) {
+                Routed, /*CrossValueRouting=*/true)) {
           diagnoseUnderControl(Gate,
                                "routed base predates a non-diagonal gate");
           return ArmDisposition::Declined;

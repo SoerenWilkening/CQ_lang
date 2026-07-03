@@ -192,11 +192,46 @@ uncontrolled-copy follow-on), and §5-row-1's bitcast/freeze/nested-select
 carriers stay pinned by the integer-era GATE-3 fixtures (the new fp fixture
 exercises the fpext carrier + the fan-out rule).
 
-**Final tallies:** 2 rounds, 32 agents, ~2.3M tokens, 60+ probes. 5 defects
-found and fixed in-change (D1–D3, E1–E2), 2 adjacent pre-existing defects
-filed (`tayx`, `4i7r`), 2 process follow-ons filed (`9ymx` in-loop select
-owner decision, `52oi` condition-width branding). Every fix is
-decline-monotone; the full suite (610 lit + 59 ctest incl. e2e goldens) is
-green post-fix. The un-staged fp accept surface itself survived every attack
-on its own terms (angle fence, basis-copy physics, fcmp mint/strip, scope
-containment, uncompute shape, f80 ABI).
+## Postscript — the follow-ons landed (2026-07-03, bd tayx + 9ymx)
+
+A third adversarial round (3 refute-default skeptics, ~470k tokens, 30+
+probes) cleared the follow-up change set:
+
+- **bd `tayx` FIXED**: `CrossValueRouting=true` at all four detection-time
+  WireWalk sites (both ArmClassify sites, SwitchClassify G10, SwitchArmProve;
+  the select was already true). The router-hidden pre-compare theta now
+  declines on the phase-diamond and phase-switch paths (fixtures
+  `control_swap_reject_stalecond_router_diamond.ll`,
+  `control_swap_reject_switch_stalecond_router.ll`); the two value paths were
+  already owned by the pre-detect `declineStaleRecordOps` backstop (pinned by
+  the two `*_router_base_backstop.ll` fixtures). The round then found the
+  claim-boundary hole: the **depth-2 nested phase path had NO stale-condition
+  guard at all** (bypasses `classifyArms`; direct AND routed spellings
+  verify-clean, plain-C-reachable — probe p16 family). Fixed with the
+  per-level guard in `RegionTreeDetect` (flat-path mirror; fixtures
+  `control_swap_reject_nested_stalecond_{direct,router}.ll`). Intended
+  over-declines recorded: phi-mediated post-region theta spellings now align
+  with their already-declining direct twins.
+- **bd `9ymx` RESOLVED (owner: option (a), conditionals in loops allowed)**:
+  GATE 2c's cross-block blanket decline removed (prong (a) — position-free,
+  router-crossing — owns condition-wire staleness with no window; the dropped
+  positional conservatism only ever covered other-wire thetas, which cannot
+  move the condition basis). The N3 note above is thereby resolved: the
+  in-loop select accept is documented as intended
+  (`control_swap_select_inloop{,_hoisted_cond}.ll`, e2e
+  `slice_control_select_loop` pinning the per-iteration contract). Skeptic
+  verdicts: the relaxation and the in-loop physics CLEAR (per-iteration
+  mint/strip valid, exactly one flag free per iteration, q never freed,
+  dead out-rails leaked never freed dirty); one safe-direction asymmetry note
+  (same-block other-wire thetas still over-decline via retained prong (c)).
+
+**Final tallies:** 3 rounds, 35 agents, ~2.8M tokens, 90+ probes. 7 defects
+found and fixed across the family (kjd1: D1–D3, E1–E2; tayx: the four-site
+router flip + the guard-less nested path), `4i7r` (fp-freeze crash outside
+select) and `52oi` (condition-width branding) filed and open, `9ymx` resolved
+by owner decision. Every stale/phase fix is decline-monotone; the one
+deliberate accept-widening (the 9ymx cross-block relaxation) was cleared by a
+dedicated refute-default round. The full suite (623 lit + 60 ctest incl. e2e
+goldens) is green post-fix. The un-staged fp accept surface itself survived
+every attack on its own terms (angle fence, basis-copy physics, fcmp
+mint/strip, scope containment, uncompute shape, f80 ABI).

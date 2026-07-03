@@ -476,6 +476,16 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       // precise per-shape string (`rotation angle` / `control flow`). The
       // per-block scan and the tainted-condition entry guard are unchanged; only
       // the body flips from the WI-1 transitional `select` decline.
+      //
+      // Deliberately NO `regionEntryInLoop` guard here (bd 9ymx, owner decision
+      // 2026-07-03: conditionals in loops are ALLOWED): unlike br/switch above,
+      // a select performs no CFG surgery -- there is no flatten to tear across a
+      // backedge (the structural hazard d8jl guards) -- and the per-iteration
+      // merge stream is faithful (fresh flag minted from the loop-invariant
+      // condition wire each iteration, stripped and freed at |0>; a fresh |0>
+      // out rail per iteration; the per-iteration measure is user-written).
+      // Pinned by control_swap_select_inloop{,_hoisted_cond}.ll and the
+      // slice_control_select_loop e2e golden.
       for (Instruction &I : BB)
         if (auto *Sel = dyn_cast<SelectInst>(&I))
           if (taint.Tainted.count(Sel->getCondition()))

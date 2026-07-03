@@ -236,7 +236,13 @@ bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
   // (ArmClassify.cpp:928) so the switch shares the diamond's primary guard rather
   // than relying on the `valuePureChain` / `declineStaleRecordOps` backstop
   // coincidence (Rule 14).
-  if (CallInst *Gate = findNonDiagonalWireGate(P, /*CrossValueRouting=*/false)) {
+  // CrossValueRouting=TRUE since bd tayx (uniform router posture; Rule 14): a
+  // router phi forwards the same physical handle. For this value path the
+  // flip is belt-and-braces — the router spelling's arm ops read the stale
+  // wire and the pre-detect `declineStaleRecordOps` declines it first (pinned
+  // by control_swap_reject_switch_value_router_base_backstop.ll) — exactly
+  // the backstop coincidence this guard exists not to rely on (see above).
+  if (CallInst *Gate = findNonDiagonalWireGate(P, /*CrossValueRouting=*/true)) {
     diagnoseUnderControl(Gate, "routed base predates a non-diagonal gate");
     return false;
   }
