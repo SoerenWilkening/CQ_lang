@@ -1,0 +1,178 @@
+{
+  "fabs": {
+    "status": "COMPILES",
+    "detail": "surviving:[]"
+  },
+  "nearbyint": {
+    "status": "exit0-but-uninlined",
+    "detail": "surviving:['fegetenv']"
+  },
+  "copysign": {
+    "status": "COMPILES",
+    "detail": "surviving:[]"
+  },
+  "sqrt": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee"
+  },
+  "fma": {
+    "status": "decline",
+    "detail": "probe double (): cq specialization: floating-point quantum argument or return has no reve"
+  },
+  "sin": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value stored to memory"
+  },
+  "cos": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value stored to memory"
+  },
+  "tan": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value stored to memory"
+  },
+  "exp": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction"
+  },
+  "exp2": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction"
+  },
+  "log": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "log2": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction"
+  },
+  "log10": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction"
+  },
+  "asin": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "acos": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "atan": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "sinh": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "cosh": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "tanh": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "asinh": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "acosh": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "atanh": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "expm1": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "log1p": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "logb": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "cbrt": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "floor": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "trunc": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "round": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "ceil": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "rint": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction"
+  },
+  "atan2": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "pow": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "remainder": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "fdim": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: control flow under quantum control"
+  },
+  "scalbn": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee"
+  },
+  "hypot": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "fmod": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction"
+  },
+  "fmax": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "fmin": {
+    "status": "decline",
+    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  },
+  "nextafter": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value stored to memory"
+  },
+  "erf": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction"
+  },
+  "erfc": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction"
+  },
+  "lgamma": {
+    "status": "exit0-but-uninlined",
+    "detail": "surviving:['lgamma']"
+  }
+}

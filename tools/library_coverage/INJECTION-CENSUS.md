@@ -95,14 +95,43 @@ surfaced the **only opcode-ish gap** in the whole census — a missing template 
   taint-escape guard for `memory(none)` externals and should be investigated independently of
   this census (Prime Directive).
 
+## Re-measurement 2026-07-03 (post kjd1 + 9ymx fp-select/loop work) — NET ZERO movement
+
+The fp-DATA select un-staging (kjd1) and in-loop select accept (9ymx) landed on
+`injection-census` 2026-07-03. Both target **blocker #1** (control flow). Re-ran this
+census on the current pass via the now-**reproducible** harness `inject_census.py`
+(the original was manual — that gap is now closed):
+
+| Outcome | Count | vs 2026-07-02 baseline |
+|---|---:|---|
+| ✅ **COMPILES** (fully inlined + lowers) | **2** (`fabs`, `copysign`) | 3 → 2–3 (`nearbyint` now gated only by a `fegetenv` link-gap in the harness) — **no net change** |
+| ❌ **nested** control flow under quantum control | 24 | the transcendentals (`asin acos atan sinh…atan2 pow hypot fmax fmin log`) |
+| ❌ tainted store to memory (Shadow) | 4 | `sin cos tan nextafter` |
+| ❌ unsupported instruction | 8 | `exp exp2 log2 log10 rint fmod erf erfc` |
+| ❌ uninlined kernel / self-ref (harness gap) | 4 | `sqrt scalbn lgamma nearbyint` |
+
+**The fp-select unlock moved 0 functions into COMPILES.** Verified the bodies genuinely
+inline and taint reaches the internals (e.g. `atan` fully inlines to 21 fp-arith opcodes +
+10 branches, then declines at a **nested** tainted branch). kjd1 unlocked *single-level*
+tainted fp `select` (clang -O1 flattens a lone `?:`); openlibm's real range reduction is
+*multi-level* `if/br` (decline reason is literally "**nested** control flow under quantum
+control"), which the 4.4/4.5 single-diamond/switch shapes don't match. **Consequence
+(unchanged): off-the-shelf branchy libm is still blocked by nested control flow + scratch
+memory; the unlock only pays off with BRANCHLESS-authored bodies** (the
+`math-source-injection-opcode-lowering` bd memory's thesis). Raw per-fn results:
+`inject_results.json`.
+
 ## Reproduce
 
 Requires cloning openlibm (not a runtime dependency — a one-time source fetch; the shipped
-compiler would vendor its own injectable soft-lib and never download):
+compiler would vendor its own injectable soft-lib and never download). The
+`inject_census.py` harness automates the per-function pipeline; its module docstring has the
+exact bitcode-corpus build commands:
 
 ```
-git clone --depth 1 https://github.com/JuliaMath/openlibm
-# build src/*.c to bitcode (-I include -I src -I amd64 -I bsdsrc), force alwaysinline,
-# per-function dependency-closure link, then: clang -fno-builtin-<fn> -> llvm-link ->
-# opt 'internalize,always-inline,globaldce,default<O2>' -> opt -passes=cq-lowering
+git clone --depth 1 https://github.com/JuliaMath/openlibm <scratch>/openlibm
+# build src/*.c + bsdsrc/*.c to bitcode (-I include -I src -I amd64 -I bsdsrc) into <scratch>/bc,
+# then: BC=<scratch>/bc python3 tools/library_coverage/inject_census.py
+# (per-function: clang -fno-builtin-<fn> -> iterative closure llvm-link ->
+#  opt 'internalize,always-inline,globaldce,default<O2>' -> opt -passes=cq-lowering)
 ```
