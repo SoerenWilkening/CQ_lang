@@ -78,6 +78,60 @@ bool declineTaintedAngle(CallInst *Rot, const TaintSet &taint) {
   return true;
 }
 
+// Frozen-quantum-wire guard (test_C_libtooling-4i7r): a tainted `FreezeInst`
+// whose result type is NOT `i32` is UN-LAUNDERABLE. The runtime handle is
+// ALWAYS i32 (Rule 15); every lowering path RAUWs a tainted quantum value to a
+// `cqrt_alloc_*` / `cq_template_*` i32 handle — but a `freeze` is NEVER erased
+// by any stage (`declineTaintEscapes` SKIPS an fp freeze so it can ride the
+// GATE-3 angle fence; it is never folded). So once the wire under it is
+// RAUW'd, `%f = freeze <fp> %handle` is ill-typed AND any `cqrt_*`/`cq_template_*`
+// call reading `%f` gets an fp value in an i32 handle slot. With no
+// measure/uncompute owner (a dead sibling while the wire is measured/escaped
+// elsewhere) NOTHING declines it and `opt` ABORTS on the broken module
+// (SIGABRT 134, "Call parameter type does not match function signature")
+// instead of the house decline — a crash on VALID input (Rule 1). Scan and
+// decline BEFORE the first RAUW so every freeze stays well-typed and `opt`
+// exits with the source-located diagnostic, never a crash.
+//
+// COMPLETENESS: a tainted value derives (transitively) from a `@cq_theta`
+// result — the sole taint source — whose lowering yields an i32 handle, so a
+// tainted freeze at a non-i32 result type is invariably inconsistent with that
+// i32 handle and cannot be lowered. An i32 tainted freeze self-launders
+// (`freeze i32 %handle` is well-typed) and is not flagged; a non-i32 INTEGER
+// freeze is already declined upstream at `declineTaintEscapes` (kMsgOther, the
+// non-foldable `freezeResultWouldEscape` path) so in practice only fp freezes
+// reach here — the `!isIntegerTy(32)` test is defensively complete for any
+// non-i32 remnant. A CLASSICAL freeze (untainted) is left untouched (its
+// operand keeps its own type across every RAUW).
+//
+// FIXTURE INVARIANT: the SELECT-mediated fp-freeze spellings decline EARLIER at
+// `detectControlRegions` (which runs strictly before `lowerRotations`) — the
+// kjd1 operand/condition fences (`taintedLineageHasFreeze` + the
+// condition-provenance `FreezeInst` scan) and the GATE-3 angle walk
+// (`selReachesRotationArg1`) — so this guard NEVER fires on those four fixtures
+// (`control_swap_reject_select_fp_freeze_{operand,cond}.ll`,
+// `control_swap_reject_select_freeze.ll`,
+// `control_swap_reject_freeze_phi_angle.ll`); it owns ONLY the straight-line
+// frozen-wire shape the detection fences never see. Walk in BB order for a
+// deterministic, source-located first report (the DS_Error diagnose exits).
+bool declineFrozenWire(Module &M, const TaintSet &taint) {
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB)
+        if (auto *FI = dyn_cast<FreezeInst>(&I))
+          if (taint.Tainted.count(FI) && !FI->getType()->isIntegerTy(32)) {
+            F.getContext().diagnose(DiagnosticInfoUnsupported(
+                F,
+                "cq rotation lowering: unsupported frozen quantum wire",
+                FI->getDebugLoc()));
+            return true;
+          }
+  }
+  return false;
+}
+
 }  // namespace
 
 bool emitRz(CallInst *Phi, Value *Handle, Value *Angle, WidthDispatch &wd,
@@ -114,8 +168,15 @@ bool emitRz(CallInst *Phi, Value *Handle, Value *Angle, WidthDispatch &wd,
 
 void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
                     const ControlPlan *plan) {
-  (void)M;
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty())
+    return;
+
+  // Frozen-quantum-wire guard (test_C_libtooling-4i7r): decline any tainted
+  // non-i32 `freeze` BEFORE the cross-type RAUW-to-handle below breaks it into a
+  // verify-clean-invisible SIGABRT. See `declineFrozenWire` for the invariant.
+  // The DS_Error diagnose exits `opt` non-zero; return is a belt-and-braces
+  // "lower nothing" for any future non-exiting diagnostic handler.
+  if (declineFrozenWire(M, taint))
     return;
 
   IRBuilder<> Builder(wd.context());

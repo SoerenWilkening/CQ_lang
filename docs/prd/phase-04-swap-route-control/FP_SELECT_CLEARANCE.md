@@ -177,9 +177,25 @@ radius):**
   4.1 path; the kjd1 select mirror is fixed, the diamond fix needs its own
   Rule-13 clearance (also audit the same-flag callers in SwitchClassify /
   SwitchArmProve).
-- **E5 — [note → bd `4i7r`, P2]** the fp-freeze wire-hop is unmodeled outside
-  the select path: the dead-theta freeze-carrier spelling SIGABRTs
-  (loud-and-safe, never exit 0, but a crash instead of the house decline).
+- **E5 — [RESOLVED, bd `4i7r`, 2026-07-03]** the fp-freeze wire-hop outside the
+  select path (the dead-theta freeze-carrier spelling SIGABRT'd instead of
+  declining). FIXED by `RotationLowering::declineFrozenWire`: a pre-RAUW module
+  scan at the top of `lowerRotations` that loud-declines EVERY tainted non-i32
+  `FreezeInst` ("cq rotation lowering: unsupported frozen quantum wire") before
+  the cross-type RAUW-to-i32-handle can break it. The invariant is width, not
+  fp: the runtime handle is ALWAYS i32 (Rule 15), so any tainted freeze at a
+  non-i32 result type is un-launderable (integer non-i32 freezes already decline
+  upstream at `declineTaintEscapes`; the four select/angle fp-freeze fixtures
+  decline earlier at detection, so their brands are untouched — the guard runs
+  strictly after `detectControlRegions`). Rule-13-cleared (6-lens adversarial
+  workflow, ~860k tokens, 0 freeze-guard holes; before/after pass builds proved
+  zero accept→decline regressions and the intended 134→decline flip). The round
+  ALSO surfaced an ORTHOGONAL, pre-existing over-accept of the SAME class (a
+  taint-gated guard missing an UNTAINTED non-i32 quantum-controlled value RAUW'd
+  to an i32 handle) but via `ret`, not `freeze`: the Phase-6.5 classical-call arm
+  accepts an i64 untainted merge phi (`int64_t y=5; if(q>3) y=f(a); return y;`)
+  and SIGABRTs on `ret i64` — filed as bd `8mld` (P2, needs its own clearance;
+  audit `SelectMergeEmit` / value-arm merges for the same ret-escape blind spot).
 
 **Completeness critic:** §5 decline matrix 100% pinned with exact strings
 (after adding the one gap it found — the §5.9c AbortPark fp leg, now
