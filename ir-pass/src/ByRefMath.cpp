@@ -323,11 +323,32 @@ bool lowerByRefMath(Module &M, WidthDispatch &wd, TaintSet &taint,
       }
 
       // ---- Tear down the memory cell (loads, dead pre-call stores, call,
-      //      lifetimes, alloca). -------------------------------------------
-      for (LoadInst *LD : Loads)
+      //      lifetimes, alloca). SCRUB each erased instruction from the taint
+      //      side-tables FIRST (bd 0vvq): the dugh round-2 re-run
+      //      (`repropagateControlMerges`) seeds its re-propagation work-list from
+      //      the live `taint.Tainted` set, so a freed `Instruction*` left there is
+      //      a use-after-free. Harmless at the step-2 fixpoint (its full
+      //      re-`propagate` rebuilds `Tainted` from scratch, so a stale entry is
+      //      dropped anyway) — but LIVE in round 2. ALL THREE erased kinds must be
+      //      scrubbed: the STORE scrub is load-bearing (Rule-13 UAF, 3-lens
+      //      convergence) — a dead pre-call whole-cell store `store %out, %cell`
+      //      whose VALUE is the round-2 control-merge rail IS in `Tainted` (a plain
+      //      user of the tainted `%out`), so erasing it un-scrubbed dangles a freed
+      //      `StoreInst*` the re-seed then dereferences via `V->users()`. A load
+      //      reads the classical cell pointer so it is never tainted, but scrub it
+      //      too (erase-from-set is a no-op when absent). ---------------------
+      for (LoadInst *LD : Loads) {
+        taint.Tainted.erase(LD);
+        taint.HandleWidth.erase(LD);
         LD->eraseFromParent();
-      for (StoreInst *ST : Stores)
+      }
+      for (StoreInst *ST : Stores) {
+        taint.Tainted.erase(ST);
+        taint.HandleWidth.erase(ST);
         ST->eraseFromParent();
+      }
+      taint.Tainted.erase(CI);
+      taint.HandleWidth.erase(CI);
       CI->eraseFromParent();
       for (Instruction *LT : Lifetimes)
         LT->eraseFromParent();

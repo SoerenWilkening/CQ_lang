@@ -729,6 +729,26 @@ add_test(NAME e2e-slice-classical-call-under-control
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_caller.expected.log")
 
+# bd 0vvq Increment 1 (the by-ref UNFREEZE): a 6.5 classical-call arm builds an
+# UNTAINTED merge %out (i32) that then feeds an ONWARD by-ref libm call frexp on the
+# merged register. dugh's `repropagateControlMerges` RE-RUNS `lowerByRefMath` after
+# the diamond is flattened, so the round-2-tainted frexp lowers to the
+# cq_template_frexp_f64 / cq_template_frexpexp_f64_to_i32 producers (its mantissa +
+# exponent, both reversible functions of %out) instead of the frozen-plan
+# over-decline. The ONLY layer that LINK-proves those re-run markers resolve +
+# signature-match against libcq_runtime (Rule 2/16). Reuses
+# classical_call_under_control_lib.c for the visible pure `ext_f`. The `cq_measure(y)`
+# keeps the merge i32 (else clang -O1 sinks the (double)y cast into the arm -> fp
+# phi). Pinned by control_classical_call_arm_accept_onward_byref_math.ll.
+add_test(NAME e2e-slice-control-byref-frexp
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_byref_frexp_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_byref_frexp_caller.expected.log")
+
 # Phase 7.6 (test_C_libtooling-9x4z.1): the reversible I/O output tape. The only
 # layer that LINKS — and 7.6 adds NEW frozen hand-written core symbols, so this
 # golden is the ONLY proof cqrt_tape_alloc + cqrt_tape_write_<W> resolve and

@@ -1215,9 +1215,9 @@ void declineReClassifiedControl(Module &M, TaintSet &taint) {
 // `%out`-derivation) as an argument. A "frozen-plan" lowering is one whose per-call
 // plan/transform is FIXED before `repropagateControlMerges` runs, so a round-2
 // argument it never saw is silently mishandled — the `declineTaintEscapes` carve
-// for that owner would wave it through. Two such owners exist (both carve in
-// `declineTaintEscapes`; both run pre-emit; `g7ip` `lowerByRefInline` is NOT one —
-// it INLINES its producer, leaving no carved call):
+// for that owner would wave it through.
+//
+// ONE such owner remains after bd 0vvq (Increment 1):
 //
 //   * Phase-6 SPECIALIZATION (`shouldSpecialize`, plan from `detectSpecializations`
 //     at step 5). The clone's per-arg quantum/classical MASK is frozen from the
@@ -1226,16 +1226,18 @@ void declineReClassifiedControl(Module &M, TaintSet &taint) {
 //     `exp` a CLASSICAL literal. dugh re-taints `y`(=`%out`), but the frozen mask
 //     makes the `_hl` template read the `%out` QUBIT HANDLE as a literal (a
 //     verify-clean silent miscompile — the handle tag, not the superposed value).
-//   * by-ref MATH (`isByRefMathCall`: frexp/modf/remquo, `lowerByRefMath`/g387 at
-//     step 2). It rewrites only TAINTED by-ref math to `@cq_byref_*` markers; a
-//     round-1-untainted call is left as a raw `frexp(double, ptr)`. dugh re-taints
-//     a `%out`-derived arg (`sitofp %out → frexp`), but `lowerByRefMath` already
-//     ran and will not re-process it — so the carve leaves an un-lowered `frexp`
-//     whose double arg is a lowered i32 handle: a type-mismatched BROKEN MODULE.
+//     UNFREEZING this (the spec-clone re-plan to a Q-mask) is 0vvq Increment 2.
 //
-// Decline HERE, before the round-2 `declineTaintEscapes` carves either, whenever
-// such a call reads a reseed value. Over-decline is safe (Prime Directive): a
-// frozen-plan call consuming a control-merge register is out of dugh's arith/phase
+// by-ref MATH (`isByRefMathCall`: frexp/modf/remquo) was the OTHER frozen-plan
+// owner, but 0vvq Increment 1 RE-RUNS `lowerByRefMath` inside
+// `repropagateControlMerges` (above) on the now-tainted, now-flattened by-ref
+// calls, so a round-2 `%out`-derived `frexp` is LOWERED to `@cq_byref_*` markers
+// (or loud-declined by g387 itself if genuinely off-pattern) — it is no longer
+// frozen, and is intentionally NOT guarded here.
+//
+// Decline HERE, before the round-2 `declineTaintEscapes` carves the spec call,
+// whenever it reads a reseed value. Over-decline is safe (Prime Directive): a
+// frozen-plan clone consuming a control-merge register is out of dugh's arith/phase
 // scope. A round-1-only such call (no reseed operand) is untouched and lowers
 // normally.
 void declineReseedIntoFrozenPlan(Module &M, const TaintSet &taint,
@@ -1247,7 +1249,7 @@ void declineReseedIntoFrozenPlan(Module &M, const TaintSet &taint,
     for (BasicBlock &BB : F)
       for (Instruction &I : BB)
         if (auto *CI = dyn_cast<CallInst>(&I))
-          if (shouldSpecialize(CI, plan6) || isByRefMathCall(CI))
+          if (shouldSpecialize(CI, plan6))
             for (const Use &Op : CI->args())
               if (reseed.count(Op.get())) {
                 diagnoseUnderControl(CI, "control flow");  // DS_Error → exit(1)
@@ -1295,17 +1297,47 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
                                 taint.UntaintedMergeRails.end());
   propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, taint,
                     /*skipRuntimeCalls=*/true);
+
+  // bd 0vvq (Increment 1) — UNFREEZE by-ref math. `lowerByRefMath` (g387) ran at
+  // step 2 and left a merge-fed `frexp`/`modf`/`remquo` RAW (its fp arg was an
+  // untainted classical double then). Now `%out` is tainted AND the
+  // tainted-condition diamond is FLATTENED (`lowerControlRegions` ran before this),
+  // so `analyzeCell`'s `underTaintedControl` check — which declined at round 1 on
+  // the tainted-`br` dominator — now passes, and g387 lowers the call to
+  // `@cq_byref_*` markers exactly as it would a round-1 tainted `frexp`. Re-run to a
+  // FIXPOINT (chained by-ref); after each change re-propagate from the LIVE taint
+  // set (`skipRuntimeCalls=true`) so the new markers and their downstream re-taint —
+  // a `cq_byref_*` marker is a plain user of the tainted fp arg (not a
+  // `cqrt_`/`cq_template_`/measure/angle edge), so `propagateWorklist` taints it.
+  // Seeding from the WHOLE current `Tainted` set (not just the rails) is required:
+  // the marker's fp arg is already tainted, so a rails-only re-seed would not
+  // re-visit it and the new marker would never taint. The `lowerByRefMath` teardown
+  // scrubs each erased instruction from `Tainted`, so this seed carries no freed
+  // pointers. A genuinely off-pattern round-2 by-ref (nested control, loop,
+  // escaping/aliased cell, tainted out-pointer, bad signature) still loud-declines
+  // inside `lowerByRefMath` (Prime Directive preserved). By-ref is NO LONGER a
+  // frozen-plan owner after this — `declineReseedIntoFrozenPlan` below is spec-only.
+  SmallPtrSet<const CallInst *, 8> byRefDeclined2;
+  while (lowerByRefMath(M, wd, taint, byRefDeclined2)) {
+    std::vector<Value *> WL(taint.Tainted.begin(), taint.Tainted.end());
+    propagateWorklist(WL, ThetaFns, PhiFns, MeasureFns, taint,
+                      /*skipRuntimeCalls=*/true);
+  }
+
+  // Round-2 reseed set — computed AFTER the by-ref re-run so a marker result (a new
+  // round-2 tainted value) feeding a Phase-6 spec candidate is caught by
+  // `declineReseedIntoFrozenPlan` below (Increment 2's frozen-plan owner).
   SmallPtrSet<Value *, 32> reseed(taint.UntaintedMergeRails.begin(),
                                   taint.UntaintedMergeRails.end());
   for (Value *V : taint.Tainted)
     if (!beforeTaint.count(V))
       reseed.insert(V);
 
-  // 2. Decline a FROZEN-PLAN call (Phase-6 spec / by-ref math) whose plan was
-  //    fixed pre-emit and cannot accommodate a round-2-quantum `%out` argument
-  //    (else a silent miscompile / a type-mismatched broken module). Must precede
-  //    `declineTaintEscapes`, whose `shouldSpecialize` / `isByRefMathCall` carves
-  //    would let it through.
+  // 2. Decline a FROZEN-PLAN call (Phase-6 spec — the SOLE remaining frozen-plan
+  //    owner after 0vvq Inc 1 re-ran by-ref math above) whose plan was fixed
+  //    pre-emit and cannot accommodate a round-2-quantum `%out` argument (else a
+  //    verify-clean silent miscompile). Must precede `declineTaintEscapes`, whose
+  //    `shouldSpecialize` carve would let it through.
   // 3. Decline a NEW tainted-condition br/switch/select on the merge (hole the
   //    escape net does not cover). Then 4. re-run the escape net (onward
   //    classical escapes decline via the precise messages; onward arith/phase/
@@ -1317,7 +1349,6 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   declineReClassifiedControl(M, taint);
   declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);
-  (void)wd;  // reserved: the guards are width-agnostic on the i32-handle domain.
 }
 
 }  // namespace cq
