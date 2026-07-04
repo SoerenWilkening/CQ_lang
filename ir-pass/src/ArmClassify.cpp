@@ -1205,6 +1205,43 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // `StraightThrough` (the tainted routed base) names that obligation's subject.
   (void)StraightThrough;
 
+  // MERGE-OUT ESCAPE GATE (8mld) — the G6-mirror of the switch data-mux consumer
+  // proof (`proveSwitchDataMux`, SwitchArmProve.cpp). The merge phi is UNTAINTED
+  // (a classical call result + a classical/`q` straight-through), so the ORIGINAL
+  // forward taint propagation never saw it and `declineTaintEscapes` (the pre-
+  // detection ret/store/other net) NEVER fires on it — UNLIKE the value/phase
+  // merge, whose TAINTED incomings route every non-i32 escape through that net
+  // (lowering_reject_taint_escape_return_{value,phase}_diamond.ll). The emitter
+  // RAUWs this phi to the FRESH `%out` handle, and `cqrt_alloc_<W>` returns an i32
+  // at EVERY width (Rule 15) — so a consumer that is neither a measurement sink
+  // nor an i32 `ret` reads a QUBIT HANDLE as if it were the width-W value:
+  //   * a NON-i32 `ret` leaves `ret iN <i32 handle>` — a BROKEN MODULE the LLVM
+  //     verifier aborts on (`report_fatal_error`), NOT a Rule-1 source-located
+  //     decline (8mld repro `int64_t y=5; if(q>3) y=f(a); return y;` SIGABRTs);
+  //   * a `store` / opaque call / stock arithmetic op SILENTLY LEAKS the handle to
+  //     classical code as a raw i32 — a verify-clean over-accept (the class
+  //     `proveSwitchDataMux` G6 rejects; the classical-call arm had NO such gate).
+  // Require every merge-phi user be a measurement sink (EXACT membership in
+  // `taint.MeasureCalls` — a `starts_with("cq_measure_")` prefix is spoofable by
+  // an opaque `cq_measure_evil`; the handle-arg is i32 at every width and the sink
+  // RE-TYPES the result, so a measure consumer is correct at ANY merge width) OR a
+  // `ret` AT i32 (the caller owns the escaped handle — FreePoint's Escaped case).
+  // Otherwise DECLINE loudly (Prime Directive: over-decline is safe; i64-MEASURE
+  // stays accepted — the surgical, non-blanket gate). Pure SSA analysis before
+  // mutation (Rule 9): `MergePhi->users()` are the ORIGINAL consumers.
+  SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
+                                         Taint.MeasureCalls.end());
+  const bool MergeIsI32 = MergePhi->getType()->isIntegerTy(32);
+  for (const User *U : MergePhi->users()) {
+    if (isa<ReturnInst>(U) && MergeIsI32)
+      continue;  // i32 escape — the caller owns the handle.
+    if (const auto *CI = dyn_cast<CallInst>(U))
+      if (Sinks.count(CI))
+        continue;  // measurement sink — re-types; correct at any merge width.
+    diagnoseUnderControl(Call, "control flow");
+    return ClassicalCallDisp::Declined;
+  }
+
   // ACCEPT — the route-merged classical-call arm (the fp/i128 RESULT gate is the
   // emitter's `copyControlledFn` non-null check, DD-7). The emitter re-derives the
   // call as the `Arm`-edge merge incoming (a pure consumer of the plan).

@@ -368,8 +368,19 @@ bool proveSwitchDataMux(const SwitchShape &S, TaintSet &Taint) {
   // guard pre-filter NEVER fires here — the gate must do the exact check itself.
   SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
                                          Taint.MeasureCalls.end());
+  // 8mld — the escape `ret` is sound ONLY at i32. G4's `widthHasReversibleCopy`
+  // admits {i1,i8,i16,i32,i64}, but the merge RAUWs to a FRESH `%out` handle and
+  // `cqrt_alloc_<W>` returns an i32 at every width (Rule 15). A measurement sink
+  // RE-TYPES its result (handle-arg is i32 at any width), so it stays width-
+  // independent; a NON-i32 `ret`, however, leaves `ret iN <i32 handle>` — a BROKEN
+  // MODULE the verifier aborts on (`report_fatal_error`), NOT a Rule-1 decline.
+  // (Confirmed: `switch(q){...} -> phi i64 -> ret i64` SIGABRTs pre-8mld — the
+  // sibling of the classical-call arm 8mld crash; both are untainted-merge escapes
+  // the pre-detection net cannot see.) Gate the `ret` escape to i32; i64-MEASURE
+  // data-muxes stay accepted (the surgical, non-blanket fix).
+  const bool MergeIsI32 = S.Merge->getType()->isIntegerTy(32);
   for (const User *U : S.Merge->users()) {
-    if (isa<ReturnInst>(U))
+    if (isa<ReturnInst>(U) && MergeIsI32)
       continue;
     if (const auto *CI = dyn_cast<CallInst>(U))
       if (Sinks.count(CI))
