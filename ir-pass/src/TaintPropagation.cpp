@@ -15,6 +15,7 @@
 #include "OpcodeLowering.h"   // declineStaleRecordOps (dugh second-round re-sweep)
 #include "QramLowering.h"
 #include "SpecializePlan.h"
+#include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
 #include "Specialization.h"
 #include "WidthDispatch.h"
 
@@ -1211,58 +1212,104 @@ void declineReClassifiedControl(Module &M, TaintSet &taint) {
   }
 }
 
-// dugh — decline a FROZEN-PLAN call that reads a round-2 reseed value (`%out` or a
-// `%out`-derivation) as an argument. A "frozen-plan" lowering is one whose per-call
-// plan/transform is FIXED before `repropagateControlMerges` runs, so a round-2
-// argument it never saw is silently mishandled — the `declineTaintEscapes` carve
-// for that owner would wave it through.
+// bd 0vvq (Increment 2) — RE-PLAN a Phase-6 specialization candidate whose FROZEN
+// per-arg mask no longer matches the round-2 taint, so its clone lowers the
+// round-2-quantum `%out` argument as a QUANTUM operand (a Q+Q / Q+C clone body)
+// instead of reading the `%out` qubit-handle tag as a classical `_hl` literal (the
+// D2 verify-clean silent miscompile — the handle tag, not the superposed value —
+// that dugh's now-deleted `declineReseedIntoFrozenPlan` over-declined).
 //
-// ONE such owner remains after bd 0vvq (Increment 1):
+// THE FROZEN PLAN IS THE `Pending` MASK, NOT A BUILT CLONE. `detectSpecializations`
+// (step 5) froze each candidate's per-arg mask from round-1 taint and pushed a
+// `SpecCandidate{Site, Callee, Mask}` onto `plan6.Pending`; but the DRIVER
+// (`specialize`, step 14) that actually clones runs DOWNSTREAM of this second
+// propagation. So at re-plan time NO clone exists yet — unfreezing is simply
+// UPDATING the Pending candidate's `Mask` before the driver consumes it. There is
+// no premature clone to drop and no retarget to redo: the driver clones the
+// corrected Q+Q body, and its existing depth-first transitive machinery (6.3)
+// specializes any inner call whose argument the wider mask newly taints. `Site` is
+// a stable pointer here — `RegionFlatten` `splice`s the merge tail into the pred
+// (it MOVES the call, never erases it), the same invariant `shouldSpecialize`
+// already relies on.
 //
-//   * Phase-6 SPECIALIZATION (`shouldSpecialize`, plan from `detectSpecializations`
-//     at step 5). The clone's per-arg quantum/classical MASK is frozen from the
-//     round-1 taint: `int y=5; if(q>3) y=f(a); z = ipow(q, y)` clones `ipow` with
-//     arg0=Q, arg1=C, lowering `base+exp` as `cq_template_add_<W>_hl(base, exp)` —
-//     `exp` a CLASSICAL literal. dugh re-taints `y`(=`%out`), but the frozen mask
-//     makes the `_hl` template read the `%out` QUBIT HANDLE as a literal (a
-//     verify-clean silent miscompile — the handle tag, not the superposed value).
-//     UNFREEZING this (the spec-clone re-plan to a Q-mask) is 0vvq Increment 2.
+// SOUNDNESS OF THE WIDER MASK. `scanBody` (the body verdict inside
+// `classifyCandidate`) is MASK-INDEPENDENT: it proved the WHOLE transitive body is
+// straight-line, pure, and built only from in-scope data ops at DETECTION, and
+// every such op carries a complete QQ + `unc_qq` grid (opcode_table.yaml), so an
+// operand flipped C→Q switches a `cq_template_<op>_<W>_hl` producer to its bare-QQ
+// twin `cq_template_<op>_<W>` (both with an `_unc` twin `emitInverseChain`
+// reverses) and nothing else changes. The ONE mask-dependent gate is
+// `classifyCandidate` step (A): every TAINTED argument must arrive as an i32 handle
+// (Rule 15). Round-1-tainted args were already proven i32 (else the candidate is
+// not in `Pending`), so the re-plan can only newly FAIL on a NON-i32 reseed arg
+// (`f(q, (short)%out)` / `f(q, sitofp %out)`) → loud `kMsgFpAbi`.
 //
-// by-ref MATH (`isByRefMathCall`: frexp/modf/remquo) was the OTHER frozen-plan
-// owner, but 0vvq Increment 1 RE-RUNS `lowerByRefMath` inside
-// `repropagateControlMerges` (above) on the now-tainted, now-flattened by-ref
-// calls, so a round-2 `%out`-derived `frexp` is LOWERED to `@cq_byref_*` markers
-// (or loud-declined by g387 itself if genuinely off-pattern) — it is no longer
-// frozen, and is intentionally NOT guarded here.
-//
-// Decline HERE, before the round-2 `declineTaintEscapes` carves the spec call,
-// whenever it reads a reseed value. Over-decline is safe (Prime Directive): a
-// frozen-plan clone consuming a control-merge register is out of dugh's arith/phase
-// scope. A round-1-only such call (no reseed operand) is untouched and lowers
-// normally.
-void declineReseedIntoFrozenPlan(Module &M, const TaintSet &taint,
-                                 const SpecPlan &plan6,
-                                 const SmallPtrSetImpl<Value *> &reseed) {
-  for (Function &F : M) {
-    if (F.isDeclaration())
+// SCOPE (Prime Directive). This RE-PLANS an EXISTING `plan6.Pending` candidate
+// (proven-Accept at round 1, ≥1 round-1 tainted arg) whose C-masked arg is now a
+// reseed value. A call that was NOT a candidate at round 1 (ALL args classical
+// then, now reading `%out`) is a round-2 spec DETECTION, out of this increment's
+// scope — it stays declined by the re-run `declineTaintEscapes` (`kMsgUnknownCallee`,
+// a visible-body callee reading tainted, not carved; tracked follow-on). An
+// in-clone construct the clone cannot emit was already declined at DETECTION by the
+// mask-independent `scanBody`, so it never entered `Pending`.
+void replanReseedSpecialization(TaintSet &taint, WidthDispatch &wd,
+                                SpecPlan &plan6,
+                                const SmallPtrSetImpl<Value *> &reseed) {
+  // Indices of candidates that could NOT be re-planned (loud-declined) — compacted
+  // out of `Pending` after the walk so the driver never clones a stale-mask body.
+  SmallVector<unsigned, 4> Rejected;
+  for (unsigned i = 0, n = plan6.Pending.size(); i < n; ++i) {
+    SpecCandidate &Cand = plan6.Pending[i];
+    CallInst *Site = Cand.Site;
+
+    // Does the site read a reseed value (`%out` or a `%out`-derivation) as an arg?
+    bool ReadsReseed = false;
+    for (const Use &Op : Site->args())
+      if (reseed.count(Op.get())) {
+        ReadsReseed = true;
+        break;
+      }
+    if (!ReadsReseed)
+      continue;  // a round-1-only candidate — its frozen mask is still correct.
+
+    // Recompute the mask against the round-2 taint (monotonically ⊇ the frozen
+    // `Cand.Mask`: propagation only ADDS taint, so a reseed arg's bit grows).
+    SpecMask NewMask = taintArgMask(Site, taint);
+    if (NewMask == Cand.Mask)
+      continue;  // defensive: a reseed arg was already masked Q (cannot happen — a
+                 // reseed value was untainted at round 1, so its bit must grow).
+
+    // Re-classify with the grown mask. `scanBody` is unchanged (the body verdict is
+    // mask-independent); the only new gate is step (A)'s per-arg i32 ABI on the
+    // newly-tainted reseed args.
+    SpecCandidate ReCand{Site, Cand.Callee, NewMask};
+    Instruction *Where = nullptr;
+    std::string Kind;
+    SpecReject Why = classifyCandidate(ReCand, taint, wd, Where, Kind);
+    if (Why == SpecReject::Accept) {
+      Cand.Mask = NewMask;  // RE-PLAN — the driver clones the Q+Q body transitively.
       continue;
-    for (BasicBlock &BB : F)
-      for (Instruction &I : BB)
-        if (auto *CI = dyn_cast<CallInst>(&I))
-          if (shouldSpecialize(CI, plan6))
-            for (const Use &Op : CI->args())
-              if (reseed.count(Op.get())) {
-                diagnoseUnderControl(CI, "control flow");  // DS_Error → exit(1)
-                return;
-              }
+    }
+    // Cannot re-plan (a non-i32 reseed arg): decline LOUDLY at the offending
+    // instruction (the precise `kMsgFpAbi`, not dugh's generic "under quantum
+    // control"), mark it `Diagnosed` so the re-run `declineTaintEscapes` carve
+    // renders no second `kMsgUnknownCallee`, and drop it from `Pending` so the
+    // driver never clones a stale-mask body (`opt` exits non-zero regardless; the
+    // drop keeps the transient IR clean).
+    diagnoseReject(Where, Why, Kind);
+    plan6.Diagnosed.insert(Site);
+    Rejected.push_back(i);
   }
-  (void)taint;
+  // Compact `Pending`, dropping the rejected indices highest-first (so the lower
+  // indices stay valid across each erase).
+  for (unsigned j = Rejected.size(); j-- > 0;)
+    plan6.Pending.erase(plan6.Pending.begin() + Rejected[j]);
 }
 
 }  // namespace
 
 void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
-                              const SpecPlan &plan6) {
+                              SpecPlan &plan6) {
   if (taint.UntaintedMergeRails.empty())
     return;  // no 6.5 classical-call arm / 4.5 switch data-mux region emitted.
 
@@ -1333,11 +1380,14 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
     if (!beforeTaint.count(V))
       reseed.insert(V);
 
-  // 2. Decline a FROZEN-PLAN call (Phase-6 spec — the SOLE remaining frozen-plan
-  //    owner after 0vvq Inc 1 re-ran by-ref math above) whose plan was fixed
-  //    pre-emit and cannot accommodate a round-2-quantum `%out` argument (else a
-  //    verify-clean silent miscompile). Must precede `declineTaintEscapes`, whose
-  //    `shouldSpecialize` carve would let it through.
+  // 2. RE-PLAN a FROZEN-PLAN Phase-6 spec candidate (the SOLE remaining frozen-plan
+  //    owner after 0vvq Inc 1 re-ran by-ref math above) whose per-arg mask was fixed
+  //    pre-emit and no longer matches a round-2-quantum `%out` argument: recompute
+  //    the mask (Q+Q) so the step-14 driver clones a body that reads `%out` as a
+  //    QUANTUM operand, not as an `_hl` classical literal (the D2 silent miscompile).
+  //    A non-i32 reseed arg cannot be re-planned and declines LOUDLY here (0vvq Inc
+  //    2). Must precede `declineTaintEscapes`, whose `shouldSpecialize` carve would
+  //    otherwise wave a re-planned OR a to-be-declined candidate through.
   // 3. Decline a NEW tainted-condition br/switch/select on the merge (hole the
   //    escape net does not cover). Then 4. re-run the escape net (onward
   //    classical escapes decline via the precise messages; onward arith/phase/
@@ -1345,7 +1395,7 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   //    (mirrors the `declineLiftedStaleRecordOps` re-sweep precedent). Each
   //    decline is a `DiagnosticInfoUnsupported(DS_Error)` → `exit(1)`, so an
   //    A1-escape decline exits before the transiently-mistyped IR is verified.
-  declineReseedIntoFrozenPlan(M, taint, plan6, reseed);
+  replanReseedSpecialization(taint, wd, plan6, reseed);
   declineReClassifiedControl(M, taint);
   declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);

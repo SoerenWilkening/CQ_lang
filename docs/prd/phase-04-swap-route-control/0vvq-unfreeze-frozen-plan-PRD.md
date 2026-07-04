@@ -2,7 +2,8 @@
 
 **Status:** Increment 1 (BY-REF half) **DONE + Rule-13 CLEARED** (branch
 `dugh-repropagate-control-merge`, 2026-07-04). Increment 2 (the Phase-6 spec-clone
-re-plan) scoped in §7, shipped separately with its own clearance.
+re-plan, the D2 core) implemented 2026-07-05 — **full spec in §9** (§7 is the
+earlier forward-scope stub, superseded by §9's corrected ordering analysis).
 Owner-directed accept-more follow-on from `dugh` (2026-07-04): *"lower/compile
 everything not ruled out by physics — unfreeze."* Core-lowering change; cleared via
 multi-agent adversarial review (§6 — one UAF found + fixed, no silent miscompile).
@@ -172,3 +173,194 @@ Fixtures (flip + new accept + retained declines) + ≥1 e2e golden smoke; full
 ctest green; `gen_templates.py --check` clean (no new ABI — the `cq_byref_*` /
 `cq_template_frexp…` surface already exists from g387); independent Rule-13
 adversarial clearance.
+
+---
+
+## 9. Increment 2 — the spec-clone re-plan (the D2 core)
+
+**Status:** implemented on branch `dugh-repropagate-control-merge` (2026-07-05).
+Owner-directed accept-more follow-on; core-lowering change, cleared via independent
+multi-agent adversarial review (§9.6).
+
+### 9.1 The frozen plan is the `Pending` mask — NOT a built clone
+
+The D2 silent miscompile (`control_classical_call_arm_reject_onward_spec_call.ll`,
+dugh's own regression pin): a 6.5 classical-call arm's untainted merge `%out` is
+passed to a Phase-6 specialization candidate `z = ipow(q, %out)` whose per-arg
+mask was **frozen classical** for that argument at `detectSpecializations`
+(step 127, when the merge was data-untainted). dugh re-taints `%out` in round 2 but
+the driver `specialize` (step 262) would clone `ipow` with the stale mask `0b01`,
+lowering `base + exp` as `cq_template_add_i32_hl(base, exp)` with `exp` = the `%out`
+**qubit-handle tag** read as a classical literal — a verify-clean wrong unitary.
+dugh over-declined it (`declineReseedIntoFrozenPlan`, spec-only after Inc 1).
+
+**The unfreezing is far simpler than the by-ref half.** The "frozen plan" is not a
+built artifact — it is the `SpecCandidate{Site, Callee, Mask}` in `plan6.Pending`,
+whose `Mask` was fixed at detection. But the DRIVER that actually clones runs at
+**step 262, downstream of `repropagateControlMerges` (step 200)**. So at re-plan
+time **no clone exists yet**: unfreezing is simply **updating the Pending
+candidate's `Mask`** before the driver consumes it. There is no premature clone to
+drop and no retarget to redo — the driver clones the corrected Q+Q body, and its
+existing depth-first transitive machinery (6.3) specializes any inner call whose
+argument the wider mask newly taints. (The bead's "re-clone / drop the dead C-mask
+clone / retarget" framing was written pre-analysis; the real ordering makes those
+steps no-ops.)
+
+`Site` is a stable pointer here: `lowerControlRegions` (step 184) flattens the
+diamond by `RegionFlatten::flattenRegion`, which **`splice`s** the merge tail into
+the pred — it MOVES the `ipow` call, never erases/recreates it — so the Pending
+`Site` is live at step 200 (the same invariant dugh's `shouldSpecialize` walk
+already relies on).
+
+### 9.2 Soundness of the wider mask (why Q+Q is correct where Q+C was)
+
+The re-plan grows the mask `0b01 → 0b11` (`%out` C→Q). Two facts make this provably
+sound for **exactly** the shape `scanBody` accepts:
+
+1. **`scanBody` is mask-INDEPENDENT.** The single authoritative body verdict inside
+   `classifyCandidate` (`SpecializeReject.cpp`) scans the callee's — and, transitively,
+   every reachable visible callee's — body for shape (straight-line, single-BB, `ret`
+   only), for non-reversibilizable constructs (memory / control / EH / recursion /
+   atomics), and for op scope (`unsupportedWidth` / `compareInScope` / `castInScope`).
+   None of these read the taint mask. So a body proven Accept at round-1 detection is
+   Accept at round-2 with **any** mask — the whole transitive body was already
+   validated as all-in-scope data ops.
+2. **The binary / unary / cast data ops carry a complete `QQ` + `unc_qq` grid**
+   (`tools/opcode_table.yaml`): the 18 binary ops and `fneg` have `fwd_qq`/`unc_qq`
+   twins, and every cast is arity-1 (its width is on the op type, never laundered).
+   So a binary operand flipped C→Q switches one `cq_template_<op>_<W>_hl` producer
+   to its bare-QQ twin `cq_template_<op>_<W>` — **both** with an `_unc` twin the
+   Bennett wrap's `emitInverseChain` reverses. A binary op recovers its width from
+   its own result type, and a cast from its op types, so **neither loses width when
+   an operand becomes a laundered handle**.
+
+There are **two** mask-dependent gates, and BOTH are decline-only (never a silent
+miscompile):
+
+* `classifyCandidate` **step (A)**: every *tainted* argument must arrive as an
+  **i32 handle** (Rule 15). Round-1-tainted args were already proven i32; the only
+  NEW tainted args are reseed args, so step (A) can only newly fail on a **non-i32
+  reseed arg** → loud `kMsgFpAbi`.
+* **The Q+Q compare limitation (a genuine data-path decline, not a QQ-grid gap).**
+  A `CmpInst` whose *both* operands become tainted is a **Q+Q compare**, and the
+  Phase-3 data path deliberately **loud-declines** it (`CompareLowering.cpp:101-112`,
+  `no template for opcode 'icmp/fcmp …' in tainted context`): a compare's logical
+  width is unrecoverable from two i32-laundered handles (the result is an i1, unlike
+  a binary op whose result type carries the width), and minting `cq_template_icmp_*`
+  on the laundered i32 would be a wrong symbol — so it conservatively declines. This
+  is the pre-existing `lowering_icmp_qq_no_width_reject` limitation. `scanBody`
+  accepts a compare **mask-independently** (it only proves `compareInScope`), so
+  re-planning a candidate whose compare flips C→Q to Q+Q **loud-declines** — SAFELY:
+  `opt` exits non-zero, the module is discarded, **no wrong unitary**. This decline
+  is **byte-identical** to a *round-1* mask-`0b11` compare candidate
+  (`__cq_q_<f>_11: no template for opcode 'icmp i1' …`) — the re-plan reaches the
+  SAME pre-existing boundary, not a new one. It surfaces **late** (at `lowerOps`,
+  naming the clone, not source-located) — a shared, pre-existing WI-1.13-class
+  deferred boundary (round-1 mask-`0b11` compare candidates already do this).
+  Moving it earlier (a mask-AWARE source-located pre-check in `scanBody`, shared
+  with detection) is **tracked follow-on `test_C_libtooling-6o60`**, not correctness
+  debt (the decline is already loud and safe; Prime Directive).
+
+### 9.3 Fix shape — `replanReseedSpecialization` (replaces `declineReseedIntoFrozenPlan`)
+
+Inside `repropagateControlMerges`, after the by-ref fixpoint + reseed computation,
+**before** the re-run escape net, replace the spec decline with a re-plan
+(`TaintPropagation.cpp`, anonymous namespace). For each `plan6.Pending` candidate
+whose `Site` reads a reseed value (`%out` or a `%out`-derivation) as an argument:
+
+* `newMask = taintArgMask(Site, taint)` (round-2 taint; monotonically ⊇ the frozen
+  `Cand.Mask` since propagation only ever ADDS taint — a reseed arg's bit grows).
+* Re-run `classifyCandidate(SpecCandidate{Site, Callee, newMask}, taint, wd, …)`:
+  * **Accept** → `Cand.Mask = newMask` (**re-plan**). The step-262 driver clones the
+    Q+Q body and transitively specializes inner calls via the unchanged 6.3 path.
+  * **Reject** (only ever `kMsgFpAbi` on a non-i32 reseed arg) → `diagnoseReject`
+    (loud, source-located), insert `Site` into `plan6.Diagnosed` (so the re-run
+    `declineTaintEscapes` carve renders no duplicate `kMsgUnknownCallee`), and
+    **remove it from `Pending`** (so the driver never clones a stale-mask body —
+    `opt` exits non-zero regardless, but the drop keeps the transient IR clean).
+
+`plan6` becomes a **mutable** reference through `repropagateControlMerges` (both
+twin-pipeline call sites already pass the non-const local `plan6`).
+`declineReseedIntoFrozenPlan` is **deleted** — its sole remaining owner (spec) is
+now re-planned, and by-ref was already dropped in Inc 1.
+
+### 9.4 Scope boundary — what still declines (Increment 2)
+
+* **A non-i32 reseed argument** (`f(q, (short)%out)`, `f(q, sitofp %out)`) → the
+  re-plan's `classifyCandidate` step (A) → loud `kMsgFpAbi`. The clone's tainted
+  arg ABI is i32-only (Rule 15) — a narrowed / fp-cast reseed value has no i32
+  handle representation.
+* **A body compare whose operand flips C→Q to a Q+Q compare** (`cmpf(q, %out)`
+  with `icmp %a, %b` on both params) → loud `no template for opcode 'icmp/fcmp …'
+  in tainted context` at `lowerOps` (the pre-existing data-path Q+Q-compare
+  width-decline, §9.2). SAFE (opt exits non-zero, no wrong unitary) and
+  byte-identical to a round-1 mask-`0b11` compare candidate.
+* **A round-2-only NEW candidate** — a visible pure callee `g(%out)` whose args
+  were *all* classical at round 1 (so it never entered `Pending`) — is a round-2
+  spec **DETECTION**, a genuinely distinct capability from this **re-plan**. It
+  stays loud-declined by the re-run `declineTaintEscapes` (`kMsgUnknownCallee`, a
+  visible-body callee reading tainted, not carved). **Tracked** as follow-on
+  `test_C_libtooling-9paa` (round-2 spec detection); NOT correctness debt (a safe
+  over-decline of a shape outside this increment's target, Prime Directive + Rule 17).
+* **An in-clone construct the clone cannot emit** (in-body control / memory /
+  recursion / a non-i32 return / an out-of-scope op) was already declined at
+  DETECTION by the mask-independent `scanBody`, so such a callee never entered
+  `Pending` and cannot be re-planned. The transitive inner-call declines (6.3) are
+  likewise preserved by the driver's own `classifyCandidate` on each inner site.
+
+### 9.5 Fixtures (red-green, Rule 12)
+
+**Flip to ACCEPT** — `control_classical_call_arm_reject_onward_spec_call.ll` →
+`control_classical_call_arm_accept_onward_spec_call.ll`: the dugh regression pin
+(same `@ipow(i32 %base, i32 %exp)` body as `spec_accept_two_arg_mask.ll`) now lifts
+to the QQ clone `@__cq_q_ipow_11` — `cq_template_mul_i32` + `cq_template_add_i32`
+(bare QQ, NOT `_hl`) + `_unc` reverse; `CHECK-NOT: under quantum control`;
+`CHECK-NOT: cq_template_add_i32_hl`.
+
+**New ACCEPT (transitive)** — `spec` … a re-planned top whose Q+Q body calls an
+inner classical helper whose arg is now tainted → the 6.3 inner clone + `_unc`
+twin, minted from the round-2 re-plan.
+
+**New DECLINE** — `control_classical_call_arm_reject_onward_spec_i16arg.ll`: a
+candidate reading a non-i32 `%out`-derivation (`(i16)%out`) → `kMsgFpAbi` (mirrored
+char-for-char). `control_classical_call_arm_reject_onward_spec_newcand.ll`: the
+round-2-only new-candidate case (`g(%out)`, all-classical round 1) declines via the
+escape net (`kMsgUnknownCallee`) — the tracked-follow-on boundary (round-2 spec
+DETECTION). `control_classical_call_arm_reject_onward_spec_qqcmp.ll`: a re-planned
+compare that flips to Q+Q loud-declines (`no template for opcode 'icmp i1' …`) — the
+pre-existing width limitation (§9.2), safe.
+
+**e2e golden smoke** — a 2-file `run_slice_multi.sh` slice: a classical-call arm
+builds `%out`, a separate-TU pure `combine(q, %out)` re-plans to `@__cq_q_combine_11`,
+the result measured — through the full clang -O1 → llvm-link → opt → link → run
+pipeline (the only layer that LINKs the QQ clone + its `_unc` twin against the
+templates).
+
+### 9.6 Rule-13 adversarial clearance (Increment 2) — CLEAR
+
+Independent multi-agent adversarial review (6 finders across distinct lenses, each
+building + RUNNING probe .ll files, then per-finding refute-by-default verifiers +
+a synthesis judge). **Verdict: CLEAR — 0 confirmed silent-miscompile / crash /
+broken-module on valid input.** The positive miscompile hunt came back clean: the
+cast-body C→Q flip round-trips (matching `*_unc` twins, verify-clean), the
+transitive inner re-plan mints `@__cq_q_inner_1` + its `_unc` twin correctly, and
+the non-i32 reseed arg declines via `kMsgFpAbi`. `Site` liveness, the reject-path
+`Pending`/`Diagnosed` bookkeeping, and the two-mask multiplicity all held.
+
+**One finding (surfaced + addressed): the Q+Q-compare boundary.** The review found
+that a re-planned clone whose compare flips to Q+Q **loud-declines** at `lowerOps`
+(`no template for opcode 'icmp i1' …`), which **contradicted an over-stated §9.2
+claim** ("every op has a QQ grid"). Investigated + corrected: this is the
+pre-existing data-path Q+Q-compare width limitation (§9.2), it is **SAFE** (opt
+exits non-zero, no wrong unitary), and it is **byte-identical** to a round-1
+mask-`0b11` compare candidate (verified by hand: both emit
+`__cq_q_<f>_11: no template for opcode 'icmp i1' …`, exit 1, empty output). §9.2/§9.4
+now state it accurately, `control_classical_call_arm_reject_onward_spec_qqcmp.ll`
+pins it, and the source-located-early-decline improvement is tracked
+(`test_C_libtooling-6o60`). No blocker.
+
+### 9.7 Done criteria (Increment 2)
+
+Flip + transitive-accept + non-i32-decline fixtures + the new-candidate boundary
+probe + ≥1 e2e golden; full ctest green; `gen_templates.py --check` clean (no new
+ABI — the QQ + `unc_qq` grid already exists); independent Rule-13 clearance.

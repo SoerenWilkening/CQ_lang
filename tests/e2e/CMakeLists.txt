@@ -749,6 +749,26 @@ add_test(NAME e2e-slice-control-byref-frexp
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_byref_frexp_caller.expected.log")
 
+# bd 0vvq Increment 2 (the spec-clone RE-PLAN, the D2 core): a 6.5 classical-call
+# arm builds an UNTAINTED merge %out (i32) that then feeds a Phase-6 SPECIALIZATION
+# candidate qpow(q, %out). At `detectSpecializations` (pre-emit) %out is untainted,
+# so the candidate is FROZEN mask 0b01; dugh's `repropagateControlMerges` re-taints
+# %out in round 2 and `replanReseedSpecialization` recomputes the mask to 0b11
+# BEFORE the step-14 driver clones — so @__cq_q_qpow_11 lowers `mul base,base` +
+# `add sq,exp` bare-QQ (the merged register h2 read as a HANDLE, cq_template_add_i32
+# NOT _hl — the D2 miscompile fix), Bennett-wrapped. The ONLY layer that LINK-proves
+# the re-planned clone + its bare-QQ producers + their _unc twins resolve and
+# signature-match through llvm-link (Rule 2/16). Reuses classical_call_under_control_lib.c
+# for the visible pure `ext_f`. Pinned by control_classical_call_arm_accept_onward_spec_call.ll.
+add_test(NAME e2e-slice-control-spec-replan
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_replan_qpow_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_replan_qpow_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_replan_qpow_caller.expected.log")
+
 # Phase 7.6 (test_C_libtooling-9x4z.1): the reversible I/O output tape. The only
 # layer that LINKS — and 7.6 adds NEW frozen hand-written core symbols, so this
 # golden is the ONLY proof cqrt_tape_alloc + cqrt_tape_write_<W> resolve and

@@ -274,8 +274,14 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 // The remaining downstream stages (QRAM/Shadow/IO, rotations + the tainted-angle
 // guard, ops, measures, uncompute) then lower the onward QUANTUM flow. `plan6` is
 // forwarded to the re-run `declineTaintEscapes` (its Phase-6 carve-out).
+//
+// bd 0vvq (Increment 2): `plan6` is taken by MUTABLE reference because the round-2
+// spec-clone RE-PLAN (`replanReseedSpecialization`) UPDATES a `plan6.Pending`
+// candidate's per-arg mask (or drops it to `plan6.Diagnosed` on a loud decline)
+// when a round-2-tainted `%out` argument no longer matches its frozen round-1 mask
+// — the fix that unfreezes the spec-clone half of dugh's `declineReseedIntoFrozenPlan`.
 void repropagateControlMerges(llvm::Module &M, WidthDispatch &wd,
-                              TaintSet &taint, const SpecPlan &plan6);
+                              TaintSet &taint, SpecPlan &plan6);
 
 // bd iw81.1 — fold same-width int<->int `bitcast` identity EARLY (before ANY
 // wire / lineage / control / stale-record analysis runs), so the whole pass sees
