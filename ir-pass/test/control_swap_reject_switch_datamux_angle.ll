@@ -2,18 +2,19 @@
 ; silent-miscompile): an all-ConstantInt DATA-MUX switch whose merge result reaches
 ; a rotation arg-1 ANGLE through an `icmp` -> select-condition carrier.
 ;
-; THE HAZARD (verify-clean, NO downstream backstop): the data-mux merge phi has
-; all-ConstantInt incomings, so it is UNTAINTED by SSA data-flow — unlike the
-; value/phase merge (tainted incomings) the L110 `declineTaintedAngle` cannot help
-; here. The emitter re-taints the lowered %out but does NOT re-propagate, and G3
-; (`mergeReachesRotationArg1`) — the SOLE pre-emit backstop — crosses only
-; casts/binops/phi/select-VALUE, NOT an `icmp` (a CmpInst) or a select CONDITION. So
-; `%ang = (rm != 0) ? a : b` feeding `cq_phi` arg-1 (an angle derived from the
-; quantum-controlled mux result, entangled with the scrutinee) would be SILENTLY
-; accepted and lowered to `cqrt_rz(h, %ang)` (opt exit 0, verify-clean) — a Rule-3
-; f64/angle wrong unitary. `proveSwitchDataMux` forecloses it: the data-mux merge
-; result must be consumed ONLY by a measurement sink or a `ret` (escape), the
-; conservative carrier-independent gate (Prime Directive: over-decline is safe).
+; THE HAZARD (verify-clean, NO pre-emit backstop): the data-mux merge phi has
+; all-ConstantInt incomings, so it is UNTAINTED by SSA data-flow. `%ang = (rm != 0)
+; ? a : b` feeding `cq_phi` arg-1 is an angle derived from the quantum-controlled mux
+; result (entangled with the scrutinee) — a Rule-3 f64/angle wrong unitary if lowered.
+;
+; Under dugh (Phase 4×6) the pre-emit `proveSwitchDataMux` G6 merge-out gate is
+; retired; `repropagateControlMerges` re-seeds a second propagation from the emitted
+; `%out`, which taints `rm`, the `icmp ne`, and the `select` — whose CONDITION is now
+; tainted. That tainted-condition select is a NEW control construct on the merge (out
+; of dugh scope), so `declineReClassifiedControl` declines it `control flow under
+; quantum control` (fires before `declineTaintedAngle` would fire on the tainted
+; angle at rotation lowering). Either way it declines loudly — the angle never reaches
+; `cqrt_rz`. Over-decline is safe (Prime Directive).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}control flow under quantum control

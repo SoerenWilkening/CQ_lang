@@ -231,6 +231,23 @@ struct TaintSet {
   // stage consumes to emit the capture + whole-loop reverse-play on the lowered
   // body. Empty for a module with no recognized value-arm break.
   llvm::SmallVector<LoopBreakRegion, 2> BreakRegions;
+
+  // Issue dugh (Phase 4×6) — the untainted-capable control-merge OUT-rails. The
+  // two accept paths that build a DATA-untainted-yet-quantum-by-control merge
+  // register — the 6.5 classical-call arm (`emitClassicalCallArmRegion`) and the
+  // 4.5 switch data-mux (`emitSwitchDataMuxRegion`) — RAUW their merge phi to a
+  // fresh `%out = cqrt_alloc_<W>` handle and record it HERE. The FIRST `propagate`
+  // (data-flow taint from `cq_theta`) ran BEFORE `%out` existed and classified its
+  // onward consumers as classical; `repropagateControlMerges` (run right after
+  // `lowerControlRegions`) re-seeds a forward propagation from this set so an
+  // onward QUANTUM flow (arith / phase / local-array Shadow store) is re-tainted
+  // and lowers, while an onward CLASSICAL escape (store / opaque call / non-i32
+  // ret) declines via the re-run escape net. A rail whose merge WAS already
+  // tainted (a `q`-straight-through classical-call arm) is recorded too — the
+  // re-propagation is idempotent for it (its onward users were tainted by the
+  // first round). Populated by the two emitters; consumed once by
+  // `repropagateControlMerges`. Empty for a module with no untainted-merge region.
+  llvm::SmallPtrSet<llvm::Value *, 4> UntaintedMergeRails;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure
@@ -238,6 +255,27 @@ struct TaintSet {
 // propagation. The work-list is seeded with each theta's RESULT (the
 // suffix's natural ABI scalar — plain SSA, no struct wrapper).
 TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
+
+// Issue dugh (Phase 4×6) — the SECOND propagation round for control-merge
+// out-rails. Wired right AFTER `lowerControlRegions` in BOTH pipeline entry
+// points (the twin-pipeline trap). A no-op when `taint.UntaintedMergeRails` is
+// empty (no 6.5 classical-call arm / 4.5 switch data-mux region emitted).
+//
+// The two untainted-merge emitters build a fresh `%out` quantum handle and RAUW
+// their (data-untainted) merge phi to it, but the first `propagate` ran before
+// `%out` existed, so `%out`'s onward consumers were classified CLASSICAL. This
+// re-seeds a forward taint propagation from those rails (skipping the emitted
+// `cqrt_*`/`cq_template_*` scaffolding so uncompute parity with the tainted-merge
+// case is preserved), then re-runs the taint-gated guards on the newly-tainted
+// onward flow: `declineReClassifiedControl` (a new tainted-condition
+// br/switch/select on `%out` — out of scope, over-decline), `declineTaintEscapes`
+// (onward classical escapes — store / opaque call / non-i32 ret still decline via
+// the precise net), and `declineStaleRecordOps` (an onward stale-record hazard).
+// The remaining downstream stages (QRAM/Shadow/IO, rotations + the tainted-angle
+// guard, ops, measures, uncompute) then lower the onward QUANTUM flow. `plan6` is
+// forwarded to the re-run `declineTaintEscapes` (its Phase-6 carve-out).
+void repropagateControlMerges(llvm::Module &M, WidthDispatch &wd,
+                              TaintSet &taint, const SpecPlan &plan6);
 
 // bd iw81.1 — fold same-width int<->int `bitcast` identity EARLY (before ANY
 // wire / lineage / control / stale-record analysis runs), so the whole pass sees

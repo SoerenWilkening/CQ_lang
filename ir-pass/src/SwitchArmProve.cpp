@@ -336,58 +336,28 @@ bool proveSwitchDataMux(const SwitchShape &S, TaintSet &Taint) {
         }
   }
 
-  // The data-mux merge result lowers (RAUW) to a FRESH quantum handle %out that the
-  // ORIGINAL forward taint propagation never saw: the merge has all-ConstantInt
-  // incomings, so it is UNTAINTED by SSA data-flow (unlike the value/phase merge,
-  // whose TAINTED incomings let the L110 angle backstop `declineTaintedAngle` catch
-  // a downstream angle). The emitter re-taints %out but does NOT re-propagate, so
-  // ANY user of the merge beyond a measurement/escape is left CLASSICAL-OVER-QUANTUM:
-  //   - a `(double)(merge != k) ? a : b` angle reaching a `cq_phi`/`cq_theta` arg-1
-  //     through an `icmp` / select-condition / store-load / call carrier that G3's
-  //     forward walk (`mergeReachesRotationArg1`, casts+binops+phi+select-value only)
-  //     CANNOT cross — a verify-clean f64/angle silent miscompile (Rule 3); OR
-  //   - a stock `add %out, k` reading the i32 HANDLE as if it were the value.
-  // G3 is the SOLE pre-emit backstop for the untainted data-mux merge and it cannot
-  // enumerate every carrier, so require the merge result be consumed ONLY by a
-  // measurement sink or a `ret` (escape) — the conservative, carrier-independent gate
-  // (Prime Directive: over-decline is always safe). The DIRECT-angle case still fires
-  // the precise `rotation angle` via G3 first (it runs before this G6 proof).
-  //
-  // The sink test is EXACT-MEMBERSHIP (`Taint.MeasureCalls`, the recognized
-  // `@cq_measure_<sfx>` call sites), NOT a `starts_with("cq_measure_")` prefix match.
-  // Prefix-matching on the ACCEPT side is spoofable: an opaque extern named
-  // `cq_measure_evil` (or an unsupported-width `cq_measure_si128`) is treated by the
-  // rest of the pipeline as an UNKNOWN callee, yet a prefix check would mistake it for
-  // an owning sink and accept — leaking the live superposed rail %out to a classical
-  // function as a raw i32 handle (a confirmed verify-clean over-accept). This is the
-  // asymmetry vs the G10 scrutinee allowlist (SwitchClassify.cpp): there the operand
-  // `q` is ALWAYS tainted, so `declineTaintEscapes` (L64, pre-detection) has already
-  // rejected any unknown-callee user before G10 runs — so on a tainted operand the
-  // prefix check only ever sees KNOWN callees and is equivalent to membership. The
-  // data-mux merge result is UNTAINTED (all-ConstantInt incomings), so that escape-
-  // guard pre-filter NEVER fires here — the gate must do the exact check itself.
-  SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
-                                         Taint.MeasureCalls.end());
-  // 8mld — the escape `ret` is sound ONLY at i32. G4's `widthHasReversibleCopy`
-  // admits {i1,i8,i16,i32,i64}, but the merge RAUWs to a FRESH `%out` handle and
-  // `cqrt_alloc_<W>` returns an i32 at every width (Rule 15). A measurement sink
-  // RE-TYPES its result (handle-arg is i32 at any width), so it stays width-
-  // independent; a NON-i32 `ret`, however, leaves `ret iN <i32 handle>` — a BROKEN
-  // MODULE the verifier aborts on (`report_fatal_error`), NOT a Rule-1 decline.
-  // (Confirmed: `switch(q){...} -> phi i64 -> ret i64` SIGABRTs pre-8mld — the
-  // sibling of the classical-call arm 8mld crash; both are untainted-merge escapes
-  // the pre-detection net cannot see.) Gate the `ret` escape to i32; i64-MEASURE
-  // data-muxes stay accepted (the surgical, non-blanket fix).
-  const bool MergeIsI32 = S.Merge->getType()->isIntegerTy(32);
-  for (const User *U : S.Merge->users()) {
-    if (isa<ReturnInst>(U) && MergeIsI32)
-      continue;
-    if (const auto *CI = dyn_cast<CallInst>(U))
-      if (Sinks.count(CI))
-        continue;
-    diagnoseUnderControl(S.SI, "control flow");
-    return false;
-  }
+  // MERGE-OUT ESCAPE adjudication (was the 8mld G6 gate here; MOVED post-emit by
+  // dugh, Phase 4×6). The all-ConstantInt data-mux merge is ALWAYS data-untainted,
+  // so the FIRST forward propagation never saw `%out`'s onward consumers — the very
+  // reason 8mld required the merge result be consumed only by a measure sink or an
+  // i32 `ret` HERE (its angle backstop, non-i32-ret backstop, and handle-leak
+  // backstop all in one). dugh instead re-seeds a SECOND propagation from the
+  // emitted `%out` (`repropagateControlMerges`, run right after
+  // `lowerControlRegions`) and re-runs the existing taint-gated nets on the now-
+  // tainted onward flow:
+  //   * onward QUANTUM flow (`z = rm + 1; measure z`) is re-tainted and LOWERS — the
+  //     (A2) subset this bead accepts;
+  //   * a `(double)(rm != k) ? a : b` ANGLE is now tainted, so the taint-gated
+  //     `declineTaintedAngle` fires (the carrier-independent successor to G3);
+  //   * an onward CLASSICAL escape declines via the precise `declineTaintEscapes`
+  //     net (`kMsgStore` / `kMsgUnknownCallee` — including the spoof `cq_measure_evil`
+  //     as an unknown callee — / `kMsgNonI32Return` for the non-i32 ret);
+  //   * a NEW tainted-condition br/switch/select on `rm` declines via
+  //     `declineReClassifiedControl`.
+  // A measure sink / i32 `ret` (the two shapes 8mld allowed) lowers exactly as
+  // before. So the detection-time G6 merge-out gate is retired: accept the data-mux
+  // and let the post-emit net adjudicate its onward flow.
+  (void)Taint;
   return true;  // clean constant data-mux (would-be-accept).
 }
 

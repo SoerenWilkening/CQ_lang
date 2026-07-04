@@ -86,6 +86,19 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint) {
     Arm->eraseFromParent();
   if (ArmFalse)
     ArmFalse->eraseFromParent();
+  // dugh (Phase 4×6): the merge block's spliced tail is USUALLY a clean
+  // measure/`ret` sink, but with the second-propagation round the merge value
+  // `%out` may now flow ONWARD into a downstream block structure whose head is
+  // the merge's terminator — e.g. `if (q>k) y=f(a); if (cc) y=cq_phi(y,θ);
+  // measure y`, where `merge` ends in `br i1 %cc` and a downstream block's phi
+  // lists `merge` as a predecessor. Splicing that terminator into `Pred` moves
+  // control to `Pred`, but a PHI incoming BLOCK is not an operand-use of the
+  // block, so `Merge`'s erase below leaves those phis with a dangling `<badref>`
+  // predecessor (a broken module the standard merge-into-pred fixup prevents).
+  // Re-point every successor-phi incoming block `Merge → Pred` — a NO-OP for the
+  // clean-tail case (a `ret` has no successors). Runs AFTER the splice (so `Pred`
+  // owns the successors) and BEFORE the erase (so no phi dangles).
+  Pred->replaceSuccessorsPhiUsesWith(Merge, Pred);
   Merge->eraseFromParent();
 }
 
@@ -172,6 +185,12 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   //    `Merge` (branch-first lifetime, ET2).
   InnerArm->eraseFromParent();
   Mid->eraseFromParent();
+  // dugh (Phase 4×6): re-point any surviving reference to the shared `Merge` (a
+  // downstream successor-phi incoming block, when the collapsed nest value flows
+  // onward past a classical branch whose head is the spliced merge terminator) at
+  // `Pred` before the erase — the standard merge-into-pred fixup, a NO-OP for the
+  // clean measure/`ret` tail. See the twin note in `flattenRegion`.
+  Pred->replaceSuccessorsPhiUsesWith(Merge, Pred);
   Merge->eraseFromParent();
 }
 
@@ -215,6 +234,12 @@ void flattenSwitchRegion(const ControlRegion &R, TaintSet &taint) {
   //    arms must go first — branch-first lifetime).
   for (BasicBlock *A : Arms)
     A->eraseFromParent();
+  // dugh (Phase 4×6): re-point any surviving reference to `merge` (a downstream
+  // successor-phi incoming block, when the muxed `%out` flows onward past a
+  // classical branch whose head is the spliced merge terminator) at `Pred`
+  // before the erase — the standard merge-into-pred fixup, a NO-OP for the clean
+  // measure/`ret` tail. See the twin note in `flattenRegion`.
+  Pred->replaceSuccessorsPhiUsesWith(Merge, Pred);
   Merge->eraseFromParent();
 }
 

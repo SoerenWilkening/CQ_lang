@@ -1,21 +1,23 @@
 ; control_swap_reject_switch_datamux_nonI32_ret.ll — NON-i32 RETURN reject (8mld,
-; the switch sibling of control_classical_call_arm_reject_nonI32_ret.ll): a
-; tainted-scrutinee `switch` whose all-`ConstantInt` merge phi is `i64` and is
-; consumed by a DIRECT `ret i64`. The data-mux emitter preloads + XOR-delta-copies
-; into a FRESH `%out` handle and RAUWs the merge phi to it; `cqrt_alloc_<W>` is i32
-; at every width (Rule 15), so accepting leaves `ret i64 <i32 handle>` — a BROKEN
-; MODULE the verifier aborts on (`report_fatal_error`), NOT a Rule-1 decline. A
-; crash on well-formed valid input (opt -verify exit 0) violates Rule 1.
+; the switch sibling of control_classical_call_arm_reject_nonI32_ret.ll;
+; re-routed by dugh): a tainted-scrutinee `switch` whose all-`ConstantInt` merge phi
+; is `i64` and is consumed by a DIRECT `ret i64`. The data-mux emitter preloads +
+; XOR-delta-copies into a FRESH `%out` handle and RAUWs the merge phi to it;
+; `cqrt_alloc_<W>` is i32 at every width (Rule 15), so accepting leaves
+; `ret i64 <i32 handle>` — a BROKEN MODULE the verifier aborts on, NOT a Rule-1
+; decline. A crash on well-formed valid input (opt -verify exit 0) violates Rule 1.
 ;
-; The data-mux merge is UNTAINTED (all-ConstantInt incomings), so the pre-detection
-; `declineTaintEscapes` non-i32-return net never sees it. G4's `widthHasReversibleCopy`
-; admits i8..i64 (correct for the width-independent MEASURE sink, which re-types),
-; but a non-i32 `ret` is NOT width-independent. `proveSwitchDataMux` G6 now gates
-; the `ret` escape to i32; i64-MEASURE data-muxes stay accepted (the surgical fix).
-; NEVER lowered.
+; The data-mux merge is UNTAINTED (all-ConstantInt incomings). dugh (Phase 4×6)
+; retired the `proveSwitchDataMux` G6 merge-out gate and instead RE-SEEDS a second
+; propagation from the emitted `%out` (`repropagateControlMerges`); the now-tainted
+; `ret` declines via the precise `kMsgNonI32Return`. The return check keys on the
+; FUNCTION return type (i64), not the RAUW'd RV type (i32), so it catches the
+; post-emit mismatch and `exit(1)`s before the verifier. i64-MEASURE data-muxes stay
+; accepted (the sink re-types); the non-i32 raw quantum return is the (A1) limit that
+; STAYS declined (feature jx32). NEVER lowered.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}tainted value returned at non-i32 width
 declare i32 @cq_theta_si32(i32, double)
 
 define i64 @example(i32 %u0) {

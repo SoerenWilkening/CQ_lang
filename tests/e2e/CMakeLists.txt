@@ -303,6 +303,21 @@ add_test(NAME e2e-slice-control-switch-datamux
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_datamux.expected.log")
 
+# dugh (Phase 4×6): the SECOND propagation round. A data-mux merge (untainted by
+# SSA data-flow) feeds an ONWARD-QUANTUM phase `cq_phi(r, .25)` — an OPAQUE call
+# clang -O1 cannot fold into the switch incomings (a stock `r + const` WOULD fold,
+# erasing the onward op), so a real onward-quantum op survives to opt.
+# `repropagateControlMerges` re-seeds taint from the emitted %out so the onward
+# cq_phi lowers IN PLACE to `cqrt_rz_i32(out, .25)` instead of declining. The only
+# layer that LINK-proves the re-tainted onward Rz over the control merge.
+add_test(NAME e2e-slice-control-cond-onward-phase
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cond_onward_phase.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cond_onward_phase.expected.log")
+
 # Phase 4.5 (WI-6): the equality-folded `br` diamond (`if (q==7) { phase arm }`) —
 # the regression FLOOR for emitRegion-reuse via the additive D1-D7 tryEqFoldArm
 # clause (§4D detection-only; re-tests the golden 4.1 diamond path end-to-end).

@@ -9,8 +9,10 @@
 #include "TaintPropagation.h"
 
 #include "ByRefMath.h"
+#include "ControlPlan.h"      // diagnoseUnderControl (dugh re-classified control)
 #include "IntrinsicLowering.h"
 #include "LibmLowering.h"
+#include "OpcodeLowering.h"   // declineStaleRecordOps (dugh second-round re-sweep)
 #include "QramLowering.h"
 #include "SpecializePlan.h"
 #include "Specialization.h"
@@ -257,6 +259,60 @@ void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
   }
 }
 
+// Shared forward-taint work-list loop (extracted for reuse by both the initial
+// `propagate` and the dugh second round `repropagateControlMerges`). Each tainted
+// SSA value's user instructions become tainted, except measure sinks and the
+// arg-1 angle edge of a rotation. The work-list discipline (insert-then-push)
+// processes each value exactly once.
+//
+// `skipRuntimeCalls` is set ONLY by the dugh second round: at that point the IR
+// already carries the control emitter's own `cqrt_*` / `cq_template_*`
+// scaffolding (the controlled-copy calls whose dst arg IS the seed `%out`), which
+// is NOT user data flow — never re-taint it (so `uncompute` treats a re-seeded
+// merge out-rail exactly as it treats a tainted-merge one) nor recurse through it.
+// At first `propagate` time no such runtime calls exist, so the flag is false and
+// this is a pure no-op there.
+void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
+                       const FnSet &PhiFns, const FnSet &MeasureFns,
+                       TaintSet &out, bool skipRuntimeCalls) {
+  while (!Worklist.empty()) {
+    Value *V = Worklist.back();
+    Worklist.pop_back();
+    for (User *U : V->users()) {
+      auto *I = dyn_cast<Instruction>(U);
+      if (!I)
+        continue;
+      if (isMeasureSink(I, MeasureFns))
+        continue;
+      // WP10/R9 angle taint-discipline: the angle operand (arg 1) of a
+      // cq_theta/cq_phi is a classical scalar, never a quantum handle. If `V`
+      // reaches a rotation ONLY as its angle (arg 1) and not as the arg-0
+      // handle, do NOT propagate taint through that edge — an angle-derived
+      // value (e.g. an `if(q){rz(u,a)}else{rz(u,b)}` angle select) must stay
+      // classical so it lowers as a rotation-angle choice, not quantum data.
+      // Excluding only the arg-1 operand-use (not `V` globally) keeps a value
+      // that is ALSO used as a handle elsewhere tainted (risk R9).
+      if (auto *CI = dyn_cast<CallInst>(I)) {
+        Function *Callee = CI->getCalledFunction();
+        if (Callee && (ThetaFns.contains(Callee) || PhiFns.contains(Callee)) &&
+            CI->arg_size() >= 2 && CI->getArgOperand(1) == V &&
+            CI->getArgOperand(0) != V)
+          continue;  // V is used here only as the classical angle; skip edge.
+        // dugh: an already-lowered runtime primitive (the control emitter's own
+        // cqrt_copy_<W>_controlled / flag scaffolding on the seed rail) is not
+        // user data flow — never re-taint / recurse (uncompute parity).
+        if (skipRuntimeCalls && Callee) {
+          StringRef N = Callee->getName();
+          if (N.starts_with("cqrt_") || N.starts_with("cq_template_"))
+            continue;
+        }
+      }
+      if (out.Tainted.insert(I).second)
+        Worklist.push_back(I);
+    }
+  }
+}
+
 }  // namespace
 
 TaintSet propagate(Module &M, WidthDispatch &wd) {
@@ -285,34 +341,9 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
   // (insert-then-push) means each value is processed exactly once. A
   // tainted-operand phi is reached here as a normal user, so its result
   // taints and propagates onward — correct (Rz preserves the value).
-  while (!Worklist.empty()) {
-    Value *V = Worklist.back();
-    Worklist.pop_back();
-    for (User *U : V->users()) {
-      auto *I = dyn_cast<Instruction>(U);
-      if (!I)
-        continue;
-      if (isMeasureSink(I, MeasureFns))
-        continue;
-      // WP10/R9 angle taint-discipline: the angle operand (arg 1) of a
-      // cq_theta/cq_phi is a classical scalar, never a quantum handle. If `V`
-      // reaches a rotation ONLY as its angle (arg 1) and not as the arg-0
-      // handle, do NOT propagate taint through that edge — an angle-derived
-      // value (e.g. an `if(q){rz(u,a)}else{rz(u,b)}` angle select) must stay
-      // classical so it lowers as a rotation-angle choice, not quantum data.
-      // Excluding only the arg-1 operand-use (not `V` globally) keeps a value
-      // that is ALSO used as a handle elsewhere tainted (risk R9).
-      if (auto *CI = dyn_cast<CallInst>(I)) {
-        Function *Callee = CI->getCalledFunction();
-        if (Callee && (ThetaFns.contains(Callee) || PhiFns.contains(Callee)) &&
-            CI->arg_size() >= 2 && CI->getArgOperand(1) == V &&
-            CI->getArgOperand(0) != V)
-          continue;  // V is used here only as the classical angle; skip edge.
-      }
-      if (out.Tainted.insert(I).second)
-        Worklist.push_back(I);
-    }
-  }
+  // `skipRuntimeCalls=false`: no `cqrt_*`/`cq_template_*` calls exist pre-lowering.
+  propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, out,
+                    /*skipRuntimeCalls=*/false);
 
   return out;
 }
@@ -689,7 +720,19 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
         //    lowering_taint_escape_return_measure_i64.ll).
         if (auto *Ret = dyn_cast<ReturnInst>(&I)) {
           Value *RV = Ret->getReturnValue();
-          if (RV && taint.Tainted.count(RV) && !RV->getType()->isIntegerTy(32))
+          // Gate on the FUNCTION return type, NOT `RV->getType()` (dugh). Pre-RAUW
+          // (the first-pass tainted straight-line/diamond returns) the two are
+          // identical — well-formed IR requires `ret <T> <v>` with v: T == the
+          // function return type — so this is equivalent for every pinned
+          // straight-line/value/phase-diamond non-i32-return fixture. But in the
+          // SECOND round (`repropagateControlMerges`) an untainted-merge emitter has
+          // already RAUW'd its iN merge phi to the i32 `%out` handle, so
+          // `ret i64 %out` has an i32 RV yet an i64 function return type — the exact
+          // 8mld broken-module the verifier aborts on. Reading `RV->getType()` here
+          // would see i32 and MISS it (verifier SIGABRT on valid input); the function
+          // return type is the stable ABI width and catches the post-RAUW mismatch.
+          if (RV && taint.Tainted.count(RV) &&
+              !Ret->getFunction()->getReturnType()->isIntegerTy(32))
             diagnoseEscape(&I, kMsgNonI32Return);
           continue;
         }
@@ -1117,6 +1160,164 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
       }
     }
   }
+}
+
+namespace {
+
+// dugh — decline a SURVIVING tainted-condition `br`/`switch`/`select` on a
+// re-seeded control-merge value. Runs inside `repropagateControlMerges`, AFTER
+// the second forward propagation has tainted `%out`'s onward derivations and
+// BEFORE the re-run escape net.
+//
+// WHY IT IS NEEDED: `detectControlRegions` adjudicated every tainted-condition
+// construct visible at detection time (accept → flattened; decline → opt already
+// exited). But the two untainted-merge emitters create `%out` AFTER detection, so
+// a downstream `if (%out > k) …` / `%out > k ? a : b` was NOT a tainted-condition
+// construct then (the merge was data-untainted) and survived. After the second
+// propagation its condition is tainted — a *new* control region on the merge,
+// which is OUT of dugh scope (arith/phase/local-array store terminating at
+// measure/i32-ret). The escape net does not catch it: `declineTaintEscapes` skips
+// terminators ("a tainted br/switch condition is ControlDetect's") and
+// `declineClassicalMuxes` skips a tainted-condition select ("ControlDetect's").
+// So decline it loudly HERE (Prime Directive: over-decline is always safe; a
+// future bead can re-detect + emit it as nested onward control).
+//
+// This never fires on an already-emitted region: those are flattened (their
+// tainted br/switch is gone) or RAUW'd+erased (the emitted select). The only
+// tainted-condition construct at this point is a genuinely new downstream one.
+void declineReClassifiedControl(Module &M, TaintSet &taint) {
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        if (auto *BI = dyn_cast<BranchInst>(&I)) {
+          if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
+            diagnoseUnderControl(BI, "control flow");
+          continue;
+        }
+        if (auto *SI = dyn_cast<SwitchInst>(&I)) {
+          if (taint.Tainted.count(SI->getCondition()))
+            diagnoseUnderControl(SI, "control flow");
+          continue;
+        }
+        if (auto *Sel = dyn_cast<SelectInst>(&I)) {
+          if (taint.Tainted.count(Sel->getCondition()))
+            diagnoseUnderControl(Sel, "control flow");
+          continue;
+        }
+      }
+    }
+  }
+}
+
+// dugh — decline a FROZEN-PLAN call that reads a round-2 reseed value (`%out` or a
+// `%out`-derivation) as an argument. A "frozen-plan" lowering is one whose per-call
+// plan/transform is FIXED before `repropagateControlMerges` runs, so a round-2
+// argument it never saw is silently mishandled — the `declineTaintEscapes` carve
+// for that owner would wave it through. Two such owners exist (both carve in
+// `declineTaintEscapes`; both run pre-emit; `g7ip` `lowerByRefInline` is NOT one —
+// it INLINES its producer, leaving no carved call):
+//
+//   * Phase-6 SPECIALIZATION (`shouldSpecialize`, plan from `detectSpecializations`
+//     at step 5). The clone's per-arg quantum/classical MASK is frozen from the
+//     round-1 taint: `int y=5; if(q>3) y=f(a); z = ipow(q, y)` clones `ipow` with
+//     arg0=Q, arg1=C, lowering `base+exp` as `cq_template_add_<W>_hl(base, exp)` —
+//     `exp` a CLASSICAL literal. dugh re-taints `y`(=`%out`), but the frozen mask
+//     makes the `_hl` template read the `%out` QUBIT HANDLE as a literal (a
+//     verify-clean silent miscompile — the handle tag, not the superposed value).
+//   * by-ref MATH (`isByRefMathCall`: frexp/modf/remquo, `lowerByRefMath`/g387 at
+//     step 2). It rewrites only TAINTED by-ref math to `@cq_byref_*` markers; a
+//     round-1-untainted call is left as a raw `frexp(double, ptr)`. dugh re-taints
+//     a `%out`-derived arg (`sitofp %out → frexp`), but `lowerByRefMath` already
+//     ran and will not re-process it — so the carve leaves an un-lowered `frexp`
+//     whose double arg is a lowered i32 handle: a type-mismatched BROKEN MODULE.
+//
+// Decline HERE, before the round-2 `declineTaintEscapes` carves either, whenever
+// such a call reads a reseed value. Over-decline is safe (Prime Directive): a
+// frozen-plan call consuming a control-merge register is out of dugh's arith/phase
+// scope. A round-1-only such call (no reseed operand) is untouched and lowers
+// normally.
+void declineReseedIntoFrozenPlan(Module &M, const TaintSet &taint,
+                                 const SpecPlan &plan6,
+                                 const SmallPtrSetImpl<Value *> &reseed) {
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB)
+        if (auto *CI = dyn_cast<CallInst>(&I))
+          if (shouldSpecialize(CI, plan6) || isByRefMathCall(CI))
+            for (const Use &Op : CI->args())
+              if (reseed.count(Op.get())) {
+                diagnoseUnderControl(CI, "control flow");  // DS_Error → exit(1)
+                return;
+              }
+  }
+  (void)taint;
+}
+
+}  // namespace
+
+void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
+                              const SpecPlan &plan6) {
+  if (taint.UntaintedMergeRails.empty())
+    return;  // no 6.5 classical-call arm / 4.5 switch data-mux region emitted.
+
+  // Rebuild the theta/phi/measure FnSets from the collected intrinsic call sites
+  // (needed by the shared work-list loop's angle / measure-sink rules). NOT a
+  // re-`resolveSources`: that would re-run the malformed-decl prototype guard —
+  // already fired (and exited) in the first `propagate` if it was going to. The
+  // collected calls are intact here (this runs before `lowerRotations`/
+  // `lowerMeasures`; the two emitters scrub only the erased merge PHINode, never a
+  // theta/phi/measure call).
+  FnSet ThetaFns, PhiFns, MeasureFns;
+  for (CallInst *CI : taint.ThetaCalls)
+    if (Function *Fn = CI->getCalledFunction())
+      ThetaFns.insert(Fn);
+  for (CallInst *CI : taint.PhiCalls)
+    if (Function *Fn = CI->getCalledFunction())
+      PhiFns.insert(Fn);
+  for (CallInst *CI : taint.MeasureCalls)
+    if (Function *Fn = CI->getCalledFunction())
+      MeasureFns.insert(Fn);
+
+  // 1. Incremental forward propagation from the merge out-rails (already in
+  //    `Tainted`). `skipRuntimeCalls=true`: never re-taint the emitter's own
+  //    cqrt_copy scaffolding (uncompute parity). Idempotent for a rail whose
+  //    merge was already tainted (its onward users are already in `Tainted`).
+  //    Snapshot the round-1 taint FIRST so the round-2 reseed set (the merge
+  //    rails + everything the propagation newly taints) is recoverable — the
+  //    Phase-6 spec guard below needs it. `%out` itself is pre-tainted by the
+  //    emitter (so it is in the snapshot, not the diff), so union in the rails.
+  std::set<Value *> beforeTaint = taint.Tainted;
+  std::vector<Value *> Worklist(taint.UntaintedMergeRails.begin(),
+                                taint.UntaintedMergeRails.end());
+  propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, taint,
+                    /*skipRuntimeCalls=*/true);
+  SmallPtrSet<Value *, 32> reseed(taint.UntaintedMergeRails.begin(),
+                                  taint.UntaintedMergeRails.end());
+  for (Value *V : taint.Tainted)
+    if (!beforeTaint.count(V))
+      reseed.insert(V);
+
+  // 2. Decline a FROZEN-PLAN call (Phase-6 spec / by-ref math) whose plan was
+  //    fixed pre-emit and cannot accommodate a round-2-quantum `%out` argument
+  //    (else a silent miscompile / a type-mismatched broken module). Must precede
+  //    `declineTaintEscapes`, whose `shouldSpecialize` / `isByRefMathCall` carves
+  //    would let it through.
+  // 3. Decline a NEW tainted-condition br/switch/select on the merge (hole the
+  //    escape net does not cover). Then 4. re-run the escape net (onward
+  //    classical escapes decline via the precise messages; onward arith/phase/
+  //    QRAM-store are carved for their owners) and 5. the stale-record sweep
+  //    (mirrors the `declineLiftedStaleRecordOps` re-sweep precedent). Each
+  //    decline is a `DiagnosticInfoUnsupported(DS_Error)` → `exit(1)`, so an
+  //    A1-escape decline exits before the transiently-mistyped IR is verified.
+  declineReseedIntoFrozenPlan(M, taint, plan6, reseed);
+  declineReClassifiedControl(M, taint);
+  declineTaintEscapes(M, taint, plan6);
+  declineStaleRecordOps(M, taint);
+  (void)wd;  // reserved: the guards are width-agnostic on the i32-handle domain.
 }
 
 }  // namespace cq

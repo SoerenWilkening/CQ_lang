@@ -183,6 +183,22 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   ControlPlan plan = detectControlRegions(M, taint);
   lowerControlRegions(M, wd, taint, plan);
 
+  // Issue dugh (Phase 4×6): the SECOND propagation round for control-merge
+  // out-rails. The two untainted-merge emitters (6.5 classical-call arm, 4.5
+  // switch data-mux) built a fresh `%out` quantum handle and RAUW'd their
+  // (data-untainted) merge phi to it — but the first `propagate` ran before `%out`
+  // existed, so its onward consumers were classified CLASSICAL. Re-seed a forward
+  // propagation from `taint.UntaintedMergeRails` so an onward QUANTUM flow (arith /
+  // phase / local-array Shadow store) is re-tainted and lowers via the stages
+  // below, while an onward CLASSICAL escape / a new tainted-condition control on
+  // `%out` declines via the re-run escape + control nets. Runs BEFORE
+  // `lowerIOSinks`/`lowerQramReads`/`lowerShadowMemory` (they must see the newly-
+  // tainted onward IO/QRAM/Shadow access), BEFORE `declineClassicalMuxes` (a
+  // classical mux over a derived `%out` value), and BEFORE `lowerRotations` (the
+  // tainted-angle guard + the newly-tainted onward `cq_phi`). A no-op when no
+  // untainted-merge region was emitted.
+  repropagateControlMerges(M, wd, taint, plan6);
+
   // Reversible I/O output tape (Phase 7.6): a tainted `printf`/`putchar` lowers
   // to `cqrt_tape_alloc` + `cqrt_tape_write_<W>` append sequences instead of
   // declining at the escape guard above (Rule 5 — NO measurement). Runs BEFORE
@@ -347,6 +363,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // IMPLEMENTATION §6.5).
   ControlPlan plan = detectControlRegions(M, taint);
   lowerControlRegions(M, wd, taint, plan);
+  // Issue dugh (Phase 4×6): the SECOND propagation round mirrored in this entry
+  // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
+  // pre-`lowerIOSinks`/`lowerQramReads`/`declineClassicalMuxes`/`lowerRotations`
+  // ordering rationale.
+  repropagateControlMerges(M, wd, taint, plan6);
   // Reversible I/O output tape (Phase 7.6) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY — a stage wired in run() but not here
   // silently diverges, WI-1.12). See run() for the pre-`lowerRotations`

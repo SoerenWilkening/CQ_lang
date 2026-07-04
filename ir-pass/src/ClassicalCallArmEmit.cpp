@@ -152,6 +152,15 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   stamp(Out);
   taint.Tainted.insert(Out);
   taint.ControlOwnedRails.insert(Out);
+  // dugh (Phase 4×6): record the merge out-rail so `repropagateControlMerges` (run
+  // right after `lowerControlRegions`) re-seeds a forward propagation from it. The
+  // merge phi is data-untainted whenever the straight-through is a classical
+  // constant (`int y = 5; if (q>k) y = f(a)`), so the first `propagate` classified
+  // its onward consumers as classical; the second round re-taints an onward QUANTUM
+  // flow so it lowers, while an onward CLASSICAL escape declines via the re-run
+  // escape net. Idempotent when the straight-through is the tainted `q` (the merge
+  // was already tainted; its onward users are already in `Tainted`).
+  taint.UntaintedMergeRails.insert(Out);
   taint.BirthOrder[Out] = taint.NextBirth++;
 
   // 3. COPY the TRUE value on the flag (materialize if classical) — fires on f=1.

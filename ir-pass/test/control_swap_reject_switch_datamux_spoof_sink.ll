@@ -1,20 +1,20 @@
-; control_swap_reject_switch_datamux_spoof_sink.ll — DECLINE (4.5 WI-4): an
-; all-ConstantInt DATA-MUX whose merge result is consumed by an opaque extern whose
-; name merely STARTS WITH `cq_measure_` but is NOT a recognized intrinsic sink.
+; control_swap_reject_switch_datamux_spoof_sink.ll — SPOOFED-SINK reject (4.5 WI-4;
+; re-routed by dugh): an all-ConstantInt DATA-MUX whose merge result is consumed by
+; an opaque extern whose name merely STARTS WITH `cq_measure_` but is NOT a
+; recognized intrinsic sink.
 ;
-; THE HAZARD: `proveSwitchDataMux` requires the (UNTAINTED) data-mux merge result to
-; be consumed only by a measurement sink or a `ret`. That sink test MUST be
-; exact-membership (`TaintSet::MeasureCalls`, the recognized `@cq_measure_<sfx>` call
-; sites), NOT a `starts_with("cq_measure_")` prefix match — a prefix check on the
-; ACCEPT side is spoofable: `cq_measure_evil` is an UNKNOWN opaque callee everywhere
-; else in the pipeline (declineTaintEscapes / isMeasureSink both use exact membership),
-; yet a prefix check would mistake it for an owning sink and ACCEPT, leaking the live
-; superposed rail %out to a classical function as a raw i32 handle (a verify-clean
-; over-accept). Unlike the tainted-scrutinee allowlists, the untainted data-mux merge
-; is never escape-guard pre-filtered, so the gate must do the exact check itself.
+; THE HAZARD: `cq_measure_evil` must NEVER be mistaken for an owning measurement sink
+; (that would leak the live superposed rail %out to a classical function as a raw i32
+; handle). Under dugh the exact-membership sink test lives in the escape net, not a
+; detection-time gate: `repropagateControlMerges` re-seeds a second propagation from
+; the emitted `%out`, so the `cq_measure_evil` call reads a now-tainted value and —
+; being absent from the recognized `@cq_measure_<sfx>` sinks and every carve — is
+; correctly declined as an UNKNOWN CALLEE (`kMsgUnknownCallee`), refusing to leak the
+; rail. (A real `@cq_measure_<sfx>` sink stops propagation and is owned by
+; `lowerMeasures`; only the spoof falls through to the unknown-callee decline.)
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}tainted value consumed by an unknown callee
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_evil(i32)
 define i32 @example(i32 %u0) {

@@ -1,21 +1,20 @@
-; control_classical_call_arm_reject_escape_leak.ll — HANDLE-LEAK reject (8mld): a
-; PURE classical call inside a tainted-condition diamond arm whose i32 merge phi is
-; consumed by a `store` (equally: an opaque call, or a stock arithmetic op). The
-; 6.5 emitter RAUWs the merge phi to the FRESH `%out` QUBIT handle; a non-measure /
-; non-`ret` consumer then reads that handle as if it were the classical value —
-; `store i32 <handle>` SILENTLY writes the register id to memory. That is a
-; verify-clean over-accept (opt exits 0, module verifies) — the classical-over-
-; quantum leak the switch data-mux `proveSwitchDataMux` G6 already rejects, but
-; which the classical-call arm had NO gate for before 8mld.
+; control_classical_call_arm_reject_escape_leak.ll — HANDLE-LEAK reject (8mld;
+; re-routed by dugh): a PURE classical call inside a tainted-condition diamond arm
+; whose i32 merge phi is consumed by a `store` to a CLASSICAL pointer. The 6.5
+; emitter RAUWs the merge phi to the FRESH `%out` QUBIT handle; a `store i32 <handle>`
+; would SILENTLY write the register id to classical memory — a verify-clean
+; classical-over-quantum leak (the (A1) escape that must stay declined).
 ;
-; The merge is UNTAINTED (classical call result + constant), so `declineTaintEscapes`
-; (TAINT-gated) never fires — the value/phase-diamond `store` is caught there, the
-; classical-call arm's is not. The MERGE-OUT ESCAPE GATE restricts merge consumers
-; to a measurement sink (any width) or an i32 `ret`; a `store` DECLINES loudly.
-; NEVER lowered.
+; The merge is UNTAINTED (classical call result + constant), so the FIRST
+; `declineTaintEscapes` (TAINT-gated) never fires. dugh (Phase 4×6) retired the
+; detection-time merge-out gate and RE-SEEDS a second propagation from the emitted
+; `%out` (`repropagateControlMerges`); the now-tainted `store` declines via the
+; precise `kMsgStore`. The opaque-ptr store is the (A1) escape that STAYS declined;
+; dugh converts only the (A2) onward-QUANTUM subset (arith/phase → measure). NEVER
+; lowered.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}tainted value stored to memory
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @f(i32) #0
 

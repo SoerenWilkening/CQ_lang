@@ -143,6 +143,12 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
   stamp(Out);
   taint.Tainted.insert(Out);
   taint.ControlOwnedRails.insert(Out);  // DD-4: Phase-4 owns this data-mux out-rail
+  // dugh (Phase 4×6): the all-ConstantInt data-mux merge is ALWAYS data-untainted,
+  // so record the out-rail for `repropagateControlMerges` to re-seed. An onward
+  // QUANTUM flow (`z = rm + 1; measure z`) is then re-tainted and lowers; an onward
+  // classical escape / a new tainted-condition control on `rm` declines via the
+  // re-run net (replacing the pre-8mld `proveSwitchDataMux` merge-out gate).
+  taint.UntaintedMergeRails.insert(Out);
   taint.BirthOrder[Out] = taint.NextBirth++;
 
   // 2. Per CONTENT case (incoming v_i ≠ v_d): mint eq-flag → XOR-delta alloc →
