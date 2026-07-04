@@ -11,8 +11,13 @@
 ; `%out`, the store declines via the precise `kMsgStore`. Owner-directed defer
 ; (2026-07-04): the clean fix is a g7ip-sibling store→load forwarding (prove the
 ; scratch slot is single-write/single-read/no-alias/no-escape, RAUW the load to
-; `%out`) — a distinct mechanism tracked in the follow-on bead. This fixture pins the
-; SAFE over-decline in the interim (Prime Directive). NEVER lowered.
+; `%out`) — a distinct mechanism tracked in the follow-on bead. the follow-on
+; bead is CLOSED not-reachable (2026-07-04): that forwarding is UNREACHABLE on the
+; clang -O1/-O2/-O3 validated floor — GVN already forwards every provably-same-address
+; round-trip before cq-lowering runs (d3ji's accept-set is a strict subset of GVN's),
+; so this shape arises ONLY in hand-authored off-floor IR like below. This fixture pins
+; the PERMANENT SAFE over-decline (Prime Directive). NEVER lowered. See `bd memories
+; d3ji-gvn-subsumption-finding` + docs/prd/phase-04-swap-route-control/d3ji-*.md.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}tainted value stored to memory

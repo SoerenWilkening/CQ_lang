@@ -1,7 +1,8 @@
 # d3ji — Store a quantum handle into a local scratch slot (g7ip-sibling store→load forwarding)
 
-**Status:** INVESTIGATED, not built — **blocked on an owner scope decision.**
-Follow-on from `dugh` (owner-directed defer, 2026-07-04). Branch
+**Status:** CLOSED — **not-reachable / won't-fix (owner-approved 2026-07-04).**
+The forwarder is unreachable on the clang -O1/-O2/-O3 floor (§2); the current safe
+decline is correct and stays. Follow-on from `dugh` (owner-directed defer). Branch
 `dugh-repropagate-control-merge`.
 
 > **TL;DR (the finding).** The d3ji accept-shape — a provably-same-address,
