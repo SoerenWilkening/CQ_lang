@@ -2,6 +2,7 @@
 
 #include "SpecializeDetect.h"
 
+#include "Specialization.h"  // shouldSpecialize (bd 9paa round-2 Pending dedup)
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"
 #include "TaintPropagation.h"
@@ -45,7 +46,8 @@ bool readsTainted(const CallInst *CI, const TaintSet &taint) {
 }  // namespace
 
 void detectSpecializations(Module &M, const TaintSet &taint, WidthDispatch &wd,
-                           SpecPlan &out) {
+                           SpecPlan &out,
+                           const SmallPtrSetImpl<Value *> *reseed) {
   SmallPtrSet<const CallInst *, 16> Intrinsics = intrinsicSites(taint);
 
   for (Function &F : M) {
@@ -69,6 +71,42 @@ void detectSpecializations(Module &M, const TaintSet &taint, WidthDispatch &wd,
           continue;
         if (!readsTainted(CI, taint))
           continue;  // no tainted operand — not in the taint-escape domain.
+
+        // ── Round-2 re-detection (bd 9paa) ─────────────────────────────────
+        // A NON-null `reseed` marks the SECOND propagation pass
+        // (`repropagateControlMerges`): a wholly-new candidate `g(%out)` whose
+        // args were ALL classical at round 1 (so it never entered the plan) now
+        // reads a tainted control-merge `%out`. Three round-2-only filters (each
+        // a no-op at round 1, where `reseed == nullptr`, the plan is built one
+        // Site at a time, and each CallInst is visited exactly once so the
+        // Pending/Diagnosed scans never self-hit):
+        //   (a) a site already proven-Accept (in `Pending`) — owned by the
+        //       step-262 driver, or already re-planned by
+        //       `replanReseedSpecialization`; re-pushing would clone/retarget the
+        //       SAME Site twice with a duplicate candidate.
+        //   (b) a site already loud-declined (in `Diagnosed`, by round-1
+        //       detection OR by `replanReseedSpecialization`) — it rendered its
+        //       one specialization message; re-diagnosing double-fires it.
+        //   (c) consider ONLY a site whose newly-tainted arg is a RESEED value
+        //       (the control-merge `%out`, a yn71-produced `%out2` control rail, or
+        //       a data-derivation of either — the set computed in
+        //       `repropagateControlMerges` AFTER the control fixpoint, so it spans
+        //       every round-2 taint delta, bd afmv). A round-1-tainted-arg site was
+        //       already adjudicated in round 1 (and is in Pending/Diagnosed, so
+        //       (a)/(b) already skipped it). Restricting to the reseed set keeps a
+        //       site tainted for any OTHER reason out of round-2 re-detection.
+        if (reseed) {
+          if (shouldSpecialize(CI, out) || out.Diagnosed.count(CI))
+            continue;
+          bool ReadsReseed = false;
+          for (const Use &Op : CI->args())
+            if (reseed->count(Op.get())) {
+              ReadsReseed = true;
+              break;
+            }
+          if (!ReadsReseed)
+            continue;
+        }
 
         // The §2.2 taint signature. `mask == 0` cannot happen here
         // (`readsTainted` is true), but a value used ONLY as a classical angle

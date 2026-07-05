@@ -792,6 +792,52 @@ add_test(NAME e2e-slice-control-spec-replan
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_replan_qpow_caller.expected.log")
 
+# bd 9paa (round-2 spec DETECTION — the detection twin of the 0vvq re-plan): a 6.5
+# classical-call arm builds an UNTAINTED merge %out (i32) that feeds a WHOLLY-NEW
+# Phase-6 SPECIALIZATION candidate qsq(y) whose SOLE arg is the merge (NO round-1
+# theta handle). At `detectSpecializations` (pre-emit) qsq reads NO tainted operand,
+# so it never enters `plan6.Pending` and the 0vvq re-plan skips it — dugh/0vvq
+# over-declined it `kMsgUnknownCallee`. dugh's `repropagateControlMerges` re-taints
+# %out in round 2 and 9paa's round-2 `detectSpecializations` DETECTS qsq(%out), so
+# the step-262 driver clones @__cq_q_qsq_1 with `mul v,v` lowering bare-QQ (the merged
+# register h2 read as a HANDLE, cq_template_mul_i32 NOT _hl — the D2 miscompile guard),
+# Bennett-wrapped. The ONLY layer that LINK-proves the round-2-DETECTED clone + its
+# bare-QQ producer + its _unc twin resolve and signature-match through llvm-link (Rule
+# 2/16). Reuses classical_call_under_control_lib.c for the visible pure `ext_f`. Pinned
+# by control_classical_call_arm_accept_onward_spec_newcand.ll.
+add_test(NAME e2e-slice-control-spec-newcand
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_newcand_qsq_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_newcand_qsq_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_newcand_qsq_caller.expected.log")
+
+# bd afmv (the CHAINED onward-control -> spec re-plan; a CRITICAL yn71-introduced silent
+# miscompile discovered by the 9paa Rule-13 workflow). Two chained 6.5 classical-call arms:
+# region 1 `if(q>5)` -> %out1; region 2 `if(y>50)` (cond reads %out1) is lowered by yn71's
+# detectAndLowerOnwardControl in round 2 -> %out2 (a quantum rail). `gg(w,q)` is a ROUND-1
+# Phase-6 Pending candidate (reads the theta handle q, mask frozen 0b10). Pre-afmv the reseed
+# set was frozen BEFORE the yn71 fixpoint, so gg's stale mask was never re-widened for the
+# %out2 arg and the driver cloned @__cq_q_gg_10 with cq_template_mul_i32_hl(q, %out2) reading
+# the superposed rail's HANDLE-TAG as an _hl literal (q*7, verify-clean wrong unitary). The
+# afmv fix computes reseed AFTER the control fixpoint so %out2 is in it; replanReseedSpecial-
+# ization re-widens gg 0b10 -> 0b11 and the driver clones @__cq_q_gg_11 with a bare-QQ
+# cq_template_mul_i32 over TWO quantum handles. The golden's `cq_template_mul_i32(h0, h7)`
+# (q * %out2, both HANDLES) + its _unc twin is the miscompile-fix contract; the second
+# measure(y) keeps region-1's merge live so clang -O1 materializes both rails. The ONLY layer
+# that LINK-proves the re-widened clone resolves. Pinned by
+# control_classical_call_arm_accept_onward_ctl_spec_replan.ll.
+add_test(NAME e2e-slice-control-spec-chained-ctl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_chained_ctl_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_chained_ctl_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_chained_ctl_caller.expected.log")
+
 # Phase 7.6 (test_C_libtooling-9x4z.1): the reversible I/O output tape. The only
 # layer that LINKS — and 7.6 adds NEW frozen hand-written core symbols, so this
 # golden is the ONLY proof cqrt_tape_alloc + cqrt_tape_write_<W> resolve and

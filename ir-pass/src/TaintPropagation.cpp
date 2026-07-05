@@ -14,6 +14,7 @@
 #include "LibmLowering.h"
 #include "OpcodeLowering.h"   // declineStaleRecordOps (dugh second-round re-sweep)
 #include "QramLowering.h"
+#include "SpecializeDetect.h"   // detectSpecializations (9paa round-2 re-detection)
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
 #include "Specialization.h"
@@ -1430,9 +1431,31 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
                       /*skipRuntimeCalls=*/true);
   }
 
-  // Round-2 reseed set — computed AFTER the by-ref re-run so a marker result (a new
-  // round-2 tainted value) feeding a Phase-6 spec candidate is caught by
-  // `declineReseedIntoFrozenPlan` below (Increment 2's frozen-plan owner).
+  // yn71 (Phase 4×6, CONTROL case): RE-DETECT + emit a NEW tainted-condition
+  // br/switch/select on the merge as a FIXPOINT, instead of dugh's blanket decline.
+  // `detectControlRegions`/`lowerControlRegions` (the same machinery step 183/184
+  // run) lowers the known phase/value/select/switch shapes and declines the rest
+  // loudly itself (it is the decline authority — see `detectAndLowerOnwardControl`).
+  //
+  // Runs BEFORE the reseed computation + spec re-plan/re-detect below — the bd afmv
+  // ORDERING FIX. yn71's `detectAndLowerOnwardControl` builds NEW `%out2` control
+  // rails (a downstream `if(%out>k)` classical-call arm / switch data-mux) that are
+  // genuine i32 quantum handles and taints them + their downstream. A Phase-6 spec
+  // candidate reading a `%out2` rail must be in the round-2 reseed domain so the
+  // re-plan/re-detect below either re-widen its mask to bare-QQ or loud-decline it —
+  // otherwise a ROUND-1 `Pending` candidate whose arg is a `%out2` rail keeps its
+  // stale (frozen) mask and the step-262 driver clones it reading the superposed rail
+  // as an `_hl` classical literal (`cq_template_mul_i32_hl(q, %out2)` = q × the rail's
+  // handle-TAG, a verify-clean wrong unitary, bd afmv). Computing `reseed` AFTER this
+  // (so it captures the `%out2` rails) is exactly what closes that hole.
+  detectAndLowerOnwardControl(M, wd, taint, ThetaFns, PhiFns, MeasureFns);
+
+  // Round-2 reseed set — computed AFTER the by-ref re-run AND the yn71 control
+  // fixpoint, so it captures the WHOLE round-2 taint delta: the merge out-rails, the
+  // by-ref markers, AND the yn71-produced `%out2` control rails + everything they
+  // taint. `UntaintedMergeRails` has grown to include the yn71 rails (the 6.5/4.5
+  // emitters record every `%out` they build); `Tainted − beforeTaint` captures their
+  // derivations. This POST-fixpoint computation is the bd afmv fix (see above).
   SmallPtrSet<Value *, 32> reseed(taint.UntaintedMergeRails.begin(),
                                   taint.UntaintedMergeRails.end());
   for (Value *V : taint.Tainted)
@@ -1441,25 +1464,31 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
 
   // 2. RE-PLAN a FROZEN-PLAN Phase-6 spec candidate (the SOLE remaining frozen-plan
   //    owner after 0vvq Inc 1 re-ran by-ref math above) whose per-arg mask was fixed
-  //    pre-emit and no longer matches a round-2-quantum `%out` argument: recompute
-  //    the mask (Q+Q) so the step-14 driver clones a body that reads `%out` as a
+  //    pre-emit and no longer matches a round-2-quantum argument: recompute the mask
+  //    (Q+Q) so the step-262 driver clones a body that reads the reseed arg as a
   //    QUANTUM operand, not as an `_hl` classical literal (the D2 silent miscompile).
   //    A non-i32 reseed arg cannot be re-planned and declines LOUDLY here (0vvq Inc
-  //    2). Must precede `declineTaintEscapes`, whose `shouldSpecialize` carve would
-  //    otherwise wave a re-planned OR a to-be-declined candidate through.
-  // 3. yn71 (Phase 4×6, CONTROL case): RE-DETECT + emit a NEW tainted-condition
-  //    br/switch/select on the merge as a FIXPOINT, instead of dugh's blanket
-  //    decline. `detectControlRegions`/`lowerControlRegions` (the same machinery
-  //    step 183/184 run) lowers the known phase/value/select/switch shapes and
-  //    declines the rest loudly itself (it is the decline authority — see
-  //    `detectAndLowerOnwardControl`). Then 4. re-run the escape net (onward
-  //    classical escapes decline via the precise messages; onward arith/phase/
-  //    QRAM-store are carved for their owners) and 5. the stale-record sweep
-  //    (mirrors the `declineLiftedStaleRecordOps` re-sweep precedent). Each
-  //    decline is a `DiagnosticInfoUnsupported(DS_Error)` → `exit(1)`, so an
-  //    A1-escape decline exits before the transiently-mistyped IR is verified.
+  //    2). With the afmv ordering the reseed set now includes yn71 `%out2` rails, so a
+  //    round-1 `Pending` candidate reading a `%out2` rail is re-widened here (bd afmv)
+  //    exactly as a `%out`-reading one. Must precede `declineTaintEscapes`, whose
+  //    `shouldSpecialize` carve would otherwise wave a stale-mask candidate through.
+  // 2b. bd 9paa (round-2 spec DETECTION — the detection twin of the re-plan): a
+  //    wholly-new candidate `g(%out)`/`g(%out2)` that was ALL-classical at round 1
+  //    (never in the plan) now reads a tainted merge/control rail. RE-RUN
+  //    `detectSpecializations` on the reseed set, feeding the SAME `plan6`, so the
+  //    driver clones it. Runs AFTER the re-plan (so its (a)/(b) Pending/Diagnosed
+  //    dedup sees the re-plan's result — a reseed-reading round-1 candidate is already
+  //    resolved and 9paa skips it) and AFTER `detectAndLowerOnwardControl` (so the CFG
+  //    is fully settled: no un-lowered pre-lowering merge phi can enter `Pending`,
+  //    closing the broken-module hazard). Both must precede `declineTaintEscapes` so
+  //    the `shouldSpecialize` carve suppresses the new site's `kMsgUnknownCallee`.
+  // 3. Then re-run the escape net (onward classical escapes decline via the precise
+  //    messages; onward arith/phase/QRAM-store are carved for their owners) and 4. the
+  //    stale-record sweep (mirrors the `declineLiftedStaleRecordOps` re-sweep
+  //    precedent). Each decline is a `DiagnosticInfoUnsupported(DS_Error)` → non-zero
+  //    exit, so an escape decline exits before the transiently-mistyped IR is verified.
   replanReseedSpecialization(taint, wd, plan6, reseed);
-  detectAndLowerOnwardControl(M, wd, taint, ThetaFns, PhiFns, MeasureFns);
+  detectSpecializations(M, taint, wd, plan6, &reseed);
   declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);
 }
