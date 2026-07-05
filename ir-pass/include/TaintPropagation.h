@@ -267,8 +267,10 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 // re-seeds a forward taint propagation from those rails (skipping the emitted
 // `cqrt_*`/`cq_template_*` scaffolding so uncompute parity with the tainted-merge
 // case is preserved), then re-runs the taint-gated guards on the newly-tainted
-// onward flow: `declineReClassifiedControl` (a new tainted-condition
-// br/switch/select on `%out` — out of scope, over-decline), `declineTaintEscapes`
+// onward flow: `detectAndLowerOnwardControl` (yn71 — a new tainted-condition
+// br/switch/select on `%out` is RE-DETECTED + emitted as a fixpoint via the
+// step-183/184 machinery, the known shapes lowered and the rest declined loudly;
+// replaces dugh's blanket `declineReClassifiedControl`), `declineTaintEscapes`
 // (onward classical escapes — store / opaque call / non-i32 ret still decline via
 // the precise net), and `declineStaleRecordOps` (an onward stale-record hazard).
 // The remaining downstream stages (QRAM/Shadow/IO, rotations + the tainted-angle

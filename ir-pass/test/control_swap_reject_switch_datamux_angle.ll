@@ -10,14 +10,15 @@
 ; Under dugh (Phase 4×6) the pre-emit `proveSwitchDataMux` G6 merge-out gate is
 ; retired; `repropagateControlMerges` re-seeds a second propagation from the emitted
 ; `%out`, which taints `rm`, the `icmp ne`, and the `select` — whose CONDITION is now
-; tainted. That tainted-condition select is a NEW control construct on the merge (out
-; of dugh scope), so `declineReClassifiedControl` declines it `control flow under
-; quantum control` (fires before `declineTaintedAngle` would fire on the tainted
-; angle at rotation lowering). Either way it declines loudly — the angle never reaches
-; `cqrt_rz`. Over-decline is safe (Prime Directive).
+; tainted. Under yn71 that tainted-condition select is RE-DETECTED (replacing dugh's
+; blanket `declineReClassifiedControl`): `classifySelectRegion` sees its result feed a
+; rotation arg-1 ANGLE (`cq_phi(%qx, %ang)`), the fp/angle coherent-use fence, and
+; declines with the PRECISE `rotation angle under quantum control` — sharper than
+; dugh's generic `control flow`, and exactly the f64/angle hazard this fixture pins.
+; The angle never reaches `cqrt_rz`. Over-decline is safe (Prime Directive).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}rotation angle under quantum control
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

@@ -17,6 +17,7 @@
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
 #include "Specialization.h"
+#include "SwapRouteEmit.h"     // lowerControlRegions (yn71 onward-control re-emit)
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -1165,50 +1166,108 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
 
 namespace {
 
-// dugh — decline a SURVIVING tainted-condition `br`/`switch`/`select` on a
-// re-seeded control-merge value. Runs inside `repropagateControlMerges`, AFTER
-// the second forward propagation has tainted `%out`'s onward derivations and
-// BEFORE the re-run escape net.
+// yn71 (Phase 4×6, the CONTROL case) — RE-DETECT + emit onward tainted control on
+// a re-seeded control-merge `%out`. REPLACES dugh's blanket
+// `declineReClassifiedControl`: a downstream `br`/`switch`/`select` whose
+// condition is a `%out` derivation was CLASSICAL-conditioned at round-1 detection
+// (the merge was data-untainted then), so `detectControlRegions` (step 183)
+// skipped it and it survived round-1 flattening. The second propagation just
+// tainted its condition, making it a genuinely NEW tainted-control region —
+// indistinguishable from the tainted-condition diamond/if-else/switch/select the
+// SAME machinery already lowers (a re-seeded `%out` handle is a tainted quantum
+// handle exactly like a fresh `cq_theta` one). This is the physics-valid "quantum
+// data used as further quantum control" case dugh over-declined (over-decline is
+// safe, so shipping it as this bead's real lowering; Rule 17 build-the-intent).
 //
-// WHY IT IS NEEDED: `detectControlRegions` adjudicated every tainted-condition
-// construct visible at detection time (accept → flattened; decline → opt already
-// exited). But the two untainted-merge emitters create `%out` AFTER detection, so
-// a downstream `if (%out > k) …` / `%out > k ? a : b` was NOT a tainted-condition
-// construct then (the merge was data-untainted) and survived. After the second
-// propagation its condition is tainted — a *new* control region on the merge,
-// which is OUT of dugh scope (arith/phase/local-array store terminating at
-// measure/i32-ret). The escape net does not catch it: `declineTaintEscapes` skips
-// terminators ("a tainted br/switch condition is ControlDetect's") and
-// `declineClassicalMuxes` skips a tainted-condition select ("ControlDetect's").
-// So decline it loudly HERE (Prime Directive: over-decline is always safe; a
-// future bead can re-detect + emit it as nested onward control).
+// SAFE TO RE-RUN. Round-1's accepted regions are already flattened (their tainted
+// `br`/`switch` erased) or RAUW'd+erased (the emitted `select`); round-1's
+// declines already exited `opt`. So the ONLY tainted-condition construct visible
+// here is a new downstream one on `%out`. `detectControlRegions` is pure analysis
+// by SSA identity (fresh `ControlPlan`+`Claimed` per call, no cached block
+// pointers across erasures — Rule 9) and is the DECLINE AUTHORITY: any tainted
+// control it cannot prove fires its precise per-shape diagnostic (`opt` exits
+// non-zero), so the "accept the known phase/value/select/switch shapes, decline
+// the rest loudly" contract holds with ZERO new decline logic (Rule 14 reuse).
 //
-// This never fires on an already-emitted region: those are flattened (their
-// tainted br/switch is gone) or RAUW'd+erased (the emitted select). The only
-// tainted-condition construct at this point is a genuinely new downstream one.
-void declineReClassifiedControl(Module &M, TaintSet &taint) {
-  for (Function &F : M) {
-    if (F.isDeclaration())
-      continue;
-    for (BasicBlock &BB : F) {
-      for (Instruction &I : BB) {
-        if (auto *BI = dyn_cast<BranchInst>(&I)) {
-          if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
-            diagnoseUnderControl(BI, "control flow");
-          continue;
-        }
-        if (auto *SI = dyn_cast<SwitchInst>(&I)) {
-          if (taint.Tainted.count(SI->getCondition()))
-            diagnoseUnderControl(SI, "control flow");
-          continue;
-        }
-        if (auto *Sel = dyn_cast<SelectInst>(&I)) {
-          if (taint.Tainted.count(Sel->getCondition()))
-            diagnoseUnderControl(Sel, "control flow");
-          continue;
-        }
-      }
+// FIXPOINT (mirrors the g387 by-ref / 0vvq spec fixpoints in this same function).
+// Two accepted region kinds — the 6.5 classical-call arm and the 4.5 switch
+// data-mux — build a NEW `%out2` rail that may itself feed a further onward
+// control. Re-seed `propagateWorklist` from the WHOLE live `taint.Tainted`
+// (`skipRuntimeCalls=true` — never re-taint the emitter's own `cqrt_*`/
+// `cq_template_*` scaffolding, so uncompute parity with a round-1 rail is kept)
+// after each `lowerControlRegions`, so the next iteration adjudicates the
+// cascaded region. Seeding from the whole set (not just the new rails) is
+// required: the rail is already tainted, so a rails-only re-seed would not
+// re-visit its downstream (the g387 by-ref re-seed uses the full set for the same
+// reason). TERMINATES: each non-empty plan emits ≥1 region and every emit REMOVES
+// exactly one tainted-condition construct (`RegionFlatten` erases the
+// `br`/`switch`; `emitSelectRegion` erases the `select`) while creating none, so
+// the finite construct count strictly decreases; a single-level onward control
+// runs two iterations (emit, then confirm empty).
+//
+// THE CASCADE IS NATURALLY SEQUENCED. When an upstream region is adjudicated, the
+// downstream (cascaded) region's condition is still CLASSICAL (its rail does not
+// exist until the upstream emits + the next re-propagation runs), so
+// `recoverRegion`'s `hasTaintedCondBranch(merge)` sequential/nested guard does not
+// fire on it and it lowers on the following iteration. Two SAME-source siblings
+// `if(%out>k1)…; if(%out>k2)…` are BOTH tainted in one iteration, so the first's
+// merge hosts the second's tainted `br` and `recoverRegion` declines them as
+// sequential/nested (the block-lifetime SIGSEGV-family guard, unchanged) — a safe
+// over-decline (filed follow-on).
+//
+// THE RE-FLATTEN HAZARD (Rule 13). The CFG is ALREADY flattened by round-1
+// `lowerControlRegions` (step 184). When the downstream diamond's pred is the
+// round-1 spliced merge tail (`int y=5; if(q>3) y=f(a); if(y>7) y=cq_phi(y,θ)`,
+// the round-1 merge block ending in the downstream `br i1 %c2`), round-1
+// `flattenRegion` already re-pointed the downstream merge phi's incoming block
+// `Merge → Pred` before erasing `Merge` (the dugh D1 fix
+// `replaceSuccessorsPhiUsesWith`, load-bearing for the CLASSICAL 5j5
+// `accept_onward_phase_downstream_if` case AND equally for this TAINTED case),
+// leaving a clean standalone downstream diamond whose pred is the flattened block;
+// round-2 `flattenRegion` handles it with the same discipline (its own D1 fix
+// re-points any THIRD region's merge phi). Stress-tested under guard-malloc in the
+// Rule-13 sweep.
+// BY-REF RE-RUN (Rule-13 robustness). A by-ref math call (frexp/modf/remquo) fed by
+// a rail THIS fixpoint creates (a round-2 onward classical-call-arm / switch-data-mux
+// / select `%out2`) was never seen by the step-2 `lowerByRefMath` fixpoint (which
+// ran BEFORE this control emit), and `declineTaintEscapes`'s by-ref carve
+// (`isByRefMathCall → continue`, assuming `lowerByRefMath` already owned it) would
+// let the RAW call escape into `lowerOps`, which lowers its `sitofp` arg to an i32
+// handle → a type-mismatched BROKEN MODULE (`frexp(i32, ptr)` vs `frexp(double,
+// ptr)`). That shape is not clang-`-O1`-emittable (a constant-straight-through arm
+// merge that also keeps `%out` live as an un-threaded onward comparison is mutually
+// exclusive under clang's threading), but a broken module on ANY input is a
+// robustness hole (Rule 10). Fold `lowerByRefMath` INTO the fixpoint (AFTER the
+// control emit so the diamond is already flattened and its cell is straight-line —
+// the 0vvq Inc 1 enabler): a round-2-rail by-ref then LOWERS to `@cq_byref_*`
+// markers (byte-identical to a round-1-rail by-ref) or LOUD-DECLINES an off-pattern
+// cell — never survives raw. A control emit may expose a new by-ref and a by-ref
+// marker may expose a new onward control, so both run each iteration until neither
+// changes. The SPEC case (a round-2 rail feeding a Phase-6 candidate) already
+// declines cleanly via `declineTaintEscapes` `kMsgUnknownCallee` (a round-2 spec
+// DETECTION, bead 9paa) — no broken module — so only by-ref needs this re-run.
+void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
+                                 const FnSet &ThetaFns, const FnSet &PhiFns,
+                                 const FnSet &MeasureFns) {
+  SmallPtrSet<const CallInst *, 8> byRefDeclined;
+  while (true) {
+    bool changed = false;
+    ControlPlan plan2 = detectControlRegions(M, taint);
+    if (!plan2.Regions.empty()) {
+      lowerControlRegions(M, wd, taint, plan2);
+      std::vector<Value *> WL(taint.Tainted.begin(), taint.Tainted.end());
+      propagateWorklist(WL, ThetaFns, PhiFns, MeasureFns, taint,
+                        /*skipRuntimeCalls=*/true);
+      changed = true;
     }
+    if (lowerByRefMath(M, wd, taint, byRefDeclined)) {
+      std::vector<Value *> WL(taint.Tainted.begin(), taint.Tainted.end());
+      propagateWorklist(WL, ThetaFns, PhiFns, MeasureFns, taint,
+                        /*skipRuntimeCalls=*/true);
+      changed = true;
+    }
+    if (!changed)
+      break;  // fixpoint: no new control region emitted and no new by-ref lowered.
   }
 }
 
@@ -1388,15 +1447,19 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   //    A non-i32 reseed arg cannot be re-planned and declines LOUDLY here (0vvq Inc
   //    2). Must precede `declineTaintEscapes`, whose `shouldSpecialize` carve would
   //    otherwise wave a re-planned OR a to-be-declined candidate through.
-  // 3. Decline a NEW tainted-condition br/switch/select on the merge (hole the
-  //    escape net does not cover). Then 4. re-run the escape net (onward
+  // 3. yn71 (Phase 4×6, CONTROL case): RE-DETECT + emit a NEW tainted-condition
+  //    br/switch/select on the merge as a FIXPOINT, instead of dugh's blanket
+  //    decline. `detectControlRegions`/`lowerControlRegions` (the same machinery
+  //    step 183/184 run) lowers the known phase/value/select/switch shapes and
+  //    declines the rest loudly itself (it is the decline authority — see
+  //    `detectAndLowerOnwardControl`). Then 4. re-run the escape net (onward
   //    classical escapes decline via the precise messages; onward arith/phase/
   //    QRAM-store are carved for their owners) and 5. the stale-record sweep
   //    (mirrors the `declineLiftedStaleRecordOps` re-sweep precedent). Each
   //    decline is a `DiagnosticInfoUnsupported(DS_Error)` → `exit(1)`, so an
   //    A1-escape decline exits before the transiently-mistyped IR is verified.
   replanReseedSpecialization(taint, wd, plan6, reseed);
-  declineReClassifiedControl(M, taint);
+  detectAndLowerOnwardControl(M, wd, taint, ThetaFns, PhiFns, MeasureFns);
   declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);
 }

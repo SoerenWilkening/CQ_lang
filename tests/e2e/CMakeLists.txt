@@ -729,6 +729,29 @@ add_test(NAME e2e-slice-classical-call-under-control
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_caller.expected.log")
 
+# bd yn71 (Phase 4×6, the CONTROL case): a 6.5 classical-call arm builds an UNTAINTED
+# merge %out (`int y=5; if (q>5) y=ext_f(7)`) that then feeds an ONWARD TAINTED-CONTROL
+# phase arm (`if (y>50) y=cq_phi(y, .25)`). The merge is data-untainted at round-1, so
+# `if (y>50)` is a CLASSICAL branch then; dugh's `repropagateControlMerges` re-seeds the
+# second propagation from %out, tainting `icmp sgt %out, 50`. PRE-yn71
+# `declineReClassifiedControl` declined that new tainted-condition branch; yn71 RE-DETECTS
+# it (`detectAndLowerOnwardControl`) and `SwapRouteEmit` emits the routed phase arm ON
+# %out (flag=icmp(%out,50), cqrt_cswap route in, VERBATIM cqrt_rz(rail,.25), route back,
+# rail free, icmp_inv strip, flag free; measure reads %out). The ONLY layer that
+# LINK-proves the re-detected onward controlled cqrt_cswap/cqrt_rz stream over the control
+# merge resolves + signature-matches (Rule 2/16). Reuses classical_call_under_control_lib.c
+# for the visible pure `ext_f` (=107); the downstream `ext_f(7)`/`y>50` are unfoldable at
+# the CQ-TU compile (ext_f only declared), so `if (y>50)` survives -O1 as a real diamond.
+# control_classical_call_arm_accept_onward_ctl_phase.ll is the pinned IR contract.
+add_test(NAME e2e-slice-control-cond-onward-ctl-phase
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/onward_ctl_phase_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/onward_ctl_phase_caller.expected.log")
+
 # bd 0vvq Increment 1 (the by-ref UNFREEZE): a 6.5 classical-call arm builds an
 # UNTAINTED merge %out (i32) that then feeds an ONWARD by-ref libm call frexp on the
 # merged register. dugh's `repropagateControlMerges` RE-RUNS `lowerByRefMath` after
