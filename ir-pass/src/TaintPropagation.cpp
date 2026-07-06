@@ -8,10 +8,8 @@
 
 #include "TaintPropagation.h"
 
-#include "ByRefMath.h"
 #include "ControlPlan.h"      // diagnoseUnderControl (dugh re-classified control)
 #include "IntrinsicLowering.h"
-#include "LibmLowering.h"
 #include "OpcodeLowering.h"   // declineStaleRecordOps (dugh second-round re-sweep)
 #include "QramLowering.h"
 #include "SpecializeDetect.h"   // detectSpecializations (9paa round-2 re-detection)
@@ -616,32 +614,15 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             //     transcendentals, general funnel shift stay declined).
             if (isCuratedReversibleIntrinsic(CI))
               continue;
-            // 1d-3c6m.2. Curated DIRECT-libm math.h calls (cbrt/erf/atan2/hypot/
-            //     ilogb/ldexp/scalbn/…) are OWNED by LibmLowering (enqueued in
-            //     OpcodeLowering, lowered to a cq_template_<…> additive producer
-            //     the whole-DAG uncompute spine reverses). EXACT-name membership
-            //     over a DECLARATION-only libc extern with NO operand bundles —
-            //     NEVER a name prefix (the cq_theta_evil hazard) — with the
-            //     arity/result-type/operand-width shape validated (isLibmCall is
-            //     the SAME predicate the emitter re-checks, so the carve can never
-            //     accept an unlowerable call). A user's own in-module `cbrt` body
-            //     (not a declaration) is NOT carved (owned by the specializer /
-            //     escape path). The fp result reaching a rotation arg-1 STILL
-            //     declines — the angle fence is upstream (declineTaintedAngle),
-            //     producer-agnostic (bd [fp-angle-fence-ordering-invariant]).
-            if (isLibmCall(CI))
-              continue;
-            // 1d-g387. A by-ref math call (frexp/modf/remquo) is OWNED by
-            //     `lowerByRefMath` (which ran already, right after the first
-            //     propagate): on a valid out-cell it was rewritten to
-            //     `@cq_byref_*` producer markers (carved above via `isLibmCall`);
-            //     on an off-pattern cell it ALREADY emitted the loud
-            //     `kMsgByRefMath` decline and left the call in place. Skip it
-            //     here either way so the generic `kMsgUnknownCallee` never
-            //     double-fires (a classical by-ref call reads no tainted value
-            //     and would not reach here).
-            if (isByRefMathCall(CI))
-              continue;
+            // p119 (Rule 18): a DIRECT-libm math.h call (cbrt/erf/atan2/hypot/
+            //     ilogb/ldexp/…) and a by-ref math call (frexp/modf/remquo) are
+            //     LIBRARY functions — their name-recognition is REMOVED. A library
+            //     function must be compiled by SOURCE INJECTION (its body inlines
+            //     to opcodes before this pass), never carved by name. So a tainted
+            //     un-injected libm call is NOT carved here: it falls through to the
+            //     loud kMsgUnknownCallee decline below (the correct, safe outcome —
+            //     you did not inject the source). Only the hardware-backed
+            //     intrinsics carved above (isCuratedReversibleIntrinsic) survive.
           }
           // 1d-Phase7.6. Recognized I/O output sinks (`printf` / `putchar`)
           //     consuming a tainted INTEGER-SCALAR arg are OWNED by
@@ -1228,47 +1209,24 @@ namespace {
 // round-2 `flattenRegion` handles it with the same discipline (its own D1 fix
 // re-points any THIRD region's merge phi). Stress-tested under guard-malloc in the
 // Rule-13 sweep.
-// BY-REF RE-RUN (Rule-13 robustness). A by-ref math call (frexp/modf/remquo) fed by
-// a rail THIS fixpoint creates (a round-2 onward classical-call-arm / switch-data-mux
-// / select `%out2`) was never seen by the step-2 `lowerByRefMath` fixpoint (which
-// ran BEFORE this control emit), and `declineTaintEscapes`'s by-ref carve
-// (`isByRefMathCall → continue`, assuming `lowerByRefMath` already owned it) would
-// let the RAW call escape into `lowerOps`, which lowers its `sitofp` arg to an i32
-// handle → a type-mismatched BROKEN MODULE (`frexp(i32, ptr)` vs `frexp(double,
-// ptr)`). That shape is not clang-`-O1`-emittable (a constant-straight-through arm
-// merge that also keeps `%out` live as an un-threaded onward comparison is mutually
-// exclusive under clang's threading), but a broken module on ANY input is a
-// robustness hole (Rule 10). Fold `lowerByRefMath` INTO the fixpoint (AFTER the
-// control emit so the diamond is already flattened and its cell is straight-line —
-// the 0vvq Inc 1 enabler): a round-2-rail by-ref then LOWERS to `@cq_byref_*`
-// markers (byte-identical to a round-1-rail by-ref) or LOUD-DECLINES an off-pattern
-// cell — never survives raw. A control emit may expose a new by-ref and a by-ref
-// marker may expose a new onward control, so both run each iteration until neither
-// changes. The SPEC case (a round-2 rail feeding a Phase-6 candidate) already
-// declines cleanly via `declineTaintEscapes` `kMsgUnknownCallee` (a round-2 spec
-// DETECTION, bead 9paa) — no broken module — so only by-ref needs this re-run.
+// p119: the by-ref re-run (frexp/modf/remquo on a round-2 rail) is REMOVED — by-ref
+// math is a library-function family, now source-injected, not name-recognized. Only
+// the onward tainted-CONTROL re-detect (yn71) remains: a round-2 br/switch/select on
+// a merge rail is lowered as a fixpoint (a control emit can expose a further onward
+// control). The SPEC case (a round-2 rail feeding a Phase-6 candidate) declines
+// cleanly via `declineTaintEscapes` `kMsgUnknownCallee` (round-2 spec detection,
+// bead 9paa).
 void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
                                  const FnSet &ThetaFns, const FnSet &PhiFns,
                                  const FnSet &MeasureFns) {
-  SmallPtrSet<const CallInst *, 8> byRefDeclined;
   while (true) {
-    bool changed = false;
     ControlPlan plan2 = detectControlRegions(M, taint);
-    if (!plan2.Regions.empty()) {
-      lowerControlRegions(M, wd, taint, plan2);
-      std::vector<Value *> WL(taint.Tainted.begin(), taint.Tainted.end());
-      propagateWorklist(WL, ThetaFns, PhiFns, MeasureFns, taint,
-                        /*skipRuntimeCalls=*/true);
-      changed = true;
-    }
-    if (lowerByRefMath(M, wd, taint, byRefDeclined)) {
-      std::vector<Value *> WL(taint.Tainted.begin(), taint.Tainted.end());
-      propagateWorklist(WL, ThetaFns, PhiFns, MeasureFns, taint,
-                        /*skipRuntimeCalls=*/true);
-      changed = true;
-    }
-    if (!changed)
-      break;  // fixpoint: no new control region emitted and no new by-ref lowered.
+    if (plan2.Regions.empty())
+      break;  // fixpoint: no new onward control region emitted.
+    lowerControlRegions(M, wd, taint, plan2);
+    std::vector<Value *> WL(taint.Tainted.begin(), taint.Tainted.end());
+    propagateWorklist(WL, ThetaFns, PhiFns, MeasureFns, taint,
+                      /*skipRuntimeCalls=*/true);
   }
 }
 
@@ -1405,31 +1363,11 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, taint,
                     /*skipRuntimeCalls=*/true);
 
-  // bd 0vvq (Increment 1) — UNFREEZE by-ref math. `lowerByRefMath` (g387) ran at
-  // step 2 and left a merge-fed `frexp`/`modf`/`remquo` RAW (its fp arg was an
-  // untainted classical double then). Now `%out` is tainted AND the
-  // tainted-condition diamond is FLATTENED (`lowerControlRegions` ran before this),
-  // so `analyzeCell`'s `underTaintedControl` check — which declined at round 1 on
-  // the tainted-`br` dominator — now passes, and g387 lowers the call to
-  // `@cq_byref_*` markers exactly as it would a round-1 tainted `frexp`. Re-run to a
-  // FIXPOINT (chained by-ref); after each change re-propagate from the LIVE taint
-  // set (`skipRuntimeCalls=true`) so the new markers and their downstream re-taint —
-  // a `cq_byref_*` marker is a plain user of the tainted fp arg (not a
-  // `cqrt_`/`cq_template_`/measure/angle edge), so `propagateWorklist` taints it.
-  // Seeding from the WHOLE current `Tainted` set (not just the rails) is required:
-  // the marker's fp arg is already tainted, so a rails-only re-seed would not
-  // re-visit it and the new marker would never taint. The `lowerByRefMath` teardown
-  // scrubs each erased instruction from `Tainted`, so this seed carries no freed
-  // pointers. A genuinely off-pattern round-2 by-ref (nested control, loop,
-  // escaping/aliased cell, tainted out-pointer, bad signature) still loud-declines
-  // inside `lowerByRefMath` (Prime Directive preserved). By-ref is NO LONGER a
-  // frozen-plan owner after this — `declineReseedIntoFrozenPlan` below is spec-only.
-  SmallPtrSet<const CallInst *, 8> byRefDeclined2;
-  while (lowerByRefMath(M, wd, taint, byRefDeclined2)) {
-    std::vector<Value *> WL(taint.Tainted.begin(), taint.Tainted.end());
-    propagateWorklist(WL, ThetaFns, PhiFns, MeasureFns, taint,
-                      /*skipRuntimeCalls=*/true);
-  }
+  // p119: the bd-0vvq by-ref-math UNFREEZE on a round-2 `%out` is REMOVED — by-ref
+  // math (frexp/modf/remquo) is a library-function family, now source-injected, not
+  // name-recognized. A merge-fed un-injected by-ref call declines cleanly via
+  // `declineTaintEscapes` `kMsgUnknownCallee`. `declineReseedIntoFrozenPlan` below is
+  // spec-only.
 
   // yn71 (Phase 4×6, CONTROL case): RE-DETECT + emit a NEW tainted-condition
   // br/switch/select on the merge as a FIXPOINT, instead of dugh's blanket decline.

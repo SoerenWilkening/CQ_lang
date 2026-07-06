@@ -1,9 +1,22 @@
 # Source-Injection Census — math.h via openlibm (opcode-lowering path)
 
+> **⚠️ p119 (2026-07-06): source injection is now the AUTHORITATIVE way to compile a
+> library function (Rule 18).** The old "template-recognition" strategy (recognize
+> `@llvm.<fn>` / `@<fn>` by name → per-fn `cq_template_<fn>`) has been RETIRED for
+> library functions — it measured a compile that never happens once the real source
+> is injected. Recognition now survives ONLY for **hardware-backed intrinsics** (no
+> injectable body): `sqrt fabs copysign floor ceil trunc round rint nearbyint fmin
+> fmax fma/fmuladd lrint llrint`. Every transcendental / direct-libm / by-ref
+> function now **declines loudly** without injection. This census is therefore no
+> longer a "separate baseline" — it is THE measure of library-function coverage.
+> See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
+> [`libm-coverage-source-injection-rule`]. The numbers below are the pre-p119
+> point-in-time run; re-run `inject_census.py` (now reports surviving `@llvm.*`)
+> over a fresh openlibm corpus for the current figures.
+
 > **Point-in-time findings, 2026-07-02** (this box: x86_64 darwin, Homebrew LLVM 19,
-> real `cq-lowering` pass). This is a *different lowering strategy* from
-> [`COVERAGE.md`](COVERAGE.md) and does **not** replace it — see "Two strategies" below.
-> A naïve off-the-shelf-libm **baseline**, deliberately measured to learn requirements.
+> real `cq-lowering` pass). A naïve off-the-shelf-libm baseline, deliberately
+> measured to learn requirements.
 
 ## What this measures
 
@@ -70,14 +83,20 @@ surfaced the **only opcode-ish gap** in the whole census — a missing template 
 5. **Only pure straight-line bit-functions compile today** (`fabs`, `nearbyint`, `copysign`) —
    exactly the functions with no control flow and no scratch memory.
 
-## Two strategies, one goal (not a replacement)
+## One strategy for library functions (p119)
 
-| | Template-recognition (`COVERAGE.md`) | Source-injection (this doc) |
+Under Rule 18 these are **no longer two coexisting strategies**. Recognition is
+retired for library functions; source injection is the only way to compile them.
+Recognition survives only for the hardware-backed intrinsics (the leaves an
+injected body reduces to).
+
+| | Hardware-backed recognition | Source-injection (library functions) |
 |---|---|---|
-| Mechanism | recognize `@llvm.<fn>` → emit `cq_template_<fn>` | inject libm source → inline to opcodes → taint |
-| Per-fn frozen ABI symbol | yes (one per function) | **no** |
-| Reversible backend for transcendentals | `open` (deferred) | free once it lowers (stock reversible opcodes) |
-| Today's math.h reach | 165/174 lower | 3/44 compile (naïve openlibm baseline) |
+| Applies to | `sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` | all transcendentals + direct-libm + by-ref |
+| Mechanism | `@llvm.<fn>` (HW instr, no body) → `cq_template_<fn>` | inject source → inline to opcodes → taint |
+| Per-fn frozen ABI symbol | yes (the 14 survivors) | **no** |
+| Without injection | lowers | **loud decline** (kMsgUnknownCallee) |
+| math.h reach | 14 hardware stems (+ opcode-macros) | off-the-shelf openlibm: ~0 fully compile (control-flow / scratch-memory blocked) |
 
 ## Caveats (honest)
 
@@ -94,6 +113,33 @@ surfaced the **only opcode-ish gap** in the whole census — a missing template 
   tainted arg into an unknown pure callee. This looks like a silent-accept gap in the
   taint-escape guard for `memory(none)` externals and should be investigated independently of
   this census (Prime Directive).
+
+## Re-measurement 2026-07-06 (p119 — live, with surviving-`@llvm.*` instrumentation)
+
+Re-ran on the p119 pass (recognizers removed; only hardware-backed intrinsics kept)
+over a freshly cloned openlibm corpus (217/242 `.c` → bitcode). `inject_census.py` now
+records, per function, the `@llvm.*` intrinsics that **survive** the injection+inline.
+
+| Outcome | Count | Functions |
+|---|---:|---|
+| ✅ **COMPILES** (fully inlined + lowers) | **2** | `fabs`, `copysign` |
+| ⚠️ exit0-but-uninlined (harness `fegetenv`/lifetime gap) | 1 | `nearbyint` |
+| ❌ decline (nested control flow · tainted memory · nested transcendental · vector) | 41 | everything else |
+
+**The surviving-`@llvm.*` report is the empirical validation of the p119 keep-set.** Every
+injected libm body bottoms out in exactly the kept hardware leaves — `llvm.fmuladd.f64`
+appears in **nearly every function** (the Horner-polynomial workhorse — this is precisely
+why `fma`/`fmuladd` MUST be kept; drop it and *nothing* inject-compiles), alongside
+`llvm.fabs` / `llvm.sqrt` / `llvm.copysign` / `llvm.floor` / `llvm.rint` (all kept) and the
+kept integer intrinsics (`ctlz` / `fshl` / `smax` / `umin` / `umax`). The **blockers** are, as
+before, not missing opcodes: (1) nested/tainted **control flow** (the range-reduction
+branches), (2) tainted **scratch memory**, (3) **nested transcendentals** — openlibm's
+`sinh`/`cosh`/`erf` call `exp()`, `asinh`/`acosh` call `log()`, `atan2` calls `atan()`, and
+those nested `@llvm.exp`/`@llvm.log`/`@llvm.atan` now **correctly decline** (they are library
+functions needing their own injection; pre-p119 the recognizer would have *falsely* lowered
+them via a per-fn template — p119 makes this HONEST), and (4) **vectorized** range reduction
+(`llvm.vector.reduce.or`, `llvm.fmuladd.v2f64`). The COMPILE count (2) is unchanged from the
+prior baseline — the honest floor holds; branchless-authored bodies remain the way up.
 
 ## Re-measurement 2026-07-03 (post kjd1 + 9ymx fp-select/loop work) — NET ZERO movement
 

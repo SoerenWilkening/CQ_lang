@@ -47,6 +47,19 @@ function through every applicable classical/quantum argument **mixture** (`HL`, 
 …) over the full pipeline and records, per cell, whether it lowers, links, runs, and matches
 a committed golden trace.
 
+> **Rule 18 (bd `p119`, 2026-07-06):** compiling a **library function ALWAYS means its
+> source is injected** (an openlibm-style body inlined to opcodes *before* the pass) —
+> coverage of a library function is measured **only** by source injection, never by
+> recognizing `@llvm.<fn>` / `@<fn>` by name. Name-recognition survives **only** for the
+> **hardware-backed intrinsics** that codegen to a HW instruction and have no injectable
+> body: `sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma/fmuladd
+> lrint llrint`. So `probe.py`'s number below counts what lowers **by recognition** (the
+> hardware survivors + opcode-macros); every transcendental / direct-libm / by-ref
+> function **declines loudly** without injection and is measured by the
+> [source-injection census](tools/library_coverage/INJECTION-CENSUS.md), where
+> off-the-shelf openlibm currently compiles ~0 of them (blocked by tainted control flow /
+> scratch memory). The old **165/174 (95%)** was the retired name-recognition claim.
+
 `math.h` is the flagship (pure numerical functions); `stdlib.h`'s integer `abs` island is the
 second. The format is **adaptable** — a new library is one `Lib(...)` entry plus its spec
 (see [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) §"Adding a
@@ -55,31 +68,33 @@ library"; scouted-but-unwired headers like `ctype.h`/`string.h`/`complex.h` are 
 
 A function counts as **Covered** only when *every* applicable mixture is **golden-verified** —
 exit-zero is not verification, and a loud decline is a *correct* (just uncovered) outcome,
-never papered over to inflate the number (the Prime Directive). The tables separate
-**cannot-compile-at-the-moment** (fixable future work — e.g. `long double` needs an f80/f128
-width) from **cannot-compile-at-all** (by design — e.g. `nan(const char*)` has no quantum input).
+never papered over to inflate the number (the Prime Directive). Note that most of math.h now
+falls in **injection-required** (a library function — decline without source injection), not
+the small **cannot-compile-at-all** by-design set (e.g. `nan(const char*)` has no quantum input).
 
 <!-- LIBRARY-COVERAGE:START -->
-**Standard-library quantum-coverage — lowering-verified: 168/213 (78.9%)** &nbsp;·&nbsp; backend-available: 42/213 (19.7%).
+**Standard-library quantum-coverage — lowering-verified: 48/213 (22.5%)** &nbsp;·&nbsp; backend-available: 21/213 (9.9%).
 
 Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches the reversible-template sequence. **Backend-available** = 🟩 `standard` (a correct reversible routine is directly obtainable) **and** it lowers — vs 🟨 `synthesizable` / 🟥 `open` (no known elementary reversible circuit — the transcendentals). The trace-only runtime proves the lowering, not the backend.
 
 | Library | Lowers | Verified | Backend-avail | 🟩 std | 🟨 syn | 🟥 open | By-design |
 |---|---|---|---|---|---|---|---|
-| [`math.h`](tools/library_coverage/coverage/mathh.md) | 165/174 (95%) | 165/174 (95%) | 39/174 (22%) | 42 | 45 | 84 | 3 |
+| [`math.h`](tools/library_coverage/coverage/mathh.md) | 45/174 (26%) | 45/174 (26%) | 18/174 (10%) | 42 | 45 | 84 | 3 |
 | [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 3/39 (8%) | 6 | 0 | 0 | 8 |
 
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->
 
-The table above is the **template-recognition** strategy (one frozen `cq_template_<fn>` per
-function). A separate baseline — [`INJECTION-CENSUS.md`](tools/library_coverage/INJECTION-CENSUS.md) —
-measures the **source-injection** strategy (inject an existing libm's source so LLVM inlines it
-to stock opcodes *before* the pass, no per-function template). Off-the-shelf openlibm baseline:
-**3 / 44 `math.h` functions compile** (`fabs`, `nearbyint`, `copysign` — the straight-line
-bit-ops); every other declines on **tainted control flow** or **scratch memory**, and *not one*
-on a missing opcode — the opcode surface is already sufficient; branchy/memory-heavy libm bodies
-are the blocker.
+The table above counts what lowers **by recognition** — the hardware-backed intrinsic
+survivors (`sqrt`/rounding/`copysign`/`fmin`/`fmax`/`fma`/`lrint`/`llrint`) plus the
+opcode-macros (`isnan`, `isfinite`, …). It is **not** a per-function template surface for
+library functions any more (Rule 18 retired that). The genuine library functions are measured
+by [`INJECTION-CENSUS.md`](tools/library_coverage/INJECTION-CENSUS.md) — the **source-injection**
+strategy (inject an existing libm's source so LLVM inlines it to stock opcodes *before* the pass,
+no per-function template). Off-the-shelf openlibm baseline: **~2–3 / 44 `math.h` functions
+compile** (`fabs`, `copysign`, [`nearbyint`] — the straight-line bit-ops); every other declines
+on **tainted control flow** or **scratch memory**, and *not one* on a missing opcode — the opcode
+surface is already sufficient; branchy/memory-heavy libm bodies are the blocker.
 
 ## Documentation
 

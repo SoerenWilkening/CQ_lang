@@ -1,8 +1,11 @@
 ; spec_accept_fp_select_body.ll — Phase 6 / issue kmdc: the canonical fabs-shape
 ; FP two-arm select INSIDE a specialization-lifted callee. `int mhelper(int n){
-; double x=(double)n; double a=(x<0.0)?-x:x; return ilogb(a); }` — an int→int
-; helper whose fp is purely internal scratch. clang -O1 gives
-; `select(icmp slt n,0, fneg x, x)` feeding the libm producer `ilogb`.
+; double x=(double)n; double a=(x<0.0)?-x:x; return a>1.0; }` — an int→int helper
+; whose fp is purely internal scratch. clang -O1 gives
+; `select(icmp slt n,0, fneg x, x)` feeding a consumer that reduces the fp back to
+; an i32. (p119: the terminal consumer is a stock `fcmp ogt`+`zext` — the original
+; `ilogb` cross-width libm producer was removed as a library function; fcmp/zext
+; exercise the same fp-select lifting + Bennett palindrome and keep the i32 return.)
 ;
 ; Lifted into `@__cq_q_mhelper_1` as the full 4.4 controlled-XOR stream over an fp
 ; `cqrt_copy_f64_controlled` + an fp |0> rail: copy the TRUE arm on the flag, then
@@ -23,7 +26,6 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
-declare i32 @ilogb(double)
 
 define i32 @mhelper(i32 %n) {
 entry:
@@ -31,7 +33,8 @@ entry:
   %c  = icmp slt i32 %n, 0
   %nx = fneg double %x
   %a  = select i1 %c, double %nx, double %x   ; fabs — two derived fp arms
-  %r  = call i32 @ilogb(double %a)
+  %cmp = fcmp ogt double %a, 1.000000e+00
+  %r  = zext i1 %cmp to i32
   ret i32 %r
 }
 
@@ -55,11 +58,13 @@ entry:
 ; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
 ; CHECK:     call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[F:[a-zA-Z0-9_.]+]], i32 %[[SEL]])
 ; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
-; CHECK:     call i32 @cq_template_ilogb_f64_to_i32(i32 %[[SEL]])
+; CHECK:     %[[CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_ogt_f64_hl(i32 %[[SEL]], double 1.000000e+00)
+; CHECK:     call i32 @cq_template_zext_i1_to_i32(i32 %[[CMP]])
 
-; Bennett REVERSE — the PALINDROME: ilogb _unc, then bracket, copy_F, bracket,
-; copy_T (the brackets are NOT dropped), then the compare/fneg/sitofp _unc chain.
-; CHECK:     call void @cq_template_ilogb_f64_to_i32_unc(
+; Bennett REVERSE — the PALINDROME: zext _unc, fcmp _unc, then bracket, copy_F,
+; bracket, copy_T (the brackets are NOT dropped), then the compare/fneg/sitofp _unc.
+; CHECK:     call void @cq_template_zext_i1_to_i32_unc(
+; CHECK:     call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[CMP]], i32 %[[SEL]], double 1.000000e+00)
 ; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
 ; CHECK:     call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %[[F]], i32 %[[SEL]])
 ; CHECK:     call void @cqrt_x(i32 %[[FLAG]])

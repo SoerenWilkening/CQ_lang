@@ -46,26 +46,25 @@ StringRef intrinsicStem(Intrinsic::ID id) {
   case Intrinsic::usub_sat:   return "usub_sat";
   case Intrinsic::sadd_sat:   return "sadd_sat";
   case Intrinsic::ssub_sat:   return "ssub_sat";
-  // iw81.4.b fp-math family. 22 unary transcendental / round / fabs (stem ==
-  // the llvm name) + binary pow/fmin/fmax/copysign. minnum/maxnum carry the
-  // C99 spelling fmin/fmax (the symbol stem matches the intrinsic_table `op`).
-  // wd2p: ternary fma/fmuladd BOTH carry the `fma` stem (the trace does not
-  // distinguish the `fmuladd` may-fuse rounding from `fma` must-fuse — a Phase-9
-  // backend concern).
-  case Intrinsic::sin:        return "sin";
-  case Intrinsic::cos:        return "cos";
-  case Intrinsic::tan:        return "tan";
-  case Intrinsic::asin:       return "asin";
-  case Intrinsic::acos:       return "acos";
-  case Intrinsic::atan:       return "atan";
-  case Intrinsic::sinh:       return "sinh";
-  case Intrinsic::cosh:       return "cosh";
-  case Intrinsic::tanh:       return "tanh";
-  case Intrinsic::exp:        return "exp";
-  case Intrinsic::exp2:       return "exp2";
-  case Intrinsic::log:        return "log";
-  case Intrinsic::log2:       return "log2";
-  case Intrinsic::log10:      return "log10";
+  // p119 (Rule 18) hardware-backed fp-math survivors ONLY. A library function is
+  // compiled by SOURCE INJECTION (its body inlines to opcodes) — never by
+  // recognizing @llvm.<fn> by name. The sole recognized fp intrinsics are those
+  // that codegen to a hardware instruction (or an inline opcode sequence) with NO
+  // libcall — they have no injectable body. The transcendentals
+  // (sin/cos/tan/asin/…/exp/log/log10) and pow TAIL-CALL a libcall on this target
+  // (x86-64+SSE4.1) → LIBRARY functions → removed → they decline loudly without
+  // injection. NB the keep/cut line is measured on the PROJECT pipeline: native
+  // `clang -O1` with `-fno-math-errno` (the darwin default), where a survivor
+  // appears as `@llvm.<fn>` and lowers. On a `-fmath-errno` target clang emits a
+  // DIRECT `@sqrt`/`@lrint` libcall instead → the recognizer does not fire and the
+  // program over-declines (the SAFE side of the Prime Directive), never mislowers.
+  // KEPT: sqrt (sqrtsd) · the rounding family floor/ceil/trunc/round/
+  // rint/nearbyint (roundsd / inline) · fabs/copysign (bitmask) · fmin/fmax
+  // (minnum/maxnum, inline) · fma+fmuladd (the a*b+c contraction → mulsd+addsd,
+  // exactly what injected Horner-poly bodies reduce to — removing it would decline
+  // every injected polynomial). minnum/maxnum carry the C99 spelling fmin/fmax;
+  // fma and fmuladd BOTH carry the `fma` stem (the trace-only backend does not
+  // distinguish must-fuse from may-fuse — a Phase-9 concern).
   case Intrinsic::sqrt:       return "sqrt";
   case Intrinsic::floor:      return "floor";
   case Intrinsic::ceil:       return "ceil";
@@ -74,21 +73,18 @@ StringRef intrinsicStem(Intrinsic::ID id) {
   case Intrinsic::rint:       return "rint";
   case Intrinsic::nearbyint:  return "nearbyint";
   case Intrinsic::fabs:       return "fabs";
-  case Intrinsic::pow:        return "pow";
   case Intrinsic::minnum:     return "fmin";
   case Intrinsic::maxnum:     return "fmax";
   case Intrinsic::copysign:   return "copysign";
   case Intrinsic::fma:        return "fma";
   case Intrinsic::fmuladd:    return "fma";
-  // bd 3c6m.2 cross-width libm rounding: fp -> i64. clang -O1 lowers
-  // lrint/llrint (round-to-nearest-even) and lround/llround (round-half-away)
-  // to `@llvm.<fn>.i64.f<W>` intrinsics (NOT direct libm calls), so they are
-  // recognized here by Intrinsic::ID but share the DIRECT-libm cross-width
-  // TEMPLATE surface (cq_template_<stem>_<from>_to_<to>, the libm_table sibling).
+  // p119 cross-width rounding survivors: lrint/llrint (round-to-nearest-even)
+  // codegen to cvtsd2si (hardware) → KEPT. lround/llround (round-half-away) have
+  // no HW fp→int form → libcall → LIBRARY functions → removed. clang -O1 lowers
+  // lrint/llrint to `@llvm.<fn>.i64.f<W>` intrinsics recognized here by ID but
+  // sharing the cross-width TEMPLATE surface (cq_template_<stem>_<from>_to_<to>).
   case Intrinsic::lrint:      return "lrint";
   case Intrinsic::llrint:     return "llrint";
-  case Intrinsic::lround:     return "lround";
-  case Intrinsic::llround:    return "llround";
   default:                    return {};
   }
 }
@@ -101,30 +97,26 @@ bool isCrossWidthLibmIntrinsic(Intrinsic::ID id) {
   switch (id) {
   case Intrinsic::lrint:
   case Intrinsic::llrint:
-  case Intrinsic::lround:
-  case Intrinsic::llround:
+    // p119: lround/llround (round-half-away) → libcall on x86-64 → removed.
     return true;
   default:
     return false;
   }
 }
 
-// The 28 curated fp-math IDs (iw81.4.b + wd2p): 22 unary + pow/fmin/fmax/copysign
-// + fma/fmuladd (ternary). Used ONLY by widthInTableSet to admit {f16,f32,f64}
-// PER-ID — never a blanket fp open, so every NON-curated fp path keeps the full
-// f64 angle/data fence.
+// The 13 curated fp-math survivor IDs (p119, Rule 18): sqrt + the rounding family
+// (floor/ceil/trunc/round/rint/nearbyint) + fabs + copysign + fmin/fmax
+// (minnum/maxnum) + fma/fmuladd. The transcendentals + pow were removed (library
+// functions — source-injected, not recognized). Used ONLY by widthInTableSet to
+// admit {f16,f32,f64,f80} PER-ID — never a blanket fp open, so every NON-curated
+// fp path keeps the full f64 angle/data fence.
 bool isCuratedFpIntrinsic(Intrinsic::ID id) {
   switch (id) {
-  case Intrinsic::sin:   case Intrinsic::cos:    case Intrinsic::tan:
-  case Intrinsic::asin:  case Intrinsic::acos:   case Intrinsic::atan:
-  case Intrinsic::sinh:  case Intrinsic::cosh:   case Intrinsic::tanh:
-  case Intrinsic::exp:   case Intrinsic::exp2:
-  case Intrinsic::log:   case Intrinsic::log2:   case Intrinsic::log10:
   case Intrinsic::sqrt:
   case Intrinsic::floor: case Intrinsic::ceil:   case Intrinsic::trunc:
   case Intrinsic::round: case Intrinsic::rint:   case Intrinsic::nearbyint:
   case Intrinsic::fabs:
-  case Intrinsic::pow:   case Intrinsic::minnum: case Intrinsic::maxnum:
+  case Intrinsic::minnum: case Intrinsic::maxnum:
   case Intrinsic::copysign:
   case Intrinsic::fma:   case Intrinsic::fmuladd:
     return true;
@@ -141,12 +133,8 @@ IntrinKind intrinsicKind(Intrinsic::ID id) {
   case Intrinsic::ctlz:
   case Intrinsic::cttz:
   case Intrinsic::abs:
-  // iw81.4.b unary fp-math (one fp data handle, no immarg flag).
-  case Intrinsic::sin:   case Intrinsic::cos:    case Intrinsic::tan:
-  case Intrinsic::asin:  case Intrinsic::acos:   case Intrinsic::atan:
-  case Intrinsic::sinh:  case Intrinsic::cosh:   case Intrinsic::tanh:
-  case Intrinsic::exp:   case Intrinsic::exp2:
-  case Intrinsic::log:   case Intrinsic::log2:   case Intrinsic::log10:
+  // p119 unary fp-math survivors (one fp data handle, no immarg flag): sqrt + the
+  // rounding family + fabs. Transcendentals removed (library → source-injected).
   case Intrinsic::sqrt:
   case Intrinsic::floor: case Intrinsic::ceil:   case Intrinsic::trunc:
   case Intrinsic::round: case Intrinsic::rint:   case Intrinsic::nearbyint:
@@ -198,9 +186,10 @@ bool intrinsicCommutative(Intrinsic::ID id) {
 // unresolved cq_template_<op>_<W>).
 bool widthInTableSet(Intrinsic::ID id, StringRef W) {
   if (isCuratedFpIntrinsic(id))
-    // bd 3c6m.4 admits the long-double width f80 (the `…l` math.h variants:
-    // sinl/sqrtl/powl/fmal/… lower to `@llvm.<fn>.f80` on x86-64). f128 (the
-    // AArch64 `.f128` form) is deferred — not shipped. Still PER-ID and fp-only.
+    // bd 3c6m.4 admits the long-double width f80 (the survivor `…l` math.h
+    // variants: sqrtl/floorl/copysignl/fmal/… lower to `@llvm.<fn>.f80` on
+    // x86-64). f128 (the AArch64 `.f128` form) is deferred — not shipped. Still
+    // PER-ID and fp-only.
     return W == "f16" || W == "f32" || W == "f64" || W == "f80";
   const bool base = (W == "i8" || W == "i16" || W == "i32" || W == "i64");
   if (id == Intrinsic::bswap)

@@ -1,4 +1,0 @@
-cqrt_alloc_f32(1.500000) -> h0
-cqrt_ry_f32(h0, 0.500000)
-cq_template_llround_f32_to_i64(h0) -> h1
-cqrt_measure_i64(h1) -> 0

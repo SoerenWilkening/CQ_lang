@@ -48,7 +48,6 @@ add_library(CQPass MODULE
   src/BennettWrap.cpp
   src/BreakReversePlay.cpp
   src/ByRefInline.cpp
-  src/ByRefMath.cpp
   src/CastLowering.cpp
   src/ChainWalk.cpp
   src/ClassicalCallArmEmit.cpp
@@ -62,7 +61,6 @@ add_library(CQPass MODULE
   src/FreePoint.cpp
   src/IntrinsicLowering.cpp
   src/IOSinkLowering.cpp
-  src/LibmLowering.cpp
   src/LoopLowering.cpp
   src/MeasureLowering.cpp
   src/NestedRouteEmit.cpp

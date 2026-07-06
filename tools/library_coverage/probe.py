@@ -461,10 +461,13 @@ def classify(stage, variant, combo, stderr):
             return ("tainted-control limitation", raw)
         if "angle" in low or "rotation" in low:
             return ("math-result-as-angle hazard", raw)
+        # p119 (Rule 18): a by-ref math out-param (frexp/modf/remquo) and any direct
+        # libm / transcendental call is a LIBRARY function — recognition is retired;
+        # it must be SOURCE-INJECTED (see INJECTION-CENSUS.md), NOT given a template.
         if byref:
-            return ("by-ref out-param → needs 7.5 Shadow routing", raw)
+            return ("library function (by-ref) — source-injection required (Rule 18)", raw)
         if "unknown callee" in low or ("unknown" in low and "call" in low):
-            return ("needs curated libm entry + Phase 9 template", raw)
+            return ("library function — source-injection required (Rule 18)", raw)
         if "no template for opcode" in low:
             return ("needs opcode/template support for this expansion", raw)
         return ("declines (opt cq-lowering)", raw)

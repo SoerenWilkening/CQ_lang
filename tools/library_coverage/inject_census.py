@@ -106,6 +106,14 @@ double probe(void){{
         surv = [m for m in re.findall(r'call[^@]*@([A-Za-z0-9_.$]+)', ir)
                 if not m.startswith("cq_") and not m.startswith("llvm.")]
         fully_inlined = len(surv) == 0
+        # p119: report the surviving `@llvm.*` intrinsics separately — these are the
+        # HARDWARE-BACKED leaves an injected body bottoms out in (sqrt/fabs/copysign/
+        # roundsd family/fma/…). They are the ONLY math intrinsics the pass still
+        # recognizes (Rule 18); their presence confirms the keep-set empirically
+        # under injection. A surviving @llvm.<transcendental> would be a keep-set
+        # violation (a transcendental should have inlined to opcodes, not stayed an
+        # intrinsic) — flag it.
+        surv_llvm = sorted(set(re.findall(r'call[^@]*@(llvm\.[A-Za-z0-9_.]+)', ir)))
         r = subprocess.run([OPT, "-load-pass-plugin", str(PASS), "-passes=cq-lowering",
                             "-S", str(inl), "-o", "/dev/null"], capture_output=True, text=True)
         lowered = (r.returncode == 0)
@@ -120,16 +128,24 @@ double probe(void){{
             status = "exit0-but-uninlined"   # meaningless per census
         else:
             status = "decline"
-        return (status, (diag or f"surviving:{sorted(set(surv))[:3]}").strip())
+        detail = (diag or f"surviving:{sorted(set(surv))[:3]}").strip()
+        return (status, detail, surv_llvm)
 
-# The census's 44 double functions (INJECTION-CENSUS.md).
+# The census's double functions (INJECTION-CENSUS.md). These are the LIBRARY
+# functions — the ones that must be SOURCE-INJECTED (Rule 18). p119 note: the f/l
+# variants (sinf/sinl/…) inject IDENTICALLY (same body shape, same blockers), so
+# this double set is representative of the full ~174 surface for the injection
+# question; the hardware-backed survivors (sqrt/fabs/copysign/rounding/fmin/fmax/
+# fma/lrint/llrint) are NOT injection candidates — they lower by recognition
+# (measured by probe.py's codegen path), and appear here only to confirm they
+# survive as `@llvm.*` under injection (surv_llvm).
 FUNCS = {  # fn: argc
  "fabs":1,"nearbyint":1,"copysign":2,"sqrt":1,"fma":3,
  "sin":1,"cos":1,"tan":1,"exp":1,"exp2":1,"log":1,"log2":1,"log10":1,
  "asin":1,"acos":1,"atan":1,"sinh":1,"cosh":1,"tanh":1,"asinh":1,"acosh":1,"atanh":1,
  "expm1":1,"log1p":1,"logb":1,"cbrt":1,"floor":1,"trunc":1,"round":1,"ceil":1,"rint":1,
  "atan2":2,"pow":2,"remainder":2,"fdim":2,"scalbn":2,"hypot":2,"fmod":2,"fmax":2,"fmin":2,
- "nextafter":2,"erf":1,"erfc":1,"lgamma":1,
+ "nextafter":2,"erf":1,"erfc":1,"lgamma":1,"tgamma":1,
 }
 
 if __name__ == "__main__":
@@ -138,11 +154,18 @@ if __name__ == "__main__":
     print(f"indexed {len(defmap)} symbols across bc/", file=sys.stderr)
     results = {}
     for fn, argc in FUNCS.items():
-        status, detail = run_one(fn, argc, defmap)
-        results[fn] = {"status": status, "detail": detail}
-        print(f"  {fn:12s} {status:22s} {detail}", file=sys.stderr)
+        status, detail, surv_llvm = run_one(fn, argc, defmap)
+        results[fn] = {"status": status, "detail": detail, "surviving_llvm": surv_llvm}
+        note = f"  [llvm survivors: {surv_llvm}]" if surv_llvm else ""
+        print(f"  {fn:12s} {status:22s} {detail}{note}", file=sys.stderr)
     Path("inject_results.json").write_text(json.dumps(results, indent=2))
     from collections import Counter
     c = Counter(r["status"] for r in results.values())
     print("\n=== TALLY ===", file=sys.stderr)
     for k,v in c.most_common(): print(f"  {k:22s} {v}", file=sys.stderr)
+    # p119: which functions leave a surviving @llvm.* intrinsic (the hardware-backed
+    # keep-set, confirmed under injection). A transcendental appearing here would be
+    # a keep-set violation (it should inline to opcodes).
+    surv = {fn: r["surviving_llvm"] for fn, r in results.items() if r["surviving_llvm"]}
+    print(f"\n=== SURVIVING @llvm.* (hardware keep-set under injection) ===", file=sys.stderr)
+    for fn, s in surv.items(): print(f"  {fn:12s} {s}", file=sys.stderr)

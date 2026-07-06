@@ -9,13 +9,13 @@
 ; CHECK-NOT: cqrt_copy_f64_controlled
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
-declare i32 @ilogb(double)
 define i32 @mhelper(i32 %n, i32 %m) {
   %x  = sitofp i32 %n to double        ; arms derive from TAINTED %n
   %c  = icmp slt i32 %m, 0             ; condition tests CLASSICAL %m
   %nx = fneg double %x
   %a  = select i1 %c, double %nx, double %x
-  %r  = call i32 @ilogb(double %a)
+  %cmp = fcmp ogt double %a, 1.000000e+00   ; p119: stock consumer (was ilogb)
+  %r  = zext i1 %cmp to i32
   ret i32 %r
 }
 define void @example(i32 %u0, i32 %u1) {

@@ -495,21 +495,10 @@ add_test(NAME e2e-slice-intrinsic-fma
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_fma.expected.log")
 
-# bd 3c6m.2: the curated DIRECT-libm math.h family (FROZEN sibling ABI,
-# cq_libm_templates). LINK-proves the new libm symbols resolve and signature-match
-# through the runtime across all four novel shapes — same-width unary/binary
-# forwards, the CROSS-WIDTH producers cq_template_ilogb_f64_to_i32 (direct libm) /
-# cq_template_lrint_f64_to_i64 (intrinsic), the MIXED-ARG producers
-# cq_template_ldexp_f64_i32[_hl|_lh] — AND their void `_unc` twins reverse the
-# dead cross-width / mixed-arg lineages once from the still-live sources and free
-# every rail (Rules 2, 16). The one layer that links; the .ll FileCheck is not.
-add_test(NAME e2e-slice-libm
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm.expected.log")
+# p119: e2e-slice-libm REMOVED — the DIRECT-libm family (cbrt/atan2/ilogb/ldexp) is
+# a library-function surface, source-injected not name-recognized (Rule 18). The
+# cross-width lrint/llrint survivors are still link-covered by the ir-pass
+# lowering_libm_cross_width.ll fixture.
 
 # Phase 7.1 follow-up D5 (test_C_libtooling-m0yi): a non-power-of-2 _BitInt(N)
 # INTERMEDIATE round-trips with NO new ABI. clang -O1 rounds the i40 up to i64 and
@@ -544,15 +533,10 @@ add_test(NAME e2e-slice-i128-mulhi
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_i128_mulhi.expected.log")
 
-# bd g387 — by-ref math out-params (frexp/modf/remquo): forward producers + the
-# fan-out `_unc` twins + the NEW cross_binary remquoquo. The link-proof layer.
-add_test(NAME e2e-slice-byref
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_byref.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_byref.expected.log")
+# p119: e2e-slice-byref REMOVED — by-ref math (frexp/modf/remquo) is a
+# library-function family, source-injected not name-recognized (Rule 18). The
+# by-ref out-param INLINER (g7ip, ByRefInline) is a distinct capability and its
+# e2e-slice-byref-inline below is UNCHANGED.
 
 # bd g7ip — by-ref out-param on a VISIBLE user function: ByRefInline inlines the
 # `noinline` helper's pure store-value producer into the caller (Architecture A),
@@ -693,28 +677,10 @@ add_test(NAME e2e-slice-specialize-intrinsic
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/specialize_intrinsic_caller.expected.log")
 
-# bd 3c6m.3 (Rule-13 finding on bd 3c6m.2): a curated DIRECT-libm math.h call
-# INSIDE a specialized clone — the EXACT-name analog of the mvjc intrinsic golden
-# above. specialize_libm_caller.c routes a theta-tainted `x` through the
-# separate-TU classical helper ilogb_helper (specialize_libm_lib.c), whose body is
-# `ilogb((double) n)` → `sitofp i32→f64` + a direct `@ilogb` call. Pre-fix the
-# specializer loud-declined (the libm call read as a declaration-only nested call,
-# then FpAbi'd on the fp operand in the transitive worklist); now it lifts the
-# helper into __cq_q_ilogb_helper_1, lowers the sitofp + ilogb to their frozen
-# cq_template_* producers, and Bennett-wraps it. This LINK-proves the clone +
-# cq_template_ilogb_f64_to_i32 + its void `_unc` twin (and the cross-width sitofp
-# cast + its `_unc`) resolve and signature-match across llvm-link, and the golden's
-# LIFO reverse (ilogb_unc before sitofp_unc, each reading its still-live source,
-# then both frees AFTER the complete reverse) is the trace contract for a Class-2
-# libm producer under quantum specialization (Rules 2, 13, 16).
-add_test(NAME e2e-slice-specialize-libm
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_libm_caller.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_libm_lib.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/specialize_libm_caller.expected.log")
+# p119: e2e-slice-specialize-libm REMOVED — it lifted a DIRECT-libm call (ilogb)
+# into a specialized clone, but direct-libm is a library-function surface
+# (source-injected, not name-recognized; Rule 18). Specialization-of-a-clone-with-a-
+# curated-producer is still covered by e2e-slice-specialize-intrinsic above.
 
 # Phase 6.2 (WI-2.6, test_C_libtooling-mvna.8): signatures / cache / multiplicity.
 # specialize_multiarg_caller.c routes ONE theta-tainted `x` through the separate-TU
@@ -810,25 +776,11 @@ add_test(NAME e2e-slice-control-cond-onward-ctl-phase
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/onward_ctl_phase_caller.expected.log")
 
-# bd 0vvq Increment 1 (the by-ref UNFREEZE): a 6.5 classical-call arm builds an
-# UNTAINTED merge %out (i32) that then feeds an ONWARD by-ref libm call frexp on the
-# merged register. dugh's `repropagateControlMerges` RE-RUNS `lowerByRefMath` after
-# the diamond is flattened, so the round-2-tainted frexp lowers to the
-# cq_template_frexp_f64 / cq_template_frexpexp_f64_to_i32 producers (its mantissa +
-# exponent, both reversible functions of %out) instead of the frozen-plan
-# over-decline. The ONLY layer that LINK-proves those re-run markers resolve +
-# signature-match against libcq_runtime (Rule 2/16). Reuses
-# classical_call_under_control_lib.c for the visible pure `ext_f`. The `cq_measure(y)`
-# keeps the merge i32 (else clang -O1 sinks the (double)y cast into the arm -> fp
-# phi). Pinned by control_classical_call_arm_accept_onward_byref_math.ll.
-add_test(NAME e2e-slice-control-byref-frexp
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_byref_frexp_caller.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/classical_call_under_control_lib.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_byref_frexp_caller.expected.log")
+# p119: e2e-slice-control-byref-frexp REMOVED — it exercised the dugh/0vvq by-ref
+# UNFREEZE (an onward frexp on a control-merged %out), but by-ref math is a
+# library-function family, source-injected not name-recognized (Rule 18). The
+# ONWARD-CONTROL capability (yn71) on a merged %out is still covered by the other
+# onward control/switch/select e2e slices; only the by-ref re-run was removed.
 
 # bd 0vvq Increment 2 (the spec-clone RE-PLAN, the D2 core): a 6.5 classical-call
 # arm builds an UNTAINTED merge %out (i32) that then feeds a Phase-6 SPECIALIZATION

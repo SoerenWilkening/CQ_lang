@@ -4,21 +4,21 @@
 
 The C standard math library — the flagship demonstrator: pure, mostly-total numerical functions with clean scalar in/out, ideal for taint-driven reversible lowering.
 
-**Compiles: 165/174 (94.8%)** — of which **golden-verified: 165/174 (94.8%)**.
+**Compiles: 45/174 (25.9%)** — of which **golden-verified: 45/174 (25.9%)**.
 
 | Bucket | Count | Meaning |
 |---|---|---|
-| ✅ Verified | 165 | lowers + links + runs + matches a committed golden trace |
+| ✅ Verified | 45 | lowers + links + runs + matches a committed golden trace |
 | 🟢 Compiles (golden pending) | 0 | lowers + links + runs; golden not yet blessed |
 | 🟠 Partial | 3 | some C/Q mixtures compile, others decline (not fully covered) |
-| 🟡 Cannot **at the moment** (fixable) | 6 | declines loudly today; future work (0 are `long double` → one f80/f128 width gap) |
+| 🟡 Cannot **at the moment** (fixable) | 126 | declines loudly today; future work (0 are `long double` → one f80/f128 width gap) |
 | ⛔ Cannot **at all** (by design) | 3 | no taintable quantum input |
 
 ---
 
 **Backend tiers** (a STATIC per-fn judgment of whether a correct *reversible implementation* of the emitted templates exists — a level ABOVE "does it lower"; the trace-only runtime never runs a real unitary):
 
-**Backend-available (🟩 standard ∩ lowers): 39/174 (22.4%)** — the functions that could actually run correctly on a real reversible backend today (modulo backend-CORRECTNESS, which needs simulation and is deferred).
+**Backend-available (🟩 standard ∩ lowers): 18/174 (10.3%)** — the functions that could actually run correctly on a real reversible backend today (modulo backend-CORRECTNESS, which needs simulation and is deferred).
 
 | Backend tier | Count | Meaning |
 |---|---|---|
@@ -33,131 +33,131 @@ Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 
 
 | Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
 |---|---|---|---|---|---|
-| `cosf` `errno` | `float cosf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `cos` `errno` | `double cos(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `cosl` `errno` | `long double cosl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `sinf` `errno` | `float sinf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `sin` `errno` | `double sin(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `sinl` `errno` | `long double sinl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `tanf` `errno` | `float tanf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `tan` `errno` | `double tan(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `tanl` `errno` | `long double tanl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `acosf` `errno` | `float acosf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `acos` `errno` | `double acos(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `acosl` `errno` | `long double acosl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `asinf` `errno` | `float asinf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `asin` `errno` | `double asin(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `asinl` `errno` | `long double asinl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `atanf` | `float atanf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `atan` | `double atan(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `atanl` | `long double atanl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `atan2f` `errno` | `float atan2f(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
-| `atan2` `errno` | `double atan2(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
-| `atan2l` `errno` | `long double atan2l(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `cosf` `errno` | `float cosf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `cos` `errno` | `double cos(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `cosl` `errno` | `long double cosl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `sinf` `errno` | `float sinf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `sin` `errno` | `double sin(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `sinl` `errno` | `long double sinl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `tanf` `errno` | `float tanf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `tan` `errno` | `double tan(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `tanl` `errno` | `long double tanl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `acosf` `errno` | `float acosf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `acos` `errno` | `double acos(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `acosl` `errno` | `long double acosl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `asinf` `errno` | `float asinf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `asin` `errno` | `double asin(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `asinl` `errno` | `long double asinl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `atanf` | `float atanf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `atan` | `double atan(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `atanl` | `long double atanl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `atan2f` `errno` | `float atan2f(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `atan2` `errno` | `double atan2(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `atan2l` `errno` | `long double atan2l(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
 
 ### hyperbolic
 
 | Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
 |---|---|---|---|---|---|
-| `coshf` `errno` | `float coshf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `cosh` `errno` | `double cosh(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `coshl` `errno` | `long double coshl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `sinhf` `errno` | `float sinhf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `sinh` `errno` | `double sinh(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `sinhl` `errno` | `long double sinhl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `tanhf` | `float tanhf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `tanh` | `double tanh(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `tanhl` | `long double tanhl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `acoshf` `errno` | `float acoshf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `acosh` `errno` | `double acosh(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `acoshl` `errno` | `long double acoshl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `asinhf` | `float asinhf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `asinh` | `double asinh(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `asinhl` | `long double asinhl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `atanhf` `errno` | `float atanhf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `atanh` `errno` | `double atanh(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `atanhl` `errno` | `long double atanhl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `coshf` `errno` | `float coshf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `cosh` `errno` | `double cosh(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `coshl` `errno` | `long double coshl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `sinhf` `errno` | `float sinhf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `sinh` `errno` | `double sinh(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `sinhl` `errno` | `long double sinhl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `tanhf` | `float tanhf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `tanh` | `double tanh(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `tanhl` | `long double tanhl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `acoshf` `errno` | `float acoshf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `acosh` `errno` | `double acosh(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `acoshl` `errno` | `long double acoshl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `asinhf` | `float asinhf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `asinh` | `double asinh(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `asinhl` | `long double asinhl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `atanhf` `errno` | `float atanhf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `atanh` `errno` | `double atanh(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `atanhl` `errno` | `long double atanhl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
 
 ### exp_log
 
 | Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
 |---|---|---|---|---|---|
-| `expf` `errno` | `float expf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `exp` `errno` | `double exp(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `expl` `errno` | `long double expl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `exp2f` `errno` | `float exp2f(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `exp2` `errno` | `double exp2(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `exp2l` `errno` | `long double exp2l(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `expm1f` `errno` | `float expm1f(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `expm1` `errno` | `double expm1(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `expm1l` `errno` | `long double expm1l(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `logf` `errno` | `float logf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log` `errno` | `double log(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `logl` `errno` | `long double logl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log10f` `errno` | `float log10f(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log10` `errno` | `double log10(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log10l` `errno` | `long double log10l(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log2f` `errno` | `float log2f(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log2` `errno` | `double log2(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log2l` `errno` | `long double log2l(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log1pf` `errno` | `float log1pf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log1p` `errno` | `double log1p(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `log1pl` `errno` | `long double log1pl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `logbf` | `float logbf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `logb` | `double logb(double)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `logbl` | `long double logbl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `ilogbf` | `int ilogbf(float)` | H:✅ | ✅ verified | 🟩 standard |  |
-| `ilogb` | `int ilogb(double)` | H:✅ | ✅ verified | 🟩 standard |  |
-| `ilogbl` | `int ilogbl(long double)` | H:✅ | ✅ verified | 🟩 standard |  |
-| `ldexpf` | `float ldexpf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `ldexp` | `double ldexp(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `ldexpl` | `long double ldexpl(long double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `scalbnf` | `float scalbnf(float, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `scalbn` | `double scalbn(double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `scalbnl` | `long double scalbnl(long double, int)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `scalblnf` | `float scalblnf(float, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `scalbln` | `double scalbln(double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `scalblnl` | `long double scalblnl(long double, long)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `frexpf` `byref` | `float frexpf(float, int *)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `frexp` `byref` | `double frexp(double, int *)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `frexpl` `byref` | `long double frexpl(long double, int *)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `modff` `byref` | `float modff(float, float *)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `modf` `byref` | `double modf(double, double *)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `modfl` `byref` | `long double modfl(long double, long double *)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `expf` `errno` | `float expf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `exp` `errno` | `double exp(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `expl` `errno` | `long double expl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `exp2f` `errno` | `float exp2f(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `exp2` `errno` | `double exp2(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `exp2l` `errno` | `long double exp2l(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `expm1f` `errno` | `float expm1f(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `expm1` `errno` | `double expm1(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `expm1l` `errno` | `long double expm1l(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `logf` `errno` | `float logf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log` `errno` | `double log(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `logl` `errno` | `long double logl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log10f` `errno` | `float log10f(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log10` `errno` | `double log10(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log10l` `errno` | `long double log10l(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log2f` `errno` | `float log2f(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log2` `errno` | `double log2(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log2l` `errno` | `long double log2l(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log1pf` `errno` | `float log1pf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log1p` `errno` | `double log1p(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `log1pl` `errno` | `long double log1pl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `logbf` | `float logbf(float)` | H:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `logb` | `double logb(double)` | H:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `logbl` | `long double logbl(long double)` | H:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `ilogbf` | `int ilogbf(float)` | H:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `ilogb` | `int ilogb(double)` | H:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `ilogbl` | `int ilogbl(long double)` | H:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `ldexpf` | `float ldexpf(float, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `ldexp` | `double ldexp(double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `ldexpl` | `long double ldexpl(long double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `scalbnf` | `float scalbnf(float, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `scalbn` | `double scalbn(double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `scalbnl` | `long double scalbnl(long double, int)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `scalblnf` | `float scalblnf(float, long)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `scalbln` | `double scalbln(double, long)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `scalblnl` | `long double scalblnl(long double, long)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `frexpf` `byref` | `float frexpf(float, int *)` | H:🟡 | 🟡 declined | 🟨 synth | library function (by-ref) — source-injection required (Rule 18) |
+| `frexp` `byref` | `double frexp(double, int *)` | H:🟡 | 🟡 declined | 🟨 synth | library function (by-ref) — source-injection required (Rule 18) |
+| `frexpl` `byref` | `long double frexpl(long double, int *)` | H:🟡 | 🟡 declined | 🟨 synth | library function (by-ref) — source-injection required (Rule 18) |
+| `modff` `byref` | `float modff(float, float *)` | H:🟡 | 🟡 declined | 🟨 synth | library function (by-ref) — source-injection required (Rule 18) |
+| `modf` `byref` | `double modf(double, double *)` | H:🟡 | 🟡 declined | 🟨 synth | library function (by-ref) — source-injection required (Rule 18) |
+| `modfl` `byref` | `long double modfl(long double, long double *)` | H:🟡 | 🟡 declined | 🟨 synth | library function (by-ref) — source-injection required (Rule 18) |
 
 ### power
 
 | Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
 |---|---|---|---|---|---|
-| `powf` `errno` | `float powf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
-| `pow` `errno` | `double pow(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
-| `powl` `errno` | `long double powl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `powf` `errno` | `float powf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `pow` `errno` | `double pow(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `powl` `errno` | `long double powl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
 | `sqrtf` `errno` | `float sqrtf(float)` | H:✅ | ✅ verified | 🟥 open |  |
 | `sqrt` `errno` | `double sqrt(double)` | H:✅ | ✅ verified | 🟥 open |  |
 | `sqrtl` `errno` | `long double sqrtl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `cbrtf` | `float cbrtf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `cbrt` | `double cbrt(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `cbrtl` | `long double cbrtl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `hypotf` | `float hypotf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
-| `hypot` | `double hypot(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
-| `hypotl` | `long double hypotl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟥 open |  |
+| `cbrtf` | `float cbrtf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `cbrt` | `double cbrt(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `cbrtl` | `long double cbrtl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `hypotf` | `float hypotf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `hypot` | `double hypot(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `hypotl` | `long double hypotl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
 
 ### error_gamma
 
 | Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
 |---|---|---|---|---|---|
-| `erff` | `float erff(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `erf` | `double erf(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `erfl` | `long double erfl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `erfcf` `errno` | `float erfcf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `erfc` `errno` | `double erfc(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `erfcl` `errno` | `long double erfcl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `tgammaf` `errno` | `float tgammaf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `tgamma` `errno` | `double tgamma(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `tgammal` `errno` | `long double tgammal(long double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `lgammaf` `errno` | `float lgammaf(float)` | H:✅ | ✅ verified | 🟥 open |  |
-| `lgamma` `errno` | `double lgamma(double)` | H:✅ | ✅ verified | 🟥 open |  |
-| `lgammal` `errno` | `long double lgammal(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `erff` | `float erff(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `erf` | `double erf(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `erfl` | `long double erfl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `erfcf` `errno` | `float erfcf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `erfc` `errno` | `double erfc(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `erfcl` `errno` | `long double erfcl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `tgammaf` `errno` | `float tgammaf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `tgamma` `errno` | `double tgamma(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `tgammal` `errno` | `long double tgammal(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `lgammaf` `errno` | `float lgammaf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `lgamma` `errno` | `double lgamma(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
+| `lgammal` `errno` | `long double lgammal(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
 
 ### nearest_int
 
@@ -187,12 +187,12 @@ Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 
 | `llrintf` | `long llrintf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
 | `llrint` | `long llrint(double)` | H:✅ | ✅ verified | 🟨 synth |  |
 | `llrintl` | `long llrintl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `lroundf` | `long lroundf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `lround` | `long lround(double)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `lroundl` | `long lroundl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `llroundf` | `long llroundf(float)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `llround` | `long llround(double)` | H:✅ | ✅ verified | 🟨 synth |  |
-| `llroundl` | `long llroundl(long double)` | H:✅ | ✅ verified | 🟨 synth |  |
+| `lroundf` | `long lroundf(float)` | H:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `lround` | `long lround(double)` | H:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `lroundl` | `long lroundl(long double)` | H:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `llroundf` | `long llroundf(float)` | H:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `llround` | `long llround(double)` | H:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `llroundl` | `long llroundl(long double)` | H:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
 
 ### remainder
 
@@ -201,12 +201,12 @@ Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 
 | `fmodf` `errno` | `float fmodf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `fmod` `errno` | `double fmod(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `fmodl` `errno` | `long double fmodl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `remainderf` `errno` | `float remainderf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `remainder` `errno` | `double remainder(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `remainderl` `errno` | `long double remainderl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `remquof` `byref` | `float remquof(float, float, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `remquo` `byref` | `double remquo(double, double, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `remquol` `byref` | `long double remquol(long double, long double, int *)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `remainderf` `errno` | `float remainderf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `remainder` `errno` | `double remainder(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `remainderl` `errno` | `long double remainderl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `remquof` `byref` | `float remquof(float, float, int *)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function (by-ref) — source-injection required (Rule 18) |
+| `remquo` `byref` | `double remquo(double, double, int *)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function (by-ref) — source-injection required (Rule 18) |
+| `remquol` `byref` | `long double remquol(long double, long double, int *)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function (by-ref) — source-injection required (Rule 18) |
 
 ### manipulation
 
@@ -215,21 +215,21 @@ Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 
 | `copysignf` | `float copysignf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `copysign` | `double copysign(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `copysignl` | `long double copysignl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `nextafterf` `errno` | `float nextafterf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `nextafter` `errno` | `double nextafter(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `nextafterl` `errno` | `long double nextafterl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `fdimf` `errno` | `float fdimf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟨 synth |  |
-| `fdim` `errno` | `double fdim(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟨 synth |  |
-| `fdiml` `errno` | `long double fdiml(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟨 synth |  |
+| `nextafterf` `errno` | `float nextafterf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `nextafter` `errno` | `double nextafter(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `nextafterl` `errno` | `long double nextafterl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `fdimf` `errno` | `float fdimf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `fdim` `errno` | `double fdim(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
+| `fdiml` `errno` | `long double fdiml(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
 | `fmaxf` | `float fmaxf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `fmax` | `double fmax(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `fmaxl` | `long double fmaxl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `fminf` | `float fminf(float, float)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `fmin` | `double fmin(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `fminl` | `long double fminl(long double, long double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
-| `fmaf` | `float fmaf(float, float, float)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | 🟨 synth | needs curated libm entry + Phase 9 template |
-| `fma` | `double fma(double, double, double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | 🟨 synth | needs curated libm entry + Phase 9 template |
-| `fmal` | `long double fmal(long double, long double, long double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | 🟨 synth | needs curated libm entry + Phase 9 template |
+| `fmaf` | `float fmaf(float, float, float)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | 🟨 synth | library function — source-injection required (Rule 18) |
+| `fma` | `double fma(double, double, double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | 🟨 synth | library function — source-injection required (Rule 18) |
+| `fmal` | `long double fmal(long double, long double, long double)` | HLL:✅ LHL:✅ HHL:✅ LLH:🟡 HLH:✅ LHH:✅ QQQ:✅ | 🟠 partial | 🟨 synth | library function — source-injection required (Rule 18) |
 | `nanf` | `float nanf(const char *)` | — | ⛔ no-taintable-input | ▫️ n/a | no taintable scalar input |
 | `nan` | `double nan(const char *)` | — | ⛔ no-taintable-input | ▫️ n/a | no taintable scalar input |
 | `nanl` | `long double nanl(const char *)` | — | ⛔ no-taintable-input | ▫️ n/a | no taintable scalar input |
@@ -238,11 +238,11 @@ Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 
 
 | Function | Signature | Mixtures (C/Q) | Lowering | Backend | Reason |
 |---|---|---|---|---|---|
-| `fpclassify` `macro` | `int fpclassify(double)` | H:🟡 | 🟡 declined | 🟩 standard | needs curated libm entry + Phase 9 template |
+| `fpclassify` `macro` | `int fpclassify(double)` | H:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
 | `isfinite` `macro` | `int isfinite(double)` | H:✅ | ✅ verified | 🟩 standard |  |
 | `isinf` `macro` | `int isinf(double)` | H:✅ | ✅ verified | 🟩 standard |  |
 | `isnan` `macro` | `int isnan(double)` | H:✅ | ✅ verified | 🟩 standard |  |
-| `isnormal` `macro` | `int isnormal(double)` | H:🟡 | 🟡 declined | 🟩 standard | needs curated libm entry + Phase 9 template |
+| `isnormal` `macro` | `int isnormal(double)` | H:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
 | `signbit` `macro` | `int signbit(double)` | H:🟡 | 🟡 declined | 🟩 standard | needs opcode/template support for this expansion |
 | `isgreater` `macro` | `int isgreater(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
 | `isless` `macro` | `int isless(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |

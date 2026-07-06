@@ -8,10 +8,12 @@ cqrt_copy_f64_controlled(h3, h2, h4)
 cqrt_x(h3)
 cqrt_copy_f64_controlled(h3, h1, h4)
 cqrt_x(h3)
-cq_template_ilogb_f64_to_i32(h4) -> h5
-cqrt_alloc_i32(0) -> h6
-cqrt_copy_i32(h5, h6)
-cq_template_ilogb_f64_to_i32_unc(h5, h4)
+cq_template_fcmp_ogt_f64_hl(h4, 1.000000) -> h5
+cq_template_zext_i1_to_i32(h5) -> h6
+cqrt_alloc_i32(0) -> h7
+cqrt_copy_i32(h6, h7)
+cq_template_zext_i1_to_i32_unc(h6, h5)
+cq_template_fcmp_ogt_f64_hl_unc(h5, h4, 1.000000)
 cqrt_x(h3)
 cqrt_copy_f64_controlled(h3, h1, h4)
 cqrt_x(h3)
@@ -24,4 +26,5 @@ cqrt_free(h2)
 cqrt_free(h3)
 cqrt_free(h4)
 cqrt_free(h5)
-cqrt_measure_i32(h6) -> 0
+cqrt_free(h6)
+cqrt_measure_i32(h7) -> 0

@@ -1,6 +1,0 @@
-cqrt_alloc_f32(1.500000) -> h0
-cqrt_ry_f32(h0, 0.500000)
-cq_template_remquo_f32_hl(h0, 1.500000) -> h1
-cq_template_remquoquo_f32_to_i32_hl(h0, 1.500000) -> h2
-cqrt_measure_i32(h2) -> 0
-cqrt_measure_f32(h1) -> 0.000000

@@ -211,42 +211,38 @@ class GenTemplatesTest(unittest.TestCase):
     def test_decl_def_pairing(self):
         self.assertEqual(self.h_decls, self.c_defs)
 
-    def test_intrinsic_sibling_count_is_509(self):
-        # Phase 7.1 (FROZEN) + bd 3c6m.4. Curated reversible llvm.* idioms in the
-        # SEPARATE sibling artifact; the opcode-table count is untouched. Derived
-        # from the table: Sum over rows of widths x variants.
-        #   Increment E (integer idioms) = 221: Class-1 45 (bswap 9 + bitreverse 12
-        #   + fshl 12 + fshr 12) + Class-2 unary 32 (ctpop/ctlz/cttz/abs x 4w x 2v)
-        #   + min/max 64 (4 ops x 4w x 4v) + add.sat 32 (2 ops x 4w x 4v) + sub.sat
-        #   48 (2 ops x 4w x 6v).
-        #   iw81.4.b + 3c6m.4 (fp-math family, now 4 fp widths f16/f32/f64/f80;
-        #   f128 deferred) = 248: unary 176 (22 fns x 4w x 2v) + fmin/fmax 32 (2 ops
-        #   x 4w x 4v) + pow/copysign 48 (2 ops x 4w x 6v).
-        #   wd2p (ternary fma) = 32: fma (1 op x 4w x 8v — qqq/qql/qlq/qll fwd+unc).
-        # 221 + 248 + 32 = 509 (was 437; +72 from f80 on the fp rows).
+    def test_intrinsic_sibling_count_is_373(self):
+        # Curated reversible llvm.* idioms in the SEPARATE sibling artifact; the
+        # opcode-table count is untouched. Derived: sum over rows of widths x
+        # variants.
+        #   Integer idioms = 221: Class-1 45 (bswap 9 + bitreverse 12 + fshl 12 +
+        #   fshr 12) + Class-2 unary 32 (ctpop/ctlz/cttz/abs x 4w x 2v) + min/max 64
+        #   (4 ops x 4w x 4v) + add.sat 32 (2 ops x 4w x 4v) + sub.sat 48 (2 ops x
+        #   4w x 6v).
+        #   fp-math HARDWARE survivors (p119, 4 fp widths f16/f32/f64/f80) = 120:
+        #   unary 64 (8 fns sqrt/floor/ceil/trunc/round/rint/nearbyint/fabs x 4w x
+        #   2v) + fmin/fmax 32 (2 ops x 4w x 4v) + copysign 24 (1 op x 4w x 6v).
+        #   (The 14 transcendentals + pow were REMOVED — library functions.)
+        #   ternary fma = 32: fma (1 op x 4w x 8v — qqq/qql/qlq/qll fwd+unc).
+        # 221 + 120 + 32 = 373 (was 509; -136 from the transcendental + pow removal).
         expected = sum(len(o["widths"]) * len(o["variants"])
                        for o in self.itable["intrinsics"])
-        self.assertEqual(expected, 509)
-        self.assertEqual(len(self.ih_decls), 509)
+        self.assertEqual(expected, 373)
+        self.assertEqual(len(self.ih_decls), 373)
 
     def test_intrinsic_decl_def_pairing(self):
         self.assertEqual(self.ih_decls, self.ic_defs)
 
-    def test_libm_sibling_count_is_294(self):
-        # bd 3c6m.2 (FROZEN) + bd 3c6m.4 (f80) + bd g387 (by-ref frexp/modf/
-        # remquo). Curated DIRECT-libm math.h functions in the SEPARATE sibling
-        # artifact; the opcode + intrinsic counts are untouched. 3 fp widths
-        # (f32,f64,f80; f128 deferred). Derived:
-        #   same_unary  84: 14 fns x 3 widths x 2 variants (fwd,unc). (11 base +
-        #     g387 frexp/modf/modfint.)
-        #   same_binary 102: hypot (comm) 1 x 3w x 4v = 12; atan2/remainder/
-        #     nextafter/fdim/remquo (non-comm) 5 x 3w x 6v = 90. (g387 remquo.)
-        #   cross_unary 36: ilogb (to i32) + lrint/llrint/lround/llround (to i64)
-        #     + g387 frexpexp (to i32) = 6 fns x 3 froms x 2 variants.
-        #   mixed_binary 54: ldexp/scalbn (wb i32) + scalbln (wb i64) = 3 fns x 3
-        #     was (f32,f64,f80) x 6 variants (qq/hl/lh fwd+unc).
-        #   cross_binary 18: g387 remquoquo (non-comm) 1 x 3 froms x 6 variants.
-        # 84 + 102 + 36 + 54 + 18 = 294 (was 234; the g387 by-ref producers).
+    def test_libm_sibling_count_is_12(self):
+        # p119 (Rule 18): the DIRECT-libm name-matcher (3c6m.2) and by-ref subsystem
+        # (g387) were REMOVED — those are library functions, source-injected not
+        # recognized. Only the cross-width rounding survivors lrint/llrint remain
+        # (hardware cvtsd2si). 3 fp froms (f32,f64,f80; f128 deferred). Derived:
+        #   cross_unary 12: lrint/llrint (to i64) = 2 fns x 3 froms x 2 variants
+        #     (fwd,unc). (lround/llround removed — libcall; ilogb/ldexp/frexp/… and
+        #     the whole same_unary/same_binary/mixed_binary/cross_binary surface
+        #     removed — library functions.)
+        # 12 (was 294; -282 from the direct-libm + by-ref removal).
         def _count(op):
             k = op["kind"]
             if k == "same_unary":
@@ -261,8 +257,8 @@ class GenTemplatesTest(unittest.TestCase):
                 return len(op["froms"]) * (4 if op["commutative"] else 6)
             raise AssertionError(op["kind"])
         expected = sum(_count(op) for op in self.ltable["libm"])
-        self.assertEqual(expected, 294)
-        self.assertEqual(len(self.lh_decls), 294)
+        self.assertEqual(expected, 12)
+        self.assertEqual(len(self.lh_decls), 12)
 
     def test_libm_decl_def_pairing(self):
         self.assertEqual(self.lh_decls, self.lc_defs)

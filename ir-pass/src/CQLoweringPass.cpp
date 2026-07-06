@@ -7,7 +7,6 @@
 #include "CQLoweringPass.h"
 
 #include "ByRefInline.h"
-#include "ByRefMath.h"
 #include "ControlPlan.h"
 #include "IOSinkLowering.h"
 #include "LoopPlan.h"
@@ -48,16 +47,6 @@ void eraseDeadDecls(Module &M, WidthDispatch &wd) {
         FE->eraseFromParent();
     }
   }
-  // bd g387: erase the synthetic `@cq_byref_*` marker declarations now that
-  // `lowerOps` has rewritten every marker call to its `cq_template_*` producer.
-  // They are pass-invented (unlike the user's libc `@frexp` decl, left dead like
-  // any lowered libm call), so cleaning them keeps the output tidy.
-  SmallVector<Function *, 8> DeadMarkers;
-  for (Function &F : M)
-    if (F.getName().starts_with("cq_byref_") && F.use_empty())
-      DeadMarkers.push_back(&F);
-  for (Function *F : DeadMarkers)
-    F->eraseFromParent();
 }
 
 }  // namespace
@@ -75,22 +64,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
-  // bd g387: canonicalize tainted by-ref math (frexp/modf/remquo) into
-  // `@cq_byref_*` producer markers + erase the out-cell, BEFORE any downstream
-  // analysis. Taint is a pure SSA property that does NOT cross the out-cell's
-  // memory, so the read-back load and its downstream are untainted until the
-  // markers replace them; re-propagate so the markers' downstream is re-tainted
-  // via the normal mechanism. Iterate to a FIXPOINT (re-propagate between passes)
-  // so CHAINED by-ref math of any depth/linkage is lowered rather than stranded
-  // (Rule-13 DEFECT C); `byRefDeclined` carries loud-declined calls across passes
-  // so an unlowerable one is diagnosed exactly once. The markers are curated libm
-  // calls (carved in `declineTaintEscapes`).
-  SmallPtrSet<const CallInst *, 8> byRefDeclined;
-  while (lowerByRefMath(M, wd, taint, byRefDeclined))
-    taint = propagate(M, wd);
-
-  // bd g7ip: by-ref out-param on a VISIBLE user function. Where g387 curates an
-  // OPAQUE libm declaration, this INLINES the pure store-value producer of a
+  // p119: tainted by-ref MATH (frexp/modf/remquo) recognition is REMOVED — those
+  // are library functions, now source-injected, not name-recognized. A tainted
+  // un-injected by-ref libm call declines via `declineTaintEscapes`. The g7ip
+  // by-ref out-param INLINER below (a VISIBLE user body) is unrelated and stays.
+  //
+  // bd g7ip: by-ref out-param on a VISIBLE user function. This INLINES the pure
+  // store-value producer of a
   // visible user body `void f(v…, T* out){ *out = g(v…); }` into the caller and
   // RAUWs the read-back load — Architecture A (owner decision 2026-07-01), sound
   // because the out-cell is a single-write/single-read fresh scalar with a
@@ -319,13 +299,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.MeasureCalls.empty())
     return false;
 
-  // bd g387 by-ref math canonicalization, mirrored here for twin-pipeline parity
-  // (MANDATORY — a step wired in run() but not here would silently diverge,
-  // WI-1.12). Like the specialization pre-pass below, it walks the WHOLE module
-  // (the AXIS-F dead-shim caveat above applies); iterate to a FIXPOINT, see run().
-  SmallPtrSet<const CallInst *, 8> byRefDeclined;
-  while (lowerByRefMath(M, wd, taint, byRefDeclined))
-    taint = propagate(M, wd);
+  // p119: by-ref math canonicalization removed (library functions, source-injected
+  // not recognized) — see run(). Twin-pipeline parity preserved by the removal in
+  // both entry points.
 
   // bd iw81.1: fold same-width int<->int bitcast identity, mirrored in this entry
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the

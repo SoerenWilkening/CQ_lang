@@ -1,7 +1,9 @@
 ; spec_accept_fp_select_f32_body.ll — Phase 6 / issue kmdc: the fabs FP two-arm
 ; select at f32 (float), confirming the width-parametric path — both {f32,f64}
 ; resolve real cqrt_copy_f<W>_controlled / cqrt_alloc_f<W> symbols. `int
-; mhelper(int n){ float x=(float)n; float a=(x<0)?-x:x; return ilogbf(a); }`.
+; mhelper(int n){ float x=(float)n; float a=(x<0)?-x:x; return a>1.0f; }`. (p119:
+; the terminal is a stock `fcmp ogt`+`zext` — the original `ilogbf` cross-width
+; libm producer was removed as a library function; the lifting is identical.)
 ; The ordered forward/reverse palindrome is pinned in spec_accept_fp_select_body.ll
 ; (f64); this fixture pins the f32 width plumbing + the four-copy / four-bracket
 ; palindrome counts (each on its own FileCheck pass — the copies and brackets are
@@ -13,7 +15,6 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=XB
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
-declare i32 @ilogbf(float)
 
 define i32 @mhelper(i32 %n) {
 entry:
@@ -21,7 +22,8 @@ entry:
   %c  = icmp slt i32 %n, 0
   %nx = fneg float %x
   %a  = select i1 %c, float %nx, float %x
-  %r  = call i32 @ilogbf(float %a)
+  %cmp = fcmp ogt float %a, 1.000000e+00
+  %r  = zext i1 %cmp to i32
   ret i32 %r
 }
 

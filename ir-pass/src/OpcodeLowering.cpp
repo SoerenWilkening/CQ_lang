@@ -33,7 +33,6 @@
 #include "CastLowering.h"
 #include "CompareLowering.h"
 #include "IntrinsicLowering.h"
-#include "LibmLowering.h"
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -93,7 +92,7 @@ bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
   // the wire → the post-Ry-basis miscompile). checkStaleOp walks each tainted
   // operand's wire; a classical exponent/literal is untainted and skipped.
   if (auto *CI = dyn_cast<CallInst>(&I))
-    return isCuratedReversibleIntrinsic(CI) || isLibmCall(CI);
+    return isCuratedReversibleIntrinsic(CI);
   return false;
 }
 
@@ -267,16 +266,15 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
           CastW[Cast] = {FromW, abiWidthFromType(Cast->getDestTy())};
           Work.push_back(&I);
         } else if (auto *CI = dyn_cast<CallInst>(&I);
-                   CI && (isCuratedReversibleIntrinsic(CI) ||
-                          isLibmCall(CI))) {
-          // Phase 7.1 Increment E: a curated reversible llvm.* idiom intrinsic
+                   CI && isCuratedReversibleIntrinsic(CI)) {
+          // A curated reversible llvm.* idiom / hardware fp-math intrinsic
           // (recognized by exact Intrinsic::ID + table width + rotation-form
           // guard). Lowered by IntrinsicLowering to a cq_template_<op>_<W>
-          // additive producer in Phase 2. bd 3c6m.2: a curated DIRECT-libm call
-          // (exact name + declaration + shape/width) is lowered by LibmLowering
-          // to a cq_template_<…> additive producer likewise. A NON-curated
-          // tainted call already declined loudly at declineTaintEscapes
-          // (kMsgUnknownCallee), so it is not in the lowerable shapes here.
+          // additive producer in Phase 2. p119: a LIBRARY function
+          // (transcendental / direct-libm call) is NOT lowerable by recognition —
+          // it must be source-injected; a NON-curated tainted call already
+          // declined loudly at declineTaintEscapes (kMsgUnknownCallee), so it is
+          // not in the lowerable shapes here.
           Work.push_back(&I);
         }
       }
@@ -308,16 +306,10 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
       Rewritten = rewriteCast(Cast, CastW[Cast], wd, taint);
     } else if (auto *CI = dyn_cast<CallInst>(I);
                CI && isCuratedReversibleIntrinsic(CI)) {
-      // Phase 7.1 Increment E: only curated intrinsics are enqueued as calls
-      // (the predicate is the SAME at enqueue and here — no drift).
+      // Only curated intrinsics are enqueued as calls (the predicate is the SAME
+      // at enqueue and here — no drift). p119: library functions are not lowered
+      // by recognition (removed) — they are source-injected or decline.
       Rewritten = rewriteIntrinsic(CI, wd, taint);
-    } else if (auto *CI = dyn_cast<CallInst>(I);
-               CI && isLibmCall(CI)) {
-      // bd 3c6m.2: a curated DIRECT-libm call — same enqueue/rewrite predicate
-      // (isLibmCall), no drift. Dispatched AFTER the intrinsic check: the two
-      // accept sets are disjoint (isLibmCall requires a non-intrinsic
-      // declaration callee), so order is irrelevant here.
-      Rewritten = rewriteLibmCall(CI, wd, taint);
     }
     if (Rewritten)
       ToErase.push_back(I);

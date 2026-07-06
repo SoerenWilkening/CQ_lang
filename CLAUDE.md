@@ -268,6 +268,31 @@ done. Over-declining what we set out to build is a punt, not a feature — the
 decline belongs to the inputs outside the target shape, not to the target shape
 itself.
 
+**Rule 18 — A library function means its SOURCE, injected.** Compiling a
+`math.h`/libc function ALWAYS means compiling with its real implementation
+**injected as source** (an openlibm-style soft-body llvm-linked + inlined
+*before* `cq-lowering`; caller `-fno-builtin-<fn>` so the named call resolves to
+the body) so the taint pass sees stock **opcodes**. Library-function coverage is
+measured **only** by source injection — **never** by recognizing `@llvm.<fn>` /
+`@<fn>` by name and emitting a per-fn `cq_template_<fn>`. That name-recognition
+path is **fiction**: once the source is injected the named call is inlined away,
+so the recognizer never fires (this is why the old `math.h` 165/174 "95%"
+overclaimed — measured recognition, not injection). The **sole exception** is a
+**hardware-backed intrinsic** — one that codegens to a hardware instruction (or
+an inline opcode sequence) with **no libcall**, so it has no injectable body and
+is recognized directly. The keep/cut line is **testable and target-dependent**
+(measure, never guess — Rule 11): compile `T f(T x){return f(x);}` at
+`clang -O1`; **keep** iff no external `call`/`jmp _<fn>` (hardware/inline
+opcodes), **cut** iff clang emits a libcall. On x86-64+SSE4.1 the keep-set is
+`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma/fmuladd
+lrint llrint` (+ the non-`math.h` integer bit-intrinsics); everything else
+(transcendentals, `pow`, all direct-libm, by-ref `frexp/modf/remquo`,
+`lround/llround`) is a library function and **declines** without injection. See
+`docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
+[`libm-coverage-source-injection-rule`]. This **retires** the per-fn
+name-recognition of library functions (the old `3c6m.2` direct-libm matcher and
+the `iw81.4.b` transcendental-intrinsic rows).
+
 ---
 
 ## Pipeline Architecture

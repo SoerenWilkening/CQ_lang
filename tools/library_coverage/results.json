@@ -21,14 +21,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_cos_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -45,14 +45,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_cos_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -69,14 +69,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_cos_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -93,14 +93,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_sin_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -117,14 +117,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_sin_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -141,14 +141,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_sin_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -165,14 +165,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_tan_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -189,14 +189,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_tan_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -213,14 +213,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_tan_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -237,14 +237,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_acos_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -261,14 +261,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_acos_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -285,14 +285,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_acos_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -309,14 +309,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_asin_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -333,14 +333,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_asin_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -357,14 +357,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_asin_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -379,14 +379,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_atan_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -401,14 +401,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_atan_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -423,14 +423,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_atan_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -447,32 +447,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_atan2_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_atan2_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_atan2_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -489,32 +489,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_atan2_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_atan2_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_atan2_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -531,32 +531,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_atan2_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_atan2_f80_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_atan2_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -573,14 +573,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_cosh_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -597,14 +597,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_cosh_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -621,14 +621,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_cosh_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -645,14 +645,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_sinh_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -669,14 +669,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_sinh_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -693,14 +693,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_sinh_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -715,14 +715,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_tanh_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -737,14 +737,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_tanh_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -759,14 +759,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_tanh_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -783,14 +783,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_acosh_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -807,14 +807,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_acosh_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -831,14 +831,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_acosh_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -853,14 +853,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_asinh_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -875,14 +875,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_asinh_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -897,14 +897,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_asinh_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -921,14 +921,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_atanh_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -945,14 +945,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_atanh_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -969,14 +969,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_atanh_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -993,14 +993,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_exp_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1017,14 +1017,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_exp_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1041,14 +1041,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_exp_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1065,14 +1065,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_exp2_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1089,14 +1089,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_exp2_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1113,14 +1113,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_exp2_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1137,14 +1137,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_expm1_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1161,14 +1161,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_expm1_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1185,14 +1185,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_expm1_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1209,14 +1209,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_log_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1233,14 +1233,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_log_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1257,14 +1257,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_log_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1281,14 +1281,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_log10_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1305,14 +1305,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_log10_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1329,14 +1329,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_log10_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1353,14 +1353,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_log2_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1377,14 +1377,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_log2_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1401,14 +1401,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_log2_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1425,14 +1425,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_log1p_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1449,14 +1449,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_log1p_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1473,14 +1473,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_log1p_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -1495,14 +1495,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_logb_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -1517,14 +1517,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_logb_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -1539,14 +1539,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_logb_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -1561,14 +1561,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_ilogb_f32_to_i32(h0) -> h1\ncqrt_measure_i32(h1) -> 0\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe i32 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1583,14 +1583,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_ilogb_f64_to_i32(h0) -> h1\ncqrt_measure_i32(h1) -> 0\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe i32 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1605,14 +1605,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_ilogb_f80_to_i32(h0) -> h1\ncqrt_measure_i32(h1) -> 0\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe i32 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1627,32 +1627,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_ldexp_f32_i32_hl(h0, 2) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_ldexp_f32_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_ldexp_f32_i32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1667,32 +1667,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_ldexp_f64_i32_hl(h0, 2) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_ldexp_f64_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_ldexp_f64_i32(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1707,32 +1707,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_ldexp_f80_i32_hl(h0, 2) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_ldexp_f80_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_ldexp_f80_i32(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1747,32 +1747,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_scalbn_f32_i32_hl(h0, 2) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_scalbn_f32_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_scalbn_f32_i32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1787,32 +1787,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_scalbn_f64_i32_hl(h0, 2) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_scalbn_f64_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_scalbn_f64_i32(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1827,32 +1827,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_scalbn_f80_i32_hl(h0, 2) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_scalbn_f80_i32_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_i32(2) -> h1\ncqrt_ry_i32(h1, 0.600000)\ncq_template_scalbn_f80_i32(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1867,32 +1867,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_scalbln_f32_i64_hl(h0, 2) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_i64(2) -> h0\ncqrt_ry_i64(h0, 0.500000)\ncq_template_scalbln_f32_i64_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_i64(2) -> h1\ncqrt_ry_i64(h1, 0.600000)\ncq_template_scalbln_f32_i64(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1907,32 +1907,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_scalbln_f64_i64_hl(h0, 2) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_i64(2) -> h0\ncqrt_ry_i64(h0, 0.500000)\ncq_template_scalbln_f64_i64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_i64(2) -> h1\ncqrt_ry_i64(h1, 0.600000)\ncq_template_scalbln_f64_i64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1947,32 +1947,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_scalbln_f80_i64_hl(h0, 2) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_i64(2) -> h0\ncqrt_ry_i64(h0, 0.500000)\ncq_template_scalbln_f80_i64_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_i64(2) -> h1\ncqrt_ry_i64(h1, 0.600000)\ncq_template_scalbln_f80_i64(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -1989,14 +1989,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_frexp_f32(h0) -> h1\ncq_template_frexpexp_f32_to_i32(h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -2013,14 +2013,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_frexp_f64(h0) -> h1\ncq_template_frexpexp_f64_to_i32(h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -2037,14 +2037,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_frexp_f80(h0) -> h1\ncq_template_frexpexp_f80_to_i32(h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -2061,14 +2061,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_modf_f32(h0) -> h1\ncq_template_modfint_f32(h0) -> h2\ncqrt_measure_f32(h2) -> 0.000000\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -2085,14 +2085,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_modf_f64(h0) -> h1\ncq_template_modfint_f64(h0) -> h2\ncqrt_measure_f64(h2) -> 0.000000\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -2109,14 +2109,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_modf_f80(h0) -> h1\ncq_template_modfint_f80(h0) -> h2\ncqrt_measure_f80(h2) -> 0.000000\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -2133,32 +2133,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_pow_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_pow_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_pow_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2175,32 +2175,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_pow_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_pow_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_pow_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2217,32 +2217,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_pow_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_pow_f80_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_pow_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2329,14 +2329,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_cbrt_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2351,14 +2351,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_cbrt_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2373,14 +2373,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_cbrt_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2395,32 +2395,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_hypot_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_hypot_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_hypot_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2435,32 +2435,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_hypot_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_hypot_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_hypot_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2475,32 +2475,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_hypot_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_hypot_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_hypot_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2515,14 +2515,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_erf_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2537,14 +2537,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_erf_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2559,14 +2559,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_erf_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2583,14 +2583,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_erfc_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2607,14 +2607,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_erfc_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2631,14 +2631,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_erfc_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2655,14 +2655,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_tgamma_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2679,14 +2679,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_tgamma_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2703,14 +2703,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_tgamma_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2727,14 +2727,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_lgamma_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2751,14 +2751,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_lgamma_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -2775,14 +2775,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_lgamma_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "open"
         },
         {
@@ -3325,14 +3325,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_lround_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -3347,14 +3347,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_lround_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -3369,14 +3369,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_lround_f80_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -3391,14 +3391,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_llround_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -3413,14 +3413,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_llround_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -3435,14 +3435,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_llround_f80_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe i64 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -3585,32 +3585,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_remainder_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_remainder_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_remainder_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -3627,32 +3627,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_remainder_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_remainder_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_remainder_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -3669,32 +3669,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_remainder_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_remainder_f80_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_remainder_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -3711,32 +3711,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_remquo_f32_hl(h0, 1.500000) -> h1\ncq_template_remquoquo_f32_to_i32_hl(h0, 1.500000) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_remquo_f32_lh(1.500000, h0) -> h1\ncq_template_remquoquo_f32_to_i32_lh(1.500000, h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_remquo_f32(h0, h1) -> h2\ncq_template_remquoquo_f32_to_i32(h0, h1) -> h3\ncqrt_measure_i32(h3) -> 0\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -3753,32 +3753,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_remquo_f64_hl(h0, 1.500000) -> h1\ncq_template_remquoquo_f64_to_i32_hl(h0, 1.500000) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_remquo_f64_lh(1.500000, h0) -> h1\ncq_template_remquoquo_f64_to_i32_lh(1.500000, h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_remquo_f64(h0, h1) -> h2\ncq_template_remquoquo_f64_to_i32(h0, h1) -> h3\ncqrt_measure_i32(h3) -> 0\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -3795,32 +3795,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_remquo_f80_hl(h0, 1.500000) -> h1\ncq_template_remquoquo_f80_to_i32_hl(h0, 1.500000) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_remquo_f80_lh(1.500000, h0) -> h1\ncq_template_remquoquo_f80_to_i32_lh(1.500000, h0) -> h2\ncqrt_measure_i32(h2) -> 0\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_remquo_f80(h0, h1) -> h2\ncq_template_remquoquo_f80_to_i32(h0, h1) -> h3\ncqrt_measure_i32(h3) -> 0\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function (by-ref) \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -3957,32 +3957,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_nextafter_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_nextafter_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_nextafter_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -3999,32 +3999,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_nextafter_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_nextafter_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_nextafter_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -4041,32 +4041,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_nextafter_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_nextafter_f80_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_nextafter_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "standard"
         },
         {
@@ -4083,32 +4083,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fdim_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fdim_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_fdim_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -4125,32 +4125,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fdim_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fdim_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fdim_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -4167,32 +4167,32 @@
             {
               "mixture": "HL",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fdim_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "LH",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fdim_f80_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             },
             {
               "mixture": "QQ",
               "res": {
-                "status": "verified",
-                "reason": "",
-                "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_fdim_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
               }
             }
           ],
-          "rollup": "verified",
+          "rollup": "declined",
           "backend": "synthesizable"
         },
         {
@@ -4475,7 +4475,7 @@
               "mixture": "LLH",
               "res": {
                 "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
                 "raw": "error: <unknown>:0:0: in function probe float (): no template for opcode 'call float' in tainted context",
                 "trace": ""
               }
@@ -4551,7 +4551,7 @@
               "mixture": "LLH",
               "res": {
                 "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
                 "raw": "error: <unknown>:0:0: in function probe double (): no template for opcode 'call double' in tainted context",
                 "trace": ""
               }
@@ -4627,7 +4627,7 @@
               "mixture": "LLH",
               "res": {
                 "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
                 "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): no template for opcode 'call x86_fp80' in tainted context",
                 "trace": ""
               }
@@ -4714,7 +4714,7 @@
               "mixture": "H",
               "res": {
                 "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
                 "raw": "error: <unknown>:0:0: in function probe i32 (): cq taint escape: tainted value consumed by an unknown callee",
                 "trace": ""
               }
@@ -4810,7 +4810,7 @@
               "mixture": "H",
               "res": {
                 "status": "declined",
-                "reason": "needs curated libm entry + Phase 9 template",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
                 "raw": "error: <unknown>:0:0: in function probe i32 (): cq taint escape: tainted value consumed by an unknown callee",
                 "trace": ""
               }
