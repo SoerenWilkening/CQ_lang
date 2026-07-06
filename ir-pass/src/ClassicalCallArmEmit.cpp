@@ -162,6 +162,12 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   // was already tainted; its onward users are already in `Tainted`).
   taint.UntaintedMergeRails.insert(Out);
   taint.BirthOrder[Out] = taint.NextBirth++;
+  // bd p119.8 (same gap as p119.6): record the out-rail's LOGICAL ABI width (=
+  // `Abi`, the classical-call merge width) so a DOWNSTREAM cast/Q+Q-compare off the
+  // RAUW'd merge recovers the real width, not the laundered i32. Inert when the
+  // merge is i32 (the common 6.5 shape) but restores the producer invariant for a
+  // non-i32 integer call result. `Abi` is non-empty (the width guard bailed otherwise).
+  taint.HandleWidth[Out] = Abi;
 
   // 3. COPY the TRUE value on the flag (materialize if classical) — fires on f=1.
   //    The classical call result materializes to a fresh `cqrt_alloc_<Wd>` handle

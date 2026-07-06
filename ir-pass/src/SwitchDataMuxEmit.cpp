@@ -150,6 +150,13 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
   // re-run net (replacing the pre-8mld `proveSwitchDataMux` merge-out gate).
   taint.UntaintedMergeRails.insert(Out);
   taint.BirthOrder[Out] = taint.NextBirth++;
+  // bd p119.8 (same gap as p119.6): record the out-rail's LOGICAL ABI width (=
+  // `Abi`, the data-mux width) so a DOWNSTREAM cast/Q+Q-compare off the RAUW'd merge
+  // recovers the real width instead of the laundered i32 (getSrcTy-after-RAUW). A
+  // non-i32 data-mux (i8/i16/i64) feeding `trunc`/`sext`/`zext`/a Q+Q `icmp`
+  // otherwise over-declines. `Abi` is non-empty (the `!RailTy` bail above returned
+  // otherwise). Persists across `repropagateControlMerges` (a plain side-table).
+  taint.HandleWidth[Out] = Abi;
 
   // 2. Per CONTENT case (incoming v_i ≠ v_d): mint eq-flag → XOR-delta alloc →
   //    controlled copy. A passthrough case (v_i == v_d) needs no copy — %out

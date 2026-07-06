@@ -239,6 +239,12 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
   taint.Tainted.insert(Out);
   taint.ControlOwnedRails.insert(Out);  // DD-4: Phase-4 owns this merge out-rail
   taint.BirthOrder[Out] = taint.NextBirth++;
+  // bd p119.8 (same gap as p119.6): record the out-rail's LOGICAL ABI width (=
+  // `Abi`, the routed value-arm width) so a DOWNSTREAM cast/Q+Q-compare off the
+  // RAUW'd merge recovers the real width instead of the laundered i32 (a non-i32
+  // value merge feeding `trunc`/a Q+Q compare otherwise over-declines). `Abi` is
+  // non-empty (the width guard above bailed otherwise).
+  taint.HandleWidth[Out] = Abi;
 
   // 7. Reverse-play R†, per case in REVERSE emission order (LIFO). Per case:
   //    route-back† (cswap on the chain-final handle), then the chain adjoint in
