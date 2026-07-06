@@ -91,6 +91,17 @@ bool isInverseEmittable(const CallInst *Forward) {
   // itself ends `_unc` and is excluded — it is never a forward link.
   if (Name.starts_with("__cq_q_") && !Name.ends_with("_unc"))
     return true;
+
+  // Phase 6 (5po2): the 4.4 controlled-XOR copy `cqrt_copy_<W>_controlled(ctrl,
+  // src, dst)` is self-inverse — XOR applied twice is identity — so a clone body
+  // that lifts a tainted `select` (`out = ctrl ? src : 0`) reverses it by
+  // re-emitting the SAME call under the still-live flag, zeroing the `dst` (out)
+  // rail before free. The uncontrolled Bennett copy-out `cqrt_copy_<W>` (no
+  // `_controlled` suffix) is deliberately NOT a forward link (it copies the
+  // escaping basis value out; it is never reversed) and is excluded by the suffix.
+  if (Name.starts_with("cqrt_copy_") && Name.ends_with("_controlled"))
+    return true;
+
   return false;
 }
 
@@ -150,7 +161,15 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // UNITARY. The swap-route value-arm emitter brackets its R† route cswaps
   // itself via `emitRoute` (cswap is self-inverse) and hands this spine the
   // BODY CHAIN only.
-  if (Name == "cqrt_x" || Name == "cqrt_cswap") {
+  //
+  // The 4.4 controlled-XOR copy `cqrt_copy_<W>_controlled(ctrl, src, dst)` joins
+  // this involution family (5po2): re-emitting the SAME call under the still-live
+  // flag XOR-copies `src` into `dst` a second time, zeroing `dst`. Like
+  // `cqrt_cswap`, its arg 0 is the FLAG/ctrl slot, so `CurHandle` must never be
+  // threaded into it — moot for the uncompute driver (`emitInverseChain` passes
+  // CurHandle=nullptr), the only caller that reaches a controlled copy.
+  if (Name == "cqrt_x" || Name == "cqrt_cswap" ||
+      (Name.starts_with("cqrt_copy_") && Name.ends_with("_controlled"))) {
     SmallVector<Value *, 3> Args(Forward->args());
     if (CurHandle && !Args.empty())
       Args[0] = CurHandle;

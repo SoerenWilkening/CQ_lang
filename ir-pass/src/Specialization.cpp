@@ -3,6 +3,8 @@
 #include "Specialization.h"
 
 #include "BennettWrap.h"
+#include "CompareLowering.h"
+#include "ControlledSymbols.h"
 #include "IntrinsicLowering.h"
 #include "LibmLowering.h"
 #include "OpcodeLowering.h"
@@ -19,8 +21,10 @@
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
@@ -47,6 +51,99 @@ bool isForwardTemplate(const CallInst *CI) {
   StringRef N = F->getName();
   return N.starts_with("cq_template_") && !N.ends_with("_unc") &&
          !N.ends_with("_inv");
+}
+
+// 5po2: lower each LIFTABLE tainted `select` in `Clone` to a 4.4 controlled-XOR
+// copy, run in `buildClone` AFTER `seedClone`/the inner-clone drain and BEFORE
+// `lowerOps` (so the fresh `cq_template_icmp` flag mint is an ordinary data
+// template `lowerOps`/the wrap already understand, and the stock `icmp` feeding
+// the select is consumed before `lowerOps` would lower a spurious dead compare).
+//
+// The accepted shape (`SpecializeReject::isLiftableSelect`) is
+// `select(icmp(param, k), param, 0)`: condition and true arm share the SAME param,
+// so they share taint. When that param is TAINTED this emits the reversible
+// embedding `out = flag ? param : 0`:
+//
+//     flag = cq_template_icmp_<pred>_i32_hl(param, k)   ; kept LIVE (no local strip)
+//     out  = cqrt_alloc_i32(0)                           ; the |0> result rail
+//     cqrt_copy_i32_controlled(flag, param, out)         ; out = flag ? param : 0
+//
+// The flag is NOT stripped/freed here (unlike the top-level 4.4 emitter): the
+// Bennett wrap reverses the forward stream `[flag-mint, controlled-copy]` — the
+// self-inverse copy zeroes `out`, the `icmp _unc` zeroes `flag` — then frees both.
+// `CopyOps` collects the void copies (ForwardStream-only) and `OutRails` the out
+// allocs (ScratchRails-only) for the capture in `buildClone`.
+//
+// When the shared param is CLASSICAL the select is a plain classical mux (both
+// arms/condition classical by the shape gate) — left UNTOUCHED for the backend,
+// never promoted to a quantum controlled copy (Rule: taint is the only Q/C
+// boundary). The gate's same-param requirement forecloses the mixed
+// classical-flag-over-quantum-data case, so no loud decline is reachable here.
+void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
+                      SmallPtrSetImpl<CallInst *> &CopyOps,
+                      SmallPtrSetImpl<Value *> &OutRails) {
+  ControlledSymbols csyms(*Clone.getParent(), wd);
+  SmallVector<SelectInst *, 4> Selects;  // snapshot before mutation
+  for (BasicBlock &BB : Clone)
+    for (Instruction &I : BB)
+      if (auto *SI = dyn_cast<SelectInst>(&I))
+        Selects.push_back(SI);
+
+  for (SelectInst *SI : Selects) {
+    auto *Cond = dyn_cast<ICmpInst>(SI->getCondition());
+    Value *TrueVal = SI->getTrueValue();
+    // Defensive re-check of the SpecializeReject shape (classify already proved
+    // it); a mismatch means this is not a lifted select — leave it untouched.
+    if (!Cond || !isa<Argument>(TrueVal))
+      continue;
+    // Taint re-proof: with the shared param CLASSICAL the whole select is a
+    // classical mux — leave it for the backend, DO NOT emit a controlled copy.
+    if (!cloneTaint.Tainted.count(TrueVal))
+      continue;
+
+    StringRef Abi = abiWidthFromType(SI->getType());  // "i32" (gate-proven)
+    FunctionCallee Alloc = wd.allocFn(Abi);
+    Type *RailTy = wd.llvmWidthType(Abi);
+    FunctionCallee Copy = csyms.copyControlledFn(Abi);
+    const DebugLoc DL = SI->getDebugLoc();
+    IRBuilder<> B(SI);  // every stream call lands immediately before the select.
+
+    // 1. MINT the flag from the compare's operands — kept LIVE (the Bennett
+    //    reverse plays its `_unc`, NOT a local strip). Reuses `lowerCompareToFlag`
+    //    (Rule 14); a null return means it already diagnosed (unsupported width /
+    //    Q+Q) — leave the select for that loud decline to fail the compile.
+    Value *Flag = lowerCompareToFlag(Cond, wd, cloneTaint, /*qqWidth=*/{},
+                                     /*inverse=*/false, /*before=*/SI);
+    if (!Flag)
+      continue;
+
+    // 2. ALLOC the |0> out rail. It joins `cloneTaint` so `ReturnTainted` holds
+    //    (the RAUW'd select result is a quantum handle).
+    CallInst *Out = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "cqq.sel");
+    if (DL)
+      Out->setDebugLoc(DL);
+    cloneTaint.Tainted.insert(Out);
+    cloneTaint.BirthOrder[Out] = cloneTaint.NextBirth++;
+    OutRails.insert(Out);
+
+    // 3. out = flag ? param : 0 — one controlled copy (false arm is const 0, so
+    //    no ¬flag `cqrt_x` bracket / second copy).
+    CallInst *CC = B.CreateCall(Copy, {Flag, TrueVal, Out});
+    if (DL)
+      CC->setDebugLoc(DL);
+    CopyOps.insert(CC);
+
+    // 4. REWIRE + erase the select and its now-dead condition compare.
+    SI->replaceAllUsesWith(Out);
+    cloneTaint.Tainted.erase(SI);
+    cloneTaint.BirthOrder.erase(SI);
+    SI->eraseFromParent();
+    if (Cond->use_empty()) {
+      cloneTaint.Tainted.erase(Cond);
+      cloneTaint.BirthOrder.erase(Cond);
+      Cond->eraseFromParent();
+    }
+  }
 }
 
 // Erase `V` and its forward cone of consumers that lose ALL taint once `V` is
@@ -283,6 +380,16 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
     }
   }
 
+  // 5po2: lift any LIFTABLE tainted `select` in the clone body to a 4.4
+  // controlled-XOR copy BEFORE `lowerOps` — so the fresh `cq_template_icmp` flag
+  // mint is an ordinary data template the wrap captures/reverses, and the stock
+  // `icmp` feeding the select is consumed before `lowerOps` would lower a dead
+  // compare. `SelectCopyOps` (the void controlled copies) and `SelectOutRails`
+  // (the out allocs) steer the Bennett capture below.
+  SmallPtrSet<CallInst *, 4> SelectCopyOps;
+  SmallPtrSet<Value *, 4> SelectOutRails;
+  lowerCloneSelect(*Clone, cloneTaint, wd, SelectCopyOps, SelectOutRails);
+
   // Scoped data lowering: `lowerOps` walks all of `M` but lowers only the
   // instructions in `cloneTaint` (C25). Inner clone calls are not stock opcodes,
   // so they are untouched; already-lowered sibling clones are in disjoint
@@ -291,16 +398,25 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
 
   // Capture the forward stream + scratch rails in program order: data templates
   // AND the `ReturnTainted` inner clone calls (each a reversible rail the wrap
-  // reverses via its twin and frees).
+  // reverses via its twin and frees). 5po2 adds two off-1:1 kinds: a controlled
+  // copy (`SelectCopyOps`) is a REVERSE-ONLY forward op (played self-inverse to
+  // zero the out rail, mints no rail → ForwardStream only), and the select out
+  // alloc (`SelectOutRails`) is a rail to FREE but not a forward op (zeroed by
+  // that copy's reverse → ScratchRails only).
   SmallVector<CallInst *, 8> ForwardStream;
   SmallVector<Value *, 8> ScratchRails;
   for (BasicBlock &BB : *Clone)
     for (Instruction &I : BB)
-      if (auto *CI = dyn_cast<CallInst>(&I))
+      if (auto *CI = dyn_cast<CallInst>(&I)) {
         if (isForwardTemplate(CI) || TaintedCloneCalls.count(CI)) {
           ForwardStream.push_back(CI);
           ScratchRails.push_back(CI);
+        } else if (SelectCopyOps.count(CI)) {
+          ForwardStream.push_back(CI);
+        } else if (SelectOutRails.count(CI)) {
+          ScratchRails.push_back(CI);
         }
+      }
 
   auto *Ret = dyn_cast<ReturnInst>(Clone->getEntryBlock().getTerminator());
   Value *RV = Ret ? Ret->getReturnValue() : nullptr;

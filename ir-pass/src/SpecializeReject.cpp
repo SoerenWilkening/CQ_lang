@@ -18,6 +18,7 @@
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
@@ -98,6 +99,43 @@ Instruction *firstEHConstruct(Function &F) {
 // late, clone-named lowerOps backstop (the WI-1.13 over-accept finding).
 bool unsupportedWidth(Type *T) {
   return !T->isVectorTy() && abiWidthFromType(T).empty();
+}
+
+// 5po2: the ONE in-body control shape Phase 6 specialization lifts — a liftable
+// tainted `select`. Scoped tight (Prime Directive; first increment): an i32
+// `select(<icmp>, <param>, 0)` — a DIRECT-param true arm, a constant-ZERO false
+// arm (so the clone emits ONE `cqrt_copy_i32_controlled` with no ¬flag bracket),
+// and an integer-`icmp` condition. The clone (`lowerCloneSelect`) lowers it to a
+// controlled-XOR copy `out = flag ? param : 0` and the Bennett reverse plays the
+// self-inverse copy + the flag `_unc` (EmitInverse 5po2). Everything off this
+// shape — a non-zero / non-constant false arm, a derived (non-`Argument`) true
+// arm, an `fcmp` / vector / non-`icmp` condition, a non-i32 width — stays
+// `InBodyControl` (a safe over-decline). This is a SHAPE gate only (scanBody has
+// no per-Site mask); `lowerCloneSelect` RE-PROVES the condition is genuinely
+// tainted before it mints the controlled copy, and loudly declines a shape-match
+// whose condition turns out classical.
+bool isLiftableSelect(const SelectInst *SI) {
+  if (abiWidthFromType(SI->getType()) != "i32")
+    return false;  // copyControlledFn + the i32-return gate support only i32.
+  auto *FalseC = dyn_cast<ConstantInt>(SI->getFalseValue());
+  if (!FalseC || !FalseC->isZero())
+    return false;  // non-zero/non-const false arm needs a 2nd (¬flag) copy — not slice 1.
+  auto *TrueArg = dyn_cast<Argument>(SI->getTrueValue());
+  if (!TrueArg)
+    return false;  // a derived true arm is a wider shape; slice 1 is param-direct.
+  auto *Cond = dyn_cast<ICmpInst>(SI->getCondition());
+  if (!Cond)
+    return false;  // integer compare only (no fcmp / non-icmp condition).
+  // The compare must test the SAME param the true arm routes (one operand ==
+  // TrueArg, the other a constant). This makes the select's CONDITION and DATA
+  // share taint by construction: with the param tainted they are BOTH quantum
+  // (→ `lowerCloneSelect` emits the controlled copy); with it classical they are
+  // BOTH classical (→ a plain classical select, left untouched). It forecloses
+  // the mixed classical-control-over-quantum-data select (a classical flag over a
+  // tainted arm) — an unproven shape this slice must never emit.
+  Value *A = Cond->getOperand(0), *B = Cond->getOperand(1);
+  return (A == TrueArg && isa<ConstantInt>(B)) ||
+         (B == TrueArg && isa<ConstantInt>(A));
 }
 
 // The Callee-only body-shape verdict (arity cap, straight-line value shape, no
@@ -347,8 +385,19 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       pop();
       return SpecReject::NonReversibilizable;
     }
-    // Control muxes — InBodyControl (a select/phi on a tainted value).
-    if (isa<SelectInst>(I) || isa<PHINode>(I)) {
+    // Control muxes. A PHI join is a multi-block branch artifact (already gated
+    // by the (1) single-block requirement, so this is defensive) — InBodyControl.
+    // A SELECT is a straight-line mux: most decline InBodyControl, but the tight
+    // 5po2 liftable shape (`select(icmp, param, 0)`) is emitted as a controlled
+    // copy in the clone, so accept it here (the emission re-proves taint).
+    if (isa<PHINode>(I)) {
+      WhereOut = &I;
+      pop();
+      return SpecReject::InBodyControl;
+    }
+    if (auto *SI = dyn_cast<SelectInst>(&I)) {
+      if (isLiftableSelect(SI))
+        continue;
       WhereOut = &I;
       pop();
       return SpecReject::InBodyControl;

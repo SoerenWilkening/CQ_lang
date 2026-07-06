@@ -614,6 +614,27 @@ add_test(NAME e2e-slice-specialize-2file
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/specialize_caller.expected.log")
 
+# Phase 6 / issue 5po2: a tainted `select` (in-body control) INSIDE a specialized
+# clone. spec_select_caller.c routes a theta-tainted `b` through the separate-TU
+# classical helper `foo` (spec_select_lib.c), whose body `int a=0; if(b<5) a+=b;
+# return a` is `select(icmp slt b,5, b, 0)` at -O1. Pre-5po2 the specializer
+# loud-declined (`callee contains tainted control flow under quantum lift`); now
+# it lifts `foo` into __cq_q_foo_1, emits the select as a 4.4 controlled-XOR copy
+# `out = flag ? b : 0`, and Bennett-wraps it. This LINK-proves the clone +
+# cqrt_copy_i32_controlled + the compare `_unc` twin resolve and signature-match
+# across llvm-link, and the golden's reverse (the SELF-INVERSE controlled copy
+# re-applied to zero the out rail, then the compare `_unc` to unmint the flag,
+# then BOTH frees AFTER the complete reverse — no dirty free, Rule 6) is the trace
+# contract for a lifted in-body-control select (Rules 2, 6, 13, 16).
+add_test(NAME e2e-slice-specialize-select
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_select_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_select_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_select_caller.expected.log")
+
 # Phase 7.1-E follow-up (test_C_libtooling-mvjc): a CURATED reversible llvm.* idiom
 # intrinsic INSIDE a specialized clone. specialize_intrinsic_caller.c routes a
 # theta-tainted `x` through the separate-TU classical helper popcount_helper
