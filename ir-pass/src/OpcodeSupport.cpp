@@ -153,6 +153,22 @@ bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
     return ff && ti && toW != "i1" && toW != "i128";
   if (op == "fptoui")
     return ff && ti && toW != "i128";
+  // Reinterpret cast (bd p119.7): a same-BIT-WIDTH fp<->int `bitcast` — the
+  // EXTRACT_WORDS/INSERT_WORDS/GET_*_WORD idiom that opens nearly every injected
+  // openlibm body. A tainted fp<->int bitcast is a reversible IDENTITY RELABEL
+  // (same basis states, new type label, zero gate), lowered like any other
+  // cross-domain cast to `cq_template_bitcast_<from>_to_<to>`. Admit EXACTLY the
+  // six shipped pairs — f16<->i16, f32<->i32, f64<->i64 — via a same-bit-width
+  // fp<->int test: (fp source, int dest, equal widths) OR (int source, fp dest,
+  // equal widths). f80<->i80 is EXCLUDED (intBits has no i80, so `ti`/`fi` is 0);
+  // i128<->fp, f128, and same-width int<->int (the pre-lowering identity FOLD,
+  // never reaching here) all fail this test and decline (Prime Directive: never
+  // mint a phantom the YAML does not carry — the same grid-completeness discipline
+  // the other cast rows follow). The f64-as-angle hazard (Rule 3) is owned by the
+  // authoritative `declineTaintedAngle`/`taintedAngleGate`, which run BEFORE
+  // `lowerOps` — NOT by declining the bitcast (lowering_reject_bitcast_angle.ll).
+  if (op == "bitcast")
+    return (ff && ti && ff == ti) || (fi && tf && fi == tf);
   return false;
 }
 

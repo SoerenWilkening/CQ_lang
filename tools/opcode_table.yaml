@@ -397,4 +397,25 @@ cast_opcodes:
       - { from: f80, to: i16 }
       - { from: f80, to: i32 }
       - { from: f80, to: i64 }
+  # Reinterpret casts (bd p119.7): same-BIT-WIDTH fp<->int `bitcast` — the
+  # EXTRACT_WORDS / INSERT_WORDS / GET_*_WORD idiom that opens nearly every injected
+  # openlibm body (p119 Phase-1 audit). A tainted fp<->int bitcast is a reversible
+  # IDENTITY RELABEL (same basis states under a new type label; zero gate), so its
+  # fwd/inv/unc bodies are trace-only relabels like every other cast. BOTH
+  # directions ship (fp->int for EXTRACT, int->fp for INSERT). castInScope admits
+  # EXACTLY these 6 pairs; f80<->i80 is EXCLUDED (no i80 width -> declines) and
+  # same-width int<->int stays the pre-lowering identity FOLD (no template). The
+  # f64-as-angle hazard is owned by declineTaintedAngle, NOT by declining bitcast.
+  - opcode: bitcast
+    kind: reinterpret
+    llvm_inst: "llvm::Instruction::BitCast"
+    c_operators: ["(reinterpret)"]
+    variants: [fwd, inv, unc]
+    pairs:
+      - { from: f16, to: i16 }
+      - { from: f32, to: i32 }
+      - { from: f64, to: i64 }
+      - { from: i16, to: f16 }
+      - { from: i32, to: f32 }
+      - { from: i64, to: f64 }
 # -- End of opcode table -------------------------------------------------------

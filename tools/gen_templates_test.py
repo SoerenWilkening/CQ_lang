@@ -100,7 +100,7 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_2315(self):
+    def test_total_symbol_count_is_2333(self):
         # 1562 baseline -> 1732 (f16, Increment D) -> 1947 (i128 Tier-1 +215) ->
         # 2091 (8rvn fcmp predicate fill +144). bd 3c6m.4 adds ONE long-double fp
         # width f80 to EVERY fp row + the fp-WIDTH cast grid (NOT the cross-domain
@@ -114,7 +114,10 @@ class GenTemplatesTest(unittest.TestCase):
         #   sitofp +4 pairs ({i8,i16,i32,i64}->f80), uitofp +5 (i1 too), fptosi +4
         #   (f80->{i8,i16,i32,i64}), fptoui +5 (i1 too) = 18 pairs x {fwd,inv,unc}
         #   = +54 over 2261 -> 2315.
-        self.assertEqual(len(self.h_decls), 2315)
+        # bd p119.7 adds the fp<->int `bitcast` REINTERPRET family (the EXTRACT_WORDS/
+        #   INSERT_WORDS idiom): 6 same-width pairs (f16<->i16, f32<->i32, f64<->i64,
+        #   both directions) x {fwd,inv,unc} = +18 over 2315 -> 2333.
+        self.assertEqual(len(self.h_decls), 2333)
 
     def test_unc_family_is_void_in_place(self):
         """PRD §2.3 / DD-3: the `_unc` uncompute family is VOID and in-place.

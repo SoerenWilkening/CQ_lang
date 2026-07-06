@@ -228,6 +228,19 @@ add_test(NAME e2e-slice-cast-f80-to-int
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_cast_f80_to_int.expected.log")
 
+# bd p119.7: the fp<->int `bitcast` REINTERPRET round-trip (EXTRACT_WORDS /
+# INSERT_WORDS — the idiom that opens nearly every injected openlibm body). The
+# ONLY layer that LINK-proves cq_template_bitcast_f64_to_i64 + _i64_to_f64 resolve
+# + signature-match the runtime; the golden pins the reversible relabel chain
+# (theta -> ry -> bitcast f64->i64 -> xor -> bitcast i64->f64 -> measure).
+add_test(NAME e2e-slice-bitcast-words
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_bitcast_words.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_bitcast_words.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.
