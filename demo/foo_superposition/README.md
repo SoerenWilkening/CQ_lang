@@ -120,12 +120,24 @@ subroutine.** (Pre-5po2 this declined *"callee contains tainted control flow
 under quantum lift"* — the clone path had no bridge from the top-level control
 emitter. See `docs/prd/phase-06-call-graph-specialization/5po2_SELECT_IN_CLONE.md`.)
 
-The one shape still on the frontier is the **single-file** `foo` where `main`
-wraps the call in `if (a != 0) a = cq_phi(a, …)`
-([`foo_noinline.c`](foo_noinline.c) → [`foo_noinline.decline.txt`](foo_noinline.decline.txt)):
-`foo` itself lifts, but `main`'s outer conditional phase is a *separate* tainted-
-control decline (the const-folded phase/value merge — bd issue **a8c0**), so the
-whole module still declines there.
+## Your whole *original* program (un-inlined) now runs end-to-end
+
+Keeping `foo` un-inlined (`__attribute__((noinline))`), the **single-file**
+program — `foo`'s internal `if (b<5)` **and** `main`'s outer
+`if (a != 0) a = cq_phi(a, …)` — now compiles and runs
+([`foo_noinline.c`](foo_noinline.c) → [`foo_noinline.trace.log`](foo_noinline.trace.log)).
+`foo` lifts into the clone (**5po2**), and `main`'s conditional phase lowers as a
+coherent phase arm (**issue a8c0** — the const-folded straight-through re-anchor:
+`clang -O1` folds the `a == 0` else edge to the literal `0`, and a8c0 re-anchors the
+routed handle back to the qubit). The trace shows both: the `@__cq_q_foo_1` clone,
+then the phase arm (`icmp_eq` flag → `cqrt_cswap` route → `cqrt_rz` → route back →
+`icmp_eq_inv` strip), then the measure.
+
+The **inlined** single-file [`foo.c`](foo.c) still declines (step 1): inlining fuses
+`foo`'s `b<5` into `main`'s condition, producing the compound `(b>4)||(b==0)` merge
+that maps many `b` to the constant `0` — a genuine mixed phase+value collapse a8c0
+correctly leaves declined. Un-inlining is what separates the coherent conditional
+phase from that collapse.
 
 ## Files / reproduce
 
@@ -133,7 +145,7 @@ whole module still declines there.
 - `foo_working.c`, `foo_working.frontend.ll`, `foo_working.lowered.ll`, `foo_working.trace.log` — the single-file version that runs.
 - `foo_spec_caller.c`, `foo_spec_lib.c`, `foo_spec.lowered.ll`, `foo_spec.trace.log` — the multi-file quantum-clone version (pure `foo`).
 - `foo_spec_inbody.lowered.ll`, `foo_spec_inbody.trace.log` — **your original `foo` body (with the `if`), un-inlined, now LIFTED to a reversible clone** (issue 5po2).
-- `foo_noinline.c`, `foo_noinline.frontend.ll`, `foo_noinline.decline.txt` — single-file `noinline` `foo`: `foo` lifts, but `main`'s outer `if` still declines (issue a8c0).
+- `foo_noinline.c`, `foo_noinline.frontend.ll`, `foo_noinline.lowered.ll`, `foo_noinline.trace.log` — **single-file `noinline` `foo` that now RUNS end-to-end**: `foo`'s `if` lifts (5po2) and `main`'s conditional phase lowers (a8c0).
 - `build.sh` — regenerates every artifact above (needs `cmake --build build --target CQPass` first).
 
 ```bash

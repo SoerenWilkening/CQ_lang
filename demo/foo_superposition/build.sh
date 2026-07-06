@@ -48,12 +48,18 @@ printf 'int foo(int b){int a=0; if(b<5) a+=b; return a;}\n' > "$TMP/orig.c"
 "$TMP/inbody_exe" > "$D/foo_spec_inbody.trace.log"
 cat "$D/foo_spec_inbody.trace.log"
 
-echo "### 3c. the SINGLE-FILE noinline foo -> foo lifts, but main's OUTER if still declines (a8c0)"
-# foo.c with __attribute__((noinline)) keeps foo un-inlined. foo itself now lifts
-# (5po2), but main's `if (a != 0) a = cq_phi(a, ...)` is a SEPARATE tainted-control
-# decline (the const-folded phase/value merge — bd issue a8c0), so the whole
-# module still declines. This isolates the remaining frontier from foo.
+echo "### 3c. the SINGLE-FILE noinline foo -> now RUNS end-to-end (foo via 5po2 + the conditional phase via a8c0)"
+# foo.c with __attribute__((noinline)) keeps foo un-inlined. foo's `if (b<5)` lifts
+# into the clone (5po2) AND main's `if (a != 0) a = cq_phi(a, ...)` lowers as a
+# coherent phase arm (issue a8c0 — the const-folded straight-through re-anchor), so
+# the WHOLE program compiles + runs. (Pre-a8c0 main's outer if declined "value-arm
+# swap-route under quantum control"; the un-inlined `a != 0` is a SIMPLE eq condition
+# a8c0 re-anchors, unlike the INLINED foo.c whose compound (b>4)||(b==0) merge stays
+# a genuine mixed-collapse decline in step 1.)
+rm -f "$D/foo_noinline.decline.txt"   # stale pre-a8c0 artifact
 "$LLVM/clang" -Iinclude -include CQ.h -O1 -emit-llvm -S "$D/foo_noinline.c" -o "$D/foo_noinline.frontend.ll"
-"$LLVM/opt" -load-pass-plugin "$PLUGIN" -passes=cq-lowering -S "$D/foo_noinline.frontend.ll" -o /dev/null 2>"$D/foo_noinline.decline.txt" || true
-cat "$D/foo_noinline.decline.txt"
+"$LLVM/opt" -load-pass-plugin "$PLUGIN" -passes=cq-lowering -S "$D/foo_noinline.frontend.ll" -o "$D/foo_noinline.lowered.ll"
+"$LLVM/clang" "$D/foo_noinline.lowered.ll" "$TPL" "$RT" -o "$TMP/noinline_exe"
+"$TMP/noinline_exe" > "$D/foo_noinline.trace.log"
+cat "$D/foo_noinline.trace.log"
 echo "### done."
