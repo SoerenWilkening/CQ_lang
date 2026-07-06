@@ -139,6 +139,14 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   taint.Tainted.insert(Out);
   taint.ControlOwnedRails.insert(Out);  // DD-4: Phase-4 owns this merge out-rail
   taint.BirthOrder[Out] = taint.NextBirth++;
+  // bd p119.6: record the out-rail's LOGICAL ABI width (= the select's data width,
+  // `Abi`), the same invariant every other producer upholds (theta/arith/cast).
+  // Without it, a DOWNSTREAM cast/Q+Q-compare off the RAUW'd merge reads the
+  // laundered i32 (getSrcTy after RAUW) instead of the real width and declines —
+  // the `n = (int)select(cond,a,b)` branchless range-reduction shape declining
+  // `no template for opcode 'fptosi i32'`. `Abi` is non-empty here (the `!RailTy`
+  // guard above returned otherwise) and is exactly `abiWidthFromType(Sel->getType())`.
+  taint.HandleWidth[Out] = Abi;
 
   // 3. COPY the TRUE value on the flag (materialize if classical) — fires on f=1.
   Value *TrueSrc = materializeCopySource(Tru, Alloc, taint, B, DL);

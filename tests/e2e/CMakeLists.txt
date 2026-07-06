@@ -241,6 +241,20 @@ add_test(NAME e2e-slice-bitcast-words
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_bitcast_words.expected.log")
 
+# bd 3c6m.7 / p119: the FIRST transcendental compiled by SOURCE INJECTION (Rule 18) —
+# a BRANCHLESS soft-exp (select range reduction, no tables/control/scratch) inlined to
+# stock reversible opcodes. Load-bearing on BOTH p119 unlocks: p119.6
+# (cq_template_fptosi_f64_to_i32 on the kjd1 fp-select merge) AND p119.7
+# (cq_template_bitcast_i64_to_f64 for the 2^n INSERT_WORDS scale). The golden pins the
+# whole branchless-exp reversible-opcode stream end-to-end.
+add_test(NAME e2e-slice-branchless-exp
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_exp.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_exp.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.
