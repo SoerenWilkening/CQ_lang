@@ -70,6 +70,22 @@ add_test(NAME e2e-slice-control-phase-diamond
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_diamond.expected.log")
 
+# Issue a8c0: the idiomatic conditional phase `if (q != 0) q = cq_phi(q, a)` whose
+# else edge `clang -O1` const-folds to `0` (the merge is `phi [phase(q), 0]`).
+# Pre-a8c0 the classifier over-declined it (the `Base == Routed` gate saw the
+# folded `0`, not the qubit). The straight-through const-fold re-anchor proves
+# `q == 0` on that edge and re-anchors the routed handle to `q`, so it lowers as a
+# clean phase arm (¬flag cqrt_x brackets — the arm fires on the `q != 0` FALSE
+# edge — the Rz on the rail, strip with icmp_eq_inv, merge RAUW'd to q). LINK-proves
+# the a8c0 stream resolves against the runtime; the golden is the trace contract.
+add_test(NAME e2e-slice-control-phase-ifne
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_ifne.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_ifne.expected.log")
+
 # Phase 4.1 follow-on (test_C_libtooling-9hh): two-arm PHASE if/else routing a
 # DERIVED base (a pre-region cq_phi result). Links the dual-rail §5b stream —
 # both rails, the cqrt_x ¬flag bracket, and the pre-region cqrt_rz that must

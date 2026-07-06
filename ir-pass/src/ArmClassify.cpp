@@ -33,6 +33,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
@@ -630,6 +631,86 @@ CondDataDisp condDataUseDisposition(Instruction *Cond,
   return CondDataDisp::ShareOk;
 }
 
+namespace {
+
+// issue a8c0 — the straight-through const-fold re-anchor (the Pred-edge analog of
+// `tryEqFoldArm`). `clang -O1` reaches a diamond's straight-through (Pred→merge)
+// edge ONLY when the branch proves the routed qubit holds a single value, so it
+// value-propagates that phi incoming to a `ConstantInt` k (Rule 9: "value-
+// propagating the straight-through edge to a constant"). For the idiomatic
+// conditional phase `if (q != 0) q = cq_phi(q, θ)` the else edge folds to `0`, so
+// the merge is `phi [phase(q), 0]` and the classifier's `Base == Routed` gate
+// fails (`Routed` is the folded `0`, `Base` is the qubit) — a verify-clean OVER-
+// DECLINE of a clean phase arm.
+//
+// This returns the tainted qubit `H` to re-anchor `Routed`/`RoutedBase` to, but
+// ONLY when the branch condition SOUNDLY proves `H == k` on the straight-through
+// edge — so `phi [phase(H), k] ≡ phi [phase(H), H]` there. Requirements:
+//   * `Routed` (== the straight-through incoming) is a `ConstantInt` k;
+//   * a DIAMOND (one content arm + a Pred straight edge) — an if/else has no
+//     straight-through and never folds one;
+//   * the condition is `icmp <eq|ne> H, C` — H a tainted handle == the arm's
+//     phase-spine `Base` (the arm rotates the proven handle), C a `ConstantInt`;
+//   * the folded constant equals the compare literal (`k == C`, width+value);
+//   * the straight-through (Pred→merge) edge is the branch successor whose truth
+//     value PROVES `H == C` (eq → true edge, ne → false edge).
+// Any miss returns null → the ordinary decline runs unchanged (Prime Directive).
+// A compound/nested condition (`Region.Condition` is a select, not an `ICmpInst`)
+// and a value arm (`Base != H`) both miss — so the demo's `(b>4)||(b==0)` merge
+// and every genuine value collapse stay correctly declined.
+Value *straightThroughConstFoldHandle(const ControlRegion &Region, Value *Routed,
+                                      Value *Base, const TaintSet &Taint) {
+  auto *K = dyn_cast_or_null<ConstantInt>(Routed);
+  if (!K)
+    return nullptr;
+  if (!Region.Arm || Region.ArmFalse)
+    return nullptr;  // diamond only.
+  auto *Cond = dyn_cast_or_null<ICmpInst>(Region.Condition);
+  if (!Cond || !Cond->isEquality())
+    return nullptr;
+  // Position-free { ConstantInt C, non-constant handle H }.
+  auto *C0 = dyn_cast<ConstantInt>(Cond->getOperand(0));
+  auto *C1 = dyn_cast<ConstantInt>(Cond->getOperand(1));
+  ConstantInt *C = nullptr;
+  Value *H = nullptr;
+  if (C1 && !C0) {
+    C = C1;
+    H = Cond->getOperand(0);
+  } else if (C0 && !C1) {
+    C = C0;
+    H = Cond->getOperand(1);
+  } else {
+    return nullptr;  // two handles or two constants — not this shape.
+  }
+  if (H != Base)
+    return nullptr;  // the arm must rotate the handle the compare constrains.
+  if (!Taint.Tainted.count(H))
+    return nullptr;  // criterion 3 — the routed handle is a tainted qubit.
+  if (C->getType() != K->getType() || C->getValue() != K->getValue())
+    return nullptr;  // the folded constant must equal the compare literal.
+  // Soundness: the straight-through (Pred→merge) edge must PROVE H == C. Locate it
+  // as the branch successor equal to the merge block, and check its truth value.
+  auto *Br = dyn_cast<BranchInst>(Region.Pred->getTerminator());
+  if (!Br || !Br->isConditional() || Br->getCondition() != Cond)
+    return nullptr;
+  const BasicBlock *MergeBB = Region.Merge->getParent();
+  bool StraightIsTrueEdge;
+  if (Br->getSuccessor(0) == MergeBB && Br->getSuccessor(1) != MergeBB)
+    StraightIsTrueEdge = true;
+  else if (Br->getSuccessor(1) == MergeBB && Br->getSuccessor(0) != MergeBB)
+    StraightIsTrueEdge = false;
+  else
+    return nullptr;  // merge is both/neither successor — not a clean straight edge.
+  bool StraightProvesEq = Cond->getPredicate() == CmpInst::ICMP_EQ
+                              ? StraightIsTrueEdge
+                              : !StraightIsTrueEdge;
+  if (!StraightProvesEq)
+    return nullptr;
+  return H;
+}
+
+}  // namespace
+
 ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   auto *MergePhi = dyn_cast_or_null<PHINode>(Region.Merge);
   if (!MergePhi) {
@@ -778,6 +859,21 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
     // walks here and in SwapRouteEmit (the shared pre-region phi is never
     // collected as an arm gate, so it cannot be double-erased — see
     // [[swap-route-ifelse-derived-base-boundary]]).
+
+    // issue a8c0 — straight-through const-fold re-anchor. When `clang -O1` folded
+    // the diamond's straight-through (Pred-edge) incoming to a `ConstantInt` that
+    // the branch PROVES equals this arm's routed qubit on that edge (e.g.
+    // `if (q != 0) q = cq_phi(q, θ)` folds the else edge to `0`), re-anchor both
+    // `Routed` (so the `Base == Routed` gate below accepts) and `Region.RoutedBase`
+    // (so `SwapRouteEmit::emitRegion` cswaps/RAUWs the qubit, NOT the folded
+    // constant — the same emitter re-anchor `tryEqFoldArm` uses). Strictly
+    // additive: fires ONLY on the proven folded-constant diamond phase arm; a
+    // compound condition, a value arm (`Base != H`), or an unproven edge miss and
+    // fall through to the existing decline (Prime Directive).
+    if (Value *H = straightThroughConstFoldHandle(Region, Routed, Base, Taint)) {
+      Routed = H;
+      Region.RoutedBase = H;
+    }
 
     // Pure phase chain bottoming at the routed handle: accept this arm. The
     // routed handle MAY itself be a value DERIVED before the region (an earlier
