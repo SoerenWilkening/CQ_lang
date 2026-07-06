@@ -651,6 +651,27 @@ add_test(NAME e2e-slice-specialize-select
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_select_caller.expected.log")
 
+# Phase 6 / issue kmdc (5po2 fp widening): a fabs-shape FP TWO-ARM select in a
+# source-injected int->int helper (fp is internal scratch, reduced to i32 via the
+# libm producer ilogb). spec_fp_select_lib.c: `double x=(double)n; double a=(x<0)?
+# -x:x; return ilogb(a)` -> select(icmp slt n,0, fneg x, x). Lifts into
+# __cq_q_mhelper_1 as an fp cqrt_copy_f64_controlled two-arm merge (copy_T, ¬flag
+# cqrt_x bracket, copy_F, cqrt_x) + the libm producer, Bennett-wrapped. LINK-proves
+# cqrt_copy_f64_controlled / cqrt_alloc_f64 / cq_template_ilogb_f64_to_i32 + all
+# their reverses resolve. The golden is the PALINDROMIC trace — the two cqrt_x
+# brackets appear in BOTH the forward stream AND the reverse (the SelectXBrackets
+# capture; a dropped bracket would dirty-free the fp rail, Rule 6), and all five
+# scratch rails free on |0>. First golden to exercise fp-select-merge + libm
+# together (Rules 2, 6, 13, 16).
+add_test(NAME e2e-slice-specialize-fp-select
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_caller.expected.log")
+
 # Phase 7.1-E follow-up (test_C_libtooling-mvjc): a CURATED reversible llvm.* idiom
 # intrinsic INSIDE a specialized clone. specialize_intrinsic_caller.c routes a
 # theta-tainted `x` through the separate-TU classical helper popcount_helper

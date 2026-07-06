@@ -23,6 +23,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
@@ -78,10 +79,24 @@ bool isForwardTemplate(const CallInst *CI) {
 // arms/condition classical by the shape gate) — left UNTOUCHED for the backend,
 // never promoted to a quantum controlled copy (Rule: taint is the only Q/C
 // boundary). The gate's same-param requirement forecloses the mixed
-// classical-flag-over-quantum-data case, so no loud decline is reachable here.
+// classical-flag-over-quantum-data case, so no loud decline is reachable there.
+//
+// kmdc adds the FP two-arm branch: a `select(icmp, <derived fp>, <derived fp>)`
+// (`isLiftableFpSelect`) — the canonical fabs `(x<0)?-x:x`. It emits the full 4.4
+// stream over an fp `cqrt_copy_f<W>_controlled` + an fp |0> rail: copy the TRUE
+// arm on flag, then the ¬flag `cqrt_x`-bracketed copy of the FALSE arm. The two
+// `cqrt_x` brackets are captured into `XBrackets` (ForwardStream-only) — WITHOUT
+// this the Bennett reverse would silently drop them (`isForwardTemplate` matches
+// only `cq_template_` names, not `cqrt_x`), replaying `[copy_F, copy_T]` at the
+// wrong polarity and leaving `out = arm_T ^ arm_F ≠ 0` — a dirty free / hidden
+// measurement (Rule 6), verify-clean (the kmdc CONFIRMED-hazard). SAFE without an
+// angle fence: a clone body is rotation-free (see `isLiftableFpSelect`), so the fp
+// value never reaches a rotation angle. Unlike the top-level 4.4 emitter this
+// keeps the flag LIVE (no local strip/free) for the Bennett reverse.
 void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
                       SmallPtrSetImpl<CallInst *> &CopyOps,
-                      SmallPtrSetImpl<Value *> &OutRails) {
+                      SmallPtrSetImpl<Value *> &OutRails,
+                      SmallPtrSetImpl<CallInst *> &XBrackets) {
   ControlledSymbols csyms(*Clone.getParent(), wd);
   SmallVector<SelectInst *, 4> Selects;  // snapshot before mutation
   for (BasicBlock &BB : Clone)
@@ -89,49 +104,97 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
       if (auto *SI = dyn_cast<SelectInst>(&I))
         Selects.push_back(SI);
 
+  // Shared tail: mint the flag LIVE, alloc the |0> out rail (joins cloneTaint so
+  // ReturnTainted holds), then let `emit` lay down the per-shape copies before the
+  // select, RAUW the select to `out`, and erase the select + now-dead compare.
   for (SelectInst *SI : Selects) {
     auto *Cond = dyn_cast<ICmpInst>(SI->getCondition());
-    Value *TrueVal = SI->getTrueValue();
-    // Defensive re-check of the SpecializeReject shape (classify already proved
-    // it); a mismatch means this is not a lifted select — leave it untouched.
-    if (!Cond || !isa<Argument>(TrueVal))
-      continue;
-    // Taint re-proof: with the shared param CLASSICAL the whole select is a
-    // classical mux — leave it for the backend, DO NOT emit a controlled copy.
-    if (!cloneTaint.Tainted.count(TrueVal))
-      continue;
+    if (!Cond)
+      continue;  // not a lifted select shape (defensive — classify proved it).
+    const bool IsFp = SI->getType()->isFloatingPointTy();
 
-    StringRef Abi = abiWidthFromType(SI->getType());  // "i32" (gate-proven)
+    // Per-shape taint re-proof (the SHAPE gate in SpecializeReject is taint-blind).
+    if (!IsFp) {
+      // Integer 5po2: true arm = the tainted param; classical → classical mux, leave.
+      if (!isa<Argument>(SI->getTrueValue()) ||
+          !cloneTaint.Tainted.count(SI->getTrueValue()))
+        continue;
+    } else {
+      // FP kmdc two-arm: re-prove the condition AND BOTH arms tainted. All-tainted
+      // → emit; whole-classical → leave for the backend; MIXED → loud decline (a
+      // classical flag over quantum fp data, or vice versa, has no proven lowering).
+      bool CondT = cloneTaint.Tainted.count(Cond->getOperand(0)) ||
+                   cloneTaint.Tainted.count(Cond->getOperand(1));
+      bool TrueT = cloneTaint.Tainted.count(SI->getTrueValue());
+      bool FalseT = cloneTaint.Tainted.count(SI->getFalseValue());
+      if (!CondT && !TrueT && !FalseT)
+        continue;  // whole-classical fp select — leave for the backend.
+      if (!(CondT && TrueT && FalseT)) {
+        Clone.getContext().diagnose(DiagnosticInfoUnsupported(
+            Clone,
+            "cq specialization: mixed classical/quantum fp select under quantum "
+            "lift",
+            SI->getDebugLoc()));
+        continue;  // loud decline (opt exits non-zero) — never a partial emit.
+      }
+    }
+
+    StringRef Abi = abiWidthFromType(SI->getType());  // "i32" | "f32" | "f64"
     FunctionCallee Alloc = wd.allocFn(Abi);
     Type *RailTy = wd.llvmWidthType(Abi);
-    FunctionCallee Copy = csyms.copyControlledFn(Abi);
+    FunctionCallee Copy =
+        IsFp ? csyms.copyControlledFpFn(Abi) : csyms.copyControlledFn(Abi);
+    if (!Alloc || !RailTy || !Copy)
+      continue;  // unsupported width past the gate — leave for the loud backstop.
     const DebugLoc DL = SI->getDebugLoc();
     IRBuilder<> B(SI);  // every stream call lands immediately before the select.
+    auto stamp = [&](CallInst *C) {
+      if (DL)
+        C->setDebugLoc(DL);
+    };
 
-    // 1. MINT the flag from the compare's operands — kept LIVE (the Bennett
-    //    reverse plays its `_unc`, NOT a local strip). Reuses `lowerCompareToFlag`
-    //    (Rule 14); a null return means it already diagnosed (unsupported width /
-    //    Q+Q) — leave the select for that loud decline to fail the compile.
+    // 1. MINT the flag from the compare — kept LIVE (the Bennett reverse plays its
+    //    `_unc`, NOT a local strip). Reuses `lowerCompareToFlag` (Rule 14).
     Value *Flag = lowerCompareToFlag(Cond, wd, cloneTaint, /*qqWidth=*/{},
                                      /*inverse=*/false, /*before=*/SI);
     if (!Flag)
-      continue;
+      continue;  // lowerCompareToFlag already diagnosed.
 
-    // 2. ALLOC the |0> out rail. It joins `cloneTaint` so `ReturnTainted` holds
-    //    (the RAUW'd select result is a quantum handle).
+    // 2. ALLOC the |0> out rail (i32 or fp). It joins `cloneTaint` so the RAUW'd
+    //    select result classifies as a quantum handle / ReturnTainted holds.
     CallInst *Out = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "cqq.sel");
-    if (DL)
-      Out->setDebugLoc(DL);
+    stamp(Out);
     cloneTaint.Tainted.insert(Out);
     cloneTaint.BirthOrder[Out] = cloneTaint.NextBirth++;
     OutRails.insert(Out);
 
-    // 3. out = flag ? param : 0 — one controlled copy (false arm is const 0, so
-    //    no ¬flag `cqrt_x` bracket / second copy).
-    CallInst *CC = B.CreateCall(Copy, {Flag, TrueVal, Out});
-    if (DL)
-      CC->setDebugLoc(DL);
-    CopyOps.insert(CC);
+    // 3. The controlled copies. Tainted arms are threaded AS-IS — the later
+    //    (taint-gated) `lowerOps` RAUWs their fp producers (sitofp/fneg) to i32
+    //    handles, so the copy's `src` operand becomes well-typed (the deferred-RAUW
+    //    the top-level 4.4 emitter also relies on).
+    if (!IsFp) {
+      // out = flag ? param : 0 — one copy (false arm is const 0, no ¬flag bracket).
+      CallInst *CC = B.CreateCall(Copy, {Flag, SI->getTrueValue(), Out});
+      stamp(CC);
+      CopyOps.insert(CC);
+    } else {
+      // out = flag ? T : F — copy T on flag, then the ¬flag `cqrt_x`-bracketed copy
+      // of F. The bracket encloses ONLY the second copy (SelectMergeEmit §16.3
+      // order); both `cqrt_x` are captured into `XBrackets` so the Bennett reverse
+      // re-brackets them (the kmdc dropped-bracket hazard).
+      CallInst *CopyT = B.CreateCall(Copy, {Flag, SI->getTrueValue(), Out});
+      stamp(CopyT);
+      CopyOps.insert(CopyT);
+      CallInst *X1 = B.CreateCall(csyms.xFn(), {Flag});
+      stamp(X1);
+      XBrackets.insert(X1);
+      CallInst *CopyF = B.CreateCall(Copy, {Flag, SI->getFalseValue(), Out});
+      stamp(CopyF);
+      CopyOps.insert(CopyF);
+      CallInst *X2 = B.CreateCall(csyms.xFn(), {Flag});
+      stamp(X2);
+      XBrackets.insert(X2);
+    }
 
     // 4. REWIRE + erase the select and its now-dead condition compare.
     SI->replaceAllUsesWith(Out);
@@ -388,7 +451,13 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
   // (the out allocs) steer the Bennett capture below.
   SmallPtrSet<CallInst *, 4> SelectCopyOps;
   SmallPtrSet<Value *, 4> SelectOutRails;
-  lowerCloneSelect(*Clone, cloneTaint, wd, SelectCopyOps, SelectOutRails);
+  // kmdc: the fp two-arm select's ¬flag `cqrt_x` brackets — ForwardStream-only
+  // reverse-only ops the Bennett reverse must re-play (they mint no rail). Held
+  // separately because `isForwardTemplate` matches only `cq_template_` names, so
+  // without this set the reverse would DROP them → dirty out-rail / hidden measure.
+  SmallPtrSet<CallInst *, 4> SelectXBrackets;
+  lowerCloneSelect(*Clone, cloneTaint, wd, SelectCopyOps, SelectOutRails,
+                   SelectXBrackets);
 
   // Scoped data lowering: `lowerOps` walks all of `M` but lowers only the
   // instructions in `cloneTaint` (C25). Inner clone calls are not stock opcodes,
@@ -411,7 +480,9 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
         if (isForwardTemplate(CI) || TaintedCloneCalls.count(CI)) {
           ForwardStream.push_back(CI);
           ScratchRails.push_back(CI);
-        } else if (SelectCopyOps.count(CI)) {
+        } else if (SelectCopyOps.count(CI) || SelectXBrackets.count(CI)) {
+          // A controlled copy OR an fp-select ¬flag `cqrt_x` bracket: reverse-only
+          // (self-inverse, mints no rail) → ForwardStream, never ScratchRails.
           ForwardStream.push_back(CI);
         } else if (SelectOutRails.count(CI)) {
           ScratchRails.push_back(CI);

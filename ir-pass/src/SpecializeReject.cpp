@@ -138,6 +138,41 @@ bool isLiftableSelect(const SelectInst *SI) {
          (B == TrueArg && isa<ConstantInt>(A));
 }
 
+// kmdc (5po2 fp widening): the canonical fabs/abs-shape FP select in a lifted
+// clone — `select(<icmp>, <derived fp>, <derived fp>)`, e.g. clang -O1's
+// `(x<0.0)?-x:x` → `select(icmp slt %param, 0, fneg %x, %x)`. UNLIKE the integer
+// slice this is a TWO-arm select (both arms derived, non-constant), so
+// `lowerCloneSelect` emits the full 4.4 stream — copy_T, the ¬flag `cqrt_x`
+// bracket, copy_F, `cqrt_x` — over an fp `cqrt_copy_f<W>_controlled` and an fp
+// |0> rail. SAFE despite the f64/angle miscompile family: a clone body is provably
+// ROTATION-FREE (scanBody rejects every `cq_theta`/`cq_phi`; buildClone never
+// lowers rotations), so there is no rotation arg-1 angle slot for the fp value to
+// reach — the top-level three-legged angle fence is VACUOUS here; the residual
+// (fp → a caller angle) is blocked by the `RetW == "i32"` return-ABI gate (an
+// fp-return clone declines `FpAbi`). Both are load-bearing preconditions (see the
+// kmdc PRD): do NOT relax the i32-return gate or admit a rotation into a lifted
+// body while fp selects are accepted.
+//
+// Scoped tight (Prime Directive; first slice): scalar fp result restricted to an
+// EXPLICIT {f32,f64} whitelist (NOT `abiWidthHasControlledFpCopy`, which also
+// admits f16/f80 with no coverage; f128/vector fall out via `isFloatingPointTy`),
+// an integer-`icmp` condition (the fabs sign test folds to `icmp slt i32`; `fcmp`
+// clamps deferred), and BOTH arms non-constant. This is a SHAPE gate only;
+// `lowerCloneSelect` re-proves the condition AND BOTH arms are genuinely tainted
+// (mixed → loud decline; all-classical → left for the backend).
+bool isLiftableFpSelect(const SelectInst *SI) {
+  if (!SI->getType()->isFloatingPointTy())
+    return false;  // scalar fp only — vectors / non-fp fall out here.
+  StringRef W = abiWidthFromType(SI->getType());
+  if (W != "f32" && W != "f64")
+    return false;  // explicit slice-1 whitelist (f16/f80/f128 decline — no coverage).
+  if (!isa<ICmpInst>(SI->getCondition()))
+    return false;  // integer icmp condition only (fcmp is a deferred widening).
+  // BOTH arms non-constant (derived fp — fneg/sitofp/fsub…). A constant arm needs
+  // the materialize-classical-arm path (a later widening), not slice 1.
+  return !isa<Constant>(SI->getTrueValue()) && !isa<Constant>(SI->getFalseValue());
+}
+
 // The Callee-only body-shape verdict (arity cap, straight-line value shape, no
 // `cq_*`/measure/non-reversibilizable construct, integer-i32 return), recursing
 // through nested calls (Phase 6.3 transitive). `OnStack` is the DFS recursion
@@ -396,7 +431,7 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       return SpecReject::InBodyControl;
     }
     if (auto *SI = dyn_cast<SelectInst>(&I)) {
-      if (isLiftableSelect(SI))
+      if (isLiftableSelect(SI) || isLiftableFpSelect(SI))
         continue;
       WhereOut = &I;
       pop();
