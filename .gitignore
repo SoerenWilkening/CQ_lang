@@ -20,3 +20,6 @@ ir-pass/test/Output/
 # Python bytecode (oracle scripts under docs/design run by hand)
 __pycache__/
 *.pyc
+
+# Local-only demos (regenerate with demo/*/build.sh; not tracked)
+demo/
