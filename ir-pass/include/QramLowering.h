@@ -24,6 +24,7 @@ class DominatorTree;
 class Instruction;
 class LoopInfo;
 class Module;
+class StoreInst;
 }  // namespace llvm
 
 namespace cq {
@@ -45,16 +46,35 @@ struct TaintSet;
 //   * `NotQram` — not a tainted-index access (a classical-address / value-tainted
 //     store, or a control-region access): fall through to the GENERIC taint-escape
 //     decline (`kMsgStore` / `kMsgOther`).
+//   * `DeferControl` (iw81.7) — a tainted-index STORE (or its address gep) that
+//     sits in a depth-1 tainted-diamond arm and has the bounded-alloca Shadow
+//     shape: a GuardedStoreArm candidate. SUPPRESS the pre-detection escape decline
+//     (like `Accept`) so `detectControlRegions` reaches it; the control emitter
+//     flattens the diamond and records the store, then `lowerShadowMemory` emits
+//     the GUARDED store. If detection instead DECLINES the region (any precondition
+//     miss), it fires its own loud diagnostic — so a deferred store is always
+//     resolved (accept or loud decline), never a silent pass (the divergence fence).
 // The emitter classifiers share the SAME `matchQramAccess`, so the carve and the
 // emit can never diverge (the Inc 1 discipline). The single-PtrOrigin provenance
 // walk proves single-origin through gep chains + pointer phi/select; multi-origin
 // declines (the over-accept surface — what stays rejected is forbidden by
 // no-cloning / linearity, [[pointer-boundary-linearity-bennett]], not a shortcut).
-enum class QramCarve { Accept, Decline, NotQram };
+enum class QramCarve { Accept, Decline, NotQram, DeferControl };
 
 QramCarve qramCarveVerdict(const llvm::Instruction *I, const TaintSet &taint,
                            llvm::DominatorTree &DT, llvm::LoopInfo &LInfo,
                            const char *&outMsg);
+
+// iw81.7 — the shared GuardedStoreArm SHAPE predicate: is `SI` a bounded-alloca
+// tainted-index Shadow store sitting in a depth-1 tainted-diamond arm (single-pred
+// block whose predecessor ends in a conditional tainted `br` to {this block, the
+// merge}, and whose single successor is that merge)? Consulted by BOTH the carve
+// (`qramCarveVerdict` → `DeferControl`) AND the control recognizer
+// (`classifyGuardedStoreArm`), so the two can never diverge (the Inc-1 discipline).
+// Proves the QRAM shape with `allowTaintedControl` (the region flattens the diamond
+// to straight-line before `lowerShadowMemory` runs). Pure analysis (no mutation).
+bool guardedShadowStoreShape(llvm::StoreInst *SI, const TaintSet &taint,
+                             llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
 
 // Lower every accepted const-global tainted-index READ in `M`. Runs BEFORE
 // `lowerRotations` (pre-RAUW SSA identity, the control/IO precedent): the emitted

@@ -22,6 +22,7 @@
 #include "AbortParkEmit.h"
 #include "ArmClassify.h"
 #include "ControlShape.h"
+#include "GuardedStoreArmEmit.h"  // classifyGuardedStoreArm (iw81.7)
 #include "RegionTreeDetect.h"
 #include "SelectClassify.h"
 #include "SwitchClassify.h"
@@ -342,6 +343,20 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
   case AbortParkDisp::Declined:
     return;
   case AbortParkDisp::NotApplicable:
+    break;
+  }
+  // iw81.7 — guarded Shadow store arm, tried BEFORE `recoverRegion`: a
+  // side-effect-only store arm (a `store`, NO merge φ) would be labelled
+  // `OffPattern` and declined generically, exactly like the abort/exit sink arm.
+  // On Accept push the `GuardedStoreArm` region for `emitGuardedStoreArmRegion`; on
+  // Declined it already fired the precise diagnostic; NotApplicable falls through.
+  switch (classifyGuardedStoreArm(BI, Taint, R)) {
+  case GuardedStoreDisp::Accept:
+    Plan.Regions.push_back(R);
+    return;
+  case GuardedStoreDisp::Declined:
+    return;
+  case GuardedStoreDisp::NotApplicable:
     break;
   }
   switch (recoverRegion(BI, Taint, R)) {

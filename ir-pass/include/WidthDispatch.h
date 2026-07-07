@@ -125,6 +125,15 @@ public:
   llvm::FunctionCallee qramStoreFn(llvm::StringRef abiWidth) const;     // @cqrt_qram_store_<W>
   llvm::FunctionCallee qramStoreUncFn(llvm::StringRef abiWidth) const;  // @cqrt_qram_store_<W>_unc
 
+  // iw81.7 — the path-predicate-GUARDED store + its adjoint. `void
+  // cqrt_qram_store_<W>_controlled(i32 pred, i32 arr, i32 idx, i32 val)` (the
+  // guard flag is arg 0, then the same arr/idx/val as the unguarded store); a
+  // NO-OP on cell+tape when pred=0 (Bennett guarded shadow/MUX, backend-owned).
+  // `_controlled_unc` is a DISTINCT symbol (store not self-inverse), gated by the
+  // SAME pred, popped in strict LIFO reverse. Same INTEGER-width fence.
+  llvm::FunctionCallee qramStoreControlledFn(llvm::StringRef abiWidth) const;     // @cqrt_qram_store_<W>_controlled
+  llvm::FunctionCallee qramStoreControlledUncFn(llvm::StringRef abiWidth) const;  // @cqrt_qram_store_<W>_controlled_unc
+
   // Rotation runtime resolvers. Both signatures are `void(i32, double)`
   // (handle, angle) — the handle is always i32 across every ABI width
   // (PRD §"Width unification"). Names `@cqrt_ry_<W>` / `@cqrt_rz_<W>`.

@@ -758,6 +758,9 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           case QramCarve::Decline:
             diagnoseEscape(&I, QMsg);  // Inc 3 pattern-naming decline; opt non-zero.
             continue;
+          case QramCarve::DeferControl:
+            continue;  // iw81.7 — a GuardedStoreArm store/gep: `detectControlRegions`
+                       // owns it (flatten + guarded emit) or declines it loudly.
           case QramCarve::NotQram:
             break;  // fall through to the generic kMsgStore / kMsgOther decline.
           }

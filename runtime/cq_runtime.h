@@ -514,6 +514,40 @@ void cqrt_qram_store_i32_unc(int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i64_unc(int32_t arr, int32_t idx, int32_t val);
 
 /* -----------------------------------------------------------------
+ * iw81.7 — path-predicate-GUARDED Shadow store (tainted-index memop UNDER
+ * tainted control). Same (arr, idx, val) contract as cqrt_qram_store_<W>, with
+ * the block path predicate `pred` as arg 0. The backend realizes the Bennett
+ * guarded shadow / MUX store (Bennett.jl `emit_shadow_store_guarded!` /
+ * `soft_mux_store_guarded_NxW`): each store CNOT lifted to a Toffoli(pred, ...),
+ * a NO-OP on cell + tape when pred=0, coherent under a superposed pred. The ABI
+ * is STRATEGY-AGNOSTIC (PRD-7.5 §2.4) — the per-store tape stays backend-owned.
+ *   cqrt_qram_store_<W>_controlled(pred, arr, idx, val)
+ *       Store `val` at `idx` iff `pred` — the genuinely-controlled store the
+ *       swap-route mechanism CANNOT express (memory has no per-arm work rail; a
+ *       store on the wrong branch is the verify-clean-invisible miscompile).
+ *   cqrt_qram_store_<W>_controlled_unc(pred, arr, idx, val)
+ *       Adjoint — pops the backend tape ONLY on the branch where the forward
+ *       store pushed. A DISTINCT symbol (store is not self-inverse), gated by
+ *       the SAME pred, fired in strict LIFO reverse (§2.8(ii)). An ungated /
+ *       pred-stripped _unc over-pops the inactive branch (a dephasing silent
+ *       miscompile) — the pred rail is kept live through the _unc, THEN stripped.
+ * Trace: `pred` is a rail handle → prints `h<pred>`:
+ *     "cqrt_qram_store_<W>_controlled(h<pred>, a<arr>, h<idx>, h<val>)"     (void).
+ *     "cqrt_qram_store_<W>_controlled_unc(h<pred>, a<arr>, h<idx>, h<val>)" (void).
+ * ----------------------------------------------------------------- */
+void cqrt_qram_store_i1_controlled (int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i8_controlled (int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i16_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i32_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i64_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+
+void cqrt_qram_store_i1_controlled_unc (int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i8_controlled_unc (int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i16_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i32_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_i64_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+
+/* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;
  * reserved for later lifetime work.
  * Trace: "cqrt_free(h<handle>)" (no return-value suffix).

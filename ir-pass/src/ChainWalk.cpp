@@ -18,6 +18,17 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   if (!Callee)
     return false;
   StringRef N = Callee->getName();
+  // iw81.7: the GUARDED QRAM store `cqrt_qram_store_<W>_controlled(flag, arr, idx,
+  // val)` — a VOID in-place mutation on its ARG-1 array handle (arg 0 is the path
+  // predicate flag; the plain store has the array at arg 0). arg_size 4. Recognized
+  // BEFORE the generic `_controlled` bail below (a controlled gate is normally NOT
+  // an in-place gate, but this store IS on its array). The `_controlled_unc` twin
+  // ends `_unc`, not `_controlled`, so it is EXCLUDED (it is the adjoint). The flag
+  // (arg 0) is a borrowed tainted operand `DagTraversal` enqueues as a parent — its
+  // producer (the flag-mint compare) reverses AFTER this gate's `_unc` (the strip).
+  if (N.starts_with("cqrt_qram_store_") && N.ends_with("_controlled") &&
+      G->arg_size() == 4 && G->getArgOperand(1) == H)
+    return true;
   if (N.contains("_controlled"))
     return false;
   // Uncontrolled rotation `cqrt_ry/rz_<W>(H, θ)` — arg_size 2, arg 0 is the

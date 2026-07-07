@@ -248,6 +248,22 @@ struct TaintSet {
   // first round). Populated by the two emitters; consumed once by
   // `repropagateControlMerges`. Empty for a module with no untainted-merge region.
   llvm::SmallPtrSet<llvm::Value *, 4> UntaintedMergeRails;
+
+  // iw81.7 — guarded Shadow stores. Maps a tainted-index `store` that
+  // `emitGuardedStoreArmRegion` proved sits under a depth-1 tainted diamond (the
+  // GuardedStoreArm region) to the path-predicate FLAG handle minted from that
+  // diamond's condition. The control emitter records the (store→flag) pair and
+  // FLATTENS the diamond BEFORE `lowerShadowMemory` runs; `lowerShadowMemory` then
+  // consults this map and emits the GUARDED store
+  // `cqrt_qram_store_<W>_controlled(flag, arr, idx, val)` (arg-0 flag) instead of
+  // the plain `cqrt_qram_store_<W>(arr, idx, val)`. The `StoreInst*` key is stable
+  // across the flatten (a splice preserves instruction identity) and is the same
+  // pointer `classifyShadowAccess` hands back as `A.MemOp`. The flag is left LIVE
+  // (never eagerly stripped) so the whole-DAG LIFO uncompute reverses the guarded
+  // store via `..._controlled_unc` (pred arg 0) and then strips the flag (the
+  // flag-mint compare is a reversible DAG ancestor, §6.0 compare `_unc`). Empty
+  // for a module with no guarded store.
+  llvm::DenseMap<llvm::StoreInst *, llvm::Value *> GuardedStores;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure

@@ -149,13 +149,29 @@ struct ControlRegion {
   // tape → run the sibling/downstream UNCONTROLLED (abort terminates, so the
   // branch-correlated tail-garbage never dephases). The graveyard + flag join the
   // new `taint.GraveyardRails` (kept, NEVER reversed/freed — Rule 6).
+  // GuardedStoreArm (iw81.7) — a tainted-condition `br`-diamond whose single
+  // content arm is SIDE-EFFECT-ONLY: a bounded-alloca tainted-index Shadow STORE
+  // (a gep chain + one `store`, NO merge φ — a store mints no SSA value), the
+  // sibling being the empty straight-to-merge edge. NOT swap-routable (memory has
+  // no per-arm work rail; swap-routing writes `arr[0]=0` on the inactive branch) —
+  // it is GENUINELY CONTROLLED. Lowered by `emitGuardedStoreArmRegion`: mint the
+  // path-predicate flag from the pre-store condition handle, RECORD (store→flag) in
+  // `taint.GuardedStores`, FLATTEN the diamond (splice the arm's gep+store into
+  // `Pred`, unconditional `br` to `MergeBB`), and DO NOT strip the flag. Then
+  // `lowerShadowMemory` emits the guarded store `cqrt_qram_store_<W>_controlled(
+  // flag, arr, idx, val)` for the recorded store, and the whole-DAG LIFO uncompute
+  // reverses it via `..._controlled_unc` (EmitInverse's existing generic
+  // qram-store branch) and strips+frees the flag (the flag-mint compare is a
+  // reversible DAG ancestor, §6.0 compare `_unc`). `Pred`/`Arm`/`MergeBB`/
+  // `Condition`/`ArmNegated` carry the shape as a `BranchRegion` diamond does.
   enum Kind {
     SelectRegion,
     BranchRegion,
     AngleSelectRegion,
     SwitchRegion,
     ClassicalCallArm,
-    AbortPark
+    AbortPark,
+    GuardedStoreArm
   } Kind = BranchRegion;
 
   // The merge node: a `SelectInst` (select-sourced) or the merge-block

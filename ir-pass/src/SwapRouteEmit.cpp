@@ -23,6 +23,7 @@
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "CompareLowering.h"     // lowerCompareToFlag
 #include "ClassicalCallArmEmit.h" // emitClassicalCallArmRegion (the 6.5 merge)
+#include "GuardedStoreArmEmit.h"  // emitGuardedStoreArmRegion (iw81.7)
 #include "ControlPlan.h"         // ControlRegion / ControlPlan
 #include "ControlledSymbols.h"   // cswapFn / xFn
 #include "EmitInverse.h"         // emitInverseChain (the value-arm reverse-play)
@@ -830,6 +831,18 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       // Condition kept its diagnose arm live. No nest link — dispatch + continue
       // BEFORE the Depth / child-lookup branch (which keys on CFG anchors).
       emitAbortParkRegion(R, wd, csyms, taint);
+      continue;
+    }
+    if (R.Kind == ControlRegion::GuardedStoreArm) {
+      // iw81.7 — a tainted-index Shadow store inside a tainted-condition diamond
+      // arm: mint the path-predicate flag, record (store→flag), FLATTEN the diamond
+      // (splice the gep+store into Pred, rewire straight to the merge), leave the
+      // flag LIVE. `lowerShadowMemory` then emits the guarded store; the whole-DAG
+      // LIFO uncompute reverses it (`..._controlled_unc`) and strips the flag. Its
+      // Pred/Arm/MergeBB are set (a real diamond), so the cross-region pre-flight
+      // above covered the block-lifetime hazard. No nest link — dispatch + continue
+      // BEFORE the Depth / child-lookup branch.
+      emitGuardedStoreArmRegion(R, wd, taint);
       continue;
     }
     if (R.Kind == ControlRegion::ClassicalCallArm) {

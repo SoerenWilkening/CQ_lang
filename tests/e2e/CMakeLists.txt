@@ -987,6 +987,18 @@ add_test(NAME e2e-slice-qram-local-uncompute
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_uncompute.expected.log")
 
+# iw81.7: a tainted-index Shadow STORE UNDER tainted control — the guarded store.
+# The GUARDED symbol cqrt_qram_store_i32_controlled reverses via _controlled_unc with
+# the flag live, THEN the flag strips (pred-lifetime invariant); the array is never
+# freed. Exercises the reversal path (non-main helper).
+add_test(NAME e2e-slice-qram-guarded-store
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store.expected.log")
+
 # Phase 7.3 Increment 1 (test_C_libtooling-799w.1): the rolled-in-place Case A
 # phase accumulator. A classically-bounded loop over an in-place persistent rail
 # `for (i<n) q = cq_phi(q, 0.1)` lowers ROLLED — the loop CFG is preserved, the

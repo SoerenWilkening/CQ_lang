@@ -23,6 +23,7 @@
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -158,29 +159,50 @@ struct ShadowAccess {
   bool IsStore;
 };
 
-// Is `I` control-dependent on a tainted-condition branch? CONSERVATIVE (Prime
-// Directive): true if ANY block strictly dominating `I`'s block ends in a
-// tainted-condition `br`/`switch`. 7.5 lowers STRAIGHT-LINE memory only (§2.11);
-// an access inside a tainted-control region (e.g. the const `@switch.table`
-// gep/load of a clang-folded jump table, control_swap_reject_switch_jumptable.ll)
-// is NOT ours and must keep declining at the escape guard. Over-declining a
-// straight-line access that merely sits after an unrelated tainted diamond is
-// safe. Takes any memory instruction (load or store — Inc 2 reuses it).
+// Is `I` genuinely CONTROL-DEPENDENT on a tainted-condition branch? 7.5 lowers
+// STRAIGHT-LINE memory only (§2.11); a CONDITIONALLY-executed access inside a
+// tainted-control region (e.g. the const `@switch.table` gep/load of a clang-folded
+// jump table, control_swap_reject_switch_jumptable.ll) is NOT ours and declines at
+// the escape guard.
+//
+// The test is CONTROL DEPENDENCE, not mere dominance: `I` is under control of a
+// tainted br at block `B` iff `B` strictly dominates `I`'s block AND `I`'s block
+// does NOT post-dominate `B` (i.e. some path leaving `B` bypasses `I` — the access
+// is genuinely conditional). A block that POST-DOMINATES the tainted br (the merge
+// and everything after it) is reached on EVERY path, so it is unconditional /
+// straight-line and NOT under control — a load `arr[q]` sitting after an
+// `if(q<k){arr[i]=v;}` diamond executes regardless of the branch. Keying on plain
+// dominance (the pre-iw81.7 form) over-declined every such post-merge access — a
+// blocker for the guarded store (iw81.7), whose array is inevitably read after the
+// diamond. Over-declining a conditional access is safe; ACCEPTING an unconditional
+// post-dominating one is correct (it is exactly the straight-line 7.5 shape). The
+// `PostDominatorTree` is built lazily — ONLY when a dominating tainted br is found
+// (the rare case) — so the common no-tainted-control access pays nothing.
 bool instUnderTaintedControl(const Instruction *I, const TaintSet &taint,
                              DominatorTree &DT) {
-  DomTreeNode *Node = DT.getNode(const_cast<BasicBlock *>(I->getParent()));
+  BasicBlock *IB = const_cast<BasicBlock *>(I->getParent());
+  DomTreeNode *Node = DT.getNode(IB);
   if (!Node)
     return true;  // unreachable / no node — decline conservatively.
+  std::optional<PostDominatorTree> PDT;
   for (DomTreeNode *D = Node->getIDom(); D; D = D->getIDom()) {
-    const Instruction *T = D->getBlock()->getTerminator();
-    if (const auto *BI = dyn_cast<BranchInst>(T)) {
-      if (BI->isConditional() &&
-          taint.Tainted.count(const_cast<Value *>(BI->getCondition())))
-        return true;
-    } else if (const auto *SI = dyn_cast<SwitchInst>(T)) {
-      if (taint.Tainted.count(const_cast<Value *>(SI->getCondition())))
-        return true;
-    }
+    BasicBlock *B = D->getBlock();
+    const Instruction *T = B->getTerminator();
+    bool TaintedBr = false;
+    if (const auto *BI = dyn_cast<BranchInst>(T))
+      TaintedBr = BI->isConditional() &&
+                  taint.Tainted.count(const_cast<Value *>(BI->getCondition()));
+    else if (const auto *SI = dyn_cast<SwitchInst>(T))
+      TaintedBr = taint.Tainted.count(const_cast<Value *>(SI->getCondition()));
+    if (!TaintedBr)
+      continue;
+    if (!PDT)
+      PDT.emplace(*IB->getParent());
+    // Control-dependent iff `I`'s block does NOT post-dominate the tainted br `B`
+    // (some successor path of `B` bypasses `I` — the access is conditional). A
+    // post-dominating access is unconditional → straight-line → NOT under control.
+    if (!PDT->dominates(IB, B))
+      return true;
   }
   return false;
 }
@@ -365,7 +387,8 @@ struct QramMatch {
 
 std::optional<QramMatch> matchQramAccess(Instruction *MemOp,
                                          const TaintSet &taint, DominatorTree &DT,
-                                         LoopInfo &LInfo) {
+                                         LoopInfo &LInfo,
+                                         bool allowTaintedControl = false) {
   Value *PtrOp = nullptr;
   Value *StoreVal = nullptr;
   bool IsStore;
@@ -411,8 +434,11 @@ std::optional<QramMatch> matchQramAccess(Instruction *MemOp,
   if (Origin.Kind == OriginResult::Global &&
       (!Origin.GV->isConstant() || !Origin.GV->hasInitializer()))
     return std::nullopt;  // a QROM table must be a constant initialized global.
-  if (instUnderTaintedControl(MemOp, taint, DT))
-    return std::nullopt;  // straight-line only (§2.11).
+  if (!allowTaintedControl && instUnderTaintedControl(MemOp, taint, DT))
+    return std::nullopt;  // straight-line only (§2.11). iw81.7 passes
+                          // `allowTaintedControl` to prove the SHAPE of a store
+                          // that a GuardedStoreArm region will flatten to
+                          // straight-line before `lowerShadowMemory` runs.
   if (LInfo.getLoopFor(MemOp->getParent()))
     return std::nullopt;  // a QRAM access in a loop needs 7.3 unroll (§5/§6).
   return QramMatch{MemOp,  GEP,      Origin,   abiWidthFromType(E),
@@ -440,6 +466,45 @@ std::optional<ShadowAccess> classifyShadowAccess(Instruction *MemOp,
                       M->Count,  M->RawIndex, M->StoreVal, M->IsStore};
 }
 
+// iw81.7 — the shared GuardedStoreArm SHAPE predicate (impl; public wrapper
+// `guardedShadowStoreShape` below). (a) The bounded-alloca tainted-index Shadow
+// STORE shape, ALLOWING the tainted control the region flattens away. (b) The
+// depth-1 diamond arm: the store's block has a single predecessor ending in a
+// conditional TAINTED `br` whose two successors are exactly {this block, the
+// merge}, and this block's single successor is that merge — a side-effect-only
+// diamond arm. (The arm being EXACTLY {gep, store, br} — no other gate — is
+// checked by `classifyGuardedStoreArm`, which owns the loud decline on any miss.)
+bool guardedShadowStoreShapeImpl(StoreInst *SI, const TaintSet &taint,
+                                 DominatorTree &DT, LoopInfo &LInfo) {
+  auto M = matchQramAccess(SI, taint, DT, LInfo, /*allowTaintedControl=*/true);
+  if (!M || M->Origin.Kind != OriginResult::Alloca || !M->IsStore)
+    return false;
+  BasicBlock *ArmBB = SI->getParent();
+  BasicBlock *Pred = ArmBB->getSinglePredecessor();
+  BasicBlock *Merge = ArmBB->getSingleSuccessor();
+  if (!Pred || !Merge)
+    return false;
+  auto *BI = dyn_cast<BranchInst>(Pred->getTerminator());
+  if (!BI || !BI->isConditional() ||
+      !taint.Tainted.count(BI->getCondition()))
+    return false;
+  BasicBlock *S0 = BI->getSuccessor(0), *S1 = BI->getSuccessor(1);
+  if (!((S0 == ArmBB && S1 == Merge) || (S1 == ArmBB && S0 == Merge)))
+    return false;
+  // Reject a NESTED diamond (Rule 10 — do NOT lean on clang's incidental
+  // AND-flattening of `if(a){if(b){...}}` into one compound condition). If the
+  // branch block `Pred` is ITSELF control-dependent on another tainted br, the
+  // store sits inside an OUTER tainted region: accepting the inner diamond
+  // standalone would guard the store on the INNER condition only, silently
+  // dropping the outer guard (a verify-clean wrong unitary). v1 accepts only a
+  // top-level (depth-1) diamond; a genuine nest declines loudly (the carve returns
+  // NotQram → generic decline, or `classifyGuardedStoreArm` → NotApplicable →
+  // `recoverRegion`'s nested decline). Reuses the same control-dependence test.
+  if (instUnderTaintedControl(BI, taint, DT))
+    return false;
+  return true;
+}
+
 // The carve verdict for `declineTaintEscapes` (Inc 3). A tainted-pointer
 // load/store is in QRAM's domain: it is Accepted (the emitter lowers it),
 // loud-Declined with a pattern-naming message (fired HERE — per-access info
@@ -458,8 +523,18 @@ QramCarve classifyQramCarve(const Instruction *I, const TaintSet &taint,
   if (auto *GEP = dyn_cast<GetElementPtrInst>(I)) {
     if (!taint.Tainted.count(const_cast<GetElementPtrInst *>(GEP)))
       return QramCarve::NotQram;
-    if (instUnderTaintedControl(GEP, taint, DT))
+    if (instUnderTaintedControl(GEP, taint, DT)) {
+      // iw81.7 — a store address-gep in a GuardedStoreArm arm: defer with its
+      // store (the sole user of a single-use address gep). SUPPRESS the generic
+      // decline so `detectControlRegions` reaches the region.
+      for (const User *U : GEP->users())
+        if (auto *SU = dyn_cast<StoreInst>(U))
+          if (SU->getPointerOperand() == GEP &&
+              guardedShadowStoreShapeImpl(const_cast<StoreInst *>(SU), taint, DT,
+                                          LInfo))
+            return QramCarve::DeferControl;
       return QramCarve::NotQram;
+    }
     for (const User *U : GEP->users()) {
       if (const auto *LU = dyn_cast<LoadInst>(U))
         if (LU->getPointerOperand() == GEP)
@@ -486,8 +561,18 @@ QramCarve classifyQramCarve(const Instruction *I, const TaintSet &taint,
   if (!taint.Tainted.count(PtrOp))
     return QramCarve::NotQram;  // classical-address access (value-tainted store →
                                 // generic kMsgStore; out of QRAM scope).
-  if (instUnderTaintedControl(I, taint, DT))
+  if (instUnderTaintedControl(I, taint, DT)) {
+    // iw81.7 — a bounded-alloca tainted-index STORE in a depth-1 diamond arm is a
+    // GuardedStoreArm candidate: defer to `detectControlRegions` (which flattens
+    // the diamond, then `lowerShadowMemory` emits the guarded store). A LOAD or a
+    // deeper/off-shape access is NOT deferred — it stays the generic decline
+    // (jumptable kMsgOther); detection never touches it.
+    if (auto *SI = dyn_cast<StoreInst>(I))
+      if (guardedShadowStoreShapeImpl(const_cast<StoreInst *>(SI), taint, DT,
+                                      LInfo))
+        return QramCarve::DeferControl;
     return QramCarve::NotQram;  // ControlDetect/generic domain (jumptable kMsgOther).
+  }
   if (LInfo.getLoopFor(I->getParent())) {
     Msg = kMsgQramLoop;
     return QramCarve::Decline;
@@ -611,6 +696,11 @@ QramCarve qramCarveVerdict(const llvm::Instruction *I, const TaintSet &taint,
                            DominatorTree &DT, LoopInfo &LInfo,
                            const char *&outMsg) {
   return classifyQramCarve(I, taint, DT, LInfo, outMsg);
+}
+
+bool guardedShadowStoreShape(StoreInst *SI, const TaintSet &taint,
+                             DominatorTree &DT, LoopInfo &LInfo) {
+  return guardedShadowStoreShapeImpl(SI, taint, DT, LInfo);
 }
 
 void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
@@ -968,7 +1058,18 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
           VH->setDebugLoc(DL);
         Val = VH;
       }
-      CallInst *St = B.CreateCall(StoreFn, {Arr, Idx, Val});
+      // iw81.7 — a GuardedStoreArm store (recorded by the control emitter that
+      // flattened its diamond) lowers to the GUARDED symbol
+      // `cqrt_qram_store_<W>_controlled(flag, arr, idx, val)` — the flag (path
+      // predicate) is arg 0, kept LIVE for the whole-DAG LIFO `..._controlled_unc`.
+      auto GsIt = taint.GuardedStores.find(cast<StoreInst>(A.MemOp));
+      CallInst *St;
+      if (GsIt != taint.GuardedStores.end()) {
+        FunctionCallee GStoreFn = wd.qramStoreControlledFn(ElemAbi);
+        St = B.CreateCall(GStoreFn, {GsIt->second, Arr, Idx, Val});
+      } else {
+        St = B.CreateCall(StoreFn, {Arr, Idx, Val});
+      }
       if (DebugLoc DL = A.MemOp->getDebugLoc())
         St->setDebugLoc(DL);
       ToErase.push_back(A.MemOp);  // the store

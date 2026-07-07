@@ -883,6 +883,69 @@ void cqrt_qram_store_i64_unc(int32_t arr, int32_t idx, int32_t val) {
 }
 
 /* ---------------------------------------------------------------------
+ * iw81.7 — path-predicate-GUARDED Shadow store (tainted-index memop under
+ * tainted control). Same (arr, idx, val) contract as the unguarded store,
+ * with the block path predicate `pred` as arg 0: the backend realizes the
+ * Bennett guarded shadow / MUX store (each store CNOT lifted to a
+ * Toffoli(pred, ...) — `emit_shadow_store_guarded!` / `soft_mux_store_guarded`),
+ * a NO-OP on cell and tape when pred=0. STRATEGY-AGNOSTIC (PRD-7.5 §2.4): the
+ * per-store tape stays backend-owned; the ABI never sees it. `_controlled_unc`
+ * is a DISTINCT symbol (the store is not self-inverse), gated by the SAME pred
+ * value, fired in strict LIFO reverse of the forward guarded stores. `pred` is
+ * a rail handle → prints `h<pred>`.
+ * ------------------------------------------------------------------- */
+
+void cqrt_qram_store_i1_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i1_controlled(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i8_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i8_controlled(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i16_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i16_controlled(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i32_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i32_controlled(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i64_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i64_controlled(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i1_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i1_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i8_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i8_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i16_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i16_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i32_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i32_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_i64_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_i64_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Free — width-irrelevant.
  * ------------------------------------------------------------------- */
 

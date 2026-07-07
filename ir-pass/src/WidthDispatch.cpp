@@ -294,6 +294,40 @@ FunctionCallee WidthDispatch::qramStoreUncFn(StringRef abiWidth) const {
       FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
 }
 
+FunctionCallee WidthDispatch::qramStoreControlledFn(StringRef abiWidth) const {
+  // iw81.7 — the path-predicate-GUARDED store. Signature:
+  // void(i32 pred, i32 arr, i32 idx, i32 val) — the guard flag is arg 0, then
+  // the SAME (arr, idx, val) as the unguarded store (all i32 handles). Realizes
+  // the Bennett guarded shadow/MUX store in the deferred backend; a NO-OP on
+  // cell+tape when pred=0. Mirrors cqrt_qram_store_<W>_controlled in
+  // runtime/cq_runtime.h. Same INTEGER-width fence as qramStoreFn.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_qram_store_" + abiWidth + "_controlled").str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32, I32}, false));
+}
+
+FunctionCallee WidthDispatch::qramStoreControlledUncFn(StringRef abiWidth) const {
+  // iw81.7 — adjoint of the guarded store. SAME args as the forward guarded
+  // store (pred, arr, idx, val); `_controlled_unc` pops the backend tape ONLY on
+  // the branch where the forward store pushed, gated by the SAME pred. A DISTINCT
+  // symbol (the store is not self-inverse) — EmitInverse cannot reuse the
+  // re-emit-under-flag involution trick. Mirrors cqrt_qram_store_<W>_controlled_unc
+  // in runtime/cq_runtime.h. Same INTEGER-width fence.
+  LLVMContext &Ctx = M.getContext();
+  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
+  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return FunctionCallee();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      ("cqrt_qram_store_" + abiWidth + "_controlled_unc").str(),
+      FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32, I32}, false));
+}
+
 FunctionCallee WidthDispatch::measureRtFn(StringRef abiWidth) const {
   // Signature: takes an i32 handle, returns a value of the ABI-width
   // type. Mirrors cqrt_measure_<W> in runtime/cq_runtime.h.
