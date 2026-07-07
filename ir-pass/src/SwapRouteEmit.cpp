@@ -737,6 +737,27 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
            (A.Depth == B.Depth + 1 && A.ParentIdx == b);
   };
 
+  // The blocks a region's flatten actually ERASES (its "doomed" set) — what the
+  // pre-flight below must protect from another region's references. iw81.7/g5gi: a
+  // `GuardedStoreArm` flatten erases ONLY its `Arm` block (it splices the gep+store
+  // into `Pred` and rewires `Pred → MergeBB` unconditionally — `MergeBB` and `Pred`
+  // SURVIVE, unlike the phase / if-else flatten which erases `MergeBB`). So a
+  // guarded store's genuine doomed set is `{Arm}`, NOT `{Arm, ArmFalse, MergeBB}` —
+  // exempting `MergeBB` is what un-blocks two guarded diamonds sharing a block (the
+  // first's `MergeBB` is the second's `Pred`; PRD-g5gi §2). The exemption is
+  // KIND-scoped: every OTHER region kind keeps `{Arm, ArmFalse, MergeBB}`, so a
+  // guarded region whose `Pred` is a PHASE region's (really-erased) merge still
+  // declines — the protection is intact in that direction (defense-in-depth).
+  auto doomedBlocks = [&](const ControlRegion &R) {
+    SmallVector<BasicBlock *, 3> Doomed;
+    Doomed.push_back(R.Arm);
+    if (R.Kind != ControlRegion::GuardedStoreArm) {
+      Doomed.push_back(R.ArmFalse);
+      Doomed.push_back(R.MergeBB);
+    }
+    return Doomed;
+  };
+
   // Pre-flight, while EVERY region's blocks are still valid (the block-lifetime
   // rule): no accepted region may reference a block that flattening ANOTHER
   // (non-coordinated) accepted region will erase (its Arm/ArmFalse/MergeBB).
@@ -751,7 +772,7 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       if (a == b || coordinated(a, b))
         continue;
       const ControlRegion &A = Regions[a], &B = Regions[b];
-      for (BasicBlock *Doomed : {B.Arm, B.ArmFalse, B.MergeBB}) {
+      for (BasicBlock *Doomed : doomedBlocks(B)) {
         if (!Doomed)
           continue;
         if (A.Pred == Doomed || A.Arm == Doomed || A.ArmFalse == Doomed ||

@@ -999,6 +999,36 @@ add_test(NAME e2e-slice-qram-guarded-store
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store.expected.log")
 
+# g5gi: guarded store on a SWAPPED (FALSE-successor) branch — `if (q != 3) {...}`
+# canonicalizes to `icmp eq; br eq, merge, arm`, so the store fires on `¬(q==3)`.
+# g5gi mints the flag with the INVERSE predicate (icmp eq -> icmp ne) — a NEGATED
+# MINT, NOT a cqrt_x bracket — so the whole-DAG uncompute reverses it via the same
+# `_unc` (cq_template_icmp_ne_i32_hl_unc). The only layer that LINKS: re-proves the
+# guarded-store symbol set resolves + signature-matches with the negated flag.
+add_test(NAME e2e-slice-qram-guarded-store-swapped
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_swapped.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_swapped.expected.log")
+
+# g5gi: TWO separate guarded-store diamonds sharing a block —
+# `if(q<3){arr[i]=7;} if(q<5){arr[j]=8;}`. The first diamond's merge is the second's
+# Pred. g5gi exempts a GuardedStoreArm's MergeBB from the cross-region pre-flight
+# doomed set (the guarded flatten erases only the Arm, never the merge), so both
+# diamonds lower. The whole-DAG uncompute reverses both stores + both flag strips in
+# strict reverse program order (store2 before store1); the shared array is never
+# freed. The only layer that LINKS: the guarded-store set composes across two
+# sequential guarded diamonds.
+add_test(NAME e2e-slice-qram-guarded-store-multi
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_multi.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_multi.expected.log")
+
 # Phase 7.3 Increment 1 (test_C_libtooling-799w.1): the rolled-in-place Case A
 # phase accumulator. A classically-bounded loop over an in-place persistent rail
 # `for (i<n) q = cq_phi(q, 0.1)` lowers ROLLED — the loop CFG is preserved, the

@@ -77,7 +77,8 @@ bool isDataPositionCompare(CmpInst *cmp) {
 // `lowerCompareToFlagRail`). `railBase` is null on the data path.
 static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
                                StringRef qqWidth, bool inverse,
-                               Instruction *before, Value *railBase) {
+                               Instruction *before, Value *railBase,
+                               bool negate) {
   // `op` is the family stem the symbol table uses: "icmp" / "fcmp". The
   // predicate range partition is authoritative (an fcmp predicate is < 32;
   // an icmp predicate is in [32,..]); `isa<ICmpInst>` would do as well.
@@ -93,6 +94,15 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
   const bool BTainted = taint.Tainted.count(B) != 0;
 
   CmpInst::Predicate Pred = cmp->getPredicate();
+  // g5gi — a SWAPPED (FALSE-successor) guarded-store arm fires on `¬cond`, so mint
+  // the flag for the LOGICALLY-NEGATED predicate. Applied FIRST, before the
+  // classical-on-left `flipPredicate` below (`getInversePredicate` ∘
+  // `getSwappedPredicate` commute for integer predicates: e.g. `icmp slt 3, q`
+  // negate→`sge 3,q` flip→`icmp sle q,3` = `¬(q>3)` = `q<=3` ✓). The negated
+  // predicate rides the SAME symbol grammar + `_unc` spine as the un-negated flag;
+  // an out-of-scope inverse trips the `compareInScope` gate below (loud decline).
+  if (negate)
+    Pred = CmpInst::getInversePredicate(Pred);
   StringRef AbiWidth;
   Value *Lhs = nullptr;
   Value *Rhs = nullptr;
@@ -232,15 +242,18 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
 
 Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
                           StringRef qqWidth, bool inverse,
-                          Instruction *before) {
+                          Instruction *before, bool negate) {
   return lowerCompareImpl(cmp, wd, taint, qqWidth, inverse, before,
-                          /*railBase=*/nullptr);
+                          /*railBase=*/nullptr, negate);
 }
 
 Value *lowerCompareToFlagRail(CmpInst *cmp, Value *railBase, WidthDispatch &wd,
                               TaintSet &taint, StringRef qqWidth, bool inverse,
                               Instruction *before) {
-  return lowerCompareImpl(cmp, wd, taint, qqWidth, inverse, before, railBase);
+  // Nested-control mint is never negated (the swap-route nest has no FALSE-
+  // successor store arm); pass negate=false.
+  return lowerCompareImpl(cmp, wd, taint, qqWidth, inverse, before, railBase,
+                          /*negate=*/false);
 }
 
 Value *emitEqFlag(Value *handle, ConstantInt *caseValue, WidthDispatch &wd,

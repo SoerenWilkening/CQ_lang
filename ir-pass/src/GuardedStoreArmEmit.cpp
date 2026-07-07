@@ -172,13 +172,11 @@ GuardedStoreDisp classifyGuardedStoreArm(BranchInst *BI, TaintSet &Taint,
   // From here this step OWNS the shape (a side-effect-only bounded-alloca store
   // arm): every unmet precondition is a LOUD decline, never NotApplicable.
 
-  // v1 accepts only the un-negated (TRUE-successor) store arm. A swapped
-  // (FALSE-successor) arm fires the store on ¬flag, which needs the flag brackets
-  // threaded through the guarded `_unc` — a safe additive follow-on. Decline.
-  if (Negated) {
-    diagnoseUnderControl(BI, "guarded store on a swapped branch");
-    return GuardedStoreDisp::Declined;
-  }
+  // g5gi — a SWAPPED (FALSE-successor) store arm is now ACCEPTED: the store fires
+  // on `¬cond`, minted directly as the inverse-predicate flag (a negated mint, NOT
+  // a `cqrt_x` bracket — the spine reverses `icmp_ne_..._unc` identically to the
+  // un-negated `_unc`; PRD-g5gi §1). `R.ArmNegated` carries the polarity to the
+  // emitter, which passes `negate` to `lowerCompareToFlag`.
 
   // A merge φ means a value/phase arm rides beside the store (mixed) — off the
   // side-effect-only v1 shape. (soleSideEffectStore already rejects an escaping
@@ -218,7 +216,7 @@ GuardedStoreDisp classifyGuardedStoreArm(BranchInst *BI, TaintSet &Taint,
   R.MergeBB = Merge;
   R.Merge = nullptr;  // no merge φ (side-effect-only arm).
   R.Condition = Cond;
-  R.ArmNegated = false;
+  R.ArmNegated = Negated;  // g5gi — a FALSE-successor arm mints the ¬cond flag.
   return GuardedStoreDisp::Accept;
 }
 
@@ -240,9 +238,14 @@ void emitGuardedStoreArmRegion(const ControlRegion &R, WidthDispatch &wd,
 
   // 1. Mint the path-predicate flag from the PRE-store condition handle (before
   //    BI). A store does not change `q`'s value, so the flag stays recomputable —
-  //    the whole-DAG LIFO strip (`icmp_..._unc`) is valid.
+  //    the whole-DAG LIFO strip (`icmp_..._unc`) is valid. g5gi — for a SWAPPED
+  //    (FALSE-successor) arm (`R.ArmNegated`) the store fires on `¬cond`, so mint
+  //    the INVERSE-predicate flag (`negate`): `flag = icmp_ne(q,k)` for `br [q==k]`.
+  //    The spine reverses the negated compare via its own `_unc`, identical to the
+  //    un-negated case — only the predicate string differs (PRD-g5gi §1).
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/BI);
+                                   /*inverse=*/false, /*before=*/BI,
+                                   /*negate=*/R.ArmNegated);
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed.
 

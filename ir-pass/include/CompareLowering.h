@@ -103,6 +103,14 @@ bool rewriteCompare(llvm::CmpInst *cmp, WidthDispatch &wd, TaintSet &taint);
 //     template `cq_template_icmp_<pred>_<W>` at that width. (Forward seam for
 //     WP6; unused by WP3.)
 //   * `inverse` → spell the `_inv` twin for the flag UNCOMPUTE (§1.5).
+//   * `negate` (g5gi) → mint the flag for the LOGICALLY-NEGATED predicate
+//     (`CmpInst::getInversePredicate`), applied BEFORE the classical-on-left
+//     `flipPredicate` canonicalization. Used by the guarded-store emitter for a
+//     SWAPPED (FALSE-successor) store arm: the store must fire on `¬cond`, so the
+//     path-predicate flag is `icmp_ne(q,k)` for a `br [q==k]` diamond. The whole-
+//     DAG spine reverses the negated compare via its own `_unc` (identical to the
+//     un-negated case — only the predicate string differs). An out-of-scope
+//     inverse self-declines loudly here (`compareInScope` → `diagnoseNoTemplate`).
 //
 // The insertion point is `before` when non-null, else immediately before
 // `cmp` (the forward compute). For the uncompute, callers pass the region's
@@ -110,7 +118,8 @@ bool rewriteCompare(llvm::CmpInst *cmp, WidthDispatch &wd, TaintSet &taint);
 llvm::Value *lowerCompareToFlag(llvm::CmpInst *cmp, WidthDispatch &wd,
                                 TaintSet &taint, llvm::StringRef qqWidth = {},
                                 bool inverse = false,
-                                llvm::Instruction *before = nullptr);
+                                llvm::Instruction *before = nullptr,
+                                bool negate = false);
 
 // Swap-route nested-control variant of `lowerCompareToFlag` (Phase 4.3, the ONE
 // new emission primitive — IMPLEMENTATION-4.3 §4/§12.2). Mints the inner
