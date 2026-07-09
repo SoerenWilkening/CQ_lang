@@ -10,9 +10,59 @@
 > function now **declines loudly** without injection. This census is therefore no
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
-> [`libm-coverage-source-injection-rule`]. The numbers below are the pre-p119
-> point-in-time run; re-run `inject_census.py` (now reports surviving `@llvm.*`)
-> over a fresh openlibm corpus for the current figures.
+> [`libm-coverage-source-injection-rule`]. **The authoritative current figures are the
+> [2026-07-10 re-measurement](#re-measurement-2026-07-10-3c6m8--census-honesty-the-authoritative-numbers)
+> below (0/32 injection-covered, disjoint from the recognition floor);** the older dated
+> sections are kept as history. Re-run `inject_census.py` over a fresh openlibm corpus to
+> refresh.
+
+## Re-measurement 2026-07-10 (3c6m.8 — census honesty; the AUTHORITATIVE numbers)
+
+The `inject_census.py` harness was hardened (bd `3c6m.8`, mechanizing the p119
+blocker-audit's own recommendations — harness-only, **zero pass change**):
+
+1. **Scalarizer** in the inline pipeline (`…default<O2>,scalarizer,instcombine,dce`) — a
+   surviving SLP `<2 x double>` op (`fmuladd.v2f64` / `vector.reduce.or`) was **masking**
+   the real blocker as a bogus "unsupported instruction". De-vectorizing **reclassifies**:
+   `log2`/`log10` → *nested control flow*, `erf`/`erfc` → *nested `exp()` unknown-callee*.
+   It compiles **0** extra functions — it only makes the categorization honest.
+2. **Per-arg int types** — `scalbn`/`scalbln` take an **int** 2nd arg; probing it as a
+   `double` left the openlibm body unresolvable (signature mismatch → a *false* "unknown
+   callee"). Fixed, they now link and reclassify to their real **control-flow** blocker.
+   (`ldexp` is an asm-level alias `.set ldexp, scalbn`, invisible to `llvm-link` — a harness
+   gap, annotated; its true result == `scalbn`.)
+3. **Hardware-kept exclusion** — the recognition keep-set (`sqrt fma floor trunc round ceil
+   rint nearbyint fmax fmin` **and** `fabs`/`copysign`) is partitioned out of the injection
+   tally: those lower by **recognition**, so their soft-body injection decline (or fold-to-
+   `@llvm.*` "compile") is **moot**. `fabs`/`copysign` "COMPILE" in the raw census only
+   because `clang -O1` folds their bit-tricks to `@llvm.fabs`/`@llvm.copysign` — they never
+   exercise a raw injected opcode, so they are **recognition wins, not injection wins**.
+
+### The TWO DISJOINT scoreboards (owner rule, bd `libm-scoreboard-two-numbers`)
+
+| Scoreboard | Number | What it means |
+|---|---:|---|
+| **Injection-covered** (the campaign number) | **0 / 32** | genuine `math.h` library bodies that inline to opcodes + lower — an **honest floor** |
+| **Recognition-covered** (fixed hardware floor) | 12 stems here (probe.py's full number is separate) | the hardware keep-set — disjoint, **not** injection progress |
+
+**Never merged.** A library function that declines under injection stays declined (and is
+ticketed, bd `3c6m.9`) until its *injected body* lowers; recognition is never a fallback.
+
+### The 32 genuine-injection declines, by campaign lever (the `3c6m.9` ticket feed)
+
+| Lever | Count | Functions |
+|---|---:|---|
+| **L6** nested tainted control flow | 15 | `acos asin atan atanh cbrt expm1 hypot log log10 log1p log2 logb pow remainder tanh` |
+| **L2** nested-transcendental closure | 7 | `acosh asinh atan2 cosh erf erfc sinh` |
+| **L5** tainted scratch memory (Shadow) | 4 | `cos nextafter sin tan` |
+| **L5** dynamic-index const-table read (QROM) | 3 | `exp exp2 fmod` |
+| **L4** fp-select chain / compound cond | 3 | `fdim scalbn scalbln` |
+
+Harness link-gaps (not real blockers): `ldexp` (asm alias), `lgamma` (wrapper closure),
+`tgamma` (no double body in openlibm). *Not one* decline is a missing opcode. Raw per-fn
+results: `inject_results.json`; machine-readable scoreboard: `injection_summary.json`.
+
+---
 
 > **Point-in-time findings, 2026-07-02** (this box: x86_64 darwin, Homebrew LLVM 19,
 > real `cq-lowering` pass). A naïve off-the-shelf-libm baseline, deliberately

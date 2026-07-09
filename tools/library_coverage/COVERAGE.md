@@ -5,6 +5,13 @@
 
 **All libraries — lowering-verified: 48/213 (22.5%)** &nbsp;·&nbsp; backend-available: 21/213 (9.9%).
 
+> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.**
+
+1. **Recognition-covered** — the hardware keep-set (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants): functions that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (they have no injectable transcendental body, Rule 18). This is the **`Lowers`/`Verified` number in the table below** — a *fixed floor*, not injection progress.
+2. **Injection-covered** — genuine library bodies compiled by **source injection** (the real libm-campaign number): **0/32** (an honest floor) of the `math.h` double surface ([source-injection census](INJECTION-CENSUS.md)).
+
+The two sets are **disjoint** (a fn is counted in at most one). A library function that declines under injection stays declined — and is ticketed (bd `3c6m.9`) — until its *injected body* lowers; recognition is **never** a fallback for a hard injection. A single merged headline (the retired `165/174` 95%-overclaim) is treated as a bug.
+
 Coverage has **two orthogonal axes** (bd e4jv). **Lowering** = *every* applicable classical/quantum (C/Q) argument mixture lowers, links, runs, **and** matches a committed golden trace — the compiler emits the right reversible-template call sequence. But the runtime is **trace-only** (each `cq_template_*` just prints its symbol; measure returns 0), so "verified" certifies the lowering, **not** that a correct reversible *implementation* of those templates exists. **Backend** is that second axis: a static per-fn tier — 🟩 `standard` (reversible routine directly obtainable), 🟨 `synthesizable` (buildable IEEE bit-field circuit, not off-the-shelf), 🟥 `open` (no known elementary reversible circuit: the transcendentals — the bulk of the math.h count). **Backend-available** = 🟩 standard **and** it lowers. A third level, backend-*correctness* (does it compute the right unitary), needs simulation and is deferred (owner, 2026-06-10). A loud decline is a *correct* (uncovered) outcome — never papered over to inflate a number (Prime Directive); the backend column exists to stop the single-number overclaim that a *compilable* fn has a *working reversible backend*.
 
 | Library | Fit | Lowers | Verified | Backend-avail | 🟩 std | 🟨 syn | 🟥 open | Cannot-yet | By-design | Detail |

@@ -74,12 +74,21 @@ def closure_link(probe_bc, defmap, workdir):
             return cur, None
     return None, "closure-did-not-converge"
 
-def run_one(fn, argc, defmap):
+# A classical constant literal for each non-tainted probe arg, keyed by C type.
+# arg0 is ALWAYS the tainted `double q`; the rest are classical consts of the
+# CORRECT type. p119 (3c6m.8): scalbn/ldexp/scalbln take an INT 2nd arg — probing
+# it as a double left the call unresolvable (signature mismatch -> the openlibm
+# body never links -> a FALSE "unknown callee" decline that masked the real
+# blocker). Probe each arg with its true type.
+CONST_FOR = {"double": "0.5", "int": "2", "long": "2", "float": "0.5f"}
+
+def run_one(fn, argtypes, defmap):
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
-        # Probe: taint argc doubles, call fn, measure. Extra args are classical consts.
-        args = ", ".join(["q"]+["0.5"]*(argc-1))
-        proto_args = ", ".join(["double"]*argc)
+        # Probe: taint arg0 (double q), pass classical consts (of the RIGHT type)
+        # for the rest, call fn, measure.
+        args = ", ".join(["q"] + [CONST_FOR[t] for t in argtypes[1:]])
+        proto_args = ", ".join(argtypes)
         src = f'''extern double {fn}({proto_args});
 double cq_theta_f64(double, double);
 double cq_measure_f64(double);
@@ -93,12 +102,19 @@ double probe(void){{
         r = subprocess.run([CLANG, "-O1", f"-fno-builtin-{fn}", "-emit-llvm", "-c",
                             str(td/"probe.c"), "-o", str(pbc)], capture_output=True, text=True)
         if r.returncode != 0:
-            return ("build-fail", r.stderr.strip().split('\n')[-1][:80])
+            return ("build-fail", r.stderr.strip().split('\n')[-1][:80], [])
         linked, err = closure_link(pbc, defmap, td)
         if linked is None:
-            return ("link-fail", err)
+            return ("link-fail", err, [])
         inl = td/"inl.bc"
-        subprocess.run([OPT, "-passes=internalize,always-inline,globaldce,default<O2>",
+        # p119 (3c6m.8): a `scalarizer` pass AFTER default<O2> de-vectorizes the
+        # SLP output (fmuladd.v2f64 / reduce.or) so a surviving <2 x double> op
+        # stops MASKING the real blocker as a bogus "unsupported instruction".
+        # The p119 blocker-audit proved this RECLASSIFIES (log2/log10 -> nested
+        # control flow, erf/erfc -> nested exp() unknown-callee) and COMPILES 0
+        # extra functions — it only makes the categorization honest.
+        subprocess.run([OPT, "-passes=internalize,always-inline,globaldce,"
+                        "default<O2>,scalarizer,instcombine,dce",
                         "-internalize-public-api-list=probe", "-inline-threshold=2000000",
                         str(linked), "-o", str(inl)], capture_output=True, text=True)
         ir = subprocess.run([DIS, str(inl), "-o", "-"], capture_output=True, text=True).stdout
@@ -131,38 +147,147 @@ double probe(void){{
         detail = (diag or f"surviving:{sorted(set(surv))[:3]}").strip()
         return (status, detail, surv_llvm)
 
-# The census's double functions (INJECTION-CENSUS.md). These are the LIBRARY
-# functions — the ones that must be SOURCE-INJECTED (Rule 18). p119 note: the f/l
-# variants (sinf/sinl/…) inject IDENTICALLY (same body shape, same blockers), so
-# this double set is representative of the full ~174 surface for the injection
-# question; the hardware-backed survivors (sqrt/fabs/copysign/rounding/fmin/fmax/
-# fma/lrint/llrint) are NOT injection candidates — they lower by recognition
-# (measured by probe.py's codegen path), and appear here only to confirm they
-# survive as `@llvm.*` under injection (surv_llvm).
-FUNCS = {  # fn: argc
- "fabs":1,"nearbyint":1,"copysign":2,"sqrt":1,"fma":3,
- "sin":1,"cos":1,"tan":1,"exp":1,"exp2":1,"log":1,"log2":1,"log10":1,
- "asin":1,"acos":1,"atan":1,"sinh":1,"cosh":1,"tanh":1,"asinh":1,"acosh":1,"atanh":1,
- "expm1":1,"log1p":1,"logb":1,"cbrt":1,"floor":1,"trunc":1,"round":1,"ceil":1,"rint":1,
- "atan2":2,"pow":2,"remainder":2,"fdim":2,"scalbn":2,"hypot":2,"fmod":2,"fmax":2,"fmin":2,
- "nextafter":2,"erf":1,"erfc":1,"lgamma":1,"tgamma":1,
+# The census's double functions (INJECTION-CENSUS.md). Each maps to its C arg-type
+# list; arg0 is ALWAYS the tainted `double q`, the rest are classical consts. p119
+# note: the f/l variants (sinf/sinl/…) inject IDENTICALLY (same body shape, same
+# blockers), so this double set is representative of the full ~174 surface for the
+# injection question.
+FUNCS = {  # fn: [C arg types]  (arg0 = tainted double)
+ "fabs":["double"], "nearbyint":["double"], "copysign":["double","double"],
+ "sqrt":["double"], "fma":["double","double","double"],
+ "sin":["double"],"cos":["double"],"tan":["double"],"exp":["double"],"exp2":["double"],
+ "log":["double"],"log2":["double"],"log10":["double"],
+ "asin":["double"],"acos":["double"],"atan":["double"],"sinh":["double"],"cosh":["double"],
+ "tanh":["double"],"asinh":["double"],"acosh":["double"],"atanh":["double"],
+ "expm1":["double"],"log1p":["double"],"logb":["double"],"cbrt":["double"],
+ "floor":["double"],"trunc":["double"],"round":["double"],"ceil":["double"],"rint":["double"],
+ "atan2":["double","double"],"pow":["double","double"],"remainder":["double","double"],
+ "fdim":["double","double"],"hypot":["double","double"],"fmod":["double","double"],
+ "fmax":["double","double"],"fmin":["double","double"],"nextafter":["double","double"],
+ # p119 (3c6m.8): 2nd arg is INT/long, NOT double — probing it as double left the
+ # openlibm body unresolvable (signature mismatch -> false "unknown callee").
+ "scalbn":["double","int"],"ldexp":["double","int"],"scalbln":["double","long"],
+ "erf":["double"],"erfc":["double"],"lgamma":["double"],"tgamma":["double"],
 }
+
+# ── The hardware-backed RECOGNITION keep-set (Rule 18 / bd libm-scoreboard-two-numbers).
+# These lower by RECOGNITION (probe.py's codegen path) — they codegen to a HW instr
+# and have NO injectable transcendental body, so they are NOT injection candidates.
+# Their soft-body injection decline is MOOT (covered by recognition). Reported as a
+# SEPARATE, DISJOINT scoreboard from the injection number (owner, emphatic 2026-07-09).
+HARDWARE_KEPT_CORE = {"sqrt","fma","floor","trunc","round","ceil","rint",
+                      "nearbyint","fmax","fmin"}
+# fabs/copysign are ALSO hardware-kept (@llvm.fabs/@llvm.copysign). They "COMPILE" in
+# the raw census ONLY because clang -O1 folds their bit-tricks to those recognized
+# intrinsics — they never exercise a raw injected opcode (bd
+# p119-phase1-bitcast-masked-blocker). Under the DISJOINT two-scoreboard rule they
+# belong to RECOGNITION, making the honest GENUINE-injection count 0 today.
+#   True  (recommended, honest-disjoint): fabs/copysign = recognition -> injection genuine = 0.
+#   False: fabs/copysign = injection COMPILES = 2 (overlaps recognition; needs a footnote).
+# NOTE: this toggle is the ONLY thing gated on the owner's pending 0-vs-2 call (3c6m.8);
+# everything else in this census is decision-independent. Default = honest disjoint.
+BITOPS_ARE_RECOGNITION = True
+HARDWARE_KEPT = HARDWARE_KEPT_CORE | ({"fabs","copysign"}
+                                      if BITOPS_ARE_RECOGNITION else set())
+
+# Harness link-gaps found by the p119 blocker-audit — NOT real blockers, so excluded
+# from the genuine-injection decline tally (they cannot be honestly measured here):
+#  tgamma: openlibm ships no double body (only s_tgammaf.c);
+#  lgamma: wrapper link-closure gap;
+#  ldexp:  an ASM-level alias `.set ldexp, scalbn` (module asm, invisible to llvm-link) —
+#          it has no distinct @ldexp IR body, so it cannot link. Its TRUE injection
+#          result is identical to scalbn (L4 control flow); the int-arg fix is validated
+#          by scalbn + scalbln, which do resolve and reclassify.
+HARNESS_GAP = {"tgamma": "openlibm ships no double tgamma body (only s_tgammaf.c)",
+               "lgamma": "lgamma wrapper link-closure gap",
+               "ldexp":  "asm alias '.set ldexp, scalbn' — no distinct IR body; == scalbn (L4)"}
+
+def lever_of(detail):
+    """Map a genuine-injection decline reason to its campaign lever (bd libm-campaign-pivot)."""
+    d = (detail or "").lower()
+    if "stored to memory" in d:            return "L5-shadow"       # tainted scratch store
+    if "unsupported instruction" in d:     return "L5-qrom"         # tainted-index table read
+    if "unknown callee" in d:              return "L2-closure"      # nested transcendental
+    if "nested control flow" in d:         return "L6-nested-ctrl"  # multi-level range-reduction br
+    if "control flow" in d:                return "L4-fp-select"    # single-level select/diamond
+    if "no template for opcode" in d:      return "opcode-gap"      # would be a real gap (none expected)
+    return "other"
+
+def bucket_of(fn):
+    if fn in HARDWARE_KEPT: return "moot-hardware-kept"
+    if fn in HARNESS_GAP:   return "harness-gap"
+    return "injection"
 
 if __name__ == "__main__":
     print("building symbol index...", file=sys.stderr)
     defmap = build_symbol_index()
     print(f"indexed {len(defmap)} symbols across bc/", file=sys.stderr)
     results = {}
-    for fn, argc in FUNCS.items():
-        status, detail, surv_llvm = run_one(fn, argc, defmap)
-        results[fn] = {"status": status, "detail": detail, "surviving_llvm": surv_llvm}
+    for fn, argtypes in FUNCS.items():
+        status, detail, surv_llvm = run_one(fn, argtypes, defmap)
+        bucket = bucket_of(fn)
+        lever = lever_of(detail) if (bucket == "injection" and status == "decline") else ""
+        if bucket == "harness-gap":
+            detail = f"{HARNESS_GAP[fn]} [{detail}]"
+        results[fn] = {"status": status, "detail": detail, "surviving_llvm": surv_llvm,
+                       "bucket": bucket, "lever": lever}
         note = f"  [llvm survivors: {surv_llvm}]" if surv_llvm else ""
-        print(f"  {fn:12s} {status:22s} {detail}{note}", file=sys.stderr)
+        tag = f" ⟨{bucket}{('/'+lever) if lever else ''}⟩"
+        print(f"  {fn:12s} {status:22s}{tag}  {detail}{note}", file=sys.stderr)
     Path("inject_results.json").write_text(json.dumps(results, indent=2))
+
+    # ── TWO DISJOINT SCOREBOARDS (owner, emphatic 2026-07-09; bd libm-scoreboard-two-numbers).
+    # NEVER a merged headline. (1) INJECTION = genuine library bodies that COMPILE here.
+    # (2) RECOGNITION = the hardware keep-set (measured by probe.py, not this census) —
+    # shown here only for disjointness bookkeeping; it is a FIXED FLOOR, not injection progress.
     from collections import Counter
-    c = Counter(r["status"] for r in results.values())
-    print("\n=== TALLY ===", file=sys.stderr)
-    for k,v in c.most_common(): print(f"  {k:22s} {v}", file=sys.stderr)
+    inj = {fn: r for fn, r in results.items() if r["bucket"] == "injection"}
+    inj_compiles = sorted(fn for fn, r in inj.items() if r["status"] == "COMPILES")
+    print("\n" + "=" * 68, file=sys.stderr)
+    print("SCOREBOARD 1 — INJECTION-covered (genuine library bodies; the campaign number)",
+          file=sys.stderr)
+    print(f"  {len(inj_compiles)}/{len(inj)} COMPILE  (fully inlined + cq-lowering exit 0)",
+          file=sys.stderr)
+    print(f"  COMPILES: {inj_compiles or '(none — honest floor)'}", file=sys.stderr)
+    print("SCOREBOARD 2 — RECOGNITION-covered (hardware keep-set; DISJOINT, fixed floor)",
+          file=sys.stderr)
+    print(f"  {len(HARDWARE_KEPT)} stems in this census, moot for injection: "
+          f"{sorted(HARDWARE_KEPT)}", file=sys.stderr)
+    print("  (recognition's TRUE coverage number is probe.py's, not measured here)",
+          file=sys.stderr)
+    print("=" * 68, file=sys.stderr)
+
+    print("\n=== INJECTION declines by lever (3c6m.9 ticket feed) ===", file=sys.stderr)
+    lev = Counter(r["lever"] for r in inj.values() if r["status"] == "decline")
+    levers = {}
+    for k, v in lev.most_common():
+        fns = sorted(fn for fn, r in inj.items()
+                     if r["status"] == "decline" and r["lever"] == k)
+        levers[k] = fns
+        print(f"  {k:16s} {v:2d}  {fns}", file=sys.stderr)
+
+    # ── The committed, machine-readable INJECTION scoreboard. probe.py reads this to
+    # print the injection number DISJOINT from its own recognition number (the
+    # two-scoreboard rule; bd libm-scoreboard-two-numbers) — keeping the two artifacts
+    # in sync without probe.py having to re-run the (corpus-dependent) census.
+    Path("injection_summary.json").write_text(json.dumps({
+        "injection_compiles": len(inj_compiles),
+        "injection_candidates": len(inj),
+        "injection_compiles_fns": inj_compiles,
+        "declines_by_lever": levers,
+        "hardware_kept_stems": sorted(HARDWARE_KEPT),
+        "harness_gap": sorted(HARNESS_GAP),
+        "bitops_are_recognition": BITOPS_ARE_RECOGNITION,
+        "note": "Injection-covered = genuine library bodies (source injection, Rule 18); "
+                "DISJOINT from recognition-covered (hardware keep-set, measured by probe.py).",
+    }, indent=2))
+
+    print("\n=== per-bucket status tally ===", file=sys.stderr)
+    for b in ("injection", "moot-hardware-kept", "harness-gap"):
+        c = Counter(r["status"] for r in results.values() if r["bucket"] == b)
+        print(f"  [{b}] " + ", ".join(f"{k}:{v}" for k, v in c.most_common()),
+              file=sys.stderr)
+
     # p119: which functions leave a surviving @llvm.* intrinsic (the hardware-backed
     # keep-set, confirmed under injection). A transcendental appearing here would be
     # a keep-set violation (it should inline to opcodes).

@@ -1,0 +1,70 @@
+{
+  "injection_compiles": 0,
+  "injection_candidates": 32,
+  "injection_compiles_fns": [],
+  "declines_by_lever": {
+    "L6-nested-ctrl": [
+      "acos",
+      "asin",
+      "atan",
+      "atanh",
+      "cbrt",
+      "expm1",
+      "hypot",
+      "log",
+      "log10",
+      "log1p",
+      "log2",
+      "logb",
+      "pow",
+      "remainder",
+      "tanh"
+    ],
+    "L2-closure": [
+      "acosh",
+      "asinh",
+      "atan2",
+      "cosh",
+      "erf",
+      "erfc",
+      "sinh"
+    ],
+    "L5-shadow": [
+      "cos",
+      "nextafter",
+      "sin",
+      "tan"
+    ],
+    "L5-qrom": [
+      "exp",
+      "exp2",
+      "fmod"
+    ],
+    "L4-fp-select": [
+      "fdim",
+      "scalbln",
+      "scalbn"
+    ]
+  },
+  "hardware_kept_stems": [
+    "ceil",
+    "copysign",
+    "fabs",
+    "floor",
+    "fma",
+    "fmax",
+    "fmin",
+    "nearbyint",
+    "rint",
+    "round",
+    "sqrt",
+    "trunc"
+  ],
+  "harness_gap": [
+    "ldexp",
+    "lgamma",
+    "tgamma"
+  ],
+  "bitops_are_recognition": true,
+  "note": "Injection-covered = genuine library bodies (source injection, Rule 18); DISJOINT from recognition-covered (hardware keep-set, measured by probe.py)."
+}

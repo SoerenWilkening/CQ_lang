@@ -48,7 +48,61 @@ COVERAGE_MD = HERE / "COVERAGE.md"
 COVERAGE_DIR = HERE / "coverage"
 GOLDENS = HERE / "goldens"
 README = ROOT / "README.md"
+INJECTION_SUMMARY = HERE / "injection_summary.json"   # written by inject_census.py
 TIMEOUT = 40
+
+# The hardware-backed RECOGNITION keep-set (Rule 18; bd libm-coverage-source-injection-rule).
+# These codegen to a HW instruction with no libcall, so they are lowered by NAME-recognition
+# and have NO injectable body. This is a FIXED FLOOR — never injection progress.
+HARDWARE_KEEP_SET = ("sqrt fabs copysign floor ceil trunc round rint nearbyint "
+                     "fmin fmax fma lrint llrint")
+
+def _injection_scoreboard():
+    """Read the committed injection scoreboard (inject_census.py) if present."""
+    try:
+        return json.loads(INJECTION_SUMMARY.read_text())
+    except Exception:
+        return None
+
+def two_scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-CENSUS.md"):
+    """The DISJOINT two-scoreboard note (owner, emphatic 2026-07-09; never a merged headline;
+    bd libm-scoreboard-two-numbers). Emitted into the README badge, COVERAGE.md, and the
+    math.h detail page — `census_link` is the INJECTION-CENSUS.md path RELATIVE to each."""
+    inj = _injection_scoreboard()
+    if inj is not None:
+        n, m = inj["injection_compiles"], inj["injection_candidates"]
+        injnum = (f"**{n}/{m}**" + (" (an honest floor)" if n == 0 else ""))
+    else:
+        injnum = "**see the source-injection census**"
+    census = census_link
+    head = ("> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — "
+            "never merged.**")
+    if short:
+        return [f"{head} The `math.h` `Lowers`/`Verified` columns are the **recognition "
+                f"floor** — fns that lower because `clang -O1` emits a hardware-backed "
+                f"intrinsic the pass recognizes (`{HARDWARE_KEEP_SET}` + variants) — a *fixed "
+                f"floor, not injection progress*. **Injection-covered** — genuine library "
+                f"bodies compiled by source injection (Rule 18), the number the libm campaign "
+                f"actually moves — is {injnum} of the `math.h` double surface "
+                f"([source-injection census]({census})). The two sets are disjoint; a library "
+                f"function that declines under injection stays declined (and ticketed), never "
+                f"counted via recognition."]
+    return [
+        head, "",
+        f"1. **Recognition-covered** — the hardware keep-set (`{HARDWARE_KEEP_SET}` + "
+        "variants): functions that lower because `clang -O1` emits a hardware-backed intrinsic "
+        "the pass recognizes (they have no injectable transcendental body, Rule 18). This is "
+        "the **`Lowers`/`Verified` number in the table below** — a *fixed floor*, not injection "
+        "progress.",
+        f"2. **Injection-covered** — genuine library bodies compiled by **source injection** "
+        f"(the real libm-campaign number): {injnum} of the `math.h` double surface "
+        f"([source-injection census]({census})).",
+        "",
+        "The two sets are **disjoint** (a fn is counted in at most one). A library function "
+        "that declines under injection stays declined — and is ticketed (bd `3c6m.9`) — until "
+        "its *injected body* lowers; recognition is **never** a fallback for a hard injection. "
+        "A single merged headline (the retired `165/174` 95%-overclaim) is treated as a bug.",
+    ]
 
 # ---------------------------------------------------------------------------
 # The BACKEND axis (bd e4jv). Three static tiers classifying whether a correct
@@ -730,6 +784,10 @@ def write_library_page(lib, s):
              lib["blurb"], "",
              f"**Compiles: {s['compiles']}/{s['total']} ({s['pct_compiles']:.1f}%)** — of which "
              f"**golden-verified: {s['verified']}/{s['total']} ({s['pct_verified']:.1f}%)**.", ""]
+    # For math.h, the number above is the RECOGNITION floor — state the disjoint
+    # injection scoreboard so this page can't be read as merged coverage (owner rule).
+    if lib["slug"] == "mathh":
+        lines += two_scoreboard_lines(short=True, census_link="../INJECTION-CENSUS.md") + [""]
     lines += bucket_table(s)
     lines += ["", "---", ""]
     lines += backend_bucket_table(s)
@@ -791,6 +849,7 @@ def write_index(per_lib, agg):
          f"**All libraries — lowering-verified: {agg['verified']}/{agg['total']} "
          f"({agg['pct_verified']:.1f}%)** &nbsp;·&nbsp; backend-available: "
          f"{agg['backend_available']}/{agg['total']} ({agg['pct_backend']:.1f}%).", "",
+         *two_scoreboard_lines(short=False, census_link="INJECTION-CENSUS.md"), "",
          "Coverage has **two orthogonal axes** (bd e4jv). **Lowering** = *every* applicable "
          "classical/quantum (C/Q) argument mixture lowers, links, runs, **and** matches a committed "
          "golden trace — the compiler emits the right reversible-template call sequence. But the "
@@ -851,7 +910,8 @@ def update_readme(per_lib, agg):
                  f"| {s['verified']}/{s['total']} ({s['pct_verified']:.0f}%) "
                  f"| {s['backend_available']}/{s['total']} ({s['pct_backend']:.0f}%) "
                  f"| {s['be_standard']} | {s['be_synth']} | {s['be_open']} | {s['out_design']} |")
-    L += ["", "Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) "
+    L += ["", *two_scoreboard_lines(short=True),
+          "", "Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) "
           "(regenerate: `python3 tools/library_coverage/probe.py run`)."]
     badge = README_START + "\n" + "\n".join(L) + "\n" + README_END
     txt = README.read_text()
