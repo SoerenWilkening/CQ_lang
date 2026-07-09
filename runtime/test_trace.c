@@ -156,9 +156,10 @@ int main(void) {
 
     /* --- Phase 7.1 Increment D smoke: half-precision (f16). f16 rides the
      * fp rotation-lowering path — alloc / measure / ry / rz + the fadd Q+Q
-     * and Q+C templates. There is still NO UNCONTROLLED cqrt_copy_f16 (no
-     * consumer — dead ABI is forbidden), but the CONTROLLED fp copy family
-     * exists since the fp-DATA select un-staging (next block). Appended
+     * and Q+C templates. The UNCONTROLLED cqrt_copy_f<W> family exists since
+     * bd 38t2 (the fp memory-cell copy-out is its live consumer; link-proven
+     * by the slice_qram_local_uncompute_fp e2e golden), and the CONTROLLED
+     * fp copy family exists since the fp-DATA select un-staging. Appended
      * at the end so every existing handle ID (h0..h32) is unchanged; the
      * monotonic counter resumes at h33. 1.5 and 0.5 are exactly representable
      * in f16, so the (double)-promoted %f prints byte-stable. */

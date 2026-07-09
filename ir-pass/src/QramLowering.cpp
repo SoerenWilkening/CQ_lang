@@ -44,10 +44,13 @@ namespace {
 // The exact diagnostic string the QRAM read emitter owns (PRD-7.5 §3 deliverable
 // 5; the element-width gate). The negative LIT fixtures mirror it CHARACTER-FOR-
 // CHARACTER (Rule 12):
-//   * lowering_reject_qram_fp_cell.ll    → kMsgQramCell (a `[N x double]` cell)
 //   * lowering_reject_qram_i128_cell.ll  → kMsgQramCell (a `[N x i128]` cell)
+//   * lowering_reject_qram_fp128_cell.ll → kMsgQramCell (a `[N x fp128]` cell)
+// As of bd 38t2 an fp cell `[N x {half,float,double,x86_fp80}]` ACCEPTS (a faithful
+// reversible bit-pattern cell); only i128 (no cqrt_qram_*_i128) and fp128 (no sound
+// c_type on this x86-64 build) still hit this gate.
 constexpr char kMsgQramCell[] =
-    "cq QRAM read: array element is not a reversible integer cell";
+    "cq QRAM read: array element is not a reversible cell";
 
 // The exact diagnostic strings the Shadow (alloca-backed store/load) emitter owns
 // (Phase 7.5 Inc 2; PRD-7.5 §2.8). The negative LIT fixtures mirror each one
@@ -413,6 +416,16 @@ std::optional<QramMatch> matchQramAccess(Instruction *MemOp,
   Type *CellTy = nullptr;
   if (!matchAddressGep(GEP, taint, RawIndex, CellTy))
     return std::nullopt;  // non-canonical / classical-index gep — not ours.
+  // Pun fence (38t2 Rule-13 clearance): the memop's ACCESSED type must BE the
+  // cell type. A type-punned sub-width access (`store float` through a
+  // `[N x double]` gep, `store i32` into an `[N x i64]` cell) would otherwise
+  // resolve ElemAbi from the ORIGIN and emit a full-cell-width qram call fed by
+  // a narrower rail — a verify-clean wrong-width gate stream. Not a qram shape;
+  // the pass-wide taint-escape guards decline the tainted memop/index loudly
+  // downstream (a carve is never a silent accept).
+  Type *AccTy = IsStore ? StoreVal->getType() : MemOp->getType();
+  if (AccTy != CellTy)
+    return std::nullopt;
   Value *Base = GEP->getPointerOperand();
   OriginResult Origin = walkPtrOrigin(Base);
   if (Origin.Kind == OriginResult::Bad)
@@ -754,19 +767,22 @@ void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
       diagnose(R.Load, kMsgQramCohEscape);
       continue;
     }
-    // Element-width gate — the carve accepted the structural shape; an fp/i128
-    // cell has no reversible copy and DECLINES LOUDLY here, so the carve is never
-    // a silent accept (§6.9). `widthHasReversibleCopy` is the {i1,i8,i16,i32,i64}
-    // set (the f64/angle + i128-no-clone fences, §2.10).
-    if (!widthHasReversibleCopy(R.ElemAbi)) {
+    // Element-width gate — the carve accepted the structural shape; a cell whose
+    // element width has no reversible copy DECLINES LOUDLY here, so the carve is
+    // never a silent accept (§6.9). `widthHasQramCell` is int {i1,i8,i16,i32,i64}
+    // + fp {f16,f32,f64,f80} (bd 38t2 — an fp cell is a faithful bit-pattern
+    // CNOT-copy, NOT an angle; the f64-angle fence stays declineTaintedAngle). An
+    // i128 / fp128 / unsupported cell still declines (no cqrt_qram_*_i128, no
+    // sound f128 c_type).
+    if (!widthHasQramCell(R.ElemAbi)) {
       diagnose(R.Load, kMsgQramCell);
       continue;
     }
     FunctionCallee AllocFn = wd.qramAllocFn(R.ElemAbi);
     FunctionCallee LoadFn = wd.qramLoadFn(R.ElemAbi);
     if (!AllocFn || !LoadFn) {
-      // widthHasReversibleCopy already proved a supported width, so a null here
-      // is unreachable — guard defensively rather than mint a null call.
+      // widthHasQramCell already proved a supported cell width, so a null here is
+      // unreachable — guard defensively rather than mint a null call.
       diagnose(R.Load, kMsgQramCell);
       continue;
     }
@@ -861,11 +877,15 @@ void emitCopyOutIfDirectMeasure(CallInst *Out, StringRef ElemAbi, WidthDispatch 
              // (and its index frees) sound; everything else leaks safely.
   Instruction *U = CI;
   FunctionCallee Alloc = wd.allocFn(ElemAbi);
-  FunctionCallee Copy = wd.copyFn(ElemAbi);
+  // bd 38t2: `copyFnCell` (NOT the integer-only `copyFn`) so an fp cell load's
+  // direct-measure copy-out mints `cqrt_copy_f<W>` — the live consumer that keeps
+  // the uncontrolled fp copy from being dead ABI. Cell-local (fp cannot leak to
+  // the value-arm copy paths).
+  FunctionCallee Copy = wd.copyFnCell(ElemAbi);
   Type *RailTy = wd.llvmWidthType(ElemAbi);
   if (!Alloc || !Copy || !RailTy)
-    return;  // no reversible copy at this width — leave as-is (the caller already
-             // proved widthHasReversibleCopy, so this is a defensive guard).
+    return;  // no reversible copy at this cell width — leave as-is (the caller
+             // already proved widthHasQramCell, so this is a defensive guard).
   IRBuilder<> B(U);  // the carrier alloc + copy land right before the escape.
   CallInst *Ret = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "qret");
   CallInst *Cp = B.CreateCall(Copy, {Out, Ret});
@@ -892,10 +912,12 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
   uint64_t Count = Accesses.front().Count;
   Instruction *Anchor = Accesses.front().MemOp;  // a real access for the !dbg.
 
-  // Element-width gate (§2.10): an fp/i128 cell has no reversible copy → loud
-  // decline, so the carve is never a silent accept (§6.9). `widthHasReversibleCopy`
-  // is the {i1,i8,i16,i32,i64} set (the f64/angle + i128-no-clone fences).
-  if (!widthHasReversibleCopy(ElemAbi)) {
+  // Element-width gate (§2.10): a cell whose element width has no reversible copy
+  // → loud decline, so the carve is never a silent accept (§6.9). `widthHasQramCell`
+  // is int {i1,i8,i16,i32,i64} + fp {f16,f32,f64,f80} (bd 38t2 — an fp cell is a
+  // faithful bit-pattern CNOT-copy, NOT an angle; the f64-angle fence stays
+  // declineTaintedAngle). An i128 / fp128 / unsupported cell still declines.
+  if (!widthHasQramCell(ElemAbi)) {
     diagnose(Anchor, kMsgQramCell);
     return;
   }

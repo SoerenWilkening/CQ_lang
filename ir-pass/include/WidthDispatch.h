@@ -79,6 +79,14 @@ public:
   // (method-B) swap-route lowering.
   llvm::FunctionCallee copyFn(llvm::StringRef abiWidth) const;        // @cqrt_copy_<W>
 
+  // bd 38t2 — the CELL-WIDENED copy resolver: same `@cqrt_copy_<W>` symbol, but
+  // over the cell width set int {i1..i64} + fp {f16,f32,f64,f80}
+  // (`widthHasQramCell`). Used ONLY by the QRAM/Shadow cell copy-out
+  // (`emitCopyOutIfDirectMeasure`) so the fp admit stays cell-local and never
+  // reaches the integer-only value-arm/select/switch/loop copy paths that gate on
+  // `copyFn`. Byte-identical to `copyFn` for an integer width.
+  llvm::FunctionCallee copyFnCell(llvm::StringRef abiWidth) const;   // @cqrt_copy_<W> (cell)
+
   // In-place reversible arithmetic — immediate operand (issue dtzb). Signature
   // `void cqrt_{addc,xorc}_<W>(i32 h, <iW> imm)`: the handle is i32 for every
   // width (Rule 15), the immediate carries the logical width type. INTEGER

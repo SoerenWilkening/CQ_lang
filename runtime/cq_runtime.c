@@ -513,6 +513,31 @@ void cqrt_copy_i64(int32_t src, int32_t dst) {
     fflush(stdout);
 }
 
+/* fp uncontrolled basis copy (bd 38t2 — the fp cell copy-out for a
+ * direct-sole-measure fp `arr[q]` load). The fp width tags the symbol name
+ * only; both args stay i32 handles (Rule 15). Storing/copying an fp bit
+ * pattern is a faithful reversible permutation of basis labels; the angle
+ * fence keeps a rotation angle out of this path (see cq_runtime.h). */
+void cqrt_copy_f16(int32_t src, int32_t dst) {
+    printf("cqrt_copy_f16(h%d, h%d)\n", src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_f32(int32_t src, int32_t dst) {
+    printf("cqrt_copy_f32(h%d, h%d)\n", src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_f64(int32_t src, int32_t dst) {
+    printf("cqrt_copy_f64(h%d, h%d)\n", src, dst);
+    fflush(stdout);
+}
+
+void cqrt_copy_f80(int32_t src, int32_t dst) {
+    printf("cqrt_copy_f80(h%d, h%d)\n", src, dst);
+    fflush(stdout);
+}
+
 /* ---------------------------------------------------------------------
  * Controlled reversible basis copy (Phase 4.4, PRD Part IV §16.3) — one
  * per width. Copies src into the |0> dst rail iff the i32 control flag
@@ -765,6 +790,36 @@ int32_t cqrt_qram_alloc_i64(int32_t count) {
     return a;
 }
 
+/* fp-as-bitpattern cell allocators (bd 38t2). Width tags the symbol name;
+ * the array handle is i32 and the count i32 for every width (Rule 15). */
+int32_t cqrt_qram_alloc_f16(int32_t count) {
+    int32_t a = cqrt_alloc_handle();
+    printf("cqrt_qram_alloc_f16(%d) -> a%d\n", count, a);
+    fflush(stdout);
+    return a;
+}
+
+int32_t cqrt_qram_alloc_f32(int32_t count) {
+    int32_t a = cqrt_alloc_handle();
+    printf("cqrt_qram_alloc_f32(%d) -> a%d\n", count, a);
+    fflush(stdout);
+    return a;
+}
+
+int32_t cqrt_qram_alloc_f64(int32_t count) {
+    int32_t a = cqrt_alloc_handle();
+    printf("cqrt_qram_alloc_f64(%d) -> a%d\n", count, a);
+    fflush(stdout);
+    return a;
+}
+
+int32_t cqrt_qram_alloc_f80(int32_t count) {
+    int32_t a = cqrt_alloc_handle();
+    printf("cqrt_qram_alloc_f80(%d) -> a%d\n", count, a);
+    fflush(stdout);
+    return a;
+}
+
 int32_t cqrt_qram_load_i1(int32_t arr, int32_t idx) {
     int32_t out = cqrt_alloc_handle();
     printf("cqrt_qram_load_i1(a%d, h%d) -> h%d\n", arr, idx, out);
@@ -800,6 +855,36 @@ int32_t cqrt_qram_load_i64(int32_t arr, int32_t idx) {
     return out;
 }
 
+/* fp cell load (bd 38t2) — a reversible copy-out (Toffoli), no tape; the
+ * fresh loaded-value handle is i32 for every width. */
+int32_t cqrt_qram_load_f16(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_f16(a%d, h%d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_qram_load_f32(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_f32(a%d, h%d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_qram_load_f64(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_f64(a%d, h%d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+
+int32_t cqrt_qram_load_f80(int32_t arr, int32_t idx) {
+    int32_t out = cqrt_alloc_handle();
+    printf("cqrt_qram_load_f80(a%d, h%d) -> h%d\n", arr, idx, out);
+    fflush(stdout);
+    return out;
+}
+
 void cqrt_qram_load_i1_unc(int32_t out, int32_t arr, int32_t idx) {
     printf("cqrt_qram_load_i1_unc(h%d, a%d, h%d)\n", out, arr, idx);
     fflush(stdout);
@@ -822,6 +907,27 @@ void cqrt_qram_load_i32_unc(int32_t out, int32_t arr, int32_t idx) {
 
 void cqrt_qram_load_i64_unc(int32_t out, int32_t arr, int32_t idx) {
     printf("cqrt_qram_load_i64_unc(h%d, a%d, h%d)\n", out, arr, idx);
+    fflush(stdout);
+}
+
+/* fp cell load adjoint (bd 38t2). */
+void cqrt_qram_load_f16_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_f16_unc(h%d, a%d, h%d)\n", out, arr, idx);
+    fflush(stdout);
+}
+
+void cqrt_qram_load_f32_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_f32_unc(h%d, a%d, h%d)\n", out, arr, idx);
+    fflush(stdout);
+}
+
+void cqrt_qram_load_f64_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_f64_unc(h%d, a%d, h%d)\n", out, arr, idx);
+    fflush(stdout);
+}
+
+void cqrt_qram_load_f80_unc(int32_t out, int32_t arr, int32_t idx) {
+    printf("cqrt_qram_load_f80_unc(h%d, a%d, h%d)\n", out, arr, idx);
     fflush(stdout);
 }
 
@@ -857,6 +963,30 @@ void cqrt_qram_store_i64(int32_t arr, int32_t idx, int32_t val) {
     fflush(stdout);
 }
 
+/* fp cell store (bd 38t2) — VOID in-place on the arg-0 array handle; the
+ * displaced old value goes on the backend tape (never in the ABI). Storing
+ * a theta/phi-derived fp value is faithful reversible QRAM (bd
+ * [38t2-fp-cell-commits-to-basis-sound]). All args i32 handles. */
+void cqrt_qram_store_f16(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f16(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f32(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f32(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f64(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f64(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f80(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f80(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
 void cqrt_qram_store_i1_unc(int32_t arr, int32_t idx, int32_t val) {
     printf("cqrt_qram_store_i1_unc(a%d, h%d, h%d)\n", arr, idx, val);
     fflush(stdout);
@@ -879,6 +1009,27 @@ void cqrt_qram_store_i32_unc(int32_t arr, int32_t idx, int32_t val) {
 
 void cqrt_qram_store_i64_unc(int32_t arr, int32_t idx, int32_t val) {
     printf("cqrt_qram_store_i64_unc(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+/* fp cell store adjoint (bd 38t2) — pops the backend tape; same args. */
+void cqrt_qram_store_f16_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f16_unc(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f32_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f32_unc(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f64_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f64_unc(a%d, h%d, h%d)\n", arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f80_unc(int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f80_unc(a%d, h%d, h%d)\n", arr, idx, val);
     fflush(stdout);
 }
 
@@ -920,6 +1071,28 @@ void cqrt_qram_store_i64_controlled(int32_t pred, int32_t arr, int32_t idx, int3
     fflush(stdout);
 }
 
+/* fp guarded cell store (bd 38t2 — the fp twin of the iw81.7 guarded store).
+ * Store `val` at `idx` iff `pred`; NO-OP on cell + tape when pred=0. */
+void cqrt_qram_store_f16_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f16_controlled(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f32_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f32_controlled(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f64_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f64_controlled(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f80_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f80_controlled(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
 void cqrt_qram_store_i1_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
     printf("cqrt_qram_store_i1_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
     fflush(stdout);
@@ -942,6 +1115,28 @@ void cqrt_qram_store_i32_controlled_unc(int32_t pred, int32_t arr, int32_t idx, 
 
 void cqrt_qram_store_i64_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
     printf("cqrt_qram_store_i64_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+/* fp guarded cell store adjoint (bd 38t2) — pops the tape only on pred's
+ * branch; same args, gated by the SAME pred (kept live through the _unc). */
+void cqrt_qram_store_f16_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f16_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f32_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f32_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f64_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f64_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
+    fflush(stdout);
+}
+
+void cqrt_qram_store_f80_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val) {
+    printf("cqrt_qram_store_f80_controlled_unc(h%d, a%d, h%d, h%d)\n", pred, arr, idx, val);
     fflush(stdout);
 }
 

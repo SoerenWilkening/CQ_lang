@@ -249,6 +249,22 @@ bool abiWidthHasControlledFpCopy(StringRef w) {
   return w == "f16" || w == "f32" || w == "f64" || w == "f80";
 }
 
+bool widthHasQramCell(StringRef w) {
+  // The QRAM/Shadow memory CELL element widths (bd 38t2): the integer cell set
+  // {i1,i8,i16,i32,i64} PLUS the fp-as-bitpattern cell widths {f16,f32,f64,f80}.
+  // A memory cell stores a computational-basis BIT PATTERN; storing/loading an
+  // fp value is a faithful reversible CNOT-copy of that pattern (bd
+  // [38t2-fp-cell-commits-to-basis-sound]) — NOT the f64-angle miscompile family,
+  // which is fenced separately by declineTaintedAngle (a cell value used as a
+  // rotation arg-1 angle still declines, width-agnostic). i128/f128/unknown stay
+  // out (no cqrt_qram_*_i128 / no sound f128 c_type). CELL-LOCAL: the ONLY
+  // callers are QramLowering's two element-width gates and the WidthDispatch
+  // qram/cell-copy resolvers — do NOT reuse it for the integer-only data-mux /
+  // select / switch / loop paths (those keep `widthHasReversibleCopy`, whose fp
+  // null IS the live f64-angle classifier there).
+  return widthHasReversibleCopy(w) || abiWidthHasControlledFpCopy(w);
+}
+
 void diagnoseNoTemplate(Instruction *inst, StringRef detail) {
   // Loud failure on the same DiagnosticInfoUnsupported surface the rest of
   // the pass uses. `detail` lets a caller supply a precise "<op> <type>"

@@ -3,6 +3,7 @@
 
 #include "WidthDispatch.h"
 
+#include "OpcodeSupport.h"  // widthHasQramCell (the fp-as-bitpattern cell fence, bd 38t2)
 #include "TemplateName.h"
 
 #include "llvm/IR/DataLayout.h"
@@ -154,6 +155,26 @@ FunctionCallee WidthDispatch::copyFn(StringRef abiWidth) const {
                         false));
 }
 
+FunctionCallee WidthDispatch::copyFnCell(StringRef abiWidth) const {
+  // bd 38t2 — the CELL-WIDENED variant of copyFn. Mints the SAME `cqrt_copy_<W>`
+  // symbol (void(i32 src, i32 dst)) but over the cell width set int {i1..i64} +
+  // fp {f16,f32,f64,f80} (widthHasQramCell), for the QRAM/Shadow cell copy-out
+  // (`emitCopyOutIfDirectMeasure`) of a direct-sole-measure `arr[q]` load — the
+  // consumer that keeps the uncontrolled `cqrt_copy_f<W>` from being dead ABI.
+  // CELL-LOCAL: only the qram copy-out calls it, so the fp admit never reaches
+  // the integer-only value-arm/select/switch/loop copy paths (which keep the
+  // shared `copyFn` integer null-fence — the live f64-angle classifier there).
+  // For an integer width it is byte-identical to `copyFn`.
+  if (!widthHasQramCell(abiWidth))
+    return FunctionCallee();
+  LLVMContext &Ctx = M.getContext();
+  return M.getOrInsertFunction(
+      ("cqrt_copy_" + abiWidth).str(),
+      FunctionType::get(Type::getVoidTy(Ctx),
+                        {Type::getInt32Ty(Ctx), Type::getInt32Ty(Ctx)},
+                        false));
+}
+
 FunctionCallee WidthDispatch::addcFn(StringRef abiWidth) const {
   // Signature: void(i32 h, <iW> imm) — in-place add of a classical immediate
   // (issue dtzb). The handle is i32 for every width (Rule 15); the immediate
@@ -222,8 +243,12 @@ FunctionCallee WidthDispatch::qramAllocFn(StringRef abiWidth) const {
   // cqrt_qram_alloc_i128, so an unsupported width returns a null callee
   // (caller declines) rather than minting a phantom.
   LLVMContext &Ctx = M.getContext();
-  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
-  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+  // bd 38t2: the cell width set is int {i1..i64} + fp {f16,f32,f64,f80}
+  // (widthHasQramCell), NOT the integer-only copyFn fence — an fp memory cell is
+  // a faithful reversible bit-pattern CNOT-copy, and this resolver is CELL-LOCAL
+  // (only QramLowering calls it), so lifting the fp fence here cannot leak fp into
+  // the integer-only value-mux/select/switch/loop copy paths.
+  if (!widthHasQramCell(abiWidth))
     return FunctionCallee();
   Type *I32 = Type::getInt32Ty(Ctx);
   return M.getOrInsertFunction(("cqrt_qram_alloc_" + abiWidth).str(),
@@ -235,8 +260,7 @@ FunctionCallee WidthDispatch::qramLoadFn(StringRef abiWidth) const {
   // fresh loaded-value handle are all i32. Mirrors cqrt_qram_load_<W> in
   // runtime/cq_runtime.h. Same INTEGER-width fence as qramAllocFn.
   LLVMContext &Ctx = M.getContext();
-  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
-  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+  if (!widthHasQramCell(abiWidth))  // bd 38t2: int cells + fp cells (cell-local)
     return FunctionCallee();
   Type *I32 = Type::getInt32Ty(Ctx);
   return M.getOrInsertFunction(("cqrt_qram_load_" + abiWidth).str(),
@@ -251,8 +275,7 @@ FunctionCallee WidthDispatch::qramLoadUncFn(StringRef abiWidth) const {
   // forward call's own type; this resolver exists for symmetry / direct callers
   // and produces a byte-identical FunctionType so the two never diverge.
   LLVMContext &Ctx = M.getContext();
-  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
-  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+  if (!widthHasQramCell(abiWidth))  // bd 38t2: int cells + fp cells (cell-local)
     return FunctionCallee();
   Type *I32 = Type::getInt32Ty(Ctx);
   return M.getOrInsertFunction(("cqrt_qram_load_" + abiWidth + "_unc").str(),
@@ -267,8 +290,7 @@ FunctionCallee WidthDispatch::qramStoreFn(StringRef abiWidth) const {
   // (preserved) inputs. Mirrors cqrt_qram_store_<W> in runtime/cq_runtime.h.
   // Same INTEGER-width fence as qramAllocFn/qramLoadFn.
   LLVMContext &Ctx = M.getContext();
-  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
-  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+  if (!widthHasQramCell(abiWidth))  // bd 38t2: int cells + fp cells (cell-local)
     return FunctionCallee();
   Type *I32 = Type::getInt32Ty(Ctx);
   return M.getOrInsertFunction(
@@ -285,8 +307,7 @@ FunctionCallee WidthDispatch::qramStoreUncFn(StringRef abiWidth) const {
   // resolver exists for symmetry and produces a byte-identical FunctionType so
   // the two never diverge. Same INTEGER-width fence.
   LLVMContext &Ctx = M.getContext();
-  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
-  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+  if (!widthHasQramCell(abiWidth))  // bd 38t2: int cells + fp cells (cell-local)
     return FunctionCallee();
   Type *I32 = Type::getInt32Ty(Ctx);
   return M.getOrInsertFunction(
@@ -302,8 +323,7 @@ FunctionCallee WidthDispatch::qramStoreControlledFn(StringRef abiWidth) const {
   // cell+tape when pred=0. Mirrors cqrt_qram_store_<W>_controlled in
   // runtime/cq_runtime.h. Same INTEGER-width fence as qramStoreFn.
   LLVMContext &Ctx = M.getContext();
-  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
-  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+  if (!widthHasQramCell(abiWidth))  // bd 38t2: int cells + fp cells (cell-local)
     return FunctionCallee();
   Type *I32 = Type::getInt32Ty(Ctx);
   return M.getOrInsertFunction(
@@ -319,8 +339,7 @@ FunctionCallee WidthDispatch::qramStoreControlledUncFn(StringRef abiWidth) const
   // re-emit-under-flag involution trick. Mirrors cqrt_qram_store_<W>_controlled_unc
   // in runtime/cq_runtime.h. Same INTEGER-width fence.
   LLVMContext &Ctx = M.getContext();
-  Type *Ty = typeForAbiWidth(abiWidth, Ctx);
-  if (!Ty || !Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+  if (!widthHasQramCell(abiWidth))  // bd 38t2: int cells + fp cells (cell-local)
     return FunctionCallee();
   Type *I32 = Type::getInt32Ty(Ctx);
   return M.getOrInsertFunction(

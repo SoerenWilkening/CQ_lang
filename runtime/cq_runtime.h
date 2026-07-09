@@ -256,15 +256,23 @@ void cqrt_cswap(int32_t ctrl, int32_t a, int32_t b);
  * |0> — so there is NO cqrt_copy_<W>_inv twin (same class as cqrt_x /
  * cqrt_cswap). It NEVER frees, consumes, or disentangles its source
  * (Rule 8: freeing a superposed source stays cqrt_cswap-only).
- * The 5 INTEGER widths only FOR THIS PLAIN COPY: no uncontrolled fp
- * twin exists because nothing consumes one (dead ABI is forbidden) —
- * the fp `_controlled` merge twins DO exist below since the fp-DATA
- * select un-staging (fp-data-select-PRD, issue kjd1), where the
- * three-legged angle fence proves the merged fp value is data, not an
- * angle. Adding an uncontrolled cqrt_copy_f<W> later must re-audit
- * ChainWalk's isCopyOutSink prefix test and LoopLowering's copyFn
- * null-fence (the §3 tripwire). Emitted by the IR pass as the
- * copy-out step of the 4.2 value-arm (method-B) swap-route lowering.
+ * (Rule 8: freeing a superposed source stays cqrt_cswap-only).
+ * The 5 INTEGER widths PLUS the 4 fp widths f16/f32/f64/f80 (bd 38t2 —
+ * the fp-as-bitpattern memory CELL; designated frozen at the Phase-11
+ * gate). The fp uncontrolled twin now HAS a consumer: the fp QRAM cell
+ * copy-out (`emitCopyOutIfDirectMeasure`, QramLowering) for a
+ * direct-sole-measure fp `arr[q]` load, exactly as the integer copy
+ * serves the integer cell copy-out — so it is NOT dead ABI. Storing a
+ * theta/phi-derived fp value into a memory cell is faithful reversible
+ * QRAM (a CNOT-copy of the fp BIT PATTERN preserves the phase in the
+ * JOINT amplitude; only the value's local reduced state goes mixed =
+ * entanglement, not the Rule-7 dephasing — bd
+ * [38t2-fp-cell-commits-to-basis-sound]); the angle fence
+ * (declineTaintedAngle) still declines any fp cell value used as a
+ * rotation arg-1 angle. The §3 tripwires re-audited for 38t2:
+ * ChainWalk's isCopyOutSink `starts_with("cqrt_copy_")` prefix already
+ * admits a 2-arg fp copy; LoopLowering's copyFn > 64 fence is
+ * fp-orthogonal (`fadd` never reaches the integer in-place rail path).
  * Same no-arrow void trace convention as cqrt_cswap; both handle args
  * print as h<N>:
  *     "cqrt_copy_<W>(h<src>, h<dst>)".
@@ -274,6 +282,10 @@ void cqrt_copy_i8 (int32_t src, int32_t dst);
 void cqrt_copy_i16(int32_t src, int32_t dst);
 void cqrt_copy_i32(int32_t src, int32_t dst);
 void cqrt_copy_i64(int32_t src, int32_t dst);
+void cqrt_copy_f16(int32_t src, int32_t dst);   /* bd 38t2 — fp cell copy-out */
+void cqrt_copy_f32(int32_t src, int32_t dst);
+void cqrt_copy_f64(int32_t src, int32_t dst);
+void cqrt_copy_f80(int32_t src, int32_t dst);
 
 /* -----------------------------------------------------------------
  * Controlled reversible basis copy (Phase 4.4, PRD Part IV §16.3 — the
@@ -488,30 +500,50 @@ int32_t cqrt_qram_alloc_i8 (int32_t count);
 int32_t cqrt_qram_alloc_i16(int32_t count);
 int32_t cqrt_qram_alloc_i32(int32_t count);
 int32_t cqrt_qram_alloc_i64(int32_t count);
+int32_t cqrt_qram_alloc_f16(int32_t count);   /* bd 38t2 — fp-as-bitpattern cell */
+int32_t cqrt_qram_alloc_f32(int32_t count);
+int32_t cqrt_qram_alloc_f64(int32_t count);
+int32_t cqrt_qram_alloc_f80(int32_t count);
 
 int32_t cqrt_qram_load_i1 (int32_t arr, int32_t idx);
 int32_t cqrt_qram_load_i8 (int32_t arr, int32_t idx);
 int32_t cqrt_qram_load_i16(int32_t arr, int32_t idx);
 int32_t cqrt_qram_load_i32(int32_t arr, int32_t idx);
 int32_t cqrt_qram_load_i64(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_f16(int32_t arr, int32_t idx);   /* bd 38t2 */
+int32_t cqrt_qram_load_f32(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_f64(int32_t arr, int32_t idx);
+int32_t cqrt_qram_load_f80(int32_t arr, int32_t idx);
 
 void cqrt_qram_load_i1_unc (int32_t out, int32_t arr, int32_t idx);
 void cqrt_qram_load_i8_unc (int32_t out, int32_t arr, int32_t idx);
 void cqrt_qram_load_i16_unc(int32_t out, int32_t arr, int32_t idx);
 void cqrt_qram_load_i32_unc(int32_t out, int32_t arr, int32_t idx);
 void cqrt_qram_load_i64_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_f16_unc(int32_t out, int32_t arr, int32_t idx);   /* bd 38t2 */
+void cqrt_qram_load_f32_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_f64_unc(int32_t out, int32_t arr, int32_t idx);
+void cqrt_qram_load_f80_unc(int32_t out, int32_t arr, int32_t idx);
 
 void cqrt_qram_store_i1 (int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i8 (int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i16(int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i32(int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i64(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f16(int32_t arr, int32_t idx, int32_t val);   /* bd 38t2 */
+void cqrt_qram_store_f32(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f64(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f80(int32_t arr, int32_t idx, int32_t val);
 
 void cqrt_qram_store_i1_unc (int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i8_unc (int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i16_unc(int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i32_unc(int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i64_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f16_unc(int32_t arr, int32_t idx, int32_t val);   /* bd 38t2 */
+void cqrt_qram_store_f32_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f64_unc(int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f80_unc(int32_t arr, int32_t idx, int32_t val);
 
 /* -----------------------------------------------------------------
  * iw81.7 — path-predicate-GUARDED Shadow store (tainted-index memop UNDER
@@ -540,12 +572,20 @@ void cqrt_qram_store_i8_controlled (int32_t pred, int32_t arr, int32_t idx, int3
 void cqrt_qram_store_i16_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i32_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i64_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f16_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);   /* bd 38t2 */
+void cqrt_qram_store_f32_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f64_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f80_controlled(int32_t pred, int32_t arr, int32_t idx, int32_t val);
 
 void cqrt_qram_store_i1_controlled_unc (int32_t pred, int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i8_controlled_unc (int32_t pred, int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i16_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i32_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
 void cqrt_qram_store_i64_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f16_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);   /* bd 38t2 */
+void cqrt_qram_store_f32_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f64_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
+void cqrt_qram_store_f80_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
 
 /* -----------------------------------------------------------------
  * Free — width-irrelevant (handle-typed only). Declared but unused;

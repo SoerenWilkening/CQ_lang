@@ -104,10 +104,23 @@ bool widthHasReversibleCopy(llvm::StringRef w);
 // `ControlledSymbols::copyControlledFpFn` minter): the fp-DATA un-staging is
 // select-NARROW, so every other fp-under-control consumer keeps its own fence
 // and this predicate must not migrate into them. f128 / unknown / integer
-// widths are false. There is NO uncontrolled `cqrt_copy_f<W>` (no consumer —
-// dead ABI is forbidden); when one is added, re-audit LoopLowering's copyFn
-// null-fence and ChainWalk's `isCopyOutSink` prefix test (the §3 tripwire).
+// widths are false. As of bd 38t2 an uncontrolled `cqrt_copy_f<W>` DOES exist
+// (its consumer is the fp cell copy-out via `widthHasQramCell` below); the §3
+// tripwires (LoopLowering's copyFn null-fence, ChainWalk's `isCopyOutSink`
+// prefix) were re-audited then and hold (fp is orthogonal to the loop in-place
+// rail; the `starts_with("cqrt_copy_")` prefix admits a 2-arg fp copy).
 bool abiWidthHasControlledFpCopy(llvm::StringRef w);
+
+// True iff `w` is a QRAM/Shadow memory CELL element width (bd 38t2): the integer
+// cell set {i1,i8,i16,i32,i64} PLUS the fp-as-bitpattern cell widths
+// {f16,f32,f64,f80}. A memory cell stores a basis BIT PATTERN, so an fp cell
+// store/load is a faithful reversible CNOT-copy (the f64-angle miscompile family
+// is fenced separately by `declineTaintedAngle` — a cell value used as a rotation
+// arg-1 angle still declines). CELL-LOCAL: the ONLY callers are QramLowering's
+// two element-width gates and the WidthDispatch qram / cell-copy resolvers. Do
+// NOT reuse it for the integer-only data-mux/select/switch/loop paths, which keep
+// `widthHasReversibleCopy` (whose fp null IS the live f64-angle classifier there).
+bool widthHasQramCell(llvm::StringRef w);
 
 // "No template for opcode" diagnostic, generalized from the original
 // `BinaryOperator`-only helper to any `Instruction*`. Same

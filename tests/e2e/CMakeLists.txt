@@ -972,6 +972,20 @@ add_test(NAME e2e-slice-qram-store
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store.expected.log")
 
+# bd 38t2: the fp-as-bitpattern memory cell. `arr[q] = x` where `x = cq_theta(...)` is
+# an fp superposition CARRIER and `q` a tainted index, then `v = arr[p]`; lowers to
+# cqrt_qram_alloc_f64 + cqrt_qram_store_f64 (of the carrier) + cqrt_qram_load_f64 +
+# cqrt_measure_f64. Storing a coherent fp carrier is faithful reversible QRAM (bd
+# [38t2-fp-cell-commits-to-basis-sound]); the width only tags the symbol (all i32
+# handles). main-resident, so no reversal is emitted.
+add_test(NAME e2e-slice-qram-store-fp
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_fp.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_fp.expected.log")
+
 # Phase 7.5 bug sxuk: a LOCAL alloca array built+loaded in a NON-main helper whose
 # loaded value is measured INSIDE the helper. Unlike slice_qram_store (main-resident,
 # no reversal), the local scratch MUST uncompute: the loaded value is copied out to a
@@ -986,6 +1000,20 @@ add_test(NAME e2e-slice-qram-local-uncompute
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_uncompute.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_uncompute.expected.log")
+
+# bd 38t2 (Rule-13 clearance link-proof): the FP twin of slice-qram-local-uncompute.
+# The only layer that LINKS: proves the fp reversal family — the UNCONTROLLED
+# cqrt_copy_f64 copy-out (frozen-designate, its live consumer) + cqrt_qram_load_f64_unc
+# + cqrt_qram_store_f64_unc — resolves, signature-matches, and traces in faithful
+# Bennett LIFO order (store_unc BEFORE the index rails' Ry† + free) through a real
+# link. Byte-parallel to the integer golden with width-tagged symbols.
+add_test(NAME e2e-slice-qram-local-uncompute-fp
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_uncompute_fp.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_uncompute_fp.expected.log")
 
 # iw81.7: a tainted-index Shadow STORE UNDER tainted control — the guarded store.
 # The GUARDED symbol cqrt_qram_store_i32_controlled reverses via _controlled_unc with
@@ -1028,6 +1056,20 @@ add_test(NAME e2e-slice-qram-guarded-store-multi
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_multi.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_multi.expected.log")
+
+# bd 38t2 (Rule-13 clearance link-proof): the FP twin of slice-qram-guarded-store.
+# The only layer that LINKS: proves the GUARDED fp store family —
+# cqrt_qram_store_f64_controlled + _controlled_unc (flag STILL LIVE at the reverse,
+# THEN the flag strip: the store-reverse-BEFORE-strip pred-lifetime invariant) plus
+# the cqrt_copy_f64 copy-out — resolves, signature-matches, and byte-diffs through a
+# real link. Byte-parallel to the integer guarded golden with width-tagged symbols.
+add_test(NAME e2e-slice-qram-guarded-store-fp
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_fp.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_guarded_store_fp.expected.log")
 
 # Phase 7.3 Increment 1 (test_C_libtooling-799w.1): the rolled-in-place Case A
 # phase accumulator. A classically-bounded loop over an in-place persistent rail
