@@ -62,6 +62,31 @@ Harness link-gaps (not real blockers): `ldexp` (asm alias), `lgamma` (wrapper cl
 `tgamma` (no double body in openlibm). *Not one* decline is a missing opcode. Raw per-fn
 results: `inject_results.json`; machine-readable scoreboard: `injection_summary.json`.
 
+### The census→tickets bridge (`3c6m.9` — a decline is a bug ticket, never terminal)
+
+The owner operating rule (2026-07-09, bd `libm-campaign-pivot`) is: **accept needs
+proof, but a DECLINE BECOMES A BUG TICKET.** `census_to_tickets.py` mechanizes it —
+an **idempotent reconciler** that burns every genuine-injection decline above into one
+bd issue under the campaign epic (`test_C_libtooling-3c6m`), keyed by metadata
+`census_fn` (marker label `libm-census-decline`):
+
+```
+python3 tools/library_coverage/census_to_tickets.py            # DRY-RUN: print the plan
+python3 tools/library_coverage/census_to_tickets.py --apply    # file/refresh the bd tickets
+python3 tools/library_coverage/inject_census.py --file-tickets  # census + bridge in one shot
+```
+
+Each ticket is a `bug` carrying the **decline diagnostic string**, the **blocking source
+line** (the diagnostic's `!dbg` `<file>:<line>:<col>` — real only when the openlibm corpus
+was built with `-g`; otherwise stated as unavailable), the **lever** classification
+(`lever-*` label + `census_lever` metadata), and a **depends-on edge to the lever ticket**
+(L2→`3c6m.11`, L4→`3c6m.12`, L5-qrom→`3c6m.13`, L6→`3c6m.14`; L5-shadow has no dedicated
+child yet) so the decline is `bd ready`-blocked until that lever lands. Re-runs **update in
+place, never duplicate**; a fn that flips decline→`COMPILES` **closes** its ticket, a
+re-decline **reopens** it, and a lever **reclassification** re-labels + re-points the edge.
+Only `bucket=="injection"` declines are ticketed — the moot hardware-kept (recognition wins)
+and harness-gap fns are deliberately excluded.
+
 ---
 
 > **Point-in-time findings, 2026-07-02** (this box: x86_64 darwin, Homebrew LLVM 19,

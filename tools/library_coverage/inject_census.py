@@ -18,10 +18,14 @@ scratch dir; set BC below to where you build the bitcode corpus):
     git clone --depth 1 https://github.com/JuliaMath/openlibm <scratch>/openlibm
     mkdir <scratch>/bc
     for c in <scratch>/openlibm/src/*.c <scratch>/openlibm/bsdsrc/*.c; do
-      clang -O1 -emit-llvm -c -I openlibm/include -I openlibm/src \
+      clang -g -O1 -emit-llvm -c -I openlibm/include -I openlibm/src \
             -I openlibm/amd64 -I openlibm/bsdsrc "$c" -o bc/$(basename ${c%.c}).bc
     done   # ~217/242 compile; arch-asm/dup files fail-skip (expected)
-    BC=<scratch>/bc  python3 inject_census.py     # -> inject_results.json
+           # `-g` (3c6m.9): line tables so a body blocker's decline diagnostic
+           # carries a REAL openlibm !dbg <file>:<line>:<col> (the ticket bridge's
+           # "blocking source line"). Metadata-only at -O1 -> scoreboard unchanged.
+    BC=<scratch>/bc  python3 inject_census.py                  # -> inject_results.json
+    BC=<scratch>/bc  python3 inject_census.py --file-tickets   # + burn declines to bd (3c6m.9)
 
 CAVEATS (same as the manual census): fenv-dependent bodies (nearbyint) and a few
 self-referential/link-closure gaps (lgamma, sqrt/scalbn kernels) surface as
@@ -99,13 +103,23 @@ double probe(void){{
 }}'''
         (td/"probe.c").write_text(src)
         pbc = td/"probe.bc"
-        r = subprocess.run([CLANG, "-O1", f"-fno-builtin-{fn}", "-emit-llvm", "-c",
+        # `-g`: probe.c carries line tables so the decline diagnostic's !dbg
+        # `<file>:<line>:<col>` is real for a probe-side blocker. For an openlibm
+        # BODY blocker the source line comes from the CORPUS's debug info — build
+        # bc/ with `clang -g -O1 …` (see REPRODUCE above) to populate it; without a
+        # -g corpus the inlined blocker prints `<unknown>:0:0` (captured honestly by
+        # census_to_tickets.py as "no !dbg source location"). `-g` is metadata-only
+        # at -O1 and does not perturb codegen / the scoreboard (3c6m.9).
+        r = subprocess.run([CLANG, "-O1", "-g", f"-fno-builtin-{fn}", "-emit-llvm", "-c",
                             str(td/"probe.c"), "-o", str(pbc)], capture_output=True, text=True)
         if r.returncode != 0:
-            return ("build-fail", r.stderr.strip().split('\n')[-1][:80], [])
+            # 3c6m.9: the early-return arity MUST match the 5-tuple normal path —
+            # a probe build-fail / link-fail (the docstring's expected fail-skips)
+            # would otherwise ValueError-unpack and abort the whole census.
+            return ("build-fail", r.stderr.strip().split('\n')[-1][:80], [], "", "")
         linked, err = closure_link(pbc, defmap, td)
         if linked is None:
-            return ("link-fail", err, [])
+            return ("link-fail", err, [], "", "")
         inl = td/"inl.bc"
         # p119 (3c6m.8): a `scalarizer` pass AFTER default<O2> de-vectorizes the
         # SLP output (fmuladd.v2f64 / reduce.or) so a surviving <2 x double> op
@@ -133,10 +147,21 @@ double probe(void){{
         r = subprocess.run([OPT, "-load-pass-plugin", str(PASS), "-passes=cq-lowering",
                             "-S", str(inl), "-o", "/dev/null"], capture_output=True, text=True)
         lowered = (r.returncode == 0)
-        diag = ""
+        diag = ""; diag_full = ""; blocking_loc = ""
         if not lowered:
             for line in r.stderr.split('\n'):
-                if 'error' in line.lower(): diag = line.split('in function')[-1][:90]; break
+                if 'error' in line.lower():
+                    diag = line.split('in function')[-1][:90]   # UNCHANGED: keeps
+                    # `detail`/lever byte-identical to the pre-3c6m.9 census.
+                    # 3c6m.9: ALSO keep the full diagnostic line and parse its !dbg
+                    # `<file>:<line>:<col>` (the token between `error: ` and
+                    # `: in function`) as the blocking source line for the ticket
+                    # bridge. `<unknown>:0:0` (no debug info) -> left empty.
+                    diag_full = line.strip()
+                    m = re.search(r'error:\s*(.*?):\s*in function', line)
+                    if m and not m.group(1).strip().startswith('<unknown>'):
+                        blocking_loc = m.group(1).strip()
+                    break
         # census rule: COMPILES iff fully inlined AND cq-lowering exit 0
         if lowered and fully_inlined:
             status = "COMPILES"
@@ -145,7 +170,7 @@ double probe(void){{
         else:
             status = "decline"
         detail = (diag or f"surviving:{sorted(set(surv))[:3]}").strip()
-        return (status, detail, surv_llvm)
+        return (status, detail, surv_llvm, diag_full, blocking_loc)
 
 # The census's double functions (INJECTION-CENSUS.md). Each maps to its C arg-type
 # list; arg0 is ALWAYS the tainted `double q`, the rest are classical consts. p119
@@ -224,13 +249,16 @@ if __name__ == "__main__":
     print(f"indexed {len(defmap)} symbols across bc/", file=sys.stderr)
     results = {}
     for fn, argtypes in FUNCS.items():
-        status, detail, surv_llvm = run_one(fn, argtypes, defmap)
+        status, detail, surv_llvm, diag_full, blocking_loc = run_one(fn, argtypes, defmap)
         bucket = bucket_of(fn)
         lever = lever_of(detail) if (bucket == "injection" and status == "decline") else ""
         if bucket == "harness-gap":
             detail = f"{HARNESS_GAP[fn]} [{detail}]"
         results[fn] = {"status": status, "detail": detail, "surviving_llvm": surv_llvm,
-                       "bucket": bucket, "lever": lever}
+                       "bucket": bucket, "lever": lever,
+                       # 3c6m.9 ticket-bridge fields: the full diagnostic line + its
+                       # parsed !dbg source location (empty when the corpus lacks -g).
+                       "diag_full": diag_full, "blocking_loc": blocking_loc}
         note = f"  [llvm survivors: {surv_llvm}]" if surv_llvm else ""
         tag = f" ⟨{bucket}{('/'+lever) if lever else ''}⟩"
         print(f"  {fn:12s} {status:22s}{tag}  {detail}{note}", file=sys.stderr)
@@ -294,3 +322,11 @@ if __name__ == "__main__":
     surv = {fn: r["surviving_llvm"] for fn, r in results.items() if r["surviving_llvm"]}
     print(f"\n=== SURVIVING @llvm.* (hardware keep-set under injection) ===", file=sys.stderr)
     for fn, s in surv.items(): print(f"  {fn:12s} {s}", file=sys.stderr)
+
+    # 3c6m.9 — the census→tickets bridge. `--file-tickets` burns every genuine-
+    # injection decline into a bd work-queue ticket (owner rule: a decline BECOMES A
+    # BUG TICKET). Off by default so a plain census run stays read-only (writes only
+    # the JSON scoreboards); opt in explicitly to mutate the tracker.
+    if "--file-tickets" in sys.argv:
+        print("\n=== filing/refreshing bd tickets (3c6m.9 bridge) ===", file=sys.stderr)
+        subprocess.run([sys.executable, str(HERE / "census_to_tickets.py"), "--apply"])
