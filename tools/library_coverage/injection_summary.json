@@ -1,5 +1,5 @@
 {
-  "injection_compiles": 15,
+  "injection_compiles": 17,
   "injection_candidates": 32,
   "injection_compiles_fns": [
     "acosh",
@@ -9,6 +9,8 @@
     "atanh",
     "cbrt",
     "cosh",
+    "erf",
+    "erfc",
     "exp",
     "expm1",
     "log",
@@ -26,6 +28,8 @@
     "atanh",
     "cbrt",
     "cosh",
+    "erf",
+    "erfc",
     "exp",
     "expm1",
     "log",
@@ -36,32 +40,22 @@
     "tanh"
   ],
   "declines_by_lever": {
-    "L6-nested-ctrl": [
+    "L2-closure": [
       "acos",
       "asin",
+      "cos",
+      "exp2",
+      "fdim",
+      "fmod",
       "hypot",
       "logb",
-      "pow",
-      "remainder"
-    ],
-    "L5-shadow": [
-      "cos",
       "nextafter",
+      "pow",
+      "remainder",
+      "scalbln",
+      "scalbn",
       "sin",
       "tan"
-    ],
-    "L4-fp-select": [
-      "fdim",
-      "scalbln",
-      "scalbn"
-    ],
-    "L5-qrom": [
-      "exp2",
-      "fmod"
-    ],
-    "L2-closure": [
-      "erf",
-      "erfc"
     ]
   },
   "hardware_kept_stems": [

@@ -1,128 +1,83 @@
 {
   "fabs": {
-    "status": "COMPILES",
-    "detail": "surviving:[]",
-    "surviving_llvm": [
-      "llvm.fabs.f64"
-    ],
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "",
-    "blocking_loc": ""
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "nearbyint": {
-    "status": "exit0-but-uninlined",
-    "detail": "surviving:['fegetenv']",
-    "surviving_llvm": [
-      "llvm.lifetime.end.p0",
-      "llvm.lifetime.start.p0",
-      "llvm.rint.f64"
-    ],
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "",
-    "blocking_loc": ""
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "copysign": {
-    "status": "COMPILES",
-    "detail": "surviving:[]",
-    "surviving_llvm": [
-      "llvm.fabs.f64"
-    ],
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "",
-    "blocking_loc": ""
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "sqrt": {
     "status": "decline",
     "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
-    "surviving_llvm": [
-      "llvm.ctlz.i32",
-      "llvm.fmuladd.f64",
-      "llvm.fshl.i32"
-    ],
+    "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_sqrt.c:130:10: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-    "blocking_loc": "src/e_sqrt.c:130:10"
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "fma": {
     "status": "decline",
-    "detail": "probe double (): cq specialization: floating-point quantum argument or return has no reve",
-    "surviving_llvm": [
-      "llvm.fabs.f64",
-      "llvm.fmuladd.f64",
-      "llvm.lifetime.end.p0",
-      "llvm.lifetime.start.p0"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_fma.c:276:15: in function probe double (): cq specialization: floating-point quantum argument or return has no reversible copy",
-    "blocking_loc": "src/s_fma.c:276:15"
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "sin": {
     "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value stored to memory",
-    "surviving_llvm": [
-      "llvm.copysign.f64",
-      "llvm.floor.f64",
-      "llvm.fmuladd.f64",
-      "llvm.lifetime.end.p0",
-      "llvm.lifetime.start.p0",
-      "llvm.smax.i32",
-      "llvm.umin.i32",
-      "llvm.vector.reduce.or.v4i32"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L5-shadow",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_rem_pio2.c:174:9: in function probe double (): cq taint escape: tainted value stored to memory",
-    "blocking_loc": "src/e_rem_pio2.c:174:9"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "cos": {
     "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value stored to memory",
-    "surviving_llvm": [
-      "llvm.copysign.f64",
-      "llvm.floor.f64",
-      "llvm.fmuladd.f64",
-      "llvm.lifetime.end.p0",
-      "llvm.lifetime.start.p0",
-      "llvm.smax.i32",
-      "llvm.umin.i32",
-      "llvm.vector.reduce.or.v4i32"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L5-shadow",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_rem_pio2.c:174:9: in function probe double (): cq taint escape: tainted value stored to memory",
-    "blocking_loc": "src/e_rem_pio2.c:174:9"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "tan": {
     "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value stored to memory",
-    "surviving_llvm": [
-      "llvm.copysign.f64",
-      "llvm.fabs.f64",
-      "llvm.floor.f64",
-      "llvm.fmuladd.f64",
-      "llvm.lifetime.end.p0",
-      "llvm.lifetime.start.p0",
-      "llvm.smax.i32",
-      "llvm.umin.i32",
-      "llvm.vector.reduce.or.v4i32"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L5-shadow",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_rem_pio2.c:174:9: in function probe double (): cq taint escape: tainted value stored to memory",
-    "blocking_loc": "src/e_rem_pio2.c:174:9"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "exp": {
     "status": "COMPILES",
@@ -138,15 +93,13 @@
   },
   "exp2": {
     "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction",
-    "surviving_llvm": [
-      "llvm.fmuladd.f64"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L5-qrom",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_exp2.c:376:6: in function probe double (): cq taint escape: tainted value reaches an unsupported instruction",
-    "blocking_loc": "src/s_exp2.c:376:6"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "log": {
     "status": "COMPILES",
@@ -186,30 +139,23 @@
   },
   "asin": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.fabs.f64",
-      "llvm.fmuladd.f64",
-      "llvm.sqrt.f64"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_asin.c:77:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/e_asin.c:77:5"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "acos": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.fmuladd.f64",
-      "llvm.sqrt.f64"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_acos.c:71:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/e_acos.c:71:5"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "atan": {
     "status": "COMPILES",
@@ -336,15 +282,13 @@
   },
   "logb": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.fabs.f64"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_logb.c:36:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_logb.c:36:5"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "cbrt": {
     "status": "COMPILES",
@@ -361,57 +305,53 @@
   },
   "floor": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_floor.c:39:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_floor.c:39:5"
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "trunc": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_trunc.c:39:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_trunc.c:39:5"
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "round": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.floor.f64"
-    ],
-    "bucket": "moot-hardware-kept",
-    "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_round.c:41:6: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_round.c:41:6"
-  },
-  "ceil": {
-    "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_ceil.c:39:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_ceil.c:39:5"
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
+  },
+  "ceil": {
+    "status": "decline",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
+    "bucket": "moot-hardware-kept",
+    "lever": "",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "rint": {
     "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction",
-    "surviving_llvm": [
-      "llvm.fabs.f64"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_rint.c:53:10: in function probe double (): cq taint escape: tainted value reaches an unsupported instruction",
-    "blocking_loc": "src/s_rint.c:53:10"
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "atan2": {
     "status": "COMPILES",
@@ -429,111 +369,93 @@
   },
   "pow": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.fabs.f64",
-      "llvm.sqrt.f64"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_pow.c:115:21: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/e_pow.c:115:21"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "remainder": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.fabs.f64"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_remainder.c:49:21: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/e_remainder.c:49:21"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "fdim": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: control flow under quantum control",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
     "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L4-fp-select",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_fdim.c:44:1: in function probe double (): cq controlled lowering: control flow under quantum control",
-    "blocking_loc": "src/s_fdim.c:44:1"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "hypot": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.fabs.f64",
-      "llvm.fmuladd.f64",
-      "llvm.sqrt.f64",
-      "llvm.umax.i32",
-      "llvm.umin.i32"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_hypot.c:67:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/e_hypot.c:67:5"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "fmod": {
     "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction",
-    "surviving_llvm": [
-      "llvm.fshl.i32"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L5-qrom",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_fmod.c:48:10: in function probe double (): cq taint escape: tainted value reaches an unsupported instruction",
-    "blocking_loc": "src/e_fmod.c:48:10"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "fmax": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_fmax.c:44:28: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_fmax.c:44:28"
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "fmin": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
     "lever": "",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_fmin.c:44:28: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_fmin.c:44:28"
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "nextafter": {
     "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value stored to memory",
-    "surviving_llvm": [
-      "llvm.lifetime.end.p0",
-      "llvm.lifetime.start.p0"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L5-shadow",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_nextafter.c:69:8: in function probe double (): cq taint escape: tainted value stored to memory",
-    "blocking_loc": "src/s_nextafter.c:69:8"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "scalbn": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.copysign.f64"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L4-fp-select",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_scalbn.c:39:13: in function probe double (): cq controlled lowering: control flow under quantum control",
-    "blocking_loc": "src/s_scalbn.c:39:13"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "ldexp": {
     "status": "decline",
@@ -547,44 +469,44 @@
   },
   "scalbln": {
     "status": "decline",
-    "detail": "probe double (): cq controlled lowering: control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.copysign.f64"
-    ],
+    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L4-fp-select",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_scalbn.c:39:13: in function probe double (): cq controlled lowering: control flow under quantum control",
-    "blocking_loc": "src/s_scalbn.c:39:13"
+    "lever": "L2-closure",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "erf": {
-    "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
       "llvm.copysign.f64",
-      "llvm.exp.f64",
       "llvm.fabs.f64",
-      "llvm.fmuladd.f64"
+      "llvm.fmuladd.f64",
+      "llvm.maxnum.f64",
+      "llvm.minnum.f64"
     ],
     "bucket": "injection",
-    "lever": "L2-closure",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_erf.c:238:8: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-    "blocking_loc": "src/s_erf.c:238:8"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "erfc": {
-    "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
-      "llvm.exp.f64",
       "llvm.fabs.f64",
-      "llvm.fmuladd.f64"
+      "llvm.fmuladd.f64",
+      "llvm.maxnum.f64",
+      "llvm.minnum.f64"
     ],
     "bucket": "injection",
-    "lever": "L2-closure",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_erf.c:296:12: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-    "blocking_loc": "src/s_erf.c:296:12"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "lgamma": {
     "status": "decline",

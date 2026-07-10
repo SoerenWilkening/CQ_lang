@@ -423,6 +423,36 @@ add_test(NAME e2e-slice-branchless-cosh
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cosh.expected.log")
 
+# bd 3c6m.27/.28 / L2-closure: erf + erfc — the deepest branchy libm body
+# (openlibm s_erf.c: FIVE |x| segments + an exp-based asymptotic). Rendered
+# branchless via the atan pattern: CONSTANT-operand fp selects producing 0/1
+# regime weights that feed an UNCONDITIONAL weighted sum (so clang -O1 cannot
+# branch-ify the expensive exp regime onto one arm), over openlibm's own minimax
+# coefficients. The exp asymptotic uses the L2-closure spine — exp(y) via the
+# branchless expm1 leaf (exp(y)=2^n*(expm1(r)+1), r near 0). Each slice inlines a
+# static twin of BOTH the body AND the leaf, kept in sync with the corpus twins
+# tools/library_coverage/branchless/{erf,erfc,expm1}.c. erf <=1.0 ulp; erfc <=2 ulp
+# over the bulk, worst ~4.0 in the R2/R3 breakpoint band (a cluster of 4-double-off
+# hard-to-round points; inherent to openlibm's R3 exp-asymptotic; the corpus worst by a
+# hair, acosh ~3.97) vs
+# a 50-digit mpmath reference (host erfl/erfcl are several ulp off and OVERSTATE).
+# The ONLY layer that LINKS the whole erf/erfc opcode stream.
+add_test(NAME e2e-slice-branchless-erf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_erf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_erf.expected.log")
+
+add_test(NAME e2e-slice-branchless-erfc
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_erfc.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_erfc.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.

@@ -11,15 +11,52 @@
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
 > [`libm-coverage-source-injection-rule`]. **The authoritative live figure is
-> `injection_summary.json`: 15/32 injection-covered — `exp`, `log`, `log2`, `log10`,
+> `injection_summary.json`: 17/32 injection-covered — `exp`, `log`, `log2`, `log10`,
 > `cbrt`, `log1p`, `expm1`, `atan`, `tanh`, `atanh`, `acosh`, `asinh`, `atan2`, `sinh`,
-> `cosh`, all authored-branchless, disjoint from the recognition floor** (0/32 → 2/32
-> `exp`/`log` first landing, → 5/32 `cbrt`/`log1p`/`expm1`, → 7/32 `atan`/`tanh`, → 9/32
-> `log2`/`log10` (all bd `3c6m.10` L1), → 15/32 `atanh`/`acosh`/`asinh`/`atan2`/`sinh`/`cosh`
-> (bd `3c6m.10` **L2-closure**: compound bodies that call an L1 leaf)).
+> `cosh`, `erf`, `erfc`, all authored-branchless, disjoint from the recognition floor**
+> (0/32 → 2/32 `exp`/`log` first landing, → 5/32 `cbrt`/`log1p`/`expm1`, → 7/32
+> `atan`/`tanh`, → 9/32 `log2`/`log10` (all bd `3c6m.10` L1), → 15/32
+> `atanh`/`acosh`/`asinh`/`atan2`/`sinh`/`cosh`, → 17/32 `erf`/`erfc` (bd `3c6m.10`
+> **L2-closure**: compound bodies that call an L1 leaf)).
 > The dated sections below are kept as HISTORY (each frozen at its landing's number,
 > not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
 > refresh.
+
+## Re-measurement 2026-07-10 (3c6m.27/.28 — erf/erfc L2-closure; 15/32 → 17/32)
+
+> HISTORY, frozen at 17/32. Live number: `injection_summary.json`.
+
+**`erf` (3c6m.27), `erfc` (3c6m.28)** flip decline→`COMPILES` via authored branchless
+bodies (`branchless/{erf,erfc}.c`; e2e twins `tests/e2e/slice_branchless_{erf,erfc}.c`).
+These were the **deepest** branchy libm body — openlibm `s_erf.c` dispatches FIVE `|x|`
+segments in a nested `if`-ladder plus an exp-based asymptotic (the L2/L6 blocker at
+`s_erf.c:238`, the `__ieee754_exp` call). The branchless rendering keeps openlibm's OWN
+minimax coefficients but replaces the range ladder with the **atan pattern**:
+CONSTANT-operand fp selects producing 0/1 regime **weights** that feed an
+**unconditional weighted sum** (`w1*R1 + w2*R2 + w3*Rexp`, exactly one weight = 1), so
+every regime formula is evaluated on a **clamped** (finite) argument and clang -O1
+**cannot branch-ify** the expensive exp regime onto one arm — the tainted-control decline
+this body exists to avoid. `0*finite = 0` keeps the blend bit-exact. The exp asymptotic
+rides the **L2-closure spine**: `exp(y) = 2^n*(expm1(r)+1)` with `r` reduced near 0 (where
+`expm1` is ≤2 ulp and the `+1` never cancels) and the `2^n` scale **split** into two
+half-exponents so a large-negative `y` underflows cleanly to 0 (the `erfc` tail) — it
+CALLS `expm1`, resolved by the census closure-link to `branchless/expm1.c` and inlined
+(mirrors `sinh`/`cosh`→`expm1`). Accuracy (worst **true**-ulp `|g-ref|/ulp(ref)` vs a
+**50-digit mpmath** reference composing the branchless `expm1` leaf — host `erfl`/`erfcl`
+are themselves several ulp off here and OVERSTATE the error): `erf` ≤1.0 (rounding-limited),
+`erfc` ≤2 over the bulk rising to a worst ~4.0 ulp in the R2/R3 breakpoint band (a CLUSTER of
+4-double-off hard-to-round points; observed peak 3.99 ulp at `x=1.3371898113192247`, dps=400), 0 in-domain NaN/Inf. That `erfc` worst is INHERENT —
+openlibm's R3 exp-asymptotic is ~3 ulp in double there even with a perfectly-rounded exp
+(the log-then-exp of `R/S` amplifies rounding), and the branchless `expm1` leaf adds ~1;
+the corpus worst by a hair (`acosh` ~3.97). **Methodology (Rule 10):** the >3-ulp band is
+INVISIBLE to random/uniform sampling (peaks ~2.75) — only ulp-scale CONTIGUOUS-double grids
+spanning the breakpoint band expose it — any single named double UNDERSTATES the ceiling
+(adversarial Rule-13 caught this twice: 3.0->3.73->~4.0 as the scan widened). `te` is clamped to `[1.25,30]` so
+`z²` never overflows: `erf=±1` for all `|x|∈[6,DBL_MAX]`, `erfc=0` in the underflow tail
+(≥~27.23). UNSPECIFIED edges (per-file headers): inf/NaN (te-clamp gives the correct ±1 /
+0,2 limits, NOT NaN). Surviving `@llvm.*` are keep-set leaves only
+(`fmuladd`/`fabs`/`copysign`/`minnum`/`maxnum`). Census diff is surgical: only these 2
+flip. ZERO core-pass/runtime-YAML change; pure additive corpus + e2e + docs.
 
 ## Re-measurement 2026-07-10 (3c6m.23/.18/.20/.22/.45/.26 — L2-closure batch; 9/32 → 15/32)
 

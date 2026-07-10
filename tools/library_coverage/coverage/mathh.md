@@ -6,7 +6,7 @@ The C standard math library — the flagship demonstrator: pure, mostly-total nu
 
 **Compiles: 45/174 (25.9%)** — of which **golden-verified: 45/174 (25.9%)**.
 
-> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. **Injection-covered** — genuine library bodies compiled by source injection (Rule 18), the number the libm campaign actually moves — is **7/32** of the `math.h` double surface ([source-injection census](../INJECTION-CENSUS.md)). The two sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
+> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. **Injection-covered** — genuine library bodies compiled by source injection (Rule 18), the number the libm campaign actually moves — is **17/32** of the `math.h` double surface ([source-injection census](../INJECTION-CENSUS.md)). The two sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
 
 | Bucket | Count | Meaning |
 |---|---|---|
