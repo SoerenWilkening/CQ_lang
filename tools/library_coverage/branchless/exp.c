@@ -6,9 +6,10 @@
 
    Select-based range reduction (ONE fp-data select for the round bias — the
    kjd1 accept shape), Horner exp(r) on the reduced range, 2^n scale via
-   INSERT_WORDS. Accuracy is the 3c6m.7 truncated-Taylor level (~1e-7 relative
-   on the reduced range); overflow/underflow/NaN are UNSPECIFIED — the branchy
-   special cases a branchless injected body deliberately omits.
+   INSERT_WORDS. Accuracy is the 3c6m.7 degree-5-Taylor level — worst-case ≈3e-6
+   relative (measured 3.24e-6; the dropped r^6/720 ≈ 2e-6 at the |r| ≤ ln2/2
+   reduced-range edge, far smaller near r=0); overflow/underflow/NaN are UNSPECIFIED
+   — the branchy special cases a branchless injected body deliberately omits.
 
    Compile like the openlibm corpus: `clang -g -O1 -emit-llvm -c`, NO
    -fno-builtin (see branchless/log.c for the inliner-compatibility reason). */

@@ -1,8 +1,10 @@
 {
-  "injection_compiles": 19,
+  "injection_compiles": 23,
   "injection_candidates": 32,
   "injection_compiles_fns": [
+    "acos",
     "acosh",
+    "asin",
     "asinh",
     "atan",
     "atan2",
@@ -13,6 +15,7 @@
     "erf",
     "erfc",
     "exp",
+    "exp2",
     "expm1",
     "log",
     "log10",
@@ -20,10 +23,13 @@
     "log2",
     "sin",
     "sinh",
+    "tan",
     "tanh"
   ],
   "authored_branchless_fns": [
+    "acos",
     "acosh",
+    "asin",
     "asinh",
     "atan",
     "atan2",
@@ -34,6 +40,7 @@
     "erf",
     "erfc",
     "exp",
+    "exp2",
     "expm1",
     "log",
     "log10",
@@ -41,13 +48,11 @@
     "log2",
     "sin",
     "sinh",
+    "tan",
     "tanh"
   ],
   "declines_by_lever": {
     "L2-closure": [
-      "acos",
-      "asin",
-      "exp2",
       "fdim",
       "fmod",
       "hypot",
@@ -56,8 +61,7 @@
       "pow",
       "remainder",
       "scalbln",
-      "scalbn",
-      "tan"
+      "scalbn"
     ]
   },
   "hardware_kept_stems": [

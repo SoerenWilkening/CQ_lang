@@ -11,19 +11,71 @@
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
 > [`libm-coverage-source-injection-rule`]. **The authoritative live figure is
-> `injection_summary.json`: 19/32 injection-covered — `exp`, `log`, `log2`, `log10`,
+> `injection_summary.json`: 23/32 injection-covered — `exp`, `log`, `log2`, `log10`,
 > `cbrt`, `log1p`, `expm1`, `atan`, `tanh`, `atanh`, `acosh`, `asinh`, `atan2`, `sinh`,
-> `cosh`, `erf`, `erfc`, `sin`, `cos`, all authored-branchless, disjoint from the
-> recognition floor**
+> `cosh`, `erf`, `erfc`, `sin`, `cos`, `tan`, `exp2`, `asin`, `acos`, all
+> authored-branchless, disjoint from the recognition floor**
 > (0/32 → 2/32 `exp`/`log` first landing, → 5/32 `cbrt`/`log1p`/`expm1`, → 7/32
 > `atan`/`tanh`, → 9/32 `log2`/`log10` (all bd `3c6m.10` L1), → 15/32
 > `atanh`/`acosh`/`asinh`/`atan2`/`sinh`/`cosh`, → 17/32 `erf`/`erfc` (bd `3c6m.10`
 > **L2-closure**: compound bodies that call an L1 leaf), → 19/32 `sin`/`cos` (bd
 > `3c6m.44`/`.25` **L1**: branchless Cody–Waite range reduction + fp-quadrant
-> const-selects, replacing openlibm's Payne–Hanek scratch-store)).
+> const-selects, replacing openlibm's Payne–Hanek scratch-store), → 23/32
+> `tan`/`exp2`/`asin`/`acos` (bd `3c6m.46`/`.30`/`.19`/`.17`: `tan` **L1** reuses the
+> sin/cos reduction as a k_sin/k_cos ratio, `exp2`/`asin`/`acos` **L2-closure** to the
+> `exp`/`atan` leaves)).
 > The dated sections below are kept as HISTORY (each frozen at its landing's number,
 > not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
 > refresh.
+
+## Re-measurement 2026-07-10 (3c6m.46/.30/.19/.17 — tan L1 + exp2/asin/acos L2-closure; 19/32 → 23/32)
+
+> HISTORY, frozen at 23/32. Live number: `injection_summary.json`.
+
+**`tan` (3c6m.46), `exp2` (3c6m.30), `asin` (3c6m.19), `acos` (3c6m.17)** flip
+decline→`COMPILES` via authored branchless bodies (`branchless/{tan,exp2,asin,acos}.c`;
+e2e twins `tests/e2e/slice_branchless_{tan,exp2,asin,acos}.c`). All four are single-arg,
+so the multi-arg combination gap (`atan2`-class) does not apply.
+
+**`tan` (L1, blocker L5-shadow)** shares sin/cos's blocker — openlibm's Payne–Hanek
+scratch-store (`e_rem_pio2.c:174`) — and its fix: **reuse** the register-only branchless
+Cody–Waite reduction of `branchless/sin.c` and reconstruct `tan` from the **same**
+`k_sin`/`k_cos` kernels as a **ratio** (no `k_tan` table, no scratch). `tan` is
+**π-periodic**, so only the **parity** of `fn = rint(x·2/π)` matters: `fn` even → `S/C`,
+`fn` odd → `−C/S` (`S=sin(y)`, `C=cos(y)`, `y∈[-π/4,π/4]`). `par = fn − 2·floor(fn/2)` is
+derived in fp (keep-set `floor`, no `fptosi`), and the ratio operands are built by **one
+constant-operand fp select** feeding two **unconditional weighted sums** with **one**
+division — `num = useT·S + (1−useT)·(−C)`, `den = useT·C + (1−useT)·S`, `tan = num/den`
+(the sin/atan/erf const-select-weight pattern; a libm body mints no `Rz`/`Ry`, so the kjd1
+fp-DATA select accept shape applies). `den = 0` occurs **only** at the true poles (odd
+multiples of `π/2`, `y=0`, odd parity) where `num = −1 ≠ 0`, so `tan → ±∞` (the correct
+pole limit) — never `0/0`, so **no in-domain NaN**; the `fmax`/`fmin` clamp keeps `S`,`C`
+finite for every double.
+
+**`exp2` (L2-closure, blocker L5-qrom)** — openlibm's `s_exp2.c` reads a 256-entry accuracy
+table `tbl[i0]` with a data-dependent index (`s_exp2.c:376`, the QROM surface). Dissolved
+with `exp2(x) = 2^x = exp(x·ln2)`, calling the branchless `exp` leaf (closure-resolved to
+`branchless/exp.c`, inlined). No table.
+
+**`asin` (L2-closure, blocker L6-nested-ctrl)** — openlibm's `e_asin.c` branches on `|x|`
+with a nested `if` ladder (`e_asin.c:77`). Dissolved with `asin(x) = atan(x/√(1−x²))`,
+calling the branchless `atan` leaf. **The `fmax` clamp kills the `|x|→1` NaN**: `s =
+√(fmax(1−x², 1e-300))`, so at `x=1` the argument is `1e150` — a large **finite** value in
+atan's big segment (`atan(1e150) ≈ π/2`), never the `+∞` that would make the branchless
+atan return NaN. So `asin` is finite and NaN-free across `[−1,1]`. atan is odd and carries
+the sign, so no extra copysign.
+
+**`acos` (L2-closure)** — `acos(x) = π/2 − asin(x)`, a two-level closure (asin → atan). All
+range/NaN care lives in asin's clamp; acos is one subtraction on top.
+
+Accuracy is a **sanity check, not a gate** (trace-only runtime; bd
+`libm-accuracy-is-sanity-not-gate`): spot-checked at `x=0.5` — `tan=0.5463`, `exp2=√2`,
+`asin=π/6`, `acos=π/3`, each matching host libm. Every lowered trace is a **pure
+value-embedding** — 1 `ry`, 1 `measure`, **0 controlled rotations**
+(`cqrt_rz`/`cnot`/`toffoli`/`cswap`), balanced fp-select flag mint/strip/free pairs (`tan`
+1 / `exp2` 1 / `asin` 5 / `acos` 5, matching each body's select count). Surviving `@llvm.*`
+are keep-set leaves only. Census diff is surgical: only these 4 flip. ZERO
+core-pass/runtime-YAML change; pure additive corpus + e2e + docs.
 
 ## Re-measurement 2026-07-10 (3c6m.44/.25 — sin/cos L1; 17/32 → 19/32)
 

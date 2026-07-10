@@ -477,6 +477,50 @@ add_test(NAME e2e-slice-branchless-cos
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cos.expected.log")
 
+# bd 3c6m.46/.30/.19/.17: tan + exp2 + asin + acos by SOURCE INJECTION, all
+# single-arg. tan (L1) REUSES the sin/cos Cody–Waite reduction and reconstructs
+# tan as a RATIO of the SAME k_sin/k_cos kernels — tan is π-periodic so only the
+# PARITY of fn matters (fn even → S/C, fn odd → −C/S), built by ONE constant-operand
+# fp select feeding two UNCONDITIONAL weighted sums + ONE division (no k_tan table,
+# no Payne–Hanek scratch → sidesteps the L5-shadow blocker). exp2/asin/acos are
+# L2-closures: exp2(x)=exp(x·ln2) (dissolves the s_exp2 table, L5-qrom), asin(x)=
+# atan(x/√(fmax(1−x²,TINY))) (the fmax clamp kills the |x|→1 NaN — dissolves the
+# e_asin nested-if ladder, L6-nested-ctrl), acos(x)=π/2−asin(x). Each slice inlines
+# static twins of its leaf(s); corpus twins tools/library_coverage/branchless/
+# {tan,exp2,exp,asin,acos,atan}.c — keep textually in sync. All four lower to PURE
+# value-embedding traces (0 controlled rotations, balanced flag frees, one measure).
+add_test(NAME e2e-slice-branchless-tan
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tan.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tan.expected.log")
+
+add_test(NAME e2e-slice-branchless-exp2
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_exp2.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_exp2.expected.log")
+
+add_test(NAME e2e-slice-branchless-asin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_asin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_asin.expected.log")
+
+add_test(NAME e2e-slice-branchless-acos
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_acos.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_acos.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.
