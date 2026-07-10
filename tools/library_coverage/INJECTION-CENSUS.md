@@ -10,13 +10,18 @@
 > function now **declines loudly** without injection. This census is therefore no
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
-> [`libm-coverage-source-injection-rule`]. **The authoritative current figures are the
-> [2026-07-10 L1 re-measurement](#re-measurement-2026-07-10-3c6m10--l1-authored-branchless-bodies-the-authoritative-numbers)
-> below (2/32 injection-covered — `exp`, `log`, both authored-branchless — disjoint from the
-> recognition floor);** the older dated sections are kept as history. Re-run
+> [`libm-coverage-source-injection-rule`]. **The authoritative live figure is
+> `injection_summary.json`: 7/32 injection-covered — `exp`, `log`, `cbrt`, `log1p`,
+> `expm1`, `atan`, `tanh`, all authored-branchless, disjoint from the recognition
+> floor** (0/32 → 2/32 `exp`/`log` first landing, → 5/32 `cbrt`/`log1p`/`expm1`,
+> → 7/32 `atan`/`tanh`, bd `3c6m.10` L1). The dated sections below are kept as
+> HISTORY (each frozen at its landing's number, not updated in place). Re-run
 > `inject_census.py` over a fresh openlibm corpus to refresh.
 
-## Re-measurement 2026-07-10 (3c6m.10 — L1 authored branchless bodies; the AUTHORITATIVE numbers)
+## Re-measurement 2026-07-10 (3c6m.10 — L1 authored branchless bodies; FIRST landing snapshot)
+
+> HISTORY, frozen at the first landing (2/32). Superseded by later L1 batches
+> (→5/32 `cbrt`/`log1p`/`expm1`, →7/32 `atan`/`tanh`). Live number: `injection_summary.json`.
 
 **First scoreboard movement: 0/32 → 2/32.** The L1 spine (bd `3c6m.10`) landed its first
 authored body — a **branchless double `log`** — and promoted the proven 3c6m.7 branchless

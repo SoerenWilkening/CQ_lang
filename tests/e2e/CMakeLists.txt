@@ -310,6 +310,37 @@ add_test(NAME e2e-slice-branchless-expm1
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_expm1.expected.log")
 
+# bd 3c6m.21 / L1: atan by SOURCE INJECTION. openlibm's 5-segment |x| branch
+# ladder (the L6-nested-ctrl blocker) replaced by Cephes's 3-segment reduction
+# rendered branchless: the reduced arg xr = N/D is ONE unconditional division
+# with N,D from CONSTANT-operand selects (so clang keeps them selects, not
+# branches — a division on a bare select arm would SimplifyCFG-branch-ify into
+# tainted control flow), then Cephes's degree-4/5 rational R(z) as straight-line
+# fmuladd + fdiv, with the sign on a copysign keep-set leaf. 5 fp-select merges.
+# <=1.15 ulp vs host libm (dense breakpoint + tail sweeps).
+add_test(NAME e2e-slice-branchless-atan
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan.expected.log")
+
+# bd 3c6m.47 / L1: tanh by SOURCE INJECTION. openlibm's 4-range |x| branch (the
+# L6-nested-ctrl blocker) replaced by its OWN |x|<1 kernel made valid for all x:
+# tanh(|x|) = -t/(t+2), t = expm1(-2|x|). expm1 is inlined (the branchless kernel,
+# == branchless/expm1.c). Saturation is branchless via fmin(|x|,20) — which ALSO
+# keeps expm1's arg in-domain (load-bearing for correctness, not just speed). The
+# only control is expm1's round-bias fp select. <=3.1 ulp vs host libm (worst
+# ~3.05 near |x|=0.125, inherited from the branchless expm1 kernel).
+add_test(NAME e2e-slice-branchless-tanh
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tanh.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tanh.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.

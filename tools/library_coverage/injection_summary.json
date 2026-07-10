@@ -1,33 +1,35 @@
 {
-  "injection_compiles": 5,
+  "injection_compiles": 7,
   "injection_candidates": 32,
   "injection_compiles_fns": [
+    "atan",
     "cbrt",
     "exp",
     "expm1",
     "log",
-    "log1p"
+    "log1p",
+    "tanh"
   ],
   "authored_branchless_fns": [
+    "atan",
     "cbrt",
     "exp",
     "expm1",
     "log",
-    "log1p"
+    "log1p",
+    "tanh"
   ],
   "declines_by_lever": {
     "L6-nested-ctrl": [
       "acos",
       "asin",
-      "atan",
       "atanh",
       "hypot",
       "log10",
       "log2",
       "logb",
       "pow",
-      "remainder",
-      "tanh"
+      "remainder"
     ],
     "L2-closure": [
       "acosh",

@@ -212,17 +212,18 @@
     "blocking_loc": "src/e_acos.c:71:5"
   },
   "atan": {
-    "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
+      "llvm.copysign.f64",
       "llvm.fabs.f64",
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_atan.c:81:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_atan.c:81:5"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "sinh": {
     "status": "decline",
@@ -254,17 +255,19 @@
     "blocking_loc": "src/e_cosh.c:68:7"
   },
   "tanh": {
-    "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
+      "llvm.copysign.f64",
       "llvm.fabs.f64",
-      "llvm.fmuladd.f64"
+      "llvm.fmuladd.f64",
+      "llvm.minnum.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_tanh.c:57:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_tanh.c:57:5"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "asinh": {
     "status": "decline",

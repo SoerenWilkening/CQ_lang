@@ -82,7 +82,7 @@ Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches t
 | [`math.h`](tools/library_coverage/coverage/mathh.md) | 45/174 (26%) | 45/174 (26%) | 18/174 (10%) | 42 | 45 | 84 | 3 |
 | [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 3/39 (8%) | 6 | 0 | 0 | 8 |
 
-> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. **Injection-covered** — genuine library bodies compiled by source injection (Rule 18), the number the libm campaign actually moves — is **5/32** of the `math.h` double surface ([source-injection census](tools/library_coverage/INJECTION-CENSUS.md)). The two sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
+> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. **Injection-covered** — genuine library bodies compiled by source injection (Rule 18), the number the libm campaign actually moves — is **7/32** of the `math.h` double surface ([source-injection census](tools/library_coverage/INJECTION-CENSUS.md)). The two sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
 
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->
@@ -93,10 +93,10 @@ The table above is the **recognition floor** — the hardware-backed intrinsic s
 any more (Rule 18 retired that). The genuine library functions are measured **separately and
 disjointly** by [`INJECTION-CENSUS.md`](tools/library_coverage/INJECTION-CENSUS.md) — the
 **source-injection** strategy (inject a real libm body's source so LLVM inlines it to stock
-opcodes *before* the pass, no per-function template). Current: **5 / 32 genuine `math.h`
-library bodies compile** — `exp`, `log`, `cbrt`, `log1p`, and `expm1`, all via **hand-authored
-branchless soft-bodies** (`tools/library_coverage/branchless/`, bd `3c6m.10` L1; each with a
-linked+diffed e2e golden slice and validated ≤2 ulp vs host libm). The off-the-shelf openlibm
+opcodes *before* the pass, no per-function template). Current: **7 / 32 genuine `math.h`
+library bodies compile** — `exp`, `log`, `cbrt`, `log1p`, `expm1`, `atan`, and `tanh`, all via
+**hand-authored branchless soft-bodies** (`tools/library_coverage/branchless/`, bd `3c6m.10` L1;
+each with a linked+diffed e2e golden slice and validated ≤3.1 ulp vs host libm). The off-the-shelf openlibm
 baseline remains 0/32: every branchy libm body declines on
 **tainted control flow**, **scratch memory**, a **nested transcendental**, or a
 **dynamic-index table read**, and *not one* on a missing opcode (the opcode surface is
