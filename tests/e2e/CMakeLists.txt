@@ -680,6 +680,37 @@ add_test(NAME e2e-slice-branchless-hypot-qq
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_hypot_qq.expected.log")
 
+# bd 3c6m Batch B (.40): pow by SOURCE INJECTION — the L2-closure pow(x,y) =
+# exp2(y·log2(x)) [x>0], dissolving openlibm e_pow.c's sign/parity/overflow ladder +
+# table-driven log/exp. BOTH leaves are authored branchless (log2 fully branchless;
+# exp2→exp contributes ONE fp round-bias select — the kjd1 accept shape). Golden per
+# accepted taint mask (qc/cq/qq — 3c6m.48); each is a PURE value-embedding (0 controlled
+# rotations, single balanced flag, one measure). Injection scoreboard 30→31. Corpus twins
+# tools/library_coverage/branchless/{pow,log2,exp2,exp}.c — keep textually in sync.
+add_test(NAME e2e-slice-branchless-pow
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow.expected.log")
+
+add_test(NAME e2e-slice-branchless-pow-cq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow_cq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow_cq.expected.log")
+
+add_test(NAME e2e-slice-branchless-pow-qq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow_qq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow_qq.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.
