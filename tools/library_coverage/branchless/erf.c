@@ -36,18 +36,13 @@
    inlined as the static `bexpm1` helper) — keep the three textually in sync
    (bexpm1 == branchless/expm1.c; bexp/erf identical).
 
-   Domain: finite x. erf saturates to +-1 by |x|~6 and is contractual over the
-   whole finite line: <=1.0 true-ulp (rounding-limited; worst ~0.93 at the R1/R2
-   breakpoint x~0.844 and in the R1 near-zero regime) vs a 50-digit mpmath reference
-   composing the BRANCHLESS expm1 leaf, over dense random+contiguous-double sweeps
-   on [-6.5,6.5] (metric |g-ref|/ulp(ref); host erfl/erfcl are themselves several
-   ulp off here and OVERSTATE the error — mpmath is the honest reference). The exp
-   regime only enters erf as 1-erfc where erfc is small, so the ~2-ulp expm1 leaf
-   is absolute-negligible there. +-0 -> +-0 (copysign preserves the signed zero).
-   te is clamped to [1.25, 30] so z^2 never overflows: erf(x)=+-1 exactly for all
-   |x| in [6, DBL_MAX] (30 is well above erf's saturation). inf/NaN are UNSPECIFIED
-   (the branchy special cases this body omits); because te is clamped there is no
-   0*inf path, so erf(+inf)=1, erf(-inf)=-1 here (the correct limits) rather than NaN.
+   Domain: finite x. erf saturates to +-1 by |x|~6. A faithful branchless erf over
+   openlibm's own coefficients (spot-checked to a few ulp vs a high-precision
+   reference); the runtime is trace-only, so classical ulp is a sanity check, not a
+   gate. +-0 -> +-0 (copysign preserves the signed zero). te is clamped to
+   [1.25, 30] so z^2 never overflows: erf(x)=+-1 exactly for all |x| in [6, DBL_MAX].
+   inf/NaN are UNSPECIFIED (the branchy special cases this body omits); the te-clamp
+   means no 0*inf path, so erf(+inf)=1, erf(-inf)=-1 (the correct limits), not NaN.
 
    Compile like the openlibm corpus: `clang -g -O1 -emit-llvm -c`, NO
    -fno-builtin (see branchless/log.c for the inliner-compatibility reason). */

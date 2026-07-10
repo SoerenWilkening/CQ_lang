@@ -20,15 +20,10 @@
    mirroring sinh/cosh->expm1); here the branchless expm1 kernel is inlined as the
    static `bexpm1` helper. fabs/fmin/fmax are the hardware keep-set leaves.
 
-   Domain: finite x; erfc(x>0) underflows to 0 by x~27.23. Accuracy vs a 50-digit
-   mpmath reference (host erfcl is ~7 ulp off in the asymptotic and OVERSTATES):
-   <=2 ulp over the bulk, worst ~4.0 ulp in the R2/R3 breakpoint band (a cluster of
-   4-double-off hard-to-round points, peak 3.99 at x=1.3371898113192247; INHERENT to
-   openlibm's R3 exp-asymptotic, ~3 ulp in double even with a perfect exp, +~1 from
-   the branchless leaf; corpus worst by a hair, acosh ~3.97). Only ulp-scale
-   contiguous-double grids across the breakpoint band expose it (random sampling
-   peaks ~2.75; any single named double understates it). +-0 -> 1.
-   inf/NaN UNSPECIFIED (te-clamp gives the correct 0/2 limits, not NaN).
+   Domain: finite x; erfc(x>0) underflows to 0 by x~27.23. A faithful branchless
+   erfc over openlibm's coefficients (spot-checked to a few ulp; trace-only runtime,
+   so classical ulp is a sanity check, not a gate). +-0 -> 1. inf/NaN UNSPECIFIED
+   (te-clamp gives the correct 0/2 limits, not NaN).
 
    The corpus twins are tools/library_coverage/branchless/{erfc,expm1}.c (same
    bodies) — keep the three textually in sync (bexpm1 == branchless/expm1.c;

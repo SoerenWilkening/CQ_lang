@@ -41,20 +41,13 @@ rides the **L2-closure spine**: `exp(y) = 2^n*(expm1(r)+1)` with `r` reduced nea
 `expm1` is ≤2 ulp and the `+1` never cancels) and the `2^n` scale **split** into two
 half-exponents so a large-negative `y` underflows cleanly to 0 (the `erfc` tail) — it
 CALLS `expm1`, resolved by the census closure-link to `branchless/expm1.c` and inlined
-(mirrors `sinh`/`cosh`→`expm1`). Accuracy (worst **true**-ulp `|g-ref|/ulp(ref)` vs a
-**50-digit mpmath** reference composing the branchless `expm1` leaf — host `erfl`/`erfcl`
-are themselves several ulp off here and OVERSTATE the error): `erf` ≤1.0 (rounding-limited),
-`erfc` ≤2 over the bulk rising to a worst ~4.0 ulp in the R2/R3 breakpoint band (a CLUSTER of
-4-double-off hard-to-round points; observed peak 3.99 ulp at `x=1.3371898113192247`, dps=400), 0 in-domain NaN/Inf. That `erfc` worst is INHERENT —
-openlibm's R3 exp-asymptotic is ~3 ulp in double there even with a perfectly-rounded exp
-(the log-then-exp of `R/S` amplifies rounding), and the branchless `expm1` leaf adds ~1;
-the corpus worst by a hair (`acosh` ~3.97). **Methodology (Rule 10):** the >3-ulp band is
-INVISIBLE to random/uniform sampling (peaks ~2.75) — only ulp-scale CONTIGUOUS-double grids
-spanning the breakpoint band expose it — any single named double UNDERSTATES the ceiling
-(adversarial Rule-13 caught this twice: 3.0->3.73->~4.0 as the scan widened). `te` is clamped to `[1.25,30]` so
-`z²` never overflows: `erf=±1` for all `|x|∈[6,DBL_MAX]`, `erfc=0` in the underflow tail
-(≥~27.23). UNSPECIFIED edges (per-file headers): inf/NaN (te-clamp gives the correct ±1 /
-0,2 limits, NOT NaN). Surviving `@llvm.*` are keep-set leaves only
+(mirrors `sinh`/`cosh`→`expm1`). Both are faithful branchless renderings over openlibm's
+own coefficients, spot-checked to a few ulp (the runtime is trace-only, so classical ulp
+is a sanity check on the injected body, NOT a coverage gate — the gate is `decline→COMPILES`
++ the e2e link/diff). 0 in-domain NaN/Inf. `te` is clamped to `[1.25,30]` so `z²` never
+overflows: `erf=±1` for all `|x|∈[6,DBL_MAX]`, `erfc=0` in the underflow tail (≥~27.23);
+inf/NaN UNSPECIFIED (te-clamp gives the correct ±1 / 0,2 limits, NOT NaN). Surviving
+`@llvm.*` are keep-set leaves only
 (`fmuladd`/`fabs`/`copysign`/`minnum`/`maxnum`). Census diff is surgical: only these 2
 flip. ZERO core-pass/runtime-YAML change; pure additive corpus + e2e + docs.
 

@@ -26,10 +26,10 @@
    two INSERT/EXTRACT bitcasts (low-word clear + 2^n scale) lower as injected
    opcodes; the surviving selects are the atan-style const-operand fp selects.
 
-   Domain: finite x; erf saturates to +-1 by |x|~6. <=1.0 true-ulp (rounding-
-   limited) vs a 50-digit mpmath reference over dense sweeps on [-6.5,6.5] (host
-   erfl OVERSTATES). +-0 -> +-0. inf/NaN UNSPECIFIED (te-clamp gives the correct
-   +-1 limits, not NaN).
+   Domain: finite x; erf saturates to +-1 by |x|~6. A faithful branchless erf over
+   openlibm's coefficients (spot-checked to a few ulp; trace-only runtime, so
+   classical ulp is a sanity check, not a gate). +-0 -> +-0. inf/NaN UNSPECIFIED
+   (te-clamp gives the correct +-1 limits, not NaN).
 
    The corpus twins are tools/library_coverage/branchless/{erf,expm1}.c (same
    bodies) — keep the three textually in sync (bexpm1 == branchless/expm1.c;

@@ -30,25 +30,13 @@
    (bexpm1 == branchless/expm1.c; bexp/erfc identical).
 
    Domain: finite x. erfc(x>0) underflows to 0 by x~27.23 (below DBL_MIN); erfc(0)=1,
-   erfc(-x)=2-erfc(x). Accuracy vs a 50-digit mpmath reference composing the
-   BRANCHLESS expm1 leaf (metric |g-ref|/ulp(ref); host erfcl is itself ~7 ulp off
-   in the R4 asymptotic and OVERSTATES the error — mpmath is the honest reference):
-   <=2 ulp over the bulk of the domain, rising to a WORST of ~4.0 ulp in the R2/R3
-   breakpoint band, where a CLUSTER of hard-to-round points lands up to 4 doubles
-   (~4.0 fractional ulp; observed peak 3.99 at x=1.3371898113192247, dps=400) from
-   correctly-rounded. That worst is INHERENT, not a leaf artifact: openlibm's R3
-   exp-asymptotic formula is itself ~3 ulp in double there even with a
-   perfectly-rounded exp (the log-then-exp of the R/S rational amplifies rounding),
-   and the branchless expm1 leaf composition adds the last ~1 ulp. It is the corpus
-   worst by a hair (acosh ~3.97 ulp). METHODOLOGY NOTE (Rule 10): the >3-ulp band is INVISIBLE to
-   random/uniform sampling (which peaks at ~2.75) AND is UNDERSTATED by any single
-   named double (adjacent 4-double-off points range 3.7-4.0 fractional ulp) — the
-   ceiling is only pinned by dense ulp-scale CONTIGUOUS-double grids spanning the
-   whole breakpoint band. te is clamped to [1.25,30]
-   so the tail underflows cleanly (erfc=0 for x in [~27.23,DBL_MAX], correct)
-   instead of overflowing z^2. +-0 -> 1. inf/NaN are UNSPECIFIED (the branchy
-   special cases this body omits); because te is clamped there is no 0*inf path, so
-   erfc(+inf)=0, erfc(-inf)=2 here (the correct limits) rather than NaN.
+   erfc(-x)=2-erfc(x). A faithful branchless erfc over openlibm's own coefficients
+   (spot-checked to a few ulp vs a high-precision reference; the runtime is
+   trace-only, so classical ulp is a sanity check, not a gate). te is clamped to
+   [1.25,30] so the tail underflows cleanly (erfc=0 for x in [~27.23,DBL_MAX],
+   correct) instead of overflowing z^2. +-0 -> 1. inf/NaN are UNSPECIFIED (the
+   branchy special cases this body omits); the te-clamp means no 0*inf path, so
+   erfc(+inf)=0, erfc(-inf)=2 (the correct limits), not NaN.
 
    Compile like the openlibm corpus: `clang -g -O1 -emit-llvm -c`, NO
    -fno-builtin (see branchless/log.c for the inliner-compatibility reason). */

@@ -431,11 +431,8 @@ add_test(NAME e2e-slice-branchless-cosh
 # coefficients. The exp asymptotic uses the L2-closure spine — exp(y) via the
 # branchless expm1 leaf (exp(y)=2^n*(expm1(r)+1), r near 0). Each slice inlines a
 # static twin of BOTH the body AND the leaf, kept in sync with the corpus twins
-# tools/library_coverage/branchless/{erf,erfc,expm1}.c. erf <=1.0 ulp; erfc <=2 ulp
-# over the bulk, worst ~4.0 in the R2/R3 breakpoint band (a cluster of 4-double-off
-# hard-to-round points; inherent to openlibm's R3 exp-asymptotic; the corpus worst by a
-# hair, acosh ~3.97) vs
-# a 50-digit mpmath reference (host erfl/erfcl are several ulp off and OVERSTATE).
+# tools/library_coverage/branchless/{erf,erfc,expm1}.c. Faithful branchless erf/erfc
+# over openlibm's coefficients (spot-checked to a few ulp; runtime is trace-only).
 # The ONLY layer that LINKS the whole erf/erfc opcode stream.
 add_test(NAME e2e-slice-branchless-erf
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
