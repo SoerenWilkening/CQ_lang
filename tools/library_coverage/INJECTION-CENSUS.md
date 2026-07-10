@@ -11,12 +11,33 @@
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
 > [`libm-coverage-source-injection-rule`]. **The authoritative live figure is
-> `injection_summary.json`: 7/32 injection-covered — `exp`, `log`, `cbrt`, `log1p`,
-> `expm1`, `atan`, `tanh`, all authored-branchless, disjoint from the recognition
-> floor** (0/32 → 2/32 `exp`/`log` first landing, → 5/32 `cbrt`/`log1p`/`expm1`,
-> → 7/32 `atan`/`tanh`, bd `3c6m.10` L1). The dated sections below are kept as
-> HISTORY (each frozen at its landing's number, not updated in place). Re-run
-> `inject_census.py` over a fresh openlibm corpus to refresh.
+> `injection_summary.json`: 9/32 injection-covered — `exp`, `log`, `log2`, `log10`,
+> `cbrt`, `log1p`, `expm1`, `atan`, `tanh`, all authored-branchless, disjoint from the
+> recognition floor** (0/32 → 2/32 `exp`/`log` first landing, → 5/32
+> `cbrt`/`log1p`/`expm1`, → 7/32 `atan`/`tanh`, → 9/32 `log2`/`log10`, bd `3c6m.10` L1).
+> The dated sections below are kept as HISTORY (each frozen at its landing's number,
+> not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
+> refresh.
+
+## Re-measurement 2026-07-10 (3c6m.37/3c6m.35 — L1 log2/log10; 7/32 → 9/32)
+
+> HISTORY, frozen at 9/32. Live number: `injection_summary.json`.
+
+**`log2` (bd 3c6m.37) and `log10` (bd 3c6m.35)** flip decline→`COMPILES` via authored
+branchless bodies (`branchless/log2.c`, `branchless/log10.c`; e2e twins
+`tests/e2e/slice_branchless_log{2,10}.c`). openlibm's `e_log2.c`/`e_log10.c` are
+**already branchless in their core** — the *only* control flow was the leading
+special-case ladder (`x` subnormal / `x<=0` / inf / NaN / `x==1`, `src/e_log{2,10}.c:50`,
+the `L6-nested-ctrl` blocker). The bodies drop exactly those data-dependent branches, do
+the `{k,1+f}` reduction with the proven full-64-bit boundary-shift bit trick (== `log.c`,
+ZERO selects), then run openlibm's **verbatim** extra-precision combining: `log(m)=hi+lo`
+(`SET_LOW_WORD(hi,0)` as a bitcast+`and`+bitcast round-trip) scaled by `1/ln2` resp.
+`1/ln10` with `k` (resp. `k*log10(2)`) added by a Dekker two-sum. `log2` is **exact at
+powers of two** (`k` integer-exact, `m==1 ⇒ log2(m)==0`); ~1 ulp on finite normal `x>0`;
+`x<=0`/inf/NaN/subnormal UNSPECIFIED (the omitted branches). Surviving `@llvm.*`:
+`llvm.fmuladd.f64` only (keep-set leaf). This closes the `L6-nested-ctrl` census tickets
+for `log2`/`log10` (the leaf was never truly "nested control flow" — it was a removable
+special-case ladder around an already-branchless core).
 
 ## Re-measurement 2026-07-10 (3c6m.10 — L1 authored branchless bodies; FIRST landing snapshot)
 

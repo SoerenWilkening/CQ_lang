@@ -161,28 +161,28 @@
     "blocking_loc": ""
   },
   "log2": {
-    "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_log2.c:50:6: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/e_log2.c:50:6"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "log10": {
-    "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/e_log10.c:50:6: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/e_log10.c:50:6"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "asin": {
     "status": "decline",

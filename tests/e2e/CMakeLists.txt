@@ -341,6 +341,33 @@ add_test(NAME e2e-slice-branchless-tanh
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tanh.expected.log")
 
+# bd 3c6m.37 / 3c6m.35 / L1: log2 and log10 by SOURCE INJECTION. openlibm's
+# e_log2.c/e_log10.c are ALREADY branchless in their core — the ONLY control flow
+# is the leading special-case ladder (x subnormal / x<=0 / inf / NaN / x==1 —
+# src/e_log{2,10}.c:50, the L6-nested-ctrl census blocker). These bodies remove
+# exactly those data-dependent branches: the {k,1+f} decomposition is the
+# canonical full-64-bit boundary-shift bit trick (== branchless/log.c, ZERO
+# selects), then openlibm's VERBATIM extra-precision combining — log(m)=hi+lo
+# (SET_LOW_WORD via a bitcast+and+bitcast round-trip) scaled by 1/ln2 resp.
+# 1/ln10 and k (resp. k*log10(2)) added by a Dekker two-sum. All straight-line
+# fp + both p119.7 bitcast directions, zero control flow. ~1 ulp on finite
+# normal x>0; log2 is exact at powers of two (k integer-exact, m==1 => log2 m==0).
+add_test(NAME e2e-slice-branchless-log2
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log2.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log2.expected.log")
+
+add_test(NAME e2e-slice-branchless-log10
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log10.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log10.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.

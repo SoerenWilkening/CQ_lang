@@ -1,5 +1,5 @@
 {
-  "injection_compiles": 7,
+  "injection_compiles": 9,
   "injection_candidates": 32,
   "injection_compiles_fns": [
     "atan",
@@ -7,7 +7,9 @@
     "exp",
     "expm1",
     "log",
+    "log10",
     "log1p",
+    "log2",
     "tanh"
   ],
   "authored_branchless_fns": [
@@ -16,7 +18,9 @@
     "exp",
     "expm1",
     "log",
+    "log10",
     "log1p",
+    "log2",
     "tanh"
   ],
   "declines_by_lever": {
@@ -25,8 +29,6 @@
       "asin",
       "atanh",
       "hypot",
-      "log10",
-      "log2",
       "logb",
       "pow",
       "remainder"
