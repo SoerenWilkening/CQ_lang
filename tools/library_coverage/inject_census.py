@@ -308,13 +308,16 @@ def run_fn(fn, argtypes, defmap):
 # inject IDENTICALLY (same body shape, same blockers), so this double set is
 # representative of the full ~174 surface for the injection question.
 #
-# COMMITTED-SNAPSHOT NOTE (3c6m.48): a full run here needs the openlibm bitcode corpus
-# ($BC); without it the multi-double DECLINERS resolve as "unknown callee" instead of
-# their real body blockers, so the committed inject_results.json splices the per-mask
-# `combinations` for `atan2` ONLY (the sole COMPILES multi-arg, re-measured on this box).
-# The multi-double decliner entries keep pre-3c6m.48 single-line formatting until the
-# next full corpus run repopulates them — a formatting lag with NO scoreboard impact
-# (they stay declines). See INJECTION-CENSUS.md "Methodology 2026-07-10 (3c6m.48 …)".
+# COMMITTED-SNAPSHOT NOTE (3c6m.48, extended 3c6m.10 Batch A/B/C): a full run here needs
+# the openlibm bitcode corpus ($BC); without it a multi-double DECLINER resolves as
+# "unknown callee" instead of its real body blocker. So the committed inject_results.json
+# splices the per-mask `combinations` for EVERY COMPILES multi-arg fn (each re-measured
+# via the faithful mini-census: build_authored_bc + build_symbol_index + run_fn with
+# BC=emptydir so only branchless/ is indexed) — as of the 3c6m.10 batches those are
+# atan2, fdim, fmod, remainder, hypot, pow, nextafter. Any STILL-declining multi-double
+# fn keeps pre-3c6m.48 single-line formatting until it flips (a formatting lag with NO
+# scoreboard impact — it stays a decline). See INJECTION-CENSUS.md
+# "Methodology 2026-07-10 (3c6m.48 …)".
 FUNCS = {  # fn: [C arg types]  (arg0 tainted by default; all doubles are maskable)
  "fabs":["double"], "nearbyint":["double"], "copysign":["double","double"],
  "sqrt":["double"], "fma":["double","double","double"],

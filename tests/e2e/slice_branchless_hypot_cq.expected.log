@@ -1,0 +1,10 @@
+cqrt_alloc_f64(0.500000) -> h0
+cqrt_ry_f64(h0, 0.500000)
+cq_template_fabs_f64(h0) -> h1
+cq_template_fmax_f64_hl(h1, 0.500000) -> h2
+cq_template_fmin_f64_hl(h1, 0.500000) -> h3
+cq_template_fdiv_f64(h3, h2) -> h4
+cq_template_fma_f64_qql(h4, h4, 1.000000) -> h5
+cq_template_sqrt_f64(h5) -> h6
+cq_template_fmul_f64(h2, h6) -> h7
+cqrt_measure_f64(h7) -> 0.000000

@@ -11,10 +11,11 @@
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
 > [`libm-coverage-source-injection-rule`]. **The authoritative live figure is
-> `injection_summary.json`: 23/32 injection-covered — `exp`, `log`, `log2`, `log10`,
+> `injection_summary.json`: 30/32 injection-covered — `exp`, `log`, `log2`, `log10`,
 > `cbrt`, `log1p`, `expm1`, `atan`, `tanh`, `atanh`, `acosh`, `asinh`, `atan2`, `sinh`,
-> `cosh`, `erf`, `erfc`, `sin`, `cos`, `tan`, `exp2`, `asin`, `acos`, all
-> authored-branchless, disjoint from the recognition floor**
+> `cosh`, `erf`, `erfc`, `sin`, `cos`, `tan`, `exp2`, `asin`, `acos`, `logb`, `scalbn`,
+> `scalbln`, `fdim`, `fmod`, `remainder`, `hypot`, all authored-branchless, disjoint
+> from the recognition floor**
 > (0/32 → 2/32 `exp`/`log` first landing, → 5/32 `cbrt`/`log1p`/`expm1`, → 7/32
 > `atan`/`tanh`, → 9/32 `log2`/`log10` (all bd `3c6m.10` L1), → 15/32
 > `atanh`/`acosh`/`asinh`/`atan2`/`sinh`/`cosh`, → 17/32 `erf`/`erfc` (bd `3c6m.10`
@@ -23,7 +24,10 @@
 > const-selects, replacing openlibm's Payne–Hanek scratch-store), → 23/32
 > `tan`/`exp2`/`asin`/`acos` (bd `3c6m.46`/`.30`/`.19`/`.17`: `tan` **L1** reuses the
 > sin/cos reduction as a k_sin/k_cos ratio, `exp2`/`asin`/`acos` **L2-closure** to the
-> `exp`/`atan` leaves)).
+> `exp`/`atan` leaves), → 30/32 `logb`/`scalbn`/`scalbln`/`fdim`/`fmod`/`remainder`/
+> `hypot` (bd `3c6m.10` **Batch A**, `.38`/`.43`/`.42`/`.16`/`.32`/`.41`/`.33`:
+> keep-set identities + bit-field extracts that dissolve openlibm's special-case
+> control flow with ZERO selects — each 2-arg fn certified on all qc/cq/qq masks)).
 > The dated sections below are kept as HISTORY (each frozen at its landing's number,
 > not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
 > refresh.

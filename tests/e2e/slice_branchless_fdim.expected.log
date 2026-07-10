@@ -1,0 +1,5 @@
+cqrt_alloc_f64(0.500000) -> h0
+cqrt_ry_f64(h0, 0.500000)
+cq_template_fadd_f64_hl(h0, -0.500000) -> h1
+cq_template_fmax_f64_hl(h1, 0.000000) -> h2
+cqrt_measure_f64(h2) -> 0.000000

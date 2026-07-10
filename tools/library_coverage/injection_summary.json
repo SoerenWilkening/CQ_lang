@@ -1,5 +1,5 @@
 {
-  "injection_compiles": 23,
+  "injection_compiles": 30,
   "injection_candidates": 32,
   "injection_compiles_fns": [
     "acos",
@@ -17,10 +17,17 @@
     "exp",
     "exp2",
     "expm1",
+    "fdim",
+    "fmod",
+    "hypot",
     "log",
     "log10",
     "log1p",
     "log2",
+    "logb",
+    "remainder",
+    "scalbln",
+    "scalbn",
     "sin",
     "sinh",
     "tan",
@@ -42,10 +49,17 @@
     "exp",
     "exp2",
     "expm1",
+    "fdim",
+    "fmod",
+    "hypot",
     "log",
     "log10",
     "log1p",
     "log2",
+    "logb",
+    "remainder",
+    "scalbln",
+    "scalbn",
     "sin",
     "sinh",
     "tan",
@@ -53,15 +67,8 @@
   ],
   "declines_by_lever": {
     "L2-closure": [
-      "fdim",
-      "fmod",
-      "hypot",
-      "logb",
       "nextafter",
-      "pow",
-      "remainder",
-      "scalbln",
-      "scalbn"
+      "pow"
     ]
   },
   "hardware_kept_stems": [
