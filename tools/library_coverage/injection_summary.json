@@ -1,13 +1,19 @@
 {
-  "injection_compiles": 2,
+  "injection_compiles": 5,
   "injection_candidates": 32,
   "injection_compiles_fns": [
+    "cbrt",
     "exp",
-    "log"
+    "expm1",
+    "log",
+    "log1p"
   ],
   "authored_branchless_fns": [
+    "cbrt",
     "exp",
-    "log"
+    "expm1",
+    "log",
+    "log1p"
   ],
   "declines_by_lever": {
     "L6-nested-ctrl": [
@@ -15,11 +21,8 @@
       "asin",
       "atan",
       "atanh",
-      "cbrt",
-      "expm1",
       "hypot",
       "log10",
-      "log1p",
       "log2",
       "logb",
       "pow",

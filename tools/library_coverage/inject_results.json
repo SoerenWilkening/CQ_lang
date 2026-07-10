@@ -309,28 +309,28 @@
     "blocking_loc": "src/e_atanh.c:52:6"
   },
   "expm1": {
-    "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_expm1.c:143:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_expm1.c:143:5"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "log1p": {
-    "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_log1p.c:110:6: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_log1p.c:110:6"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "logb": {
     "status": "decline",
@@ -345,16 +345,17 @@
     "blocking_loc": "src/s_logb.c:36:5"
   },
   "cbrt": {
-    "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
+      "llvm.fabs.f64",
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl",
-    "body_source": "openlibm",
-    "diag_full": "error: src/s_cbrt.c:52:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
-    "blocking_loc": "src/s_cbrt.c:52:5"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "floor": {
     "status": "decline",

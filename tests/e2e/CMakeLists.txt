@@ -270,6 +270,46 @@ add_test(NAME e2e-slice-branchless-log
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log.expected.log")
 
+# bd 3c6m.10 / L1 (batch cbrt/log1p/expm1): three more source-injected
+# transcendentals landed by the branchless-authored body spine. Corpus twins in
+# tools/library_coverage/branchless/{cbrt,log1p,expm1}.c — each body kept in sync.
+
+# cbrt: FreeBSD/openlibm's s_cbrt.c, special-case branches removed. ZERO selects —
+# the rough seed "divides the exponent by 3" as an integer udiv on the punned high
+# word (hx/3 + Kahan B1), the sign rides a bit, the 23-bit round is add+mask on the
+# pattern; clang folds the sign-clear to the hardware-kept @llvm.fabs
+# (cq_template_fabs_f64). Both p119.7 bitcast directions, twice. <=1 ulp vs host libm.
+add_test(NAME e2e-slice-branchless-cbrt
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cbrt.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cbrt.expected.log")
+
+# log1p: openlibm's near-0 range-reduction branch thicket dissolved by an EXACT
+# Knuth 2Sum (1+x == u+c) + the branchless soft-log of u + the c/u correction —
+# ZERO selects, zero control flow. <=2 ulp vs host libm incl. the near-0 region.
+add_test(NAME e2e-slice-branchless-log1p
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log1p.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log1p.expected.log")
+
+# expm1: openlibm's per-k reconstruction thicket replaced by the single
+# cancellation-free identity 2^n*(1+expm1(r)) - 1 = scale*Pr + (scale-1), keeping
+# openlibm's accurate Q1..Q5 primary. The ONLY control is exp's round-bias fp
+# select (the kjd1 controlled-copy merge). <=2 ulp vs host libm incl. near 0.
+add_test(NAME e2e-slice-branchless-expm1
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_expm1.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_expm1.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.
