@@ -1,5 +1,5 @@
 {
-  "injection_compiles": 31,
+  "injection_compiles": 32,
   "injection_candidates": 32,
   "injection_compiles_fns": [
     "acos",
@@ -25,6 +25,7 @@
     "log1p",
     "log2",
     "logb",
+    "nextafter",
     "pow",
     "remainder",
     "scalbln",
@@ -58,6 +59,7 @@
     "log1p",
     "log2",
     "logb",
+    "nextafter",
     "pow",
     "remainder",
     "scalbln",
@@ -67,11 +69,7 @@
     "tan",
     "tanh"
   ],
-  "declines_by_lever": {
-    "L2-closure": [
-      "nextafter"
-    ]
-  },
+  "declines_by_lever": {},
   "hardware_kept_stems": [
     "ceil",
     "copysign",

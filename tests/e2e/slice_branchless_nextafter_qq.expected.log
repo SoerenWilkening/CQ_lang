@@ -1,0 +1,17 @@
+cqrt_alloc_f64(0.500000) -> h0
+cqrt_ry_f64(h0, 0.500000)
+cqrt_alloc_f64(0.500000) -> h1
+cqrt_ry_f64(h1, 0.500000)
+cq_template_bitcast_f64_to_i64(h0) -> h2
+cq_template_fcmp_ogt_f64(h1, h0) -> h3
+cq_template_zext_i1_to_i64(h3) -> h4
+cq_template_fcmp_olt_f64(h1, h0) -> h5
+cq_template_sext_i1_to_i64(h5) -> h6
+cq_template_add_i64(h4, h6) -> h7
+cq_template_lshr_i64_hl(h2, 62) -> h8
+cq_template_and_i64_hl(h8, 2) -> h9
+cq_template_sub_i64_lh(1, h9) -> h10
+cq_template_mul_i64(h7, h10) -> h11
+cq_template_add_i64(h2, h11) -> h12
+cq_template_bitcast_i64_to_f64(h12) -> h13
+cqrt_measure_f64(h13) -> 0.000000

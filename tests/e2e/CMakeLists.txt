@@ -711,6 +711,41 @@ add_test(NAME e2e-slice-branchless-pow-qq
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_pow_qq.expected.log")
 
+# bd 3c6m Batch C (.39): nextafter by SOURCE INJECTION — the L5-shadow wildcard. openlibm
+# s_nextafter.c is a ladder of data-dependent branches (x==y early-out, x==0 subnormal
+# seed, over/underflow flag raises). This body renders the one-ULP bit step FULLY
+# ARITHMETIC (dir = (y>x)-(y<x); step = dir*(1-2*sign(x)); bitcast(bits(x)+step)) — the
+# comparisons are fcmp->zext, the sign is a bit shift, no selects in the source. Golden per
+# accepted taint mask (qc/cq/qq — 3c6m.48): qc/qq are fully arithmetic (0 flags); cq (x
+# const) is where clang materializes bits(x)+up as an INTEGER const-select over the tainted
+# `up` flag — one balanced cqrt_copy_i64_controlled merge (the base-4.4 integer select
+# accept shape). Each a PURE value-embedding (0 controlled rotations, single measure).
+# Injection scoreboard 31→32 (COMPLETE injection surface). Corpus twin
+# tools/library_coverage/branchless/nextafter.c — keep textually in sync.
+add_test(NAME e2e-slice-branchless-nextafter
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter.expected.log")
+
+add_test(NAME e2e-slice-branchless-nextafter-cq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter_cq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter_cq.expected.log")
+
+add_test(NAME e2e-slice-branchless-nextafter-qq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter_qq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_nextafter_qq.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.

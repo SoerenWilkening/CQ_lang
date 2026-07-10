@@ -11,11 +11,14 @@
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
 > [`libm-coverage-source-injection-rule`]. **The authoritative live figure is
-> `injection_summary.json`: 31/32 injection-covered — `exp`, `log`, `log2`, `log10`,
-> `cbrt`, `log1p`, `expm1`, `atan`, `tanh`, `atanh`, `acosh`, `asinh`, `atan2`, `sinh`,
-> `cosh`, `erf`, `erfc`, `sin`, `cos`, `tan`, `exp2`, `asin`, `acos`, `logb`, `scalbn`,
-> `scalbln`, `fdim`, `fmod`, `remainder`, `hypot`, `pow`, all authored-branchless,
-> disjoint from the recognition floor**
+> `injection_summary.json`: **32/32 injection-covered — the COMPLETE injection surface**
+> (`declines_by_lever` is now empty): `exp`, `log`, `log2`, `log10`, `cbrt`, `log1p`,
+> `expm1`, `atan`, `tanh`, `atanh`, `acosh`, `asinh`, `atan2`, `sinh`, `cosh`, `erf`,
+> `erfc`, `sin`, `cos`, `tan`, `exp2`, `asin`, `acos`, `logb`, `scalbn`, `scalbln`,
+> `fdim`, `fmod`, `remainder`, `hypot`, `pow`, `nextafter`, all authored-branchless,
+> disjoint from the recognition floor** (the 3 remaining math.h doubles `ldexp`/
+> `lgamma`/`tgamma` are a separate HARNESS-GAP bucket — a census link-closure/self-
+> reference limitation, NOT injection body work — see `HARNESS_GAP` below)
 > (0/32 → 2/32 `exp`/`log` first landing, → 5/32 `cbrt`/`log1p`/`expm1`, → 7/32
 > `atan`/`tanh`, → 9/32 `log2`/`log10` (all bd `3c6m.10` L1), → 15/32
 > `atanh`/`acosh`/`asinh`/`atan2`/`sinh`/`cosh`, → 17/32 `erf`/`erfc` (bd `3c6m.10`
@@ -30,7 +33,11 @@
 > control flow with ZERO selects — each 2-arg fn certified on all qc/cq/qq masks),
 > → 31/32 `pow` (bd `3c6m.10` **Batch B**, `.40`: **L2-closure** `pow(x,y) =
 > exp2(y·log2(x))` [x>0] — dissolves e_pow.c's sign/parity/overflow ladder + table
-> log/exp into the authored `log2`/`exp2`(→`exp`) leaves, single fp round-bias flag)).
+> log/exp into the authored `log2`/`exp2`(→`exp`) leaves, single fp round-bias flag),
+> → **32/32** `nextafter` (bd `3c6m.10` **Batch C**, `.39`: the L5-shadow wildcard —
+> the one-ULP bit step rendered FULLY ARITHMETIC, `step = ((y>x)-(y<x))·(1-2·sign(x))`,
+> `bitcast(bits(x)+step)`; qc/qq lower with zero flags, cq materializes one integer
+> const-select over the tainted direction — **the injection surface is now complete**)).
 > The dated sections below are kept as HISTORY (each frozen at its landing's number,
 > not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
 > refresh.
