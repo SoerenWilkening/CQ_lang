@@ -255,6 +255,21 @@ add_test(NAME e2e-slice-branchless-exp
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_exp.expected.log")
 
+# bd 3c6m.10 / L1: the SECOND source-injected transcendental — a BRANCHLESS soft-log
+# (musl's core algorithm, special-case branches removed). Range reduction is the
+# canonical boundary-shift bit trick: pure i64 add/ashr/and on the punned bit pattern
+# (ZERO selects, zero control flow), round-tripping BOTH p119.7 bitcast directions
+# (f64->i64 EXTRACT_WORDS and i64->f64 INSERT_WORDS), then musl's minimax R(z) on
+# s=f/(2+f) as straight-line fp arithmetic (fdiv QQ + fmuladd keep-set contraction).
+# The golden pins the whole branchless-log reversible-opcode stream end-to-end.
+add_test(NAME e2e-slice-branchless-log
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_log.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.

@@ -1,7 +1,14 @@
 {
-  "injection_compiles": 0,
+  "injection_compiles": 2,
   "injection_candidates": 32,
-  "injection_compiles_fns": [],
+  "injection_compiles_fns": [
+    "exp",
+    "log"
+  ],
+  "authored_branchless_fns": [
+    "exp",
+    "log"
+  ],
   "declines_by_lever": {
     "L6-nested-ctrl": [
       "acos",
@@ -11,7 +18,6 @@
       "cbrt",
       "expm1",
       "hypot",
-      "log",
       "log10",
       "log1p",
       "log2",
@@ -35,15 +41,14 @@
       "sin",
       "tan"
     ],
-    "L5-qrom": [
-      "exp",
-      "exp2",
-      "fmod"
-    ],
     "L4-fp-select": [
       "fdim",
       "scalbln",
       "scalbn"
+    ],
+    "L5-qrom": [
+      "exp2",
+      "fmod"
     ]
   },
   "hardware_kept_stems": [
@@ -66,5 +71,5 @@
     "tgamma"
   ],
   "bitops_are_recognition": true,
-  "note": "Injection-covered = genuine library bodies (source injection, Rule 18); DISJOINT from recognition-covered (hardware keep-set, measured by probe.py)."
+  "note": "Injection-covered = genuine library bodies (source injection, Rule 18); DISJOINT from recognition-covered (hardware keep-set, measured by probe.py). Bodies are openlibm's, except authored_branchless_fns: hand-authored branchless soft-bodies (tools/library_coverage/branchless/, bd 3c6m.10 L1)."
 }

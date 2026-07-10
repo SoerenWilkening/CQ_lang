@@ -6,7 +6,10 @@
       "llvm.fabs.f64"
     ],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "nearbyint": {
     "status": "exit0-but-uninlined",
@@ -17,7 +20,10 @@
       "llvm.rint.f64"
     ],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "copysign": {
     "status": "COMPILES",
@@ -26,7 +32,10 @@
       "llvm.fabs.f64"
     ],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "sqrt": {
     "status": "decline",
@@ -37,7 +46,10 @@
       "llvm.fshl.i32"
     ],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_sqrt.c:130:10: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "src/e_sqrt.c:130:10"
   },
   "fma": {
     "status": "decline",
@@ -49,7 +61,10 @@
       "llvm.lifetime.start.p0"
     ],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_fma.c:276:15: in function probe double (): cq specialization: floating-point quantum argument or return has no reversible copy",
+    "blocking_loc": "src/s_fma.c:276:15"
   },
   "sin": {
     "status": "decline",
@@ -65,7 +80,10 @@
       "llvm.vector.reduce.or.v4i32"
     ],
     "bucket": "injection",
-    "lever": "L5-shadow"
+    "lever": "L5-shadow",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_rem_pio2.c:174:9: in function probe double (): cq taint escape: tainted value stored to memory",
+    "blocking_loc": "src/e_rem_pio2.c:174:9"
   },
   "cos": {
     "status": "decline",
@@ -81,7 +99,10 @@
       "llvm.vector.reduce.or.v4i32"
     ],
     "bucket": "injection",
-    "lever": "L5-shadow"
+    "lever": "L5-shadow",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_rem_pio2.c:174:9: in function probe double (): cq taint escape: tainted value stored to memory",
+    "blocking_loc": "src/e_rem_pio2.c:174:9"
   },
   "tan": {
     "status": "decline",
@@ -98,16 +119,22 @@
       "llvm.vector.reduce.or.v4i32"
     ],
     "bucket": "injection",
-    "lever": "L5-shadow"
+    "lever": "L5-shadow",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_rem_pio2.c:174:9: in function probe double (): cq taint escape: tainted value stored to memory",
+    "blocking_loc": "src/e_rem_pio2.c:174:9"
   },
   "exp": {
-    "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value reaches an unsupported instruction",
+    "status": "COMPILES",
+    "detail": "surviving:[]",
     "surviving_llvm": [
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L5-qrom"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "exp2": {
     "status": "decline",
@@ -116,36 +143,46 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L5-qrom"
+    "lever": "L5-qrom",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_exp2.c:376:6: in function probe double (): cq taint escape: tainted value reaches an unsupported instruction",
+    "blocking_loc": "src/s_exp2.c:376:6"
   },
   "log": {
+    "status": "COMPILES",
+    "detail": "surviving:[]",
+    "surviving_llvm": [
+      "llvm.fmuladd.f64"
+    ],
+    "bucket": "injection",
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
+  },
+  "log2": {
     "status": "decline",
     "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
     "surviving_llvm": [
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
-  },
-  "log2": {
-    "status": "decline",
-    "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
-    "surviving_llvm": [
-      "llvm.fmuladd.f64",
-      "llvm.fmuladd.v2f64"
-    ],
-    "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_log2.c:50:6: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/e_log2.c:50:6"
   },
   "log10": {
     "status": "decline",
     "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
     "surviving_llvm": [
-      "llvm.fmuladd.f64",
-      "llvm.fmuladd.v2f64"
+      "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_log10.c:50:6: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/e_log10.c:50:6"
   },
   "asin": {
     "status": "decline",
@@ -156,7 +193,10 @@
       "llvm.sqrt.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_asin.c:77:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/e_asin.c:77:5"
   },
   "acos": {
     "status": "decline",
@@ -166,7 +206,10 @@
       "llvm.sqrt.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_acos.c:71:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/e_acos.c:71:5"
   },
   "atan": {
     "status": "decline",
@@ -176,7 +219,10 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_atan.c:81:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_atan.c:81:5"
   },
   "sinh": {
     "status": "decline",
@@ -188,7 +234,10 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L2-closure"
+    "lever": "L2-closure",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_sinh.c:67:33: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "src/e_sinh.c:67:33"
   },
   "cosh": {
     "status": "decline",
@@ -199,7 +248,10 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L2-closure"
+    "lever": "L2-closure",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_cosh.c:68:7: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "src/e_cosh.c:68:7"
   },
   "tanh": {
     "status": "decline",
@@ -209,7 +261,10 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_tanh.c:57:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_tanh.c:57:5"
   },
   "asinh": {
     "status": "decline",
@@ -221,7 +276,10 @@
       "llvm.sqrt.f64"
     ],
     "bucket": "injection",
-    "lever": "L2-closure"
+    "lever": "L2-closure",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_asinh.c:49:10: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "src/s_asinh.c:49:10"
   },
   "acosh": {
     "status": "decline",
@@ -232,7 +290,10 @@
       "llvm.sqrt.f64"
     ],
     "bucket": "injection",
-    "lever": "L2-closure"
+    "lever": "L2-closure",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_acosh.c:54:10: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "src/e_acosh.c:54:10"
   },
   "atanh": {
     "status": "decline",
@@ -242,7 +303,10 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_atanh.c:52:6: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/e_atanh.c:52:6"
   },
   "expm1": {
     "status": "decline",
@@ -251,7 +315,10 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_expm1.c:143:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_expm1.c:143:5"
   },
   "log1p": {
     "status": "decline",
@@ -260,7 +327,10 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_log1p.c:110:6: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_log1p.c:110:6"
   },
   "logb": {
     "status": "decline",
@@ -269,7 +339,10 @@
       "llvm.fabs.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_logb.c:36:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_logb.c:36:5"
   },
   "cbrt": {
     "status": "decline",
@@ -278,21 +351,30 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_cbrt.c:52:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_cbrt.c:52:5"
   },
   "floor": {
     "status": "decline",
     "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_floor.c:39:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_floor.c:39:5"
   },
   "trunc": {
     "status": "decline",
     "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_trunc.c:39:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_trunc.c:39:5"
   },
   "round": {
     "status": "decline",
@@ -301,14 +383,20 @@
       "llvm.floor.f64"
     ],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_round.c:41:6: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_round.c:41:6"
   },
   "ceil": {
     "status": "decline",
     "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_ceil.c:39:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_ceil.c:39:5"
   },
   "rint": {
     "status": "decline",
@@ -317,7 +405,10 @@
       "llvm.fabs.f64"
     ],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_rint.c:53:10: in function probe double (): cq taint escape: tainted value reaches an unsupported instruction",
+    "blocking_loc": "src/s_rint.c:53:10"
   },
   "atan2": {
     "status": "decline",
@@ -328,7 +419,10 @@
       "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L2-closure"
+    "lever": "L2-closure",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_atan2.c:117:9: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "src/e_atan2.c:117:9"
   },
   "pow": {
     "status": "decline",
@@ -338,7 +432,10 @@
       "llvm.sqrt.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_pow.c:115:21: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/e_pow.c:115:21"
   },
   "remainder": {
     "status": "decline",
@@ -347,14 +444,20 @@
       "llvm.fabs.f64"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_remainder.c:49:21: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/e_remainder.c:49:21"
   },
   "fdim": {
     "status": "decline",
     "detail": "probe double (): cq controlled lowering: control flow under quantum control",
     "surviving_llvm": [],
     "bucket": "injection",
-    "lever": "L4-fp-select"
+    "lever": "L4-fp-select",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_fdim.c:44:1: in function probe double (): cq controlled lowering: control flow under quantum control",
+    "blocking_loc": "src/s_fdim.c:44:1"
   },
   "hypot": {
     "status": "decline",
@@ -367,7 +470,10 @@
       "llvm.umin.i32"
     ],
     "bucket": "injection",
-    "lever": "L6-nested-ctrl"
+    "lever": "L6-nested-ctrl",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_hypot.c:67:5: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/e_hypot.c:67:5"
   },
   "fmod": {
     "status": "decline",
@@ -376,21 +482,30 @@
       "llvm.fshl.i32"
     ],
     "bucket": "injection",
-    "lever": "L5-qrom"
+    "lever": "L5-qrom",
+    "body_source": "openlibm",
+    "diag_full": "error: src/e_fmod.c:48:10: in function probe double (): cq taint escape: tainted value reaches an unsupported instruction",
+    "blocking_loc": "src/e_fmod.c:48:10"
   },
   "fmax": {
     "status": "decline",
     "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_fmax.c:44:28: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_fmax.c:44:28"
   },
   "fmin": {
     "status": "decline",
     "detail": "probe double (): cq controlled lowering: nested control flow under quantum control",
     "surviving_llvm": [],
     "bucket": "moot-hardware-kept",
-    "lever": ""
+    "lever": "",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_fmin.c:44:28: in function probe double (): cq controlled lowering: nested control flow under quantum control",
+    "blocking_loc": "src/s_fmin.c:44:28"
   },
   "nextafter": {
     "status": "decline",
@@ -400,7 +515,10 @@
       "llvm.lifetime.start.p0"
     ],
     "bucket": "injection",
-    "lever": "L5-shadow"
+    "lever": "L5-shadow",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_nextafter.c:69:8: in function probe double (): cq taint escape: tainted value stored to memory",
+    "blocking_loc": "src/s_nextafter.c:69:8"
   },
   "scalbn": {
     "status": "decline",
@@ -409,14 +527,20 @@
       "llvm.copysign.f64"
     ],
     "bucket": "injection",
-    "lever": "L4-fp-select"
+    "lever": "L4-fp-select",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_scalbn.c:39:13: in function probe double (): cq controlled lowering: control flow under quantum control",
+    "blocking_loc": "src/s_scalbn.c:39:13"
   },
   "ldexp": {
     "status": "decline",
     "detail": "asm alias '.set ldexp, scalbn' \u2014 no distinct IR body; == scalbn (L4) [probe double (): cq taint escape: tainted value consumed by an unknown callee]",
     "surviving_llvm": [],
     "bucket": "harness-gap",
-    "lever": ""
+    "lever": "",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "scalbln": {
     "status": "decline",
@@ -425,7 +549,10 @@
       "llvm.copysign.f64"
     ],
     "bucket": "injection",
-    "lever": "L4-fp-select"
+    "lever": "L4-fp-select",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_scalbn.c:39:13: in function probe double (): cq controlled lowering: control flow under quantum control",
+    "blocking_loc": "src/s_scalbn.c:39:13"
   },
   "erf": {
     "status": "decline",
@@ -434,11 +561,13 @@
       "llvm.copysign.f64",
       "llvm.exp.f64",
       "llvm.fabs.f64",
-      "llvm.fmuladd.f64",
-      "llvm.fmuladd.v2f64"
+      "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L2-closure"
+    "lever": "L2-closure",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_erf.c:238:8: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "src/s_erf.c:238:8"
   },
   "erfc": {
     "status": "decline",
@@ -446,24 +575,32 @@
     "surviving_llvm": [
       "llvm.exp.f64",
       "llvm.fabs.f64",
-      "llvm.fmuladd.f64",
-      "llvm.fmuladd.v2f64"
+      "llvm.fmuladd.f64"
     ],
     "bucket": "injection",
-    "lever": "L2-closure"
+    "lever": "L2-closure",
+    "body_source": "openlibm",
+    "diag_full": "error: src/s_erf.c:296:12: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "src/s_erf.c:296:12"
   },
   "lgamma": {
     "status": "decline",
     "detail": "lgamma wrapper link-closure gap [probe double (): cq taint escape: tainted value consumed by an unknown callee]",
     "surviving_llvm": [],
     "bucket": "harness-gap",
-    "lever": ""
+    "lever": "",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   },
   "tgamma": {
     "status": "decline",
     "detail": "openlibm ships no double tgamma body (only s_tgammaf.c) [probe double (): cq taint escape: tainted value consumed by an unknown callee]",
     "surviving_llvm": [],
     "bucket": "harness-gap",
-    "lever": ""
+    "lever": "",
+    "body_source": "",
+    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+    "blocking_loc": "probe.c:6:16"
   }
 }

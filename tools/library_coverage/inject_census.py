@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Source-injection census: inject openlibm bodies, inline to opcodes, run cq-lowering.
+"""Source-injection census: inject libm bodies, inline to opcodes, run cq-lowering.
+
+Bodies come from TWO corpora, authored-first (L1 spine, bd 3c6m.10): a fn with a
+hand-authored BRANCHLESS soft-body in branchless/<fn>.c is measured with THAT body
+(recorded as body_source="authored-branchless"); every other fn injects its stock
+openlibm body. Both are Rule-18 source injection — real C bodies inlined to stock
+opcodes before cq-lowering, never name-recognition.
 
 Reproducible harness for the OPCODE-lowering strategy documented in
 INJECTION-CENSUS.md (previously a MANUAL investigation — this script fills that
@@ -37,12 +43,35 @@ LLVM = Path("/usr/local/opt/llvm@19/bin")
 CLANG, OPT, LINK, DIS = LLVM/"clang", LLVM/"opt", LLVM/"llvm-link", LLVM/"llvm-dis"
 HERE = Path(__file__).resolve().parent
 BC = Path(os.environ.get("BC", HERE/"bc"))   # openlibm bitcode corpus (built to scratch)
+BRANCHLESS = HERE/"branchless"               # L1 (3c6m.10): authored branchless soft-bodies
 PASS = Path(__file__).resolve().parents[2]/"build/ir-pass/libCQPass.so"
 
-# Map: which bc file(s) DEFINE each symbol (built once).
-def build_symbol_index():
+# L1 spine (3c6m.10): compile the AUTHORED branchless bodies (branchless/<fn>.c)
+# with the SAME flags as the openlibm corpus (plain `-g -O1`; deliberately NO
+# -fno-builtin — a "no-builtins" DEFINITION attribute makes the probe caller's
+# no-builtin-<fn> set a non-superset and the O2 inliner then REFUSES to inline
+# the body: TLI areInlineCompatible / InlineCallerSupersetNoBuiltin). These are
+# indexed BEFORE the openlibm corpus, so an authored body SHADOWS the branchy
+# openlibm one — per-fn provenance is recorded honestly as `body_source`.
+def build_authored_bc(workdir):
+    out = []
+    for c in sorted(BRANCHLESS.glob("*.c")):
+        b = workdir/f"branchless_{c.stem}.bc"
+        r = subprocess.run([CLANG, "-O1", "-g", "-emit-llvm", "-c", str(c), "-o", str(b)],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            out.append(b)
+        else:
+            print(f"  authored {c.name}: BUILD-FAIL "
+                  f"{r.stderr.strip().splitlines()[-1][:80]}", file=sys.stderr)
+    return out
+
+# Map: which bc file(s) DEFINE each symbol (built once). `authored` bc files are
+# indexed FIRST — closure_link resolves an undefined symbol to the first indexed
+# definer, so an authored branchless body wins over the openlibm one (L1 spine).
+def build_symbol_index(authored=()):
     defmap = {}   # symbol -> list of bc files defining it
-    for b in sorted(BC.glob("*.bc")):
+    for b in list(authored) + sorted(BC.glob("*.bc")):
         try:
             ir = subprocess.run([DIS, str(b), "-o", "-"], capture_output=True, text=True, timeout=30).stdout
         except Exception:
@@ -132,8 +161,13 @@ double probe(void){{
                         "-internalize-public-api-list=probe", "-inline-threshold=2000000",
                         str(linked), "-o", str(inl)], capture_output=True, text=True)
         ir = subprocess.run([DIS, str(inl), "-o", "-"], capture_output=True, text=True).stdout
-        # surviving non-cq, non-intrinsic call = not fully inlined
-        surv = [m for m in re.findall(r'call[^@]*@([A-Za-z0-9_.$]+)', ir)
+        # surviving non-cq, non-intrinsic call = not fully inlined. `[^@\n]` (3c6m.10):
+        # the character class must NOT cross lines — `[^@]*` matched from a "call"
+        # inside an ATTRIBUTE COMMENT line (`; ... nocallback nofree ...`) through the
+        # newline into the next line's dead `declare @llvm.*`, false-reporting
+        # call-site-free declares as survivors (scalarizer leaves the dead declare;
+        # dce does not remove declarations).
+        surv = [m for m in re.findall(r'call[^@\n]*@([A-Za-z0-9_.$]+)', ir)
                 if not m.startswith("cq_") and not m.startswith("llvm.")]
         fully_inlined = len(surv) == 0
         # p119: report the surviving `@llvm.*` intrinsics separately — these are the
@@ -143,7 +177,7 @@ double probe(void){{
         # under injection. A surviving @llvm.<transcendental> would be a keep-set
         # violation (a transcendental should have inlined to opcodes, not stayed an
         # intrinsic) — flag it.
-        surv_llvm = sorted(set(re.findall(r'call[^@]*@(llvm\.[A-Za-z0-9_.]+)', ir)))
+        surv_llvm = sorted(set(re.findall(r'call[^@\n]*@(llvm\.[A-Za-z0-9_.]+)', ir)))
         r = subprocess.run([OPT, "-load-pass-plugin", str(PASS), "-passes=cq-lowering",
                             "-S", str(inl), "-o", "/dev/null"], capture_output=True, text=True)
         lowered = (r.returncode == 0)
@@ -156,11 +190,25 @@ double probe(void){{
                     # 3c6m.9: ALSO keep the full diagnostic line and parse its !dbg
                     # `<file>:<line>:<col>` (the token between `error: ` and
                     # `: in function`) as the blocking source line for the ticket
-                    # bridge. `<unknown>:0:0` (no debug info) -> left empty.
-                    diag_full = line.strip()
-                    m = re.search(r'error:\s*(.*?):\s*in function', line)
+                    # bridge. `<unknown>:0:0` (no debug info at all) -> left empty.
+                    # 3c6m.10: a body compiled WITHOUT `-g` does not print
+                    # `<unknown>` — inlining attaches the PROBE CALL-SITE debugloc
+                    # (…/probe.c:6:16) to the inlined blocker, a misleading
+                    # "blocking source line". A probe.c loc is kept ONLY when the
+                    # body genuinely did not inline (a real probe-side blocker,
+                    # e.g. the harness-gap fns); for a FULLY-INLINED body it is
+                    # dropped like `<unknown>` (census_to_tickets then honestly
+                    # reports "no source location — rebuild the corpus with -g").
+                    # Strip the EPHEMERAL probe tempdir prefix (…/T/tmpXXXX/probe.c
+                    # -> probe.c) so the committed snapshot is DETERMINISTIC across
+                    # census runs (3c6m.10; only the probe lives there — corpus
+                    # paths are real and untouched).
+                    diag_full = line.strip().replace(str(td) + "/", "")
+                    m = re.search(r'error:\s*(.*?):\s*in function', diag_full)
                     if m and not m.group(1).strip().startswith('<unknown>'):
-                        blocking_loc = m.group(1).strip()
+                        loc = m.group(1).strip()
+                        if not (fully_inlined and "probe.c" in loc):
+                            blocking_loc = loc
                     break
         # census rule: COMPILES iff fully inlined AND cq-lowering exit 0
         if lowered and fully_inlined:
@@ -244,9 +292,16 @@ def bucket_of(fn):
     return "injection"
 
 if __name__ == "__main__":
+    # L1 (3c6m.10): the authored-body scratch must outlive the whole census loop —
+    # defmap holds paths into it.
+    authored_td = tempfile.TemporaryDirectory()
+    authored = build_authored_bc(Path(authored_td.name))
+    authored_set = set(authored)
+    print(f"authored branchless bodies: {[b.stem.replace('branchless_','') for b in authored]}",
+          file=sys.stderr)
     print("building symbol index...", file=sys.stderr)
-    defmap = build_symbol_index()
-    print(f"indexed {len(defmap)} symbols across bc/", file=sys.stderr)
+    defmap = build_symbol_index(authored)
+    print(f"indexed {len(defmap)} symbols across branchless/ + bc/", file=sys.stderr)
     results = {}
     for fn, argtypes in FUNCS.items():
         status, detail, surv_llvm, diag_full, blocking_loc = run_one(fn, argtypes, defmap)
@@ -254,14 +309,21 @@ if __name__ == "__main__":
         lever = lever_of(detail) if (bucket == "injection" and status == "decline") else ""
         if bucket == "harness-gap":
             detail = f"{HARNESS_GAP[fn]} [{detail}]"
+        # Body PROVENANCE (two-scoreboard honesty): closure_link resolves `fn` to the
+        # FIRST indexed definer, so defmap[fn][0] names the body actually injected —
+        # "authored-branchless" (the L1 corpus) vs "openlibm".
+        definer = defmap.get(fn, [None])[0]
+        body_source = ("authored-branchless" if definer in authored_set
+                       else "openlibm" if definer is not None else "")
         results[fn] = {"status": status, "detail": detail, "surviving_llvm": surv_llvm,
-                       "bucket": bucket, "lever": lever,
+                       "bucket": bucket, "lever": lever, "body_source": body_source,
                        # 3c6m.9 ticket-bridge fields: the full diagnostic line + its
                        # parsed !dbg source location (empty when the corpus lacks -g).
                        "diag_full": diag_full, "blocking_loc": blocking_loc}
         note = f"  [llvm survivors: {surv_llvm}]" if surv_llvm else ""
+        src = f" ⟪{body_source}⟫" if body_source == "authored-branchless" else ""
         tag = f" ⟨{bucket}{('/'+lever) if lever else ''}⟩"
-        print(f"  {fn:12s} {status:22s}{tag}  {detail}{note}", file=sys.stderr)
+        print(f"  {fn:12s} {status:22s}{tag}{src}  {detail}{note}", file=sys.stderr)
     Path("inject_results.json").write_text(json.dumps(results, indent=2))
 
     # ── TWO DISJOINT SCOREBOARDS (owner, emphatic 2026-07-09; bd libm-scoreboard-two-numbers).
@@ -302,12 +364,20 @@ if __name__ == "__main__":
         "injection_compiles": len(inj_compiles),
         "injection_candidates": len(inj),
         "injection_compiles_fns": inj_compiles,
+        # L1 (3c6m.10) provenance: which of the compiling fns rode an AUTHORED
+        # branchless body (vs stock openlibm). Kept visible so the injection number
+        # can never silently morph into an "openlibm compiles" claim.
+        "authored_branchless_fns": sorted(
+            fn for fn in inj_compiles
+            if inj[fn].get("body_source") == "authored-branchless"),
         "declines_by_lever": levers,
         "hardware_kept_stems": sorted(HARDWARE_KEPT),
         "harness_gap": sorted(HARNESS_GAP),
         "bitops_are_recognition": BITOPS_ARE_RECOGNITION,
         "note": "Injection-covered = genuine library bodies (source injection, Rule 18); "
-                "DISJOINT from recognition-covered (hardware keep-set, measured by probe.py).",
+                "DISJOINT from recognition-covered (hardware keep-set, measured by probe.py). "
+                "Bodies are openlibm's, except authored_branchless_fns: hand-authored "
+                "branchless soft-bodies (tools/library_coverage/branchless/, bd 3c6m.10 L1).",
     }, indent=2))
 
     print("\n=== per-bucket status tally ===", file=sys.stderr)

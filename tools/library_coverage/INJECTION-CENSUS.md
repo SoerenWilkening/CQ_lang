@@ -1,4 +1,4 @@
-# Source-Injection Census — math.h via openlibm (opcode-lowering path)
+# Source-Injection Census — math.h via openlibm + authored branchless bodies (opcode-lowering path)
 
 > **⚠️ p119 (2026-07-06): source injection is now the AUTHORITATIVE way to compile a
 > library function (Rule 18).** The old "template-recognition" strategy (recognize
@@ -11,12 +11,58 @@
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
 > [`libm-coverage-source-injection-rule`]. **The authoritative current figures are the
-> [2026-07-10 re-measurement](#re-measurement-2026-07-10-3c6m8--census-honesty-the-authoritative-numbers)
-> below (0/32 injection-covered, disjoint from the recognition floor);** the older dated
-> sections are kept as history. Re-run `inject_census.py` over a fresh openlibm corpus to
-> refresh.
+> [2026-07-10 L1 re-measurement](#re-measurement-2026-07-10-3c6m10--l1-authored-branchless-bodies-the-authoritative-numbers)
+> below (2/32 injection-covered — `exp`, `log`, both authored-branchless — disjoint from the
+> recognition floor);** the older dated sections are kept as history. Re-run
+> `inject_census.py` over a fresh openlibm corpus to refresh.
 
-## Re-measurement 2026-07-10 (3c6m.8 — census honesty; the AUTHORITATIVE numbers)
+## Re-measurement 2026-07-10 (3c6m.10 — L1 authored branchless bodies; the AUTHORITATIVE numbers)
+
+**First scoreboard movement: 0/32 → 2/32.** The L1 spine (bd `3c6m.10`) landed its first
+authored body — a **branchless double `log`** — and promoted the proven 3c6m.7 branchless
+`exp` into the same corpus. Both flips are **injection merit** (real C bodies inlined to
+stock opcodes + lowered, Rule 18), **zero pass change**.
+
+| Scoreboard | Number | What it means |
+|---|---:|---|
+| **Injection-covered** (the campaign number) | **2 / 32** | `exp`, `log` — both **authored-branchless** bodies |
+| **Recognition-covered** (fixed hardware floor) | 12 stems here (probe.py's full number is separate) | the hardware keep-set — disjoint, **not** injection progress |
+
+1. **Authored-body corpus** (`branchless/<fn>.c`): the census now injects a hand-authored
+   BRANCHLESS soft-body when one exists, **shadowing** the branchy openlibm one (indexed
+   first in the symbol index; `closure_link` resolves to the first definer). Provenance is
+   recorded per fn as `body_source` (`authored-branchless` vs `openlibm`) in
+   `inject_results.json` and as `authored_branchless_fns` in `injection_summary.json`, so
+   the injection number can never silently morph into an "openlibm compiles" claim.
+   Authored bodies compile with the **same flags as the corpus** (`clang -g -O1`, no
+   `-fno-builtin` — a `"no-builtins"` definition attribute would make the probe caller's
+   `no-builtin-<fn>` set a non-superset and the O2 inliner then *refuses to inline*:
+   `TLI areInlineCompatible` / `InlineCallerSupersetNoBuiltin`).
+2. **`log` (authored)** — musl's core algorithm, branch-free: the canonical boundary-shift
+   bit trick on the full 64-bit word (pure `i64 add/ashr/and`, **zero selects**) centers
+   `m ∈ [√2/2, √2)` *exactly* for every finite normal `x > 0`, then musl's `Lg1..Lg7`
+   minimax on `s = f/(2+f)` + two-constant `ln2` split. Classically validated against host
+   libm: **worst case 1 ulp** across the full normal exponent range (~82k samples + exact
+   boundary probes). e2e golden twin: `tests/e2e/slice_branchless_log.c`.
+3. **`exp` (authored)** — the proven 3c6m.7 body (`tests/e2e/slice_branchless_exp.c`),
+   verbatim: one kjd1 fp-data select (round bias) + Horner + INSERT_WORDS 2^n scale.
+4. **Surviving-call regex fix** — `call[^@]*@` could match from a `"call"` inside an
+   attribute comment **across the newline** into the next line's dead `declare @llvm.*`
+   (the scalarizer leaves dead declares; `dce` does not remove declarations), false-reporting
+   call-free declares as survivors. Now `call[^@\n]*@`. Reporting-only; the COMPILES
+   criterion (fully inlined + `cq-lowering` exit 0) is unchanged.
+5. **Blocking source lines populated** — this run's corpus was built with `-g` (the 3c6m.9
+   REPRODUCE recipe), so all 30 remaining declines now carry a real openlibm
+   `<file>:<line>:<col>` in `blocking_loc` (was empty in the 3c6m.8 snapshot).
+
+The 30 remaining genuine-injection declines are **byte-identical in status + lever** to the
+3c6m.8 snapshot (re-verified by diff): L6 `acos asin atan atanh cbrt expm1 hypot log10 log1p
+log2 logb pow remainder tanh` (14), L2 `acosh asinh atan2 cosh erf erfc sinh` (7), L5-shadow
+`cos nextafter sin tan` (4), L5-qrom `exp2 fmod` (2), L4 `fdim scalbn scalbln` (3). The
+census→tickets bridge closes `3c6m.34` (`log`) and `3c6m.29` (`exp`) and refreshes the rest
+with their now-real blocking source lines.
+
+## Re-measurement 2026-07-10 (3c6m.8 — census honesty)
 
 The `inject_census.py` harness was hardened (bd `3c6m.8`, mechanizing the p119
 blocker-audit's own recommendations — harness-only, **zero pass change**):
