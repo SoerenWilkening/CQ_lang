@@ -46,18 +46,34 @@ BC = Path(os.environ.get("BC", HERE/"bc"))   # openlibm bitcode corpus (built to
 BRANCHLESS = HERE/"branchless"               # L1 (3c6m.10): authored branchless soft-bodies
 PASS = Path(__file__).resolve().parents[2]/"build/ir-pass/libCQPass.so"
 
-# L1 spine (3c6m.10): compile the AUTHORED branchless bodies (branchless/<fn>.c)
-# with the SAME flags as the openlibm corpus (plain `-g -O1`; deliberately NO
-# -fno-builtin — a "no-builtins" DEFINITION attribute makes the probe caller's
-# no-builtin-<fn> set a non-superset and the O2 inliner then REFUSES to inline
-# the body: TLI areInlineCompatible / InlineCallerSupersetNoBuiltin). These are
-# indexed BEFORE the openlibm corpus, so an authored body SHADOWS the branchy
+# L1 spine (3c6m.10): compile the AUTHORED branchless bodies (branchless/<fn>.c),
+# indexed BEFORE the openlibm corpus so an authored body SHADOWS the branchy
 # openlibm one — per-fn provenance is recorded honestly as `body_source`.
+#
+# BLANKET `-fno-builtin` on BOTH the bodies AND the probe (3c6m.10 L2-closure).
+# The reason is the ERRNO-FREE-LEAF closure hazard: a COMPOUND authored body
+# (atan2 -> atan, the L2-closure spine) calls a sibling leaf by its libm name, and
+# clang -O1 rewrites an errno-FREE transcendental call (`atan`, total domain, never
+# sets errno) into the `@llvm.atan.f64` INTRINSIC — which closure_link cannot
+# resolve to branchless/atan.c (that defines `@atan`, not the intrinsic), so atan2
+# falsely declined with a surviving `@llvm.atan`. (Errno-SETTING leaves — expm1,
+# log1p, sqrt — stay named calls under the default -fmath-errno, which is why the
+# tanh->expm1 closure worked plain.) `-fno-builtin` keeps EVERY libm-named leaf a
+# named call so closure_link always resolves it. NOTE this REVISES the old
+# "bodies MUST compile plain" rule (bd branchless-log-3c6m10 fact #2): that gotcha
+# was that a -fno-builtin BODY ("no-builtins" attr) won't inline into a
+# `-fno-builtin-<fn>` (targeted) probe because the caller's no-builtin set is not a
+# SUPERSET of the callee's. The fix is to make BOTH blanket: probe "no-builtins" is
+# then a superset of the body's "no-builtins" (and of an openlibm body's empty set),
+# so every body still inlines. `__builtin_*` calls (fabs/sqrt/copysign/memcpy) are
+# explicit and unaffected by -fno-builtin, so the hardware keep-set leaves still
+# lower. Verified surgical: only the intended fns flip, no other census churn.
 def build_authored_bc(workdir):
     out = []
     for c in sorted(BRANCHLESS.glob("*.c")):
         b = workdir/f"branchless_{c.stem}.bc"
-        r = subprocess.run([CLANG, "-O1", "-g", "-emit-llvm", "-c", str(c), "-o", str(b)],
+        r = subprocess.run([CLANG, "-O1", "-g", "-fno-builtin", "-emit-llvm", "-c",
+                            str(c), "-o", str(b)],
                            capture_output=True, text=True)
         if r.returncode == 0:
             out.append(b)
@@ -139,7 +155,14 @@ double probe(void){{
         # -g corpus the inlined blocker prints `<unknown>:0:0` (captured honestly by
         # census_to_tickets.py as "no !dbg source location"). `-g` is metadata-only
         # at -O1 and does not perturb codegen / the scoreboard (3c6m.9).
-        r = subprocess.run([CLANG, "-O1", "-g", f"-fno-builtin-{fn}", "-emit-llvm", "-c",
+        # `-fno-builtin` (blanket) on the probe too (3c6m.10 L2-closure): required
+        # so the probe's "no-builtins" set is a SUPERSET of every authored body's
+        # (also built -fno-builtin) — else the O2 inliner refuses to inline the body
+        # (InlineCallerSupersetNoBuiltin; see build_authored_bc). Inert for the
+        # probe's own IR (it makes exactly one libm call, `fn`, already disabled by
+        # `-fno-builtin-{fn}`); it only relaxes the inliner's superset check.
+        r = subprocess.run([CLANG, "-O1", "-g", "-fno-builtin", f"-fno-builtin-{fn}",
+                            "-emit-llvm", "-c",
                             str(td/"probe.c"), "-o", str(pbc)], capture_output=True, text=True)
         if r.returncode != 0:
             # 3c6m.9: the early-return arity MUST match the 5-tuple normal path —

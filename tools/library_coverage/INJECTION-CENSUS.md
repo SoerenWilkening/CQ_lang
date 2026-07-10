@@ -11,13 +11,49 @@
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
 > [`libm-coverage-source-injection-rule`]. **The authoritative live figure is
-> `injection_summary.json`: 9/32 injection-covered — `exp`, `log`, `log2`, `log10`,
-> `cbrt`, `log1p`, `expm1`, `atan`, `tanh`, all authored-branchless, disjoint from the
-> recognition floor** (0/32 → 2/32 `exp`/`log` first landing, → 5/32
-> `cbrt`/`log1p`/`expm1`, → 7/32 `atan`/`tanh`, → 9/32 `log2`/`log10`, bd `3c6m.10` L1).
+> `injection_summary.json`: 15/32 injection-covered — `exp`, `log`, `log2`, `log10`,
+> `cbrt`, `log1p`, `expm1`, `atan`, `tanh`, `atanh`, `acosh`, `asinh`, `atan2`, `sinh`,
+> `cosh`, all authored-branchless, disjoint from the recognition floor** (0/32 → 2/32
+> `exp`/`log` first landing, → 5/32 `cbrt`/`log1p`/`expm1`, → 7/32 `atan`/`tanh`, → 9/32
+> `log2`/`log10` (all bd `3c6m.10` L1), → 15/32 `atanh`/`acosh`/`asinh`/`atan2`/`sinh`/`cosh`
+> (bd `3c6m.10` **L2-closure**: compound bodies that call an L1 leaf)).
 > The dated sections below are kept as HISTORY (each frozen at its landing's number,
 > not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
 > refresh.
+
+## Re-measurement 2026-07-10 (3c6m.23/.18/.20/.22/.45/.26 — L2-closure batch; 9/32 → 15/32)
+
+> HISTORY, frozen at 15/32. Live number: `injection_summary.json`.
+
+**`atanh` (3c6m.23), `acosh` (3c6m.18), `asinh` (3c6m.20), `atan2` (3c6m.22), `sinh`
+(3c6m.45), `cosh` (3c6m.26)** flip decline→`COMPILES` via authored branchless bodies
+(`branchless/{atanh,acosh,asinh,atan2,sinh,cosh}.c`; e2e twins
+`tests/e2e/slice_branchless_*.c`). These are the **L2-closure** shape: each is a compound
+transcendental that reduces to an L1 leaf already in the corpus and CALLS that leaf by its
+libm name — `atanh`/`acosh`/`asinh` → `log1p`, `atan2` → `atan`, `sinh`/`cosh` → `expm1` —
+resolved by the census closure-link to the authored `branchless/<leaf>.c` (indexed first)
+and inlined, so the whole body injects as straight-line opcodes (mirrors `tanh`→`expm1`).
+All renderings are **overflow-safe and cancellation-free** (per-file headers): `atanh` on
+`|x|` (log1p well-conditioned; a signed-`x` form is 52782 ulp near ∓1), `acosh` via
+`sqrt(x-1)*sqrt(x+1)` (product split → no `x*x` overflow, no near-1 cancellation), `asinh`
+via `fmin` of the naive and reciprocal `sqrt(x*x+1)` (IEEE fmin drops the NaN/inf arm) +
+the div-first `ax*(ax/(1+s))` correction (overflow-safe AND keeps the near-0 `x²/2`),
+`atan2` via constant-operand quadrant selects (the probe's constant `x=0.5` folds them to
+the `x>0` half-plane), `sinh`/`cosh` via the bounded `t/(t+1)` / `1/e` reconstructions
+(no `t²`/`e²` overflow). Accuracy (worst **true**-ulp `|g-ref|/ulp(ref)` vs host
+long-double, with the **branchless leaf composed** — a host-leaf sweep understates it,
+since the ≤2-ulp branchless `log1p`/`expm1`/`atan` leaf dominates): `acosh` ≤4.0
+(observed ~3.97), `sinh` ≤2.7 (~2.64), `atanh` ≤2.5 (~2.45), `asinh` ≤2.1 (~2.05),
+`cosh` ≤1.7 (~1.59), `atan2` ≤1.35 (interior ~1.18). Per-body
+UNSPECIFIED edges documented honestly (poles → NaN; `x<1`; the last overflow octave
+`x > DBL_MAX/2` where `acosh`/`asinh` → NaN; the `x=0` atan2 axis). **Harness note (3c6m.10 L2-closure):** the census now builds the authored
+corpus AND the probe with blanket `-fno-builtin` — required because clang -O1 rewrites an
+errno-FREE transcendental leaf call (`atan`) into the `@llvm.atan.f64` intrinsic, which
+closure-link cannot resolve to `branchless/atan.c`; blanket `-fno-builtin` keeps every
+libm-named leaf a resolvable named call, and matching it on both sides keeps the O2
+inliner's no-builtin superset check satisfied (revises the old "bodies compile plain"
+rule — see `inject_census.py`). Surviving `@llvm.*` are keep-set leaves only
+(`fmuladd`/`fabs`/`copysign`/`sqrt`/`minnum`). Census diff is surgical: only these 6 flip.
 
 ## Re-measurement 2026-07-10 (3c6m.37/3c6m.35 — L1 log2/log10; 7/32 → 9/32)
 

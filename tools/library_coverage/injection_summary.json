@@ -1,46 +1,48 @@
 {
-  "injection_compiles": 9,
+  "injection_compiles": 15,
   "injection_candidates": 32,
   "injection_compiles_fns": [
+    "acosh",
+    "asinh",
     "atan",
+    "atan2",
+    "atanh",
     "cbrt",
+    "cosh",
     "exp",
     "expm1",
     "log",
     "log10",
     "log1p",
     "log2",
+    "sinh",
     "tanh"
   ],
   "authored_branchless_fns": [
+    "acosh",
+    "asinh",
     "atan",
+    "atan2",
+    "atanh",
     "cbrt",
+    "cosh",
     "exp",
     "expm1",
     "log",
     "log10",
     "log1p",
     "log2",
+    "sinh",
     "tanh"
   ],
   "declines_by_lever": {
     "L6-nested-ctrl": [
       "acos",
       "asin",
-      "atanh",
       "hypot",
       "logb",
       "pow",
       "remainder"
-    ],
-    "L2-closure": [
-      "acosh",
-      "asinh",
-      "atan2",
-      "cosh",
-      "erf",
-      "erfc",
-      "sinh"
     ],
     "L5-shadow": [
       "cos",
@@ -56,6 +58,10 @@
     "L5-qrom": [
       "exp2",
       "fmod"
+    ],
+    "L2-closure": [
+      "erf",
+      "erfc"
     ]
   },
   "hardware_kept_stems": [
