@@ -1,0 +1,61 @@
+cqrt_alloc_f64(0.500000) -> h0
+cqrt_ry_f64(h0, 0.500000)
+cq_template_fmul_f64_hl(h0, 0.636620) -> h1
+cq_template_rint_f64(h1) -> h2
+cq_template_fneg_f64(h2) -> h3
+cq_template_fma_f64_qlq(h3, 1.570796, h0) -> h4
+cq_template_fma_f64_qlq(h3, 0.000000, h4) -> h5
+cq_template_fmin_f64_hl(h5, 0.785398) -> h6
+cq_template_fmax_f64_hl(h6, -0.785398) -> h7
+cq_template_fmul_f64(h7, h7) -> h8
+cq_template_fmul_f64(h8, h8) -> h9
+cq_template_fma_f64_qll(h8, 0.000003, -0.000198) -> h10
+cq_template_fma_f64_qql(h8, h10, 0.008333) -> h11
+cq_template_fmul_f64(h8, h9) -> h12
+cq_template_fma_f64_qll(h8, 0.000000, -0.000000) -> h13
+cq_template_fma_f64(h12, h13, h11) -> h14
+cq_template_fmul_f64(h7, h8) -> h15
+cq_template_fma_f64_qql(h8, h14, -0.166667) -> h16
+cq_template_fma_f64(h15, h16, h7) -> h17
+cq_template_fma_f64_qll(h8, 0.000025, -0.001389) -> h18
+cq_template_fma_f64_qql(h8, h18, 0.041667) -> h19
+cq_template_fmul_f64(h9, h9) -> h20
+cq_template_fma_f64_qll(h8, -0.000000, 0.000000) -> h21
+cq_template_fma_f64_qql(h8, h21, -0.000000) -> h22
+cq_template_fmul_f64(h20, h22) -> h23
+cq_template_fma_f64(h8, h19, h23) -> h24
+cq_template_fmul_f64_hl(h8, 0.500000) -> h25
+cq_template_fsub_f64_lh(1.000000, h25) -> h26
+cq_template_fsub_f64_lh(1.000000, h26) -> h27
+cq_template_fsub_f64(h27, h25) -> h28
+cq_template_fma_f64(h8, h24, h28) -> h29
+cq_template_fadd_f64(h26, h29) -> h30
+cq_template_fmul_f64_hl(h2, 0.250000) -> h31
+cq_template_floor_f64(h31) -> h32
+cq_template_fma_f64_qlq(h32, -4.000000, h2) -> h33
+cq_template_fmul_f64_hl(h33, 0.500000) -> h34
+cq_template_floor_f64(h34) -> h35
+cq_template_fma_f64_qlq(h35, -2.000000, h33) -> h36
+cq_template_fcmp_olt_f64_hl(h36, 0.500000) -> h37
+cqrt_alloc_f64(0.000000) -> h38
+cqrt_alloc_f64(1.000000) -> h39
+cqrt_copy_f64_controlled(h37, h39, h38)
+cqrt_x(h37)
+cqrt_alloc_f64(0.000000) -> h40
+cqrt_copy_f64_controlled(h37, h40, h38)
+cqrt_x(h37)
+cq_template_fcmp_olt_f64_hl_inv(h36, 0.500000) -> h41
+cqrt_free(h37)
+cq_template_fsub_f64_lh(1.000000, h38) -> h42
+cq_template_fmul_f64(h30, h42) -> h43
+cq_template_fma_f64(h38, h17, h43) -> h44
+cq_template_fneg_f64(h44) -> h45
+cq_template_fcmp_olt_f64_hl(h35, 0.500000) -> h46
+cqrt_alloc_f64(0.000000) -> h47
+cqrt_copy_f64_controlled(h46, h44, h47)
+cqrt_x(h46)
+cqrt_copy_f64_controlled(h46, h45, h47)
+cqrt_x(h46)
+cq_template_fcmp_olt_f64_hl_inv(h35, 0.500000) -> h48
+cqrt_free(h46)
+cqrt_measure_f64(h47) -> 0.000000

@@ -50,24 +50,36 @@
     "blocking_loc": "probe.c:6:16"
   },
   "sin": {
-    "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
-    "surviving_llvm": [],
+    "status": "COMPILES",
+    "detail": "surviving:[]",
+    "surviving_llvm": [
+      "llvm.floor.f64",
+      "llvm.fmuladd.f64",
+      "llvm.maxnum.f64",
+      "llvm.minnum.f64",
+      "llvm.rint.f64"
+    ],
     "bucket": "injection",
-    "lever": "L2-closure",
-    "body_source": "",
-    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-    "blocking_loc": "probe.c:6:16"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "cos": {
-    "status": "decline",
-    "detail": "probe double (): cq taint escape: tainted value consumed by an unknown callee",
-    "surviving_llvm": [],
+    "status": "COMPILES",
+    "detail": "surviving:[]",
+    "surviving_llvm": [
+      "llvm.floor.f64",
+      "llvm.fmuladd.f64",
+      "llvm.maxnum.f64",
+      "llvm.minnum.f64",
+      "llvm.rint.f64"
+    ],
     "bucket": "injection",
-    "lever": "L2-closure",
-    "body_source": "",
-    "diag_full": "error: probe.c:6:16: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
-    "blocking_loc": "probe.c:6:16"
+    "lever": "",
+    "body_source": "authored-branchless",
+    "diag_full": "",
+    "blocking_loc": ""
   },
   "tan": {
     "status": "decline",

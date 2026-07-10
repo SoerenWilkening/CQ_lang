@@ -450,6 +450,33 @@ add_test(NAME e2e-slice-branchless-erfc
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_erfc.expected.log")
 
+# bd 3c6m.44/.25 / L1: sin + cos by SOURCE INJECTION. openlibm's sin/cos reduce
+# with Payne–Hanek, storing the split product into a multi-word scratch double[]
+# (e_rem_pio2.c:174 — the L5-shadow `tainted value stored to memory` blocker).
+# Replaced by a REGISTER-ONLY, BRANCHLESS Cody–Waite reduction (fn=rint(x·2/π),
+# 2-term ≈66-bit π/2) + fdlibm k_sin/k_cos kernels, with the quadrant (fn mod 4)
+# derived ENTIRELY in fp (floor keep-set, no fptosi) and blended by CONSTANT-
+# operand fp selects into an UNCONDITIONAL weighted sum (the atan/erf pattern, the
+# kjd1 fp-DATA select controlled-copy merge). cos = sin(x+π/2) reuses the sin
+# weights on (fn+1). fmin/fmax clamp the reduced arg so the body is FINITE for
+# every double (no in-domain NaN/Inf). Corpus twins:
+# tools/library_coverage/branchless/{sin,cos}.c — keep textually in sync.
+add_test(NAME e2e-slice-branchless-sin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sin.expected.log")
+
+add_test(NAME e2e-slice-branchless-cos
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cos.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cos.expected.log")
+
 # Phase 7.2 Increment 3 (test_C_libtooling-65wb.3): the controlled abort/exit PARK
 # CASCADE (PRD-7.2 §2.8). `if (q > 5) abort();` lowers to flag mint -> graveyard
 # cqrt_cswap -> cqrt_tape_write_i1 (the abort marker) -> uncontrolled remainder.

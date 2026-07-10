@@ -11,16 +11,56 @@
 > longer a "separate baseline" — it is THE measure of library-function coverage.
 > See `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
 > [`libm-coverage-source-injection-rule`]. **The authoritative live figure is
-> `injection_summary.json`: 17/32 injection-covered — `exp`, `log`, `log2`, `log10`,
+> `injection_summary.json`: 19/32 injection-covered — `exp`, `log`, `log2`, `log10`,
 > `cbrt`, `log1p`, `expm1`, `atan`, `tanh`, `atanh`, `acosh`, `asinh`, `atan2`, `sinh`,
-> `cosh`, `erf`, `erfc`, all authored-branchless, disjoint from the recognition floor**
+> `cosh`, `erf`, `erfc`, `sin`, `cos`, all authored-branchless, disjoint from the
+> recognition floor**
 > (0/32 → 2/32 `exp`/`log` first landing, → 5/32 `cbrt`/`log1p`/`expm1`, → 7/32
 > `atan`/`tanh`, → 9/32 `log2`/`log10` (all bd `3c6m.10` L1), → 15/32
 > `atanh`/`acosh`/`asinh`/`atan2`/`sinh`/`cosh`, → 17/32 `erf`/`erfc` (bd `3c6m.10`
-> **L2-closure**: compound bodies that call an L1 leaf)).
+> **L2-closure**: compound bodies that call an L1 leaf), → 19/32 `sin`/`cos` (bd
+> `3c6m.44`/`.25` **L1**: branchless Cody–Waite range reduction + fp-quadrant
+> const-selects, replacing openlibm's Payne–Hanek scratch-store)).
 > The dated sections below are kept as HISTORY (each frozen at its landing's number,
 > not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
 > refresh.
+
+## Re-measurement 2026-07-10 (3c6m.44/.25 — sin/cos L1; 17/32 → 19/32)
+
+> HISTORY, frozen at 19/32. Live number: `injection_summary.json`.
+
+**`sin` (3c6m.44), `cos` (3c6m.25)** flip decline→`COMPILES` via authored branchless
+bodies (`branchless/{sin,cos}.c`; e2e twins `tests/e2e/slice_branchless_{sin,cos}.c`).
+The blocker was **L5-shadow**: openlibm reduces an arbitrary argument to `[-π/4,π/4]`
+with **Payne–Hanek**, storing the split product into a multi-word scratch array
+`double tx[3]` and reading it back (`e_rem_pio2.c:174` — `tainted value stored to
+memory`), which is the Phase-7.5 QRAM/Shadow surface, not yet lowerable. The branchless
+rendering replaces Payne–Hanek with a fully **register-only, branchless Cody–Waite**
+reduction — `fn = rint(x·2/π)`, `y = (x − fn·pio2_1) − fn·pio2_1t` (two-term, ≈66-bit
+`π/2`; faithful for `|x| ≲ 2^20·(π/2) ≈ 1.65e6`, fdlibm's own medium-path threshold) —
+then fdlibm's degree-6 `k_sin`/`k_cos` minimax kernels, with the **quadrant** (`fn mod 4`)
+selecting `±sin(y)`/`±cos(y)`. The quadrant is derived **entirely in fp** (`qf = fn −
+4·floor(fn/4)`, `par`, `half` via the keep-set `floor` — no `fptosi`/integer mask) and the
+answer is the **atan pattern**: CONSTANT-operand fp selects (`useS=(par<0.5)?1:0`,
+`sgn=(half<0.5)?1:-1`) feeding the **unconditional** weighted expression
+`sgn·(useS·S + (1−useS)·C)`, so clang -O1 keeps them speculatable `select`s (never
+branches). `cos = sin(x+π/2)` reuses the same sin-weight code on `(fn+1)` — every
+comparison a `<`-against-a-constant, since the equality form `par==half` **is**
+branch-ified by SimplifyCFG (verified: it declined `control flow under quantum control`).
+The reduced arg is clamped `yc = fmax(-π/4, fmin(y, π/4))` with the NaN-suppressing
+keep-set `fmin`/`fmax`, a no-op on the faithful range and a finite bound beyond it — so the
+body is **finite for every double** (±∞/NaN → finite): **0 in-domain NaN/Inf**; the
+branchless range-reduction limit surfaces only as reduced ACCURACY for `|x| ≳ 1.65e6`,
+never as a non-finite result (the Payne–Hanek path this body deliberately omits).
+Accuracy is a **sanity check, not a gate** (trace-only runtime; bd
+`libm-accuracy-is-sanity-not-gate`): spot-checked to ≈1 ulp vs host libm across all four
+quadrants (exact at `1e6`), sub-ulp absolute (~1e-26) at the transcendental zeros. The
+lowered trace is a pure value-embedding — 1 `ry`, 1 `measure`, 0 controlled rotations
+(`cqrt_rz`/`cnot`/`toffoli`/`cswap`), 2 balanced fp-select flag mint/strip/free pairs (4
+`cqrt_copy_f64_controlled`); tainted `floor`/`rint` lower as reversible templates.
+Surviving `@llvm.*` are keep-set leaves only (`floor`/`fmuladd`/`maxnum`/`minnum`/`rint`).
+Census diff is surgical: only these 2 flip. ZERO core-pass/runtime-YAML change; pure
+additive corpus + e2e + docs.
 
 ## Re-measurement 2026-07-10 (3c6m.27/.28 — erf/erfc L2-closure; 15/32 → 17/32)
 

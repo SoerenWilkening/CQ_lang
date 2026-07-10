@@ -1,5 +1,5 @@
 {
-  "injection_compiles": 17,
+  "injection_compiles": 19,
   "injection_candidates": 32,
   "injection_compiles_fns": [
     "acosh",
@@ -8,6 +8,7 @@
     "atan2",
     "atanh",
     "cbrt",
+    "cos",
     "cosh",
     "erf",
     "erfc",
@@ -17,6 +18,7 @@
     "log10",
     "log1p",
     "log2",
+    "sin",
     "sinh",
     "tanh"
   ],
@@ -27,6 +29,7 @@
     "atan2",
     "atanh",
     "cbrt",
+    "cos",
     "cosh",
     "erf",
     "erfc",
@@ -36,6 +39,7 @@
     "log10",
     "log1p",
     "log2",
+    "sin",
     "sinh",
     "tanh"
   ],
@@ -43,7 +47,6 @@
     "L2-closure": [
       "acos",
       "asin",
-      "cos",
       "exp2",
       "fdim",
       "fmod",
@@ -54,7 +57,6 @@
       "remainder",
       "scalbln",
       "scalbn",
-      "sin",
       "tan"
     ]
   },
