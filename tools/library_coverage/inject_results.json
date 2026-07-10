@@ -387,7 +387,7 @@
   },
   "atan2": {
     "status": "COMPILES",
-    "detail": "surviving:[]",
+    "detail": "surviving:[] (all 3 taint masks)",
     "surviving_llvm": [
       "llvm.copysign.f64",
       "llvm.fabs.f64",
@@ -397,7 +397,39 @@
     "lever": "",
     "body_source": "authored-branchless",
     "diag_full": "",
-    "blocking_loc": ""
+    "blocking_loc": "",
+    "combinations": {
+      "qc": {
+        "status": "COMPILES",
+        "detail": "surviving:[]",
+        "surviving_llvm": [
+          "llvm.copysign.f64",
+          "llvm.fabs.f64",
+          "llvm.fmuladd.f64"
+        ],
+        "blocking_loc": ""
+      },
+      "cq": {
+        "status": "COMPILES",
+        "detail": "surviving:[]",
+        "surviving_llvm": [
+          "llvm.copysign.f64",
+          "llvm.fabs.f64",
+          "llvm.fmuladd.f64"
+        ],
+        "blocking_loc": ""
+      },
+      "qq": {
+        "status": "COMPILES",
+        "detail": "surviving:[]",
+        "surviving_llvm": [
+          "llvm.copysign.f64",
+          "llvm.fabs.f64",
+          "llvm.fmuladd.f64"
+        ],
+        "blocking_loc": ""
+      }
+    }
   },
   "pow": {
     "status": "decline",

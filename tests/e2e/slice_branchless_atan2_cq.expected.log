@@ -1,0 +1,83 @@
+cqrt_alloc_f64(0.500000) -> h0
+cqrt_ry_f64(h0, 0.500000)
+cq_template_fcmp_olt_f64_hl(h0, 0.000000) -> h1
+cqrt_alloc_f64(0.000000) -> h2
+cqrt_alloc_f64(3.141593) -> h3
+cqrt_copy_f64_controlled(h1, h3, h2)
+cqrt_x(h1)
+cqrt_alloc_f64(0.000000) -> h4
+cqrt_copy_f64_controlled(h1, h4, h2)
+cqrt_x(h1)
+cq_template_fcmp_olt_f64_hl_inv(h0, 0.000000) -> h5
+cqrt_free(h1)
+cq_template_fdiv_f64_lh(0.500000, h0) -> h6
+cq_template_fabs_f64(h6) -> h7
+cq_template_fcmp_ogt_f64_hl(h7, 0.660000) -> h8
+cqrt_alloc_f64(0.000000) -> h9
+cqrt_alloc_f64(0.785398) -> h10
+cqrt_copy_f64_controlled(h8, h10, h9)
+cqrt_x(h8)
+cqrt_alloc_f64(0.000000) -> h11
+cqrt_copy_f64_controlled(h8, h11, h9)
+cqrt_x(h8)
+cq_template_fcmp_ogt_f64_hl_inv(h7, 0.660000) -> h12
+cqrt_free(h8)
+cq_template_fcmp_ogt_f64_hl(h7, 2.414214) -> h13
+cqrt_alloc_f64(0.000000) -> h14
+cqrt_alloc_f64(0.000000) -> h15
+cqrt_copy_f64_controlled(h13, h15, h14)
+cqrt_x(h13)
+cqrt_alloc_f64(1.000000) -> h16
+cqrt_copy_f64_controlled(h13, h16, h14)
+cqrt_x(h13)
+cq_template_fcmp_ogt_f64_hl_inv(h7, 2.414214) -> h17
+cqrt_free(h13)
+cq_template_fcmp_ogt_f64_hl(h7, 2.414214) -> h18
+cqrt_alloc_f64(0.000000) -> h19
+cqrt_alloc_f64(1.570796) -> h20
+cqrt_copy_f64_controlled(h18, h20, h19)
+cqrt_x(h18)
+cqrt_copy_f64_controlled(h18, h9, h19)
+cqrt_x(h18)
+cq_template_fcmp_ogt_f64_hl_inv(h7, 2.414214) -> h21
+cqrt_free(h18)
+cq_template_fcmp_ogt_f64_hl(h7, 0.660000) -> h22
+cqrt_alloc_f64(0.000000) -> h23
+cqrt_alloc_f64(-1.000000) -> h24
+cqrt_copy_f64_controlled(h22, h24, h23)
+cqrt_x(h22)
+cqrt_alloc_f64(0.000000) -> h25
+cqrt_copy_f64_controlled(h22, h25, h23)
+cqrt_x(h22)
+cq_template_fcmp_ogt_f64_hl_inv(h7, 0.660000) -> h26
+cqrt_free(h22)
+cq_template_fma_f64(h14, h7, h23) -> h27
+cq_template_fcmp_ogt_f64_hl(h7, 0.660000) -> h28
+cqrt_alloc_f64(0.000000) -> h29
+cqrt_alloc_f64(1.000000) -> h30
+cqrt_copy_f64_controlled(h28, h30, h29)
+cqrt_x(h28)
+cqrt_alloc_f64(0.000000) -> h31
+cqrt_copy_f64_controlled(h28, h31, h29)
+cqrt_x(h28)
+cq_template_fcmp_ogt_f64_hl_inv(h7, 0.660000) -> h32
+cqrt_free(h28)
+cq_template_fma_f64(h29, h7, h14) -> h33
+cq_template_fdiv_f64(h27, h33) -> h34
+cq_template_fmul_f64(h34, h34) -> h35
+cq_template_fma_f64_qll(h35, -0.875061, -16.157537) -> h36
+cq_template_fma_f64_qql(h35, h36, -75.008558) -> h37
+cq_template_fma_f64_qql(h35, h37, -122.886668) -> h38
+cq_template_fma_f64_qql(h35, h38, -64.850219) -> h39
+cq_template_fadd_f64_hl(h35, 24.858465) -> h40
+cq_template_fma_f64_qql(h35, h40, 165.027010) -> h41
+cq_template_fma_f64_qql(h35, h41, 432.881060) -> h42
+cq_template_fma_f64_qql(h35, h42, 485.390400) -> h43
+cq_template_fma_f64_qql(h35, h43, 194.550657) -> h44
+cq_template_fmul_f64(h35, h39) -> h45
+cq_template_fdiv_f64(h45, h44) -> h46
+cq_template_fma_f64(h34, h46, h34) -> h47
+cq_template_fadd_f64(h19, h47) -> h48
+cq_template_copysign_f64(h48, h6) -> h49
+cq_template_fadd_f64(h2, h49) -> h50
+cqrt_measure_f64(h50) -> 0.000000

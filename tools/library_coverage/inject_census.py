@@ -36,7 +36,7 @@ scratch dir; set BC below to where you build the bitcode corpus):
 CAVEATS (same as the manual census): fenv-dependent bodies (nearbyint) and a few
 self-referential/link-closure gaps (lgamma, sqrt/scalbn kernels) surface as
 "exit0-but-uninlined"/"unknown callee" — harness limitations, not real compiles."""
-import os, re, subprocess, sys, json, tempfile
+import os, re, subprocess, sys, json, tempfile, itertools
 from pathlib import Path
 
 LLVM = Path("/usr/local/opt/llvm@19/bin")
@@ -131,18 +131,39 @@ def closure_link(probe_bc, defmap, workdir):
 # blocker). Probe each arg with its true type.
 CONST_FOR = {"double": "0.5", "int": "2", "long": "2", "float": "0.5f"}
 
-def run_one(fn, argtypes, defmap):
+def run_one(fn, argtypes, defmap, mask=None):
+    # `mask` = the set of DOUBLE-arg positions to TAINT this probe (3c6m.48). A
+    # multi-arg fn has 2^k-1 non-empty tainted combinations over its k double args,
+    # each a DISTINCT lowering path (distinct _hl/_lh/_qq templates + distinct taint
+    # propagation) that emits a DIFFERENT unitary — so "COMPILES" must certify ALL of
+    # them, not just (arg0-tainted, rest-classical). `mask=None` defaults to the
+    # legacy arg0-only shape (the sole tainted double is the FIRST double position),
+    # keeping every single-double-arg census entry byte-identical to the pre-3c6m.48
+    # snapshot. Each TAINTED double arg gets its OWN cq_theta source (distinct qubits
+    # — the general atan2(q0,q1) case, not an aliased single-qubit special case);
+    # every untainted arg (a non-masked double, or any int/long) is a classical const.
+    dpos = [i for i, t in enumerate(argtypes) if t == "double"]
+    if mask is None:
+        mask = {dpos[0]}
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
-        # Probe: taint arg0 (double q), pass classical consts (of the RIGHT type)
-        # for the rest, call fn, measure.
-        args = ", ".join(["q"] + [CONST_FOR[t] for t in argtypes[1:]])
+        # Build the call args + one `double qN = cq_theta_f64(...)` decl per tainted arg.
+        decls, callargs, qi = [], [], 0
+        for i, t in enumerate(argtypes):
+            if t == "double" and i in mask:
+                callargs.append(f"q{qi}")
+                decls.append(f"    double q{qi} = cq_theta_f64(0.5, 0.5);")
+                qi += 1
+            else:
+                callargs.append(CONST_FOR[t])
         proto_args = ", ".join(argtypes)
+        decl_block = "\n".join(decls)
+        args = ", ".join(callargs)
         src = f'''extern double {fn}({proto_args});
 double cq_theta_f64(double, double);
 double cq_measure_f64(double);
 double probe(void){{
-    double q = cq_theta_f64(0.5, 0.5);
+{decl_block}
     double r = {fn}({args});
     return cq_measure_f64(r);
 }}'''
@@ -243,12 +264,58 @@ double probe(void){{
         detail = (diag or f"surviving:{sorted(set(surv))[:3]}").strip()
         return (status, detail, surv_llvm, diag_full, blocking_loc)
 
+def _mask_label(argtypes, mask):
+    """A stable per-combination key: 'q' for a tainted double, 'c' for any classical
+    operand (an untainted double OR an int/long that can never be tainted). E.g. for
+    atan2(double,double): 'qc' (arg0 tainted) / 'cq' (arg1 tainted) / 'qq' (both)."""
+    return "".join("q" if (t == "double" and i in mask) else "c"
+                   for i, t in enumerate(argtypes))
+
+def run_fn(fn, argtypes, defmap):
+    """3c6m.48: probe EVERY non-empty tainted-double combination and aggregate honestly.
+    Returns the same 5-tuple as run_one PLUS a `combinations` dict {label: 5-tuple}
+    (None for a single-double-arg fn — its lone mask IS run_one, so no extra field is
+    emitted and its census entry stays byte-identical to the pre-3c6m.48 snapshot).
+
+    AGGREGATION (Prime Directive, scoreboard honesty bd libm-scoreboard-two-numbers):
+    a multi-arg fn is COMPILES *only if EVERY* combination COMPILES — each taint mask
+    is a distinct unitary, so certifying one (the weakest, arg0-only, where classical
+    consts const-fold body logic) never certifies the rest. If ANY combination is not
+    COMPILES, the fn reports that combination's (decline) verdict — never a silent
+    'COMPILES' that hides an unlowered mask. Every accepted combination must still be
+    Rule-13-cleared separately (the emitted unitary differs per mask)."""
+    dpos = [i for i, t in enumerate(argtypes) if t == "double"]
+    if len(dpos) <= 1:                       # single tainted-double surface: legacy path
+        return run_one(fn, argtypes, defmap) + (None,)
+    masks = [set(m) for k in range(1, len(dpos) + 1)
+             for m in itertools.combinations(dpos, k)]
+    combos = {_mask_label(argtypes, m): run_one(fn, argtypes, defmap, mask=m) for m in masks}
+    # COMPILES iff all masks COMPILE; surviving_llvm = union across masks. Otherwise
+    # surface the FIRST non-COMPILES combination's verdict (a definite loud outcome).
+    if all(v[0] == "COMPILES" for v in combos.values()):
+        surv_union = sorted({s for v in combos.values() for s in v[2]})
+        return ("COMPILES", "surviving:[] (all %d taint masks)" % len(combos),
+                surv_union, "", "", combos)
+    fail_label, fail = next((l, v) for l, v in combos.items() if v[0] != "COMPILES")
+    st, detail, surv_llvm, diag_full, blocking_loc = fail
+    return (st, f"[mask {fail_label}] {detail}", surv_llvm, diag_full, blocking_loc, combos)
+
 # The census's double functions (INJECTION-CENSUS.md). Each maps to its C arg-type
-# list; arg0 is ALWAYS the tainted `double q`, the rest are classical consts. p119
-# note: the f/l variants (sinf/sinl/…) inject IDENTICALLY (same body shape, same
-# blockers), so this double set is representative of the full ~174 surface for the
-# injection question.
-FUNCS = {  # fn: [C arg types]  (arg0 = tainted double)
+# list. 3c6m.48: every DOUBLE arg is a maskable taint position — run_fn probes all
+# 2^k-1 non-empty tainted-double combinations and a fn is COMPILES only if ALL of them
+# are (single-double-arg fns keep the legacy arg0-only mask). Int/long args are never
+# tainted (cq_theta_f64 only makes doubles). p119 note: the f/l variants (sinf/sinl/…)
+# inject IDENTICALLY (same body shape, same blockers), so this double set is
+# representative of the full ~174 surface for the injection question.
+#
+# COMMITTED-SNAPSHOT NOTE (3c6m.48): a full run here needs the openlibm bitcode corpus
+# ($BC); without it the multi-double DECLINERS resolve as "unknown callee" instead of
+# their real body blockers, so the committed inject_results.json splices the per-mask
+# `combinations` for `atan2` ONLY (the sole COMPILES multi-arg, re-measured on this box).
+# The multi-double decliner entries keep pre-3c6m.48 single-line formatting until the
+# next full corpus run repopulates them — a formatting lag with NO scoreboard impact
+# (they stay declines). See INJECTION-CENSUS.md "Methodology 2026-07-10 (3c6m.48 …)".
+FUNCS = {  # fn: [C arg types]  (arg0 tainted by default; all doubles are maskable)
  "fabs":["double"], "nearbyint":["double"], "copysign":["double","double"],
  "sqrt":["double"], "fma":["double","double","double"],
  "sin":["double"],"cos":["double"],"tan":["double"],"exp":["double"],"exp2":["double"],
@@ -327,7 +394,10 @@ if __name__ == "__main__":
     print(f"indexed {len(defmap)} symbols across branchless/ + bc/", file=sys.stderr)
     results = {}
     for fn, argtypes in FUNCS.items():
-        status, detail, surv_llvm, diag_full, blocking_loc = run_one(fn, argtypes, defmap)
+        # 3c6m.48: run_fn probes EVERY tainted-double combination; `combinations` is a
+        # per-mask {label: 5-tuple} for multi-double-arg fns (None otherwise — those
+        # stay single-mask and byte-identical). status is COMPILES only if ALL masks are.
+        status, detail, surv_llvm, diag_full, blocking_loc, combinations = run_fn(fn, argtypes, defmap)
         bucket = bucket_of(fn)
         lever = lever_of(detail) if (bucket == "injection" and status == "decline") else ""
         if bucket == "harness-gap":
@@ -343,6 +413,13 @@ if __name__ == "__main__":
                        # 3c6m.9 ticket-bridge fields: the full diagnostic line + its
                        # parsed !dbg source location (empty when the corpus lacks -g).
                        "diag_full": diag_full, "blocking_loc": blocking_loc}
+        if combinations is not None:
+            # 3c6m.48 per-combination breakdown (only for multi-double-arg fns): each
+            # taint mask's own verdict, so a fn's "COMPILES" is auditably ALL-masks.
+            results[fn]["combinations"] = {
+                lbl: {"status": v[0], "detail": v[1], "surviving_llvm": v[2],
+                      "blocking_loc": v[4]}
+                for lbl, v in combinations.items()}
         note = f"  [llvm survivors: {surv_llvm}]" if surv_llvm else ""
         src = f" ⟪{body_source}⟫" if body_source == "authored-branchless" else ""
         tag = f" ⟨{bucket}{('/'+lever) if lever else ''}⟩"

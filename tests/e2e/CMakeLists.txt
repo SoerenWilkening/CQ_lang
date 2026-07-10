@@ -407,6 +407,31 @@ add_test(NAME e2e-slice-branchless-atan2
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2.expected.log")
 
+# bd 3c6m.48: the OTHER two taint masks of atan2. The census now certifies a
+# multi-arg fn's COMPILES only if EVERY tainted-double combination lowers (each mask
+# is a distinct unitary), so each accepted combination gets its own linked golden.
+# slice_branchless_atan2.c pins (q,c) [y tainted, x const]; these pin (c,q) [y const,
+# x tainted — exercises the fdiv_lh literal/handle division + an x-tainted quadrant
+# merge] and (q,q) [both tainted, two qubits — handle/handle fdiv + a NESTED
+# tainted-condition quadrant select, inner (y<0)?±PI merge feeding the outer (x<0)?
+# merge as a copy source]. Both are pure value-embeddings (0 controlled rotations,
+# balanced flag frees; the quadrant/off DATA rails left allocated, never dirty-freed).
+add_test(NAME e2e-slice-branchless-atan2-cq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2_cq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2_cq.expected.log")
+
+add_test(NAME e2e-slice-branchless-atan2-qq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2_qq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_atan2_qq.expected.log")
+
 add_test(NAME e2e-slice-branchless-sinh
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

@@ -28,6 +28,47 @@
 > not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
 > refresh.
 
+## Methodology 2026-07-10 (3c6m.48 — multi-arg taint-combination honesty; scoreboard unchanged 23/32)
+
+`inject_census.py` previously tainted only **arg0** (the rest classical consts), so a
+multi-arg fn's `COMPILES` certified exactly ONE of its `2^k-1` non-empty tainted-double
+combinations — and the *weakest*, because the classical constants **const-fold body
+logic** (e.g. `atan2(q,0.5)` folds the whole `(x<0)?±PI:0` quadrant offset to `+0.0`).
+Taint is **per-operand**: each combination is a DISTINCT lowering path (distinct
+`_hl`/`_lh`/`_qq` templates, distinct taint propagation) that emits a DIFFERENT unitary.
+The census now **enumerates every non-empty tainted-double mask** per fn (`run_fn` →
+`run_one(mask=…)`, distinct `cq_theta` per tainted arg) and counts a fn `COMPILES`
+**only if EVERY mask COMPILES** (else it reports the first declining mask — Prime
+Directive; never a silent `COMPILES` hiding an unlowered mask). Per-combination verdicts
+are recorded in `inject_results.json` under a `combinations` field (multi-arg fns only;
+single-double-arg entries keep their lone mask and stay byte-identical).
+
+The only **live** multi-arg fn that COMPILES is `atan2` — re-measured across all three
+masks: `qc` (y tainted, x const — the already-golden `x>0` half-plane), `cq` (y const,
+x tainted — exercises the `fdiv_lh` literal/handle division + an x-tainted quadrant
+merge), `qq` (both tainted, two qubits — handle/handle `fdiv` + a NESTED tainted-condition
+quadrant select). **All three COMPILE** and each is a **pure value-embedding** (0
+controlled rotations, balanced flag frees; the `off`/quadrant DATA rails left allocated,
+never dirty-freed) — so `atan2` stays honestly `COMPILES`, now with all masks certified
+and each accepted mask carrying its own linked e2e golden
+(`slice_branchless_atan2{,_cq,_qq}.c`, Rule-13 cleared).
+
+**Committed-snapshot scope (surgical splice, per the corpus-churn discipline of bd
+`branchless-sin-cos-3c6m10`).** `inject_results.json`'s `combinations` field is spliced
+for **`atan2` only** — the sole COMPILES multi-arg fn, re-measured on this box. The other
+multi-double surfaces stay declines on every mask (`pow`/`hypot`/`fmod`/`fdim`/`remainder`/
+`nextafter` — injection decliners; `copysign`/`fma`/`fmax`/`fmin` — hardware-kept) and
+retain their **pre-3c6m.48 single-line formatting**; a full `inject_census.py` run under
+the new code will additionally give each of them a `combinations` breakdown and a
+`[mask qc]` detail prefix, but that requires the openlibm bitcode corpus (absent here) and
+would churn ~27 unrelated entries — so it is deferred to the next full corpus run. This is
+a formatting lag on entries that **remain declines**, with **no scoreboard-number impact**
+(all stay declines; `injection_compiles`/`injection_candidates`/`declines_by_lever` are
+byte-stable). The one fn whose `COMPILES` actually needed multi-mask certification —
+`atan2` — is certified here (per-mask `combinations` + three linked e2e goldens). Scoreboard
+unchanged at **23/32**; what changed is that the multi-arg number is now HONESTLY measured
+(bd `libm-scoreboard-two-numbers`).
+
 ## Re-measurement 2026-07-10 (3c6m.46/.30/.19/.17 — tan L1 + exp2/asin/acos L2-closure; 19/32 → 23/32)
 
 > HISTORY, frozen at 23/32. Live number: `injection_summary.json`.
