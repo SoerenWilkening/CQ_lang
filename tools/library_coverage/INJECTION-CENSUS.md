@@ -42,6 +42,41 @@
 > not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
 > refresh.
 
+## ⚠️ Read the 32/32 precisely — FULL-SURFACE CENSUS 2026-07-11 (bd `3c6m.49`): real openlibm = **2/120**
+
+The **32/32** headline above is honest **but narrow in two ways**, and it is easy to
+misread as "math.h is done":
+
+1. **Authored substitutes, not off-the-shelf source.** All 32 bodies are
+   **hand-authored branchless** soft-bodies (`branchless/`, bd `3c6m.10` L1)
+   deliberately written to **bypass** every open lowering lever (zero selects, zero
+   nested control, no scratch store, no QROM). They are real Rule-18 injection — but
+   they are *our* code, not openlibm's.
+2. **Double-only.** `inject_census.py`'s probe generator is hard-wired to `double`
+   (`arg0` is always a `cq_theta_f64`), so the **float / long-double / by-ref /
+   integer-return** variants of the ~174-cell `math.h` surface were **never probed**.
+
+Injecting the **real off-the-shelf openlibm** body at **every width**
+([`full_surface/`](full_surface/), the width-parametric widening of this census) gives
+the honest picture: of **120 injectable cells**, **2 COMPILE** (`fdim.f64`, `fdimf.f32`
+— genuinely branchless) and **118 DECLINE**. The declines map cleanly onto the **already-open
+lever tickets** — there is *no large novel capability gap*, only the scoreboard was
+misleading:
+
+| Decline bucket | Cells | Lever |
+|---|---|---|
+| memory-store / Shadow at scale (mostly f80 `ld80` tables) | 34 | `3c6m.13` · `iw81.13` · `u9pl` |
+| L6 nested control (`atan`/`log*`/`cbrt`/`expm1`/`tanh`/`modf`/`lround`…) | 27 | `3c6m.14` (reprioritized P2) |
+| inner-reduction / unknown-callee (trig kernels + `pow`/`hypot`/`lgamma`…) | 25 | `3c6m.11` L2 ⚠ *partly harness closure/inlining — triage per-case* |
+| L5-QROM const-table reads mis-surfacing as "unsupported instruction" (`e_exp.c:138` `ln2HI[xsb]`, `e_fmod.c:48` `Zero[sx]`) | 18 | `3c6m.13` |
+| flat control · loops · fp-copy/specialization · §3c clobber | 14 | 4.x · 7.3 · `5po2` |
+
+**Takeaway (scoreboard honesty, bd `libm-scoreboard-two-numbers`):** the campaign number
+moves on **real-body injection**, not authored substitutes. `3c6m.49` owns productionizing
+this full-surface census as the authoritative scoreboard (superseding the double-only one).
+Reproduce: [`full_surface/README.md`](full_surface/README.md). Details: bd memory
+`libm-full-surface-empirical-decline-2026-07-11`.
+
 ## Methodology 2026-07-10 (3c6m.48 — multi-arg taint-combination honesty; scoreboard unchanged 23/32)
 
 `inject_census.py` previously tainted only **arg0** (the rest classical consts), so a

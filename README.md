@@ -56,9 +56,15 @@ a committed golden trace.
 > lrint llrint`. So `probe.py`'s number below counts what lowers **by recognition** (the
 > hardware survivors + opcode-macros); every transcendental / direct-libm / by-ref
 > function **declines loudly** without injection and is measured by the
-> [source-injection census](tools/library_coverage/INJECTION-CENSUS.md), where
-> off-the-shelf openlibm currently compiles ~0 of them (blocked by tainted control flow /
-> scratch memory). The old **165/174 (95%)** was the retired name-recognition claim.
+> [source-injection census](tools/library_coverage/INJECTION-CENSUS.md). That census
+> reports **32/32 injection-covered**, but read it precisely: those 32 are **hand-authored
+> branchless bodies** (`branchless/`, bd `3c6m.10`) for the **double** surface, deliberately
+> written to bypass the open lowering levers. The [**full-surface census**](tools/library_coverage/full_surface/)
+> (bd `3c6m.49`) injects the **real off-the-shelf openlibm** at every width and compiles
+> **2/120** cells (only `fdim`) — the other 118 decline on the tracked levers (L2/L5/L6 nested
+> control · Shadow scratch · loops · specialization). The old **165/174 (95%)** was the retired
+> name-recognition claim; the honest campaign number moves on real-body injection, not authored
+> substitutes.
 
 `math.h` is the flagship (pure numerical functions); `stdlib.h`'s integer `abs` island is the
 second. The format is **adaptable** — a new library is one `Lib(...)` entry plus its spec
