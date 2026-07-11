@@ -1,0 +1,2577 @@
+{
+ "acos.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "acosf.f32": {
+  "levers": [
+   "CONTROL",
+   "LOOP"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "loop-carried"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "LOOP"
+  ]
+ },
+ "acosh.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "acoshf.f32": {
+  "levers": [
+   "CONTROL",
+   "LOOP"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "loop-carried"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "LOOP"
+  ]
+ },
+ "acoshl.f80": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ]
+ },
+ "acosl.f80": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ]
+ },
+ "asin.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "asinf.f32": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "asinh.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "asinhf.f32": {
+  "levers": [
+   "CONTROL",
+   "LOOP"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "loop-carried"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "LOOP"
+  ]
+ },
+ "asinhl.f80": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ]
+ },
+ "asinl.f80": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ]
+ },
+ "atan.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "atan2.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "atan2f.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "control-flat-diamond"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "atan2l.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW",
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "fp-specialization",
+   "shadow-store"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW",
+   "SPECIALIZE"
+  ]
+ },
+ "atanf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "atanh.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "atanhf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "atanhl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "atanl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "cbrt.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "cbrtf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "cbrtl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "cos.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "in-loop-control",
+   "shadow-store",
+   "unknown-callee",
+   "unsupported-opcode"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ]
+ },
+ "cosf.f32": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ]
+ },
+ "cosh.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "coshf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "coshl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW",
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "fp-specialization",
+   "shadow-store"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW",
+   "SPECIALIZE"
+  ]
+ },
+ "cosl.f80": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ]
+ },
+ "erf.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "erfc.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "erfcf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "erfcl.f80": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ]
+ },
+ "erff.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "erfl.f80": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ]
+ },
+ "exp.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "exp2.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "exp2f.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "exp2l.f80": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "expf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "expl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "expm1.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "expm1f.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "expm1l.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "fdim.f64": {
+  "levers": [],
+  "compiles": true,
+  "fully_inlined": true,
+  "first_blocker": [],
+  "census_classes": [],
+  "uninlined_calls": false,
+  "projected_levers": []
+ },
+ "fdimf.f32": {
+  "levers": [],
+  "compiles": true,
+  "fully_inlined": true,
+  "first_blocker": [],
+  "census_classes": [],
+  "uninlined_calls": false,
+  "projected_levers": []
+ },
+ "fdiml.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "fmod.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "fmodf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "fmodl.f80": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "frexp.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "control-flat-diamond"
+  ],
+  "census_classes": [
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "frexpf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "clobber-3c"
+  ],
+  "census_classes": [
+   "classical-mux",
+   "clobber-3c"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "frexpl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "hypot.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "hypotf.f32": {
+  "levers": [
+   "CONTROL",
+   "LOOP"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "loop-carried"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "LOOP"
+  ]
+ },
+ "hypotl.f80": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ]
+ },
+ "ldexp.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "control-flat-diamond"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "ldexpf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "control-flat-diamond"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "ldexpl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "lgamma.f64": {
+  "levers": [
+   "CONTROL",
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "fp-specialization"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "fp-specialization"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "SPECIALIZE"
+  ]
+ },
+ "lgammaf.f32": {
+  "levers": [
+   "CONTROL",
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "fp-specialization"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "fp-specialization"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "SPECIALIZE"
+  ]
+ },
+ "lgammal.f80": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW",
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "fp-specialization"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "fp-specialization",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW",
+   "SPECIALIZE"
+  ]
+ },
+ "llround.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "llroundf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "llroundl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "log.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "log10.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "log10f.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "log10l.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "log1p.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "log1pf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "log1pl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "log2.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "log2f.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "log2l.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "logb.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "logbf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "logbl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "logf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "logl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "lround.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "lroundf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "lroundl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "modf.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "modff.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "modfl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "nextafter.f64": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "nextafterf.f32": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "nextafterl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "nexttoward.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ]
+ },
+ "nexttowardf.f32": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "nexttowardl.f80": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW"
+  ]
+ },
+ "pow.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "powf.f32": {
+  "levers": [
+   "CONTROL",
+   "LOOP"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "loop-carried"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "LOOP"
+  ]
+ },
+ "powl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW",
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "fp-specialization"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "fp-specialization",
+   "qram-read-under-control",
+   "shadow-store"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW",
+   "SPECIALIZE"
+  ]
+ },
+ "remainder.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "remainderf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "remainderl.f80": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "remquo.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "remquof.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "remquol.f80": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL"
+  ]
+ },
+ "scalbln.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "control-flat-diamond"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "scalblnf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "control-flat-diamond"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "scalblnl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "scalbn.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "control-flat-diamond"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "scalbnf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "control-flat-diamond"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "scalbnl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "sin.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "in-loop-control",
+   "shadow-store",
+   "unknown-callee",
+   "unsupported-opcode"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ]
+ },
+ "sinf.f32": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ]
+ },
+ "sinh.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "sinhf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "qram-read-under-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "qram-read-under-control"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "sinhl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW",
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "fp-specialization",
+   "shadow-store"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW",
+   "SPECIALIZE"
+  ]
+ },
+ "sinl.f80": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ]
+ },
+ "tan.f64": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "in-loop-control",
+   "shadow-store",
+   "unknown-callee",
+   "unsupported-opcode"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ]
+ },
+ "tanf.f32": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ]
+ },
+ "tanh.f64": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "tanhf.f32": {
+  "levers": [
+   "CONTROL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "L6-nested-control"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL"
+  ]
+ },
+ "tanhl.f80": {
+  "levers": [
+   "CONTROL",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "SHADOW"
+  ]
+ },
+ "tanl.f80": {
+  "levers": [
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "LOOP",
+   "OPCODE",
+   "SHADOW"
+  ]
+ },
+ "tgamma.f64": {
+  "levers": [
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "fp-specialization"
+  ],
+  "census_classes": [
+   "fp-specialization"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "SPECIALIZE"
+  ]
+ },
+ "tgammaf.f32": {
+  "levers": [
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "fp-specialization"
+  ],
+  "census_classes": [
+   "fp-specialization"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "SPECIALIZE"
+  ]
+ },
+ "tgammal.f80": {
+  "levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW",
+   "SPECIALIZE"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "fp-specialization"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "fp-specialization",
+   "shadow-store",
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "CONTROL",
+   "INNER-CALL",
+   "SHADOW",
+   "SPECIALIZE"
+  ]
+ }
+}

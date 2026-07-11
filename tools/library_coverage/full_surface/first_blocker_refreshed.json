@@ -1,0 +1,1835 @@
+{
+ "tanf.f32": {
+  "fn": "tanf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmpiwrdf2_d/probe.c:7:13",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "sinl.f80": {
+  "fn": "sinl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmpxyfhzj08/probe.c:7:19",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "cosf.f32": {
+  "fn": "cosf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmpemwnsq7l/probe.c:7:13",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "cosl.f80": {
+  "fn": "cosl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmpdgzq7y0n/probe.c:7:19",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "tanl.f80": {
+  "fn": "tanl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmpj6wnd7w_/probe.c:7:19",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "sinf.f32": {
+  "fn": "sinf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmpqnwvfucn/probe.c:7:13",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "acosf.f32": {
+  "fn": "acosf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "loop-carried",
+    "loc": "<unknown>:0:0",
+    "msg": "loop lowering: loop-carried tainted value crosses iterations"
+   }
+  ]
+ },
+ "atanf.f32": {
+  "fn": "atanf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_atanf.c:57:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "asinf.f32": {
+  "fn": "asinf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/tmp/openlibm/src/e_sqrt.c:130:10",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "asin.f64": {
+  "fn": "asin",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/tmp/openlibm/src/e_sqrt.c:130:10",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "acos.f64": {
+  "fn": "acos",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/tmp/openlibm/src/e_sqrt.c:130:10",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "sin.f64": {
+  "fn": "sin",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/e_rem_pio2.c:174:9",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "cos.f64": {
+  "fn": "cos",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/e_rem_pio2.c:174:9",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "tan.f64": {
+  "fn": "tan",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/e_rem_pio2.c:174:9",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "asinl.f80": {
+  "fn": "asinl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/e_asinl.c:39:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "acosl.f80": {
+  "fn": "acosl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/e_acosl.c:49:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "atan.f64": {
+  "fn": "atan",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_atan.c:81:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "atanl.f80": {
+  "fn": "atanl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_atanl.c:41:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "atan2.f64": {
+  "fn": "atan2",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/e_atan2.c:71:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "atan2f.f32": {
+  "fn": "atan2f",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "control-flat-diamond",
+    "loc": "/tmp/openlibm/src/e_atan2f.c:43:20",
+    "msg": "controlled lowering: control flow under quantum control"
+   }
+  ]
+ },
+ "atan2l.f80": {
+  "fn": "atan2l",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/e_atan2l.c:54:7",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "coshf.f32": {
+  "fn": "coshf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_expf.c:68:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "sinhf.f32": {
+  "fn": "sinhf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_expf.c:68:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "coshl.f80": {
+  "fn": "coshl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/e_coshl.c:48:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "sinhl.f80": {
+  "fn": "sinhl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/e_sinhl.c:44:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "tanhf.f32": {
+  "fn": "tanhf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_tanhf.c:34:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "tanh.f64": {
+  "fn": "tanh",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_tanh.c:57:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "cosh.f64": {
+  "fn": "cosh",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_exp.c:138:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "acoshf.f32": {
+  "fn": "acoshf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "loop-carried",
+    "loc": "<unknown>:0:0",
+    "msg": "loop lowering: loop-carried tainted value crosses iterations"
+   }
+  ]
+ },
+ "sinh.f64": {
+  "fn": "sinh",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_exp.c:138:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "acosh.f64": {
+  "fn": "acosh",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/tmp/openlibm/src/e_sqrt.c:130:10",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "tanhl.f80": {
+  "fn": "tanhl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/s_tanhl.c:51:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "asinhf.f32": {
+  "fn": "asinhf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "loop-carried",
+    "loc": "<unknown>:0:0",
+    "msg": "loop lowering: loop-carried tainted value crosses iterations"
+   }
+  ]
+ },
+ "atanhf.f32": {
+  "fn": "atanhf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/e_atanhf.c:34:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "asinh.f64": {
+  "fn": "asinh",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/tmp/openlibm/src/e_sqrt.c:130:10",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "atanh.f64": {
+  "fn": "atanh",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/e_atanh.c:52:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "acoshl.f80": {
+  "fn": "acoshl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/e_acoshl.c:40:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "expf.f32": {
+  "fn": "expf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_expf.c:68:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "exp.f64": {
+  "fn": "exp",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_exp.c:138:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "atanhl.f80": {
+  "fn": "atanhl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/e_atanhl.c:45:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "exp2f.f32": {
+  "fn": "exp2f",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/s_exp2f.c:130:7",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "asinhl.f80": {
+  "fn": "asinhl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/s_asinhl.c:38:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "exp2l.f80": {
+  "fn": "exp2l",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmplbnuihjc/probe.c:7:19",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "exp2.f64": {
+  "fn": "exp2",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/s_exp2.c:376:6",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "expm1f.f32": {
+  "fn": "expm1f",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_expm1f.c:52:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "expm1.f64": {
+  "fn": "expm1",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_expm1.c:143:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "logf.f32": {
+  "fn": "logf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/e_logf.c:44:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "expl.f80": {
+  "fn": "expl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_isnan.c:61:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "log.f64": {
+  "fn": "log",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/e_log.c:97:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "expm1l.f80": {
+  "fn": "expm1l",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/s_floorl.c:33:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "log10f.f32": {
+  "fn": "log10f",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/e_log10f.c:45:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "log10.f64": {
+  "fn": "log10",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/e_log10.c:50:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "log2f.f32": {
+  "fn": "log2f",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/e_log2f.c:43:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "log2.f64": {
+  "fn": "log2",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/e_log2.c:50:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "log1pf.f32": {
+  "fn": "log1pf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_log1pf.c:48:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "log1p.f64": {
+  "fn": "log1p",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_log1p.c:110:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "logl.f80": {
+  "fn": "logl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_isnan.c:61:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "log10l.f80": {
+  "fn": "log10l",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_isnan.c:61:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "log2l.f80": {
+  "fn": "log2l",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_isnan.c:61:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "logbf.f32": {
+  "fn": "logbf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_logbf.c:32:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "logb.f64": {
+  "fn": "logb",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_logb.c:36:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "logbl.f80": {
+  "fn": "logbl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_logbl.c:27:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "log1pl.f80": {
+  "fn": "log1pl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_isnan.c:61:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "ldexpf.f32": {
+  "fn": "ldexpf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "control-flat-diamond",
+    "loc": "/tmp/openlibm/src/s_scalbnf.c:35:13",
+    "msg": "controlled lowering: control flow under quantum control"
+   }
+  ]
+ },
+ "scalbnf.f32": {
+  "fn": "scalbnf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "control-flat-diamond",
+    "loc": "/tmp/openlibm/src/s_scalbnf.c:35:13",
+    "msg": "controlled lowering: control flow under quantum control"
+   }
+  ]
+ },
+ "ldexp.f64": {
+  "fn": "ldexp",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "control-flat-diamond",
+    "loc": "/tmp/openlibm/src/s_scalbn.c:39:13",
+    "msg": "controlled lowering: control flow under quantum control"
+   }
+  ]
+ },
+ "ldexpl.f80": {
+  "fn": "ldexpl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_scalbnl.c:47:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "scalbn.f64": {
+  "fn": "scalbn",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "control-flat-diamond",
+    "loc": "/tmp/openlibm/src/s_scalbn.c:39:13",
+    "msg": "controlled lowering: control flow under quantum control"
+   }
+  ]
+ },
+ "frexpf.f32": {
+  "fn": "frexpf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "clobber-3c",
+    "loc": "/tmp/openlibm/src/s_frexpf.c:42:2",
+    "msg": "controlled lowering: arm rewrites a condition operand under quantum control"
+   }
+  ]
+ },
+ "scalbnl.f80": {
+  "fn": "scalbnl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_scalbnl.c:47:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "scalblnf.f32": {
+  "fn": "scalblnf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "control-flat-diamond",
+    "loc": "/tmp/openlibm/src/s_scalbnf.c:35:13",
+    "msg": "controlled lowering: control flow under quantum control"
+   }
+  ]
+ },
+ "scalblnl.f80": {
+  "fn": "scalblnl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_scalbnl.c:47:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "scalbln.f64": {
+  "fn": "scalbln",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "control-flat-diamond",
+    "loc": "/tmp/openlibm/src/s_scalbn.c:39:13",
+    "msg": "controlled lowering: control flow under quantum control"
+   }
+  ]
+ },
+ "frexp.f64": {
+  "fn": "frexp",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "control-flat-diamond",
+    "loc": "/tmp/openlibm/src/s_frexp.c:41:19",
+    "msg": "controlled lowering: control flow under quantum control"
+   }
+  ]
+ },
+ "frexpl.f80": {
+  "fn": "frexpl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_frexpl.c:44:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "modff.f32": {
+  "fn": "modff",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_modff.c:32:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "modf.f64": {
+  "fn": "modf",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_modf.c:36:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "modfl.f80": {
+  "fn": "modfl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/s_modfl.c:34:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "cbrtf.f32": {
+  "fn": "cbrtf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_cbrtf.c:43:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "cbrt.f64": {
+  "fn": "cbrt",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_cbrt.c:52:5",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "powf.f32": {
+  "fn": "powf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "loop-carried",
+    "loc": "<unknown>:0:0",
+    "msg": "loop lowering: loop-carried tainted value crosses iterations"
+   }
+  ]
+ },
+ "pow.f64": {
+  "fn": "pow",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/tmp/openlibm/src/e_sqrt.c:130:10",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "cbrtl.f80": {
+  "fn": "cbrtl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_cbrtl.c:47:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "hypotf.f32": {
+  "fn": "hypotf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "loop-carried",
+    "loc": "<unknown>:0:0",
+    "msg": "loop lowering: loop-carried tainted value crosses iterations"
+   }
+  ]
+ },
+ "hypot.f64": {
+  "fn": "hypot",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/tmp/openlibm/src/e_sqrt.c:130:10",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "powl.f80": {
+  "fn": "powl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "fp-specialization",
+    "loc": "/tmp/openlibm/ld80/e_powl.c:331:6",
+    "msg": "specialization: floating-point quantum argument or return has no reversible copy"
+   }
+  ]
+ },
+ "erff.f32": {
+  "fn": "erff",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_expf.c:68:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "hypotl.f80": {
+  "fn": "hypotl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/e_hypotl.c:55:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "erf.f64": {
+  "fn": "erf",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_exp.c:138:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "erfcf.f32": {
+  "fn": "erfcf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_expf.c:68:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "erfc.f64": {
+  "fn": "erfc",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_exp.c:138:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "erfl.f80": {
+  "fn": "erfl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/s_erfl.c:255:3",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "erfcl.f80": {
+  "fn": "erfcl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/s_erfl.c:335:3",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "tgamma.f64": {
+  "fn": "tgamma",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "fp-specialization",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmpfjt81a72/probe.c:7:14",
+    "msg": "specialization: floating-point quantum argument or return has no reversible copy"
+   }
+  ]
+ },
+ "tgammaf.f32": {
+  "fn": "tgammaf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "fp-specialization",
+    "loc": "/tmp/openlibm/src/s_tgammaf.c:44:10",
+    "msg": "specialization: floating-point quantum argument or return has no reversible copy"
+   }
+  ]
+ },
+ "lroundf.f32": {
+  "fn": "lroundf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_roundf.c:39:7",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "lround.f64": {
+  "fn": "lround",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_round.c:41:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "tgammal.f80": {
+  "fn": "tgammal",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "fp-specialization",
+    "loc": "/tmp/openlibm/ld80/e_tgammal.c:263:7",
+    "msg": "specialization: floating-point quantum argument or return has no reversible copy"
+   }
+  ]
+ },
+ "lgammaf.f32": {
+  "fn": "lgammaf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "fp-specialization",
+    "loc": "/tmp/openlibm/src/e_lgammaf_r.c:108:6",
+    "msg": "specialization: floating-point quantum argument or return has no reversible copy"
+   }
+  ]
+ },
+ "lgamma.f64": {
+  "fn": "lgamma",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "fp-specialization",
+    "loc": "/tmp/openlibm/src/e_lgamma_r.c:175:6",
+    "msg": "specialization: floating-point quantum argument or return has no reversible copy"
+   }
+  ]
+ },
+ "lroundl.f80": {
+  "fn": "lroundl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_isfinite.c:58:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "llroundf.f32": {
+  "fn": "llroundf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_roundf.c:39:7",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "fmodl.f80": {
+  "fn": "fmodl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp7p__m4fr/probe.c:7:19",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "lgammal.f80": {
+  "fn": "lgammal",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "fp-specialization",
+    "loc": "/tmp/openlibm/ld80/e_lgammal_r.c:324:9",
+    "msg": "specialization: floating-point quantum argument or return has no reversible copy"
+   }
+  ]
+ },
+ "fmodf.f32": {
+  "fn": "fmodf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_fmodf.c:48:13",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "fmod.f64": {
+  "fn": "fmod",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_fmod.c:48:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "llround.f64": {
+  "fn": "llround",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "L6-nested-control",
+    "loc": "/tmp/openlibm/src/s_round.c:41:6",
+    "msg": "controlled lowering: nested control flow under quantum control"
+   }
+  ]
+ },
+ "llroundl.f80": {
+  "fn": "llroundl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_isfinite.c:58:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "remainderf.f32": {
+  "fn": "remainderf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_fmodf.c:48:13",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "remainder.f64": {
+  "fn": "remainder",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/e_fmod.c:48:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "remquol.f80": {
+  "fn": "remquol",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmpp2fyheum/probe.c:7:19",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "remainderl.f80": {
+  "fn": "remainderl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/tmp/openlibm/src/e_remainderl.c:38:10",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "nextafterf.f32": {
+  "fn": "nextafterf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_nextafterf.c:59:8",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "remquof.f32": {
+  "fn": "remquof",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/s_remquof.c:51:13",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "nextafter.f64": {
+  "fn": "nextafter",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_nextafter.c:69:8",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "remquo.f64": {
+  "fn": "remquo",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "qram-read-under-control",
+    "loc": "/tmp/openlibm/src/s_remquo.c:55:10",
+    "msg": "QRAM access: const-global table read under tainted control (needs nested-control lowering)"
+   }
+  ]
+ },
+ "nextafterl.f80": {
+  "fn": "nextafterl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/s_nextafterl.c:30:2",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "nexttowardl.f80": {
+  "fn": "nexttowardl",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": false,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp2b0errl_/probe.c:7:19",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "nexttowardf.f32": {
+  "fn": "nexttowardf",
+  "width": "f32",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/ld80/s_nexttowardf.c:63:21",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ },
+ "nexttoward.f64": {
+  "fn": "nexttoward",
+  "width": "f64",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "unknown-callee",
+    "loc": "/tmp/openlibm/ld80/s_nexttoward.c:50:20",
+    "msg": "taint escape: tainted value consumed by an unknown callee"
+   }
+  ]
+ },
+ "fdimf.f32": {
+  "fn": "fdimf",
+  "width": "f32",
+  "status": "COMPILES",
+  "fully_inlined": true,
+  "exit0": true,
+  "n_blockers": 0,
+  "blockers": []
+ },
+ "fdim.f64": {
+  "fn": "fdim",
+  "width": "f64",
+  "status": "COMPILES",
+  "fully_inlined": true,
+  "exit0": true,
+  "n_blockers": 0,
+  "blockers": []
+ },
+ "fdiml.f80": {
+  "fn": "fdiml",
+  "width": "f80",
+  "status": "decline",
+  "fully_inlined": true,
+  "exit0": false,
+  "n_blockers": 1,
+  "blockers": [
+   {
+    "class": "shadow-store",
+    "loc": "/tmp/openlibm/src/s_isnan.c:61:6",
+    "msg": "taint escape: tainted value stored to memory"
+   }
+  ]
+ }
+}

@@ -206,6 +206,7 @@ MATHH_SPEC = [
     # --- power --- (open: algebraic-irrational / transcendental, no elementary circuit)
     B("pow", "power", ["fp", "fp"], flags=("errno",), backend="open"),
     B("sqrt", "power", ["fp"], flags=("errno",), backend="open"),
+    B("fabs", "power", ["fp"], backend="standard"),                    # hardware keep-set (bit-clear sign); census skips
     B("cbrt", "power", ["fp"], backend="open"),
     B("hypot", "power", ["fp", "fp"], backend="open"),
     # --- error / gamma --- (open: special functions)
@@ -231,6 +232,12 @@ MATHH_SPEC = [
     # --- manipulation ---
     B("copysign", "manipulation", ["fp", "fp"], backend="standard"),                   # sign-bit copy
     B("nextafter", "manipulation", ["fp", "fp"], flags=("errno",), backend="standard"),# bit-pattern ±1
+    # nexttoward(x,y): C11 §7.12.11, 2nd arg is ALWAYS long double (all widths).
+    # Same bit-pattern ±1 profile as nextafter, but the direction compare widens to
+    # long double. Injectable (openlibm s_nexttoward{,f}.c); nexttowardl may be
+    # corpus-limited on this build (no distinct ld80 body). The "ldbl" arg-kind
+    # pins the classical long-double 2nd operand (see full_census.cell_args).
+    B("nexttoward", "manipulation", ["fp", "ldbl"], flags=("errno",), backend="standard"),
     # fdim(x,y)=max(x−y,0): the compare-select is standard, but the RESULT is a
     # genuine IEEE fp subtraction (align + subtract + normalize + round-to-nearest-
     # even) — the SAME rounding machinery as fma / the rounding family, NOT a
@@ -250,7 +257,10 @@ MATHH_SPEC = [
     B("isnormal", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
     B("signbit", "classify_macro", ["fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
     B("isgreater", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("isgreaterequal", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
     B("isless", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("islessequal", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
+    B("islessgreater", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
     B("isunordered", "classify_macro", ["fp", "fp"], ret="int", flags=("macro",), variants=("",), backend="standard"),
 ]
 

@@ -26,6 +26,7 @@ def cell_args(spec, width, ctype, lit):
             out.append(("q", width) if i == 0 else (f"c:{ctype}:{lit}",))
         elif a == "int":   out.append(("c:int:2",))
         elif a == "long":  out.append(("c:long:2",))
+        elif a == "ldbl":  out.append(("c:long double:0.5L",))   # nexttoward 2nd arg (always long double)
         elif a == "int*":  out.append(("ref:int",))
         elif a == "fp*":   out.append((f"ref:{ctype}",))
         elif a == "str":   return None   # nan("") — no taintable input
