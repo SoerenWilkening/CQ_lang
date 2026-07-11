@@ -61,6 +61,21 @@ public:
   // inverse — no `_inv` twin.
   llvm::FunctionCallee cswapFn() const;
 
+  // CNOT gate primitive (3c6m.12 — the compound-condition OR network):
+  // `void cqrt_cnot(i32 ctrl, i32 tgt)`. Width-agnostic — both operands are
+  // i32 flag/ancilla handles. Self-inverse (an involution), so the LIFO
+  // uncompute re-emits the same `cqrt_cnot` — no `_inv` twin. Together with
+  // `toffoliFn` this realizes the header doctrine that multi-condition
+  // control is built from single-control ops plus Toffoli flag conjunction:
+  // `OR` on a |0> ancilla g is `cnot(l,g); cnot(r,g); toffoli(l,r,g)`
+  // (g = l⊕r⊕lr = l∨r) — inputs are READ-ONLY, never X-bracketed.
+  llvm::FunctionCallee cnotFn() const;
+
+  // Toffoli / CCX gate primitive (3c6m.12 — the compound-condition AND node
+  // and the OR completion): `void cqrt_toffoli(i32 c1, i32 c2, i32 tgt)`.
+  // Width-agnostic (three i32 handles); self-inverse — no `_inv` twin.
+  llvm::FunctionCallee toffoliFn() const;
+
   // Controlled reversible basis copy (Phase 4.4, PRD Part IV §16.3):
   // `void cqrt_copy_<W>_controlled(i32 ctrl, i32 src, i32 dst)` — the
   // tainted-`select` controlled-XOR copy merge primitive. Copies `src`

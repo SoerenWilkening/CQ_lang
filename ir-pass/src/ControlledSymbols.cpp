@@ -54,6 +54,29 @@ FunctionCallee ControlledSymbols::cswapFn() const {
       "cqrt_cswap", FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
 }
 
+FunctionCallee ControlledSymbols::cnotFn() const {
+  // `void cqrt_cnot(i32 ctrl, i32 tgt)`. Width-agnostic; both operands are i32
+  // flag/ancilla handles. CNOT is an involution (its own inverse), so the
+  // compound-condition LIFO uncompute re-emits the same `cqrt_cnot` — no
+  // `_inv` twin. Byte-matches the hand-written decl in runtime/cq_runtime.h
+  // (§11.4 gate primitives).
+  LLVMContext &Ctx = M.getContext();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      "cqrt_cnot", FunctionType::get(Type::getVoidTy(Ctx), {I32, I32}, false));
+}
+
+FunctionCallee ControlledSymbols::toffoliFn() const {
+  // `void cqrt_toffoli(i32 c1, i32 c2, i32 tgt)`. Width-agnostic; three i32
+  // handles (two read-only controls, one target). Self-inverse — no `_inv`
+  // twin. Byte-matches runtime/cq_runtime.h (§11.4 gate primitives).
+  LLVMContext &Ctx = M.getContext();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  return M.getOrInsertFunction(
+      "cqrt_toffoli",
+      FunctionType::get(Type::getVoidTy(Ctx), {I32, I32, I32}, false));
+}
+
 FunctionCallee ControlledSymbols::copyControlledFn(StringRef abiWidth) const {
   // `void cqrt_copy_<W>_controlled(i32 ctrl, i32 src, i32 dst)`. Mirrors
   // cqrt_copy_<W>_controlled in runtime/cq_runtime.h (Phase 4.4 — the

@@ -121,6 +121,28 @@ llvm::Value *lowerCompareToFlag(llvm::CmpInst *cmp, WidthDispatch &wd,
                                 llvm::Instruction *before = nullptr,
                                 bool negate = false);
 
+// 3c6m.12 (L4) — detection-side DRY-RUN of the HL flag mint above: TRUE iff
+// `lowerCompareToFlag(cmp, …, qqWidth={}, negate=false)` would mint without
+// diagnosing (exactly-one-tainted operand, recoverable non-i128 ABI width from
+// the classical operand, in-scope post-flip predicate). Pure — emits nothing,
+// mutates nothing. Added so a COMPOUND select condition validates EVERY leaf
+// BEFORE the emitter mints the first flag: with one flag per leaf the mint is
+// no longer atomic, and a mid-stream `diagnoseNoTemplate` bail would leave
+// earlier flags/ancillas dangling in the stream (mutate-then-decline — the
+// ziov.4 detect-before-mutate class comparePredLowerable was added to
+// detection to forbid). KEEP IN LOCKSTEP with `lowerCompareImpl`'s HL
+// classification front half (CompareLowering.cpp) — the decline fixtures
+// `control_swap_reject_select_{i128_leaf,fp128_cond}.ll` pin both ends.
+// KNOWN RESIDUAL (Rule-13 clearance NIT, non-blocking): this dry-run does NOT
+// replicate the final `compareTemplateFn`-null check — a leaf passing every
+// gate here whose template resolver still nulled would reach the emitter's
+// mid-mint `if (!F) return` bail. No reachable width exists today (i1
+// operands are policy-fenced at the leaf loop, f128/pointer land
+// `AbiWidth.empty()`, i128 is explicit), and the outcome would be LOUD
+// (`diagnoseNoTemplate`, opt exits non-zero) — re-audit if the compare
+// template surface ever narrows below `compareInScope`.
+bool compareFlagMintable(llvm::CmpInst *cmp, TaintSet &taint);
+
 // Swap-route nested-control variant of `lowerCompareToFlag` (Phase 4.3, the ONE
 // new emission primitive — IMPLEMENTATION-4.3 §4/§12.2). Mints the inner
 // condition's flag with `railBase` substituted for the parent-routed handle

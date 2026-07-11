@@ -11,6 +11,7 @@
 #include "SelectClassify.h"
 
 #include "ArmAnalysis.h"     // comparePredLowerable, diagonalAliasHit, condProvenance
+#include "CompareLowering.h" // compareFlagMintable (per-leaf width/scope fence)
 #include "ControlPlan.h"     // diagnoseUnderControl, ControlPlan, ControlRegion
 #include "OpcodeSupport.h"   // abiWidthFromType
 #include "TaintPropagation.h"  // TaintSet
@@ -361,6 +362,48 @@ bool operandsAlias(Value *A, Value *B) {
 
 }  // namespace
 
+// 3c6m.12 (L4) — the shared condition-tree walk (see SelectClassify.h). An
+// explicit two-phase stack (a (value, childrenDone) pair) yields left-to-right
+// post-order without recursion; `Seen` both dedupes SHARED subtrees (a leaf or
+// node reachable from two tree positions collects ONCE — its flag/ancilla
+// mints once, network controls are read-only) and bounds the walk (SSA is
+// acyclic through pure i1 ops — no phi is ever crossed).
+bool collectCondTree(Value *Root, CondTree &Tree) {
+  SmallPtrSet<Value *, 8> Seen;
+  SmallVector<std::pair<Value *, bool>, 8> Stack;
+  Stack.push_back({Root, false});
+  while (!Stack.empty()) {
+    auto [V, ChildrenDone] = Stack.pop_back_val();
+    if (ChildrenDone) {
+      Tree.Nodes.push_back(cast<BinaryOperator>(V));  // post-order emit slot.
+      continue;
+    }
+    if (!Seen.insert(V).second)
+      continue;  // shared subtree — already collected once.
+    if (auto *Leaf = dyn_cast<CmpInst>(V)) {
+      Tree.Leaves.push_back(Leaf);
+      continue;
+    }
+    auto *BO = dyn_cast<BinaryOperator>(V);
+    if (!BO || !BO->getType()->isIntegerTy(1) ||
+        (BO->getOpcode() != Instruction::And &&
+         BO->getOpcode() != Instruction::Or))
+      return false;  // off-grammar: xor / freeze / i1-select / phi / trunc / …
+    // Self-operand node fence (design-review MAJOR): `or/and i1 %c, %c` would
+    // emit a toffoli whose two CONTROL slots resolve to ONE rail (per-Value
+    // memo) — value-correct in trace semantics yet an ill-formed physical
+    // 3-qubit gate no backend can realize, frozen into the golden at exit 0.
+    // The shape is non-canonical (InstCombine folds x∨x/x∧x to x), so decline
+    // it rather than peephole an unprobed accept (Prime Directive).
+    if (BO->getOperand(0) == BO->getOperand(1))
+      return false;
+    Stack.push_back({V, true});  // node slot AFTER both children.
+    Stack.push_back({BO->getOperand(1), false});
+    Stack.push_back({BO->getOperand(0), false});  // left child visits first.
+  }
+  return !Tree.Leaves.empty();
+}
+
 void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   // GATE 1 — entry: only tainted-condition selects are ours. A classical-cond
   // select is `declineClassicalMuxes`'s domain (L96) and stays declined
@@ -368,25 +411,57 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   if (!taint.Tainted.count(Sel->getCondition()))
     return;  // not ours; leave for declineClassicalMuxes.
 
-  // GATE 2 — lowerable compare condition. A non-`CmpInst` tainted i1 (a compound
-  // `&&`/`||`, a `trunc`, …) or an out-of-scope `fcmp` predicate has no flag-mint
-  // template; decline generic `control flow` (a select has no straight-through
-  // edge, so the §3c clobber proof obligation can never be met — never brand it
-  // `control condition has no template`/clobber; IMPLEMENTATION-4.4 §0).
-  auto *Cond = dyn_cast<CmpInst>(Sel->getCondition());
-  if (!Cond || !comparePredLowerable(Cond))
+  // GATE 2 — lowerable condition TREE (3c6m.12 L4 widening; compound-cond-
+  // select-PRD §2). The condition must be a `CmpInst` or an `and i1`/`or i1`
+  // tree over `CmpInst` leaves (the clang -O1 `&&`/`||` fold; a bare compare is
+  // the degenerate single-leaf tree — the pre-L4 path, byte-identical
+  // emission). Any other tainted i1 (a `trunc`, `xor`, `freeze`, an i1-select
+  // combinator, a phi, …) has no flag-mint shape; decline generic `control
+  // flow` (a select has no straight-through edge, so the §3c clobber proof
+  // obligation can never be met — never brand it `control condition has no
+  // template`/clobber; IMPLEMENTATION-4.4 §0). Then PER LEAF:
+  //   * an out-of-scope predicate declines (the pre-L4 gate 2);
+  //   * an UNTAINTED (classical) leaf declines — it has no quantum flag to
+  //     mint, and promoting it would allocate a qubit for classical data (the
+  //     §5.2 prohibition); a hybrid classical∧quantum conjunction is out of
+  //     scope this increment;
+  //   * GATE 2b — a Q+Q leaf (BOTH compare operands tainted) declines HERE in
+  //     the CONTROL dialect rather than let the emitter's mint reach the
+  //     data-path `no template` bail (the message would mis-brand as a
+  //     straight-line lowering failure — WI-3 adversarial review NIT).
+  CondTree Tree;
+  if (!collectCondTree(Sel->getCondition(), Tree))
     return diagnoseUnderControl(Sel, "control flow");
-
-  // GATE 2b — HL-only flag mint. A Q+Q condition (BOTH compare operands tainted,
-  // e.g. `icmp sgt %q, %y`) has no flag-mint template — `lowerCompareToFlag` is
-  // HL-only (handle + literal). Decline HERE in the CONTROL dialect rather than
-  // let `emitSelectRegion`'s step-1 mint reach the data-path `no template` bail
-  // (the message would mis-brand as a straight-line lowering failure — WI-3
-  // adversarial review NIT). Over-decline-safe; a Q+Q select condition is out of
-  // scope this increment regardless.
-  if (Cond->getNumOperands() >= 2 && taint.Tainted.count(Cond->getOperand(0)) &&
-      taint.Tainted.count(Cond->getOperand(1)))
-    return diagnoseUnderControl(Sel, "control flow");
+  for (CmpInst *Leaf : Tree.Leaves) {
+    if (!comparePredLowerable(Leaf))
+      return diagnoseUnderControl(Sel, "control flow");
+    if (!taint.Tainted.count(Leaf))
+      return diagnoseUnderControl(Sel, "control flow");
+    if (Leaf->getNumOperands() >= 2 &&
+        taint.Tainted.count(Leaf->getOperand(0)) &&
+        taint.Tainted.count(Leaf->getOperand(1)))
+      return diagnoseUnderControl(Sel, "control flow");
+    // Per-leaf WIDTH/scope fence (design-review MAJOR — the ziov.4
+    // detect-before-mutate discipline): with one flag per leaf the emitter's
+    // mint is no longer atomic, so an unmintable leaf (i128 compare, fp128 /
+    // pointer / empty-width classical operand, out-of-scope post-flip
+    // predicate) must decline HERE, before any sibling flag is emitted — a
+    // mid-stream `diagnoseNoTemplate` bail would leave earlier flags and node
+    // ancillas dangling (mutate-then-decline). Also sharpens the pre-L4
+    // single-leaf emit-time `no template` bail into the control dialect
+    // (control_swap_reject_select_fp128_cond.ll, re-pinned as its own comment
+    // anticipated).
+    if (!compareFlagMintable(Leaf, taint))
+      return diagnoseUnderControl(Sel, "control flow");
+    // i1-OPERAND leaf fence (design-review MINOR — the `icmp eq i1 %c, false`
+    // NOT evasion): a compare OVER i1 values is non-canonical (InstCombine
+    // rewrites i1 eq/ne to xor/not forms) and would smuggle a boolean-NOT
+    // node past the tree grammar; its mint also passes a raw i1 into the i32
+    // handle slot, sound only when the inner producer independently lowers.
+    // Over-decline-safe: no -O1/O2 canonical shape lands here.
+    if (Leaf->getOperand(0)->getType()->isIntegerTy(1))
+      return diagnoseUnderControl(Sel, "control flow");
+  }
 
   // GATE 2c — STALE-CONDITION wire guard (kjd1 Rule-13 implementation
   // clearance, fcmp-lens BLOCKER; FP_SELECT_CLEARANCE.md). SelectMergeEmit
@@ -441,9 +516,17 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   // leaves `freeze double %h` ill-typed and opt ABORTS on the broken module
   // (a crash on valid input, not a loud decline). Newly fp-reachable through
   // the gate-4 un-staging; fenced here at detection, before any mutation.
+  // 3c6m.12: the guard runs over the LEAF UNION — `condProvenance` accumulates
+  // per leaf into ONE seed set (a walk seeded from only one leaf would accept
+  // a chained theta staling the OTHER leaf's wire — pinned by
+  // control_swap_reject_select_stale_leaf_onewire.ll); the positional prong
+  // (c) scans per leaf. The tree NODES need no seeding of their own: an
+  // `and`/`or` result carries no rotation wire, and its basis provenance is
+  // exactly the union of its leaves'.
   {
     SmallPtrSet<Value *, 16> Prov;
-    condProvenance(Cond, taint, Prov);
+    for (CmpInst *Leaf : Tree.Leaves)
+      condProvenance(Leaf, taint, Prov);
     for (Value *P : Prov)
       if (isa<FreezeInst>(P))
         return diagnoseUnderControl(Sel, "control flow");
@@ -451,8 +534,10 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
     if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true))
       return diagnoseUnderControl(Sel,
                                   "condition predates a non-diagonal gate");
-    if (Cond->getParent() == Sel->getParent())
-      for (const Instruction *I = Cond->getNextNode(); I && I != Sel;
+    for (CmpInst *Leaf : Tree.Leaves) {
+      if (Leaf->getParent() != Sel->getParent())
+        continue;
+      for (const Instruction *I = Leaf->getNextNode(); I && I != Sel;
            I = I->getNextNode()) {
         const auto *CI = dyn_cast<CallInst>(I);
         if (!CI)
@@ -463,6 +548,7 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
           return diagnoseUnderControl(
               Sel, "condition predates a non-diagonal gate");
       }
+    }
   }
 
   // GATE 3 — the §3.2 BLOCKER: NOT an angle. FIRST among the type gates (the

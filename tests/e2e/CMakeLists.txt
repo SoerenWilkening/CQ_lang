@@ -1711,3 +1711,20 @@ add_custom_target(check-e2e
   DEPENDS CQPass cq_runtime cq_templates
   USES_TERMINAL
   COMMENT "Running e2e vertical slices")
+
+# 3c6m.12 (Phase-4.4 L4 widening): compound (`||`/`&&`) conditions on tainted-
+# data selects. The fp `||` half exercises the NEW conjunction network — per-
+# leaf fcmp flag mints, a cqrt_alloc_i1 ancilla, the input-preserving OR
+# (cnot,cnot,toffoli), root-controlled f64 copies, the exact-LIFO inverse
+# network + strips (every free provably |0>). The int `&&` half documents the
+# -O1 RANGE-FUSE (clang folds `n>5 && n<100` to `add -6; icmp ult 94` — a
+# single compare, the pre-existing single-flag path). Links cqrt_cnot /
+# cqrt_toffoli / cqrt_alloc_i1 against libcq_runtime — no new frozen ABI (all
+# three are hand-written core symbols).
+add_test(NAME e2e-slice-control-select-compound
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_compound.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_compound.expected.log")

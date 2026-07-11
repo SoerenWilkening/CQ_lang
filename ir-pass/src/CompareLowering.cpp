@@ -247,6 +247,28 @@ Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
                           /*railBase=*/nullptr, negate);
 }
 
+bool compareFlagMintable(CmpInst *cmp, TaintSet &taint) {
+  // Detection-side dry-run of `lowerCompareImpl`'s HL classification front
+  // half (see the header contract; KEEP IN LOCKSTEP — same operand-taint
+  // classify, same classical-operand width recovery, same i128 fence, same
+  // post-`flipPredicate` `compareInScope` gate). Emits nothing.
+  Value *A = cmp->getOperand(0);
+  Value *B = cmp->getOperand(1);
+  const bool ATainted = taint.Tainted.count(A) != 0;
+  const bool BTainted = taint.Tainted.count(B) != 0;
+  if (ATainted == BTainted)
+    return false;  // Q+Q (no HL mint) or all-classical (nothing to mint).
+  Type *WidthTy = !ATainted ? A->getType() : B->getType();
+  StringRef AbiWidth = abiWidthFromType(WidthTy);
+  if (AbiWidth.empty() || AbiWidth == "i128")
+    return false;  // unrecoverable / out-of-surface width (the n0ui fence).
+  CmpInst::Predicate Pred = cmp->getPredicate();
+  if (BTainted)
+    Pred = flipPredicate(Pred);  // classical-on-left mints the flipped `_hl`.
+  StringRef Op = cmp->isFPPredicate() ? "fcmp" : "icmp";
+  return compareInScope(Op, CmpInst::getPredicateName(Pred));
+}
+
 Value *lowerCompareToFlagRail(CmpInst *cmp, Value *railBase, WidthDispatch &wd,
                               TaintSet &taint, StringRef qqWidth, bool inverse,
                               Instruction *before) {

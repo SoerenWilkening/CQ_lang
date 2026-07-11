@@ -34,14 +34,42 @@
 #ifndef CQ_IRPASS_SELECT_CLASSIFY_H_
 #define CQ_IRPASS_SELECT_CLASSIFY_H_
 
+#include "llvm/ADT/SmallVector.h"
+
 namespace llvm {
+class BinaryOperator;
+class CmpInst;
 class SelectInst;
+class Value;
 }  // namespace llvm
 
 namespace cq {
 
 struct TaintSet;
 struct ControlPlan;
+
+// 3c6m.12 (L4) — the compound-condition tree (compound-cond-select-PRD §2).
+// A select condition is accepted as a TREE of `and i1`/`or i1`
+// `BinaryOperator`s whose leaves are `CmpInst`s; a bare `CmpInst` root is the
+// degenerate single-leaf tree (the pre-L4 shape, byte-identical emission).
+// `Leaves` holds each UNIQUE leaf in first-visit (left-to-right post-order)
+// order — a leaf shared by two tree positions appears ONCE (its flag mints
+// once; the network's controls are read-only). `Nodes` is in post-order
+// (children strictly before parents): exactly the emission order and,
+// reversed, exactly the LIFO uncompute order.
+struct CondTree {
+  llvm::SmallVector<llvm::CmpInst *, 4> Leaves;
+  llvm::SmallVector<llvm::BinaryOperator *, 4> Nodes;
+};
+
+// Shape-only walk of `Root` into `Tree`: returns false on ANY off-grammar node
+// (`xor`, `freeze`, an i1 `select` combinator, a phi/trunc/call/argument leaf).
+// Purely structural — the taint/predicate/staleness gates live in
+// `classifySelectRegion`. ONE walk shared by the classifier and
+// `SelectMergeEmit` (which re-derives the tree at emit time and loud-bails on
+// mismatch) so the accept predicate and the emitter cannot drift — the g387
+// phase-invariant carve/enqueue discipline.
+bool collectCondTree(llvm::Value *Root, CondTree &Tree);
 
 // Run the §0 ladder on a tainted-condition `Sel`. On ACCEPT push a
 // `ControlRegion{Kind=SelectRegion, Merge=Sel, Condition=Sel->getCondition()}`

@@ -20,11 +20,14 @@
 
 #include "CompareLowering.h"    // lowerCompareToFlag (mint + _inv strip)
 #include "ControlPlan.h"        // ControlRegion / diagnoseUnderControl
-#include "ControlledSymbols.h"  // copyControlledFn / xFn
+#include "ControlledSymbols.h"  // copyControlledFn / xFn / cnotFn / toffoliFn
 #include "OpcodeSupport.h"      // abiWidthFromType
+#include "SelectClassify.h"     // CondTree / collectCondTree (the shared walk)
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"      // allocFn / freeFn / llvmWidthType
 
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Constants.h"
@@ -52,6 +55,12 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
   taint.Tainted.erase(I);
   taint.BirthOrder.erase(I);
   taint.StaleDeclined.erase(I);
+  // 3c6m.12 design-review NIT: mirror the Phase-7.1 scrub — step 6 now erases
+  // a new instruction class (condition-tree nodes/leaves), and a lingering
+  // HandleWidth entry on a freed Instruction* is an address-reuse phantom
+  // width waiting to happen. Vacuous for today's erased classes; closed by
+  // construction.
+  taint.HandleWidth.erase(I);
   if (auto *CI = dyn_cast<CallInst>(I)) {
     auto &PC = taint.PhiCalls;
     PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
@@ -77,12 +86,18 @@ Value *materializeCopySource(Value *V, FunctionCallee Alloc,
 void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
                       ControlledSymbols &csyms, TaintSet &taint) {
   auto *Sel = dyn_cast_or_null<SelectInst>(R.Merge);
-  auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
-  if (!Sel || !Cond) {
+  // 3c6m.12 (L4): the condition is a `CmpInst` or an `and i1`/`or i1` TREE
+  // over `CmpInst` leaves — re-derived here via the SAME `collectCondTree`
+  // walk the classifier accepted with (SelectClassify.h; the walk cannot
+  // drift). A bare compare is the degenerate single-leaf tree whose emission
+  // below is byte-identical to the pre-L4 stream.
+  CondTree Tree;
+  if (!Sel || !R.Condition || !collectCondTree(R.Condition, Tree)) {
     // Detection guarantees the shape (SelectClassify pushes only a SelectInst
-    // Merge + CmpInst Condition); if it ever fails to hold, bail LOUDLY — a
-    // silently skipped accepted region leaves the tainted select to the backend
-    // as classical control over quantum state (the unforgivable outcome, Rule 1).
+    // Merge + a tree-shaped Condition); if it ever fails to hold, bail LOUDLY —
+    // a silently skipped accepted region leaves the tainted select to the
+    // backend as classical control over quantum state (the unforgivable
+    // outcome, Rule 1).
     if (R.Merge)
       diagnoseUnderControl(R.Merge, "control flow");
     return;
@@ -122,12 +137,77 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
       C->setDebugLoc(DL);
   };
 
-  // 1. MINT the flag — cq_template_icmp_<pred>_<Wc>_hl(q, k). Wc is the condition
-  //    operand width, resolved internally by lowerCompareToFlag.
-  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/Sel);
-  if (!Flag)
-    return;  // lowerCompareToFlag already diagnosed (unsupported width / Q+Q).
+  // 1. MINT the condition NETWORK (3c6m.12; compound-cond-select-PRD §3) —
+  //    left-to-right post-order over the tree, the SAME traversal
+  //    `collectCondTree` used: each leaf mints its flag via
+  //    `lowerCompareToFlag` (`cq_template_(i|f)cmp_<pred>_<Wc>_hl(q, k)`; Wc
+  //    resolved internally) at FIRST visit — a shared leaf mints ONCE — and
+  //    each `and`/`or` node computes onto a fresh `|0⟩` i1 ancilla:
+  //      AND: toffoli(l, r, g)                        g = l∧r
+  //      OR : cnot(l, g); cnot(r, g); toffoli(l,r,g)  g = l⊕r⊕lr = l∨r
+  //    Controls are READ-ONLY (no transient X on shared rails — safe under
+  //    sharing by construction). Ancillas/flags are NOT added to
+  //    `taint.Tainted`: their only users are `cqrt_*` calls, so `uncompute`
+  //    never selects them (the same treatment as the pre-L4 single flag). A
+  //    bare-compare tree mints exactly the pre-L4 single flag — no ancilla,
+  //    byte-identical stream.
+  DenseMap<Value *, Value *> FlagOf;                       // tree value → rail
+  SmallVector<std::pair<CmpInst *, Value *>, 4> MintedLeaves;  // mint order
+  struct NodeRec {
+    BinaryOperator *N;
+    Value *L;
+    Value *R;
+    Value *G;
+  };
+  SmallVector<NodeRec, 4> NodeRecs;  // post-order = emission order
+  FunctionCallee AllocI1;
+  if (!Tree.Nodes.empty()) {
+    AllocI1 = wd.allocFn("i1");
+    if (!AllocI1) {
+      diagnoseUnderControl(Sel, "control flow");
+      return;  // no i1 ancilla allocator — decline, lower nothing (Rule 1).
+    }
+  }
+  Type *I1Ty = Type::getInt1Ty(Sel->getContext());
+  {
+    SmallVector<std::pair<Value *, bool>, 8> Stack;
+    Stack.push_back({R.Condition, false});
+    while (!Stack.empty()) {
+      auto [V, ChildrenDone] = Stack.pop_back_val();
+      if (ChildrenDone) {
+        auto *BO = cast<BinaryOperator>(V);
+        Value *L = FlagOf.lookup(BO->getOperand(0));
+        Value *Rv = FlagOf.lookup(BO->getOperand(1));
+        CallInst *G =
+            B.CreateCall(AllocI1, {Constant::getNullValue(I1Ty)}, "g");
+        stamp(G);
+        if (BO->getOpcode() == Instruction::Or) {
+          stamp(B.CreateCall(csyms.cnotFn(), {L, G}));
+          stamp(B.CreateCall(csyms.cnotFn(), {Rv, G}));
+        }
+        stamp(B.CreateCall(csyms.toffoliFn(), {L, Rv, G}));
+        FlagOf[V] = G;
+        NodeRecs.push_back({BO, L, Rv, G});
+        continue;
+      }
+      if (FlagOf.count(V))
+        continue;  // shared subtree — its rail is minted once and reused.
+      if (auto *Leaf = dyn_cast<CmpInst>(V)) {
+        Value *F = lowerCompareToFlag(Leaf, wd, taint, /*qqWidth=*/{},
+                                      /*inverse=*/false, /*before=*/Sel);
+        if (!F)
+          return;  // already diagnosed (unsupported width / predicate) — loud.
+        FlagOf[V] = F;
+        MintedLeaves.push_back({Leaf, F});
+        continue;
+      }
+      auto *BO = cast<BinaryOperator>(V);  // grammar proven by collectCondTree
+      Stack.push_back({V, true});
+      Stack.push_back({BO->getOperand(1), false});
+      Stack.push_back({BO->getOperand(0), false});
+    }
+  }
+  Value *Flag = FlagOf.lookup(R.Condition);  // the ROOT rail gates the copies.
 
   // 2. ALLOC the |0> result rail (Wd). It joins `taint.Tainted` (+BirthOrder) so
   //    downstream consumers of the RAUW'd select keep classifying it as a quantum
@@ -161,13 +241,30 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   stamp(B.CreateCall(Copy, {Flag, FalseSrc, Out}));
   stamp(B.CreateCall(csyms.xFn(), {Flag}));
 
-  // 5. STRIP the flag + the SINGLE free. Structurally valid outright: the merge
-  //    never wrote Cond's lineage (the copies write `%out`, never q), so q == q0
-  //    and the `_inv` un-computes the flag to |0> (provably free-able). Reads
-  //    Cond's operands — MUST precede any erase of Cond (step 6).
-  lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                     /*before=*/Sel);
-  stamp(B.CreateCall(wd.freeFn(), {Flag}));
+  // 5. STRIP — exact LIFO (compound-cond-select-PRD §3). Reverse node order:
+  //    the self-inverse network (AND: the same toffoli; OR: the toffoli, then
+  //    the cnots in reverse) returns each ancilla to |0> while its children's
+  //    rails are STILL ALLOCATED (reverse post-order — a parent uncomputes
+  //    before its children), then frees it. Then reverse leaf-MINT order: the
+  //    `_inv` compare strip (reads the leaf's ORIGINAL operands — MUST precede
+  //    any erase of the tree, step 6) then the flag free. Structurally valid
+  //    outright: the merge never wrote any leaf's condition lineage (the
+  //    copies write `%out`, never q), so every rail un-computes to |0> exactly
+  //    and every free is a proven-|0> free (Rule 6). The single-leaf tree
+  //    degenerates to the pre-L4 `_inv` + free pair, byte-identical.
+  for (NodeRec &NR : llvm::reverse(NodeRecs)) {
+    stamp(B.CreateCall(csyms.toffoliFn(), {NR.L, NR.R, NR.G}));
+    if (NR.N->getOpcode() == Instruction::Or) {
+      stamp(B.CreateCall(csyms.cnotFn(), {NR.R, NR.G}));
+      stamp(B.CreateCall(csyms.cnotFn(), {NR.L, NR.G}));
+    }
+    stamp(B.CreateCall(wd.freeFn(), {NR.G}));
+  }
+  for (auto &LF : llvm::reverse(MintedLeaves)) {
+    lowerCompareToFlag(LF.first, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                       /*before=*/Sel);
+    stamp(B.CreateCall(wd.freeFn(), {LF.second}));
+  }
 
   // 6. REWIRE — RAUW %sel -> %out, scrub, erase. NO flatten (there is no CFG).
   //    The user's measure/ret on the select becomes one on %out (no measurement
@@ -176,17 +273,26 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   scrubTaint(Sel, taint);
   Sel->eraseFromParent();
 
-  // The select's condition compare is now (in the canonical single-use case)
-  // dead: the mint/strip built FRESH `cq_template_icmp` templates from Cond's
-  // operands (lowerCompareToFlag does not consume Cond), so the original stock
-  // `icmp` has lost its only user. Scrub + erase it so `lowerOps` (L111) does not
-  // lower a spurious dead compare into the trace. A SHARED compare (also read as
-  // data — clang -O1 CSEs `int f=(q>5)` with the select condition) keeps its
-  // other users; leave it for `lowerOps` to lower for that independent data use.
-  if (Cond->use_empty()) {
-    scrubTaint(Cond, taint);
-    Cond->eraseFromParent();
-  }
+  // The condition tree is now (in the canonical single-use case) dead: the
+  // mint/strip built FRESH templates from the leaves' operands
+  // (lowerCompareToFlag does not consume them), so the root has lost its only
+  // user. Cascade-erase ROOT-FIRST (reverse post-order nodes, then leaves) so
+  // each child's use count drops before it is tested; scrub + erase so
+  // `lowerOps` (L111) does not lower a spurious dead compare/or into the
+  // trace. A SHARED node or leaf (also read as data — clang -O1 CSEs
+  // `int f=(q>5)` with the select condition — or feeding a second select)
+  // keeps its other users; leave it for `lowerOps`/the sibling region (the
+  // shared-compare discipline verbatim).
+  for (BinaryOperator *N : llvm::reverse(Tree.Nodes))
+    if (N->use_empty()) {
+      scrubTaint(N, taint);
+      N->eraseFromParent();
+    }
+  for (CmpInst *Leaf : llvm::reverse(Tree.Leaves))
+    if (Leaf->use_empty()) {
+      scrubTaint(Leaf, taint);
+      Leaf->eraseFromParent();
+    }
 }
 
 }  // namespace cq
