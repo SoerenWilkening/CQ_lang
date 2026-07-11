@@ -68,8 +68,21 @@ misleading:
 | memory-store / Shadow at scale (mostly f80 `ld80` tables) | 34 | `3c6m.13` · `iw81.13` · `u9pl` |
 | L6 nested control (`atan`/`log*`/`cbrt`/`expm1`/`tanh`/`modf`/`lround`…) | 27 | `3c6m.14` (reprioritized P2) |
 | inner-reduction / unknown-callee (trig kernels + `pow`/`hypot`/`lgamma`…) | 25 | `3c6m.11` L2 ⚠ *partly harness closure/inlining — triage per-case* |
-| L5-QROM const-table reads mis-surfacing as "unsupported instruction" (`e_exp.c:138` `ln2HI[xsb]`, `e_fmod.c:48` `Zero[sx]`) | 18 | `3c6m.13` |
+| const-global QROM reads under tainted control, first-surfacing as "unsupported instruction" (`e_exp.c:138` `ln2HI[xsb]`, `e_fmod.c:48` `Zero[sx]`, `s_exp2.c:376` `tbl[i0]`) | 18 | **`3c6m.14` (L6)** — corrected below |
 | flat control · loops · fp-copy/specialization · §3c clobber | 14 | 4.x · 7.3 · `5po2` |
+
+> **CORRECTION 2026-07-11 (bd `3c6m.13`, empirically re-scoped).** The 18-cell "unsupported
+> instruction" bucket was mapped to **L5-QROM (`3c6m.13`)** on the theory that the tainted-index
+> const-table read is an accept-shape gap. Measured (throwaway probe accepting the under-control
+> read, run on the real openlibm bodies) it is **not**: the read is the *first-tripped* instruction
+> only because `declineTaintEscapes` runs before `detectControlRegions`; the reads are all **under
+> tainted control** (not straight-line — straight-line const reads already lower), and accepting
+> them yields **0 new compiles** — every cell reclassifies to `nested control flow` (L6), `unknown
+> callee`, or `loop`. **So this bucket maps to L6 (`3c6m.14`), not L5.** `3c6m.13` shipped a precise
+> decline **signpost** for the shape (`const-global table read under tainted control`) replacing the
+> misleading "unsupported instruction" (which is exactly what mis-routed this bucket to L5); it does
+> **not** widen the accept-shape (a non-win + over-accept trap). Evidence:
+> `docs/prd/phase-07-expressiveness/PRD-3c6m.13-EVIDENCE.md`; memory `qrom-under-control-signpost-3c6m13`.
 
 **Takeaway (scoreboard honesty, bd `libm-scoreboard-two-numbers`):** the campaign number
 moves on **real-body injection**, not authored substitutes. `3c6m.49` owns productionizing

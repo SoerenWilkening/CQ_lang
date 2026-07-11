@@ -106,6 +106,18 @@ constexpr char kMsgQramAlias[] =
     "cq QRAM access: array address has aliasing fan-out";
 constexpr char kMsgQramLoop[] =
     "cq QRAM access: tainted-index memory access inside a loop";
+// bd 3c6m.13 — a would-be QROM read (constant-global table, tainted index, clean
+// single-origin shape) whose SOLE blocker is that it is control-dependent on a tainted
+// branch. The identical shape lowers straight-line (lowering_qram_read_fp64.ll); under
+// tainted control it stays a LOUD decline. Empirically (real openlibm bodies, bd 3c6m.13):
+// ACCEPTING it (hoisting to unconditional) yields ZERO new compiles — the surrounding
+// NESTED tainted control (L6 = bd 3c6m.14) / inner calls / loops are the real wall — and it
+// would couple QROM-accept to control-accept (L6's job), an over-accept hazard. This precise
+// signpost (the Bennett pattern-naming model, [[pointer-boundary-linearity-bennett]]) replaces
+// the MISLEADING generic "unsupported instruction" (which implied a missing OPCODE and sent
+// the injection census down the wrong lever), so future nested-control work is directed right.
+constexpr char kMsgQromUnderControl[] =
+    "cq QRAM access: const-global table read under tainted control (needs nested-control lowering)";
 // The coherent-return no-cloning fence (bug test_C_libtooling-l6xk + the sxuk
 // direct-return / Inc-1 QROM-return regressions; VERIFIED physics 2026-06-24,
 // memory 7-5-qram-coherent-return-nocloning). A qRAM LOAD at a superposed index
@@ -479,6 +491,49 @@ std::optional<ShadowAccess> classifyShadowAccess(Instruction *MemOp,
                       M->Count,  M->RawIndex, M->StoreVal, M->IsStore};
 }
 
+// bd 3c6m.13 — is `LI` a would-be QROM read (constant-global table, tainted trailing
+// index, single-use gep, clean direct origin) whose SOLE blocker is that it is
+// control-dependent on a tainted branch? Reuses the SHARED `matchQramAccess`
+// (`allowTaintedControl=true` strips only the straight-line gate) so the signpost
+// names EXACTLY the shape the emitter WOULD lower were it straight-line — carve and
+// emit cannot diverge (Inc-1 discipline). A non-const global (nullopt), an alloca
+// Shadow origin, an aliased/off-shape gep (nullopt), or an in-loop read (nullopt) is
+// NOT this shape → the caller falls to its existing verdict. Callers invoke this only
+// from a branch already known to be under tainted control.
+//
+// "Blocked SOLELY by control" means the read WOULD lower were it hoisted straight-line —
+// so the helper must replicate EVERY straight-line-accept gate `lowerQramReads` applies
+// beyond the structural `matchQramAccess`, else the "needs nested-control lowering"
+// signpost is a FALSE promise for a read a second blocker would decline anyway. Those
+// gates are exactly two:
+//   * WIDTH (design-review scope lens): `widthHasQramCell` (the SAME gate at L~790). An
+//     i128 / fp128 const cell declines on WIDTH even straight-line (kMsgQramCell), so
+//     control is not its sole blocker (de-nesting cannot make an i128 cell lowerable).
+//   * COHERENT ESCAPE (Rule-13 clearance): a non-`main` read whose value coherently flows
+//     to a `ret` / `cq_invert` (no measure/tape collapse first) declines straight-line with
+//     the no-cloning fence (kMsgQramCohEscape, L~773) — perfect nested-control lowering would
+//     STILL hit the no-cloning wall (the value is entangled with its local index), so the
+//     signpost would misdirect. `coherentlyEscapesToReturn` is producer-agnostic and works at
+//     carve time (walks raw SSA users, stops at `cq_measure_`; the not-yet-lowered tape is a
+//     safe non-stop — a taped-only value returns false as its call result is dead).
+// Either non-control blocker → helper returns false → the read falls to the caller's generic
+// decline (kMsgOther), never the false signpost. So the predicate reads EXACTLY as "would be
+// an accepted QROM read if hoisted straight-line, blocked solely by the tainted-control
+// region." (`coherentlyEscapesToReturn` is defined later in this namespace — forward-declared.)
+bool coherentlyEscapesToReturn(Value *V);
+bool isQromReadBlockedOnlyByControl(LoadInst *LI, const TaintSet &taint,
+                                    DominatorTree &DT, LoopInfo &LInfo) {
+  auto M = matchQramAccess(LI, taint, DT, LInfo, /*allowTaintedControl=*/true);
+  if (!M.has_value() || M->Origin.Kind != OriginResult::Global ||
+      !widthHasQramCell(M->ElemAbi))
+    return false;
+  // A coherently-escaping value is no-cloning-blocked even straight-line — not a
+  // control-sole shape (`main`'s ret is the process-exit observation, exempt).
+  if (LI->getFunction()->getName() != "main" && coherentlyEscapesToReturn(LI))
+    return false;
+  return true;
+}
+
 // iw81.7 — the shared GuardedStoreArm SHAPE predicate (impl; public wrapper
 // `guardedShadowStoreShape` below). (a) The bounded-alloca tainted-index Shadow
 // STORE shape, ALLOWING the tainted control the region flattens away. (b) The
@@ -546,6 +601,17 @@ QramCarve classifyQramCarve(const Instruction *I, const TaintSet &taint,
               guardedShadowStoreShapeImpl(const_cast<StoreInst *>(SU), taint, DT,
                                           LInfo))
             return QramCarve::DeferControl;
+      // bd 3c6m.13 — a const-global QROM-read address gep under tainted control: name
+      // the precise signpost (via the load user, the sole user of a single-use gep) so
+      // the misleading generic "unsupported instruction" is replaced. Still a DECLINE.
+      for (const User *U : GEP->users())
+        if (auto *LU = dyn_cast<LoadInst>(U))
+          if (LU->getPointerOperand() == GEP &&
+              isQromReadBlockedOnlyByControl(const_cast<LoadInst *>(LU), taint, DT,
+                                             LInfo)) {
+            Msg = kMsgQromUnderControl;
+            return QramCarve::Decline;
+          }
       return QramCarve::NotQram;
     }
     for (const User *U : GEP->users()) {
@@ -584,6 +650,16 @@ QramCarve classifyQramCarve(const Instruction *I, const TaintSet &taint,
       if (guardedShadowStoreShapeImpl(const_cast<StoreInst *>(SI), taint, DT,
                                       LInfo))
         return QramCarve::DeferControl;
+    // bd 3c6m.13 — a const-global QROM read under tainted control: precise signpost
+    // (replaces the misleading generic "unsupported instruction"). Still a DECLINE —
+    // accepting it yields 0 compiles (the real wall is nested control, L6). Loads only:
+    // a const global cannot be stored (the store paths above own their own verdicts).
+    if (auto *LI = dyn_cast<LoadInst>(I))
+      if (isQromReadBlockedOnlyByControl(const_cast<LoadInst *>(LI), taint, DT,
+                                         LInfo)) {
+        Msg = kMsgQromUnderControl;
+        return QramCarve::Decline;
+      }
     return QramCarve::NotQram;  // ControlDetect/generic domain (jumptable kMsgOther).
   }
   if (LInfo.getLoopFor(I->getParent())) {
