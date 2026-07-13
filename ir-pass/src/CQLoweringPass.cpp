@@ -12,6 +12,7 @@
 #include "LoopPlan.h"
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
+#include "PredMuxFlatten.h"
 #include "QramLowering.h"
 #include "RotationLowering.h"
 #include "SpecializeDetect.h"
@@ -96,6 +97,24 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // preserving RAUW+erase (the freeze-fold precedent), so NO re-propagate is
   // needed. fp<->int / vector bitcasts are left standing to decline at castInScope.
   foldIdentityBitcasts(M, taint);
+
+  // bd 3c6m.14 (L6) — PredMux: general acyclic tainted control flattened to
+  // block-predicate select chains (PredMuxFlatten.cpp; PRD
+  // docs/prd/phase-07-expressiveness/3c6m.14-L6-control-predication/). Runs
+  // HERE — after taint settles + the bitcast fold, BEFORE every analysis
+  // guard — so the escape/stale guards, loop lowering, control detection,
+  // select classification, and uncompute all see the post-flatten IR through
+  // their normal entry points (the 2qyz full-re-run lesson holds by
+  // construction: the guards below simply run after the fixpoint). ACCEPT-
+  // ONLY: an ineligible shape is left byte-untouched and falls through to the
+  // existing loud declines; regions with cq_* calls / stores / loads / loops
+  // are never claimed, so every shipped accept shape reaches its owner
+  // byte-identically. One region per iteration + a full re-propagate (the
+  // lowerByRefInline fixpoint precedent) so each claim sees fresh
+  // dominance/taint state and sequential siblings compose without any cached
+  // block identity crossing an erasure (Rule 9).
+  while (flattenPredMuxRegions(M, taint))
+    taint = propagate(M, wd);
 
   // Phase 6 specialization PRE-PASS (C-Plan, DD-1): pure analysis by SSA
   // identity, BEFORE `declineTaintEscapes`, so the carve-out's membership test
@@ -307,6 +326,19 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // fold-before-any-analysis rationale.
   foldIdentityBitcasts(M, taint);
+
+  // bd 3c6m.14 (L6) — PredMux flatten fixpoint, mirrored in this entry point
+  // too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
+  // before-every-analysis-guard placement rationale. Note the re-propagate
+  // rebuilds module-wide work lists; the F-restriction below this point in
+  // the original shim applies only to the rotation/measure lists, and this
+  // shim is a documented DEAD entry point (AXIS-F) — parity is kept anyway.
+  while (flattenPredMuxRegions(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.MeasureCalls);
+  }
 
   // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY — a pre-pass wired in `run()` but not
