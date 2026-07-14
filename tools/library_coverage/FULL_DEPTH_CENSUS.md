@@ -408,10 +408,13 @@ fdim` (the 2 pre-L6 COMPILES). Of the 51-cell pre-L6 "CONTROL (pure-L6 target)" 
 **Scoreboard honesty (bd `libm-scoreboard-two-numbers`, Rule 2).** The number the
 campaign moves is **injection-covered = compiles under real-body source injection**:
 **2 → 48**. It is DISJOINT from the recognition floor (14 hardware intrinsics). But a
-compile is not a proof of the unitary — **only 8 cells are VERIFIED** (golden e2e
-trace). The other 40 (38 new + 2 fdim) compile+link+run; promoting them to *verified*
-needs goldens (the follow-up ticket, §11.4). Do **not** quote "48 verified" — quote
-**48 injection-covered, 8 verified**.
+compile is not a proof of the unitary — a cell is VERIFIED only with a golden e2e
+trace. Post bd `3c6m.53` (§11.4): **42 cells are VERIFIED** (8→42; 34 new
+`slice_libm_real_*` goldens). Of the other 6: 2 are fdim (branchless goldens) and
+**4 (`log1p{,f}`, `atanh{,f}`) DECLINE at the -O1 verified floor** — injection-covered
+only under this census's O2 measurement pipeline, so they are NOT verifiable at -O1
+(bd `q2wk`). Do **not** quote "48 verified" — quote **48 injection-covered (O2),
+42 verified (-O1 golden), 44/48 -O1-holding**.
 
 ### 11.2 f32 siblings fell out for free (the near-free width win)
 
@@ -454,6 +457,19 @@ lower-bound re-audit**: the census-flood missed these loops (returns before
   injection-covered cells (23 f32 + 15 f64) compile but lack a golden. New ticket to
   add e2e goldens (Rule 2), f32 siblings called out. *Not folded into Inc 4* (owner
   directive) — census/docs only; the goldens are their own verified work.
+  → **RESOLVED bd `3c6m.53` (2026-07-14): 34 of the 38 promoted to VERIFIED**
+  (committed `slice_libm_real_*` e2e goldens; verified 8→42). Each vendors the REAL
+  openlibm body (edit-a-corpus-copy, mechanical macro/rename edits only; independently
+  audited faithful — the audit caught + fixed a `k_expf.c __frexp_expf` `double exp_x`
+  narrowing bug in coshf/sinhf where the float-word macro dropped openlibm's implicit
+  double→float conversion). **The 4 log1p-family cells (`log1p{,f}`, `atanh{,f}`)
+  do NOT verify: they DECLINE at the -O1 floor** (`run_slice.sh`, Rule 9) —
+  "nested control flow under quantum control", the fdlibm reduction diamonds exceed
+  PredMux's -O1 accept shape. They compile in THIS census only because `wprobe.probe`
+  measures under an **O2** pipeline (`default<O2>,scalarizer,instcombine`) whose
+  SimplifyCFG pre-flattens the nest into accepted selects. So **44/48 hold at -O1**
+  (42 real-openlibm goldens + 2 fdim); **4 are an O2-only injection-covered artifact**.
+  No golden fabricated (Rule 2). O1/O2 metric gap + PredMux -O1 widening → bd `q2wk`.
 - **LOOP cells surfaced** → **8h7d** (un-defer): the 8 f32 LOOP cells above are the
   now-surfaced targets; the `fmod/remainder/remquo` bit-reduction loops are exactly
   the ones 8h7d's note said the census had missed. Comment filed on 8h7d.

@@ -7,12 +7,23 @@ The width/by-ref/int-ret widening of `../inject_census.py` (which is hardcoded t
 **⚡ POST-L6 headline (3c6m.14 Inc 4, 2026-07-14):** the L6 CONTROL lever (PredMux)
 shipped. Re-running this census with the committed HEAD plugin: real openlibm
 math.h = **48/123 injectable cells compile** (was 2), **24 f64 + 24 f32**; f80 all
-still held by SHADOW. Of the 48, **8 are VERIFIED** (committed e2e goldens:
-`atan cbrt erf exp log lround scalbn tanh.f64`); the other 40 compile+link+run but
-need goldens. Two DISJOINT numbers (Rule 2, bd `libm-scoreboard-two-numbers`):
-**injection-covered 48/123 (39%), verified 8/123 (6.5%)** — never quote "48 verified".
+still held by SHADOW. Two DISJOINT numbers (Rule 2, bd `libm-scoreboard-two-numbers`):
+**injection-covered 48/123 (39%), verified 42/123 (34%)** — never quote "48 verified".
 Deterministic 48/48/48 across 3 runs; census-mode flood reproduces the §4/§5 lever
 map exactly. Full delta + per-lever follow-ups: `../FULL_DEPTH_CENSUS.md` §11.
+
+**⚡ POST-3c6m.53 update (2026-07-14):** the 40 compile-but-ungoldened cells were
+worked. **34 promoted to VERIFIED** (committed real-openlibm `slice_libm_real_*`
+e2e goldens: the 8 originals + 23 f32 siblings + 11 f64 — `atan2 cosh erfc exp2
+expm1 ldexp llround log10 log2 logb modf scalbln sinh` and the f32 set). Verified
+went **8 → 42**. The remaining **4 (`log1p{,f}`, `atanh{,f}`) DECLINE at the -O1
+verified floor** (`run_slice.sh`, Rule 9): their fdlibm reduction diamonds exceed
+PredMux's -O1 accept shape. They are injection-covered ONLY because THIS census
+measures lowerability under an **O2** pipeline (`default<O2>,scalarizer,instcombine`,
+inline-threshold 2M in `wprobe.probe`) whose SimplifyCFG pre-flattens the nest into
+accepted selects. So of the 48 injection-covered, **44 hold at -O1** (42 real-openlibm
+goldens + 2 fdim branchless); **4 are O2-only**. The 4 correctly have NO fabricated
+golden (Rule 2). O1/O2 gap + PredMux-widening follow-up: bd `q2wk`.
 
 **First-blocker headline (3c6m.49, 2026-07-11 — pre-L6 baseline):** real openlibm
 math.h = **2/120 injectable cells compile** (only `fdim` — genuinely branchless);
