@@ -79,16 +79,16 @@ falls in **injection-required** (a library function — decline without source i
 the small **cannot-compile-at-all** by-design set (e.g. `nan(const char*)` has no quantum input).
 
 <!-- LIBRARY-COVERAGE:START -->
-**Standard-library quantum-coverage — lowering-verified: 48/213 (22.5%)** &nbsp;·&nbsp; backend-available: 21/213 (9.9%).
+**Standard-library quantum-coverage — lowering-verified: 48/222 (21.6%)** &nbsp;·&nbsp; backend-available: 28/222 (12.6%).
 
 Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches the reversible-template sequence. **Backend-available** = 🟩 `standard` (a correct reversible routine is directly obtainable) **and** it lowers — vs 🟨 `synthesizable` / 🟥 `open` (no known elementary reversible circuit — the transcendentals). The trace-only runtime proves the lowering, not the backend.
 
 | Library | Lowers | Verified | Backend-avail | 🟩 std | 🟨 syn | 🟥 open | By-design |
 |---|---|---|---|---|---|---|---|
-| [`math.h`](tools/library_coverage/coverage/mathh.md) | 45/174 (26%) | 45/174 (26%) | 18/174 (10%) | 42 | 45 | 84 | 3 |
+| [`math.h`](tools/library_coverage/coverage/mathh.md) | 52/183 (28%) | 45/183 (25%) | 25/183 (14%) | 51 | 45 | 84 | 3 |
 | [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 3/39 (8%) | 6 | 0 | 0 | 8 |
 
-> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. **Injection-covered** — genuine library bodies compiled by source injection (Rule 18), the number the libm campaign actually moves — is **32/32** of the `math.h` double surface ([source-injection census](tools/library_coverage/INJECTION-CENSUS.md)). The two sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
+> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **48/123 injection-covered (39%), 8 verified** of the reconciled 123-cell surface ([full-depth census](tools/library_coverage/FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`123 injectable + 42 recognition + 12 macros + 6 int-ret/str`). The double-only authored-branchless number (**32/32**, [source-injection census](tools/library_coverage/INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
 
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->

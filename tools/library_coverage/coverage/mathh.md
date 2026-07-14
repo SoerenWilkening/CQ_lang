@@ -4,27 +4,27 @@
 
 The C standard math library — the flagship demonstrator: pure, mostly-total numerical functions with clean scalar in/out, ideal for taint-driven reversible lowering.
 
-**Compiles: 45/174 (25.9%)** — of which **golden-verified: 45/174 (25.9%)**.
+**Compiles: 52/183 (28.4%)** — of which **golden-verified: 45/183 (24.6%)**.
 
-> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. **Injection-covered** — genuine library bodies compiled by source injection (Rule 18), the number the libm campaign actually moves — is **32/32** of the `math.h` double surface ([source-injection census](../INJECTION-CENSUS.md)). The two sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
+> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **48/123 injection-covered (39%), 8 verified** of the reconciled 123-cell surface ([full-depth census](../FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`123 injectable + 42 recognition + 12 macros + 6 int-ret/str`). The double-only authored-branchless number (**32/32**, [source-injection census](../INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
 
 | Bucket | Count | Meaning |
 |---|---|---|
 | ✅ Verified | 45 | lowers + links + runs + matches a committed golden trace |
-| 🟢 Compiles (golden pending) | 0 | lowers + links + runs; golden not yet blessed |
+| 🟢 Compiles (golden pending) | 7 | lowers + links + runs; golden not yet blessed |
 | 🟠 Partial | 3 | some C/Q mixtures compile, others decline (not fully covered) |
-| 🟡 Cannot **at the moment** (fixable) | 126 | declines loudly today; future work (0 are `long double` → one f80/f128 width gap) |
+| 🟡 Cannot **at the moment** (fixable) | 128 | declines loudly today; future work (0 are `long double` → one f80/f128 width gap) |
 | ⛔ Cannot **at all** (by design) | 3 | no taintable quantum input |
 
 ---
 
 **Backend tiers** (a STATIC per-fn judgment of whether a correct *reversible implementation* of the emitted templates exists — a level ABOVE "does it lower"; the trace-only runtime never runs a real unitary):
 
-**Backend-available (🟩 standard ∩ lowers): 18/174 (10.3%)** — the functions that could actually run correctly on a real reversible backend today (modulo backend-CORRECTNESS, which needs simulation and is deferred).
+**Backend-available (🟩 standard ∩ lowers): 25/183 (13.7%)** — the functions that could actually run correctly on a real reversible backend today (modulo backend-CORRECTNESS, which needs simulation and is deferred).
 
 | Backend tier | Count | Meaning |
 |---|---|---|
-| 🟩 standard | 42 | reduces to stock reversible arithmetic / bit-ops (sign·exponent bit-field, compare-select, modulo, integer abs) — a correct reversible routine is directly obtainable (Bennett-copyable) |
+| 🟩 standard | 51 | reduces to stock reversible arithmetic / bit-ops (sign·exponent bit-field, compare-select, modulo, integer abs) — a correct reversible routine is directly obtainable (Bennett-copyable) |
 | 🟨 synthesizable | 45 | a well-defined, finite, exact IEEE bit-field / rounding circuit (frexp/modf split, the rounding family, fma) — buildable, not off-the-shelf |
 | 🟥 open | 84 | no known elementary reversible circuit — transcendentals, algebraic-irrationals (sqrt/cbrt/hypot), powers, special functions |
 | ▫️ n/a | 3 | no reversible-function question (no taintable input / non-numeric) |
@@ -137,6 +137,9 @@ Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 
 | `sqrtf` `errno` | `float sqrtf(float)` | H:✅ | ✅ verified | 🟥 open |  |
 | `sqrt` `errno` | `double sqrt(double)` | H:✅ | ✅ verified | 🟥 open |  |
 | `sqrtl` `errno` | `long double sqrtl(long double)` | H:✅ | ✅ verified | 🟥 open |  |
+| `fabsf` | `float fabsf(float)` | H:🟢 | 🟢 accepted | 🟩 standard | lowers+links+runs; golden pending |
+| `fabs` | `double fabs(double)` | H:🟢 | 🟢 accepted | 🟩 standard | lowers+links+runs; golden pending |
+| `fabsl` | `long double fabsl(long double)` | H:🟢 | 🟢 accepted | 🟩 standard | lowers+links+runs; golden pending |
 | `cbrtf` | `float cbrtf(float)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
 | `cbrt` | `double cbrt(double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
 | `cbrtl` | `long double cbrtl(long double)` | H:🟡 | 🟡 declined | 🟥 open | library function — source-injection required (Rule 18) |
@@ -220,6 +223,9 @@ Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 
 | `nextafterf` `errno` | `float nextafterf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
 | `nextafter` `errno` | `double nextafter(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
 | `nextafterl` `errno` | `long double nextafterl(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `nexttowardf` `errno` | `float nexttowardf(float, long double)` | H:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `nexttoward` `errno` | `double nexttoward(double, long double)` | H:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
+| `nexttowardl` `errno` | `long double nexttowardl(long double, long double)` | H:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
 | `fdimf` `errno` | `float fdimf(float, float)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
 | `fdim` `errno` | `double fdim(double, double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
 | `fdiml` `errno` | `long double fdiml(long double, long double)` | HL:🟡 LH:🟡 QQ:🟡 | 🟡 declined | 🟨 synth | library function — source-injection required (Rule 18) |
@@ -245,7 +251,10 @@ Legend — **Lowering**: ✅ verified · 🟢 accepted (golden pending) · 🟠 
 | `isinf` `macro` | `int isinf(double)` | H:✅ | ✅ verified | 🟩 standard |  |
 | `isnan` `macro` | `int isnan(double)` | H:✅ | ✅ verified | 🟩 standard |  |
 | `isnormal` `macro` | `int isnormal(double)` | H:🟡 | 🟡 declined | 🟩 standard | library function — source-injection required (Rule 18) |
-| `signbit` `macro` | `int signbit(double)` | H:🟡 | 🟡 declined | 🟩 standard | needs opcode/template support for this expansion |
+| `signbit` `macro` | `int signbit(double)` | H:🟢 | 🟢 accepted | 🟩 standard | lowers+links+runs; golden pending |
 | `isgreater` `macro` | `int isgreater(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `isgreaterequal` `macro` | `int isgreaterequal(double, double)` | HL:🟢 LH:🟢 QQ:🟢 | 🟢 accepted | 🟩 standard | lowers+links+runs; golden pending |
 | `isless` `macro` | `int isless(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |
+| `islessequal` `macro` | `int islessequal(double, double)` | HL:🟢 LH:🟢 QQ:🟢 | 🟢 accepted | 🟩 standard | lowers+links+runs; golden pending |
+| `islessgreater` `macro` | `int islessgreater(double, double)` | HL:🟢 LH:🟢 QQ:🟢 | 🟢 accepted | 🟩 standard | lowers+links+runs; golden pending |
 | `isunordered` `macro` | `int isunordered(double, double)` | HL:✅ LH:✅ QQ:✅ | ✅ verified | 🟩 standard |  |

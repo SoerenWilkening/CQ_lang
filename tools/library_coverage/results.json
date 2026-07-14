@@ -2318,6 +2318,72 @@
           "backend": "open"
         },
         {
+          "name": "fabsf",
+          "base": "fabs",
+          "cat": "power",
+          "suf": "f",
+          "ret": "float",
+          "sig": "float fabsf(float)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "H",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fabs_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+              }
+            }
+          ],
+          "rollup": "accepted",
+          "backend": "standard"
+        },
+        {
+          "name": "fabs",
+          "base": "fabs",
+          "cat": "power",
+          "suf": "",
+          "ret": "double",
+          "sig": "double fabs(double)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "H",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fabs_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+              }
+            }
+          ],
+          "rollup": "accepted",
+          "backend": "standard"
+        },
+        {
+          "name": "fabsl",
+          "base": "fabs",
+          "cat": "power",
+          "suf": "l",
+          "ret": "long double",
+          "sig": "long double fabsl(long double)",
+          "flags": [],
+          "cells": [
+            {
+              "mixture": "H",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fabs_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+              }
+            }
+          ],
+          "rollup": "accepted",
+          "backend": "standard"
+        },
+        {
           "name": "cbrtf",
           "base": "cbrt",
           "cat": "power",
@@ -4070,6 +4136,78 @@
           "backend": "standard"
         },
         {
+          "name": "nexttowardf",
+          "base": "nexttoward",
+          "cat": "manipulation",
+          "suf": "f",
+          "ret": "float",
+          "sig": "float nexttowardf(float, long double)",
+          "flags": [
+            "errno"
+          ],
+          "cells": [
+            {
+              "mixture": "H",
+              "res": {
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe float (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "declined",
+          "backend": "standard"
+        },
+        {
+          "name": "nexttoward",
+          "base": "nexttoward",
+          "cat": "manipulation",
+          "suf": "",
+          "ret": "double",
+          "sig": "double nexttoward(double, long double)",
+          "flags": [
+            "errno"
+          ],
+          "cells": [
+            {
+              "mixture": "H",
+              "res": {
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe double (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "declined",
+          "backend": "standard"
+        },
+        {
+          "name": "nexttowardl",
+          "base": "nexttoward",
+          "cat": "manipulation",
+          "suf": "l",
+          "ret": "long double",
+          "sig": "long double nexttowardl(long double, long double)",
+          "flags": [
+            "errno"
+          ],
+          "cells": [
+            {
+              "mixture": "H",
+              "res": {
+                "status": "declined",
+                "reason": "library function \u2014 source-injection required (Rule 18)",
+                "raw": "error: <unknown>:0:0: in function probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+                "trace": ""
+              }
+            }
+          ],
+          "rollup": "declined",
+          "backend": "standard"
+        },
+        {
           "name": "fdimf",
           "base": "fdim",
           "cat": "manipulation",
@@ -4833,14 +4971,14 @@
             {
               "mixture": "H",
               "res": {
-                "status": "declined",
-                "reason": "needs opcode/template support for this expansion",
-                "raw": "error: <unknown>:0:0: in function probe i32 (): no template for opcode 'bitcast i64' in tainted context",
-                "trace": ""
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_bitcast_f64_to_i64(h0) -> h1\ncq_template_lshr_i64_hl(h1, 63) -> h2\ncq_template_trunc_i64_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
-          "rollup": "declined",
+          "rollup": "accepted",
           "backend": "standard"
         },
         {
@@ -4886,6 +5024,48 @@
           "backend": "standard"
         },
         {
+          "name": "isgreaterequal",
+          "base": "isgreaterequal",
+          "cat": "classify_macro",
+          "suf": "",
+          "ret": "int",
+          "sig": "int isgreaterequal(double, double)",
+          "flags": [
+            "macro"
+          ],
+          "cells": [
+            {
+              "mixture": "HL",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_oge_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+              }
+            },
+            {
+              "mixture": "LH",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_ole_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+              }
+            },
+            {
+              "mixture": "QQ",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fcmp_oge_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+              }
+            }
+          ],
+          "rollup": "accepted",
+          "backend": "standard"
+        },
+        {
           "name": "isless",
           "base": "isless",
           "cat": "classify_macro",
@@ -4925,6 +5105,90 @@
             }
           ],
           "rollup": "verified",
+          "backend": "standard"
+        },
+        {
+          "name": "islessequal",
+          "base": "islessequal",
+          "cat": "classify_macro",
+          "suf": "",
+          "ret": "int",
+          "sig": "int islessequal(double, double)",
+          "flags": [
+            "macro"
+          ],
+          "cells": [
+            {
+              "mixture": "HL",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_ole_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+              }
+            },
+            {
+              "mixture": "LH",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_oge_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+              }
+            },
+            {
+              "mixture": "QQ",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fcmp_ole_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+              }
+            }
+          ],
+          "rollup": "accepted",
+          "backend": "standard"
+        },
+        {
+          "name": "islessgreater",
+          "base": "islessgreater",
+          "cat": "classify_macro",
+          "suf": "",
+          "ret": "int",
+          "sig": "int islessgreater(double, double)",
+          "flags": [
+            "macro"
+          ],
+          "cells": [
+            {
+              "mixture": "HL",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_one_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+              }
+            },
+            {
+              "mixture": "LH",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_one_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+              }
+            },
+            {
+              "mixture": "QQ",
+              "res": {
+                "status": "accepted",
+                "reason": "lowers+links+runs; golden not yet committed",
+                "raw": "",
+                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fcmp_one_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+              }
+            }
+          ],
+          "rollup": "accepted",
           "backend": "standard"
         },
         {

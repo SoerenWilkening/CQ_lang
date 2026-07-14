@@ -64,6 +64,21 @@ def _injection_scoreboard():
     except Exception:
         return None
 
+def _full_surface_scoreboard():
+    """The AUTHORITATIVE full-surface REAL-openlibm injection scoreboard (bd 3c6m.49/
+    .50/.14), superseding the double-only authored-branchless number. Reads the
+    committed census outputs: compiles/total from `full_surface/first_blocker_refreshed
+    .json`; verified = count of committed real-openlibm goldens `tests/e2e/
+    slice_libm_real_*.expected.log`. Returns (compiles, total, verified) or None."""
+    try:
+        fb = json.loads((HERE / "full_surface" / "first_blocker_refreshed.json").read_text())
+        compiles = sum(1 for v in fb.values() if v.get("status") == "COMPILES")
+        total = len(fb)
+        verified = len(list((ROOT / "tests" / "e2e").glob("slice_libm_real_*.expected.log")))
+        return (compiles, total, verified)
+    except Exception:
+        return None
+
 def two_scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-CENSUS.md"):
     """The DISJOINT two-scoreboard note (owner, emphatic 2026-07-09; never a merged headline;
     bd libm-scoreboard-two-numbers). Emitted into the README badge, COVERAGE.md, and the
@@ -75,18 +90,29 @@ def two_scoreboard_lines(short=False, census_link="tools/library_coverage/INJECT
     else:
         injnum = "**see the source-injection census**"
     census = census_link
+    full_census = census_link.replace("INJECTION-CENSUS.md", "FULL_DEPTH_CENSUS.md")
+    fs = _full_surface_scoreboard()
+    if fs is not None:
+        fc, ft, fv = fs
+        fspct = round(100 * fc / ft) if ft else 0
+        fsnum = (f"**{fc}/{ft} injection-covered ({fspct}%), {fv} verified**")
+    else:
+        fsnum = "**see the full-surface census**"
     head = ("> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — "
             "never merged.**")
     if short:
         return [f"{head} The `math.h` `Lowers`/`Verified` columns are the **recognition "
                 f"floor** — fns that lower because `clang -O1` emits a hardware-backed "
                 f"intrinsic the pass recognizes (`{HARDWARE_KEEP_SET}` + variants) — a *fixed "
-                f"floor, not injection progress*. **Injection-covered** — genuine library "
-                f"bodies compiled by source injection (Rule 18), the number the libm campaign "
-                f"actually moves — is {injnum} of the `math.h` double surface "
-                f"([source-injection census]({census})). The two sets are disjoint; a library "
-                f"function that declines under injection stays declined (and ticketed), never "
-                f"counted via recognition."]
+                f"floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is "
+                f"the full-surface REAL-openlibm injection census: {fsnum} of the reconciled "
+                f"123-cell surface ([full-depth census]({full_census}) §11) — the injectable "
+                f"subset of this table's denominator (`123 injectable + 42 recognition + 12 "
+                f"macros + 6 int-ret/str`). The double-only authored-branchless number "
+                f"({injnum}, [source-injection census]({census})) is a hand-written-substitute "
+                f"subset, superseded by the full-surface census. The three sets are disjoint; a "
+                f"library function that declines under injection stays declined (and ticketed), "
+                f"never counted via recognition."]
     return [
         head, "",
         f"1. **Recognition-covered** — the hardware keep-set (`{HARDWARE_KEEP_SET}` + "
@@ -94,11 +120,19 @@ def two_scoreboard_lines(short=False, census_link="tools/library_coverage/INJECT
         "the pass recognizes (they have no injectable transcendental body, Rule 18). This is "
         "the **`Lowers`/`Verified` number in the table below** — a *fixed floor*, not injection "
         "progress.",
-        f"2. **Injection-covered** — genuine library bodies compiled by **source injection** "
-        f"(the real libm-campaign number): {injnum} of the `math.h` double surface "
-        f"([source-injection census]({census})).",
+        f"2. **Injection-covered (AUTHORITATIVE campaign number)** — genuine REAL off-the-shelf "
+        f"openlibm bodies compiled by **source injection** (Rule 18) at every width, over the "
+        f"reconciled 123-cell full-surface census (bd `3c6m.49`/`.50`/`.14`): {fsnum} "
+        f"([full-depth census]({full_census}) §11). NB the census's **123** is the INJECTABLE "
+        f"subset of this table's **183-cell** surface (`123 injectable + 42 hardware-recognition "
+        f"+ 12 by-design macros + 6 int-ret/str`); it is a different, tighter denominator than "
+        f"the recognition columns below — not the same 174/183.",
+        f"3. **Authored-branchless doubles** — the earlier double-only injection number, "
+        f"{injnum} of the `math.h` double surface ([source-injection census]({census})): "
+        f"these are our HAND-WRITTEN branchless substitutes (`branchless/`), a subset "
+        f"**superseded** by the real-openlibm full-surface census in (2).",
         "",
-        "The two sets are **disjoint** (a fn is counted in at most one). A library function "
+        "The sets are **disjoint** (a fn is counted in at most one). A library function "
         "that declines under injection stays declined — and is ticketed (bd `3c6m.9`) — until "
         "its *injected body* lowers; recognition is **never** a fallback for a hard injection. "
         "A single merged headline (the retired `165/174` 95%-overclaim) is treated as a bug.",
@@ -387,7 +421,11 @@ LIBRARIES = [
 FP_TYPE = {"f": "float", "": "double", "l": "long double"}
 
 def c_type(kind, fpty):
+    # `ldbl` = an always-long-double arg (nexttoward's 2nd arg, C11 §7.12.11) —
+    # width-independent, unlike `fp` which follows the variant. Non-mixable
+    # (classical const), matching the census's `c:long double` treatment.
     return {"fp": fpty, "int": "int", "long": "long", "llong": "long long",
+            "ldbl": "long double",
             "fp*": fpty + " *", "int*": "int *", "str": "const char *"}[kind]
 
 # A position is "mixable" (we attempt to taint it) iff it is a scalar value arg.
@@ -397,7 +435,7 @@ def is_mixable(kind):
     return kind in ("fp", "int", "long", "llong")
 
 def sample_literal(kind, fpty):
-    return {"fp": "1.5", "int": "2", "long": "2L", "llong": "2LL",
+    return {"fp": "1.5", "int": "2", "long": "2L", "llong": "2LL", "ldbl": "2.0L",
             "fp*": None, "int*": None, "str": '""'}[kind]
 
 # ---------------------------------------------------------------------------
