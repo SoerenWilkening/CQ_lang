@@ -98,6 +98,17 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // needed. fp<->int / vector bitcasts are left standing to decline at castInScope.
   foldIdentityBitcasts(M, taint);
 
+  // bd 3c6m.14 Inc 3 — volatile-const global-load fold (QramLowering.cpp): the
+  // openlibm anti-const-fold idiom (`static volatile double twom1000`,
+  // `*(volatile double *)&atanlo[3]`) folds to the initializer constant when
+  // the global is internal, definitively initialized, never stored, and never
+  // address-escaped. Runs HERE — after the passthrough early-out (a cq-free
+  // module stays byte-identical) and BEFORE the PredMux fixpoint, whose E4
+  // admits no volatile access (unfolded, these block the tainted arm). Folded
+  // loads are classical, so taint is unaffected (the bitcast-fold precedent —
+  // no re-propagate needed).
+  foldVolatileConstGlobalLoads(M);
+
   // bd 3c6m.14 (L6) — PredMux: general acyclic tainted control flattened to
   // block-predicate select chains (PredMuxFlatten.cpp; PRD
   // docs/prd/phase-07-expressiveness/3c6m.14-L6-control-predication/). Runs
@@ -326,6 +337,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // fold-before-any-analysis rationale.
   foldIdentityBitcasts(M, taint);
+
+  // bd 3c6m.14 Inc 3 — volatile-const global-load fold, mirrored in this entry
+  // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
+  // post-passthrough / pre-PredMux placement rationale.
+  foldVolatileConstGlobalLoads(M);
 
   // bd 3c6m.14 (L6) — PredMux flatten fixpoint, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the

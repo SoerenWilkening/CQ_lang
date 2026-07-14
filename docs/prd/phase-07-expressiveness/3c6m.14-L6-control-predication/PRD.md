@@ -372,33 +372,74 @@ expm1 and is the mechanism cell).
   are unaffected (signedness lives in the opcode/predicate, not these flags —
   Rule 15; verified against `TemplateName`/`OpcodeSupport` at implementation).
 - **(b) `undef` freeze** — §4.4.
-- **(c) [Inc 3] Volatile-const fold (curation).** A `volatile load` of a
-  scalar `GlobalVariable` with internal/private linkage, a constant
-  initializer, and **zero stores module-wide** folds to its initializer
-  (openlibm's `@twom1000` fp-underflow-signal idiom). This deliberately drops
-  the fp-environment side effect — consistent with the trace-only/no-fp-env
-  runtime semantics and the documented lgamma/errno curation precedent. Scoped
-  to loads inside a claimed region; any other volatile access → region left
-  unclaimed.
-- **(d) [Inc 3] Const-global QROM reads under control.** A load inside `R`
-  is admissible iff the 7.5 single-origin provenance walk proves a
-  const-global with compile-time shape AND the index's range (known-bits /
-  `ConstantRange`) provably fits the array bound (exp/erf: `zext(lshr(x,31))`
-  ∈ {0,1} into `[2 x double]`). The load moves to the straight line like any
-  other op; post-flatten it is a *straight-line* tainted-index read that
-  `lowerQramReads` (7.5 Inc 1) accepts and the spine reverses. This is the
-  "reversal-integrated form" 3c6m.13 planned: the read's control is subsumed
-  by the mux predicates, not by a standalone under-control QROM accept.
-  Requires flipping the 3c6m.13 signpost carve to `DeferControl`
-  (QramLowering.cpp:657–662; guarded-store :597–603 precedent) so
-  `declineTaintEscapes` (step 116) defers instead of exiting before detection;
-  the backstop stays loud: a read still under tainted control after the
-  PredMux fixpoint (region not claimed) declines exactly as today via the
-  under-control check on the `lowerQramReads` path (`instUnderTaintedControl`)
-  — verified red-green in Inc 3 (the four existing
-  `lowering_reject_qram_read_under_control*` fixtures must stay green with
-  their strings unchanged, minus the ones whose shapes become accepts —
-  re-scoped deliberately, never by reflex).
+- **(c) [Inc 3, AS SHIPPED] Volatile-const fold (curation,
+  `foldVolatileConstGlobalLoads`, QramLowering.cpp).** A `volatile load`
+  whose pointer strips through CONSTANT offsets to an internal/private,
+  definitively-initialized `GlobalVariable` that is never stored and whose
+  address never escapes (every transitive user through instruction/constexpr
+  gep/bitcast chains is a plain non-atomic load) folds to the loaded constant
+  from the initializer. BOTH openlibm forms: the direct scalar
+  (`static volatile double twom1000`, e_exp.c) and the volatile-CAST
+  constant-index element (`*(volatile double *)&atanlo[3]`, s_atan.c — a
+  constexpr byte-offset gep). This deliberately drops the fp-environment
+  side effect — consistent with the trace-only/no-fp-env runtime semantics.
+  Shipped as a MODULE-WIDE pre-PredMux normalize (after the passthrough
+  early-out, both pipeline entry points — twin parity), not region-scoped:
+  the proof (load == initializer on every execution) is global, and folded
+  loads are classical so taint is unaffected (the bitcast-fold precedent).
+  A stored / external / escaping / atomic / unfoldable-offset global is left
+  untouched (fixtures: `lowering_qram_volatile_fold.ll`,
+  `lowering_reject_qram_volatile_{stored,external}.ll`).
+- **(d) [Inc 3, AS SHIPPED] Const-global QROM reads under control
+  (`classifyQromReadUnderControl`, the SHARED claim predicate).** A load
+  inside `R` (and its single-use address gep) is admissible iff the 7.5
+  `matchQramAccess` proves a const-global with compile-time shape at a qram
+  cell width with no coherent escape, AND the speculation is bounds-sound in
+  one of two ways:
+    * `Provable` — known-bits proves the index < N unconditionally (exp/erf:
+      `zext(lshr(hx,31))` ∈ {0,1} into `[2 x double]`); or
+    * `NeedsMask` — unprovable but N is a power of two: the flatten rewrites
+      the gep index to `and idx, N−1`. The mask is the IDENTITY on every
+      in-bounds index (idx ∈ [0,N)); it changes only an OUT-OF-BOUNDS index,
+      and `tbl[idx]` out of bounds is UB in the source — so that basis state
+      is obligation-free (there was no defined result to preserve). Soundness
+      thus rests on OOB-read-is-UB, NOT on the guard bounding the index (the
+      guard may be unrelated — e.g. `if(q>0) tbl[i]` with independent `q`,`i`;
+      the mask is still sound). This is the atan `atanhi[id]` / folded-jumptable
+      mechanism; a non-pow2 unprovable index keeps a LOUD decline with the new
+      precise bounds signpost (`index not provably in-bounds`), which RETIRES
+      the 3c6m.13 "needs nested-control lowering" text (nested-control lowering
+      now exists — the honest blocker is the bounds proof).
+    * BOUNDS-PROOF SIGNEDNESS (Rule-13 clearance, LENS-3): a gep index is a
+      SIGNED offset sign-extended to the pointer-index width, so both forms are
+      unsound for a NARROW index (a sign-bit-set `i8` sign-extends negative;
+      `and i8 idx, N−1` with `N=256` is a no-op that leaves the sign set). The
+      claim requires the index to already BE at the pointer-index width — what
+      clang -O1 always emits — and Provable additionally requires proven
+      non-negativity (`KnownBits::isNonNegative`). A narrower hand-written index
+      is over-declined (fixture `lowering_reject_qram_read_narrow_index.ll`).
+  INDEX-TAINT WIDENING (the atan discovery): the claim tolerates a currently
+  UNTAINTED index that the flatten itself will taint — one transitively
+  dependent on a region-internal PHI (atan's `id` phi over constants is
+  control-dependent but data-classical; its phi→select conversion rewires it
+  onto the tainted edge predicates). The carve/signpost callers keep the
+  strict tainted-index gate. A claimable read is ALSO its own claim WITNESS
+  (W4): no shipped owner accepts a load-bearing arm (ArmClassify breaks on
+  loads; the 4.5 data-mux is all-ConstantInt), so claiming the flat read-mux
+  diamond (exp's `ln2HI[xsb]`, the folded jumptable — a DELIBERATE flip of
+  `control_swap_reject_switch_jumptable.ll` to
+  `control_predmux_accept_qrom_jumptable.ll`) steals nothing. Post-flatten
+  the read is a *straight-line* tainted-index read that `lowerQramReads`
+  (7.5 Inc 1) accepts and the spine reverses — the "reversal-integrated form"
+  3c6m.13 planned. The 3c6m.13 signpost carve flips to `DeferControl` for
+  claimable reads (QramLowering.cpp `classifyQramCarve`, both branches;
+  guarded-store precedent), which matters for round-2
+  (`repropagateControlMerges`) compositions — round-1 claims flatten BEFORE
+  the escape guard runs; the backstop stays loud (a deferred read in an
+  unclaimed region reaches `detectControlRegions`' own decline — the iw81.7
+  divergence fence; `lowering_reject_qram_read_under_control.ll` was
+  superseded by the accept + `_nonpow2` bounds pin, and
+  `_nonconst`/`_wide`/`_cohescape` stay green byte-identically).
 
 ### 4.6 Flatten mechanics (block-lifetime discipline)
 

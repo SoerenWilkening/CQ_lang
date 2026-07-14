@@ -19,9 +19,15 @@
 #ifndef CQ_IRPASS_QRAM_LOWERING_H_
 #define CQ_IRPASS_QRAM_LOWERING_H_
 
+#include "llvm/ADT/SmallPtrSet.h"
+
+#include <cstdint>
+
 namespace llvm {
+class BasicBlock;
 class DominatorTree;
 class Instruction;
+class LoadInst;
 class LoopInfo;
 class Module;
 class StoreInst;
@@ -75,6 +81,57 @@ QramCarve qramCarveVerdict(const llvm::Instruction *I, const TaintSet &taint,
 // to straight-line before `lowerShadowMemory` runs). Pure analysis (no mutation).
 bool guardedShadowStoreShape(llvm::StoreInst *SI, const TaintSet &taint,
                              llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
+
+// ── 3c6m.14 (L6) Inc 3: const-global QROM read under tainted control ────────────
+//
+// The claim classification consulted by BOTH the carve (`qramCarveVerdict` →
+// `DeferControl`) AND PredMux's E4 speculation gate (PredMuxFlatten.cpp), so the
+// two can never diverge (the iw81.7 GuardedStoreArm discipline). A read is
+// claimable iff it is a would-be QROM read blocked solely by tainted control
+// (`isQromReadBlockedOnlyByControl` — shape + width + no coherent escape) AND its
+// SPECULATED execution is sound: the flatten moves the gep+load out of their
+// guard, so the index must be in-bounds on EVERY basis state, not merely on the
+// originally-guarded path.
+//   * `Provable`  — known-bits proves index < N unconditionally (the exp
+//     `ln2HI[xsb]` shape: `zext(lshr hx, 31)` < 2). Speculate as-is.
+//   * `NeedsMask` — unprovable, but N is a power of two: the flatten rewrites the
+//     gep index to `and idx, N-1` — the identity on every in-guard basis state
+//     (the guard implied idx < N there); excluded states read a garbage ROW whose
+//     value the merge's ∧-with-block-predicate discards (PredMux PRD §4.4/§6.1) —
+//     the atan `atanhi[id]` / folded-jumptable mechanism.
+//   * `No`        — off-shape / wrong width / coherent escape / bounds unprovable
+//     with a non-pow2 table. The caller keeps its loud decline.
+// `OutCount` (optional) receives the table's element count when claimable — the
+// flatten needs it for the mask constant. `Region` (optional, the PredMux claim
+// only) widens the tainted-index gate to a currently-UNTAINTED index the flatten
+// itself will taint — one that transitively depends on a region-internal PHI
+// (the atan `id` phi over constants: control-dependent, data-classical; the
+// phi→select conversion rewires it onto the tainted edge predicates). The
+// carve/signpost callers pass no region and keep the strict tainted-index gate.
+// Pure analysis (no mutation).
+enum class QromClaim { No, Provable, NeedsMask };
+
+QromClaim classifyQromReadUnderControl(
+    llvm::LoadInst *LI, const TaintSet &taint, llvm::DominatorTree &DT,
+    llvm::LoopInfo &LInfo, uint64_t *OutCount = nullptr,
+    const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region = nullptr);
+
+// 3c6m.14 Inc 3 — volatile-const global-load fold (curation, runs pre-PredMux in
+// BOTH pipeline entry points). Folds a VOLATILE load whose pointer strips (through
+// constant offsets) to an INTERNAL, definitively-initialized global that is never
+// stored and whose address never escapes (every transitive user through
+// gep/bitcast — instruction or constexpr — is a plain non-atomic load) to the
+// loaded constant from the initializer. This is the openlibm anti-const-fold
+// idiom (`static volatile double twom1000`, `*(volatile double *)&atanlo[3]`):
+// the volatile qualifier exists purely to defeat classical FP folding /
+// raise-inexact elision, and fenv is out of scope project-wide. The proof makes
+// load == initializer on every execution, so the fold is exact; anything short of
+// the proof (external linkage, any store, any escaping user, atomic, a type the
+// initializer cannot produce at that offset) is left untouched — the existing
+// loud declines own it. Folded loads are CLASSICAL (constant address), so taint
+// is unaffected and no re-propagate is needed (the foldIdentityBitcasts
+// precedent). Returns true if anything folded.
+bool foldVolatileConstGlobalLoads(llvm::Module &M);
 
 // Lower every accepted const-global tainted-index READ in `M`. Runs BEFORE
 // `lowerRotations` (pre-RAUW SSA identity, the control/IO precedent): the emitted

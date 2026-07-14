@@ -49,16 +49,19 @@
 #include "PredMuxFlatten.h"
 
 #include "IntrinsicLowering.h"
+#include "QramLowering.h"
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
@@ -263,6 +266,12 @@ struct PredMuxRegion {
   BasicBlock *Merge = nullptr;   // immediate post-dominator of Entry
   SmallVector<BasicBlock *, 16> Topo;  // region blocks, topological, Entry first
   SmallPtrSet<BasicBlock *, 16> InRegion;
+  // Inc 3 — claimable QROM reads whose index is NOT known-bits-provable but
+  // whose pow2 table admits the `and idx, N-1` mask (QromClaim::NeedsMask);
+  // the flatten rewrites each gep index before the speculation is final.
+  // (load, table element count) pairs, captured at E4-analysis time
+  // (detect-before-mutate: analysis decides, the flatten only executes).
+  SmallVector<std::pair<LoadInst *, uint64_t>, 4> MaskLoads;
 };
 
 // Blocks that sit on any CFG cycle (any non-trivial SCC, or a self-loop).
@@ -304,8 +313,8 @@ bool topoOrderRegion(PredMuxRegion &R) {
 }
 
 // The full E-ladder. Pure analysis; returns false to LEAVE (never diagnoses).
-bool recoverRegion(Instruction *T, PostDominatorTree &PDT,
-                   const SmallPtrSetImpl<BasicBlock *> &OnCycle,
+bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
+                   LoopInfo &LInfo, const SmallPtrSetImpl<BasicBlock *> &OnCycle,
                    const TaintSet &Taint, PredMuxRegion &R) {
   BasicBlock *E = T->getParent();
   auto *Node = PDT.getNode(E);
@@ -342,13 +351,34 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT,
     ++NumMergePhis;
     SolePhiIncomings = P.getNumIncomingValues();
   }
+  // W4 (Inc 3) — a claimable const-global QROM read inside an arm is its own
+  // claim witness: no shipped owner accepts a load-bearing arm (ArmClassify's
+  // walkValueChain breaks on LoadInst; the 4.5 data-mux is all-ConstantInt),
+  // so claiming the flat read-mux diamond (exp's `ln2HI[xsb]`, the folded
+  // jumptable) steals nothing (anti-overlap preserved).
+  bool ClaimableRead = false;
+  for (BasicBlock *B : R.InRegion) {
+    if (B == E)
+      continue;
+    for (Instruction &I : *B)
+      if (auto *LI2 = dyn_cast<LoadInst>(&I))
+        if (classifyQromReadUnderControl(LI2, Taint, DT, LInfo,
+                                         /*OutCount=*/nullptr,
+                                         &R.InRegion) != QromClaim::No) {
+          ClaimableRead = true;
+          break;
+        }
+    if (ClaimableRead)
+      break;
+  }
   bool Claim = false;
   if (isa<SwitchInst>(T)) {
     // Straight-line-arm switches are 4.5 territory (route/value/data-mux/
-    // eq-fold) — claim only when an arm hosts further tainted control.
-    Claim = NestedTainted;
+    // eq-fold) — claim only when an arm hosts further tainted control (or a
+    // claimable read, which 4.5 never accepts).
+    Claim = NestedTainted || ClaimableRead;
   } else {
-    Claim = NestedTainted || NumMergePhis >= 2 ||
+    Claim = NestedTainted || ClaimableRead || NumMergePhis >= 2 ||
             (NumMergePhis == 1 && SolePhiIncomings > 2);
   }
   if (!Claim)
@@ -397,7 +427,7 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT,
     }
     if (B == E)
       continue;  // E's own instructions are not moved
-    for (const Instruction &I : *B) {
+    for (Instruction &I : *B) {
       if (isa<PHINode>(I)) {
         if (!isMuxableType(I.getType()))
           return false;  // E7
@@ -405,6 +435,33 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT,
       }
       if (I.isTerminator())
         continue;
+      // E4' (Inc 3) — a claimable const-global QROM read (and its single-use
+      // address gep) is speculatable dataflow: the table is immutable, the
+      // width has a qram cell, and the index is provable or pow2-maskable
+      // (`classifyQromReadUnderControl` — the SAME predicate the carve
+      // defers on, so claim and carve can never diverge). A NeedsMask read
+      // is recorded for the flatten to rewrite its gep index. Every other
+      // load — and any volatile/atomic access (isSimple gates them) — leaves.
+      if (auto *LI2 = dyn_cast<LoadInst>(&I)) {
+        uint64_t Count = 0;
+        QromClaim QC = classifyQromReadUnderControl(LI2, Taint, DT, LInfo,
+                                                    &Count, &R.InRegion);
+        if (QC == QromClaim::No)
+          return false;
+        if (QC == QromClaim::NeedsMask)
+          R.MaskLoads.push_back({LI2, Count});
+        continue;
+      }
+      if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
+        if (GEP->hasOneUse())
+          if (auto *LU = dyn_cast<LoadInst>(GEP->user_back()))
+            if (LU->getPointerOperand() == GEP &&
+                classifyQromReadUnderControl(LU, Taint, DT, LInfo,
+                                             /*OutCount=*/nullptr,
+                                             &R.InRegion) != QromClaim::No)
+              continue;  // the claimable read's address gep (load re-checked).
+        return false;
+      }
       if (!isSpeculatableDataflow(I))
         return false;  // E4
     }
@@ -435,6 +492,30 @@ public:
       moveBody(D);
     }
     convertPhis(R.Merge);
+    // Inc 3 — mask the NeedsMask reads' gep indices (`and idx, N-1`): the
+    // speculated read must be in-bounds on EVERY basis state. The mask is the
+    // IDENTITY exactly on the in-bounds indices (idx ∈ [0,N)); it only changes
+    // an OUT-OF-BOUNDS index — and `tbl[idx]` out of bounds is UB in the source,
+    // so that basis state is obligation-free (the original program had no
+    // defined result to preserve). Soundness thus rests on OOB-read-is-UB, not
+    // on the guard bounding the index (the guard may be unrelated to it); the
+    // masked garbage-row value, where it survives the merge predicate, only ever
+    // replaces an undefined one. The claim gate (classifyQromReadUnderControl)
+    // keeps the index at the pointer-index width, so `and idx, N-1` (N ≤ 2^63)
+    // yields a non-negative in-range offset for every bit pattern. Inserted AT
+    // the (already-moved) gep so the index dominates textually; the And is
+    // tainted by the caller's re-propagate and lowers as an ordinary hl template.
+    for (auto &ML : R.MaskLoads) {
+      auto *GEP = cast<GetElementPtrInst>(ML.first->getPointerOperand());
+      unsigned IdxNo = GEP->getNumOperands() - 1;
+      Value *Idx = GEP->getOperand(IdxNo);
+      IRBuilder<> MB(GEP);
+      MB.SetCurrentDebugLocation(GEP->getDebugLoc());
+      Value *Masked = MB.CreateAnd(
+          Idx, ConstantInt::get(Idx->getType(), ML.second - 1));
+      GEP->setOperand(IdxNo, Masked);
+      track(Masked);
+    }
     // Entry terminator → unconditional branch to the merge; erase the arms.
     // The entry terminator's own condition/scrutinee joins the sweep set (a
     // Rule-13 clearance follow-up): it normally stays live as a predicate
@@ -694,6 +775,8 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint) {
 
     PostDominatorTree PDT;
     PDT.recalculate(F);
+    DominatorTree DT(F);
+    LoopInfo LInfo(DT);  // for the Inc-3 QROM-read claim (shared carve predicate)
     SmallPtrSet<BasicBlock *, 16> OnCycle;
     collectCycleBlocks(F, OnCycle);
 
@@ -702,7 +785,7 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint) {
       if (!isTaintedCtrlTerm(T, Taint))
         continue;
       PredMuxRegion R;
-      if (!recoverRegion(T, PDT, OnCycle, Taint, R))
+      if (!recoverRegion(T, PDT, DT, LInfo, OnCycle, Taint, R))
         continue;  // leave: today's loud declines own it
       IRBuilder<> Builder(T);
       Builder.SetCurrentDebugLocation(T->getDebugLoc());

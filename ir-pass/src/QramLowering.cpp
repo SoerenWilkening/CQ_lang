@@ -15,9 +15,12 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugLoc.h"
@@ -31,7 +34,10 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/Support/KnownBits.h"
+#include "llvm/Support/MathExtras.h"
 
+#include <algorithm>
 #include <optional>
 #include <utility>
 
@@ -106,18 +112,19 @@ constexpr char kMsgQramAlias[] =
     "cq QRAM access: array address has aliasing fan-out";
 constexpr char kMsgQramLoop[] =
     "cq QRAM access: tainted-index memory access inside a loop";
-// bd 3c6m.13 — a would-be QROM read (constant-global table, tainted index, clean
-// single-origin shape) whose SOLE blocker is that it is control-dependent on a tainted
-// branch. The identical shape lowers straight-line (lowering_qram_read_fp64.ll); under
-// tainted control it stays a LOUD decline. Empirically (real openlibm bodies, bd 3c6m.13):
-// ACCEPTING it (hoisting to unconditional) yields ZERO new compiles — the surrounding
-// NESTED tainted control (L6 = bd 3c6m.14) / inner calls / loops are the real wall — and it
-// would couple QROM-accept to control-accept (L6's job), an over-accept hazard. This precise
-// signpost (the Bennett pattern-naming model, [[pointer-boundary-linearity-bennett]]) replaces
-// the MISLEADING generic "unsupported instruction" (which implied a missing OPCODE and sent
-// the injection census down the wrong lever), so future nested-control work is directed right.
-constexpr char kMsgQromUnderControl[] =
-    "cq QRAM access: const-global table read under tainted control (needs nested-control lowering)";
+// bd 3c6m.13 → 3c6m.14 Inc 3 — a would-be QROM read (constant-global table, tainted
+// index, clean single-origin shape) under tainted control. Since Inc 3 the CLAIMABLE
+// subset (index known-bits-provably in-bounds, or a pow2 table the flatten can mask —
+// `classifyQromReadUnderControl`) DEFERS to PredMux/control detection and lowers; what
+// remains here is the read whose SPECULATION is genuinely unprovable — no known-bits
+// bound and a non-pow2 table, so no sound mask exists. This precise signpost (the
+// Bennett pattern-naming model, [[pointer-boundary-linearity-bennett]]) replaces the
+// retired "needs nested-control lowering" text (nested-control lowering now EXISTS;
+// the honest blocker is the bounds proof), keeping the injection census pointed at
+// the real wall.
+constexpr char kMsgQromUnderControlBounds[] =
+    "cq QRAM access: const-global table read under tainted control: index not "
+    "provably in-bounds (no known-bits proof; table size not a power of two)";
 // The coherent-return no-cloning fence (bug test_C_libtooling-l6xk + the sxuk
 // direct-return / Inc-1 QROM-return regressions; VERIFIED physics 2026-06-24,
 // memory 7-5-qram-coherent-return-nocloning). A qRAM LOAD at a superposed index
@@ -358,7 +365,8 @@ bool isDirectOriginPtr(Value *P, const OriginResult &Origin, unsigned Depth = 0)
 // flat element form (`E, base, idx`) clang -O1 emits for pointer-indirected
 // access (Inc 3, the realistic phi/select shape).
 bool matchAddressGep(GetElementPtrInst *GEP, const TaintSet &taint,
-                     Value *&RawIndex, Type *&CellTy) {
+                     Value *&RawIndex, Type *&CellTy,
+                     bool requireTaintedIndex = true) {
   Type *Src = GEP->getSourceElementType();
   if (auto *AT = dyn_cast<ArrayType>(Src)) {
     // Array-decay: exactly (const-zero, trailing index).
@@ -377,7 +385,11 @@ bool matchAddressGep(GetElementPtrInst *GEP, const TaintSet &taint,
     return false;  // a struct / vector / aggregate source element is not a cell.
   }
   RawIndex = GEP->getOperand(GEP->getNumOperands() - 1);
-  return taint.Tainted.count(RawIndex);  // the trailing index must be tainted.
+  // The trailing index must be tainted — except for the Inc-3 PredMux claim,
+  // which may waive it for a region-internal-phi-derived index the flatten
+  // itself will taint (the caller enforces that proof; see
+  // `classifyQromReadUnderControl`).
+  return !requireTaintedIndex || taint.Tainted.count(RawIndex);
 }
 
 // The SINGLE structural ACCEPT — the shared truth for the carve AND both emitters
@@ -403,7 +415,8 @@ struct QramMatch {
 std::optional<QramMatch> matchQramAccess(Instruction *MemOp,
                                          const TaintSet &taint, DominatorTree &DT,
                                          LoopInfo &LInfo,
-                                         bool allowTaintedControl = false) {
+                                         bool allowTaintedControl = false,
+                                         bool allowUntaintedIndex = false) {
   Value *PtrOp = nullptr;
   Value *StoreVal = nullptr;
   bool IsStore;
@@ -426,7 +439,8 @@ std::optional<QramMatch> matchQramAccess(Instruction *MemOp,
     return std::nullopt;  // single-use address gep (sole user is this memop).
   Value *RawIndex = nullptr;
   Type *CellTy = nullptr;
-  if (!matchAddressGep(GEP, taint, RawIndex, CellTy))
+  if (!matchAddressGep(GEP, taint, RawIndex, CellTy,
+                       /*requireTaintedIndex=*/!allowUntaintedIndex))
     return std::nullopt;  // non-canonical / classical-index gep — not ours.
   // Pun fence (38t2 Rule-13 clearance): the memop's ACCESSED type must BE the
   // cell type. A type-punned sub-width access (`store float` through a
@@ -534,6 +548,89 @@ bool isQromReadBlockedOnlyByControl(LoadInst *LI, const TaintSet &taint,
   return true;
 }
 
+// Inc 3 — will the flatten itself TAINT this (currently untainted) index? True
+// iff the index transitively depends on a region-internal PHI: convertPhis
+// rewrites every such phi to a select chain over the (tainted) edge predicates,
+// and taint then flows forward through the pure ops between the phi and the
+// gep. An index with NO region-phi dependence stays classical post-flatten —
+// then the load is a plain classical load whose SPECULATION is in-bounds by the
+// same proof/mask the caller enforces (immutable dereferenceable global), and
+// it simply stays classical code. The atan `id` phi over constants is the
+// canonical taint-after-flatten case.
+bool indexWillTaintAfterFlatten(const Value *V, const TaintSet &taint,
+                                const SmallPtrSetImpl<BasicBlock *> &Region,
+                                unsigned Depth = 0) {
+  if (Depth > 16)
+    return false;  // over-declining is safe.
+  if (taint.Tainted.count(const_cast<Value *>(V)))
+    return true;
+  const auto *I = dyn_cast<Instruction>(V);
+  if (!I || !Region.count(const_cast<BasicBlock *>(I->getParent())))
+    return false;
+  if (isa<PHINode>(I))
+    return true;  // converts to a select chain over tainted edge predicates.
+  for (const Value *Op : I->operands())
+    if (indexWillTaintAfterFlatten(Op, taint, Region, Depth + 1))
+      return true;
+  return false;
+}
+
+// 3c6m.14 Inc 3 — the claim classification (see QramLowering.h). The SPECULATED
+// read runs on every basis state, so in-bounds must hold UNCONDITIONALLY
+// (known-bits), not merely on the originally-guarded path; failing that, a pow2
+// table admits the `and idx, N-1` mask (identity in-guard; excluded states read a
+// garbage row the merge's ∧-with-block-predicate discards). Everything else is No
+// — the caller keeps its loud decline (over-declining is safe). With `Region`
+// (the PredMux claim) the tainted-index gate widens to indexes the flatten
+// itself will taint (region-internal-phi-derived — the atan `id` shape); the
+// carve/signpost callers pass no region and keep the strict gate.
+QromClaim classifyQromReadUnderControlImpl(
+    LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
+    uint64_t *OutCount, const SmallPtrSetImpl<BasicBlock *> *Region) {
+  auto M = matchQramAccess(LI, taint, DT, LInfo, /*allowTaintedControl=*/true,
+                           /*allowUntaintedIndex=*/Region != nullptr);
+  if (!M.has_value() || M->Origin.Kind != OriginResult::Global ||
+      !widthHasQramCell(M->ElemAbi))
+    return QromClaim::No;
+  // The coherent-escape no-cloning fence (as in isQromReadBlockedOnlyByControl).
+  if (LI->getFunction()->getName() != "main" && coherentlyEscapesToReturn(LI))
+    return QromClaim::No;
+  // Index-taint gate: tainted now, or provably tainted-by-flatten.
+  if (!taint.Tainted.count(M->RawIndex) &&
+      (!Region || !indexWillTaintAfterFlatten(M->RawIndex, taint, *Region)))
+    return QromClaim::No;
+  if (OutCount)
+    *OutCount = M->Count;
+  // Bounds proof for the speculated read. An LLVM gep trailing index is a
+  // SIGNED offset computed at the POINTER-INDEX width, sign-extending a narrower
+  // index. That signedness makes both claim forms unsound for a narrow index:
+  //   * Provable — a sign-bit-set narrow index (`i8 0x80`) sign-extends to a
+  //     NEGATIVE offset, reading before the table, even though it is `< N`
+  //     unsigned;
+  //   * NeedsMask — the mask `and idx, N-1` is built in the INDEX's own type, so
+  //     when N-1 fills that type (`[256 x i8]`, mask `and i8 idx, -1`) it is a
+  //     no-op that leaves the sign bit set — the masked value still sign-extends
+  //     OOB.
+  // Require the index to ALREADY be at the pointer-index width (exactly what
+  // clang -O1 emits — it widens every gep index to i64, so no sign-extension
+  // occurs). Then Provable's non-negativity proof holds and NeedsMask's `and`
+  // clears the high bits into [0,N-1] (N ≤ 2^63 for any real table). A narrower
+  // hand-written index is over-declined (safe — Prime Directive).
+  const DataLayout &DL = LI->getModule()->getDataLayout();
+  if (M->RawIndex->getType()->getScalarSizeInBits() !=
+      DL.getIndexTypeSizeInBits(M->Gep->getType()))
+    return QromClaim::No;
+  KnownBits KB = computeKnownBits(M->RawIndex, DL);
+  unsigned Wide = std::max<unsigned>(KB.getBitWidth(), 65);
+  APInt MaxIdx = KB.getMaxValue().zext(Wide);
+  APInt CountAP(Wide, M->Count);
+  if (KB.isNonNegative() && MaxIdx.ult(CountAP))
+    return QromClaim::Provable;  // non-negative (bit 63 clear) AND max < N.
+  if (isPowerOf2_64(M->Count))
+    return QromClaim::NeedsMask;
+  return QromClaim::No;
+}
+
 // iw81.7 — the shared GuardedStoreArm SHAPE predicate (impl; public wrapper
 // `guardedShadowStoreShape` below). (a) The bounded-alloca tainted-index Shadow
 // STORE shape, ALLOWING the tainted control the region flattens away. (b) The
@@ -601,16 +698,26 @@ QramCarve classifyQramCarve(const Instruction *I, const TaintSet &taint,
               guardedShadowStoreShapeImpl(const_cast<StoreInst *>(SU), taint, DT,
                                           LInfo))
             return QramCarve::DeferControl;
-      // bd 3c6m.13 — a const-global QROM-read address gep under tainted control: name
-      // the precise signpost (via the load user, the sole user of a single-use gep) so
-      // the misleading generic "unsupported instruction" is replaced. Still a DECLINE.
+      // bd 3c6m.13 → 3c6m.14 Inc 3 — a const-global QROM-read address gep under
+      // tainted control (via the load user, the sole user of a single-use gep). A
+      // CLAIMABLE read (provable/maskable bounds) DEFERS like the guarded store:
+      // suppress the escape decline so PredMux (round 2: `repropagateControlMerges`
+      // compositions) / `detectControlRegions` adjudicate the region — a deferred
+      // read is always resolved (flattened+lowered, or the region's own loud
+      // decline), never silent (the iw81.7 divergence fence). An unclaimable
+      // would-be QROM read keeps the precise bounds signpost. Still a DECLINE.
       for (const User *U : GEP->users())
         if (auto *LU = dyn_cast<LoadInst>(U))
-          if (LU->getPointerOperand() == GEP &&
-              isQromReadBlockedOnlyByControl(const_cast<LoadInst *>(LU), taint, DT,
-                                             LInfo)) {
-            Msg = kMsgQromUnderControl;
-            return QramCarve::Decline;
+          if (LU->getPointerOperand() == GEP) {
+            if (classifyQromReadUnderControlImpl(const_cast<LoadInst *>(LU), taint,
+                                                 DT, LInfo, nullptr, nullptr) !=
+                QromClaim::No)
+              return QramCarve::DeferControl;
+            if (isQromReadBlockedOnlyByControl(const_cast<LoadInst *>(LU), taint,
+                                               DT, LInfo)) {
+              Msg = kMsgQromUnderControlBounds;
+              return QramCarve::Decline;
+            }
           }
       return QramCarve::NotQram;
     }
@@ -650,16 +757,21 @@ QramCarve classifyQramCarve(const Instruction *I, const TaintSet &taint,
       if (guardedShadowStoreShapeImpl(const_cast<StoreInst *>(SI), taint, DT,
                                       LInfo))
         return QramCarve::DeferControl;
-    // bd 3c6m.13 — a const-global QROM read under tainted control: precise signpost
-    // (replaces the misleading generic "unsupported instruction"). Still a DECLINE —
-    // accepting it yields 0 compiles (the real wall is nested control, L6). Loads only:
-    // a const global cannot be stored (the store paths above own their own verdicts).
-    if (auto *LI = dyn_cast<LoadInst>(I))
+    // bd 3c6m.13 → 3c6m.14 Inc 3 — a const-global QROM read under tainted control.
+    // CLAIMABLE (provable/maskable bounds) → DEFER (see the gep branch above);
+    // would-be-QROM but unclaimable → the precise bounds signpost. Loads only: a
+    // const global cannot be stored (the store paths above own their own verdicts).
+    if (auto *LI = dyn_cast<LoadInst>(I)) {
+      if (classifyQromReadUnderControlImpl(const_cast<LoadInst *>(LI), taint, DT,
+                                           LInfo, nullptr, nullptr) !=
+          QromClaim::No)
+        return QramCarve::DeferControl;
       if (isQromReadBlockedOnlyByControl(const_cast<LoadInst *>(LI), taint, DT,
                                          LInfo)) {
-        Msg = kMsgQromUnderControl;
+        Msg = kMsgQromUnderControlBounds;
         return QramCarve::Decline;
       }
+    }
     return QramCarve::NotQram;  // ControlDetect/generic domain (jumptable kMsgOther).
   }
   if (LInfo.getLoopFor(I->getParent())) {
@@ -790,6 +902,90 @@ QramCarve qramCarveVerdict(const llvm::Instruction *I, const TaintSet &taint,
 bool guardedShadowStoreShape(StoreInst *SI, const TaintSet &taint,
                              DominatorTree &DT, LoopInfo &LInfo) {
   return guardedShadowStoreShapeImpl(SI, taint, DT, LInfo);
+}
+
+QromClaim classifyQromReadUnderControl(
+    LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
+    uint64_t *OutCount, const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region) {
+  return classifyQromReadUnderControlImpl(LI, taint, DT, LInfo, OutCount,
+                                          Region);
+}
+
+// 3c6m.14 Inc 3 — volatile-const global-load fold (see QramLowering.h). Pure
+// module-local curation of the openlibm anti-const-fold idiom; every gate below
+// is load-bearing (external linkage / a store / an escaping user / an atomic /
+// an unfoldable offset+type each leave the global untouched for the existing
+// loud declines — over-declining is safe, a wrong fold would be a silent
+// wrong-value miscompile in the classical remainder).
+bool foldVolatileConstGlobalLoads(Module &M) {
+  bool Changed = false;
+  const DataLayout &DL = M.getDataLayout();
+  for (GlobalVariable &G : M.globals()) {
+    if (!G.hasLocalLinkage() || !G.hasDefinitiveInitializer())
+      continue;
+    // Never-stored / address-never-escaping proof: every transitive user
+    // (through gep/bitcast — instruction or constexpr — chains) is a plain
+    // non-atomic load. Any other user (store, call, ptrtoint, cmp, phi/select,
+    // …) forfeits the fold for the WHOLE global.
+    SmallVector<const User *, 16> Work(G.user_begin(), G.user_end());
+    SmallPtrSet<const User *, 16> Seen;
+    SmallVector<LoadInst *, 8> VolLoads;
+    bool Clean = true;
+    while (!Work.empty() && Clean) {
+      const User *U = Work.pop_back_val();
+      if (!Seen.insert(U).second)
+        continue;
+      if (const auto *LI = dyn_cast<LoadInst>(U)) {
+        if (LI->isAtomic()) {
+          Clean = false;
+          break;
+        }
+        if (LI->isVolatile())
+          VolLoads.push_back(const_cast<LoadInst *>(LI));
+        continue;  // a plain load neither stores nor escapes the address.
+      }
+      if (isa<GEPOperator>(U) || isa<BitCastOperator>(U)) {
+        Work.append(U->user_begin(), U->user_end());
+        continue;
+      }
+      Clean = false;
+    }
+    if (!Clean || VolLoads.empty())
+      continue;
+    for (LoadInst *LI : VolLoads) {
+      // Fold only a load whose pointer strips to G through CONSTANT offsets
+      // (the direct `@twom1000` load: offset 0; the `&atanlo[3]` constexpr
+      // byte-gep: offset 24). A variable-index gep load stays live — that is
+      // the QROM read's domain, never the fold's.
+      APInt Off(DL.getIndexTypeSizeInBits(LI->getPointerOperand()->getType()),
+                0);
+      Value *Base = LI->getPointerOperand()->stripAndAccumulateConstantOffsets(
+          DL, Off, /*AllowNonInbounds=*/true);
+      if (Base != &G)
+        continue;
+      // In-bounds proof BEFORE folding: `AllowNonInbounds=true` admits negative
+      // or past-the-end constant offsets, and `ConstantFoldLoadFromConst` treats
+      // bytes past the initializer as POISON (a non-null constant), so an
+      // out-of-bounds volatile read would silently fold to poison instead of
+      // riding the existing decline. An OOB access is UB in C and never fires on
+      // the injected openlibm bodies (twom1000 @0, atanlo[3] @24 are exactly
+      // in-bounds), but leave it standing anyway (over-declining is safe): the
+      // whole `[Off, Off+loadSize)` byte range must lie inside the initializer.
+      uint64_t GBytes = DL.getTypeAllocSize(G.getValueType());
+      uint64_t LdBytes = DL.getTypeStoreSize(LI->getType());
+      if (Off.isNegative() || Off.getActiveBits() > 63 ||
+          Off.getZExtValue() > GBytes || GBytes - Off.getZExtValue() < LdBytes)
+        continue;  // out-of-bounds constant offset — never fold to poison.
+      Constant *C =
+          ConstantFoldLoadFromConst(G.getInitializer(), LI->getType(), Off, DL);
+      if (!C)
+        continue;  // offset/type the initializer cannot produce — leave.
+      LI->replaceAllUsesWith(C);
+      LI->eraseFromParent();
+      Changed = true;
+    }
+  }
+  return Changed;
 }
 
 void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
