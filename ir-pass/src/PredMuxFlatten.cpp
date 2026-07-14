@@ -149,6 +149,34 @@ bool isSupportedCondTree(const Value *V, unsigned Depth) {
   return false;
 }
 
+// Inc 2 — the SUBSTRATE-grammar condition tree (a strict subset of
+// isSupportedCondTree): compare leaves and distinct-operand `and i1`/`or i1`
+// nodes only — no xor-true, no trunc/freeze/select/phi, no compares OVER i1
+// operands. This mirrors `collectCondTree` (SelectClassify.cpp) plus its
+// self-operand and i1-operand-leaf fences, because an i1 phi converted to
+// boolean algebra composes its incomings INTO a select condition the 3c6m.12
+// flag-mint must accept verbatim. i1 constants are additionally admitted —
+// they never reach the tree (the composer folds ∧true/∧false away). Anything
+// off-grammar falls back to the Inc-1 select chain (same loud decline at the
+// consuming select as today — posture unchanged).
+bool isBooleanCondTree(const Value *V, unsigned Depth) {
+  if (Depth > 16)
+    return false;
+  if (const auto *C = dyn_cast<ConstantInt>(V))
+    return C->getType()->isIntegerTy(1);
+  if (const auto *Cmp = dyn_cast<CmpInst>(V))
+    return isSupportedCompareLeaf(Cmp) &&
+           !Cmp->getOperand(0)->getType()->isIntegerTy(1);
+  if (const auto *BO = dyn_cast<BinaryOperator>(V))
+    if (BO->getType()->isIntegerTy(1) &&
+        (BO->getOpcode() == Instruction::And ||
+         BO->getOpcode() == Instruction::Or))
+      return BO->getOperand(0) != BO->getOperand(1) &&
+             isBooleanCondTree(BO->getOperand(0), Depth + 1) &&
+             isBooleanCondTree(BO->getOperand(1), Depth + 1);
+  return false;
+}
+
 // E4 — one instruction of pure speculatable dataflow at template-supported
 // widths. Loads are excluded in v1 (the Inc-3 QROM/volatile-fold proofs land
 // separately); ANY other call — including every @cq_* front-end intrinsic, so
@@ -558,10 +586,54 @@ private:
       for (auto &IV : In)
         if (isa<UndefValue>(IV.second))
           IV.second = Constant::getNullValue(P->getType());
-      Value *Acc = In.back().second;
-      for (unsigned I = In.size() - 1; I-- > 0;) {
-        Value *EP = edgePred(In[I].first, D);
-        Acc = track(B.CreateSelect(EP, In[I].second, Acc));
+      // Inc 2 — an i1 phi whose incomings all sit inside the substrate
+      // condition-tree grammar converts to BOOLEAN ALGEBRA, ∨ᵢ (EP(eᵢ) ∧ vᵢ)
+      // (the iw81.14 / Bennett `_compute_block_pred!` form), instead of a
+      // select chain: a select-of-i1 feeding a downstream select CONDITION is
+      // off the 3c6m.12 flag-mint grammar (the tanh s_expm1.c:168 decline),
+      // while and/or-over-compare-leaves stays mintable. Exactly one EP is
+      // true when the merge is on the taken path (acyclic single-visit), so
+      // the ∨ picks that edge's value; off-path the result is `false` —
+      // garbage excluded downstream by the same ∧-with-block-predicate
+      // argument as the chain's fallback garbage (PRD §4.4/§6.1). ∧true/
+      // ∧false fold away so i1 constants never reach the emitted tree; the
+      // EP==v and Acc==Term guards keep the substrate's self-operand fence
+      // unreachable (x∧x = x, x∨x = x). Off-grammar incomings (trunc/xor/…)
+      // keep the Inc-1 select chain — the consuming select declines loudly
+      // exactly as today.
+      bool BoolAlg = P->getType()->isIntegerTy(1) && In.size() > 1;
+      if (BoolAlg)
+        for (auto &IV : In)
+          if (!isBooleanCondTree(IV.second, 0)) {
+            BoolAlg = false;
+            break;
+          }
+      Value *Acc = nullptr;
+      if (BoolAlg) {
+        for (auto &IV : In) {
+          Value *EP = edgePred(IV.first, D);
+          Value *Term = nullptr;
+          if (auto *C = dyn_cast<ConstantInt>(IV.second))
+            Term = C->isOne() ? EP : nullptr;  // ∧true = EP; ∧false drops.
+          else if (EP == IV.second)
+            Term = EP;  // x ∧ x = x (never mint a self-operand node).
+          else
+            Term = track(B.CreateAnd(EP, IV.second));
+          if (!Term)
+            continue;
+          if (!Acc)
+            Acc = Term;
+          else if (Acc != Term)  // x ∨ x = x.
+            Acc = track(B.CreateOr(Acc, Term));
+        }
+        if (!Acc)  // every incoming was constant-false/frozen-undef.
+          Acc = ConstantInt::getFalse(P->getContext());
+      } else {
+        Acc = In.back().second;
+        for (unsigned I = In.size() - 1; I-- > 0;) {
+          Value *EP = edgePred(In[I].first, D);
+          Acc = track(B.CreateSelect(EP, In[I].second, Acc));
+        }
       }
       P->replaceAllUsesWith(Acc);
       P->eraseFromParent();

@@ -308,6 +308,62 @@ mux = select(EP(e₁), v₁, select(EP(e₂), v₂, … select(EP(e_{m-1}), v_{m
   domain and the region is **left unclaimed** instead (checked at E3-time:
   `M`'s preds ⊆ R). The 8 targets all satisfy preds(M) ⊆ R.)
 
+### 4.4a Inc 2 — i1 phis convert to boolean algebra (the tanh mechanism)
+
+An i1 phi converted to a select chain produces a `select i1` VALUE; when that
+value feeds a downstream select **condition**, the condition falls off the
+3c6m.12 and/or-over-compare-leaves flag-mint grammar (`collectCondTree`,
+SelectClassify.cpp) and the consuming select declines `control flow under
+quantum control` — the census tanh.f64 blocker (`s_expm1.c:168`,
+`k = invln2*x + ((xsb==0)?0.5:-0.5)`, where `xsb==0` reaches the ternary
+through an i1 phi at an internal merge).
+
+Inc 2 therefore converts an i1 phi with >1 unique incoming, **when every
+incoming already sits inside the substrate condition-tree grammar**
+(`isBooleanCondTree`: supported compare leaves — never over i1 operands —
+distinct-operand `and i1`/`or i1` nodes, i1 constants; NO xor/trunc/freeze/
+select/phi; depth ≤ 16), to the Bennett `_compute_block_pred!` boolean
+algebra instead:
+
+```
+mux = ∨ᵢ (EP(eᵢ) ∧ vᵢ)          -- ∧true folds to EP, ∧false drops the term,
+                                 -- x∧x = x and x∨x = x fold by identity,
+                                 -- all-dropped ⇒ constant false
+```
+
+- **Equivalence:** exactly one `EP(eᵢ)` is true when the merge is on the taken
+  path (§6.1), so the ∨ picks that edge's value; off-path all terms are false
+  and the result is `false` — garbage excluded downstream by the same
+  ∧-with-block-predicate argument as the chain's fallback garbage (§4.4). The
+  folds only strengthen this (they never change the on-path value).
+- **Grammar closure:** EP trees are and/or-over-compare-leaves by
+  construction (§4.3); ∧/∨-composing them with grammar-conforming incomings
+  stays inside the grammar, so a muxed condition remains flag-mintable and
+  the emitted nodes keep the substrate's self-operand fence unreachable (the
+  EP==v and Acc==Term identity folds).
+- **Fallback:** any off-grammar incoming keeps the Inc-1 select chain —
+  byte-identical posture (the consuming select declines loudly exactly as
+  before; `control_predmux_i1phi_offgrammar_fallback.ll` pins it).
+- **Poison note (Inc-2 Rule-13 clearance, Lens-1 NIT, accepted):**
+  `and i1 false, poison` is poison where the chain's `select` blocked the
+  unselected arm — a real SSA-refinement asymmetry. Non-observable today
+  because every minted ∧/∨ carries the (unconditionally tainted) EP operand
+  and lowers to a total-function template before any consumer, concretizing
+  poison; moved region ops already drop poison flags. **This masking depends
+  on EP being unconditionally tainted-and-lowered** — a future change that
+  lets an EP fold to a classical constant, or that defers lowering so clang
+  sees a residual classical `and i1 …, poison`, must re-examine this note.
+
+Fixtures: `control_predmux_accept_i1phi_cond.ll` (integer),
+`control_predmux_accept_i1phi_cond_fp.ll` (the fp mini-tanh),
+`control_predmux_accept_i1phi_const_folds.ll` (const-true→EP / const-false→
+drop), `control_predmux_accept_i1phi_data.ll` (result as zext'd DATA —
+`cq_template_{and,or}_i1` path), `control_predmux_accept_i1phi_final_merge.ll`
+(i1 phi at `R.Merge`, entry-bypass literal + pre-region-value incoming),
+`control_predmux_i1phi_offgrammar_fallback.ll` (decline pin). E2E:
+`slice_libm_real_{log,cbrt,tanh}` (real openlibm bodies; tanh doubly inlines
+expm1 and is the mechanism cell).
+
 ### 4.5 Normalizations (each proof-gated, each part of the claimed region only)
 
 - **(a) Poison-flag strip.** Every instruction moved out of its guarding

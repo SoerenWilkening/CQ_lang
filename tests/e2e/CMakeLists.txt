@@ -584,6 +584,32 @@ add_test(NAME e2e-slice-libm-real-lround
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lround.expected.log")
 
+# 3c6m.14 L6 Inc 2 — real openlibm log/cbrt/tanh (tanh = the i1-phi-feeding-a-
+# select-condition mechanism cell; expm1 doubly inlined).
+add_test(NAME e2e-slice-libm-real-log
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log.expected.log")
+
+add_test(NAME e2e-slice-libm-real-cbrt
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_cbrt.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_cbrt.expected.log")
+
+add_test(NAME e2e-slice-libm-real-tanh
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_tanh.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_tanh.expected.log")
+
 add_test(NAME e2e-slice-branchless-scalbn
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
