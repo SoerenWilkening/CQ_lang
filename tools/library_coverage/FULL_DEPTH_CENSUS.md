@@ -7,6 +7,21 @@
 > *every* decline layer per cell, so the capability-combination → function map is
 > exact — fixing the first-blocker mis-routing that flipped 18 cells L5→L6 (3c6m.13).
 
+> **⚡ UPDATE 2026-07-14 (bd 3c6m.14 Inc 4 — L6 CONTROL landed; re-census).** The
+> L6 CONTROL lever (PredMux — general acyclic tainted control flattened to
+> block-predicate select chains) shipped (3c6m.14 Inc 1–3). Re-running
+> `peel_census.py` over the reconciled 123-cell surface with the shipped pass:
+> **injection-covered COMPILE went 2 → 48** (24 f64 + 24 f32; f80 all still held
+> by SHADOW). All 8 IR-verified CONTROL-alone cells flipped; **8 remain VERIFIED**
+> (committed real-openlibm e2e goldens), 40 more compile+link+run and await goldens
+> (see §11 + the scoreboard). The census-mode flood cross-check reproduced §4/§5's
+> pre-L6 capability map **exactly** (CONTROL 108 / SHADOW 40 / INNER-CALL 34 /
+> SPECIALIZE 10 / OPCODE 3), confirming the map is a stable property of the
+> unchanged bodies — L6 unlocked the CONTROL-alone row, it did not move the map.
+> **Full post-L6 delta, scoreboard, and per-lever follow-ups are in the new §11.**
+> §1–§10 below are the frozen pre-L6 baseline (read them as "what each body
+> *needs*"; §11 is "what now *compiles*").
+
 ---
 
 ## 1. Headline
@@ -150,6 +165,15 @@ quantum arg/return on a surviving call, or an un-inlinable recursive body.
 ---
 
 ## 5. L6 (3c6m.14) decision support — cells-unlocked-per-lever
+
+> **⚡ SUPERSEDED for the delta by §11 (bd 3c6m.14 Inc 4, 2026-07-14).** L6 landed;
+> the "8 verified / ≤48 projected CONTROL-alone" prediction below **resolved to 46
+> cells that actually COMPILE** (of the 51-cell CONTROL row) + the 2 pre-L6 fdim = 48
+> injection-covered, 8 verified. The 5 non-flips (2 residual-control + 3 loop-behind-
+> control) and the +5 CONTROL+LOOP f32 cells all surfaced their next layer exactly as
+> this section's LOOP lower-bound warned — see §11.3. The lever *counts* below
+> (CONTROL 108 / SHADOW 40 / …) were re-confirmed **exactly** by the Inc-4 census-mode
+> re-flood (§11.5); they remain the correct "what each body needs" map.
 
 | lever | cells (measured) | note (verification-adjusted) |
 |---|---|---|
@@ -348,3 +372,115 @@ reasoning, never a green run — the Rule-10/11 pattern) and are folded in above
 the honest headline is **8 verified, up to 48 projected**, and the LOOP tally must be
 published as ≥8, not 8."* This census endorses CONTROL/3c6m.14 as the next build
 lever — with an honest target count, not an inflated one.
+
+---
+
+## 11. Post-L6 re-census (bd 3c6m.14 Inc 4 · 2026-07-14 · branch `3c6m.14-control-l6`)
+
+L6 CONTROL (PredMux, 3c6m.14 Inc 1–3) shipped. This section is the **measured
+delta**: §1–§10 above say what each body *needs* (a property of the unchanged
+openlibm bodies); this section says what now *compiles* with the shipped pass. Two
+independent runs of `peel_census.py` over a freshly-rebuilt 241-body corpus (per
+`full_surface/README.md`), all with the committed HEAD plugin:
+
+- **normal / first-blocker mode** (env-unset) — the shipped pass runs **end-to-end**
+  (PredMux really flattens the control, then lowering continues through
+  opcode/shadow/loop), so the first blocker post-flatten *is* the real next layer.
+  This is the load-bearing measurement (the old census-mode could not see past
+  control — it returned before opcode lowering; PredMux removes that blind spot for
+  the flattened cells). Deterministic across 3 runs (48/48/48, identical set).
+- **census-mode flood** (`CQ_PEEL_CENSUS=1`, throwaway instrumentation, reverted
+  before commit) — the full pure-guard blocker STACK per cell, pre-PredMux, to
+  cross-check §4/§5's capability-combination map.
+
+### 11.1 Headline delta — INJECTION-COVERED went 2 → 48
+
+| result | pre-L6 (3c6m.50) | post-L6 (Inc 4) | note |
+|---|---|---|---|
+| **COMPILE (injection-covered)** | **2** | **48** | 24 f64 + 24 f32 — the SAME 24 functions at both widths; f80 **0** (all held by SHADOW) |
+| **VERIFIED (committed e2e golden)** | 0 real-body | **8** | `atan cbrt erf exp log lround scalbn tanh` (all `.f64`) — `slice_libm_real_*`. Rule 2: golden trace, not just pass-exit-0 |
+| **compile, golden PENDING** | — | **38** | 23 f32 siblings + 15 additional f64 — compile+link+run (10/10 e2e-spot-checked, real trace) but no committed golden → *injection-covered, not yet verified* |
+
+The 48 reconcile **exactly** against the pre-L6 §4 rows: `48 = 46 CONTROL-flips + 2
+fdim` (the 2 pre-L6 COMPILES). Of the 51-cell pre-L6 "CONTROL (pure-L6 target)" row,
+**46 flipped to COMPILE**; the 5 that did not are §11.3.
+
+**Scoreboard honesty (bd `libm-scoreboard-two-numbers`, Rule 2).** The number the
+campaign moves is **injection-covered = compiles under real-body source injection**:
+**2 → 48**. It is DISJOINT from the recognition floor (14 hardware intrinsics). But a
+compile is not a proof of the unitary — **only 8 cells are VERIFIED** (golden e2e
+trace). The other 40 (38 new + 2 fdim) compile+link+run; promoting them to *verified*
+needs goldens (the follow-up ticket, §11.4). Do **not** quote "48 verified" — quote
+**48 injection-covered, 8 verified**.
+
+### 11.2 f32 siblings fell out for free (the near-free width win)
+
+The 24 f32 cells are the *same* bodies as the 24 f64 cells at narrower width; PredMux
+flattens their control identically, so **every f64 CONTROL-alone flip brought its f32
+sibling with it** — 23 new f32 compiles (fdimf was already the pre-L6 baseline),
+including all 8 siblings of the verified set (`atanf cbrtf erff expf logf lroundf
+scalbnf tanhf`). They still need their own goldens (§11.4) — "compiles" ≠ "verified".
+**f80/ld80 siblings did NOT flip**: their `x86_fp80` isnan/exponent extraction is
+routed through a `union.ieee_extended` SROA cannot promote, so the theta seed is
+genuinely stored — SHADOW blocks first (§6; bd 3c6m.51).
+
+### 11.3 The census working — 5 cells surfaced a layer hidden behind control
+
+PredMux flattened the control on these 5 (of the 51-cell CONTROL row), and the
+**next** layer surfaced as the new first blocker — exactly the "re-census exposes
+hidden layers" outcome (§9 limitation 2). All map to **existing** trackers; none is a
+new capability or a C-physics wall:
+
+| cell | new first-blocker | real shape | lever / ticket |
+|---|---|---|---|
+| `fmodf.f32` | `loop lowering: multiple early-break sites` | fix-point bit-reduction loop, multi-break | **LOOP** — 8h7d (multi-break widening) |
+| `remainderf.f32` | `loop lowering: multiple early-break sites` | shares `e_fmodf.c` body | **LOOP** — 8h7d |
+| `remquof.f32` | `loop under quantum control` | fix-point loop nested under tainted control | **LOOP** — 8h7d (loop×control) |
+| `frexp.f64` | `control flow under quantum control` | tainted early-`return` diamond + by-ref `*eptr` store under control | **CONTROL** — new residual (§11.4) |
+| `frexpf.f32` | `arm rewrites a condition operand under quantum control` | §3c clobber: subnormal arm rewrites `ix`/`hx` the condition reads | **CONTROL** — new residual (§11.4) |
+
+Plus the 5 f32 cells the pre-L6 §4 already routed to **CONTROL+LOOP** (acosf, acoshf,
+asinhf, hypotf, powf `.f32`) also decline `loop lowering: loop-carried tainted value
+crosses iteration` — their control flattened, their loop surfaced. So the **LOOP lever
+now has 8 f32 first-blocker cells** (acosf, acoshf, asinhf, hypotf, powf, fmodf,
+remainderf, remquof) — the trigger 8h7d's own note named ("un-defer when CONTROL
+lands, since these loops sit behind CONTROL"). This **empirically confirms §5's LOOP
+lower-bound re-audit**: the census-flood missed these loops (returns before
+`lowerLoops`); PredMux peeling the control is what exposed them.
+
+### 11.4 Per-lever follow-ups filed
+
+- **f32/f80 sibling verification** (near-free wins → need goldens): the 38 new
+  injection-covered cells (23 f32 + 15 f64) compile but lack a golden. New ticket to
+  add e2e goldens (Rule 2), f32 siblings called out. *Not folded into Inc 4* (owner
+  directive) — census/docs only; the goldens are their own verified work.
+- **LOOP cells surfaced** → **8h7d** (un-defer): the 8 f32 LOOP cells above are the
+  now-surfaced targets; the `fmod/remainder/remquo` bit-reduction loops are exactly
+  the ones 8h7d's note said the census had missed. Comment filed on 8h7d.
+- **frexp residual-control** (`frexp.f64`, `frexpf.f32`) → new CONTROL follow-on: the
+  frexp by-ref family combines a tainted early-`return`, a §3c clobber, and a by-ref
+  `*eptr` store under control — a PredMux/L6 coverage gap. New ticket.
+- **f80 SHADOW** (40 cells) → **3c6m.51** (already P2, 37 ld80 cells) — unchanged.
+
+### 11.5 Census-mode flood cross-check — §4/§5 confirmed stable
+
+The `CQ_PEEL_CENSUS=1` full-stack flood over all 123 cells (fresh corpus, HEAD pass,
+pre-PredMux) reproduced 3c6m.50's lever counts **exactly**:
+
+| lever | 3c6m.50 (2026-07-11) | Inc-4 re-flood | |
+|---|---|---|---|
+| CONTROL (family union) | 108 | **108** | ✓ exact |
+| SHADOW | 40 | **40** | ✓ exact |
+| INNER-CALL | 34 | **34** | ✓ exact |
+| SPECIALIZE | 10 | **10** | ✓ exact |
+| OPCODE | 3 (cos/sin/tan.f64) | **3** (cos/sin/tan.f64) | ✓ exact |
+| LOOP (census-visible) | ≥8 (sees 3) | **3** (cos/sin/tan.f64) | ✓ consistent (returns before `lowerLoops`) |
+
+This confirms (a) the freshly-rebuilt corpus reproduces 3c6m.50's, and (b) the
+capability-combination map (§4/§5) is a **stable property of the unchanged bodies** —
+L6 landing changed what the *pass accepts*, not what the *bodies need*. It also
+re-confirms §5's own limitation: the flood labels **56** cells CONTROL-alone
+(control-family classes only), but 10 of those still decline in the real end-to-end
+run (the 8 masked-loop + 2 residual-control above) — the census over-counts
+CONTROL-alone because it is blind to loops behind control, exactly as §5/§9 stated.
+The true end-to-end CONTROL-alone unlock is the **46 that compile**.

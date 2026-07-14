@@ -42,6 +42,33 @@
 > not updated in place). Re-run `inject_census.py` over a fresh openlibm corpus to
 > refresh.
 
+## ⚡ SCOREBOARD UPDATE 2026-07-14 (bd `3c6m.14` Inc 4 — L6 CONTROL landed): real openlibm **2 → 48** injection-covered
+
+The L6 CONTROL lever (PredMux — general acyclic tainted control, 3c6m.14 Inc 1–3)
+shipped. Re-running the full-surface census over a freshly-rebuilt 241-body corpus
+with the committed HEAD plugin (`full_surface/peel_census.py`, normal/first-blocker
+mode; deterministic 48/48/48 across 3 runs; census-mode flood cross-checks §4/§5's
+levers exactly — bd `FULL_DEPTH_CENSUS.md` §11):
+
+> **The authoritative full-surface real-openlibm scoreboard (two DISJOINT numbers,
+> bd `libm-scoreboard-two-numbers`):**
+> - **Injection-covered (COMPILES under real-body source injection): 48 / 123** (was
+>   **2**). 24 f64 + 24 f32 (the same 24 functions at both widths); f80 all still held
+>   by SHADOW (bd `3c6m.51`). The number the campaign moves — DISJOINT from the
+>   recognition floor (14 hardware intrinsics).
+> - **Verified (committed e2e golden trace, Rule 2): 8** — `atan cbrt erf exp log
+>   lround scalbn tanh` (`.f64`, `slice_libm_real_*`). A compile is not a proof of the
+>   unitary; the other **40** (38 new + 2 fdim) compile+link+run (10/10 e2e-spot-
+>   checked) but need goldens before they count as verified.
+>
+> Do **not** quote "48 verified" — quote **48 injection-covered, 8 verified**. The 38
+> new-compile cells (23 f32 siblings + 15 additional f64) are the follow-up
+> verification ticket. Full delta + per-lever follow-ups: `FULL_DEPTH_CENSUS.md` §11.
+
+The 3c6m.49 "2/120" and 3c6m.50 "8 verified / ≤48 projected" below are the frozen
+pre-L6 baseline this update supersedes; §11 of `FULL_DEPTH_CENSUS.md` reconciles them
+(`48 = 46 CONTROL-flips + 2 fdim`, exact).
+
 ## ⚠️ Read the 32/32 precisely — FULL-SURFACE CENSUS 2026-07-11 (bd `3c6m.49`): real openlibm = **2/120**
 
 The **32/32** headline above is honest **but narrow in two ways**, and it is easy to
