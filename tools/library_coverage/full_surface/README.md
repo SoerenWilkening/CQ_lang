@@ -4,10 +4,20 @@ The width/by-ref/int-ret widening of `../inject_census.py` (which is hardcoded t
 `double`). Injects the **real openlibm** body per cell across every width variant
 (f32/f64/f80), runs `cq-lowering`, and records the actual blocking capability.
 
-**First-blocker headline (3c6m.49, 2026-07-11):** real openlibm math.h = **2/120
-injectable cells compile** (only `fdim` — genuinely branchless); 118 decline. The
-`inject_census.py` "32/32 COMPLETE" is the **authored branchless substitutes**
-(`../branchless/`) that bypass every lever.
+**⚡ POST-L6 headline (3c6m.14 Inc 4, 2026-07-14):** the L6 CONTROL lever (PredMux)
+shipped. Re-running this census with the committed HEAD plugin: real openlibm
+math.h = **48/123 injectable cells compile** (was 2), **24 f64 + 24 f32**; f80 all
+still held by SHADOW. Of the 48, **8 are VERIFIED** (committed e2e goldens:
+`atan cbrt erf exp log lround scalbn tanh.f64`); the other 40 compile+link+run but
+need goldens. Two DISJOINT numbers (Rule 2, bd `libm-scoreboard-two-numbers`):
+**injection-covered 48/123 (39%), verified 8/123 (6.5%)** — never quote "48 verified".
+Deterministic 48/48/48 across 3 runs; census-mode flood reproduces the §4/§5 lever
+map exactly. Full delta + per-lever follow-ups: `../FULL_DEPTH_CENSUS.md` §11.
+
+**First-blocker headline (3c6m.49, 2026-07-11 — pre-L6 baseline):** real openlibm
+math.h = **2/120 injectable cells compile** (only `fdim` — genuinely branchless);
+118 decline. The `inject_census.py` "32/32 COMPLETE" is the **authored branchless
+substitutes** (`../branchless/`) that bypass every lever.
 
 **Full-DEPTH peel headline (3c6m.50, 2026-07-11):** the first-blocker bucketing
 hid the true capability combinations. The `CQ_PEEL_CENSUS` census-mode plugin
