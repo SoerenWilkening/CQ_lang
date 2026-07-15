@@ -54,6 +54,8 @@ Type *typeForAbiWidth(StringRef W, LLVMContext &Ctx) {
   if (W == "i16") return Type::getInt16Ty(Ctx);
   if (W == "i32") return Type::getInt32Ty(Ctx);
   if (W == "i64") return Type::getInt64Ty(Ctx);
+  if (W == "i80") return Type::getIntNTy(Ctx, 80);  // bd 3c6m.51 — x86_fp80
+                                                    // bit-pattern extraction width
   if (W == "i128") return Type::getInt128Ty(Ctx);  // n0ui Tier-1 — wide-int width
   if (W == "f16") return Type::getHalfTy(Ctx);   // Phase 7.1 Increment D — _Float16
   if (W == "f32") return Type::getFloatTy(Ctx);

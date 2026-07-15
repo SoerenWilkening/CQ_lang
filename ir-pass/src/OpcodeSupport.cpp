@@ -27,6 +27,9 @@ unsigned intBits(StringRef w) {
   if (w == "i16") return 16;
   if (w == "i32") return 32;
   if (w == "i64") return 64;
+  if (w == "i80") return 80;    // bd 3c6m.51 — INTERMEDIATE x86_fp80 bit-pattern
+                                // extraction width (mirrors i128; a NARROWER op
+                                // set — and/lshr/icmp/trunc-from/bitcast only).
   if (w == "i128") return 128;  // n0ui Tier-1 — INTERMEDIATE wide-int width
   return 0;
 }
@@ -115,11 +118,19 @@ CmpInst::Predicate flipPredicate(CmpInst::Predicate pred) {
 bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
   const unsigned fi = intBits(fromW), ti = intBits(toW);
   const unsigned ff = fpBits(fromW),  tf = fpBits(toW);
-  // Integer width casts.
+  // Integer width casts. i80 (bd 3c6m.51) is EXCLUDED from sext/zext in BOTH
+  // directions: it is a bitcast-only extraction width, never built by widening a
+  // narrower int (no `cq_template_{sext,zext}_*_to_i80`) nor widened to i128 (no
+  // `..._i80_to_i128`). A tainted `sext i64->i80` / `zext i80->i128` therefore
+  // DECLINES loudly rather than minting a phantom (the n0ui i128 phantom-mint
+  // lesson at a narrower surface; over-decline is safe, Prime Directive).
   if (op == "sext" || op == "zext")
-    return fi && ti && fi < ti;            // strict widen
+    return fi && ti && fi < ti && fromW != "i80" && toW != "i80";  // strict widen
+  // trunc: i80 is a valid SOURCE (`trunc i80 -> i1..i64`, the peephole's word
+  // extraction) but NOT a DEST (`trunc i128 -> i80` has no template) — exclude
+  // toW == "i80" so the narrow grid matches the shipped i80->{i1..i64} pairs.
   if (op == "trunc")
-    return fi && ti && fi > ti;            // strict narrow
+    return fi && ti && fi > ti && toW != "i80";                    // strict narrow
   // Floating-point width casts. The full fp-width grid {f16,f32,f64,f80,f128}
   // is shipped (opcode_table.yaml fpext/fptrunc pairs) — the generic width
   // compare admits every strict widen/narrow among them, and each admitted pair
@@ -145,28 +156,34 @@ bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
   // reach a cast. f128 itself is NOT in fpBits (abiWidthFromType returns "" =>
   // ff/tf are 0), so it can never reach these branches; the i128 guards keep
   // i128<->fp declining (i128 ships integer WIDTH casts only, n0ui Tier-1).
+  // i80 (bd 3c6m.51) is EXCLUDED from every cross-domain cast (mirror i128): it
+  // ships ONLY the extraction ops (and/lshr/icmp/trunc-from/bitcast), never
+  // int<->fp — a tainted `sitofp i80->f64` / `fptoui f64->i80` DECLINES.
   if (op == "sitofp")
-    return fi && tf && fromW != "i1" && fromW != "i128";
+    return fi && tf && fromW != "i1" && fromW != "i128" && fromW != "i80";
   if (op == "uitofp")
-    return fi && tf && fromW != "i128";
+    return fi && tf && fromW != "i128" && fromW != "i80";
   if (op == "fptosi")
-    return ff && ti && toW != "i1" && toW != "i128";
+    return ff && ti && toW != "i1" && toW != "i128" && toW != "i80";
   if (op == "fptoui")
-    return ff && ti && toW != "i128";
+    return ff && ti && toW != "i128" && toW != "i80";
   // Reinterpret cast (bd p119.7): a same-BIT-WIDTH fp<->int `bitcast` — the
   // EXTRACT_WORDS/INSERT_WORDS/GET_*_WORD idiom that opens nearly every injected
   // openlibm body. A tainted fp<->int bitcast is a reversible IDENTITY RELABEL
   // (same basis states, new type label, zero gate), lowered like any other
   // cross-domain cast to `cq_template_bitcast_<from>_to_<to>`. Admit EXACTLY the
-  // six shipped pairs — f16<->i16, f32<->i32, f64<->i64 — via a same-bit-width
-  // fp<->int test: (fp source, int dest, equal widths) OR (int source, fp dest,
-  // equal widths). f80<->i80 is EXCLUDED (intBits has no i80, so `ti`/`fi` is 0);
-  // i128<->fp, f128, and same-width int<->int (the pre-lowering identity FOLD,
-  // never reaching here) all fail this test and decline (Prime Directive: never
-  // mint a phantom the YAML does not carry — the same grid-completeness discipline
-  // the other cast rows follow). The f64-as-angle hazard (Rule 3) is owned by the
-  // authoritative `declineTaintedAngle`/`taintedAngleGate`, which run BEFORE
-  // `lowerOps` — NOT by declining the bitcast (lowering_reject_bitcast_angle.ll).
+  // eight shipped pairs — f16<->i16, f32<->i32, f64<->i64, and (bd 3c6m.51)
+  // f80<->i80 — via a same-bit-width fp<->int test: (fp source, int dest, equal
+  // widths) OR (int source, fp dest, equal widths). f80<->i80 is now INCLUDED
+  // (intBits knows i80 == 80 == fpBits(f80)) — it is the promoteFp80Union
+  // peephole's x86_fp80 extraction relabel. i128<->fp, f128, and same-width
+  // int<->int (the pre-lowering identity FOLD, never reaching here) all fail this
+  // test and decline (Prime Directive: never mint a phantom the YAML does not
+  // carry — the same grid-completeness discipline the other cast rows follow).
+  // The f64/f80-as-angle hazard (Rule 3) is owned by the authoritative
+  // `declineTaintedAngle`/`taintedAngleGate`, which run BEFORE `lowerOps` — NOT by
+  // declining the bitcast (lowering_reject_bitcast_angle.ll); a fp80 bit-pattern
+  // is DATA, not an angle.
   if (op == "bitcast")
     return (ff && ti && ff == ti) || (fi && tf && fi == tf);
   return false;
@@ -210,6 +227,13 @@ StringRef abiWidthFromType(Type *ty) {
     case 16: return "i16";
     case 32: return "i32";
     case 64: return "i64";
+    case 80: return "i80";    // bd 3c6m.51 — INTERMEDIATE x86_fp80 bit-pattern
+                              // width. Only `bitcast x86_fp80 -> i80` mints an
+                              // i80 SSA value (the promoteFp80Union peephole),
+                              // immediately consumed by and/lshr/icmp/trunc; the
+                              // rewriteBinary/CompareLowering/castInScope guards
+                              // decline every OTHER i80 op, and the copyFn/addc/
+                              // xorc/tape/qram >64 fence keeps it intermediate-only.
     case 128: return "i128";  // n0ui Tier-1 — INTERMEDIATE wide-int width. NOT a
                               // theta/measure suffix (the C ABI shreds a __int128
                               // source/sink to {i64,i64} — Tier-2, deferred). The
@@ -231,11 +255,14 @@ StringRef abiWidthFromType(Type *ty) {
 }
 
 bool widthHasReversibleCopy(StringRef w) {
-  // {i1,i8,i16,i32,i64} have a `cqrt_copy_<W>` / `_controlled`; i128 (now a
-  // recognized INTERMEDIATE width) and any wider int do NOT (n0ui Tier-1). An
-  // empty/unknown width (intBits 0) and the fp widths (intBits 0) also fail —
-  // exactly the set a tainted data-mux must decline. (The fp SELECT accept
-  // rides `abiWidthHasControlledFpCopy` below, never this predicate.)
+  // {i1,i8,i16,i32,i64} have a `cqrt_copy_<W>` / `_controlled`; the recognized
+  // INTERMEDIATE wide-int widths i80 (bd 3c6m.51, 80 bits) and i128 (n0ui Tier-1,
+  // 128 bits) do NOT — the `b <= 64` bound fences both, so a tainted data-mux /
+  // select / switch / merge over an i80 or i128 value declines (never a
+  // control-merged data value; intermediate-only). An empty/unknown width
+  // (intBits 0) and the fp widths (intBits 0) also fail — exactly the set a
+  // tainted data-mux must decline. (The fp SELECT accept rides
+  // `abiWidthHasControlledFpCopy` below, never this predicate.)
   const unsigned b = intBits(w);
   return b >= 1 && b <= 64;
 }

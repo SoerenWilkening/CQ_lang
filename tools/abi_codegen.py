@@ -45,6 +45,14 @@ WIDTH_INFO = {
     # sequence contract, not a value simulation). Tier-1 literals (shift amounts,
     # small masks) fit; a genuine >64-bit literal prints its low 64 bits.
     "i128": {"ctype": "__int128", "fmt": "%lld", "cast": "(long long)"},
+    # i80 (bd 3c6m.51): the x86_fp80 bit-pattern extraction width. Like i128 it
+    # rides __int128 (i80 is not a C type) and prints via the (long long)/%lld path
+    # — printf has no 80-bit specifier. Every shipped i80 literal is a mask or a
+    # shift amount that fits in 64 bits (fdiml: `and i80 %h, 0x7fff..`=2^63-1,
+    # `lshr i80 %bc, 64`), so the trace label is faithful; a >64-bit literal would
+    # print its low 64 bits (deterministic gate-sequence contract, not a value
+    # simulation — same as i128).
+    "i80": {"ctype": "__int128", "fmt": "%lld", "cast": "(long long)"},
     # _Float16: the explicit (double) cast is MANDATORY — a bare _Float16 passed
     # to printf("%f") trips -Wdouble-promotion / a format-arg type mismatch under
     # -Werror. f16 is fp-domain; it has a runtime template surface (fadd_f16 etc.)

@@ -576,6 +576,18 @@ add_test(NAME e2e-slice-libm-real-scalbn
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_scalbn.expected.log")
 
+# bd 3c6m.51 Inc 1 — the FIRST long-double libm slice: the real openlibm fdiml
+# over x86_fp80, exercising the promoteFp80Union peephole (union bit-pattern
+# memory -> bitcast x86_fp80 -> i80 + lshr/trunc/zext, padding modelled as 0) and
+# the i80 extraction template surface (bitcast/lshr/trunc/and/icmp i80).
+add_test(NAME e2e-slice-libm-real-fdiml
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdiml.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdiml.expected.log")
+
 add_test(NAME e2e-slice-libm-real-lround
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

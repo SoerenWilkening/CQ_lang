@@ -59,6 +59,7 @@ add_library(CQPass MODULE
   src/CQLoweringPass.cpp
   src/EmitInverse.cpp
   src/EqFoldArm.cpp
+  src/Fp80Union.cpp
   src/FreePoint.cpp
   src/IntrinsicLowering.cpp
   src/IOSinkLowering.cpp

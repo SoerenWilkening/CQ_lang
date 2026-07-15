@@ -8,6 +8,7 @@
 
 #include "ByRefInline.h"
 #include "ControlPlan.h"
+#include "Fp80Union.h"
 #include "IOSinkLowering.h"
 #include "LoopPlan.h"
 #include "MeasureLowering.h"
@@ -108,6 +109,24 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // loads are classical, so taint is unaffected (the bitcast-fold precedent —
   // no re-propagate needed).
   foldVolatileConstGlobalLoads(M);
+
+  // bd 3c6m.51 — x86_fp80 union-promotion peephole (Fp80Union.cpp): the ld80 libm
+  // cells extract sign/exponent/mantissa through a `union IEEEl2bits` bit-pattern
+  // type-pun (`store x86_fp80` then `load iN` at const byte offsets) that LLVM
+  // cannot promote (the offset-8 word straddles the undefined padding bytes
+  // [10,16)) — so the union stays in MEMORY at CQ's -O1 floor and the tainted seed
+  // store would decline at kMsgStore. This rewrites each provable union to
+  // `bitcast x86_fp80 -> i80` + lshr/trunc/zext register form, modelling the
+  // padding as 0 (sound only under the §4.1 mask fence — an unmasked padding
+  // observation loud-declines here). Runs HERE — after the volatile-const fold and
+  // BEFORE flattenPredMuxRegions — so the union is register-resident before PredMux
+  // (which never claims a region containing loads/stores). A FIXPOINT + full
+  // re-propagate (the bitcast-fold / PredMux precedent): promotion mints new
+  // `bitcast x86_fp80` on the theta seed, so re-`propagate` re-taints the extracted
+  // words + the isnan/exponent branch, and a nested union exposed by an outer
+  // promotion is claimed on the next turn. An off-pattern union is byte-untouched.
+  while (promoteFp80Union(M, taint))
+    taint = propagate(M, wd);
 
   // bd 3c6m.14 (L6) — PredMux: general acyclic tainted control flattened to
   // block-predicate select chains (PredMuxFlatten.cpp; PRD
@@ -342,6 +361,16 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // post-passthrough / pre-PredMux placement rationale.
   foldVolatileConstGlobalLoads(M);
+
+  // bd 3c6m.51 — x86_fp80 union-promotion peephole, mirrored in this entry point
+  // too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
+  // post-volatile-fold / pre-PredMux placement + fixpoint-re-propagate rationale.
+  while (promoteFp80Union(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.MeasureCalls);
+  }
 
   // bd 3c6m.14 (L6) — PredMux flatten fixpoint, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the

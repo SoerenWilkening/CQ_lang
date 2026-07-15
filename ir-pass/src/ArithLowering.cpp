@@ -61,6 +61,19 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
     diagnoseNoTemplate(bo);
     return false;
   }
+  // i80 binary fence (bd 3c6m.51): i80 is an INTERMEDIATE x86_fp80 bit-pattern
+  // extraction width shipping ONLY `and` (mask) and `lshr` (word offset shift) —
+  // the ops the promoteFp80Union peephole and SROA's within-value promotion emit.
+  // Every OTHER binary op at i80 (add/sub/mul/or/xor/shl/ashr/div/rem) has NO
+  // generated template; without this gate `dataTemplateFn` would `getOrInsertFunction`
+  // a phantom `cq_template_<op>_i80` extern (verify-clean, exit 0, LINK-FAILS at
+  // Stage 3) — the n0ui i128 phantom-mint lesson at a narrower surface. Decline
+  // LOUDLY and leave `bo` standing (well-typed, verify-clean); over-decline is safe
+  // (Prime Directive). `and`/`lshr` are the shipped i80 rows (opcode_table.yaml).
+  if (AbiWidth == "i80" && Stem != "and" && Stem != "lshr") {
+    diagnoseNoTemplate(bo);
+    return false;
+  }
   // Domain sanity: integer stems must land on an integer width and fp
   // stems on an fp width. `binaryStem` already partitions the opcodes; this
   // guards against malformed IR picking a mismatched template.
