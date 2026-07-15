@@ -1,5 +1,29 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ POST-3c6m.51 Inc 1 (2026-07-15):** the SHADOW lever (fp80 `union IEEEl2bits`
+bit-pattern memory) shipped for the READ-ONLY idiom — the `i80` intermediate width +
+`promoteFp80Union` peephole (bd 3c6m.51, memory `fp80-ld80-i80-minimal-3c6m51`).
+**`fdiml.f80` is the FIRST ld80 cell to COMPILE + VERIFY at the -O1 floor** (real-
+openlibm e2e golden `slice_libm_real_fdiml`): **verified 42 → 43**. NO full re-census
+run yet (deferred per the ticket); the **-O2 injection-covered headline (48/123) is
+UNCHANGED**. Measured directly over the 37 ld80 cells: **-O1 = 1/37 (fdiml), -O2 =
+0/37** — fdiml is **-O1-ONLY**, the REVERSE of `q2wk`'s O2-only log1p family: at -O2
+instcombine jump-threads the isnan nest into a control shape PredMux declines
+(`nested control flow`), while the -O1 shape (after the peephole's classical
+`isnan(const)`→dead-branch fold) lowers. **CENSUS METHODOLOGY:** because ld80 cells
+are -O1-favored (O2 threads their control), a re-census should measure ld80 at **-O1**,
+not the probe default -O2. Post-Inc-1 the 36 remaining ld80 cells re-bucket (from
+"all SHADOW/kMsgStore"): **padding-fence 16, off-pattern-union kMsgStore 14 (a union
+shape the peephole does not match yet — live RMW store-back = Inc 2), unknown-callee
+4 (corpus gaps), fp-quantum-arg specialization 2.** The §4.1 padding fence
+(`Fp80Union.cpp` `everyUserMasksPadding`) is CONSERVATIVE — it accepts only a DIRECT
+`and`-mask on a padding-straddle load, so a cell that masks the padding after an
+intermediate `trunc` (e.g. coshl: `load i64 → trunc i32 → and 0x7fff`) is SAFELY
+over-declined (Prime Directive; those cells have deeper RMW/loop/control blockers
+anyway). Widening it to a forward "padding-cleared-before-any-observable" walk is
+Inc 2 (bd 3c6m.51.1, soundness-critical).
+
+
 The width/by-ref/int-ret widening of `../inject_census.py` (which is hardcoded to
 `double`). Injects the **real openlibm** body per cell across every width variant
 (f32/f64/f80), runs `cq-lowering`, and records the actual blocking capability.
