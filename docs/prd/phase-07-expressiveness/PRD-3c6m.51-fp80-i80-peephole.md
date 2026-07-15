@@ -93,9 +93,16 @@ handles both loads at -O1, just the residual offset-8 load at -O2 — one peepho
 3. **i80 immediate representation** in the trace runtime (`__int128` c_type) — the golden must show the
    literal printed faithfully.
 4. **Padding non-bijectivity under uncompute** — the `f80→i80` extract loses the padding, so the extract's
-   `_unc`/`_inv` adjoint is not a clean inverse. This does NOT bite `fdiml` (measured terminal → InsertTerms
-   empty → no uncompute fires — same as the f64 siblings). It DOES bite the Inc-2 RMW cells; handle there,
-   route through an e2e golden (the 38t2 "_unc must be a genuine adjoint" invariant).
+   `_unc`/`_inv` adjoint is not a clean inverse. **VERIFIED 2026-07-15 (Inc-2 feasibility): this does NOT bite
+   the RMW cells either, for the same reason as `fdiml`.** Every census slice is `cq_measure(fn(q))`, and
+   `FreePoint.cpp:212` classifies a measured terminal as `FreePointKind::Measured`, so `Uncomputation` skips it
+   — **no `_unc`/`cqrt_free` ever fires** on the promoted RMW (the reload is the sole terminal, and it is
+   measured). The scary padding-non-bijectivity is a NON-ISSUE for the measured cells (the fp80 padding is
+   dropped exactly ONCE, at the forward `bitcast f80→i80`, and never reaches an observable). If a future cell
+   RETURNED/left-dead the reload (uncompute WOULD fire), the i80 ops' void `_unc` twins ARE genuine adjoints
+   (Bennett out-of-place recompute-and-XOR — `EmitInverse.cpp:68`), reversible as long as the sources stay live;
+   the `%bc` fan-out (read by both the extraction and the field-insert) is handled by the DAG `Seen`/visited
+   dedup (once-per-gate), not a Rule-8 bail. Still route the real cells through an e2e golden in Inc 3.
 5. **Passthrough:** the peephole fires only on theta-reachable f80 union cells (a classical-only module stays
    byte-identical); a classical union with a constant value folds to dead code after promotion.
 
@@ -105,11 +112,44 @@ handles both loads at -O1, just the residual offset-8 load at -O2 — one peepho
   read-only peephole. Handles the classical 2nd union too (fdiml has `isnan(y)` on a const `0.5L`; promote it
   → `bitcast`/`and` fold `isnan(0.5)=false` → dead branch). Red-green: minimal positive `.ll` fixture (single
   tainted fp80 union) + the §4 decline matrix (unmasked-padding, angle, off-pattern) + e2e golden
-  `slice_libm_real_fdiml`. Independent Rule-13 clearance.
-- **Inc 2 — `scalbnl.f80` / `ldexpl`** (RMW): extend the peephole to the store-back + reload (`u.bits.exp=k;
-  return u.e`), i.e. a register update + `pack` (i80→x86_fp80 reconstruction) + a genuine `_unc` adjoint.
-- **Later:** `lroundl`/`llroundl` (nested roundl-in-floorl unions), `nextafterl` (`volatile` store — hard
-  decline until volatile handling), the loop cells (`logbl` etc. — gated on Phase 7.3 / `799w`).
+  `slice_libm_real_fdiml`. Independent Rule-13 clearance. **DONE 2026-07-15.**
+
+- **Inc 2 RE-SCOPED (2026-07-15) — the ticket model vs. the real -O1 IR.** Rule 11 (dump the real -O1 IR
+  before implementing) uncovered a **model↔cell inconsistency**: the ticket models `scalbnl` as a SINGLE-BLOCK
+  RMW (`u.e=x; u.bits.exp=k; return u.e`), but the real clang -O1 IR is **MULTI-BLOCK** — one union alloca
+  threaded across **5 basic blocks** (an fp80 re-store `u.e*=2^128` in a non-entry block + **two** separate
+  offset-8 field-insert PACK arms, joined by a merge phi). `SROA`/`-O2` both leave it in memory (the offset-8
+  word straddles the padding). A structural census of all 40 ld80 cells found **ZERO** single-block fp80-seed
+  RMW cells (every ld80 fn guards on nan/inf/zero, so the pack always lands in a branch arm). So the
+  single-block peephole cannot reach `scalbnl`, and no alternate real single-block cell exists. The RMW work
+  therefore splits (owner-approved 2026-07-15):
+
+  - **Inc 2 — i80 field-insert (WRITE) width surface** (groundwork; **DONE 2026-07-15**). The reusable
+    prerequisite: add the three missing i80 write-path ops the RMW pack emits — `zext {i1..i64}→i80` (widen the
+    store-back word), `shl i80` (position), `or i80` (combine) — **each with its `_unc` twin** (never fwd-only:
+    `isInverseEmittable` returns true for every `cq_template_`, so a fwd-only op would mint a dangling `_unc`
+    extern = Stage-3 link fail). Lift exactly two OpcodeSupport gates (`ArithLowering` i80 allow-set → and/lshr/
+    or/shl; `castInScope` → `zext→i80` DEST, keeping `sext→i80` + cross-domain excluded). **No union accept-set
+    change this increment** (the RMW still declines at `kMsgStore`), so no new silent-miscompile surface. +40
+    gen symbols → 2479. Red-green: positive `lowering_fp80_i80_field_insert.ll` (the hand-promoted RMW form,
+    pre-validating the Inc-3 template stream) + the `lowering_reject_i80_{add,sext,sitofp}.ll` invariants
+    (add/sub/mul/xor/ashr/div/rem, sext, cross-domain still decline char-for-char).
+
+  - **Inc 3 — the multi-block union promotion** (the *proper implementation*; landing `scalbnl`/`ldexpl`/
+    `scalblnl`/`cbrtl` real goldens). **`canonicalize + PromoteMemToReg`** (Bennett's `sroa/mem2reg`-preprocess,
+    §2): rewrite each union access to a full-width `x86_fp80` load/store on a fresh promotable alloca (the i80
+    extract/field-insert kept LOCAL around each access), delete the original union, then call LLVM's own
+    battle-tested `PromoteMemToReg` to build the phis — **NOT** a hand-rolled SSA construction. The cross-arm
+    merge is already `phi x86_fp80` at -O1/-O2 (evidence: `scalbn.f64` — the same algorithm — already compiles
+    at -O1 with fp64/i64 phis under the same tainted control), so the i80 stays intra-arm (intermediate-only,
+    invariant preserved). **Safety fence:** if canonicalization would ever require an i80 value to cross a
+    tainted control merge (an i80 phi), DECLINE loudly (never mux an i80). Plus the analyze() broadening
+    (recognize the `load x86_fp80` reload PACK + a live field-insert store-back) and the §4.1 fence-widening
+    (§4.4 below). Deep Rule-13 clearance.
+
+- **Later:** `lroundl`/`llroundl` (integer-SEEDED reload packs — a DISTINCT shape from the fp80-seed idiom),
+  `nextafterl` (`volatile` store — hard decline until volatile handling), the loop cells (`logbl` etc. — 19 of
+  the 40 ld80 cells are loop-gated, on Phase 7.3 / `799w`).
 
 ## 6. Done criteria (Inc 1)
 

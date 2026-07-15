@@ -1,10 +1,13 @@
-; lowering_reject_i80_sext.ll — bd 3c6m.51 DECLINE (the i80 cast fence): i80 is a
-; bitcast-only extraction width — never BUILT by widening a narrower integer. A
-; tainted `sext i32 -> i80` (or `zext ... -> i80`) has no `cq_template_sext_*_to_i80`
-; template; castInScope excludes i80 from sext/zext in BOTH directions
-; (`fromW != "i80" && toW != "i80"`), so `rewriteCast` declines rather than mint a
-; phantom. i80 ships ONLY the narrowing `trunc i80 -> {i1..i64}` + the f80<->i80
-; bitcast (Prime Directive: over-decline is safe).
+; lowering_reject_i80_sext.ll — bd 3c6m.51 DECLINE (the i80 cast fence): i80 is
+; never SIGN-extended — there is no sign-extended fp80 word idiom. A tainted
+; `sext i32 -> i80` has no `cq_template_sext_*_to_i80` template; castInScope excludes
+; i80 from sext in BOTH directions (`fromW != "i80" && toW != "i80"`), so
+; `rewriteCast` declines rather than mint a phantom. (Contrast `zext`: i80 IS a valid
+; ZERO-extend DEST since Inc 2 — the RMW field-insert `zext iN -> i80`, exercised by
+; lowering_fp80_i80_field_insert.ll — but never a zext SOURCE.) i80 ships the
+; narrowing `trunc i80 -> {i1..i64}`, the `zext {i1..i64} -> i80` widen, the four
+; bitwise ops (and/lshr/or/shl), icmp, and the f80<->i80 bitcast — nothing else
+; (Prime Directive: over-decline is safe).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 

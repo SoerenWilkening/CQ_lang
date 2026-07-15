@@ -100,7 +100,7 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_2439(self):
+    def test_total_symbol_count_is_2479(self):
         # 1562 baseline -> 1732 (f16, Increment D) -> 1947 (i128 Tier-1 +215) ->
         # 2091 (8rvn fcmp predicate fill +144). bd 3c6m.4 adds ONE long-double fp
         # width f80 to EVERY fp row + the fp-WIDTH cast grid (NOT the cross-domain
@@ -117,14 +117,19 @@ class GenTemplatesTest(unittest.TestCase):
         # bd p119.7 adds the fp<->int `bitcast` REINTERPRET family (the EXTRACT_WORDS/
         #   INSERT_WORDS idiom): 6 same-width pairs (f16<->i16, f32<->i32, f64<->i64,
         #   both directions) x {fwd,inv,unc} = +18 over 2315 -> 2333.
-        # bd 3c6m.51 adds the i80 x86_fp80 bit-pattern EXTRACTION surface (Tier-1
-        #   INTERMEDIATE, a NARROWER op set than i128): `and` (int_bitwise 10v) +10,
-        #   `lshr` (int_bitwise 15v) +15, `icmp` (10 preds x 6v) +60, `trunc`
-        #   i80->{i1..i64} (5 pairs x 3v) +15, `bitcast` f80<->i80 (2 pairs x 3v) +6
-        #   = +106 over 2333 -> 2439. Every other i80 op declines (rewriteBinary /
-        #   CompareLowering / castInScope guards); the >64 fence keeps i80 out of
-        #   copyFn/addc/xorc/tape/qram.
-        self.assertEqual(len(self.h_decls), 2439)
+        # bd 3c6m.51 Inc 1 adds the i80 x86_fp80 bit-pattern EXTRACTION (read)
+        #   surface (Tier-1 INTERMEDIATE, a NARROWER op set than i128): `and`
+        #   (int_bitwise 10v) +10, `lshr` (int_bitwise 15v) +15, `icmp` (10 preds x
+        #   6v) +60, `trunc` i80->{i1..i64} (5 pairs x 3v) +15, `bitcast` f80<->i80
+        #   (2 pairs x 3v) +6 = +106 over 2333 -> 2439.
+        # bd 3c6m.51 Inc 2 adds the i80 field-insert (WRITE) surface the RMW pack
+        #   needs: `or` (int_bitwise 10v) +10, `shl` (int_bitwise 15v) +15, `zext`
+        #   i{1..64}->i80 (5 pairs x 3v) +15 = +40 over 2439 -> 2479. Every OTHER
+        #   i80 op still declines (ArithLowering allow-set and/lshr/or/shl only;
+        #   CompareLowering / castInScope guards — i80 a zext DEST + trunc SOURCE
+        #   only, sext/cross-domain excluded); the >64 fence keeps i80 out of
+        #   copyFn/addc/xorc/tape/qram. i80 is NEVER a control-merged data value.
+        self.assertEqual(len(self.h_decls), 2479)
 
     def test_unc_family_is_void_in_place(self):
         """PRD §2.3 / DD-3: the `_unc` uncompute family is VOID and in-place.

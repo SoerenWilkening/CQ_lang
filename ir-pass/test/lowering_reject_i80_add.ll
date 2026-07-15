@@ -1,11 +1,11 @@
 ; lowering_reject_i80_add.ll — bd 3c6m.51 DECLINE (the i80 binary fence): i80 is an
-; INTERMEDIATE x86_fp80 bit-pattern EXTRACTION width shipping ONLY `and` (mask) and
-; `lshr` (word offset shift) — the two ops the union idiom and SROA's within-value
-; promotion emit. Every other binary op at i80 (add/sub/mul/or/xor/shl/ashr/div/rem)
-; has NO generated template; without the rewriteBinary fence a tainted `add i80`
-; would `getOrInsertFunction` a phantom `cq_template_add_i80` extern (verify-clean,
-; exit 0, LINK-FAILS at Stage 3) — the n0ui i128 phantom-mint lesson at a narrower
-; surface. Decline LOUDLY, mint nothing (Prime Directive).
+; INTERMEDIATE x86_fp80 bit-pattern width shipping ONLY four bitwise ops — `and` +
+; `lshr` (the Inc-1 read/extraction ops) and `or` + `shl` (the Inc-2 field-insert /
+; write ops the RMW pack emits). Every OTHER binary op at i80 (add/sub/mul/xor/ashr/
+; div/rem) has NO generated template; without the ArithLowering fence a tainted
+; `add i80` would `getOrInsertFunction` a phantom `cq_template_add_i80` extern
+; (verify-clean, exit 0, LINK-FAILS at Stage 3) — the n0ui i128 phantom-mint lesson
+; at a narrower surface. Decline LOUDLY, mint nothing (Prime Directive).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 

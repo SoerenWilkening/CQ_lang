@@ -1,6 +1,7 @@
 ; lowering_reject_i80_sitofp.ll — bd 3c6m.51 DECLINE (the i80 cross-domain fence):
-; i80 ships ONLY the extraction ops (and/lshr/icmp/trunc-from/bitcast), never
-; int<->fp — mirror the i128 cross-domain exclusion. A tainted `sitofp i80 -> double`
+; i80 ships ONLY the bit-pattern ops (and/lshr/or/shl/icmp/trunc-from/zext-to/
+; bitcast), never int<->fp — mirror the i128 cross-domain exclusion. A tainted
+; `sitofp i80 -> double`
 ; has no template; castInScope excludes i80 from every cross-domain cast
 ; (`fromW != "i80"` on sitofp/uitofp, `toW != "i80"` on fptosi/fptoui), so
 ; `rewriteCast` declines rather than mint a phantom.

@@ -118,13 +118,17 @@ CmpInst::Predicate flipPredicate(CmpInst::Predicate pred) {
 bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
   const unsigned fi = intBits(fromW), ti = intBits(toW);
   const unsigned ff = fpBits(fromW),  tf = fpBits(toW);
-  // Integer width casts. i80 (bd 3c6m.51) is EXCLUDED from sext/zext in BOTH
-  // directions: it is a bitcast-only extraction width, never built by widening a
-  // narrower int (no `cq_template_{sext,zext}_*_to_i80`) nor widened to i128 (no
-  // `..._i80_to_i128`). A tainted `sext i64->i80` / `zext i80->i128` therefore
-  // DECLINES loudly rather than minting a phantom (the n0ui i128 phantom-mint
-  // lesson at a narrower surface; over-decline is safe, Prime Directive).
-  if (op == "sext" || op == "zext")
+  // Integer width casts. zext: i80 is a valid widen DEST (bd 3c6m.51 Inc 2 — the
+  // promoteFp80Union RMW field-insert zero-extends the store-back word `zext iN ->
+  // i80` before `shl` into position), but NEVER a zext SOURCE (no
+  // `cq_template_zext_i80_to_i128`; mirror trunc, where i80 is a SOURCE only). sext:
+  // i80 stays EXCLUDED in BOTH directions (no sign-extended fp80 word idiom; no
+  // `cq_template_sext_*_to_i80` nor `..._i80_to_*`). A tainted `zext i80->i128` /
+  // `sext i64->i80` therefore DECLINES rather than minting a phantom (the n0ui
+  // i128 phantom-mint lesson at a narrower surface; over-decline is safe).
+  if (op == "zext")
+    return fi && ti && fi < ti && fromW != "i80";  // strict widen; i80 DEST ok
+  if (op == "sext")
     return fi && ti && fi < ti && fromW != "i80" && toW != "i80";  // strict widen
   // trunc: i80 is a valid SOURCE (`trunc i80 -> i1..i64`, the peephole's word
   // extraction) but NOT a DEST (`trunc i128 -> i80` has no template) — exclude
