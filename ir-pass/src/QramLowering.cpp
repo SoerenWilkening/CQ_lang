@@ -988,6 +988,132 @@ bool foldVolatileConstGlobalLoads(Module &M) {
   return Changed;
 }
 
+// bd etiq — volatile-const LOCAL fold: the alloca sibling of
+// foldVolatileConstGlobalLoads (see QramLowering.h). Same curation target (the
+// openlibm anti-const-fold idiom, here `volatile double vd2 = 0x1.0p32;` in
+// s_cbrtl.c), same deliberate volatile-fold choice. The local proof is
+// NARROWER than the global one — direct users only, exact-type reads, and
+// per-load DOMINANCE by the single constant store (an alloca has no
+// initializer, so an undominated load reads uninitialized memory and folding
+// it would invent a value; the global fold has no such hazard). Every gate
+// forfeits the WHOLE alloca untouched — the unfolded volatile access then
+// rides the existing loud declines (over-declining is safe; a wrong fold
+// would be a silent wrong-value miscompile in the classical remainder).
+bool foldVolatileConstAllocaLoads(Module &M, const TaintSet &taint) {
+  bool Changed = false;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    // Built lazily, at most once per function; erasing non-terminator
+    // instructions changes no CFG edge, so it stays valid across folds.
+    std::optional<DominatorTree> DT;
+    // Static allocas live in the entry block (clang -O1). Snapshot the
+    // candidates first — the fold below erases from this very block.
+    SmallVector<AllocaInst *, 8> Cands;
+    for (Instruction &I : F.getEntryBlock())
+      if (auto *A = dyn_cast<AllocaInst>(&I))
+        if (A->isStaticAlloca())
+          Cands.push_back(A);
+    for (AllocaInst *A : Cands) {
+      // Whole-alloca user scan: EXACTLY one non-atomic store of a Constant
+      // with A as the pointer operand, any number of non-atomic loads and
+      // lifetime markers, nothing else. Any other user — a call, a gep (even
+      // offset 0), a ptrtoint/cmp/phi/select, A as a store's VALUE operand —
+      // is an escape or an off-idiom view and forfeits the fold.
+      StoreInst *TheStore = nullptr;
+      SmallVector<LoadInst *, 4> Loads;
+      SmallVector<IntrinsicInst *, 4> Lifetimes;
+      bool Clean = true, SawVolatile = false;
+      for (User *U : A->users()) {
+        if (auto *LI = dyn_cast<LoadInst>(U)) {
+          if (LI->isAtomic()) {
+            Clean = false;
+            break;
+          }
+          SawVolatile |= LI->isVolatile();
+          Loads.push_back(LI);
+          continue;
+        }
+        if (auto *SI = dyn_cast<StoreInst>(U)) {
+          if (SI->getValueOperand() == A || SI->isAtomic() || TheStore) {
+            Clean = false;  // address stored away / atomic / a second store.
+            break;
+          }
+          SawVolatile |= SI->isVolatile();
+          TheStore = SI;
+          continue;
+        }
+        if (auto *II = dyn_cast<IntrinsicInst>(U)) {
+          if (II->getIntrinsicID() == Intrinsic::lifetime_start ||
+              II->getIntrinsicID() == Intrinsic::lifetime_end) {
+            Lifetimes.push_back(II);
+            continue;
+          }
+        }
+        Clean = false;
+        break;
+      }
+      // Target the idiom only: at least one VOLATILE access (an all-plain
+      // single-store alloca was mem2reg's to claim at -O1, never ours).
+      if (!Clean || !TheStore || Loads.empty() || !SawVolatile)
+        continue;
+      auto *C = dyn_cast<Constant>(TheStore->getValueOperand());
+      if (!C)
+        continue;  // runtime value — and a TAINTED value is never a Constant,
+                   // so quantum shadow allocas are structurally excluded.
+      // In-slot proof (the Rule-13 posture-symmetry gate with the global
+      // fold's in-bounds check): a store that overruns its alloca is UB IR —
+      // unreachable from legal C at -O1, but decline rather than refine.
+      const DataLayout &DL = M.getDataLayout();
+      std::optional<TypeSize> Slot = A->getAllocationSize(DL);
+      if (!Slot || Slot->isScalable() ||
+          DL.getTypeStoreSize(C->getType()).getFixedValue() >
+              Slot->getFixedValue())
+        continue;
+      // Exact-type reads only, each dominated by the single store (so every
+      // dynamic execution of a load is preceded by ≥1 execution of the one
+      // store, which always writes the same Constant). Two documented
+      // conventions ride along: a load in an UNREACHABLE block is "dominated
+      // by everything" and folds — sound, it never executes; and the fold is
+      // single-pass in entry order, so a cascade (alloca A's store value fed
+      // by alloca B's folded load) completes only when B precedes A — the
+      // unfolded remainder rides PredMux E4's loud decline, an over-decline
+      // only. The taint membership checks are belt-and-braces (see the
+      // Constant gate): a tainted load RAUW'd to a constant would silently
+      // drop quantum data.
+      bool Foldable = !taint.Tainted.count(A);
+      for (LoadInst *LI : Loads) {
+        if (!Foldable)
+          break;
+        if (LI->getType() != C->getType() || taint.Tainted.count(LI)) {
+          Foldable = false;
+          break;
+        }
+        if (!DT)
+          DT.emplace(F);
+        if (!DT->dominates(TheStore, LI))
+          Foldable = false;
+      }
+      if (!Foldable)
+        continue;
+      // Fold. Unlike the global fold (whose global carries no code and may
+      // stay), the store / lifetime markers / alloca must be ERASED with the
+      // loads — a surviving volatile store would still block the PredMux
+      // claim (E4) exactly as before.
+      for (LoadInst *LI : Loads) {
+        LI->replaceAllUsesWith(C);
+        LI->eraseFromParent();
+      }
+      TheStore->eraseFromParent();
+      for (IntrinsicInst *II : Lifetimes)
+        II->eraseFromParent();
+      A->eraseFromParent();
+      Changed = true;
+    }
+  }
+  return Changed;
+}
+
 void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // 1. Collect accepted reads (pure analysis; do not mutate while walking the IR).
   struct Accepted {

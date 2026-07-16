@@ -1,5 +1,19 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ POST-etiq (2026-07-16):** the volatile-const-LOCAL fold shipped
+(`foldVolatileConstAllocaLoads` — the alloca sibling of the 3c6m.14
+volatile-const-global fold: single-`Constant`-store + dominated exact-type
+volatile loads on an entry-block alloca fold to the constant; loads/store/
+lifetime-markers/alloca erased, so no volatile access survives into the tainted
+region). **`cbrtl.f80` COMPILES + VERIFIES at the -O1 floor** (real-openlibm e2e
+golden `slice_libm_real_cbrtl`, 539-line deterministic trace: both unions u/v
+promote, both tainted switches route, the `vd2`/`vd1` rounding constants ride as
+classical fp literals): **verified 46 → 47**; ld80 -O1 measure **4/37 → 5/37**.
+NO full re-census (the -O2 injection-covered headline 48/123 is UNCHANGED).
+`nextafterl` stays declined — its `t = x*x` volatile idiom stores a RUNTIME
+value, excluded by the same single-`Constant`-store gate that makes the fold
+sound (that cell needs real volatile handling, not a fold).
+
 **⚡ POST-3c6m.51 Inc 3 (2026-07-16):** the MULTI-BLOCK fp80 union RMW promotion
 shipped (canonicalize + PromoteMemToReg + the §4.1 per-bit padding-taint walk, bd
 `3vdz`) — the Inc-1 read-only peephole is now the general fp80-seeded promotion

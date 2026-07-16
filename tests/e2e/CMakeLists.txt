@@ -598,9 +598,9 @@ add_test(NAME e2e-slice-libm-real-fdiml
 # (zext/shl/or i80 + and-clear + bitcast i80->f80), and the PredMux + kjd1
 # cqrt_copy_f80_controlled merge downstream. The three traces are byte-identical
 # by construction (alias + const-folded clamp) — kept as separate goldens so
-# each census cell is independently pinned. cbrtl stays UNWIRED: its union axis
-# clears, but the volatile-const-LOCAL rounding idiom still declines (see
-# slice_libm_real_cbrtl.c and the bd follow-up).
+# each census cell is independently pinned. cbrtl (below, bd etiq) additionally
+# exercises the volatile-const-LOCAL fold (its vd2/vd1 rounding constants), the
+# TWO-union promotion (u and v), and the tainted exponent-class + k%3 switches.
 add_test(NAME e2e-slice-libm-real-scalbnl
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -624,6 +624,14 @@ add_test(NAME e2e-slice-libm-real-scalblnl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_scalblnl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_scalblnl.expected.log")
+
+add_test(NAME e2e-slice-libm-real-cbrtl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_cbrtl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_cbrtl.expected.log")
 
 add_test(NAME e2e-slice-libm-real-lround
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"

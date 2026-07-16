@@ -110,6 +110,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // no re-propagate needed).
   foldVolatileConstGlobalLoads(M);
 
+  // bd etiq — volatile-const LOCAL fold (QramLowering.cpp): the alloca sibling
+  // of the global fold, for the openlibm rounding idiom kept in a LOCAL
+  // (`volatile double vd2 = 0x1.0p32;` in s_cbrtl.c — mem2reg never promotes a
+  // volatile access, so the store/load pair survives -O1 and would block the
+  // tainted arm at PredMux E4). Single-Constant-store + dominated exact-type
+  // loads only; the fold erases the loads, store, lifetime markers, and
+  // alloca. Folded values are classical — same no-re-propagate rationale.
+  foldVolatileConstAllocaLoads(M, taint);
+
   // bd 3c6m.51 — x86_fp80 union-promotion peephole (Fp80Union.cpp): the ld80 libm
   // cells extract sign/exponent/mantissa through a `union IEEEl2bits` bit-pattern
   // type-pun (`store x86_fp80` then `load iN` at const byte offsets) that LLVM
@@ -361,6 +370,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // post-passthrough / pre-PredMux placement rationale.
   foldVolatileConstGlobalLoads(M);
+
+  // bd etiq — volatile-const LOCAL fold, mirrored in this entry point too
+  // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
+  // post-global-fold / pre-PredMux placement rationale.
+  foldVolatileConstAllocaLoads(M, taint);
 
   // bd 3c6m.51 — x86_fp80 union-promotion peephole, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the

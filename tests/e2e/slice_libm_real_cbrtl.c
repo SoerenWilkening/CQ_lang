@@ -1,14 +1,15 @@
-/* slice_libm_real_cbrtl.c — bd 3c6m.51 Inc 3: the REAL openlibm cbrtl body
-   (s_cbrtl.c, fdlibm-derived, BSD-licensed) over x86_fp80 `long double`.
+/* slice_libm_real_cbrtl.c — bd 3c6m.51 Inc 3 + bd etiq: the REAL openlibm
+   cbrtl body (s_cbrtl.c, fdlibm-derived, BSD-licensed) over x86_fp80
+   `long double`.
 
-   NOT YET WIRED (no CMake entry, no golden): the Inc-3 multi-block union
-   promotion CLEARS cbrtl's fp80-union axis (both unions promote; no kMsgStore),
-   but the cell still LOUD-declines on the control axis — the LDBL_MANT_DIG==64
-   rounding arm's `volatile double vd2/vd1` LOCALS keep volatile loads inside
-   the tainted region, which PredMux E4 refuses (proven: this exact body with
-   those two locals non-volatile compiles, links, and traces end-to-end).
-   Pending the volatile-const-LOCAL fold (the alloca sibling of
-   foldVolatileConstGlobalLoads) — see the bd follow-up filed with 3vdz.
+   The Inc-3 multi-block union promotion clears cbrtl's fp80-union axis (both
+   unions u/v promote; no kMsgStore); the control axis cleared with bd etiq's
+   volatile-const-LOCAL fold (the alloca sibling of
+   foldVolatileConstGlobalLoads): the LDBL_MANT_DIG==64 rounding arm's
+   `volatile double vd2/vd1` LOCALS — single constant store + dominated
+   same-type volatile load each — fold to their constants and the alloca /
+   store / lifetime markers are erased, so no volatile access survives into
+   the tainted region (PredMux E4 admits none).
    Mechanical edits ONLY: license/includes dropped; cbrtl renamed to the
    always_inline olm_cbrtl; B1 uniquified to olm_cbrtl_B1; the math_private.h
    GET/SET_FLOAT_WORD macros expanded to the __builtin_memcpy idiom (fx/ft are

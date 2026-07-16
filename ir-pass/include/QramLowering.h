@@ -133,6 +133,26 @@ QromClaim classifyQromReadUnderControl(
 // precedent). Returns true if anything folded.
 bool foldVolatileConstGlobalLoads(llvm::Module &M);
 
+// bd etiq — volatile-const LOCAL fold: the alloca sibling of the global fold
+// above (curation, runs immediately after it in BOTH pipeline entry points).
+// The openlibm rounding idiom (`volatile double vd2 = 0x1.0p32;` in s_cbrtl.c)
+// keeps a volatile store + load on a classical entry-block alloca at -O1
+// (mem2reg never touches volatile), and PredMux E4 admits no volatile access.
+// Folds every load of a static alloca whose ONLY users are: exactly one
+// non-atomic store of a Constant (pointer operand A), non-atomic exact-type
+// loads each DOMINATED by that store, and lifetime markers — at least one
+// access volatile — to the stored constant, then erases the loads, the store,
+// the markers, and the alloca (a surviving volatile store would still block
+// E4, unlike the global fold's code-free global). Direct users only, no
+// through-gep tolerance (the local proof is exact-type/exact-address; a
+// type-punned or offset view is off-idiom and forfeits). The single-Constant
+// store gate structurally excludes tainted (shadow-QRAM) allocas; folded
+// values are CLASSICAL, so taint is unaffected and no re-propagate is needed
+// (the foldVolatileConstGlobalLoads precedent). Anything short of the proof is
+// left untouched for the existing loud declines. Returns true if anything
+// folded.
+bool foldVolatileConstAllocaLoads(llvm::Module &M, const TaintSet &taint);
+
 // Lower every accepted const-global tainted-index READ in `M`. Runs BEFORE
 // `lowerRotations` (pre-RAUW SSA identity, the control/IO precedent): the emitted
 // index operand is the still-tainted source value, which the rotation/opcode RAUW

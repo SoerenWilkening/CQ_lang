@@ -164,8 +164,46 @@ handles both loads at -O1, just the residual offset-8 load at -O2 — one peepho
     defects): >64-bit i80 literals and sub-1e-6 fp literals print truncated in the trace label (the
     deterministic gate-sequence contract; no shipped golden affected); duplicate decline diagnostics can
     repeat across fixpoint turns in multi-function modules (opt exits non-zero on the first). Follow-ups:
-    bd `etiq` (volatile-const-LOCAL fold — the last cbrtl blocker), bd `szpr` (trace-verify the i80
-    field-insert `_unc` adjoints via a specialized-callee slice + the critic's minor hardening notes).
+    bd `etiq` (volatile-const-LOCAL fold — the last cbrtl blocker; **DONE 2026-07-16**, below), bd `szpr`
+    (trace-verify the i80 field-insert `_unc` adjoints via a specialized-callee slice + the critic's minor
+    hardening notes).
+
+  - **Follow-on — the volatile-const-LOCAL fold (bd `etiq`, DONE 2026-07-16): lands `cbrtl.f80`.**
+    `foldVolatileConstAllocaLoads` (QramLowering.cpp) — the alloca sibling of the 3c6m.14
+    volatile-const-global fold, run immediately after it in BOTH pipeline entry points (pre-Fp80Union,
+    pre-PredMux). The openlibm rounding idiom (`volatile double vd2 = 0x1.0p32; volatile double vd1 =
+    0x1.0p-31;` in s_cbrtl.c) survives -O1 as a volatile store/load pair on a classical entry-block
+    alloca (mem2reg skips volatile) and blocked the tainted region at PredMux E4. The fold's proof:
+    static entry-block alloca whose ONLY direct users are exactly one non-atomic store of a `Constant`
+    (pointer-operand A), non-atomic exact-type loads each DOMINATED by that store, and lifetime markers —
+    ≥1 access volatile — then every load observes exactly the stored constant; loads RAUW to the
+    constant and the loads/store/markers/alloca are ERASED (unlike the global fold, a surviving volatile
+    store would still block E4). NARROWER than the global fold by design: direct users only (any gep —
+    even offset 0 — forfeits), exact-type only, per-load dominance (an alloca has no initializer; an
+    undominated load reads uninitialized memory). The single-`Constant`-store gate structurally excludes
+    tainted / shadow-QRAM / by-ref / union allocas (a tainted value is never a `Constant`); `nextafterl`'s
+    `t = x*x` volatile anti-fold idiom stays declined by the same gate (runtime store value). Red-green:
+    `lowering_volatile_local_fold.ll` + 7 `lowering_reject_volatile_local_*` decline probes
+    (two-stores / nonconst-store / escape / load-before-store / atomic / typepun / gep-user), all on the
+    claimable nested-W1 skeleton so an over-firing fold makes the negatives FAIL (a single fp diamond is
+    never PredMux-claimable — hand-written probe shapes on it would be vacuous; at real -O1 that shape
+    arrives as a `select`). e2e: `slice_libm_real_cbrtl` (both unions promote, the two tainted switches
+    route, the vd2/vd1 constants ride as classical fp literals; 539-line deterministic golden).
+    **Rule-13 clearance (2026-07-16, 2 independent reviewers): CLEAR, 0 blocking findings** —
+    adversarial counterexample lens (14 hand-built probes: loop-backedge/conditional-store dominance,
+    unreachable-block store and load, unordered-atomic, cascaded allocas both orders, ConstantExpr store
+    value, fp80 padding, dbg.declare metadata user, oversized store; every attack either declined or was
+    proven value-identical; end-to-end classical-value diff of the volatile-drop vs plain clang -O1:
+    byte-identical) + pipeline-interaction lens (twin-parity, TaintSet dangling-pointer audit over ALL
+    members at fold time, subsystem-theft matrix — shadow-QRAM/by-ref/fp80-union each excluded
+    STRUCTURALLY, fixture-discrimination audit, golden determinism re-derivation). Both optional
+    hardenings applied post-review: the in-slot store-size gate (posture symmetry with the global fold's
+    in-bounds proof — never refine UB IR) and the documented-convention comments (unreachable-use
+    dominance; single-pass cascade order). Accepted-benign notes: a crafted
+    `store C; lifetime.end; lifetime.start; load` folds to `C` (legal undef/UB refinement; clang never
+    emits it single-store); a dbg.declare on a folded alloca degrades to `ptr undef` (the standard
+    stack-slot-elimination behavior); and the fold is module-wide past the passthrough early-out
+    (consistent with the global fold; fenv/MMIO out of scope project-wide).
 
     Original scope (implemented): **`canonicalize + PromoteMemToReg`** (Bennett's `sroa/mem2reg`-preprocess,
     §2): rewrite each union access to a full-width `x86_fp80` load/store on a fresh promotable alloca (the i80
