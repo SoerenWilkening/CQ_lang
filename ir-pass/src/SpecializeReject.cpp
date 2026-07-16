@@ -116,25 +116,31 @@ bool unsupportedWidth(Type *T) {
 bool isLiftableSelect(const SelectInst *SI) {
   if (abiWidthFromType(SI->getType()) != "i32")
     return false;  // copyControlledFn + the i32-return gate support only i32.
-  auto *FalseC = dyn_cast<ConstantInt>(SI->getFalseValue());
-  if (!FalseC || !FalseC->isZero())
-    return false;  // non-zero/non-const false arm needs a 2nd (¬flag) copy — not slice 1.
-  auto *TrueArg = dyn_cast<Argument>(SI->getTrueValue());
-  if (!TrueArg)
-    return false;  // a derived true arm is a wider shape; slice 1 is param-direct.
   auto *Cond = dyn_cast<ICmpInst>(SI->getCondition());
   if (!Cond)
     return false;  // integer compare only (no fcmp / non-icmp condition).
-  // The compare must test the SAME param the true arm routes (one operand ==
-  // TrueArg, the other a constant). This makes the select's CONDITION and DATA
-  // share taint by construction: with the param tainted they are BOTH quantum
-  // (→ `lowerCloneSelect` emits the controlled copy); with it classical they are
-  // BOTH classical (→ a plain classical select, left untouched). It forecloses
-  // the mixed classical-control-over-quantum-data select (a classical flag over a
-  // tainted arm) — an unproven shape this slice must never emit.
-  Value *A = Cond->getOperand(0), *B = Cond->getOperand(1);
-  return (A == TrueArg && isa<ConstantInt>(B)) ||
-         (B == TrueArg && isa<ConstantInt>(A));
+  // Increment-1 one-copy shape: false arm = const 0, true arm = a param the
+  // compare tests (one operand == TrueArg, the other a constant). Condition and
+  // data share taint by construction — with the param tainted both are quantum
+  // (`lowerCloneSelect` emits ONE controlled copy `out = flag ? param : 0`), with
+  // it classical both are classical (a plain classical select, left untouched) —
+  // foreclosing the mixed classical-control-over-quantum-data shape at slice 1.
+  auto *FalseC = dyn_cast<ConstantInt>(SI->getFalseValue());
+  auto *TrueArg = dyn_cast<Argument>(SI->getTrueValue());
+  if (FalseC && FalseC->isZero() && TrueArg) {
+    Value *A = Cond->getOperand(0), *B = Cond->getOperand(1);
+    return (A == TrueArg && isa<ConstantInt>(B)) ||
+           (B == TrueArg && isa<ConstantInt>(A));
+  }
+  // 5po2 I1 two-arm shape: BOTH arms non-constant (derived) — the integer analog
+  // of `isLiftableFpSelect`, covering the `clang -O1` if-conversion of an integer
+  // if/else (`select(icmp, f(b), g(b))`) AND a PredMux-flattened value-diamond
+  // mux. This is a SHAPE gate only (scanBody is taint-blind): `lowerCloneSelect`
+  // re-proves the condition + BOTH arms genuinely tainted (whole-classical →
+  // leave; MIXED → loud decline) and a Q+Q compare condition → loud decline. A
+  // constant arm needs the materialize-classical-arm path (a later widening),
+  // not this slice — so both arms must be non-constant here.
+  return !isa<Constant>(SI->getTrueValue()) && !isa<Constant>(SI->getFalseValue());
 }
 
 // kmdc (5po2 fp widening): the canonical fabs/abs-shape FP select in a lifted
@@ -224,13 +230,18 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
     return SpecReject::NonReversibilizable;
   }
 
-  // (1) Straight-line value bodies only (the open Rule-13 item, §8). A body with
-  //     >1 basic block has a branch/switch — in-body control flow this plan does
-  //     not prove.
-  if (Callee->size() != 1) {
-    WhereOut = Callee->getEntryBlock().getTerminator();
-    return SpecReject::InBodyControl;
-  }
+  // (1) Body shape: a SINGLE straight-line value block, OR (5po2 I1) a multi-block
+  //     acyclic tainted VALUE diamond that the clone's scoped PredMux flatten
+  //     (`lowerCloneControl`) collapses to straight-line. The whitelist walk below
+  //     covers EVERY block, so a non-value construct in ANY arm still declines;
+  //     `br` (diamond edge) and `phi` (merge mux) are accepted as flattenable
+  //     control, and `switch`/`indirectbr`/`invoke` (out of the I1 br scope)
+  //     decline in the walk. A shape PredMux cannot claim (multi-exit — the I2
+  //     controlled-return shape; a loop; a compound region) is caught by the
+  //     `lowerCloneControl` post-flatten "still multi-block → decline" backstop
+  //     and, for a surviving unlowered mux, the "no tainted select survives" guard
+  //     in `buildClone` — detection stays permissive-but-safe here (Prime
+  //     Directive), the emission proves the flatten by construction.
 
   // (2) ABI return: a (possibly-tainted) return must have a reversible copy-out
   //     to an i32 handle. Two admitted families (bd 3c6m.54):
@@ -267,11 +278,14 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
     if (Inserted)
       OnStack.erase(Callee);
   };
-  BasicBlock &BB = Callee->getEntryBlock();
+  for (BasicBlock &BB : *Callee)
   for (Instruction &I : BB) {
-    // The terminator must be a plain `ret` (no branch/switch — in-body control).
+    // Terminators: a plain `ret` (the whitelist proves the returned value
+    // reversible) or a `br` — 5po2 I1's diamond edge, collapsed by the clone's
+    // PredMux flatten. A `switch`/`indirectbr`/`invoke`/`callbr` is out of the I1
+    // br scope → InBodyControl (a safe over-decline; a later widening).
     if (I.isTerminator()) {
-      if (!isa<ReturnInst>(I)) {
+      if (!isa<ReturnInst>(I) && !isa<BranchInst>(I)) {
         WhereOut = &I;
         pop();
         return SpecReject::InBodyControl;
@@ -410,16 +424,25 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       pop();
       return SpecReject::NonReversibilizable;
     }
-    // Control muxes. A PHI join is a multi-block branch artifact (already gated
-    // by the (1) single-block requirement, so this is defensive) — InBodyControl.
+    // Control muxes. A PHI join is a diamond merge (5po2 I1) — the clone's PredMux
+    // flatten dissolves it into a `select` the two-arm `lowerCloneSelect` lowers.
+    // Its incomings are proven by the per-block whitelist (they are body ops in
+    // the arms). Accept it as a flattenable construct, but keep the width/vector
+    // fence (a phi is not a BinaryOperator/Cast, so it skips the width gates
+    // below): an i128/half/fp128/vector merge has no reversible copy and would
+    // survive the flatten as an unlowerable select → reject at the phi, precise.
+    if (auto *PH = dyn_cast<PHINode>(&I)) {
+      if (touchesVector(I) || unsupportedWidth(PH->getType())) {
+        WhereOut = &I;
+        KindOut = touchesVector(I) ? "vector SIMD" : "unsupported width";
+        pop();
+        return SpecReject::NonReversibilizable;
+      }
+      continue;
+    }
     // A SELECT is a straight-line mux: most decline InBodyControl, but the tight
     // 5po2 liftable shape (`select(icmp, param, 0)`) is emitted as a controlled
     // copy in the clone, so accept it here (the emission re-proves taint).
-    if (isa<PHINode>(I)) {
-      WhereOut = &I;
-      pop();
-      return SpecReject::InBodyControl;
-    }
     if (auto *SI = dyn_cast<SelectInst>(&I)) {
       if (isLiftableSelect(SI) || isLiftableFpSelect(SI))
         continue;

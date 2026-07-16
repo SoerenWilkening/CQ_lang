@@ -1602,6 +1602,32 @@ add_test(NAME e2e-slice-specialize-select
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_select_caller.expected.log")
 
+# Phase 6 / issue 5po2 I1 (tainted control in a lifted callee — the two-arm
+# integer widening beyond increment-1's `select(icmp, param, 0)`). spec_twoarm_lib.c:
+# `if(b>5) a=(b<<2)^9; else a=(b+100)*3; return a` -> `clang -O1` if-converts to a
+# two-DERIVED-arm `select(icmp sgt b,5, (b<<2)^9, (b+100)*3)`. Handed a tainted arg
+# it lifts into __cq_q_helper_1, emitting the full 4.4 two-copy stream (copy_T ·
+# ¬flag `cqrt_x` · copy_F · `cqrt_x`) over `cqrt_copy_i32_controlled` + a |0> out
+# rail (flag kept LIVE), Bennett-wrapped. LINK-proves @__cq_q_helper_1 +
+# cqrt_copy_i32_controlled + the derived-arm producer `_unc` twins resolve and
+# signature-match across llvm-link, and the golden's palindromic reverse (both
+# `cqrt_x` brackets replay, the flag + every arm producer `_unc`, then ALL frees
+# after the complete reverse; the borrowed input `h0`=`b` left allocated, never
+# freed dirty) is the trace contract (Rules 2, 6, 13, 16). The same generalized
+# `lowerCloneSelect`/`isLiftableSelect` two-arm path also lowers a PredMux-
+# flattened value diamond (ir-pass-lit spec_accept_diamond_body.ll — a real
+# multi-block merge-phi diamond rarely survives `clang -O1` from C, which
+# if-converts it, so the flatten path is pinned by lit, this e2e link-proves the
+# shared two-arm emission).
+add_test(NAME e2e-slice-specialize-twoarm-select
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_twoarm_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_twoarm_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_twoarm_caller.expected.log")
+
 # Phase 6 / issue kmdc (5po2 fp widening): a fabs-shape FP TWO-ARM select in a
 # source-injected int->int helper (fp is internal scratch, reduced to i32 via the
 # libm producer ilogb). spec_fp_select_lib.c: `double x=(double)n; double a=(x<0)?

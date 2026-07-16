@@ -8,6 +8,7 @@
 #include "IntrinsicLowering.h"
 #include "OpcodeLowering.h"
 #include "OpcodeSupport.h"
+#include "PredMuxFlatten.h"
 #include "SpecializeClone.h"
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"
@@ -28,6 +29,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
 #include <string>
@@ -113,11 +115,40 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
     const bool IsFp = SI->getType()->isFloatingPointTy();
 
     // Per-shape taint re-proof (the SHAPE gate in SpecializeReject is taint-blind).
+    // `TwoArm` selects the emission form below: false = the increment-1 one-copy
+    // shape (`select(icmp, param, 0)`, no ¬flag bracket); true = the full 4.4
+    // two-copy stream (copy_T · ¬flag `cqrt_x` · copy_F · `cqrt_x`) for a
+    // both-arms-derived merge (the kmdc fp select AND, 5po2 I1, the PredMux-
+    // flattened value-diamond mux `select(icmp, derived, derived)`).
+    bool TwoArm;
     if (!IsFp) {
-      // Integer 5po2: true arm = the tainted param; classical → classical mux, leave.
-      if (!isa<Argument>(SI->getTrueValue()) ||
-          !cloneTaint.Tainted.count(SI->getTrueValue()))
-        continue;
+      auto *FalseC = dyn_cast<ConstantInt>(SI->getFalseValue());
+      if (FalseC && FalseC->isZero() && isa<Argument>(SI->getTrueValue()) &&
+          cloneTaint.Tainted.count(SI->getTrueValue())) {
+        // Increment-1 integer 5po2: true arm = the tainted param, false arm = 0.
+        TwoArm = false;
+      } else {
+        // Two-arm integer merge (the PredMux value-diamond output, 5po2 I1): a
+        // `select(icmp, derived, derived)` whose CONDITION and BOTH arms are
+        // genuinely tainted. Same all-tainted / whole-classical / MIXED trichotomy
+        // as the fp two-arm path — a classical flag over quantum data (or vice
+        // versa) has no proven lowering (loud decline; never a partial emit).
+        bool CondT = cloneTaint.Tainted.count(Cond->getOperand(0)) ||
+                     cloneTaint.Tainted.count(Cond->getOperand(1));
+        bool TrueT = cloneTaint.Tainted.count(SI->getTrueValue());
+        bool FalseT = cloneTaint.Tainted.count(SI->getFalseValue());
+        if (!CondT && !TrueT && !FalseT)
+          continue;  // whole-classical integer select — leave for the backend.
+        if (!(CondT && TrueT && FalseT)) {
+          Clone.getContext().diagnose(DiagnosticInfoUnsupported(
+              Clone,
+              "cq specialization: mixed classical/quantum select under quantum "
+              "lift",
+              SI->getDebugLoc()));
+          continue;  // loud decline (opt exits non-zero) — never a partial emit.
+        }
+        TwoArm = true;
+      }
     } else {
       // FP kmdc two-arm: re-prove the condition AND BOTH arms tainted. All-tainted
       // → emit; whole-classical → leave for the backend; MIXED → loud decline (a
@@ -136,6 +167,7 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
             SI->getDebugLoc()));
         continue;  // loud decline (opt exits non-zero) — never a partial emit.
       }
+      TwoArm = true;
     }
 
     StringRef Abi = abiWidthFromType(SI->getType());  // "i32" | "f32" | "f64"
@@ -151,6 +183,24 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
       if (DL)
         C->setDebugLoc(DL);
     };
+
+    // Q+Q compare-condition fence: the flag mint below is the HL (handle+literal)
+    // form (`qqWidth={}`) — it needs EXACTLY ONE tainted compare operand (a
+    // quantum handle) against a classical literal. A Q+Q compare (BOTH operands
+    // tainted) would mint a flag treating one handle as a literal (a silent-
+    // miscompile shape) — loud-decline it (Prime Directive; a Q+Q compare
+    // condition is a separate capability out of the shipped clone-control scope).
+    // Reachable only on the two-arm derived paths — the increment-1 shape's
+    // condition is `icmp(param, const)` by construction (one tainted operand).
+    if (cloneTaint.Tainted.count(Cond->getOperand(0)) &&
+        cloneTaint.Tainted.count(Cond->getOperand(1))) {
+      Clone.getContext().diagnose(DiagnosticInfoUnsupported(
+          Clone,
+          "cq specialization: quantum-quantum compare condition under quantum "
+          "lift",
+          SI->getDebugLoc()));
+      continue;  // loud decline; never mint a mis-typed HL flag.
+    }
 
     // 1. MINT the flag from the compare — kept LIVE (the Bennett reverse plays its
     //    `_unc`, NOT a local strip). Reuses `lowerCompareToFlag` (Rule 14).
@@ -171,7 +221,7 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
     //    (taint-gated) `lowerOps` RAUWs their fp producers (sitofp/fneg) to i32
     //    handles, so the copy's `src` operand becomes well-typed (the deferred-RAUW
     //    the top-level 4.4 emitter also relies on).
-    if (!IsFp) {
+    if (!TwoArm) {
       // out = flag ? param : 0 — one copy (false arm is const 0, no ¬flag bracket).
       CallInst *CC = B.CreateCall(Copy, {Flag, SI->getTrueValue(), Out});
       stamp(CC);
@@ -206,6 +256,116 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
       Cond->eraseFromParent();
     }
   }
+}
+
+// Rebuild `ct.Tainted` from the persistent tainted params via the SAME forward
+// transitive-user closure `seedClone` uses (Rule 14). A full rebuild
+// (clear-then-seed) is required after a PredMux flatten, not a merge: the flatten
+// ERASED the diamond blocks, so the pre-flatten `ct.Tainted` holds dangling
+// instruction pointers — reading their `users()` would be a use-after-free. The
+// tainted params are never erased, and every clone-body taint derives
+// (transitively) from them, so a param-rooted re-closure recovers the full set.
+// `HandleWidth`/`BirthOrder` are keyed on persistent params/rails (never the
+// erased body values), so they are preserved untouched.
+void reseedCloneTaintFromParams(Function &Clone,
+                                ArrayRef<Argument *> TaintedParams,
+                                TaintSet &ct) {
+  ct.Tainted.clear();
+  std::vector<Value *> WL;
+  for (Argument *A : TaintedParams)
+    if (ct.Tainted.insert(A).second)
+      WL.push_back(A);
+  while (!WL.empty()) {
+    Value *V = WL.back();
+    WL.pop_back();
+    for (User *U : V->users()) {
+      auto *I = dyn_cast<Instruction>(U);
+      if (!I || I->getFunction() != &Clone)
+        continue;
+      if (ct.Tainted.insert(I).second)
+        WL.push_back(I);
+    }
+  }
+}
+
+// 5po2 I1: flatten any PredMux-claimable acyclic tainted VALUE diamond in the
+// rotation-free clone body into straight-line `select` muxes, BEFORE the inner
+// drain / `lowerCloneSelect` / `lowerOps`. Reuses the module PredMux flattener
+// (`flattenPredMuxRegions`, Rule 14) driven with the DISJOINT `cloneTaint`: it
+// only claims a function whose terminator is tainted UNDER THAT set
+// (PredMuxFlatten.cpp:795), so only THIS clone's diamonds flatten and every other
+// function (caller, sibling clones) is left byte-untouched. One region per call +
+// a scoped param-rooted re-propagate, mirroring the module driver's fixpoint
+// (CQLoweringPass.cpp:155). A clone body is rotation-free (`scanBody` rejects
+// cq_theta/cq_phi), so a claimed diamond is ALWAYS a value/data-mux — never a
+// phase arm. After the fixpoint NO tainted control may survive: a surviving
+// tainted conditional `br` is an off-pattern shape PredMux declined to claim
+// (multi-exit — the I2 controlled-return shape; loop; compound) — LOUD-decline it
+// source-located (Prime Directive; never a partial clone). Returns true on a
+// clean flatten (or a body with no tainted control at all), false if control
+// survives (the caller declines + retargets to keep the site consistent).
+bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
+  // Capture the tainted params ONCE — they persist across every flatten erasure.
+  SmallVector<Argument *, 8> TaintedParams;
+  for (Argument &A : Clone.args())
+    if (ct.Tainted.count(&A))
+      TaintedParams.push_back(&A);
+
+  while (flattenPredMuxRegions(M, ct))
+    reseedCloneTaintFromParams(Clone, TaintedParams, ct);
+
+  // PredMux replaces the merge phis with selects and rewrites the branch to an
+  // UNCONDITIONAL edge into the (surviving) merge block, so a flattened diamond is
+  // 2+ straight-line blocks joined by unconditional `br`s — not yet the single
+  // block the Bennett wrap requires (it reads the ENTRY block's terminator as the
+  // `ret`). Fold every unconditional-br chain into one block
+  // (`MergeBlockIntoPredecessor` merges a block whose sole predecessor has this
+  // block as its sole successor — it never touches a CONDITIONAL br, so real
+  // control is preserved for the backstop). No reseed needed: folding moves
+  // instructions without changing SSA identity or creating/erasing tainted values.
+  bool Merged = true;
+  while (Merged) {
+    Merged = false;
+    for (BasicBlock &BB : llvm::make_early_inc_range(Clone))
+      if (&BB != &Clone.getEntryBlock() && MergeBlockIntoPredecessor(&BB))
+        Merged = true;
+  }
+
+  // Rule-9 lifetime hygiene: `MergeBlockIntoPredecessor` RAUWs+erases a folded
+  // block's single-incoming PHI. Were that phi tainted, its freed pointer would
+  // linger in `ct.Tainted` and be carried (as a stale pointer) into every later
+  // stage — the exact block-lifetime hazard class this codebase treats as
+  // unforgivable. One final param-rooted reseed drops any freed pointer and
+  // recovers the full live set (every clone value is param-derived). Cheap and
+  // unconditional so the invariant "no stage after this reads a freed `ct` entry"
+  // holds by construction, not by the fold's incidental non-reuse of the slot.
+  reseedCloneTaintFromParams(Clone, TaintedParams, ct);
+
+  // Backstop: a FULLY-flattened acyclic value region now collapses to exactly ONE
+  // straight-line block. Any surviving block is unflattened control PredMux
+  // declined to claim — multi-exit (the I2 controlled-return shape), a loop
+  // (classical OR tainted condition — the size check catches BOTH, where a
+  // tainted-only conditional-br check would miss a classical loop), or a compound
+  // shape. LOUD-decline (Prime Directive; never a partial clone). Point at a
+  // surviving conditional `br` for the best `!dbg`, else the entry terminator.
+  if (Clone.size() != 1) {
+    Instruction *Where = nullptr;
+    for (BasicBlock &BB : Clone)
+      if (auto *BI = dyn_cast<BranchInst>(BB.getTerminator()))
+        if (BI->isConditional()) {
+          Where = BI;
+          break;
+        }
+    if (!Where)
+      Where = Clone.getEntryBlock().getTerminator();
+    Clone.getContext().diagnose(DiagnosticInfoUnsupported(
+        Clone,
+        "cq specialization: callee contains tainted control flow under quantum "
+        "lift",
+        Where->getDebugLoc()));
+    return false;
+  }
+  return true;
 }
 
 // Erase `V` and its forward cone of consumers that lose ALL taint once `V` is
@@ -394,6 +554,18 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
       cloneTaint.HandleWidth[Clone->getArg(i)] = OrigW;
   }
 
+  // 5po2 I1: flatten a PredMux-claimable tainted VALUE diamond in the clone body
+  // to straight-line selects FIRST — before the inner drain, `lowerCloneSelect`,
+  // and `lowerOps` all see a flattened straight-line body. An off-pattern control
+  // shape (multi-exit / loop / non-claimable) LOUD-declines here; retarget the
+  // site (keeping it consistent so no secondary crash precedes the DS_Error) and
+  // return — `opt` exits non-zero on the diagnostic and the module is rejected.
+  if (!lowerCloneControl(*Clone, M, cloneTaint)) {
+    plan.Cache[Key].ReturnTainted = false;
+    retargetSite(Site, Clone);
+    return SpecRecord{Clone, false};
+  }
+
   // Depth-first transitive worklist (3.3): specialize each inner tainted-arg call
   // INSIDE this clone — and synthesize its uncompute twin — BEFORE this clone's
   // own data lowering, stream capture, and Bennett wrap. So the inner retargeted
@@ -514,6 +686,26 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   SmallPtrSet<CallInst *, 4> SelectXBrackets;
   lowerCloneSelect(*Clone, cloneTaint, wd, SelectCopyOps, SelectOutRails,
                    SelectXBrackets);
+
+  // 5po2 I1 over-accept backstop: after select lowering NO tainted `select` may
+  // survive. A PredMux-flattened mux at an unsupported width / off-shape that
+  // `lowerCloneSelect` could not lower (it `continue`s past an unrecognized shape)
+  // would otherwise reach the Bennett wrap as a raw select — a broken / verify-
+  // dirty clone. LOUD-decline it source-located (Prime Directive; retarget to keep
+  // the site consistent before the DS_Error exits opt non-zero).
+  for (BasicBlock &BB : *Clone)
+    for (Instruction &I : BB)
+      if (auto *SI = dyn_cast<SelectInst>(&I))
+        if (cloneTaint.Tainted.count(SI)) {
+          Clone->getContext().diagnose(DiagnosticInfoUnsupported(
+              *Clone,
+              "cq specialization: callee contains tainted control flow under "
+              "quantum lift",
+              SI->getDebugLoc()));
+          plan.Cache[Key].ReturnTainted = false;
+          retargetSite(Site, Clone);
+          return SpecRecord{Clone, false};
+        }
 
   // Scoped data lowering: `lowerOps` walks all of `M` but lowers only the
   // instructions in `cloneTaint` (C25). Inner clone calls are not stock opcodes,

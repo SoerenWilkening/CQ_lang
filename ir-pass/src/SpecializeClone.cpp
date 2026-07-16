@@ -104,10 +104,24 @@ SpecMask taintArgMask(const CallInst *Site, const TaintSet &taint) {
 // always-inlined census cells, which have no inner calls) is caught by the LOUD
 // mispredict guard in `buildClone`, never a silent miscompile.
 bool predictReturnTainted(Function *Callee, SpecMask Mask) {
-  auto *Ret = dyn_cast<ReturnInst>(Callee->getEntryBlock().getTerminator());
-  Value *RV = Ret ? Ret->getReturnValue() : nullptr;
-  if (!RV || isa<Constant>(RV))
-    return false;  // void / non-ret terminator / constant return → classical.
+  // Collect the return value(s). Pre-5po2-I1 this read ONLY the entry-block
+  // terminator (a single-block callee, guaranteed by `scanBody`). I1 accepts a
+  // MULTI-BLOCK value diamond whose `ret` lives in the exit/merge block, NOT the
+  // entry terminator (a `br`) — reading the entry terminator alone under-predicts
+  // "classical", so `cloneFor` would keep an fp return type while `emitBennettWrap`
+  // copies out to an i32 handle: a mistyped `ret` (broken module). Scan ALL blocks
+  // and OVER-approximate: predict tainted if ANY reachable return value derives
+  // from a masked param. Soundness is one-directional — an over-prediction is
+  // caught by the loud mispredict guard in `buildClone`; an UNDER-prediction is
+  // the broken module. A single-block callee's entry `ret` is found first, so its
+  // result is byte-identical to the pre-I1 behavior.
+  SmallVector<Value *, 4> RetVals;
+  for (BasicBlock &BB : *Callee)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      if (Value *RV = R->getReturnValue(); RV && !isa<Constant>(RV))
+        RetVals.push_back(RV);
+  if (RetVals.empty())
+    return false;  // void / non-ret terminators / all-constant returns → classical.
   SmallPtrSet<Value *, 16> Tainted;
   std::vector<Value *> WL;
   for (Argument &A : Callee->args())
@@ -124,7 +138,10 @@ bool predictReturnTainted(Function *Callee, SpecMask Mask) {
         WL.push_back(I);
     }
   }
-  return Tainted.count(RV) != 0;
+  for (Value *RV : RetVals)
+    if (Tainted.count(RV))
+      return true;
+  return false;
 }
 
 // Clone + mangle + internal linkage. Two paths (bd 3c6m.54):
