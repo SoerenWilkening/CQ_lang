@@ -919,6 +919,15 @@ bool foldConstantConeAndBranches(Function &F, const DataLayout &DL) {
 
 bool promoteFp80Union(Module &M, TaintSet &taint) {
   const DataLayout &DL = M.getDataLayout();
+  // bd szpr hardening — the whole promotion's byte arithmetic (the offset-8
+  // expsign straddle, the [10,16) padding range, the 128-bit canonical slot)
+  // assumes the x86-64 f80:128 layout: x86_fp80 stored in a 16-byte slot with
+  // 6 padding bytes. On any other datalayout (i386 f80:32/96, or a target
+  // where long double is fp128) the offsets are WRONG — promote NOTHING and
+  // let every union ride the existing loud kMsgStore decline (over-declining
+  // is safe; a mis-offset promotion would be a silent bit-pattern miscompile).
+  if (DL.getTypeAllocSize(Type::getX86_FP80Ty(M.getContext())) != 16)
+    return false;
   bool Changed = false;
   for (Function &F : M) {
     if (F.isDeclaration())

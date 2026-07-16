@@ -633,6 +633,20 @@ add_test(NAME e2e-slice-libm-real-cbrtl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_cbrtl.expected.log")
 
+# bd szpr (3c6m.51 Inc-3 critic Gap 1) — the i80 field-insert WRITE-surface
+# `_unc` adjoints trace-verified: a dead promoted-union RMW on a dedicated rail
+# (result-dropped cq_phi keep-alive, the slice_f80.c case-B discipline) makes
+# the whole-DAG LIFO uncompute play cq_template_{or,shl,zext,and}_i80*_unc +
+# both i80<->f80 bitcast adjoints, each rail freed at proven-|0>. The analytic
+# audit of record lives in the slice header.
+add_test(NAME e2e-slice-fp80-union-unc
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_fp80_union_unc.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_fp80_union_unc.expected.log")
+
 add_test(NAME e2e-slice-libm-real-lround
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

@@ -47,7 +47,10 @@ set +f
 # Stage 3 — the single cq-lowering pass over the combined module.
 "$OPT" -load-pass-plugin "$PASS" -passes=cq-lowering -S "$TMP/combined.ll" -o "$TMP/s2.ll"
 
-# Stage 4 — link: templates BEFORE runtime (load-bearing, C18).
+# Stage 4 — link: templates BEFORE runtime (load-bearing, C18). Deliberately
+# NO -O flag (clang default -O0): the lowered IR is the verified artifact; an
+# optimized link stage could const-fold/reorder the classical remainder and
+# desynchronize the trace from the golden (bd szpr pin, mirrors run_slice.sh).
 "$CLANG" "$TMP/s2.ll" "$TPL" "$RT" -o "$TMP/slice"
 
 # Stage 5 — run + byte-diff the trace against the golden.

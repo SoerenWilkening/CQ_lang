@@ -165,8 +165,33 @@ handles both loads at -O1, just the residual offset-8 load at -O2 — one peepho
     deterministic gate-sequence contract; no shipped golden affected); duplicate decline diagnostics can
     repeat across fixpoint turns in multi-function modules (opt exits non-zero on the first). Follow-ups:
     bd `etiq` (volatile-const-LOCAL fold — the last cbrtl blocker; **DONE 2026-07-16**, below), bd `szpr`
-    (trace-verify the i80 field-insert `_unc` adjoints via a specialized-callee slice + the critic's minor
-    hardening notes).
+    (trace-verify the i80 field-insert `_unc` adjoints + the critic's minor hardening notes; **DONE
+    2026-07-16**, below).
+
+  - **Follow-on — i80 `_unc` adjoints TRACE-VERIFIED (bd `szpr`, DONE 2026-07-16).** The critic's Gap 1
+    closed: `slice_fp80_union_unc` (e2e golden, 49 deterministic lines) fires the ENTIRE i80 write-surface
+    adjoint family — `cq_template_{bitcast_f80_to_i80, lshr_i80_hl, trunc_i80_to_i16, and_i80_hl,
+    zext_i64_to_i80, shl_i80_hl, or_i80, bitcast_i80_to_f80}_unc` — via the shipped Phase-5 dead-DAG
+    mechanism (the slice_f80.c case-B discipline): a promoted union RMW on a DEDICATED theta rail whose
+    packed result feeds a result-dropped `cq_phi` keep-alive behind the load-bearing `noinline` boundary.
+    The analytic audit of record (in the slice header, independently re-derived by a second reviewer):
+    exact reverse program order; every `_unc(out, args…)` fires with all `args` still allocated and
+    `cqrt_free(out)` immediately after (Rule 6: each free at proven-|0⟩); Rz keep-alive unwinds first as
+    `Rz(−θ)`; the dedicated rail unwinds last via `Ry(−θ)` then frees; measured rails left allocated; the
+    h3/h6 DAG fan-out is handled by whole-DAG reverse-program-order (each shared source recomputed by both
+    consumers' `_unc` while live, zeroed once, last) — exactly the shape linear ChainWalk would decline.
+    EmitInverse's out-first `_unc` slot convention verified against the generated runtime signatures; the
+    `and_i80_hl(h, -1)` label re-confirmed as the documented 64-bit truncation of the i80 low-64 keep mask.
+    The critic's suggested Phase-6 VEHICLE is NOT buildable today (measured): fp80 quantum signatures
+    decline at the spec fp gate, and an int-signature callee with the union inside declines at the spec
+    body gate — `fpSeedValueOk` requires a tainted seed and the promotion fixpoint runs pre-specialization
+    (filed as bd `vqlq`; every shape declines loudly, so a coverage boundary, not correctness debt; the
+    synthesized spec uncompute twin is already integer-trace-verified by spec_chained_ctl). Bundled
+    hardenings: the `f80:128` datalayout guard at the top of `promoteFp80Union` (alloc-size≠16 → promote
+    NOTHING, ride kMsgStore — i386 f80:96/fp128 targets decline), the no-`-O` stage-3/4 pins in
+    run_slice.sh + run_slice_multi.sh, and the aggregate/nested-union decline pins
+    `lowering_reject_fp80_union_{nested_aggregate,aggregate_array}.ll` (padding-fence / kMsgStore, each
+    with `CHECK-NOT` on the promotion's bitcast so a future over-widening fails loudly).
 
   - **Follow-on — the volatile-const-LOCAL fold (bd `etiq`, DONE 2026-07-16): lands `cbrtl.f80`.**
     `foldVolatileConstAllocaLoads` (QramLowering.cpp) — the alloca sibling of the 3c6m.14
