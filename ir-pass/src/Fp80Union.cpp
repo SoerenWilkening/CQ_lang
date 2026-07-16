@@ -339,10 +339,26 @@ void markDeadInserts(UnionCand &C, const DominatorTree &DT) {
 // reloads of the function's candidate unions (the scalbnl re-seed
 // `u.e *= 0x1p+128`: its `load x86_fp80` operand is NOT tainted pre-promotion
 // because taint never flows through memory; the caller's re-propagate re-taints
-// it post-promotion). A runtime-classical seed (an f80 argument, an unknown
-// call result) is NOT the bit-pattern idiom — the candidate is dropped.
+// it post-promotion). A runtime-classical seed from an unknown call result is
+// NOT the bit-pattern idiom — the candidate is dropped.
+//
+// bd vqlq widening (`AdmitArgDerived`): a seed derived from function ARGUMENTS
+// (an Argument root, reached directly or through an int->fp `sitofp`/`uitofp`)
+// is admissible as an OPPORTUNISTIC candidate — the Phase-6 clone-on-taint case
+// (`int qpack(int a) { u.e = (long double)a; … }`): the original callee is
+// untainted when this fixpoint runs (pre-specialization), yet must reach
+// `detectSpecializations` in register form (scanBody admits no alloca/load/
+// store), and the clone's seeded params re-taint the whole cone. Promoting an
+// untainted union is fence-sound classically — the §4.1 walk is a pure
+// value-flow bit-divergence analysis (taint-independent): every observable
+// (return/call/compare/out-store) carrying a diverged bit refuses the
+// promotion. The caller keeps opportunistic candidates SEPARATE: a walk
+// failure drops them silently (today's outcome — the memory form rides the
+// classical execution or the existing loud declines) instead of widening the
+// loud kMsgFp80Padding surface.
 bool fpSeedValueOk(Value *Root, TaintSet &taint,
-                   const SmallPtrSetImpl<const LoadInst *> &CandFpLoads) {
+                   const SmallPtrSetImpl<const LoadInst *> &CandFpLoads,
+                   bool AdmitArgDerived) {
   SmallVector<Value *, 8> Work{Root};
   SmallPtrSet<Value *, 16> Seen;
   while (!Work.empty()) {
@@ -351,6 +367,8 @@ bool fpSeedValueOk(Value *Root, TaintSet &taint,
       continue;
     if (taint.Tainted.count(V) || isa<Constant>(V))
       continue;
+    if (AdmitArgDerived && isa<Argument>(V))
+      continue;  // vqlq: a function-parameter root (see above).
     if (auto *L = dyn_cast<LoadInst>(V)) {
       if (CandFpLoads.count(L))
         continue;
@@ -358,8 +376,17 @@ bool fpSeedValueOk(Value *Root, TaintSet &taint,
     }
     auto *I = dyn_cast<Instruction>(V);
     if (!I)
-      return false;  // an Argument or other non-instruction root.
+      return false;  // an Argument (strict mode) or other non-instruction root.
     switch (I->getOpcode()) {
+    case Instruction::SIToFP:
+    case Instruction::UIToFP:
+      // vqlq: the int->fp seed conversion (`(long double)a`). Widened mode
+      // only — the strict predicate stays byte-identical to the shipped rule.
+      if (!AdmitArgDerived)
+        return false;
+      for (Value *Op : I->operands())
+        Work.push_back(Op);
+      break;
     case Instruction::FAdd:
     case Instruction::FSub:
     case Instruction::FMul:
@@ -956,38 +983,79 @@ bool promoteFp80Union(Module &M, TaintSet &taint) {
     }
 
     // Seed gate (fixpoint: dropping a candidate removes its reloads from the
-    // admissible cone of the others' re-seed values).
-    bool Dropped = true;
-    while (Dropped && !Cands.empty()) {
-      Dropped = false;
+    // admissible cone of the others' re-seed values). bd vqlq: each surviving
+    // candidate is classified STRICT (every seed admissible under the shipped
+    // tainted/Constant/candidate-reload rule) or OPPORTUNISTIC (needs the
+    // argument-derived widening for >= 1 seed). `AdmitArgDerived=false` drops
+    // opportunistic candidates too — the strict-only re-run below.
+    SmallPtrSet<const AllocaInst *, 4> Opportunistic;
+    auto seedClass = [&](const UnionCand &C,
+                         const SmallPtrSetImpl<const LoadInst *> &Rel) -> int {
+      // 2 = strict, 1 = opportunistic, 0 = inadmissible.
+      bool NeedsWide = false;
+      for (StoreInst *S : C.FpStores) {
+        if (fpSeedValueOk(S->getValueOperand(), taint, Rel,
+                          /*AdmitArgDerived=*/false))
+          continue;
+        if (!fpSeedValueOk(S->getValueOperand(), taint, Rel,
+                           /*AdmitArgDerived=*/true))
+          return 0;
+        NeedsWide = true;
+      }
+      return NeedsWide ? 1 : 2;
+    };
+    auto runSeedFixpoint = [&](bool AdmitArgDerived) {
+      Opportunistic.clear();
+      bool Dropped = true;
       SmallPtrSet<const LoadInst *, 8> CandFpLoads;
-      for (const UnionCand &C : Cands)
-        for (const LoadInst *L : C.FpLoads)
-          CandFpLoads.insert(L);
-      for (size_t i = 0; i < Cands.size(); ++i) {
-        bool Ok = true;
-        for (StoreInst *S : Cands[i].FpStores)
-          if (!fpSeedValueOk(S->getValueOperand(), taint, CandFpLoads)) {
-            Ok = false;
+      while (Dropped && !Cands.empty()) {
+        Dropped = false;
+        CandFpLoads.clear();
+        for (const UnionCand &C : Cands)
+          for (const LoadInst *L : C.FpLoads)
+            CandFpLoads.insert(L);
+        for (size_t i = 0; i < Cands.size(); ++i) {
+          int K = seedClass(Cands[i], CandFpLoads);
+          if (K == 0 || (K == 1 && !AdmitArgDerived)) {
+            Cands.erase(Cands.begin() + i);
+            Dropped = true;
             break;
           }
-        if (!Ok) {
-          Cands.erase(Cands.begin() + i);
-          Dropped = true;
-          break;
         }
       }
-    }
+      for (const UnionCand &C : Cands)
+        if (seedClass(C, CandFpLoads) == 1)
+          Opportunistic.insert(C.A);
+    };
+    runSeedFixpoint(/*AdmitArgDerived=*/true);
     if (Cands.empty())
       continue;
 
     // The §4.1 fence: one whole-function walk over every candidate at once
     // (divergence flows ACROSS unions — a word extracted from one union can be
     // field-inserted into another, as in copysignl). A violation declines the
-    // WHOLE function's promotion, loudly; nothing is mutated.
+    // WHOLE function's promotion, loudly; nothing is mutated. bd vqlq: if any
+    // OPPORTUNISTIC candidate is present, a violation first drops them ALL and
+    // re-runs the strict-only fixpoint + walk — an opportunistic union was not
+    // a candidate before the widening, so its failure must reproduce today's
+    // outcome (memory form, silent) rather than widen the loud-decline
+    // surface; a strict-only violation keeps today's loud decline exactly.
+    // (Strict-from-scratch equals drop-opportunistic-then-strict: the seed
+    // gate is monotone in the candidate-reload set.)
     if (const Instruction *Bad = PaddingWalk(Cands).run()) {
-      diagnoseFp80(const_cast<Instruction *>(Bad), kMsgFp80Padding);
-      continue;
+      if (!Opportunistic.empty()) {
+        llvm::erase_if(Cands, [&](const UnionCand &C) {
+          return Opportunistic.count(C.A);
+        });
+        runSeedFixpoint(/*AdmitArgDerived=*/false);
+        Bad = Cands.empty() ? nullptr : PaddingWalk(Cands).run();
+      }
+      if (Bad) {
+        diagnoseFp80(const_cast<Instruction *>(Bad), kMsgFp80Padding);
+        continue;
+      }
+      if (Cands.empty())
+        continue;
     }
 
     // Canonicalize every candidate, then let LLVM's own mem2reg build the SSA.

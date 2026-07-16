@@ -647,6 +647,21 @@ add_test(NAME e2e-slice-fp80-union-unc
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_fp80_union_unc.expected.log")
 
+# bd vqlq — an fp80-union RMW inside a Phase-6 SPECIALIZED callee: the
+# argument-derived OPPORTUNISTIC union seed (promoteFp80Union rewrites the
+# untainted callee to register form pre-detect) + the scanBody value-bitcast
+# carve (Rule-14 mirror of castInScope) compose so @__cq_q_qpack_1 clones,
+# lowers the i80 write surface, and Bennett-reverse-plays its full `_unc`
+# family (szpr's route (a)). The trace audit lives in the caller TU header.
+add_test(NAME e2e-spec-fp80-union
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp80_union_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp80_union_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp80_union_caller.expected.log")
+
 add_test(NAME e2e-slice-libm-real-lround
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

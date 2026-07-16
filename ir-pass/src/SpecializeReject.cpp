@@ -424,6 +424,16 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       if (auto *CA = dyn_cast<CastInst>(&I)) {
         switch (CA->getOpcode()) {
         case Instruction::BitCast:
+          // bd vqlq: a VALUE bitcast between non-pointer scalars falls THROUGH
+          // to the width + castInScope gates below (Rule 14: detection must
+          // MIRROR the lowerOps accept — castInScope admits exactly the eight
+          // shipped same-width fp<->int relabels incl. f80<->i80, the promoted
+          // fp80-union extraction form; every other value bitcast still
+          // declines there, source-located). Only a pointer-typed side keeps
+          // the categorical reject with its precise "pointer cast" kind.
+          if (!CA->getSrcTy()->isPointerTy() && !CA->getDestTy()->isPointerTy())
+            break;
+          [[fallthrough]];
         case Instruction::PtrToInt:
         case Instruction::IntToPtr:
         case Instruction::AddrSpaceCast:
@@ -489,6 +499,22 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
           return SpecReject::NonReversibilizable;
         }
       }
+      // i80 binary fence (bd vqlq, the Rule-13 F1 mirror): i80 is a recognized
+      // Tier-1 INTERMEDIATE width, but only the four extraction/field-insert
+      // rows ship (`i80BinaryInScope`: and/lshr/or/shl — exactly what the
+      // promoted-union form emits). Any other i80 binary op (add/sub/mul/xor/
+      // ashr/div/rem) has no template; without this it over-accepts into the
+      // clone and declines LATE at lowerOps naming the CLONE (the WI-1.13
+      // detect-mirrors-lowerOps gap, the exact class of the i128 compare fence
+      // above). Made newly reachable by the value-bitcast carve below.
+      if (auto *BO = dyn_cast<BinaryOperator>(&I))
+        if (abiWidthFromType(BO->getType()) == "i80" &&
+            !i80BinaryInScope(BO->getOpcodeName())) {
+          WhereOut = &I;
+          KindOut = "unsupported width";
+          pop();
+          return SpecReject::NonReversibilizable;
+        }
       if (auto *CA = dyn_cast<CastInst>(&I))
         if (!castInScope(CA->getOpcodeName(), abiWidthFromType(CA->getSrcTy()),
                          abiWidthFromType(CA->getDestTy()))) {

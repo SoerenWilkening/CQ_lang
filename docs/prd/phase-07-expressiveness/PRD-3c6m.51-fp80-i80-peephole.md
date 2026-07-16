@@ -241,6 +241,41 @@ handles both loads at -O1, just the residual offset-8 load at -O2 — one peepho
     (recognize the `load x86_fp80` reload PACK + a live field-insert store-back) and the §4.1 fence-widening
     (§4.4 below). Deep Rule-13 clearance.
 
+  - **Follow-on — fp80-union RMW inside a Phase-6 SPECIALIZED callee (bd `vqlq`, DONE 2026-07-16).**
+    The boundary measured during szpr closed by two composed enablers. (1) `fpSeedValueOk` gains the
+    `AdmitArgDerived` mode: an `Argument` root + int→fp `sitofp`/`uitofp` traversal are admissible seeds
+    — the untainted original callee (`int qpack(int a){ u.e=(long double)a; u.bits.exp=a&0x7fff;
+    return (int)(u.e*4.0L); }`) promotes to register form BEFORE `detectSpecializations` (scanBody admits
+    no alloca/load/store), and the clone's seeded params re-taint the cone. Soundness: the §4.1 walk is a
+    pure value-flow bit-divergence analysis (taint-independent, observable set = return/call/compare/
+    branch/out-store/unmodellable) — verified by a 10-shape ~500-combo promoted-vs-plain-`-O1` classical
+    differential (byte-identical). Candidates are classified STRICT (the shipped seed rule, byte-identical
+    predicate) vs OPPORTUNISTIC (needs the widening); a PaddingWalk failure with opportunistic candidates
+    present drops them ALL and re-runs the strict-only fixpoint + walk — only a strict failure keeps the
+    loud kMsgFp80Padding, so the widening adds NO new loud-decline surface (drop-then-rerun ≡
+    strict-from-scratch by seed-cone monotonicity). (2) `scanBody` routes a NON-pointer value `bitcast` to
+    the width + castInScope gates instead of the categorical "pointer cast" reject (Rule-14 mirror:
+    castInScope admits exactly the eight shipped same-width fp↔int relabels incl. f80↔i80; everything
+    else keeps declining source-located). Bundled: the i80-binary detect fence (`i80BinaryInScope` mirror
+    beside the i128 compare fence — an `add i80` body op now declines EARLY at the callee, not late at
+    lowerOps naming the clone; the Rule-13 F1 finding, made reachable by the carve). e2e:
+    `e2e-spec-fp80-union` (multi-TU) — `@__cq_q_qpack_1` computes the promoted i80 chain on the borrowed
+    theta rail, `cqrt_copy_i32` copy-out, exact-LIFO `_unc` reverse-play (the szpr route (a), delivered),
+    53-line deterministic golden, trace audited. Fixtures: `spec_accept_fp80_union_body`,
+    `lowering_fp80_union_arg_seed{,_multiblock}` (the f80-phi/no-i80-phi pin),
+    `lowering_fp80_union_arg_seed_padding_drop`, the fallback family
+    `lowering_fp80_union_mixed_{strictfail_loud,oppfail_promotes}` + `lowering_fp80_union_reload_chain_drop`
+    (the adversarial strict-rides-opportunistic-reload chain), `spec_reject_fp80_union_padding`,
+    `spec_reject_i80_add_body`, `spec_reject_bitcast_fp128_body`. **Rule-13 clearance (2026-07-16, 2
+    independent reviewers): CLEAR, 0 blocking** — adversarial lens (classical-soundness differential,
+    fallback monotonicity, bitcast-carve boundary probes incl. x86_mmx/fp128/bfloat, dual-caller
+    (callee,mask)-cache composition, golden algebra audit) + pipeline lens (fixpoint monotonicity /
+    no-oscillation, twin-parity, kMsgFp80I80Merge f80-phi-by-construction claim, 32/32 golden-symbol +
+    12/12 bitcast-`_unc` ABI parity, census goldens byte-identical). Both reviewer suggestions adopted
+    (the F1 fence + the F2 fixture family + the multi-block pin). Accepted-benign note: a pre-existing
+    hand-written i80 phi in a newly-promoted classical arg-seeded function would now loud-decline
+    (safe-direction, pathological input).
+
 - **Later:** `lroundl`/`llroundl` (integer-SEEDED reload packs — a DISTINCT shape from the fp80-seed idiom),
   `nextafterl` (`volatile` store — hard decline until volatile handling), the loop cells (`logbl` etc. — 19 of
   the 40 ld80 cells are loop-gated, on Phase 7.3 / `799w`).
