@@ -49,6 +49,7 @@
 #include "PredMuxFlatten.h"
 
 #include "IntrinsicLowering.h"
+#include "OpcodeSupport.h"  // abiWidthFromType, binaryStem, castInScope, i80BinaryInScope
 #include "QramLowering.h"
 #include "TaintPropagation.h"
 
@@ -206,11 +207,34 @@ bool isSpeculatableDataflow(const Instruction &I) {
   if (const auto *UO = dyn_cast<UnaryOperator>(&I))
     return UO->getOpcode() == Instruction::FNeg &&
            isTemplateWidthType(UO->getType());
-  if (const auto *CI = dyn_cast<CastInst>(&I))
-    return !CI->getType()->isPointerTy() && !CI->getSrcTy()->isPointerTy() &&
-           isTemplateWidthType(CI->getType()) &&
+  if (const auto *CI = dyn_cast<CastInst>(&I)) {
+    if (CI->getType()->isPointerTy() || CI->getSrcTy()->isPointerTy())
+      return false;
+    // i80 (bd 3c6m.51 Inc 3): the promoteFp80Union canonical extract/insert
+    // ops (`bitcast f80<->i80`, `trunc i80 -> iN`, `zext iN -> i80`) land
+    // INSIDE claimed arms (scalbnl's field-insert packs live in the normal/
+    // subnormal arms). Gate them by `castInScope` ITSELF — the exact predicate
+    // castInScope-lowering enforces — so detection mirrors lowering (bd 6-4)
+    // and a claimed region still can never half-lower. Every other i80 cast
+    // (sext, cross-domain) fails castInScope and leaves the region.
+    if (CI->getType()->isIntegerTy(80) || CI->getSrcTy()->isIntegerTy(80))
+      return castInScope(CI->getOpcodeName(), abiWidthFromType(CI->getSrcTy()),
+                         abiWidthFromType(CI->getType()));
+    return isTemplateWidthType(CI->getType()) &&
            isTemplateWidthType(CI->getSrcTy());
+  }
   if (const auto *BO = dyn_cast<BinaryOperator>(&I)) {
+    // i80 (bd 3c6m.51 Inc 3): admit exactly the four shipped i80 bitwise rows
+    // (and/lshr/or/shl — the shared i80BinaryInScope, mirroring the
+    // ArithLowering fence); add/sub/mul/xor/ashr/div/rem at i80 have no
+    // template and leave the region (detect-before-mutate). NOTE the mirror is
+    // one-directional by design elsewhere: icmp/select/freeze at i80 stay
+    // conservatively UNCLAIMED here (isTemplateWidthType excludes i80) even
+    // though CompareLowering could lower a straight-line icmp i80 — an
+    // over-decline, always safe; the canonical promotion never puts those
+    // inside an arm.
+    if (BO->getType()->isIntegerTy(80))
+      return i80BinaryInScope(binaryStem(BO->getOpcode()));
     if (!isTemplateWidthType(BO->getType()))
       return false;
     switch (BO->getOpcode()) {

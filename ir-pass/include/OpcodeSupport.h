@@ -61,6 +61,14 @@ llvm::CmpInst::Predicate flipPredicate(llvm::CmpInst::Predicate pred);
 bool castInScope(llvm::StringRef op, llvm::StringRef fromW,
                  llvm::StringRef toW);
 
+// Whether a BINARY op stem is in the i80 surface (bd 3c6m.51). i80 is an
+// INTERMEDIATE x86_fp80 bit-pattern width shipping ONLY four bitwise rows —
+// `and`/`lshr` (the Inc-1 extraction ops) + `or`/`shl` (the Inc-2 field-insert
+// ops); every other binary op at i80 has NO generated template. Shared by the
+// ArithLowering i80 fence and PredMux's E4 arm-op gate so detection mirrors
+// lowering (bd 6-4-detection-mirrors-lowerops) — one source of truth, no drift.
+bool i80BinaryInScope(llvm::StringRef stem);
+
 // Whether a compare `op` ("icmp"/"fcmp") with predicate-name `pred` is in the
 // Phase-3 compare surface. `pred` is `CmpInst::getPredicateName(...)` (e.g.
 // "eq"/"slt"/"oeq"/"une"). Mirrors the YAML `predicates:` map

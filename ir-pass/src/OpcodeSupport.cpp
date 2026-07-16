@@ -115,6 +115,12 @@ CmpInst::Predicate flipPredicate(CmpInst::Predicate pred) {
   return CmpInst::getSwappedPredicate(pred);
 }
 
+bool i80BinaryInScope(StringRef stem) {
+  // The four shipped i80 rows (opcode_table.yaml int_bitwise): the extraction
+  // ops and/lshr (bd 3c6m.51 Inc 1) + the field-insert ops or/shl (Inc 2).
+  return stem == "and" || stem == "lshr" || stem == "or" || stem == "shl";
+}
+
 bool castInScope(StringRef op, StringRef fromW, StringRef toW) {
   const unsigned fi = intBits(fromW), ti = intBits(toW);
   const unsigned ff = fpBits(fromW),  tf = fpBits(toW);

@@ -49,9 +49,14 @@ WIDTH_INFO = {
     # rides __int128 (i80 is not a C type) and prints via the (long long)/%lld path
     # — printf has no 80-bit specifier. Every shipped i80 literal is a mask or a
     # shift amount that fits in 64 bits (fdiml: `and i80 %h, 0x7fff..`=2^63-1,
-    # `lshr i80 %bc, 64`), so the trace label is faithful; a >64-bit literal would
-    # print its low 64 bits (deterministic gate-sequence contract, not a value
-    # simulation — same as i128).
+    # `lshr i80 %bc, 64`; the Inc-3 RMW packs: field [64,80) keep-mask = 2^64-1,
+    # `shl i80 .., 64`), so every shipped trace label is faithful; a >64-bit
+    # literal would print its low 64 bits (deterministic gate-sequence contract,
+    # not a value simulation — same as i128). NOTE (Inc 3): a LIVE field-insert
+    # at a sub-64 offset would emit an and-clear keep-mask above 2^64 (e.g.
+    # field [0,64) keeps 0xFFFF<<64) and print truncated — no shipped cell does
+    # (fdiml's offset-0 store-back is DEAD and elided; scalbnl/copysignl insert
+    # at offset 8 only). Revisit the label format before landing such a cell.
     "i80": {"ctype": "__int128", "fmt": "%lld", "cast": "(long long)"},
     # _Float16: the explicit (double) cast is MANDATORY — a bare _Float16 passed
     # to printf("%f") trips -Wdouble-promotion / a format-arg type mismatch under

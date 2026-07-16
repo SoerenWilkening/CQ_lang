@@ -588,6 +588,43 @@ add_test(NAME e2e-slice-libm-real-fdiml
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdiml.expected.log")
 
+# bd 3c6m.51 Inc 3 — the long-double RMW slices: the real openlibm scalbnl (+
+# its ldexpl strong-reference alias + the scalblnl clamp wrapper) over x86_fp80,
+# exercising the MULTI-BLOCK promoteFp80Union (canonicalize + PromoteMemToReg:
+# fp80 re-seed in the subnormal arm, two offset-8 field-insert PACK arms, the
+# copysignl twin unions, the 5-way f80 return merge), the §4.1 per-bit
+# padding-taint walk (the store-backs KEEP diverged straddle bits that land only
+# in the dropped >= 80 padding), the i80 field-insert write surface
+# (zext/shl/or i80 + and-clear + bitcast i80->f80), and the PredMux + kjd1
+# cqrt_copy_f80_controlled merge downstream. The three traces are byte-identical
+# by construction (alias + const-folded clamp) — kept as separate goldens so
+# each census cell is independently pinned. cbrtl stays UNWIRED: its union axis
+# clears, but the volatile-const-LOCAL rounding idiom still declines (see
+# slice_libm_real_cbrtl.c and the bd follow-up).
+add_test(NAME e2e-slice-libm-real-scalbnl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_scalbnl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_scalbnl.expected.log")
+
+add_test(NAME e2e-slice-libm-real-ldexpl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_ldexpl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_ldexpl.expected.log")
+
+add_test(NAME e2e-slice-libm-real-scalblnl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_scalblnl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_scalblnl.expected.log")
+
 add_test(NAME e2e-slice-libm-real-lround
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

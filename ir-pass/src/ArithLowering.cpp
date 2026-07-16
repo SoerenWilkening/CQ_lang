@@ -71,8 +71,7 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   // Stage 3) — the n0ui i128 phantom-mint lesson at a narrower surface. Decline
   // LOUDLY and leave `bo` standing (well-typed, verify-clean); over-decline is safe
   // (Prime Directive). and/lshr/or/shl are the shipped i80 rows (opcode_table.yaml).
-  if (AbiWidth == "i80" && Stem != "and" && Stem != "lshr" && Stem != "or" &&
-      Stem != "shl") {
+  if (AbiWidth == "i80" && !i80BinaryInScope(Stem)) {
     diagnoseNoTemplate(bo);
     return false;
   }

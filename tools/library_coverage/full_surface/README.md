@@ -1,5 +1,22 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ POST-3c6m.51 Inc 3 (2026-07-16):** the MULTI-BLOCK fp80 union RMW promotion
+shipped (canonicalize + PromoteMemToReg + the §4.1 per-bit padding-taint walk, bd
+`3vdz`) — the Inc-1 read-only peephole is now the general fp80-seeded promotion
+(live field-inserts, fp80 re-seeds, reload packs, multi-union bodies).
+**`scalbnl.f80` / `ldexpl.f80` / `scalblnl.f80` COMPILE + VERIFY at the -O1 floor**
+(real-openlibm e2e goldens `slice_libm_real_{scalbnl,ldexpl,scalblnl}`, byte-identical
+traces by construction): **verified 43 → 46**; ld80 -O1 measure **1/37 → 4/37**. NO
+full re-census (the -O2 injection-covered headline 48/123 is UNCHANGED — ld80 stays
+-O1-favored). `cbrtl.f80`'s union axis now CLEARS (both unions promote, no kMsgStore);
+it still declines on the ORTHOGONAL volatile-const-LOCAL rounding idiom
+(`volatile double vd2/vd1` inside the tainted region — the alloca sibling of the
+3c6m.14 volatile-const-global fold; proven: the same body with those two locals
+non-volatile compiles end-to-end). The Inc-1 §4.1 `everyUserMasksPadding` fence is
+REPLACED by the forward per-bit walk, so trunc/add-then-mask chains (coshl-style)
+no longer over-decline on the fence — the remaining ld80 holds are RMW-loop/by-ref/
+control shapes, not the mask idiom.
+
 **⚡ POST-3c6m.51 Inc 1 (2026-07-15):** the SHADOW lever (fp80 `union IEEEl2bits`
 bit-pattern memory) shipped for the READ-ONLY idiom — the `i80` intermediate width +
 `promoteFp80Union` peephole (bd 3c6m.51, memory `fp80-ld80-i80-minimal-3c6m51`).

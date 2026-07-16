@@ -15,24 +15,37 @@
 // therefore stays in MEMORY at CQ's -O1 floor and a tainted seed store declines
 // at `declineTaintEscapes` (kMsgStore).
 //
-// `promoteFp80Union` finishes what SROA will not: it rewrites the union into
-// register-resident form — `bitcast x86_fp80 %seed to i80` once, then each
-// `load iN @ off` becomes `[lshr i80] + trunc i80 -> iN` (or `+ zext` for a word
-// that straddles the padding, modelling the padding bits as 0) — and erases the
-// store / dead masked store-backs / geps / lifetime markers / alloca. The i80
-// ops lower as reversible relabels/permutations (the shipped and/lshr/icmp/trunc/
-// bitcast i80 surface). This mirrors Bennett.jl (SROA-preprocess + bitcast=
-// identity relabel + arbitrary widths). Runs in the early rewrite zone (after
-// foldVolatileConstGlobalLoads, before flattenPredMuxRegions) so PredMux and
-// every downstream guard see a store/load-free region; the caller re-propagates.
+// `promoteFp80Union` finishes what SROA will not (MULTI-BLOCK since Inc 3, bd
+// 3vdz): it CANONICALIZES every union access onto a fresh promotable
+// `alloca x86_fp80` — each `load iN @ off` becomes `load x86_fp80` +
+// `bitcast -> i80` + `[lshr] + trunc [+ zext]` (padding read as 0); each LIVE
+// integer field-insert store-back becomes `load x86_fp80` + `bitcast -> i80` +
+// and-clear + `zext`/`shl`/`or` + `bitcast -> x86_fp80` + `store x86_fp80`
+// (inserted bits landing at storage positions >= 80 drop into the modelled-zero
+// padding); full-width fp80 stores/reloads retarget in place — then hands the
+// fresh alloca to LLVM's own PromoteMemToReg to build the SSA. Merge phis are
+// therefore `phi x86_fp80`, NEVER i80 (the i80 extract/insert stays local
+// around each access by construction; a post-promotion `phi i80` scan
+// LOUD-declines defensively). The original union memory is erased and a
+// dominance CSE restores the one-bitcast-per-value relabel shape. The i80 ops
+// lower as reversible relabels/permutations (the shipped and/lshr/or/shl/icmp/
+// trunc/zext/bitcast i80 surface). This mirrors Bennett.jl (sroa/mem2reg
+// preprocess + bitcast = identity relabel + arbitrary widths). Runs in the
+// early rewrite zone (after foldVolatileConstGlobalLoads, before
+// flattenPredMuxRegions) so PredMux and every downstream guard see a
+// store/load-free region; the caller re-propagates.
 //
 // FENCE (§4.1, the central silent-miscompile guard): modelling padding as 0 is
-// sound ONLY where the body masks the padding bits off. If a padding-straddle
-// word has a user that observes a padding bit unmasked, the peephole LOUD-declines
-// (`kMsgFp80Padding`) rather than promote. An off-pattern union (escaping address,
-// non-constant gep offset, live RMW store-back, multi-block accesses, ...) is left
-// byte-untouched and falls to the existing kMsgStore decline. A classical (const-
-// seed) union promotes to constant-folded loads (isnan(0.5L) -> dead branch).
+// sound ONLY where no padding-derived bit can reach an observable. A per-bit
+// padding-taint walk (see Fp80Union.cpp header) follows every straddle-read bit
+// through the integer dataflow — masks clear, carries taint upward, field-insert
+// landings below bit 80 taint the union content — and LOUD-declines
+// (`kMsgFp80Padding`) if a diverged bit reaches an icmp/branch/call/return/fp80
+// reload or any op the walk cannot model. An off-pattern union (escaping
+// address, non-constant gep offset, integer-seeded pack, runtime-classical
+// seed, off-grid width, ...) is left byte-untouched and falls to the existing
+// kMsgStore decline. A classical (const-seed) union promotes to constant-folded
+// loads (isnan(0.5L) -> dead branch).
 
 #ifndef CQ_FP80UNION_H
 #define CQ_FP80UNION_H

@@ -1,13 +1,53 @@
-// Fp80Union.cpp — the x86_fp80 union-promotion peephole (bd 3c6m.51). See
-// Fp80Union.h for the idiom, the placement, and the §4 padding fence.
+// Fp80Union.cpp — the x86_fp80 union-promotion pass (bd 3c6m.51; multi-block
+// canonicalize + PromoteMemToReg since Inc 3). See Fp80Union.h for the idiom,
+// the placement, and the §4 padding fence.
 //
-// PURE structural rewrite: it emits STANDARD LLVM `bitcast`/`lshr`/`trunc`/`zext`
-// (byte-identical to LLVM's own SROA output for the within-value loads — proven
+// PURE structural rewrite in two steps: (1) CANONICALIZE every provable union
+// access to a full-width `x86_fp80` load/store on a fresh promotable alloca —
+// an integer word load becomes `load x86_fp80` + `bitcast -> i80` + lshr/trunc/
+// zext (padding read as 0), an integer field-insert store-back becomes
+// `load x86_fp80` + `bitcast -> i80` + and-clear + zext/shl/or + `bitcast ->
+// x86_fp80` + `store x86_fp80` (inserted bits landing at storage positions
+// >= 80 are DROPPED into the modelled-zero padding) — then (2) hand the fresh
+// alloca to LLVM's own PromoteMemToReg to build the SSA (merge phis are
+// `phi x86_fp80`, never i80: the i80 extract/insert stays local around each
+// access by construction). It emits STANDARD LLVM ops only (the extraction is
+// byte-identical to LLVM's own SROA output for the within-value loads — proven
 // against the -O2 fdiml IR), so it is not a bespoke lowering. Every gate is
 // load-bearing: an off-pattern union is left untouched (falls to kMsgStore); a
 // matched-but-unsound padding observation LOUD-declines (a wrong "padding = 0"
 // fold would be a verify-clean silent miscompile — undefined bytes read as a
 // definite value the real program never commits to).
+//
+// THE §4.1 FENCE (widened in Inc 3 from the every-user-masks rule to a per-bit
+// padding-taint walk): modelling the padding bytes [10,16) as 0 is sound iff no
+// OBSERVABLE value can differ between the model and any real padding content.
+// The walk computes, for every SSA value reachable from a padding-straddling
+// word load, the bitmask of positions where model and reality may diverge —
+//   · a straddle load taints its bits at storage positions >= 80 (this also
+//     covers written-then-read padding: a field-insert's dropped bits are
+//     re-tainted at the next straddle read, whatever wrote them);
+//   · `and` clears through a 0 mask bit; `or` clears through a 1; `xor` unions;
+//   · add/sub/mul carry the taint upward from the lowest diverged bit;
+//   · trunc/zext/sext/shl/lshr/ashr shift the mask (sext/ashr smear the sign);
+//   · a field-insert lands the stored word's diverged bits at byte-offset
+//     positions — landings >= 80 drop into padding, landings < 80 taint the
+//     union CONTENT, which every later load of those bytes inherits;
+//   · an OBSERVABLE — icmp/fcmp, a branch/switch condition, a call (incl.
+//     cq_measure), a return, an fp80 reload of diverged content, a store
+//     outside the candidate unions, any op the walk cannot model — with a
+//     diverged bit LOUD-declines (kMsgFp80Padding).
+// Poison-flag guard: an `add`/`sub`/`mul`/`shl` carrying nsw/nuw (or an `exact`
+// shift/div) over a DIVERGED operand also declines — the model's zeros can flip
+// signed-overflow poison where the real program is defined (e.g. a negative
+// real operand whose diverged high bits read 0 turns a defined signed add into
+// a model-side nsw overflow). Exactly three zero-monotone flags are accepted,
+// each with proof: model operands equal the real ones except diverged bits
+// read 0, so a model-side `or disjoint` overlap / `trunc nuw|nsw` dropped-bit
+// / `zext nneg` negative-input violation implies the real one — model poison
+// ⊆ real poison, a sound refinement. Every `exact` shift/division on a
+// diverged operand DECLINES (over-safe; the zero-monotone argument would also
+// cover `lshr exact`, but the code keeps the uniform decline).
 
 #include "Fp80Union.h"
 
@@ -19,14 +59,20 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Operator.h"
+#include "llvm/Analysis/CFG.h"  // isPotentiallyReachable
 #include "llvm/Transforms/Utils/Local.h"  // ConstantFoldTerminator, removeUnreachableBlocks
+#include "llvm/Transforms/Utils/PromoteMemToReg.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -38,75 +84,66 @@ namespace {
 
 // The x86_fp80 significant width. Its 80 bits occupy bytes [0,10) of a padded
 // 16-byte (align-16) storage slot; bytes [10,16) — bits [80,128) — are undefined
-// padding the peephole models as 0 (sound only under the mask fence, §4.1).
+// padding the promotion models as 0 (sound only under the §4.1 walk).
 constexpr unsigned kFp80Bits = 80;
 
-// The loud decline for a matched fp80 union with an UNMASKED padding observation
-// (the central §4.1 fence). The negative fixture mirrors this string
-// character-for-character (Rule 12): lowering_reject_fp80_union_padding.ll.
+// The loud decline for a matched fp80 union whose padding can reach an
+// observable (the central §4.1 fence). The negative fixtures mirror this string
+// character-for-character (Rule 12): lowering_reject_fp80_union_padding.ll,
+// lowering_reject_fp80_union_padding_{carry,insert}.ll.
 constexpr char kMsgFp80Padding[] =
     "cq fp80 union: padding byte observed without a mask";
 
-void diagnoseFp80Padding(Instruction *I) {
+// The Inc-3 safety fence: an i80 value must never cross a control merge (there
+// is no i80 controlled copy — the >64 fence). The promotion keeps i80 local by
+// construction (the fresh alloca is x86_fp80-typed, so PromoteMemToReg only
+// builds f80 phis); this diagnostic is the defensive invariant scan behind that
+// construction. Fixture: lowering_reject_fp80_union_i80_merge.ll.
+constexpr char kMsgFp80I80Merge[] =
+    "cq fp80 union: i80 value crosses a control merge";
+
+void diagnoseFp80(Instruction *I, const char *Msg) {
   I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
-      *I->getFunction(), kMsgFp80Padding, I->getDebugLoc()));
+      *I->getFunction(), Msg, I->getDebugLoc()));
 }
 
-// One integer word load off the union, with its constant byte offset.
+// One integer word access on the union, with its constant byte offset.
 struct WordLoad {
   LoadInst *Load;
   uint64_t ByteOff;
   unsigned Bits;
 };
+struct WordStore {
+  StoreInst *Store;
+  uint64_t ByteOff;
+  unsigned Bits;
+  bool Dead = false;  // no overlapping load ever reads it — erased, not packed.
+};
 
-enum class Status { Promote, PaddingDecline, OffPattern };
+// One structurally-proven candidate union alloca and its complete access set.
+struct UnionCand {
+  AllocaInst *A = nullptr;
+  SmallVector<StoreInst *, 2> FpStores;  // x86_fp80 stores @0 (seed + re-seeds)
+  SmallVector<LoadInst *, 3> FpLoads;    // x86_fp80 reloads @0 (`return u.e`)
+  SmallVector<WordLoad, 4> Loads;        // iN loads at const byte offsets
+  SmallVector<WordStore, 2> Inserts;     // iN store-backs (LIVE field-inserts OK)
+  SmallVector<GetElementPtrInst *, 4> Geps;
+  SmallVector<IntrinsicInst *, 4> Lifetimes;
+};
 
-// Is `C` (the RHS of an `and` masking `L`) a padding-CLEARING mask for a word
-// whose meaningful part is the low `meaningfulBits`? True iff `C` has no bit set
-// at position >= meaningfulBits — i.e. every padding bit of the masked result is
-// forced to 0, so the (undefined, modelled-as-0) padding cannot be observed.
-bool clearsPadding(const ConstantInt *C, unsigned meaningfulBits) {
-  return C->getValue().getActiveBits() <= meaningfulBits;
-}
+// ---------------------------------------------------------------------------
+// Structural analysis (pure, pre-mutation)
+// ---------------------------------------------------------------------------
 
-// PADDING FENCE (§4.1): a load that reads past bit 80 (a padding straddle) is
-// sound to model with padding=0 ONLY if every observer masks the padding bits.
-// Conservatively require every user to be `and L, C` (or `and C, L`) with a
-// padding-clearing constant `C`; a dead load (no users) is vacuously safe. Any
-// other user (a compare, a return, a wider arithmetic op, a second unmasked `and`)
-// observes an undefined byte → not promotable.
-bool everyUserMasksPadding(LoadInst *L, unsigned meaningfulBits) {
-  for (User *U : L->users()) {
-    auto *BO = dyn_cast<BinaryOperator>(U);
-    if (!BO || BO->getOpcode() != Instruction::And)
-      return false;
-    Value *Other = BO->getOperand(0) == L ? BO->getOperand(1) : BO->getOperand(0);
-    auto *C = dyn_cast<ConstantInt>(Other);
-    if (!C || !clearsPadding(C, meaningfulBits))
-      return false;
-  }
-  return true;
-}
-
-// Analyze one alloca as a candidate x86_fp80 bit-pattern union. On Promote it
-// fills `Seed`/`SeedVal`/`Loads`/`StoreBacks`/`Geps`/`Lifetimes`. On
-// PaddingDecline the shape matched but a straddle word is observed unmasked.
-// Otherwise OffPattern (leave untouched → kMsgStore).
-Status analyze(AllocaInst *A, const DataLayout &DL, TaintSet &taint,
-               StoreInst *&Seed, Value *&SeedVal,
-               SmallVectorImpl<WordLoad> &Loads,
-               SmallVectorImpl<StoreInst *> &StoreBacks,
-               SmallVectorImpl<GetElementPtrInst *> &Geps,
-               SmallVectorImpl<IntrinsicInst *> &Lifetimes) {
-  Seed = nullptr;
-  SeedVal = nullptr;
+// Analyze one alloca as a candidate x86_fp80 bit-pattern union. Returns false
+// (leave byte-untouched → the existing kMsgStore decline for a tainted seed)
+// on ANY off-pattern user: a call reading the address, ptrtoint, an icmp/phi/
+// select on the pointer, a non-constant gep, the address stored as a VALUE, a
+// volatile/atomic access, an access at an off-grid width or offset. Block
+// structure is NOT constrained — PromoteMemToReg owns the SSA construction.
+bool analyzeStructure(AllocaInst *A, const DataLayout &DL, UnionCand &C) {
+  C.A = A;
   const unsigned PtrBits = DL.getIndexTypeSizeInBits(A->getType());
-
-  // Every transitive pointer user of A must be a simple integer load into the
-  // union, a store into it (fp80 seed or integer store-back), a constant-offset
-  // gep whose users we follow, or a lifetime marker. ANY other user (a call
-  // reading the address, ptrtoint, an icmp/phi/select on the pointer, a
-  // non-constant gep, the address stored as a VALUE) forfeits the WHOLE union.
   SmallVector<Value *, 8> Work{A};
   SmallPtrSet<Value *, 16> Seen;
   auto offsetFromA = [&](Value *Ptr, uint64_t &Off) -> bool {
@@ -123,114 +160,573 @@ Status analyze(AllocaInst *A, const DataLayout &DL, TaintSet &taint,
     for (User *U : V->users()) {
       auto *I = dyn_cast<Instruction>(U);
       if (!I)
-        return Status::OffPattern;  // a constexpr user of a stack slot — bail.
+        return false;  // a constexpr user of a stack slot — bail.
       if (auto *LI = dyn_cast<LoadInst>(I)) {
-        if (!LI->isSimple() || !LI->getType()->isIntegerTy())
-          return Status::OffPattern;
-        unsigned Bits = LI->getType()->getIntegerBitWidth();
-        // Only word widths the trunc/zext grid can extract (≤ 64, a shipped int
-        // width). A wider or off-grid load is Inc-2+/off-pattern.
-        if (Bits > 64 || abiWidthFromType(LI->getType()).empty())
-          return Status::OffPattern;
+        if (!LI->isSimple())
+          return false;
         uint64_t Off;
         if (!offsetFromA(LI->getPointerOperand(), Off))
-          return Status::OffPattern;
-        Loads.push_back({LI, Off, Bits});
+          return false;
+        if (LI->getType()->isX86_FP80Ty()) {
+          if (Off != 0)
+            return false;  // a misaligned fp80 read is not the idiom.
+          C.FpLoads.push_back(LI);
+          continue;
+        }
+        if (!LI->getType()->isIntegerTy())
+          return false;
+        unsigned Bits = LI->getType()->getIntegerBitWidth();
+        // Only word widths the trunc/zext grid can extract (≤ 64, a shipped
+        // int width). For a padding straddle the intermediate meaningful width
+        // must ALSO be shipped (the `trunc i80 -> i<meaningful>` template).
+        if (Bits > 64 || abiWidthFromType(LI->getType()).empty())
+          return false;
+        unsigned BitOff = static_cast<unsigned>(Off * 8);
+        unsigned Meaningful =
+            BitOff >= kFp80Bits ? 0 : std::min(Bits, kFp80Bits - BitOff);
+        if (Meaningful != 0 && Meaningful != Bits &&
+            abiWidthFromType(IntegerType::get(A->getContext(), Meaningful))
+                .empty())
+          return false;
+        C.Loads.push_back({LI, Off, Bits});
       } else if (auto *SI = dyn_cast<StoreInst>(I)) {
         // The address must be the POINTER operand, never the stored VALUE (an
         // address escape), and the store must be simple (no volatile/atomic).
         if (SI->getValueOperand() == V || SI->getPointerOperand() != V ||
             !SI->isSimple())
-          return Status::OffPattern;
+          return false;
         uint64_t Off;
         if (!offsetFromA(SI->getPointerOperand(), Off))
-          return Status::OffPattern;
+          return false;
         Type *VT = SI->getValueOperand()->getType();
         if (VT->isX86_FP80Ty()) {
-          if (Seed || Off != 0)
-            return Status::OffPattern;  // >1 seed, or a seed not at offset 0.
-          Seed = SI;
-          SeedVal = SI->getValueOperand();
+          if (Off != 0)
+            return false;  // an fp80 store not at offset 0 is not the idiom.
+          C.FpStores.push_back(SI);  // MULTIPLE fp stores OK (seed + re-seeds).
         } else if (VT->isIntegerTy()) {
-          StoreBacks.push_back(SI);  // deadness proven below.
+          unsigned Bits = VT->getIntegerBitWidth();
+          // The field-insert zero-extends the word to i80 — the source width
+          // must be on the shipped zext grid ({i1..i64} -> i80).
+          if (Bits > 64 || abiWidthFromType(VT).empty())
+            return false;
+          C.Inserts.push_back({SI, Off, Bits});
         } else {
-          return Status::OffPattern;  // storing a non-fp80/non-int (e.g. a vector).
+          return false;  // storing a non-fp80/non-int (e.g. a vector).
         }
       } else if (auto *GEP = dyn_cast<GetElementPtrInst>(I)) {
         uint64_t Off;
         if (!offsetFromA(GEP, Off))  // rejects non-constant / aliasing geps.
-          return Status::OffPattern;
-        Geps.push_back(GEP);
+          return false;
+        C.Geps.push_back(GEP);
         if (Seen.insert(GEP).second)
           Work.push_back(GEP);
       } else if (auto *II = dyn_cast<IntrinsicInst>(I);
                  II && II->isLifetimeStartOrEnd()) {
-        Lifetimes.push_back(II);
+        C.Lifetimes.push_back(II);
       } else {
-        return Status::OffPattern;  // any other user escapes the address.
+        return false;  // any other user escapes the address.
       }
     }
   }
+  // The target idiom is fp80-SEEDED: at least one full-width fp80 store. The
+  // integer-seeded reload packs (lroundl SET_LDBL_WORDS — words building a
+  // value from scratch, reading partially-undefined content before any seed)
+  // are a DISTINCT shape and stay declined.
+  return !C.FpStores.empty();
+}
 
-  if (!Seed || Loads.empty())
-    return Status::OffPattern;  // not an fp80 extraction union.
+// Blocks that sit on any CFG cycle (any non-trivial SCC, or a self-loop).
+// Twin of PredMuxFlatten.cpp collectCycleBlocks (kept local — both live in
+// anonymous namespaces; 6 lines, cross-referenced so they cannot drift apart
+// silently). The Inc-3 accept surface is ACYCLIC: a union access inside a
+// cycle would put the promoted value on a loop-carried path, which is Phase
+// 7.3 territory (the 19 loop-gated ld80 cells) and — the Rule-13 clearance
+// finding — makes any lexical-order deadness reasoning unsound. A candidate
+// with a cyclic access is left byte-untouched (tainted seed → kMsgStore).
+void collectCycleBlocks(Function &F, SmallPtrSetImpl<BasicBlock *> &OnCycle) {
+  for (scc_iterator<Function *> It = scc_begin(&F); !It.isAtEnd(); ++It) {
+    const std::vector<BasicBlock *> &SCC = *It;
+    if (SCC.size() > 1 || It.hasCycle())
+      OnCycle.insert(SCC.begin(), SCC.end());
+  }
+}
 
-  // Only the seed value's kind we support: a tainted handle (the quantum cell) or
-  // a Constant (the classical isnan(const) cell, which folds to dead code). A
-  // runtime-classical seed is not the target idiom — leave it untouched.
-  if (!taint.Tainted.count(SeedVal) && !isa<Constant>(SeedVal))
-    return Status::OffPattern;
+// The Inc-3 scope gate: every union access must live in an acyclic block that
+// is REACHABLE from entry. scc_begin only visits reachable blocks, so an
+// unreachable (possibly self-looping) block evades OnCycle — and unreachable
+// accesses reach PromoteMemToReg with no defined reaching-store semantics.
+// Dropping the candidate is free: unreachable code never executes.
+bool accessesAcyclic(const UnionCand &C,
+                     const SmallPtrSetImpl<BasicBlock *> &OnCycle,
+                     const DominatorTree &DT) {
+  auto Ok = [&](const Instruction *I) {
+    return !OnCycle.count(I->getParent()) &&
+           DT.isReachableFromEntry(I->getParent());
+  };
+  return llvm::all_of(C.FpStores, Ok) && llvm::all_of(C.FpLoads, Ok) &&
+         llvm::all_of(C.Loads,
+                      [&](const WordLoad &W) { return Ok(W.Load); }) &&
+         llvm::all_of(C.Inserts,
+                      [&](const WordStore &W) { return Ok(W.Store); });
+}
 
-  // STRAIGHT-LINE requirement: the seed store and every load / store-back live in
-  // ONE block, and the seed dominates every load (comesBefore in that block). A
-  // multi-block union is Inc-2+/off-pattern. (Lifetime markers may sit in
-  // successor blocks; they are erased regardless.)
-  BasicBlock *BB = Seed->getParent();
-  for (const WordLoad &W : Loads)
-    if (W.Load->getParent() != BB || !Seed->comesBefore(W.Load))
-      return Status::OffPattern;
-  for (StoreInst *SB : StoreBacks)
-    if (SB->getParent() != BB)
-      return Status::OffPattern;
+// Every non-seed access must be DOMINATED by some fp80 store, so the promoted
+// value is fully defined at every read/RMW point (this is what keeps the
+// integer-first packs out and makes the mem2reg result undef-free).
+bool accessesSeedDominated(const UnionCand &C, const DominatorTree &DT) {
+  auto dominatedBySeed = [&](const Instruction *I) {
+    for (const StoreInst *S : C.FpStores)
+      if (S != I && DT.dominates(S, I))
+        return true;
+    return false;
+  };
+  for (const WordLoad &W : C.Loads)
+    if (!dominatedBySeed(W.Load))
+      return false;
+  for (const WordStore &W : C.Inserts)
+    if (!dominatedBySeed(W.Store))
+      return false;
+  for (const LoadInst *L : C.FpLoads)
+    if (!dominatedBySeed(L))
+      return false;
+  return true;
+}
 
-  // STORE-BACK DEADNESS: a masked store-back is erasable ONLY if no load reads the
-  // bytes it wrote (a LIVE store-back is a genuine RMW — Inc 2). Since all are in
-  // one block, "a load reads it" = a load that comesBefore-after the store-back
-  // whose byte range overlaps. Bail (off-pattern) on any live store-back.
-  for (StoreInst *SB : StoreBacks) {
-    uint64_t SOff;
-    offsetFromA(SB->getPointerOperand(), SOff);  // succeeded above.
-    uint64_t SBytes = DL.getTypeStoreSize(SB->getValueOperand()->getType());
-    for (const WordLoad &W : Loads) {
-      if (!SB->comesBefore(W.Load))
-        continue;  // load precedes the store-back → reads the seed, not it.
-      uint64_t LBytes = DL.getTypeStoreSize(W.Load->getType());
-      bool Disjoint = W.ByteOff + LBytes <= SOff || SOff + SBytes <= W.ByteOff;
-      if (!Disjoint)
-        return Status::OffPattern;  // live RMW store-back — Inc 2.
+// DEAD field-insert detection (Inc-1 parity): a store-back that no load ever
+// observes is ERASED rather than canonicalized into an RMW pack. A load
+// OBSERVES the store iff execution can flow from the store to the load —
+// tested with LLVM's own `isPotentiallyReachable` (conservative-TRUE on its
+// walk limit, so uncertainty keeps the store LIVE = the safe direction).
+// NEVER use lexical order here: the first Rule-13 clearance round CONFIRMED a
+// verify-clean silent miscompile from a comesBefore-based test — a loop-body
+// load lexically BEFORE the store reads the PREVIOUS iteration's store via the
+// back-edge, so lexical deadness erased a live loop-carried RMW. (The acyclic
+// access gate independently keeps such candidates out; this test is sound on
+// its own regardless.) Sound both ways: the model drops a store no model-load
+// can observe (real observation needs the same store→load path), and the
+// store's padding-byte writes are covered by the walk's always-on straddle
+// re-taint. This is what keeps fdiml's dead `mask_nbit_l` store-back out of
+// the trace — and with it every shipped i80 literal inside the 64-bit faithful
+// print range (the abi_codegen __int128 trace label truncates above 64 bits by
+// design).
+void markDeadInserts(UnionCand &C, const DominatorTree &DT) {
+  for (WordStore &S : C.Inserts) {
+    uint64_t SB = S.ByteOff, SE = S.ByteOff + (S.Bits + 7) / 8;
+    auto liveAgainst = [&](const Instruction *L, uint64_t LB, uint64_t LE) {
+      if (LB >= SE || SB >= LE)
+        return false;  // disjoint ranges never observe the store.
+      return isPotentiallyReachable(S.Store, L, /*ExclusionSet=*/nullptr, &DT);
+    };
+    bool Live = false;
+    for (const WordLoad &W : C.Loads)
+      if (liveAgainst(W.Load, W.ByteOff, W.ByteOff + (W.Bits + 7) / 8)) {
+        Live = true;
+        break;
+      }
+    if (!Live)
+      for (const LoadInst *L : C.FpLoads)
+        if (liveAgainst(L, 0, (kFp80Bits + 7) / 8)) {
+          Live = true;
+          break;
+        }
+    S.Dead = !Live;
+  }
+}
+
+// Whether an fp80-store VALUE is admissible: tainted (the theta-derived
+// quantum cell), a Constant (the classical isnan(const) union — folds to dead
+// code after promotion), or derived purely from scalar fp dataflow over fp80
+// reloads of the function's candidate unions (the scalbnl re-seed
+// `u.e *= 0x1p+128`: its `load x86_fp80` operand is NOT tainted pre-promotion
+// because taint never flows through memory; the caller's re-propagate re-taints
+// it post-promotion). A runtime-classical seed (an f80 argument, an unknown
+// call result) is NOT the bit-pattern idiom — the candidate is dropped.
+bool fpSeedValueOk(Value *Root, TaintSet &taint,
+                   const SmallPtrSetImpl<const LoadInst *> &CandFpLoads) {
+  SmallVector<Value *, 8> Work{Root};
+  SmallPtrSet<Value *, 16> Seen;
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    if (taint.Tainted.count(V) || isa<Constant>(V))
+      continue;
+    if (auto *L = dyn_cast<LoadInst>(V)) {
+      if (CandFpLoads.count(L))
+        continue;
+      return false;
+    }
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      return false;  // an Argument or other non-instruction root.
+    switch (I->getOpcode()) {
+    case Instruction::FAdd:
+    case Instruction::FSub:
+    case Instruction::FMul:
+    case Instruction::FDiv:
+    case Instruction::FRem:
+    case Instruction::FNeg:
+    case Instruction::FPExt:
+    case Instruction::FPTrunc:
+    case Instruction::PHI:
+    case Instruction::Select:
+    case Instruction::Freeze:
+      for (Value *Op : I->operands())
+        Work.push_back(Op);
+      break;
+    default:
+      return false;
+    }
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// The §4.1 padding-taint walk (pure, pre-mutation)
+// ---------------------------------------------------------------------------
+
+class PaddingWalk {
+public:
+  explicit PaddingWalk(ArrayRef<UnionCand> Cands) {
+    for (const UnionCand &C : Cands) {
+      for (const WordLoad &W : C.Loads)
+        LoadAt[W.Load] = {C.A, W.ByteOff};
+      for (const WordStore &W : C.Inserts) {
+        if (W.Dead)
+          DeadStores.insert(W.Store);  // erased, never lands — a walk no-op.
+        else
+          InsertAt[W.Store] = {C.A, W.ByteOff};
+      }
+      for (const LoadInst *L : C.FpLoads)
+        ReloadOf[L] = C.A;
+      for (const StoreInst *S : C.FpStores)
+        FpSeeds.insert(S);
+      LoadsOf[C.A].assign(C.Loads.begin(), C.Loads.end());
+      for (LoadInst *L : C.FpLoads)
+        FpLoadsOf[C.A].push_back(L);
     }
   }
 
-  // PADDING FENCE (§4.1): every padding-straddle word must have all its observers
-  // mask the padding bits. A matched union that fails this is UNSOUND to promote —
-  // loud-decline (NOT leave-untouched: the shape IS the target idiom, so a silent
-  // skip would look like "covered" while a future looser matcher could promote it).
-  for (const WordLoad &W : Loads) {
-    unsigned BitOff = static_cast<unsigned>(W.ByteOff * 8);
-    unsigned Meaningful = BitOff >= kFp80Bits ? 0 : std::min(W.Bits, kFp80Bits - BitOff);
-    if (Meaningful >= W.Bits)
-      continue;  // wholly within the 80-bit value — no padding read.
-    // The intermediate meaningful width must be a shipped int width (else the
-    // `trunc i80 -> i<meaningful>` has no template) — off-grid ⇒ leave untouched.
-    if (Meaningful == 0 ||
-        abiWidthFromType(IntegerType::get(A->getContext(), Meaningful)).empty())
-      return Status::OffPattern;
-    if (!everyUserMasksPadding(W.Load, Meaningful))
-      return Status::PaddingDecline;
+  // Runs the forward fixpoint. Returns nullptr if the promotion is sound, else
+  // the instruction where a diverged bit becomes observable / unmodellable.
+  const Instruction *run() {
+    for (auto &KV : LoadAt)
+      enqueue(const_cast<LoadInst *>(KV.first));
+    while (!WL.empty()) {
+      Instruction *I = WL.pop_back_val();
+      InQueue.erase(I);
+      if (const Instruction *Bad = eval(I))
+        return Bad;
+    }
+    return nullptr;
   }
 
-  return Status::Promote;
-}
+private:
+  DenseMap<const LoadInst *, std::pair<AllocaInst *, uint64_t>> LoadAt;
+  DenseMap<const StoreInst *, std::pair<AllocaInst *, uint64_t>> InsertAt;
+  DenseMap<const LoadInst *, AllocaInst *> ReloadOf;
+  SmallPtrSet<const StoreInst *, 4> FpSeeds;
+  SmallPtrSet<const StoreInst *, 4> DeadStores;
+  DenseMap<const AllocaInst *, SmallVector<WordLoad, 4>> LoadsOf;
+  DenseMap<const AllocaInst *, SmallVector<LoadInst *, 3>> FpLoadsOf;
+  DenseMap<const AllocaInst *, APInt> ContentD;  // 80-bit content divergence
+  DenseMap<const Value *, APInt> D;              // per-SSA-value divergence
+  SmallVector<Instruction *, 16> WL;
+  SmallPtrSet<Instruction *, 16> InQueue;
+
+  void enqueue(Instruction *I) {
+    if (InQueue.insert(I).second)
+      WL.push_back(I);
+  }
+
+  APInt getD(const Value *V, unsigned W) const {
+    auto It = D.find(V);
+    if (It == D.end())
+      return APInt::getZero(W);
+    assert(It->second.getBitWidth() == W && "divergence width mismatch");
+    return It->second;
+  }
+
+  // Monotone update; on growth, re-enqueue every instruction user.
+  void setD(Value *V, const APInt &M) {
+    auto It = D.find(V);
+    if (It == D.end()) {
+      if (M.isZero())
+        return;
+      D.try_emplace(V, M);
+    } else {
+      APInt Merged = It->second | M;
+      if (Merged == It->second)
+        return;
+      It->second = Merged;
+    }
+    for (User *U : V->users())
+      if (auto *UI = dyn_cast<Instruction>(U))
+        enqueue(UI);
+  }
+
+  APInt contentSlice(const AllocaInst *A, uint64_t ByteOff, unsigned W) const {
+    APInt Out = APInt::getZero(W);
+    auto It = ContentD.find(A);
+    if (It == ContentD.end())
+      return Out;
+    unsigned BitOff = static_cast<unsigned>(ByteOff * 8);
+    for (unsigned i = 0; i < W; ++i)
+      if (BitOff + i < kFp80Bits && It->second[BitOff + i])
+        Out.setBit(i);
+    return Out;
+  }
+
+  // Evaluate one instruction's divergence transfer. Returns the instruction on
+  // an observation/unmodellable use of a diverged bit, nullptr otherwise.
+  const Instruction *eval(Instruction *I) {
+    if (auto *LI = dyn_cast<LoadInst>(I)) {
+      if (auto It = LoadAt.find(LI); It != LoadAt.end()) {
+        unsigned W = LI->getType()->getIntegerBitWidth();
+        unsigned BitOff = static_cast<unsigned>(It->second.second * 8);
+        APInt M = contentSlice(It->second.first, It->second.second, W);
+        for (unsigned i = 0; i < W; ++i)
+          if (BitOff + i >= kFp80Bits)
+            M.setBit(i);  // straddle: every padding read diverges.
+        setD(LI, M);
+        return nullptr;
+      }
+      if (auto It = ReloadOf.find(LI); It != ReloadOf.end()) {
+        // An fp80 reload OBSERVES the whole 80-bit content (it feeds fp
+        // arithmetic / escapes as data) — any content divergence is unsound.
+        auto CIt = ContentD.find(It->second);
+        if (CIt != ContentD.end() && !CIt->second.isZero())
+          return LI;
+        return nullptr;
+      }
+      return nullptr;  // a load from unrelated memory never carries divergence.
+    }
+
+    if (auto *SI = dyn_cast<StoreInst>(I)) {
+      Value *Val = SI->getValueOperand();
+      unsigned W = Val->getType()->isIntegerTy()
+                       ? Val->getType()->getIntegerBitWidth()
+                       : 0;
+      APInt Dv = W ? getD(Val, W) : APInt::getZero(1);
+      if (auto It = InsertAt.find(SI); It != InsertAt.end()) {
+        if (Dv.isZero())
+          return nullptr;
+        // Land the diverged bits: positions >= 80 drop into the modelled-zero
+        // padding (the next straddle read re-taints them); positions < 80
+        // taint the union CONTENT every later load inherits.
+        unsigned BitOff = static_cast<unsigned>(It->second.second * 8);
+        AllocaInst *A = It->second.first;
+        APInt &CD =
+            ContentD.try_emplace(A, APInt::getZero(kFp80Bits)).first->second;
+        APInt Before = CD;
+        for (unsigned i = 0; i < W; ++i)
+          if (Dv[i] && BitOff + i < kFp80Bits)
+            CD.setBit(BitOff + i);
+        if (CD != Before) {
+          for (const WordLoad &WLd : LoadsOf[A])
+            enqueue(WLd.Load);
+          for (LoadInst *FL : FpLoadsOf[A])
+            enqueue(FL);
+        }
+        return nullptr;
+      }
+      if (FpSeeds.count(SI) || DeadStores.count(SI))
+        return nullptr;  // fp80 values never diverge; a dead insert is erased.
+      return Dv.isZero() ? nullptr : I;  // diverged value escapes to memory.
+    }
+
+    if (auto *BO = dyn_cast<BinaryOperator>(I)) {
+      unsigned W = BO->getType()->isIntegerTy()
+                       ? BO->getType()->getIntegerBitWidth()
+                       : 0;
+      if (!W)
+        return nullptr;  // fp binops: fp operands never carry divergence.
+      APInt Da = getD(BO->getOperand(0), W);
+      APInt Db = getD(BO->getOperand(1), W);
+      if (Da.isZero() && Db.isZero()) {
+        setD(BO, APInt::getZero(W));
+        return nullptr;
+      }
+      // Poison-flag guard (see file header): nsw/nuw arithmetic and exact
+      // shifts/divs over a diverged operand can flip poison model-side.
+      if (auto *OBO = dyn_cast<OverflowingBinaryOperator>(BO))
+        if (OBO->hasNoSignedWrap() || OBO->hasNoUnsignedWrap())
+          return I;
+      if (auto *PE = dyn_cast<PossiblyExactOperator>(BO))
+        if (PE->isExact())
+          return I;
+      auto nzBits = [&](Value *V) {  // bits that can possibly be 1
+        if (auto *C = dyn_cast<ConstantInt>(V))
+          return C->getValue();
+        return APInt::getAllOnes(W);
+      };
+      auto oneBits = [&](Value *V) {  // bits that are definitely 1
+        if (auto *C = dyn_cast<ConstantInt>(V))
+          return C->getValue();
+        return APInt::getZero(W);
+      };
+      APInt Out(W, 0);
+      switch (BO->getOpcode()) {
+      case Instruction::And:
+        Out = (Da & nzBits(BO->getOperand(1))) | (Db & nzBits(BO->getOperand(0)));
+        break;
+      case Instruction::Or:
+        Out = (Da & ~oneBits(BO->getOperand(1))) |
+              (Db & ~oneBits(BO->getOperand(0)));
+        break;
+      case Instruction::Xor:
+        Out = Da | Db;
+        break;
+      case Instruction::Add:
+      case Instruction::Sub:
+      case Instruction::Mul: {
+        // A diverged bit perturbs its own position and every higher one (carry
+        // / borrow / partial products) — taint [lowest diverged, W).
+        unsigned Lo = (Da | Db).countTrailingZeros();
+        Out = APInt::getBitsSetFrom(W, Lo);
+        break;
+      }
+      case Instruction::Shl:
+        if (auto *C = dyn_cast<ConstantInt>(BO->getOperand(1))) {
+          if (!Db.isZero())
+            return I;
+          Out = C->getValue().uge(W) ? APInt::getZero(W)
+                                     : Da.shl(C->getValue().getZExtValue());
+        } else if (!Db.isZero()) {
+          return I;  // a diverged shift AMOUNT is unmodellable.
+        } else {
+          Out = Da.isZero()
+                    ? APInt::getZero(W)
+                    : APInt::getBitsSetFrom(W, Da.countTrailingZeros());
+        }
+        break;
+      case Instruction::LShr:
+      case Instruction::AShr:
+        if (auto *C = dyn_cast<ConstantInt>(BO->getOperand(1))) {
+          if (!Db.isZero())
+            return I;
+          uint64_t Amt = C->getValue().uge(W) ? W : C->getValue().getZExtValue();
+          Out = BO->getOpcode() == Instruction::AShr ? Da.ashr(Amt)
+                                                     : Da.lshr(Amt);
+        } else if (!Db.isZero()) {
+          return I;
+        } else {
+          Out = Da.isZero() ? APInt::getZero(W) : APInt::getAllOnes(W);
+        }
+        break;
+      default:
+        return I;  // udiv/sdiv/urem/srem/… on a diverged operand — decline.
+      }
+      setD(BO, Out);
+      return nullptr;
+    }
+
+    if (auto *CI = dyn_cast<CastInst>(I)) {
+      Value *Src = CI->getOperand(0);
+      if (!Src->getType()->isIntegerTy())
+        return nullptr;  // fp/ptr sources never carry divergence.
+      unsigned SW = Src->getType()->getIntegerBitWidth();
+      APInt Ds = getD(Src, SW);
+      if (Ds.isZero()) {
+        if (CI->getType()->isIntegerTy())
+          setD(CI, APInt::getZero(CI->getType()->getIntegerBitWidth()));
+        return nullptr;
+      }
+      if (!CI->getType()->isIntegerTy())
+        return I;  // a diverged word crossing into fp/ptr — unmodellable.
+      unsigned DW = CI->getType()->getIntegerBitWidth();
+      switch (CI->getOpcode()) {
+      case Instruction::Trunc:
+        // trunc nuw/nsw stays sound: model dropped bits read 0 ⊆ real dropped
+        // bits, so model poison ⊆ real poison (zero-monotone; header proof).
+        setD(CI, Ds.trunc(DW));
+        return nullptr;
+      case Instruction::ZExt:
+        setD(CI, Ds.zext(DW));
+        return nullptr;
+      case Instruction::SExt:
+        setD(CI, Ds.sext(DW));  // APInt::sext smears a diverged sign bit.
+        return nullptr;
+      case Instruction::BitCast:
+        setD(CI, Ds.zextOrTrunc(DW));  // same-width int<->int relabel.
+        return nullptr;
+      default:
+        return I;
+      }
+    }
+
+    if (auto *Cmp = dyn_cast<CmpInst>(I)) {
+      Type *OT = Cmp->getOperand(0)->getType();
+      if (!OT->isIntegerTy())
+        return nullptr;
+      unsigned W = OT->getIntegerBitWidth();
+      if (!getD(Cmp->getOperand(0), W).isZero() ||
+          !getD(Cmp->getOperand(1), W).isZero())
+        return I;  // a compare OBSERVES every bit of both operands.
+      setD(Cmp, APInt::getZero(1));
+      return nullptr;
+    }
+
+    if (auto *P = dyn_cast<PHINode>(I)) {
+      unsigned W = P->getType()->isIntegerTy()
+                       ? P->getType()->getIntegerBitWidth()
+                       : 0;
+      if (!W)
+        return nullptr;
+      APInt Out(W, 0);
+      for (Value *In : P->incoming_values())
+        Out |= getD(In, W);
+      setD(P, Out);
+      return nullptr;
+    }
+
+    if (auto *Sel = dyn_cast<SelectInst>(I)) {
+      if (!getD(Sel->getCondition(), 1).isZero())
+        return I;  // a diverged condition is control divergence.
+      unsigned W = Sel->getType()->isIntegerTy()
+                       ? Sel->getType()->getIntegerBitWidth()
+                       : 0;
+      if (!W)
+        return nullptr;
+      setD(Sel, getD(Sel->getTrueValue(), W) | getD(Sel->getFalseValue(), W));
+      return nullptr;
+    }
+
+    if (auto *Fr = dyn_cast<FreezeInst>(I)) {
+      if (Fr->getType()->isIntegerTy()) {
+        unsigned W = Fr->getType()->getIntegerBitWidth();
+        setD(Fr, getD(Fr->getOperand(0), W));
+      }
+      return nullptr;
+    }
+
+    if (auto *Br = dyn_cast<BranchInst>(I)) {
+      if (Br->isConditional() && !getD(Br->getCondition(), 1).isZero())
+        return I;  // diverged control.
+      return nullptr;
+    }
+    if (auto *Sw = dyn_cast<SwitchInst>(I)) {
+      Type *CT = Sw->getCondition()->getType();
+      if (CT->isIntegerTy() &&
+          !getD(Sw->getCondition(), CT->getIntegerBitWidth()).isZero())
+        return I;
+      return nullptr;
+    }
+
+    // Any other user of a diverged value — a call (incl. cq_measure), a
+    // return, a gep index, anything unmodelled — is an observation. (This
+    // instruction is only ever enqueued because an operand's mask grew.)
+    for (Value *Op : I->operands())
+      if (Op->getType()->isIntegerTy() &&
+          !getD(Op, Op->getType()->getIntegerBitWidth()).isZero())
+        return I;
+    return nullptr;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Canonicalization + promotion (mutating)
+// ---------------------------------------------------------------------------
 
 // Build the register-resident extraction of the word `[byteOff, byteOff+bits)`
 // from the i80 value `Bc`: `[lshr i80 Bc, byteOff*8] + trunc i80 -> iN`, or, for a
@@ -247,50 +743,138 @@ Value *extractWord(IRBuilder<> &B, Value *Bc, uint64_t ByteOff, unsigned Bits) {
   if (Meaningful >= Bits)
     return B.CreateTrunc(Sh, DstTy, "u_word");
   if (Meaningful == 0)
-    return ConstantInt::get(DstTy, 0);  // wholly padding (fence proved masked).
+    return ConstantInt::get(DstTy, 0);  // wholly padding (walk proved masked).
   Value *M = B.CreateTrunc(Sh, IntegerType::get(Ctx, Meaningful), "u_mean");
   return B.CreateZExt(M, DstTy, "u_word");  // padding bits modelled as 0.
 }
 
-// Rewrite one proven union to register-resident form and erase the memory.
-void promote(AllocaInst *A, StoreInst *Seed, Value *SeedVal,
-             ArrayRef<WordLoad> Loads, ArrayRef<StoreInst *> StoreBacks,
-             ArrayRef<GetElementPtrInst *> Geps,
-             ArrayRef<IntrinsicInst *> Lifetimes) {
-  // The single `bitcast x86_fp80 %seed to i80`, positioned right before the seed
-  // store so it dominates every (later, same-block) load. For a constant seed the
-  // IRBuilder folds it (and the whole classical union) to constants.
-  IRBuilder<> B(Seed);
-  Type *I80 = IntegerType::get(A->getContext(), kFp80Bits);
-  Value *Bc = B.CreateBitCast(SeedVal, I80, "u_bits");
-  if (auto *BcI = dyn_cast<Instruction>(Bc))
-    if (DebugLoc DL = Seed->getDebugLoc())
-      BcI->setDebugLoc(DL);
+// Rewrite one proven union onto a fresh promotable `alloca x86_fp80`: every
+// access becomes a full-width x86_fp80 load/store with the i80 extract/insert
+// LOCAL around it, and the original memory is erased. `Bcs` collects the
+// emitted `bitcast x86_fp80 -> i80` instructions for the post-mem2reg CSE.
+void canonicalize(UnionCand &C, SmallVectorImpl<Instruction *> &Bcs,
+                  SmallVectorImpl<AllocaInst *> &Fresh) {
+  LLVMContext &Ctx = C.A->getContext();
+  Type *F80 = Type::getX86_FP80Ty(Ctx);
+  Type *I80 = IntegerType::get(Ctx, kFp80Bits);
+  IRBuilder<> AB(C.A);
+  AllocaInst *NA = AB.CreateAlloca(F80, nullptr, C.A->getName() + ".f80");
+  NA->setAlignment(Align(16));
+  Fresh.push_back(NA);
 
-  for (const WordLoad &W : Loads) {
-    IRBuilder<> LB(W.Load);
-    Value *Word = extractWord(LB, Bc, W.ByteOff, W.Bits);
-    if (auto *WI = dyn_cast<Instruction>(Word))
-      if (DebugLoc DL = W.Load->getDebugLoc())
-        WI->setDebugLoc(DL);
+  auto keepDbg = [](Value *V, Instruction *From) {
+    if (auto *VI = dyn_cast<Instruction>(V))
+      if (DebugLoc DL = From->getDebugLoc())
+        VI->setDebugLoc(DL);
+  };
+
+  // Full-width fp80 accesses: retarget in place (order + !dbg preserved).
+  for (StoreInst *S : C.FpStores)
+    S->setOperand(StoreInst::getPointerOperandIndex(), NA);
+  for (LoadInst *L : C.FpLoads)
+    L->setOperand(LoadInst::getPointerOperandIndex(), NA);
+
+  // Integer word loads: load the whole value, relabel to i80, extract.
+  for (const WordLoad &W : C.Loads) {
+    IRBuilder<> B(W.Load);
+    Value *V = B.CreateAlignedLoad(F80, NA, Align(16), "u_val");
+    Value *Bc = B.CreateBitCast(V, I80, "u_bits");
+    Value *Word = extractWord(B, Bc, W.ByteOff, W.Bits);
+    keepDbg(V, W.Load);
+    keepDbg(Bc, W.Load);
+    keepDbg(Word, W.Load);
+    if (auto *BcI = dyn_cast<Instruction>(Bc))
+      Bcs.push_back(BcI);
     W.Load->replaceAllUsesWith(Word);
   }
 
-  // Erase in dependency order: loads (RAUW'd) + store-backs + seed store +
-  // lifetime markers first (all now use-free), then geps (their only users were
-  // those), then the alloca.
-  for (const WordLoad &W : Loads)
+  // Integer field-inserts: read-modify-write the whole value through i80.
+  // The inserted field is bits [pos, min(pos+N,80)); value bits landing at
+  // storage positions >= 80 drop into the modelled-zero padding (walk-proven
+  // unobservable), so `zext` + `shl` (which truncates past bit 79) place
+  // exactly the surviving field and `and ~field` clears its old content.
+  for (const WordStore &W : C.Inserts) {
+    if (W.Dead)
+      continue;  // a dead insert — erased below, no pack emitted.
+    unsigned Pos = static_cast<unsigned>(W.ByteOff * 8);
+    if (Pos >= kFp80Bits) {
+      continue;  // a pure-padding write — erased below, nothing survives.
+    }
+    unsigned Hi = std::min(Pos + W.Bits, kFp80Bits);
+    IRBuilder<> B(W.Store);
+    Value *V = B.CreateAlignedLoad(F80, NA, Align(16), "u_val");
+    Value *Bc = B.CreateBitCast(V, I80, "u_bits");
+    APInt Keep = ~APInt::getBitsSet(kFp80Bits, Pos, Hi);
+    Value *Clr = B.CreateAnd(Bc, ConstantInt::get(I80, Keep), "u_keep");
+    Value *Z = B.CreateZExt(W.Store->getValueOperand(), I80, "u_ins");
+    Value *Sh = Pos ? B.CreateShl(Z, ConstantInt::get(I80, Pos), "u_pos") : Z;
+    Value *Ins = B.CreateOr(Clr, Sh, "u_set");
+    Value *Fp = B.CreateBitCast(Ins, F80, "u_pack");
+    B.CreateAlignedStore(Fp, NA, Align(16));
+    for (Value *NV : {V, Bc, Clr, Z, Sh, Ins, Fp})
+      keepDbg(NV, W.Store);
+    if (auto *BcI = dyn_cast<Instruction>(Bc))
+      Bcs.push_back(BcI);
+  }
+
+  // Erase the original memory: word accesses (RAUW'd / replaced), lifetime
+  // markers, then geps (their only users were those), then the alloca.
+  for (const WordLoad &W : C.Loads)
     W.Load->eraseFromParent();
-  for (StoreInst *SB : StoreBacks)
-    SB->eraseFromParent();
-  Seed->eraseFromParent();
-  for (IntrinsicInst *LM : Lifetimes)
+  for (const WordStore &W : C.Inserts)
+    W.Store->eraseFromParent();
+  for (IntrinsicInst *LM : C.Lifetimes)
     LM->eraseFromParent();
-  for (GetElementPtrInst *G : Geps)
-    if (G->use_empty())
-      G->eraseFromParent();
-  if (A->use_empty())
-    A->eraseFromParent();
+  // Gep chains erase children-first: a parent gep is only use-free once its
+  // dependent geps are gone, so iterate to a fixpoint (discovery order lists
+  // parents before children — one pass would leak the parents).
+  SmallVector<GetElementPtrInst *, 4> Geps(C.Geps.begin(), C.Geps.end());
+  bool Erased = true;
+  while (Erased) {
+    Erased = false;
+    for (size_t i = 0; i < Geps.size(); ++i)
+      if (Geps[i]->use_empty()) {
+        Geps[i]->eraseFromParent();
+        Geps.erase(Geps.begin() + i);
+        Erased = true;
+        break;
+      }
+  }
+  if (C.A->use_empty())
+    C.A->eraseFromParent();
+}
+
+// Dominance-based CSE over the emitted `bitcast x86_fp80 -> i80` relabels.
+// After mem2reg the per-access loads collapse to shared SSA values, so sibling
+// extracts of the same value mint identical bitcasts; keeping one per
+// dominating position restores the Inc-1 single-relabel shape (one bitcast,
+// fanned out — the DAG-dedup-cleared form) and keeps the fdiml golden stable.
+void cseBitcasts(SmallVectorImpl<Instruction *> &Bcs, const DominatorTree &DT) {
+  // Emission order follows the alloca's user list, not program order, so the
+  // dominance test must run BOTH ways; only dominance-incomparable duplicates
+  // (sibling arms) survive.
+  SmallVector<Instruction *, 8> Live(Bcs.begin(), Bcs.end());
+  bool Changed = true;
+  while (Changed) {
+    Changed = false;
+    for (size_t i = 0; i < Live.size() && !Changed; ++i)
+      for (size_t j = i + 1; j < Live.size() && !Changed; ++j) {
+        Instruction *A = Live[i], *B = Live[j];
+        if (A->getOperand(0) != B->getOperand(0))
+          continue;
+        if (DT.dominates(A, B)) {
+          B->replaceAllUsesWith(A);
+          B->eraseFromParent();
+          Live.erase(Live.begin() + j);
+          Changed = true;
+        } else if (DT.dominates(B, A)) {
+          A->replaceAllUsesWith(B);
+          A->eraseFromParent();
+          Live.erase(Live.begin() + i);
+          Changed = true;
+        }
+      }
+  }
 }
 
 // Fold the all-constant cone a CLASSICAL (const-seed) union promotion exposes,
@@ -298,7 +882,7 @@ void promote(AllocaInst *A, StoreInst *Seed, Value *SeedVal,
 // dead-branch fold the PRD §5 depends on. This is EXACTLY the instcombine/
 // simplifycfg cleanup the f64 sibling gets for free at clang -O1 (SROA promotes
 // its union there, so the branches fold before cq-lowering ever runs); the fp80
-// union stays in memory past clang -O1, so the peephole must do it. Constant
+// union stays in memory past clang -O1, so the promotion must do it. Constant
 // folding is semantics-preserving and touches ONLY all-constant instructions —
 // a tainted (theta-derived) value is never all-constant, so the tainted isnan/
 // exponent control is left byte-untouched; only the classical dead branch
@@ -340,33 +924,98 @@ bool promoteFp80Union(Module &M, TaintSet &taint) {
     if (F.isDeclaration())
       continue;
     // Collect candidate allocas up front (analysis + rewrite mutate the IR).
-    SmallVector<AllocaInst *, 8> Candidates;
+    SmallVector<AllocaInst *, 8> Allocas;
     for (Instruction &I : F.getEntryBlock())
       if (auto *A = dyn_cast<AllocaInst>(&I))
-        Candidates.push_back(A);
-    bool PromotedInF = false;
-    for (AllocaInst *A : Candidates) {
-      StoreInst *Seed = nullptr;
-      Value *SeedVal = nullptr;
-      SmallVector<WordLoad, 4> Loads;
-      SmallVector<StoreInst *, 2> StoreBacks;
-      SmallVector<GetElementPtrInst *, 4> Geps;
-      SmallVector<IntrinsicInst *, 4> Lifetimes;
-      Status St = analyze(A, DL, taint, Seed, SeedVal, Loads, StoreBacks, Geps,
-                          Lifetimes);
-      if (St == Status::OffPattern)
-        continue;  // not the idiom — leave untouched (falls to kMsgStore).
-      if (St == Status::PaddingDecline) {
-        diagnoseFp80Padding(Seed);  // §4.1 loud fence; lower nothing.
-        continue;
+        Allocas.push_back(A);
+    if (Allocas.empty())
+      continue;
+
+    DominatorTree DT(F);
+    SmallPtrSet<BasicBlock *, 16> OnCycle;
+    collectCycleBlocks(F, OnCycle);
+
+    // Structural pass: keep only provable fp80 bit-pattern unions.
+    SmallVector<UnionCand, 4> Cands;
+    for (AllocaInst *A : Allocas) {
+      UnionCand C;
+      if (analyzeStructure(A, DL, C) && accessesAcyclic(C, OnCycle, DT) &&
+          accessesSeedDominated(C, DT)) {
+        markDeadInserts(C, DT);
+        Cands.push_back(std::move(C));
       }
-      promote(A, Seed, SeedVal, Loads, StoreBacks, Geps, Lifetimes);
-      Changed = PromotedInF = true;
     }
+
+    // Seed gate (fixpoint: dropping a candidate removes its reloads from the
+    // admissible cone of the others' re-seed values).
+    bool Dropped = true;
+    while (Dropped && !Cands.empty()) {
+      Dropped = false;
+      SmallPtrSet<const LoadInst *, 8> CandFpLoads;
+      for (const UnionCand &C : Cands)
+        for (const LoadInst *L : C.FpLoads)
+          CandFpLoads.insert(L);
+      for (size_t i = 0; i < Cands.size(); ++i) {
+        bool Ok = true;
+        for (StoreInst *S : Cands[i].FpStores)
+          if (!fpSeedValueOk(S->getValueOperand(), taint, CandFpLoads)) {
+            Ok = false;
+            break;
+          }
+        if (!Ok) {
+          Cands.erase(Cands.begin() + i);
+          Dropped = true;
+          break;
+        }
+      }
+    }
+    if (Cands.empty())
+      continue;
+
+    // The §4.1 fence: one whole-function walk over every candidate at once
+    // (divergence flows ACROSS unions — a word extracted from one union can be
+    // field-inserted into another, as in copysignl). A violation declines the
+    // WHOLE function's promotion, loudly; nothing is mutated.
+    if (const Instruction *Bad = PaddingWalk(Cands).run()) {
+      diagnoseFp80(const_cast<Instruction *>(Bad), kMsgFp80Padding);
+      continue;
+    }
+
+    // Canonicalize every candidate, then let LLVM's own mem2reg build the SSA.
+    SmallVector<Instruction *, 8> Bcs;
+    SmallVector<AllocaInst *, 4> Fresh;
+    for (UnionCand &C : Cands)
+      canonicalize(C, Bcs, Fresh);
+    assert(llvm::all_of(Fresh,
+                        [](AllocaInst *A) { return isAllocaPromotable(A); }) &&
+           "canonicalized fp80 union alloca must be promotable");
+    PromoteMemToReg(Fresh, DT);
+    cseBitcasts(Bcs, DT);
+    Changed = true;
+
+    // Inc-3 safety fence: no i80 value may cross a control merge (there is no
+    // i80 controlled copy). The f80-typed fresh alloca makes this impossible
+    // for mem2reg-built phis by construction; the scan is the defensive
+    // invariant behind that construction and also catches a pre-existing
+    // hand-written i80 phi in a function we just promoted. Diagnose loudly —
+    // opt exits non-zero, so the mutated module never ships.
+    bool I80Merge = false;
+    for (BasicBlock &BB : F) {
+      for (PHINode &P : BB.phis())
+        if (P.getType()->isIntegerTy(kFp80Bits)) {
+          diagnoseFp80(&P, kMsgFp80I80Merge);
+          I80Merge = true;
+          break;
+        }
+      if (I80Merge)
+        break;
+    }
+    if (I80Merge)
+      continue;
+
     // Collapse the classical-union dead branch (isnan(const) -> dead), so the
     // residual tainted control is PredMux-eligible (E6: all terminators tainted).
-    if (PromotedInF)
-      foldConstantConeAndBranches(F, DL);
+    foldConstantConeAndBranches(F, DL);
   }
   return Changed;
 }

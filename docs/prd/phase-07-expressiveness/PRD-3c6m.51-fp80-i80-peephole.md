@@ -135,8 +135,39 @@ handles both loads at -O1, just the residual offset-8 load at -O2 — one peepho
     pre-validating the Inc-3 template stream) + the `lowering_reject_i80_{add,sext,sitofp}.ll` invariants
     (add/sub/mul/xor/ashr/div/rem, sext, cross-domain still decline char-for-char).
 
-  - **Inc 3 — the multi-block union promotion** (the *proper implementation*; landing `scalbnl`/`ldexpl`/
-    `scalblnl`/`cbrtl` real goldens). **`canonicalize + PromoteMemToReg`** (Bennett's `sroa/mem2reg`-preprocess,
+  - **Inc 3 — the multi-block union promotion** (the *proper implementation*; landed `scalbnl`/`ldexpl`/
+    `scalblnl` real goldens — **DONE 2026-07-16, bd `3vdz`**; `cbrtl`'s union axis CLEARS but the cell
+    stays declined on the ORTHOGONAL volatile-const-LOCAL rounding idiom — the alloca sibling of the
+    3c6m.14 volatile-const-global fold, filed as a follow-up). Shipped exactly as scoped below, plus:
+    the §4.1 fence is the forward per-bit padding-taint walk (`PaddingWalk` in Fp80Union.cpp — content
+    landings, carry-upward, poison-flag guard with the zero-monotone or-disjoint/trunc-nuw/zext-nneg
+    acceptance proofs; every `exact` shift/div on a diverged operand DECLINES — over-safe by choice);
+    DEAD field-inserts are elided (Inc-1 parity — fdiml's golden stays
+    byte-identical, and every shipped i80 trace literal stays inside the 64-bit faithful print range of
+    the __int128 trace label); a dominance-CSE keeps one `bitcast f80->i80` relabel per SSA value;
+    PredMux's E4 gained the narrow i80 clauses (castInScope / i80BinaryInScope mirrors — the canonical
+    insert packs live inside claimed arms); and the i80-merge fence is a post-promotion `phi i80` scan
+    (`kMsgFp80I80Merge`). Fixtures: `lowering_fp80_union_{rmw,multiblock,crossunion,padding_flow,
+    dead_insert}.ll` + `lowering_reject_fp80_union_{padding_carry,padding_insert,i80_merge,loop,
+    unseeded_read,fpstore_off8}.ll` + `control_predmux_reject_i80_arm_op.ll`.
+
+    **Rule-13 clearance of record (2026-07-16, two rounds):** round 1 (7 lenses + 3-vote adversarial
+    refutation panels + completeness critic, 26 agents) CONFIRMED one verify-clean silent miscompile —
+    the dead-insert elision used intra-block lexical `comesBefore`, which erased a LIVE loop-carried
+    field-insert store-back (a loop-body load lexically before the store reads the previous iteration's
+    store via the back-edge; reproduced end-to-end at exit 0). FIX: the ACYCLIC+REACHABLE access gate
+    (`collectCycleBlocks` scc twin + `DT.isReachableFromEntry`; loop unions are Phase-7.3 scope and fall
+    to the loud kMsgStore) plus `isPotentiallyReachable`-based deadness (conservative-TRUE keeps stores
+    live). Round 2 (3 independent reviewers: re-attack incl. irreducible/self-loop/unreachable-cycle
+    probes + the original repro, regression envelope with golden re-derivation + mutation-tested decline
+    reasons, fresh code read) — CLEAN, 0 critical findings. Known accepted limitations (documented, not
+    defects): >64-bit i80 literals and sub-1e-6 fp literals print truncated in the trace label (the
+    deterministic gate-sequence contract; no shipped golden affected); duplicate decline diagnostics can
+    repeat across fixpoint turns in multi-function modules (opt exits non-zero on the first). Follow-ups:
+    bd `etiq` (volatile-const-LOCAL fold — the last cbrtl blocker), bd `szpr` (trace-verify the i80
+    field-insert `_unc` adjoints via a specialized-callee slice + the critic's minor hardening notes).
+
+    Original scope (implemented): **`canonicalize + PromoteMemToReg`** (Bennett's `sroa/mem2reg`-preprocess,
     §2): rewrite each union access to a full-width `x86_fp80` load/store on a fresh promotable alloca (the i80
     extract/field-insert kept LOCAL around each access), delete the original union, then call LLVM's own
     battle-tested `PromoteMemToReg` to build the phis — **NOT** a hand-rolled SSA construction. The cross-arm
