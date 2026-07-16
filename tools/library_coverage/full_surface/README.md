@@ -1,5 +1,43 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ ld80 RE-CENSUS at the -O1 ship floor (2026-07-16, bd 3c6m.51 epic).** The
+deferred re-census finally ran, at BOTH opt levels (`ld80_census.py` — the
+focused f80 runner; `CENSUS_OPTLEVEL=O1|O2` toggle added to `wprobe.py`; JSON in
+`ld80_census_{O1,O2}.json`). The methodology point is now MEASURED, not asserted:
+
+| opt level | ld80 COMPILES | note |
+|---|---|---|
+| **-O1 (ship floor)** | **5 / 41** | cbrtl, fdiml, ldexpl, scalblnl, scalbnl |
+| -O2 (probe default)  | 4 / 41 | fdiml drops → `L6 nested control` (instcombine threads its isnan nest) |
+
+So the ld80 half is **-O1-favored** (O2 UNDER-counts by 1: fdiml, and log10l
+re-buckets store↔spec). **-O1 is the authoritative floor.** The 41-cell f80
+surface is the epic's 37 target cells + 4 extras (exp2l, fmodl, remainderl,
+remquol — all corpus-gap "unknown callee"). Of the epic's **37: 5 compile, 32
+decline**, bucketed at -O1:
+
+| # | bucket | lever | cells (epic-37) |
+|---|---|---|---|
+| 13 | memory-store (Shadow) | mixed — off-pattern union / by-ref / volatile-runtime / integer-seeded | acoshl, acosl, asinhl, asinl, expl, expm1l, hypotl, **llroundl, lroundl** (int-seeded packs), **modfl** (by-ref), **nextafterl** (volatile runtime), log2l, tanhl |
+| 6 | unknown callee | **corpus/closure gap, NOT a compiler wall** — an inner reduction call the injection didn't resolve | cosl, erfcl, erfl, nexttowardl, sinl, tanl |
+| 7 | fp-copy/specialization | fp80 quantum-ARG to a specialized callee (vqlq handled the int-sig+internal-union case, NOT this) | atan2l, coshl, lgammal, log10l, powl, sinhl, tgammal |
+| 4 | loop-carried | Phase 7.3 (`799w`/`8h7d`) | atanhl, log1pl, logbl, logl |
+| 1 | L6 nested control | PredMux accept-shape (`q2wk`) | atanl |
+| 1 | control (flat/diamond) | frexp by-ref family (`3c6m.52`) | frexpl |
+
+Reading: only **~26 of the 37 sit behind genuine compiler levers** (13 store + 7
+spec + 4 loop + 1 nested + 1 control); **6 are corpus-completeness** (would need
+the missing reduction bodies just to measure their real blocker). The single
+biggest lever is the **memory-store (Shadow) 13** — but it is a MIX, not one
+capability: the 3c6m.51 fp80-union promotion already cleared the fp80-SEEDED RMW
+shape (the 5 that compile), and what remains is integer-seeded reload packs
+(`lroundl`/`llroundl`, PRD §"Later"), by-ref (`modfl`, `3c6m.52`/7.5),
+volatile-runtime (`nextafterl`, needs real volatile handling — NOT the etiq
+const-fold), and transcendentals whose store shape needs per-cell inspection
+(SHADOW is measured by decline fragment only). No C-physics walls (3c6m.50
+holds). REPRODUCE: `BC=/private/tmp/bc OPENLIBM=/private/tmp/openlibm
+CENSUS_OPTLEVEL=O1 python3 ld80_census.py`.
+
 **⚡ POST-etiq (2026-07-16):** the volatile-const-LOCAL fold shipped
 (`foldVolatileConstAllocaLoads` — the alloca sibling of the 3c6m.14
 volatile-const-global fold: single-`Constant`-store + dominated exact-type

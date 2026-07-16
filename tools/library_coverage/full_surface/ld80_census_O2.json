@@ -1,0 +1,207 @@
+{
+ "cosl.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "sinl.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "tanl.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "acosl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "asinl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "atanl.f80": {
+  "status": "decline",
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
+ },
+ "atan2l.f80": {
+  "status": "decline",
+  "bucket": "fp-copy/specialization",
+  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+ },
+ "coshl.f80": {
+  "status": "decline",
+  "bucket": "fp-copy/specialization",
+  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+ },
+ "sinhl.f80": {
+  "status": "decline",
+  "bucket": "fp-copy/specialization",
+  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+ },
+ "tanhl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "acoshl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "asinhl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "atanhl.f80": {
+  "status": "decline",
+  "bucket": "loop-carried",
+  "diag": "probe x86_fp80 (): cq loop lowering: loop-carried tainted value crosses iterations"
+ },
+ "expl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "exp2l.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "expm1l.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "logl.f80": {
+  "status": "decline",
+  "bucket": "loop-carried",
+  "diag": "probe x86_fp80 (): cq loop lowering: loop-carried tainted value crosses iterations"
+ },
+ "log10l.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "log2l.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "log1pl.f80": {
+  "status": "decline",
+  "bucket": "loop-carried",
+  "diag": "probe x86_fp80 (): cq loop lowering: loop-carried tainted value crosses iterations"
+ },
+ "logbl.f80": {
+  "status": "decline",
+  "bucket": "loop-carried",
+  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control"
+ },
+ "ldexpl.f80": {
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
+ },
+ "scalbnl.f80": {
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
+ },
+ "scalblnl.f80": {
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
+ },
+ "frexpl.f80": {
+  "status": "decline",
+  "bucket": "control (flat/diamond)",
+  "diag": "probe x86_fp80 (): cq controlled lowering: control flow under quantum control"
+ },
+ "modfl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "powl.f80": {
+  "status": "decline",
+  "bucket": "fp-copy/specialization",
+  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+ },
+ "cbrtl.f80": {
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
+ },
+ "hypotl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "erfl.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "erfcl.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "tgammal.f80": {
+  "status": "decline",
+  "bucket": "fp-copy/specialization",
+  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+ },
+ "lgammal.f80": {
+  "status": "decline",
+  "bucket": "fp-copy/specialization",
+  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+ },
+ "lroundl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe i64 (): cq taint escape: tainted value stored to memory"
+ },
+ "llroundl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe i64 (): cq taint escape: tainted value stored to memory"
+ },
+ "fmodl.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "remainderl.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "remquol.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "nextafterl.f80": {
+  "status": "decline",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+ },
+ "nexttowardl.f80": {
+  "status": "decline",
+  "bucket": "unknown callee (inner-call)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+ },
+ "fdiml.f80": {
+  "status": "decline",
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
+ }
+}

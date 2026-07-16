@@ -15,6 +15,15 @@ HERE = Path(__file__).resolve().parent
 # your scratch build (see README REPRODUCE); defaults to HERE for a self-hosted run.
 BC = Path(os.environ.get("BC", HERE/"bc"))
 OL = Path(os.environ.get("OPENLIBM", HERE/"openlibm"))
+# Inline-cleanup opt level for the post-link harness pass. DEFAULT O2 (the
+# historical census headline). Set CENSUS_OPTLEVEL=O1 to measure at the actual
+# ship floor (`clang -O1 -> cq-lowering`, no extra opt): for ld80 cells the O2
+# cleanup instcombine/simplifycfg-threads the isnan/exponent nest into a control
+# shape PredMux declines, so O2 UNDER-counts the -O1-favored long-double half
+# (README CENSUS METHODOLOGY; bd 3c6m.51 Inc-1 note). O0 is invalid (mem2reg
+# must run). Only O1/O2/O3/Os/Oz are accepted.
+CENSUS_OPTLEVEL = os.environ.get("CENSUS_OPTLEVEL", "O2")
+assert CENSUS_OPTLEVEL in ("O1","O2","O3","Os","Oz"), CENSUS_OPTLEVEL
 PASS = Path(os.environ.get("CQ_PASS",
             Path(__file__).resolve().parents[3]/"build/ir-pass/libCQPass.so"))
 INC = "-I%s -I%s -I%s -I%s" % (OL/"include", OL/"src", OL/"amd64", OL/"bsdsrc")
@@ -120,7 +129,7 @@ def probe(fn, retW, args, ti, defmap):
         if linked is None:
             return ("link-fail", err, src)
         inl = td/"inl.bc"
-        subprocess.run([OPT,"-passes=internalize,always-inline,globaldce,default<O2>,scalarizer,instcombine,dce",
+        subprocess.run([OPT,f"-passes=internalize,always-inline,globaldce,default<{CENSUS_OPTLEVEL}>,scalarizer,instcombine,dce",
                         "-internalize-public-api-list=probe","-inline-threshold=2000000",
                         str(linked),"-o",str(inl)], capture_output=True, text=True)
         ir = subprocess.run([DIS,str(inl),"-o","-"], capture_output=True, text=True).stdout
