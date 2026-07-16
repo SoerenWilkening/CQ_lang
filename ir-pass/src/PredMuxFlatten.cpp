@@ -339,7 +339,7 @@ bool topoOrderRegion(PredMuxRegion &R) {
 // The full E-ladder. Pure analysis; returns false to LEAVE (never diagnoses).
 bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
                    LoopInfo &LInfo, const SmallPtrSetImpl<BasicBlock *> &OnCycle,
-                   const TaintSet &Taint, PredMuxRegion &R) {
+                   const TaintSet &Taint, PredMuxRegion &R, bool ClaimAll) {
   BasicBlock *E = T->getParent();
   auto *Node = PDT.getNode(E);
   if (!Node || !Node->getIDom() || !Node->getIDom()->getBlock())
@@ -405,7 +405,12 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     Claim = NestedTainted || ClaimableRead || NumMergePhis >= 2 ||
             (NumMergePhis == 1 && SolePhiIncomings > 2);
   }
-  if (!Claim)
+  // ClaimAll (5po2 I2): inside a Bennett clone the anti-overlap witness is
+  // irrelevant (no top-level emitter runs there), so claim ANY acyclic SESE
+  // tainted value region — incl. the 2-incoming single-guard diamond a
+  // normalized single-early-return reduces to. The E2/E3/E4 gates below still
+  // apply, so a claimed region can never half-lower.
+  if (!ClaimAll && !Claim)
     return false;
 
   // --- E2: acyclic, not in/around a loop ------------------------------------
@@ -786,7 +791,7 @@ private:
 
 }  // namespace
 
-bool flattenPredMuxRegions(Module &M, TaintSet &Taint) {
+bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -809,7 +814,7 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint) {
       if (!isTaintedCtrlTerm(T, Taint))
         continue;
       PredMuxRegion R;
-      if (!recoverRegion(T, PDT, DT, LInfo, OnCycle, Taint, R))
+      if (!recoverRegion(T, PDT, DT, LInfo, OnCycle, Taint, R, ClaimAll))
         continue;  // leave: today's loud declines own it
       IRBuilder<> Builder(T);
       Builder.SetCurrentDebugLocation(T->getDebugLoc());

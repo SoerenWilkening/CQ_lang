@@ -1628,6 +1628,28 @@ add_test(NAME e2e-slice-specialize-twoarm-select
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_twoarm_caller.expected.log")
 
+# Phase 6 / issue 5po2 I2 (multi-exit controlled-return in a lifted fp80 clone —
+# the openlibm `expl`-family shape). spec_multiexit_lib.c `mini_expl`: two
+# classical-SENTINEL early returns (`if(x>MAX) return C; if(x<MIN) return C'`)
+# guarding a tainted fp80 fall-through reduction. Handed a tainted x86_fp80 arg it
+# lifts into __cq_q_mini_expl_1: `normalizeReturnMerge` + the scoped PredMux flatten
+# collapse the diamond to a nested select whose inner condition is the COMPOUND
+# `¬(x>MAX) ∧ ¬(x<MIN)` (a `cqrt_toffoli` conjunction of two fp80 fcmp leaf flags);
+# `lowerCloneSelect` mints that network FORWARD-ONLY, MATERIALIZES the sentinels
+# into leaked |const⟩ `cqrt_alloc_f80` rails, and emits the `cqrt_copy_f80_controlled`
+# XOR muxes; the Bennett wrap plays the SINGLE LIFO reverse (copy⁻¹, the self-inverse
+# toffoli, the fcmp/fmul/fma `_unc`s) and frees every proven-|0⟩ rail. LINK-proves
+# @__cq_q_mini_expl_1 + cqrt_copy_f80_controlled + cqrt_toffoli + the fp80 producer
+# `_unc` twins resolve and signature-match across llvm-link (Rules 2, 6, 13, 16).
+add_test(NAME e2e-slice-specialize-multiexit-fp80
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_multiexit_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_multiexit_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_multiexit_caller.expected.log")
+
 # Phase 6 / issue kmdc (5po2 fp widening): a fabs-shape FP TWO-ARM select in a
 # source-injected int->int helper (fp is internal scratch, reduced to i32 via the
 # libm producer ilogb). spec_fp_select_lib.c: `double x=(double)n; double a=(x<0)?

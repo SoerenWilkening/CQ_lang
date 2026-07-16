@@ -35,7 +35,19 @@ struct TaintSet;
 // fixpoint with `while (flattenPredMuxRegions(M, taint)) taint = propagate(…)`.
 // Reads `taint` only BEFORE its single mutation; the caller must re-propagate
 // before any other stage consumes taint again.
-bool flattenPredMuxRegions(llvm::Module &M, TaintSet &taint);
+//
+// `claimAll` (5po2 I2, default false) DROPS the W anti-overlap witness only:
+// with it set, ANY acyclic single-entry/single-exit tainted VALUE region is
+// claimed (incl. the 2-incoming single-guard diamond), not just the shapes the
+// top-level detection declines. It is passed true ONLY by `lowerCloneControl`,
+// which drives PredMux with the clone's DISJOINT `cloneTaint`: inside a
+// rotation-free Bennett clone the SwapRoute/4.4-select emitters do not run, so
+// EVERY tainted diamond must flatten and the anti-overlap witness is irrelevant.
+// The correctness gates (E2 acyclic, E3 SESE, E4/E6/E7 speculatable+mux-lowerable)
+// are UNCHANGED — `claimAll` relaxes only the witness. Module-level callers keep
+// the default so the top-level accept surface is byte-identical.
+bool flattenPredMuxRegions(llvm::Module &M, TaintSet &taint,
+                           bool claimAll = false);
 
 }  // namespace cq
 

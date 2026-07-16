@@ -2,10 +2,12 @@
 ; a shape-accepted fp select whose CONDITION tests a CLASSICAL param while the arms
 ; derive from a TAINTED param — a classical flag over quantum fp data, no proven
 ; lowering. The SpecializeReject shape gate is taint-blind; lowerCloneSelect
-; re-proves the condition AND BOTH arms tainted and loudly declines a mix.
+; re-proves that a tainted select has a TAINTED condition (5po2 I2 unified the int
+; and fp taint trichotomy into one message) and loudly declines a classical
+; condition over a quantum arm — the unforgivable mixed shape.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq specialization: mixed classical/quantum fp select under quantum lift
+; CHECK: error{{.*}}cq specialization: mixed classical/quantum select under quantum lift
 ; CHECK-NOT: cqrt_copy_f64_controlled
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

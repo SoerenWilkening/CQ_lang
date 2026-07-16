@@ -46,6 +46,22 @@ bool isInverseEmittable(const CallInst *Forward) {
   // Self-adjoint involutions: emitted as-is.
   if (Name == "cqrt_x" || Name == "cqrt_cswap")
     return true;
+  // `cqrt_toffoli(l,r,g)` / `cqrt_cnot(l,g)` join the involution family (5po2 I2):
+  // the compound-condition conjunction network a clone's controlled-return mux
+  // mints (`g ^= l&r` / `g ^= l`) is captured FORWARD-ONLY into the Bennett
+  // stream, and both are their own inverse — re-emitting the SAME call under the
+  // still-live controls returns the ancilla to |0>. Controls are read-only; the
+  // slots are control/data, so like `cqrt_cswap` they must never be fed a threaded
+  // `CurHandle` (moot — every direct caller passes CurHandle=null). The EXACT arity
+  // (3 / 2) is required — it fences the real VOID network gates from a synthetic
+  // NON-void same-named fake (`lowering_uncompute_uninvertible.ll`'s 1-arg i32
+  // `cqrt_cnot`), which stays un-invertible so the top-level uncompute still
+  // declines. Top-level SAFE regardless: the real gates are void, never tainted,
+  // never a data producer (`Uncomputation::isDataProducer`), so they never enter a
+  // recovered whole-DAG chain — this only enables the clone Bennett reverse.
+  if ((Name == "cqrt_toffoli" && Forward->arg_size() == 3) ||
+      (Name == "cqrt_cnot" && Forward->arg_size() == 2))
+    return true;
   // Phase 7.4 / issue dtzb (reachable ONLY via the 7.4 break whole-loop
   // reverse-play, y05j.2): the in-place value rail self-update
   // `cqrt_xorc_<W>(h, imm)` / `cqrt_addc_<W>(h, imm)` (arg_size 2, arg0 = the i32
@@ -168,7 +184,13 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // `cqrt_cswap`, its arg 0 is the FLAG/ctrl slot, so `CurHandle` must never be
   // threaded into it — moot for the uncompute driver (`emitInverseChain` passes
   // CurHandle=nullptr), the only caller that reaches a controlled copy.
-  if (Name == "cqrt_x" || Name == "cqrt_cswap" ||
+  // `cqrt_toffoli`/`cqrt_cnot` (5po2 I2) join this involution family: the
+  // compound-condition conjunction network minted forward-only in a clone's
+  // controlled-return mux is self-inverse (re-emit as-is under the live controls,
+  // zeroing the ancilla). Arg 0 is a control slot — never fed `CurHandle` (moot;
+  // the uncompute driver passes null).
+  if (Name == "cqrt_x" || Name == "cqrt_cswap" || Name == "cqrt_toffoli" ||
+      Name == "cqrt_cnot" ||
       (Name.starts_with("cqrt_copy_") && Name.ends_with("_controlled"))) {
     SmallVector<Value *, 3> Args(Forward->args());
     if (CurHandle && !Args.empty())

@@ -115,13 +115,6 @@ bool predictReturnTainted(Function *Callee, SpecMask Mask) {
   // caught by the loud mispredict guard in `buildClone`; an UNDER-prediction is
   // the broken module. A single-block callee's entry `ret` is found first, so its
   // result is byte-identical to the pre-I1 behavior.
-  SmallVector<Value *, 4> RetVals;
-  for (BasicBlock &BB : *Callee)
-    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
-      if (Value *RV = R->getReturnValue(); RV && !isa<Constant>(RV))
-        RetVals.push_back(RV);
-  if (RetVals.empty())
-    return false;  // void / non-ret terminators / all-constant returns → classical.
   SmallPtrSet<Value *, 16> Tainted;
   std::vector<Value *> WL;
   for (Argument &A : Callee->args())
@@ -138,9 +131,37 @@ bool predictReturnTainted(Function *Callee, SpecMask Mask) {
         WL.push_back(I);
     }
   }
-  for (Value *RV : RetVals)
-    if (Tainted.count(RV))
-      return true;
+  // (a) 5po2 I2 (Rule-13 CONFIRMED-finding fix): a return that is CONTROL-DEPENDENT
+  //     on a tainted branch — e.g. a CONSTANT returned only on `if(q>C) return K`, or
+  //     a merge-phi of constants under a tainted diamond — becomes a TAINTED data-mux
+  //     out rail in `lowerCloneSelect`, even though the constant itself is not
+  //     param-derived (a constant / const-phi is not a param user, so the forward
+  //     closure above never reaches it). UNDER-predicting classical made `cloneFor`
+  //     keep the fp return type while `lowerCloneSelect` minted an i32 handle → a
+  //     mistyped `ret` (a verify-DIRTY / broken module, exit 134). Over-approximate:
+  //     if ANY conditional terminator is tainted (a tainted-controlled diamond),
+  //     predict the return tainted. SOUND one-directional — an OVER-prediction is
+  //     caught by the `buildClone` fp-mispredict guards (a clean decline); an
+  //     UNDER-prediction is the broken module. Affects ONLY the fp-return rewrite
+  //     (`cloneFor` calls this solely when the return is a reversible-fp width; an
+  //     int/void return never consults it, so this is inert there).
+  for (BasicBlock &BB : *Callee) {
+    const Instruction *T = BB.getTerminator();
+    if (const auto *BI = dyn_cast<BranchInst>(T)) {
+      if (BI->isConditional() && Tainted.count(BI->getCondition()))
+        return true;
+    } else if (const auto *SW = dyn_cast<SwitchInst>(T)) {
+      if (Tainted.count(SW->getCondition()))
+        return true;
+    }
+  }
+  // (b) the param-derived return (the pre-I2 single-block / straight-line case). A
+  //     constant RV is never in `Tainted`, so the `!isa<Constant>` filter is
+  //     subsumed by the membership test.
+  for (BasicBlock &BB : *Callee)
+    if (auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      if (Value *RV = R->getReturnValue(); RV && Tainted.count(RV))
+        return true;
   return false;
 }
 
