@@ -323,28 +323,56 @@ void ensureTwin(Function *Clone) {
   synthUncomputeTwin(*Clone);
 }
 
+// Retarget `Site` to `Clone`. USUALLY `setCalledFunction` suffices — but when the
+// clone's RETURN type differs from the call's own result type (an fp-tainted return
+// rewritten to an i32 handle, bd 3c6m.54), the `CallInst`'s Value type is IMMUTABLE
+// (`setCalledFunction` updates only the called operand + FunctionType), so a stale
+// fp result would flow to the consumer (e.g. `cq_measure_f64` reads an fp, not an
+// i32 handle). Replace the call with a fresh i32-returning one and cross-type RAUW
+// the old fp result → the new i32 result (laundered by the downstream measure/op
+// lowering, exactly like the theta handle RAUW). The arg operands are carried
+// verbatim (a still-fp arg becomes its i32 handle later, via lowerRotations/
+// lowerOps — the same transient-mismatch the plain `setCalledFunction` arg path
+// already relies on). Updates `Site` in place to the live call.
+void retargetSite(CallInst *&Site, Function *Clone) {
+  if (Site->getType() == Clone->getReturnType()) {
+    Site->setCalledFunction(Clone);
+    return;
+  }
+  SmallVector<Value *, 8> Args(Site->args());
+  IRBuilder<> B(Site);
+  CallInst *NewCall = B.CreateCall(Clone, Args);
+  if (DebugLoc DL = Site->getDebugLoc())
+    NewCall->setDebugLoc(DL);
+  Site->replaceAllUsesWith(NewCall);  // cross-type: old fp result → new i32 handle.
+  NewCall->takeName(Site);
+  Site->eraseFromParent();
+  Site = NewCall;
+}
+
 // Forward decl — `buildClone` and `resolveSite` are mutually recursive (the
 // depth-first transitive worklist).
-SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M,
+SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &M,
                       WidthDispatch &wd, TaintSet &taint, SpecPlan &plan);
 
-// Get-or-create the clone for `(Callee, Mask)`, retarget `Site`, and return the
+// Get-or-create the clone for `(Callee, Mask)`, retarget `Site` (updating it in
+// place if the retarget rebuilt the call — see `retargetSite`), and return the
 // FINALIZED record. A cache HIT reuses an existing clone (C7) — and because the
 // drain is depth-first, every HIT reads a record whose `ReturnTainted` was
 // finalized before the recursion returned (closing the 6.2 drain-ordering hazard
 // the placeholder `ReturnTainted=false` would otherwise expose, [[6-3-drain-ordering-varargs-recheck]]).
-SpecRecord resolveSite(CallInst *Site, Function *Callee, SpecMask Mask, Module &M,
+SpecRecord resolveSite(CallInst *&Site, Function *Callee, SpecMask Mask, Module &M,
                        WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
   SpecKey Key{Callee, Mask};
   auto It = plan.Cache.find(Key);
   if (It != plan.Cache.end()) {
-    Site->setCalledFunction(It->second.Clone);
+    retargetSite(Site, It->second.Clone);
     return It->second;
   }
   return buildClone(Site, Callee, Mask, M, wd, taint, plan);
 }
 
-SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M,
+SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &M,
                       WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
   SpecKey Key{Callee, Mask};
   Function *Clone = cloneFor(SpecCandidate{Site, Callee, Mask});
@@ -352,6 +380,19 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
   plan.Cache[Key] = SpecRecord{Clone, false};
 
   TaintSet cloneTaint = seedClone(Clone, Mask);
+
+  // fp-ABI param HandleWidth (bd 3c6m.54): a tainted fp param rewritten to i32 in
+  // `cloneFor` carries an fp logical width the clone body needs when a CAST reads
+  // it directly (`getSrcTy()` reads the laundered i32; the width is recovered from
+  // `HandleWidth`, exactly the theta-handle mechanism RotationLowering uses). Record
+  // it here so `lowerOps` on the clone body resolves `fptrunc`/`bitcast fp<->i80`/…
+  // off an fp param to the correct `cq_template_<op>_f<W>_...` rather than declining.
+  for (unsigned i = 0, n = Callee->arg_size(); i < n; ++i) {
+    StringRef OrigW = abiWidthFromType(Callee->getArg(i)->getType());
+    if (Clone->getArg(i)->getType()->isIntegerTy(32) &&
+        abiWidthHasReversibleFpCopy(OrigW))
+      cloneTaint.HandleWidth[Clone->getArg(i)] = OrigW;
+  }
 
   // Depth-first transitive worklist (3.3): specialize each inner tainted-arg call
   // INSIDE this clone — and synthesize its uncompute twin — BEFORE this clone's
@@ -408,8 +449,33 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
       continue;
     }
 
+    CallInst *OldInner = Inner;
+    StringRef InnerOrigW = abiWidthFromType(Inner->getType());  // pre-rebuild width.
     SpecRecord Rec =
         resolveSite(Inner, InnerCallee, InnerMask, M, wd, taint, plan);
+    // fp-ABI intra-clone taint migration (bd 3c6m.54): if retargeting REBUILT the
+    // inner call (an fp-tainted return rewritten to an i32 handle), the fresh
+    // `CallInst` is a NEW value absent from THIS outer clone's `cloneTaint` —
+    // `seedClone` tainted the OLD, now-erased call. Without migration the outer
+    // body's ops read the inner result as UNTAINTED, so `ArithLowering` picks the
+    // wrong template shape (an i32 handle lands in an fp literal slot → a broken
+    // module, the Rule-13 finding). Mirror the module-level re-seed `specialize`
+    // does for a top-level rebuilt result: erase the stale entry, register the new
+    // call as a tainted i32 handle (carrying any `BirthOrder`), and record its fp
+    // logical width in `HandleWidth` so a later outer op/cast off it resolves the
+    // right `cq_template_*_f<W>`. The integer path never rebuilds
+    // (`setCalledFunction` keeps the pointer), so this is inert there.
+    if (Inner != OldInner) {
+      cloneTaint.Tainted.erase(OldInner);
+      if (auto BO = cloneTaint.BirthOrder.find(OldInner);
+          BO != cloneTaint.BirthOrder.end()) {
+        cloneTaint.BirthOrder[Inner] = BO->second;
+        cloneTaint.BirthOrder.erase(OldInner);
+      }
+      cloneTaint.Tainted.insert(Inner);
+      if (Rec.ReturnTainted && abiWidthHasReversibleFpCopy(InnerOrigW))
+        cloneTaint.HandleWidth[Inner] = InnerOrigW;
+    }
     if (Rec.ReturnTainted) {
       // A quantum-handle result, entangled with the borrowed inputs: the outer
       // wrap MUST uncompute it (via the twin) before freeing it, else freeing a
@@ -483,7 +549,38 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
   Value *RV = Ret ? Ret->getReturnValue() : nullptr;
   bool ReturnTainted = RV && cloneTaint.Tainted.count(RV);
   Value *ResultRail = ReturnTainted ? RV : nullptr;
-  StringRef RetW = abiWidthFromType(Clone->getReturnType());
+  // The copy-out width is the ORIGINAL callee return width (e.g. "f80"), NOT the
+  // clone's declared return type: a tainted fp return had its clone signature
+  // rewritten to i32 in `cloneFor`, so `Clone->getReturnType()` is i32, but the
+  // ResultRail is an fp-width quantum value that must copy out via `cqrt_copy_f<W>`
+  // (bd 3c6m.54). For an int/void return this equals the clone's own width.
+  StringRef RetW = abiWidthFromType(Callee->getReturnType());
+
+  // fp-ABI mispredict guard (bd 3c6m.54): `cloneFor` rewrote a reversible-fp
+  // return to an i32 handle ONLY when `predictReturnTainted` (a sound over-approx)
+  // said tainted. The single gap is a `predict==true`/`actual==false` mispredict —
+  // an inner tainted-arg clone that returns classical, feeding the whole return
+  // (unreachable in the always-inlined census cells: no inner calls). Then the
+  // clone declares i32 but the return value is a classical fp — a broken module.
+  // Decline LOUDLY, source-located, before any copy-out emission — never a silent
+  // miscompile (and, absent this guard, LLVM's own verifier rejects the mistyped
+  // `ret`; this house decline is the Rule-1 loud-and-located form). Over-decline
+  // is safe (Prime Directive): a classical-fp-return-with-fp-args clone is outside
+  // the shipped target shape.
+  if (!ReturnTainted && Clone->getReturnType()->isIntegerTy(32) &&
+      abiWidthHasReversibleFpCopy(RetW)) {
+    Clone->getContext().diagnose(DiagnosticInfoUnsupported(
+        *Clone,
+        "cq specialization: floating-point return-taint could not be proven "
+        "under quantum lift",
+        Ret ? Ret->getDebugLoc() : DebugLoc()));
+    // Retarget (keeping the call-site consistent so no SECONDARY crash precedes
+    // the DS_Error) and return; opt exits non-zero on the diagnostic and the
+    // module is rejected regardless of the clone's transient (broken `ret`) state.
+    plan.Cache[Key].ReturnTainted = ReturnTainted;
+    retargetSite(Site, Clone);
+    return SpecRecord{Clone, ReturnTainted};
+  }
 
   emitBennettWrap(*Clone, ForwardStream, ResultRail, ScratchRails, RetW, wd,
                   cloneTaint);
@@ -491,7 +588,12 @@ SpecRecord buildClone(CallInst *Site, Function *Callee, SpecMask Mask, Module &M
   // Finalize the record BEFORE returning — any later cache HIT (sibling or outer)
   // must read the true `ReturnTainted`, never the up-front placeholder.
   plan.Cache[Key].ReturnTainted = ReturnTainted;
-  Site->setCalledFunction(Clone);
+  retargetSite(Site, Clone);
+  // The rebuilt fp result's HandleWidth is recorded by the CALLER (the drain loop
+  // for an inner call, into `cloneTaint`; `specialize` for a top-level call, into
+  // module `taint` — covering the cache-hit path too), where the correct taint set
+  // and the pre-retarget fp width are in scope. Not here: `buildClone`'s `taint` is
+  // always the MODULE taint, wrong for an inner call.
   return SpecRecord{Clone, ReturnTainted};
 }
 
@@ -519,9 +621,21 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
   // and never grows here — inner specialization is the recursion, not a push.
   for (size_t i = 0; i < plan.Pending.size(); ++i) {
     SpecCandidate Cand = plan.Pending[i];
+    StringRef OrigW = abiWidthFromType(Cand.Site->getType());  // pre-retarget width.
     SpecRecord Rec =
         resolveSite(Cand.Site, Cand.Callee, Cand.Mask, M, wd, taint, plan);
     Retargeted.push_back({Cand.Site, Rec.ReturnTainted});
+    // fp-ABI result HandleWidth (bd 3c6m.54): a tainted fp return is an i32 handle
+    // at the call site (`retargetSite` rebuilt the call to i32), but its logical
+    // width is the ORIGINAL fp width captured above. Record it so a caller CAST off
+    // the result — `(int)coshl(q)` → `fptosi f<W> %r to i32` — recovers the fp
+    // source width (the theta-handle parity) instead of declining "no template for
+    // fptosi i32". Recorded HERE (not in `buildClone`) so BOTH the build AND the
+    // cache-HIT path are covered (a cache hit skips `buildClone` — the Rule-13
+    // cache-hit gap). A caller fp ARITH / MEASURE reads the width from its own type
+    // and never consults this; harmless there.
+    if (Rec.ReturnTainted && abiWidthHasReversibleFpCopy(OrigW))
+      taint.HandleWidth[Cand.Site] = OrigW;
   }
 
   // §2.7 return-taint re-seed. The original `propagate` conservatively tainted

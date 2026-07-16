@@ -119,6 +119,22 @@ bool widthHasReversibleCopy(llvm::StringRef w);
 // rail; the `starts_with("cqrt_copy_")` prefix admits a 2-arg fp copy).
 bool abiWidthHasControlledFpCopy(llvm::StringRef w);
 
+// True iff `w` is an fp ABI width that has an UNCONTROLLED reversible data-copy
+// `cqrt_copy_f<W>` — i.e. {f16,f32,f64,f80} (runtime `cq_runtime.h:285-288`, bd
+// 38t2). SAME width set as `abiWidthHasControlledFpCopy`, but this names the
+// UNcontrolled copy the Phase-6 specialization Bennett wrap uses to copy an
+// fp-tainted clone RETURN out to its |0> rail (bd 3c6m.54, the fp-ABI clone).
+// Consumed by the spec accept gates (`SpecializeReject` arg/return ABI) and
+// `WidthDispatch::copyFnClone`. Deliberately NOT `widthHasReversibleCopy` (whose
+// fp null IS the live f64-angle classifier for the select/switch/loop data-mux
+// paths — must not move) and NOT `widthHasQramCell` (which also admits the
+// integer cell widths i8/i16/i64 a spec return never uses). `f128`/unknown/
+// integer widths are false. The angle-safety fence stays: an fp value used as a
+// rotation arg-1 angle still declines (`declineTaintedAngle`), width-agnostic —
+// a clone body is rotation-free, and an escaping fp return is an i32 handle the
+// top-level angle fence backstops (see 3c6m.54 PRD §ANGLE-SAFETY).
+bool abiWidthHasReversibleFpCopy(llvm::StringRef w);
+
 // True iff `w` is a QRAM/Shadow memory CELL element width (bd 38t2): the integer
 // cell set {i1,i8,i16,i32,i64} PLUS the fp-as-bitpattern cell widths
 // {f16,f32,f64,f80}. A memory cell stores a basis BIT PATTERN, so an fp cell

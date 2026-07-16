@@ -286,6 +286,16 @@ bool abiWidthHasControlledFpCopy(StringRef w) {
   return w == "f16" || w == "f32" || w == "f64" || w == "f80";
 }
 
+bool abiWidthHasReversibleFpCopy(StringRef w) {
+  // {f16,f32,f64,f80} have an UNCONTROLLED `cqrt_copy_f<W>` (bd 38t2). SAME set as
+  // `abiWidthHasControlledFpCopy` above, but this names the UNcontrolled copy the
+  // Phase-6 specialization Bennett wrap uses for an fp-tainted clone RETURN's
+  // copy-out (bd 3c6m.54). Kept a distinct predicate so the spec-ABI intent is
+  // explicit and never coupled to the select-local controlled-copy fence. fp128 /
+  // integer / unknown widths are false — a spec clone with those declines FpAbi.
+  return w == "f16" || w == "f32" || w == "f64" || w == "f80";
+}
+
 bool widthHasQramCell(StringRef w) {
   // The QRAM/Shadow memory CELL element widths (bd 38t2): the integer cell set
   // {i1,i8,i16,i32,i64} PLUS the fp-as-bitpattern cell widths {f16,f32,f64,f80}.

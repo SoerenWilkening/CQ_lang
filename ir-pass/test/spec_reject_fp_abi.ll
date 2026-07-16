@@ -1,30 +1,30 @@
-; spec_reject_fp_abi.ll — Phase 6.4 WI-4.1: a TAINTED floating-point argument has
-; no reversible copy (`cqrt_copy_f*` does not exist — `cqrt-copy-abi-invariant`),
-; so a tainted arg that is not an i32 handle declines loudly (the per-Site arg-ABI
-; check (A), PRD §2.4/§2.11). Here a handle is `bitcast` to `float` before the
-; call, so the helper's tainted parameter arrives as `float`. The `bitcast` is
-; itself left un-lowered by CastLowering (out of scope — not a pointer/clone
-; concern), but DETECTION declines the specialization first. Recorded in
-; `plan6.Diagnosed`, so the carve-out does NOT also emit `kMsgUnknownCallee`.
+; spec_reject_fp_abi.ll — bd 3c6m.54: after the fp-ABI lift, a tainted arg of a
+; REVERSIBLE-fp width {f16,f32,f64,f80} is ADMITTED (see spec_accept_fp_arg_return.ll);
+; the residual FpAbi decline is a tainted arg of a width with NO reversible copy.
+; Here fp128 — `abiWidthFromType(fp128)` is empty (not shipped on this x86-64
+; build; the only sound c_type is a real 128-bit fp) so it is not in
+; `abiWidthHasReversibleFpCopy`, and the per-Site arg-ABI check (A) declines it.
+; Recorded in `plan6.Diagnosed`, so the carve-out does NOT also emit
+; `kMsgUnknownCallee`.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_measure_si32(i32)
+declare double @cq_theta_f64(double, double)
+declare double @cq_measure_f64(double)
 
-define i32 @helper(float %x) {
+define i32 @helper(fp128 %x) {
 entry:
-  %b = bitcast float %x to i32
-  %y = add i32 %b, 1
-  ret i32 %y
+  %t = fptosi fp128 %x to i32
+  ret i32 %t
 }
 
-define i32 @example(i32 %u0) {
+define i32 @example(double %u0) {
 entry:
-  %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %qf = bitcast i32 %q to float
-  %r = call i32 @helper(float %qf)
-  %z = call i32 @cq_measure_si32(i32 %r)
-  ret i32 %z
+  %q = call double @cq_theta_f64(double %u0, double 5.000000e-01)
+  %qe = fpext double %q to fp128
+  %r = call i32 @helper(fp128 %qe)
+  %z = call double @cq_measure_f64(double %q)
+  %zi = fptosi double %z to i32
+  ret i32 %zi
 }
 
 ; CHECK: error{{.*}}cq specialization: floating-point quantum argument or return has no reversible copy

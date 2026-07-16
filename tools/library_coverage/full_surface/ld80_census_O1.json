@@ -31,18 +31,18 @@
  },
  "atan2l.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+  "bucket": "control (flat/diamond)",
+  "diag": "atanl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "coshl.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+  "bucket": "control (flat/diamond)",
+  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "sinhl.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+  "bucket": "control (flat/diamond)",
+  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "tanhl.f80": {
   "status": "decline",
@@ -86,8 +86,8 @@
  },
  "log10l.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+  "bucket": "control (flat/diamond)",
+  "diag": "ldexpl x86_fp80 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "log2l.f80": {
   "status": "decline",
@@ -131,8 +131,8 @@
  },
  "powl.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+  "bucket": "control (flat/diamond)",
+  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "cbrtl.f80": {
   "status": "COMPILES",
@@ -156,13 +156,13 @@
  },
  "tgammal.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+  "bucket": "control (flat/diamond)",
+  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "lgammal.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "probe x86_fp80 (): cq specialization: floating-point quantum argument or return has no reversible copy"
+  "bucket": "control (flat/diamond)",
+  "diag": "logl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "lroundl.f80": {
   "status": "decline",

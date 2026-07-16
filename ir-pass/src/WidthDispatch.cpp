@@ -177,6 +177,25 @@ FunctionCallee WidthDispatch::copyFnCell(StringRef abiWidth) const {
                         false));
 }
 
+FunctionCallee WidthDispatch::copyFnClone(StringRef abiWidth) const {
+  // bd 3c6m.54 — the CLONE copy-out variant of copyFn. Mints the SAME
+  // `cqrt_copy_<W>` symbol (void(i32 src, i32 dst)) over the Phase-6 spec RETURN
+  // set: i32 (every int-return clone) PLUS the reversible-fp widths
+  // {f16,f32,f64,f80} (`abiWidthHasReversibleFpCopy`), for `emitBennettWrap`'s
+  // fp-tainted clone-return copy-out. CLONE-LOCAL: only the Bennett wrap calls it,
+  // so the fp admit never reaches the integer-only value-arm/select/switch/loop
+  // copy paths (which keep the shared `copyFn` integer null-fence — the live
+  // f64-angle classifier there). For i32 it is byte-identical to `copyFn`.
+  if (abiWidth != "i32" && !abiWidthHasReversibleFpCopy(abiWidth))
+    return FunctionCallee();
+  LLVMContext &Ctx = M.getContext();
+  return M.getOrInsertFunction(
+      ("cqrt_copy_" + abiWidth).str(),
+      FunctionType::get(Type::getVoidTy(Ctx),
+                        {Type::getInt32Ty(Ctx), Type::getInt32Ty(Ctx)},
+                        false));
+}
+
 FunctionCallee WidthDispatch::addcFn(StringRef abiWidth) const {
   // Signature: void(i32 h, <iW> imm) — in-place add of a classical immediate
   // (issue dtzb). The handle is i32 for every width (Rule 15); the immediate

@@ -20,7 +20,7 @@ decline**, bucketed at -O1:
 |---|---|---|---|
 | 13 | memory-store (Shadow) | mixed — off-pattern union / by-ref / volatile-runtime / integer-seeded | acoshl, acosl, asinhl, asinl, expl, expm1l, hypotl, **llroundl, lroundl** (int-seeded packs), **modfl** (by-ref), **nextafterl** (volatile runtime), log2l, tanhl |
 | 6 | unknown callee | **corpus/closure gap, NOT a compiler wall** — an inner reduction call the injection didn't resolve | cosl, erfcl, erfl, nexttowardl, sinl, tanl |
-| 7 | fp-copy/specialization | fp80 quantum-ARG to a specialized callee (vqlq handled the int-sig+internal-union case, NOT this) | atan2l, coshl, lgammal, log10l, powl, sinhl, tgammal |
+| 7 | fp-copy/specialization | fp80 quantum-ARG to a specialized callee (vqlq handled the int-sig+internal-union case) — **CLEARED by `3c6m.54`; these 7 re-bucket to `control (flat/diamond)` / `5po2`, see the POST-3c6m.54 banner** | atan2l, coshl, lgammal, log10l, powl, sinhl, tgammal |
 | 4 | loop-carried | Phase 7.3 (`799w`/`8h7d`) | atanhl, log1pl, logbl, logl |
 | 1 | L6 nested control | PredMux accept-shape (`q2wk`) | atanl |
 | 1 | control (flat/diamond) | frexp by-ref family (`3c6m.52`) | frexpl |
@@ -68,6 +68,27 @@ non-volatile compiles end-to-end). The Inc-1 §4.1 `everyUserMasksPadding` fence
 REPLACED by the forward per-bit walk, so trunc/add-then-mask chains (coshl-style)
 no longer over-decline on the fence — the remaining ld80 holds are RMW-loop/by-ref/
 control shapes, not the mask idiom.
+
+**⚡ POST-3c6m.54 (2026-07-16):** the **fp-ABI specialization gate is LIFTED** — a
+Phase-6 clone now admits an fp {f16,f32,f64,f80} quantum ARG and RETURN (rewriting
+the fp slots to i32 handles, Rule 15; copy-out via `cqrt_copy_f<W>`). The
+re-census (`ld80_census_O1.json`, same command) shows the **fp-copy/specialization
+bucket EMPTIED**: all 7 cells (`atan2l, coshl, lgammal, log10l, powl, sinhl,
+tgammal`) **advance one layer** to **control (flat/diamond)** — the census
+"working" (a masking gate peeled, the next blocker revealed). Their new decline is
+`InBodyControl` on the inner transcendental reduction the spec candidate calls
+(e.g. `coshl` → `expl x86_fp80(x86_fp80): callee contains tainted control flow
+under quantum lift` — `expl`'s overflow/underflow branches are multi-block, which
+`scanBody`'s single-block gate rejects). That deeper blocker is **in-clone control
+flow**, tracked by **`5po2`** (Phase-6 clone declines tainted control in the
+callee), NOT the fp-ABI gate. **COMPILES is UNCHANGED at 5/41** (no cell newly
+compiles from fp-ABI alone; no regression). The bucket table above re-buckets:
+`fp-copy/specialization 7 → 0`, `control (flat/diamond) 1 → 8` (the 7 + `frexpl`).
+The fp-ABI capability itself is proven end-to-end by the synthetic full-pipeline
+golden `e2e-spec-fp-arg` (a straight-line fp80 helper clones + links + runs — the
+Rule-2/16 link proof, since no real ld80 cell is straight-line enough to clear
+`5po2` yet). So the epic's ld80 "sits behind genuine levers" count shifts: the
+7-cell fp-copy lever is now a 7-cell **`5po2` in-clone-control** lever.
 
 **⚡ POST-3c6m.51 Inc 1 (2026-07-15):** the SHADOW lever (fp80 `union IEEEl2bits`
 bit-pattern memory) shipped for the READ-ONLY idiom — the `i80` intermediate width +

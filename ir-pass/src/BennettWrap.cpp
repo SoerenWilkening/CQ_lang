@@ -64,11 +64,18 @@ bool emitBennettWrap(Function &Clone, ArrayRef<CallInst *> ForwardStream,
   //     copy (`ResultRail` is null then).
   Value *Out = nullptr;
   if (ResultRail) {
+    // `RetAbiWidth` is the ORIGINAL callee return width — i32 for an int clone, or
+    // a reversible-fp width {f16,f32,f64,f80} for an fp-tainted return whose clone
+    // signature was rewritten to i32 (bd 3c6m.54). `copyFnClone` admits exactly
+    // that set ({i32} ∪ reversible-fp) and mints `cqrt_copy_<W>` (the width selects
+    // the symbol; both handles are i32). `allocFn` already admits fp. So an fp
+    // return allocs an fp |0> rail (`cqrt_alloc_f<W>(0.0)` → i32 handle) and copies
+    // the fp bit-pattern out via `cqrt_copy_f<W>`; the clone returns the i32 `Out`.
     FunctionCallee Alloc = wd.allocFn(RetAbiWidth);
-    FunctionCallee Copy = wd.copyFn(RetAbiWidth);
+    FunctionCallee Copy = wd.copyFnClone(RetAbiWidth);
     Type *WTy = wd.llvmWidthType(RetAbiWidth);
     if (!Alloc || !Copy || !WTy) {
-      diagnose(Ret, kMsgCloneNoCopy);  // fp/i128 return — gated earlier, defensive.
+      diagnose(Ret, kMsgCloneNoCopy);  // i128/i64/fp128 return — gated earlier, defensive.
       return false;
     }
     Out = B.CreateCall(Alloc, {Constant::getNullValue(WTy)}, "cqq.out");

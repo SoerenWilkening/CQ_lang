@@ -32,9 +32,25 @@ hazard is structurally absent**, on two independently-verified pillars:
 
 fp-select-in-clone is therefore **strictly safer** than the top-level fp select
 kjd1 already ships. **Load-bearing preconditions (re-review triggers):**
-**R1** the `RetW=="i32"` return gate must stay in force (it confines fp to
-clone-internal scratch); **R2** `scanBody` must keep rejecting rotations. Relaxing
-either re-arms the f64/angle miscompile family with no clone-local guard present.
+**R1** ~~the `RetW=="i32"` return gate must stay in force~~ **— SUPERSEDED by bd
+3c6m.54** (see below); **R2** `scanBody` must keep rejecting rotations. Relaxing
+**R2** re-arms the f64/angle miscompile family with no clone-local guard present.
+
+> **⚡ R1 UPDATE (bd 3c6m.54 — fp-ABI specialization).** The `RetW=="i32"` return
+> gate is **LIFTED**: an fp-return clone is now admitted (the fp return is copied
+> out to an i32 handle via `cqrt_copy_f<W>`, and the clone signature's fp slots are
+> rewritten to i32). R1's job — keep a raw fp value from crossing the clone boundary
+> toward a caller angle — is **superseded, not abandoned**: the escaping return is
+> now an **i32 handle**, and the top-level `declineTaintedAngle` /
+> `taintedAngleGate` fence declines it if a caller steers it into a rotation angle
+> (exactly the residual this doc anticipated: "even the returned i32 … is caught by
+> `taintedAngleGate`"). So an fp-select clone whose select result is the fp RETURN
+> now ACCEPTS (fixture `spec_accept_fp_select_return.ll`) and stays safe (fixture
+> `spec_reject_fp_return_used_as_angle.ll` proves the caller-angle decline). **R2
+> is now the SOLE clone-local load-bearing precondition.** The `{f32,f64}` select
+> width whitelist (R3) is independent of the ABI change and unchanged. See
+> `docs/prd/phase-06-call-graph-specialization/3c6m.54_FP_ABI_SPECIALIZATION.md`
+> §ANGLE-SAFETY.
 
 ## The mechanism
 

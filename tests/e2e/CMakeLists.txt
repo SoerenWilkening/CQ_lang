@@ -662,6 +662,21 @@ add_test(NAME e2e-spec-fp80-union
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp80_union_caller.expected.log")
 
+# bd 3c6m.54 — the fp-ABI specialization: a Phase-6 clone with an x86_fp80 quantum
+# ARG and RETURN. The i32-only FpAbi gate is lifted so a straight-line fp80 helper
+# `lpoly` clones with the fp80 arg/return rewritten to i32 handles (Rule 15), the
+# fp80 body lowered to `cq_template_f*_f80` producers, the result copied out via
+# `cqrt_copy_f80`, and the `_f80_unc` family Bennett-reverse-played. The only layer
+# that LINKS: proves the fp-ABI symbols resolve + signature-match (Rule 2/16).
+add_test(NAME e2e-spec-fp-arg
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_arg_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_arg_caller.expected.log")
+
 add_test(NAME e2e-slice-libm-real-lround
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

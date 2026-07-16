@@ -87,6 +87,15 @@ public:
   // `copyFn`. Byte-identical to `copyFn` for an integer width.
   llvm::FunctionCallee copyFnCell(llvm::StringRef abiWidth) const;   // @cqrt_copy_<W> (cell)
 
+  // bd 3c6m.54 — the Phase-6 specialization Bennett copy-out resolver: same
+  // `@cqrt_copy_<W>` symbol, over the spec RETURN set `{i32}` (int returns are
+  // gated to i32) ∪ fp `{f16,f32,f64,f80}` (`abiWidthHasReversibleFpCopy`). Used
+  // ONLY by `emitBennettWrap` to copy an fp-tainted clone return out to its |0>
+  // rail — the fp admit stays clone-local and never reaches the integer-only
+  // value-arm/select/switch/loop copy paths that gate on `copyFn`. Byte-identical
+  // to `copyFn` for i32.
+  llvm::FunctionCallee copyFnClone(llvm::StringRef abiWidth) const;  // @cqrt_copy_<W> (spec)
+
   // In-place reversible arithmetic — immediate operand (issue dtzb). Signature
   // `void cqrt_{addc,xorc}_<W>(i32 h, <iW> imm)`: the handle is i32 for every
   // width (Rule 15), the immediate carries the logical width type. INTEGER

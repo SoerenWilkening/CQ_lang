@@ -146,11 +146,18 @@ bool isLiftableSelect(const SelectInst *SI) {
 // |0> rail. SAFE despite the f64/angle miscompile family: a clone body is provably
 // ROTATION-FREE (scanBody rejects every `cq_theta`/`cq_phi`; buildClone never
 // lowers rotations), so there is no rotation arg-1 angle slot for the fp value to
-// reach — the top-level three-legged angle fence is VACUOUS here; the residual
-// (fp → a caller angle) is blocked by the `RetW == "i32"` return-ABI gate (an
-// fp-return clone declines `FpAbi`). Both are load-bearing preconditions (see the
-// kmdc PRD): do NOT relax the i32-return gate or admit a rotation into a lifted
-// body while fp selects are accepted.
+// reach — the top-level three-legged angle fence is VACUOUS here. The residual
+// (an fp select value → a CALLER angle) was originally blocked by kmdc's R1
+// `RetW == "i32"` return gate. bd 3c6m.54 LIFTED that gate (an fp-return clone is
+// now admitted), so R1 no longer applies — but the residual is still fenced,
+// SUPERSEDED not removed: an fp-tainted return is COPIED OUT to an i32 handle
+// (`cqrt_copy_f<W>`, never a raw fp value crossing the boundary), and if a caller
+// steers that handle into a rotation angle the top-level `declineTaintedAngle`
+// fence catches it (fixture spec_reject_fp_return_used_as_angle.ll). The remaining
+// load-bearing precondition is R2: `scanBody` MUST keep rejecting `cq_theta`/
+// `cq_phi` (a rotation admitted into a lifted body would re-arm the f64/angle
+// family with no clone-local guard). See the kmdc PRD (§ANGLE-SAFETY of the
+// 3c6m.54 PRD for the R1 supersession).
 //
 // Scoped tight (Prime Directive; first slice): scalar fp result restricted to an
 // EXPLICIT {f32,f64} whitelist (NOT `abiWidthHasControlledFpCopy`, which also
@@ -225,14 +232,27 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
     return SpecReject::InBodyControl;
   }
 
-  // (2) ABI return: a (possibly-tainted) return must have an integer i32
-  //     reversible copy. fp → null `copyFn` (the f64-angle trap, C10);
-  //     i128/vector/half → empty `abiWidthFromType`; non-i32 int → no i32-handle
-  //     representation. `void` is a classical no-output — exempt.
+  // (2) ABI return: a (possibly-tainted) return must have a reversible copy-out
+  //     to an i32 handle. Two admitted families (bd 3c6m.54):
+  //       * integer i32 (`wd.copyFn("i32")` — `cqrt_copy_i32`); and
+  //       * an fp width with an uncontrolled `cqrt_copy_f<W>`
+  //         (`abiWidthHasReversibleFpCopy` = {f16,f32,f64,f80}). A tainted fp
+  //         return copies out to an i32 handle in `emitBennettWrap` (clone-return
+  //         rewritten to i32); a classical fp return stays fp and is returned
+  //         verbatim (`predictReturnTainted` decides the signature — see
+  //         `cloneFor`). The escaping fp return is thus ALWAYS an i32 handle, so
+  //         the top-level `declineTaintedAngle` fence backstops any caller-angle
+  //         misuse (the f64-angle family; 3c6m.54 PRD §ANGLE-SAFETY).
+  //     Still declines FpAbi: fp128 / vector / half-of-nothing → empty or
+  //     non-reversible `abiWidthFromType`; non-i32 int (i16/i64/i128) → no
+  //     reversible i32-handle copy-out in the shipped scope. `void` is a classical
+  //     no-output — exempt.
   Type *RetTy = Callee->getReturnType();
   if (!RetTy->isVoidTy()) {
     StringRef RetW = abiWidthFromType(RetTy);
-    if (RetW.empty() || !wd.copyFn(RetW) || RetW != "i32") {
+    const bool IntI32 = RetW == "i32" && wd.copyFn(RetW);
+    const bool RevFp = abiWidthHasReversibleFpCopy(RetW);
+    if (!IntI32 && !RevFp) {
       WhereOut = Callee->getEntryBlock().getTerminator();
       return SpecReject::FpAbi;
     }
@@ -546,15 +566,28 @@ SpecReject classifyCandidate(const SpecCandidate &Cand, const TaintSet &taint,
   KindOut.clear();
 
   // (A) Per-Site argument ABI (Rule 15): the runtime handle is ALWAYS i32, so
-  //     every TAINTED argument (mask bit set) must arrive as an i32 handle. A
-  //     classical pass-through arg may be any width. This is the one check that
-  //     needs the call's concrete taint mask — it is verified for the top
-  //     candidate at detection and for every inner candidate at specialize-time
-  //     (each with its own real `(Site, mask)`).
+  //     every TAINTED argument (mask bit set) must have an i32-handle
+  //     representation. Two admitted families (bd 3c6m.54):
+  //       * an i32 value (already the handle type); and
+  //       * a reversible-fp value {f16,f32,f64,f80} (`abiWidthHasReversibleFpCopy`)
+  //         — a tainted `cq_theta_f<W>` result (or fp derivation) that lowers to an
+  //         i32 handle by the time `lowerRotations`/`lowerOps` run (specialize is
+  //         PRE-rotation, so the fp param slot is rewritten to i32 in `cloneFor`
+  //         and the caller's fp arg becomes the handle after the RAUW-to-handle).
+  //     Inside the clone the fp arg is only ever a template arg-0 DATA operand —
+  //     never a rotation angle (a clone body is rotation-free; `scanBody` rejects
+  //     every cq_theta/cq_phi), so the f64-angle family cannot arm here.
+  //     A classical pass-through arg (mask bit clear) may be any width. Still
+  //     declines FpAbi: a tainted i16/i64/i128 (no reversible i32-handle copy in
+  //     the shipped scope) and a tainted fp128/vector. This is the one check that
+  //     needs the call's concrete taint mask — verified for the top candidate at
+  //     detection and every inner candidate at specialize-time.
   for (unsigned i = 0, n = Cand.Site->arg_size(); i < n; ++i) {
     if (!(Cand.Mask & (SpecMask(1) << i)))
       continue;  // classical pass-through arg — any width is fine.
-    if (!Cand.Site->getArgOperand(i)->getType()->isIntegerTy(32)) {
+    Type *ArgTy = Cand.Site->getArgOperand(i)->getType();
+    if (!ArgTy->isIntegerTy(32) &&
+        !abiWidthHasReversibleFpCopy(abiWidthFromType(ArgTy))) {
       WhereOut = Cand.Site;
       return SpecReject::FpAbi;
     }
