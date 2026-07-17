@@ -64,6 +64,7 @@ add_library(CQPass MODULE
   src/IntrinsicLowering.cpp
   src/IOSinkLowering.cpp
   src/LoopLowering.cpp
+  src/LoopUnrollPrepass.cpp
   src/MeasureLowering.cpp
   src/NestedRouteEmit.cpp
   src/OpcodeLowering.cpp

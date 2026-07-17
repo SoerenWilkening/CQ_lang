@@ -143,12 +143,91 @@ is the natural first increment. Sequence:
   - Milestone: `expl candidates` → all 9; decline moves union→loop; a leaf GET_LDBL/SET_LDBL
     straight-line ld80 cell (if one exists) compiles at top-level.
 
-- **Inc 2 — Lever B (static-K force-unroll pre-pass).** New `LoopUnrollPrepass.cpp` (or fold into an
-  existing pre-pass file). SCEV-driven full-unroll of small known-constant-trip loops with the
-  799w-non-clobber fence. Red-green: `lowering_unroll_const_trip.ll` (a bounded tainted loop that
-  currently declines → unrolled → lowers) + a decline/skip probe (a 799w rolled-in-place loop stays
-  untouched; a non-constant-trip loop declines its existing way). Milestone: decline moves loop→
-  control/cast.
+- **Inc 2 — Lever B (static-K force-unroll pre-pass).** **DONE 2026-07-17** (ticket lf8s;
+  `LoopUnrollPrepass.{h,cpp}` + the shared `loopHasInPlaceRailStructure` predicate exported from
+  `LoopLowering.cpp`). The two §Lever-B design questions resolved:
+  - **Placement/gating (Q1).** The pre-pass runs in BOTH pipeline entry points AFTER the
+    promoteFp80Union + PredMux fixpoints and BEFORE `detectSpecializations` — NOT for the clone
+    alone: the census `expl` cell INLINES `@expl` into the tainted probe function, so the loops
+    the milestone needs sit in a TAINTED function and declined via `tryCaseA` X1 (`kMsgCrossIter`),
+    not the spec scan. The U7 relevance fence (a tainted value in-loop, OR the enclosing function
+    in the tainted-callee cone) therefore must read the SAME settled taint `detectSpecializations`
+    reads — the taint reaching a `__polevll` accumulator flows through Lever-A-promoted unions, so
+    a pre-fixpoint run would mis-classify the target as classical. The 799w-non-clobber gate is
+    STRUCTURAL, not positional (fence U1–U8, LoopUnrollPrepass.h): Case A needs an in-place rail
+    (in-loop `cq_*` gate — U2 — or dtzb add/xor self-update / zero-hop identity carry — U4, tested
+    by the SAME `inPlaceValueRailOperand`/`peelInPlaceBase` predicates `tryCaseA` claims with,
+    exported as `loopHasInPlaceRailStructure`); Case B needs an in-loop theta mint (U2);
+    `tryBreak`/Q1 need a tainted exit (U5, plus U6 — a theta-derived exit has no constant BTC).
+    U3 additionally keeps tainted in-loop CONTROL with its ControlDetect/d8jl owners (so e.g.
+    `control_predmux_leave_inloop.ll` — constant trip 3, no in-loop cq call — is untouched).
+    A 30-fixture flip audit confirmed ZERO existing fixtures change behavior. Each unroll re-runs
+    the PredMux fixpoint (a region containing the loop was cyclic-unclaimable; post-unroll it is
+    acyclic and claimable).
+  - **promoteFp80Union coupling (Q2).** One-directional and satisfied by construction: the unroll
+    DEPENDS on the promotion fixpoint having settled (taint through promoted unions, above); the
+    reverse direction is nil for expl — the polevll bodies contain only const-global loads +
+    fmuladd, no union access (spike-IR-verified), and 9/9 unions promote pre-unroll. A
+    hypothetical union-accessed-only-inside-a-const-trip-loop stays unpromoted (status-quo silent
+    drop → the existing loud decline) — noted as a possible 8h7d widening (re-run the fp80
+    fixpoint after unroll), NOT a regression.
+  - **The LCSSA lesson (found by red-green, Rule 12).** `llvm::UnrollLoop` rewrites exit values
+    through LCSSA phis; on a raw `-O1` loop whose result is used directly outside (the polevll
+    accumulator), unrolling WITHOUT `formLCSSARecursively` first remapped the out-of-loop use to
+    the FIRST iteration's value and folded the rest away — a verify-clean dropped-Horner-step
+    silent miscompile, caught by `lowering_unroll_const_trip.ll` on first contact (the feasibility
+    spike missed it because `opt -passes=loop-unroll-full` runs inside the loop-pass adaptor,
+    which forms LCSSA first). The claim sequence is `simplifyLoop` (the second polevll loop has NO
+    preheader — its entry pred is the first loop's exiting block) → `formLCSSARecursively` →
+    `UnrollLoop(Count = exact trip, Runtime=false, PreserveLCSSA=true)`, requiring `FullyUnrolled`
+    (U6's max==exact witness pins the internal `CompletelyUnroll`).
+  - Fixtures: `lowering_unroll_const_trip.ll` (positive — trip-2 Horner over an internal-constant
+    table with the loop-carried coefficient-pointer phi and `!llvm.loop.unroll.disable`, which the
+    UnrollLoop UTILITY never reads — that metadata is unroll-PASS cost-model input, which is why
+    calling the utility directly overrides openlibm's marker) +
+    `lowering_unroll_reject_dynamic_trip.ll` / `lowering_unroll_reject_overmax_trip.ll` (the same
+    body, argument-bounded / trip-100 → `kMsgCrossIter` char-for-char) +
+    `lowering_unroll_leave_caseA_rail.ll` (THE 799w sentinel: constant-trip dtzb xor rail — every
+    fence but U4 passes — must stay rolled-in-place with ONE `cqrt_xorc`; the pre-existing 799w
+    fixtures are all argument-bounded, so this is the only constant-bound rail pin) +
+    `lowering_unroll_leave_identity_carry.ll` (U4(b) zero-hop peel).
+  - Milestone MET: the census `expl` cell moves `loop-carried tainted value crosses iterations` →
+    `value-arm swap-route under quantum control` (loop→control verbatim); all six polevll loop
+    instances (4 inlined-in-probe + 2 in `@expl` via the cone) unroll (trips 2/3); coshl/sinhl
+    unchanged (the floorl-diamond spec-scan control gate — the Lever-C frontier). BONUS: atanhl /
+    logl / log1pl also move loop-carried → `L6 nested control` (their log-kernel polynomial loops
+    are the same class). COMPILES 5/41 unchanged, 0 regressions.
+  - **Rule-13 clearance (6-lens adversarial board, 2 Fable cores + 4 opus, 2-skeptic verify).**
+    ONE CONFIRMED BLOCKING find (both skeptics reproduced): the fence was blind to
+    **tainted-operand MEMORY ops** — a const-trip loop doing tainted-index gep/load/store with no
+    cq call and no add/xor rail evaded U1–U8, unrolled, and (read shape) SILENTLY converted the
+    rolled form's loud L3 `kMsgQramLoop` decline into an unreviewed `cqrt_qram_*` accept, or
+    (Shadow store shape) routed into a LATENT `lowerShadowMemory` use-after-free crash (that
+    straight-line crash is pre-existing — reachable without Lever B — filed as bd `gyc9`).
+    FIXED as **U2b** (any gep / mayReadFromMemory / mayWriteToMemory instruction with a tainted
+    operand → skip; the memory analog of U3, mirroring `markIfIterationLocal`'s L3 walk;
+    classical `@P`/`@Q` coefficient loads unaffected) + fixtures
+    `lowering_unroll_leave_qram_read_loop.ll` / `lowering_unroll_leave_shadow_store_loop.ll`
+    pinning the L3 decline char-for-char. Also hardened from the board's mutate-on-skip note:
+    **U3 now requires every in-loop terminator be a `br`** (a switch latch made `UnrollLoop` bail
+    AFTER the simplifyLoop/formLCSSA mutation — the residue was adjudicated identically, but the
+    tightening keeps the claim path residue-free). 7 other findings REFUTED by both skeptics
+    (mutate-then-decline paths land on the identical pre-change diagnostics; the wrong-trip-count
+    family verified clean across trips 1/2/8, wrapping-i8 stride-2, 2×2 nests, with the fixture
+    output byte-identical to the manually-unrolled program's lowering). The fix delta was then
+    itself re-reviewed independently (memcpy / inttoptr-laundered / pointer-select / switch-body
+    probes all decline-to-decline with A/B classical controls proving no over-exclusion): the
+    access class CLEAR, but ONE residual same-class find — a DEAD tainted-SIZE `alloca` (neither
+    gep nor mayRead/Write) evaded U2b and rode `UnrollLoop`'s internal trivially-dead cleanup
+    past the escape guard (unitary-equivalent — the deleted consumer was dead and
+    side-effect-free — but an unreviewed decline→accept conversion). Closed by adding
+    `AllocaInst` to the U2b class (+ `lowering_unroll_leave_alloca_tainted_size.ll` pinning the
+    escape-guard decline char-for-char). A possible hardening follow-on for the owner (8h7d):
+    invert U2b to a tainted-operand WHITELIST (arith/cmp/cast/phi/select/br only), which would
+    close the same DCE channel for every other dead tainted consumer class by construction —
+    weighed against Rule-17 over-exclusion risk, not done in this increment. Post-fix: full lit
+    821+1 XFAIL, ctest 173/173, e2e re-run green, census byte-identical to the pre-fix Lever-B
+    result (the fences cost the milestone nothing).
 
 - **Inc 3 — Lever C (compose + land coshl).** `fptosi` cast coverage if needed; confirm/ widen
   `lowerCloneControl` for expl's control graph; the fp-ABI spec + I2 control compose. Milestone:

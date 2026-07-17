@@ -1496,6 +1496,39 @@ void markIfIterationLocal(Loop *L, TaintSet &taint, LoopInfo &LI) {
 
 }  // namespace
 
+// Shared with the Lever-B force-unroll pre-pass (LoopUnrollPrepass.cpp, ticket
+// lf8s — fence U4; contract in LoopPlan.h). Lives HERE so the disjointness gate
+// calls the very predicates `tryCaseA` claims with (`inPlaceValueRailOperand`,
+// `peelInPlaceBase`) instead of a re-implementation that could drift (Rule 14).
+bool loopHasInPlaceRailStructure(
+    Loop *L, const TaintSet &taint,
+    const SmallPtrSetImpl<CallInst *> &GateCalls) {
+  // (a) A tainted in-place-shaped `add`/`xor` self-update ANYWHERE in the loop
+  // (dtzb). Even one whose rail lives OUTSIDE `L` matters: unrolling would
+  // duplicate it, flipping the sibling rail's linear-lineage fan-out count
+  // (the kMsgRailFanout guard) — over-skipping here is the safe direction.
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB)
+      if (auto *BO = dyn_cast<BinaryOperator>(&I))
+        if (inPlaceValueRailOperand(BO, taint))
+          return true;
+  // (b) A tainted header phi whose latch incoming peels in-place back to the
+  // phi itself — the Case-A claim seed (`tryCaseA` Risk 2), including the
+  // zero-hop identity carry `phi [x, pre], [%self, latch]` that (a) misses.
+  BasicBlock *Latch = L->getLoopLatch();
+  if (!Latch)
+    return true;  // multi-latch: unproven shape — report rail-structured.
+  for (PHINode &P : L->getHeader()->phis()) {
+    if (!taint.Tainted.count(&P))
+      continue;
+    for (unsigned i = 0, e = P.getNumIncomingValues(); i != e; ++i)
+      if (P.getIncomingBlock(i) == Latch &&
+          peelInPlaceBase(P.getIncomingValue(i), GateCalls, taint) == &P)
+        return true;
+  }
+  return false;
+}
+
 void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // The collected rotation call sites — the in-place-gate wire vocabulary the
   // peel + closure consult (same seed as `declineClassicalMuxes`).

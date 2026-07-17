@@ -32,12 +32,14 @@
 #ifndef CQ_IRPASS_LOOP_PLAN_H_
 #define CQ_IRPASS_LOOP_PLAN_H_
 
+#include "llvm/ADT/SmallPtrSet.h"  // loopHasInPlaceRailStructure (set param)
 #include "llvm/ADT/StringRef.h"  // LoopBreakRegion::RailWidth (by-value member)
 
 namespace llvm {
 class Module;
 class Loop;
 class BasicBlock;
+class CallInst;
 class Value;
 class PHINode;
 }  // namespace llvm
@@ -120,6 +122,23 @@ struct LoopBreakRegion {
 // values) is left byte-identical. Wired in BOTH pipeline entry points
 // (twin-pipeline parity is mandatory, WI-1.12).
 void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+
+// Shared 799w/dtzb rail-structure predicate for the Lever-B force-unroll
+// pre-pass (LoopUnrollPrepass.cpp, ticket lf8s — fence U4). True iff `L`
+// carries IN-PLACE rail structure the rolled-in-place owner's vocabulary
+// recognizes: (a) a tainted in-place-shaped `add`/`xor` self-update
+// (`inPlaceValueRailOperand` — the dtzb bijection family) anywhere in `L`'s
+// blocks, or (b) a tainted header phi whose latch incoming peels through
+// in-place gates back to the phi itself (`peelInPlaceBase` — the Case-A claim
+// seed, including the zero-hop identity carry). Defined in LoopLowering.cpp so
+// it CALLS the same predicates `tryCaseA` claims with — the disjointness gate
+// is the shared code path, not a re-implementation that could drift (Rule 14).
+// Conservative: an unproven shape (no single latch) reports true (the caller
+// skips; over-skipping is the safe direction). `GateCalls` is the collected
+// theta+phi vocabulary, the same seed `lowerLoops` builds.
+bool loopHasInPlaceRailStructure(
+    llvm::Loop *L, const TaintSet &taint,
+    const llvm::SmallPtrSetImpl<llvm::CallInst *> &GateCalls);
 
 // Phase 7.4 Increment 2 (epic y05j) — the POST-LOWERING reverse-play stage.
 // Wired AFTER `lowerOps`/`lowerRotations` in BOTH pipeline entry points (PRD-7.4

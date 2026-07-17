@@ -61,13 +61,13 @@
  },
  "atanhl.f80": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq loop lowering: loop-carried tainted value crosses iterations"
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
  },
  "expl.f80": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq loop lowering: loop-carried tainted value crosses iterations"
+  "bucket": "other: probe x86_fp80 (): cq controlled lowering: value-a",
+  "diag": "probe x86_fp80 (): cq controlled lowering: value-arm swap-route under quantum control"
  },
  "exp2l.f80": {
   "status": "decline",
@@ -81,8 +81,8 @@
  },
  "logl.f80": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq loop lowering: loop-carried tainted value crosses iterations"
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
  },
  "log10l.f80": {
   "status": "decline",
@@ -96,8 +96,8 @@
  },
  "log1pl.f80": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq loop lowering: loop-carried tainted value crosses iterations"
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
  },
  "logbl.f80": {
   "status": "decline",

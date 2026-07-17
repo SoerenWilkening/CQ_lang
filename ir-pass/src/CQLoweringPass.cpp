@@ -11,6 +11,7 @@
 #include "Fp80Union.h"
 #include "IOSinkLowering.h"
 #include "LoopPlan.h"
+#include "LoopUnrollPrepass.h"
 #include "MeasureLowering.h"
 #include "OpcodeLowering.h"
 #include "PredMuxFlatten.h"
@@ -160,6 +161,31 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // block identity crossing an erasure (Rule 9).
   while (flattenPredMuxRegions(M, taint))
     taint = propagate(M, wd);
+
+  // bd 3c6m.55 Inc 2 (Lever B, ticket lf8s) — static-K force-unroll pre-pass
+  // (LoopUnrollPrepass.cpp): a PROVEN-constant-trip loop with no cq-family
+  // call, no tainted control, and no 799w/dtzb in-place rail structure (the
+  // openlibm `__polevll` Horner loops, kept rolled at -O1 by
+  // `!llvm.loop.unroll.disable`) is fully unrolled to the straight-line form
+  // the substrate already lowers. Runs HERE — after the fp80-union + PredMux
+  // fixpoints (the relevance fence must read the SAME settled taint
+  // `detectSpecializations` reads: the taint reaching a polevll accumulator
+  // flows through Lever-A-promoted unions) and BEFORE `detectSpecializations`
+  // (the spec-scan and the later clone must see the unrolled body) and
+  // `lowerLoops` (a claimed loop is gone before `tryCaseA` would X1-decline
+  // it; the fence is structurally disjoint from every rolled-in-place claim —
+  // see the U1–U8 gate proof in LoopUnrollPrepass.h). ACCEPT-ONLY: an
+  // off-fence loop is byte-untouched for its existing loud owner. One loop per
+  // iteration + a full re-propagate (the PredMux precedent — the unroll erases
+  // loop phis and clones body instructions, so `taint` is stale until
+  // re-propagated); each unroll re-runs the PredMux fixpoint, since a region
+  // that contained the loop (cyclic — PredMux never claims it) is acyclic and
+  // claimable once the loop is gone.
+  while (unrollConstTripLoops(M, taint)) {
+    taint = propagate(M, wd);
+    while (flattenPredMuxRegions(M, taint))
+      taint = propagate(M, wd);
+  }
 
   // Phase 6 specialization PRE-PASS (C-Plan, DD-1): pure analysis by SSA
   // identity, BEFORE `declineTaintEscapes`, so the carve-out's membership test
@@ -403,6 +429,23 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     onlyInF(taint.ThetaCalls);
     onlyInF(taint.PhiCalls);
     onlyInF(taint.MeasureCalls);
+  }
+
+  // bd 3c6m.55 Inc 2 (Lever B) — static-K force-unroll fixpoint, mirrored in
+  // this entry point too (twin-pipeline parity is MANDATORY, WI-1.12) — see
+  // run() for the post-fixpoints / pre-`detectSpecializations` placement
+  // rationale and the nested PredMux re-run.
+  while (unrollConstTripLoops(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.MeasureCalls);
+    while (flattenPredMuxRegions(M, taint)) {
+      taint = propagate(M, wd);
+      onlyInF(taint.ThetaCalls);
+      onlyInF(taint.PhiCalls);
+      onlyInF(taint.MeasureCalls);
+    }
   }
 
   // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point
