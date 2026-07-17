@@ -1,18 +1,18 @@
 {
  "cosl.f80": {
   "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
  },
  "sinl.f80": {
   "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
  },
  "tanl.f80": {
   "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
  },
  "acosl.f80": {
   "status": "decline",
@@ -25,14 +25,14 @@
   "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
  },
  "atanl.f80": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "atan2l.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "atanl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memo"
+  "bucket": "control (flat/diamond)",
+  "diag": "atanl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "coshl.f80": {
   "status": "exit0-spec:['expl']",
@@ -70,9 +70,9 @@
   "diag": "probe x86_fp80 (): cq controlled lowering: value-arm swap-route under quantum control"
  },
  "exp2l.f80": {
-  "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "expm1l.f80": {
   "status": "COMPILES",
@@ -157,12 +157,12 @@
  "tgammal.f80": {
   "status": "decline",
   "bucket": "fp-copy/specialization",
-  "diag": "stirf x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsu"
+  "diag": "sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsup"
  },
  "lgammal.f80": {
   "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "logl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
+  "bucket": "fp-copy/specialization",
+  "diag": "sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsup"
  },
  "lroundl.f80": {
   "status": "COMPILES",

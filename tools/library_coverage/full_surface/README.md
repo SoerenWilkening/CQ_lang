@@ -1,5 +1,29 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ DATA-SYMBOL CLOSURE + corpus completion (2026-07-18, bd 20xt).** The census
+was UNDER-MEASURING: `closure_link` chased undefined *functions* only, so
+data-only TUs never linked — ld80 atanl/asinl/acosl keep their coefficient
+tables in `ld80/invtrig.c` (`_ItL_atanhi`/`_ItL_atanlo`/`_ItL_aT`), which also
+silently failed to *build* (the corpus loop lacked `-I "$OLA"`; five ld80 files
+affected, see the Reproduce section). Tables stayed `external [0 x x86_fp80]`
+with no initializer: constant-address coefficient reads could not const-fold
+and tainted-index reads could not classify (`matchQramAccess` needs
+isConstant+hasInitializer+N>0) → fake first blockers. `wprobe.py` now closes
+over data symbols (build_defmap indexes global definitions; undefined_syms
+includes `@sym = external`); corpus recipe fixed. **ld80 @O1: COMPILES 11/41 →
+13/41** — `atanl` (the "L6 nested control" bucket was the measurement artifact;
+hand-verified LINK+RUN, 619-line trace, 2 QROM tables via the E4' claim, 0
+double-frees) and `exp2l` (s_exp2l.bc was one of the silent build failures)
+both flip; coshl/sinhl stay `COMPILES (spec-clone)`. Re-buckets to REAL
+blockers: cosl/sinl/tanl → the shared `rem_pio2l` Shadow store
+(e_rem_pio2l.h:141); erfl/erfcl → `@llvm.fshl.i32` consumption (the harness
+instcombine fuses `(ix<<16)|(i0>>16)` into a funnel shift the pass has no
+template for — a 7.1 opcode-surface axis, possibly census-model-only; measure
+at plain -O1 before scoping); atan2l → clone-control (its inner atanl's fp
+selects + table reads under spec, see bd 20xt); lgammal → now declines on the
+newly-linked `sinl` body. Remaining "unknown callee" cells are the accepted
+BSD-header corpus gaps (fmodl/remquol/remainderl/nexttowardl).**
+
 **⚡ ld80 RE-CENSUS at the -O1 ship floor (2026-07-16, bd 3c6m.51 epic).** The
 deferred re-census finally ran, at BOTH opt levels (`ld80_census.py` — the
 focused f80 runner; `CENSUS_OPTLEVEL=O1|O2` toggle added to `wprobe.py`; JSON in
@@ -181,13 +205,37 @@ harness (`peel_census.py` etc.) is inert without it (falls back to first-blocker
 ## Reproduce
 ```bash
 # 1. corpus (one-time source fetch; NOT a runtime dep)
+#    clang here MUST be the LLVM-19 one (/usr/local/opt/llvm@19/bin/clang) — a
+#    newer system/Xcode clang writes bitcode LLVM-19 llvm-dis cannot read.
+#    -I "$OLA" (the openlibm ROOT) is LOAD-BEARING (bd 20xt, 2026-07-18): ld80
+#    files include "ld80/invtrig.h"-style root-relative paths; without it FIVE
+#    ld80 files (invtrig, e_fmodl, s_exp2l, s_remquol, s_truncl) silently fail
+#    (the 2>/dev/null swallows it) and the census then MASKS real blockers —
+#    invtrig.c is the DATA-ONLY TU holding the atanl/asinl/acosl coefficient
+#    tables (_ItL_*), so atanl mis-bucketed as "L6 nested control" when it
+#    actually COMPILES once the tables are linked.
 git clone --depth 1 https://github.com/JuliaMath/openlibm <scratch>/openlibm
 OLA=<scratch>/openlibm; mkdir <scratch>/bc
 for c in $OLA/src/*.c $OLA/bsdsrc/*.c $OLA/ld80/*.c; do   # ld80 = long double bodies
   clang -g -O1 -fno-builtin -emit-llvm -c \
-    -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
+    -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
     "$c" -o <scratch>/bc/$(basename ${c%.c}).bc 2>/dev/null   # INLINE -I flags: zsh does
 done                                                          # NOT word-split unquoted $INC
+#   s_cosl/s_sinl/s_tanl need the BSD M_PI constants (same trick as b_tgamma in
+#   1b below) — without them the trig trio drops out and cosl/sinl/tanl census
+#   as a spurious "unknown callee":
+for b in s_cosl s_sinl s_tanl; do
+  clang -g -O1 -fno-builtin -DM_PI=3.14159265358979323846 -DM_PI_2=1.57079632679489661923 \
+    -DM_PI_4=0.78539816339744830962 -emit-llvm -c \
+    -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
+    "$OLA/src/$b.c" -o <scratch>/bc/$b.bc
+done
+#   STILL-FAILING (accepted residual corpus gaps, bd 20xt): e_fmodl.c,
+#   s_remquol.c, s_truncl.c need BSD <machine/ieee.h> (struct ieee_ext /
+#   EXT_FRAC*BITS) which openlibm does not vendor for this target — fmodl /
+#   remquol (and remainderl, which calls remquol) stay "unknown callee".
+#   There is NO s_nexttowardl.c (needs an alias shim like ldexp's; it would
+#   land on nextafterl's volatile-runtime blocker anyway).
 
 # 1b. CORPUS-GAP CLOSURES (bd 3c6m.50 Step 0c) — three openlibm public names are
 #     minted by the build's symbol aliasing, which the raw -emit-llvm corpus build

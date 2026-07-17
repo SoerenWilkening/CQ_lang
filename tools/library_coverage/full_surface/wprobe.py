@@ -37,6 +37,16 @@ W = {
     "sll": ("long long",   "cq_theta_sll", "cq_measure_sll", "2"),
 }
 
+# bd 20xt (2026-07-18): the closure resolves DATA symbols too, not just
+# functions. ld80 atanl/asinl/acosl keep their coefficient tables in a
+# data-only TU (ld80/invtrig.c: _ItL_atanhi/_ItL_atanlo/_ItL_aT/_ItL_pi_lo);
+# a function-only closure left them `external [0 x x86_fp80]` with NO
+# initializer, so the harness O1 cleanup could not const-fold the
+# constant-address coefficient reads and the pass could not classify the
+# tainted-index reads (matchQramAccess requires isConstant+hasInitializer+N>0)
+# — the census then reported a fake first blocker (spec-scan "memory access")
+# and MASKED the real one. Under-linking under-measures (Rule 18: a library
+# function means its SOURCE, injected — the tables ARE the source).
 def build_defmap():
     defmap = {}
     for b in sorted(BC.glob("*.bc")):
@@ -46,13 +56,22 @@ def build_defmap():
             continue
         for m in re.finditer(r'^define[^@]*@([A-Za-z0-9_.$]+)\b', ir, re.M):
             defmap.setdefault(m.group(1), []).append(b)
+        # data definitions: '@sym = <qualifiers> (global|constant) ...' with no
+        # 'external' qualifier before the global/constant keyword.
+        for m in re.finditer(r'^@([A-Za-z0-9_.$]+) = ([^\n]*)', ir, re.M):
+            sym, rest = m.group(1), m.group(2)
+            if 'external' not in rest.split('constant')[0].split('global')[0]:
+                defmap.setdefault(sym, []).append(b)
     return defmap
 
 def undefined_syms(bc):
     ir = subprocess.run([DIS, str(bc), "-o", "-"], capture_output=True, text=True).stdout
     decl = set(re.findall(r'^declare[^@]*@([A-Za-z0-9_.$]+)\b', ir, re.M))
     dfn  = set(re.findall(r'^define[^@]*@([A-Za-z0-9_.$]+)\b', ir, re.M))
-    return decl - dfn
+    # undefined data: '@sym = external ...' (a global declaration)
+    gdecl = set(m.group(1) for m in re.finditer(r'^@([A-Za-z0-9_.$]+) = external', ir, re.M))
+    gdfn  = set(m.group(1) for m in re.finditer(r'^@([A-Za-z0-9_.$]+) = (?!external)', ir, re.M))
+    return (decl - dfn) | (gdecl - gdfn)
 
 def closure_link(probe_bc, defmap, wd):
     linkset, seen = [probe_bc], {probe_bc}
