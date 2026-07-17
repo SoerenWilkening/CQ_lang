@@ -105,7 +105,26 @@ The levers are gated by declines in this order at the spec-callee scan: **union 
 → control/cast (C)**. But for OBSERVABLE frontier advance, Lever A moves the decline union→loop, so A
 is the natural first increment. Sequence:
 
-- **Inc 1 — Lever A (fp80-union-web coverage).** Sub-staged:
+- **Inc 1 — Lever A (fp80-union-web coverage).** **DONE 2026-07-17** (1a commit `0e699fa`;
+  1b/1c/1d this increment). Outcome: expl promotes **9/9** unions (coshl module promotes
+  **all 37** module-wide); the O1 census moves 10 cells with 0 regressions — `expl` itself
+  now `loop-carried` (the union→loop milestone verbatim), coshl/sinhl →
+  `control (flat/diamond)` (the spec-scan hits the floorl diamond before the polevll loops —
+  same Lever B/C frontier), tanhl/expm1l → `L6 nested control`, modfl +3 → control buckets;
+  COMPILES stays 5/41 (no leaf cell newly compiles — every remaining GET/SET cell carries
+  control/loops behind the unions, so the "leaf cell golden" clause is vacuous). 1c resolved
+  as predicted: the sign-extract promotes free once seeded (the shl-48 clears divergence
+  before the `ashr exact` guard; zero-divergence short-circuit precedes the flag check).
+  Implementation notes vs the plan: (b) needed a cycle-safe gep/phi/select pointer
+  resolution (`isConstGlobalFpLoad` — the Horner coefficient pointer is a loop-carried phi,
+  not a direct gep); (c) landed as a wide-mode-only transparent case for any
+  BinaryOperator/CastInst/CmpInst (the post-promotion sibling-union extract web feeds select
+  CONDITIONS through icmp/add/trunc chains — the fp-only whitelist could never close the
+  web); (d) = `Reconstruct` packs in `analyzeStructure` + the `packDefinednessOk` P1/P2
+  proof (P1 dominating-insert coverage of [0,80) per reload; P2 uncovered-bit and-mask kill
+  per word load), packs always OPPORTUNISTIC. Fixtures: seed_constglobal /
+  seed_mutableglobal_drop / signextract / reject_signextract_partial / reconstruct_pack /
+  reject_pack_{partial,unmasked,storeafter}. Sub-stages as planned:
   - **1a. Seed-cascade: curated pure fp intrinsics** as transparent `fpSeedValueOk` ops (fmuladd/fma
     + the Rule-18 keep-set). Strict-predicate care: the shipped strict predicate must stay
     byte-identical (add intrinsics to BOTH modes only if a tainted-through-intrinsic seed is genuinely

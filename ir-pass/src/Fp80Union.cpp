@@ -48,6 +48,18 @@
 // ⊆ real poison, a sound refinement. Every `exact` shift/division on a
 // diverged operand DECLINES (over-safe; the zero-monotone argument would also
 // cover `lshr exact`, but the code keeps the uniform decline).
+//
+// THE §4.4 PACK GATE (bd 3c6m.55 Lever A.1d): a second accepted idiom — the
+// INTEGER-SEEDED reconstruct pack (floorl SET_LDBL_WORDS: no fp80 seed store;
+// word inserts build the value from scratch; the fp80 reload is the terminal).
+// Definedness is proven structurally by packDefinednessOk (P1: every reload's
+// significant bits covered by DOMINATING inserts; P2: a word load's uncovered
+// significant bits must die in a constant `and` mask in every user), while the
+// §4.1 walk keeps owning divergence exactly as above. Packs always classify
+// OPPORTUNISTIC — a walk failure drops them silently, never a new loud
+// decline. Seed admissibility (fpSeedValueOk) itself is widened per bd 3c6m.55
+// Lever A.1a/1b/1c: curated pure fp intrinsics (both modes), const-global fp
+// loads + the pure-dataflow reload web (widened mode only).
 
 #include "Fp80Union.h"
 
@@ -130,6 +142,12 @@ struct UnionCand {
   SmallVector<WordStore, 2> Inserts;     // iN store-backs (LIVE field-inserts OK)
   SmallVector<GetElementPtrInst *, 4> Geps;
   SmallVector<IntrinsicInst *, 4> Lifetimes;
+  // bd 3c6m.55 Inc 1 (Lever A.1d): an integer-seeded SET_LDBL reconstruct pack
+  // — NO fp80 seed store; the words build the value from scratch and the fp80
+  // reload is the terminal (openlibm floorl `SET_LDBL(u, manl, manh, expsign)`
+  // then `return u.e`). Gated by packDefinednessOk (P1/P2) instead of
+  // accessesSeedDominated, and ALWAYS classified opportunistic.
+  bool Reconstruct = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -229,11 +247,21 @@ bool analyzeStructure(AllocaInst *A, const DataLayout &DL, UnionCand &C) {
       }
     }
   }
-  // The target idiom is fp80-SEEDED: at least one full-width fp80 store. The
-  // integer-seeded reload packs (lroundl SET_LDBL_WORDS — words building a
-  // value from scratch, reading partially-undefined content before any seed)
-  // are a DISTINCT shape and stay declined.
-  return !C.FpStores.empty();
+  // Two accepted idioms. (1) fp80-SEEDED: at least one full-width fp80 store —
+  // every access is then value-defined via accessesSeedDominated. (2) Lever
+  // A.1d integer-seeded RECONSTRUCT PACK: no fp80 store at all; word inserts
+  // build the value from scratch and an fp80 reload is the terminal
+  // (floorl/lroundl SET_LDBL_WORDS). The pack carries its own definedness
+  // proof (packDefinednessOk P1/P2) in place of seed domination. An alloca
+  // with neither shape (a pure integer scratch slot, or a read-only union
+  // never written) is not the fp80 bit-pattern idiom.
+  if (!C.FpStores.empty())
+    return true;
+  if (!C.FpLoads.empty() && !C.Inserts.empty()) {
+    C.Reconstruct = true;
+    return true;
+  }
+  return false;
 }
 
 // Blocks that sit on any CFG cycle (any non-trivial SCC, or a self-loop).
@@ -293,6 +321,83 @@ bool accessesSeedDominated(const UnionCand &C, const DominatorTree &DT) {
   return true;
 }
 
+// Lever A.1d — the §4.4 definedness proof for a RECONSTRUCT pack (the
+// replacement for accessesSeedDominated, which packs cannot satisfy: there is
+// no fp80 seed store). The fp80 reload observes ALL 80 significant bits, and a
+// partially-written pack reaching it would read undefined bytes as a definite
+// value — the silent-miscompile core this proof exists to fence. Two legs:
+//
+//   P1 (all-words-defined-before-reload): for EVERY fp80 reload, the
+//   significant bits [0,80) must be fully covered by word inserts that
+//   DOMINATE the reload (instruction-level dominance — every execution
+//   reaching the reload has run every covering store). The model value the
+//   promoted reload produces is then exactly the packed real value; the
+//   monotone §4.1 walk independently catches any DIVERGED word landing in the
+//   pack (an insert whose value carries padding taint marks ContentD and the
+//   reload declines), so P1 only needs definedness, not divergence.
+//
+//   P2 (masked pre-load): a word LOAD of the pack may read significant bits
+//   no dominating insert has defined (the floorl RMW pre-load of the
+//   expsign word: `load i64 @8; and -65536` keeps only the would-be padding).
+//   Real execution reads stack garbage there; the promoted model reads the
+//   mem2reg reaching value (undef). Sound only if the bits can never be
+//   observed: every USER of such a load must be an `and` with a constant mask
+//   that zeroes EVERY uncovered significant bit — the divergence dies in the
+//   mask (0 in both model and real), before any flag-carrying or observable
+//   op. Anything else declines the pack (stays in memory, existing declines).
+//   NOTE this refinement (`and undef, C == and garbage, C` on the masked
+//   bits) relies on PromoteMemToReg materializing the never-stored pre-state
+//   as UNDEF, not POISON (`and poison, C` would stay poison). True on the
+//   MANDATORY LLVM 19 (mem2reg inserts UndefValue; CMake FATAL_ERRORs on any
+//   other LLVM) — re-verify this if the toolchain floor ever moves.
+//
+// Bits at storage positions >= 80 are NOT P2's concern: those are the padding
+// bytes the §4.1 walk already taints at every straddle read (always-on).
+bool packDefinednessOk(const UnionCand &C, const DominatorTree &DT) {
+  // P1 — every fp80 reload fully covered by dominating inserts.
+  for (const LoadInst *L : C.FpLoads) {
+    APInt Cov = APInt::getZero(kFp80Bits);
+    for (const WordStore &S : C.Inserts) {
+      unsigned Lo = static_cast<unsigned>(S.ByteOff * 8);
+      if (Lo >= kFp80Bits || !DT.dominates(S.Store, L))
+        continue;
+      Cov.setBits(Lo, std::min(Lo + S.Bits, kFp80Bits));
+    }
+    if (!Cov.isAllOnes())
+      return false;
+  }
+  // P2 — uncovered significant bits of any word load die in every user's mask.
+  for (const WordLoad &W : C.Loads) {
+    unsigned BitOff = static_cast<unsigned>(W.ByteOff * 8);
+    if (BitOff >= kFp80Bits)
+      continue;  // pure-padding read — straddle-tainted, the walk owns it.
+    unsigned Sig = std::min(W.Bits, kFp80Bits - BitOff);  // significant window
+    APInt Uncov = APInt::getBitsSet(W.Bits, 0, Sig);
+    for (const WordStore &S : C.Inserts) {
+      if (!DT.dominates(S.Store, W.Load))
+        continue;
+      unsigned SLo = static_cast<unsigned>(S.ByteOff * 8), SHi = SLo + S.Bits;
+      // Clear the overlap of the insert's field with the load window, in the
+      // loaded value's bit coordinates.
+      for (unsigned i = 0; i < Sig; ++i)
+        if (BitOff + i >= SLo && BitOff + i < SHi)
+          Uncov.clearBit(i);
+    }
+    if (Uncov.isZero())
+      continue;
+    for (const User *U : W.Load->users()) {
+      auto *BO = dyn_cast<BinaryOperator>(U);
+      if (!BO || BO->getOpcode() != Instruction::And)
+        return false;
+      Value *Other = BO->getOperand(BO->getOperand(0) == W.Load ? 1 : 0);
+      auto *CM = dyn_cast<ConstantInt>(Other);
+      if (!CM || !(CM->getValue() & Uncov).isZero())
+        return false;
+    }
+  }
+  return true;
+}
+
 // DEAD field-insert detection (Inc-1 parity): a store-back that no load ever
 // observes is ERASED rather than canonicalized into an RMW pack. A load
 // OBSERVES the store iff execution can flow from the store to the load —
@@ -334,6 +439,53 @@ void markDeadInserts(UnionCand &C, const DominatorTree &DT) {
   }
 }
 
+// bd 3c6m.55 Inc 1 (Lever A.1b): a scalar-fp load from READ-ONLY CONSTANT
+// GLOBAL memory (the openlibm `__polevll` Horner coefficient tables `@P`/`@Q`)
+// is a constant-rooted classical value — morally a `Constant` that LLVM merely
+// cannot fold because the element index is dynamic (the loop-carried
+// `phi ptr [@P,..],[gep i8 %p,16,..]`). The load's pointer must resolve —
+// through gep (any classical indices) / phi / select, cycle-safe — ONLY to
+// `GlobalVariable` roots that are `isConstant()` with a definitive initializer
+// (immutable by LLVM semantics: no store can alias them, so no diverged union
+// content and no re-interpreted bit pattern can ever flow through the load).
+// A TAINTED such load (the 7.5 QROM read at a quantum index) short-circuits at
+// the taint check above long before this leaf, so the QROM lowering path is
+// untouched; volatile/atomic loads are excluded (`isSimple`) — the volatile
+// const-global fold runs earlier and owns those.
+bool isConstGlobalFpLoad(const LoadInst *L) {
+  if (!L->isSimple() || !L->getType()->isFloatingPointTy())
+    return false;
+  SmallVector<const Value *, 8> Work{L->getPointerOperand()};
+  SmallPtrSet<const Value *, 8> Seen;
+  while (!Work.empty()) {
+    const Value *P = Work.pop_back_val();
+    if (!Seen.insert(P).second)
+      continue;
+    P = P->stripPointerCastsAndAliases();
+    if (auto *GV = dyn_cast<GlobalVariable>(P)) {
+      if (!GV->isConstant() || !GV->hasDefinitiveInitializer())
+        return false;
+      continue;
+    }
+    if (auto *GEP = dyn_cast<GEPOperator>(P)) {
+      Work.push_back(GEP->getPointerOperand());
+      continue;
+    }
+    if (auto *Phi = dyn_cast<PHINode>(P)) {
+      for (const Value *In : Phi->incoming_values())
+        Work.push_back(In);
+      continue;
+    }
+    if (auto *Sel = dyn_cast<SelectInst>(P)) {
+      Work.push_back(Sel->getTrueValue());
+      Work.push_back(Sel->getFalseValue());
+      continue;
+    }
+    return false;  // any other pointer producer — not provably constant memory.
+  }
+  return true;
+}
+
 // Whether an fp80-store VALUE is admissible: tainted (the theta-derived
 // quantum cell), a Constant (the classical isnan(const) union — folds to dead
 // code after promotion), or derived purely from scalar fp dataflow over fp80
@@ -359,9 +511,14 @@ void markDeadInserts(UnionCand &C, const DominatorTree &DT) {
 // loud kMsgFp80Padding surface.
 bool fpSeedValueOk(Value *Root, TaintSet &taint,
                    const SmallPtrSetImpl<const LoadInst *> &CandFpLoads,
-                   bool AdmitArgDerived) {
+                   bool AdmitArgDerived, const Value **WhyNot = nullptr) {
   SmallVector<Value *, 8> Work{Root};
   SmallPtrSet<Value *, 16> Seen;
+  auto fail = [&](const Value *V) {
+    if (WhyNot)
+      *WhyNot = V;
+    return false;
+  };
   while (!Work.empty()) {
     Value *V = Work.pop_back_val();
     if (!Seen.insert(V).second)
@@ -373,18 +530,25 @@ bool fpSeedValueOk(Value *Root, TaintSet &taint,
     if (auto *L = dyn_cast<LoadInst>(V)) {
       if (CandFpLoads.count(L))
         continue;
-      return false;
+      // Lever A.1b (see isConstGlobalFpLoad above): a coefficient-table read
+      // from immutable constant-global memory. Widened mode only — the strict
+      // predicate stays byte-identical to the shipped rule, so a walk failure
+      // on such a candidate drops it silently (today's outcome) instead of
+      // widening the loud kMsgFp80Padding surface.
+      if (AdmitArgDerived && isConstGlobalFpLoad(L))
+        continue;
+      return fail(V);
     }
     auto *I = dyn_cast<Instruction>(V);
     if (!I)
-      return false;  // an Argument (strict mode) or other non-instruction root.
+      return fail(V);  // an Argument (strict mode) or other non-instruction root.
     switch (I->getOpcode()) {
     case Instruction::SIToFP:
     case Instruction::UIToFP:
       // vqlq: the int->fp seed conversion (`(long double)a`). Widened mode
       // only — the strict predicate stays byte-identical to the shipped rule.
       if (!AdmitArgDerived)
-        return false;
+        return fail(V);
       for (Value *Op : I->operands())
         Work.push_back(Op);
       break;
@@ -420,9 +584,31 @@ bool fpSeedValueOk(Value *Root, TaintSet &taint,
             Work.push_back(Op);
           break;
         }
-      return false;
+      return fail(V);
     default:
-      return false;
+      // bd 3c6m.55 Inc 1 (Lever A.1c reload-web): in WIDENED mode only, any
+      // pure dataflow op — binary arithmetic/logic, cast, compare — is
+      // transparent. This is the post-promotion extract web of a SIBLING
+      // union: once union A promotes (an earlier fixpoint round), union B's
+      // seed cone reads A's exponent word through `bitcast f80->i80` +
+      // `lshr/trunc/zext/and` + `icmp` feeding a `select` condition (the
+      // openlibm expl k-scaling / ldexpl exponent tests). Each is a pure total
+      // function of its operands, so admissibility reduces to the operands —
+      // the SAME cleared argument as `FMul`/`fmuladd` (the seed gate is a
+      // scope classifier; promotion never moves or duplicates the op; the
+      // §4.1 walk owns padding soundness and is monotone-safe under a larger
+      // candidate set). The STRICT predicate stays byte-identical: every
+      // wide-admitted candidate classifies OPPORTUNISTIC, so a walk failure
+      // drops it silently (today's outcome) — never a new loud decline.
+      // Memory/control/call ops (load handled above, store/br/invoke/...) are
+      // never BinaryOperator/CastInst/CmpInst, so they still fail here.
+      if (AdmitArgDerived &&
+          (isa<BinaryOperator>(I) || isa<CastInst>(I) || isa<CmpInst>(I))) {
+        for (Value *Op : I->operands())
+          Work.push_back(Op);
+        break;
+      }
+      return fail(V);
     }
   }
   return true;
@@ -783,14 +969,17 @@ Value *extractWord(IRBuilder<> &B, Value *Bc, uint64_t ByteOff, unsigned Bits) {
   Type *I80 = Bc->getType();
   unsigned BitOff = static_cast<unsigned>(ByteOff * 8);
   unsigned Meaningful = BitOff >= kFp80Bits ? 0 : std::min(Bits, kFp80Bits - BitOff);
+  Type *DstTy = IntegerType::get(Ctx, Bits);
+  if (Meaningful == 0)
+    return ConstantInt::get(DstTy, 0);  // wholly padding (walk proved masked) —
+                                        // return BEFORE minting the shift: a
+                                        // BitOff >= 80 lshr would be a dead
+                                        // poison-producing instruction.
   Value *Sh = Bc;
   if (BitOff > 0)
     Sh = B.CreateLShr(Bc, ConstantInt::get(I80, BitOff), "u_hi");
-  Type *DstTy = IntegerType::get(Ctx, Bits);
   if (Meaningful >= Bits)
     return B.CreateTrunc(Sh, DstTy, "u_word");
-  if (Meaningful == 0)
-    return ConstantInt::get(DstTy, 0);  // wholly padding (walk proved masked).
   Value *M = B.CreateTrunc(Sh, IntegerType::get(Ctx, Meaningful), "u_mean");
   return B.CreateZExt(M, DstTy, "u_word");  // padding bits modelled as 0.
 }
@@ -966,6 +1155,9 @@ bool foldConstantConeAndBranches(Function &F, const DataLayout &DL) {
 
 bool promoteFp80Union(Module &M, TaintSet &taint) {
   const DataLayout &DL = M.getDataLayout();
+  // Debug lever (bd 3c6m.55; env-gated, no behavior change): per-alloca
+  // candidate/seed/walk trace for the fp80-union frontier work.
+  const bool Dbg2 = ::getenv("CQ_FP80_DBG2") != nullptr;
   // bd szpr hardening — the whole promotion's byte arithmetic (the offset-8
   // expsign straddle, the [10,16) padding range, the 128-bit canonical slot)
   // assumes the x86-64 f80:128 layout: x86_fp80 stored in a 16-byte slot with
@@ -995,8 +1187,19 @@ bool promoteFp80Union(Module &M, TaintSet &taint) {
     SmallVector<UnionCand, 4> Cands;
     for (AllocaInst *A : Allocas) {
       UnionCand C;
-      if (analyzeStructure(A, DL, C) && accessesAcyclic(C, OnCycle, DT) &&
-          accessesSeedDominated(C, DT)) {
+      bool Struct = analyzeStructure(A, DL, C);
+      bool Acyc = Struct && accessesAcyclic(C, OnCycle, DT);
+      // The value-definedness gate matches the idiom class: seed domination
+      // for the fp80-seeded shape, the P1/P2 pack proof for a reconstruct.
+      bool Defined = Acyc && (C.Reconstruct ? packDefinednessOk(C, DT)
+                                            : accessesSeedDominated(C, DT));
+      if (Dbg2 && A->getAllocatedType()->isStructTy()) {
+        errs() << "[FP80DBG2] " << F.getName() << " alloca ";
+        A->printAsOperand(errs(), /*PrintType=*/false);
+        errs() << " struct=" << Struct << " acyclic=" << Acyc
+               << " defined=" << Defined << " pack=" << C.Reconstruct << "\n";
+      }
+      if (Defined) {
         markDeadInserts(C, DT);
         Cands.push_back(std::move(C));
       }
@@ -1012,6 +1215,17 @@ bool promoteFp80Union(Module &M, TaintSet &taint) {
     auto seedClass = [&](const UnionCand &C,
                          const SmallPtrSetImpl<const LoadInst *> &Rel) -> int {
       // 2 = strict, 1 = opportunistic, 0 = inadmissible.
+      // Lever A.1d: a reconstruct pack has NO fp80 seed store to classify —
+      // the seed loop below would be vacuously strict. Packs are ALWAYS
+      // opportunistic: they were not candidates before this widening, so a
+      // §4.1 walk failure must drop them silently (reproducing today's
+      // outcome — memory form, existing declines), never widen the loud
+      // kMsgFp80Padding surface; and the strict-only re-run must not keep
+      // them (a strict sibling seeded through a pack reload then re-drops via
+      // the rebuilt candidate-reload set — drop-then-rerun stays equal to
+      // strict-from-scratch).
+      if (C.Reconstruct)
+        return 1;
       bool NeedsWide = false;
       for (StoreInst *S : C.FpStores) {
         if (fpSeedValueOk(S->getValueOperand(), taint, Rel,
@@ -1037,6 +1251,23 @@ bool promoteFp80Union(Module &M, TaintSet &taint) {
         for (size_t i = 0; i < Cands.size(); ++i) {
           int K = seedClass(Cands[i], CandFpLoads);
           if (K == 0 || (K == 1 && !AdmitArgDerived)) {
+            if (Dbg2) {
+              errs() << "[FP80DBG2] " << F.getName() << " DROP-seed ";
+              Cands[i].A->printAsOperand(errs(), false);
+              errs() << " class=" << K;
+              for (StoreInst *S : Cands[i].FpStores) {
+                const Value *Why = nullptr;
+                fpSeedValueOk(S->getValueOperand(), taint, CandFpLoads,
+                              /*AdmitArgDerived=*/true, &Why);
+                errs() << " seed={";
+                S->getValueOperand()->printAsOperand(errs(), true);
+                errs() << "} blocker={";
+                if (Why)
+                  errs() << *Why;
+                errs() << "}";
+              }
+              errs() << "\n";
+            }
             Cands.erase(Cands.begin() + i);
             Dropped = true;
             break;
@@ -1048,6 +1279,16 @@ bool promoteFp80Union(Module &M, TaintSet &taint) {
           Opportunistic.insert(C.A);
     };
     runSeedFixpoint(/*AdmitArgDerived=*/true);
+    if (Dbg2) {
+      errs() << "[FP80DBG2] " << F.getName()
+             << " candidates=" << Cands.size()
+             << " opportunistic=" << Opportunistic.size() << " {";
+      for (const UnionCand &C : Cands) {
+        C.A->printAsOperand(errs(), false);
+        errs() << " ";
+      }
+      errs() << "}\n";
+    }
     if (Cands.empty())
       continue;
 
@@ -1063,6 +1304,8 @@ bool promoteFp80Union(Module &M, TaintSet &taint) {
     // (Strict-from-scratch equals drop-opportunistic-then-strict: the seed
     // gate is monotone in the candidate-reload set.)
     if (const Instruction *Bad = PaddingWalk(Cands).run()) {
+      if (Dbg2)
+        errs() << "[FP80DBG2] " << F.getName() << " WALK-BAD " << *Bad << "\n";
       if (!Opportunistic.empty()) {
         llvm::erase_if(Cands, [&](const UnionCand &C) {
           return Opportunistic.count(C.A);

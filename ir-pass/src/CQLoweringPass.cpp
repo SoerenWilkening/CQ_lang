@@ -136,6 +136,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // promotion is claimed on the next turn. An off-pattern union is byte-untouched.
   while (promoteFp80Union(M, taint))
     taint = propagate(M, wd);
+  // Debug lever (bd 3c6m.55; env-gated, no behavior change): dump the module
+  // state after the fp80-union promotion fixpoint settles.
+  if (::getenv("CQ_FP80_DBG")) {
+    llvm::errs() << "=== CQ_FP80_DBG: module after promoteFp80Union fixpoint ===\n";
+    M.print(llvm::errs(), nullptr);
+  }
 
   // bd 3c6m.14 (L6) — PredMux: general acyclic tainted control flattened to
   // block-predicate select chains (PredMuxFlatten.cpp; PRD

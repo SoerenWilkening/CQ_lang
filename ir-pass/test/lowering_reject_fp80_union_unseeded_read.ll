@@ -1,10 +1,13 @@
 ; lowering_reject_fp80_union_unseeded_read.ll — bd 3c6m.51 Inc 3 DECLINE (the
 ; seed-domination gate): a word load NOT dominated by any fp80 seed store reads
 ; partially-undefined union content (mem2reg would have to thread undef/poison
-; into the promoted SSA). The integer-seeded reload packs (lroundl-style
-; SET_LDBL_WORDS) are the real-world instance of this shape and stay a DISTINCT,
-; unshipped idiom. The candidate is left byte-untouched; the tainted seed store
-; then falls to the existing loud kMsgStore taint-escape decline.
+; into the promoted SSA). Since bd 3c6m.55 Lever A.1d the PURE integer-seeded
+; reconstruct packs (NO fp80 store at all, floorl-style SET_LDBL_WORDS) lower
+; under their own P1/P2 definedness proof — but this MIXED shape (an fp80 seed
+; store present, plus a pre-seed word read the §4.4 proof does not cover) stays
+; on the seed-domination gate and declines. The candidate is left
+; byte-untouched; the tainted seed store then falls to the existing loud
+; kMsgStore taint-escape decline.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
