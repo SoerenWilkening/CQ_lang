@@ -51,6 +51,7 @@
 
 #include "Fp80Union.h"
 
+#include "IntrinsicLowering.h"  // isCuratedReversibleIntrinsic
 #include "OpcodeSupport.h"      // abiWidthFromType
 #include "TaintPropagation.h"   // TaintSet
 
@@ -401,6 +402,25 @@ bool fpSeedValueOk(Value *Root, TaintSet &taint,
       for (Value *Op : I->operands())
         Work.push_back(Op);
       break;
+    case Instruction::Call:
+      // bd 3c6m.55 Inc 1 (Lever A.1a): a curated pure fp intrinsic
+      // (fmuladd/fma/sqrt/fabs/copysign/floor/…, the openlibm Horner/polynomial
+      // reduction that feeds `u.e = fmuladd(x, c, c)`) is a transparent
+      // fp-derivation op — a pure total producer of admissible operands is a
+      // legitimate fp value, EXACTLY like the `FMul`/`FAdd` above (NOT an
+      // arg-only widening like `sitofp`, so admitted in BOTH modes). Membership
+      // is the exported `isCuratedReversibleIntrinsic` (accept-set = the
+      // lowered-set: the same intrinsics `lowerOps` reversibilizes), so a
+      // NON-curated call (a transcendental `@llvm.sin`, an opaque `@foo`, an
+      // fp128/vector width) is NOT admitted and rides the existing seed-drop.
+      // A trailing i1 immarg (abs/ctlz) is a Constant → short-circuits.
+      if (auto *CI = dyn_cast<CallInst>(I))
+        if (isCuratedReversibleIntrinsic(CI)) {
+          for (Value *Op : CI->args())
+            Work.push_back(Op);
+          break;
+        }
+      return false;
     default:
       return false;
     }
