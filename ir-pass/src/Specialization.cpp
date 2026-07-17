@@ -96,10 +96,11 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
       C->setDebugLoc(DL);
     return C;
   };
-  // Per-leaf taint fence: the HL flag mint needs EXACTLY ONE tainted compare operand
-  // (a quantum handle) against a classical literal.
-  //   * A Q+Q leaf (BOTH operands tainted) would mint a flag treating one handle as
-  //     a literal — loud-decline (a separate capability out of scope).
+  // Per-leaf taint fence.
+  //   * A Q+Q leaf (BOTH operands tainted) mints the QQ compare template when
+  //     its shared logical width resolves in-surface (bd adia — the shared
+  //     `qqSelectLeafWidth` gate, mirroring the top-level select path); an
+  //     off-surface Q+Q (width mismatch, i1/i80/i128) still loud-declines.
   //   * An ALL-CLASSICAL leaf (NEITHER operand tainted) — reachable inside a COMPOUND
   //     tree whose taint comes from a SIBLING leaf (`lowerCloneSelect`'s `CondT` is
   //     true if ANY leaf touches taint) — would fall into `lowerCompareToFlag`'s Q+C
@@ -114,12 +115,18 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
     bool T0 = ct.Tainted.count(Leaf->getOperand(0));
     bool T1 = ct.Tainted.count(Leaf->getOperand(1));
     if (T0 && T1) {
-      SI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
-          *SI->getFunction(),
-          "cq specialization: quantum-quantum compare condition under quantum "
-          "lift",
-          SI->getDebugLoc()));
-      return nullptr;
+      // bd adia (3c6m.55 Lever C): a Q+Q leaf is mintable when its shared logical width
+      // resolves in-surface (qqSelectLeafWidth — the same predicate the
+      // top-level select path gates on); the QQ mint below then passes the
+      // width through. Off-surface Q+Q still declines loudly.
+      if (qqSelectLeafWidth(Leaf, ct).empty()) {
+        SI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+            *SI->getFunction(),
+            "cq specialization: quantum-quantum compare condition under "
+            "quantum lift",
+            SI->getDebugLoc()));
+        return nullptr;
+      }
     }
     if (!T0 && !T1) {
       SI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
@@ -168,7 +175,8 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
       // `i1_hl` template + its `_unc` exist and reverse coherently. If compare
       // lowering ever changes how an i1-operand compare is minted, RE-REVIEW this
       // acceptance (it is an asymmetry vs the top level, not a miscompile today).
-      Value *F = lowerCompareToFlag(Leaf, wd, ct, /*qqWidth=*/{},
+      Value *F = lowerCompareToFlag(Leaf, wd, ct,
+                                    /*qqWidth=*/qqSelectLeafWidth(Leaf, ct),
                                     /*inverse=*/false, /*before=*/SI);
       if (!F)
         return nullptr;  // lowerCompareToFlag already diagnosed (width/predicate).
@@ -291,6 +299,10 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
     stamp(Out);
     cloneTaint.Tainted.insert(Out);
     cloneTaint.BirthOrder[Out] = cloneTaint.NextBirth++;
+    // bd adia (3c6m.55 Lever C): record the out-rail's LOGICAL ABI width — the p119.6
+    // downstream-consumer invariant, clone edition (a later cast/Q+Q compare
+    // off the RAUW'd select otherwise reads the laundered i32 and declines).
+    cloneTaint.HandleWidth[Out] = Abi;
     OutRails.insert(Out);
 
     // The increment-1 ONE-COPY fast path: a single-leaf tree, a const-ZERO false

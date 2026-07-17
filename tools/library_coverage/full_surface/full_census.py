@@ -42,6 +42,7 @@ def ret_width(spec, width):
 def bucket(st, diag):
     d = diag.lower()
     if st == "COMPILES": return "COMPILES"
+    if st.startswith("exit0-spec"): return "COMPILES (spec-clone)"
     if st.startswith("exit0"): return "uninlined(harness)"
     if "nested control" in d: return "L6 nested control"
     if "control flow inside a loop" in d: return "in-loop control"

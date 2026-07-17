@@ -247,6 +247,38 @@ Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
                           /*railBase=*/nullptr, negate);
 }
 
+// bd adia (3c6m.55 Lever C): logical ABI width of a (possibly already-RAUW'd) tainted
+// operand — the `HandleWidth` side-table wins over the (possibly laundered
+// i32) LLVM type, exactly the p119.6 downstream-consumer discipline.
+static StringRef logicalOperandWidth(Value *V, TaintSet &taint) {
+  auto It = taint.HandleWidth.find(V);
+  if (It != taint.HandleWidth.end())
+    return It->second;
+  return abiWidthFromType(V->getType());
+}
+
+// bd adia: the Q+Q select-leaf width — non-empty iff BOTH compare operands
+// are tainted and share one in-surface logical width (the QQ compare
+// template grid: icmp i8..i64, fcmp f16..f80). Fenced OUT: i128/i80 (no QQ
+// row — the n0ui phantom-mint class) and i1 (a compare OVER i1 values is the
+// non-canonical boolean-NOT evasion the top-level i1-operand fence declines
+// — SelectClassify gate order; fencing it HERE keeps the clone path
+// symmetric, where mintCondNetwork has no later i1 gate and an i1 QQ mint
+// would name an off-grid `cq_template_icmp_<pred>_i1(h,h)`). Shared by
+// detection (compareFlagMintable) and emission (SelectMergeEmit /
+// mintCondNetwork) so the paths cannot drift.
+StringRef qqSelectLeafWidth(CmpInst *cmp, TaintSet &taint) {
+  Value *A = cmp->getOperand(0);
+  Value *B = cmp->getOperand(1);
+  if (!taint.Tainted.count(A) || !taint.Tainted.count(B))
+    return {};
+  StringRef WA = logicalOperandWidth(A, taint);
+  StringRef WB = logicalOperandWidth(B, taint);
+  if (WA.empty() || WA != WB || WA == "i128" || WA == "i80" || WA == "i1")
+    return {};
+  return WA;
+}
+
 bool compareFlagMintable(CmpInst *cmp, TaintSet &taint) {
   // Detection-side dry-run of `lowerCompareImpl`'s HL classification front
   // half (see the header contract; KEEP IN LOCKSTEP — same operand-taint
@@ -256,8 +288,16 @@ bool compareFlagMintable(CmpInst *cmp, TaintSet &taint) {
   Value *B = cmp->getOperand(1);
   const bool ATainted = taint.Tainted.count(A) != 0;
   const bool BTainted = taint.Tainted.count(B) != 0;
-  if (ATainted == BTainted)
-    return false;  // Q+Q (no HL mint) or all-classical (nothing to mint).
+  if (ATainted && BTainted) {
+    // bd adia (3c6m.55 Lever C): Q+Q leaf — mintable iff the shared QQ width resolves
+    // and the (unflipped — QQ never flips) predicate is in scope.
+    if (qqSelectLeafWidth(cmp, taint).empty())
+      return false;
+    StringRef Op = cmp->isFPPredicate() ? "fcmp" : "icmp";
+    return compareInScope(Op, CmpInst::getPredicateName(cmp->getPredicate()));
+  }
+  if (!ATainted && !BTainted)
+    return false;  // all-classical: nothing to mint.
   Type *WidthTy = !ATainted ? A->getType() : B->getType();
   StringRef AbiWidth = abiWidthFromType(WidthTy);
   if (AbiWidth.empty() || AbiWidth == "i128")

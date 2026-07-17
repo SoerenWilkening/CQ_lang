@@ -23,6 +23,7 @@
 #define CQ_IRPASS_PREDMUXFLATTEN_H
 
 namespace llvm {
+class Function;
 class Module;
 }  // namespace llvm
 
@@ -48,6 +49,16 @@ struct TaintSet;
 // the default so the top-level accept surface is byte-identical.
 bool flattenPredMuxRegions(llvm::Module &M, TaintSet &taint,
                            bool claimAll = false);
+
+// bd adia (3c6m.55 Lever C): the pending-spec pure-callee proof (EXACT
+// definition — interposable weak/linkonce bodies fail — + non-vararg +
+// acyclic CFG + br/ret terminators only + every non-terminator instruction
+// speculatable dataflow; inner calls are curated memory(none) intrinsics or
+// recursively-proven bodies, call-graph cycles broken by an OnStack set).
+// True ⇒ the call is a pure, total, terminating function of its arguments —
+// safe to speculate (PredMux E4) and transparent as an fp seed derivation
+// (Fp80Union wide mode).
+bool isSpeculatablePureCallee(const llvm::Function *F);
 
 }  // namespace cq
 

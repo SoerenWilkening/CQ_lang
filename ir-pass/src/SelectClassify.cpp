@@ -437,10 +437,9 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
       return diagnoseUnderControl(Sel, "control flow");
     if (!taint.Tainted.count(Leaf))
       return diagnoseUnderControl(Sel, "control flow");
-    if (Leaf->getNumOperands() >= 2 &&
-        taint.Tainted.count(Leaf->getOperand(0)) &&
-        taint.Tainted.count(Leaf->getOperand(1)))
-      return diagnoseUnderControl(Sel, "control flow");
+    // bd adia (3c6m.55 Lever C): the categorical Q+Q-leaf decline is LIFTED — a Q+Q
+    // leaf is now gated by compareFlagMintable's QQ branch below (shared
+    // qqSelectLeafWidth derivation, in-scope predicate, QQ template grid).
     // Per-leaf WIDTH/scope fence (design-review MAJOR — the ziov.4
     // detect-before-mutate discipline): with one flag per leaf the emitter's
     // mint is no longer atomic, so an unmintable leaf (i128 compare, fp128 /

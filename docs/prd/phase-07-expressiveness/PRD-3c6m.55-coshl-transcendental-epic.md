@@ -229,13 +229,79 @@ is the natural first increment. Sequence:
     821+1 XFAIL, ctest 173/173, e2e re-run green, census byte-identical to the pre-fix Lever-B
     result (the fences cost the milestone nothing).
 
-- **Inc 3 — Lever C (compose + land coshl).** `fptosi` cast coverage if needed; confirm/ widen
-  `lowerCloneControl` for expl's control graph; the fp-ABI spec + I2 control compose. Milestone:
-  **coshl compiles at -O1** + a committed `slice_libm_real_coshl` e2e golden + no census regression +
-  full `ctest` green + re-census confirms coshl (and by extension sinhl — same expl reduction) move
-  to COMPILES. Then re-derive the remaining 5 cells (atan2l/lgammal/log10l/powl/tgammal — each routes
-  through a polynomial-eval inner callee, so Levers A/B/C apply; per-cell inner-callee coverage may
-  add rows).
+- **Inc 3 — Lever C (compose + land coshl).** **DONE 2026-07-17** (ticket adia). The three
+  design questions resolved:
+  - **Q1 (fptosi f80→i32).** ALREADY covered — `castInScope` admits it and the YAML has carried
+    the int↔f80 cross-domain rows (+`_inv`/`_unc`) since bd 3c6m.5. Zero rows added. The real
+    gap was the **p119.6 invariant, clone edition**: `lowerCloneSelect` minted its select
+    out-rail without a `HandleWidth` entry, so the downstream `fptosi` read the laundered i32
+    and declined `no template for fptosi i32`. Fixed by recording `cloneTaint.HandleWidth[Out]`
+    exactly as the top-level emitter does (pinned by `spec_accept_fp_select_f80.ll`).
+  - **Q2 (does PredMux claimAll flatten expl's graph?).** YES — `lowerCloneControl` flattens the
+    full post-Lever-A/B @expl web (32 conditional branches / 17 phis / 1 fp80 select / 1 fptosi)
+    once the frontier gates widened. Per-gate findings, each red-green + probed:
+    * **scan gate**: `isLiftableFpSelect` was a {f32,f64} whitelist — the s_floorl.c:61 fp80
+      select (icmp cond, both arms derived) declined at the SPEC-SCAN. Widened +f80 ONLY
+      (f16 pinned declining, `spec_reject_fp_select_f16.ll`); the emission rides the kjd1
+      select-local `copyControlledFpFn` (`cqrt_copy_f80_controlled` — frozen family, no new
+      symbol; the shared integer minter's fp-null classifier untouched).
+    * **Q+Q select-condition compares** (floorl's `i0 > mantissa-word`, two theta-derived
+      words): the select flag mint was HL-only at BOTH levels. Widened via one shared
+      predicate `qqSelectLeafWidth` (CompareLowering — HandleWidth-aware logical width, both
+      operands tainted + equal width, i128/i80 fenced) feeding `lowerCompareToFlag`'s
+      existing QQ path: SelectClassify gate-2b lifted + `compareFlagMintable` QQ branch
+      (top), `mintCondNetwork` (clone). The QQ compare grid (40 icmp + 56 fcmp, `_inv`+
+      `_unc`) was frozen by 7.1 — **zero new runtime symbols**. i1-operand fence holds
+      (`control_swap_reject_select_qq_i1leaf.ll`).
+    * **TOP-LEVEL envelope (the part the ticket under-scoped)**: the coshl census cell also
+      carries tainted control in @probe ITSELF (the coshl exponent ladder + two inlined
+      expm1l/expl copies + the outlined @expl call in an arm) — the spec-scan decline had
+      MASKED it. Three PredMux widenings clear it, all accept-only:
+      (a) **E4 pending-spec pure-callee admit** — a DIRECT call with ≥1 tainted arg (the 6.5
+      classical-call-arm anti-overlap fence), template-width result, and a callee passing
+      `isSpeculatablePureCalleeBody` (visible, non-vararg, acyclic CFG, br/ret terminators,
+      every non-terminator speculatable dataflow; inner calls = curated intrinsics or
+      recursively-proven bodies, OnStack cycle-broken) is speculatable dataflow — under
+      quantum control every basis state executes every arm, so speculating a pure total
+      terminating call is exactly the established arm discipline. Probes: impure/loop/
+      recursive/classical-args callees all still decline loudly char-for-char.
+      (b) **select-form condition trees** — clang -O1's poison-shielded short-circuit
+      `select(a,b,false)`/`select(a,true,b)` (the `ex < K || (ex == K && mx < M)` ladder)
+      admitted in E6 and canonicalized to plain and/or at flatten time; the SHIELDED
+      operand's backward cone is `dropPoisonGeneratingFlags`-stripped first (the moveBody
+      speculation discipline), making the rewrite basis-state-equivalent. Off-grammar
+      combinators (all-non-const select-of-i1) keep declining.
+      (c) **degenerate same-arm select fold** (`select(EP,x,x)` = x, the value-chain mirror
+      of the BoolAlg x∨x guard) + **E6 constant-condition admit** + a **fold-first step**
+      (the exported `foldConstantConesInFunction` runs per tainted-control function inside
+      `flattenPredMuxRegions`, collapsing late-materialized all-constant compare/branch
+      residues that otherwise read as "classical control inside a tainted region").
+  - **Q3 (fp80 copy-out under the fp-ABI spec + angle fence).** Composes as shipped: the
+    clone's fp80 return copies out via `cqrt_copy_f80` (3c6m.54 `copyFnClone`), the f80 select
+    merges mint ONLY through the select-local `copyControlledFpFn`, and the census/real traces
+    carry exactly ONE user ry + ONE user measure (Rule 5), 0 double-frees, 0 unborn frees.
+  - **A fourth lever surfaced at the plain -O1 floor** (the real vendored slice, where floorl
+    stays OUTLINED): expl's union seeds derive through `px = olm_floorl(...)` — a CALL in the
+    seed cone — so Lever A's walk dropped 4 unions the census model (2M inline threshold) never
+    showed. Widened: `fpSeedValueOk` admits a call to an `isSpeculatablePureCallee` body as a
+    transparent fp derivation (AdmitArgDerived/opportunistic mode only; the proof passes only
+    after the callee's own unions promoted, so the fixpoint cascades). Probes:
+    `lowering_fp80_union_seed_purecall.ll` / `_impurecall_drop.ll`.
+  - **Milestone MET:** `slice_libm_real_coshl` (real vendored openlibm closure: e_coshl +
+    e_expl + s_expm1l + s_floorl + polevll `__polevll` + `__isnanl` + scalbnl-as-ldexpl,
+    IEEEl2bits verbatim) compiles, links, runs deterministically at plain -O1 — the committed
+    21,426-line golden + ctest wiring. Census ld80@O1: **COMPILES 5/41 → 9/41** (+frexpl,
+    +modfl, +lroundl, +llroundl — the Q+Q/select-form widenings unlocked them), **coshl and
+    sinhl → "COMPILES (spec-clone)"** (a new honest census bucket: opt exit-0 with the
+    surviving @expl handled by clone-on-taint — every retargeted call proven in the lowered
+    output; both hand-verified compile+LINK+RUN deterministic), zero regressions. The census
+    `expl` cell (wprobe fully-INLINES expl into the tainted probe — the top-level value-arm
+    envelope, 3c6m.14 L6 territory) stays declined — explicitly OUT of this increment's scope
+    per the owner's frontier note.
+  Then re-derive the remaining 5 cells (atan2l/lgammal/log10l/powl/tgammal — each routes
+  through a polynomial-eval inner callee, so Levers A/B/C apply; per-cell inner-callee coverage
+  may add rows). Post-Inc-3 buckets: atan2l/tgammal → fp-copy/specialization,
+  lgammal/powl → control (flat/diamond), log10l → memory-store (Shadow).
 
 ## 3. Done criteria (epic)
 

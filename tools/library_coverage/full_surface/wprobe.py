@@ -136,7 +136,8 @@ def probe(fn, retW, args, ti, defmap):
         surv = [m for m in re.findall(r'call[^@\n]*@([A-Za-z0-9_.$]+)', ir)
                 if not m.startswith("cq_") and not m.startswith("llvm.")]
         fully = len(surv)==0
-        r = subprocess.run([OPT,"-load-pass-plugin",str(PASS),"-passes=cq-lowering","-S",str(inl),"-o","/dev/null"],
+        low = td/"low.ll"
+        r = subprocess.run([OPT,"-load-pass-plugin",str(PASS),"-passes=cq-lowering","-S",str(inl),"-o",str(low)],
                            capture_output=True, text=True)
         lowered = (r.returncode==0)
         diag=""
@@ -145,7 +146,22 @@ def probe(fn, retW, args, ti, defmap):
                 if 'error' in line.lower():
                     diag = line.split('in function')[-1][:120]; break
         if lowered and fully: st="COMPILES"
-        elif lowered and not fully: st="exit0-uninlined:"+str(sorted(set(surv))[:2])
+        elif lowered and not fully:
+            # bd adia: a surviving pre-lowering callee may be HANDLED by
+            # Phase-6 clone-on-taint rather than inlining — the LOWERED output
+            # then retargets every call to a @__cq_q_* clone (which itself
+            # lowered: opt exited 0) and no raw call to the survivor remains
+            # reachable from @probe. Report that as its own honest bucket
+            # ("COMPILES (spec-clone)"), NEVER merged into plain COMPILES
+            # (the two-numbers scoreboard discipline).
+            lowir = low.read_text() if low.exists() else ""
+            spec_handled = False
+            if "@__cq_q_" in lowir:
+                raw = [m for m in re.findall(r'call[^@\n]*@([A-Za-z0-9_.$]+)', lowir)
+                       if m in set(surv)]
+                spec_handled = len(raw) == 0
+            st = ("exit0-spec:"+str(sorted(set(surv))[:2])) if spec_handled \
+                 else "exit0-uninlined:"+str(sorted(set(surv))[:2])
         else: st="decline"
         return (st, diag.strip() if diag else f"surv:{sorted(set(surv))[:2]}", src)
 

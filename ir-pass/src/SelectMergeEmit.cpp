@@ -193,7 +193,8 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
       if (FlagOf.count(V))
         continue;  // shared subtree — its rail is minted once and reused.
       if (auto *Leaf = dyn_cast<CmpInst>(V)) {
-        Value *F = lowerCompareToFlag(Leaf, wd, taint, /*qqWidth=*/{},
+        Value *F = lowerCompareToFlag(Leaf, wd, taint,
+                                      /*qqWidth=*/qqSelectLeafWidth(Leaf, taint),
                                       /*inverse=*/false, /*before=*/Sel);
         if (!F)
           return;  // already diagnosed (unsupported width / predicate) — loud.
@@ -261,7 +262,9 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     stamp(B.CreateCall(wd.freeFn(), {NR.G}));
   }
   for (auto &LF : llvm::reverse(MintedLeaves)) {
-    lowerCompareToFlag(LF.first, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+    lowerCompareToFlag(LF.first, wd, taint,
+                       /*qqWidth=*/qqSelectLeafWidth(LF.first, taint),
+                       /*inverse=*/true,
                        /*before=*/Sel);
     stamp(B.CreateCall(wd.freeFn(), {LF.second}));
   }

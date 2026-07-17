@@ -176,8 +176,8 @@ bool isLiftableFpSelect(const SelectInst *SI) {
   if (!SI->getType()->isFloatingPointTy())
     return false;  // scalar fp only — vectors / non-fp fall out here.
   StringRef W = abiWidthFromType(SI->getType());
-  if (W != "f32" && W != "f64")
-    return false;  // explicit slice-1 whitelist (f16/f80/f128 decline — no coverage).
+  if (W != "f32" && W != "f64" && W != "f80")
+    return false;  // bd adia whitelist: {f32,f64,f80} — f16 declines (no coverage)
   if (!isa<ICmpInst>(SI->getCondition()))
     return false;  // integer icmp condition only (fcmp is a deferred widening).
   // BOTH arms non-constant (derived fp — fneg/sitofp/fsub…). A constant arm needs

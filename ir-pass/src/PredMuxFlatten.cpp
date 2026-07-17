@@ -48,6 +48,7 @@
 
 #include "PredMuxFlatten.h"
 
+#include "Fp80Union.h"      // foldConstantConesInFunction (adia fold residue)
 #include "IntrinsicLowering.h"
 #include "OpcodeSupport.h"  // abiWidthFromType, binaryStem, castInScope, i80BinaryInScope
 #include "QramLowering.h"
@@ -55,6 +56,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -128,6 +130,119 @@ bool isSupportedCompareLeaf(const CmpInst *Cmp) {
          OpTy->isX86_FP80Ty();
 }
 
+// bd adia (fwd decl — defined with the E4 pure-callee machinery below).
+bool isSpeculatablePureCalleeBody(const Function *F);
+
+// bd adia: is every instruction in `V`'s backward cone TOTAL (defined on all
+// inputs) once its poison-generating flags/metadata are dropped? The
+// admissibility proof for canonicalizing a poison-shielded short-circuit
+// select-form into a plain and/or (which observes the shielded operand on
+// basis states the original never did). Whitelist, mirroring the
+// isSpeculatableDataflow families but STRICTER — definedness, not just
+// speculation safety:
+//   * icmp/fcmp (FMF dropped), add/sub/mul/and/or/xor (nsw/nuw dropped),
+//     udiv/sdiv/urem/srem by the isSpeculatableDataflow-safe CONSTANT only;
+//   * shl/lshr/ashr ONLY by an in-range ConstantInt amount (a runtime
+//     amount >= bit width is INHERENT poison — no flag to drop);
+//   * the defined casts zext/sext/trunc/fpext/fptrunc/sitofp/uitofp/bitcast
+//     (fptosi/fptoui are inherent poison on out-of-range inputs — fail);
+//   * select/phi/freeze, curated memory(none) intrinsics (total fns);
+//   * Constant/Argument leaves (arguments are assumed runtime-defined — the
+//     same leaf assumption every existing flatten makes; undef phi
+//     incomings are zero-frozen by convertPhis).
+// Anything else fails and the select-form stays unclaimed (accept-only).
+bool coneDefinedAfterFlagDrop(const Value *Root) {
+  SmallPtrSet<const Value *, 16> Seen;
+  SmallVector<const Value *, 16> WL;
+  WL.push_back(Root);
+  while (!WL.empty()) {
+    const Value *V = WL.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    const auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;  // Constant / Argument leaf — defined.
+    bool Ok = false;
+    if (isa<CmpInst>(I) || isa<SelectInst>(I) || isa<PHINode>(I) ||
+        isa<FreezeInst>(I)) {
+      Ok = true;
+    } else if (const auto *BO = dyn_cast<BinaryOperator>(I)) {
+      switch (BO->getOpcode()) {
+      case Instruction::Add:
+      case Instruction::Sub:
+      case Instruction::Mul:
+      case Instruction::And:
+      case Instruction::Or:
+      case Instruction::Xor:
+      case Instruction::FAdd:
+      case Instruction::FSub:
+      case Instruction::FMul:
+      case Instruction::FDiv:
+      case Instruction::FRem:
+        Ok = true;
+        break;
+      case Instruction::Shl:
+      case Instruction::LShr:
+      case Instruction::AShr:
+        if (const auto *C = dyn_cast<ConstantInt>(BO->getOperand(1)))
+          Ok = C->getZExtValue() <
+               BO->getType()->getScalarSizeInBits();
+        break;
+      case Instruction::UDiv:
+      case Instruction::SDiv:
+      case Instruction::URem:
+      case Instruction::SRem: {
+        const auto *C = dyn_cast<ConstantInt>(BO->getOperand(1));
+        Ok = C && !C->isZero() &&
+             !((BO->getOpcode() == Instruction::SDiv ||
+                BO->getOpcode() == Instruction::SRem) &&
+               C->isMinusOne());
+        break;
+      }
+      default:
+        break;
+      }
+    } else if (const auto *CI = dyn_cast<CastInst>(I)) {
+      switch (CI->getOpcode()) {
+      case Instruction::ZExt:
+      case Instruction::SExt:
+      case Instruction::Trunc:
+      case Instruction::FPExt:
+      case Instruction::FPTrunc:
+      case Instruction::SIToFP:
+      case Instruction::UIToFP:
+      case Instruction::BitCast:
+        Ok = true;
+        break;
+      default:  // fptosi/fptoui/ptr casts — inherent poison / out of scope.
+        break;
+      }
+    } else if (const auto *Call = dyn_cast<CallInst>(I)) {
+      // A cq_theta/cq_phi rotation result is RUNTIME DATA minted by the
+      // runtime ABI — a defined leaf, never poison (do not recurse into the
+      // classical seed/angle operands: the result's definedness does not
+      // depend on them being poison-free in this proof's sense — the
+      // rotation call itself would be the UB-observing consumer, which the
+      // original program already executed unconditionally here).
+      const Function *CF = Call->getCalledFunction();
+      if (CF && (CF->getName().starts_with("cq_theta_") ||
+                 CF->getName().starts_with("cq_phi_"))) {
+        continue;  // defined leaf — skip operand recursion.
+      }
+      // A curated memory(none) intrinsic and a proven pure/total pending-spec
+      // callee are total functions of their operands.
+      Ok = (isCuratedReversibleIntrinsic(Call) &&
+            Call->doesNotAccessMemory()) ||
+           isSpeculatablePureCalleeBody(CF);
+    }
+    if (!Ok)
+      return false;
+    for (const Value *Op : I->operands())
+      WL.push_back(Op);
+  }
+  return true;
+}
+
 // E6 — a branch condition PredMux can take BOTH polarities of: a supported
 // compare, an and/or tree over such conditions, an xor-true (not), or an i1
 // constant. The false-edge literal is built by pushing the negation to the
@@ -149,6 +264,34 @@ bool isSupportedCondTree(const Value *V, unsigned Depth) {
       if (const auto *C = dyn_cast<ConstantInt>(BO->getOperand(1)))
         if (C->isOne())
           return isSupportedCondTree(BO->getOperand(0), Depth + 1);
+  }
+  // bd adia: clang -O1's poison-shielded short-circuit forms —
+  // `select i1 a, i1 b, false` (a && b) and `select i1 a, true, i1 b`
+  // (a || b, the coshl `ex < K || (ex == K && mx < M)` exponent ladder). The
+  // flatten canonicalizes them to plain and/or (see canonicalizePred), which
+  // OBSERVES the shielded operand on basis states where the original select
+  // did not — sound ONLY when that operand is provably DEFINED there. The
+  // admissibility proof is coneDefinedAfterFlagDrop: every instruction in
+  // the shielded operand's backward cone must be total once its
+  // poison-generating flags/metadata are dropped (the drop happens in
+  // stripPoisonCone at flatten time). Ops whose poison is INHERENT — a shift
+  // by a runtime amount that may reach the bit width, the out-of-range
+  // fp->int casts — have no flag to drop and fail the proof (the adia
+  // Rule-13 board's inherent-poison note), leaving the region for the
+  // existing loud declines.
+  if (const auto *Sel = dyn_cast<SelectInst>(V)) {
+    if (!Sel->getType()->isIntegerTy(1))
+      return false;
+    if (const auto *FC = dyn_cast<ConstantInt>(Sel->getFalseValue()))
+      if (FC->isZero())
+        return coneDefinedAfterFlagDrop(Sel->getTrueValue()) &&
+               isSupportedCondTree(Sel->getCondition(), Depth + 1) &&
+               isSupportedCondTree(Sel->getTrueValue(), Depth + 1);
+    if (const auto *TC = dyn_cast<ConstantInt>(Sel->getTrueValue()))
+      if (TC->isOne())
+        return coneDefinedAfterFlagDrop(Sel->getFalseValue()) &&
+               isSupportedCondTree(Sel->getCondition(), Depth + 1) &&
+               isSupportedCondTree(Sel->getFalseValue(), Depth + 1);
   }
   return false;
 }
@@ -276,9 +419,70 @@ bool isSpeculatableDataflow(const Instruction &I) {
   if (const auto *Call = dyn_cast<CallInst>(&I))
     // Curated pure keep-set intrinsics (fmuladd/fabs/copysign/sqrt/…) are
     // already first-class straight-line citizens of the pass; memory(none)
-    // is required so nothing observable moves.
+    // is required so nothing observable moves. (The bd adia pending-spec
+    // pure-callee admit is handled at the REGION walk, where the tainted-arg
+    // anti-overlap fence has taint in scope; inside a pure-callee proof the
+    // inner-call case is handled by isSpeculatablePureCalleeBodyImpl itself.)
     return isCuratedReversibleIntrinsic(Call) && Call->doesNotAccessMemory();
   return false;
+}
+
+// bd adia (3c6m.55 Lever C): a direct call to a VISIBLE, acyclic, all-speculatable pure
+// body — the pending-specialization callee under tainted control. Every block
+// must end in br/ret, sit on no CFG cycle (termination), and every
+// non-terminator instruction must itself be speculatable dataflow (phis
+// included). Inner calls: curated memory(none) intrinsics, or — recursively —
+// another body passing this same proof (the plain -O1 expl→floorl nesting);
+// `OnStack` breaks call-graph cycles (a recursive callee has no termination
+// bound → false).
+bool isSpeculatablePureCalleeBodyImpl(
+    const Function *F, SmallPtrSetImpl<const Function *> &OnStack) {
+  // hasExactDefinition: a body this proof reads must be the body that LINKS —
+  // an INTERPOSABLE definition (weak/linkonce/common) may be replaced by the
+  // linker, so a purity/termination proof over the module-local body would be
+  // baked into the speculated hoist and the Bennett clone while a different
+  // function runs at stage 3 (the adia Rule-13 board's confirmed fence gap;
+  // the ByRefInline hasLocalLinkage precedent). weak_odr/linkonce_odr are
+  // ODR-exact and pass; declarations fail here too.
+  if (!F || !F->hasExactDefinition() || F->isVarArg())
+    return false;
+  if (!OnStack.insert(F).second)
+    return false;  // call-graph cycle: termination unprovable
+  auto pop = llvm::make_scope_exit([&] { OnStack.erase(F); });
+  for (scc_iterator<const Function *> It = scc_begin(F); !It.isAtEnd(); ++It)
+    if (It->size() > 1 || It.hasCycle())
+      return false;  // a CFG cycle: termination unprovable
+  for (const BasicBlock &BB : *F) {
+    const Instruction *Term = BB.getTerminator();
+    if (!isa<BranchInst>(Term) && !isa<ReturnInst>(Term))
+      return false;
+    for (const Instruction &I : BB) {
+      if (I.isTerminator())
+        continue;
+      if (const auto *CI2 = dyn_cast<CallInst>(&I)) {
+        if (isCuratedReversibleIntrinsic(CI2) && CI2->doesNotAccessMemory())
+          continue;
+        if (isSpeculatablePureCalleeBodyImpl(CI2->getCalledFunction(), OnStack))
+          continue;
+        if (::getenv("CQ_PREDMUX_DBG"))
+          llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
+                       << " fails at call: " << I << "\n";
+        return false;
+      }
+      if (!isSpeculatableDataflow(I)) {
+        if (::getenv("CQ_PREDMUX_DBG"))
+          llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
+                       << " fails at: " << I << "\n";
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool isSpeculatablePureCalleeBody(const Function *F) {
+  SmallPtrSet<const Function *, 8> OnStack;
+  return isSpeculatablePureCalleeBodyImpl(F, OnStack);
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +549,18 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
   if (!Node || !Node->getIDom() || !Node->getIDom()->getBlock())
     return false;
   BasicBlock *Mg = Node->getIDom()->getBlock();
+  // bd adia debug lever (env-gated, byte-neutral)
+  auto leave = [&](const char *Why, const Instruction *At = nullptr) {
+    if (::getenv("CQ_PREDMUX_DBG")) {
+      llvm::errs() << "CQ_PREDMUX_DBG: leave @" << E->getParent()->getName()
+                   << " entry=" << E->getName() << " merge=" << Mg->getName()
+                   << " gate=" << Why;
+      if (At)
+        llvm::errs() << " at: " << *At;
+      llvm::errs() << "\n";
+    }
+    return false;
+  };
 
   // Collect region blocks: everything reachable from E without crossing Mg.
   R.Entry = E;
@@ -411,30 +627,30 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
   // normalized single-early-return reduces to. The E2/E3/E4 gates below still
   // apply, so a claimed region can never half-lower.
   if (!ClaimAll && !Claim)
-    return false;
+    return leave("W-witness");
 
   // --- E2: acyclic, not in/around a loop ------------------------------------
   for (BasicBlock *B : R.InRegion)
     if (OnCycle.count(B))
-      return false;
+      return leave("E2-cycle");
 
   // --- E3: single-entry / single-exit ---------------------------------------
   for (BasicBlock *B : R.InRegion) {
     const Instruction *Term = B->getTerminator();
     if (!isa<BranchInst>(Term) && !isa<SwitchInst>(Term))
-      return false;  // ret/unreachable/invoke/… inside: multi-exit
+      return leave("E3-multiexit", Term);  // ret/unreachable/invoke/… inside: multi-exit
     for (const BasicBlock *S : successors(B))
       if (S != Mg && !R.InRegion.count(S))
-        return false;  // escapes the region without reconverging
+        return leave("E3-escape", Term);  // escapes the region without reconverging
     if (B == E)
       continue;
     for (const BasicBlock *P : predecessors(B))
       if (!R.InRegion.count(P))
-        return false;  // side entry
+        return leave("E3-sideentry");  // side entry
   }
   for (const BasicBlock *P : predecessors(Mg))
     if (!R.InRegion.count(P))
-      return false;  // a reaching edge PredMux does not predicate
+      return leave("E3-mergepred");  // a reaching edge PredMux does not predicate
 
   // --- E4 + E6 + E7 over the region body ------------------------------------
   for (BasicBlock *B : R.InRegion) {
@@ -442,24 +658,29 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     const Instruction *Term = B->getTerminator();
     if (const auto *BI = dyn_cast<BranchInst>(Term)) {
       if (BI->isConditional()) {
-        if (!Taint.Tainted.count(BI->getCondition()))
-          return false;  // classical control inside a tainted region: mixed
+        // bd adia (3c6m.55 Lever C): a CONSTANT-condition br (a fold residue the fp80
+        // promotion or an earlier flatten materialized late) is degenerate —
+        // no runtime classical/quantum mixing; the literal machinery folds
+        // ∧true/∧false natively (isSupportedCondTree admits ConstantInt).
+        if (!Taint.Tainted.count(BI->getCondition()) &&
+            !isa<ConstantInt>(BI->getCondition()))
+          return leave("E6-classicalbr", BI);  // classical control inside a tainted region: mixed
         if (!isSupportedCondTree(BI->getCondition(), 0))
-          return false;
+          return leave("E6-condtree", BI);
       }
     } else if (const auto *SI = dyn_cast<SwitchInst>(Term)) {
       if (!Taint.Tainted.count(SI->getCondition()))
-        return false;
+        return leave("E6-classicalswitch", SI);
       Type *ScrTy = SI->getCondition()->getType();
       if (!isMuxableType(ScrTy))
-        return false;  // eq/ne flags must be mintable at this width
+        return leave("E6-switchwidth", SI);  // eq/ne flags must be mintable at this width
     }
     if (B == E)
       continue;  // E's own instructions are not moved
     for (Instruction &I : *B) {
       if (isa<PHINode>(I)) {
         if (!isMuxableType(I.getType()))
-          return false;  // E7
+          return leave("E7-phi", &I);  // E7
         continue;
       }
       if (I.isTerminator())
@@ -476,7 +697,7 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         QromClaim QC = classifyQromReadUnderControl(LI2, Taint, DT, LInfo,
                                                     &Count, &R.InRegion);
         if (QC == QromClaim::No)
-          return false;
+          return leave("E4-load", &I);
         if (QC == QromClaim::NeedsMask)
           R.MaskLoads.push_back({LI2, Count});
         continue;
@@ -489,16 +710,38 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
                                              /*OutCount=*/nullptr,
                                              &R.InRegion) != QromClaim::No)
               continue;  // the claimable read's address gep (load re-checked).
-        return false;
+        return leave("E4-gep", &I);
+      }
+      // bd adia (Lever C) — a PENDING-SPECIALIZATION call is speculatable
+      // dataflow: DIRECT, ≥1 TAINTED argument (an all-classical pure call in
+      // an arm stays with its 6.5 classical-call-arm owner — anti-overlap),
+      // a template-width result, and a callee body passing the pure/acyclic/
+      // all-speculatable proof (a pure total terminating function of its
+      // arguments — the same class Phase-6 clones; under quantum control the
+      // call executes on every basis state, exactly as every other
+      // speculated arm op). An off-proof call still excludes the region.
+      if (auto *CI = dyn_cast<CallInst>(&I)) {
+        if (isCuratedReversibleIntrinsic(CI) && CI->doesNotAccessMemory())
+          continue;
+        bool TaintedArg = false;
+        for (Value *A : CI->args())
+          if (Taint.Tainted.count(A)) {
+            TaintedArg = true;
+            break;
+          }
+        if (TaintedArg && isTemplateWidthType(CI->getType()) &&
+            isSpeculatablePureCalleeBody(CI->getCalledFunction()))
+          continue;
+        return leave("E4-dataflow", &I);
       }
       if (!isSpeculatableDataflow(I))
-        return false;  // E4
+        return leave("E4-dataflow", &I);  // E4
     }
   }
   // E7 for the merge phis (they all convert: preds(Mg) ⊆ region).
   for (const PHINode &P : Mg->phis())
     if (!isMuxableType(P.getType()))
-      return false;
+      return leave("E7-mergephi", &P);
 
   return topoOrderRegion(R);
 }
@@ -588,7 +831,8 @@ private:
     Value *L = nullptr;
     if (auto *BI = dyn_cast<BranchInst>(Term)) {
       assert(BI->isConditional() && "unconditional edge has no literal");
-      L = Idx == 0 ? BI->getCondition() : buildNegation(BI->getCondition());
+      L = Idx == 0 ? canonicalizePred(BI->getCondition())
+                   : buildNegation(BI->getCondition());
     } else {
       auto *SI = cast<SwitchInst>(Term);
       if (Idx == 0) {  // default: ∧ of (scrut != case_k)
@@ -610,6 +854,73 @@ private:
     return L;
   }
 
+  // bd adia (Lever C): strip poison-generating flags AND metadata over the
+  // full backward cone of a select-form's SHIELDED operand. The rewrite below
+  // turns `select(a,b,false)` into `and(a,b)`: in the ORIGINAL program `b` is
+  // never observed when `a` is false (the clang short-circuit shield), so a
+  // poison `b` on an a=false basis state was harmless there but would poison
+  // the rewritten `and`. The claim-time proof `coneDefinedAfterFlagDrop`
+  // already restricted the cone to ops that are TOTAL once flags are gone
+  // (inherent-poison ops — variable-amount shifts, fp->int casts — never
+  // reach here); this strip performs the drop, so the cone is then defined
+  // on every basis state. Flag/metadata-stripping only widens definedness,
+  // so every other user of a cone value is unaffected.
+  void stripPoisonCone(Value *V) {
+    SmallPtrSet<Instruction *, 16> Seen;
+    SmallVector<Instruction *, 16> WL;
+    if (auto *I = dyn_cast<Instruction>(V)) {
+      Seen.insert(I);
+      WL.push_back(I);
+    }
+    while (!WL.empty()) {
+      Instruction *I = WL.pop_back_val();
+      I->dropPoisonGeneratingFlags();
+      I->dropPoisonGeneratingMetadata();
+      for (Value *Op : I->operands())
+        if (auto *OI = dyn_cast<Instruction>(Op))
+          if (Seen.insert(OI).second)
+            WL.push_back(OI);
+    }
+  }
+
+  // bd adia (Lever C): rewrite the poison-shielded short-circuit select forms
+  // (`select(a,b,false)` = a&&b, `select(a,true,b)` = a||b — the clang -O1
+  // compound-condition lowering of coshl's `ex < K || (ex == K && mx < M)`
+  // range ladder) into plain and/or nodes so the emitted predicate trees stay
+  // inside the cleared and/or-over-compare-leaves grammar (collectCondTree /
+  // the 3c6m.12 flag mint). Identity on every other supported shape. The
+  // shielded operand's cone is flag-stripped first (see stripPoisonCone) so
+  // the rewrite is basis-state-equivalent: a defined `b` makes
+  // `and(a,b) == select(a,b,false)` on every input.
+  Value *canonicalizePred(Value *V) {
+    if (auto *Sel = dyn_cast<SelectInst>(V)) {
+      if (auto *FC = dyn_cast<ConstantInt>(Sel->getFalseValue()))
+        if (FC->isZero()) {
+          stripPoisonCone(Sel->getTrueValue());
+          return track(B.CreateAnd(canonicalizePred(Sel->getCondition()),
+                                   canonicalizePred(Sel->getTrueValue())));
+        }
+      if (auto *TC = dyn_cast<ConstantInt>(Sel->getTrueValue()))
+        if (TC->isOne()) {
+          stripPoisonCone(Sel->getFalseValue());
+          return track(B.CreateOr(canonicalizePred(Sel->getCondition()),
+                                  canonicalizePred(Sel->getFalseValue())));
+        }
+      return V;  // unreachable past isSupportedCondTree
+    }
+    if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+      if (BO->getOpcode() == Instruction::And ||
+          BO->getOpcode() == Instruction::Or) {
+        Value *L = canonicalizePred(BO->getOperand(0));
+        Value *Rr = canonicalizePred(BO->getOperand(1));
+        if (L != BO->getOperand(0) || Rr != BO->getOperand(1))
+          return track(BO->getOpcode() == Instruction::And ? B.CreateAnd(L, Rr)
+                                                           : B.CreateOr(L, Rr));
+      }
+    }
+    return V;
+  }
+
   // ¬V with the negation pushed to the leaves (PRD §4.3, the no-NOT
   // invariant). Shapes are pre-checked by isSupportedCondTree.
   Value *buildNegation(Value *V) {
@@ -619,6 +930,23 @@ private:
     if (auto *Cmp = dyn_cast<CmpInst>(V))
       return track(B.CreateCmp(Cmp->getInversePredicate(), Cmp->getOperand(0),
                                Cmp->getOperand(1)));
+    // bd adia: select-form short-circuit nodes (see canonicalizePred; the
+    // shielded operand's cone is flag-stripped before negation, same
+    // basis-state-equivalence argument). ¬(a&&b) = ¬a ∨ ¬b ;
+    // ¬(a||b) = ¬a ∧ ¬b — leaf-inverted De Morgan (the no-NOT invariant).
+    if (auto *Sel = dyn_cast<SelectInst>(V)) {
+      if (auto *FC = dyn_cast<ConstantInt>(Sel->getFalseValue());
+          FC && FC->isZero()) {
+        stripPoisonCone(Sel->getTrueValue());
+        return track(B.CreateOr(buildNegation(Sel->getCondition()),
+                                buildNegation(Sel->getTrueValue())));
+      }
+      auto *TC = cast<ConstantInt>(Sel->getTrueValue());
+      (void)TC;
+      stripPoisonCone(Sel->getFalseValue());
+      return track(B.CreateAnd(buildNegation(Sel->getCondition()),
+                               buildNegation(Sel->getFalseValue())));
+    }
     auto *BO = cast<BinaryOperator>(V);
     if (BO->getOpcode() == Instruction::Xor)
       return BO->getOperand(0);  // xor-true: ¬¬x = x
@@ -741,6 +1069,10 @@ private:
       } else {
         Acc = In.back().second;
         for (unsigned I = In.size() - 1; I-- > 0;) {
+          // bd adia (3c6m.55 Lever C): select(EP, x, x) = x — never mint the degenerate
+          // same-arm mux (the value-chain mirror of the BoolAlg x∨x guard).
+          if (In[I].second == Acc)
+            continue;
           Value *EP = edgePred(In[I].first, D);
           Acc = track(B.CreateSelect(EP, In[I].second, Acc));
         }
@@ -791,6 +1123,14 @@ private:
 
 }  // namespace
 
+// bd adia (3c6m.55 Lever C): exported wrapper — the pending-spec pure-callee proof
+// (visible + non-vararg + acyclic CFG + br/ret terminators + every
+// non-terminator speculatable dataflow; inner calls curated memory(none)
+// intrinsics only). Shared with the Fp80Union seed walk (Rule 14).
+bool isSpeculatablePureCallee(const Function *F) {
+  return isSpeculatablePureCalleeBody(F);
+}
+
 bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
   for (Function &F : M) {
     if (F.isDeclaration())
@@ -801,6 +1141,16 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
         HasTaintedCtrl = true;
     if (!HasTaintedCtrl)
       continue;
+
+    // bd adia (3c6m.55 Lever C): collapse constant-fold residues FIRST (an all-constant
+    // compare feeding a branch — materialized late by an earlier flatten's
+    // select folding or a cross-function promotion round — reads as
+    // "classical control inside a tainted region" and wedges E6). Taint-safe
+    // (only all-constant instructions fold; a theta-derived value is never
+    // Constant). A fold is a mutation: report it so the driver re-propagates
+    // before the next claim reads the region.
+    if (foldConstantConesInFunction(F))
+      return true;
 
     PostDominatorTree PDT;
     PDT.recalculate(F);
@@ -819,6 +1169,12 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
       IRBuilder<> Builder(T);
       Builder.SetCurrentDebugLocation(T->getDebugLoc());
       RegionFlattener(R, Builder).run();
+      // bd adia (3c6m.55 Lever C): collapse fold residues the flatten materialized
+      // (a select chain over constant incomings folds to a constant, leaving
+      // a constant-operand compare feeding a "classical" branch that would
+      // wedge the next claim's E6 walk). Taint-safe: only all-constant
+      // instructions fold; the caller re-derives taint before the next claim.
+      foldConstantConesInFunction(F);
       return true;  // one region per call; caller re-propagates
     }
   }

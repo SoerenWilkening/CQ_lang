@@ -633,6 +633,24 @@ add_test(NAME e2e-slice-libm-real-cbrtl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_cbrtl.expected.log")
 
+# bd adia (3c6m.55 Lever C) — the FIRST ld80 TRANSCENDENTAL golden: the real
+# openlibm coshl closure (e_coshl + e_expl + s_expm1l + s_floorl + __polevll +
+# __isnanl + scalbnl-as-ldexpl) at plain -O1. The Lever A+B+C composition of
+# record: every union promotes (incl. seeds crossing the OUTLINED pure floorl
+# call), both polevll Horner loops force-unroll, the coshl exponent ladder's
+# select-form short-circuit conditions and floorl's Q+Q word compares flatten
+# and mint, and the outlined expl specializes under tainted control (PredMux
+# speculates the proven-pure body; the Phase-6 clone Bennett-wraps it with the
+# fp80-ABI copy-out and lowerCloneControl flattens its internal branch web).
+# 21k+ trace lines, deterministic; exactly ONE ry + ONE measure (Rule 5).
+add_test(NAME e2e-slice-libm-real-coshl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_coshl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_coshl.expected.log")
+
 # bd szpr (3c6m.51 Inc-3 critic Gap 1) — the i80 field-insert WRITE-surface
 # `_unc` adjoints trace-verified: a dead promoted-union RMW on a dedicated rail
 # (result-dropped cq_phi keep-alive, the slice_f80.c case-B discipline) makes

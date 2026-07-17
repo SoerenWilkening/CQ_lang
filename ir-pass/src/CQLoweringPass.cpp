@@ -186,6 +186,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
     while (flattenPredMuxRegions(M, taint))
       taint = propagate(M, wd);
   }
+  // Debug lever (bd adia; env-gated, no behavior change): dump the module state
+  // the Phase-6 spec-scan reads (post fp80/PredMux/unroll fixpoints).
+  if (::getenv("CQ_SPEC_DBG")) {
+    llvm::errs() << "=== CQ_SPEC_DBG: module before detectSpecializations ===\n";
+    M.print(llvm::errs(), nullptr);
+  }
 
   // Phase 6 specialization PRE-PASS (C-Plan, DD-1): pure analysis by SSA
   // identity, BEFORE `declineTaintEscapes`, so the carve-out's membership test

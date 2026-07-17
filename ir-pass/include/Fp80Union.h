@@ -51,6 +51,7 @@
 #define CQ_FP80UNION_H
 
 namespace llvm {
+class Function;
 class Module;
 }
 
@@ -63,6 +64,16 @@ struct TaintSet;
 // constant. Returns true if any union was promoted (caller re-propagates). Emits
 // the loud padding diagnostic for a matched-but-unsound union.
 bool promoteFp80Union(llvm::Module &M, TaintSet &taint);
+
+// bd adia (3c6m.55 Lever C): exported wrapper over the internal constant-cone/branch
+// fold (ConstantFoldInstruction fixpoint + ConstantFoldTerminator +
+// removeUnreachableBlocks). Semantics-preserving and taint-safe: it touches
+// ONLY all-constant instructions, and a theta-derived value is never a
+// Constant. PredMux runs it after each successful flatten so fold residues
+// (a constant-operand compare materialized by a select-chain fold) collapse
+// before the next claim's E6 walk reads the region. Callers must re-derive
+// taint after a `true` return (blocks may have been erased).
+bool foldConstantConesInFunction(llvm::Function &F);
 
 }  // namespace cq
 

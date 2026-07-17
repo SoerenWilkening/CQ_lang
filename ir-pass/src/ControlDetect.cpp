@@ -51,6 +51,10 @@ namespace cq {
 void diagnoseUnderControl(Instruction *Where, StringRef What) {
   std::string Msg =
       ("cq controlled lowering: " + What + " under quantum control").str();
+  // bd adia debug lever (env-gated, byte-neutral): print the offending instruction.
+  if (::getenv("CQ_CTRL_DBG"))
+    llvm::errs() << "CQ_CTRL_DBG: decline [" << What << "] at: " << *Where
+                 << "\n";
   Where->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
       *Where->getFunction(), Msg, Where->getDebugLoc()));
 }

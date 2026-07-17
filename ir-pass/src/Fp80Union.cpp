@@ -65,6 +65,7 @@
 
 #include "IntrinsicLowering.h"  // isCuratedReversibleIntrinsic
 #include "OpcodeSupport.h"      // abiWidthFromType
+#include "PredMuxFlatten.h"     // isSpeculatablePureCallee (adia seed widening)
 #include "TaintPropagation.h"   // TaintSet
 
 #include "llvm/Analysis/ConstantFolding.h"
@@ -578,12 +579,29 @@ bool fpSeedValueOk(Value *Root, TaintSet &taint,
       // NON-curated call (a transcendental `@llvm.sin`, an opaque `@foo`, an
       // fp128/vector width) is NOT admitted and rides the existing seed-drop.
       // A trailing i1 immarg (abs/ctlz) is a Constant → short-circuits.
-      if (auto *CI = dyn_cast<CallInst>(I))
+      if (auto *CI = dyn_cast<CallInst>(I)) {
         if (isCuratedReversibleIntrinsic(CI)) {
           for (Value *Op : CI->args())
             Work.push_back(Op);
           break;
         }
+        // bd adia (3c6m.55 Lever C) (Lever C compose): in WIDENED mode only, a direct
+        // call to a VISIBLE, acyclic, all-speculatable PURE body (the
+        // pending-specialization callee class — the SAME `isSpeculatablePure-
+        // Callee` proof PredMux's E4 speculates on, Rule 14) is a transparent
+        // fp-derivation op: a pure total terminating function of its operands
+        // (olm_expl's `px = olm_floorl(...)` seed cone at the plain -O1
+        // floor, where floorl stays outlined). The proof only passes AFTER
+        // the callee's own unions promoted (its body must be load/store-free)
+        // — an earlier fixpoint round, so the cascade converges naturally.
+        // Wide-admitted candidates classify OPPORTUNISTIC (strict predicate
+        // byte-identical; walk failure = today's silent drop).
+        if (AdmitArgDerived && isSpeculatablePureCallee(CI->getCalledFunction())) {
+          for (Value *Op : CI->args())
+            Work.push_back(Op);
+          break;
+        }
+      }
       return fail(V);
     default:
       // bd 3c6m.55 Inc 1 (Lever A.1c reload-web): in WIDENED mode only, any
@@ -1152,6 +1170,10 @@ bool foldConstantConeAndBranches(Function &F, const DataLayout &DL) {
 }
 
 }  // namespace
+
+bool foldConstantConesInFunction(Function &F) {
+  return foldConstantConeAndBranches(F, F.getParent()->getDataLayout());
+}
 
 bool promoteFp80Union(Module &M, TaintSet &taint) {
   const DataLayout &DL = M.getDataLayout();

@@ -143,6 +143,11 @@ llvm::Value *lowerCompareToFlag(llvm::CmpInst *cmp, WidthDispatch &wd,
 // template surface ever narrows below `compareInScope`.
 bool compareFlagMintable(llvm::CmpInst *cmp, TaintSet &taint);
 
+// bd adia (3c6m.55 Lever C): the Q+Q select-leaf width — non-empty iff BOTH compare
+// operands are tainted and share one in-surface logical width (HandleWidth-
+// aware). Shared by SelectClassify (detection) and SelectMergeEmit (emission).
+llvm::StringRef qqSelectLeafWidth(llvm::CmpInst *cmp, TaintSet &taint);
+
 // Swap-route nested-control variant of `lowerCompareToFlag` (Phase 4.3, the ONE
 // new emission primitive — IMPLEMENTATION-4.3 §4/§12.2). Mints the inner
 // condition's flag with `railBase` substituted for the parent-routed handle
