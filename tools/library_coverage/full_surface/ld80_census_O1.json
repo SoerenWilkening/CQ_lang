@@ -31,18 +31,18 @@
  },
  "atan2l.f80": {
   "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "atanl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
+  "bucket": "fp-copy/specialization",
+  "diag": "atanl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memo"
  },
  "coshl.f80": {
   "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
+  "bucket": "fp-copy/specialization",
+  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsup"
  },
  "sinhl.f80": {
   "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
+  "bucket": "fp-copy/specialization",
+  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsup"
  },
  "tanhl.f80": {
   "status": "decline",
@@ -86,8 +86,8 @@
  },
  "log10l.f80": {
   "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "ldexpl x86_fp80 (x86_fp80, i32): cq specialization: callee contains tainted control flow under quantum lift"
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
  },
  "log2l.f80": {
   "status": "decline",
@@ -131,8 +131,8 @@
  },
  "powl.f80": {
   "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
+  "bucket": "fp-copy/specialization",
+  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (uns"
  },
  "cbrtl.f80": {
   "status": "COMPILES",
@@ -156,8 +156,8 @@
  },
  "tgammal.f80": {
   "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
+  "bucket": "fp-copy/specialization",
+  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (uns"
  },
  "lgammal.f80": {
   "status": "decline",
