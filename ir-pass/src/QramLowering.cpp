@@ -1197,15 +1197,23 @@ void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
       ArrayHandle[Key] = A;
     }
 
-    // Resolve the index handle: strip the mandatory `-O1` widening sext/zext so
-    // the index is the i32 handle (Rule 15 — the widening is irrelevant to the
+    // bd gyc9: re-read the index FRESH from the LIVE gep's trailing operand, NOT
+    // the captured `R.RawIndex` — the nested `tbl2[tbl1[q]]` read's inner-load
+    // RAUW (below, an earlier loop iteration) bypasses the classify-time capture,
+    // which would leave the outer call referencing the erased inner load
+    // (dangling operand → verifier UAF SIGSEGV; the Shadow-side twin is the
+    // self-referential store web). `matchAddressGep` proved the index is the
+    // trailing gep operand, so the fresh read is the same value modulo RAUW.
+    //
+    // Then resolve the index handle: strip the mandatory `-O1` widening sext/zext
+    // so the index is the i32 handle (Rule 15 — the widening is irrelevant to the
     // symbol). The cross-type RAUW launders the operand to its i32 handle later,
     // EXACTLY like the I/O tape-write `src` (RotationLowering §1). If the cast is
     // single-use (the gep was its only user) it dies here; otherwise it is left
     // for `lowerOps` and the source value is still the right index.
-    Value *Idx = R.RawIndex;
+    Value *Idx = R.Gep->getOperand(R.Gep->getNumOperands() - 1);
     Instruction *DeadCast = nullptr;
-    if (auto *CI = dyn_cast<CastInst>(R.RawIndex))
+    if (auto *CI = dyn_cast<CastInst>(Idx))
       if ((isa<SExtInst>(CI) || isa<ZExtInst>(CI)) &&
           taint.Tainted.count(CI->getOperand(0))) {
         Idx = CI->getOperand(0);
@@ -1439,12 +1447,22 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
 
   SmallVector<Instruction *, 16> ToErase;
   for (const ShadowAccess &A : Accesses) {
-    // Resolve the index handle: strip the mandatory `-O1` widening sext/zext so the
-    // index is the i32 handle (Rule 15) — the cross-type RAUW launders it later,
-    // EXACTLY like Inc 1's read and the I/O tape-write `src`.
-    Value *Idx = A.RawIndex;
+    // bd gyc9 (the 7z9k.3 fresh-value-read's INDEX twin): re-read the index FRESH
+    // from the LIVE gep's trailing operand, NOT the captured `A.RawIndex`. When an
+    // earlier-processed load access RAUW'd its original load to the new
+    // `cqrt_qram_load` and this access's index IS that load result directly (the
+    // self-referential `arr[v]=v` web; a widening cast in between stays live and
+    // is fixed up by the RAUW), the captured pointer is the STALE pre-RAUW load —
+    // the new call would reference a soon-erased value (dangling operand →
+    // verifier UAF SIGSEGV). `matchAddressGep` proved the index is the trailing
+    // gep operand, so the fresh read is the same value modulo intervening RAUW.
+    //
+    // Then resolve the index handle: strip the mandatory `-O1` widening sext/zext
+    // so the index is the i32 handle (Rule 15) — the cross-type RAUW launders it
+    // later, EXACTLY like Inc 1's read and the I/O tape-write `src`.
+    Value *Idx = A.Gep->getOperand(A.Gep->getNumOperands() - 1);
     Instruction *DeadCast = nullptr;
-    if (auto *CI = dyn_cast<CastInst>(A.RawIndex))
+    if (auto *CI = dyn_cast<CastInst>(Idx))
       if ((isa<SExtInst>(CI) || isa<ZExtInst>(CI)) &&
           taint.Tainted.count(CI->getOperand(0))) {
         Idx = CI->getOperand(0);
