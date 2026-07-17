@@ -36,18 +36,18 @@
  },
  "coshl.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsup"
+  "bucket": "control (flat/diamond)",
+  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "sinhl.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsup"
+  "bucket": "control (flat/diamond)",
+  "diag": "expl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "tanhl.f80": {
   "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
  },
  "acoshl.f80": {
   "status": "decline",
@@ -66,8 +66,8 @@
  },
  "expl.f80": {
   "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+  "bucket": "loop-carried",
+  "diag": "probe x86_fp80 (): cq loop lowering: loop-carried tainted value crosses iterations"
  },
  "exp2l.f80": {
   "status": "decline",
@@ -76,8 +76,8 @@
  },
  "expm1l.f80": {
   "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
  },
  "logl.f80": {
   "status": "decline",
@@ -126,13 +126,13 @@
  },
  "modfl.f80": {
   "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+  "bucket": "control (flat/diamond)",
+  "diag": "probe x86_fp80 (): cq controlled lowering: control flow under quantum control"
  },
  "powl.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (uns"
+  "bucket": "control (flat/diamond)",
+  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "cbrtl.f80": {
   "status": "COMPILES",
@@ -156,8 +156,8 @@
  },
  "tgammal.f80": {
   "status": "decline",
-  "bucket": "fp-copy/specialization",
-  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (uns"
+  "bucket": "control (flat/diamond)",
+  "diag": "floorl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift"
  },
  "lgammal.f80": {
   "status": "decline",
@@ -166,13 +166,13 @@
  },
  "lroundl.f80": {
   "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe i64 (): cq taint escape: tainted value stored to memory"
+  "bucket": "control (flat/diamond)",
+  "diag": "probe i64 (): cq controlled lowering: control flow under quantum control"
  },
  "llroundl.f80": {
   "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe i64 (): cq taint escape: tainted value stored to memory"
+  "bucket": "control (flat/diamond)",
+  "diag": "probe i64 (): cq controlled lowering: control flow under quantum control"
  },
  "fmodl.f80": {
   "status": "decline",
