@@ -180,9 +180,29 @@ bool isLiftableFpSelect(const SelectInst *SI) {
     return false;  // bd adia whitelist: {f32,f64,f80} — f16 declines (no coverage)
   if (!isa<ICmpInst>(SI->getCondition()))
     return false;  // integer icmp condition only (fcmp is a deferred widening).
-  // BOTH arms non-constant (derived fp — fneg/sitofp/fsub…). A constant arm needs
-  // the materialize-classical-arm path (a later widening), not slice 1.
-  return !isa<Constant>(SI->getTrueValue()) && !isa<Constant>(SI->getFalseValue());
+  // 20xt.3 (the materialize-classical-arm widening — atan2l → inner atanl block
+  // %20, the |x|≥2^64 overflow arm `select(sgn, +π/2, −π/2)`): each arm is EITHER
+  // a derived (non-constant) fp value OR a concrete `ConstantFP`. A ConstantFP arm
+  // is a classical basis value `lowerCloneSelect` materializes to a fresh
+  // `cqrt_alloc_f<W>(<const>)` |const⟩ rail via `materializeCopySource`, then
+  // controlled-copies into the |0⟩ out rail — the SAME two-copy stream the
+  // value/value fabs shape emits, the SAME classical-arm materialize the 4.4
+  // top-level select / 4.5 switch data-mux / 6.5 classical-call arm already ship
+  // (Rule 14). The materialized rail is separable classical data: LEFT allocated
+  // (leaked) per Rule 6, its controlled copy captured + reverse-played by the
+  // Bennett wrap (Specialization.cpp select-op capture). This admits const/const
+  // (the atanl ±π/2 arm), const/value, and value/const on top of value/value. A
+  // NON-`ConstantFP` constant (undef / poison / ConstantExpr) is not a concrete
+  // materializable basis value → stays InBodyControl (safe over-decline, Prime
+  // Directive; spec_reject_fp_select_undef_arm.ll). This is a taint-blind SHAPE
+  // gate only: `lowerCloneSelect` re-proves the condition's taint and the
+  // whole-classical / mixed trichotomy at emission (an all-classical select is
+  // left for the backend; a classical condition over a tainted arm declines the
+  // unforgivable mixed shape loudly — spec_reject_fp_select_mixed.ll).
+  auto armLiftable = [](const Value *A) {
+    return !isa<Constant>(A) || isa<ConstantFP>(A);
+  };
+  return armLiftable(SI->getTrueValue()) && armLiftable(SI->getFalseValue());
 }
 
 // The Callee-only body-shape verdict (arity cap, straight-line value shape, no

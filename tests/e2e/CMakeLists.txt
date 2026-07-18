@@ -1774,6 +1774,30 @@ add_test(NAME e2e-slice-specialize-fp-select
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_caller.expected.log")
 
+# bd 20xt.3 (the materialize-classical-arm widening): a CONST/CONST fp80 select in
+# a source-injected int->long-double helper lifted to a reversible clone — the
+# atan2l -> inner atanl |x|>=2^64 overflow arm `z = (expsign<0) ? -pi/2 : +pi/2`
+# (s_atanl.c block %20; both arms ConstantFP). spec_fp_select_const_lib.c returns
+# `(n<0) ? -1.5L : 2.5L` directly, so clang -O1 keeps select(icmp, fp80 const, fp80
+# const). Lifts into __cq_q_mhelper_1: EACH ConstantFP arm materialized to its own
+# `cqrt_alloc_f80(<const>)` |const> rail (LEAKED, Rule 6), two cqrt_copy_f80_controlled
+# merge (copy_T, ¬flag cqrt_x, copy_F, cqrt_x), fp80 result copied out
+# (`cqrt_copy_f80`, 3c6m.54), Bennett-wrapped. LINK-proves cqrt_alloc_f80 /
+# cqrt_copy_f80_controlled / cqrt_copy_f80 / cq_template_icmp_slt_i32_hl(+_unc)
+# resolve. The golden: 1 ry + 1 measure (Rule 5), the two |const> rails NEVER freed
+# (Rule 6), the out + flag rails freed on |0> (0 double-frees), palindromic
+# forward/reverse copies (Rules 2, 6, 13, 16). atan2l itself still declines at the
+# NEXT blocker (the atanhi[id]/atanlo[id] table reads); this synthetic slice is the
+# Rule-2 link proof for the const-arm clone widening in isolation.
+add_test(NAME e2e-slice-specialize-fp-select-const
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_const_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_const_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_const_caller.expected.log")
+
 # Phase 7.1-E follow-up (test_C_libtooling-mvjc): a CURATED reversible llvm.* idiom
 # intrinsic INSIDE a specialized clone. specialize_intrinsic_caller.c routes a
 # theta-tainted `x` through the separate-TU classical helper popcount_helper
