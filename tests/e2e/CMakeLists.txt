@@ -1819,6 +1819,27 @@ add_test(NAME e2e-slice-specialize-intrinsic
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/specialize_intrinsic_caller.expected.log")
 
+# bd 20xt.4 Inc 1 — a const-global tainted-index QROM read (`kTable[id]`) INSIDE a
+# Phase-6 specialized callee (the atan2l inner-atanl `atanhi[id]`/`atanlo[id]`
+# spec-callee capability, in isolation: straight-line — no control, no index-select).
+# The `noinline` callee `lookup` stays outlined at -O1, so a tainted-arg call is a
+# clone-on-taint candidate; `scanBody` admits the gep+load SHAPE (`qromReadShapeInScope`,
+# the same `matchQramAccess` structure the emitter re-proves), the clone's
+# `lowerQramReads` (`cloneTaint`, `inBennettClone` — the top-level coherent-return
+# fence is vacuous in a wrapped clone) lowers it to `cqrt_qram_alloc_f64` (array-handle
+# birth) + `cqrt_qram_load_f64`, and the Bennett wrap CAPTURES the load: reversed via
+# `cqrt_qram_load_f64_unc`, then the value rail is freed clean. Golden = the gate
+# trace: exactly 1 `cqrt_ry` + 1 `cqrt_measure` (Rule 5), the array handle `a1` NEVER a
+# `cqrt_free` operand (a classical resource token), `h4` (the load rail) reversed
+# before free, `h3` (the index) live through the `load_unc`.
+add_test(NAME e2e-slice-spec-qram-read
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_qram_read.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_qram_read.expected.log")
+
 # p119: e2e-slice-specialize-libm REMOVED — it lifted a DIRECT-libm call (ilogb)
 # into a specialized clone, but direct-libm is a library-function surface
 # (source-injected, not name-recognized; Rule 18). Specialization-of-a-clone-with-a-

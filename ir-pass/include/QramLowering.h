@@ -153,12 +153,37 @@ bool foldVolatileConstGlobalLoads(llvm::Module &M);
 // folded.
 bool foldVolatileConstAllocaLoads(llvm::Module &M, const TaintSet &taint);
 
+// bd 20xt.4 — the taint-blind STRUCTURAL const-global QROM-read shape, the shared
+// truth for the Phase-6 spec-clone ADMIT paths (`scanBody` in SpecializeReject and,
+// Inc 2, `isSpeculatableDataflow` in PredMuxFlatten). True iff `LI` is a simple load
+// whose pointer is a single-use canonical gep off a constant-initialised `[N x cell]`
+// global (N>0, scalar cell of a qram-cell width). Reuses the SAME structural helpers
+// `matchQramAccess` calls (`matchAddressGep`/`walkPtrOrigin`/`isDirectOriginPtr`), so
+// the admit can never STRUCTURALLY diverge from the emitter's `classifyQromRead`
+// (Rule 14). TAINT-BLIND + DT/LInfo-free: the index-taint, straight-line/loop AND
+// bounds proofs are DEFERRED to the emitter (`lowerQramReads` under the clone's
+// `cloneTaint`, where the index IS tainted and the intra-clone flatten has masked it).
+bool qromReadShapeInScope(const llvm::LoadInst *LI);
+
 // Lower every accepted const-global tainted-index READ in `M`. Runs BEFORE
 // `lowerRotations` (pre-RAUW SSA identity, the control/IO precedent): the emitted
 // index operand is the still-tainted source value, which the rotation/opcode RAUW
 // later rewrites to its i32 handle. An accepted-shape read whose element width has
 // no reversible copy (fp/i128) declines LOUDLY here.
-void lowerQramReads(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+//
+// `inBennettClone` (bd 20xt.4): when lowering INSIDE a Phase-6 Bennett clone body,
+// SKIP the coherent-return no-cloning fence (`kMsgQramCohEscape`). That fence exists
+// only for the TOP-LEVEL `return tbl[q]` shape, where the raw entangled load value
+// escapes with no copy-out and the whole-DAG uncompute later dirty-frees the local
+// index (dephasing the carrier). In a clone the escape is handled correctly by the
+// Bennett wrap: the return is COPIED OUT to a fresh basis rail BEFORE the reverse,
+// and the reverse uncomputes the ENTIRE forward stream (the qram load `_unc` AND the
+// index) so the copied-out value is a clean basis function of the borrowed inputs
+// (Bennett's theorem — sound). The wrap is what makes the escape lowerable, so the
+// top-level fence is vacuous here; every OTHER gate (width, taint, straight-line)
+// still applies. Default false keeps the top-level entry points unchanged.
+void lowerQramReads(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
+                    bool inBennettClone = false);
 
 // ── Phase 7.5 Increment 2: alloca-backed mutable array (Shadow-shaped) ──────────
 //

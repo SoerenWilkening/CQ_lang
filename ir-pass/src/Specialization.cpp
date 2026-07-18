@@ -9,6 +9,7 @@
 #include "OpcodeLowering.h"
 #include "OpcodeSupport.h"
 #include "PredMuxFlatten.h"
+#include "QramLowering.h"      // lowerQramReads (bd 20xt.4 spec-callee QROM read)
 #include "SelectClassify.h"    // collectCondTree / CondTree (5po2 I2 compound cond)
 #include "SelectMergeEmit.h"   // materializeCopySource (5po2 I2 classical arm)
 #include "SpecializeClone.h"
@@ -58,6 +59,22 @@ bool isForwardTemplate(const CallInst *CI) {
   StringRef N = F->getName();
   return N.starts_with("cq_template_") && !N.ends_with("_unc") &&
          !N.ends_with("_inv");
+}
+
+// bd 20xt.4: a forward `cqrt_qram_load_<W>(arr, idx)` minted into the clone by
+// `lowerQramReads` — a reversible data producer (Toffoli copy-out) whose result is
+// a dead value rail the Bennett wrap reverses (via `cqrt_qram_load_<W>_unc`, which
+// un-copies the rail using the preserved cell) and then frees. Captured like an
+// `isForwardTemplate` result (ForwardStream + ScratchRails). NOT the array-handle
+// `cqrt_qram_alloc_<W>` (a CLASSICAL resource token — never tainted, never reversed
+// or freed, matching the top-level `isQramArrayHandle` disposition) and NOT the
+// `_unc` twin (a reverse-only op the wrap mints itself).
+bool isForwardQramLoad(const CallInst *CI) {
+  const Function *F = CI->getCalledFunction();
+  if (!F)
+    return false;
+  StringRef N = F->getName();
+  return N.starts_with("cqrt_qram_load_") && !N.ends_with("_unc");
 }
 
 // Scrub `V` from every clone taint work-list (mirror of SwapRouteEmit/
@@ -865,6 +882,21 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
           return SpecRecord{Clone, false};
         }
 
+  // bd 20xt.4: lower any const-global tainted-index QROM read in the clone body to
+  // `cqrt_qram_alloc_<W>` (array-handle birth, at the clone entry) + `cqrt_qram_load
+  // _<W>` (Toffoli copy-out). The module-level `lowerQramReads` (CQLoweringPass) ran
+  // BEFORE `specialize`, so the clone (created just now) still holds raw gep+loads;
+  // lower them HERE, scoped by `cloneTaint` (only the clone's tainted-index reads
+  // match — every other function's reads are already lowered or untainted here), and
+  // BEFORE `lowerOps` so the load result is an i32 handle when its arith consumers
+  // lower. `inBennettClone=true` skips the top-level coherent-return no-cloning
+  // fence: the Bennett wrap below copies the return out to a fresh basis rail and
+  // uncomputes the WHOLE forward stream (the qram load `_unc` AND the index), so the
+  // escape is sound (Bennett) — the fence is vacuous in a clone. The lowered load
+  // result joins `cloneTaint` (a reversible producer the wrap captures); the array
+  // handle is a CLASSICAL resource token (never tainted, never captured/freed).
+  lowerQramReads(M, wd, cloneTaint, /*inBennettClone=*/true);
+
   // Scoped data lowering: `lowerOps` walks all of `M` but lowers only the
   // instructions in `cloneTaint` (C25). Inner clone calls are not stock opcodes,
   // so they are untouched; already-lowered sibling clones are in disjoint
@@ -883,7 +915,13 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   for (BasicBlock &BB : *Clone)
     for (Instruction &I : BB)
       if (auto *CI = dyn_cast<CallInst>(&I)) {
-        if (isForwardTemplate(CI) || TaintedCloneCalls.count(CI)) {
+        if (isForwardTemplate(CI) || TaintedCloneCalls.count(CI) ||
+            isForwardQramLoad(CI)) {
+          // bd 20xt.4: a `cqrt_qram_load_<W>` joins the data-template/inner-clone
+          // family — a reversible producer the wrap reverses (its `_unc`) then frees
+          // (the value rail). Its array-handle `cqrt_qram_alloc_<W>` is neither
+          // `isForwardTemplate` nor a select op, so it is naturally EXCLUDED here
+          // (a classical resource token — never reversed or freed).
           ForwardStream.push_back(CI);
           ScratchRails.push_back(CI);
         } else if (SelectCopyOps.count(CI) || SelectXBrackets.count(CI) ||

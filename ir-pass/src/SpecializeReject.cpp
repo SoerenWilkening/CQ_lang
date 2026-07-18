@@ -9,6 +9,7 @@
 
 #include "IntrinsicLowering.h"
 #include "OpcodeSupport.h"
+#include "QramLowering.h"
 #include "SpecializePlan.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -461,6 +462,17 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
       return SpecReject::NonReversibilizable;
     }
     if (auto *LI = dyn_cast<LoadInst>(&I)) {
+      // bd 20xt.4: a const-global tainted-index QROM read (`tbl[id]`) is a
+      // reversibilizable data producer inside a clone — the clone's flatten
+      // masks a NeedsMask index, `lowerQramReads` (under `cloneTaint`) lowers it
+      // to `cqrt_qram_alloc/load_<W>`, and the Bennett wrap captures+reverses the
+      // load (its `_unc` un-copies the dead value rail). Admit the SHAPE here
+      // (taint-blind, the SAME `matchQramAccess` structure the emitter re-proves —
+      // Rule 14); its address gep is admitted symmetrically in the catch-all
+      // below. Everything off this shape (a store, a non-const/non-array global, a
+      // punned or unsupported-width cell) keeps the loud memory-access decline.
+      if (qromReadShapeInScope(LI))
+        continue;
       WhereOut = &I;
       KindOut = LI->isVolatile() ? "volatile" : "memory access";
       pop();
@@ -616,6 +628,18 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
         }
       continue;  // accepted data op.
     }
+    // bd 20xt.4: the address gep of an admitted const-global QROM read (the sole
+    // user of a single-use gep is that load). Mirrors the LoadInst admit above and
+    // the PredMux region-walk E4-gep case, so detection is consistent across the
+    // two spec-clone entry points (Rule 14). Any other gep (a non-QROM-read user,
+    // a captured/escaping address) rides the loud decline below.
+    if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
+      if (GEP->hasOneUse())
+        if (auto *LU = dyn_cast<LoadInst>(GEP->user_back()))
+          if (LU->getPointerOperand() == GEP && qromReadShapeInScope(LU))
+            continue;
+    }
+
     // Anything else (getelementptr, freeze, va_arg, extract/insert, …) is an
     // unproven shape — decline (Prime Directive).
     WhereOut = &I;

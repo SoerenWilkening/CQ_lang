@@ -886,6 +886,63 @@ bool coherentlyEscapesToReturn(Value *V) {
 
 }  // namespace
 
+// bd 20xt.4 — the taint-blind STRUCTURAL const-global QROM-read shape, the shared
+// truth for the Phase-6 spec-clone ADMIT paths (`scanBody` in SpecializeReject,
+// and — Inc 2 — `isSpeculatableDataflow`/`isSpeculatablePureCalleeBody` in
+// PredMuxFlatten). Reuses the SAME structural helpers `matchQramAccess` itself
+// calls — `matchAddressGep` (canonical array-decay/flat gep + trailing index) +
+// `walkPtrOrigin` (single statically-shaped origin) + `isDirectOriginPtr` (clean
+// zero base offset) — plus the identical array/const/width gates, so the admit can
+// never STRUCTURALLY diverge from the emitter's `classifyQromRead` (Rule 14, the
+// carve/emit non-divergence discipline; the shared `matchQramAccess` fences off a
+// silent accept). Deliberately TAINT-BLIND and DT/LInfo-free: the clone-body index
+// is not in the module taint (taint stops at the caller→callee boundary), so the
+// index-taint proof, the straight-line/loop gates AND the bounds proof are DEFERRED
+// — re-proven by the emitter under the clone's own `cloneTaint` (`lowerQramReads`,
+// where the seeded index IS tainted and the intra-clone flatten has already masked
+// a NeedsMask index). A load whose gep is multi-use, off a non-const/uninitialised
+// or non-array global, punned to a different access type, or of an unsupported cell
+// width returns false (the safe over-decline stays with the whitelist's catch-all).
+// Pure analysis (no mutation, no taint dependence).
+bool qromReadShapeInScope(const llvm::LoadInst *LI) {
+  if (!LI->isSimple())
+    return false;  // volatile/atomic loads are not a QROM read.
+  // Pure analysis (no mutation); const_cast to reuse the non-const structural
+  // helpers `matchQramAccess` itself calls.
+  auto *GEP = dyn_cast<GetElementPtrInst>(
+      const_cast<Value *>(LI->getPointerOperand()));
+  if (!GEP || !GEP->hasOneUse())
+    return false;  // single-use address gep (sole user is this load).
+  // `matchAddressGep` needs a `TaintSet` only to test the trailing-index taint,
+  // which `requireTaintedIndex=false` waives — an empty set is unread.
+  TaintSet Empty;
+  Value *RawIndex = nullptr;
+  Type *CellTy = nullptr;
+  if (!matchAddressGep(GEP, Empty, RawIndex, CellTy,
+                       /*requireTaintedIndex=*/false))
+    return false;  // non-canonical / off-shape address gep.
+  if (LI->getType() != CellTy)
+    return false;  // pun fence (38t2): the accessed type must BE the cell type.
+  Value *Base = GEP->getPointerOperand();
+  OriginResult Origin = walkPtrOrigin(Base);
+  if (Origin.Kind != OriginResult::Global)
+    return false;  // a QROM table is a GLOBAL (an alloca is Shadow, a different ABI).
+  if (!isDirectOriginPtr(Base, Origin))
+    return false;  // dynamic / non-zero base offset — index not clean.
+  auto *OT = dyn_cast<ArrayType>(Origin.GV->getValueType());
+  if (!OT || OT->getElementType() != CellTy || OT->getNumElements() == 0)
+    return false;  // origin shape must be `[N x cell]`, N > 0 (a `[0 x _]` decl is OOB).
+  Type *E = OT->getElementType();
+  if (!E->isIntegerTy() && !E->isFloatingPointTy())
+    return false;  // scalar cells only.
+  if (!Origin.GV->isConstant() || !Origin.GV->hasInitializer())
+    return false;  // a QROM table must be a constant initialized global.
+  // Mirror the emitter's element-width gate (`lowerQramReads` L~1175): a cell whose
+  // width has no reversible qram copy (fp128 / i128 / …) declines HERE at the admit,
+  // so `scanBody` never accepts a shape the clone emitter would loud-decline.
+  return widthHasQramCell(abiWidthFromType(E));
+}
+
 // The single carve entry point for `declineTaintEscapes` (Inc 3, replacing the
 // per-family `isAccepted*` predicates). For a tainted-pointer `load`/`store`/`gep`
 // returns Accept (the emitter owns it), Decline (with `outMsg`, a pattern-naming
@@ -1114,7 +1171,8 @@ bool foldVolatileConstAllocaLoads(Module &M, const TaintSet &taint) {
   return Changed;
 }
 
-void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
+void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint,
+                    bool inBennettClone) {
   // 1. Collect accepted reads (pure analysis; do not mutate while walking the IR).
   struct Accepted {
     LoadInst *Load;
@@ -1160,7 +1218,7 @@ void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint) {
     // miscompile). DECLINE — a coherent qRAM-load value cannot escape once its
     // local address is erased. A MEASURE collapses it first (immune); `main`'s ret
     // is the process-exit observation.
-    if (R.Load->getFunction()->getName() != "main" &&
+    if (!inBennettClone && R.Load->getFunction()->getName() != "main" &&
         coherentlyEscapesToReturn(R.Load)) {
       diagnose(R.Load, kMsgQramCohEscape);
       continue;
