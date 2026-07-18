@@ -651,6 +651,23 @@ add_test(NAME e2e-slice-libm-real-coshl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_coshl.expected.log")
 
+# bd 3c6m.53 (20xt data-symbol closure) — the ld80 census cell atanl.f80
+# COMPILES->VERIFIED at plain -O1: the real openlibm atanl closure
+# (ld80/s_atanl.c + ld80/invtrig.c atanhi/atanlo/aT tables + invtrig.h
+# T_even/T_odd + amd64_fpmath.h union). The proof the 20xt data closure
+# unblocked: with the coefficient tables LINKED+INITIALIZED the two
+# data-indexed reads atanhi[id]/atanlo[id] classify as cqrt_qram_* QROM reads
+# (n=4 each) instead of fake-declining on an uninitialized [0 x x86_fp80]; the
+# constant-index reads const-fold. 619-line deterministic trace; exactly ONE
+# ry + ONE measure (Rule 5); 0 double-frees, all freed handles minted (Rule 6/8).
+add_test(NAME e2e-slice-libm-real-atanl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanl.expected.log")
+
 # bd szpr (3c6m.51 Inc-3 critic Gap 1) — the i80 field-insert WRITE-surface
 # `_unc` adjoints trace-verified: a dead promoted-union RMW on a dedicated rail
 # (result-dropped cq_phi keep-alive, the slice_f80.c case-B discipline) makes
