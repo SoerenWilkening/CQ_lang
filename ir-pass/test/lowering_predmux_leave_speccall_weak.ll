@@ -1,15 +1,25 @@
-; lowering_predmux_leave_speccall_weak.ll — DECLINE probe (bd adia Rule-13
-; board, the CONFIRMED fence gap): the pending-spec pure-callee proof
-; requires `hasExactDefinition()` — an INTERPOSABLE definition (weak /
-; linkonce / common) may be replaced by the linker at stage 3, so a purity/
-; termination proof read off the module-local body must never be baked into
-; the speculated hoist and the Bennett clone (the analyzed semantics would be
-; emitted while a different function links — verify-clean). weak_odr /
-; linkonce_odr are ODR-exact and stay admitted. E4 leaves the region and the
-; existing loud nested-control decline fires, char-for-char.
+; lowering_predmux_leave_speccall_weak.ll — DECLINE probe: a weak callee reached
+; under NESTED tainted control declines loudly and is never cloned. Originally
+; (bd adia Rule-13 board, the CONFIRMED fence gap) this pinned the E4 pending-spec
+; pure-callee proof `hasExactDefinition()` — an INTERPOSABLE definition
+; (weak_any/linkonce_any/common/extern_weak) may be replaced by the linker at
+; stage 3, so a purity/termination proof read off the module-local body must never
+; be baked into the speculated hoist and the Bennett clone (verify-clean).
+;
+; UPDATE (bd gxhi): the SAME interposability hazard is now caught EARLIER, at
+; `detectSpecializations` — `scanBody` requires `hasExactDefinition()`, and the
+; spec-scan pre-pass runs BEFORE `lowerControlRegions`, so it MASKS the control
+; envelope (the coshl-family ordering) and the loud spec-interposable decline
+; fires first, char-for-char below. The E4 `isSpeculatablePureCalleeBodyImpl`
+; fence remains as defense-in-depth (it would fire were the spec-scan ever
+; bypassed). NOTE: `hasExactDefinition()` ALSO declines weak_odr/linkonce_odr/
+; available_externally (they `mayBeDerefined`), not only this arbitrary-replacement
+; `weak_any` case — a safe over-decline. The direct-call analogue with no control
+; region is pinned by spec_reject_weak_callee.ll.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq controlled lowering: nested control flow under quantum control
+; CHECK: error{{.*}}cq specialization: callee has a non-link-exact definition (interposable/derefinable linkage); the linker may bind a different body
+; CHECK-NOT: @__cq_q_purefn
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define weak i32 @purefn(i32 %a) {

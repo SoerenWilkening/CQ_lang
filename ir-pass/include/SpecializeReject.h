@@ -51,6 +51,7 @@ enum class SpecReject {
   NonReversibilizable,
   InBodyControl,
   ArityOverflow,
+  Interposable,
 };
 
 // Pinned diagnostic strings (Rule 12; the negative fixtures mirror each
@@ -71,6 +72,17 @@ constexpr char kMsgInBodyControl[] =
 constexpr char kMsgArityOverflow[] =
     "cq specialization: callee arity exceeds the 64-parameter specialization "
     "mask limit";
+// bd gxhi: a callee whose definition is NOT link-exact — either INTERPOSABLE
+// (weak/linkonce/common/extern_weak: the linker may substitute an arbitrary
+// body) or DEREFINABLE (weak_odr/linkonce_odr/available_externally: a
+// differently-optimized ODR variant may bind). Specialization reads + clones the
+// module-local body, so a stage-3 rebind makes the cloned unitary diverge from
+// the linked program (verify-clean). EXACT mirror of the E4 speculation fence's
+// `hasExactDefinition()` test (PredMuxFlatten.cpp) so the two accept-surfaces
+// stay aligned (Rule 14).
+constexpr char kMsgInterposable[] =
+    "cq specialization: callee has a non-link-exact definition "
+    "(interposable/derefinable linkage); the linker may bind a different body";
 
 // The single authoritative accept predicate. Returns `SpecReject::Accept` iff
 // `Cand` is provably liftable; otherwise the rejecting reason and, in

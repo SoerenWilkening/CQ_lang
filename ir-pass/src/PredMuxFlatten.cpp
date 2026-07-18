@@ -438,12 +438,18 @@ bool isSpeculatableDataflow(const Instruction &I) {
 bool isSpeculatablePureCalleeBodyImpl(
     const Function *F, SmallPtrSetImpl<const Function *> &OnStack) {
   // hasExactDefinition: a body this proof reads must be the body that LINKS —
-  // an INTERPOSABLE definition (weak/linkonce/common) may be replaced by the
-  // linker, so a purity/termination proof over the module-local body would be
-  // baked into the speculated hoist and the Bennett clone while a different
-  // function runs at stage 3 (the adia Rule-13 board's confirmed fence gap;
-  // the ByRefInline hasLocalLinkage precedent). weak_odr/linkonce_odr are
-  // ODR-exact and pass; declarations fail here too.
+  // an INTERPOSABLE definition (weak_any/linkonce_any/common/extern_weak) may be
+  // replaced by the linker, so a purity/termination proof over the module-local
+  // body would be baked into the speculated hoist and the Bennett clone while a
+  // different function runs at stage 3 (the adia Rule-13 board's confirmed fence
+  // gap; the ByRefInline hasLocalLinkage precedent). NOTE (bd gxhi, empirically
+  // verified against LLVM 19): `hasExactDefinition()` is `!isDeclaration() &&
+  // !mayBeDerefined()`, and `mayBeDerefined()` is TRUE for weak_odr/linkonce_odr/
+  // available_externally — so this predicate ALSO declines those ODR variants,
+  // NOT only the arbitrary-replacement interposable set. That is a SAFE
+  // over-decline (Prime Directive) with zero corpus cost (openlibm has no weak
+  // symbols); admitting the ODR variants would be a deliberate `!isInterposable()`
+  // widening, a separate ticket. Declarations fail here too.
   if (!F || !F->hasExactDefinition() || F->isVarArg())
     return false;
   if (!OnStack.insert(F).second)

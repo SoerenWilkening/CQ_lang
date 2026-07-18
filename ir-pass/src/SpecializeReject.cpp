@@ -200,6 +200,34 @@ bool isLiftableFpSelect(const SelectInst *SI) {
 SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
                     WidthDispatch &wd, SmallPtrSetImpl<const Function *> &OnStack,
                     Instruction *&WhereOut, std::string &KindOut) {
+  // (0-pre) Link-exact definition (bd gxhi — the adia Rule-13 board's confirmed
+  //      fence gap). Specialization ANALYZES this body and CLONES it into a
+  //      Bennett twin the tainted path calls IN PLACE OF the callee. If the
+  //      linker may bind a DIFFERENT body at stage 3, the analyzed+cloned unitary
+  //      diverges from the linked program with NO diagnostic (verify-clean).
+  //      `hasExactDefinition()` is FALSE for an INTERPOSABLE definition
+  //      (weak_any/linkonce_any/common/extern_weak — the linker may substitute an
+  //      ARBITRARY body) AND for a DEREFINABLE one (weak_odr/linkonce_odr/
+  //      available_externally — `mayBeDerefined()` is true, a differently-optimized
+  //      ODR variant may bind). This is the EXACT predicate of the E4 pending-spec
+  //      fence `isSpeculatablePureCalleeBodyImpl` (PredMuxFlatten.cpp) and the
+  //      ByRefInline `hasLocalLinkage` precedent, so the spec-clone and
+  //      E4-speculation accept-surfaces stay aligned (Rule 14). NOTE: LLVM's
+  //      `hasExactDefinition()` ALSO declines the weak_odr/linkonce_odr ODR
+  //      variants (they `mayBeDerefined`), NOT only the arbitrary-replacement
+  //      interposable set — over-declining them is safe (Prime Directive) and
+  //      costs zero coverage (openlibm has no weak symbols); admitting weak_odr
+  //      would be a deliberate `!isInterposable()` widening across BOTH fences, a
+  //      separate ticket. A top candidate is a definition by contract, and a
+  //      nested declaration is declined as "nested call" BEFORE recursing here, so
+  //      this fires only on a real non-link-exact BODY. Placed first: an
+  //      untrusted body must not be scanned as if its instructions were the ones
+  //      that run.
+  if (!Callee->hasExactDefinition()) {
+    WhereOut = &*Callee->getEntryBlock().begin();
+    return SpecReject::Interposable;
+  }
+
   // (0a) Varargs: `taintArgMask` reads the call site's `arg_size()` (incl. the
   //      vararg tail) while seeding iterates the callee's FIXED params only — a
   //      tainted vararg-tail arg would set a mask bit that is never seeded
@@ -645,6 +673,9 @@ void diagnoseReject(Instruction *Where, SpecReject Why, StringRef Kind) {
     break;
   case SpecReject::ArityOverflow:
     Msg = kMsgArityOverflow;
+    break;
+  case SpecReject::Interposable:
+    Msg = kMsgInterposable;
     break;
   case SpecReject::NonReversibilizable:
     Msg = (Twine(kMsgNonRevizPrefix) + " (" + Kind + ")").str();
