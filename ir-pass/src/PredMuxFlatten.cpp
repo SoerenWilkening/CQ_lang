@@ -54,6 +54,7 @@
 #include "QramLowering.h"
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -578,15 +579,138 @@ bool topoOrderRegion(PredMuxRegion &R) {
   return R.Topo.size() == R.InRegion.size();
 }
 
+// bd 20xt.5 (d) — the merge for an entry `E` whose STANDARD post-dominator is
+// the PDT virtual root PURELY because some path from `E` reaches an
+// `unreachable` block (a switch default `clang -O1` proved dead — e.g. atan2l's
+// exhaustive quadrant `switch i32 %m` over a 2-bit sign pack, whose
+// `default.unreachable` LLVM's PostDominatorTree treats as a SECOND function
+// exit alongside `ret`, giving every switch-reaching block a virtual-root
+// ipdom). `unreachable` is UB: no basis state with defined behaviour ever
+// enters it (Rule 5 — the source ASSERTS the path is dead), so for
+// post-dominance it is NOT a real exit. We recompute the immediate
+// post-dominator over the CFG-VIEW where every `unreachable`-terminated block
+// (and the edges into it) is removed and the `ret` blocks are the sole exits —
+// exactly the "convert unreachable→br-merge then post-dominate" experiment, but
+// as PURE ANALYSIS (no mutation; Rule 9 detect-before-mutate). Returns nullptr
+// (→ leave; the caller keeps today's silent virtual-root bail) unless a single
+// real merge exists — over-declining is safe (Prime Directive). Downstream E2
+// (acyclic) / E3 (single-exit, now unreachable-tolerant) VALIDATE the returned
+// merge structurally, so a wrong answer here can only LEAVE, never miscompile.
+BasicBlock *mergeIgnoringUnreachable(BasicBlock *E) {
+  auto isUnreach = [](BasicBlock *B) {
+    return isa<UnreachableInst>(B->getTerminator());
+  };
+  if (isUnreach(E))
+    return nullptr;
+  // Forward-reachable node set from E, EXCLUDING unreachable blocks (edges into
+  // an unreachable block are dropped — they are never taken).
+  SmallVector<BasicBlock *, 32> Order;  // discovery order = a valid RPO seed.
+  SmallPtrSet<BasicBlock *, 32> Nodes;
+  Nodes.insert(E);
+  Order.push_back(E);
+  for (unsigned I = 0; I < Order.size(); ++I)
+    for (BasicBlock *S : successors(Order[I])) {
+      if (isUnreach(S))
+        continue;
+      if (Nodes.insert(S).second)
+        Order.push_back(S);
+    }
+  // Exits = ret blocks with no in-Node successor. A non-ret node with NO
+  // in-Node successor (all its successors were unreachable) is an off-pattern
+  // dead-end → bail (over-decline). Multiple rets simply fail to reconverge and
+  // yield a nullptr merge below (no virtual bottom needed — the intersection
+  // excludes disjoint-exit suffixes on its own).
+  DenseMap<BasicBlock *, unsigned> Idx;
+  for (unsigned I = 0; I < Order.size(); ++I)
+    Idx[Order[I]] = I;
+  unsigned N = Order.size();
+  auto inNodeSuccs = [&](BasicBlock *B, SmallVectorImpl<BasicBlock *> &Out) {
+    for (BasicBlock *S : successors(B))
+      if (Nodes.count(S))
+        Out.push_back(S);
+  };
+  for (BasicBlock *B : Order) {
+    SmallVector<BasicBlock *, 4> Succ;
+    inNodeSuccs(B, Succ);
+    if (Succ.empty() && !isa<ReturnInst>(B->getTerminator()))
+      return nullptr;
+  }
+  // Iterative post-dominator SETS (BitVector over Nodes): PostDom(exit)={exit};
+  // PostDom(B) = {B} ∪ ⋂_{S ∈ in-Node succ} PostDom(S). Fixpoint (small F).
+  SmallVector<BitVector, 32> PD(N, BitVector(N, true));
+  for (unsigned I = 0; I < N; ++I) {
+    SmallVector<BasicBlock *, 4> Succ;
+    inNodeSuccs(Order[I], Succ);
+    if (Succ.empty()) {  // an exit (ret): post-dominated only by itself.
+      PD[I].reset();
+      PD[I].set(I);
+    }
+  }
+  bool Changed = true;
+  while (Changed) {
+    Changed = false;
+    for (unsigned I = 0; I < N; ++I) {
+      SmallVector<BasicBlock *, 4> Succ;
+      inNodeSuccs(Order[I], Succ);
+      if (Succ.empty())
+        continue;  // exit: fixed.
+      BitVector Meet(N, true);
+      for (BasicBlock *S : Succ)
+        Meet &= PD[Idx[S]];
+      Meet.set(I);  // {B} ∪ ⋂
+      if (Meet != PD[I]) {
+        PD[I] = std::move(Meet);
+        Changed = true;
+      }
+    }
+  }
+  // ipdom(E) = the member of PostDom(E)\{E} with the LARGEST post-dom set
+  // (post-dominators form a strict chain E ≺ D1 ≺ … ≺ ret, and PostDom(D1) ⊋
+  // PostDom(D2) ⊋ …, so D1 — the immediate one — has the max popcount). Empty
+  // ⇒ no reconvergence before exit ⇒ nullptr.
+  unsigned EI = Idx[E];
+  int Best = -1;
+  unsigned BestPop = 0;
+  for (unsigned J = PD[EI].find_first(); J != (unsigned)-1;
+       J = PD[EI].find_next(J)) {
+    if (J == EI)
+      continue;
+    unsigned Pop = PD[J].count();
+    if (Best < 0 || Pop > BestPop) {
+      Best = (int)J;
+      BestPop = Pop;
+    }
+  }
+  return Best < 0 ? nullptr : Order[Best];
+}
+
 // The full E-ladder. Pure analysis; returns false to LEAVE (never diagnoses).
 bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
                    LoopInfo &LInfo, const SmallPtrSetImpl<BasicBlock *> &OnCycle,
                    const TaintSet &Taint, PredMuxRegion &R, bool ClaimAll) {
   BasicBlock *E = T->getParent();
   auto *Node = PDT.getNode(E);
-  if (!Node || !Node->getIDom() || !Node->getIDom()->getBlock())
-    return false;
-  BasicBlock *Mg = Node->getIDom()->getBlock();
+  BasicBlock *Mg = nullptr;
+  if (Node && Node->getIDom() && Node->getIDom()->getBlock()) {
+    Mg = Node->getIDom()->getBlock();  // standard path — byte-identical today.
+  } else {
+    // bd 20xt.5 (d) — virtual-root ipdom (an `unreachable`/non-returning exit
+    // poisons post-dominance). Retry the merge ignoring unreachable exits. This
+    // path fires ONLY where today's code silently bailed (return false above):
+    // a standard-ipdom region can NEVER contain a reachable `unreachable` block
+    // (a successorless block reachable from E without crossing Mg would
+    // contradict Mg post-dominating E), so BOTH this recompute and the E3
+    // `UnreachableInst` tolerance are dead code on the standard path. Hence every
+    // existing ACCEPT and every real-ipdom DECLINE is byte-identical; the ONLY
+    // behaviour change is the virtual-root decline subset, where an
+    // unreachable-poisoned region may now flatten (fully E-ladder-gated) — the
+    // intended feature — or still leave. (The helper also runs on non-unreachable
+    // virtual roots — infinite loops, disjoint multi-ret — but E2 declines the
+    // former and `mergeIgnoringUnreachable` returns nullptr for the latter.)
+    Mg = mergeIgnoringUnreachable(E);
+    if (!Mg)
+      return false;
+  }
   // bd adia debug lever (env-gated, byte-neutral)
   auto leave = [&](const char *Why, const Instruction *At = nullptr) {
     if (::getenv("CQ_PREDMUX_DBG")) {
@@ -675,8 +799,19 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
   // --- E3: single-entry / single-exit ---------------------------------------
   for (BasicBlock *B : R.InRegion) {
     const Instruction *Term = B->getTerminator();
-    if (!isa<BranchInst>(Term) && !isa<SwitchInst>(Term))
-      return leave("E3-multiexit", Term);  // ret/unreachable/invoke/… inside: multi-exit
+    // bd 20xt.5 (d) — an `unreachable` arm terminator is TOLERATED: it is a
+    // dead sink (UB in the source, no basis state enters it — Rule 5), erased
+    // by the flatten with NO merge-phi incoming (it has no successors, so no phi
+    // lists it). Its body (if any): an impure instruction (store/non-curated
+    // call) is excluded by E4 below (→ leave); a pure instruction is hoisted by
+    // `moveBody` but is provably dead — a successorless block dominates nothing
+    // outside itself, so its SSA values have zero external uses — and `sweepDead`
+    // erases the whole cone before `lowerOps` (Rule-13 clearance: verified inert
+    // on a non-empty pure dead body; `control_predmux_accept_unreachable_dead_body.ll`).
+    // `ret`/`indirectbr`/`invoke`/`callbr` remain real multi-exits and still leave.
+    if (!isa<BranchInst>(Term) && !isa<SwitchInst>(Term) &&
+        !isa<UnreachableInst>(Term))
+      return leave("E3-multiexit", Term);  // ret/invoke/… inside: multi-exit
     for (const BasicBlock *S : successors(B))
       if (S != Mg && !R.InRegion.count(S))
         return leave("E3-escape", Term);  // escapes the region without reconverging

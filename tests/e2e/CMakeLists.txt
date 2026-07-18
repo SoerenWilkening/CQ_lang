@@ -120,6 +120,26 @@ add_test(NAME e2e-slice-control-value-diamond
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond.expected.log")
 
+# 3c6m.14 L6 / bd 20xt.5 (d): PredMux tolerates `unreachable` switch-defaults.
+# The only layer that LINKS — proves the (d)-flattened nest (a tainted special-
+# case branch over an EXHAUSTIVE `switch (q&3)` whose dead default clang lowers
+# to a shared `unreachable` block, the minimized atan2l quadrant shape) lowers to
+# the 4.4 select-merge substrate and its whole symbol set resolves + signature-
+# matches against the runtime (Rule 2/16; (d) adds NO new runtime ABI). LLVM's
+# PostDominatorTree treats `unreachable` as a 2nd exit, so the standard merge
+# lookup bails (virtual-root ipdom) and the nest would decline `nested control
+# flow`; (d) recomputes the merge ignoring the unreachable exit so it flattens.
+# The `unreachable` arm contributes NO predicate and NO merge incoming; case 3 is
+# the sound chain fallback. Deterministic straight-line trace (every gate fires
+# unconditionally); flags/out-rails follow the standard 4.4 bookkeeping.
+add_test(NAME e2e-slice-predmux-unreachable-switch
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_unreachable_switch.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_unreachable_switch.expected.log")
+
 # Phase 4.3 (WI-4, test_C_libtooling-s8yf.5): RSSA swap-routed depth-2
 # homogeneous-PHASE NEST. The only layer that LINKS — and so the only proof the
 # nested emitter's symbol set resolves and signature-matches across BOTH routing
