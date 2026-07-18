@@ -607,11 +607,13 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             //     cq_template_<op>_<W> additive producer the whole-DAG uncompute
             //     spine reverses). EXACT Intrinsic::ID membership — NEVER a
             //     `starts_with("llvm.")` accept (the cq_theta_evil hazard) — and
-            //     fshl/fshr require the rotation form (arg0==arg1, constant
-            //     amount). A non-curated id, an unsupported width, or the general
-            //     funnel shift fails the predicate and falls through to the loud
-            //     kMsgUnknownCallee decline below (`*.with.overflow`,
-            //     transcendentals, general funnel shift stay declined).
+            //     fshl/fshr require a CONSTANT amount in EITHER the rotation form
+            //     (arg0==arg1) OR the general two-runtime-operand funnel form
+            //     (arg0!=arg1, both non-ConstantInt — the (ix<<16)|(i0>>16) idiom).
+            //     A non-curated id, an unsupported width, a dynamic amount, or a
+            //     funnel with a ConstantInt data operand fails the predicate and
+            //     falls through to the loud kMsgUnknownCallee decline below
+            //     (`*.with.overflow`, transcendentals stay declined).
             if (isCuratedReversibleIntrinsic(CI))
               continue;
             // p119 (Rule 18): a DIRECT-libm math.h call (cbrt/erf/atan2/hypot/

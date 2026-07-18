@@ -109,6 +109,27 @@ intrinsics:
   - { op: fshr, llvm_id: fshr, class: 1, reversibility: rotate_back, arity: rotate, widths: [i8,i16,i32,i64], variants: [fwd_hl, inv_hl, unc_hl] }
 
   # ---- Class 2: non-injective but pure total (fwd / unc only) --------------
+  # fshl/fshr in the GENERAL funnel case (arg0!=arg1, constant amount, BOTH data
+  # operands runtime quantum handles) — the (ix<<16)|(i0>>16) ld80 word-extract
+  # idiom (s_erfl.c:264/343, erfl/erfcl). fshl(a,b,n) = (a<<n)|(b>>(W-n)):
+  # NON-injective jointly over (a,b) (it keeps the low W-n bits of a and the high
+  # n bits of b, discarding the rest), so it is Class-2 — NO `_inv` twin. It is a
+  # reversible ADDITIVE PRODUCER exactly like fma: |a>|b>|0> -> |a>|b>|fshl(a,b,n)>,
+  # the void `_unc(out,a,b,n)` recomputes fshl(a,b,n) from the still-LIVE a,b,n and
+  # XORs the out rail to |0> (source-liveness, Rule 8; it NEVER recovers an input).
+  # The constant amount n is a COMPILE-TIME literal (needed statically for the
+  # recompute); it rides the qql literal slot. REUSES the ternary qql SHAPE (Rule
+  # 14) — a distinct symbol stem (`fshl`/`fshr`) gives a distinct symbol from the
+  # fma qql, and the uncompute spine / WidthDispatch / EmitInverse all handle it
+  # with ZERO new code. ONLY the QQ case (both data operands handles) is generated:
+  # a funnel with a ConstantInt data operand is folded by instcombine to a plain
+  # shl/or (never arises); a tainted+classical-runtime mix declines loudly at the
+  # rewriter (diagnoseNoTemplate); a dynamic amount / non-table width rides the
+  # loud escape decline. See docs/prd/phase-07-expressiveness/INTRINSIC_TABLE_CLEARANCE.md.
+  - { op: fshl, llvm_id: fshl, class: 2, reversibility: pure_noninjective, arity: funnel, widths: [i8,i16,i32,i64], variants: [fwd_qql, unc_qql] }
+  - { op: fshr, llvm_id: fshr, class: 2, reversibility: pure_noninjective, arity: funnel, widths: [i8,i16,i32,i64], variants: [fwd_qql, unc_qql] }
+
+  # ---- Class 2: non-injective but pure total (fwd / unc only) --------------
   # popcount / count-leading-zeros / count-trailing-zeros / absolute value —
   # unary, non-injective. Reversible via recompute-from-live-source `_unc`.
   - { op: ctpop, llvm_id: ctpop, class: 2, reversibility: pure_noninjective, arity: unary, widths: [i8,i16,i32,i64], variants: [fwd, unc] }

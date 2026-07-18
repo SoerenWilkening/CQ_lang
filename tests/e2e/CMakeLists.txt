@@ -668,6 +668,42 @@ add_test(NAME e2e-slice-libm-real-atanl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanl.expected.log")
 
+# bd 20xt — the ld80 census cell exp2l.f80 COMPILES->VERIFIED at the plain -O1
+# ship floor: the real openlibm exp2l closure (ld80/s_exp2l.c — the self-
+# contained degree-6 minimax table tbl[TBLSIZE*2]=128 hi/lo pairs + P1..P6 +
+# redux + the volatile twom10000 + amd64_fpmath.h union; NO inner libm calls,
+# the __i386__ exp2() fallback is #ifdef-guarded out). The tainted-index reads
+# tbl[i0]/tbl[i0+1] (i0 from x+redux via u.bits.manl) classify as cqrt_qram_*
+# QROM reads over cqrt_qram_alloc_f64(256); the fp80 union promotion drives the
+# u.xbits/u.bits/v.xbits field extract/insert family. 493-line deterministic
+# trace (matches the census hand-verify); exactly ONE ry + ONE measure (Rule 5);
+# 0 double-frees, all 100 freed handles minted (Rule 6/8); tables+body
+# faithfulness-audited (tbl 130 lines + P1..P6 byte-identical to the vendored
+# source; body verbatim modulo the entry rename). See bd libm-real-slice-recipe.
+add_test(NAME e2e-slice-libm-real-exp2l
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_exp2l.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_exp2l.expected.log")
+
+# bd 20xt.1 — the general constant-amount funnel shift fshl(a,b,n), a!=b, both
+# data operands quantum handles (the (ix<<16)|(i0>>16) word-extract idiom that
+# unblocks erfl/erfcl). This e2e is the LINK-layer proof (Rule 2/Rule 16) that
+# the new frozen symbols cq_template_fshl_i32_qql[_unc] RESOLVE + signature-match:
+# a measured forward funnel + a dead phase-armed funnel reverse-played through the
+# void _unc (recompute-and-XOR from live sources). 19-line deterministic trace;
+# 0 double-frees; every rail freed only at |0>. Flagged by the Rule-13 review as
+# the missing regression baseline for the funnel symbols.
+add_test(NAME e2e-slice-funnel-fshl-qq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_funnel_fshl_qq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_funnel_fshl_qq.expected.log")
+
 # bd szpr (3c6m.51 Inc-3 critic Gap 1) — the i80 field-insert WRITE-surface
 # `_unc` adjoints trace-verified: a dead promoted-union RMW on a dedicated rail
 # (result-dropped cq_phi keep-alive, the slice_f80.c case-B discipline) makes

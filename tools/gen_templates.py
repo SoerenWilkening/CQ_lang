@@ -250,9 +250,12 @@ def enumerate_intrinsics(itable):
         # variants are exclusively the *_hl tokens). The classical operand C type
         # of an hl/lh form comes from the row width (an iN), exactly like a binary
         # opcode — for a rotation that operand IS the constant shift amount n.
+        # `ternary` (fma a*b+c) and `funnel` (the GENERAL constant-amount funnel
+        # shift fshl/fshr(a,b,n), REUSING the qql shape — Rule 14) both ride the
+        # ternary qql/uqql shape machinery; the amount n is the qql literal slot.
         arity = op["arity"]
         kind = ("unary" if arity == "unary"
-                else "ternary" if arity == "ternary"
+                else "ternary" if arity in ("ternary", "funnel")
                 else "binary")  # binary | rotate → "binary"
         for w in op["widths"]:
             _emit_variants(rows, f"cq_template_{op['op']}_{w}", kind,

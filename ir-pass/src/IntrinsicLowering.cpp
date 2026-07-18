@@ -9,6 +9,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/IRBuilder.h"
@@ -239,14 +240,29 @@ bool isCuratedReversibleIntrinsic(const CallInst *CI) {
   // of Increment A's HandleWidth (a compare result is the only i1).
   if (!widthInTableSet(id, abiWidthFromType(CI->getType())))
     return false;
-  // fshl/fshr: ONLY the rotation form (arg0==arg1) with a CONSTANT amount is
-  // curated. The general (x!=y) funnel shift, and a dynamic rotation amount, are
-  // NOT this idiom — fall through to the loud decline.
+  // fshl/fshr: TWO curated forms, both with a CONSTANT amount (the inverse /
+  // uncompute needs the amount statically). A DYNAMIC amount is neither and rides
+  // the loud escape decline.
+  //   (a) ROTATION (arg0==arg1): the Class-1 bijection, lowered `_hl`.
+  //   (b) GENERAL funnel (arg0!=arg1, BOTH data operands runtime values): the
+  //       Class-2 `(ix<<16)|(i0>>16)` word-extract idiom, lowered to the ternary
+  //       qql producer. A ConstantInt DATA operand is NOT this idiom — instcombine
+  //       folds `(C<<n)|(y>>(W-n))` to a plain shl/or, so a funnel with a literal
+  //       high/low word never survives to the pass; reject it (→ escape decline).
+  //       The remaining tainted-vs-classical-runtime distinction is taint-based and
+  //       completed in the rewriter (this predicate is taint-invariant by design —
+  //       it is consulted at the escape carve and the enqueue, where no TaintSet is
+  //       in scope; the rewriter declines a tainted+classical mix via diagnoseNoTemplate).
   if (id == Intrinsic::fshl || id == Intrinsic::fshr) {
-    if (CI->arg_size() != 3 ||
-        CI->getArgOperand(0) != CI->getArgOperand(1) ||
-        !isa<ConstantInt>(CI->getArgOperand(2)))
-      return false;
+    if (CI->arg_size() != 3 || !isa<ConstantInt>(CI->getArgOperand(2)))
+      return false;  // dynamic amount → not curated.
+    if (CI->getArgOperand(0) == CI->getArgOperand(1))
+      return true;   // (a) rotation form.
+    // (b) general funnel: both DATA operands must be runtime (non-ConstantInt).
+    if (isa<ConstantInt>(CI->getArgOperand(0)) ||
+        isa<ConstantInt>(CI->getArgOperand(1)))
+      return false;  // literal high/low word → folded by instcombine → escape.
+    return true;
   }
   return true;
 }
@@ -314,17 +330,51 @@ bool rewriteIntrinsic(CallInst *CI, WidthDispatch &wd, TaintSet &taint) {
   }
 
   if (K == IntrinKind::Rotate) {
-    // fshl/fshr rotation: arg0 (==arg1) is the data handle, arg2 the CONSTANT
-    // amount n. Lower to the _hl shape (handle, iN n) — exactly the handle+
-    // literal form. Adjoint (Class-1 rotate_back) is the `_inv` twin; whole-DAG
-    // reversal is the `_unc` twin (recompute-and-XOR), both in the sibling table.
-    FunctionCallee Callee = wd.dataTemplateFn(Stem, W, Shape::HL);
+    Value *P0 = CI->getArgOperand(0);
+    Value *P1 = CI->getArgOperand(1);
+    Value *Amt = CI->getArgOperand(2);  // ConstantInt (predicate-guaranteed).
+    if (P0 == P1) {
+      // fshl/fshr ROTATION (arg0==arg1): the single data handle + CONSTANT amount
+      // n. Lower to the _hl shape (handle, iN n) — the handle+literal form.
+      // Adjoint (Class-1 rotate_back) is the `_inv` twin; whole-DAG reversal is
+      // the `_unc` twin (recompute-and-XOR), both in the sibling table.
+      FunctionCallee Callee = wd.dataTemplateFn(Stem, W, Shape::HL);
+      if (!Callee) {
+        diagnoseNoTemplate(CI);
+        return false;
+      }
+      CallInst *T = Builder.CreateCall(Callee, {P0, Amt}, "h_intr");
+      if (DebugLoc DL = CI->getDebugLoc())
+        T->setDebugLoc(DL);
+      CI->replaceAllUsesWith(T);
+      promote(T, CI, taint, W);
+      return true;
+    }
+    // fshl/fshr GENERAL funnel (arg0!=arg1): fshl(a,b,n) = (a<<n)|(b>>(W-n)), the
+    // `(ix<<16)|(i0>>16)` word-extract idiom. Class-2 additive producer over the
+    // ternary qql shape (Rule 14): |a>|b>|0> -> |a>|b>|fshl(a,b,n)>; the void
+    // `_unc(out,a,b,n)` recomputes fshl from the still-LIVE a,b,n (source-liveness,
+    // Rule 8). ONLY the QQ case (BOTH data operands quantum handles) has a template
+    // — a tainted+classical-runtime mix has NO qql shape (the amount is the literal
+    // slot; a second literal data operand would be a different, ungenerated shape),
+    // so decline it loudly rather than mint a phantom symbol (the SAME pattern as
+    // the fma all-literal-product / binary all-classical guards below). The amount
+    // n rides the qql literal slot at its own iN width (matching the generated sig).
+    const bool P0T = taint.Tainted.count(P0) != 0;
+    const bool P1T = taint.Tainted.count(P1) != 0;
+    if (!P0T || !P1T) {
+      diagnoseNoTemplate(
+          CI, (Twine(Stem) + "." + W + " general funnel (non-quantum operand)")
+                  .str());
+      return false;
+    }
+    // Operand order is SEMANTIC (a = high word, b = low word) — NEVER canonicalize.
+    FunctionCallee Callee = wd.dataTemplateFn(Stem, W, Shape::TernaryQQL);
     if (!Callee) {
       diagnoseNoTemplate(CI);
       return false;
     }
-    CallInst *T = Builder.CreateCall(
-        Callee, {CI->getArgOperand(0), CI->getArgOperand(2)}, "h_intr");
+    CallInst *T = Builder.CreateCall(Callee, {P0, P1, Amt}, "h_intr");
     if (DebugLoc DL = CI->getDebugLoc())
       T->setDebugLoc(DL);
     CI->replaceAllUsesWith(T);

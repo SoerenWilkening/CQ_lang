@@ -268,8 +268,9 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
         } else if (auto *CI = dyn_cast<CallInst>(&I);
                    CI && isCuratedReversibleIntrinsic(CI)) {
           // A curated reversible llvm.* idiom / hardware fp-math intrinsic
-          // (recognized by exact Intrinsic::ID + table width + rotation-form
-          // guard). Lowered by IntrinsicLowering to a cq_template_<op>_<W>
+          // (recognized by exact Intrinsic::ID + table width + the fshl/fshr
+          // constant-amount guard — rotation or general two-operand funnel).
+          // Lowered by IntrinsicLowering to a cq_template_<op>_<W>
           // additive producer in Phase 2. p119: a LIBRARY function
           // (transcendental / direct-libm call) is NOT lowerable by recognition —
           // it must be source-injected; a NON-curated tainted call already

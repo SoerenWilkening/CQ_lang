@@ -226,12 +226,14 @@ class GenTemplatesTest(unittest.TestCase):
     def test_decl_def_pairing(self):
         self.assertEqual(self.h_decls, self.c_defs)
 
-    def test_intrinsic_sibling_count_is_373(self):
+    def test_intrinsic_sibling_count_is_389(self):
         # Curated reversible llvm.* idioms in the SEPARATE sibling artifact; the
         # opcode-table count is untouched. Derived: sum over rows of widths x
         # variants.
-        #   Integer idioms = 221: Class-1 45 (bswap 9 + bitreverse 12 + fshl 12 +
-        #   fshr 12) + Class-2 unary 32 (ctpop/ctlz/cttz/abs x 4w x 2v) + min/max 64
+        #   Integer idioms = 237: Class-1 45 (bswap 9 + bitreverse 12 + fshl 12 +
+        #   fshr 12) + fshl/fshr GENERAL funnel 16 (bd 20xt.1: 2 ops x 4w x 2v —
+        #   fwd_qql+unc_qql, the (ix<<16)|(i0>>16) word-extract idiom, Class-2, NO
+        #   _inv) + Class-2 unary 32 (ctpop/ctlz/cttz/abs x 4w x 2v) + min/max 64
         #   (4 ops x 4w x 4v) + add.sat 32 (2 ops x 4w x 4v) + sub.sat 48 (2 ops x
         #   4w x 6v).
         #   fp-math HARDWARE survivors (p119, 4 fp widths f16/f32/f64/f80) = 120:
@@ -239,11 +241,11 @@ class GenTemplatesTest(unittest.TestCase):
         #   2v) + fmin/fmax 32 (2 ops x 4w x 4v) + copysign 24 (1 op x 4w x 6v).
         #   (The 14 transcendentals + pow were REMOVED — library functions.)
         #   ternary fma = 32: fma (1 op x 4w x 8v — qqq/qql/qlq/qll fwd+unc).
-        # 221 + 120 + 32 = 373 (was 509; -136 from the transcendental + pow removal).
+        # 237 + 120 + 32 = 389 (was 373; +16 from the general funnel shift, bd 20xt.1).
         expected = sum(len(o["widths"]) * len(o["variants"])
                        for o in self.itable["intrinsics"])
-        self.assertEqual(expected, 373)
-        self.assertEqual(len(self.ih_decls), 373)
+        self.assertEqual(expected, 389)
+        self.assertEqual(len(self.ih_decls), 389)
 
     def test_intrinsic_decl_def_pairing(self):
         self.assertEqual(self.ih_decls, self.ic_defs)
