@@ -60,6 +60,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/BasicBlock.h"
@@ -71,6 +72,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Transforms/Utils/Local.h"  // RecursivelyDeleteTriviallyDeadInstructions
 
 using namespace llvm;
 
@@ -1304,6 +1306,109 @@ bool isSpeculatablePureCallee(const Function *F) {
   return isSpeculatablePureCalleeBody(F);
 }
 
+// bd 20xt.5.1 blocker (e): fold the constant-fold RESIDUES the flatten's
+// `foldConstantConeAndBranches` leaves behind. `ConstantFoldInstruction` is
+// all-or-nothing — it RAUWs an all-constant operand to its value but cannot
+// finish a PARTIAL-constant binop whose other operand is tainted, so a dead
+// classical arm (e.g. atan2l's `x==1.0` special-case or its `2*sign(x)`
+// quadrant term with x a positive classical constant) leaves `and i1 false,%t`
+// / `or i32 0,%t` behind. Those wedge SelectClassify: `collectCondTree` hits
+// the `false` ConstantInt leaf and declines "control flow under quantum
+// control", even though the select is dead (`select false,a,b`) or a no-op
+// (`select c,a,a`).
+//
+// SCOPE — ONLY the residue shapes that WEDGE SelectClassify, NEVER a general
+// InstSimplify sweep:
+//   * an i1 and/or with a ConstantInt operand — the CONDITION-CONE logic
+//     residue (X∧false=false, X∧true=X, X∨true=true, X∨false=X). This is what
+//     `collectCondTree` chokes on (the `false` ConstantInt leaf). The and/or
+//     fold is deliberately restricted to i1: a WIDER `or i32/i64 0,X` fold is a
+//     DATA residue that does NOT block detection (it is a compare operand /
+//     select arm, not a tree node) — and the fp80-union promotion mints exactly
+//     that shape (`or i64 0,%w` in the union reconstruction), so folding it
+//     drifts the cbrtl/exp2l/erfl real-source goldens by one gate + a handle
+//     renumber cascade for zero detection benefit. Leave it.
+//   * select with a ConstantInt condition (const ? a : b) — collapses the dead
+//     special-case arm the flatten straight-lined (atan2l's `select i1 false`).
+//   * select with syntactically-equal arms (c ? a : a = a).
+// A legit cond-tree node (`and/or i1` of two RUNTIME compares) and a genuine
+// data select have NO constant operand and unequal arms, so they are never
+// touched — that keeps every existing golden's toffoli/copy-gate emission
+// byte-identical (a full `simplifyInstruction` sweep folds legit and/or-over-
+// compares via deeper reasoning and drifts ~29 verified libm real-source
+// goldens: it drops the very toffolis that realize the cond tree). InstSimplify
+// is reused ONLY to COMPUTE the fold of a gated residue (Rule 14) — it returns
+// an existing value or a Constant, never mints new IR, so no NOT/De-Morgan
+// leaks into the no-NOT and/or-over-compare-leaves grammar. Sound: InstSimplify
+// is value-preserving and the taint lowering faithfully emulates LLVM value
+// semantics, so a folded residue lowers to the identical unitary (the dead arm
+// carried zero amplitude / was source-UB — see
+// quantum-ub-unreachable-sharp-edge-20xt5). Fixpoint: a fold exposes the next
+// (`%27→false` ⇒ `and i1 %43,%27 → and i1 %43,false`).
+static bool isFlattenResidue(const Instruction &I) {
+  if (auto *BO = dyn_cast<BinaryOperator>(&I)) {
+    if ((BO->getOpcode() == Instruction::And ||
+         BO->getOpcode() == Instruction::Or) &&
+        BO->getType()->isIntegerTy(1))
+      return isa<ConstantInt>(BO->getOperand(0)) ||
+             isa<ConstantInt>(BO->getOperand(1));
+    return false;
+  }
+  if (auto *Sel = dyn_cast<SelectInst>(&I))
+    return isa<ConstantInt>(Sel->getCondition()) ||
+           Sel->getTrueValue() == Sel->getFalseValue();
+  return false;
+}
+
+static bool simplifyFlattenResiduesInFunction(Function &F) {
+  const DataLayout &DL = F.getParent()->getDataLayout();
+  SimplifyQuery SQ(DL);
+  bool Any = false, Changed = true;
+  while (Changed) {
+    Changed = false;
+    // TWO-PASS per round: COLLECT the residue instructions first (pure
+    // analysis, no mutation), then fold + DCE over the worklist. The mutation
+    // pass must NOT run inside a block iterator, because the recursive DCE below
+    // can delete an instruction that FOLLOWS the fold site: a LOOP PHI's
+    // back-edge incoming value need not dominate the phi (it dominates only the
+    // incoming block terminator), so folding `and i1 %loopphi, false` can
+    // orphan the phi and cascade to its back-edge operand `%J = getNextNode()`
+    // — dangling a `make_early_inc_range` lookahead cursor (a UAF crash on valid
+    // IR; the "operands dominate I" proof holds for straight-line SSA but not
+    // across a loop back-edge). Iterating a WeakTrackingVH worklist instead is
+    // deletion-safe: a cascade-deleted entry nulls out and is skipped.
+    SmallVector<WeakTrackingVH, 16> Worklist;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB)
+        if (isFlattenResidue(I))
+          Worklist.push_back(&I);
+    for (WeakTrackingVH &H : Worklist) {
+      auto *I = dyn_cast_or_null<Instruction>(H.operator Value *());
+      if (!I || !isFlattenResidue(*I))
+        continue;  // cascade-deleted, or no longer a residue after an RAUW.
+      Value *V = simplifyInstruction(I, SQ);
+      if (!V)
+        continue;
+      I->replaceAllUsesWith(V);
+      // Erase I AND recursively any operand cone it just ORPHANED. Unlike
+      // ConstantFold (which folds only ALL-constant ops, so an erased op's
+      // operands are Constants), this fold collapses PARTIAL-constant residues
+      // whose non-constant operand is TAINTED — e.g. folding `and i1 false, %t3`
+      // drops the ONLY use of `%t3 = icmp eq %q,3`. Left un-DCE'd that dead
+      // tainted compare would lower to a forward `cq_template_icmp_*` gate never
+      // uncomputed / never freed — an entangled which-path flag left dangling on
+      // a live rail (Rule 6/8 garbage; harmless to the measured answer but a
+      // coherence hazard, and trivially avoidable since the op is DEAD).
+      // RecursivelyDelete removes only pure, use-free instructions (never a
+      // cq_theta/phi/measure call — those have side effects — nor a value with
+      // other live uses).
+      RecursivelyDeleteTriviallyDeadInstructions(I);
+      Changed = Any = true;
+    }
+  }
+  return Any;
+}
+
 bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
   for (Function &F : M) {
     if (F.isDeclaration())
@@ -1348,6 +1453,10 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
       // wedge the next claim's E6 walk). Taint-safe: only all-constant
       // instructions fold; the caller re-derives taint before the next claim.
       foldConstantConesInFunction(F);
+      // bd 20xt.5.1(e): fold the partial-constant / degenerate-select residues
+      // ConstantFold left in the flattened region so SelectClassify sees the
+      // collapsed (dead-arm-free) select chain, not an `and i1 false` leaf.
+      simplifyFlattenResiduesInFunction(F);
       return true;  // one region per call; caller re-propagates
     }
   }

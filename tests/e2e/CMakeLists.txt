@@ -140,6 +140,21 @@ add_test(NAME e2e-slice-predmux-unreachable-switch
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_unreachable_switch.expected.log")
 
+# bd 20xt.5.1 blocker (e): PredMux post-flatten residual-select fold. A tainted
+# nest whose classical fp80-const special-case guard (x==1.0, x=0.5L) collapses
+# to `false` under cq-lowering's fp80-union promotion, leaving a partial-constant
+# `and i1 false,%hi` residue that ConstantFold cannot finish. Without the residue
+# fold the residual select declines "control flow under quantum control"; with it
+# the dead special-case collapses to EXACTLY the residue-free lowering (verified
+# byte-identical). Deterministic straight-line trace, 1 ry + 1 measure (Rule 5).
+add_test(NAME e2e-slice-predmux-selectchain-foldresidue
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_selectchain_foldresidue.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_selectchain_foldresidue.expected.log")
+
 # Phase 4.3 (WI-4, test_C_libtooling-s8yf.5): RSSA swap-routed depth-2
 # homogeneous-PHASE NEST. The only layer that LINKS — and so the only proof the
 # nested emitter's symbol set resolves and signature-matches across BOTH routing
