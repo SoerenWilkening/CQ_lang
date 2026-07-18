@@ -704,6 +704,38 @@ add_test(NAME e2e-slice-funnel-fshl-qq
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_funnel_fshl_qq.expected.log")
 
+# bd 20xt.2 — the ld80 census cells erfl.f80 / erfcl.f80 COMPILE->VERIFIED at the
+# plain -O1 ship floor, post the 20xt.1 general funnel-shift axis that unblocked
+# them: the real openlibm erf-family closure (ld80/s_erfl.c pp/qq/pa/qa/ra/sa/rb/
+# sb/rc/sc tables + the inner ld80/e_expl.c expl, called TWICE in the asymptotic
+# arm, over its own closure __isnanl / __polevll / ldexpl==scalbnl / floorl+fabsl
+# keep-intrinsics). The 20xt.1 payoff is direct: the `ix=(ix<<16)|(i0>>16)` word
+# extract fuses to @llvm.fshl.i32 -> cq_template_fshl_i32_qql; every |x| range-band
+# select flattens under PredMux + the kjd1 fp-select controlled-copy family; the
+# ieee_extended_shape_type GET/SET_LDOUBLE_WORDS fp80 union RMW (the SET_LDOUBLE_
+# WORDS low-word truncation is the multi-block 3c6m.51 Shadow store) promotes; the
+# const-index coefficient reads all const-fold (NO QROM); and both expl inlines
+# force-unroll their __polevll Horner loops + pack their ldexpl exponent-RMW union.
+# Deterministic (erfl 2518 / erfcl 2724 trace lines); exactly ONE ry + ONE measure
+# (Rule 5); 0 double-frees, no free of a never-minted or measured handle (Rule 6/8);
+# bodies faithfulness-audited normalized-identical to source modulo the declared
+# entry/keep-intrinsic renames. See bd libm-real-slice-recipe, ld80-fshl-funnel-erfl-erfcl.
+add_test(NAME e2e-slice-libm-real-erfl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_erfl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_erfl.expected.log")
+
+add_test(NAME e2e-slice-libm-real-erfcl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_erfcl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_erfcl.expected.log")
+
 # bd szpr (3c6m.51 Inc-3 critic Gap 1) — the i80 field-insert WRITE-surface
 # `_unc` adjoints trace-verified: a dead promoted-union RMW on a dedicated rail
 # (result-dropped cq_phi keep-alive, the slice_f80.c case-B discipline) makes
