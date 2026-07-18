@@ -325,10 +325,16 @@ bool isBooleanCondTree(const Value *V, unsigned Depth) {
 }
 
 // E4 — one instruction of pure speculatable dataflow at template-supported
-// widths. Loads are excluded in v1 (the Inc-3 QROM/volatile-fold proofs land
-// separately); ANY other call — including every @cq_* front-end intrinsic, so
-// phase/value-rotation arms and 6.5 classical-call arms structurally stay
-// with their shipped owners — and any store/atomic excludes the region.
+// widths. The ONLY memory op admitted is a const-global QROM READ (and its
+// single-use address gep) via the taint-blind `qromReadShapeInScope` (bd 20xt.4
+// Inc 2, blocker c) — a pure, side-effect-free load of an immutable table; every
+// store/atomic/volatile-load excludes the region. ANY call other than a curated
+// memory(none) intrinsic — including every @cq_* front-end intrinsic, so
+// phase/value-rotation arms and 6.5 classical-call arms structurally stay with
+// their shipped owners — excludes it too. NOTE the QROM-read cases are reached
+// ONLY from the pending-spec pure-callee proof (`isSpeculatablePureCalleeBody`);
+// `recoverRegion`'s E4 body walk handles load/gep by the STRICTER, taint-aware
+// `classifyQromReadUnderControl` BEFORE it ever falls through to here.
 bool isSpeculatableDataflow(const Instruction &I) {
   // No vector lane and no non-template width anywhere — such an op would only
   // decline loudly post-flatten at lowerOps/castInScope; gate it here so a
@@ -415,6 +421,32 @@ bool isSpeculatableDataflow(const Instruction &I) {
     default:
       return false;
     }
+  }
+  // bd 20xt.4 Inc 2 (blocker c) — a const-global QROM read (and its single-use
+  // address gep) is pure speculatable dataflow FOR THE PENDING-SPEC PURE-CALLEE
+  // PROOF (`isSpeculatablePureCalleeBodyImpl`). The table is a `constant` global
+  // (immutable) and the load has no side effect, so admitting it proves the
+  // CALLEE BODY is a pure total terminating function — which is all that is
+  // needed to hoist its CALL straight-line under quantum control (the callee's
+  // OWN control flow stays intact after the hoist, so the read still executes
+  // only on the in-bounds indices the source reaches; nothing is speculated OUT
+  // of the callee here). The read's bounds/mask obligation is the CLONE's job:
+  // when Phase-6 later flattens the clone body, the region walk's E4' LoadInst
+  // case masks a NeedsMask index (`classifyQromReadUnderControl`). TAINT-BLIND
+  // `qromReadShapeInScope` — the SAME structural shape the emitter's
+  // `classifyQromRead` proves (Rule 14, carve/emit non-divergence) — because the
+  // callee body is not in module taint (taint stops at the caller→callee
+  // boundary). NOTE this case is unreachable from `recoverRegion`'s E4 walk
+  // (which handles load/gep BEFORE its `isSpeculatableDataflow` fallthrough), so
+  // it only widens the pure-callee proof, never the region flatten.
+  if (const auto *LI = dyn_cast<LoadInst>(&I))
+    return qromReadShapeInScope(LI);
+  if (const auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
+    if (GEP->hasOneUse())
+      if (const auto *LU = dyn_cast<LoadInst>(GEP->user_back()))
+        if (LU->getPointerOperand() == GEP && qromReadShapeInScope(LU))
+          return true;  // the QROM read's address gep (the load re-checks shape).
+    return false;
   }
   if (const auto *Call = dyn_cast<CallInst>(&I))
     // Curated pure keep-set intrinsics (fmuladd/fabs/copysign/sqrt/…) are

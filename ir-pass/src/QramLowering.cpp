@@ -147,6 +147,29 @@ constexpr char kMsgQromUnderControlBounds[] =
 constexpr char kMsgQramCohEscape[] =
     "cq QRAM load: coherently escaping value is entangled with a local index (no-cloning)";
 
+// bd 20xt.4 Inc 2 (blocker c Rule-13 fix): a QROM read inside a Phase-6 Bennett
+// CLONE whose SPECULATED index is not provably in-bounds. A clone is called on
+// EVERY basis state of a hoisted-under-control call (PredMux speculation), so —
+// unlike a top-level FAITHFUL `tbl[q]` whose in-bounds precondition is the
+// source's obligation — the clone read may be driven OOB on the basis states the
+// caller's guard excluded. The under-control DIRECT read masks (pow2) or declines
+// (non-pow2) exactly this via classifyQromReadUnderControl; the straight-line clone
+// emitter never runs that discipline, so an unmasked-index clone read would emit an
+// out-of-contract OOB `cqrt_qram_load` (frozen ABI: idx ∈ [0,N); OOB undefined).
+// DECLINE unless the index is known-bits in-bounds. The accept surface TODAY is a
+// SOURCE-masked / constant / otherwise-known-bits-bounded index (a genuinely
+// unbounded straight-line clone read declines LOUDLY). The DESIGNED-FOR future path
+// — a read the clone's OWN internal flatten masks to `and id, N-1` (atanl's
+// atanhi[id]) — is not yet exercisable: a QROM-read-arm clone declines UPSTREAM at
+// SpecializeReject/lowerCloneControl ("tainted control flow under quantum lift"),
+// and even past that the clone-read masking accept path also needs the
+// coherent-escape gate in classifyQromReadUnderControl (which returns No for a read
+// whose value flows to a non-`main` ret) revisited for clone reads. Both are the
+// deferred clone-control follow-up; this fence is forward-compatible — once a masked
+// i64 index reaches here it is provably in-bounds and passes.
+constexpr char kMsgQramCloneUnbounded[] =
+    "cq QRAM load: speculated const-global table read in a specialized clone: index not provably in-bounds";
+
 // Loud `DiagnosticInfoUnsupported(DS_Error)` with the offending load's `!dbg`
 // (source-located; `opt` exits non-zero, which the negative fixtures invert with
 // `RUN: not`). Same idiom as `diagnoseEscape` / `FreePoint::diagnose`.
@@ -575,6 +598,26 @@ bool indexWillTaintAfterFlatten(const Value *V, const TaintSet &taint,
   return false;
 }
 
+// bd 20xt.4 Inc 2 (blocker c Rule-13 fix) — the shared "index KNOWN in-bounds"
+// proof, consulted by BOTH `classifyQromReadUnderControlImpl` (its `Provable`
+// verdict) AND the Bennett-clone read fence in `lowerQramReads` (so the under-
+// control claim and the clone emitter can never diverge — Rule 14). True iff the
+// gep trailing index is ALREADY at the pointer-index width (clang -O1's i64, so no
+// narrow-index sign-extension can turn a `< N` value into a negative offset) AND
+// its known bits prove non-negative AND max < N. (Full signedness/pointer-width
+// rationale in the `classifyQromReadUnderControlImpl` bounds comment below.)
+bool qromIndexKnownInBounds(Value *RawIndex, GetElementPtrInst *Gep,
+                            uint64_t Count, const DataLayout &DL) {
+  if (RawIndex->getType()->getScalarSizeInBits() !=
+      DL.getIndexTypeSizeInBits(Gep->getType()))
+    return false;
+  KnownBits KB = computeKnownBits(RawIndex, DL);
+  unsigned Wide = std::max<unsigned>(KB.getBitWidth(), 65);
+  APInt MaxIdx = KB.getMaxValue().zext(Wide);
+  APInt CountAP(Wide, Count);
+  return KB.isNonNegative() && MaxIdx.ult(CountAP);
+}
+
 // 3c6m.14 Inc 3 — the claim classification (see QramLowering.h). The SPECULATED
 // read runs on every basis state, so in-bounds must hold UNCONDITIONALLY
 // (known-bits), not merely on the originally-guarded path; failing that, a pow2
@@ -617,14 +660,15 @@ QromClaim classifyQromReadUnderControlImpl(
   // clears the high bits into [0,N-1] (N ≤ 2^63 for any real table). A narrower
   // hand-written index is over-declined (safe — Prime Directive).
   const DataLayout &DL = LI->getModule()->getDataLayout();
+  // Pointer-index-width gate FIRST: it gates BOTH claim forms (a narrow index
+  // sign-extends OOB, and the in-type `and idx, N-1` NeedsMask mask is a no-op on
+  // it — lowering_reject_qram_read_narrow_index.ll). Kept explicit here so the pow2
+  // NeedsMask branch below can never admit a narrow index; `qromIndexKnownInBounds`
+  // re-proves it for the Provable verdict + the shared clone-read fence (Rule 14).
   if (M->RawIndex->getType()->getScalarSizeInBits() !=
       DL.getIndexTypeSizeInBits(M->Gep->getType()))
     return QromClaim::No;
-  KnownBits KB = computeKnownBits(M->RawIndex, DL);
-  unsigned Wide = std::max<unsigned>(KB.getBitWidth(), 65);
-  APInt MaxIdx = KB.getMaxValue().zext(Wide);
-  APInt CountAP(Wide, M->Count);
-  if (KB.isNonNegative() && MaxIdx.ult(CountAP))
+  if (qromIndexKnownInBounds(M->RawIndex, M->Gep, M->Count, DL))
     return QromClaim::Provable;  // non-negative (bit 63 clear) AND max < N.
   if (isPowerOf2_64(M->Count))
     return QromClaim::NeedsMask;
@@ -1221,6 +1265,27 @@ void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint,
     if (!inBennettClone && R.Load->getFunction()->getName() != "main" &&
         coherentlyEscapesToReturn(R.Load)) {
       diagnose(R.Load, kMsgQramCohEscape);
+      continue;
+    }
+    // bd 20xt.4 Inc 2 (blocker c Rule-13 fix): a SPECULATED clone read must be
+    // in-bounds on EVERY basis state (see kMsgQramCloneUnbounded). A read that
+    // reaches here NOT provably in-bounds is a straight-line clone read on an
+    // unmasked speculated argument — the caller hoisted the call past its bounding
+    // guard, so the read is driven OOB on the excluded basis states (out-of-contract
+    // for the frozen QROM ABI: idx ∈ [0,N), OOB undefined). The direct under-control
+    // read masks-or-declines exactly this; the straight-line clone emitter never runs
+    // that discipline, so DECLINE here (over-declining is safe). It shares the SAME
+    // `qromIndexKnownInBounds` proof the under-control claim uses (Rule 14). The
+    // accept surface today is a SOURCE-masked / const / known-bits-bounded index; the
+    // clone-internal-flatten-masked path (atanl's `and id, N-1`) is deferred
+    // clone-control work (declines upstream at SpecializeReject today), and this fence
+    // is forward-compatible — a masked i64 index that reaches here IS provably
+    // in-bounds and passes. Top-level reads (inBennettClone=false) are the actual
+    // program access — bounds are the source's obligation, left untouched (Inc-1).
+    if (inBennettClone &&
+        !qromIndexKnownInBounds(R.Gep->getOperand(R.Gep->getNumOperands() - 1),
+                                R.Gep, R.Count, M.getDataLayout())) {
+      diagnose(R.Load, kMsgQramCloneUnbounded);
       continue;
     }
     // Element-width gate — the carve accepted the structural shape; a cell whose

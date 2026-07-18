@@ -1840,6 +1840,26 @@ add_test(NAME e2e-slice-spec-qram-read
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_qram_read.expected.log")
 
+# bd 20xt.4 Inc 2 (blocker c): the spec-callee QROM read called UNDER QUANTUM
+# CONTROL. The `noinline` callee `lookup` (its only memory access a const-global
+# tainted-index read) is called inside a NESTED tainted diamond (`if(q>5){if(q>10)
+# r=lookup(q)}`), so PredMux must prove the callee speculatable to flatten the
+# diamond + hoist the call. Inc 2 teaches `isSpeculatableDataflow` to admit the
+# QROM read (taint-blind `qromReadShapeInScope`, Rule 14) so `isSpeculatablePure
+# CalleeBody` passes; the flatten hoists the call unconditional, the Phase-6 clone
+# Bennett-wraps it, and the 4.4 controlled-copy merge selects the result. Golden =
+# the gate trace: 1 `cqrt_ry` + 1 `cqrt_measure` (Rule 5), 1 `cqrt_qram_alloc_f64`
+# (the array handle, NEVER freed), the load rail reversed via `cqrt_qram_load_f64
+# _unc` before free, and the flattened diamond's controlled-copy / flag-strip
+# stream. The straight-line Inc-1 clone case is slice_spec_qram_read.c above.
+add_test(NAME e2e-slice-spec-qram-read-under-control
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_qram_read_under_control.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_qram_read_under_control.expected.log")
+
 # p119: e2e-slice-specialize-libm REMOVED — it lifted a DIRECT-libm call (ilogb)
 # into a specialized clone, but direct-libm is a library-function surface
 # (source-injected, not name-recognized; Rule 18). Specialization-of-a-clone-with-a-
