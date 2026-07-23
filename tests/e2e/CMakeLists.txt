@@ -583,6 +583,29 @@ add_test(NAME e2e-slice-branchless-logl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_logl.expected.log")
 
+# bd 20xt.8 Inc 4: the ld80 (x86_fp80) HYBRID lgammal slice — promotes the census
+# cell lgammal.f80 COMPILES→VERIFIED. The REAL openlibm ld80/e_lgammal_r.c outer
+# ladder (sin_pi reflection helper + the [1.5,2.5] rational / x≥8 asymptotic /
+# negative-x reflection branch ladder + every poly coefficient, VERBATIM; the only
+# mechanical edits are the GET_LDOUBLE_WORDS union word-read shim, u_int32_t, the
+# olm_ entry renames, and the inner sinl/cosl/logl→bsinl/bcosl/blogl +
+# floorl/fabsl→__builtin_* renames) wrapped around the THREE AUTHORED branchless
+# leaves bsinl/bcosl/blogl (textually identical to slice_branchless_{sinl,cosl,logl}.c;
+# always_inline so clang -O1 inlines them into the tainted seed — never spec-cloned,
+# the inline-not-cloned lesson). A DISJOINT hybrid/authored-leaf provenance —
+# NEVER quoted alongside the real-openlibm goldens; the census cell STAYS declined
+# (the ld80 census injects real openlibm sinl/cosl (Payne–Hanek) + logl, none of
+# which lowers), so NO census delta. Lowers PURE-REGISTER: opt exit 0, verify-clean,
+# 0 qram/Shadow/alloca, 0 spec-clones, 1 ry + 1 measure, deterministic. Corpus twins
+# tools/library_coverage/branchless/{sinl,cosl,logl}.c — keep in sync.
+add_test(NAME e2e-slice-hybrid-lgammal
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_hybrid_lgammal.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_hybrid_lgammal.expected.log")
+
 # bd 3c6m.46/.30/.19/.17: tan + exp2 + asin + acos by SOURCE INJECTION, all
 # single-arg. tan (L1) REUSES the sin/cos Cody–Waite reduction and reconstructs
 # tan as a RATIO of the SAME k_sin/k_cos kernels — tan is π-periodic so only the

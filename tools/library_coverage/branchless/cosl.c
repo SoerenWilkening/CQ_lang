@@ -16,8 +16,12 @@
    *** cos = sin(x + π/2). *** Adding π/2 leaves the reduced argument y unchanged
    (fn increases by exactly 1, y = (x+π/2) − (fn+1)·π/2 = x − fn·π/2) and shifts
    the quadrant by +1. So cos is authored as the branchless/sinl.c quadrant/sign
-   code applied to (fn+1):  qf = (fn+1) mod 4 selects  q'=0:+cos(y)  q'=1:−sin(y)
-   q'=2:−cos(y)  q'=3:+sin(y)  via the same useS=(par<0.5)?1:0 kernel pick and
+   code applied to (fn+1): qf = (fn+1) mod 4 feeds the SAME sinl useS/sgn map, so
+   per the SHIFTED quadrant q'=(fn+1)mod4 the kernel output is q'=0:+sin(y)
+   q'=1:+cos(y) q'=2:−sin(y) q'=3:−cos(y) — which is exactly cos(x) per the
+   ORIGINAL quadrant q=fn mod4 (q=0:+cos, q=1:−sin, q=2:−cos, q=3:+sin). NOTE the
+   value list is q'-indexed here (do NOT relabel it q — see the git history nit):
+   via the same useS=(par<0.5)?1:0 kernel pick and
    sgn=(half<0.5)?1:−1 sign — every comparison a `<` against a CONSTANT, so clang
    -O1 keeps them speculatable `select`s (never branches; the equality form
    par==half WOULD branch-ify — see branchless/sinl.c). Both kernels are computed
