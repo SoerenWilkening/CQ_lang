@@ -629,14 +629,30 @@ bool qromIndexKnownInBounds(Value *RawIndex, GetElementPtrInst *Gep,
 // carve/signpost callers pass no region and keep the strict gate.
 QromClaim classifyQromReadUnderControlImpl(
     LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
-    uint64_t *OutCount, const SmallPtrSetImpl<BasicBlock *> *Region) {
+    uint64_t *OutCount, const SmallPtrSetImpl<BasicBlock *> *Region,
+    bool inBennettClone = false) {
   auto M = matchQramAccess(LI, taint, DT, LInfo, /*allowTaintedControl=*/true,
                            /*allowUntaintedIndex=*/Region != nullptr);
   if (!M.has_value() || M->Origin.Kind != OriginResult::Global ||
       !widthHasQramCell(M->ElemAbi))
     return QromClaim::No;
   // The coherent-escape no-cloning fence (as in isQromReadBlockedOnlyByControl).
-  if (LI->getFunction()->getName() != "main" && coherentlyEscapesToReturn(LI))
+  // BYPASSED under `inBennettClone` (bd 20xt.5.2): the E4 region-claim walk that
+  // flattens a Phase-6 specialization clone body (PredMux `ClaimAll`) reaches a
+  // QROM read whose value flows to the clone's non-`main` ret — EXACTLY the
+  // top-level coherent-escape shape this fence blocks. But a clone read is NOT a
+  // top-level `return tbl[q]`: the Bennett wrap (`emitBennettWrap`) copies the
+  // return out to a FRESH |0⟩ basis rail BEFORE the reverse and then reverses the
+  // WHOLE forward stream (the `cqrt_qram_load_<W>_unc` AND the index), leaving
+  // Σ aᵢ|inputᵢ⟩|f(inputᵢ)⟩ — the index is uncomputed cleanly, never dirty-freed.
+  // So the escape is SOUND here (the same bypass `lowerQramReads(inBennettClone=
+  // true)` already applies at the EMITTER; this threads it to the CLAIM so the
+  // flatten and the emitter cannot diverge — Rule 14). The signal is `ClaimAll`,
+  // set ONLY by `lowerCloneControl` (the sole `flattenPredMuxRegions(claimAll=
+  // true)` caller), so it is exactly the "inside a Bennett clone" predicate; the
+  // carve/signpost callers pass `inBennettClone=false` and keep the fence.
+  if (!inBennettClone && LI->getFunction()->getName() != "main" &&
+      coherentlyEscapesToReturn(LI))
     return QromClaim::No;
   // Index-taint gate: tainted now, or provably tainted-by-flatten.
   if (!taint.Tainted.count(M->RawIndex) &&
@@ -1007,9 +1023,10 @@ bool guardedShadowStoreShape(StoreInst *SI, const TaintSet &taint,
 
 QromClaim classifyQromReadUnderControl(
     LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
-    uint64_t *OutCount, const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region) {
-  return classifyQromReadUnderControlImpl(LI, taint, DT, LInfo, OutCount,
-                                          Region);
+    uint64_t *OutCount, const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region,
+    bool inBennettClone) {
+  return classifyQromReadUnderControlImpl(LI, taint, DT, LInfo, OutCount, Region,
+                                          inBennettClone);
 }
 
 // 3c6m.14 Inc 3 — volatile-const global-load fold (see QramLowering.h). Pure

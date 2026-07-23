@@ -869,8 +869,13 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
       // load — and any volatile/atomic access (isSimple gates them) — leaves.
       if (auto *LI2 = dyn_cast<LoadInst>(&I)) {
         uint64_t Count = 0;
-        QromClaim QC = classifyQromReadUnderControl(LI2, Taint, DT, LInfo,
-                                                    &Count, &R.InRegion);
+        // bd 20xt.5.2: `ClaimAll` is the Bennett-clone signal (set only by
+        // `lowerCloneControl`); it bypasses the coherent-escape fence so an
+        // arm-resident QROM read whose value flows to the clone ret is claimable
+        // (the wrap copies-out + reverse-plays the whole stream — the same bypass
+        // `lowerQramReads(inBennettClone=true)` applies at the emitter, Rule 14).
+        QromClaim QC = classifyQromReadUnderControl(
+            LI2, Taint, DT, LInfo, &Count, &R.InRegion, /*inBennettClone=*/ClaimAll);
         if (QC == QromClaim::No)
           return leave("E4-load", &I);
         if (QC == QromClaim::NeedsMask)
@@ -882,8 +887,9 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
           if (auto *LU = dyn_cast<LoadInst>(GEP->user_back()))
             if (LU->getPointerOperand() == GEP &&
                 classifyQromReadUnderControl(LU, Taint, DT, LInfo,
-                                             /*OutCount=*/nullptr,
-                                             &R.InRegion) != QromClaim::No)
+                                             /*OutCount=*/nullptr, &R.InRegion,
+                                             /*inBennettClone=*/ClaimAll) !=
+                    QromClaim::No)
               continue;  // the claimable read's address gep (load re-checked).
         return leave("E4-gep", &I);
       }

@@ -1895,6 +1895,26 @@ add_test(NAME e2e-slice-spec-qram-read-under-control
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_qram_read_under_control.expected.log")
 
+# bd 20xt.5.2 (the FINAL atan2l blocker: inner-atanl clone-control): a spec-clone
+# with INTERNAL tainted control whose arm reads a const-global table and whose
+# merged value ESCAPES to the clone's non-`main` ret with NO measure (the atanl
+# `atanhi[id]`->fmuladd->ret shape). The `noinline` callee `reduce` has a tainted
+# diamond `if(x>1.0){ base=kTable[id]+x } else { base=x }; return base;`. Pre-fix
+# the clone's PredMux ClaimAll flatten LEFT at E4-gep because
+# classifyQromReadUnderControl's coherent-escape no-cloning fence blocked the read;
+# the inBennettClone bypass (threaded from ClaimAll) makes it claimable and the
+# Bennett wrap reverses the whole stream (the read + index) after copying the
+# return out. Golden = 1 `cqrt_ry` + 1 `cqrt_measure` (Rule 5), 1
+# `cqrt_qram_alloc_f64` (array handle NEVER freed), the load rail reversed via
+# `cqrt_qram_load_f64_unc` before free, the fp arm-merge controlled-copy stream.
+add_test(NAME e2e-slice-spec-qrom-read-arm-escape
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_qrom_read_arm_escape.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_qrom_read_arm_escape.expected.log")
+
 # p119: e2e-slice-specialize-libm REMOVED — it lifted a DIRECT-libm call (ilogb)
 # into a specialized clone, but direct-libm is a library-function surface
 # (source-injected, not name-recognized; Rule 18). Specialization-of-a-clone-with-a-

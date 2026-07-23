@@ -111,10 +111,18 @@ bool guardedShadowStoreShape(llvm::StoreInst *SI, const TaintSet &taint,
 // Pure analysis (no mutation).
 enum class QromClaim { No, Provable, NeedsMask };
 
+// `inBennettClone` (bd 20xt.5.2, the PredMux `ClaimAll` claim only) BYPASSES the
+// coherent-escape no-cloning fence: inside a Phase-6 specialization clone the
+// Bennett wrap copies the return out to a fresh basis rail and reverse-plays the
+// whole forward stream (the qram-load `_unc` + the index), so a read whose value
+// escapes to the clone ret is SOUND — the same bypass `lowerQramReads` applies at
+// the emitter, threaded here so claim and emit cannot diverge (Rule 14). The
+// carve/signpost callers pass false and keep the fence (a real top-level escape).
 QromClaim classifyQromReadUnderControl(
     llvm::LoadInst *LI, const TaintSet &taint, llvm::DominatorTree &DT,
     llvm::LoopInfo &LInfo, uint64_t *OutCount = nullptr,
-    const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region = nullptr);
+    const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region = nullptr,
+    bool inBennettClone = false);
 
 // 3c6m.14 Inc 3 — volatile-const global-load fold (curation, runs pre-PredMux in
 // BOTH pipeline entry points). Folds a VOLATILE load whose pointer strips (through
