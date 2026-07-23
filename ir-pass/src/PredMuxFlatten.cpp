@@ -72,6 +72,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/MathExtras.h"  // isPowerOf2_64 (bd 20xt.7 Provable-pow2 mask)
 #include "llvm/Transforms/Utils/Local.h"  // RecursivelyDeleteTriviallyDeadInstructions
 
 using namespace llvm;
@@ -874,11 +875,34 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         // arm-resident QROM read whose value flows to the clone ret is claimable
         // (the wrap copies-out + reverse-plays the whole stream — the same bypass
         // `lowerQramReads(inBennettClone=true)` applies at the emitter, Rule 14).
+        bool IndexBecomesOpaque = false;
         QromClaim QC = classifyQromReadUnderControl(
-            LI2, Taint, DT, LInfo, &Count, &R.InRegion, /*inBennettClone=*/ClaimAll);
+            LI2, Taint, DT, LInfo, &Count, &R.InRegion,
+            /*inBennettClone=*/ClaimAll, &IndexBecomesOpaque);
         if (QC == QromClaim::No)
           return leave("E4-load", &I);
-        if (QC == QromClaim::NeedsMask)
+        // bd 20xt.7: a PROVABLE clone read on a pow2 table whose index BECOMES
+        // OPAQUE after the flatten ALSO gets the (identity) mask, not only a
+        // NeedsMask one. `and idx, N-1` is the IDENTITY on a provable-in-bounds
+        // index (Provable ⟹ known-bits max < N = 2^k ⟹ idx fits in k bits ⟹
+        // `and idx, N-1` == idx at runtime), so it is semantically inert — its SOLE
+        // effect is to carry the flatten's bounds proof to the EMITTER. The index
+        // becomes opaque iff it is region-internal-phi-derived (currently untainted,
+        // admitted only via `indexWillTaintAfterFlatten`): the flatten +
+        // `lowerCloneSelect` lower it to a `cqrt_alloc_i64` handle whose known-bits
+        // `lowerQramReads`' `qromIndexKnownInBounds` re-proof cannot see, so it would
+        // else loud-decline `kMsgQramCloneUnbounded` (a safe-but-confusing claim/emit
+        // divergence). A CURRENTLY-TAINTED Provable index (a source `& 3` straight-
+        // line computation) keeps its RAW op at the gep, which the emitter re-proves
+        // directly — masking THAT would be a redundant double-`and` that drifts its
+        // golden (Rule 14; the e2e slice_spec_qrom_read_arm_escape regression this
+        // guard fixes). Gated on `ClaimAll` (clone-only): a top-level Provable read
+        // is a faithful source access, bounds the source's obligation, left UNMASKED.
+        // A non-pow2 Provable clone read stays unmasked here and, in a clone, still
+        // declines at the emitter (rare; the safe residual over-decline).
+        if (QC == QromClaim::NeedsMask ||
+            (QC == QromClaim::Provable && ClaimAll && IndexBecomesOpaque &&
+             Count != 0 && isPowerOf2_64(Count)))
           R.MaskLoads.push_back({LI2, Count});
         continue;
       }

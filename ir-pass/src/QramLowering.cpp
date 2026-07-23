@@ -630,7 +630,7 @@ bool qromIndexKnownInBounds(Value *RawIndex, GetElementPtrInst *Gep,
 QromClaim classifyQromReadUnderControlImpl(
     LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
     uint64_t *OutCount, const SmallPtrSetImpl<BasicBlock *> *Region,
-    bool inBennettClone = false) {
+    bool inBennettClone = false, bool *OutIndexBecomesOpaque = nullptr) {
   auto M = matchQramAccess(LI, taint, DT, LInfo, /*allowTaintedControl=*/true,
                            /*allowUntaintedIndex=*/Region != nullptr);
   if (!M.has_value() || M->Origin.Kind != OriginResult::Global ||
@@ -660,6 +660,19 @@ QromClaim classifyQromReadUnderControlImpl(
     return QromClaim::No;
   if (OutCount)
     *OutCount = M->Count;
+  // bd 20xt.7: does the index become an OPAQUE handle after the flatten? A
+  // CURRENTLY-UNTAINTED claimed index is region-internal-phi-derived (the taint
+  // gate above admitted it only via `indexWillTaintAfterFlatten`), so the flatten
+  // converts its phi to a select and `lowerCloneSelect` lowers it to a
+  // `cqrt_alloc_i64` handle whose known-bits the emitter's `qromIndexKnownInBounds`
+  // re-proof cannot see — that read (if Provable, pow2) NEEDS the identity mask to
+  // carry its bounds proof forward. A CURRENTLY-TAINTED index is a straight-line
+  // data computation (e.g. a source `& 3`): its raw op SURVIVES to the gep, so the
+  // emitter re-proves it directly and no extra mask is needed (masking it would be
+  // a redundant double-`and`, Rule 14). The caller uses this ONLY for the Provable
+  // clone-read mask decision; it is meaningless for a `No` verdict.
+  if (OutIndexBecomesOpaque)
+    *OutIndexBecomesOpaque = !taint.Tainted.count(M->RawIndex);
   // Bounds proof for the speculated read. An LLVM gep trailing index is a
   // SIGNED offset computed at the POINTER-INDEX width, sign-extending a narrower
   // index. That signedness makes both claim forms unsound for a narrow index:
@@ -1024,9 +1037,9 @@ bool guardedShadowStoreShape(StoreInst *SI, const TaintSet &taint,
 QromClaim classifyQromReadUnderControl(
     LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
     uint64_t *OutCount, const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region,
-    bool inBennettClone) {
+    bool inBennettClone, bool *OutIndexBecomesOpaque) {
   return classifyQromReadUnderControlImpl(LI, taint, DT, LInfo, OutCount, Region,
-                                          inBennettClone);
+                                          inBennettClone, OutIndexBecomesOpaque);
 }
 
 // 3c6m.14 Inc 3 — volatile-const global-load fold (see QramLowering.h). Pure

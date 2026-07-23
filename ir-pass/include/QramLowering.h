@@ -118,11 +118,18 @@ enum class QromClaim { No, Provable, NeedsMask };
 // escapes to the clone ret is SOUND — the same bypass `lowerQramReads` applies at
 // the emitter, threaded here so claim and emit cannot diverge (Rule 14). The
 // carve/signpost callers pass false and keep the fence (a real top-level escape).
+// `OutIndexBecomesOpaque` (bd 20xt.7, optional): when non-null, receives whether a
+// CLAIMED read's index is currently untainted — i.e. region-internal-phi-derived, so
+// the flatten + `lowerCloneSelect` lower it to an opaque `cqrt_alloc_i64` handle the
+// emitter's bounds re-proof cannot see. The E4 Provable-pow2 clone-read mask uses it
+// to mask ONLY that opaque case (a source-masked, already-tainted Provable index
+// keeps its raw op and is re-proven directly — masking it would be a redundant
+// double-`and`). Meaningless for a `No` verdict.
 QromClaim classifyQromReadUnderControl(
     llvm::LoadInst *LI, const TaintSet &taint, llvm::DominatorTree &DT,
     llvm::LoopInfo &LInfo, uint64_t *OutCount = nullptr,
     const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region = nullptr,
-    bool inBennettClone = false);
+    bool inBennettClone = false, bool *OutIndexBecomesOpaque = nullptr);
 
 // 3c6m.14 Inc 3 — volatile-const global-load fold (curation, runs pre-PredMux in
 // BOTH pipeline entry points). Folds a VOLATILE load whose pointer strips (through
