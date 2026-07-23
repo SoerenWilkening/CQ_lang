@@ -563,6 +563,26 @@ add_test(NAME e2e-slice-branchless-cosl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cosl.expected.log")
 
+# bd 20xt.8 Inc 2: the ld80 (x86_fp80) branchless-leaf natural-log twin — the
+# third Bennett-parity leaf for the lgammal hybrid slice. e_logl.c's small-exponent
+# path log(1+f)=f−½f²+f³P(f)/Q(f) taken UNCONDITIONALLY (faithful over the whole
+# centered mantissa for every exponent — the f64 branchless/log.c single-path move),
+# with the ld80 P[7]/Q[6]/C1/C2 coefficients. PURE-REGISTER: the frexp mantissa/
+# exponent split is a `union IEEEl2bits` bit-cast that SROA promotes to reversible
+# cq_template_{bitcast,lshr,shl,and,or,trunc,zext}_i80/i64/i32 surgery on the f80
+# (NO Shadow/qram/alloca — a 10-byte fp80 memcpy is deliberately avoided), the √2/2
+# centering is ONE constant-operand fp select → cqrt_copy_f80_controlled (kjd1), and
+# k is carried to fp with sitofp i32→f80. A DISJOINT hybrid/authored-leaf provenance,
+# never quoted with the real-openlibm goldens. Corpus twin:
+# tools/library_coverage/branchless/logl.c — keep in sync.
+add_test(NAME e2e-slice-branchless-logl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_logl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_logl.expected.log")
+
 # bd 3c6m.46/.30/.19/.17: tan + exp2 + asin + acos by SOURCE INJECTION, all
 # single-arg. tan (L1) REUSES the sin/cos Cody–Waite reduction and reconstructs
 # tan as a RATIO of the SAME k_sin/k_cos kernels — tan is π-periodic so only the

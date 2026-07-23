@@ -1,0 +1,54 @@
+cqrt_alloc_f80(0.500000) -> h0
+cqrt_ry_f80(h0, 0.500000)
+cq_template_bitcast_f80_to_i80(h0) -> h1
+cq_template_lshr_i80_hl(h1, 64) -> h2
+cq_template_trunc_i80_to_i16(h2) -> h3
+cq_template_zext_i16_to_i64(h3) -> h4
+cq_template_trunc_i64_to_i32(h4) -> h5
+cq_template_and_i32_hl(h5, 32767) -> h6
+cq_template_add_i32_hl(h6, -16382) -> h7
+cq_template_and_i64_hl(h4, -32768) -> h8
+cq_template_or_i64_hl(h8, 16382) -> h9
+cq_template_and_i80_hl(h1, -1) -> h10
+cq_template_zext_i64_to_i80(h9) -> h11
+cq_template_shl_i80_hl(h11, 64) -> h12
+cq_template_or_i80(h10, h12) -> h13
+cq_template_bitcast_i80_to_f80(h13) -> h14
+cq_template_fcmp_olt_f80_hl(h14, 0.707107) -> h15
+cqrt_alloc_f80(0.000000) -> h16
+cqrt_alloc_f80(1.000000) -> h17
+cqrt_copy_f80_controlled(h15, h17, h16)
+cqrt_x(h15)
+cqrt_alloc_f80(0.000000) -> h18
+cqrt_copy_f80_controlled(h15, h18, h16)
+cqrt_x(h15)
+cq_template_fcmp_olt_f80_hl_inv(h14, 0.707107) -> h19
+cqrt_free(h15)
+cq_template_sitofp_i32_to_f80(h7) -> h20
+cq_template_fsub_f80(h20, h16) -> h21
+cq_template_fma_f80_qll(h14, 2.000000, -1.000000) -> h22
+cq_template_fsub_f80_lh(1.000000, h16) -> h23
+cq_template_fadd_f80_hl(h14, -1.000000) -> h24
+cq_template_fmul_f80(h23, h24) -> h25
+cq_template_fma_f80(h16, h22, h25) -> h26
+cq_template_fmul_f80(h26, h26) -> h27
+cq_template_fma_f80_qll(h26, 0.000045, 0.498541) -> h28
+cq_template_fma_f80_qql(h26, h28, 6.578733) -> h29
+cq_template_fma_f80_qql(h26, h29, 29.911919) -> h30
+cq_template_fma_f80_qql(h26, h30, 60.949668) -> h31
+cq_template_fma_f80_qql(h26, h31, 57.112964) -> h32
+cq_template_fma_f80_qql(h26, h32, 20.039553) -> h33
+cq_template_fadd_f80_hl(h26, 15.062909) -> h34
+cq_template_fma_f80_qql(h26, h34, 83.047566) -> h35
+cq_template_fma_f80_qql(h26, h35, 221.762398) -> h36
+cq_template_fma_f80_qql(h26, h36, 309.098722) -> h37
+cq_template_fma_f80_qql(h26, h37, 216.427886) -> h38
+cq_template_fma_f80_qql(h26, h38, 60.118660) -> h39
+cq_template_fmul_f80(h27, h33) -> h40
+cq_template_fdiv_f80(h40, h39) -> h41
+cq_template_fmul_f80(h26, h41) -> h42
+cq_template_fma_f80_qlq(h21, 0.000001, h42) -> h43
+cq_template_fma_f80_qlq(h27, -0.500000, h43) -> h44
+cq_template_fadd_f80(h26, h44) -> h45
+cq_template_fma_f80_qlq(h21, 0.693146, h45) -> h46
+cqrt_measure_f80(h46) -> 0.000000
