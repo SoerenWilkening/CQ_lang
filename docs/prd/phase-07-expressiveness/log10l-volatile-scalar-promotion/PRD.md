@@ -1,9 +1,30 @@
 # PRD — `log10l.f80` census unblock: volatile scalar-local SSA promotion
 
-**Status:** SCOPE — **AWAITING OWNER APPROVAL** (2026-07-23). Do **not** build until
-approved (owner directive: "scope it first"). Follow-on to the **20xt** ld80 census
-campaign; sibling of bd **`etiq`** (`foldVolatileConstAllocaLoads`, closed 2026-07-16)
-and the **7.5** Shadow model. Bennett-parity consulted (owner standing instruction).
+**Status:** **Inc 1 DONE + Rule-13 CLEARED (2026-07-24)** — owner-approved 2026-07-23.
+Follow-on to the **20xt** ld80 census campaign; sibling of bd **`etiq`**
+(`foldVolatileConstAllocaLoads`, closed 2026-07-16) and the **7.5** Shadow model.
+Bennett-parity consulted (owner standing instruction).
+
+> **Inc-1 outcome (empirical, Rule 11):** `promoteVolatileScalarLocals` shipped and
+> ADVANCES `log10l.f80` from the volatile-`z` `kMsgStore` (e_log10l.c:156) to the
+> `ldexpl` unknown-callee (e_log10l.c:177) — exactly as §7 predicted. 5-lens Rule-13
+> clearance = **0 silent miscompiles / 0 blocking** (soundness backbone confirmed
+> byte-for-byte against the non-`volatile` mem2reg twin). **NEW FINDING that revises
+> Inc 2 (§7):** promoting `z` does NOT yield straight-line SSA — `z` is stored on
+> BOTH arms of the tainted `if (frac < SQRTH)` argument-reduction branch (the real
+> body's `%40`/`%41` are BOTH tainted: `icmp` on the frexpl exponent, `fcmp` on the
+> frexpl fraction), so `PromoteMemToReg` mints an **x86_fp80 merge phi UNDER TAINTED
+> CONTROL** (the "fp phi is an angle" family). The existing control machinery
+> **loud-declines** that shape ("control flow under quantum control" — verified,
+> byte-identical to its non-`volatile` twin; the safety net is intact and
+> regression-pinned by `lowering_reject_volatile_scalar_promote_fpphi_tainted.ll`).
+> ⇒ `log10l.f80`'s FULL compile is blocked not only on the `ldexpl` closure but ALSO
+> on **fp80-merge-under-tainted-control** — control-flow work of MUX-EXCH class, NOT
+> the "small `ldexpl` fix" §7 Inc 2 assumed. **log10l is therefore likely NOT the
+> clean, MUX-EXCH-orthogonal +1 §1/§9 claimed.** OWNER DECISION NEEDED before Inc 2:
+> reassess whether to pursue the fp80-merge control work (couples log10l to the
+> sinl/cosl/tanl set) or defer log10l's census +1. Inc 1's promotion is sound and
+> valuable regardless (it unblocks the volatile-scalar idiom class module-wide).
 
 ---
 
@@ -113,16 +134,27 @@ Each ships a negative lit fixture mirroring the exact diagnostic (Rule 12):
 
 ## 7. Increment plan
 
-- **Inc 1 — `promoteVolatileScalarLocals` + re-probe.** Implement the promotion; re-probe
-  `log10l.f80` → expect it to ADVANCE past the volatile-`z` (to the `ldexpl` secondary,
-  or straight to COMPILES). Rule-12 red-green fixtures (positive: a volatile scalar
-  accumulator promotes + lowers register-only; the §6 decline matrix). Rule-13 clearance.
-- **Inc 2 — secondary `ldexpl` resolution + census +1.** Resolve the `ldexpl`
-  closure/inline (small; `scalbnl` already COMPILES) if it blocks post-promotion; then
-  `tests/e2e/slice_libm_real_log10l.c` + deterministic golden (real openlibm
-  `ld80/e_log10l.c`, **mechanical edits only — the `volatile` STAYS in the vendored
-  source**; the fold handles it, keeping the body faithful, exactly as `etiq` did for
-  `cbrtl`). Census verified count +1. Rule-13 clearance.
+- **Inc 1 — `promoteVolatileScalarLocals` + re-probe. ✅ DONE + Rule-13 CLEARED
+  (2026-07-24).** Implemented the promotion (`QramLowering.cpp`; gates: single int/fp
+  scalar · non-escaping exact-type direct load/store + lifetime only · ≥1 volatile ·
+  undef-safety `everyLoadIsStoreDefined` · not `callsFunctionThatReturnsTwice()` ·
+  taint-exclusion; ACCEPT-ONLY; re-propagate fixpoint in both pipeline entry points).
+  Re-probe: `log10l.f80` ADVANCES from `kMsgStore` (line 156) → `ldexpl` unknown-callee
+  (line 177), as predicted. Rule-12 red-green: 1 canonical positive + 2 converted etiq
+  pins (now correctly compiling via promotion) + 6 decline pins (array/escape/typepun/
+  global/setjmp/undef) + 1 safety-net pin (fp-phi-under-tainted-control promotes-then-
+  loud-declines). Full suite green (190/190 ctest, 878/878 ir-pass-lit). 5-lens Rule-13
+  clearance: 0 blocking, 0 silent miscompiles.
+- **Inc 2 — RE-SCOPED (owner decision needed; see the Inc-1 outcome note at top).** The
+  original "small `ldexpl` closure fix → census +1" is **superseded** by the Inc-1
+  finding: post-promotion, `log10l.f80` needs BOTH (a) the `ldexpl` closure AND (b)
+  **fp80-merge-under-tainted-control** lowering (the exposed `z`-phi across the tainted
+  argument-reduction branch loud-declines today). (b) is MUX-EXCH-class control work,
+  coupling `log10l` to the `sinl`/`cosl`/`tanl` set — so the "clean, orthogonal +1"
+  premise no longer holds. Do NOT proceed to the golden/census until the owner decides
+  whether to (i) invest in the fp80-merge control work here, or (ii) defer `log10l`'s
+  census +1 to the broader control campaign. The Inc-1 promotion stands on its own
+  (unblocks the volatile-scalar idiom class module-wide, sound + Rule-13-cleared).
 
 ## 8. Verification (the three gates)
 

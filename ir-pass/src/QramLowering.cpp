@@ -36,6 +36,7 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/KnownBits.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Transforms/Utils/PromoteMemToReg.h"  // bd zco4 (isAllocaPromotable / PromoteMemToReg)
 
 #include <algorithm>
 #include <optional>
@@ -1241,6 +1242,166 @@ bool foldVolatileConstAllocaLoads(Module &M, const TaintSet &taint) {
       A->eraseFromParent();
       Changed = true;
     }
+  }
+  return Changed;
+}
+
+namespace {
+
+// bd zco4 — undef-safety proof for a promotion candidate: every load of `A` must
+// be preceded on EVERY path from function entry by a store to `A`, so
+// PromoteMemToReg never materializes an `undef` reaching definition (reading an
+// uninitialized scalar is UB in C and never appears in a real accumulator body;
+// promoting it would silently invent a garbage value — the Prime-Directive
+// decline, mirroring the etiq per-load dominance gate but generalized to the
+// multi-store accumulator where NO single store dominates a post-merge load yet
+// every path still stores first). A block is "undef-on-entry" iff some path
+// entry→B carries no intervening store to `A`; a load reads a defined value iff
+// its block is not undef-on-entry, OR a store to `A` precedes it within its own
+// block. `Stores`/`Loads` are `A`'s direct accesses (the caller's exact-type,
+// non-escaping scan). Small forward fixpoint over the CFG.
+bool everyLoadIsStoreDefined(AllocaInst *A, ArrayRef<LoadInst *> Loads,
+                             ArrayRef<StoreInst *> Stores, Function &F) {
+  SmallPtrSet<const BasicBlock *, 16> StoreBlocks;
+  for (StoreInst *S : Stores)
+    StoreBlocks.insert(S->getParent());
+  // undefOnEntry(B) = (B == entry) OR ∃ pred P: undefOnEntry(P) AND P has no
+  // store to A (a store in P defines A before control leaves P).
+  SmallPtrSet<const BasicBlock *, 16> UndefIn;
+  UndefIn.insert(&F.getEntryBlock());
+  bool Changed = true;
+  while (Changed) {
+    Changed = false;
+    for (BasicBlock &B : F) {
+      if (UndefIn.count(&B))
+        continue;
+      for (const BasicBlock *P : predecessors(&B)) {
+        if (UndefIn.count(P) && !StoreBlocks.count(P)) {
+          UndefIn.insert(&B);
+          Changed = true;
+          break;
+        }
+      }
+    }
+  }
+  for (LoadInst *L : Loads) {
+    BasicBlock *B = L->getParent();
+    if (!UndefIn.count(B))
+      continue;  // every path into B stores A first — defined.
+    bool StoreBefore = false;
+    for (Instruction &I : *B) {
+      if (&I == L)
+        break;
+      if (auto *S = dyn_cast<StoreInst>(&I))
+        if (S->getPointerOperand() == A) {
+          StoreBefore = true;
+          break;
+        }
+    }
+    if (!StoreBefore)
+      return false;  // a store-free path reaches L — promotion would read undef.
+  }
+  return true;
+}
+
+}  // namespace
+
+// bd zco4 — volatile scalar-local SSA promotion (see QramLowering.h for the full
+// gate list + soundness). ACCEPT-ONLY: an alloca short of ANY gate is left
+// byte-untouched for the existing loud declines (no diagnostic emitted here).
+bool promoteVolatileScalarLocals(Module &M, const TaintSet &taint) {
+  bool Changed = false;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    // A returns_twice/setjmp caller relies on `volatile` to keep the scalar in
+    // memory across a longjmp (a non-volatile local is indeterminate after
+    // longjmp — that is WHY the idiom needs volatile); promoting it to a register
+    // would drop the value longjmp must restore. Decline the WHOLE function
+    // (over-declining is safe; a pure libm body never calls setjmp).
+    if (F.callsFunctionThatReturnsTwice())
+      continue;
+    // Static entry-block allocas only (clang -O1). Snapshot up front — promotion
+    // erases from this very block.
+    SmallVector<AllocaInst *, 8> Cands;
+    for (Instruction &I : F.getEntryBlock())
+      if (auto *A = dyn_cast<AllocaInst>(&I))
+        if (A->isStaticAlloca())
+          Cands.push_back(A);
+    if (Cands.empty())
+      continue;
+
+    std::optional<DominatorTree> DT;
+    SmallVector<AllocaInst *, 4> ToPromote;
+    for (AllocaInst *A : Cands) {
+      // Gate 1 — a single INTEGER/FP SCALAR. An array/struct is the
+      // Shadow/MUX-EXCH domain; a vector is an angle-vector; a pointer scalar has
+      // no reversible-copy story. Each is left for its own owner.
+      Type *AllocTy = A->getAllocatedType();
+      if (!(AllocTy->isIntegerTy() || AllocTy->isFloatingPointTy()))
+        continue;
+      // Gates 2-4 — whole-alloca user scan: the address NEVER escapes (every user
+      // a direct non-atomic load/store of A at the EXACT allocated type, or a
+      // lifetime/droppable intrinsic), and ≥1 access is VOLATILE (else clang
+      // mem2reg already claimed it). ANY other user (gep — even offset 0 —,
+      // call-arg, ptrtoint, cast, cmp, phi/select, A as a store's VALUE operand,
+      // an atomic, a mismatched-type access) forfeits the WHOLE alloca.
+      SmallVector<LoadInst *, 8> Loads;
+      SmallVector<StoreInst *, 8> Stores;
+      bool Clean = true, SawVolatile = false;
+      for (User *U : A->users()) {
+        if (auto *LI = dyn_cast<LoadInst>(U)) {
+          if (LI->isAtomic() || LI->getType() != AllocTy) {
+            Clean = false;
+            break;
+          }
+          SawVolatile |= LI->isVolatile();
+          Loads.push_back(LI);
+          continue;
+        }
+        if (auto *SI = dyn_cast<StoreInst>(U)) {
+          if (SI->getPointerOperand() != A || SI->isAtomic() ||
+              SI->getValueOperand()->getType() != AllocTy) {
+            Clean = false;  // address stored away / atomic / mismatched type.
+            break;
+          }
+          SawVolatile |= SI->isVolatile();
+          Stores.push_back(SI);
+          continue;
+        }
+        if (auto *II = dyn_cast<IntrinsicInst>(U))
+          if (II->isLifetimeStartOrEnd() || II->isDroppable())
+            continue;  // lifetime/assume markers — PromoteMemToReg strips them.
+        Clean = false;
+        break;
+      }
+      if (!Clean || !SawVolatile || Loads.empty() || Stores.empty())
+        continue;
+      // Belt-and-braces: a tainted alloca POINTER would be a shadow-QRAM handle,
+      // never a plain scalar accumulator — exclude it structurally (the address
+      // is a classical stack slot; only the stored VALUE is ever tainted).
+      if (taint.Tainted.count(A))
+        continue;
+      // Gate 5 — every load proven store-defined (no undef reaching def).
+      if (!everyLoadIsStoreDefined(A, Loads, Stores, F))
+        continue;
+      // Clear volatile so the alloca is promotable, then defer the promotion
+      // until all of F's candidates are collected (one PromoteMemToReg per
+      // function). The stricter scan above guarantees isAllocaPromotable now.
+      for (LoadInst *LI : Loads)
+        LI->setVolatile(false);
+      for (StoreInst *SI : Stores)
+        SI->setVolatile(false);
+      assert(isAllocaPromotable(A) &&
+             "zco4: scanned volatile scalar must be promotable after unvolatile");
+      ToPromote.push_back(A);
+    }
+    if (ToPromote.empty())
+      continue;
+    if (!DT)
+      DT.emplace(F);
+    PromoteMemToReg(ToPromote, *DT);
+    Changed = true;
   }
   return Changed;
 }

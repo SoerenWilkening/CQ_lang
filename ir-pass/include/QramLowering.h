@@ -168,6 +168,37 @@ bool foldVolatileConstGlobalLoads(llvm::Module &M);
 // folded.
 bool foldVolatileConstAllocaLoads(llvm::Module &M, const TaintSet &taint);
 
+// bd zco4 — volatile scalar-local SSA promotion: the mem2reg sibling of
+// foldVolatileConstAllocaLoads above. The etiq fold folds a single-CONSTANT-store
+// volatile scalar to its constant; this generalizes to a MULTI-STORE COMPUTED
+// accumulator (the OpenBSD/Moshier "***CAUTION***" idiom `volatile long double z`
+// in e_log10l.c: an anti-reassociation guard on a private non-escaping scalar).
+// clang's own mem2reg never promotes a volatile access, so the store/load pair
+// survives -O1 and a tainted stored value declines at kMsgStore (or blocks a
+// tainted region at PredMux E4). For an alloca whose EVERY gate holds — a single
+// INTEGER/FP SCALAR (never an array/struct/vector: those are the Shadow/MUX-EXCH /
+// promoteFp80Union domains), address NEVER escaping (every user a direct
+// non-atomic load/store of the alloca at the EXACT allocated type, or a
+// lifetime/droppable intrinsic — no gep/call-arg/ptrtoint/cast/phi/select/cmp on
+// the address), ≥1 VOLATILE access (else clang mem2reg already promoted it —
+// nothing to do), EVERY load proven defined (dominated on all paths by a store, so
+// promotion never invents an undef), and the FUNCTION not calling a
+// returns_twice/setjmp routine (whose volatile-liveness contract promotion would
+// break) — this clears isVolatile on the alloca's loads/stores and runs LLVM
+// PromoteMemToReg. The result is EXACTLY the SSA clang's mem2reg would build for
+// the same body with `volatile` removed (per-alloca, deterministic, no aliasing —
+// direct accesses only), so the transform maps the volatile idiom to IR the pass
+// already adjudicates (compile-correct or loud-decline); dropping volatile is the
+// same deliberate, idiom-invited choice etiq established (a private non-escaping
+// scalar has no external observer — volatile's only effect is to defeat FP
+// reassociation, which taint lowering never does — so the "***CAUTION***" order is
+// preserved). Anything short of ANY gate is left byte-untouched for the existing
+// loud declines (Prime Directive; ACCEPT-ONLY, emits no diagnostic). Promotion
+// mints tainted SSA (the accumulator's stored value flows to its loads), so the
+// caller RE-PROPAGATES taint after a true return (the promoteFp80Union fixpoint
+// precedent). Returns true if anything promoted.
+bool promoteVolatileScalarLocals(llvm::Module &M, const TaintSet &taint);
+
 // bd 20xt.4 — the taint-blind STRUCTURAL const-global QROM-read shape, the shared
 // truth for the Phase-6 spec-clone ADMIT paths (`scanBody` in SpecializeReject and,
 // Inc 2, `isSpeculatableDataflow` in PredMuxFlatten). True iff `LI` is a simple load

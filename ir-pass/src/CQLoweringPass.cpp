@@ -120,6 +120,22 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // alloca. Folded values are classical — same no-re-propagate rationale.
   foldVolatileConstAllocaLoads(M, taint);
 
+  // bd zco4 — volatile scalar-local SSA promotion (QramLowering.cpp): the mem2reg
+  // sibling of the etiq fold above, for the OpenBSD/Moshier "***CAUTION***" idiom
+  // where the anti-reassociation `volatile` is on a MULTI-STORE COMPUTED
+  // accumulator (`volatile long double z` in e_log10l.c), not a single constant.
+  // clang's mem2reg never promotes a volatile access, so the tainted store
+  // survives -O1 and declines at kMsgStore. This clears isVolatile + runs
+  // PromoteMemToReg on a proven non-escaping single scalar (see QramLowering.h for
+  // the gate list). Runs HERE — same slot as the etiq fold, BEFORE the
+  // promoteFp80Union / PredMux fixpoints and BEFORE declineTaintEscapes. UNLIKE
+  // the const fold, promotion mints TAINTED SSA (the accumulator's stored value
+  // reaches its loads), so this is a FIXPOINT with a full re-propagate (the
+  // promoteFp80Union precedent) — the promoted phis/values are re-tainted and a
+  // scalar exposed by an outer promotion is claimed on the next turn.
+  while (promoteVolatileScalarLocals(M, taint))
+    taint = propagate(M, wd);
+
   // bd 3c6m.51 — x86_fp80 union-promotion peephole (Fp80Union.cpp): the ld80 libm
   // cells extract sign/exponent/mantissa through a `union IEEEl2bits` bit-pattern
   // type-pun (`store x86_fp80` then `load iN` at const byte offsets) that LLVM
@@ -413,6 +429,16 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // post-global-fold / pre-PredMux placement rationale.
   foldVolatileConstAllocaLoads(M, taint);
+
+  // bd zco4 — volatile scalar-local SSA promotion, mirrored in this entry point
+  // too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
+  // same-slot-as-etiq placement + fixpoint-re-propagate rationale.
+  while (promoteVolatileScalarLocals(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.MeasureCalls);
+  }
 
   // bd 3c6m.51 — x86_fp80 union-promotion peephole, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
