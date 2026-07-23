@@ -1,0 +1,62 @@
+cqrt_alloc_f80(0.500000) -> h0
+cqrt_ry_f80(h0, 0.500000)
+cq_template_fmul_f80_hl(h0, 0.636620) -> h1
+cq_template_rint_f80(h1) -> h2
+cq_template_fneg_f80(h2) -> h3
+cq_template_fma_f80_qlq(h3, 1.570796, h0) -> h4
+cq_template_fma_f80_qlq(h3, -0.000000, h4) -> h5
+cq_template_fmin_f80_hl(h5, 0.785398) -> h6
+cq_template_fmax_f80_hl(h6, -0.785398) -> h7
+cq_template_fmul_f80(h7, h7) -> h8
+cq_template_fma_f80_qll(h8, 0.000000, -0.000000) -> h9
+cq_template_fma_f80_qql(h8, h9, 0.000000) -> h10
+cq_template_fma_f80_qql(h8, h10, -0.000000) -> h11
+cq_template_fma_f80_qql(h8, h11, 0.000003) -> h12
+cq_template_fma_f80_qql(h8, h12, -0.000198) -> h13
+cq_template_fma_f80_qql(h8, h13, 0.008333) -> h14
+cq_template_fmul_f80(h7, h8) -> h15
+cq_template_fma_f80_qql(h8, h14, -0.166667) -> h16
+cq_template_fma_f80(h15, h16, h7) -> h17
+cq_template_fma_f80_qll(h8, 0.000000, -0.000000) -> h18
+cq_template_fma_f80_qql(h8, h18, 0.000000) -> h19
+cq_template_fma_f80_qql(h8, h19, -0.000000) -> h20
+cq_template_fma_f80_qql(h8, h20, 0.000025) -> h21
+cq_template_fma_f80_qql(h8, h21, -0.001389) -> h22
+cq_template_fma_f80_qql(h8, h22, 0.041667) -> h23
+cq_template_fmul_f80(h8, h23) -> h24
+cq_template_fmul_f80_hl(h8, 0.500000) -> h25
+cq_template_fsub_f80_lh(1.000000, h25) -> h26
+cq_template_fsub_f80_lh(1.000000, h26) -> h27
+cq_template_fsub_f80(h27, h25) -> h28
+cq_template_fma_f80(h8, h24, h28) -> h29
+cq_template_fadd_f80(h26, h29) -> h30
+cq_template_fadd_f80_hl(h2, 1.000000) -> h31
+cq_template_fmul_f80_hl(h31, 0.250000) -> h32
+cq_template_floor_f80(h32) -> h33
+cq_template_fma_f80_qlq(h33, -4.000000, h31) -> h34
+cq_template_fmul_f80_hl(h34, 0.500000) -> h35
+cq_template_floor_f80(h35) -> h36
+cq_template_fma_f80_qlq(h36, -2.000000, h34) -> h37
+cq_template_fcmp_olt_f80_hl(h37, 0.500000) -> h38
+cqrt_alloc_f80(0.000000) -> h39
+cqrt_alloc_f80(1.000000) -> h40
+cqrt_copy_f80_controlled(h38, h40, h39)
+cqrt_x(h38)
+cqrt_alloc_f80(0.000000) -> h41
+cqrt_copy_f80_controlled(h38, h41, h39)
+cqrt_x(h38)
+cq_template_fcmp_olt_f80_hl_inv(h37, 0.500000) -> h42
+cqrt_free(h38)
+cq_template_fsub_f80_lh(1.000000, h39) -> h43
+cq_template_fmul_f80(h30, h43) -> h44
+cq_template_fma_f80(h39, h17, h44) -> h45
+cq_template_fneg_f80(h45) -> h46
+cq_template_fcmp_olt_f80_hl(h36, 0.500000) -> h47
+cqrt_alloc_f80(0.000000) -> h48
+cqrt_copy_f80_controlled(h47, h45, h48)
+cqrt_x(h47)
+cqrt_copy_f80_controlled(h47, h46, h48)
+cqrt_x(h47)
+cq_template_fcmp_olt_f80_hl_inv(h36, 0.500000) -> h49
+cqrt_free(h47)
+cqrt_measure_f80(h48) -> 0.000000

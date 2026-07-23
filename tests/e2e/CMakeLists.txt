@@ -537,6 +537,32 @@ add_test(NAME e2e-slice-branchless-cos
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cos.expected.log")
 
+# bd 20xt.8 Inc 1: the ld80 (x86_fp80) branchless-leaf twins of {sin,cos} — the
+# Bennett-parity path for the lgammal hybrid slice. Same 2-term Cody–Waite
+# reduction + fp-const-select quadrant blend as the f64 bodies, retyped to
+# `long double` with the ld80 rem_pio2l constants (39-bit pio2_1 kept `double`,
+# NEGATIVE tail) and the grown ld80 k_sinl (S1..S8) / k_cosl (C1..C7) kernels.
+# PURE-REGISTER: the rintl/floorl/fminl/fmaxl keep-set leaves lower to
+# cq_template_*_f80 (curated intrinsic bodies) and the fp selects to
+# cqrt_copy_f80_controlled (kjd1) — no Shadow/i80/memcpy. A DISJOINT
+# hybrid/authored-leaf provenance, never quoted with the real-openlibm goldens.
+# Corpus twins: tools/library_coverage/branchless/{sinl,cosl}.c — keep in sync.
+add_test(NAME e2e-slice-branchless-sinl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sinl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_sinl.expected.log")
+
+add_test(NAME e2e-slice-branchless-cosl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cosl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cosl.expected.log")
+
 # bd 3c6m.46/.30/.19/.17: tan + exp2 + asin + acos by SOURCE INJECTION, all
 # single-arg. tan (L1) REUSES the sin/cos Cody–Waite reduction and reconstructs
 # tan as a RATIO of the SAME k_sin/k_cos kernels — tan is π-periodic so only the
