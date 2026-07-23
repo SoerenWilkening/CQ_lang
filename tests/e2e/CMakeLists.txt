@@ -703,6 +703,32 @@ add_test(NAME e2e-slice-libm-real-atanl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanl.expected.log")
 
+# bd 20xt.6 — the ld80 census cell atan2l.f80 COMPILES(spec-clone)->VERIFIED at
+# the plain -O1 ship floor: the real openlibm atan2l closure (src/e_atan2l.c: the
+# special-case/quadrant control ladder + m=2*sign(x)+sign(y) route wrapping the
+# inner olm_atanl(fabsl(y/x)) call; over the SAME vendored inner-atanl body as
+# slice_libm_real_atanl.c — ld80/s_atanl.c + ld80/invtrig.c atanhi[4]/atanlo[4]/
+# aT[13]/pi_lo + invtrig.h T_even/T_odd + amd64_fpmath.h union). This is the
+# LINK-layer proof (Rule 2) that the 20xt.3/.4/.5.2 inner-atanl clone-control
+# machinery emits+resolves end-to-end: at plain -O1 the inner atanl stays
+# OUTLINED and lowers to a Phase-6 spec clone @__cq_q_olm_atanl_1 whose internal
+# tainted argument-reduction cascade flattens (lowerCloneControl) and whose two
+# data-indexed atanhi[id]/atanlo[id] QROM reads coherently escape via the 20xt.5.2
+# Bennett-clone bypass (the range-id is the NeedsMask 4294967295-sentinel phi, not
+# the deferred fcmp-select). 1712-line deterministic trace; exactly ONE ry + ONE
+# measure (Rule 5); 2 cqrt_qram_alloc_f80(4) tables each read+reversed (4 loads);
+# 0 double-frees, all 398 freed handles minted (Rule 6/8). Faithfulness-audited:
+# both bodies verbatim-equal to the vendored source modulo the declared renames
+# (entry rename, __i386__ guard-out, atanl->olm_atanl, fabsl->__builtin_fabsl).
+# See bd libm-real-slice-recipe, clone-control-qram-coherent-escape-20xt52.
+add_test(NAME e2e-slice-libm-real-atan2l
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atan2l.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atan2l.expected.log")
+
 # bd 20xt — the ld80 census cell exp2l.f80 COMPILES->VERIFIED at the plain -O1
 # ship floor: the real openlibm exp2l closure (ld80/s_exp2l.c — the self-
 # contained degree-6 minimax table tbl[TBLSIZE*2]=128 hi/lo pairs + P1..P6 +
