@@ -62,6 +62,33 @@ capability (the `frem` template already exists and lowers). Follow-up = 3 e2e
 goldens (builtins-on, real user shape) to promote COMPILES → VERIFIED, plus the
 census measuring the fmod family builtins-on rather than injected.
 
+### 1a. The same doctrine — the long-double rounders (measured 2026-07-24)
+
+`fmod` is one instance of a broader rule: *when clang folds a libm name to an
+in-grid IR construct (a `frem` opcode, OR a `@llvm.*` intrinsic CQ has a
+template for), that is a keep even though it is an asm-level libcall.* CQ
+recognizes all six round-family intrinsics (`IntrinsicLowering.cpp:70-75`) and
+ships curated **f80** templates for all six (`runtime/cq_intrinsic_templates.c`).
+Two-sided measurement (builtins-on keep path vs. the census `-fno-builtin`
+injection; authoritative `wprobe`):
+
+| rounder (f80) | keep path (builtins-on) | census now (`-fno-builtin`) | delta |
+|---|---|---|---|
+| `floorl` / `ceill` / `roundl` | `@llvm.<fn>.f80` → template ✓ | **COMPILES** (injected `s_<fn>l.c` body lowers) | none — already covered |
+| `rintl` / `nearbyintl` | `@llvm.<fn>.f80` → template ✓ | **declines** `nested control flow` (injected `s_rintl.c`) | **+2 — pure doctrine** |
+| `truncl` | `@llvm.trunc.f80` → template ✓ | **declines** `unknown callee` (no `s_truncl.bc` — corpus gap) | **+1 — doctrine (or close the corpus gap)** |
+
+So the **doctrine** (not just fmod) is worth **≈ +6 cells**: `fmod`/`fmodf`/
+`fmodl` (+3; all three currently decline — f64/f32 on the loop, f80 on the BSD-
+header corpus gap) and `rintl`/`nearbyintl`/`truncl`.f80 (+3). `floorl`/`ceill`/
+`roundl`.f80 already lower via injection (no scoreboard delta, but the doctrine
+makes them lower via the direct template path rather than depending on the
+injected body simplifying). The **f64/f32** `floor`/`ceil`/`trunc`/`round`/`rint`
+are already legitimate **hardware** keeps (SSE4.1 `roundsd`); this is purely the
+**f80 l-suffix** variants, where they are libcalls at codegen but IR intrinsics
+CQ intercepts. Of the 6, five are pure-doctrine (`fmod`×3, `rintl`, `nearbyintl`)
+and one (`truncl`) flips via either the doctrine or a corpus body.
+
 **Scope of the exception — measured, does NOT generalize:**
 
 | candidate | builtins-on IR | verdict |
