@@ -155,6 +155,21 @@ add_test(NAME e2e-slice-predmux-selectchain-foldresidue
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_selectchain_foldresidue.expected.log")
 
+# bd vyqi (W5): the sole-phi fp diamond — the volatile-single-accumulator
+# "***CAUTION***" idiom (log10l `z`, distilled) end-to-end. volatile stores
+# defeat clang if-conversion, so the diamond reaches the pass as a real branch;
+# promoteVolatileScalarLocals mints the sole 2-incoming fp merge phi, the W5
+# claim witness flattens it, and the kjd1 controlled-copy merge lowers it (no
+# new runtime ABI — this re-proves the kjd1 fp copy symbols resolve for the
+# PredMux-flattened diamond).
+add_test(NAME e2e-slice-predmux-fp-diamond-volatile
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_fp_diamond_volatile.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_fp_diamond_volatile.expected.log")
+
 # Phase 4.3 (WI-4, test_C_libtooling-s8yf.5): RSSA swap-routed depth-2
 # homogeneous-PHASE NEST. The only layer that LINKS — and so the only proof the
 # nested emitter's symbol set resolves and signature-matches across BOTH routing

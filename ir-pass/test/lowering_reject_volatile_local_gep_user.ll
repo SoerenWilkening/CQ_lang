@@ -39,4 +39,9 @@ merge:
   ret double %m
 }
 
-; CHECK: error{{.*}}cq controlled lowering: nested control flow under quantum control
+; (bd vyqi, W5 re-label: the INNER flat fp diamond of the nested-W1 skeleton
+; now flattens first — its sole-2-incoming fp merge phi is a claim witness —
+; so the residual outer region declines UN-nested. The access above still
+; blocks the fold/promotion and the region still declines LOUDLY; only the
+; label narrowed from `nested control flow` to `control flow`.)
+; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control

@@ -12,10 +12,13 @@
 //
 // Eligibility (PRD §4.2, E-ladder) in brief:
 //   W  — claim witnesses: only shapes today's detection DECLINES are claimed
-//        (nested tainted terminators; multi-phi / >2-incoming br merges). A
-//        flat sole-2-incoming-phi diamond, a straight-line-arm switch, and the
-//        depth-2 homogeneous-phase nest (its arms hold cq_phi CALLS, excluded
-//        by E4) all stay with their shipped owners byte-identically.
+//        (nested tainted terminators; multi-phi / >2-incoming br merges; and —
+//        W5, bd vyqi — the flat sole-2-incoming SCALAR-FP-phi diamond with
+//        distinct incomings, which ArmClassify's fp fence categorically
+//        declines). A flat sole-2-incoming-phi INTEGER diamond, a
+//        straight-line-arm switch, and the depth-2 homogeneous-phase nest
+//        (its arms hold cq_phi CALLS, excluded by E4) all stay with their
+//        shipped owners byte-identically.
 //   E2 — acyclic: no region block (incl. entry) on any CFG cycle.
 //   E3 — single-entry/single-exit: successors ⊆ region ∪ {merge}; merge preds
 //        ⊆ region; no side entry; only br/switch terminators inside.
@@ -752,9 +755,11 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
   }
   unsigned NumMergePhis = 0;
   unsigned SolePhiIncomings = 0;
+  const PHINode *SoleMergePhi = nullptr;
   for (const PHINode &P : Mg->phis()) {
     ++NumMergePhis;
     SolePhiIncomings = P.getNumIncomingValues();
+    SoleMergePhi = &P;
   }
   // W4 (Inc 3) — a claimable const-global QROM read inside an arm is its own
   // claim witness: no shipped owner accepts a load-bearing arm (ArmClassify's
@@ -783,8 +788,32 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     // claimable read, which 4.5 never accepts).
     Claim = NestedTainted || ClaimableRead;
   } else {
+    // W5 (bd vyqi) — a br-rooted flat region whose merge holds EXACTLY ONE
+    // 2-incoming SCALAR-FP (muxable) phi with DISTINCT incomings: the
+    // distilled log10l `z` accumulator diamond/triangle the zco4 promotion
+    // exposed. No shipped owner ever ACCEPTS this shape — ArmClassify's 4.2
+    // value path categorically declines an fp-typed merge (the fp-angle
+    // fence), and every fp-merge shape the swap-route owners DO accept
+    // (phase arms, the eq-fold and a8c0 re-anchor diamonds) holds a
+    // `cq_phi`/`cq_theta` CALL inside an arm, which E4 excludes from any
+    // PredMux claim; the 6.5 classical-call arm is i32-only. The
+    // distinct-incomings fence keeps the degenerate empty-arm identity phi
+    // (`phi [%q,%arm],[%q,%entry]`, an ACCEPTED empty phase arm) with its
+    // owner. INTEGER sole-phi diamonds are deliberately NOT claimed — the
+    // 4.2 value emitter owns their accepts (routed method-B), and the
+    // two-base integer mux stays the owner-declined 65wb.5 surface. So W5
+    // claims only currently-DECLINING shapes: containment (every existing
+    // accept byte-identical) holds by construction, and the flattened
+    // select is adjudicated by the kjd1 six-gate ladder (angle fence,
+    // stale-condition wire guard, phase-carrier/downstream-rotation
+    // declines) exactly like every other PredMux-minted select.
+    const bool FpSolePhiMux =
+        NumMergePhis == 1 && SolePhiIncomings == 2 && SoleMergePhi &&
+        SoleMergePhi->getType()->isFloatingPointTy() &&
+        isMuxableType(SoleMergePhi->getType()) &&
+        SoleMergePhi->getIncomingValue(0) != SoleMergePhi->getIncomingValue(1);
     Claim = NestedTainted || ClaimableRead || NumMergePhis >= 2 ||
-            (NumMergePhis == 1 && SolePhiIncomings > 2);
+            (NumMergePhis == 1 && SolePhiIncomings > 2) || FpSolePhiMux;
   }
   // ClaimAll (5po2 I2): inside a Bennett clone the anti-overlap witness is
   // irrelevant (no top-level emitter runs there), so claim ANY acyclic SESE

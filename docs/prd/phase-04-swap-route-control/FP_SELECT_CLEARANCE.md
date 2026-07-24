@@ -112,6 +112,11 @@ green post-fix proves no shipped accept regressed.
   a follow-on (accept-with-per-iteration-semantics vs decline).
 - Scope §5.9d pins added: `control_swap_reject_select_fp_in_routed_arm.ll`,
   `control_swap_reject_select_fp_in_specialized_callee.ll`.
+  *(2026-07-24, bd `vyqi`/W5: the first pin's fp body is now CLAIMED by the
+  PredMux sole-phi fp-diamond witness and lowers — converted to
+  `control_predmux_accept_fp_arm_select.ll`; its ArmClassify no-select-in-arm
+  tripwire is re-pinned type-agnostically by
+  `control_swap_reject_select_in_routed_arm_intmerge.ll`.)*
 
 ## What HELD under attack (33+ spec claims, now probe-backed)
 

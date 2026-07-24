@@ -16,15 +16,32 @@ Bennett-parity consulted (owner standing instruction).
 > frexpl fraction), so `PromoteMemToReg` mints an **x86_fp80 merge phi UNDER TAINTED
 > CONTROL** (the "fp phi is an angle" family). The existing control machinery
 > **loud-declines** that shape ("control flow under quantum control" — verified,
-> byte-identical to its non-`volatile` twin; the safety net is intact and
-> regression-pinned by `lowering_reject_volatile_scalar_promote_fpphi_tainted.ll`).
-> ⇒ `log10l.f80`'s FULL compile is blocked not only on the `ldexpl` closure but ALSO
-> on **fp80-merge-under-tainted-control** — control-flow work of MUX-EXCH class, NOT
-> the "small `ldexpl` fix" §7 Inc 2 assumed. **log10l is therefore likely NOT the
-> clean, MUX-EXCH-orthogonal +1 §1/§9 claimed.** OWNER DECISION NEEDED before Inc 2:
-> reassess whether to pursue the fp80-merge control work (couples log10l to the
-> sinl/cosl/tanl set) or defer log10l's census +1. Inc 1's promotion is sound and
-> valuable regardless (it unblocks the volatile-scalar idiom class module-wide).
+> byte-identical to its non-`volatile` twin).
+>
+> **SUPERSEDED by the bd `vyqi` investigation (2026-07-24 —
+> `docs/prd/phase-07-expressiveness/3c6m.14-L6-control-predication/W5-fp-solephi-diamond.md`):**
+> the fp-merge decline was NOT MUX-EXCH-class — it was the PredMux claim-witness
+> fence leaving the flat SOLE-2-incoming-phi diamond unclaimed (the same body with
+> ≥2 merge phis already flattened + lowered via the kjd1 fp controlled-copy merge).
+> **W5** (a ~10-line witness widening, shipped + Rule-13-cleared under bd `vyqi`)
+> now claims it; the distilled `z` shape COMPILES end-to-end
+> (`lowering_volatile_scalar_promote_fpphi_tainted.ll`, converted from the old
+> safety-net decline pin, + the `slice_predmux_fp_diamond_volatile` e2e golden).
+> **But the REAL log10l z-merge never needed W5** — it is a 3-phi merge, claimed by
+> the pre-existing multi-phi witness (verified on the dumped injected body: the
+> post-PredMux dump shows the z selects minted). `log10l.f80` remains blocked, in
+> order, on: (1) the `ldexpl` closure — a CENSUS-INFRA gap (openlibm ships `ldexpl`
+> only as module-asm `.set ldexpl, scalbnl`, invisible to the defmap regex);
+> (2) the `__isnanl` early-exit value region (s_isnan.c:63); (3) the sign/zero/inf
+> early-exit chain feeding a 5-incoming fp return merge with a theta-passthrough
+> incoming; (4) frexpl's tainted 3-way switch (non-empty default C5, memory-writing
+> type-pun arms, nested br, undef incoming); (5) the outer diamond's arms each
+> containing two rolled `__polevll`/`__p1evll` loops (the `8h7d` loops-under-control
+> campaign) + the in-arm `ldexpl`. ⇒ **log10l's census +1 stays DEFERRED** (a
+> multi-increment early-exit + switch + loops campaign — the broad control
+> neighborhood, though not literally Payne–Hanek MUX-EXCH). Inc 1's promotion and
+> the W5 widening both stand on their own (the volatile-single-accumulator idiom
+> class is now covered end-to-end module-wide).
 
 ---
 
