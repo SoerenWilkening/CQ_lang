@@ -51,9 +51,20 @@ README = ROOT / "README.md"
 INJECTION_SUMMARY = HERE / "injection_summary.json"   # written by inject_census.py
 TIMEOUT = 40
 
-# The hardware-backed RECOGNITION keep-set (Rule 18; bd libm-coverage-source-injection-rule).
-# These codegen to a HW instruction with no libcall, so they are lowered by NAME-recognition
-# and have NO injectable body. This is a FIXED FLOOR — never injection progress.
+# The RECOGNITION keep-set (Rule 18; bd libm-coverage-source-injection-rule / 3c6m.56).
+# These lower by NAME-recognition of an in-grid IR construct (a HW instruction, an inline
+# opcode sequence, or a recognized @llvm.<fn> intrinsic) BEFORE codegen — so they have NO
+# injectable body. This is a FIXED FLOOR — never injection progress. Two conditions gate a
+# keep (both required; measure, Rule 11): (1) clang -O1 folds it to the in-grid construct
+# (NOT "no libcall in final asm" — the l-suffix rounders rintl/nearbyintl/truncl emit a
+# `callq _<fn>l` at f80 codegen yet are keeps: CQ intercepts @llvm.{rint,nearbyint,trunc}.f80
+# first; the floor.f80 precedent); AND (2) Bennett.jl ships a reversible gate sequence for it
+# (rounders -> soft_round/soft_trunc, sqrt -> soft_fsqrt, fmin/fmax -> soft_fminimum/maximum,
+# fma -> soft_fma; fabs/copysign are sign-bit permutations). If (1) holds but (2) fails, the
+# cell is a recognizer PARITY-INVERSION we cannot realize -> NOT a keep -> stays declined.
+# ⛔ fmod/fmodf/fmodl are DELIBERATELY ABSENT: they fold to the in-grid `frem` OPCODE (cond 1
+#    holds) but Bennett has NO frem/fmod gate sequence (cond 2 fails) — do NOT add them. They
+#    stay declining library cells; `frem` is a separate parity-inversion follow-up (3c6m.56).
 HARDWARE_KEEP_SET = ("sqrt fabs copysign floor ceil trunc round rint nearbyint "
                      "fmin fmax fma lrint llrint")
 

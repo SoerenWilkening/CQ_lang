@@ -69,6 +69,44 @@ The 3c6m.49 "2/120" and 3c6m.50 "8 verified / ≤48 projected" below are the fro
 pre-L6 baseline this update supersedes; §11 of `FULL_DEPTH_CENSUS.md` reconciles them
 (`48 = 46 CONTROL-flips + 2 fdim`, exact).
 
+## ⚡ SCOREBOARD UPDATE 2026-07-24 (bd `3c6m.56` — Bennett-gated round-family KEEPs): **+3 recognition-floor VERIFIED**, injection-covered UNCHANGED
+
+The long-double round family (`rintl`/`nearbyintl`/`truncl`.f80) is now
+**e2e-VERIFIED** on the **recognition/keep path** (not injection): `clang -O1`
+folds each to `@llvm.{rint,nearbyint,trunc}.f80`, which lowers to
+`cq_template_{rint,nearbyint,trunc}_f80`; committed goldens
+`tests/e2e/slice_libm_keep_{rintl,nearbyintl,truncl}.c` link + run a deterministic
+4-line trace. These are legit keeps because **Bennett.jl backs them** —
+`soft_round` (round-to-nearest-even = `rint`/`nearbyint` under the default FP env)
+/ `soft_trunc` (`src/softfloat/fround.jl`). They were **already** recognition-floor
+cells (the `probe.py` keep-set skips `rint`/`nearbyint`/`trunc` base names since
+`3c6m.8`), so this is a promotion of an already-counted keep to *golden-verified*,
+**not** a new injection cell.
+
+> **Both DISJOINT numbers are intact** (bd `libm-scoreboard-two-numbers`):
+> - **Injection-covered: UNCHANGED at 48/123.** No cell moved into or out of the
+>   injectable denominator. In particular `fmod`/`fmodf`/`fmodl` stay **declining**
+>   injectable cells (f64/f32 `loop`, `fmodl.f80` `unknown callee`) — they were
+>   **NOT** reclassified.
+> - **Recognition-floor: 3 cells gain committed e2e goldens** (`rintl`/`nearbyintl`/
+>   `truncl`.f80), the first golden-verified keeps in the round family.
+>
+> **`fmod` was explicitly rejected as a keep (Bennett gate).** It folds to the
+> in-grid `frem` **opcode** (recognizer holds) but **Bennett ships no `frem`/`fmod`
+> gate sequence** (no `soft_frem`/`soft_fmod`, absent from the SoftFloat export
+> list, no `Base.rem`/`mod`/`%` overload; the only `frem` in Bennett's `src/`
+> lowering path is an error-string entry, `src/extract/errors.jl:34`, with no
+> dispatch arm; the deferred `soft_frem` port is a still-open unimplemented issue)
+> — so a Phase-9 backend has **no** source, and reclassifying it would over-commit.
+> `frem` is a pre-existing CQ recognizer parity-*inversion*, tracked as a separate
+> follow-up (`3c6m.57`). (By contrast the round family clears the gate at the
+> algorithm level: Bennett's `soft_round`/`soft_trunc` are f64, and the `.f80`
+> variants are that algorithm widened — CQ's standing width parity-inversion.)
+> This corrects the `2026-07-24` "fmod frem-keep" finding: the `floor.f80` analogy
+> fails for `fmod` (`floor` IS Bennett-backed, `frem` is NOT). See
+> `docs/prd/phase-07-expressiveness/libm-deferred-capabilities-scope-boundary.md`
+> §1 correction banner + CLAUDE.md Rule 18.
+
 ## ⚠️ Read the 32/32 precisely — FULL-SURFACE CENSUS 2026-07-11 (bd `3c6m.49`): real openlibm = **2/120**
 
 The **32/32** headline above is honest **but narrow in two ways**, and it is easy to

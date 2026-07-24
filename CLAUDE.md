@@ -277,17 +277,32 @@ measured **only** by source injection — **never** by recognizing `@llvm.<fn>` 
 `@<fn>` by name and emitting a per-fn `cq_template_<fn>`. That name-recognition
 path is **fiction**: once the source is injected the named call is inlined away,
 so the recognizer never fires (this is why the old `math.h` 165/174 "95%"
-overclaimed — measured recognition, not injection). The **sole exception** is a
-**hardware-backed intrinsic** — one that codegens to a hardware instruction (or
-an inline opcode sequence) with **no libcall**, so it has no injectable body and
-is recognized directly. The keep/cut line is **testable and target-dependent**
-(measure, never guess — Rule 11): compile `T f(T x){return f(x);}` at
-`clang -O1`; **keep** iff no external `call`/`jmp _<fn>` (hardware/inline
-opcodes), **cut** iff clang emits a libcall. On x86-64+SSE4.1 the keep-set is
+overclaimed — measured recognition, not injection). The **sole exception** is an
+**in-grid IR construct CQ recognizes before codegen that Bennett.jl backs** — it
+has no injectable body and is lowered directly. The keep/cut line is **testable
+and target-dependent** (measure, never guess — Rule 11) and needs **BOTH**
+conditions: **(1)** `clang -O1` on `T f(T x){return f(x);}` folds the call to a
+hardware instruction, an inline opcode sequence, or a recognized `@llvm.<fn>`
+intrinsic **before codegen** — the operative test is the *IR construct the pass
+sees*, **NOT** "no `call`/`jmp _<fn>` in the final asm" (the l-suffix rounders
+`rintl`/`nearbyintl`/`truncl` emit `callq _<fn>l` at f80 codegen yet are keeps
+because CQ intercepts `@llvm.{rint,nearbyint,trunc}.f80` first — the `floor.f80`
+precedent); **and (2)** Bennett.jl ships a reversible gate sequence for that
+construct (so a Phase-9 backend has a source), else it is a parity-*inversion* we
+cannot realize and it **declines**. On x86-64+SSE4.1 the keep-set is
 `sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma/fmuladd
-lrint llrint` (+ the non-`math.h` integer bit-intrinsics); everything else
-(transcendentals, `pow`, all direct-libm, by-ref `frexp/modf/remquo`,
-`lround/llround`) is a library function and **declines** without injection. See
+lrint llrint` (+ the non-`math.h` integer bit-intrinsics), **all Bennett-backed**
+(soft-float `soft_round`/`soft_trunc`/`soft_floor`/… + hardware ops; Bennett's
+SoftFloatLib is **f64** — the `.f80` rounder variants are that same algorithm
+**widened**, CQ's standing width parity-inversion per Rule 15, unlike `frem` which
+has **no** Bennett algorithm at any width to widen); everything
+else (transcendentals, `pow`, all direct-libm, by-ref `frexp/modf/remquo`,
+`lround/llround`) is a library function and **declines** without injection.
+**`fmod`/`fmodf`/`fmodl` are NOT keeps** despite folding to the in-grid `frem`
+**opcode** (condition 1 holds): Bennett ships **no** `frem`/`fmod` gate sequence
+(condition 2 fails — its only `frem` token is an error-string entry; `frem` is a
+CQ recognizer parity-*inversion*, tracked separately), so `fmod` stays a
+declining library cell (bd `fmod-frem-keep-2026-07-24` / `3c6m.56`). See
 `docs/prd/phase-07-expressiveness/p119-libm-coverage-honesty/PRD.md` and bd
 [`libm-coverage-source-injection-rule`]. This **retires** the per-fn
 name-recognition of library functions (the old `3c6m.2` direct-libm matcher and

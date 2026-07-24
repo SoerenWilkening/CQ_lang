@@ -31,6 +31,23 @@ its cells from the denominator is not.
 
 ## 1. Near-term RECLASSIFICATION (not a defer) — the fmod family via `frem`
 
+> **⛔ CORRECTION 2026-07-24 (owner, bd `3c6m.56`): `fmod` is NOT reclassified.**
+> The reclassification recommended below was **rejected** after a Bennett.jl
+> check. The keep criterion is not "in-grid IR construct" alone — it is "in-grid
+> IR construct **that Bennett.jl backs with a reversible gate sequence**." `fmod`
+> folds to the in-grid `frem` **opcode** (recognizer condition holds), but
+> **Bennett ships no `frem`/`fmod` gate sequence** (its only `frem` token is an
+> error-string entry in `src/extract/errors.jl`; the full SoftFloat surface in
+> `src/softfloat/softfloat.jl` has `soft_fadd/fsub/fmul/fdiv/fma/fsqrt/fneg` +
+> rounders + transcendentals but **no** remainder). Native `frem` is a CQ
+> recognizer parity-*inversion* (the pass recognizes an opcode Bennett declines),
+> tracked as a separate follow-up. So the `floor.f80` analogy **fails for fmod**:
+> `floor` **is** Bennett-backed (`soft_floor`), `frem` is **not**. `fmod`/`fmodf`/
+> `fmodl` therefore **stay declining library cells** (census `unknown callee` /
+> `loop`), NOT keeps, NOT added to the keep-set, NO goldens. The rounders in §1a
+> **do** clear the Bennett gate (`soft_round`/`soft_trunc`) and are verified.
+> Everything below in §1 is the pre-correction analysis, kept for the record.
+
 **Finding (measured this session, all three widths):** `fmod`/`fmodf`/`fmodl`
 are **opcode-keeps in disguise**. With builtins on (the natural user
 compilation) clang folds `fmod(x,y)` directly to the **`frem` IR opcode** —
@@ -56,11 +73,12 @@ over: an asm-level libcall that CQ intercepts as an **IR opcode** (`frem`) befor
 codegen. The operative keep/cut test is "in-grid IR construct before codegen,"
 not "no libcall in final asm."
 
-**Recommendation:** reclassify `fmod`/`fmodf`/`fmodl` as **`frem`-keeps** (Rule-18
-keep-set addition; owner doctrine call — bd `3c6m.56`). Payoff: **+3 cells**, no new
-capability (the `frem` template already exists and lowers). Follow-up = 3 e2e
-goldens (builtins-on, real user shape) to promote COMPILES → VERIFIED, plus the
-census measuring the fmod family builtins-on rather than injected.
+**Recommendation (SUPERSEDED — see the correction banner atop §1):** the original
+recommendation was to reclassify `fmod`/`fmodf`/`fmodl` as `frem`-keeps. This was
+**rejected** (bd `3c6m.56`): `frem` fails the Bennett-gate (no `soft_frem`/
+`soft_fmod` in Bennett.jl), so `fmod` stays declined and is **not** added to the
+keep-set. The `frem` recognizer is a pre-existing CQ parity-*inversion*, handled
+by a separate frem-inversion follow-up, not by reclassifying `fmod` as covered.
 
 ### 1a. The same doctrine — the long-double rounders (measured 2026-07-24)
 
@@ -78,29 +96,45 @@ injection; authoritative `wprobe`):
 | `rintl` / `nearbyintl` | `@llvm.<fn>.f80` → template ✓ | **declines** `nested control flow` (injected `s_rintl.c`) | **+2 — pure doctrine** |
 | `truncl` | `@llvm.trunc.f80` → template ✓ | **declines** `unknown callee` (no `s_truncl.bc` — corpus gap) | **+1 — doctrine (or close the corpus gap)** |
 
-So the **doctrine** (not just fmod) is worth **≈ +6 cells**: `fmod`/`fmodf`/
-`fmodl` (+3; all three currently decline — f64/f32 on the loop, f80 on the BSD-
-header corpus gap) and `rintl`/`nearbyintl`/`truncl`.f80 (+3). `floorl`/`ceill`/
-`roundl`.f80 already lower via injection (no scoreboard delta, but the doctrine
-makes them lower via the direct template path rather than depending on the
-injected body simplifying). The **f64/f32** `floor`/`ceil`/`trunc`/`round`/`rint`
-are already legitimate **hardware** keeps (SSE4.1 `roundsd`); this is purely the
-**f80 l-suffix** variants, where they are libcalls at codegen but IR intrinsics
-CQ intercepts. Of the 6, five are pure-doctrine (`fmod`×3, `rintl`, `nearbyintl`)
-and one (`truncl`) flips via either the doctrine or a corpus body.
+So the **doctrine** — corrected to the Bennett-gated form — is worth **+3 cells**,
+**all rounders**: `rintl`/`nearbyintl`/`truncl`.f80 (Bennett-backed via
+`soft_round`/`soft_trunc`, `src/softfloat/fround.jl`; e2e-verified by
+`tests/e2e/slice_libm_keep_{rintl,nearbyintl,truncl}.c`, bd `3c6m.56`).
+
+> **f80-width precision (be honest):** Bennett's `soft_round`/`soft_trunc` are its
+> **f64** SoftFloatLib (`UInt64` bit patterns; `llvm.round`/`roundeven` `_ir_error`
+> for non-f64 widths). The keep claim is that Bennett ships the round-to-nearest-
+> even / toward-zero **algorithm**; the `.f80` variant is that same algorithm
+> **widened** — CQ's standing width parity-inversion (Rule 15; the same f64→f80
+> widening that already underlies **every** CQ f80 soft-float leaf, per
+> `consult-bennett-jl-always`). This is categorically different from `fmod`/`frem`,
+> where Bennett has **no** remainder algorithm at **any** width — nothing to widen.
+> So the Bennett gate is satisfied at the algorithm level for the rounders and
+> fails outright for `frem`. The
+`fmod`×3 that the pre-correction §1 counted **do NOT** contribute — `frem` fails
+the Bennett gate (see the §1 correction banner), so they stay declined. `floorl`/
+`ceill`/`roundl`.f80 already lower via injection (no scoreboard delta, but they
+are equally Bennett-backed and template-path-robust). The **f64/f32** `floor`/
+`ceil`/`trunc`/`round`/`rint` are already legitimate **hardware** keeps (SSE4.1
+`roundsd`); this delta is purely the **f80 l-suffix** rounder variants, which are
+libcalls at codegen but `@llvm.<fn>.f80` intrinsics CQ intercepts and Bennett
+backs. All 3 are pure-doctrine (census already skips their base names as keeps;
+the goldens promote COMPILES-by-recognition → VERIFIED).
 
 **Scope of the exception — measured, does NOT generalize:**
 
 | candidate | builtins-on IR | verdict |
 |---|---|---|
-| `fmod`/`fmodf`/`fmodl` | `frem` | **KEEP** (in grid) |
+| `fmod`/`fmodf`/`fmodl` | `frem` (in grid) | **decline** — recognizer holds but **Bennett has no `frem`/`fmod` gate sequence** → fails the backend-realizable gate; NOT a keep (§1 correction) |
 | `remainder`/`remainderf`/`remainderl` | `call @remainder*` | decline — no frem-equivalent (IEEE remainder ≠ C fmod rounding) |
 | `remquo`/`remquof`/`remquol` | `call @remquo*` | decline — also returns quotient bits; no opcode |
 | `nextafter*` / `nexttoward*` / `logb*` | `call @…` | decline — no cheap opcode fold |
 | `acosf`/`acoshf`/`asinhf`/`hypotf`/`atanhl`/`log1pl`/`logl` | `@llvm.<fn>` (retired) or `call` | decline — transcendental, Rule-18 retired name-recognition |
 | `powf` | `@llvm.pow.f32` | decline — the `powf(q,0.5)→sqrt` fold is a **0.5-exponent artifact**; general `powf(q,0.3)` → `@llvm.pow` → declines |
 
-`fmod` is the **only** disguise in the whole loop/unknown-callee bucket.
+No cell in the whole loop/unknown-callee bucket is a keep: `fmod` looked like a
+disguise (folds to the in-grid `frem` opcode) but fails the Bennett gate, so it
+stays declined with the rest.
 
 ---
 
@@ -119,7 +153,7 @@ full 5-layer stack behind the trig cells).
 | `sin`/`cos`/`tan` {f32,f64,f80} (9) | Payne–Hanek `__kernel_rem_pio2` | `kMsgStore` (tx fill) → loop stack |
 | `lgammal`/`tgammal`.f80 | inner `sinl` reduction (same kernel) | non-reversibilizable under lift |
 | `remainder`/`remquo` {f,,l} (6) | fix-point bit-alignment loop | `loop under quantum control` |
-| `fmod`/`fmodf`/`fmodl` **under injection** | bit-reduction loop | see §1 — **reclassify, don't defer** |
+| `fmod`/`fmodf`/`fmodl` | bit-reduction loop (injection) / `frem` (builtins-on) | **declines** — recognizer holds but no Bennett `frem` gate (§1 correction) |
 
 Bennett.jl parity: Bennett **rejects this source too** (nested loops + goto; its
 data-dependent loops need a user-supplied K + a *simulate-time* convergence
@@ -173,8 +207,13 @@ body*.
 
 ## 4. What to do now (recommended, in order)
 
-1. **Reclassify the fmod family** as `frem`-keeps (§1) — owner doctrine ratify +
-   3 e2e goldens + census/keep-set update. +3 VERIFIED, no capability.
+1. ~~Reclassify the fmod family as `frem`-keeps~~ **DONE + corrected (bd `3c6m.56`,
+   2026-07-24):** the **round family** `rintl`/`nearbyintl`/`truncl`.f80 was
+   verified as Bennett-backed keeps (+3 VERIFIED via `tests/e2e/slice_libm_keep_*`);
+   the **fmod family was REJECTED** (Bennett has no `frem`/`fmod` gate sequence —
+   §1 correction banner). No keep-set/census change (rounders already keeps; fmod
+   stays declined). The native `frem` recognizer parity-inversion is a separate
+   follow-up (`3c6m.57`).
 2. **Bucket** the Tier-A/B cells as "deferred — out of v1 scope" in the census
    (keep them in the denominator; §0). No number is deleted.
 3. **Build the branchless `tanl` leaf** (`20xt.9`) to complete the trig trio in
@@ -187,7 +226,8 @@ body*.
 
 - `8h7d` (loop campaign, DEFERRED) · `8h7d.1` (trig/Payne–Hanek deep-end) ·
   `iw81.13` (QRAM-in-loop) · `20xt.9` (branchless tanl) · `iw81.16` (const-index
-  value-Shadow parity) · `3c6m.56` (fmod frem-keep doctrine, §1).
+  value-Shadow parity) · `3c6m.56` (**round-family keeps DONE**, fmod REJECTED —
+  Bennett-gated, §1 correction) · `3c6m.57` (native `frem` parity-inversion review).
 - Memories: `payne-hanek-trig-scoping-2026-07-24`, `predmux-l6-inc4-recensus`,
   `ld80-o1-recensus-3c6m51`, `libm-scoreboard-two-numbers`,
   `branchless-f80-leaf-recipe`, `consult-bennett-jl-always`.

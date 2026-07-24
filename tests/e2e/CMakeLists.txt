@@ -2558,3 +2558,42 @@ add_test(NAME e2e-slice-control-select-compound
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_compound.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_compound.expected.log")
+
+# bd 3c6m.56 — the long-double round-family KEEP path (Bennett-gated). With
+# builtins on, `clang -O1` folds `rintl`/`nearbyintl`/`truncl` to the in-grid IR
+# intrinsics `@llvm.{rint,nearbyint,trunc}.f80`, which cq-lowering recognizes
+# (IntrinsicLowering.cpp) and lowers to `cq_template_{rint,nearbyint,trunc}_f80` —
+# NO openlibm body injected (the asm-level `callq _<fn>l` is intercepted as the
+# intrinsic BEFORE codegen: the floor.f80 precedent). These are legitimate keeps
+# because Bennett.jl ships the reversible gate sequence — `soft_round`
+# (round-to-nearest-even = rint/nearbyint under the default FP env) and
+# `soft_trunc` (`src/softfloat/fround.jl`) — so a real Phase-9 backend has a
+# Bennett source. Contrast `fmod`→`frem`: an in-grid OPCODE but with NO Bennett
+# frem/fmod primitive, so it is NOT a keep and is deliberately absent here (bd
+# fmod-frem-keep-2026-07-24 + the frem-inversion follow-up). Each golden is the
+# Rule-2 e2e proof (link + run + deterministic trace) promoting the census cell
+# from COMPILES-by-recognition to VERIFIED; the census (probe.py keep-set) already
+# skips these bases, so the ld80 scoreboard is unchanged.
+add_test(NAME e2e-slice-libm-keep-rintl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_keep_rintl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_keep_rintl.expected.log")
+
+add_test(NAME e2e-slice-libm-keep-nearbyintl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_keep_nearbyintl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_keep_nearbyintl.expected.log")
+
+add_test(NAME e2e-slice-libm-keep-truncl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_keep_truncl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_keep_truncl.expected.log")

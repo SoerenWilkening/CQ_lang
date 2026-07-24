@@ -61,6 +61,41 @@ Two asymmetries the experiment caught (x86-64 + SSE4.1, no FMA3):
   Horner-polynomial bodies bottom out in. Removing it would decline every
   injected polynomial.
 
+### Amendment 2026-07-24 (bd `3c6m.56`) — the criterion is "in-grid IR construct **that Bennett backs**," NOT "no libcall in final asm"
+
+The `2026-07-06` "no external `call`/`jmp _<fn>`" formulation above is **too
+narrow at both ends** and is superseded (measured, Rule 11). The operative
+keep/cut test has **two** conditions, **both** required:
+
+1. **Recognizer** — `clang -O1` folds the call to an **in-grid IR construct CQ
+   recognizes before codegen** (a hardware instruction, an inline opcode
+   sequence, OR a recognized `@llvm.<fn>` intrinsic). The test is the *IR the
+   pass sees*, **not** the final asm. The `floor.f80` precedent generalizes: the
+   **l-suffix rounders** `rintl`/`nearbyintl`/`truncl` emit `callq _<fn>l` at f80
+   codegen (a libcall in the asm!) yet are **keeps**, because CQ intercepts
+   `@llvm.{rint,nearbyint,trunc}.f80` *before* codegen. So a libcall in the final
+   asm does **not** by itself cut a cell.
+2. **Backend-realizable** — Bennett.jl ships a **reversible gate sequence** for
+   that construct, so a real Phase-9 backend has a source. If (1) holds but (2)
+   fails, the cell is a recognizer **parity-inversion** we cannot realize; it is
+   **not** a keep and stays declined. This gates recognizer over-reach.
+
+The 14-stem keep-set below all clear **both**: the rounders map to Bennett
+`soft_round` (round-to-nearest-even = `rint`/`nearbyint` under the default FP
+env) / `soft_round_away` (`round`) / `soft_trunc` / `soft_floor` / `soft_ceil`
+(`src/softfloat/fround.jl`); `sqrt`→`soft_fsqrt`; `fmin`/`fmax`→`soft_fminimum`/
+`soft_fmaximum`; `fma`→`soft_fma`; `fabs`/`copysign` are sign-bit permutations.
+
+**`fmod`/`fmodf`/`fmodl` are NOT keeps.** They fold to the in-grid **`frem`
+opcode** (condition 1 holds) — but Bennett ships **no** `frem`/`fmod` gate
+sequence (condition 2 **fails**; its sole `frem` token is an error-string entry
+in `src/extract/errors.jl`). Native `frem` is a CQ recognizer parity-*inversion*
+(the pass recognizes an opcode Bennett declines), tracked as a separate
+follow-up; `fmod` therefore stays a **declining** library cell, NOT added to the
+keep-set. This is the correction to the 2026-07-24 "fmod frem-keep" finding: the
+`floor.f80` analogy fails for `fmod` because `floor` **is** Bennett-backed and
+`frem` is **not**.
+
 ## Empirical keep-set (x86-64 + SSE4.1, this box, 2026-07-06)
 
 **KEEP — 14 hardware/opcode survivors:**
