@@ -8,12 +8,16 @@
 > *"Do not quote '48 verified' — quote 48 injection-covered, 8 verified"* is itself now
 > out of date on both halves.
 >
-> **CURRENT AUTHORITATIVE NUMBERS (2026-07-25):** the all-widths **O1** baseline
-> `full_surface/full_census_O1.json` (bd `vuy6`) gives **68 / 123 injection-covered
-> (55%)**, 55 declining. bd `3c6m.58` then re-measured *verified* at 53, minted goldens
-> for the 15-cell gap, and **all 15 held** at the true `clang -O1 → cq-lowering` ship
-> floor → **68 verified**. Full ctest 210/210. Injection-covered and verified now
-> COINCIDE; they are still MEASURED separately and must never be conflated (Rule 2).
+> **CURRENT AUTHORITATIVE NUMBERS (2026-07-25, after bd `3c6m.60`):** the all-widths **O1**
+> baseline `full_surface/full_census_O1.json` gives **80 / 123 injection-covered (65%)**,
+> 43 declining. History: bd `3c6m.58` re-measured *verified* at 53, goldened the 15-cell
+> gap, and all 15 held → 68 = injection-covered; bd `3c6m.60` then fixed the census
+> hardware-keep-set methodology bug (an inner `sqrt`/`floor` was resolving to openlibm's
+> *software* body, not the `@llvm.<fn>` intrinsic the ship floor emits), taking
+> injection-covered 68 → **80 with 0 regressions**, and goldened 11 of the 12 new cells →
+> **79 verified**. The 12th, `hypotl.f80`, census-COMPILES and DECLINES at the plain -O1
+> ship floor (bd `3c6m.61`) — so the two numbers are 1 apart and must never be conflated
+> (Rule 2, bd `libm-scoreboard-two-numbers`).
 >
 > What is still current in this file: the **p119 / Rule-18 doctrine** immediately below
 > (source injection is the only way a library function counts; per-fn name recognition

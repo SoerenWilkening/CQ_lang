@@ -45,34 +45,34 @@
   "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
  },
  "acosf.f32": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe float (): cq loop lowering: loop-carried tainted value crosses iterations"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "acos.f64": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe double (): cq controlled lowering: loop under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "acosl.f80": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "asinf.f32": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe float (): cq controlled lowering: loop under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "asin.f64": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe double (): cq controlled lowering: loop under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "asinl.f80": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "atanf.f32": {
   "status": "COMPILES",
@@ -151,33 +151,33 @@
  },
  "acoshf.f32": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe float (): cq loop lowering: loop-carried tainted value crosses iterations"
+  "bucket": "L6 nested control",
+  "diag": "probe float (): cq controlled lowering: nested control flow under quantum control"
  },
  "acosh.f64": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe double (): cq controlled lowering: loop under quantum control"
+  "bucket": "L6 nested control",
+  "diag": "probe double (): cq controlled lowering: nested control flow under quantum control"
  },
  "acoshl.f80": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control"
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
  },
  "asinhf.f32": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe float (): cq loop lowering: loop-carried tainted value crosses iterations"
+  "bucket": "L6 nested control",
+  "diag": "probe float (): cq controlled lowering: nested control flow under quantum control"
  },
  "asinh.f64": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe double (): cq controlled lowering: loop under quantum control"
+  "bucket": "L6 nested control",
+  "diag": "probe double (): cq controlled lowering: nested control flow under quantum control"
  },
  "asinhl.f80": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control"
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
  },
  "atanhf.f32": {
   "status": "decline",
@@ -390,14 +390,14 @@
   "diag": "surv:[]"
  },
  "powf.f32": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe float (): cq loop lowering: loop-carried tainted value crosses iterations"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "pow.f64": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe double (): cq controlled lowering: loop under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "powl.f80": {
   "status": "decline",
@@ -421,18 +421,18 @@
  },
  "hypotf.f32": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe float (): cq loop lowering: loop-carried tainted value crosses iterations"
+  "bucket": "L6 nested control",
+  "diag": "probe float (): cq controlled lowering: nested control flow under quantum control"
  },
  "hypot.f64": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe double (): cq controlled lowering: loop under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "hypotl.f80": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "erff.f32": {
   "status": "COMPILES",
@@ -480,14 +480,14 @@
   "diag": "sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsup"
  },
  "lgammaf.f32": {
-  "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "floorf float (float): cq specialization: callee contains tainted control flow under quantum lift"
+  "status": "exit0-spec:['logf']",
+  "bucket": "COMPILES (spec-clone)",
+  "diag": "surv:['logf']"
  },
  "lgamma.f64": {
-  "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "floor double (double): cq specialization: callee contains tainted control flow under quantum lift"
+  "status": "exit0-spec:['__kernel_cos', 'log']",
+  "bucket": "COMPILES (spec-clone)",
+  "diag": "surv:['__kernel_cos', 'log']"
  },
  "lgammal.f80": {
   "status": "decline",

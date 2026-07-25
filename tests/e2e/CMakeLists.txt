@@ -2799,3 +2799,122 @@ add_test(NAME e2e-slice-libm-real-sinhl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_sinhl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_sinhl.expected.log")
+
+# --- bd 3c6m.60: the 11 cells unblocked by the census hardware-keep-set harness fix.
+# Each vendors the REAL openlibm body and spells its inner keep-set calls `__builtin_<keep>` —
+# the SAME `@llvm.<fn>.f<W>` construct plain `clang -O1` emits for the named call at the ship
+# floor (Rule 18), which is exactly what the corpus's blanket `-fno-builtin` used to defeat.
+# hypotl.f80 is DELIBERATELY ABSENT: it census-COMPILES but DECLINES at the plain -O1 ship floor
+# (`nested control flow under quantum control`) — the one census-pipeline-only cell in this
+# baseline. Its faithful vendoring is parked at slice_libm_real_hypotl.c.DECLINED as the
+# ready-made re-test for bd q2wk; do NOT wire it until that lever lands (bd 3c6m.61).
+
+# acos.f64 — the classification cascade over the tainted exponent word (|x|>=1 / |x|<0.5 /
+# x<-0.5 / x>0.5) flattened through PredMux; the pS/qS Horner polynomials; the `pio2_lo`
+# volatile-scalar fold. Inner `sqrt` is a Rule-18 hardware KEEP -> cq_template_sqrt_f64.
+add_test(NAME e2e-slice-libm-real-acos
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acos.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acos.expected.log")
+
+# acosf.f32 — f32 sibling of acos: same cascade over GET_FLOAT_WORD, sqrtf -> cq_template_sqrt_f32.
+add_test(NAME e2e-slice-libm-real-acosf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acosf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acosf.expected.log")
+
+# acosl.f80 — ld80 sibling: the invtrig P/Q Horner tables + union IEEEl2bits mantissa mask as an
+# i80 register RMW (no Shadow/QRAM), sqrtl -> cq_template_sqrt_f80.
+add_test(NAME e2e-slice-libm-real-acosl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acosl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acosl.expected.log")
+
+# asin.f64 — the |x|>=1 / |x|<0.5 / else cascade with the SET_LOW_WORD half-precision split;
+# fabs + sqrt are keeps.
+add_test(NAME e2e-slice-libm-real-asin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asin.expected.log")
+
+# asinf.f32 — f32 sibling of asin.
+add_test(NAME e2e-slice-libm-real-asinf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinf.expected.log")
+
+# asinl.f80 — ld80 sibling of asin over the invtrig tables.
+add_test(NAME e2e-slice-libm-real-asinl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinl.expected.log")
+
+# hypot.f64 — the widest of the acos/asin family (1098 trace lines, 145 allocs): the exponent-difference
+# ladder, the two SET_HIGH_WORD rescalings, and the sqrt correction step.
+add_test(NAME e2e-slice-libm-real-hypot
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_hypot.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_hypot.expected.log")
+
+# pow.f64 — NB the census cell convention pins arg1 to the classical literal 0.5, which is pow's
+# `y == 0.5` fast path -- clang -O1 proves the log/exp core UNREACHABLE, so this golden verifies
+# pow's tainted classification prologue + the sqrt route, NOT its numeric core (bd 3c6m.62).
+add_test(NAME e2e-slice-libm-real-pow
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_pow.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_pow.expected.log")
+
+# powf.f32 — same arg1=0.5f fast-path caveat as pow.f64 (bd 3c6m.62); verifies the classification
+# prologue, the nan_mix f80 leg, and the sqrtf/fabsf keep routes.
+add_test(NAME e2e-slice-libm-real-powf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_powf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_powf.expected.log")
+
+# lgamma.f64 — the largest slice in the suite (14003 trace lines): e_lgamma_r's band ladder + the
+# sin_pi reflection over the real __kernel_sin/__kernel_cos and the real e_log body; floor/fabs are
+# keeps. Census bucket is COMPILES (spec-clone); this golden pins the plain -O1 force-inlined route
+# (sinhl precedent).
+add_test(NAME e2e-slice-libm-real-lgamma
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lgamma.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lgamma.expected.log")
+
+# lgammaf.f32 — f32 sibling of lgamma over __kernel_sindf/__kernel_cosdf + the real e_logf body.
+add_test(NAME e2e-slice-libm-real-lgammaf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lgammaf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lgammaf.expected.log")

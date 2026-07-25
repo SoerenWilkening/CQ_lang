@@ -19,6 +19,14 @@
 > - **The live plan of record is the bd memory `libm-next-steps-harness-then-q2wk`**:
 >   **STEP 1** bd `3c6m.60` — census keep-set harness fix (~1 day, harness only, +12 cells, 0/68
 >   regressions) → then mint goldens. **STEP 2** bd `q2wk` — PredMux -O1 nested control (15 cells).
+> - **STEP 1 IS DONE (2026-07-25, bd `3c6m.60`).** The predicted numbers were *confirmed by a full
+>   123-cell O1 re-census*: **68 → 80 non-declining, `REGRESSIONS: NONE`**, exactly the 12 predicted
+>   cells (`acos{,f,l}` `asin{,f,l}` `hypot{,l}` `pow{,f}` `lgamma{,f}`), with `fmod.f64` still
+>   declining as required. All 12 were goldened before the number was published, so
+>   **injection-covered = verified = 80/123 (65%)**. The 7 re-attributed cells make bd `q2wk`
+>   (L6/PredMux) the largest remaining lever at 15. Every count in §1/§2/§3 below is the PRE-fix
+>   68/55 generation — read them with the correction banners, or read
+>   `full_surface/README.md` (top banner + **CENSUS METHODOLOGY**) for the current picture.
 > - §4 open questions 1 and 2 are answered; the rest still stand.
 
 ---
@@ -83,6 +91,17 @@
 >
 > A follow-up scoping investigation **measured** this taxonomy and found its central claim inverted.
 > The rows below are kept for the record; the corrections are authoritative.
+>
+> **⚡ THE FIX HAS SINCE LANDED AND EVERY PREDICTION BELOW WAS CONFIRMED BY RE-MEASUREMENT.**
+> `wprobe.py::keep_shims()` (bd `3c6m.60`) now resolves an inner keep-set call to the `@llvm.<fn>`
+> intrinsic at the defmap. Full 123-cell O1 re-census, same corpus + same HEAD plugin:
+> **68 → 80 non-declining, `REGRESSIONS: NONE`** — the 12 flips are exactly `acos{,f,l}` `asin{,f,l}`
+> `hypot{,l}` `pow{,f}` (→`COMPILES`) and `lgamma{,f}` (→`COMPILES (spec-clone)`), and the 7
+> re-attributions are exactly `acosh{,f,l}` `asinh{,f,l}` `hypotf` (`loop-carried` → `L6 nested
+> control`). `fmod.f64` still declines. So the measured post-fix buckets are: **L6 nested control 15**,
+> unknown-callee/corpus 7, Shadow 7, **loops 7**, control-flat 3, value-arm 2, fp-copy 2 — total 43
+> declines. The methodology rule that keeps this from regressing is written down in
+> `full_surface/README.md` § **CENSUS METHODOLOGY — the hardware keep-set**.
 >
 > **Root cause — a census methodology bug, not a compiler gap.** `full_surface/README.md:309/317/334`
 > builds every openlibm `.c` with a **blanket `-fno-builtin`**, which defeats Rule 18's hardware

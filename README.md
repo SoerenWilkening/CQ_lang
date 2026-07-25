@@ -61,12 +61,14 @@ a committed golden trace.
 > branchless bodies** (`branchless/`, bd `3c6m.10`) for the **double** surface, deliberately
 > written to bypass the open lowering levers. The [**full-surface census**](tools/library_coverage/full_surface/)
 > injects the **real off-the-shelf openlibm** at every width over a reconciled 123-cell
-> surface and, as of 2026-07-25 (bd `vuy6` O1 baseline + bd `3c6m.58`), compiles
-> **68/123 (55%)** — 24 f32 + 25 f64 + 19 f80 — **all 68 of which are also VERIFIED**
+> surface and, as of 2026-07-25 (O1 baseline, bd `3c6m.60`), compiles
+> **80/123 (65%)** — 28 f32 + 30 f64 + 22 f80 — of which **79 are also VERIFIED**
 > (a committed `slice_libm_real_*` golden that links, runs and byte-matches at the true
-> `clang -O1 → cq-lowering` ship floor). The remaining **55 decline** on the tracked levers:
-> **loop-carried 24** · L6 nested control 8 · unknown callee 7 · Shadow scratch 7 ·
-> control (flat/diamond) 5 · fp80 value-arm 2 · fp-copy/specialization 2.
+> `clang -O1 → cq-lowering` ship floor); the 80th, `hypotl.f80`, compiles under the census
+> pipeline but declines at the plain -O1 ship floor (bd `3c6m.61`) — the two numbers are
+> reported apart, never merged. The remaining **43 decline** on the tracked levers:
+> **L6 nested control 15** · unknown callee 7 · Shadow scratch 7 · loop-carried 7 ·
+> control (flat/diamond) 3 · fp80 value-arm 2 · fp-copy/specialization 2.
 > Read the two numbers precisely (Rule 2, bd `libm-scoreboard-two-numbers`):
 > *injection-covered* and *verified* are measured SEPARATELY and merely happen to coincide
 > right now — and **"verified" certifies the LOWERING, not the unitary**. The runtime is
@@ -98,7 +100,7 @@ Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches t
 | [`math.h`](tools/library_coverage/coverage/mathh.md) | 52/183 (28%) | 45/183 (25%) | 25/183 (14%) | 51 | 45 | 84 | 3 |
 | [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 3/39 (8%) | 6 | 0 | 0 | 8 |
 
-> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **68/123 injection-covered (55%), 68 verified** of the reconciled 123-cell surface ([full-depth census](tools/library_coverage/FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`123 injectable + 42 recognition + 12 macros + 6 int-ret/str`). The double-only authored-branchless number (**32/32**, [source-injection census](tools/library_coverage/INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
+> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **80/123 injection-covered (65%), 79 verified** of the reconciled 123-cell surface ([full-depth census](tools/library_coverage/FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`123 injectable + 42 recognition + 12 macros + 6 int-ret/str`). The double-only authored-branchless number (**32/32**, [source-injection census](tools/library_coverage/INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
 
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->

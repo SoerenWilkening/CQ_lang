@@ -1,6 +1,74 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
-**⚡ VERIFY-FIRST SWEEP — THE TWO NUMBERS NOW COINCIDE (2026-07-25, bd `3c6m.58`).**
+**⚡ KEEP-SET HARNESS FIX — 68 → 80/123, 0 REGRESSIONS (2026-07-25, bd `3c6m.60`).**
+The census was measuring a program the ship floor never compiles. The corpus recipe
+(Reproduce step 1) builds every openlibm `.c` with a **blanket `-fno-builtin`**, so an
+**inner** call to a Rule-18 **hardware keep** (`sqrt`/`fabs`/`floor`/…) resolved to
+openlibm's *software* body and the closure linked it in — dragging that body's loops and
+control into the cell. At the real ship floor (`tests/e2e/run_slice.sh`, plain
+`clang -O1`, builtins ON) those names are **not** library functions: clang folds each to
+`@llvm.<fn>.f<W>` *before* codegen and `cq-lowering` rewrites it to
+`cq_template_<fn>_f<W>`. The census was self-inconsistent — `probe.py` already **skips**
+the keep-set as census *cells* ("recognition-covered, no injectable body") while the
+corpus injected their bodies *inside* every other cell — and Rule 18 itself specifies a
+per-function `-fno-builtin-<fn>` **on the caller**, never a blanket flag on the corpus.
+The cost was concrete: `e_acos.c`, `e_asin.c` and `e_hypot.c` contain **zero loops**, yet
+`acos`/`asin`/`hypot` all censused as `loop-carried` declines — the loop was the injected
+software `__ieee754_sqrt`'s subnormal normalize loop (`src/e_sqrt.c:118`).
+**FIX** (harness only; no compiler change): `wprobe.py::keep_shims()` synthesizes one
+forwarding shim per keep name and `build_defmap` registers it at the **front** of the
+defmap, so `closure_link` resolves an inner keep call to the intrinsic instead of the soft
+body. See **CENSUS METHODOLOGY — the hardware keep-set** below for the rules that keep this
+from silently regressing.
+**MEASURED (full 123-cell O1 re-census, same corpus + same HEAD plugin): 68 → 80
+non-declining, `REGRESSIONS: NONE`.** The 12 that flip are
+`acos{,f,l}` `asin{,f,l}` `hypot{,l}` `pow{,f}` (→ `COMPILES`) and `lgamma{,f}`
+(→ `COMPILES (spec-clone)`). Counter-check that must keep holding: **`fmod.f64` still
+declines** — its loop is its own (`loop under quantum control`), so the fix is not a
+blanket "everything compiles now". The direction of the old error was **safe** (it made
+the census UNDER-report), so no published coverage number was ever inflated — but the
+*lever ranking* built on it was wrong: 7 further cells (`acosh{,f,l}` `asinh{,f,l}`
+`hypotf`) re-attribute from `loop-carried` to `L6 nested control`, which makes L6/PredMux
+(bd `q2wk`) the largest remaining lever at **15** cells and shrinks the "bounded loops"
+bucket (bd `8h7d`) from a claimed 24 to a measured **7**.
+**THE 12 WERE THEN GOLDENED BEFORE THE 80 WAS PUBLISHED — and 1 of them did NOT hold.**
+Census-COMPILES is not verified (Rule 2, bd `libm-scoreboard-two-numbers`), and this time the
+distinction paid for itself: 11 of the 12 mint a `slice_libm_real_*` golden that links, runs
+and byte-matches at the true ship floor (each: `opt` exit 0, 0 residual `@cq_*`, 0 non-`cq`
+callees, exactly 1 `cqrt_ry` + 1 `cqrt_measure`, all `cqrt_free` operands distinct, measured
+handle never freed, byte-deterministic over two runs), but **`hypotl.f80` census-COMPILES and
+then DECLINES at plain `clang -O1`** — `cq controlled lowering: nested control flow under
+quantum control`, its five early returns forming a multi-exit funnel with a condition re-used
+below its merge. That is a *ship-floor* L6 cell, i.e. bd `q2wk`'s lever, and it is the **first
+measured census-pipeline-only cell** since the `3c6m.58` sweep closed the gap. Its faithful
+vendoring is parked, unwired, at `tests/e2e/slice_libm_real_hypotl.c.DECLINED` as the
+ready-made re-test (bd `3c6m.61`).
+**SO THE SCOREBOARD IS `80` INJECTION-COVERED / `79` VERIFIED** — deliberately *not* merged.
+The `3c6m.58` "the two numbers coincide" property held for that baseline and is now
+re-opened by exactly one cell; do not quote 80 as verified.
+**Faithfulness of the 11 new goldens was cleared by an independent 11-lens adversarial audit**
+(mechanical reverse-rename diff of every vendored body, every fp literal re-encoded and compared
+in order, qualifier/signedness/comparison-operator checks, keep-set legitimacy per Rule 18, and a
+trace re-run): **0 silent-miscompile risks, 0 faithfulness defects in the vendored code**; every
+finding was header prose, and all were corrected (the recurring lesson holds — on this class of
+work the code is right and the prose drifts).
+**TWO SCOPE NOTES the audit surfaced (bd `3c6m.62`), because they make two cells verify less than
+their names suggest:** (1) the 2-arg cell convention pins `arg1` to the classical literal `0.5`,
+which is exactly `pow`/`powf`'s `y == 0.5` fast path — clang -O1 proves the log/exp core
+*unreachable*, so **zero** of `bp`/`dp_h`/`dp_l`/`L1..L6`/`P1..P5`/`cp`/`ivln2`/`lg2` survive and
+those goldens verify the tainted classification prologue plus the `sqrt`/`fabs` keep routes, not
+pow's numeric core; (2) `lgamma`/`lgammaf`'s `signgam` side effect is **dead-stripped** — openlibm's
+`signgam` is externally linked, but the census reaches the body through `lgamma_public_shim` and
+then `internalize`+DSE removes the `*signgamp = ±1` stores, which the goldens reproduce with
+`static`. A measured A/B on the f32 slice (sole change: dropping `static`) gives 0 stores → `opt`
+exit 0 versus 3 stores → **exit 1**, so the store-under-tainted-control is never exercised and the
+externally-linked spelling declines today. Same family as the already-recorded by-ref
+`frexp`/`modf` note below. Both caveats are stated in the slice headers.
+
+**⚡ VERIFY-FIRST SWEEP — THE TWO NUMBERS COINCIDED AT 68 (2026-07-25, bd `3c6m.58`).**
+⚠ *Historical: true of the 68-cell baseline this banner describes. The `3c6m.60` banner ABOVE
+supersedes it — the scoreboard is now `80` injection-covered / `79` verified, because
+`hypotl.f80` census-COMPILES and declines at the ship floor.*
 The standing caveat below — *"injection-covered is an UPPER BOUND; verified is its own
 separate, LOWER number"* — has been **closed by measurement, not by assertion**. At the
 start of this sweep the O1 baseline was **68/123 injection-covered but only 53 verified**
@@ -291,9 +359,72 @@ guards and returns before any mutating stage. The instrumentation lives on a
 scratch branch and is `git checkout`-reverted before commit — the committed
 harness (`peel_census.py` etc.) is inert without it (falls back to first-blocker).
 
+## CENSUS METHODOLOGY — the hardware keep-set (bd `3c6m.60`, do not undo)
+
+**The rule.** A census cell must be lowered from the same IR the **ship floor** produces.
+The ship floor is `tests/e2e/run_slice.sh`: plain `clang -O1`, **builtins ON**, one
+`-fno-builtin-<fn>` on the caller so the *named* call resolves to the injected body
+(Rule 18). Therefore, inside a cell, a call to a name in the **hardware keep-set** —
+
+> `sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint`
+> (× `f` / none / `l`; `probe.py::HARDWARE_KEEP_SET`)
+
+— must appear as the `@llvm.<fn>.f<W>` intrinsic, **never** as openlibm's software body.
+Those names have **no injectable body** by definition (Rule 18: clang folds them to an
+in-grid construct before codegen, and Bennett.jl backs each one), which is exactly why
+`probe.py` skips them as census *cells*.
+
+**Why the corpus flag cannot do this.** The corpus build must keep its blanket
+`-fno-builtin`: without it clang recognizes e.g. `s_floor.c`'s body as `floor` and
+rewrites it into a self-call. So the keep-set correction is applied **at the defmap**,
+where inner calls actually resolve, not at the corpus compile.
+
+**How it is applied** (`wprobe.py`): `keep_shims()` compiles, per keep name,
+`T s(T x){ return <name>(x); }` at `clang -O1` with **builtins ON** — i.e. under ship-floor
+conditions — and renames the resulting definition to `<name>`. `build_defmap()` then
+front-inserts that shim, and `closure_link` (which takes the first not-yet-linked definer)
+picks it over the soft body. Three properties make this safe:
+
+1. **The shim body is measured, not authored.** It is whatever clang emits. If the output
+   still contains a non-intrinsic call — i.e. clang emits a *libcall* for that name/width
+   on this target, so it is not a keep here — `_synth_keep_shim` returns `None`, no shim is
+   registered, and the software body keeps winning exactly as before. Over-shimming would
+   make the census **over-report**, which is the one unforgivable direction.
+   (Measured on this host, LLVM 19 / x86-64+SSE4.1: all 14 stems × 3 widths fold; the C99
+   spellings map to `llvm.minnum`/`llvm.maxnum` and to `llvm.{l,ll}rint.i64.f<W>`.)
+2. **No link conflict is possible.** Every corpus file that defines a keep name defines
+   *only* keep names (verified over all 245 `.bc`; the `s_fma`/`s_fmal` helpers
+   `fesetround`/`add_and_denormalize`/`add_adjusted` are `internal` and called from their
+   own TU), so a shimmed file is never pulled in for some other symbol it also defines.
+3. **The probe scaffold keeps its blanket `-fno-builtin`, and that is load-bearing.**
+   Measured A/B: LLVM only inlines a `"no-builtins"` callee (every corpus body is one) into
+   a `"no-builtins"` caller. Dropping the blanket flag from `wprobe.probe` left `@acos`
+   **outlined**, which re-routed 10 baseline-COMPILES cells through Phase-6 specialization
+   and broke them. It costs no fidelity: the probe TU has no library call other than `fn`
+   itself, and a ship-floor slice renames every vendored helper to `olm_*` — not a library
+   name — so libcall simplification has nothing to act on there either.
+
+**Residual, recorded honestly.** For a cell whose body calls a keep name, an older golden
+may vendor the *software* helper (e.g. `slice_libm_real_lround.c` vendors `olm_round`)
+while the census now models the intrinsic route. Both are real-openlibm slices and the
+soft-body route is the strictly *larger* program, so those goldens remain valid — but they
+verify a superset of the ship-floor route, not the identical IR. The `3c6m.60` goldens
+(`acos`/`asin`/`hypot`/`pow`/`lgamma` families) use the `__builtin_<keep>` spelling and do
+pin the exact ship-floor construct.
+
+**If you touch this:** re-run the full 123-cell census and assert **0 regressions** against
+`full_census_O1.json`, and keep `fmod.f64` declining (its loop is genuine — SCEV reports
+`Unpredictable` for backedge-taken, constant-max and symbolic-max). A fix that makes
+`fmod` compile has broken something.
+
 ## Reproduce
 ```bash
 # 1. corpus (one-time source fetch; NOT a runtime dep)
+#    NB the blanket -fno-builtin below is CORRECT and must stay (a libm source built
+#    with builtins ON self-recurses: clang recognizes s_floor.c's body as `floor`).
+#    It does NOT defeat the Rule-18 hardware keep-set for INNER calls any more —
+#    wprobe.py::keep_shims() re-applies the ship-floor fold at the defmap. See the
+#    CENSUS METHODOLOGY section above before changing either half (bd 3c6m.60).
 #    clang here MUST be the LLVM-19 one (/usr/local/opt/llvm@19/bin/clang) — a
 #    newer system/Xcode clang writes bitcode LLVM-19 llvm-dis cannot read.
 #    -I "$OLA" (the openlibm ROOT) is LOAD-BEARING (bd 20xt, 2026-07-18): ld80

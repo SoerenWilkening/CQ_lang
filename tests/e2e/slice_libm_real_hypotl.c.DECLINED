@@ -1,0 +1,232 @@
+/* slice_libm_real_hypotl.c — bd 3c6m.60: the REAL openlibm hypotl body over
+   x86_fp80 `long double`.
+
+   Corpus files vendored (intact clone /private/tmp/openlibm_reclone):
+     - src/e_hypotl.c   : the whole algorithm — the local GET_LDBL_MAN /
+                          GET_HIGH_WORD / SET_HIGH_WORD / DESW / ESW / MANT_DIG /
+                          MAX_EXP macro block, the man_t typedef, and the
+                          hypotl() body (verbatim, constant for constant).
+     - src/amd64_fpmath.h : union IEEEl2bits (both the bits and xbits views) and
+                          LDBL_NBIT, kept VERBATIM.
+     - src/math_private.h : GET_LDBL_EXPSIGN / SET_LDBL_EXPSIGN (verbatim), which
+                          e_hypotl.c redirects GET_HIGH_WORD / SET_HIGH_WORD to.
+   FreeBSD/fdlibm-derived, BSD-licensed.
+
+   Mechanical edits ONLY (libm-real-slice-recipe; NO constant, branch, or
+   expression changed): the include lines, the license/FBSDID header block and
+   OLM_DLLEXPORT deleted; LDBL_MANT_DIG (64) and LDBL_MAX_EXP (16384) written as
+   their x86_fp80 <float.h> values; the LDBL_MANL_SIZE conditional collapsed to
+   its x86-64 arm (LDBL_MANL_SIZE == 32, so man_t is u_int32_t) with a local
+   u_int32_t typedef; the public entry `hypotl` renamed
+   `__attribute__((always_inline)) static inline olm_hypotl` (force-inlining
+   reproduces the census inline shape at plain -O1 and collapses the closure into
+   one straight-line body — recipe lesson bd 20xt.2). The x86_fp80 unions are
+   kept VERBATIM — the promoteFp80Union pass owns them, never a memcpy word shim
+   (3c6m.51 ld80 convention).
+
+   KEEP-SET CALLS: the only libm calls in the closure are fabsl (3 sites) and
+   sqrtl (2 sites). Both are Rule-18 HARDWARE KEEPS: at the ship floor (plain
+   `clang -O1`, builtins ON) the named calls fold to @llvm.fabs.f80 /
+   @llvm.sqrt.f80 before codegen, and cq-lowering rewrites those to
+   cq_template_fabs_f80 / cq_template_sqrt_f80. `__builtin_fabsl` /
+   `__builtin_sqrtl` are the deliberate spelling of that SAME construct (no libm
+   declaration needed); this is not a body substitution — a keep has no
+   injectable body by definition. That fold is exactly what the fixed harness
+   restored: under the old blanket -fno-builtin census these resolved to
+   openlibm's SOFTWARE bodies and dragged their loops into the cell.
+
+   STATUS — THIS CELL DECLINES AT THE SHIP FLOOR. There is deliberately NO
+   slice_libm_real_hypotl.expected.log and this file is NOT wired into
+   tests/e2e/CMakeLists.txt. Measured 2026-07-25 on branch 3c6m.14-control-l6:
+
+     clang -Iinclude -include CQ.h -O1 -emit-llvm -S  ->  exit 0
+     opt -passes=cq-lowering                          ->  exit 1, stderr:
+       error: tests/e2e/slice_libm_real_hypotl.c:<L>:5: in function slice
+       x86_fp80 (): cq controlled lowering: nested control flow under quantum
+       control
+     where <L> (a line number, deliberately not pinned here since this comment
+     shifts it) is the `if((ha-hb)>DESW(MANT_DIG+7)) {return a+b;}` line. Built
+     without -g the same message prints with an <unknown>:0:0 anchor.
+     (reproduced identically on two consecutive runs; s2.ll is 0 bytes, so
+     NOTHING was lowered — this is a clean Prime-Directive decline, not a
+     partial emission.)
+
+   That line is the first tainted early exit, `if((ha-hb)>DESW(MANT_DIG+7))
+   {return a+b;}`. It is the outermost arm of a 5-way multi-exit funnel: at -O1
+   @slice carries 9 tainted `br i1`, 13 phis, and one exit phi with FIVE
+   incoming edges (the a+b early return, the Inf/NaN `w`, the subnormal `return
+   a`, the k==0 `w`, and the k!=0 `t1*w`), plus a re-used condition (`%81`, the
+   `(manh|manl)==0` test) branching to the exit from a block BELOW the merge it
+   was minted above. That is outside every shipped accept shape — the 4.x fence
+   tops out at the depth-2 homogeneous nest, and PredMux's flattening grammar
+   does not reduce a multi-exit funnel with a condition re-used across a merge.
+   The decline is a CAPABILITY gap (an honest over-decline, Prime Directive),
+   not a correctness defect; the census `-fno-builtin` harness fix is orthogonal
+   and did land here (fabsl/sqrtl are @llvm.fabs.f80/@llvm.sqrt.f80 in the -O1
+   IR, with NO openlibm software sqrt loop dragged in).
+
+   Had it lowered, the cell would exercise: the tainted `xbits.expsign` extract
+   of x (the classical y = 0.5L one const-folds), the SET_LDBL_EXPSIGN exponent
+   read-modify-writes on a and b (promoteFp80Union + Shadow store — these ARE
+   present in the -O1 IR as alloca/gep/store/load pairs), the bits.manh/manl
+   subnormal and Inf/NaN mantissa tests, the w>b two-product split with its
+   `bits.manl = 0` i80 mask truncations, and cq_template_fabs_f80 /
+   cq_template_sqrt_f80 for the two curated keep-intrinsics. Re-run this file
+   unchanged when the control fence widens. */
+#include <stdint.h>
+
+typedef unsigned int u_int32_t;
+
+/* openlibm src/amd64_fpmath.h (verbatim — BOTH views; the fp80 pass owns the
+   union, never a memcpy word shim). */
+union IEEEl2bits {
+	long double	e;
+	struct {
+		unsigned int	manl	:32;
+		unsigned int	manh	:32;
+		unsigned int	exp	:15;
+		unsigned int	sign	:1;
+		unsigned int	junkl	:16;
+		unsigned int	junkh	:32;
+	} bits;
+	struct {
+		unsigned long	man	:64;
+		unsigned int	expsign	:16;
+		unsigned long	junk	:48;
+	} xbits;
+};
+
+#define	LDBL_NBIT	0x80000000
+
+/* x86_fp80 <float.h> values. */
+#define	LDBL_MANT_DIG	64
+#define	LDBL_MAX_EXP	16384
+
+/* openlibm src/math_private.h (verbatim). */
+#define	GET_LDBL_EXPSIGN(i,d)					\
+do {								\
+  union IEEEl2bits ge_u;					\
+  ge_u.e = (d);							\
+  (i) = ge_u.xbits.expsign;					\
+} while (0)
+
+#define	SET_LDBL_EXPSIGN(d,v)					\
+do {								\
+  union IEEEl2bits se_u;					\
+  se_u.e = (d);							\
+  se_u.xbits.expsign = (v);					\
+  (d) = se_u.e;							\
+} while (0)
+
+/* openlibm src/e_hypotl.c macro block (verbatim). */
+#define	GET_LDBL_MAN(h, l, v) do {	\
+	union IEEEl2bits uv;		\
+					\
+	uv.e = v;			\
+	h = uv.bits.manh;		\
+	l = uv.bits.manl;		\
+} while (0)
+
+#undef GET_HIGH_WORD
+#define	GET_HIGH_WORD(i, v)	GET_LDBL_EXPSIGN(i, v)
+#undef SET_HIGH_WORD
+#define	SET_HIGH_WORD(v, i)	SET_LDBL_EXPSIGN(v, i)
+
+#define	DESW(exp)	(exp)		/* delta expsign word */
+#define	ESW(exp)	(MAX_EXP - 1 + (exp))	/* expsign word */
+#define	MANT_DIG	LDBL_MANT_DIG
+#define	MAX_EXP		LDBL_MAX_EXP
+
+/* LDBL_MANL_SIZE == 32 on x86-64, so the #if arm taken is the 32-bit one. */
+typedef	u_int32_t man_t;
+
+/* openlibm src/e_hypotl.c hypotl (verbatim; fabsl -> __builtin_fabsl and
+   sqrtl -> __builtin_sqrtl, the SAME @llvm.fabs.f80 / @llvm.sqrt.f80 the ship
+   floor emits for the named calls). */
+__attribute__((always_inline)) static inline long double
+olm_hypotl(long double x, long double y)
+{
+	long double a=x,b=y,t1,t2,y1,y2,w;
+	int32_t j,k,ha,hb;
+
+	GET_HIGH_WORD(ha,x);
+	ha &= 0x7fff;
+	GET_HIGH_WORD(hb,y);
+	hb &= 0x7fff;
+	if(hb > ha) {a=y;b=x;j=ha; ha=hb;hb=j;} else {a=x;b=y;}
+	a = __builtin_fabsl(a);
+	b = __builtin_fabsl(b);
+	if((ha-hb)>DESW(MANT_DIG+7)) {return a+b;} /* x/y > 2**(MANT_DIG+7) */
+	k=0;
+	if(ha > ESW(MAX_EXP/2-12)) {	/* a>2**(MAX_EXP/2-12) */
+	   if(ha >= ESW(MAX_EXP)) {	/* Inf or NaN */
+	       man_t manh, manl;
+	       /* Use original arg order iff result is NaN; quieten sNaNs. */
+	       w = __builtin_fabsl(x+0.0)-__builtin_fabsl(y+0.0);
+	       GET_LDBL_MAN(manh,manl,a);
+	       if (manh == LDBL_NBIT && manl == 0) w = a;
+	       GET_LDBL_MAN(manh,manl,b);
+	       if (hb >= ESW(MAX_EXP) && manh == LDBL_NBIT && manl == 0) w = b;
+	       return w;
+	   }
+	   /* scale a and b by 2**-(MAX_EXP/2+88) */
+	   ha -= DESW(MAX_EXP/2+88); hb -= DESW(MAX_EXP/2+88);
+	   k += MAX_EXP/2+88;
+	   SET_HIGH_WORD(a,ha);
+	   SET_HIGH_WORD(b,hb);
+	}
+	if(hb < ESW(-(MAX_EXP/2-12))) {	/* b < 2**-(MAX_EXP/2-12) */
+	    if(hb <= 0) {		/* subnormal b or 0 */
+	        man_t manh, manl;
+		GET_LDBL_MAN(manh,manl,b);
+		if((manh|manl)==0) return a;
+		t1=1;
+		SET_HIGH_WORD(t1,ESW(MAX_EXP-2));	/* t1=2^(MAX_EXP-2) */
+		b *= t1;
+		a *= t1;
+		k -= MAX_EXP-2;
+	    } else {		/* scale a and b by 2^(MAX_EXP/2+88) */
+		ha += DESW(MAX_EXP/2+88);
+		hb += DESW(MAX_EXP/2+88);
+		k -= MAX_EXP/2+88;
+		SET_HIGH_WORD(a,ha);
+		SET_HIGH_WORD(b,hb);
+	    }
+	}
+    /* medium size a and b */
+	w = a-b;
+	if (w>b) {
+	    t1 = a;
+	    union IEEEl2bits uv;
+	    uv.e = t1; uv.bits.manl = 0; t1 = uv.e;
+	    t2 = a-t1;
+	    w  = __builtin_sqrtl(t1*t1-(b*(-b)-t2*(a+t1)));
+	} else {
+	    a  = a+a;
+	    y1 = b;
+	    union IEEEl2bits uv;
+	    uv.e = y1; uv.bits.manl = 0; y1 = uv.e;
+	    y2 = b - y1;
+	    t1 = a;
+	    uv.e = t1; uv.bits.manl = 0; t1 = uv.e;
+	    t2 = a - t1;
+	    w  = __builtin_sqrtl(t1*y1-(w*(-w)-(t1*y2+t2*b)));
+	}
+	if(k!=0) {
+	    u_int32_t high;
+	    t1 = 1.0;
+	    GET_HIGH_WORD(high,t1);
+	    SET_HIGH_WORD(t1,high+DESW(k));
+	    return t1*w;
+	} else return w;
+}
+
+long double slice(void) {
+    long double q = cq_theta(0.5L, 0.5);
+    return cq_measure(olm_hypotl(q, 0.5L));
+}
+
+int main(void) {
+    (void) slice();
+    return 0;
+}

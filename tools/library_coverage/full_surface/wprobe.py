@@ -67,6 +67,107 @@ def _alias_shim_dir():
         _ALIAS_SHIM_DIR = Path(tempfile.mkdtemp(prefix="cq_alias_shims_"))
     return _ALIAS_SHIM_DIR
 
+# ---------------------------------------------------------------------------
+# bd 3c6m.60 (2026-07-25): HARDWARE KEEP-SET SHIMS — the census must see, for an
+# INNER keep-set call, the construct the SHIP FLOOR sees.
+#
+# THE BUG THIS FIXES. The corpus recipe (README "Reproduce" step 1) builds every
+# openlibm .c with a BLANKET `-fno-builtin`, so `sqrt`/`floor`/`fabs`/… resolve to
+# openlibm's SOFTWARE bodies and the closure links them in. But Rule 18's
+# hardware KEEP-SET says those names are *not* library functions on this target:
+# at the real ship floor (`clang -O1`, builtins ON — `tests/e2e/run_slice.sh`)
+# clang folds each of them to an `@llvm.<fn>` intrinsic BEFORE codegen, and
+# cq-lowering recognizes it (`IntrinsicLowering.cpp` `isCuratedFpIntrinsic` +
+# `isCrossWidthLibmIntrinsic`). So the census was measuring a program the ship
+# floor never compiles: `e_acos.c` has ZERO loops, yet `acos.f64` declined on
+# "loop under quantum control" — the subnormal normalize loop of the *injected*
+# software `__ieee754_sqrt` (`src/e_sqrt.c:118`). Rule 18 itself specifies a
+# per-function `-fno-builtin-<fn>` ON THE CALLER, never a blanket flag on the
+# corpus; probe.py already SKIPS the keep-set as census CELLS ("recognition-
+# covered, no injectable body") while the corpus was injecting their bodies
+# INSIDE every other cell — self-inconsistent.
+#
+# THE FIX (harness only — no compiler change). Register, at the FRONT of the
+# defmap, a forwarding shim per keep name that clang itself compiles, so the
+# closure resolves e.g. `sqrt` to `@llvm.sqrt.f64` instead of the soft body.
+# Same mechanism as the vuy6 `.set`-alias shims above, and reclone-proof.
+#
+# FAITHFULNESS (Rule 11 — measure, never guess). The shim body is not authored:
+# it is whatever `clang -O1` (builtins ON, i.e. ship-floor conditions) emits for
+# `T s(T x){ return <name>(x); }`. If that output still contains a NON-intrinsic
+# call — i.e. clang emits a libcall for this name/width on this target, so the
+# name is NOT a keep here — we DECLINE to shim and the soft body keeps winning,
+# exactly as before (a wrong shim would make the census over-report, which is the
+# one unforgivable direction). Measured on this host (LLVM 19, x86-64+SSE4.1):
+# all 14 stems × {f,,l} fold, with the C99 spellings mapping to
+# minnum/maxnum (fmin/fmax) and to `@llvm.{l,ll}rint.i64.f<W>`.
+HARDWARE_KEEPS = ("sqrt fabs copysign floor ceil trunc round rint nearbyint "
+                  "fmin fmax fma lrint llrint").split()   # == probe.HARDWARE_KEEP_SET
+_KEEP_NARGS = {"copysign": 2, "fmin": 2, "fmax": 2, "fma": 3}
+_KEEP_RET   = {"lrint": "long", "llrint": "long long"}    # cross-width fp->int
+_KEEP_VARIANTS = (("f", "float"), ("", "double"), ("l", "long double"))
+_KEEP_SHIM_DIR = None
+_KEEP_SHIMS = None      # name -> .bc path  (built once, memoized)
+_KEEP_SKIPPED = []      # names that did NOT fold at -O1 (no shim; soft body wins)
+
+def _keep_shim_dir():
+    global _KEEP_SHIM_DIR
+    if _KEEP_SHIM_DIR is None:
+        _KEEP_SHIM_DIR = Path(tempfile.mkdtemp(prefix="cq_keep_shims_"))
+    return _KEEP_SHIM_DIR
+
+def _synth_keep_shim(name, ret, ctype, nargs, outdir):
+    """Compile `<ret> __cq_keep_shim(<ctype> a0, …) { return <name>(a0, …); }` at
+    clang -O1 with builtins ON (ship-floor conditions), then rename the definition
+    to @<name>. Returns the .bc path, or None if the call did NOT fold to an
+    intrinsic (then this name is a real libcall here and must keep its soft body).
+    """
+    params = ", ".join("%s a%d" % (ctype, i) for i in range(nargs))
+    args   = ", ".join("a%d" % i for i in range(nargs))
+    src = ('#include <math.h>\n'
+           '__attribute__((always_inline)) %s __cq_keep_shim(%s) { return %s(%s); }\n'
+           % (ret, params, name, args))
+    c  = outdir / ("_keep_%s.c"  % name)
+    ll = outdir / ("_keep_%s.ll" % name)
+    bc = outdir / ("_keep_%s.bc" % name)
+    c.write_text(src)
+    # NO -fno-builtin here: folding the named call to its in-grid construct is the
+    # entire point, and it is exactly what the ship floor does.
+    r = subprocess.run([CLANG, "-O1", "-emit-llvm", "-S", str(c), "-o", str(ll)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    ir = ll.read_text()
+    m = re.search(r'^define[^@\n]*@__cq_keep_shim\(.*?\n\}', ir, re.M | re.S)
+    if m is None:
+        return None
+    # Any surviving non-intrinsic callee means clang did NOT fold => not a keep on
+    # this target/width => decline to shim (renaming would also self-recurse).
+    if [x for x in re.findall(r'call[^@\n]*@([A-Za-z0-9_.$]+)', m.group(0))
+        if not x.startswith("llvm.")]:
+        return None
+    ll.write_text(ir.replace("@__cq_keep_shim", "@" + name))
+    r = subprocess.run([AS, str(ll), "-o", str(bc)], capture_output=True, text=True)
+    return bc if r.returncode == 0 else None
+
+def keep_shims():
+    """name -> forwarding-shim .bc for every hardware-keep-set name that folds."""
+    global _KEEP_SHIMS
+    if _KEEP_SHIMS is not None:
+        return _KEEP_SHIMS
+    _KEEP_SHIMS = {}
+    outdir = _keep_shim_dir()
+    for stem in HARDWARE_KEEPS:
+        for suf, ctype in _KEEP_VARIANTS:
+            name = stem + suf
+            ret  = _KEEP_RET.get(stem, ctype)
+            bc = _synth_keep_shim(name, ret, ctype, _KEEP_NARGS.get(stem, 1), outdir)
+            if bc is None:
+                _KEEP_SKIPPED.append(name)
+            else:
+                _KEEP_SHIMS[name] = bc
+    return _KEEP_SHIMS
+
 def _parse_define_sig(line, name):
     """Parse a `define ... @name(...)` header into (ret_type, [param_types]).
     Returns None unless it is a clean by-value scalar/pointer signature (the only
@@ -161,6 +262,16 @@ def build_defmap():
         bc = _synth_alias_shim(alias, definer, sig[0], sig[1], dl_triple, shimdir)
         if bc is not None:
             defmap.setdefault(alias, []).append(bc)
+    # bd 3c6m.60: hardware keep-set shims go at the FRONT of each entry, so
+    # closure_link (which takes the first not-yet-linked definer) resolves an
+    # inner `sqrt`/`floor`/… to the `@llvm.<fn>` intrinsic the ship floor emits
+    # instead of openlibm's software body. No link conflict is possible: every
+    # corpus file that defines a keep name defines ONLY keep names (verified over
+    # all 245 .bc — the s_fma/s_fmal helpers `fesetround`/`add_and_denormalize`/
+    # `add_adjusted` are `internal` and called from their own TU only), so a
+    # shimmed file is never pulled in for some other symbol it also defines.
+    for name, bc in keep_shims().items():
+        defmap[name] = [bc] + defmap.get(name, [])
     return defmap
 
 def undefined_syms(bc):
@@ -238,6 +349,17 @@ def probe(fn, retW, args, ti, defmap):
         td = Path(td)
         (td/"probe.c").write_text(src)
         pbc = td/"probe.bc"
+        # The blanket `-fno-builtin` on the PROBE SCAFFOLD is LOAD-BEARING and must
+        # stay (bd 3c6m.60, measured A/B): it stamps `"no-builtins"` on @probe, and
+        # LLVM only inlines a `"no-builtins"` callee (every corpus body is one — the
+        # corpus recipe builds with -fno-builtin) into a `"no-builtins"` caller.
+        # Dropping it left `@acos` OUTLINED, which re-routed 10 baseline-COMPILES
+        # cells through Phase-6 specialization and broke them. It costs no fidelity:
+        # the probe TU contains no library call other than `fn` itself, and a real
+        # ship-floor slice renames every vendored helper to `olm_*` (not a library
+        # name), so libcall simplification has nothing to act on there either. The
+        # keep-set fidelity gap is closed by `keep_shims()` above — at the DEFMAP,
+        # which is where the inner calls actually resolve — not by this flag.
         r = subprocess.run([CLANG,"-O1","-g","-fno-builtin",f"-fno-builtin-{fn}",
                             "-emit-llvm","-c"]+INC.split()+[str(td/"probe.c"),"-o",str(pbc)],
                            capture_output=True, text=True)
