@@ -6,6 +6,20 @@
 > the loop lever, close corpus gaps, or invest in the deep cells. It is self-contained:
 > everything needed to have the discussion is below. **Do not start building before the
 > discussion** — the point is to choose the next investment together.
+>
+> ---
+>
+> **STATUS 2026-07-25 (end of session) — THE DISCUSSION HAPPENED; THIS DOC IS NOW PARTLY SUPERSEDED.**
+> - §1 (coverage) — **resolved**: verify-first ran (bd `3c6m.58`), verified 53 → **68 = injection-covered**.
+> - §2 (taxonomy) and §3 (recommendation) — ⛔ **WRONG, do not decide from them.** A follow-up scoping
+>   investigation measured them: the "24 bounded-loop cells / biggest lever" headline is a **census
+>   harness artifact** (blanket `-fno-builtin` injects openlibm's *software* `sqrt`/`floor` into every
+>   other cell, defeating Rule 18's keep-set for inner calls — bd `3c6m.60`). Loops are **7/43**, not
+>   24/55. See the correction banners in §2 and §3.
+> - **The live plan of record is the bd memory `libm-next-steps-harness-then-q2wk`**:
+>   **STEP 1** bd `3c6m.60` — census keep-set harness fix (~1 day, harness only, +12 cells, 0/68
+>   regressions) → then mint goldens. **STEP 2** bd `q2wk` — PredMux -O1 nested control (15 cells).
+> - §4 open questions 1 and 2 are answered; the rest still stand.
 
 ---
 
@@ -65,6 +79,54 @@
 
 ## 2. The compileability taxonomy — a clean partition of the 55 declines
 
+> ### ⛔ §2 AND §3 ARE WRONG — DO NOT DECIDE FROM THEM (corrected 2026-07-25, bd `3c6m.60`)
+>
+> A follow-up scoping investigation **measured** this taxonomy and found its central claim inverted.
+> The rows below are kept for the record; the corrections are authoritative.
+>
+> **Root cause — a census methodology bug, not a compiler gap.** `full_surface/README.md:309/317/334`
+> builds every openlibm `.c` with a **blanket `-fno-builtin`**, which defeats Rule 18's hardware
+> keep-set for **inner calls**: a body that calls `sqrt`/`floor` gets openlibm's *software*
+> implementation closure-linked in, instead of the `@llvm.<keep>` intrinsic `clang -O1` emits at the
+> ship floor. The census is self-inconsistent — `probe.py:68` *skips* `sqrt`/`fabs`/`floor` as **cells**
+> ("recognition-covered, no injectable body") while injecting their software bodies **inside every
+> other cell**. Rule 18 itself specifies per-function `-fno-builtin-<fn>` *on the caller*.
+> Reproduced A/B (same source, same pass, same inline pipeline — only the builtin flag differs):
+> `acos.f64` **declines** "loop under quantum control" under the census build (the site is the software
+> `__ieee754_sqrt`'s subnormal loop, `src/e_sqrt.c:118`) and **compiles clean** at the true ship floor
+> (23 `cqrt_alloc`, 0 residual intrinsics). `hypot.f64` likewise (145 allocs). Counter-check:
+> `fmod.f64` still declines — its loop is genuine (SCEV `Unpredictable`).
+> **The error direction is SAFE — the census UNDER-reported. No published number was ever inflated.**
+>
+> **Corrections to the rows below:**
+> - **The "24 BOUNDED LOOPS" row is mis-attributed.** 17 of the 24 do not block on a loop in their own
+>   body at all — `e_acos.c`/`e_asin.c`/`e_hypot.c` contain **zero loops** (`grep`). With the keep-set
+>   honoured: **10 compile today with no compiler change**, 7 become L6 cells, and only **7 are
+>   genuinely loop-blocked**. Its sub-labels are also wrong: "dirty-rail cross-iter (5, f32)" is
+>   entirely artifact (those 5 bodies have no loop), and "loop×control (17)" misreads the diagnostic —
+>   `loop under quantum control` is emitted from ONE site (`LoopLowering.cpp:1161`, gated by
+>   `taintedExit`) and means the **trip count** is quantum-dependent, saying nothing about control
+>   inside the body (that is L2, a different diagnostic and a far harder fix). Ticket routing is wrong
+>   too: `799w.3`/`rkg1` own **zero** cells, and the static-K unroll that actually shipped
+>   (`LoopUnrollPrepass.cpp`, bd `lf8s`) is absent here and excludes all 24 by construction.
+> - **The "8 L6 NESTED CONTROL" row grows to 15** (it absorbs the 7 re-attributed cells) and becomes
+>   the **largest lever on the surface**. Its O1/O2 framing is also stale — in the committed O1
+>   baseline all four log1p/atanh cells are plain `L6 nested control` declines.
+> - **The "3 PHASE-6 IN-CLONE CONTROL" row is stale by 2:** `lgamma.f64`/`lgammaf.f32` compile under
+>   the keep-fix (they blocked on the *software* `floor` body — same artifact). Only `powl.f80` remains.
+> - **§2(B) "7 corpus/infra gaps" undercounts by 12** — the soft-sqrt/soft-floor artifact is a
+>   corpus/infra gap of exactly the same kind. (`FULL_DEPTH_CENSUS.md:303-315` had already documented
+>   it; the 2026-07-25 taxonomy dropped that caveat.) **And those 7 are NOT a cheap coverage lever:**
+>   building the missing `s_cosf/s_sinf/s_tanf` with `-DM_PI*` and re-censusing yields **0 new
+>   COMPILES** — all three land on "tainted value reaches an unsupported instruction". Do it for census
+>   honesty, not the scoreboard.
+>
+> **Corrected ranking (measured):** L6/PredMux **15** > Shadow 7 = corpus gaps 7 = **loops 7** >
+> control-flat 3 > fp-copy 2 > value-arm 2. **Loops are 7/43, not 24/55.**
+>
+> Plan of record: bd memory `libm-next-steps-harness-then-q2wk`. Tickets: `3c6m.60` (P1, the harness
+> fix) then `q2wk` (15 cells).
+
 Verified this session by 3 parallel research lenses + a reconcile lens (all read the
 committed census JSON, `FULL_DEPTH_CENSUS.md`, `peel_census_merged.json`, bd memories,
 and CLAUDE.md Rule 18) and spot-checked against the live corpus. **Counts: 0 + 7 + 48 = 55.**
@@ -121,6 +183,11 @@ Every one has a known, owned lever. **Ordered by leverage (cell count).**
 | **2** | **VALUE-ARM EARLY-EXIT** — the `__isnanl` early-exit VALUE region (a controlled-return diamond whose arm is a value, at TOP level), unmasked by the vuy6 fix. `log10l` is genuinely multi-increment (also `ldexpl` done, then `frexpl` switch + rolled `__polevll` loops). | `expl` `log10l` | **zco4** (log10l) / 3c6m.51 (expl) / 65wb (controlled-return substrate) | **medium** |
 | **1** | **VOLATILE-RUNTIME SHADOW** — `s_nextafter`'s algorithm-intrinsic `volatile double t=x*x` side-effect store (a *runtime*-valued volatile, unlike zco4's promotable scalar). Body links fully — the sole real compiler blocker among the memory-store f32 cells. | `nexttowardf` | Phase 7.5 QRAM/Shadow ABI (no dedicated ticket) | **medium** |
 
+> ⛔ **THE FOLLOWING PARAGRAPH IS THE SPECIFIC CLAIM THAT MEASUREMENT INVERTED** — see the §2
+> correction banner. Loops are **7/43**, not 24/55, and `8h7d` is **not** the highest
+> coverage-per-effort lever; the harness fix (`3c6m.60`, +12 cells/~1 day) and then `q2wk`
+> (15 cells) both beat it. Kept below only as the record of what was believed on 2026-07-25.
+
 **Headline structural insight:** **bounded loops are ~half of all declines (24/55).** The
 inverse-trig, hyperbolic, `hypot`, `pow`, `remainder`, `fmod` families *all* block on the
 same loop capability. **8h7d is by far the highest coverage-per-effort lever.** The
@@ -140,10 +207,23 @@ data-dependent reduction and even Bennett currently lacks a clean source for it.
    result: for this O1 baseline the census is not over-reporting. (`erfcl`/`erfl` were
    already goldened by bd `20xt.2`; the vuy6-unblocked remainder was `expm1l`/`tanhl`.)
 
-2. **→ NOW THE LIVE RECOMMENDATION: build the loop lever (8h7d).** 24 cells behind one
-   capability family — nothing else comes close on coverage-per-effort. With step 1 done,
-   the 68 is now a *trustworthy* floor to build on rather than an unaudited upper bound,
-   so investment decisions can be made against it directly.
+2. ~~**NOW THE LIVE RECOMMENDATION: build the loop lever (8h7d).**~~ ⛔ **RETRACTED 2026-07-25
+   (bd `3c6m.60`)** — this rested on the mis-attributed 24-cell count (see the §2 banner).
+   Do **not** execute it as written. `8h7d` owns 7 cells, not 24, and 6 of those 7 are the
+   roadmap-scale fmod/remainder/remquo family that re-opens the whole-DAG uncompute spine.
+
+3. **→ THE ACTUAL LIVE PLAN (plan of record: bd memory `libm-next-steps-harness-then-q2wk`):**
+   - **STEP 1 — bd `3c6m.60` (P1): the census keep-set harness fix.** ~1 day, harness only,
+     zero compiler risk, **+12 cells (68 → 80/123)**, 0/68 regressions measured. Gate: re-run
+     the full census asserting 0 regressions, then **mint `slice_libm_real_*` goldens before
+     quoting 80/123** — census-COMPILES ≠ verified, which bd `3c6m.58` just spent a session
+     enforcing.
+   - **STEP 2 — bd `q2wk`: PredMux -O1 nested-control widening. 15 cells**, medium, reuses the
+     shipped substrate. Its payoff grew 8 → 15 *because of* step 1's re-attribution, which is
+     exactly why step 1 must come first — otherwise q2wk gets scoped against the wrong cell
+     list, which is the failure this whole correction documents.
+   - Its blocker chain is clear: `3c6m.50` was stale-OPEN carrying a `blocks` edge on the P1
+     lever `3c6m.14`; closed 2026-07-25 (all deliverables were committed).
 
 ---
 

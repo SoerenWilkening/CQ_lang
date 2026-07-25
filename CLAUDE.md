@@ -56,8 +56,14 @@ class of bug.
 > decline partition, `y05j.2` the index-gated copy-not-move capture + whole-loop
 > reverse-play EMISSION over a new post-lowering `lowerBreakReversePlay` stage + the dtzb
 > `cqrt_xorc`/`cqrt_addc` `EmitInverse` adjoints; the canonical capture+reverse-play
-> sim-replay-verified, 7 over-accept holes found+fixed as the E1–E11 decline
-> preconditions across **three** adversarial Rule-13 rounds; 2026-06-26). **"DONE" here
+> sim-replay-verified; the shipped fence is **E1–E15** (`grep -o '(E[0-9]*)'
+> `ir-pass/src/LoopLowering.cpp`), grown by **13 recorded over-accept holes** — 7 in the
+> Inc-2 round, **3 more in the `rwou` round that ran AFTER this epic was already closed as
+> "Rule-13 cleared"**, and 3 Risk-4 recognizer fixes — across **three** adversarial Rule-13
+> rounds; 2026-06-26). That 3-for-3 hit rate across successive rounds, including one round
+> *after* clearance, is the load-bearing fact when scoping any further loop work: assume the
+> next loop shape also hides over-accepts, and budget the adversarial rounds up front.
+> **"DONE" here
 > means the scoped CORE increments shipped + Rule-13-cleared; everything outside the
 > shipped accept-shape declines loudly (Prime Directive), so the open follow-ons are
 > additive coverage / deferred separate capabilities, NOT correctness debt.** The
