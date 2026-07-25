@@ -47,6 +47,12 @@ Bennett-parity consulted (owner standing instruction).
 
 ## 1. Goal
 
+> **STATUS (2026-07-24, do not misread §1/§9 as delivered):** this section states the
+> *original* goal. Inc 1's promotion **shipped** and advances `log10l.f80` one blocker
+> (volatile-`z` `kMsgStore` → `ldexpl` unknown-callee), but the **census +1 itself is
+> DEFERRED** — see the Inc-1 outcome note at the top of this file and the still-OPEN bd
+> `zco4` tracker. `log10l.f80` still records `status=decline` in the committed census.
+
 Move the **real-openlibm census number by +1**: `log10l.f80` **decline → COMPILES →
 VERIFIED** (a committed real-openlibm golden per `libm-real-slice-recipe`), by handling
 the OpenBSD/Moshier **"\*\*\*CAUTION\*\*\*" `volatile`-accumulator idiom**. Unlike the
@@ -185,6 +191,14 @@ Each ships a negative lit fixture mirroring the exact diagnostic (Rule 12):
   the real-openlibm goldens — unlike the `lgammal` hybrid).
 
 ## 9. Census impact
+
+> **NOT YET DELIVERED (2026-07-24):** the **+1 is DEFERRED**, not realized — Inc 1
+> advanced `log10l.f80` one blocker but did not compile it (it now declines at the
+> `ldexpl` unknown-callee; the committed census still records `status=decline`). The
+> paragraph below is the *target*. What Inc 1 DID deliver as a standalone, verified win
+> is the **volatile-single-accumulator idiom class** (`promoteVolatileScalarLocals`),
+> which the lit accepts + the `slice_predmux_fp_diamond_volatile` e2e golden pin — a
+> real capability, NOT a census-cell increment. Never quote `log10l.f80` as verified.
 
 **+1** real-openlibm VERIFIED (`log10l.f80`) — a genuine census move (quotable alongside
 the real goldens). Any other libm body using the same "\*\*\*CAUTION\*\*\*"
