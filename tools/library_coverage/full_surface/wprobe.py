@@ -10,6 +10,7 @@ from pathlib import Path
 
 LLVM = Path("/usr/local/opt/llvm@19/bin")
 CLANG, OPT, LINK, DIS = LLVM/"clang", LLVM/"opt", LLVM/"llvm-link", LLVM/"llvm-dis"
+AS = LLVM/"llvm-as"   # bd vuy6: assemble the synthesized .set-alias forwarding shims
 HERE = Path(__file__).resolve().parent
 # Corpus location — set BC (openlibm bitcode dir) and OPENLIBM (source tree) to
 # your scratch build (see README REPRODUCE); defaults to HERE for a self-hosted run.
@@ -47,21 +48,119 @@ W = {
 # — the census then reported a fake first blocker (spec-scan "memory access")
 # and MASKED the real one. Under-linking under-measures (Rule 18: a library
 # function means its SOURCE, injected — the tables ARE the source).
+# bd vuy6 (2026-07-25): module-asm '.set alias, definer' strong_reference support.
+# openlibm ships some public names ONLY as an assembler alias — e.g. s_scalbnl.c's
+# `openlibm_strong_reference(scalbnl, ldexpl)` survives in the bitcode as
+#   module asm ".set ldexpl, scalbnl"
+# and NOTHING else. llvm-link/opt treat module asm as opaque text, so `ldexpl`
+# never acquires an IR body: a caller's `call @ldexpl` survives inlining as an
+# "unknown callee", which MASKS the cell's real first blocker (log10l.f80 declined
+# at the ldexpl site e_log10l.c:177 instead of its true __isnanl early-exit). The
+# durable fix (survives every corpus reclone, and closes EVERY strong_reference at
+# once — the README Step-1b hand shims did not persist) is to SYNTHESIZE, per pair,
+# the exact forwarding thunk clang emits for `T alias(...){ return definer(...); }`
+# and register it in the defmap so the closure links + inlines it like a real body.
+_ALIAS_SHIM_DIR = None
+def _alias_shim_dir():
+    global _ALIAS_SHIM_DIR
+    if _ALIAS_SHIM_DIR is None:
+        _ALIAS_SHIM_DIR = Path(tempfile.mkdtemp(prefix="cq_alias_shims_"))
+    return _ALIAS_SHIM_DIR
+
+def _parse_define_sig(line, name):
+    """Parse a `define ... @name(...)` header into (ret_type, [param_types]).
+    Returns None unless it is a clean by-value scalar/pointer signature (the only
+    shape we can faithfully forward) — an aggregate/vector/array/vararg return or
+    param makes us DECLINE to synthesize (leaving the alias unresolved exactly as
+    before: no regression, and no risk of a wrong-signature shim distorting the
+    census)."""
+    head, sep, tail = line.partition('@' + name + '(')
+    if not sep:
+        return None
+    htoks = head.split()
+    if not htoks:
+        return None
+    ret = htoks[-1]           # return ATTRS (signext / range(i32 0,2)) precede the
+                              # type, so the final pre-'@name(' token IS the type.
+    buf, depth = [], 0        # params = balanced content up to the matching ')'.
+    for ch in tail:
+        if ch == '(':
+            depth += 1; buf.append(ch)
+        elif ch == ')':
+            if depth == 0:
+                break
+            depth -= 1; buf.append(ch)
+        else:
+            buf.append(ch)
+    params = ''.join(buf).strip()
+    ptypes = []
+    if params and params != 'void':
+        for p in params.split(','):
+            p = p.strip()
+            if not p or p == '...':      # vararg / malformed — not forwardable
+                return None
+            ptypes.append(p.split()[0])  # a param's TYPE is its first token.
+    for t in [ret] + ptypes:             # scalar/ptr only (opaque `ptr`): reject
+        if not t or any(c in t for c in '{}<>[]'):  # aggregate/vector/array types.
+            return None
+    return ret, ptypes
+
+def _synth_alias_shim(alias, definer, ret, ptypes, dl_triple, outdir):
+    """Write + assemble a forwarding-thunk .bc: `define @alias(...) = tail call
+    @definer(...)`. Returns the .bc path, or None if llvm-as rejects it."""
+    typed = ", ".join("%s %%a%d" % (t, i) for i, t in enumerate(ptypes))
+    L = list(dl_triple)   # carry the target datalayout/triple to avoid link warns.
+    L.append("declare %s @%s(%s)" % (ret, definer, ", ".join(ptypes)))
+    if ret == "void":
+        L += ["define void @%s(%s) {" % (alias, typed),
+              "  tail call void @%s(%s)" % (definer, typed),
+              "  ret void", "}"]
+    else:
+        L += ["define %s @%s(%s) {" % (ret, alias, typed),
+              "  %%r = tail call %s @%s(%s)" % (ret, definer, typed),
+              "  ret %s %%r" % ret, "}"]
+    ll = outdir / ("_alias_%s.ll" % alias)
+    bc = outdir / ("_alias_%s.bc" % alias)
+    ll.write_text("\n".join(L) + "\n")
+    r = subprocess.run([AS, str(ll), "-o", str(bc)], capture_output=True, text=True)
+    return bc if r.returncode == 0 else None
+
 def build_defmap():
     defmap = {}
+    sig_lines = {}         # fn name -> its full `define ...` header (for aliases)
+    set_pairs = []         # module-asm (alias, definer) strong_reference pairs
+    dl_triple = []         # target datalayout/triple lines (shims inherit them)
     for b in sorted(BC.glob("*.bc")):
         try:
             ir = subprocess.run([DIS, str(b), "-o", "-"], capture_output=True, text=True, timeout=30).stdout
         except Exception:
             continue
-        for m in re.finditer(r'^define[^@]*@([A-Za-z0-9_.$]+)\b', ir, re.M):
-            defmap.setdefault(m.group(1), []).append(b)
+        for m in re.finditer(r'^(define[^@\n]*@([A-Za-z0-9_.$]+)\([^\n]*)', ir, re.M):
+            defmap.setdefault(m.group(2), []).append(b)
+            sig_lines.setdefault(m.group(2), m.group(1))
         # data definitions: '@sym = <qualifiers> (global|constant) ...' with no
         # 'external' qualifier before the global/constant keyword.
         for m in re.finditer(r'^@([A-Za-z0-9_.$]+) = ([^\n]*)', ir, re.M):
             sym, rest = m.group(1), m.group(2)
             if 'external' not in rest.split('constant')[0].split('global')[0]:
                 defmap.setdefault(sym, []).append(b)
+        for m in re.finditer(r'^module asm "\.set ([A-Za-z0-9_.$]+), ([A-Za-z0-9_.$]+)"', ir, re.M):
+            set_pairs.append((m.group(1), m.group(2)))
+        if not dl_triple:
+            dl_triple = re.findall(r'^target (?:datalayout|triple) = "[^"]*"', ir, re.M)
+    # Resolve the module-asm '.set' aliases into real forwarding-shim bodies.
+    shimdir = _alias_shim_dir()
+    for alias, definer in dict.fromkeys(set_pairs):   # de-dup, order-stable
+        if alias in defmap:            # a real IR definition already wins
+            continue
+        if definer not in sig_lines:   # alias to data / unresolved definer — skip
+            continue
+        sig = _parse_define_sig(sig_lines[definer], definer)
+        if sig is None:                # non-scalar / vararg signature — decline
+            continue
+        bc = _synth_alias_shim(alias, definer, sig[0], sig[1], dl_triple, shimdir)
+        if bc is not None:
+            defmap.setdefault(alias, []).append(bc)
     return defmap
 
 def undefined_syms(bc):

@@ -1,5 +1,27 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ MODULE-ASM `.set` ALIAS RESOLUTION (2026-07-25, bd vuy6).** `build_defmap` now
+resolves openlibm `strong_reference` aliases that survive in the bitcode ONLY as
+module asm (`module asm ".set ldexpl, scalbnl"` and nothing else — llvm-link/opt
+treat module asm as opaque, so the alias never got an IR body and a caller's
+`call @ldexpl` survived inlining as a FAKE "unknown callee" that MASKED the cell's
+real first blocker). For each `.set alias, definer` pair where `definer` is a
+defined function, it synthesizes the exact forwarding thunk clang emits for
+`T alias(...){ return definer(...); }`, assembles it (`llvm-as`), and registers
+`alias -> shim` — the durable, reclone-proof replacement for the README Step-1b
+hand shims (which had to be rebuilt on every corpus wipe). This retires the
+`ldexp`/`ldexpf`/`ldexpl`/`isinff`/`isnanf` corpus-gap "unknown callee" cells.
+**Measured effect (O1 A/B, same corpus+plugin, fix vs. fix-stashed): 0 regressions**
+(no COMPILES cell flips to decline); the 5 aliases now resolve, so `ldexpl`/`erfcl`/
+`erfl`/`expm1l`/`tanhl` advance to census-COMPILES (injection-covered, NOT verified —
+no goldens) and `coshl`/`sinhl` to `COMPILES (spec-clone)`, while `log10l`/`expl`
+(→ `__isnanl` early-exit value region), `acoshl`/`asinhl` (→ loop-carried), and
+`log2l`/`logl` (→ L6 nested control) unmask to their honest DEEPER blockers. The
+gates are conservative (Prime-Directive analog): a non-scalar/vararg definer
+signature makes it DECLINE to synthesize (leaving the alias unresolved as before —
+no wrong-signature shim can distort the census). `log10l.f80` remains a DEFERRED
+multi-blocker cell — this only unblocks the honest first-blocker READING (bd zco4).
+
 **⚡ DATA-SYMBOL CLOSURE + corpus completion (2026-07-18, bd 20xt).** The census
 was UNDER-MEASURING: `closure_link` chased undefined *functions* only, so
 data-only TUs never linked — ld80 atanl/asinl/acosl keep their coefficient
