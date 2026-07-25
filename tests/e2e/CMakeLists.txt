@@ -578,6 +578,23 @@ add_test(NAME e2e-slice-branchless-cosl
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_cosl.expected.log")
 
+# bd 20xt.9: the ld80 (x86_fp80) branchless-leaf tan twin — the missing trio leaf
+# beside sinl/cosl. Reuses the SAME rem_pio2l reduction + k_sinl/k_cosl kernels;
+# tan is π-periodic so only fn mod 2 matters — reconstructed as the RATIO S/C (even)
+# or -C/S (odd), NOT openlibm's branchy ld80/k_tanl.c polynomial. The tanl-specific
+# op is ONE unconditional QQ division num/den -> cq_template_fdiv_f80; the parity
+# blend is a kjd1 const-operand fp select -> cqrt_copy_f80_controlled. PURE-REGISTER,
+# DISJOINT hybrid/authored-leaf provenance (census tanl.f80 stays declined, no delta),
+# never quoted with the real-openlibm goldens. Corpus twin:
+# tools/library_coverage/branchless/tanl.c — keep in sync.
+add_test(NAME e2e-slice-branchless-tanl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tanl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_branchless_tanl.expected.log")
+
 # bd 20xt.8 Inc 2: the ld80 (x86_fp80) branchless-leaf natural-log twin — the
 # third Bennett-parity leaf for the lgammal hybrid slice. e_logl.c's small-exponent
 # path log(1+f)=f−½f²+f³P(f)/Q(f) taken UNCONDITIONALLY (faithful over the whole
