@@ -416,6 +416,18 @@ only under this census's O2 measurement pipeline, so they are NOT verifiable at 
 (bd `q2wk`). Do **not** quote "48 verified" — quote **48 injection-covered (O2),
 42 verified (-O1 golden), 44/48 -O1-holding**.
 
+> **⏭ SUPERSEDED — §11 records the post-L6 *O2* measurement as it stood; do not quote
+> its numbers as current.** The live baseline is the all-widths **O1**
+> `full_surface/full_census_O1.json` (bd `vuy6`, 2026-07-25): **68/123 injection-covered**.
+> The verified number then closed the gap entirely: bd `3c6m.58` (2026-07-25) re-measured
+> verified at **53**, minted goldens for the last 15 uncovered cells, and **all 15 held at
+> the -O1 ship floor → 68 verified = 68 injection-covered** (full ctest 210/210). Two
+> consequences for how §11 above should be read: (a) the O1 baseline no longer carries an
+> O1/O2 discrepancy — `log1p{,f}`/`atanh{,f}` are honest *declines* in
+> `full_census_O1.json`, not phantom COMPILES; and (b) the "compile, golden PENDING" row is
+> now **empty**. See `full_surface/README.md` (top banner) and
+> `NEXT-SESSION-libm-compileability-discussion.md` §1.
+
 ### 11.2 f32 siblings fell out for free (the near-free width win)
 
 The 24 f32 cells are the *same* bodies as the 24 f64 cells at narrower width; PredMux

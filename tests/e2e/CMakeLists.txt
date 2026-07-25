@@ -2614,3 +2614,188 @@ add_test(NAME e2e-slice-libm-keep-truncl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_keep_truncl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_keep_truncl.expected.log")
+
+# ---------------------------------------------------------------------------
+# bd 3c6m.58 — the VERIFY-FIRST sweep: real-openlibm e2e goldens for the 15
+# cells that were injection-covered (census full_census_O1.json) but had NO
+# committed golden. Each promotes its cell from COMPILES (an UPPER BOUND, measured
+# under the census's own default<O1> cleanup) to VERIFIED at the true
+# `clang -O1 -> cq-lowering -> link -> run` ship floor (Rule 2, Rule 18 source
+# injection). All 15 held; verified 53 -> 68, closing the gap to injection-covered.
+# Bodies are vendored from the openlibm corpus @82e90ae per bd
+# libm-real-slice-recipe (mechanical edits ONLY — no constant, branch or
+# expression changed); each was cleared by an independent adversarial
+# faithfulness + trace-soundness audit.
+# ---------------------------------------------------------------------------
+
+
+# fdim.f64 — f64 sibling of the verified fdiml.f80: union IEEEd2bits is SROA-promoted
+# by clang -O1 to `bitcast double to i64`, so the isnan OR-of-negations lands on the plain
+# integer-extraction surface and both merges are controlled-XOR copies.
+add_test(NAME e2e-slice-libm-real-fdim
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdim.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdim.expected.log")
+
+
+# fdimf.f32 — f32 sibling; __isnanf's SINGLE 23-bit mantissa test (not the manl/manh pair).
+add_test(NAME e2e-slice-libm-real-fdimf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdimf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_fdimf.expected.log")
+
+
+# frexp.f64 — BY-REF cell. NOTE the census probe declares the out-param but never READS it, so
+# clang -O1 DCEs every *eptr store before cq-lowering runs: this golden verifies the MANTISSA
+# half only (zero store/Shadow/QRAM activity). Measured separately: a live-out-param variant
+# also compiles clean, so the dead store is a probe-convention artifact, not a capability gap.
+add_test(NAME e2e-slice-libm-real-frexp
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexp.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexp.expected.log")
+
+
+# frexpf.f32 — f32 by-ref sibling; same dead-out-param scope caveat as frexp.f64.
+add_test(NAME e2e-slice-libm-real-frexpf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexpf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexpf.expected.log")
+
+
+# frexpl.f80 — ld80 by-ref: union IEEEl2bits read AND write-back (u.bits.exp = 0x3ffe field insert)
+# under a 3-way switch on the tainted exponent -- the promoteFp80Union RMW (3c6m.51).
+add_test(NAME e2e-slice-libm-real-frexpl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexpl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_frexpl.expected.log")
+
+
+# modfl.f80 — ld80 sibling of the verified modf.f64/modff.f32: openbsd GET/SET_LDOUBLE_WORDS RMW
+# across a 3-band exponent dispatch. Same dead-out-param scope caveat.
+add_test(NAME e2e-slice-libm-real-modfl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_modfl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_modfl.expected.log")
+
+
+# lroundl.f80 — ld80 sibling of the verified lround.f64. The INRANGE macro is vendored VERBATIM and
+# clang DEMONSTRATES the compile-time-TRUE fold (LONG_MAX + 0.5 is computed in DOUBLE by the
+# usual arithmetic conversions and rounds to 2^63, so dtype_max - LONG_MAX == 1.0 != 0.5):
+# feraiseexcept is absent from the lowered IR, exactly as in the census bitcode.
+add_test(NAME e2e-slice-libm-real-lroundl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lroundl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lroundl.expected.log")
+
+
+# llroundl.f80 — long long instantiation of the same s_lround.c template; trace is byte-identical to
+# lroundl (long and long long are both i64 on LP64, so the fptosi is the same).
+add_test(NAME e2e-slice-libm-real-llroundl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_llroundl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_llroundl.expected.log")
+
+
+# nextafter.f64 — VOLATILE-LOCAL cell: `volatile double t; t = x*x;` is fdlibm's underflow-flag-raise
+# idiom -- the bd zco4 Inc 1 promoteVolatileScalarLocals shape. Plus the hi/lo
+# borrow-propagating +-1 ulp walk.
+add_test(NAME e2e-slice-libm-real-nextafter
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafter.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafter.expected.log")
+
+
+# nextafterf.f32 — f32 sibling: single-word ulp walk, same volatile underflow-raise idiom.
+add_test(NAME e2e-slice-libm-real-nextafterf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterf.expected.log")
+
+
+# nextafterl.f80 — the hardest of the family: a THREE-word (esx/hx/lx) borrow-carry chain with the
+# explicit-integer-bit `(hx +- 1) | (hx & 0x80000000)` fixups, and block-scoped volatile locals.
+add_test(NAME e2e-slice-libm-real-nextafterl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterl.expected.log")
+
+
+# nexttoward.f64 — the only MIXED-WIDTH cell (C11 7.12.11 fixes arg 2 at long double): drives BOTH the f64
+# memcpy word shim and the ld80 union in one body, plus the hand-aligned f64->fp80 field
+# comparison ladder.
+add_test(NAME e2e-slice-libm-real-nexttoward
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttoward.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttoward.expected.log")
+
+
+# expm1l.f80 — ld80 exp kernel in Cephes rational form: Cody-Waite reduction via @llvm.floor.f80,
+# a P4/Q4 rational core, and 2^k reassembly through ldexpl==scalbnl -- one of the cells bd
+# vuy6's module-asm .set alias resolution unmasked.
+add_test(NAME e2e-slice-libm-real-expm1l
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_expm1l.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_expm1l.expected.log")
+
+
+# tanhl.f80 — four-band |x| dispatch over the inner expm1l; fp80 selects ride the kjd1
+# cqrt_copy_f80_controlled family.
+add_test(NAME e2e-slice-libm-real-tanhl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_tanhl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_tanhl.expected.log")
+
+
+# sinhl.f80 — four-band dispatch over BOTH inner kernels (expm1l and expl). Census status is
+# `exit0-spec:['expl']` (expl stays outlined as a Phase-6 spec clone under the census harness);
+# at the plain -O1 ship floor the recipe's force-inline convention collapses the closure to one
+# straight-line body instead. Both routes reach opt exit 0; this golden pins the ship-floor one.
+add_test(NAME e2e-slice-libm-real-sinhl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_sinhl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_sinhl.expected.log")

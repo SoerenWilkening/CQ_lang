@@ -78,12 +78,26 @@ def _injection_scoreboard():
 def _full_surface_scoreboard():
     """The AUTHORITATIVE full-surface REAL-openlibm injection scoreboard (bd 3c6m.49/
     .50/.14), superseding the double-only authored-branchless number. Reads the
-    committed census outputs: compiles/total from `full_surface/first_blocker_refreshed
-    .json`; verified = count of committed real-openlibm goldens `tests/e2e/
-    slice_libm_real_*.expected.log`. Returns (compiles, total, verified) or None."""
+    committed census outputs: compiles/total from the all-widths **O1** baseline
+    `full_surface/full_census_O1.json` (bd vuy6, 2026-07-25 — the reconciled file every
+    published number is quoted from), falling back to the older **O2**
+    `first_blocker_refreshed.json` only if that is absent; verified = count of committed
+    real-openlibm goldens `tests/e2e/slice_libm_real_*.expected.log`.
+    Returns (compiles, total, verified) or None.
+
+    Two subtleties, both load-bearing (bd 3c6m.58):
+      * a cell is injection-covered iff it did NOT decline — `full_census.py` records the
+        Phase-6 spec-clone survivors as `exit0-spec:[...]` rather than plain `COMPILES`
+        (bucket() maps them to "COMPILES (spec-clone)"), so counting == "COMPILES" would
+        undercount by exactly those cells;
+      * `compiles` and `verified` MUST come from the same generation of the census. Reading
+        `compiles` from the stale O2 snapshot while globbing `verified` live produced the
+        incoherent "48 injection-covered, 68 verified" (verified > injection-covered)."""
     try:
-        fb = json.loads((HERE / "full_surface" / "first_blocker_refreshed.json").read_text())
-        compiles = sum(1 for v in fb.values() if v.get("status") == "COMPILES")
+        fs = HERE / "full_surface"
+        o1 = fs / "full_census_O1.json"
+        fb = json.loads((o1 if o1.exists() else fs / "first_blocker_refreshed.json").read_text())
+        compiles = sum(1 for v in fb.values() if v.get("status", "decline") != "decline")
         total = len(fb)
         verified = len(list((ROOT / "tests" / "e2e").glob("slice_libm_real_*.expected.log")))
         return (compiles, total, verified)
@@ -134,7 +148,17 @@ def two_scoreboard_lines(short=False, census_link="tools/library_coverage/INJECT
         f"2. **Injection-covered (AUTHORITATIVE campaign number)** — genuine REAL off-the-shelf "
         f"openlibm bodies compiled by **source injection** (Rule 18) at every width, over the "
         f"reconciled 123-cell full-surface census (bd `3c6m.49`/`.50`/`.14`): {fsnum} "
-        f"([full-depth census]({full_census}) §11). NB the census's **123** is the INJECTABLE "
+        f"([full-depth census]({full_census}) §11). The two numbers are still measured "
+        f"SEPARATELY and must never be conflated (bd `libm-scoreboard-two-numbers`): "
+        f"*injection-covered* = the census `default<O1>` pipeline accepts the real body; "
+        f"*verified* = a committed `slice_libm_real_*` golden LINKS, RUNS and byte-matches at "
+        f"the true `clang -O1 → cq-lowering` ship floor. A census-COMPILES is in principle only "
+        f"an UPPER BOUND on the ship floor (the census cleanup can pre-flatten control the ship "
+        f"floor leaves — that gap is exactly what sank `log1p{{,f}}`/`atanh{{,f}}` under the "
+        f"older O2 baseline). As of bd `3c6m.58` that bound is **empirically discharged for "
+        f"this baseline**: the verify-first sweep goldened the last 15 uncovered cells and ALL "
+        f"15 held, so injection-covered and verified now coincide. The caveat still applies to "
+        f"any FUTURE census-COMPILES cell until its golden is minted. NB the census's **123** is the INJECTABLE "
         f"subset of this table's **183-cell** surface (`123 injectable + 42 hardware-recognition "
         f"+ 12 by-design macros + 6 int-ret/str`); it is a different, tighter denominator than "
         f"the recognition columns below — not the same 174/183.",

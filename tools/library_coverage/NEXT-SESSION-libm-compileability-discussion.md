@@ -39,12 +39,27 @@
 
 **Two-numbers discipline (Rule 2 — never conflate):**
 - **Injection-covered = 68** (the census `cq-lowering` accepts the real openlibm body).
-- **Verified = a SEPARATE, LOWER number** (a committed real-openlibm `slice_libm_real_*`
+- **Verified = a SEPARATE number** (a committed real-openlibm `slice_libm_real_*`
   golden that LINKS + RUNS + byte-matches at the true `clang -O1 → cq-lowering` ship
-  floor). The verified count is **stale** after this session's drift and **must be
-  re-measured** (historically ~42–47). **68 is an UPPER BOUND** on the ship floor: the
-  census `default<O1>` cleanup (SimplifyCFG/instcombine) pre-flattens some control the
-  real ship floor leaves — so some of the 68 may NOT survive `run_slice.sh`.
+  floor). **68 is an UPPER BOUND** on the ship floor: the census `default<O1>` cleanup
+  (SimplifyCFG/instcombine) pre-flattens some control the real ship floor leaves — so
+  some of the 68 might not survive `run_slice.sh`.
+
+> **✅ RESOLVED 2026-07-25 by bd `3c6m.58` (the verify-first step of §3 below).**
+> Verified was **re-measured at 53**, not the "~42–47" guessed above (53 committed
+> goldens, all wired, full ctest green). The 15-cell gap was then closed: goldens were
+> minted for `expm1l` `fdim` `fdimf` `frexp` `frexpf` `frexpl` `llroundl` `lroundl`
+> `modfl` `nextafter` `nextafterf` `nextafterl` `nexttoward` `sinhl` `tanhl`, and
+> **ALL 15 HELD at the true ship floor → verified 53 → 68 = injection-covered.**
+> Full ctest **210/210**. So for THIS O1 baseline the upper bound is **tight**: the
+> answer to §4.2 is a measured **NONE** — zero census-pipeline-only cells. The caveat
+> remains live for any *future* census-COMPILES cell until its golden is minted.
+> (It was NOT vacuous historically: under the older **O2** baseline 4 of 48 —
+> `log1p{,f}`/`atanh{,f}` — genuinely failed at -O1; they are honest declines in
+> `full_census_O1.json`.) Scope notes recorded in `full_surface/README.md`: the by-ref
+> cells' goldens verify the return-value half only (the census probe never reads the
+> out-param, so clang DCEs the stores — measured, and NOT a capability gap: a
+> live-out-param `frexp` variant also compiles clean).
 
 ---
 
@@ -118,24 +133,32 @@ data-dependent reduction and even Bennett currently lacks a clean source for it.
 
 **Verify first (cheap, high-signal), then build the loop lever.**
 
-1. **VERIFY NEXT (do this first).** The 68 injection-covered is an upper bound and the
-   *verified* count is stale. Mint `slice_libm_real_*` goldens (the `libm-real-slice-recipe`
-   memory) for the compile-but-ungoldened cells — **prioritizing the ones vuy6 just
-   unblocked** (`erfcl`/`erfl`/`expm1l`/`tanhl` + the ld80 set). This (a) converts
-   injection-covered → verified, and (b) **catches any of the 68 that don't hold at the
-   true ship floor** (expect a handful to fall out — that's the signal). Mechanical, low-risk.
+1. ~~**VERIFY NEXT (do this first).**~~ ✅ **DONE 2026-07-25 — bd `3c6m.58`.** The owner
+   chose verify-first; the sweep goldened all 15 compile-but-ungoldened cells and **all 15
+   held**, taking verified 53 → 68 = injection-covered, full ctest 210/210. It cost no
+   compiler change. Expected "a handful to fall out" — **none did**, which is itself the
+   result: for this O1 baseline the census is not over-reporting. (`erfcl`/`erfl` were
+   already goldened by bd `20xt.2`; the vuy6-unblocked remainder was `expm1l`/`tanhl`.)
 
-2. **THEN build the loop lever (8h7d).** 24 cells behind one capability family — nothing
-   else comes close on coverage-per-effort.
+2. **→ NOW THE LIVE RECOMMENDATION: build the loop lever (8h7d).** 24 cells behind one
+   capability family — nothing else comes close on coverage-per-effort. With step 1 done,
+   the 68 is now a *trustworthy* floor to build on rather than an unaudited upper bound,
+   so investment decisions can be made against it directly.
 
 ---
 
 ## 4. Open questions to decide together
 
-1. **Verify-first vs. build-first?** (Recommend verify-first — it's cheap and tells us how
-   many of the 68 are *real* before we invest in new capability.)
-2. **Which of the 68 are census-pipeline-only** (compile at census-O1 but decline at the
-   true ship floor)? We don't know yet — step 1 answers this.
+1. ~~**Verify-first vs. build-first?**~~ ✅ **ANSWERED** — owner chose verify-first
+   (2026-07-25); done as bd `3c6m.58`. See §3.1.
+2. ~~**Which of the 68 are census-pipeline-only?**~~ ✅ **ANSWERED: none.** All 15
+   previously-ungoldened cells held at the true ship floor. The remaining live question is
+   the narrower one this surfaced: the **by-ref cells** (`frexp{,f,l}`, `modf{,f,l}`) are
+   censused with a dead out-param, so both the census AND their goldens exercise only the
+   return-value half. A live-out-param `frexp` was measured and also compiles — so no
+   capability gap — but if we ever want the scoreboard to mean "the whole function
+   compiles", the by-ref probe convention should change. **Worth deciding: leave the
+   convention (and keep the caveat documented), or widen the probes?**
 3. **Close the 7 corpus gaps?** Cheap infra (add `-DM_PI_2` to the f32 trig build; vendor
    a minimal `machine/ieee.h`; a `nexttowardl` alias shim). Un-masks the real blockers for
    +7 cells' worth of honest measurement. Worth doing before deciding the loop investment?

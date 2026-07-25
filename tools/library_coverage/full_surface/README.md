@@ -1,5 +1,36 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ VERIFY-FIRST SWEEP — THE TWO NUMBERS NOW COINCIDE (2026-07-25, bd `3c6m.58`).**
+The standing caveat below — *"injection-covered is an UPPER BOUND; verified is its own
+separate, LOWER number"* — has been **closed by measurement, not by assertion**. At the
+start of this sweep the O1 baseline was **68/123 injection-covered but only 53 verified**
+(53 committed `slice_libm_real_*` goldens, re-measured green, superseding the stale
+"~42–47" in the next-session prompt). The 15-cell gap was
+`expm1l` `fdim` `fdimf` `frexp` `frexpf` `frexpl` `llroundl` `lroundl` `modfl`
+`nextafter` `nextafterf` `nextafterl` `nexttoward` `sinhl` `tanhl`.
+**All 15 were goldened and ALL 15 HELD at the true `clang -O1 → cq-lowering → link → run`
+ship floor → verified 53 → 68 = injection-covered.** Full ctest **210/210**.
+This answers the next-session prompt's open question §4.2 (*"which of the 68 are
+census-pipeline-only?"*) with a measured **NONE** — for this O1 baseline the census
+`default<O1>` cleanup pre-flattened nothing the ship floor could not also handle. (Contrast
+the older **O2** baseline, where 4 of 48 — `log1p{,f}`/`atanh{,f}` — genuinely did NOT hold;
+they are honest declines in `full_census_O1.json`.) **The upper-bound caveat is discharged
+for THIS baseline only and still applies to any future census-COMPILES cell until its golden
+is minted.** VERIFICATION-ONLY: no compiler change; the sole code edit was
+`probe.py::_full_surface_scoreboard`, which read `compiles` from the stale **O2**
+`first_blocker_refreshed.json` while globbing `verified` live — emitting the incoherent
+"48 injection-covered, 68 verified". It now reads the committed all-widths **O1**
+`full_census_O1.json` and counts `status != "decline"` (the older `== "COMPILES"` test
+undercounted the `exit0-spec:[...]` Phase-6 spec-clone survivors — `atan2l`, `coshl`,
+`sinhl`). Two measured scope notes worth carrying: (1) the by-ref cells
+(`frexp{,f,l}`, `modf{,f,l}`) are probed exactly as `wprobe.make_src` builds them — out-param
+declared, NEVER read — so clang -O1 DCEs every `*eptr`/`*iptr` store and those goldens verify
+the **return-value half only**; a live-out-param `frexp` variant was measured separately and
+ALSO compiles clean, so this is a probe-convention artifact, not a capability gap;
+(2) `sinhl.f80` is `exit0-spec:['expl']` under the census harness (inner `expl` stays outlined
+as a Phase-6 spec clone) but force-inlines to one straight-line body at the plain -O1 ship
+floor — both routes reach `opt` exit 0; the golden pins the ship-floor route.
+
 **⚡ MODULE-ASM `.set` ALIAS RESOLUTION (2026-07-25, bd vuy6).** `build_defmap` now
 resolves openlibm `strong_reference` aliases that survive in the bitcode ONLY as
 module asm (`module asm ".set ldexpl, scalbnl"` and nothing else — llvm-link/opt

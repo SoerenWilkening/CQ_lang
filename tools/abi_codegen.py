@@ -57,6 +57,25 @@ WIDTH_INFO = {
     # field [0,64) keeps 0xFFFF<<64) and print truncated — no shipped cell does
     # (fdiml's offset-0 store-back is DEAD and elided; scalbnl/copysignl insert
     # at offset 8 only). Revisit the label format before landing such a cell.
+    #   ⚠ THAT CELL HAS NOW LANDED (bd `3c6m.58`, 2026-07-25) — the note above is
+    #   STALE and the "every shipped i80 literal fits in 64 bits" argument no
+    #   longer holds. The verify-first sweep's SET_LDOUBLE_WORDS/IEEEl2bits
+    #   field-insert cells emit exactly the predicted >2^64 keep-mask: nextafterl,
+    #   modfl, lroundl, llroundl, frexpl (1 each) and sinhl (2). Example —
+    #   slice_libm_real_nextafterl golden line 1333 prints
+    #   `cq_template_and_i80_hl(h520, 4294967295)` for the true operand
+    #   i80 0xFFFF_00000000_FFFFFFFF, so a miscompile of ANY bit above 63 of that
+    #   mask is INVISIBLE to the Rule-2 golden diff. The f80 `%Lf` path has the
+    #   same defect in the fp domain (0x1p-128 renders as `0.000000`,
+    #   indistinguishable from +0.0 — expm1l golden line 34).
+    #   NOT fixed here on purpose: changing the label format regenerates the whole
+    #   cq_templates surface (Rule 15 + SHA-256 drift check) and re-blesses EVERY
+    #   committed ld80 golden — a deliberate baseline regeneration, never a reflex
+    #   (Rule 12). Tracked as bd `ni15` with a proposed hex/two-word (i80/i128) and
+    #   round-trip-exact `%La`/`%.21Lg` (f80) label format. The shipped goldens are
+    #   known-good regardless: the 3c6m.58 audit IR-verified each constant and
+    #   replayed the lowered IR against the vendored openlibm source over 36 edge
+    #   inputs + 200k random 80-bit patterns with 0 mismatches.
     "i80": {"ctype": "__int128", "fmt": "%lld", "cast": "(long long)"},
     # _Float16: the explicit (double) cast is MANDATORY — a bare _Float16 passed
     # to printf("%f") trips -Wdouble-promotion / a format-arg type mismatch under
