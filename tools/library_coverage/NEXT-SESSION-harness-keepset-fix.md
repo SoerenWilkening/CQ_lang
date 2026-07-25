@@ -1,5 +1,28 @@
 # NEXT-SESSION PROMPT — bd `3c6m.60`: the census keep-set harness fix
 
+> ## ✅ DONE 2026-07-26 — commit `92d96df`. This prompt has been executed; do not re-run it.
+> **Outcome: injection-covered 68 → 80/123 (65%), `REGRESSIONS: NONE`, verified 68 → 79.**
+> Every prediction in §2/§4 held: the same 12 cells flipped, `fmod.f64` still declines, and the
+> 7-cell `loop-carried` → `L6 nested control` re-attribution is confirmed (so bd `q2wk` owns 15
+> cells and bd `8h7d` owns 7). Three corrections to what is written below, kept because they cost
+> real time to find:
+> 1. **§3's fix (b) is right, but only HALF of the ticket's framing is.** The blanket
+>    `-fno-builtin` on `wprobe.probe`'s **probe scaffold** must **STAY** — measured A/B: LLVM only
+>    inlines a `"no-builtins"` callee (every corpus body is one) into a `"no-builtins"` caller, so
+>    dropping it left `@acos` **outlined** and broke 10 baseline-COMPILES cells. The keep-set
+>    correction belongs at the **defmap** (`keep_shims()`), never at the probe flag. The corpus's
+>    blanket flag must stay too (a libm source built with builtins ON self-recurses).
+> 2. **§4's honesty gate earned its keep.** `hypotl.f80` census-COMPILES and **DECLINES** at the
+>    plain -O1 ship floor (`nested control flow under quantum control`) — the one
+>    census-pipeline-only cell, so the two numbers are 1 apart again (bd `3c6m.61`). Its faithful
+>    vendoring is parked at `tests/e2e/slice_libm_real_hypotl.c.DECLINED`.
+> 3. Two probe-convention scope notes surfaced and are now recorded (bd `3c6m.62`): `pow`/`powf`'s
+>    numeric core is const-folded away by the `arg1 = 0.5` convention, and `lgamma`/`lgammaf`'s
+>    `signgam` side effect is dead-stripped.
+>
+> Live sources: `full_surface/README.md` (top banner + **CENSUS METHODOLOGY**) and bd memories
+> `libm-keepset-census-fix-3c6m60` / `libm-next-steps-harness-then-q2wk`. **Next step: bd `q2wk`.**
+
 > **Paste the block in §0 to start the session.** Everything else here is the briefing it refers to.
 > Written 2026-07-25 at the end of the `3c6m.58` / scoping session, branch `3c6m.14-control-l6`.
 
