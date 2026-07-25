@@ -44,8 +44,10 @@ hand shims (which had to be rebuilt on every corpus wipe). This retires the
 `ldexp`/`ldexpf`/`ldexpl`/`isinff`/`isnanf` corpus-gap "unknown callee" cells.
 **Measured effect (O1 A/B, same corpus+plugin, fix vs. fix-stashed): 0 regressions**
 (no COMPILES cell flips to decline); the 5 aliases now resolve, so `ldexpl`/`erfcl`/
-`erfl`/`expm1l`/`tanhl` advance to census-COMPILES (injection-covered, NOT verified —
-no goldens) and `coshl`/`sinhl` to `COMPILES (spec-clone)`, while `log10l`/`expl`
+`erfl`/`expm1l`/`tanhl` advance to census-COMPILES (injection-covered, NOT verified
+at the time — bd `3c6m.58` has since goldened `expm1l`/`tanhl`/`sinhl`; `erfl`/`erfcl`
+were already goldened by `20xt.2` and `ldexpl` by `3c6m.51` Inc 3, so ALL of these are
+now verified) and `coshl`/`sinhl` to `COMPILES (spec-clone)`, while `log10l`/`expl`
 (→ `__isnanl` early-exit value region), `acoshl`/`asinhl` (→ loop-carried), and
 `log2l`/`logl` (→ L6 nested control) unmask to their honest DEEPER blockers. The
 gates are conservative (Prime-Directive analog): a non-scalar/vararg definer
@@ -67,7 +69,11 @@ are byte-consistent (verified: 0 mismatches).
 
 CAVEATS (the standing two-numbers discipline — Rule 2): these are **injection-covered,
 NOT verified** (no goldens minted here; "verified" stays its own separate, lower
-number — never quote 68 as verified), and measured under the census `default<O1>`
+number — never quote 68 as verified) — ⚠ **THAT LAST CLAUSE IS NOW SUPERSEDED: it was
+true of THIS session (vuy6 minted no goldens), but bd `3c6m.58` later goldened the
+15-cell gap and ALL 15 held, so verified == 68 == injection-covered. See the
+verify-first banner at the top of this file. The two numbers are still MEASURED
+separately — they simply now coincide.** — and measured under the census `default<O1>`
 cleanup whose SimplifyCFG pre-flattens some control the true `clang -O1 → cq-lowering`
 ship floor leaves — so a census-COMPILES is an UPPER BOUND on the ship-floor count
 (the standing O1/O2 methodology note). ATTRIBUTION (kept honest — the committed→refreshed

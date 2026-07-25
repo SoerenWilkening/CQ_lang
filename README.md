@@ -60,11 +60,21 @@ a committed golden trace.
 > reports **32/32 injection-covered**, but read it precisely: those 32 are **hand-authored
 > branchless bodies** (`branchless/`, bd `3c6m.10`) for the **double** surface, deliberately
 > written to bypass the open lowering levers. The [**full-surface census**](tools/library_coverage/full_surface/)
-> (bd `3c6m.49`) injects the **real off-the-shelf openlibm** at every width and compiles
-> **2/120** cells (only `fdim`) — the other 118 decline on the tracked levers (L2/L5/L6 nested
-> control · Shadow scratch · loops · specialization). The old **165/174 (95%)** was the retired
-> name-recognition claim; the honest campaign number moves on real-body injection, not authored
-> substitutes.
+> injects the **real off-the-shelf openlibm** at every width over a reconciled 123-cell
+> surface and, as of 2026-07-25 (bd `vuy6` O1 baseline + bd `3c6m.58`), compiles
+> **68/123 (55%)** — 24 f32 + 25 f64 + 19 f80 — **all 68 of which are also VERIFIED**
+> (a committed `slice_libm_real_*` golden that links, runs and byte-matches at the true
+> `clang -O1 → cq-lowering` ship floor). The remaining **55 decline** on the tracked levers:
+> **loop-carried 24** · L6 nested control 8 · unknown callee 7 · Shadow scratch 7 ·
+> control (flat/diamond) 5 · fp80 value-arm 2 · fp-copy/specialization 2.
+> Read the two numbers precisely (Rule 2, bd `libm-scoreboard-two-numbers`):
+> *injection-covered* and *verified* are measured SEPARATELY and merely happen to coincide
+> right now — and **"verified" certifies the LOWERING, not the unitary**. The runtime is
+> trace-only (each `cq_template_*` prints its symbol; `measure` returns 0; no simulation),
+> so whether a correct reversible *implementation* of those templates exists is the
+> separate — and much lower — **backend** axis in the badge below. The old **165/174 (95%)**
+> was the retired name-recognition claim; the honest campaign number moves on real-body
+> injection, not authored substitutes.
 
 `math.h` is the flagship (pure numerical functions); `stdlib.h`'s integer `abs` island is the
 second. The format is **adaptable** — a new library is one `Lib(...)` entry plus its spec
