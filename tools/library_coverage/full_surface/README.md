@@ -22,6 +22,36 @@ signature makes it DECLINE to synthesize (leaving the alias unresolved as before
 no wrong-signature shim can distort the census). `log10l.f80` remains a DEFERRED
 multi-blocker cell — this only unblocks the honest first-blocker READING (bd zco4).
 
+**⚡ O1 RECONCILED BASELINE (2026-07-25, bd vuy6 follow-on).** With the `.set`-alias
+resolution above plus the accumulated zco4 (volatile-scalar + fp80-union promotion)
+and vyqi (W5 PredMux) plugin work all landed at HEAD, the committed **O1** census
+baselines were DELIBERATELY regenerated (Rule 12; the prior committed snapshots
+predated this drift and a since-wiped corpus that still carried the README Step-1b
+hand shims). Both use the `WP.probe` `default<O1>` pipeline, so their ld80 subsets
+are byte-consistent (verified: 0 mismatches).
+- **All-widths O1 first-blocker — `full_census_O1.json` (NEW, `full_census.py` @ O1):
+  68/123 injection-covered COMPILES (24 f32 + 25 f64 + 19 f80), 55 decline.**
+- **ld80 O1 — `ld80_census_O1.json` (refreshed, `ld80_census.py` @ O1): 15 → 19
+  COMPILES/spec of 41, 0 REGRESSIONS.**
+
+CAVEATS (the standing two-numbers discipline — Rule 2): these are **injection-covered,
+NOT verified** (no goldens minted here; "verified" stays its own separate, lower
+number — never quote 68 as verified), and measured under the census `default<O1>`
+cleanup whose SimplifyCFG pre-flattens some control the true `clang -O1 → cq-lowering`
+ship floor leaves — so a census-COMPILES is an UPPER BOUND on the ship-floor count
+(the standing O1/O2 methodology note). ATTRIBUTION (kept honest — the committed→refreshed
+movement is NOT all this fix): the alias fix's ISOLATED effect (clean A/B, SAME plugin,
+fix vs. git-stashed fix) is ldexpl/erfcl/erfl/expm1l/tanhl → COMPILES, coshl/sinhl →
+spec-clone, and log10l/expl/acoshl/asinhl/log2l/logl unmasked to honest DEEPER blockers
+(0 regressions); the remaining committed→refreshed ld80 movement (atan2l/nextafterl →
+COMPILES, the Shadow "memory-store" cells → loop-carried/nested-control) is the cumulative
+zco4+vyqi HEAD drift, NOT this fix. The **O2 files are INTENTIONALLY left unchanged**
+(`first_blocker_refreshed.json` = the 48/123 O2 headline; `full_census_results.json`;
+`ld80_census_O2.json`) — refreshing the O2 methodology is a separate deliberate re-census.
+Note O1 (68) > the O2 headline (48): O2 threads the ld80 control nests into declines, so
+O1 is the authoritative floor (bd 3c6m.51). `log10l.f80` stays DEFERRED (unmasked to its
+honest `__isnanl` early-exit value region; still declines).
+
 **⚡ DATA-SYMBOL CLOSURE + corpus completion (2026-07-18, bd 20xt).** The census
 was UNDER-MEASURING: `closure_link` chased undefined *functions* only, so
 data-only TUs never linked — ld80 atanl/asinl/acosl keep their coefficient
