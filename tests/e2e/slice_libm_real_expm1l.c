@@ -8,11 +8,26 @@
    split, a degree-4/degree-5 P/Q rational core, and the
    `2^k*qx + (2^k - 1)` reassembly through ldexpl. The overflow / x==0 /
    minarg early-exit ladder is a tainted-condition value-region chain that
-   PredMux flattens onto the select substrate; `floorl` folds to
-   @llvm.floor.f80 (a curated reversible keep-intrinsic, Rule 18) and
-   `ldexpl` resolves to scalbnl's exponent-pack union RMW (the 3c6m.51
-   promoteFp80Union multi-block shape) — which is exactly why the vuy6
-   `.set` fix mattered for this cell.
+   PredMux flattens onto the select substrate; `ldexpl` resolves to scalbnl's
+   exponent-pack union RMW (the 3c6m.51 promoteFp80Union multi-block shape) —
+   which is exactly why the vuy6 `.set` fix mattered for this cell.
+
+   KEEP-SET CALLS (bd tkju — Rule 18 ship-floor fold, NOT a body substitution):
+   floorl (the Cody-Waite round) and copysignl/copysign (scalbnl's
+   overflow/underflow arms) are HARDWARE KEEPS. At this slice's real ship floor —
+   plain `clang -O1`, builtins ON, no -fno-builtin — they fold to
+   @llvm.{floor,copysign} before codegen, so a keep has NO injectable body and
+   vendoring openlibm's software s_copysign{,l}.c here MISREPRESENTED the
+   compiled program. They are spelled __builtin_<fn>: no math.h is included, and
+   the builtin spelling names the intrinsic without a libm declaration.
+   Measured — stage 1 hands the pass 1 @llvm.floor.f80 and 12 @llvm.fmuladd.f80
+   CALL SITES (call sites, not `declare` lines; 1 floor_f80 forward trace line)
+   and NO @llvm.copysign at all: at this probe
+   clang -O1 folds scalbnl's overflow/underflow arms away, so the copysign keep
+   is present in the source and dead in the IR. The vendored copysign bodies it
+   replaces were equally dead — the trace is the same 276 lines with the same
+   per-symbol counts as before tkju; only the folded scalbnl arm shape and the
+   handle numbering moved.
 
    This slice is the LINK-layer proof (Rule 2) that every emitted i80/f80
    symbol resolves and the trace is stable+deterministic. The probe pins the
@@ -24,9 +39,9 @@
    public/`__`-prefixed entry renamed `olm_<name>` (force-inlining reproduces
    the census O1 inline-threshold shape at PLAIN -O1, recipe lesson 1); intra-body
    calls renamed to their olm_ vendored names (ldexpl→olm_scalbnl per
-   openlibm_strong_reference(scalbnl,ldexpl)); floorl written `__builtin_floorl`
-   (NEVER bare floorl — that injects the branchy s_floorl.c and declines);
-   s_expm1l.c's file-scope `huge`/`MAXLOGL` uniquified `em1_huge`/`em1_MAXLOGL`
+   openlibm_strong_reference(scalbnl,ldexpl)); the keep calls
+   floorl/copysignl/copysign written __builtin_<fn> (see KEEP-SET above — bd
+   tkju); s_expm1l.c's file-scope `huge`/`MAXLOGL` uniquified `em1_huge`/`em1_MAXLOGL`
    against s_scalbnl.c's `huge` and e_expl.c's `MAXLOGL` (identical value,
    1.1356523406294143949492E4L); its C1/C2 likewise prefixed `eC1`/`eC2` against
    e_expl.c's scalar C1/C2. Its P0-P4/Q0-Q4 carry the same `e` prefix for
@@ -34,10 +49,12 @@
    `P[3]`/`Q[4]`, which cannot clash with the scalars P0..P4/Q0..Q4 (the real
    collisions with e_expl.c are exactly C1, C2 and MAXLOGL).
    The shared ld80 closure below (ieee_extended_shape_type + GET/SET_LDOUBLE_WORDS,
-   union IEEEl2bits, olm_isnanl, olm_polevll, olm_copysign{,l}, olm_scalbnl,
-   olm_expl) is vendored BYTE-IDENTICALLY from the already-verified
-   slice_libm_real_erfl.c (lines 42-235) — the recipe's "inner body identical to
-   its own standalone verified slice" pattern (bd atan2l-verified-corpus-reclone).
+   union IEEEl2bits, olm_isnanl, olm_polevll, olm_scalbnl, olm_expl) is vendored
+   BYTE-IDENTICALLY from the already-verified slice_libm_real_erfl.c (lines
+   60-229, `#include <stdint.h>` through the close of olm_expl — the copysign
+   pair that used to sit inside that span is gone, tkju) — the recipe's "inner
+   body identical to its own standalone verified slice" pattern (bd
+   atan2l-verified-corpus-reclone).
    Both fp80 unions are kept VERBATIM — the promoteFp80Union pass owns them,
    never a memcpy word shim (3c6m.51 ld80 convention). */
 #include <stdint.h>
@@ -122,30 +139,6 @@ olm_polevll(long double x, void *PP, int n)
 
     return (y);
 }
-
-/* src/s_copysignl.c copysignl (verbatim, ld80 IEEEl2bits) + src/s_copysign.c
-   copysign (double; the GET/SET_HIGH_WORD f64 word macros expanded to the
-   recipe-sanctioned __builtin_memcpy shim — bit-exact, the same body as the
-   verified slice_libm_real_scalbn/scalbnl slices). Used only by olm_scalbnl's
-   overflow/underflow arms. */
-__attribute__((always_inline)) static inline long double
-olm_copysignl(long double x, long double y) {
-    union IEEEl2bits ux, uy;
-    ux.e = x;
-    uy.e = y;
-    ux.bits.sign = uy.bits.sign;
-    return (ux.e);
-}
-__attribute__((always_inline)) static inline double
-olm_copysign(double x, double y) {
-    uint64_t bx, by;
-    __builtin_memcpy(&bx, &x, 8);
-    __builtin_memcpy(&by, &y, 8);
-    bx = (bx & 0x7fffffffffffffffULL) | (by & 0x8000000000000000ULL);
-    __builtin_memcpy(&x, &bx, 8);
-    return x;
-}
-
 /* src/s_scalbnl.c scalbnl (verbatim; colliding tiny/huge uniquified scb_*).
    openlibm_strong_reference(scalbnl, ldexpl): ldexpl IS this body. */
 static const long double
@@ -166,13 +159,13 @@ olm_scalbnl(long double x, int n) {
     }
     if (k==0x7fff) return x+x;                  /* NaN or Inf */
     k = k+n;
-    if (k >= 0x7fff) return scb_huge*olm_copysignl(scb_huge,x); /* overflow  */
+    if (k >= 0x7fff) return scb_huge*__builtin_copysignl(scb_huge,x); /* overflow  */
     if (k > 0)                                  /* normal result */
         {u.bits.exp = k; return u.e;}
     if (k <= -128) {
         if (n > 50000)                          /* in case integer overflow in n+k */
-            return scb_huge*olm_copysign(scb_huge,x);   /*overflow*/
-        else return scb_tiny*olm_copysign(scb_tiny,x);  /*underflow*/
+            return scb_huge*__builtin_copysign(scb_huge,x);   /*overflow*/
+        else return scb_tiny*__builtin_copysign(scb_tiny,x);  /*underflow*/
     }
     k += 128;                                   /* subnormal result */
     u.bits.exp = k;

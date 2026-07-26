@@ -1,83 +1,30 @@
-/* slice_libm_real_lround.c — bd 3c6m.14 / L6 Inc 1: the REAL openlibm lround
-   body (s_lround.c → round (s_round.c) → floor (s_floor.c) inlined, fdlibm-
-   derived, BSD-licensed; word macros expanded to the __builtin_memcpy idiom).
-   The double/long instantiation makes INRANGE() compile-time TRUE, so
-   lround(x) = (long)round(x) with no fenv path — exactly the census cell
-   lround.f64. The inlined chain is the deepest Increment-1 shape: a ~5-level
-   nest with two mirrored floor sub-DAGs, 6-predecessor merges carrying TWO
-   phis each (hi/lo words muxed under shared edge predicates), fcmp conditions
-   (the huge+x inexact-raise idiom), fneg, and the post-merge fptosi. PredMux
-   flattens the whole DAG; the select/conjunction substrate lowers it; this
-   slice is the LINK-layer proof (Rule 2). */
+/* slice_libm_real_lround.c — bd 3c6m.14 / L6 Inc 1, keep-route corrected by
+   bd tkju: the REAL openlibm lround body (src/s_lround.c at the double/long
+   instantiation, fdlibm-derived, BSD-licensed), census cell lround.f64.
+   INRANGE() is compile-time TRUE there, so the whole function is
+   lround(x) = (long)round(x) — no fenv path; that test is folded BY HAND in the
+   body below, with the argument and the corpus-IR confirmation in its comment.
+   lround itself is a LIBRARY function and stays vendored as SOURCE (Rule 18).
+
+   KEEP-SET CALL (Rule 18 ship-floor fold, NOT a body substitution): `round` is
+   a HARDWARE KEEP. At the real ship floor (plain clang -O1, builtins ON) the
+   named call folds to @llvm.round.f64 before codegen and cq-lowering rewrites
+   that to cq_template_round_f64; `__builtin_round` emits exactly that construct
+   and needs no libm declaration. A keep has no injectable body, so the software
+   s_round.c / s_floor.c ladders this slice used to vendor modelled a program the
+   ship floor never compiles — deleted (bd tkju). (<stdint.h> is now vestigial:
+   nothing in the surviving text uses a fixed-width type.)
+
+   WHAT IT PROVES (measured on the committed golden): the 5-line trace
+   cqrt_alloc_f64 · cqrt_ry_f64 · cq_template_round_f64 ·
+   cq_template_fptosi_f64_to_i64 · cqrt_measure_i64 — the keep route plus the
+   trailing narrowing, LINK-layer (Rule 2). It proves strictly LESS than before,
+   and deliberately so: the vendored ladders were the only tainted control flow
+   in the slice, so the trace drops 1564 → 5 lines (cqrt_free 364 → 0,
+   cqrt_toffoli 350 → 0, cqrt_alloc_i1 175 → 0, cqrt_alloc_f64 13 → 1) and this
+   slice no longer exercises PredMux at all. PredMux coverage has to come from
+   slices whose census cell really is an injectable library function. */
 #include <stdint.h>
-
-static const double fl_huge = 1.0e300;
-
-__attribute__((always_inline)) static inline double olm_floor(double x) {
-    int32_t i0, i1, j0;
-    uint32_t i, j;
-    uint64_t bits;
-    __builtin_memcpy(&bits, &x, 8);                      /* EXTRACT_WORDS */
-    i0 = (int32_t)(bits >> 32);
-    i1 = (int32_t)bits;
-    j0 = ((i0 >> 20) & 0x7ff) - 0x3ff;
-    if (j0 < 20) {
-        if (j0 < 0) {                                    /* |x| < 1 */
-            if (fl_huge + x > 0.0) {                     /* raise inexact */
-                if (i0 >= 0) { i0 = i1 = 0; }
-                else if (((i0 & 0x7fffffff) | i1) != 0) { i0 = 0xbff00000; i1 = 0; }
-            }
-        } else {
-            i = (0x000fffff) >> j0;
-            if (((i0 & i) | i1) == 0) return x;          /* x is integral */
-            if (fl_huge + x > 0.0) {                     /* raise inexact */
-                if (i0 < 0) i0 += (0x00100000) >> j0;
-                i0 &= (~i); i1 = 0;
-            }
-        }
-    } else if (j0 > 51) {
-        if (j0 == 0x400) return x + x;                   /* inf or NaN */
-        else return x;                                   /* x is integral */
-    } else {
-        i = ((uint32_t)(0xffffffff)) >> (j0 - 20);
-        if ((i1 & i) == 0) return x;                     /* x is integral */
-        if (fl_huge + x > 0.0) {                         /* raise inexact */
-            if (i0 < 0) {
-                if (j0 == 20) i0 += 1;
-                else {
-                    j = i1 + (1 << (52 - j0));
-                    if (j < (uint32_t)i1) i0 += 1;       /* got a carry */
-                    i1 = j;
-                }
-            }
-            i1 &= (~i);
-        }
-    }
-    bits = ((uint64_t)(uint32_t)i0 << 32) | (uint32_t)i1; /* INSERT_WORDS */
-    __builtin_memcpy(&x, &bits, 8);
-    return x;
-}
-
-__attribute__((always_inline)) static inline double olm_round(double x) {
-    double t;
-    uint32_t hx;
-    uint64_t bits;
-    __builtin_memcpy(&bits, &x, 8);                      /* GET_HIGH_WORD */
-    hx = (uint32_t)(bits >> 32);
-    if ((hx & 0x7fffffff) == 0x7ff00000)
-        return (x + x);
-    if (!(hx & 0x80000000)) {
-        t = olm_floor(x);
-        if (t - x <= -0.5)
-            t += 1;
-        return (t);
-    } else {
-        t = olm_floor(-x);
-        if (t + x <= -0.5)
-            t += 1;
-        return (-t);
-    }
-}
 
 __attribute__((always_inline)) static inline long olm_lround(double x) {
     /* openlibm s_lround.c: INRANGE(x) = (dtype_max - DTYPE_MAX != 0.5 ||
@@ -90,7 +37,7 @@ __attribute__((always_inline)) static inline long olm_lround(double x) {
        "or TRUE otherwise" case). Empirically confirmed: the census-inlined
        s_lround.c IR (scratchpad ir8/lround_inl.ll) contains no range compare
        and no fenv call — round + fptosi only, exactly this body. */
-    return (long)olm_round(x);
+    return (long)__builtin_round(x);
 }
 
 long slice(void) {

@@ -2,7 +2,19 @@
  * Vendored REAL openlibm source:
  *   entry: /private/tmp/openlibm/src/e_log2f.c  (__ieee754_log2f)
  *   dep:   /private/tmp/openlibm/src/k_logf.h    (k_log1pf)
+ * That is the whole closure — the vendored text calls nothing but other
+ * vendored text (the stage-1 IR's only external declares are @cq_theta_f32 /
+ * @cq_measure_f32 and the @llvm.fmuladd.f32 keep).
  * bd 3c6m.53 — injection-covered -> VERIFIED (Rule 2 link proof, Rule 18 real-source injection).
+ *
+ * KEEP-SET (Rule 18 ship-floor fold, NOT a body substitution; bd tkju): the
+ * unreferenced fabs/copysign shim helpers this file used to carry are deleted —
+ * both are HARDWARE KEEPS with no injectable body, so a vendored software shim
+ * models a program the ship floor never compiles. They were dead text here and
+ * the golden is BYTE-IDENTICAL across the deletion (measured). The only keep
+ * construct reaching the pass is clang's own: at plain -O1 fp-contract fuses
+ * 4 @llvm.fmuladd.f32, lowered 1:1 to the golden's 4 cq_template_fma_f32*
+ * calls.
  */
 #include <stdint.h>
 typedef uint32_t u_int32_t;
@@ -17,11 +29,6 @@ typedef uint64_t u_int64_t;
 #define INSERT_WORDS(d,hi,lo)  do{ uint64_t __w=((uint64_t)(uint32_t)(hi)<<32)|(uint32_t)(lo); __builtin_memcpy(&(d),&__w,8); }while(0)
 #define GET_FLOAT_WORD(i,d)    do{ uint32_t __w; __builtin_memcpy(&__w,&(d),4); (i)=(int32_t)__w; }while(0)
 #define SET_FLOAT_WORD(d,i)    do{ uint32_t __w=(uint32_t)(i); __builtin_memcpy(&(d),&__w,4); }while(0)
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 /* ---- vendored from k_logf.h ---- */
 static const float
 /* |(log(1+s)-log(1-s))/s - Lg(s)| < 2**-34.24 (~[-4.95e-11, 4.97e-11]). */

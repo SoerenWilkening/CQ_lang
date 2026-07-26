@@ -3,10 +3,11 @@
    the 20xt.1 general funnel-shift 7.1 axis): the REAL openlibm erfcl body
    (ld80/s_erfl.c) over its full transcendental closure — the pp/qq/pa/qa/ra/sa/
    rb/sb/rc/sc coefficient tables, the inner expl (ld80/e_expl.c, called TWICE in
-   the asymptotic arm), and expl's own closure __isnanl (src/s_isnan.c) /
-   __polevll (src/polevll.c) / ldexpl==scalbnl (src/s_scalbnl.c) / floorl+fabsl
-   (hardware-backed keep-intrinsics) — over x86_fp80 `long double`. erfcl is the
-   sibling entry of erfl in s_erfl.c (shares every coefficient table); it adds
+   the asymptotic arm), and expl's own SOFTWARE closure __isnanl (src/s_isnan.c)
+   / __polevll (src/polevll.c) / ldexpl==scalbnl (src/s_scalbnl.c) — over
+   x86_fp80 `long double`; fabsl/floorl/copysign{,l} are NOT vendored, they are
+   hardware keeps (KEEP-SET below). erfcl is the sibling entry of erfl in
+   s_erfl.c (shares every coefficient table); it adds
    the extra [1.25,107] / >=107 asymptotic bands and the `two - r/x` /
    `half - r` complement forms. FreeBSD/OpenBSD/fdlibm-derived, BSD-licensed.
 
@@ -18,17 +19,36 @@
    the multi-block 3c6m.51 Shadow store), the fp80 data selects of the |x|
    range-band dispatch flattened by PredMux + carried by the kjd1 fp-select
    controlled-copy family, the const-index coefficient reads (all const-fold — NO
-   QROM), and the two full expl inlines. fabsl/floorl fold to @llvm.fabs.f80 /
-   @llvm.floor.f80 (curated reversible keep-intrinsics, Rule 18); fmuladd rides
-   @llvm.fmuladd.f80. The probe pins the census cell erfcl.f80: x = theta-tainted.
+   QROM), and the two full expl inlines. fmuladd rides @llvm.fmuladd.f80. The
+   probe pins the census cell erfcl.f80: x = theta-tainted.
    Data-closure/funnel history: bd memories ld80-census-data-closure,
    ld80-fshl-funnel-erfl-erfcl.
+
+   KEEP-SET CALLS (bd tkju — Rule 18 ship-floor fold, NOT a body substitution):
+   fabsl (erfcl's |x| sites), floorl (expl's Cody-Waite round) and
+   copysignl/copysign (scalbnl's overflow/underflow arms) are HARDWARE KEEPS. At
+   this slice's real ship floor — plain `clang -O1`, builtins ON, no
+   -fno-builtin — they fold to @llvm.{fabs,floor,copysign} before codegen, so a
+   keep has NO injectable body and vendoring openlibm's software s_copysign{,l}.c
+   here MISREPRESENTED the compiled program. They are spelled __builtin_<fn>: no
+   math.h is included, and the builtin spelling names the intrinsic without a
+   libm declaration. Measured — stage 1 hands the pass 2 @llvm.fabs.f80,
+   2 @llvm.floor.f80, 4 @llvm.copysign.f80, 4 @llvm.copysign.f64 and
+   74 @llvm.fmuladd.f80 CALL SITES (call sites, not `declare` lines), and every
+   one lowers to its cq_template_<fn>_<W>. The
+   trace is a dynamic gate log, so it carries 2 fabs_f80 / 2 floor_f80 /
+   4 copysign_f80_lh / 4 copysign_f64_lh forward lines. Dropping the two vendored copysign bodies took the trace from
+   2724 to 2686 lines: the f64 shim's bitcast_f64_to_i64/bitcast_i64_to_f64
+   pairs vanish outright and the ld80 body's sign-field word traffic drops
+   (lshr_i80_hl 26->22, or_i64_hl 7->1, and_i64_hl 25->19), so this slice no
+   longer covers the word-level copysign shape — only the keep route.
 
    Mechanical edits ONLY (libm-real-slice-recipe; NO constant/branch/expression
    changed): identical vendored closure to slice_libm_real_erfl.c (the shared
    s_erfl.c file-scope closure); every vendored function `__attribute__((
-   always_inline)) static inline` with `olm_<name>` entry; fabsl/floorl written
-   `__builtin_fabsl`/`__builtin_floorl`, INFINITY `__builtin_infl()`; intra-body
+   always_inline)) static inline` with `olm_<name>` entry; the keep calls
+   fabsl/floorl/copysignl/copysign written __builtin_<fn>, INFINITY
+   `__builtin_infl()`; intra-body
    calls renamed olm_ (ldexpl→olm_scalbnl per openlibm_strong_reference; isnan→
    olm_isnanl; __polevll→olm_polevll); s_scalbnl.c's colliding tiny/huge
    uniquified scb_tiny/scb_huge. Both fp80 unions kept VERBATIM (promoteFp80Union
@@ -115,30 +135,6 @@ olm_polevll(long double x, void *PP, int n)
 
     return (y);
 }
-
-/* src/s_copysignl.c copysignl (verbatim, ld80 IEEEl2bits) + src/s_copysign.c
-   copysign (double; the GET/SET_HIGH_WORD f64 word macros expanded to the
-   recipe-sanctioned __builtin_memcpy shim — bit-exact, the same body as the
-   verified slice_libm_real_scalbn/scalbnl slices). Used only by olm_scalbnl's
-   overflow/underflow arms. */
-__attribute__((always_inline)) static inline long double
-olm_copysignl(long double x, long double y) {
-    union IEEEl2bits ux, uy;
-    ux.e = x;
-    uy.e = y;
-    ux.bits.sign = uy.bits.sign;
-    return (ux.e);
-}
-__attribute__((always_inline)) static inline double
-olm_copysign(double x, double y) {
-    uint64_t bx, by;
-    __builtin_memcpy(&bx, &x, 8);
-    __builtin_memcpy(&by, &y, 8);
-    bx = (bx & 0x7fffffffffffffffULL) | (by & 0x8000000000000000ULL);
-    __builtin_memcpy(&x, &bx, 8);
-    return x;
-}
-
 /* src/s_scalbnl.c scalbnl (verbatim; colliding tiny/huge uniquified scb_*).
    openlibm_strong_reference(scalbnl, ldexpl): ldexpl IS this body. */
 static const long double
@@ -159,13 +155,13 @@ olm_scalbnl(long double x, int n) {
     }
     if (k==0x7fff) return x+x;                  /* NaN or Inf */
     k = k+n;
-    if (k >= 0x7fff) return scb_huge*olm_copysignl(scb_huge,x); /* overflow  */
+    if (k >= 0x7fff) return scb_huge*__builtin_copysignl(scb_huge,x); /* overflow  */
     if (k > 0)                                  /* normal result */
         {u.bits.exp = k; return u.e;}
     if (k <= -128) {
         if (n > 50000)                          /* in case integer overflow in n+k */
-            return scb_huge*olm_copysign(scb_huge,x);   /*overflow*/
-        else return scb_tiny*olm_copysign(scb_tiny,x);  /*underflow*/
+            return scb_huge*__builtin_copysign(scb_huge,x);   /*overflow*/
+        else return scb_tiny*__builtin_copysign(scb_tiny,x);  /*underflow*/
     }
     k += 128;                                   /* subnormal result */
     u.bits.exp = k;

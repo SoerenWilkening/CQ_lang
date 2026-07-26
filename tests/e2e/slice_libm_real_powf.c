@@ -13,8 +13,11 @@
                           injected as source, never name-recognized. Reused
                           BYTE-IDENTICALLY from the sibling slice
                           tests/e2e/slice_libm_real_scalbnf.c (bd 3c6m.53),
-                          together with that slice's word-macro, fabs and
-                          copysign shim prelude.
+                          together with that slice's word-macro prelude —
+                          re-measured byte-identical after the bd tkju keep
+                          rewrite, which in BOTH slices respelled copysignf as
+                          the keep builtin and dropped the olm_fabs/olm_fabsf/
+                          olm_copysign/olm_copysignf shim block.
                           CAVEAT — do NOT restate this as "the real body", and
                           do not propagate that phrasing to sibling cells: the
                           portable C in src/s_scalbnf.c is NOT what openlibm
@@ -71,18 +74,17 @@
             in openlibm's SOFTWARE e_sqrtf normalize loop — that is exactly the
             harness bug this ticket fixes.)
          fabsf(x)            ->  __builtin_fabsf(x)
+         copysignf(v,x)      ->  __builtin_copysignf(v,x)
+           (the 3 sites in olm_scalbnf's overflow/underflow arms. An earlier
+            draft instead routed them through a hand-written olm_copysignf
+            memcpy shim, inherited from the sibling 3c6m.53 scalbnf slice; a
+            shim is a SOFTWARE body for a keep, i.e. the same Rule-18
+            misrepresentation the sqrtf pin above exists to remove, so it was
+            deleted and the sites keep-routed with it — bd tkju.)
        scalbnf is NOT in the keep set and is therefore vendored, not builtin'd.
-     - DEVIATION from the keep-set rule just stated, declared here so it is not
-       mistaken for an oversight: copysign IS in the Rule-18 keep set, so the
-       copysignf calls inside olm_scalbnf would by that rule have been route-
-       pinned to __builtin_copysignf exactly like sqrtf and fabsf. They were
-       NOT. They stay routed through the hand-written olm_copysignf memcpy
-       shim, byte-identical to the sibling 3c6m.53 scalbnf slice and bit-exact
-       to src/s_copysignf.c ((ix&0x7fffffff)|(iy&0x80000000)). This under-
-       claims rather than over-claims — a hand-written shim lowers as stock
-       tainted opcodes and asserts no keep route — and it is moot in this cell
-       because olm_scalbnf is dead-stripped before cq-lowering, so no copysign
-       path reaches the golden at all.
+       The copysignf fix does not move this cell's golden — 152 trace lines
+       before and after, byte-identical — because olm_scalbnf is dead-stripped
+       before cq-lowering, so no copysign path reaches the golden at all.
 
    PROBE: arg0 tainted, arg1 the classical literal 0.5f —
    cq_measure_f32(olm_powf(q, 0.5f)).
@@ -142,11 +144,6 @@ typedef uint64_t u_int64_t;
 /* nan_mix, from math_private.h:249 — identical token stream; the single byte
    that differs is the whitespace after `#define` (tab in corpus, space here). */
 #define nan_mix(x, y)	(((x) + 0.0L) + ((y) + 0))
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 /* ---- vendored from src/s_scalbnf.c (byte-identical to the verified
    tests/e2e/slice_libm_real_scalbnf.c vendoring; also supplies huge/tiny) ---- */
 static const float
@@ -170,13 +167,13 @@ olm_scalbnf (float x, int n)
 	    }
         if (k==0xff) return x+x;		/* NaN or Inf */
         k = k+n;
-        if (k >  0xfe) return huge*olm_copysignf(huge,x); /* overflow  */
+        if (k >  0xfe) return huge*__builtin_copysignf(huge,x); /* overflow  */
         if (k > 0) 				/* normal result */
 	    {SET_FLOAT_WORD(x,(ix&0x807fffff)|(k<<23)); return x;}
         if (k <= -25) {
             if (n > 50000) 	/* in case integer overflow in n+k */
-		return huge*olm_copysignf(huge,x);	/*overflow*/
-	    else return tiny*olm_copysignf(tiny,x);	/*underflow*/
+		return huge*__builtin_copysignf(huge,x);	/*overflow*/
+	    else return tiny*__builtin_copysignf(tiny,x);	/*underflow*/
         }
 	k += 25;				/* subnormal result */
 	SET_FLOAT_WORD(x,(ix&0x807fffff)|(k<<23));

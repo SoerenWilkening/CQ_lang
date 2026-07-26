@@ -1,5 +1,18 @@
 /* slice_libm_real_logbf.c — REAL openlibm logbf (f32) census cell logbf.f32.
- * Vendored verbatim from openlibm src/s_logbf.c (self-contained). bd 3c6m.53. */
+ * Vendored verbatim from openlibm src/s_logbf.c (self-contained), fabsf spelled
+ * __builtin_fabsf. bd 3c6m.53.
+ *
+ * KEEP-SET CALL (Rule 18 ship-floor fold, NOT a body substitution; bd tkju):
+ * fabsf is a HARDWARE KEEP and is NOT vendored — at the real ship floor (plain
+ * clang -O1, builtins ON) it folds to @llvm.fabs.f32 before codegen and
+ * cq-lowering rewrites that to cq_template_fabs_f32. The preamble's earlier
+ * software fabs/fabsf/copysign/copysignf shims are deleted: MEASURED, the fabsf
+ * shim already folded to the same @llvm.fabs.f32 at -O1 and the other three had
+ * no call site at all, so the deletion is IR-invisible — 2 cq_template_fabs_f32
+ * before and after, 61-line golden byte-identical. Those 2 come mostly from
+ * clang, not from the one source fabsf: -O1 canonicalizes each
+ * `ix &= 0x7fffffff` word mask into @llvm.fabs.f32 + bitcast (once for x, once
+ * for x*2**25), and the source's own -1.0/fabsf(x) shares the first of them. */
 #include <stdint.h>
 typedef uint32_t u_int32_t;
 typedef uint64_t u_int64_t;
@@ -13,11 +26,6 @@ typedef uint64_t u_int64_t;
 #define INSERT_WORDS(d,hi,lo)  do{ uint64_t __w=((uint64_t)(uint32_t)(hi)<<32)|(uint32_t)(lo); __builtin_memcpy(&(d),&__w,8); }while(0)
 #define GET_FLOAT_WORD(i,d)    do{ uint32_t __w; __builtin_memcpy(&__w,&(d),4); (i)=(int32_t)__w; }while(0)
 #define SET_FLOAT_WORD(d,i)    do{ uint32_t __w=(uint32_t)(i); __builtin_memcpy(&(d),&__w,4); }while(0)
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 static const float
 two25 = 3.355443200e+07;		/* 0x4c000000 */
 
@@ -27,7 +35,7 @@ olm_logbf(float x)
 	int32_t ix;
 	GET_FLOAT_WORD(ix,x);
 	ix &= 0x7fffffff;			/* high |x| */
-	if(ix==0) return (float)-1.0/olm_fabsf(x);
+	if(ix==0) return (float)-1.0/__builtin_fabsf(x);
 	if(ix>=0x7f800000) return x*x;
 	if(ix<0x00800000) {
 		x *= two25;		 /* convert subnormal x to normal */

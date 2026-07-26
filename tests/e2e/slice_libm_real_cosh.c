@@ -1,6 +1,6 @@
 /* slice_libm_real_cosh.c — bd 3c6m.53: the REAL openlibm cosh body
    (e_cosh.c → expm1 (s_expm1.c) → __ieee754_exp (e_exp.c) → __ldexp_exp/
-   __frexp_exp (k_exp.c) → fabs (shim), fdlibm-derived, BSD-licensed;
+   __frexp_exp (k_exp.c), fdlibm-derived, BSD-licensed;
    verbatim algorithms with the math_private.h word macros expanded to the
    __builtin_memcpy idiom clang -O1 folds to the same bitcast IR the taint
    pass lowers). This promotes the census cell cosh.f64 from injection-covered
@@ -10,7 +10,17 @@
    olm_ldexp_exp are vendored from k_exp.c. cosh's five |x|-arm dispatch nests
    over the tainted x flatten via PredMux. The file-scope `one` (1.0) and
    `huge` (1.0e300) are identical across e_cosh.c / e_exp.c / s_expm1.c and are
-   deduplicated to a single definition each (same name, same value). */
+   deduplicated to a single definition each (same name, same value).
+
+   KEEP-SET CALLS (Rule 18 ship-floor fold, NOT a body substitution; bd tkju):
+     e_cosh.c's fabs(x) sites are spelled __builtin_fabs. fabs is a HARDWARE
+     KEEP — at the real ship floor (plain clang -O1, builtins ON) it folds to
+     @llvm.fabs.f64 before codegen and cq-lowering rewrites that to
+     cq_template_fabs_f64, 4 of which the committed golden carries. A keep has
+     no injectable body, so the memcpy+and-mask fabs shim this slice used to
+     vendor MISREPRESENTED the ship floor. That shim already folded to
+     @llvm.fabs at -O1 (measured), so deleting it left the lowered IR and the
+     golden byte-identical — 7663 trace lines before and after. */
 #include <stdint.h>
 typedef uint32_t u_int32_t;
 typedef uint64_t u_int64_t;
@@ -24,11 +34,6 @@ typedef uint64_t u_int64_t;
 #define INSERT_WORDS(d,hi,lo)  do{ uint64_t __w=((uint64_t)(uint32_t)(hi)<<32)|(uint32_t)(lo); __builtin_memcpy(&(d),&__w,8); }while(0)
 #define GET_FLOAT_WORD(i,d)    do{ uint32_t __w; __builtin_memcpy(&__w,&(d),4); (i)=(int32_t)__w; }while(0)
 #define SET_FLOAT_WORD(d,i)    do{ uint32_t __w=(uint32_t)(i); __builtin_memcpy(&(d),&__w,4); }while(0)
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 /* ---- shared file-scope constants (identical across e_cosh / e_exp / s_expm1) ---- */
 static const double one = 1.0, huge = 1.0e300;
 
@@ -286,7 +291,7 @@ olm_cosh(double x)
 
     /* |x| in [0,0.5*ln2], return 1+expm1(|x|)^2/(2*exp(|x|)) */
 	if(ix<0x3fd62e43) {
-	    t = olm_expm1(olm_fabs(x));
+	    t = olm_expm1(__builtin_fabs(x));
 	    w = one+t;
 	    if (ix<0x3c800000) return w;	/* cosh(tiny) = 1 */
 	    return one+(t*t)/(w+w);
@@ -294,16 +299,16 @@ olm_cosh(double x)
 
     /* |x| in [0.5*ln2,22], return (exp(|x|)+1/exp(|x|)/2; */
 	if (ix < 0x40360000) {
-		t = olm_exp(olm_fabs(x));
+		t = olm_exp(__builtin_fabs(x));
 		return half*t+half/t;
 	}
 
     /* |x| in [22, log(maxdouble)] return half*exp(|x|) */
-	if (ix < 0x40862E42)  return half*olm_exp(olm_fabs(x));
+	if (ix < 0x40862E42)  return half*olm_exp(__builtin_fabs(x));
 
     /* |x| in [log(maxdouble), overflowthresold] */
 	if (ix<=0x408633CE)
-	    return olm_ldexp_exp(olm_fabs(x), -1);
+	    return olm_ldexp_exp(__builtin_fabs(x), -1);
 
     /* |x| > overflowthresold, cosh(x) overflow */
 	return huge*huge;

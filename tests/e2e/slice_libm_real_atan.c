@@ -1,5 +1,5 @@
 /* slice_libm_real_atan.c — bd 3c6m.14 / L6 Inc 3: the REAL openlibm atan
-   body (s_atan.c → fabs (s_fabs.c), fdlibm-derived, BSD-licensed; verbatim
+   body (openlibm src/s_atan.c, fdlibm-derived, BSD-licensed; verbatim
    algorithms with the math_private.h word macros expanded to the
    __builtin_memcpy idiom clang -O1 folds to the same bitcast IR). The census
    cell atan.f64 exercises TWO Inc-3 mechanisms: (a) the volatile-CAST
@@ -11,6 +11,20 @@
    known-bits-unprovable, and the pow2 table takes the `and idx, 3` mask
    (identity on the id≥0 paths; the id=−1 basis states read a garbage row the
    merge predicate discards — those paths return `x - x*(s1+s2)` instead).
+
+   KEEP-SET CALLS (Rule 18 ship-floor fold, NOT a body substitution; bd tkju):
+   s_atan.c's only call is fabs, a HARDWARE KEEP — at the real ship floor
+   (plain clang -O1, builtins ON) it folds to @llvm.fabs.f64 before codegen and
+   cq-lowering rewrites that to cq_template_fabs_f64, so the site is spelled
+   __builtin_fabs and s_fabs.c is NOT vendored (a keep has no injectable body;
+   vendoring one would model a program the ship floor never compiles). The
+   earlier draft's software fabs shim is deleted: MEASURED, that shim already
+   folded to the same @llvm.fabs.f64 at -O1, so the deletion is IR-invisible —
+   1 cq_template_fabs_f64 before and after, 659-line golden byte-identical.
+   fma is the other keep here (clang's default fp-contract fuses the argument
+   reduction and the aT[] Horner products): 4 cq_template_fma_f64_qll + 7 _qql
+   + 2 cq_template_fma_f64, measured on the golden.
+
    PredMux flattens the classification nest + the guarded reads; the shipped
    substrate lowers it; this slice is the LINK-layer proof (Rule 2). */
 #include <stdint.h>
@@ -44,16 +58,6 @@ static const double aT[] = {
 };
 
 static const double one = 1.0, at_huge = 1.0e300;
-
-__attribute__((always_inline)) static inline double olm_fabs(double x) {
-    uint64_t bits;
-    __builtin_memcpy(&bits, &x, 8);                      /* GET_HIGH_WORD */
-    bits = (bits & 0xffffffffULL) |
-           ((uint64_t)((uint32_t)(bits >> 32) & 0x7fffffff) << 32);
-    __builtin_memcpy(&x, &bits, 8);                      /* SET_HIGH_WORD */
-    return x;
-}
-
 __attribute__((always_inline)) static inline double olm_atan(double x) {
     double w, s1, s2, z;
     int32_t ix, hx, id;
@@ -77,7 +81,7 @@ __attribute__((always_inline)) static inline double olm_atan(double x) {
         }
         id = -1;
     } else {
-    x = olm_fabs(x);
+    x = __builtin_fabs(x);
     if (ix < 0x3ff30000) {          /* |x| < 1.1875 */
         if (ix < 0x3fe60000) {      /* 7/16 <=|x|<11/16 */
             id = 0; x = (2.0 * x - one) / (2.0 + x);

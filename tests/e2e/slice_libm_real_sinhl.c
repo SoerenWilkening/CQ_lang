@@ -2,7 +2,7 @@
    (ld80/e_sinhl.c, fdlibm/OpenBSD-derived, BSD-licensed) over its full ld80
    closure — BOTH inner kernels, expm1l (ld80/s_expm1l.c) for the small-|x|
    band and expl (ld80/e_expl.c) for the two large-|x| bands, plus expl's own
-   closure (__isnanl, __polevll, ldexpl==scalbnl, floorl) — over x86_fp80
+   SOFTWARE closure (__isnanl, __polevll, ldexpl==scalbnl) — over x86_fp80
    `long double`. Census cell sinhl.f80.
 
    This is the one cell in the bd 3c6m.58 sweep whose census status is
@@ -26,8 +26,26 @@
    with inexact.) Every band boundary is a tainted compare on
    the extracted exponent/mantissa words, so the body is a multi-band value-region
    chain PredMux flattens onto the select substrate, with the fp80 selects
-   carried by the kjd1 cqrt_copy_f80_controlled family. `fabsl` folds to
-   @llvm.fabs.f80 (a curated reversible keep-intrinsic, Rule 18).
+   carried by the kjd1 cqrt_copy_f80_controlled family.
+
+   KEEP-SET CALLS (bd tkju — Rule 18 ship-floor fold, NOT a body substitution):
+   fabsl (sinhl's |x| sites), floorl (expl's and expm1l's Cody-Waite round) and
+   copysignl/copysign (scalbnl's overflow/underflow arms) are HARDWARE KEEPS. At
+   this slice's real ship floor — plain `clang -O1`, builtins ON, no
+   -fno-builtin — they fold to @llvm.{fabs,floor,copysign} before codegen, so a
+   keep has NO injectable body and vendoring openlibm's software s_copysign{,l}.c
+   here MISREPRESENTED the compiled program. They are spelled __builtin_<fn>: no
+   math.h is included, and the builtin spelling names the intrinsic without a
+   libm declaration. Measured — stage 1 hands the pass 3 @llvm.fabs.f80,
+   3 @llvm.floor.f80, 4 @llvm.copysign.f80, 4 @llvm.copysign.f64 and
+   23 @llvm.fmuladd.f80 CALL SITES (call sites, not `declare` lines), and every
+   one lowers to its cq_template_<fn>_<W>. The
+   trace is a dynamic gate log, so it carries 3 fabs_f80 / 3 floor_f80 /
+   4 copysign_f80_lh / 4 copysign_f64_lh forward lines. Dropping the two
+   vendored copysign bodies took the trace from 2741 to 2703 lines: the f64 shim's bitcast_f64_to_i64/bitcast_i64_to_f64
+   pairs vanish outright and the ld80 body's sign-field word traffic drops
+   (lshr_i80_hl 24->20, or_i80_hl 6->2, and_i64_hl 24->18), so this slice no
+   longer covers the word-level copysign shape — only the keep route.
 
    This slice is the LINK-layer proof (Rule 2) that every emitted i80/f80
    symbol resolves and the trace is stable+deterministic. The probe pins the
@@ -38,10 +56,10 @@
    marked `__attribute__((always_inline)) static inline` with its
    public/`__`-prefixed entry renamed `olm_<name>`; intra-body calls renamed to
    their olm_ vendored names (expm1l→olm_expm1l, expl→olm_expl, ldexpl→
-   olm_scalbnl per openlibm_strong_reference(scalbnl,ldexpl)); fabsl and floorl
-   written `__builtin_fabsl`/`__builtin_floorl` (NEVER the bare names — those
-   inject the branchy s_floorl.c and decline); e_sinhl.c's file-scope
-   `one`/`shuge` uniquified `sh_one`/`sh_shuge`, and s_expm1l.c's
+   olm_scalbnl per openlibm_strong_reference(scalbnl,ldexpl)); the keep calls
+   fabsl/floorl/copysignl/copysign written __builtin_<fn> (see KEEP-SET above —
+   bd tkju); e_sinhl.c's file-scope `one`/`shuge` uniquified
+   `sh_one`/`sh_shuge`, and s_expm1l.c's
    `huge`/`MAXLOGL` uniquified `em1_huge`/`em1_MAXLOGL` against s_scalbnl.c's
    `huge` and e_expl.c's `MAXLOGL` (identical value); s_expm1l.c's
    C1/C2 prefixed `eC1`/`eC2` against e_expl.c's scalar C1/C2 (its P0-P4/Q0-Q4
@@ -49,9 +67,11 @@
    the ARRAYS P[3]/Q[4]; the real collisions are exactly C1, C2 and MAXLOGL).
    The shared ld80 closure below (ieee_extended_shape_type +
    GET/SET_LDOUBLE_WORDS, union IEEEl2bits, olm_isnanl, olm_polevll,
-   olm_copysign{,l}, olm_scalbnl, olm_expl) is vendored BYTE-IDENTICALLY from the
-   already-verified slice_libm_real_erfl.c (lines 42-235), and olm_expm1l
-   BYTE-IDENTICALLY from the sibling slice_libm_real_expm1l.c — the recipe's
+   olm_scalbnl, olm_expl) is vendored BYTE-IDENTICALLY from the already-verified
+   slice_libm_real_erfl.c (lines 60-229, `#include <stdint.h>` through the close
+   of olm_expl — the copysign pair that used to sit inside that span is gone,
+   tkju), and olm_expm1l BYTE-IDENTICALLY from the sibling
+   slice_libm_real_expm1l.c — the recipe's
    "inner body identical to its own standalone verified slice" pattern (bd
    atan2l-verified-corpus-reclone). Both fp80 unions are kept VERBATIM — the
    promoteFp80Union pass owns them, never a memcpy word shim (3c6m.51 ld80
@@ -138,30 +158,6 @@ olm_polevll(long double x, void *PP, int n)
 
     return (y);
 }
-
-/* src/s_copysignl.c copysignl (verbatim, ld80 IEEEl2bits) + src/s_copysign.c
-   copysign (double; the GET/SET_HIGH_WORD f64 word macros expanded to the
-   recipe-sanctioned __builtin_memcpy shim — bit-exact, the same body as the
-   verified slice_libm_real_scalbn/scalbnl slices). Used only by olm_scalbnl's
-   overflow/underflow arms. */
-__attribute__((always_inline)) static inline long double
-olm_copysignl(long double x, long double y) {
-    union IEEEl2bits ux, uy;
-    ux.e = x;
-    uy.e = y;
-    ux.bits.sign = uy.bits.sign;
-    return (ux.e);
-}
-__attribute__((always_inline)) static inline double
-olm_copysign(double x, double y) {
-    uint64_t bx, by;
-    __builtin_memcpy(&bx, &x, 8);
-    __builtin_memcpy(&by, &y, 8);
-    bx = (bx & 0x7fffffffffffffffULL) | (by & 0x8000000000000000ULL);
-    __builtin_memcpy(&x, &bx, 8);
-    return x;
-}
-
 /* src/s_scalbnl.c scalbnl (verbatim; colliding tiny/huge uniquified scb_*).
    openlibm_strong_reference(scalbnl, ldexpl): ldexpl IS this body. */
 static const long double
@@ -182,13 +178,13 @@ olm_scalbnl(long double x, int n) {
     }
     if (k==0x7fff) return x+x;                  /* NaN or Inf */
     k = k+n;
-    if (k >= 0x7fff) return scb_huge*olm_copysignl(scb_huge,x); /* overflow  */
+    if (k >= 0x7fff) return scb_huge*__builtin_copysignl(scb_huge,x); /* overflow  */
     if (k > 0)                                  /* normal result */
         {u.bits.exp = k; return u.e;}
     if (k <= -128) {
         if (n > 50000)                          /* in case integer overflow in n+k */
-            return scb_huge*olm_copysign(scb_huge,x);   /*overflow*/
-        else return scb_tiny*olm_copysign(scb_tiny,x);  /*underflow*/
+            return scb_huge*__builtin_copysign(scb_huge,x);   /*overflow*/
+        else return scb_tiny*__builtin_copysign(scb_tiny,x);  /*underflow*/
     }
     k += 128;                                   /* subnormal result */
     u.bits.exp = k;

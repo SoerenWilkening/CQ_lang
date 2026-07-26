@@ -1,6 +1,17 @@
 /* CQ_lang e2e verification slice — census cell exp2f.f32 (bd 3c6m.53)
-   Vendors the REAL openlibm exp2f body from src/s_exp2f.c (self-contained).
-   arg0 tainted (cq_theta); real-source injection per Rule 18. */
+   Vendors the REAL openlibm exp2f body from src/s_exp2f.c (self-contained —
+   s_exp2f.c calls no libm helper, so nothing else is vendored).
+   arg0 tainted (cq_theta); real-source injection per Rule 18.
+
+   KEEP-SET (Rule 18 ship-floor fold, NOT a body substitution; bd tkju): the
+   unreferenced fabs/copysign shim helpers this file used to carry are deleted
+   — both are HARDWARE KEEPS with no injectable body, so a vendored software
+   shim models a program the ship floor never compiles. They were dead text
+   here and the golden is BYTE-IDENTICAL across the deletion (measured). The
+   keep constructs the pass actually sees are clang's own at plain -O1: the
+   `hx & 0x7fffffff` sign-mask test folds to 1 @llvm.fabs.f32, and fp-contract
+   fuses 4 @llvm.fmuladd.f64 (the polynomial is evaluated in double) — lowered
+   1:1 to the golden's 1 cq_template_fabs_f32 + 4 cq_template_fma_f64* calls. */
 #include <stdint.h>
 typedef uint32_t u_int32_t;
 typedef uint64_t u_int64_t;
@@ -17,11 +28,6 @@ typedef uint64_t u_int64_t;
    assignment (no volatile temp) — this is the target-faithful expansion. */
 #define STRICT_ASSIGN(type, lval, rval) ((lval) = (rval))
 #define SET_FLOAT_WORD(d,i)    do{ uint32_t __w=(uint32_t)(i); __builtin_memcpy(&(d),&__w,4); }while(0)
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 #define	TBLBITS	4
 #define	TBLSIZE	(1 << TBLBITS)
 

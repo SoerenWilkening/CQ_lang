@@ -9,7 +9,19 @@
    small-arg path, the 0.5*exp(|x|) mid path, and the __ldexp_exp large-arg
    path — the deepest combined DAG under a tainted top-level |x| split. This
    slice is the LINK-layer proof (Rule 2) promoting the census cell sinh.f64
-   from injection-covered to VERIFIED (Rule 18 real-source injection). */
+   from injection-covered to VERIFIED (Rule 18 real-source injection).
+
+   KEEP-SET CALLS (Rule 18 ship-floor fold, NOT a body substitution; bd tkju):
+     e_sinh.c's fabs(x) sites are spelled __builtin_fabs. fabs is a HARDWARE
+     KEEP — at the real ship floor (plain clang -O1, builtins ON) it folds to
+     @llvm.fabs.f64 before codegen and cq-lowering rewrites that to
+     cq_template_fabs_f64, 3 of which the committed golden carries. A keep has
+     no injectable body, so the memcpy+and-mask fabs shim this slice used to
+     vendor MISREPRESENTED the ship floor. That shim already folded to
+     @llvm.fabs at -O1 (measured), so deleting it left the lowered IR and the
+     golden byte-identical — 6108 trace lines before and after. The golden's
+     single cq_template_copysign_f64_lh(0.5, x) is NOT a call either: clang -O1
+     folds `h = 0.5; if (jx < 0) h = -h;` to @llvm.copysign.f64, itself a keep. */
 #include <stdint.h>
 typedef uint32_t u_int32_t;
 typedef uint64_t u_int64_t;
@@ -23,11 +35,6 @@ typedef uint64_t u_int64_t;
 #define INSERT_WORDS(d,hi,lo)  do{ uint64_t __w=((uint64_t)(uint32_t)(hi)<<32)|(uint32_t)(lo); __builtin_memcpy(&(d),&__w,8); }while(0)
 #define GET_FLOAT_WORD(i,d)    do{ uint32_t __w; __builtin_memcpy(&__w,&(d),4); (i)=(int32_t)__w; }while(0)
 #define SET_FLOAT_WORD(d,i)    do{ uint32_t __w=(uint32_t)(i); __builtin_memcpy(&(d),&__w,4); }while(0)
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 /* ---- shared file-scope constants (uniquified across concatenated corpus) ---- */
 static const double one = 1.0;
 static const double huge = 1.0e+300;
@@ -281,17 +288,17 @@ __attribute__((always_inline)) static inline double olm_sinh(double x) {
     if (ix < 0x40360000) {              /* |x|<22 */
         if (ix < 0x3e300000)            /* |x|<2**-28 */
             if (shuge + x > one) return x; /* sinh(tiny) = tiny with inexact */
-        t = olm_expm1(olm_fabs(x));
+        t = olm_expm1(__builtin_fabs(x));
         if (ix < 0x3ff00000) return h * (2.0 * t - t * t / (t + one));
         return h * (t + t / (t + one));
     }
 
     /* |x| in [22, log(maxdouble)] return 0.5*exp(|x|) */
-    if (ix < 0x40862E42)  return h * olm_exp(olm_fabs(x));
+    if (ix < 0x40862E42)  return h * olm_exp(__builtin_fabs(x));
 
     /* |x| in [log(maxdouble), overflowthresold] */
     if (ix <= 0x408633CE)
-        return h * 2.0 * olm_ldexp_exp(olm_fabs(x), -1);
+        return h * 2.0 * olm_ldexp_exp(__builtin_fabs(x), -1);
 
     /* |x| > overflowthresold, sinh(x) overflow */
     return x * shuge;

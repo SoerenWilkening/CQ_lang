@@ -1,6 +1,6 @@
 /* slice_libm_real_tanh.c — bd 3c6m.14 / L6 Inc 2: the REAL openlibm tanh
-   body (s_tanh.c → expm1 (s_expm1.c, inlined TWICE — once per |x| branch) →
-   fabs (s_fabs.c), fdlibm-derived, BSD-licensed; verbatim algorithms with
+   body (s_tanh.c → expm1 (s_expm1.c, inlined TWICE — once per |x| branch),
+   fdlibm-derived, BSD-licensed; verbatim algorithms with
    the math_private.h word macros expanded to the __builtin_memcpy idiom
    clang -O1 folds to the same bitcast IR). This is the Inc-2 MECHANISM cell:
    expm1's argument reduction computes `k = invln2*x + ((xsb==0)?0.5:-0.5)`
@@ -14,7 +14,19 @@
    is the LINK-layer proof, Rule 2). Beyond the i1 phi, the doubly-inlined
    expm1 brings the deepest Inc-2 DAG: ~4-level nests with 5-way return
    merges, INSERT_WORDS twopk construction from the shifted k, and the
-   filter/reduction/polynomial pipeline — all under the top-level |x| split. */
+   filter/reduction/polynomial pipeline — all under the top-level |x| split.
+
+   KEEP-SET CALLS (Rule 18 ship-floor fold, NOT a body substitution; bd tkju):
+     s_tanh.c's two fabs(x) sites (one in each arm of the |x|>=1 split) are
+     __builtin_fabs. fabs is a HARDWARE KEEP — at the real ship floor (plain
+     clang -O1, builtins ON) it folds to @llvm.fabs.f64 before codegen and
+     cq-lowering rewrites that to cq_template_fabs_f64, 1 of which the
+     committed golden carries. A keep has no injectable body, so the
+     high-word-mask fabs shim this slice used to vendor MISREPRESENTED the ship
+     floor. That shim already folded to @llvm.fabs at -O1 (measured), so
+     deleting it left the lowered IR and the golden byte-identical — 8008 trace
+     lines before and after; the i1-phi mechanism claim above is untouched by
+     the rewrite (it lives in expm1's argument reduction, not in fabs). */
 #include <stdint.h>
 
 static const double one = 1.0, two = 2.0, tiny = 1.0e-300, huge = 1.0e300;
@@ -30,16 +42,6 @@ Q2 =  1.58730158725481460165e-03, /* 3F5A01A0 19FE5585 */
 Q3 = -7.93650757867487942473e-05, /* BF14CE19 9EAADBB7 */
 Q4 =  4.00821782732936239552e-06, /* 3ED0CFCA 86E65239 */
 Q5 = -2.01099218183624371326e-07; /* BE8AFDB7 6E09C32D */
-
-__attribute__((always_inline)) static inline double olm_fabs(double x) {
-    uint64_t bits;
-    __builtin_memcpy(&bits, &x, 8);                      /* GET_HIGH_WORD */
-    bits = (bits & 0xffffffffULL) |
-           ((uint64_t)((uint32_t)(bits >> 32) & 0x7fffffff) << 32);
-    __builtin_memcpy(&x, &bits, 8);                      /* SET_HIGH_WORD */
-    return x;
-}
-
 __attribute__((always_inline)) static inline double olm_expm1(double x) {
     double y, hi, lo, c, t, e, hxs, hfx, r1, twopk;
     int32_t k, xsb;
@@ -157,10 +159,10 @@ __attribute__((always_inline)) static inline double olm_tanh(double x) {
             if (huge + x > one) return x; /* tanh(tiny) = tiny with inexact */
         }
         if (ix >= 0x3ff00000) {     /* |x|>=1 */
-            t = olm_expm1(two * olm_fabs(x));
+            t = olm_expm1(two * __builtin_fabs(x));
             z = one - two / (t + two);
         } else {
-            t = olm_expm1(-two * olm_fabs(x));
+            t = olm_expm1(-two * __builtin_fabs(x));
             z = -t / (t + two);
         }
     /* |x| >= 22, return +-1 */

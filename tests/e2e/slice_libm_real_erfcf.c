@@ -5,7 +5,18 @@
  * Mechanical edits only (Rule 18 real-source injection): renamed public/alias
  * entries to olm_-prefixed always_inline statics, deleted #include/license/
  * trailer blocks, word macros via the __builtin_memcpy shim, uniquified the
- * duplicate file-scope `one` (expf_one), fabsf/copysignf via shim helpers.
+ * duplicate file-scope `one` (expf_one), fabsf spelled __builtin_fabsf.
+ *
+ * KEEP-SET CALLS (Rule 18 ship-floor fold, NOT a body substitution; bd tkju):
+ * s_erff.c's 2 fabsf sites are a HARDWARE KEEP — at the ship floor (plain
+ * clang -O1, builtins ON) __builtin_fabsf folds to @llvm.fabs.f32 before
+ * codegen, which cq-lowering rewrites to cq_template_fabs_f32. A keep has no
+ * injectable body, so the four vendored olm_fabs/olm_fabsf/olm_copysign/
+ * olm_copysignf software shims are deleted and the golden is byte-identical
+ * across the rewrite (8843 lines). Its 3 cq_template_fabs_f32 are NOT those 2
+ * sites — both CSE into the |x| value clang already folds out of
+ * `ix = hx&0x7fffffff`; the 3 are that fold plus the same idiom in the two
+ * expf inlines.
  */
 #include <stdint.h>
 typedef uint32_t u_int32_t;
@@ -20,11 +31,6 @@ typedef uint64_t u_int64_t;
 #define INSERT_WORDS(d,hi,lo)  do{ uint64_t __w=((uint64_t)(uint32_t)(hi)<<32)|(uint32_t)(lo); __builtin_memcpy(&(d),&__w,8); }while(0)
 #define GET_FLOAT_WORD(i,d)    do{ uint32_t __w; __builtin_memcpy(&__w,&(d),4); (i)=(int32_t)__w; }while(0)
 #define SET_FLOAT_WORD(d,i)    do{ uint32_t __w=(uint32_t)(i); __builtin_memcpy(&(d),&__w,4); }while(0)
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 #define STRICT_ASSIGN(type, lval, rval) ((lval) = (rval))
 
 /* ===================== vendored from src/e_expf.c ===================== */
@@ -168,7 +174,7 @@ olm_erfcf(float x)
 	    }
 	}
 	if(ix < 0x3fa00000) {		/* 0.84375 <= |x| < 1.25 */
-	    s = olm_fabsf(x)-one;
+	    s = __builtin_fabsf(x)-one;
             P = pa0+s*(pa1+s*(pa2+s*pa3));
             Q = one+s*(qa1+s*(qa2+s*(qa3+s*qa4)));
 	    if(hx>=0) {
@@ -178,7 +184,7 @@ olm_erfcf(float x)
 	    }
 	}
 	if (ix < 0x41300000) {		/* |x|<28 */
-	    x = olm_fabsf(x);
+	    x = __builtin_fabsf(x);
  	    s = one/(x*x);
 	    if(ix< 0x4036DB6D) {	/* |x| < 1/.35 ~ 2.857143*/
                 R=ra0+s*(ra1+s*(ra2+s*ra3));

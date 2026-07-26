@@ -1,5 +1,5 @@
 /* slice_libm_real_erf.c — bd 3c6m.14 / L6 Inc 3: the REAL openlibm erf body
-   (s_erf.c → __ieee754_exp (e_exp.c, inlined TWICE) → fabs, fdlibm-derived,
+   (s_erf.c → __ieee754_exp (e_exp.c, inlined TWICE), fdlibm-derived,
    BSD-licensed; verbatim algorithms with the math_private.h word macros
    expanded to the __builtin_memcpy idiom clang -O1 folds to the same bitcast
    IR). The census cell erf.f64 is the Inc-3 COMPOSITION-at-scale cell: four
@@ -8,7 +8,18 @@
    volatile `twom1000` fold, its provable `ln2HI[xsb]`-family QROM reads, and
    its argument-reduction nest — all flattened by PredMux into one acyclic
    speculated DAG lowered by the shipped select substrate; this slice is the
-   LINK-layer proof (Rule 2). tiny is vendored non-volatile as in s_erf.c. */
+   LINK-layer proof (Rule 2). tiny is vendored non-volatile as in s_erf.c.
+
+   KEEP-SET CALLS (Rule 18 ship-floor fold, NOT a body substitution; bd tkju):
+   s_erf.c's 2 fabs sites are spelled __builtin_fabs. fabs is a HARDWARE KEEP —
+   at the ship floor (plain clang -O1, builtins ON) it folds to @llvm.fabs.f64
+   before codegen and cq-lowering rewrites that to cq_template_fabs_f64 (2 in
+   the golden). A keep has no injectable body, so the olm_fabs software shim
+   this slice used to vendor misrepresented the ship floor and is deleted; that
+   shim already folded to @llvm.fabs at -O1, so the golden is byte-identical
+   across the rewrite (9373 lines). The 1 cq_template_copysign_f64_lh has no
+   source call site at all: clang folds the `one-tiny / tiny-one` sign select
+   of the |x|>=6 arm to @llvm.copysign.f64. */
 #include <stdint.h>
 
 static const double
@@ -152,16 +163,6 @@ __attribute__((always_inline)) static inline double olm_exp(double x) {
         return y * twopk * twom1000;
     }
 }
-
-__attribute__((always_inline)) static inline double olm_fabs(double x) {
-    uint64_t bits;
-    __builtin_memcpy(&bits, &x, 8);                      /* GET_HIGH_WORD */
-    bits = (bits & 0xffffffffULL) |
-           ((uint64_t)((uint32_t)(bits >> 32) & 0x7fffffff) << 32);
-    __builtin_memcpy(&x, &bits, 8);                      /* SET_HIGH_WORD */
-    return x;
-}
-
 __attribute__((always_inline)) static inline double olm_erf(double x) {
     int32_t hx, ix, i;
     double R, S, P, Q, s, y, z, r;
@@ -187,7 +188,7 @@ __attribute__((always_inline)) static inline double olm_erf(double x) {
         return x + x * y;
     }
     if (ix < 0x3ff40000) {          /* 0.84375 <= |x| < 1.25 */
-        s = olm_fabs(x) - one;
+        s = __builtin_fabs(x) - one;
         P = pa0 + s * (pa1 + s * (pa2 + s * (pa3 + s * (pa4 + s * (pa5 + s * pa6)))));
         Q = one + s * (qa1 + s * (qa2 + s * (qa3 + s * (qa4 + s * (qa5 + s * qa6)))));
         if (hx >= 0) return erx + P / Q; else return -erx - P / Q;
@@ -195,7 +196,7 @@ __attribute__((always_inline)) static inline double olm_erf(double x) {
     if (ix >= 0x40180000) {         /* inf>|x|>=6 */
         if (hx >= 0) return one - tiny; else return tiny - one;
     }
-    x = olm_fabs(x);
+    x = __builtin_fabs(x);
     s = one / (x * x);
     if (ix < 0x4006DB6E) {          /* |x| < 1/0.35 */
         R = ra0 + s * (ra1 + s * (ra2 + s * (ra3 + s * (ra4 + s * (

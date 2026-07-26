@@ -735,7 +735,10 @@ add_test(NAME e2e-slice-libm-real-fdiml
 # its ldexpl strong-reference alias + the scalblnl clamp wrapper) over x86_fp80,
 # exercising the MULTI-BLOCK promoteFp80Union (canonicalize + PromoteMemToReg:
 # fp80 re-seed in the subnormal arm, two offset-8 field-insert PACK arms, the
-# copysignl twin unions, the 5-way f80 return merge), the §4.1 per-bit
+# 5-way f80 return merge; bd tkju removed the vendored copysignl/copysign
+# bodies and with them their twin unions — copysign is a Rule-18 keep, so the
+# overflow arm is now one cq_template_copysign_f80_lh and the traces moved
+# 258 -> 250 lines), the §4.1 per-bit
 # padding-taint walk (the store-backs KEEP diverged straddle bits that land only
 # in the dropped >= 80 padding), the i80 field-insert write surface
 # (zext/shl/or i80 + and-clear + bitcast i80->f80), and the PredMux + kjd1
@@ -777,15 +780,20 @@ add_test(NAME e2e-slice-libm-real-cbrtl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_cbrtl.expected.log")
 
 # bd adia (3c6m.55 Lever C) — the FIRST ld80 TRANSCENDENTAL golden: the real
-# openlibm coshl closure (e_coshl + e_expl + s_expm1l + s_floorl + __polevll +
-# __isnanl + scalbnl-as-ldexpl) at plain -O1. The Lever A+B+C composition of
-# record: every union promotes (incl. seeds crossing the OUTLINED pure floorl
-# call), both polevll Horner loops force-unroll, the coshl exponent ladder's
-# select-form short-circuit conditions and floorl's Q+Q word compares flatten
-# and mint, and the outlined expl specializes under tainted control (PredMux
-# speculates the proven-pure body; the Phase-6 clone Bennett-wraps it with the
-# fp80-ABI copy-out and lowerCloneControl flattens its internal branch web).
-# 21k+ trace lines, deterministic; exactly ONE ry + ONE measure (Rule 5).
+# openlibm coshl closure (e_coshl + e_expl + s_expm1l + __polevll + __isnanl +
+# scalbnl-as-ldexpl) at plain -O1. The Lever A+B+C composition of record: every
+# union promotes, both polevll Horner loops force-unroll, the coshl exponent
+# ladder's select-form short-circuit conditions flatten and mint, and the
+# outlined expl specializes under tainted control (PredMux speculates the
+# proven-pure body; the Phase-6 clone Bennett-wraps it with the fp80-ABI
+# copy-out and lowerCloneControl flattens its internal branch web).
+# bd tkju: floorl and copysign{,l} are Rule-18 HARDWARE KEEPS — s_floorl.c /
+# s_copysign{,l}.c are NO LONGER vendored, the sites are spelled __builtin_*
+# and lower to cq_template_{floor,copysign}_f80 / _f64. Dropping those three
+# software ladders took the trace 21426 -> 9036 lines (the floorl body was the
+# bulk: its inexact-raise fadd idiom, word RMW and Q+Q compares are gone, and
+# @__cq_q_olm_floorl_1{,_unc} is no longer specialized). 9036 trace lines,
+# deterministic; exactly ONE ry + ONE measure (Rule 5).
 add_test(NAME e2e-slice-libm-real-coshl
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -885,7 +893,9 @@ add_test(NAME e2e-slice-funnel-fshl-qq
 # WORDS low-word truncation is the multi-block 3c6m.51 Shadow store) promotes; the
 # const-index coefficient reads all const-fold (NO QROM); and both expl inlines
 # force-unroll their __polevll Horner loops + pack their ldexpl exponent-RMW union.
-# Deterministic (erfl 2518 / erfcl 2724 trace lines); exactly ONE ry + ONE measure
+# Deterministic (erfl 2480 / erfcl 2686 trace lines, post bd tkju: copysign{,l}
+# are Rule-18 keeps, the vendored s_copysign{,l}.c bodies are gone and the sites
+# lower to cq_template_copysign_f80_lh / _f64_lh); exactly ONE ry + ONE measure
 # (Rule 5); 0 double-frees, no free of a never-minted or measured handle (Rule 6/8);
 # bodies faithfulness-audited normalized-identical to source modulo the declared
 # entry/keep-intrinsic renames. See bd libm-real-slice-recipe, ld80-fshl-funnel-erfl-erfcl.
@@ -3134,6 +3144,18 @@ add_test(NAME e2e-slice-libm-real-log2l
 # It is pure Python over embedded fixtures: no clang, no opt, no plugin.
 add_test(NAME e2e-free-pairing-selftest
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/free_pairing_check_test.py")
+
+# bd tkju prevention gate (Rule 18): no e2e slice may vendor openlibm's SOFTWARE
+# body for a function the pass curates as a HARDWARE KEEP. Such a body models a
+# program the ship floor never compiles — a FAITHFULNESS defect (it over-tests a
+# bit-twiddle ladder under quantum control while under-testing the keep route),
+# which is how the copysign block propagated by copy-paste across 52 slices. The
+# keep-set is DERIVED from IntrinsicLowering.cpp::isCuratedFpIntrinsic, never
+# duplicated, so gate and compiler cannot drift. Pure Python over the .c sources:
+# no clang, no opt, no plugin.
+add_test(NAME e2e-keepset-vendor-check
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/keepset_vendor_check.py"
+          --root "${CMAKE_SOURCE_DIR}")
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or

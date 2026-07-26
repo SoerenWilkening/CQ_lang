@@ -218,8 +218,16 @@ bool isCuratedReversibleIntrinsic(const CallInst *CI) {
     return false;
   const Intrinsic::ID id = II->getIntrinsicID();
   if (intrinsicStem(id).empty())
-    return false;  // not a curated id (e.g. *.with.overflow, sqrt, memcpy).
-  // bd 3c6m.2 cross-width libm rounding (lrint/llrint/lround/llround): fp → int.
+    return false;  // not a curated id (e.g. *.with.overflow, sin, memcpy).
+                   // NB `sqrt` IS curated (see intrinsicStem above) — it was
+                   // added by the iw81.4.b fp-math family AFTER this comment
+                   // was first written, and named the wrong example until
+                   // bd tkju's prose-vs-code audit caught it.
+  // bd 3c6m.2 cross-width libm rounding (lrint/llrint ONLY): fp → int.
+  // NOT lround/llround — p119 (Rule 18) removed them as LIBRARY functions
+  // (round-half-away has no HW fp→int form → libcall), and
+  // isCrossWidthLibmIntrinsic returns true for lrint/llrint alone. The stale
+  // `/lround/llround` spelling here was corrected by bd tkju.
   // Accept ONLY the generated cross-width surface — result width i64 (the LP64
   // to-width) AND arg width f32/f64 (the generated `from`s). The arg width is
   // read from the CALLEE'S declared param type (the intrinsic's fixed
@@ -282,7 +290,8 @@ bool rewriteIntrinsic(CallInst *CI, WidthDispatch &wd, TaintSet &taint) {
   IRBuilder<> Builder(CI);
 
   if (isCrossWidthLibmIntrinsic(id)) {
-    // bd 3c6m.2 cross-width libm rounding (lrint/llrint/lround/llround): fp → i64.
+    // bd 3c6m.2 cross-width libm rounding (lrint/llrint ONLY, never
+    // lround/llround — see isCrossWidthLibmIntrinsic): fp → i64.
     // Reuse the CAST naming grammar cq_template_<stem>_<from>_to_<to> (a1/ua1
     // shapes — the handle is i32 on both sides). `from` is the intrinsic's
     // declared fp param width (laundering-proof — the operand VALUE is a

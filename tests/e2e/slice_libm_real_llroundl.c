@@ -1,8 +1,9 @@
-/* slice_libm_real_llroundl.c — bd 3c6m.58: the REAL openlibm llroundl body
-   (src/s_llroundl.c → the src/s_lround.c template instantiated at
-   type=long double / dtype=long long / roundit=roundl → src/s_roundl.c →
-   src/s_isfinite.c __isfinitel + ld80/s_floorl.c, fdlibm/FreeBSD-derived,
-   BSD-licensed) over x86_fp80 `long double`.
+/* slice_libm_real_llroundl.c — bd 3c6m.58, keep-route corrected by bd tkju: the
+   REAL openlibm llroundl body (src/s_llroundl.c → the src/s_lround.c template
+   instantiated at type=long double / dtype=long long / roundit=roundl;
+   fdlibm/FreeBSD-derived, BSD-licensed) over x86_fp80 `long double`. That
+   template is the WHOLE vendored closure — llroundl is a LIBRARY function and
+   stays vendored as SOURCE (Rule 18); roundl is not (see KEEP-SET below).
 
    INRANGE() folds to a compile-time TRUE exactly as in the verified lround.f64
    sibling, and for the same reason: `dtype_max = DTYPE_MAX + 0.5` applies the
@@ -15,164 +16,37 @@
    /private/tmp/bc/s_llroundl.bc: `tail call @roundl` + `fptosi`, no range
    compare, no fenv call) — exactly this body.
 
-   The lowered shape is the ld80 counterpart of lround.f64: floorl's word RMW
-   rides the 3c6m.51 promoteFp80Union Shadow store (GET/SET_LDOUBLE_WORDS over
-   the openbsd ieee_extended_shape_type), the multi-band exponent dispatch is
-   flattened by PredMux onto the select substrate, and the trailing
-   `(long long)` narrowing is the fptosi. This slice is the LINK-layer proof (Rule 2)
-   that every emitted i80/f80 symbol resolves and the trace is stable.
+   KEEP-SET CALL (Rule 18 ship-floor fold, NOT a body substitution): `roundl` is
+   a HARDWARE KEEP. At the real ship floor (plain clang -O1, builtins ON) the
+   named call folds to @llvm.round.f80 before codegen and cq-lowering rewrites
+   that to cq_template_round_f80; `__builtin_roundl` emits exactly that construct
+   and needs no libm declaration. A keep has no injectable body, so the software
+   ld80 ladders this slice used to vendor — src/s_roundl.c, ld80/s_floorl.c,
+   src/s_isfinite.c __isfinitel and the math_private_openbsd.h /
+   amd64_fpmath.h union closure they needed — modelled a program the ship floor
+   never compiles; all deleted (bd tkju). Only the s_lround.c template survives,
+   and it uses no word union at all, so <stdint.h> is now vestigial.
 
-   Mechanical edits ONLY (libm-real-slice-recipe; NO constant/branch/expression
-   changed): includes, license and OLM_ macros deleted (none of the five vendored
-   sources carries a weak_reference); the vendored
-   math_private closure inlined (the ieee_extended_shape_type LP64/little-endian
-   union + GET/SET_LDOUBLE_WORDS verbatim from src/math_private_openbsd.h;
-   union IEEEl2bits verbatim from src/amd64_fpmath.h — BOTH fp80 union views are
-   kept, the promoteFp80Union pass owns them and a memcpy word shim is NEVER used
-   at ld80, per the 3c6m.51 convention); every vendored function marked
-   `__attribute__((always_inline)) static inline` with its public/`__`-prefixed
-   entry renamed `olm_<name>`; intra-body calls renamed to their olm_ vendored
-   names (isfinite→olm_isfinitel per the sizeof-dispatch macro, floorl→
-   olm_floorl); s_floorl.c's file-scope `huge` uniquified `fl_hugel` (the
-   s_lround.c template contributes no colliding static). */
+   Mechanical edits ONLY on what remains (libm-real-slice-recipe; NO
+   constant/branch/expression changed): includes, license and OLM_ macros
+   deleted (the s_lround.c template carries no weak_reference); the entry marked
+   `__attribute__((always_inline)) static inline` and renamed `olm_llroundl`;
+   LLONG_MIN/LLONG_MAX/FE_INVALID supplied locally (see below).
+
+   WHAT IT PROVES (measured on the committed golden): the 5-line trace
+   cqrt_alloc_f80 · cqrt_ry_f80 · cq_template_round_f80 ·
+   cq_template_fptosi_f80_to_i64 · cqrt_measure_i64 — the fp80 keep route plus
+   the `(long long)` fptosi narrowing, LINK-layer (Rule 2) that every emitted f80
+   symbol resolves and the trace is stable. It proves strictly LESS than before,
+   and deliberately so: the deleted ladders were the entire lowered body, so the
+   trace drops 4446 → 5 lines (cqrt_free 1052 → 0, cqrt_toffoli 1076 → 0,
+   cqrt_alloc_i1 538 → 0, cqrt_alloc_f80 22 → 1). In particular the old claim
+   that floorl's word RMW rides the 3c6m.51 promoteFp80Union Shadow store is NO
+   LONGER TRUE OF THIS SLICE: it now emits no fp80 union traffic and no i80
+   symbols whatsoever, and no longer exercises promoteFp80Union or PredMux. Its
+   remaining distinction from the lroundl.f80 sibling is the dtype=long long
+   instantiation of INRANGE (identical trace otherwise). */
 #include <stdint.h>
-
-typedef unsigned int u_int32_t;
-
-/* src/math_private_openbsd.h — the LP64 little-endian ld80 word union +
-   GET/SET_LDOUBLE_WORDS (verbatim; x86-64 is always little-endian). */
-typedef union
-{
-  long double value;
-  struct {
-    u_int32_t lsw;
-    u_int32_t msw;
-    int exp:16;
-    int padl:16;
-    int padh:32;
-  } parts;
-} ieee_extended_shape_type;
-
-#define GET_LDOUBLE_WORDS(se,ix0,ix1,d)				\
-do {								\
-  ieee_extended_shape_type ew_u;				\
-  ew_u.value = (d);						\
-  (se) = ew_u.parts.exp;					\
-  (ix0) = ew_u.parts.msw;					\
-  (ix1) = ew_u.parts.lsw;					\
-} while (0)
-
-#define SET_LDOUBLE_WORDS(d,se,ix0,ix1)				\
-do {								\
-  ieee_extended_shape_type iw_u;				\
-  iw_u.parts.exp = (se);					\
-  iw_u.parts.msw = (ix0);					\
-  iw_u.parts.lsw = (ix1);					\
-  (d) = iw_u.value;						\
-} while (0)
-
-/* src/amd64_fpmath.h — union IEEEl2bits (verbatim, both views). */
-union IEEEl2bits {
-    long double e;
-    struct {
-        unsigned int manl : 32;
-        unsigned int manh : 32;
-        unsigned int exp  : 15;
-        unsigned int sign : 1;
-        unsigned int junkl : 16;
-        unsigned int junkh : 32;
-    } bits;
-    struct {
-        unsigned long man : 64;
-        unsigned int expsign : 16;
-        unsigned long junk : 48;
-    } xbits;
-};
-
-/* openlibm s_isfinite.c __isfinitel (verbatim). */
-__attribute__((always_inline)) static inline int olm_isfinitel(long double e) {
-	union IEEEl2bits u;
-
-	u.e = e;
-	return (u.bits.exp != 32767);
-}
-
-/* openlibm ld80/s_floorl.c (verbatim; `huge` → `fl_hugel`). */
-static const long double fl_hugel = 1.0e4930L;
-
-__attribute__((always_inline)) static inline long double olm_floorl(long double x)
-{
-	int32_t i1,jj0;
-	u_int32_t i,j,se,i0,sx;
-	GET_LDOUBLE_WORDS(se,i0,i1,x);
-	sx = (se>>15)&1;
-	jj0 = (se&0x7fff)-0x3fff;
-	if(jj0<31) {
-	    if(jj0<0) {	/* raise inexact if x != 0 */
-		if(fl_hugel+x>0.0) {
-		    if(sx==0)
-			return 0.0L;
-		    else if(((se&0x7fff)|i0|i1)!=0)
-			return -1.0L;
-		}
-	    } else {
-		i = (0x7fffffff)>>jj0;
-		if(((i0&i)|i1)==0) return x; /* x is integral */
-		if(fl_hugel+x>0.0) {	/* raise inexact flag */
-		    if(sx) {
-			if (jj0>0 && (i0+(0x80000000>>jj0))>i0)
-			  i0 += (0x80000000)>>jj0;
-			else
-			  {
-			    i = 0x7fffffff;
-			    ++se;
-			  }
-		    }
-		    i0 &= (~i); i1=0;
-		}
-	    }
-	} else if (jj0>62) {
-	    if(jj0==0x4000) return x+x;	/* inf or NaN */
-	    else return x;		/* x is integral */
-	} else {
-	    i = ((u_int32_t)(0xffffffff))>>(jj0-31);
-	    if((i1&i)==0) return x;	/* x is integral */
-	    if(fl_hugel+x>0.0) {		/* raise inexact flag */
-		if(sx) {
-		    if(jj0==31) i0+=1;
-		    else {
-			j = i1+(1<<(63-jj0));
-			if(j<i1) i0 +=1 ;	/* got a carry */
-			i1=j;
-		    }
-		}
-		i1 &= (~i);
-	    }
-	}
-	SET_LDOUBLE_WORDS(x,se,i0,i1);
-	return x;
-}
-
-/* openlibm s_roundl.c (verbatim; isfinite→olm_isfinitel, floorl→olm_floorl). */
-__attribute__((always_inline)) static inline long double olm_roundl(long double x)
-{
-	long double t;
-
-	if (!olm_isfinitel(x))
-		return (x);
-
-	if (x >= 0.0) {
-		t = olm_floorl(x);
-		if (t - x <= -0.5)
-			t += 1.0;
-		return (t);
-	} else {
-		t = olm_floorl(-x);
-		if (t + x <= -0.5)
-			t += 1.0;
-		return (-t);
-	}
-}
 
 /* openlibm s_lround.c instantiated by s_llroundl.c
    (type=long double, roundit=roundl, dtype=long long, DTYPE_MAX=LLONG_MAX).
@@ -194,7 +68,7 @@ __attribute__((always_inline)) static inline long long olm_llroundl(long double 
 {
 
 	if (INRANGE(x)) {
-		x = olm_roundl(x);
+		x = __builtin_roundl(x);
 		return ((long long)x);
 	} else {
 		feraiseexcept(FE_INVALID);

@@ -1,7 +1,7 @@
 /* slice_libm_real_sinhf.c — REAL openlibm sinhf (f32) end-to-end verification slice.
  * Cell: sinhf.f32. Sources: openlibm src/e_sinhf.c (public entry) → expm1f
  * (s_expm1f.c) → __ieee754_expf (e_expf.c) → __ldexp_expf/__frexp_expf
- * (k_expf.c) → fabsf (shim). fdlibm-derived, BSD-licensed; verbatim algorithms
+ * (k_expf.c). fdlibm-derived, BSD-licensed; verbatim algorithms
  * with the math_private.h word macros expanded to the __builtin_memcpy idiom
  * clang -O1 folds to the same bitcast/shift IR the taint pass lowers. Promotes
  * the census cell sinhf.f32 from injection-covered → VERIFIED (Rule 2 link-layer
@@ -12,7 +12,19 @@
  * the e_sinhf.c `shuge` (1.0e37) is distinct and kept separate;
  * `o_threshold`/`invln2` (shared value between expm1f and expf) and the k_expf
  * `k`/`kln2` are uniquified by owning-fn prefix (NAME only, never the value).
- * bd 3c6m.53. */
+ * bd 3c6m.53.
+ *
+ * KEEP-SET CALLS (Rule 18 ship-floor fold, NOT a body substitution; bd tkju):
+ * e_sinhf.c's fabsf(x) sites are spelled __builtin_fabsf. fabsf is a HARDWARE
+ * KEEP — at the real ship floor (plain clang -O1, builtins ON) it folds to
+ * @llvm.fabs.f32 before codegen and cq-lowering rewrites that to
+ * cq_template_fabs_f32, 2 of which the committed golden carries. A keep has no
+ * injectable body, so the memcpy+and-mask fabsf shim this slice used to vendor
+ * MISREPRESENTED the ship floor. That shim already folded to @llvm.fabs at -O1
+ * (measured), so deleting it left the lowered IR and the golden byte-identical
+ * — 3901 trace lines before and after. The golden's single
+ * cq_template_copysign_f32_lh(0.5, x) is NOT a call either: clang -O1 folds
+ * `h = 0.5; if (jx<0) h = -h;` to @llvm.copysign.f32, itself a keep. */
 #include <stdint.h>
 typedef uint32_t u_int32_t;
 typedef uint64_t u_int64_t;
@@ -31,11 +43,6 @@ typedef uint64_t u_int64_t;
    4-byte memcpy of the double would be unfaithful (bd 3c6m.53 audit). */
 #define GET_FLOAT_WORD(i,d)    do{ float __f=(float)(d); uint32_t __w; __builtin_memcpy(&__w,&__f,4); (i)=(int32_t)__w; }while(0)
 #define SET_FLOAT_WORD(d,i)    do{ uint32_t __w=(uint32_t)(i); float __f; __builtin_memcpy(&__f,&__w,4); (d)=__f; }while(0)
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 /* ---- shared file-scope constants (identical across e_sinhf / e_expf / s_expm1f) ---- */
 static const float one = 1.0, huge = 1.0e30;
 
@@ -258,17 +265,17 @@ olm_sinhf(float x)
 	if (ix < 0x41100000) {		/* |x|<9 */
 	    if (ix<0x39800000) 		/* |x|<2**-12 */
 		if(shuge+x>one) return x;/* sinh(tiny) = tiny with inexact */
-	    t = olm_expm1f(olm_fabsf(x));
+	    t = olm_expm1f(__builtin_fabsf(x));
 	    if(ix<0x3f800000) return h*((float)2.0*t-t*t/(t+one));
 	    return h*(t+t/(t+one));
 	}
 
     /* |x| in [9, logf(maxfloat)] return 0.5*exp(|x|) */
-	if (ix < 0x42b17217)  return h*olm_expf(olm_fabsf(x));
+	if (ix < 0x42b17217)  return h*olm_expf(__builtin_fabsf(x));
 
     /* |x| in [logf(maxfloat), overflowthresold] */
 	if (ix<=0x42b2d4fc)
-	    return h*2.0F*olm_ldexp_expf(olm_fabsf(x), -1);
+	    return h*2.0F*olm_ldexp_expf(__builtin_fabsf(x), -1);
 
     /* |x| > overflowthresold, sinh(x) overflow */
 	return x*shuge;

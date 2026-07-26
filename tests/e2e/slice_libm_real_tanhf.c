@@ -1,6 +1,21 @@
 /* slice_libm_real_tanhf.c — census cell tanhf.f32
    Real openlibm body vendored from src/s_tanhf.c (+ dep src/s_expm1f.c), self-contained.
-   bd 3c6m.53 — promotes tanhf.f32 injection-covered → VERIFIED. */
+   bd 3c6m.53 — promotes tanhf.f32 injection-covered → VERIFIED.
+
+   KEEP-SET CALLS (Rule 18 ship-floor fold, NOT a body substitution; bd tkju):
+     s_tanhf.c's two fabsf(x) sites are spelled __builtin_fabsf. fabsf is a
+     HARDWARE KEEP — at the real ship floor (plain clang -O1, builtins ON) it
+     folds to @llvm.fabs.f32 before codegen and cq-lowering rewrites that to
+     cq_template_fabs_f32. A keep has no injectable body, so the
+     memcpy+and-mask fabsf shim this slice used to vendor MISREPRESENTED the
+     ship floor; that shim already folded to @llvm.fabs at -O1 (measured), so
+     deleting it left the lowered IR and the golden byte-identical — 8440 trace
+     lines before and after. The golden carries 3 cq_template_fabs_f32, more
+     than the 2 source sites: those CSE to one (both branches take fabsf of the
+     same x), and the other two are clang folding expm1f's own `hx &= 0x7fffffff`
+     word mask to the same intrinsic (the trace's bitcast / and-sign-bit / fabs
+     cluster at each expm1f entry) — a keep arriving from the optimizer, not
+     from a call. */
 #include <stdint.h>
 typedef uint32_t u_int32_t;
 typedef uint64_t u_int64_t;
@@ -16,11 +31,6 @@ typedef uint64_t u_int64_t;
 #define SET_FLOAT_WORD(d,i)    do{ uint32_t __w=(uint32_t)(i); __builtin_memcpy(&(d),&__w,4); }while(0)
 /* x86-64 FLT_EVAL_METHOD==0: openlibm defines STRICT_ASSIGN as plain assignment. */
 #define STRICT_ASSIGN(type,lval,rval) ((lval)=(rval))
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 /* ---- dependency: src/s_expm1f.c ---- */
 static const float
 one		= 1.0,
@@ -146,10 +156,10 @@ olm_tanhf(float x)
 		if(tanh_huge+x>tanh_one) return x; /* tanh(tiny) = tiny with inexact */
 	    }
 	    if (ix>=0x3f800000) {	/* |x|>=1  */
-		t = olm_expm1f(tanh_two*olm_fabsf(x));
+		t = olm_expm1f(tanh_two*__builtin_fabsf(x));
 		z = tanh_one - tanh_two/(t+tanh_two);
 	    } else {
-	        t = olm_expm1f(-tanh_two*olm_fabsf(x));
+	        t = olm_expm1f(-tanh_two*__builtin_fabsf(x));
 	        z= -t/(t+tanh_two);
 	    }
     /* |x| >= 9, return +-1 */

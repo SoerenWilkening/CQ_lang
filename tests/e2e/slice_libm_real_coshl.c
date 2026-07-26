@@ -1,32 +1,61 @@
 /* slice_libm_real_coshl.c — bd 3c6m.55 Inc 3 (adia, Lever C): the REAL openlibm
-   coshl body (ld80/e_coshl.c + its full dependency closure: ld80/e_expl.c,
-   ld80/s_expm1l.c, ld80/s_floorl.c, src/polevll.c __polevll, src/s_isnan.c
+   coshl body (ld80/e_coshl.c + its full SOFTWARE dependency closure:
+   ld80/e_expl.c, ld80/s_expm1l.c, src/polevll.c __polevll, src/s_isnan.c
    __isnanl, s_scalbnl.c scalbnl as the ldexpl alias, fdlibm/Cephes-derived,
    BSD-licensed) over x86_fp80 `long double` — the FIRST ld80 TRANSCENDENTAL
    slice, and the Lever-A+B+C composition proof:
 
      * Lever A (hder): every IEEEl2bits / ieee_extended_shape_type union
-       (coshl's GET_LDOUBLE_WORDS, floorl's GET/SET pack, isnanl's mask_nbit_l
-       view) promotes to i80 register form — fmuladd/const-global/reload-web
-       seeds + the integer-seeded SET_LDBL reconstruct pack.
+       (coshl's GET_LDOUBLE_WORDS read, isnanl's mask_nbit_l view, scalbnl's
+       `u.bits.exp = k` exponent RMW) promotes to i80 register form —
+       fmuladd/const-global/reload-web seeds + the integer-seeded pack.
      * Lever B (lf8s): the __polevll Horner loops (trip 2 and 3, kept rolled at
        -O1) force-unroll to the straight-line fmuladd chain.
      * Lever C (adia): the residual is control — coshl's exponent range ladder
-       (select-form short-circuit `&&` conditions), floorl's Q+Q data compares
-       (two theta-derived words), the fp80 data selects, and the outlined
-       `expl` callee under tainted control (PredMux speculates the proven-pure
-       acyclic body, Phase-6 clones it with the fp80-ABI copy-out, and
-       lowerCloneControl flattens its internal 30+-branch web).
+       (select-form short-circuit `&&` conditions), the fp80 data selects, and
+       the outlined `expl` callee under tainted control (PredMux speculates the
+       proven-pure acyclic body, Phase-6 clones it as @__cq_q_olm_expl_1 with
+       the fp80-ABI copy-out, and lowerCloneControl flattens its internal
+       30+-branch web).
+
+   KEEP-SET CALLS (bd tkju — Rule 18 ship-floor fold, NOT a body substitution):
+   floorl (expl's and expm1l's Cody-Waite round), fabsl (coshl's four |x| sites)
+   and copysignl/copysign (scalbnl's overflow/underflow arms) are HARDWARE
+   KEEPS. At this slice's real ship floor — plain `clang -O1`, builtins ON, no
+   -fno-builtin — they fold to @llvm.{floor,fabs,copysign} before codegen, so a
+   keep has NO injectable body and vendoring openlibm's software s_floorl.c /
+   s_copysign{,l}.c here MISREPRESENTED the compiled program. They are spelled
+   __builtin_<fn>: no math.h is included, and the builtin spelling names the
+   intrinsic without a libm declaration. Measured — stage 1 hands the pass
+   2 @llvm.floor.f80, 4 @llvm.fabs.f80, 2 @llvm.copysign.f80, 2
+   @llvm.copysign.f64 and 18 @llvm.fmuladd.f80 CALL SITES (call sites, not
+   `declare` lines), and every one lowers to its
+   cq_template_<fn>_<W>. The trace is a dynamic gate log (@__cq_q_olm_expl_1 is
+   entered three times), so it carries 4 floor_f80 / 4 fabs_f80 /
+   6 copysign_f80_lh / 6 copysign_f64_lh forward lines.
+
+   WHAT THIS SLICE NO LONGER PROVES (tkju, stated plainly): dropping the
+   vendored s_floorl.c ladder took the trace from 21426 to 9036 lines and with
+   it the whole i32/i64 shift-mask-compare word twiddle and its _unc twins.
+   SET_LDOUBLE_WORDS now has NO caller — floorl's pack was its only user — so
+   the i80 pack exercised here is scalbnl's IEEEl2bits exponent write alone; the
+   SET_LDBL reconstruct path is not covered. And where the pass used to mint TWO
+   Phase-6 clones plus a synthesized void uncompute twin (@__cq_q_olm_floorl_1 /
+   @__cq_q_olm_floorl_1_unc), it now mints only @__cq_q_olm_expl_1 and no _unc
+   twin, so the 6.3 transitive-twin path is not covered here either.
 
    This slice is the LINK-layer proof (Rule 2) that every emitted symbol —
    cqrt_copy_f80_controlled, the QQ icmp/fcmp flag mints, the i80 extract/pack
-   family, the clone @__cq_q_* + its _unc twin — resolves and the trace is
-   stable. The probe pins the census cell coshl.f80: x = theta-tainted.
+   family, the clone @__cq_q_olm_expl_1 — resolves and the trace is stable: 9036
+   lines, exactly 1 cqrt_ry_f80 + 1 cqrt_measure_f80 (Rule 5), and all 830
+   cqrt_free sites verified by e2e stage 2b. The probe pins the census cell
+   coshl.f80: x = theta-tainted.
 
    Mechanical edits ONLY (libm-real-slice-recipe): includes/license deleted,
    entries renamed olm_*, colliding file-scope statics uniquified per body
-   (huge_*, C1/C2_*, MAXLOGL_*), intra-body calls retargeted to the olm_
-   names, u_int32_t mapped to stdint. No constant/branch/expression changed. */
+   (huge_*, C1/C2_*, MAXLOGL_*), intra-body calls retargeted to the olm_ names
+   or to the keep builtins above, u_int32_t mapped to stdint. No
+   constant/branch/expression changed. */
 #include <stdint.h>
 
 typedef uint32_t u_int32_t;
@@ -106,30 +135,6 @@ static long double olm_polevll(long double x, void *PP, int n) {
     return (y);
 }
 
-/* openlibm s_copysignl.c copysignl (verbatim — from the verified
-   slice_libm_real_scalbnl.c). */
-__attribute__((always_inline)) static inline long double
-olm_copysignl(long double x, long double y) {
-    union IEEEl2bits ux, uy;
-    ux.e = x;
-    uy.e = y;
-    ux.bits.sign = uy.bits.sign;
-    return (ux.e);
-}
-
-/* openlibm s_copysign.c copysign (double) — the GET/SET_HIGH_WORD word macros
-   expanded to the __builtin_memcpy idiom (same body as the verified
-   slice_libm_real_scalbn.c olm_copysign; f64 words keep the memcpy shim). */
-__attribute__((always_inline)) static inline double
-olm_copysign(double x, double y) {
-    uint64_t bx, by;
-    __builtin_memcpy(&bx, &x, 8);
-    __builtin_memcpy(&by, &y, 8);
-    bx = (bx & 0x7fffffffffffffffULL) | (by & 0x8000000000000000ULL);
-    __builtin_memcpy(&x, &bx, 8);
-    return x;
-}
-
 static const long double
 huge_scalbnl = 0x1p16000L,
 tiny_scalbnl = 0x1p-16000L;
@@ -150,13 +155,13 @@ olm_scalbnl(long double x, int n) {
     }
     if (k==0x7fff) return x+x;                  /* NaN or Inf */
     k = k+n;
-    if (k >= 0x7fff) return huge_scalbnl*olm_copysignl(huge_scalbnl,x); /* overflow  */
+    if (k >= 0x7fff) return huge_scalbnl*__builtin_copysignl(huge_scalbnl,x); /* overflow  */
     if (k > 0)                                  /* normal result */
         {u.bits.exp = k; return u.e;}
     if (k <= -128) {
         if (n > 50000)                          /* in case integer overflow in n+k */
-            return huge_scalbnl*olm_copysign(huge_scalbnl,x);   /*overflow*/
-        else return tiny_scalbnl*olm_copysign(tiny_scalbnl,x);  /*underflow*/
+            return huge_scalbnl*__builtin_copysign(huge_scalbnl,x);   /*overflow*/
+        else return tiny_scalbnl*__builtin_copysign(tiny_scalbnl,x);  /*underflow*/
     }
     k += 128;                                   /* subnormal result */
     u.bits.exp = k;
@@ -167,61 +172,6 @@ olm_scalbnl(long double x, int n) {
 __attribute__((always_inline)) static inline long double
 olm_ldexpl(long double x, int n) {
     return olm_scalbnl(x, n);
-}
-
-static const long double huge_floorl = 1.0e4930L;
-
-/* openlibm ld80/s_floorl.c floorl (verbatim). */
-static long double olm_floorl(long double x) {
-    int32_t i1,jj0;
-    u_int32_t i,j,se,i0,sx;
-    GET_LDOUBLE_WORDS(se,i0,i1,x);
-    sx = (se>>15)&1;
-    jj0 = (se&0x7fff)-0x3fff;
-    if(jj0<31) {
-        if(jj0<0) {	/* raise inexact if x != 0 */
-        if(huge_floorl+x>0.0) {
-            if(sx==0)
-            return 0.0L;
-            else if(((se&0x7fff)|i0|i1)!=0)
-            return -1.0L;
-        }
-        } else {
-        i = (0x7fffffff)>>jj0;
-        if(((i0&i)|i1)==0) return x; /* x is integral */
-        if(huge_floorl+x>0.0) {	/* raise inexact flag */
-            if(sx) {
-            if (jj0>0 && (i0+(0x80000000>>jj0))>i0)
-              i0 += (0x80000000)>>jj0;
-            else
-              {
-                i = 0x7fffffff;
-                ++se;
-              }
-            }
-            i0 &= (~i); i1=0;
-        }
-        }
-    } else if (jj0>62) {
-        if(jj0==0x4000) return x+x;	/* inf or NaN */
-        else return x;		/* x is integral */
-    } else {
-        i = ((u_int32_t)(0xffffffff))>>(jj0-31);
-        if((i1&i)==0) return x;	/* x is integral */
-        if(huge_floorl+x>0.0) {		/* raise inexact flag */
-        if(sx) {
-            if(jj0==31) i0+=1;
-            else {
-            j = i1+(1<<(63-jj0));
-            if(j<i1) i0 +=1 ;	/* got a carry */
-            i1=j;
-            }
-        }
-        i1 &= (~i);
-        }
-    }
-    SET_LDOUBLE_WORDS(x,se,i0,i1);
-    return x;
 }
 
 /* openlibm ld80/e_expl.c expl (verbatim; Cephes). INFINITY is float +inf
@@ -259,11 +209,10 @@ if( x < MINLOGL_expl )
  *   = e**g e**( n loge(2) )
  *   = e**( g + n loge(2) )
  */
-px = olm_floorl( LOG2EL_expl * x + 0.5L ); /* floor() truncates toward -infinity. */
+px = __builtin_floorl( LOG2EL_expl * x + 0.5L ); /* floor() truncates toward -infinity. */
 n = px;
 x -= px * C1_expl;
 x -= px * C2_expl;
-
 
 /* rational approximation for exponential
  * of the fractional part:
@@ -320,7 +269,7 @@ if (x < minarg_expm1l)
 xx = C1_expm1l + C2_expm1l;
 
 /* Express x = ln 2 (k + remainder), remainder not exceeding 1/2. */
-px = olm_floorl (0.5 + x / xx);
+px = __builtin_floorl(0.5 + x / xx);
 k = px;
 /* remainder times ln 2 */
 x -= px * C1_expm1l;

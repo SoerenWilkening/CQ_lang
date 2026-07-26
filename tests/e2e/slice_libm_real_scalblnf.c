@@ -2,7 +2,18 @@
  * Vendored REAL openlibm source:
  *   entry:  src/s_scalbln.c   (scalblnf wrapper: int cast + INT_MAX/MIN clamp)
  *   dep:    src/s_scalbnf.c    (scalbnf float body)
- * fabs/copysign use the shim helpers (olm_fabsf/olm_copysignf).
+ *
+ * KEEP-SET CALL (Rule 18 ship-floor fold, NOT a body substitution — bd tkju):
+ * olm_scalbnf's overflow/underflow arms call copysignf, a HARDWARE KEEP. At
+ * the ship floor (plain clang -O1, builtins ON) the named call folds to
+ * @llvm.copysign.f32 before codegen and cq-lowering rewrites that to
+ * cq_template_copysign_f32_lh (the literal `huge` + the tainted handle). A
+ * keep has no injectable body, so the s_copysignf.c bit-op shim vendored here
+ * before (olm_copysignf, plus the unused olm_fabs/olm_fabsf/olm_copysign
+ * siblings) misrepresented the ship floor and is deleted. MEASURED: the shim's
+ * 4 template calls (one each of bitcast_f32_to_i32 / and_i32_hl / or_i32_hl /
+ * bitcast_i32_to_f32) collapse to the single copysign template — trace
+ * 238 -> 235 lines.
  */
 #include <stdint.h>
 #include <limits.h>
@@ -18,11 +29,6 @@ typedef uint64_t u_int64_t;
 #define INSERT_WORDS(d,hi,lo)  do{ uint64_t __w=((uint64_t)(uint32_t)(hi)<<32)|(uint32_t)(lo); __builtin_memcpy(&(d),&__w,8); }while(0)
 #define GET_FLOAT_WORD(i,d)    do{ uint32_t __w; __builtin_memcpy(&__w,&(d),4); (i)=(int32_t)__w; }while(0)
 #define SET_FLOAT_WORD(d,i)    do{ uint32_t __w=(uint32_t)(i); __builtin_memcpy(&(d),&__w,4); }while(0)
-__attribute__((always_inline)) static inline double olm_fabs(double x){ uint64_t b; __builtin_memcpy(&b,&x,8); b&=0x7fffffffffffffffULL; __builtin_memcpy(&x,&b,8); return x; }
-__attribute__((always_inline)) static inline float  olm_fabsf(float x){ uint32_t b; __builtin_memcpy(&b,&x,4); b&=0x7fffffffU; __builtin_memcpy(&x,&b,4); return x; }
-__attribute__((always_inline)) static inline double olm_copysign(double x,double y){ uint64_t bx,by; __builtin_memcpy(&bx,&x,8); __builtin_memcpy(&by,&y,8); bx=(bx&0x7fffffffffffffffULL)|(by&0x8000000000000000ULL); __builtin_memcpy(&x,&bx,8); return x; }
-__attribute__((always_inline)) static inline float  olm_copysignf(float x,float y){ uint32_t bx,by; __builtin_memcpy(&bx,&x,4); __builtin_memcpy(&by,&y,4); bx=(bx&0x7fffffffU)|(by&0x80000000U); __builtin_memcpy(&x,&bx,4); return x; }
-
 /* ---- vendored from src/s_scalbnf.c ---- */
 static const float
 two25   =  3.355443200e+07,	/* 0x4c000000 */
@@ -45,13 +51,13 @@ olm_scalbnf (float x, int n)
 	    }
         if (k==0xff) return x+x;		/* NaN or Inf */
         k = k+n;
-        if (k >  0xfe) return huge*olm_copysignf(huge,x); /* overflow  */
+        if (k >  0xfe) return huge*__builtin_copysignf(huge,x); /* overflow  */
         if (k > 0) 				/* normal result */
 	    {SET_FLOAT_WORD(x,(ix&0x807fffff)|(k<<23)); return x;}
         if (k <= -25) {
             if (n > 50000) 	/* in case integer overflow in n+k */
-		return huge*olm_copysignf(huge,x);	/*overflow*/
-	    else return tiny*olm_copysignf(tiny,x);	/*underflow*/
+		return huge*__builtin_copysignf(huge,x);	/*overflow*/
+	    else return tiny*__builtin_copysignf(tiny,x);	/*underflow*/
         }
 	k += 25;				/* subnormal result */
 	SET_FLOAT_WORD(x,(ix&0x807fffff)|(k<<23));
