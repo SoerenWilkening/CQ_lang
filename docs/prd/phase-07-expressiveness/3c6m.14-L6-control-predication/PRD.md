@@ -589,7 +589,11 @@ ship floor needs (A)+(B); `hypotf.f32` needs (B) alone.
 **Explicitly NOT unblocked** (measured with the probe applied, so these are
 diagnoses, not guesses):
 
-- `log1pl.f80` / `log2l.f80` / `logl.f80` — still decline
+- `log1pl.f80` / `log2l.f80` / `logl.f80` — **[SUPERSEDED 2026-07-26 by Inc 6
+  (bd `oudq`), §4.4c: all three now COMPILE + VERIFY at the ship floor. The
+  diagnosis below is kept verbatim because it is what the fix was built from —
+  and because the two guesses that preceded it are the reason this project
+  writes diagnoses with source locations.]** — still decline
   `nested control flow under quantum control`, and the blocker is now DIAGNOSED
   (two earlier drafts of this bullet guessed, and both guesses were refuted by
   re-measurement — the Rule-13 lens that killed the second one is why this
@@ -628,6 +632,157 @@ diagnoses, not guesses):
 - `hypotl.f80` (bd `3c6m.61`) — `E4-dataflow` at
   `icmp eq i80 %24, 9223372036854775808`, an i80 compare from the fp80-union
   bit pattern (not a template width). fp80-union/width axis.
+
+### 4.4c Inc 6 (bd `oudq`) — W6, the STRANDED-MERGE claim witness
+
+Inc 5 left one shape one block out of reach, and §4.4b's residual bullet above
+names it exactly: an i1 phi in the region **ENTRY** block, OR-ed into that same
+block's branch condition. Rule (A) condition 2 refuses it — `run()` never
+converts an entry phi, so admitting it would hand `buildNegation` a `PHINode`.
+Inc 6 closes it, and the **direction of the fix is the load-bearing decision**.
+
+**Why the tempting fix is impossible, not merely risky.** "Teach the flatten to
+convert an entry phi" cannot be done: an entry phi's incoming EDGES come from
+**outside** the region, where no edge predicate exists (`BP(E) = ⊤` by
+construction, §4.3). There is nothing to convert it against. That is also why
+rule (B)'s entry FENCE exists (§4.4b) and why the ticket's option (b) was a trap:
+any entry-phi-tolerant CLAIM would have to make the phi genuinely convert, and it
+cannot. The tension the ticket flagged is resolved by **not** entering it.
+
+**The fix: root the claim one block EARLIER (option (a)).** The block that
+strands the downstream region is that region's ENTRY — but it is some *upstream*
+region's **MERGE**, and a merge phi IS converted (`run()` ends with
+`convertPhis(R.Merge)`). In every measured cell that upstream region is already a
+PredMux candidate — its own terminator is tainted — and it was leaving for one
+reason only: `W-witness`. The `__isnanl` diamond merges a **sole 2-incoming
+non-fp** phi, which is neither the ≥2-phi, the >2-incoming, nor the W5 fp shape.
+So Inc 6 is, once again, a pure **claim-gate widening**; the flatten already
+handled the shape.
+
+**W6.** For a `br`-rooted candidate, `Claim |=` the merge block `Mg` ending in a
+**tainted conditional** branch whose condition is a supported cond tree **exactly
+when** a phi of `Mg` counts as convertible:
+
+```
+   isSupportedCondTree(cond, 0, {InRegion={Mg}, Entry=nullptr})   // convertible
+&& !isSupportedCondTree(cond, 0, {InRegion={Mg}, Entry=Mg})       // downstream
+```
+
+Two sub-conditions, each load-bearing and each with a decline fixture:
+
+1. **Tainted merge branch.** This is the anti-overlap gate (below), and it is a
+   deliberate over-decline in one direction: a merge phi with all-constant
+   incomings leaves its consuming branch UNTAINTED until the flatten converts it
+   (the rule-(B) shape one level up). Widening W6 with
+   `valueWillTaintAfterFlatten` would need a region set that does not exist at
+   this point — the downstream region is not recovered here — so the safe side is
+   taken. No measured cell needs it. Pinned by
+   `control_predmux_leave_w6_classical_merge_br.ll`, whose delete-the-guard
+   measurement shows the shipped owner losing a diamond it currently owns.
+2. **The phi is precisely what strands the downstream claim.** The two scopes
+   above differ in exactly ONE thing — whether a phi of `Mg` is admissible — so
+   `supported ∧ ¬supported` says "converting `Mg`'s phis is what makes the
+   downstream condition usable, and nothing else about the tree is off-grammar".
+   The second call is the question the region rooted at `Mg` will ask itself
+   (its `R.Entry` **is** `Mg`), so this is Rule 14 — one question, one answer —
+   and the claim gate cannot drift from the E6 gate it predicts.
+
+**This formulation is the Rule-13 round's doing, and the first draft is worth
+recording.** It hand-rolled the test as a tree walk (`condTreeReadsConvertedPhi`)
+plus a mirror of `convertPhis`' BoolAlg decision (`phiConvertsToBoolAlg`). Two
+lenses independently measured that the walk was strictly MORE PERMISSIVE than the
+grammar it was predicting — it admitted a general `select i1` (not only the two
+poison-shielded short-circuit forms), it `||`-ed over and/or operands where
+`isSupportedCondTree` `&&`-s them (so an off-grammar SIBLING still fired the
+claim), it never applied `coneDefinedAfterFlagDrop`, and it carried its own depth
+budget. Measured, it fired ~7:1 against the one stranding it exists to unblock.
+Nothing unsound followed (the E-ladder, not the witness, is the soundness gate,
+and the anti-overlap argument held), but it mutated regions it could never buy —
+pure claim-order churn on already-verified cells. Asking the shipped predicate
+twice collapses all four over-fire modes at once and deletes both helpers. The
+durable lesson: **a witness that PREDICTS another gate's answer should call that
+gate, not re-implement it** — the same conclusion q2wk reached from the other
+direction with `BoolAlgPhis` (there the answer had to be RECORDED because the
+scope was gone by emit time; here the question can simply be asked directly).
+
+The scope's block set is `{Mg}` alone, which is also the entire reachable
+surface: a phi of a region-INTERIOR block cannot appear in `Mg`'s condition cone,
+since it would have to dominate `Mg` and hence post-dominate `E`, making it — not
+`Mg` — the immediate post-dominator.
+
+**Anti-overlap holds by CONSTRUCTION, not by measurement.** A `br` region whose
+MERGE ends in a **tainted** conditional branch is categorically declined by every
+shipped `br` owner:
+
+- `ControlDetect::recoverRegion` tests `hasTaintedCondBranch` on **both**
+  successors *before* any shape match, and a diamond's merge IS a successor of
+  the entry — both orientations; the if/else merge `M` gets the same test
+  explicitly. Either way it returns `RegionShape::Nested`.
+- `recoverRegionTree` (4.3) declines it too, and for a STRUCTURAL reason rather
+  than a shape observation (the Rule-13 judge's strengthening): W6 can only fire
+  when a phi of `Mg` has ≥ 2 unique incoming blocks, so `Mg` necessarily has ≥ 2
+  predecessors — as the `Mid` candidate its `getSinglePredecessor()` is therefore
+  *always* null. And when no interior block has a tainted branch at all (the
+  common case here, since `NestedTainted` would otherwise have claimed already),
+  it declines one criterion EARLIER at `T0 == T1` — the case
+  `RegionTreeDetect.cpp`'s own comment calls "the sequential `if/else; if`
+  reaching here via the if/else merge's tainted branch".
+- `classifyAbortPark` and `classifyGuardedStoreArm` run **before**
+  `recoverRegion` and require an arm construct E4 excludes — a recognized
+  noreturn CALL, a STORE. Both are additionally disjoint from W6 by
+  construction: an abort arm ends in `unreachable`, so `preds(Mg) = {E}` and no
+  merge phi can have 2 unique incoming blocks; and the guarded-store classifier
+  declines any merge that *starts* with a `PHINode`.
+  `classifyClassicalCallArm` runs **after** `recoverRegion`, i.e. only on a
+  Diamond/IfElse whose merge that function has already proven does NOT end in a
+  tainted conditional branch — a stronger fence than the arm-construct argument,
+  and NOT the "pre-`recoverRegion`" one an earlier draft of this paragraph
+  claimed (found by two lenses, corrected in the source comment first).
+- The two tainted-`br` owners outside that family are fenced independently and by
+  something other than this witness (both probe-verified in the same round):
+  `lowerControlledIOSinks` needs its arm's recognized SINK CALL, which E4
+  excludes (a declaration fails the pure-callee proof); and a loop-header merge
+  always has a latch predecessor outside the region, so the region leaves at
+  `E3-mergepred` — AFTER this witness, not before it. (The witness IS consulted
+  first, and on a real loop header it typically fires, since the header phi's
+  ≥ 3 incomings already trip the pre-existing `SolePhiIncomings > 2` witness.
+  The conclusion is unaffected — the whole E-ladder runs before anything is
+  emitted — but two delta lenses caught an earlier draft of this bullet, and of
+  the matching source comment, asserting the opposite ordering.)
+
+So W6 can only claim shapes that decline today. Measured, that is exactly what
+happened: of 910 lit fixtures (909 pass + 1 pre-existing XFAIL) and every
+buildable single-TU e2e slice — 232 of the 249 `.c` files, the other 17 being
+second-TU `*_lib.c` halves that fail stage 1 by construction on both plugins —
+run through both plugins, the only committed artifacts that moved were the three
+ld80 goldens below. (216 of the 232 compile under the post-change plugin, 213
+under the pre-change one; an earlier draft used 216 as if it were the buildable
+count, which UNDERSTATED the sweep.)
+
+**Cost (disclosed, measured, and in the FAVOURABLE direction this time).** W6
+changes claim ORDER on modules that already compiled — the bd `8dwo` phenomenon,
+here pushing the claim INWARD/EARLIER, which is the direction that ticket says
+shrinks the stream. Three committed goldens moved, all strictly SHORTER:
+`acoshl` 3934 → 3297, `asinhl` 3887 → 3282, `atanhl` 1626 → 1223 trace lines.
+Every changed symbol count is negative, forward and `_inv` counts move in pairs,
+and **no** arithmetic-template or `cqrt_copy_*` count changes at all — the DATA
+path is untouched and only the predicate network shrank (the upstream diamond's
+`isnan` predicate is now materialized once, at BP = ⊤, instead of being
+re-derived inside a deeper edge-predicate network). Regenerated deliberately.
+
+**Target set (measured 2026-07-26 at the plain `clang -O1` SHIP FLOOR, not the
+census pipeline):** `log1pl.f80`, `logl.f80`, `log2l.f80` flip
+`nested control flow under quantum control` → COMPILES, each with a committed
+real-openlibm slice + golden (`slice_libm_real_{log1pl,logl,log2l}`), so
+injection-covered **and** verified move together for once.
+
+**Residual, deliberately unclaimed (safe over-declines, all filed):** an
+untainted-but-will-taint merge branch (sub-condition 1); a stranding phi whose
+defining block is NOT part of any claimable upstream region — e.g. the upstream
+block's own terminator is CLASSICAL, so no PredMux candidate roots there at all;
+and a `switch`-rooted upstream region (W6 is gated to the `br` arm — no measured
+cell needs it and the 4.5 switch owners' accept surface would need its own
+anti-overlap argument).
 
 ### 4.5 Normalizations (each proof-gated, each part of the claimed region only)
 
@@ -864,6 +1019,10 @@ loudly. The matrix pins that the leave→decline composition stays intact:
 | **Inc 5** nested short-circuit whose INNER region is W-witnessed on its own | **accept**, but with a bigger gate stream than pre-Inc-5 (claim order shifts outer-first) | `control_predmux_accept_nested_shortcircuit_claim_order.ll` — a recorded baseline, not an optimum; see §4.4b Cost note 2 |
 | **Inc 5** i1 phi condition with < 2 unique incoming blocks | leave → existing decline | `control_predmux_reject_i1phi_single_pred.ll` (mirrors `convertPhis`' own `In.size() > 1`) |
 | **Inc 5** switch SCRUTINEE that is untainted-but-will-taint | leave (deliberately NOT widened — no measured cell needs it) | unchanged existing switch declines |
+| **Inc 6** merge's tainted branch condition reads NO phi this claim would convert (a plain compare on the rail) | leave (W6 does not fire) → existing `nested control flow` decline | `control_predmux_leave_w6_cond_reads_no_phi.ll` — the discriminating fixture for the phi-reading half: a blanket "merge ends in a tainted br" witness WOULD claim it |
+| **Inc 6** stranding-position phi whose incomings are off the strict grammar, so `convertPhis` would build a select CHAIN, not boolean algebra | leave (W6 does not fire — the phi is not admissible under the `Convertible` scope either) → existing decline | `control_predmux_leave_w6_selectchain_phi.ll`. NB the decline STRING is the same with or without the gate (both leave the downstream at `E6-condtree`); the fixture discriminates through the `CQ_PREDMUX_DBG` leave line, which the Rule-13 prose lens had to establish by delete-the-guard measurement |
+| **Inc 6** merge phi read only through an `icmp` over i1 operands (the q2wk shield) | leave (W6 does not fire — an opaque compare leaf strands nothing) → existing decline | `control_predmux_leave_w6_i1cmp_shield.ll` |
+| **Inc 6** merge's branch CLASSICAL (untainted, incl. untainted-but-will-taint) | leave (W6's taint gate) — the deliberate over-decline that keeps the anti-overlap argument exact | `control_predmux_leave_w6_classical_merge_br.ll` — the shipped owner keeps the diamond (measured: with the taint half removed, its disposition moves from `value-arm swap-route` to the generic `control flow`) |
 | `ret` inside region (multi-exit) | leave → existing decline (`non-reconverging value exit` / 7.2 paths) | existing fixtures |
 | merge phi `i128`/vector/`fp128` (E7) | leave → existing decline | existing G4-family fixtures |
 | volatile access other than the (c)-proven form | leave | new negative fixture (Inc 3) |
@@ -911,6 +1070,25 @@ workflow-model-tiering directive)
   for the claim-order emission shift. E2E: the 12 unblocked cells, all goldened
   and all holding at the ship floor. Rule-13 delta clearance: 6 adversarial
   lenses + judge, 0 blockers, findings folded pre-commit.
+- **Inc 6 (bd `oudq`) — W6, the stranded-merge claim witness — DONE 2026-07-26.**
+  §4.4c. Claim-gate only (two new pure predicates + one `Claim |=` term in
+  `recoverRegion`'s `br` arm); the flatten is untouched. Fixtures: 2 accept
+  (`control_predmux_accept_w6_stranded_merge_condphi.ll` — the phi at an `or`
+  NODE — and `control_predmux_accept_w6_direct_condphi.ll` — the phi as the WHOLE
+  condition, the second live accept position, added by the delta round; both
+  red-green verified, the pre-oudq plugin declines each `nested control flow`)
+  + 4 leave (`_classical_merge_br`, the pin for the TAINTED-merge-branch half and
+  therefore for the whole anti-overlap argument; `_cond_reads_no_phi`;
+  `_selectchain_phi`; `_i1cmp_shield`), each measured byte-identical through both
+  plugins. All four leave fixtures additionally pin the claim through
+  `env CQ_PREDMUX_DBG=1 … --check-prefix=DBG` on the `gate=W-witness` leave line,
+  because for two of them the decline STRING is identical with and without the
+  guard — which makes that lever's `gate=`/`entry=`/`merge=` strings part of the
+  shipped contract (recorded at the `leave` lambda; the `at:` operand is NOT
+  contractual, its SSA slot numbers being unstable run-to-run). E2E: the 3 ld80 cells `log1pl`/`logl`/
+  `log2l` flip at the **ship floor** with committed real-openlibm slices +
+  goldens, and 3 pre-existing goldens (`acoshl`/`asinhl`/`atanhl`) were
+  DELIBERATELY regenerated — strictly shorter, data path unchanged (§4.4c Cost).
 - **Inc 4 — re-census + scoreboard.** Re-run `peel_census.py`
   (normal/first-blocker mode; the census-mode plugin remains throwaway) over
   the full 123-cell surface; publish delta (expected: the 8 flip to COMPILE;

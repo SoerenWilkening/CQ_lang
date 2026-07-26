@@ -8,9 +8,14 @@
 > *"Do not quote '48 verified' — quote 48 injection-covered, 8 verified"* is itself now
 > out of date on both halves.
 >
-> **CURRENT AUTHORITATIVE NUMBERS (2026-07-26, after bd `q2wk`):** the all-widths **O1**
-> baseline `full_surface/full_census_O1.json` gives **92 / 123 injection-covered (75%)**
-> and **91 verified**, 36 declining. History: bd `3c6m.58` re-measured *verified* at 53,
+> **CURRENT AUTHORITATIVE NUMBERS (2026-07-26, after bd `oudq`):** the all-widths **O1**
+> baseline `full_surface/full_census_O1.json` gives **95 / 123 injection-covered (77%)**
+> and **94 verified**, **28** declining. bd `oudq` (PredMux L6 increment 6 — the W6
+> stranded-merge claim witness) took 92 → 95 / 91 → 94 with **0 regressions**, goldening
+> all three new cells (`log1pl.f80` `logl.f80` `log2l.f80`) at the ship floor, and emptied
+> the **L6 nested control** decline bucket. (The "36 declining" this line used to carry was
+> off by exactly the 5 `COMPILES (spec-clone)` cells, which ARE injection-covered; at the
+> q2wk baseline it was 31.) History: bd `3c6m.58` re-measured *verified* at 53,
 > goldened the 15-cell gap, and all 15 held → 68 = injection-covered; bd `3c6m.60` then
 > fixed the census hardware-keep-set methodology bug (an inner `sqrt`/`floor` was resolving
 > to openlibm's *software* body, not the `@llvm.<fn>` intrinsic the ship floor emits),

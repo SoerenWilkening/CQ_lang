@@ -410,10 +410,11 @@ void cqrt_ry_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
 }
 
 /* ---------------------------------------------------------------------
- * Gate primitives (backend.md §11.4) — handle-typed, void. Declared +
- * defined this phase but NOT emitted by the IR pass yet (Phase 8), so
- * they are left unexercised by the trace driver. Same no-arrow void
- * trace convention as cqrt_free; args printed as h<N>.
+ * Gate primitives (backend.md §11.4) — handle-typed, void. `cqrt_x`,
+ * `cqrt_cnot` and `cqrt_toffoli` ARE pass-emitted (the 4.1 ¬flag bracket
+ * and the 3c6m.12 compound-condition flag network respectively — see
+ * cq_runtime.h); only `cqrt_h` is still unemitted (Phase 8). Same
+ * no-arrow void trace convention as cqrt_free; args printed as h<N>.
  * ------------------------------------------------------------------- */
 
 void cqrt_x(int32_t q) {

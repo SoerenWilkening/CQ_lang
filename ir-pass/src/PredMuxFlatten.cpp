@@ -259,6 +259,18 @@ bool coneDefinedAfterFlagDrop(const Value *Root) {
 // is what makes a depth-budget or already-converted-incoming difference
 // between the two impossible. Null scope = no phi is admissible (every
 // non-claim caller keeps today's grammar byte-identically).
+//
+// `Entry == nullptr` means NO ENTRY FENCE, and that is a real contract, not an
+// accident of a default: the bd oudq W6 witness uses it to ask "would this phi
+// convert if its block were a MERGE?" and pairs it with a second scope whose
+// `Entry` IS that block, so the two answers differ exactly on the entry-phi
+// rule. Every other caller passes a real region entry. A future refinement that
+// dereferences `Entry` (a dominance test, an assert) must keep this case alive
+// or it silently turns W6 off — or, worse, on for a genuine entry phi. NOTE the
+// fence is spelled `PB == S->Entry`, so a DETACHED phi (null parent) also reads
+// as fenced under a null `Entry` — the safe direction (both scopes then answer
+// false and W6 cannot fire), and unreachable in practice since any phi in a
+// verified terminator's condition cone is parented.
 struct PhiCondScope {
   const SmallPtrSetImpl<BasicBlock *> *InRegion = nullptr;
   const BasicBlock *Entry = nullptr;
@@ -806,7 +818,14 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     if (!Mg)
       return false;
   }
-  // bd adia debug lever (env-gated, byte-neutral)
+  // bd adia debug lever (env-gated, byte-neutral). CONTRACT (bd oudq): the
+  // `gate=<name>` string and the named `entry=`/`merge=` blocks ARE pinned by
+  // fixtures (`ir-pass/test/control_predmux_leave_w6_*.ll` check them through
+  // `env CQ_PREDMUX_DBG=1 … --check-prefix=DBG`), so renaming a gate is not a
+  // byte-neutral cleanup. The trailing `at: <instruction>` operand is NOT
+  // contractual and must never be pinned — its SSA slot numbers are unstable
+  // run-to-run even for one unchanged plugin (measured on slice_libm_real_coshl:
+  // three runs, three different slot numbers, identical lowered IR).
   auto leave = [&](const char *Why, const Instruction *At = nullptr) {
     if (::getenv("CQ_PREDMUX_DBG")) {
       llvm::errs() << "CQ_PREDMUX_DBG: leave @" << E->getParent()->getName()
@@ -901,8 +920,117 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         SoleMergePhi->getType()->isFloatingPointTy() &&
         isMuxableType(SoleMergePhi->getType()) &&
         SoleMergePhi->getIncomingValue(0) != SoleMergePhi->getIncomingValue(1);
+    // W6 (bd oudq) — the MERGE block's own TAINTED conditional branch reads one
+    // of the merge's i1 phis as an and/or cond-tree NODE. That downstream region
+    // (rooted at `Mg`) can NEVER be claimed while the phi lives: rule (A)
+    // condition 2 refuses a phi whose parent is the region ENTRY, because
+    // `RegionFlattener::run()` skips the entry — so `isSupportedCondTree` cannot
+    // build its false-edge literal and it leaves at `E6-condtree` forever
+    // (nothing else in the pipeline removes an entry phi). Claiming THIS region
+    // is the fix: the phi is a MERGE phi here, `convertPhis(R.Merge)` rewrites it
+    // to the Inc-2 boolean algebra ∨ᵢ(EPᵢ ∧ vᵢ), and the downstream branch becomes
+    // an ordinary cond tree over compare leaves on the next fixpoint round. This
+    // is the fdlibm `__isnanl` early-exit chain — `s_isnan.c:63` inlined, which
+    // at the log1pl.f80 ship floor is `%16 = phi i1 [ false, %0 ], [ %14, %10 ]`
+    // OR-ed into `isinf || iszero` in that same block — and it is what blocks
+    // log1pl/log2l/logl.f80.
+    //
+    // ANTI-OVERLAP (the W witness' whole job) holds by construction, not by
+    // measurement: a br region whose MERGE ends in a tainted conditional branch
+    // is categorically DECLINED by every shipped br owner. `ControlDetect`'s
+    // `recoverRegion` tests `hasTaintedCondBranch` on BOTH successors before any
+    // shape match — and a diamond's merge IS a successor of the entry — then
+    // repeats the test explicitly on the if/else merge `M`; either way it returns
+    // `RegionShape::Nested`, and `recoverRegionTree` declines it too — as a
+    // PROOF, not a shape observation (the Rule-13 judge's strengthening):
+    // `isConvertiblePhiCond` demands ≥ 2 UNIQUE incoming blocks, so W6 can only
+    // fire when `Mg` has ≥ 2 predecessors, and the merge-as-`Mid` candidate's
+    // `getSinglePredecessor()` is therefore structurally null. When no interior
+    // block carries a tainted branch it declines one criterion earlier still, at
+    // `T0 == T1` — what that function's own comment calls the "sequential
+    // if/else; if" case. The same ≥ 2-predecessor fact makes W6 disjoint from the
+    // abort park by construction: an `unreachable` arm leaves `preds(Mg) = {E}`,
+    // so no merge phi can have two unique incoming blocks at all.
+    // `classifyAbortPark` and `classifyGuardedStoreArm` run BEFORE
+    // `recoverRegion` and require a noreturn-sink CALL / a STORE, neither of
+    // which E4 admits; `classifyClassicalCallArm` runs AFTER it, i.e. only on a
+    // Diamond/IfElse whose merge `recoverRegion` has already proven does NOT end
+    // in a tainted cond branch. The two tainted-`br` owners OUTSIDE that family
+    // are fenced independently, and by something other than this witness (both
+    // verified by probe in the same round): `lowerControlledIOSinks` needs its
+    // arm's recognized SINK CALL, which E4 excludes (a declaration fails the
+    // pure-callee proof); and a loop-header merge always has a latch predecessor
+    // outside the region, so the region leaves at `E3-mergepred` — AFTER this
+    // witness, not before it (two delta lenses caught an earlier draft asserting
+    // the opposite ordering; the conclusion is unaffected because the whole
+    // E-ladder runs before anything is emitted, but this file is the primary
+    // written record). So W6 claims only shapes that decline today.
+    // DELIBERATELY NARROW: gated on the phi actually CONVERTING to boolean
+    // algebra (a select-chain phi would leave the downstream branch just as
+    // unclaimable) and on the phi being read at a cond-tree NODE (an i1 phi
+    // behind an `icmp` is an opaque leaf that never stranded anything). NOTE what
+    // that does and does not buy (Rule-13 lens 7, with a reproducer): it removes
+    // the reason the downstream branch is UNUSABLE, but it does not make the
+    // downstream region claimable — that region may still leave on its own
+    // W-witness, in which case the only visible change is which decline fires.
+    // Claim-order churn of exactly the bd `8dwo` kind is therefore possible here;
+    // measured, it is in the favourable (shorter-stream) direction.
+    //
+    // HOW THE STRANDING IS TESTED — by asking the DOWNSTREAM question itself,
+    // not a proxy for it (bd oudq Rule-13, lens 3: the first draft used a
+    // hand-rolled tree walk that was strictly more permissive than
+    // `isSupportedCondTree` — general `select i1`, off-grammar SIBLINGS, no
+    // `coneDefinedAfterFlagDrop`, its own depth budget — and measurably fired
+    // ~7:1 against the one stranding it exists to unblock, churning three
+    // already-verified goldens for nothing). Run the SHIPPED predicate twice
+    // over `Mg`'s branch condition, with scopes that differ in exactly one
+    // thing — whether a phi of `Mg` counts as convertible:
+    //   * `Convertible` (no entry fence): does the condition become a supported
+    //     cond tree once this claim converts `Mg`'s phis?
+    //   * `Downstream` (entry fence = `Mg`, i.e. the scope the region rooted at
+    //     `Mg` will build for itself): is it supported WITHOUT that conversion?
+    // `Convertible && !Downstream` therefore says precisely "a phi of `Mg` is
+    // what makes the downstream condition unusable, and converting it is what
+    // makes it usable" — Rule 14, one question with one answer, so the claim
+    // cannot drift from the E6 gate it is predicting. Everything the old walk
+    // over-admitted collapses out: a non-phi off-grammar node fails BOTH calls,
+    // a phi behind an `icmp` (the q2wk shield) passes BOTH, and a phi whose
+    // incomings leave the strict `isBooleanCondTree` grammar — i.e. one
+    // `convertPhis` would send down its select-CHAIN path — fails the first.
+    //
+    // *** THE `BranchInst` TEST BELOW IS LOAD-BEARING, NOT A CONVENIENCE. *** The
+    // anti-overlap argument rests on `ControlDetect`'s `hasTaintedCondBranch`,
+    // which is `dyn_cast<BranchInst>` + `isConditional()` + tainted — it is FALSE
+    // for a block ending in a tainted `switch`. Generalizing this to the
+    // switch-aware `isTaintedCtrlTerm` (used one screen up, so the edit looks
+    // harmless) would silently void the whole paragraph above: a merge ending in
+    // a tainted switch is 4.5 `SwitchClassify` territory, NOT a categorical
+    // decline. That shape is a deliberate residual, filed as bd `ih70`.
+    bool StrandedCondPhi = false;
+    if (auto *MgBI = dyn_cast<BranchInst>(Mg->getTerminator()))
+      // `Mg` phi-less ⇒ the two scopes are indistinguishable (no phi node is
+      // reachable, so nothing scope-sensitive fires), both calls return the same
+      // value and the conjunction is false — skip two unmemoized depth-8 walks
+      // that can descend whole callee bodies through `coneDefinedAfterFlagDrop`.
+      // Behaviour-identical by that argument, not by measurement.
+      if (MgBI->isConditional() && !Mg->phis().empty() &&
+          Taint.Tainted.count(MgBI->getCondition())) {
+        // Scope block set = {Mg} alone. A phi of a region-INTERIOR block cannot
+        // appear in `Mg`'s condition cone anyway: it would have to dominate
+        // `Mg`, hence post-dominate `E`, making IT — not `Mg` — the immediate
+        // post-dominator (lens 3's dead-code argument), so the merge's own phis
+        // are the entire reachable surface.
+        SmallPtrSet<BasicBlock *, 1> MergeOnly;
+        MergeOnly.insert(Mg);
+        const PhiCondScope Convertible{&MergeOnly, /*Entry=*/nullptr, nullptr};
+        const PhiCondScope Downstream{&MergeOnly, /*Entry=*/Mg, nullptr};
+        StrandedCondPhi =
+            isSupportedCondTree(MgBI->getCondition(), 0, &Convertible) &&
+            !isSupportedCondTree(MgBI->getCondition(), 0, &Downstream);
+      }
     Claim = NestedTainted || ClaimableRead || NumMergePhis >= 2 ||
-            (NumMergePhis == 1 && SolePhiIncomings > 2) || FpSolePhiMux;
+            (NumMergePhis == 1 && SolePhiIncomings > 2) || FpSolePhiMux ||
+            StrandedCondPhi;
   }
   // ClaimAll (5po2 I2): inside a Bennett clone the anti-overlap witness is
   // irrelevant (no top-level emitter runs there), so claim ANY acyclic SESE

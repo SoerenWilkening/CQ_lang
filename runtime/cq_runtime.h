@@ -204,8 +204,19 @@ void cqrt_ry_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle);
  * pass-emitted since Phase 4.1: the swap-route emitter brackets a
  * ¬flag (else / false-successor) arm in a self-inverse `cqrt_x(flag)`
  * pair so the enclosed `cqrt_cswap` routes on the negated flag. The
- * other three (`cqrt_h`/`cqrt_cnot`/`cqrt_toffoli`) are declared +
- * defined but not yet emitted (reserved for Phase 8 / 11 passes).
+ * `cqrt_cnot` and `cqrt_toffoli` ARE pass-emitted too — they are the
+ * 3c6m.12 compound-condition FLAG NETWORK, minted in THREE places with one
+ * shape (`And` -> a single `cqrt_toffoli(L,R,G)`; `Or` -> `cqrt_cnot(L,G)` +
+ * `cqrt_cnot(R,G)` + `cqrt_toffoli(L,R,G)`): `SelectMergeEmit.cpp` for the 4.4
+ * tainted-`select` merge (NO clone involved — the one a PredMux-flattened body
+ * hits), `Specialization.cpp` for a clone's controlled-return mux, and
+ * `BreakReversePlay.cpp` for the 7.4 break reverse-play. `EmitInverse` re-emits
+ * each verbatim as its own adjoint since both are involutions. ONLY
+ * `cqrt_h` is still declared + defined but unemitted (reserved for
+ * Phase 8 / 11). (Corrected by the bd oudq Rule-13 round: these
+ * comments are the primary written source for the gates' semantics, and
+ * a reviewer modelling a trace was reading "unexercised" for two gates
+ * that appear 260 times in a single committed golden.)
  * Trace (no return-value suffix): args printed as h<N>, e.g.
  *     "cqrt_x(h<q>)", "cqrt_cnot(h<ctrl>, h<tgt>)".
  * ----------------------------------------------------------------- */

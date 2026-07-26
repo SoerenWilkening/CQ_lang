@@ -3012,8 +3012,16 @@ add_test(NAME e2e-slice-libm-real-hypotf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_hypotf.expected.log")
 
 # acoshl.f80 — ld80 cell over the real ld80/e_logl.c + ld80/s_log1pl.c bodies with union IEEEl2bits
-# kept verbatim. Pins that the __polevll Horner loops DO fully unroll at the plain -O1 ship floor
-# (their standalone log1pl/log2l/logl siblings do NOT, and stay honest E2-cycle declines: bd 8h7d).
+# kept verbatim. Pins that the __polevll Horner loops fully unroll IN THE PIPELINE at the plain -O1
+# ship floor — measured: `clang -O1` leaves them as REAL loops (12 in @slice here, 4 in each log
+# sibling), and the pass's own static-K force-unroll prepass (LoopUnrollPrepass.cpp, bd 3c6m.55
+# Inc 2 / lf8s, trip <= kMaxUnrollTrip=8) unrolls them between the PredMux fixpoints, before
+# lowerLoops. (TWICE-CORRECTED by bd oudq: this comment used to attribute the unroll to clang -O1
+# — a future agent debugging a loop-shaped decline would look at stage-1 IR, see 4 live loops and
+# conclude the pin was broken — and it used to say the standalone log1pl/log2l/logl siblings did
+# NOT unroll and were honest E2-cycle/bd 8h7d declines. They unroll exactly like this cell; their
+# ship-floor decline was the __isnanl entry-phi CONTROL shape W6 now claims, and all three are
+# committed slices below.)
 add_test(NAME e2e-slice-libm-real-acoshl
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -3040,3 +3048,42 @@ add_test(NAME e2e-slice-libm-real-atanhl
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanhl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanhl.expected.log")
+
+# ── bd oudq (PredMux L6 Inc 6, the W6 stranded-merge claim witness) ─────────────
+# log1pl.f80 / logl.f80 / log2l.f80 — the three ld80 cells whose ONLY ship-floor
+# blocker was the fdlibm __isnanl early-exit: a sole 2-incoming i1 merge phi
+# (s_isnan.c:63) OR-ed into that same merge block's own tainted branch. Before W6
+# both claims were lost — the downstream region at `E6-condtree` (an ENTRY phi is
+# never converted, q2wk rule (A) condition 2), the upstream diamond that DEFINES
+# the phi at `W-witness` — and all three declined `nested control flow under
+# quantum control` at the plain -O1 floor (measured on the pre-oudq plugin).
+# Their __polevll Horner loops survive `clang -O1` as real loops (4 each) and are
+# force-unrolled INSIDE cq-lowering by LoopUnrollPrepass, exactly as in the
+# acoshl / asinhl / atanhl siblings that inline these same bodies — so the loops
+# were never these cells' blocker.
+add_test(NAME e2e-slice-libm-real-log1pl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log1pl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log1pl.expected.log")
+
+add_test(NAME e2e-slice-libm-real-logl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_logl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_logl.expected.log")
+
+# log2l additionally pins the bd zco4 volatile scalar-local promotion: e_log2l.c
+# declares `volatile long double z` (the Moshier ***CAUTION*** anti-reassociation
+# idiom) and the slice keeps it verbatim.
+add_test(NAME e2e-slice-libm-real-log2l
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log2l.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log2l.expected.log")

@@ -1,5 +1,44 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ PredMux L6 INCREMENT 6 — 92 → 95/123 injection-covered, 91 → 94 VERIFIED,
+0 REGRESSIONS (2026-07-26, bd `oudq`).** The direct `q2wk` successor, and a
+claim-gate widening again — the flatten was not touched. PredMux's **W anti-overlap
+witness** gains **W6**: claim a `br`-rooted region when its MERGE ends in a
+**tainted** conditional branch whose condition tree is supported *exactly when* a
+phi of that merge counts as convertible. That is the fdlibm `__isnanl` early-exit
+(`src/s_isnan.c:63`) inlined — a sole 2-incoming `i1` merge phi OR-ed into the
+merge block's own branch — and before W6 BOTH claims were lost: the DOWNSTREAM
+region rooted at that merge left at `E6-condtree` (q2wk rule (A) condition 2: a
+phi in the region ENTRY is never converted, and nothing else in the pipeline
+removes one), while the UPSTREAM diamond that DEFINES the phi left at
+`W-witness`. Claiming the upstream one makes it a MERGE phi, `convertPhis`
+rewrites it to the Inc-2 boolean algebra, and the downstream region claims
+normally on the next fixpoint round. Design of record: `../../../docs/prd/
+phase-07-expressiveness/3c6m.14-L6-control-predication/PRD.md` §4.4c.
+**THE 3 THAT FLIP** — `log1pl.f80` `logl.f80` `log2l.f80` — were all GOLDENED
+BEFORE this number was published, and all three hold at the true `clang -O1` ship
+floor (`e2e-slice-libm-real-<fn>`, `opt` exit 0, deterministic byte-identical
+trace), so **injection-covered and verified moved together** (95 / 94; the single
+remaining gap is still `hypotl.f80`, bd `3c6m.61`). The **L6 nested control**
+decline bucket is now EMPTY.
+**THE WITNESS IS WRITTEN AS TWO CALLS TO THE GATE IT PREDICTS**
+(`isSupportedCondTree` with and without the entry fence over `{merge}`), not as a
+hand-rolled walk. The first draft WAS such a walk, and two Rule-13 lenses
+independently measured it firing ~7:1 against the one stranding it exists to
+unblock — nothing unsound (the E-ladder is the soundness gate), but pure
+claim-order churn on already-verified cells. **A witness that predicts another
+gate's answer should CALL that gate.**
+**DISCLOSED EMISSION CHANGE (deliberate, verified equivalent):** three committed
+ld80 goldens moved — `acoshl` 3934 → 3297, `asinhl` 3887 → 3282, `atanhl`
+1626 → 1223 trace lines, all strictly SHORTER, no arithmetic-template and no
+`cqrt_copy_*` count changed. A validated symbolic trace-equivalence checker
+(MTBDD over compare atoms, 13 known-answer mutants) reports EQUIVALENT for all
+three, with identical controlled-copy record sequences and identical residual
+garbage; a basis-state differential harness agrees over 120k inputs each. The
+shortening is the bd `8dwo` claim-order effect in the FAVOURABLE direction: the
+old order derived both halves of a complementary compare pair, the new one
+derives the merge predicate once at BP = ⊤.
+
 **⚡ PredMux L6 INCREMENT 5 — 80 → 92/123 injection-covered, 79 → 91 VERIFIED,
 0 REGRESSIONS (2026-07-26, bd `q2wk`).** The first COMPILER move since `3c6m.60`
 (which was harness-only). PredMux's E6 claim gate now admits **path-predicated
