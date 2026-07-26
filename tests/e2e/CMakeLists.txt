@@ -13,6 +13,13 @@ set(_E2E_OPT   "${LLVM_TOOLS_BINARY_DIR}/opt")
 # cmake re-configure — e2e does not auto-discover (unlike the lit .ll fixtures).
 set(_E2E_LLVM_LINK "${LLVM_TOOLS_BINARY_DIR}/llvm-link")
 
+# bd test_C_libtooling-8txa: stage 2b of run_slice.sh is the Rule-6 free-pairing
+# check over the lowered IR (tools/free_pairing_check.py). It is Python, so
+# resolve the interpreter once here rather than trusting whatever `python3` a
+# test shell happens to see; the project already requires python3 for
+# tools/gen_templates.py, so a missing interpreter is a hard configure error.
+find_program(_E2E_PYTHON NAMES python3 python REQUIRED)
+
 # Phase 2 canonical slice: theta -> add_hl -> measure.
 add_test(NAME e2e-slice-theta-add-measure
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
@@ -2449,13 +2456,33 @@ add_test(NAME e2e-slice-loop-value-accum
 # stripped to the classical bound (full trip count), and the break is realized by
 # an index-gated copy-not-move capture + whole-loop reverse-play (forward body ×4,
 # capture, copy-out, backward body ×4, balanced R/idx frees, ZERO measurements).
+#
+# THE FIVE `loop-break` SLICES ARE THE ONLY e2e ENTRIES THAT PASS
+# `--allow-unproven` TO run_slice.sh's stage-2b free-pairing check (bd 8txa).
+# The reason is structural, not a defect, and is the same in all five: the dtzb
+# break spine discharges its rails by a WHOLE-LOOP argument that a straight-line
+# structural checker cannot reconstruct. Two shapes, 4 sites per slice:
+#   * `%cq.brk.fire` — a Bennett RECOMPUTE-and-cancel ancilla. The forward sets
+#     `fire = cond AND [idx==0]` with a toffoli; the uncompute zeroes it with a
+#     cnot off a DIFFERENT predicate (`[idx'==0]`) that is provably equal to
+#     `fire` only after reasoning about the intervening index arithmetic. It is
+#     correct and it is not an adjoint palindrome.
+#   * `%cq.brk.R` / `%cq.brk.idx` — allocated before the loop, written inside
+#     the body and again in the reverse-play block, freed in the tail; the write
+#     history crosses the back-edge, so it is not linearly ordered in any one
+#     stream (`U1-cross-stream`).
+# Both are the province of the basis-state evaluator that is the OTHER, deferred
+# half of bd 8txa. Every VIOLATION-class check still runs on these slices — only
+# the UNPROVEN sites are downgraded — and every other e2e slice runs strict. Do
+# NOT copy this flag onto a new entry without a written reason of this kind.
 add_test(NAME e2e-slice-loop-break
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break.expected.log"
+    "--allow-unproven")   # dtzb whole-loop reverse-play; see the note above
 
 # Phase 7.4 coverage lock (test_C_libtooling-x1t1): the Q==Q value-arm break —
 # the break condition compares the rail against a SECOND loop-invariant QUBIT
@@ -2474,7 +2501,8 @@ add_test(NAME e2e-slice-loop-break-qq
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq.expected.log"
+    "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
 
 # Phase 7.4 coverage lock (test_C_libtooling-mvrb): a Q==Q value-arm break whose
 # loop-invariant comparand `p` carries a RELATIVE PHASE (an Rz / cq_phi in p's
@@ -2492,7 +2520,8 @@ add_test(NAME e2e-slice-loop-break-qq-phase
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_phase.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_phase.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_phase.expected.log"
+    "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
 
 # Phase 7.4 coverage lock (test_C_libtooling-1784): a Q==Q value-arm break whose
 # comparand is a DERIVED (non-mint) loop-invariant tainted value — `p = p0 + 5`
@@ -2511,7 +2540,8 @@ add_test(NAME e2e-slice-loop-break-qq-derived
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_derived.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_derived.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_derived.expected.log"
+    "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
 
 # Phase 7.4 coverage smoke (test_C_libtooling-rxx8): the i64-RAIL Q==Q value-arm
 # break. The only layer that LINKS the i64 break-path capture symbols (cqrt_alloc_i64,
@@ -2525,7 +2555,8 @@ add_test(NAME e2e-slice-loop-break-qq-i64
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_i64.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_i64.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_i64.expected.log"
+    "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
 
 # Phase 7.3 Increment 2 (test_C_libtooling-799w.2): the per-iteration in-body
 # uncompute Case B. Each iteration mints a FRESH rail, derives an iteration-local
@@ -3087,3 +3118,27 @@ add_test(NAME e2e-slice-libm-real-log2l
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log2l.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log2l.expected.log")
+
+# ---------------------------------------------------------------------------
+# bd test_C_libtooling-8txa — the Rule-6 free-pairing checker's OWN gate.
+#
+# tools/free_pairing_check.py runs as stage 2b of run_slice.sh on every slice
+# above, so it is now load-bearing: a checker that quietly stopped flagging
+# anything would make 232 e2e entries look green while witnessing nothing. This
+# entry is the mutant validation that keeps it honest — positive fixtures that
+# are verbatim lowered IR from the slices above and MUST verify clean, the named
+# defects bd 8txa says the golden trace cannot see (a deleted uncompute toffoli,
+# an `_inv` re-pointed to the wrong rail, a free whose uncompute never ran, each
+# with the exact finding code it must produce), and a proof-targeted sweep that
+# blanks every line a verified proof consumes and requires the verdict to flip.
+# It is pure Python over embedded fixtures: no clang, no opt, no plugin.
+add_test(NAME e2e-free-pairing-selftest
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/free_pairing_check_test.py")
+
+# Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
+# one CMake resolved, so the gate cannot silently fall back to a different (or
+# missing) `python3` on PATH. Applied to every test registered in this directory
+# — it must stay the LAST statement in this file for that sweep to be complete.
+get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
+set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
+  ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON}")

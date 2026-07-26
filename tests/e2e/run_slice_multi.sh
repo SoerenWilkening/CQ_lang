@@ -18,8 +18,16 @@
 # Empty $LIBSRCS is valid and exercised by the zero-lib fixture: llvm-link of
 # just cq.ll (an identity on the trace), proving the harness itself before the
 # specializer's real 2-file golden lands.
+#
+# Stage 3b (bd 8txa) mirrors run_slice.sh: the Rule-6 free-pairing check over
+# the same lowered IR this slice links and traces, because the golden cannot
+# witness "freed at |0>" (a `cq_template_..._inv` never names the rail it
+# restores). See run_slice.sh for the full rationale.
 set -euo pipefail
 CLANG=$1 OPT=$2 LLVMLINK=$3 PASS=$4 INC=$5 CQSRC=$6 LIBSRCS=$7 RT=$8 TPL=$9 GOLDEN=${10}
+FREECHECK_FLAGS=${11:-}
+PY=${CQ_PYTHON:-python3}
+HERE=$(cd "$(dirname "$0")" && pwd)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
 # Stage 1a — the CQ TU: -include CQ.h, -O1 (never -O0/-O2/-O3).
@@ -46,6 +54,10 @@ set +f
 
 # Stage 3 — the single cq-lowering pass over the combined module.
 "$OPT" -load-pass-plugin "$PASS" -passes=cq-lowering -S "$TMP/combined.ll" -o "$TMP/s2.ll"
+
+# Stage 3b — Rule-6 free-pairing check over the lowered IR (bd 8txa).
+# shellcheck disable=SC2086  # $FREECHECK_FLAGS is an intentional word-split
+"$PY" "$HERE/../../tools/free_pairing_check.py" -q $FREECHECK_FLAGS "$TMP/s2.ll"
 
 # Stage 4 — link: templates BEFORE runtime (load-bearing, C18). Deliberately
 # NO -O flag (clang default -O0): the lowered IR is the verified artifact; an
