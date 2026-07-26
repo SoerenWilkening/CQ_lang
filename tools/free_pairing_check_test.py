@@ -429,6 +429,15 @@ MUTANTS = [
                   "  call void @cqrt_qram_store_i32(i32 %arr, i32 %h, i32 %qval)"),
      "T2-operand-mutated"),
 
+    # A handle that arrives from outside the stream but is written inside it:
+    # its state on entry is unknown, so no in-stream history can discharge it.
+    ("free-of-a-rail-minted-outside-the-stream",
+     insert_after(
+         insert_after(CLONE_UNC, "tail call i32 @__cq_q_inner_1",
+                      "  call void @cqrt_x(i32 %0)"),
+         "@__cq_q_inner_1_unc", "  call void @cqrt_free(i32 %0)"),
+     "U3-extern-rail"),
+
     # ---- lifetime hygiene, which has no other gate in the project ---------
     ("double-free",
      insert_after(PHASE_DIAMOND, "@cqrt_free(i32 %rail)",

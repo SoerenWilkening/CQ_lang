@@ -146,7 +146,10 @@ and B(i+1) has Bi as its only predecessor. That is the shape the lowering emits
 (`RegionFlatten` linearizes accepted control regions; the uncompute spine and
 the flag network emit adjacent runs). A rail minted in one stream and freed in
 another — the dtzb whole-loop reverse-play is the live example — is reported
-UNPROVEN, never silently passed.
+UNPROVEN, never silently passed (`U1-cross-stream`, or `U3-extern-rail` when it
+is also written here). Writes to a handle that arrives from outside ARE
+recorded, so "this operand has no writes in this interval" is a fact about the
+stream rather than an absence of information.
 
 EXIT STATUS. 0 iff every free site VERIFIED. Non-zero on any VIOLATION, on any
 UNPROVEN site (unless `--allow-unproven`), and on any UNCLASSIFIED runtime
@@ -633,10 +636,9 @@ class StreamAnalysis:
                 self.check_free(pos, c)
                 continue
             if e.role == "measure":
-                r = self.rails.get(c.vals[0])
-                if r is not None:
-                    r.measured_at = c.line
-                    r.writes.append((pos, c))
+                r = self.rail_for_write(c.vals[0])
+                r.measured_at = c.line
+                r.writes.append((pos, c))
                 continue
             if e.role == "inv":
                 self.inv_pool.setdefault((e.base, tuple(c.args)),
@@ -644,9 +646,7 @@ class StreamAnalysis:
             if not e.diagonal:
                 for wi in e.writes:
                     if wi < len(c.vals):
-                        r = self.rails.get(c.vals[wi])
-                        if r is not None:
-                            r.writes.append((pos, c))
+                        self.rail_for_write(c.vals[wi]).writes.append((pos, c))
             if c.sym == "cqrt_x":
                 self.x_parity[c.vals[0]] = self.x_parity.get(c.vals[0], 0) + 1
             if e.mints in ("rail", "array", "tape") and c.res:
@@ -675,6 +675,26 @@ class StreamAnalysis:
                          f"`{c.text}` is an adjoint no cqrt_free claims; the "
                          f"ABI does not name the rail it acts on, so the rail "
                          f"it left (or dirtied) cannot be identified here")
+
+    def rail_for_write(self, name):
+        """The record for `name`, materialising an EXTERN one if it was not
+        minted in this stream.
+
+        Without this, a write to a handle that arrives from outside (a Phase-6
+        clone parameter, a rail defined in another block) would be INVISIBLE:
+        `unchanged_over` would report the operand stable because it had no
+        recorded writes, and `commutes` would take a flag's `cqrt_x` parity at
+        face value while a `cnot` retargeted it. Recording externs makes the
+        in-stream write history complete for every handle, so "no writes here"
+        is a fact rather than an absence of information. An extern rail can
+        never be VERIFIED at a free (its incoming state is unknown) — see
+        `U3-extern-rail`.
+        """
+        r = self.rails.get(name)
+        if r is None:
+            r = Rail(name, "extern", None, -1)
+            self.rails[name] = r
+        return r
 
     def add(self, kind, code, c, handle, msg):
         self.findings.append(Finding(kind, code, self.fnname, c.line, handle,
@@ -748,6 +768,11 @@ class StreamAnalysis:
         for reg, pu in ucs:
             for reg2, pw in wcs:
                 if reg != reg2 or pu == pw:
+                    continue
+                if reg not in self.rails:
+                    # Never minted and never written here: its write history is
+                    # not this stream's to know, so the parity claim is not
+                    # backed by anything. Decline rather than assume.
                     continue
                 lo, hi = min(u_pos, w_pos), max(u_pos, w_pos)
                 if all(c.sym == "cqrt_x"
@@ -824,6 +849,13 @@ class StreamAnalysis:
                          f"handle is defined by @{where[1]} outside this "
                          f"straight-line stream, so its write history is not "
                          f"linearly ordered here")
+            return
+        if r.kind == "extern":
+            where = self.module_defs.get(name)
+            self.add(UNPROVEN, "U3-extern-rail", c, name,
+                     f"handle is written in this stream but minted outside it"
+                     + (f" (by @{where[1]})" if where else "")
+                     + "; its state on entry to this stream is unknown")
             return
         if r.kind in ("array", "tape"):
             self.add(VIOLATION, "F9-free-of-nonrail", c, name,
