@@ -250,14 +250,84 @@ bool coneDefinedAfterFlagDrop(const Value *Root) {
   return true;
 }
 
+// bd q2wk (Inc 5) — the claim-time context a PATH-PREDICATED PHI condition
+// needs (PRD §4.4b rule (A)). `InRegion`/`Entry` decide whether the flatten
+// will actually convert the phi (`run()` converts every region block's phis
+// EXCEPT the entry's), and `Recorded` collects the phis the claim PROVED
+// convertible so `convertPhis` can take the boolean-algebra path for exactly
+// those — claim and emit share one decision instead of re-deriving it, which
+// is what makes a depth-budget or already-converted-incoming difference
+// between the two impossible. Null scope = no phi is admissible (every
+// non-claim caller keeps today's grammar byte-identically).
+struct PhiCondScope {
+  const SmallPtrSetImpl<BasicBlock *> *InRegion = nullptr;
+  const BasicBlock *Entry = nullptr;
+  SmallPtrSetImpl<PHINode *> *Recorded = nullptr;
+};
+
+bool isBooleanCondTree(const Value *V, unsigned Depth,
+                       const PhiCondScope *S = nullptr);
+
+// bd q2wk (Inc 5) — is this i1 phi one the flatten will convert to boolean
+// algebra, so that its value can serve as a branch-condition tree node? All
+// four conditions are load-bearing (PRD §4.4b):
+//   1. i1 type and 3. >1 UNIQUE incoming block — `convertPhis`' own BoolAlg
+//      gate, mirrored exactly (its `In` list dedups by incoming BLOCK).
+//   2. parent inside the region but NOT the entry — `run()` skips
+//      `R.Entry`, so an entry phi survives the flatten AS A PHI and
+//      `buildNegation` would run its terminal `cast<BinaryOperator>` on a
+//      `PHINode`: an assert in a `+Asserts` build and an unchecked bad cast in
+//      the shipped Release build, not merely invalid IR `-verify` would catch.
+//   4. every incoming inside the STRICT substrate grammar (`isBooleanCondTree`,
+//      extended with this same phi rule). Deliberately NOT the permissive
+//      `isSupportedCondTree`: an incoming admitted only by the permissive
+//      grammar (xor-true, a select-form short-circuit) is composed straight
+//      INTO the boolean-algebra tree as an OFF-GRAMMAR LEAF (`and(EP, %xor)`,
+//      `and(EP, %trunc)`) — because a RECORDED phi bypasses `convertPhis`'
+//      grammar re-check — and `literal()` then hands `buildNegation` a tree
+//      whose leaf is neither cmp/and/or/xor nor constant, hitting the same
+//      `cast<BinaryOperator>`. (The q2wk Rule-13 round corrected this comment:
+//      it used to describe a SELECT-CHAIN fallback, which the BoolAlgPhis
+//      record makes unreachable for exactly the phis this condition guards.)
+// undef/poison incomings are admitted because `convertPhis` freezes them to the
+// type's zero (an i1 constant) BEFORE its own grammar check — mirroring that
+// freeze here is what keeps claim and emit in step.
+bool isConvertiblePhiCond(const PHINode *P, const PhiCondScope *S,
+                          unsigned Depth) {
+  if (!S || !S->InRegion || !P->getType()->isIntegerTy(1))
+    return false;
+  BasicBlock *PB = const_cast<BasicBlock *>(P->getParent());
+  if (PB == S->Entry || !S->InRegion->count(PB))
+    return false;
+  SmallPtrSet<BasicBlock *, 8> SeenPreds;
+  for (unsigned I = 0, N = P->getNumIncomingValues(); I != N; ++I)
+    SeenPreds.insert(P->getIncomingBlock(I));
+  if (SeenPreds.size() < 2)
+    return false;
+  for (unsigned I = 0, N = P->getNumIncomingValues(); I != N; ++I) {
+    const Value *IV = P->getIncomingValue(I);
+    if (isa<UndefValue>(IV))
+      continue;  // frozen to i1 false by convertPhis before its grammar check.
+    if (!isBooleanCondTree(IV, Depth + 1, S))
+      return false;
+  }
+  if (S->Recorded)
+    S->Recorded->insert(const_cast<PHINode *>(P));
+  return true;
+}
+
 // E6 — a branch condition PredMux can take BOTH polarities of: a supported
-// compare, an and/or tree over such conditions, an xor-true (not), or an i1
-// constant. The false-edge literal is built by pushing the negation to the
-// leaves (De Morgan), so every emitted predicate tree stays inside the
-// 3c6m.12-cleared and/or-over-compare-leaves shape (the no-NOT invariant).
-bool isSupportedCondTree(const Value *V, unsigned Depth) {
+// compare, an and/or tree over such conditions, an xor-true (not), an i1
+// constant, or (Inc 5) a path-predicated i1 phi the flatten will convert. The
+// false-edge literal is built by pushing the negation to the leaves (De
+// Morgan), so every emitted predicate tree stays inside the 3c6m.12-cleared
+// and/or-over-compare-leaves shape (the no-NOT invariant).
+bool isSupportedCondTree(const Value *V, unsigned Depth,
+                         const PhiCondScope *S = nullptr) {
   if (Depth > 8)
     return false;
+  if (const auto *P = dyn_cast<PHINode>(V))
+    return isConvertiblePhiCond(P, S, Depth);  // Inc 5 (bd q2wk)
   if (isa<ConstantInt>(V))
     return true;
   if (const auto *Cmp = dyn_cast<CmpInst>(V))
@@ -265,12 +335,12 @@ bool isSupportedCondTree(const Value *V, unsigned Depth) {
   if (const auto *BO = dyn_cast<BinaryOperator>(V)) {
     if (BO->getOpcode() == Instruction::And ||
         BO->getOpcode() == Instruction::Or)
-      return isSupportedCondTree(BO->getOperand(0), Depth + 1) &&
-             isSupportedCondTree(BO->getOperand(1), Depth + 1);
+      return isSupportedCondTree(BO->getOperand(0), Depth + 1, S) &&
+             isSupportedCondTree(BO->getOperand(1), Depth + 1, S);
     if (BO->getOpcode() == Instruction::Xor)
       if (const auto *C = dyn_cast<ConstantInt>(BO->getOperand(1)))
         if (C->isOne())
-          return isSupportedCondTree(BO->getOperand(0), Depth + 1);
+          return isSupportedCondTree(BO->getOperand(0), Depth + 1, S);
   }
   // bd adia: clang -O1's poison-shielded short-circuit forms —
   // `select i1 a, i1 b, false` (a && b) and `select i1 a, true, i1 b`
@@ -292,20 +362,20 @@ bool isSupportedCondTree(const Value *V, unsigned Depth) {
     if (const auto *FC = dyn_cast<ConstantInt>(Sel->getFalseValue()))
       if (FC->isZero())
         return coneDefinedAfterFlagDrop(Sel->getTrueValue()) &&
-               isSupportedCondTree(Sel->getCondition(), Depth + 1) &&
-               isSupportedCondTree(Sel->getTrueValue(), Depth + 1);
+               isSupportedCondTree(Sel->getCondition(), Depth + 1, S) &&
+               isSupportedCondTree(Sel->getTrueValue(), Depth + 1, S);
     if (const auto *TC = dyn_cast<ConstantInt>(Sel->getTrueValue()))
       if (TC->isOne())
         return coneDefinedAfterFlagDrop(Sel->getFalseValue()) &&
-               isSupportedCondTree(Sel->getCondition(), Depth + 1) &&
-               isSupportedCondTree(Sel->getFalseValue(), Depth + 1);
+               isSupportedCondTree(Sel->getCondition(), Depth + 1, S) &&
+               isSupportedCondTree(Sel->getFalseValue(), Depth + 1, S);
   }
   return false;
 }
 
 // Inc 2 — the SUBSTRATE-grammar condition tree (a strict subset of
 // isSupportedCondTree): compare leaves and distinct-operand `and i1`/`or i1`
-// nodes only — no xor-true, no trunc/freeze/select/phi, no compares OVER i1
+// nodes only — no xor-true, no trunc/freeze/select, no compares OVER i1
 // operands. This mirrors `collectCondTree` (SelectClassify.cpp) plus its
 // self-operand and i1-operand-leaf fences, because an i1 phi converted to
 // boolean algebra composes its incomings INTO a select condition the 3c6m.12
@@ -313,11 +383,21 @@ bool isSupportedCondTree(const Value *V, unsigned Depth) {
 // they never reach the tree (the composer folds ∧true/∧false away). Anything
 // off-grammar falls back to the Inc-1 select chain (same loud decline at the
 // consuming select as today — posture unchanged).
-bool isBooleanCondTree(const Value *V, unsigned Depth) {
+//
+// bd q2wk (Inc 5): with a `PhiCondScope` (the CLAIM-time caller only) a
+// convertible i1 phi is also a node — a chained short-circuit
+// (`phi i1 [ %p, %a ], [ false, %b ]` where `%p` is itself such a phi) must be
+// admissible as a whole, because at EMIT time the inner phi has already been
+// RAUW'd to its and/or tree and would pass this grammar anyway. Without a scope
+// (the emit-time caller in `convertPhis`) the phi case is off and the grammar is
+// byte-identical to Inc 2's.
+bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
   if (Depth > 16)
     return false;
   if (const auto *C = dyn_cast<ConstantInt>(V))
     return C->getType()->isIntegerTy(1);
+  if (const auto *P = dyn_cast<PHINode>(V))
+    return isConvertiblePhiCond(P, S, Depth);  // Inc 5 (bd q2wk); null S ⇒ false
   if (const auto *Cmp = dyn_cast<CmpInst>(V))
     return isSupportedCompareLeaf(Cmp) &&
            !Cmp->getOperand(0)->getType()->isIntegerTy(1);
@@ -326,8 +406,8 @@ bool isBooleanCondTree(const Value *V, unsigned Depth) {
         (BO->getOpcode() == Instruction::And ||
          BO->getOpcode() == Instruction::Or))
       return BO->getOperand(0) != BO->getOperand(1) &&
-             isBooleanCondTree(BO->getOperand(0), Depth + 1) &&
-             isBooleanCondTree(BO->getOperand(1), Depth + 1);
+             isBooleanCondTree(BO->getOperand(0), Depth + 1, S) &&
+             isBooleanCondTree(BO->getOperand(1), Depth + 1, S);
   return false;
 }
 
@@ -545,6 +625,15 @@ struct PredMuxRegion {
   // (load, table element count) pairs, captured at E4-analysis time
   // (detect-before-mutate: analysis decides, the flatten only executes).
   SmallVector<std::pair<LoadInst *, uint64_t>, 4> MaskLoads;
+  // Inc 5 (bd q2wk) — the i1 phis the E6 claim PROVED convertible as
+  // path-predicated branch-condition tree nodes (PRD §4.4b rule (A)).
+  // `convertPhis` takes the boolean-algebra path for exactly these regardless
+  // of its own grammar re-check, so claim and emit cannot diverge (a fall-back
+  // select chain under a branch literal is a broken module, not a decline).
+  // Populated during E6, i.e. AFTER W/E2/E3 and interleaved with E4/E7 — a
+  // later `leave` discards the whole `PredMuxRegion` (one fresh `R` per
+  // candidate terminator), so a partial record can never reach the flatten.
+  SmallPtrSet<PHINode *, 8> BoolAlgPhis;
 };
 
 // Blocks that sit on any CFG cycle (any non-trivial SCC, or a self-loop).
@@ -858,6 +947,8 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
       return leave("E3-mergepred");  // a reaching edge PredMux does not predicate
 
   // --- E4 + E6 + E7 over the region body ------------------------------------
+  // Inc 5 (bd q2wk) — the claim-time phi context (PRD §4.4b rule (A)).
+  const PhiCondScope Scope{&R.InRegion, R.Entry, &R.BoolAlgPhis};
   for (BasicBlock *B : R.InRegion) {
     // E6: every conditional terminator tainted, with an invertible condition.
     const Instruction *Term = B->getTerminator();
@@ -867,10 +958,46 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         // promotion or an earlier flatten materialized late) is degenerate —
         // no runtime classical/quantum mixing; the literal machinery folds
         // ∧true/∧false natively (isSupportedCondTree admits ConstantInt).
+        //
+        // bd q2wk (Inc 5, PRD §4.4b rule (B)): a condition the FLATTEN ITSELF
+        // will taint is not classical control either — it is the region's own
+        // tainted decision re-materialized. Every region edge predicate is
+        // tainted (the entry terminator is tainted by construction), so a
+        // region-internal-phi-derived condition becomes tainted the moment
+        // `convertPhis` rewires that phi onto the edge predicates. This is the
+        // all-constant `phi i1 [true,%a],[false,%b],[false,%entry]` clang -O1
+        // emits for a short-circuit it did not if-convert (log1p's
+        // `hx > 0 || hx <= 0xbfd2bec4`), and hypotf's `icmp eq i32 %k, 0` over
+        // the phi-merged scale accumulator. SHARED predicate with the Inc-3
+        // QROM index gate (Rule 14) — one question, one answer — and `R.Entry`
+        // is passed so the two phi shapes the flatten does NOT convert to a
+        // tainted value (an ENTRY-block phi; a phi whose incoming values are
+        // all one Value) answer honestly instead of on a false promise.
+        //
+        // WHERE THE RESIDUAL ACTUALLY LANDS, corrected by the q2wk Rule-13
+        // round (the original claim here named the wrong guard): a condition
+        // that nonetheless stays classical does NOT become a classical-condition
+        // select, because every edge predicate is `and(BP, lit)` with BP derived
+        // from the tainted entry condition — so the select condition is tainted
+        // and `declineClassicalMuxes` can never fire. The classical value
+        // survives as an UNTAINTED COMPARE LEAF inside a tainted cond tree, and
+        // the load-bearing backstop is `SelectClassify`'s GATE-2 per-leaf taint
+        // check, which declines `control flow under quantum control`. That gate
+        // is explicitly staged for a future "hybrid classical∧quantum
+        // conjunction" widening — whoever lifts it MUST re-derive this
+        // argument. And the decline is not universal: a region that mints no
+        // select (an i1 merge phi takes the boolean-algebra path) compiles
+        // silently, which is SOUND only because a classical runtime operand
+        // occupies the sanctioned `_hl` literal slot and is never promoted to a
+        // qubit handle (the §5.2 non-negotiable). The SWITCH scrutinee gate
+        // below is deliberately NOT widened: no measured cell needs it and
+        // over-declining is safe.
         if (!Taint.Tainted.count(BI->getCondition()) &&
-            !isa<ConstantInt>(BI->getCondition()))
+            !isa<ConstantInt>(BI->getCondition()) &&
+            !valueWillTaintAfterFlatten(BI->getCondition(), Taint, R.InRegion,
+                                        R.Entry))
           return leave("E6-classicalbr", BI);  // classical control inside a tainted region: mixed
-        if (!isSupportedCondTree(BI->getCondition(), 0))
+        if (!isSupportedCondTree(BI->getCondition(), 0, &Scope))
           return leave("E6-condtree", BI);
       }
     } else if (const auto *SI = dyn_cast<SwitchInst>(Term)) {
@@ -1274,7 +1401,20 @@ private:
       // keep the Inc-1 select chain — the consuming select declines loudly
       // exactly as today.
       bool BoolAlg = P->getType()->isIntegerTy(1) && In.size() > 1;
-      if (BoolAlg)
+      // bd q2wk (Inc 5) — a phi the E6 claim RECORDED is a path-predicated
+      // BRANCH condition: `literal()`/`buildNegation` will read its converted
+      // value as a cond tree, so the select-chain fallback is not available
+      // (a general `select i1` there is a broken module, not a decline). The
+      // claim proved the same grammar this loop re-checks — over the ORIGINAL
+      // incomings, where a nested convertible phi is still a phi and this
+      // scope-less grammar would reject it, and where a deeper already-
+      // converted incoming may also exceed the depth budget. Trusting the
+      // recorded decision is what removes both divergences; it is never
+      // weaker, because `isConvertiblePhiCond` requires exactly this grammar
+      // (extended only by the recursive phi case) plus i1 and >1 unique
+      // incoming block. The algebra itself is total for any i1 incoming — the
+      // grammar exists only to keep the RESULT flag-mintable.
+      if (BoolAlg && !R.BoolAlgPhis.count(P))
         for (auto &IV : In)
           if (!isBooleanCondTree(IV.second, 0)) {
             BoolAlg = false;

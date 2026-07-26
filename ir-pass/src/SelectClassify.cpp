@@ -424,7 +424,18 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   //   * an UNTAINTED (classical) leaf declines — it has no quantum flag to
   //     mint, and promoting it would allocate a qubit for classical data (the
   //     §5.2 prohibition); a hybrid classical∧quantum conjunction is out of
-  //     scope this increment;
+  //     scope this increment.
+  //     *** LOAD-BEARING FOR bd q2wk — READ BEFORE LIFTING THIS. *** PredMux's
+  //     E6 rule (B) (PRD §4.4b) admits a branch condition that is currently
+  //     UNTAINTED on the proof that the flatten will taint it. Where that proof
+  //     is over-wide, the value survives the flatten as an untainted COMPARE
+  //     LEAF inside a tainted and-tree — and THIS check, not
+  //     `declineClassicalMuxes`, is what declines it (the classical-mux guard
+  //     provably cannot fire: every edge predicate is `and(BP, lit)` with a
+  //     tainted BP, so every PredMux-minted select condition is tainted). If
+  //     the hybrid conjunction is ever supported here, rule (B)'s taint
+  //     argument must be re-derived first — it is currently backstopped by
+  //     this decline;
   //   * GATE 2b — a Q+Q leaf (BOTH compare operands tainted) declines HERE in
   //     the CONTROL dialect rather than let the emitter's mint reach the
   //     data-path `no template` bail (the message would mis-brand as a

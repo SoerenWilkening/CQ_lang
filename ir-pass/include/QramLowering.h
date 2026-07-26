@@ -31,6 +31,7 @@ class LoadInst;
 class LoopInfo;
 class Module;
 class StoreInst;
+class Value;
 }  // namespace llvm
 
 namespace cq {
@@ -130,6 +131,35 @@ QromClaim classifyQromReadUnderControl(
     llvm::LoopInfo &LInfo, uint64_t *OutCount = nullptr,
     const llvm::SmallPtrSetImpl<llvm::BasicBlock *> *Region = nullptr,
     bool inBennettClone = false, bool *OutIndexBecomesOpaque = nullptr);
+
+// bd q2wk (3c6m.14 Inc 5) — "will the PredMux flatten TAINT this currently
+// untainted value?": true iff `V` is already tainted, or is a region-internal
+// instruction transitively derived from a region-internal PHI (which
+// `convertPhis` rewrites onto the tainted edge predicates). This is the SAME
+// predicate the Inc-3 QROM index gate uses, exported so PredMux's E6
+// classical-branch gate cannot drift from it (Rule 14). PredMux use: PRD §4.4b
+// rule (B) — a branch condition that is a re-materialized tainted control
+// decision (an all-constant i1 phi, or a compare over a phi-derived scale
+// accumulator) is NOT classical control inside a tainted region.
+// `RegionEntry` (bd q2wk Rule-13): the claimed region's ENTRY block — and, by its
+// presence, the caller's opt-in to the PRECISE question "will this phi actually
+// convert to a TAINTED value?" rather than the historical "is it a region-internal
+// phi?". Both fences at the definition are gated on it. PredMux's E6 gate passes
+// `R.Entry` because its residual would WIDEN the accept surface past the argument
+// that justifies it. The Inc-3 QROM index gate passes nothing and genuinely keeps
+// the historical looser answer: its residual is benign by that increment's own
+// design (an index that stays classical simply makes the speculated read a plain
+// classical in-bounds load), and the delta Rule-13 round MEASURED that tightening
+// it un-claims an all-equal index phi and turns a separately-cleared Inc-3 accept
+// into an `E4-gep` decline — safe, but not this increment's business.
+//
+// So: a caller that passes an entry gets "admitted ⇒ tainted after the flatten"
+// as a real invariant (up to the two documented over-declines); a caller that
+// passes null does NOT, and must not lean on it.
+bool valueWillTaintAfterFlatten(
+    const llvm::Value *V, const TaintSet &taint,
+    const llvm::SmallPtrSetImpl<llvm::BasicBlock *> &Region,
+    const llvm::BasicBlock *RegionEntry = nullptr);
 
 // 3c6m.14 Inc 3 — volatile-const global-load fold (curation, runs pre-PredMux in
 // BOTH pipeline entry points). Folds a VOLATILE load whose pointer strips (through

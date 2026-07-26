@@ -583,6 +583,7 @@ bool isQromReadBlockedOnlyByControl(LoadInst *LI, const TaintSet &taint,
 // canonical taint-after-flatten case.
 bool indexWillTaintAfterFlatten(const Value *V, const TaintSet &taint,
                                 const SmallPtrSetImpl<BasicBlock *> &Region,
+                                const BasicBlock *RegionEntry = nullptr,
                                 unsigned Depth = 0) {
   if (Depth > 16)
     return false;  // over-declining is safe.
@@ -591,10 +592,77 @@ bool indexWillTaintAfterFlatten(const Value *V, const TaintSet &taint,
   const auto *I = dyn_cast<Instruction>(V);
   if (!I || !Region.count(const_cast<BasicBlock *>(I->getParent())))
     return false;
-  if (isa<PHINode>(I))
+  if (const auto *P = dyn_cast<PHINode>(I)) {
+    // bd q2wk Rule-13 (4 of 6 lenses, independently) — "region-internal phi"
+    // is NOT the same question as "a phi the flatten converts", and the two
+    // FENCES below are where they come apart. Getting this wrong does not
+    // miscompile (the flatten is a taint-blind classical rewrite), but it makes
+    // the E6 accept surface wider than the argument that justifies it, and it
+    // silently breaks the invariant "admitted ⇒ tainted after the flatten" that
+    // a later caller could reasonably lean on.
+    //
+    // FENCE 1 — the ENTRY block. `RegionFlattener::run()` converts the phis of
+    // every region block EXCEPT `R.Entry`, so an entry-block phi survives the
+    // flatten AS A PHI and taints nothing. `R.InRegion` contains the entry, so
+    // without this the walk answers "will taint" for it. Rule (A)'s
+    // `isConvertiblePhiCond` has always fenced exactly this case; rule (B) did
+    // not until now. Callers that do not know an entry pass null and keep the
+    // historical looser answer (see the header note on the QROM caller).
+    if (RegionEntry && P->getParent() == RegionEntry)
+      return false;
+    // FENCE 2 — a phi whose unique-block incoming VALUES are all ONE Value is
+    // RAUW'd straight to that Value by `convertPhis`' SELECT-CHAIN path (it
+    // seeds `Acc = In.back().second` and skips every `In[I].second == Acc`), so
+    // it taints iff that Value does — recurse instead of assuming. Subsumes the
+    // degenerate SINGLE-incoming phi (`control_predmux_reject_degenerate_phi_
+    // classical.ll`) and the >1-block/one-value shape
+    // (`control_predmux_reject_equal_incomings_phi.ll`): both are refused at the
+    // CLAIM gate, detect-before-mutate, instead of declining downstream after
+    // the region was already flattened.
+    //
+    // GATED ON `RegionEntry` — i.e. on the caller having opted into the PRECISE
+    // semantics — for the same reason FENCE 1 is. The delta Rule-13 round caught
+    // this ungated and it had silently tightened the Inc-3 QROM index gate: an
+    // all-equal (or degenerate) INDEX phi stopped being claimable, so a
+    // previously-accepted, separately-cleared QROM shape began declining at
+    // `E4-gep`. Safe (an over-decline) but out of q2wk's scope, invisible to
+    // every committed input, and flatly contradicted by this header's own
+    // promise that the QROM caller keeps the historical answer.
+    //
+    // TWO PRECISION NOTES, both deliberate over-declines (safe direction):
+    //  * the undef/poison FREEZE is mirrored below because `convertPhis`
+    //    normalizes `isa<UndefValue>` incomings to the type's zero BEFORE it
+    //    builds its `In` list — comparing raw incomings let
+    //    `phi [0, %a], [undef, %b]` read as "not all equal" here while the
+    //    flatten RAUW'd it to a constant. That was a FIFTH residual the delta
+    //    round found compiling silently; the rule is "mirror `convertPhis`' In
+    //    construction verbatim", so any future normalization it grows must be
+    //    mirrored here too.
+    //  * for an i1 phi that takes the BOOLEAN-ALGEBRA path this OVER-declines:
+    //    that path builds `∨ᵢ(EPᵢ ∧ v)`, which is TAINTED even when every `v` is
+    //    the same classical value. Predicting whether BoolAlg fires needs the
+    //    grammar/record decision that is not available here, so the fence takes
+    //    the safe side. Measured cost: none (census 92/123 unchanged, lit green).
+    const Value *Sole = nullptr;
+    bool AllEqual = true;
+    for (unsigned K = 0, N = P->getNumIncomingValues(); K != N; ++K) {
+      const Value *IV = P->getIncomingValue(K);
+      if (isa<UndefValue>(IV))  // convertPhis freezes undef AND poison to zero.
+        IV = Constant::getNullValue(P->getType());
+      if (!Sole)
+        Sole = IV;
+      else if (Sole != IV) {
+        AllEqual = false;
+        break;
+      }
+    }
+    if (RegionEntry && AllEqual && Sole)
+      return indexWillTaintAfterFlatten(Sole, taint, Region, RegionEntry,
+                                        Depth + 1);
     return true;  // converts to a select chain over tainted edge predicates.
+  }
   for (const Value *Op : I->operands())
-    if (indexWillTaintAfterFlatten(Op, taint, Region, Depth + 1))
+    if (indexWillTaintAfterFlatten(Op, taint, Region, RegionEntry, Depth + 1))
       return true;
   return false;
 }
@@ -959,6 +1027,17 @@ bool coherentlyEscapesToReturn(Value *V) {
 }
 
 }  // namespace
+
+// bd q2wk (3c6m.14 Inc 5) — exported wrapper over the Inc-3 predicate so
+// PredMux's E6 gate and the QROM index gate ask the SAME question with the SAME
+// answer (Rule 14: one predicate, one meaning). See the definition above for the
+// argument; the E6 use is PRD §4.4b rule (B).
+bool valueWillTaintAfterFlatten(
+    const Value *V, const TaintSet &taint,
+    const SmallPtrSetImpl<BasicBlock *> &Region,
+    const BasicBlock *RegionEntry) {
+  return indexWillTaintAfterFlatten(V, taint, Region, RegionEntry);
+}
 
 // bd 20xt.4 — the taint-blind STRUCTURAL const-global QROM-read shape, the shared
 // truth for the Phase-6 spec-clone ADMIT paths (`scanBody` in SpecializeReject,

@@ -2918,3 +2918,125 @@ add_test(NAME e2e-slice-libm-real-lgammaf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lgammaf.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_lgammaf.expected.log")
+
+# ── bd q2wk (3c6m.14 L6 increment 5): the 12 cells unblocked by the PredMux E6
+# path-predicated-branch widening (an i1 phi as a branch condition + a condition the
+# flatten itself taints). All are REAL openlibm bodies at the plain clang -O1 ship
+# floor — census-COMPILES is only an upper bound until the golden exists (Rule 2).
+
+# log1p.f64 — THE MECHANISM CELL for bd q2wk (PredMux L6 inc 5). s_log1p.c's
+# `if(hx>0||hx<=(int32_t)0xbfd2bec4)` short-circuit survives plain clang -O1 as an i1 PHI over
+# CONSTANTS feeding a conditional branch; before inc 5 that tripped E6-classicalbr and the whole
+# fdlibm classification chain declined.
+add_test(NAME e2e-slice-libm-real-log1p
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log1p.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log1p.expected.log")
+
+# log1pf.f32 — float sibling of log1p over the real s_log1pf.c body (same i1-phi branch).
+add_test(NAME e2e-slice-libm-real-log1pf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log1pf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log1pf.expected.log")
+
+# atanh.f64 — e_atanh.c over the real vendored s_log1p.c (log1p is a library fn, injected as
+# source per Rule 18); fabs is a hardware keep.
+add_test(NAME e2e-slice-libm-real-atanh
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanh.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanh.expected.log")
+
+# atanhf.f32 — f32 sibling: e_atanhf.c + the real s_log1pf.c body.
+add_test(NAME e2e-slice-libm-real-atanhf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanhf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanhf.expected.log")
+
+# acosh.f64 — e_acosh.c over BOTH the real e_log.c and s_log1p.c bodies; sqrt is a hardware keep
+# (never openlibm's software e_sqrt.c — that misrepresentation is the bd 3c6m.60 census bug).
+add_test(NAME e2e-slice-libm-real-acosh
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acosh.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acosh.expected.log")
+
+# acoshf.f32 — f32 sibling: e_acoshf.c + the real e_logf.c and s_log1pf.c bodies.
+add_test(NAME e2e-slice-libm-real-acoshf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acoshf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acoshf.expected.log")
+
+# asinh.f64 — s_asinh.c over the real e_log.c and s_log1p.c bodies; sqrt/fabs are hardware keeps.
+add_test(NAME e2e-slice-libm-real-asinh
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinh.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinh.expected.log")
+
+# asinhf.f32 — f32 sibling: s_asinhf.c + the real e_logf.c and s_log1pf.c bodies.
+add_test(NAME e2e-slice-libm-real-asinhf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinhf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinhf.expected.log")
+
+# hypotf.f32 — the E6 SUB-RULE (B) witness: its blocker was `icmp eq i32 %k, 0` over an UNTAINTED
+# phi-merged scale accumulator, admitted now by valueWillTaintAfterFlatten. sqrtf/fabsf are keeps.
+add_test(NAME e2e-slice-libm-real-hypotf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_hypotf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_hypotf.expected.log")
+
+# acoshl.f80 — ld80 cell over the real ld80/e_logl.c + ld80/s_log1pl.c bodies with union IEEEl2bits
+# kept verbatim. Pins that the __polevll Horner loops DO fully unroll at the plain -O1 ship floor
+# (their standalone log1pl/log2l/logl siblings do NOT, and stay honest E2-cycle declines: bd 8h7d).
+add_test(NAME e2e-slice-libm-real-acoshl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acoshl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_acoshl.expected.log")
+
+# asinhl.f80 — ld80 cell: s_asinhl.c over the real ld80/e_logl.c + ld80/s_log1pl.c bodies,
+# union IEEEl2bits verbatim (the pass's promoteFp80Union owns it); sqrtl/fabsl are keeps.
+add_test(NAME e2e-slice-libm-real-asinhl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinhl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinhl.expected.log")
+
+# atanhl.f80 — ld80 cell: e_atanhl.c over the real ld80/s_log1pl.c body.
+add_test(NAME e2e-slice-libm-real-atanhl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanhl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_atanhl.expected.log")

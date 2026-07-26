@@ -150,49 +150,49 @@
   "diag": "surv:[]"
  },
  "acoshf.f32": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe float (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "acosh.f64": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "acoshl.f80": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "asinhf.f32": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe float (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "asinh.f64": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "asinhl.f80": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "atanhf.f32": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe float (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "atanh.f64": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "atanhl.f80": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "expf.f32": {
   "status": "COMPILES",
@@ -285,14 +285,14 @@
   "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control"
  },
  "log1pf.f32": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe float (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "log1p.f64": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe double (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "log1pl.f80": {
   "status": "decline",
@@ -420,9 +420,9 @@
   "diag": "surv:[]"
  },
  "hypotf.f32": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe float (): cq controlled lowering: nested control flow under quantum control"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "hypot.f64": {
   "status": "COMPILES",

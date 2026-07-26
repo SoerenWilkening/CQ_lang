@@ -364,6 +364,271 @@ drop), `control_predmux_accept_i1phi_data.ll` (result as zext'd DATA —
 `slice_libm_real_{log,cbrt,tanh}` (real openlibm bodies; tanh doubly inlines
 expm1 and is the mechanism cell).
 
+### 4.4b Inc 5 (bd `q2wk`) — path-predicated BRANCH conditions
+
+Inc 2 (§4.4a) taught the flatten to convert an i1 phi feeding a **select
+condition**. Inc 5 closes the mirror hole one level up: an i1 phi feeding a
+**conditional-branch condition** — the shape `clang -O1` emits for a
+short-circuit `&&`/`||` it did NOT if-convert. That is the sole remaining
+blocker on the whole fdlibm exponent-word classification chain
+(`if (hx > 0 || hx <= 0xbfd2bec4)` in `s_log1p.c` and its transitive callers),
+i.e. bd `iw81.14` "path-predicated phi" realized at a terminator.
+
+The flatten **already handles this**; only the E6 CLAIM GATE rejected it, in
+two distinct ways that both had to fall:
+
+- **(A) `E6-condtree`.** `isSupportedCondTree` has no PHI node in its grammar,
+  so the false-edge literal cannot be built (the no-NOT invariant needs a tree
+  whose negation pushes to compare leaves). Measured on the census-O1 bodies:
+  `log1p.f64` `%29 = phi i1 [ false, %0 ], [ %27, %25 ]` → `br i1 %29`.
+- **(B) `E6-classicalbr`.** When *every* incoming is an i1 CONSTANT — the plain
+  `clang -O1` **ship-floor** shape of the very same source line,
+  `%30 = phi i1 [ true, %28 ], [ false, %25 ], [ false, %0 ]` — the phi is
+  **untainted**, so E6 reads a classical branch inside a tainted region. The
+  same gate blocked `hypotf.f32`, where the condition is `icmp eq i32 %53, 0`
+  over an untainted i32 phi chain (the `k` scale accumulator merged over the
+  three scale-up arms).
+
+**Rule (A) — an i1 phi is a condition-tree node when the flatten will convert
+it to boolean algebra.** Admit `V` as a cond-tree node iff it is a `PHINode`
+with:
+
+1. type `i1`;
+2. parent block ∈ `R.InRegion` **and ≠ `R.Entry`** (only those blocks' phis are
+   converted: `run()` skips `R.Entry`, so an Entry phi would survive the
+   flatten as a phi and `buildNegation` would run its terminal
+   `cast<BinaryOperator>` on a `PHINode` — an assertion failure in a `+Asserts`
+   build and an unchecked bad cast in the shipped Release build, not merely
+   invalid IR that `-verify` would catch);
+3. **> 1 unique incoming block** (`convertPhis`' own `In.size() > 1` gate);
+4. every incoming value recursively admissible under the **STRICT** substrate
+   grammar `isBooleanCondTree` **extended with this same phi rule**.
+
+Point 4 is the load-bearing fence and the reason the gate is NOT written
+against the permissive `isSupportedCondTree`. An incoming admitted only by the
+permissive grammar (`xor i1 c, true`, a select-form short-circuit) is composed
+straight INTO the boolean-algebra tree as an off-grammar leaf — `and(EP, %xor)`,
+`and(EP, %trunc)` — because a RECORDED phi bypasses `convertPhis`' own grammar
+re-check (see below). `literal()` then hands `buildNegation` a tree whose leaf
+is neither cmp/and/or/xor nor constant, and its terminal `cast<BinaryOperator>`
+is an assert in `+Asserts` and an unchecked bad cast in Release. (An earlier
+draft of this paragraph, and of the matching code comment, described a
+*select-chain fallback* hazard instead. That fallback is unreachable for exactly
+the phis point 4 guards — precisely because they are recorded — so the real
+hazard is worse and differently located. Rule-13 round, lens 6.)
+
+**How claim and emit are kept in step — by RECORD, not by re-derivation.**
+`isConvertiblePhiCond` inserts every phi it proves into
+`PredMuxRegion::BoolAlgPhis`, and `convertPhis` takes the boolean-algebra path
+for exactly those, skipping its own scope-less `isBooleanCondTree` re-check
+(`if (BoolAlg && !R.BoolAlgPhis.count(P))`). This is deliberate, because the
+re-check genuinely WOULD disagree: a converted EP may contain a `xor i1 c, true`
+node (`canonicalizePred` rewrites select-forms and and/or but leaves xor-true
+verbatim), which `isBooleanCondTree` rejects, and a deeply converted incoming
+may exceed its depth-16 budget. Trusting the record is what makes divergence
+impossible; re-deriving would reintroduce it.
+
+Ordering is what makes the record safe to consume. `run()` walks `R.Topo` and
+converts every region block's phis EXCEPT `R.Entry`'s, and `literal(S, ·)` is
+first reached while processing a successor of `S` — hence after
+`convertPhis(S)` — for every `S` **except `R.Entry`, whose phis are never
+converted at all**. Condition 2 is exactly that exception, and it is not
+belt-and-braces: without it `literal(R.Entry, ·)` would read a terminator whose
+condition cone still holds a live `PHINode`. `LitCache` cannot capture a stale
+phi for the same reason.
+
+**Rule (B) — an untainted condition that the flatten will taint.** E6's
+classical-branch gate widens from `Tainted ∪ {i1 constant}` to additionally
+admit `valueWillTaintAfterFlatten(cond, Taint, R.InRegion, R.Entry)` — the
+**shared** predicate Inc 3 already ships and Rule-13-cleared for the QROM index
+(`indexWillTaintAfterFlatten`, QramLowering.cpp): tainted, or a region-internal
+instruction transitively derived from a region-internal phi. Rule 14 — one
+predicate, one meaning, exported rather than re-implemented.
+
+Justification: E6-classicalbr exists to keep *mixed* regions out — a branch
+decided by a value the quantum control cannot reach. A region-internal
+phi-derived condition is not that: every region edge predicate is tainted (the
+entry terminator is tainted by construction, §4.1), so the phi converts to a
+select/boolean over tainted EPs and the condition IS the tainted control
+decision, re-materialized. This is verbatim the argument Inc 3 made for the
+`atan` `id` index and it is cleared.
+
+**But "region-internal phi" is NOT the same question as "a phi the flatten
+converts",** and the Rule-13 rounds found the gap the hard way — four of six
+lenses in round 1, then two more shapes in the delta round that reviewed the fix
+itself. `R.Entry` is now passed, and its presence is the caller's signal that it
+wants the PRECISE semantics; the predicate then fences every shape that is
+region-internal yet converts to nothing tainted.
+
+**Do not read the list below as a closed enumeration.** It was asserted closed at
+two, then three, then five — each time a fresh reviewer found another. The
+durable rule is the one the code states: **the fence MIRRORS `convertPhis`'
+`In`-list construction verbatim.** Any normalization `convertPhis` grows (a new
+freeze, dedup or fold) must be mirrored, or it reopens the class. The shapes
+known today:
+
+- a phi in **`R.Entry`** — never converted (`run()` skips the entry), so it
+  survives as a phi and the condition stays classical forever. Rule (A) had
+  always fenced this; rule (B) had not, which made the gate *asymmetric*: the
+  same entry phi used DIRECTLY as a condition left at `E6-condtree`, but hidden
+  behind one `icmp` it passed. Pinned by
+  `control_predmux_reject_entryphi_via_compare.ll`.
+- a phi whose unique-block incoming **values are all one Value** — `convertPhis`'
+  select-chain path RAUWs it straight to that Value (it seeds
+  `Acc = In.back().second` and skips every `In[I].second == Acc`), so it taints
+  iff that Value does. Subsumes the degenerate single-incoming phi, which is the
+  one residual an earlier draft of this section conceded. Pinned by
+  `control_predmux_reject_degenerate_phi_classical.ll` and
+  `control_predmux_reject_equal_incomings_phi.ll`.
+- the same shape reached only **after the undef/poison FREEZE** — `convertPhis`
+  normalizes every `isa<UndefValue>` incoming (poison included) to the type's
+  zero BEFORE building `In`, so `phi i32 [ 0, %a ], [ undef, %b ]` is all-equal
+  to the emitter but was not to a fence reading raw incomings. It compiled
+  SILENTLY (no select minted ⇒ no GATE-2 backstop) until the delta round caught
+  it. Pinned by `control_predmux_reject_undef_freeze_phi.ll`.
+- any of the above **hidden behind an `icmp` over i1 OPERANDS**, which
+  `isSupportedCompareLeaf` accepts as an opaque leaf so `isSupportedCondTree`
+  never recurses into the phi and no rule-(A) fence is consulted. Found by the
+  round-1 judge, not by any lens. Pinned by
+  `control_predmux_reject_i1cmp_shield_phi.ll`.
+
+**Latent invariant worth pinning before someone widens E3 further (delta round,
+semantic lens).** `edgePred` omits the `∧BP` conjunct exactly when `blockPred`
+returns `nullptr` (= ⊤), and that conjunct is **REQUIRED on the false edge** — the
+semantic lens confirmed the asymmetry numerically (without it, an off-path state
+reads `¬P = true` and the merge selects the wrong incoming). Today `nullptr` means
+only `D == R.Entry`, which provably cannot host a converted-phi condition (rule (A)
+condition 2 forces the phi's parent ≠ `R.Entry`, and `R.Entry` dominates every
+region block, so a non-entry phi can never dominate the entry terminator). BUT
+`blockPred` also leaves `BP` at `nullptr` — and caches it — for a block with **no
+in-region predecessor**. That is unreachable now (`R.InRegion` is built by forward
+reachability from `E`, and `topoOrderRegion` rejects anything it cannot reach by
+in-degree), yet E3 is being widened along exactly that axis: it already TOLERATES
+`UnreachableInst` terminators (bd `20xt.5`) and `mergeIgnoringUnreachable`
+reasons about a modified CFG view. **A future widening that admits a region block
+with no in-region predecessor silently turns a correctness invariant into ⊤.**
+
+**Two deliberate imprecisions in the fence, both over-declines (the safe side):**
+(i) it is gated on `RegionEntry`, so a caller that passes none — the Inc-3 QROM
+index gate — keeps the historical looser answer. That gating is not cosmetic: the
+delta round measured that an ungated fence silently un-claimed an all-equal QROM
+INDEX phi, turning a separately-cleared Inc-3 accept into an `E4-gep` decline.
+Out of scope here, so the gate restores it byte-identically. (ii) For an i1 phi
+that takes the BOOLEAN-ALGEBRA path the all-equal case over-declines — that path
+builds `∨ᵢ(EPᵢ ∧ v)`, which is tainted even when every `v` is the same classical
+value — but predicting whether BoolAlg fires needs the grammar/record decision
+that is not available at this point, so the fence takes the safe side. Measured
+cost of both: none (census 92/123 unchanged, suite green).
+
+**Why neither rule can silently miscompile.** The flatten is a *classical*
+IR-to-IR rewrite; its correctness (§6.1, per-basis-state equivalence) is
+taint-blind, so widening a *taint* gate cannot change what the flattened
+program computes. Rule (A)'s over-wide failure mode would be a bad cast, which
+is why its fence is exact rather than conservative-by-margin.
+
+**Where rule (B)'s residual actually lands — corrected by the Rule-13 round,
+because the original claim here named a guard that provably cannot fire.** A
+condition that stays classical does NOT become a classical-condition select:
+every edge predicate is `and(BP, lit)` with `BP` derived from the tainted entry
+condition, so every emitted select condition is tainted and
+`declineClassicalMuxes` (which keys on an *untainted* condition) is structurally
+unreachable. The classical value survives instead as an **untainted COMPARE LEAF
+inside a tainted cond tree**, and the load-bearing backstop is `SelectClassify`'s
+GATE-2 per-leaf taint check (`if (!taint.Tainted.count(Leaf))` →
+`control flow under quantum control`).
+
+Two consequences worth carrying forward:
+
+1. **That gate is explicitly staged for a future widening** — its own comment
+   says "a hybrid classical∧quantum conjunction is out of scope this increment".
+   Whoever lifts it must re-derive this argument; a cross-reference has been
+   added there so the dependency is discoverable from both ends.
+2. **"Loud, never silent" is FALSE as stated.** It is loud whenever a select
+   consumes the predicate. A region that mints no select — an i1 merge phi takes
+   the boolean-algebra path — compiles silently. That is SOUND, but for a
+   different reason than the decline: a classical *runtime* operand occupies the
+   sanctioned `_hl` literal slot and is never promoted to a qubit handle (the
+   §5.2 non-negotiable), so the result is correct classically-parameterized
+   predication. The two fences above shrink this residual to shapes no lens
+   could reach, but the soundness argument — not the decline — is what carries
+   it.
+
+**Cost note — two disclosures, the second found by the Rule-13 round.**
+
+1. `buildNegation` on a converted phi condition De-Morgans through the EP
+   network and mints a second, negated copy of it down to compare leaves.
+   Logically exact (the network is a Boolean function of compare leaves, and
+   every node PredMux mints is poison-flag-free), but it doubles that
+   sub-network; the `sweepDead` fixpoint removes it when the false edge is
+   unused.
+2. **Inc 5 changes WHICH region is claimed first for a nested short-circuit,
+   and that makes some ALREADY-ACCEPTED shapes emit a bigger circuit.** PredMux
+   claims one region per call, scanning blocks in function order. Before Inc 5
+   an OUTER region whose interior held `br i1 %phi` left at `E6-condtree`, so
+   the scan fell through to the INNER short-circuit region, converted its phi
+   with `BP = ⊤` (no EP network materialized at all), and the outer region
+   picked up the already-simplified tree on the next fixpoint round. Now the
+   outer region passes E6 and swallows the whole nest, so `BP` is materialized
+   as real gates. Measured on a synthetic nest: 45 → 71 calls, 5 → 13
+   `cqrt_toffoli`, 3 → 7 flag rails, trace 46 → 72 lines; the same effect
+   appears in the `ClaimAll` Bennett-clone path. The two circuits were
+   hand-verified to compute the identical predicate, so this is an EMISSION
+   change, not a miscompile — and no committed fixture or golden moved (the
+   containment sweep ran all 899 lit fixtures and 229 e2e slices through both
+   plugins and found only the new files differing). It is disclosed rather than
+   fixed because the fix — preferring the INNERMOST claimable region — is a
+   driver-wide claim-order change that needs its own clearance; filed as an
+   optimization follow-on.
+
+**Target set (measured 2026-07-26, throwaway probe, full ctest 221/221 green):**
+12 census cells flip decline → COMPILES — `acosh{,f,l}` `asinh{,f,l}`
+`atanh{,f,l}` `hypotf.f32` `log1p{,f}` — plus the plain `clang -O1` ship-floor
+`log1p` slice. The f64/f32 half needs (A) alone under the census pipeline; the
+ship floor needs (A)+(B); `hypotf.f32` needs (B) alone.
+
+**Explicitly NOT unblocked** (measured with the probe applied, so these are
+diagnoses, not guesses):
+
+- `log1pl.f80` / `log2l.f80` / `logl.f80` — still decline
+  `nested control flow under quantum control`, and the blocker is now DIAGNOSED
+  (two earlier drafts of this bullet guessed, and both guesses were refuted by
+  re-measurement — the Rule-13 lens that killed the second one is why this
+  version cites a source location). The final PredMux leave is **`E6-condtree`**
+  on the region `entry = __isnanl.exit.i`, and the decline is source-located at
+  `src/s_isnan.c:63`. That block is:
+
+  ```llvm
+  __isnanl.exit.i:                         ; preds = %7, %0
+    %12 = phi i1 [ false, %0 ], [ %11, %7 ]
+    %13 = fcmp oeq x86_fp80 %3, 0xK7FFF8000000000000000
+    %14 = or i1 %13, %12
+    %15 = fcmp oeq x86_fp80 %3, 0xK00000000000000000000
+    %16 = or i1 %15, %14
+    br i1 %16, label %log1pl.exit, label %17
+  ```
+
+  — i.e. an i1 phi sitting in the region **ENTRY** block and OR-ed into that same
+  block's branch condition, which rule (A) **condition 2** rejects. It is a
+  control shape, exactly the one this increment is about, one block out of reach.
+  **It is NOT the `__polevll` loops**, and that is measurable rather than
+  arguable: `acoshl`/`asinhl`/`atanhl` carry the same or MORE `__polevll`
+  self-loops (12/12/4 vs 4/4/4) and all three DO flip to COMPILES here, and the
+  ordered gate trace ends with the outcome-deciding `E6-condtree` and NO
+  `E2-cycle` after it (the pass's own `LoopUnrollPrepass` unrolls the loops
+  between the two PredMux fixpoints — trips 2/3/5/6, all under
+  `kMaxUnrollTrip = 8`). NB the trace shows leave ORDER, not fixpoint round, so
+  "all the `E2-cycle` leaves are in the first round" is NOT something it can
+  establish — `log1pl` has 17 of them and they may span rounds. What it does
+  establish, and all that is claimed here, is that the LAST leave is
+  `E6-condtree`.
+  Unblocking needs either a claim that roots the region one block EARLIER, so the
+  phi is no longer in the entry, or a principled extension of rule (A) to entry
+  phis — note the latter is in tension with rule (B)'s new entry FENCE and must
+  be designed, not bolted on. **An L6 follow-on, not a bd `8h7d` loop target.**
+- `hypotl.f80` (bd `3c6m.61`) — `E4-dataflow` at
+  `icmp eq i80 %24, 9223372036854775808`, an i80 compare from the fp80-union
+  bit pattern (not a template width). fp80-union/width axis.
+
 ### 4.5 Normalizations (each proof-gated, each part of the claimed region only)
 
 - **(a) Poison-flag strip.** Every instruction moved out of its guarding
@@ -591,7 +856,14 @@ loudly. The matrix pins that the leave→decline composition stays intact:
 | region containing `cq_phi`/`cq_theta`/`cq_measure` (phase/value-rotation arms, incl. depth-2 phase nests) | leave → existing accept or decline | existing 4.1/4.3 fixtures stay green byte-identical |
 | region entry on a CFG cycle / in-loop nest | leave → d8jl `control flow inside a loop body` | `control_swap_reject_nested_loop*.ll` stay green |
 | store / atomic / non-curated call inside region | leave → escape-guard or control decline | new negative fixtures |
-| classical branch inside tainted region (E6) | leave → existing decline | new negative fixture |
+| classical branch inside tainted region (E6) — condition derived from OUTSIDE the region (an argument, a pre-region value) | leave → existing decline | `control_predmux_reject_classical_br_in_region.ll` (Inc 5 re-pins it: the widening must not read as "the check was deleted") |
+| **Inc 5** i1 phi condition defined in the region **ENTRY** block | leave → existing decline | `control_predmux_reject_i1phi_entry_block.ll` — the broken-module fence (an entry phi is never converted, so `buildNegation` would reach a PHI) |
+| **Inc 5** i1 phi condition with an off-strict-grammar incoming (`xor i1 c, true`, `trunc … to i1`) | leave → existing decline | `control_predmux_reject_i1phi_offgrammar_{xor,trunc}.ll` — without this, an off-grammar leaf is composed into the boolean tree and `buildNegation`'s `cast<BinaryOperator>` runs on it |
+| **Inc 5** i1 phi incoming that is a compare over **i1 operands** | leave → existing decline | code-level fence only (`isBooleanCondTree`'s `!isIntegerTy(1)` operand check); deliberately unpinned — `icmp` over i1 is non-canonical at `-O1`, so there is no honest fixture to write and over-declining is safe |
+| **Inc 5** rule-(B) residual: a region-internal phi that does NOT convert to a tainted value — (a) in `R.Entry`, (b) 1 unique incoming block, (c) >1 block but identical incoming values, (d) any of those reached through an `icmp` over **i1 operands**, which `isSupportedCondTree` treats as an opaque leaf so no rule-(A) fence is consulted | leave at the CLAIM gate (`E6-classicalbr`), region untouched | (a) `control_predmux_reject_entryphi_via_compare.ll` · (b) `control_predmux_reject_degenerate_phi_classical.ll` · (c) `control_predmux_reject_equal_incomings_phi.ll` · (d) `control_predmux_reject_i1cmp_shield_phi.ll` |
+| **Inc 5** nested short-circuit whose INNER region is W-witnessed on its own | **accept**, but with a bigger gate stream than pre-Inc-5 (claim order shifts outer-first) | `control_predmux_accept_nested_shortcircuit_claim_order.ll` — a recorded baseline, not an optimum; see §4.4b Cost note 2 |
+| **Inc 5** i1 phi condition with < 2 unique incoming blocks | leave → existing decline | `control_predmux_reject_i1phi_single_pred.ll` (mirrors `convertPhis`' own `In.size() > 1`) |
+| **Inc 5** switch SCRUTINEE that is untainted-but-will-taint | leave (deliberately NOT widened — no measured cell needs it) | unchanged existing switch declines |
 | `ret` inside region (multi-exit) | leave → existing decline (`non-reconverging value exit` / 7.2 paths) | existing fixtures |
 | merge phi `i128`/vector/`fp128` (E7) | leave → existing decline | existing G4-family fixtures |
 | volatile access other than the (c)-proven form | leave | new negative fixture (Inc 3) |
@@ -623,6 +895,22 @@ workflow-model-tiering directive)
   index proof + volatile-const fold + sequential-sibling composition at
   scale). e2e goldens ×3. Full Rule 13 (two curations + a carve flip = core
   changes).
+- **Inc 5 (bd `q2wk`) — path-predicated BRANCH conditions.** §4.4b: the E6 gate
+  admits (A) an i1 phi the flatten will convert to boolean algebra, recorded in
+  `PredMuxRegion::BoolAlgPhis` so `convertPhis` cannot diverge from the claim,
+  and (B) a condition `valueWillTaintAfterFlatten` proves the flatten itself
+  taints (the shared Inc-3 QROM predicate, exported). No new gate sequence, no
+  new frozen symbol, no   new taint-bookkeeping writer. Fixtures: 5 accept (the
+  canonical tainted i1-phi branch cond; the all-constant/untainted ship-floor
+  shape; the sub-rule-(B) compare-over-data-phi; the chained short-circuit; the
+  phi inside an and/or tree) + 9 decline (entry-block phi used directly; the
+  same entry phi reached through a compare — the rule-(B) twin; xor and trunc
+  off-grammar incomings; a genuinely classical branch; <2 unique preds; and the
+  three rule-(B) residual shapes — degenerate phi, equal incomings, and the
+  i1-compare shield the Rule-13 judge found), plus one recorded-baseline accept
+  for the claim-order emission shift. E2E: the 12 unblocked cells, all goldened
+  and all holding at the ship floor. Rule-13 delta clearance: 6 adversarial
+  lenses + judge, 0 blockers, findings folded pre-commit.
 - **Inc 4 — re-census + scoreboard.** Re-run `peel_census.py`
   (normal/first-blocker mode; the census-mode plugin remains throwaway) over
   the full 123-cell surface; publish delta (expected: the 8 flip to COMPILE;

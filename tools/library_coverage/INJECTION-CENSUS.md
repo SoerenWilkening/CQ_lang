@@ -8,16 +8,21 @@
 > *"Do not quote '48 verified' — quote 48 injection-covered, 8 verified"* is itself now
 > out of date on both halves.
 >
-> **CURRENT AUTHORITATIVE NUMBERS (2026-07-25, after bd `3c6m.60`):** the all-widths **O1**
-> baseline `full_surface/full_census_O1.json` gives **80 / 123 injection-covered (65%)**,
-> 43 declining. History: bd `3c6m.58` re-measured *verified* at 53, goldened the 15-cell
-> gap, and all 15 held → 68 = injection-covered; bd `3c6m.60` then fixed the census
-> hardware-keep-set methodology bug (an inner `sqrt`/`floor` was resolving to openlibm's
-> *software* body, not the `@llvm.<fn>` intrinsic the ship floor emits), taking
-> injection-covered 68 → **80 with 0 regressions**, and goldened 11 of the 12 new cells →
-> **79 verified**. The 12th, `hypotl.f80`, census-COMPILES and DECLINES at the plain -O1
-> ship floor (bd `3c6m.61`) — so the two numbers are 1 apart and must never be conflated
-> (Rule 2, bd `libm-scoreboard-two-numbers`).
+> **CURRENT AUTHORITATIVE NUMBERS (2026-07-26, after bd `q2wk`):** the all-widths **O1**
+> baseline `full_surface/full_census_O1.json` gives **92 / 123 injection-covered (75%)**
+> and **91 verified**, 36 declining. History: bd `3c6m.58` re-measured *verified* at 53,
+> goldened the 15-cell gap, and all 15 held → 68 = injection-covered; bd `3c6m.60` then
+> fixed the census hardware-keep-set methodology bug (an inner `sqrt`/`floor` was resolving
+> to openlibm's *software* body, not the `@llvm.<fn>` intrinsic the ship floor emits),
+> taking injection-covered 68 → **80 with 0 regressions** and goldening 11 of the 12 new
+> cells → **79 verified**; bd `q2wk` (PredMux L6 increment 5 — path-predicated branch
+> conditions, the first COMPILER move of the three) then took **80 → 92 with 0
+> regressions**, and all 12 new cells goldened and HELD at the ship floor → **91 verified**.
+> The one remaining gap is still `hypotl.f80`, which census-COMPILES and DECLINES at the
+> plain -O1 ship floor (bd `3c6m.61`; its gate is now precisely known — `E4-dataflow` on an
+> `i80` fp80-union compare, a width issue rather than a control shape) — so the two numbers
+> are 1 apart, for that one cell, and must never be conflated (Rule 2, bd
+> `libm-scoreboard-two-numbers`).
 >
 > What is still current in this file: the **p119 / Rule-18 doctrine** immediately below
 > (source injection is the only way a library function counts; per-fn name recognition

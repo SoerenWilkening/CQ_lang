@@ -1,5 +1,52 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ PredMux L6 INCREMENT 5 — 80 → 92/123 injection-covered, 79 → 91 VERIFIED,
+0 REGRESSIONS (2026-07-26, bd `q2wk`).** The first COMPILER move since `3c6m.60`
+(which was harness-only). PredMux's E6 claim gate now admits **path-predicated
+branch conditions** — (A) an `i1` PHI used as a conditional-branch condition
+inside a claimed region, which the flatten converts to boolean algebra, and (B) a
+branch condition that is currently *untainted* but that the flatten itself will
+taint (region-internal, phi-derived; the shared Inc-3 `valueWillTaintAfterFlatten`
+predicate). That is `clang -O1`'s CFG-level lowering of a short-circuit `a || b`
+it did not if-convert, and it is the sole blocker on the whole **fdlibm
+exponent-word classification chain** (`s_log1p.c`'s
+`if (hx > 0 || hx <= 0xbfd2bec4)` and every body that inlines it). Design of
+record: `docs/prd/phase-07-expressiveness/3c6m.14-L6-control-predication/PRD.md`
+§4.4b.
+**THE 12 THAT FLIP** — `acosh{,f,l}` `asinh{,f,l}` `atanh{,f,l}` `hypotf.f32`
+`log1p{,f}` — were **ALL GOLDENED BEFORE THE 92 WAS PUBLISHED**, and this time all
+12 held at the true `clang -O1` ship floor (`e2e-slice-libm-real-<fn>`, `opt`
+exit 0, deterministic byte-identical trace). Census-COMPILES is still only an upper
+bound for anything not yet goldened (Rule 2). `REGRESSIONS: NONE` over the full
+123-cell O1 re-census; full `ctest` green.
+**TWO TAXONOMY CORRECTIONS this lever forced, both MEASURED:**
+1. `log1pl.f80` / `log2l.f80` / `logl.f80` keep their **L6 nested control** label,
+   but NOT for the reason the loops make obvious. They inline `__polevll`, whose
+   Horner loops survive `clang -O1` — yet the pass's own `LoopUnrollPrepass` (trips
+   2/3/5/6, all under `kMaxUnrollTrip = 8`) unrolls them between the two PredMux
+   fixpoints. The ordered `CQ_PREDMUX_DBG` trace shows it: the LAST,
+   outcome-deciding leave is `E6-condtree`, with no `E2-cycle` after it. (The
+   trace shows leave ORDER, not fixpoint round — it cannot establish that every
+   `E2-cycle` leave sits in the first round, and an earlier draft of this note
+   claimed exactly that.) `acoshl.f80` inlines the SAME loops and verifies
+   end-to-end by exactly that route. So the residual is a CONTROL shape and these
+   are a successor-increment L6 target — **not** a bd `8h7d` loop target. The exact
+   residual condition is NOT yet diagnosed: the debug names a value in the
+   post-unroll module, whose numbering no longer matches stage-1, so it needs a
+   fresh dump at that point (an earlier draft of this note named it from the stale
+   mapping and was wrong — Rule 11).
+2. `hypotl.f80` (bd `3c6m.61`) is **not** unblocked by this lever, and its gate is
+   now precisely known: `E4-dataflow` on `icmp eq i80 …` — an fp80-union bit-pattern
+   compare at a non-template width. That is a width/union issue, not a control shape.
+   So the two numbers remain **1 apart, for that same one cell**: 92 covered / 91
+   verified.
+**A FAITHFULNESS DEFECT the golden round caught (bd `tkju`, filed):** 47 committed
+`slice_libm_real_*.c` vendor openlibm's **software `copysign`/`copysignl` body** for
+a Rule-18 **hardware keep**. Measured live, not dead code — fixing the spelling on
+`acoshl` moved its trace 3954 → 3934 lines and turned 0 `cq_template_copysign_*`
+into 4. `acoshl` is fixed here as the worked model; the other 47 are their own batch.
+This is the slice-level twin of the census-level bug `3c6m.60` fixed.
+
 **⚡ KEEP-SET HARNESS FIX — 68 → 80/123, 0 REGRESSIONS (2026-07-25, bd `3c6m.60`).**
 The census was measuring a program the ship floor never compiles. The corpus recipe
 (Reproduce step 1) builds every openlibm `.c` with a **blanket `-fno-builtin`**, so an
