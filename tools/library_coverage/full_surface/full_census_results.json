@@ -1,8 +1,8 @@
 {
  "cosf.f32": {
   "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe float (): cq taint escape: tainted value consumed by an unknown callee"
+  "bucket": "unsupported opcode",
+  "diag": "probe float (): cq taint escape: tainted value reaches an unsupported instruction"
  },
  "cos.f64": {
   "status": "decline",
@@ -16,8 +16,8 @@
  },
  "sinf.f32": {
   "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe float (): cq taint escape: tainted value consumed by an unknown callee"
+  "bucket": "unsupported opcode",
+  "diag": "probe float (): cq taint escape: tainted value reaches an unsupported instruction"
  },
  "sin.f64": {
   "status": "decline",
@@ -31,8 +31,8 @@
  },
  "tanf.f32": {
   "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe float (): cq taint escape: tainted value consumed by an unknown callee"
+  "bucket": "unsupported opcode",
+  "diag": "probe float (): cq taint escape: tainted value reaches an unsupported instruction"
  },
  "tan.f64": {
   "status": "decline",
@@ -536,8 +536,8 @@
  },
  "fmodl.f80": {
   "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+  "bucket": "loop-carried",
+  "diag": "probe x86_fp80 (): cq loop lowering: multiple early-break sites"
  },
  "remainderf.f32": {
   "status": "decline",
@@ -551,8 +551,8 @@
  },
  "remainderl.f80": {
   "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
  },
  "remquof.f32": {
   "status": "decline",
@@ -566,8 +566,8 @@
  },
  "remquol.f80": {
   "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee"
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
  },
  "nextafterf.f32": {
   "status": "COMPILES",

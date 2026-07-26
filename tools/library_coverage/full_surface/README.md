@@ -527,21 +527,37 @@ for c in $OLA/src/*.c $OLA/bsdsrc/*.c $OLA/ld80/*.c; do   # ld80 = long double b
     -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
     "$c" -o <scratch>/bc/$(basename ${c%.c}).bc 2>/dev/null   # INLINE -I flags: zsh does
 done                                                          # NOT word-split unquoted $INC
-#   s_cosl/s_sinl/s_tanl need the BSD M_PI constants (same trick as b_tgamma in
-#   1b below) — without them the trig trio drops out and cosl/sinl/tanl census
-#   as a spurious "unknown callee":
-for b in s_cosl s_sinl s_tanl; do
+#   The trig entries need the BSD M_PI constants (same trick as b_tgamma in 1b
+#   below) — without them they drop out and census as a spurious "unknown
+#   callee". THE f32 SIBLINGS WERE MISSING FROM THIS LOOP until 2026-07-27 (the
+#   bd tkju scoping pass): s_cosf/s_sinf/s_tanf hit the same undeclared M_PI_2
+#   at src/s_cosf.c:33, so cosf/sinf/tanf mis-bucketed as "unknown callee" for
+#   the whole campaign. With them built, all three unmask to their REAL blocker,
+#   the Payne-Hanek reduction at src/k_rem_pio2.c:310 — i.e. the SAME capability
+#   as the f64/f80 trig cells, which is how the trig lever went from an apparent
+#   6 cells to a measured 9:
+for b in s_cosl s_sinl s_tanl s_cosf s_sinf s_tanf; do
   clang -g -O1 -fno-builtin -DM_PI=3.14159265358979323846 -DM_PI_2=1.57079632679489661923 \
     -DM_PI_4=0.78539816339744830962 -emit-llvm -c \
     -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
     "$OLA/src/$b.c" -o <scratch>/bc/$b.bc
 done
-#   STILL-FAILING (accepted residual corpus gaps, bd 20xt): e_fmodl.c,
-#   s_remquol.c, s_truncl.c need BSD <machine/ieee.h> (struct ieee_ext /
-#   EXT_FRAC*BITS) which openlibm does not vendor for this target — fmodl /
-#   remquol (and remainderl, which calls remquol) stay "unknown callee".
-#   There is NO s_nexttowardl.c (needs an alias shim like ldexp's; it would
-#   land on nextafterl's volatile-runtime blocker anyway).
+#   RETRACTED 2026-07-27 (bd tkju scoping pass) — the note here used to read
+#   "STILL-FAILING (accepted residual corpus gaps, bd 20xt): e_fmodl.c,
+#   s_remquol.c, s_truncl.c need BSD <machine/ieee.h> ... fmodl / remquol (and
+#   remainderl, which calls remquol) stay 'unknown callee'". MEASURED FALSE at
+#   corpus @82e90ae: all three compile with rc=0 and ZERO errors under the exact
+#   flag set above. The note predates the `-I "$OLA"` root-include fix (bd 20xt,
+#   the paragraph above) and was never retracted; the .bc set shipped at
+#   /private/tmp/bc was simply built before it. Build them and fmodl unmasks to
+#   loop-carried ("multiple early-break sites") while remquol and remainderl
+#   unmask to memory-store (Shadow). None of the three COMPILES either way, so
+#   the scoreboard is unmoved — what was wrong was the TAXONOMY, and with it the
+#   lever ranking.
+#   STILL A GENUINE GAP: there is NO s_nexttowardl.c anywhere in the corpus
+#   (openlibm ships nexttoward/nexttowardf only). It needs an alias shim like
+#   ldexp's; it would land on nextafterl's volatile-runtime blocker anyway.
+#   nexttowardl.f80 is therefore the ONLY remaining honest "unknown callee" cell.
 
 # 1b. CORPUS-GAP CLOSURES (bd 3c6m.50 Step 0c) — three openlibm public names are
 #     minted by the build's symbol aliasing, which the raw -emit-llvm corpus build
