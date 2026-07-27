@@ -542,22 +542,56 @@ for b in s_cosl s_sinl s_tanl s_cosf s_sinf s_tanf; do
     -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
     "$OLA/src/$b.c" -o <scratch>/bc/$b.bc
 done
-#   RETRACTED 2026-07-27 (bd tkju scoping pass) — the note here used to read
-#   "STILL-FAILING (accepted residual corpus gaps, bd 20xt): e_fmodl.c,
-#   s_remquol.c, s_truncl.c need BSD <machine/ieee.h> ... fmodl / remquol (and
-#   remainderl, which calls remquol) stay 'unknown callee'". MEASURED FALSE at
-#   corpus @82e90ae: all three compile with rc=0 and ZERO errors under the exact
-#   flag set above. The note predates the `-I "$OLA"` root-include fix (bd 20xt,
-#   the paragraph above) and was never retracted; the .bc set shipped at
-#   /private/tmp/bc was simply built before it. Build them and fmodl unmasks to
-#   loop-carried ("multiple early-break sites") while remquol and remainderl
-#   unmask to memory-store (Shadow). None of the three COMPILES either way, so
-#   the scoreboard is unmoved — what was wrong was the TAXONOMY, and with it the
-#   lever ranking.
+#   THE RETRACTION WAS ITSELF WRONG — RE-MEASURED 2026-07-27 (bd tegx, the L3
+#   scoping pass). The 2026-07-27 tkju note claimed e_fmodl.c / s_remquol.c /
+#   s_truncl.c "all three compile with rc=0 and ZERO errors under the exact flag
+#   set above". MEASURED FALSE at that same corpus rev @82e90ae, this same host,
+#   those exact flags:
+#       e_fmodl   rc=1, 5 errors (incomplete type 'struct ieee_ext', EXT_FRAC*BITS)
+#       s_remquol rc=1, 1 error  (fatal: 'machine/ieee.h' file not found)
+#       s_truncl  rc=1, 2 errors (EXT_FRACHBITS undeclared)
+#   The ORIGINAL bd-20xt note was right: they need BSD <machine/ieee.h>, which
+#   openlibm does NOT ship anywhere in the tree (e_fmodl.c even has its #include
+#   COMMENTED OUT at line 14 while still using `struct ieee_ext`). This is the
+#   FIFTH corpus/bucket measurement error of the campaign; the lesson is the
+#   standing one — check rc AND the error count, never rc alone, and never with
+#   stderr redirected to /dev/null.
+#   DURABLE FIX (in-tree, survives every reclone — the bd vuy6 lesson that
+#   scratch-dir hand shims do not persist): shim/machine/ieee.h reconstructs the
+#   x86 i387 fp80 layout. Its field layout is validated EMPIRICALLY by
+#   shim/ieee_shim_check.c (struct view vs the raw 10 significant bytes over 7
+#   known values) and the resulting BODIES are validated against the host libm by
+#   shim/fmodl_remquol_check.c (1502 cases, PASS). NB s_truncl is NOT needed —
+#   `truncl` resolves from src/s_truncl.c, and `remainderl` from src/e_remainderl.c;
+#   only fmodl and remquol are genuine gaps. e_fmodl needs -include because its
+#   own #include is commented out:
+SHIM=<repo>/tools/library_coverage/full_surface/shim
+clang -g -O1 -fno-builtin -emit-llvm -c -I "$SHIM" -include machine/ieee.h \
+  -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
+  "$OLA/ld80/e_fmodl.c" -o <scratch>/bc/e_fmodl.bc
+clang -g -O1 -fno-builtin -emit-llvm -c -I "$SHIM" \
+  -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
+  "$OLA/ld80/s_remquol.c" -o <scratch>/bc/s_remquol.bc
+#   TWO UPSTREAM DEVIATIONS the body validation surfaced, both real and neither
+#   caused by the shim (recorded so a future run does not re-litigate them):
+#   (a) openlibm ld80 returns n=31 quotient bits from remquol, the host n=3 —
+#       both conform, C11 7.12.10.3 makes n implementation-defined (>= 3);
+#   (b) OPENLIBM BUG ld80/s_remquol.c:89 — the |x|==|y| branch does `*quo = 1;`
+#       where the f64 twin src/s_remquo.c:54 does `*quo = (sxy ? -1 : 1);`, so a
+#       negative unit quotient loses its sign. A literal constant, no dependence
+#       on <machine/ieee.h>. fmodl (the one that DOES use `struct ieee_ext`)
+#       matches the host bit-for-bit in all 1502 cases.
 #   STILL A GENUINE GAP: there is NO s_nexttowardl.c anywhere in the corpus
 #   (openlibm ships nexttoward/nexttowardf only). It needs an alias shim like
 #   ldexp's; it would land on nextafterl's volatile-runtime blocker anyway.
 #   nexttowardl.f80 is therefore the ONLY remaining honest "unknown callee" cell.
+#   VERIFY THE WHOLE CORPUS BEFORE ANY CENSUS RUN (251 .bc -> 409 syms):
+#     BC=<scratch>/bc OPENLIBM=<scratch>/openlibm python3 -c "import sys;\
+#     sys.path.insert(0,'.');import wprobe;d=wprobe.build_defmap();print(len(d),\
+#     [n for n in ('cosf','sinf','tanf','fmodl','remquol') if n not in d])"
+#   Expect `409 []`. 404 / 407 or a non-empty list = an incomplete corpus, and a
+#   missing .bc does NOT fail loudly — it masks the cell's real blocker as
+#   "unknown callee".
 
 # 1b. CORPUS-GAP CLOSURES (bd 3c6m.50 Step 0c) — three openlibm public names are
 #     minted by the build's symbol aliasing, which the raw -emit-llvm corpus build

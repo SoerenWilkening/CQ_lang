@@ -551,8 +551,8 @@
  },
  "remainderl.f80": {
   "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+  "bucket": "loop-carried",
+  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control"
  },
  "remquof.f32": {
   "status": "decline",
@@ -566,8 +566,8 @@
  },
  "remquol.f80": {
   "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory"
+  "bucket": "loop-carried",
+  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control"
  },
  "nextafterf.f32": {
   "status": "COMPILES",
