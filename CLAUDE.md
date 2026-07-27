@@ -295,7 +295,28 @@ sees*, **NOT** "no `call`/`jmp _<fn>` in the final asm" (the l-suffix rounders
 because CQ intercepts `@llvm.{rint,nearbyint,trunc}.f80` first — the `floor.f80`
 precedent); **and (2)** Bennett.jl ships a reversible gate sequence for that
 construct (so a Phase-9 backend has a source), else it is a parity-*inversion* we
-cannot realize and it **declines**. On x86-64+SSE4.1 the keep-set is
+cannot realize and it **declines**.
+**Condition (2) means a CONCRETE gate sequence — a K-parameterized unroller is
+NOT one** (owner decision 2026-07-27). Bennett's data-dependent-trip *loop*
+support is a family of circuits indexed by a user-supplied `max_loop_iterations`:
+`for _iter in 1:K` with the back edge removed (`src/lowering/cfg.jl:219`),
+refusing to run without K (`driver.jl:80-83`), with **zero** static trip-count
+inference anywhere in `src/`, and whose only correctness witness is a convergence
+wire read at **simulate time over random probe inputs**
+(`simulator.jl:215-223`) that `reversible_compile` never even invokes. CQ has no
+simulator and will not get one (Rule 2, owner decision 2026-06-10), so that
+witness is structurally unavailable to us. **A construct whose realization
+depends on an unverifiable parameter does not satisfy condition (2): it is a
+parity inversion and it declines.** This is not a cost judgement — it is the
+keep/cut line, and it applies to *every* data-dependent-trip library body
+(the `fmod`/`remainder`/`remquo` family, Payne–Hanek `rem_pio2`, and any future
+one). Note the contrast that makes the line coherent: Bennett's **fixed**-trip
+branchless kernels *are* concrete gate sequences (e.g. the 64-iteration restoring
+divider `src/divider.jl:22-36`), which is why a bounded, statically-known trip
+count stays in scope while a quantum-dependent one does not. Scoped, measured and
+recorded in
+`docs/prd/phase-07-expressiveness/SCOPING-L3-data-dependent-trip-loops.md` and bd
+[`l3-quantum-trip-loop-verdict-2026-07-27`]. On x86-64+SSE4.1 the keep-set is
 `sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma/fmuladd
 lrint llrint` (+ the non-`math.h` integer bit-intrinsics), **all Bennett-backed**
 (soft-float `soft_round`/`soft_trunc`/`soft_floor`/… + hardware ops; Bennett's

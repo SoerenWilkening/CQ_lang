@@ -97,17 +97,22 @@ function family at any width.** `src/softfloat/` holds 33 files, **zero** matchi
 whose shipped column reads `None`. Bennett does not solve `fmod` by a different
 algorithm — **it does not solve it at all.**
 
-**Leg B (arguable): Bennett's data-dependent-loop mechanism is not a gate
-sequence.** It is a **K-parameterized unroller** — `for _iter in 1:K`
+**Leg B (was "arguable" — SETTLED by owner decision 2026-07-27, see §5.1: a
+K-parameterized unroller does NOT satisfy condition (2)): Bennett's
+data-dependent-loop mechanism is not a gate sequence.** It is a **K-parameterized unroller** — `for _iter in 1:K`
 (`cfg.jl:219`), back edge removed, refusing to run without a user-supplied K
 (`driver.jl:80-83`) — with **zero static trip-count inference anywhere in `src/`**,
 whose only correctness witness is a convergence wire read at **simulate time**
 (`simulator.jl:215-223`, `diagnostics.jl:258-264`) over *random probe inputs*, and
 which `reversible_compile` **never invokes**. Under Rule 18 condition (2) — "Bennett
 ships a reversible gate sequence for that construct" — a family of circuits indexed
-by an unverifiable parameter arguably does not qualify. This leg is **not airtight**
-(Rule 18's keep/cut line governs named-call keeps; a source-injected loop is stock IR
-whose individual peeled templates Bennett does back) and is put to the owner in §5.
+by an unverifiable parameter **does not qualify**. The counter-argument
+considered (that Rule 18's keep/cut line governs named-call keeps, and a
+source-injected loop is stock IR whose individual peeled templates Bennett does back)
+was put to the owner and **rejected**: condition (2) asks whether Bennett can realize
+*the construct*, and a circuit family indexed by an unverifiable parameter cannot be
+realized without the simulate-time witness CQ has foregone. **So this family declines
+on BOTH legs**, and the rule now pre-decides every other data-dependent-trip body.
 
 **Bennett's actual answer to this problem class is a fixed-trip branchless kernel.**
 `src/divider.jl:22-36` `_soft_udiv_compile` / `_soft_urem_compile` is a restoring
@@ -234,13 +239,19 @@ through a measurement phase and a design phase.**
 
 ## 5. Open questions — decisions for the owner
 
-1. **Rule 18 condition (2), strict reading:** does "Bennett ships a reversible gate
+1. ~~**Rule 18 condition (2), strict reading:** does "Bennett ships a reversible gate
    sequence for that construct" cover a **K-parameterized unroller with no static
-   bound inference and no compile-time witness**? This memo reads it as **NO**. If
-   the owner reads it as YES, §2 Leg B weakens (Leg A still holds) and the family
-   becomes a *cost* decision rather than a *parity* decision. **It should be written
-   into the Rule-18 text either way** — it recurs for every data-dependent-trip libm
-   body, starting with Payne–Hanek.
+   bound inference and no compile-time witness**?~~ **ANSWERED — owner decision
+   2026-07-27: NO.** Condition (2) means a *concrete* gate sequence; a construct
+   whose realization depends on an unverifiable parameter is a parity inversion and
+   declines. Written into the Rule-18 text in `CLAUDE.md`. **Consequences, which
+   reach past this family:** §2 Leg B now stands on its own alongside Leg A, so the
+   decline here is doubly grounded; and the same rule pre-decides **every** other
+   data-dependent-trip library body — Payne–Hanek `rem_pio2` (bd `8h7d.1`) included,
+   whose 9 cells are therefore now blocked on parity, not only on cost. The line
+   stays coherent because Bennett's **fixed**-trip branchless kernels *are* concrete
+   gate sequences (`src/divider.jl:22-36`), so a statically-known bounded trip count
+   remains in scope; only a quantum-dependent one is out.
 2. **Does the record get amended?** Recommendation: *append* evidence to PRD-7.3
    §2.6, leave the "permanent decline" language intact.
 3. **Does the f80 width get an explicit parity exemption?** Even under a hypothetical
