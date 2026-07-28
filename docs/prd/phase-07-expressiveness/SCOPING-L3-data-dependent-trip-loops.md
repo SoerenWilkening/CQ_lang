@@ -11,6 +11,30 @@ family. Read both before scoping any loop work.
 > declined. Do not resequence the roadmap.** The payoff of the best design we
 > could construct is **zero cells**, measured — not "expensive", *zero*.
 
+> **ADDENDUM 2026-07-28 — the line sharpened on the one cell this memo did not
+> cover.** `logbl.f80` was the only census cell where the §5.1 ruling's terms were
+> genuinely ambiguous, and it is the *best case* for reading them narrowly:
+> measured, back-edge excision makes it lower **completely** (`opt` exit 0,
+> verify-clean, zero residual `@cq_*`, **no deeper layer at all** — unlike the
+> nine cells here, it has no L2/L4/L5 stack), and its loop-carried values are
+> purely **classical** (a counter and a shift register), so no dirty rail crosses
+> the back edge, Rules 6/8 are untouched, and §6 item 1 — the shift-until-normalized
+> bound SCEV cannot see — is *structurally absent*. Only its **trip count** is
+> quantum-dependent. **Owner ruling: still out.** The test is the trip count
+> alone, never the cleanliness of the loop body. Written into CLAUDE.md Rule 18.
+> **Consequence beyond this memo:** bd `8h7d` now owns **zero** census cells and
+> is a pure capability tracker. Recorded in bd
+> [`libm-census-scope-axis-2026-07-28`].
+>
+> The same pass found that this memo's §5.1 extension to Payne–Hanek, while
+> correct in outcome, rests on a **weaker leg** than the `fmod` family does — see
+> §2 Leg A below and bd [`bennett-grounding-asymmetry-2026-07-28`]. Bennett *does*
+> ship a concrete branchless Payne–Hanek (`src/softfloat/fsin.jl:468`,
+> re-verified at rev `e15ea23`); what it cannot realize is openlibm's **source
+> form**. For `fmod` there is no algorithm at any width. Both decline; only one of
+> them is doubly grounded, and the trig nine have a shipped parity answer (the
+> authored branchless leaf) that `fmod` does not.
+
 Method: real openlibm injection at the `-O1` ship floor over a **verified-complete**
 251-`.bc` corpus, the committed plugin (never rebuilt during analysis), a Bennett.jl
 consult at `9c1b77e`, and a four-lens adversarial refutation round. Artifacts under

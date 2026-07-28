@@ -1,5 +1,200 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+## ⚠ READ THIS FIRST — `bucket` is NOT a work list. `scope` is.
+
+**The 28 declines contain 5 cells of actionable work, not 28** (measured 2026-07-28,
+bd `3c6m.14`). Every `decline` record now carries a **`scope`** field alongside
+`bucket`, because those two answer different questions and only one of them is a
+plan:
+
+| | question it answers |
+|---|---|
+| `bucket` | **what blocks it** — the mechanism of the FIRST blocker, and nothing else |
+| `scope`  | **is it work** — decided-out, actionable, deferred, or not a compiler fact |
+
+```
+BY SCOPE (28 declines)
+  21  decided-decline       fmod/remainder/remquo x3 · sin/cos/tan x3 · tgammal · lgammal · logbl
+   5  lever-gap    <-- THE WORK   expl.f80 · log10l.f80 · tgammaf.f32 · tgamma.f64 · nexttowardf.f32
+   1  deferred-capability   powl.f80
+   1  corpus-gap            nexttowardl.f80
+```
+
+> **⚠ A DECLINING CELL IS NOT A DECLINING FUNCTION. READ THE `scope_ref`.**
+> This census measures **one thing**: can openlibm's real body be lowered *as
+> injected source* (Rule 18). `sin.f64: decided-decline` therefore means *"openlibm's
+> `s_sin.c` + `e_rem_pio2.c` + `k_rem_pio2.c` cannot be lowered"* — it does **NOT**
+> mean CQ cannot do quantum `sin`. **CQ compiles quantum `sin`/`cos`/`tan` today at
+> 6 of 9 widths**, each an e2e-verified `slice_branchless_*` entry in `ctest`
+> (`tests/e2e/CMakeLists.txt:550/558/576/584/601`). Bennett reaches them the same
+> way — a branchless kernel, not openlibm's loops. The cell stays declined because
+> the campaign's honesty rule forbids crediting an authored leaf as real-openlibm
+> injection coverage; that rule protects the *number*, and it should never be read
+> as a capability claim. The genuinely uncovered part is the **f32** width (bd `eur4`).
+
+`owner-ruling-needed` is a valid fifth value, currently empty — `logbl.f80` held it
+for one day. **Owner ruling 2026-07-28:** a **quantum-dependent trip count is out
+even when the loop recurrence is purely classical.** `logbl.f80` was the one cell
+the 2026-07-27 line did not cleanly reach — measured, back-edge excision makes it
+lower *completely* (`opt` exit 0, verify clean, zero residual `@cq_*`, **no deeper
+layer at all**) and its loop-carried values are a counter and a shift register, so
+no dirty rail crosses the back edge and Rules 6/8 are untouched. Only the trip
+count is quantum. The strict reading won. **Consequence: `8h7d` has no
+census-facing cell left and is now a pure capability tracker.**
+
+**Why this axis exists.** `bucket` labels an owner-decided cell and an actionable
+one identically, and that has inverted the published lever ranking twice:
+
+1. **2026-07-25** — *"bounded loops are ~half of all declines (24/55) … `8h7d` is by
+   far the highest coverage-per-effort lever."* 17 of the 24 were harness artifacts
+   or other levers' cells.
+2. **2026-07-27** — *"take the `fmod` family before Payne–Hanek, it rides an existing
+   lever."* Answered **NO** at a measured payoff of **zero cells**.
+
+Both readings were available *because the census presented decided work as
+available work*. The `SCOPE` table in `full_census.py` is the fix, and
+`check_scope()` fails loudly on drift in either direction (a decline with no scope
+entry; a scope entry whose cell now compiles) — a stale scope table is a silent
+**planning** miscompile, and this campaign's bucket counts have now been wrong
+**six** times.
+
+**`decided-decline` does not mean impossible.** It means: *do not scope compiler
+work against this cell.* Each entry cites its ruling and what would re-open it —
+none is a C-physics wall (that `3c6m.50` finding still stands), and `8h7d.1`
+is deliberately left OPEN.
+
+### The two groundings are NOT the same strength — do not merge them
+
+| family | Bennett Leg A (algorithm exists at all?) | Leg B (concrete gate sequence?) |
+|---|---|---|
+| `fmod`/`remainder`/`remquo` | **NO** — zero `rem`/`mod` in `src/` at any width; the only token is an error string (`src/extract/errors.jl:34`) | fails |
+| `sin`/`cos`/`tan` | **YES** — `src/softfloat/fsin.jl:468 _rp_paynehanek`, fully branchless, 4 statically-clamped const-index lookups, **zero** `for`/`while` in `fsin.jl`/`ftan.jl` | fails **for openlibm's source form only** |
+
+Re-verified 2026-07-28 at Bennett rev `e15ea23` — *newer* than the `9c1b77e` both
+memos consulted, so upstream progress has not quietly flipped Leg A.
+
+So the trig nine are ruled out **as openlibm bodies** (`k_rem_pio2.c`'s nested
+data-dependent loops, which Bennett would reject too; CLAUDE.md Rule 18 names
+`rem_pio2` verbatim). The parity-correct move is the **authored branchless leaf**
+(bd `20xt.8`) — and by the campaign's own honesty rule that leaves the census cell
+declined. **Measured gap worth acting on:** `branchless/{sin,cos,tan}.c` (f64) and
+`{sinl,cosl,tanl}.c` (f80) all ship with e2e twins; **`sinf.c`/`cosf.c`/`tanf.c` do
+not exist.** Read that precisely — the branchless corpus has **no f32 leaf for any
+function at all** (36 files, zero f32), so the trig f32 trio would be the *first* f32
+leaf, not three gaps in an otherwise-complete set. That is the real actionable content
+hiding in the trig bucket, and it is not a compiler lever at all.
+
+### Two bucket labels that are measurement artifacts, not capabilities
+
+* **`fp-copy/specialization` (was 2) — WAS A STRING RACE, now empty.** `wprobe.py`
+  truncated the diagnostic at 120 chars, one character before `"unsupported
+  instruction"` completes, so `bucket()` fell past that arm into the
+  `"specialization"` arm — resurrecting a label bd `3c6m.54` had **emptied**.
+  Blast radius of the fix was exactly the ld80 gamma pair (every other decline
+  diagnostic measures < 115 chars). Corrected here to `unsupported opcode`.
+  **The census's sixth bucket measurement error.**
+* **`unsupported opcode` (5) contains ZERO opcode-surface work.** `full_census.py:52`
+  assigns it by substring-matching `kMsgOther` (`TaintPropagation.cpp:413`) — the
+  generic gep/atomicrmw/freeze/va_arg **catch-all**, not an opcode signal. The f32
+  trig trio's real first blocker is a tainted-index QROM read of `@ipio2`
+  (`k_rem_pio2.c:310`); the gamma pair's is an `alloca [20 x i32]` inside the `sinl`
+  clone. Nothing here resembles the `fshl` axis that genuinely unblocked
+  `erfl`/`erfcl`.
+
+### The gamma gate — the recorded rationale is analytically wrong
+
+bd `20xt`'s 2026-07-24 comment reasons that `lgammal`/`tgammal` "fail the Bennett
+gate" because Bennett ships no `soft_lgamma`. **That premise does not hold, and it
+was never an owner ruling — only a recommendation.** Rule 18 condition **(1)**
+*fails* for gamma: measured at `-O1`, `tgamma`/`lgamma` and every width emit a
+surviving `tail call @<fn>`, so they are library functions measured **only by
+source injection**, and the construct-level Bennett gate is never reached. For an
+injected body, Bennett-backing is required of the **opcodes it decomposes into**
+(`soft_fadd`/`fmul`/`fdiv`/`fcmp_*`/`fma`/`floor`/`log`/`sin` — all shipped), not of a
+`soft_tgamma`. Contrast `fmod`, which folds to an in-grid `frem` **opcode** with no
+injectable body left, which is exactly why its missing gate sequence is fatal.
+**The decisive refutation:** `lgamma.f64` and `lgammaf.f32` are `COMPILES
+(spec-clone)` **today** with Bennett shipping zero gamma — under the `20xt` rule
+those two shipped cells would be over-accepts.
+
+The two ld80 gamma cells are still `decided-decline`, on **entirely different,
+measured grounds** (mapped `!dbg` → source, 2026-07-28):
+
+* `tgammal.f80` — its **own** argument-reduction loops, `ld80/e_tgammal.c:271/277/286`
+  (`while(x>=3.0L)` …), SCEV `Unpredictable`, trip governed by the quantum value
+  (~1750 iterations at the top of the domain). Squarely Rule 18.
+* `lgammal.f80` — **inherited** Payne–Hanek via `sinl`: all 10 `Unpredictable`-BTC
+  loops resolve into `__kernel_rem_pio2` / `__ieee754_rem_pio2l`, **none** is
+  `lgammal`'s own. No gamma-specific ground at all.
+
+## How many `math.h` functions actually compile? (measured 2026-07-28)
+
+**THREE DISJOINT SCOREBOARDS. NEVER SUMMED.** A merged headline is the retired
+"165/174 = 95%" overclaim recurring, and this project treats that as a **bug**
+(bd `libm-scoreboard-two-numbers`, owner, emphatic; `probe.py::two_scoreboard_lines`).
+If you take one number from this file, take **(2)**.
+
+**The surface**, as modelled by `probe.MATHH_SPEC` — *a model, not ISO's own count*:
+**69 named entities → 183 cells.** The 12 type-generic macros are modelled at **one**
+width each, so 183 is not a per-width count (ISO's per-width surface would be 207).
+Keep that hedge if you quote it.
+
+> `69 = 12 type-generic macros + 1 by-design (nan) + 14 hardware keep-set +`
+> **`42 real library functions with an injectable openlibm body`**
+
+### (1) Recognition floor — a FIXED floor, not campaign progress
+**14 functions / 42 cells** lower because `clang -O1` folds them to a hardware-backed
+intrinsic the pass recognizes. They have **no injectable body by definition** (Rule 18),
+which is why they are excluded from (2)'s denominator — that exclusion *deflates* the
+percentage (28/42 = 67% vs a merged 42/56 = 75%), it does not inflate it.
+Measured: **36 verified · 3 accepted** (`fabs{,f,l}`) **· 3 partial** (`fma{,f,l}`).
+
+### (2) Real-openlibm source injection — ***THE* campaign number**
+**Cells: 95/123 injection-covered, all 95 ship-floor verified** — *90 fully inlined +
+5 Phase-6 clone-specialized*, which `wprobe.py` requires never be merged into plain
+`COMPILES`. That the two numbers coincide is a **measurement, not an invariant**
+(closed by `3c6m.58`, re-opened by `3c6m.60`, re-closed by `3c6m.61`).
+
+**By function — 28 of 42 compile at ALL THREE widths:**
+
+| | n | functions |
+|---|---|---|
+| **all 3 widths** | **28** | `acos acosh asin asinh atan atan2 atanh cbrt cosh erf erfc exp2 expm1 fdim frexp hypot ldexp llround log log1p log2 lround modf nextafter scalbln scalbn sinh tanh` |
+| some widths | 6 | `exp lgamma log10 logb nexttoward pow` |
+| no width | 8 | 7 measured at zero (`cos fmod remainder remquo sin tan tgamma`) **+ `ilogb`, which is UNMEASURED** |
+
+All 42 carry exactly 3 variants, so "all widths" is a genuine 3/3 for every one of the
+28 — no weak-denominator inflation. `ilogb` is **not a decline**: it is int-return and
+`full_census.py::ret_width` skips it (bd `bcv4`), an unfixed harness limitation. Note
+the rule is narrower than it sounds — `lround`/`llround` are *long*-return and *are*
+censused (both land in the 28).
+
+### (3) Authored-branchless substitutes — disjoint; these cells stay DECLINED in (2)
+36 hand-written leaves, **f64/f80 only — zero f32 leaves exist**, with numerics that
+diverge from ISO in documented ways (`atan` ≤1.15 ulp and `atan(±inf)=NaN`; `tanh`
+≤3.05 ulp). They cover 11 further functions at some widths. **Do not add this to (2).**
+Because a union prints in the same shape as (2)'s row, a reader diffs them and reads
+the delta as injection progress — it is not: `sin`/`cos`/`tan` move 0/3 → 2/3 entirely
+on hand-written f64+f80 bodies, and `fmod` appears "covered" while being a standing
+Rule-18 decline.
+
+### Two caveats load-bearing for every number above
+
+* **ONE TAINT MASK.** `full_census.py::cell_args` taints **arg0 only**; every other
+  argument is a classical literal (`0.5` / `2`). Nine of the 28 are multi-arg, so
+  *"`atan2` compiles at all widths"* means `atan2(quantum, 0.5)` — **never** q⊗q.
+  (The authored-branchless census is *stronger* here: it requires qc/cq/qq.)
+* **"COMPILES" IS NOT "RUNS".** The runtime is **trace-only**, `cqrt_measure_*` returns
+  a hardcoded `0`, and there is no simulator and no backend (Rule 2). A committed
+  golden proves: the real body lowers to `opt` exit 0 at the plain `clang -O1` ship
+  floor; every emitted symbol **resolves and signature-matches at link**; and emission
+  is byte-stable. It proves **nothing** about numerical results, unitarity, coherence,
+  any input other than the single probe value, or executability on hardware. The
+  accurate phrase is **"ship-floor verified (lowers, links, byte-stable trace)"** —
+  not "fully compiled".
+
+---
+
 **⚡ PredMux L6 INCREMENT 7 — THE GAP IS 0 AGAIN: 95/123 injection-covered,
 94 → 95 VERIFIED (2026-07-28, bd `3c6m.61`).** Injection-covered did NOT move —
 the census already scored `hypotl.f80` COMPILES. What moved is the *ship floor*:

@@ -25,8 +25,23 @@
 >   Re-census `REGRESSIONS: NONE` and no other cell's status changed. The three cells left the
 >   **L6 nested control** bucket, which is now EMPTY.
 > - The 28 declines by bucket (derived from `full_census_O1.json`, 2026-07-28): loop-carried
->   10 · memory-store/Shadow 7 · unsupported opcode 3 · control (flat/diamond) 3 · fp80
->   value-arm 2 · fp-copy/specialization 2 · unknown callee 1.
+>   10 · memory-store/Shadow 7 · unsupported opcode **5** · control (flat/diamond) 3 · fp80
+>   value-arm 2 · unknown callee 1. (`fp-copy/specialization` read 2 until 2026-07-28 and is
+>   now **0** — it was a diagnostic-truncation string race, the census's sixth bucket
+>   measurement error; the ld80 gamma pair moved to `unsupported opcode`. See
+>   `full_surface/README.md` "READ THIS FIRST".)
+> - **⚠ DO NOT PLAN OFF THAT LINE.** `bucket` names the mechanism of the first blocker and
+>   says nothing about whether a cell is work. Each decline now also carries a **`scope`**
+>   field, and it is the one to read: **`lever-gap` 5** (`expl.f80` `log10l.f80` `tgammaf.f32`
+>   `tgamma.f64` `nexttowardf.f32`) · `deferred-capability` 1 (`powl.f80`) · `corpus-gap` 1
+>   (`nexttowardl.f80`) · **`decided-decline` 21** (the `fmod`/`remainder`/`remquo` nine and
+>   the `sin`/`cos`/`tan` nine, both owner-ruled 2026-07-27 under CLAUDE.md Rule 18, plus
+>   `tgammal.f80`, `lgammal.f80` and `logbl.f80`). **The actionable set is 5 cells, not 28** —
+>   quoting the decline count as a work estimate is the exact error that inverted this
+>   document's lever ranking twice.
+> - **`logbl.f80` adjudicated 2026-07-28 (owner):** a quantum-dependent trip count is out even
+>   when the loop recurrence is purely CLASSICAL. It was `8h7d`'s last census-facing cell, so
+>   that epic now owns **zero** census cells and is a pure capability tracker.
 > - **ARITHMETIC CORRECTION carried into the block below (it was wrong by exactly the 5
 >   spec-clone cells):** injection-covered counts plain `COMPILES` **plus** `COMPILES
 >   (spec-clone)`, so at the q2wk baseline 87 + 5 = 92 covered and **31** declined — the "36

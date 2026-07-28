@@ -316,7 +316,23 @@ divider `src/divider.jl:22-36`), which is why a bounded, statically-known trip
 count stays in scope while a quantum-dependent one does not. Scoped, measured and
 recorded in
 `docs/prd/phase-07-expressiveness/SCOPING-L3-data-dependent-trip-loops.md` and bd
-[`l3-quantum-trip-loop-verdict-2026-07-27`]. On x86-64+SSE4.1 the keep-set is
+[`l3-quantum-trip-loop-verdict-2026-07-27`]. **The line was sharpened by owner
+ruling 2026-07-28 on the one cell it did not cleanly reach (`logbl.f80`): a
+quantum-dependent trip count is out EVEN WHEN the loop recurrence is purely
+classical.** That cell measures as the best possible case for the other reading —
+back-edge excision makes it lower *completely* (`opt` exit 0, verify-clean, zero
+residual `@cq_*`, **no deeper layer at all**), and its loop-carried values are a
+counter and a shift register, so no dirty rail crosses the back edge and Rules 6/8
+are untouched; only the trip count is quantum. It still declines. So the test is
+the **trip count** alone, never the cleanliness of the loop body. **Two corollaries
+worth carrying:** the ruling is about the CONSTRUCT the pass sees, so it says
+nothing about a library body reached by *source injection* — for those,
+Bennett-backing is owed by the **opcodes the body decomposes into**, not by a
+`soft_<fn>` of the same name (the `lgamma`/`tgamma` mistake — bd
+[`bennett-grounding-asymmetry-2026-07-28`]); and a decline ruled on these grounds
+is a **parity** wall, never a **physics** one, so it must not be quoted as
+"impossible" (the census records it as `scope: decided-decline` with its re-opening
+condition — bd [`libm-census-scope-axis-2026-07-28`]). On x86-64+SSE4.1 the keep-set is
 `sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma/fmuladd
 lrint llrint` (+ the non-`math.h` integer bit-intrinsics), **all Bennett-backed**
 (soft-float `soft_round`/`soft_trunc`/`soft_floor`/… + hardware ops; Bennett's
@@ -493,7 +509,7 @@ cmake -S . -B build -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm -DCMAKE_B
 cmake --build build -j8
 cmake --build build --target CQPass        # just the pass → build/ir-pass/libCQPass.so
 
-# Full suite (239 ctest entries; ~10-13 min wall, expect 100% pass)
+# Full suite (239 ctest entries; ~15 min wall — MEASURED 880s 2026-07-28, expect 100% pass)
 # NOTE: these figures are MEASURED (2026-07-28, re-measured after bd 3c6m.61), not estimated, and they go stale
 # on every fixture batch — if yours disagree, re-measure and update rather than
 # trusting the doc. Budget command timeouts from the wall time, NOT from a guess:

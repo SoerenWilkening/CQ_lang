@@ -384,7 +384,18 @@ def probe(fn, retW, args, ti, defmap):
         if not lowered:
             for line in r.stderr.split('\n'):
                 if 'error' in line.lower():
-                    diag = line.split('in function')[-1][:120]; break
+                    # THE CUT MUST NOT LAND INSIDE A DIAGNOSTIC PHRASE. `bucket()`
+                    # classifies by substring match, so a truncation that clips a
+                    # phrase silently re-buckets the cell. Measured (2026-07-28):
+                    # at the old [:120] the ld80 gamma pair's 139-char diagnostic
+                    # "…under quantum lift (unsupported instruction)" was cut to
+                    # "…(unsup", so `bucket()` fell past its "unsupported
+                    # instruction" arm into the "specialization" arm — and the
+                    # census's whole "fp-copy/specialization 2" bucket was that
+                    # string race, resurrecting a label bd 3c6m.54 had EMPTIED.
+                    # Blast radius of widening it was exactly those 2 cells (every
+                    # other decline diagnostic measured < 115 chars).
+                    diag = line.split('in function')[-1][:400]; break
         if lowered and fully: st="COMPILES"
         elif lowered and not fully:
             # bd adia: a surviving pre-lowering callee may be HANDLED by

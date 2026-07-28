@@ -160,7 +160,22 @@ but by an **independent disassembly of all 241 openlibm bodies** (68k IR lines):
 `inttoptr`/`ptrtoint`, `atomicrmw`/`cmpxchg`, `invoke`/`landingpad`,
 `indirectbr`/`callbr`/`blockaddress`, heap, `va_arg`, inline-asm; all 585 GEPs rooted to
 stack/const-global. Every libm body is a deterministic classical permutation → reversibly
-embeddable *in principle*. **Every decline is a temporary capability/corpus gap, never a wall.**
+embeddable *in principle*. ~~**Every decline is a temporary capability/corpus gap, never a wall.**~~
+
+> **⚠ THAT LAST SENTENCE IS SUPERSEDED (2026-07-28).** Its *physics* half survives intact and
+> is not in question: there is still **no C-physics / no-cloning wall** anywhere in the
+> 123-cell surface, and the disassembly evidence above stands. What does **not** survive is the
+> operational reading it invites — *"every decline will eventually be covered, so every decline
+> is a lever waiting for effort."* The owner decision of **2026-07-27** (CLAUDE.md Rule 18
+> condition (2): a K-parameterized unroller is not a concrete gate sequence, so **any**
+> data-dependent-trip library body is a parity inversion) puts **20 of the 28 declines**
+> out of scope — not because they are impossible, but because CQ has foregone the
+> simulate-time witness Bennett's mechanism requires (Rule 2, owner decision 2026-06-10), so
+> their realization rests on a parameter the compiler cannot check. A **parity** wall is not a
+> **physics** wall, and the distinction is exactly what makes both statements true at once.
+> **Measured actionable set: 5 cells.** Read `scope`, not `bucket`, in
+> `full_surface/full_census_O1.json`; the reading guide is `full_surface/README.md`
+> "READ THIS FIRST". Everything in §2/§3 below predates this and is retained as history.
 
 > **The `fmod`/`frem` "by-design" trap — resolved.** `fmod` folds to the in-grid `frem`
 > opcode, and Bennett.jl ships **no** `frem` gate at any width (`soft_frem` is OPEN) — so
