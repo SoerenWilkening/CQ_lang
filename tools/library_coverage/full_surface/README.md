@@ -143,15 +143,47 @@ That sentence fixes the metric, and it is **not** any of the three scoreboards b
   automatically emitted quantum routine, and excluding it because there is no *source
   to inject* would answer a different question than the one the goal asks.
 
+**⚠ `56` COUNTS *STEMS*, AND ONLY ISO C11 ONES.** Two different denominators are
+defensible and they answer different questions — quote whichever you mean, explicitly:
+
+| denominator | | |
+|---|---|---|
+| **stems** — `sin` counted once | **42 / 56 (75%)** | covered at **all three** widths |
+| **callable spellings** — `sinf`/`sin`/`sinl` counted separately, and this is what the census cells actually are | **137 / 168 (82%)** | = **42** recognition + **95** injection |
+
+The spelling count is the one a user recognizes (`sinf` and `sinl` are distinct ABI
+functions) and it is higher, because the 6 partial-width stems still contribute real
+coverage. `137 = 47 + 48 + 42`, i.e.:
+
+**f32 47/56 (84%) · f64 48/56 (86%) · f80 42/56 (75%) — the f80 column is the gap**,
+and every one of the 6 partial stems is f80-short.
+
+Stem-level detail:
+
 | | | |
 |---|---|---|
-| **all three widths** | **42 / 56 (75%)** | = **14** by recognition + **28** by injection |
+| **all three widths** | **42 / 56** | = **14** by recognition + **28** by injection |
 | every width golden-matched | 40 / 56 | `fabs` (runs, no golden) and `fma` (partial) fall short |
 | some widths | 6 / 56 | `exp` `lgamma` `log10` `logb` `nexttoward` `pow` — all f80-short |
 | no width | 8 / 56 | `sin` `cos` `tan` `fmod` `remainder` `remquo` `tgamma` `ilogb` |
 
-Per width, since most users target one: **f32 47/56 (84%) · f64 48/56 (86%) · f80 42/56 (75%)**.
-The f80 column is the gap.
+### …and openlibm ships MORE than ISO C11 `math.h`, none of it modelled (bd `sj30`)
+
+`MATHH_SPEC` models **ISO C11 `<math.h>` only**. Measured against the built corpus's
+own defmap, openlibm exports these too — **all outside every denominator on this page,
+so they are neither covered nor counted as declines**:
+
+| surface | spellings | note |
+|---|---|---|
+| **`complex.h`** | **60** | `cabs cexp clog cpow csqrt csin ccos ctan casinh…` — a whole header openlibm implements |
+| **Bessel** (POSIX `math.h`) | **8** built | `j0 j0f j1 j1f y0 y0f y1 y1f`; `jn`/`yn` exist in `src/e_jn.c`+`e_jnf.c` but did not resolve in the defmap |
+| **`sincos`** (GNU) | 3 | `sincos sincosf sincosl` |
+| **`lgamma_r`** (POSIX reentrant) | 3 | the thread-safe gamma the census reaches only via a shim |
+
+So openlibm's public surface is roughly **242 callable functions**, of which this
+campaign *models* 168 (+12 macro cells +3 `nan` = the 183) and *probes* 123. **The
+honest one-line summary is: 137 of openlibm's ~242 public functions are automatically
+covered — and the ~74 unmodelled ones are unmeasured, not failing.**
 
 **⚠ THIS NUMBER MUST NEVER BE QUOTED AS CAMPAIGN PROGRESS.** Its recognition half is a
 **fixed floor** that does not move when we do compiler work — merging a fixed floor
