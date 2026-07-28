@@ -12,7 +12,7 @@ adjoint template prints
 
 and **never names the rail it is supposed to restore**. In
 `tests/e2e/slice_libm_real_log1pl.expected.log` four textually IDENTICAL
-`cq_template_fcmp_olt_f80_hl_inv(h67, 0.707107)` lines differ only in their
+`cq_template_fcmp_olt_f80_hl_inv(h67, 0xb.504f333f9de6484p-4)` lines differ only in their
 fresh return handle, while the emitted IR pairs each with a DIFFERENT
 `cqrt_free` (`%h_cmp68/71/74/77`). So a golden can stay byte-stable across a
 change that re-pairs an `_inv` with the wrong rail, or that frees a rail whose

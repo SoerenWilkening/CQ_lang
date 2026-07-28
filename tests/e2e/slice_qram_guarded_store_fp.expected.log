@@ -1,21 +1,21 @@
 cqrt_qram_alloc_f64(8) -> a0
 cqrt_alloc_i32(0) -> h1
-cqrt_ry_i32(h1, 0.500000)
+cqrt_ry_i32(h1, 0x1p-1)
 cqrt_alloc_i32(1) -> h2
-cqrt_ry_i32(h2, 0.500000)
+cqrt_ry_i32(h2, 0x1p-1)
 cq_template_icmp_slt_i32_hl(h1, 3) -> h3
-cqrt_alloc_f64(7.000000) -> h4
+cqrt_alloc_f64(0x1.cp+2) -> h4
 cqrt_qram_store_f64_controlled(h3, a0, h2, h4)
 cqrt_qram_load_f64(a0, h1) -> h5
-cqrt_alloc_f64(0.000000) -> h6
+cqrt_alloc_f64(0x0p+0) -> h6
 cqrt_copy_f64(h5, h6)
 cqrt_qram_load_f64_unc(h5, a0, h1)
 cqrt_free(h5)
 cqrt_qram_store_f64_controlled_unc(h3, a0, h2, h4)
 cq_template_icmp_slt_i32_hl_unc(h3, h1, 3)
 cqrt_free(h3)
-cqrt_ry_i32(h2, -0.500000)
+cqrt_ry_i32(h2, -0x1p-1)
 cqrt_free(h2)
-cqrt_ry_i32(h1, -0.500000)
+cqrt_ry_i32(h1, -0x1p-1)
 cqrt_free(h1)
-cqrt_measure_f64(h6) -> 0.000000
+cqrt_measure_f64(h6) -> 0x0p+0

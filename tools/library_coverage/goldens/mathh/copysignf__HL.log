@@ -1,4 +1,4 @@
-cqrt_alloc_f32(1.500000) -> h0
-cqrt_ry_f32(h0, 0.500000)
+cqrt_alloc_f32(0x1.8p+0) -> h0
+cqrt_ry_f32(h0, 0x1p-1)
 cq_template_fabs_f32(h0) -> h1
-cqrt_measure_f32(h1) -> 0.000000
+cqrt_measure_f32(h1) -> 0x0p+0

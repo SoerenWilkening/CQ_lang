@@ -14,9 +14,10 @@
    results (the omitted branches). Corpus twin:
    tools/library_coverage/branchless/log10.c — keep the two in sync.
 
-   Golden-reading note: the runtime prints literals with %f (6 decimals), so
-   full-precision immediates (log10_2lo 3.694e-13, ivln10lo 2.508e-11) render as
-   0.000000; the compiled IR carries the exact bit pattern, not zero. */
+   Golden-reading note: since bd `ni15` the runtime prints fp literals as HEX
+   FLOAT (%a), so full-precision immediates (log10_2lo 3.694e-13, ivln10lo
+   2.508e-11) render as their exact bit pattern. Under the old %f they printed
+   `0.000000`, indistinguishable from a genuine zero. */
 static double blog10(double x) {
     long long bits;
     __builtin_memcpy(&bits, &x, 8);                     /* bitcast f64->i64 (EXTRACT_WORDS) */

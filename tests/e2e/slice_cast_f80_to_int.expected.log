@@ -1,5 +1,5 @@
-cqrt_alloc_f80(2.500000) -> h0
-cqrt_ry_f80(h0, 0.500000)
-cq_template_fmul_f80_hl(h0, 1.500000) -> h1
+cqrt_alloc_f80(0xap-2) -> h0
+cqrt_ry_f80(h0, 0x1p-1)
+cq_template_fmul_f80_hl(h0, 0xcp-3) -> h1
 cq_template_fptosi_f80_to_i32(h1) -> h2
 cqrt_measure_i32(h2) -> 0

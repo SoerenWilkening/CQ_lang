@@ -12,14 +12,39 @@
  *   - handle:  h<N>           (printed as %d of int32_t handle id)
  *   - ints:    %lld           (value cast to long long, uniform across
  *                              all int widths so the format string does
- *                              not fork per width)
- *   - floats:  %f             (default 6-digit precision; float promotes
- *                              to double via varargs)
+ *                              not fork per width; every int width the
+ *                              hand-written ABI carries is <= 64 bits, so
+ *                              the promotion is lossless — the wide i80 /
+ *                              i128 widths exist only on the GENERATED
+ *                              template surface, which prints them as hex,
+ *                              see tools/abi_codegen.py WIDTH_INFO)
+ *   - floats:  %a / %La       (HEX FLOAT — round-trip exact for every FINITE
+ *                              value and for ±inf at every fp width; float
+ *                              and _Float16 promote to double via varargs,
+ *                              which is exact, and long double takes the L
+ *                              modifier)
  *   - _Bool:   %d             (printed as 0/1 — only the i1 alloc body)
  *
+ * The fp widths print hex float, NOT %f, because the trace label is the
+ * only evidence the Rule-2 golden byte-diff has about an emitted immediate:
+ * %f at its default 6-digit precision is NOT injective, so 0x1p-128 and
+ * +0.0 both rendered `0.000000` and a miscompile between them was invisible
+ * to every gate this project has (bd `ni15`; the sibling fix on the
+ * generated template surface is tools/abi_codegen.py WIDTH_INFO).
+ *
+ * KNOWN RESIDUE — do not read the above as a total guarantee. %a/%La render
+ * EVERY NaN encoding as the bare string `nan`: sign, the quiet/signalling
+ * bit and the payload are all dropped (Apple libc prints no `-nan` and no
+ * `nan(payload)`). Nine shipped golden lines are `cqrt_alloc_f80(nan)`, so
+ * a miscompile that swapped one NaN encoding for another is STILL invisible
+ * here. It is a residue and not a regression — %f/%Lf printed the same bare
+ * `nan` — and closing it needs raw-bit-pattern printing, not another format
+ * specifier. NaN↔NaN is the ONLY surviving collision class: no NaN can be
+ * confused with a finite, an inf or a signed zero. See bd `ni15`.
+ *
  * Measure bodies print the zero return value as a literal in the trace
- * ("0" for ints, "0.000000" for floats). This is byte-identical to
- * formatting (long long)0 with %lld and 0.0 with %f respectively, and
+ * ("0" for ints, "0x0p+0" for floats). This is byte-identical to
+ * formatting (long long)0 with %lld and 0.0 with %a respectively, and
  * matches the original cqrt_measure_i32 convention.
  *
  * cqrt_free's trace-line format: this module emits "cqrt_free(h<N>)"
@@ -83,28 +108,28 @@ int32_t cqrt_alloc_i64(int64_t value) {
 
 int32_t cqrt_alloc_f32(float value) {
     int32_t h = cqrt_alloc_handle();
-    printf("cqrt_alloc_f32(%f) -> h%d\n", (double)value, h);
+    printf("cqrt_alloc_f32(%a) -> h%d\n", (double)value, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cqrt_alloc_f64(double value) {
     int32_t h = cqrt_alloc_handle();
-    printf("cqrt_alloc_f64(%f) -> h%d\n", value, h);
+    printf("cqrt_alloc_f64(%a) -> h%d\n", value, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cqrt_alloc_f16(_Float16 value) {
     int32_t h = cqrt_alloc_handle();
-    printf("cqrt_alloc_f16(%f) -> h%d\n", (double)value, h);
+    printf("cqrt_alloc_f16(%a) -> h%d\n", (double)value, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cqrt_alloc_f80(long double value) {
     int32_t h = cqrt_alloc_handle();
-    printf("cqrt_alloc_f80(%Lf) -> h%d\n", value, h);
+    printf("cqrt_alloc_f80(%La) -> h%d\n", value, h);
     fflush(stdout);
     return h;
 }
@@ -114,7 +139,8 @@ int32_t cqrt_alloc_f80(long double value) {
  * (the runtime is trace-only, no simulation). Zero is printed as
  * a literal to keep all measure bodies uniform and match the original
  * cqrt_measure_i32 convention; byte-identical to %lld of (long long)0
- * for ints and %f of 0.0 for floats.
+ * for ints and %a of 0.0 for floats (bd `ni15` moved the fp trace format
+ * from %f to hex float, so the fp literal is now "0x0p+0").
  * ------------------------------------------------------------------- */
 
 bool cqrt_measure_i1(int32_t handle) {
@@ -148,25 +174,25 @@ int64_t cqrt_measure_i64(int32_t handle) {
 }
 
 float cqrt_measure_f32(int32_t handle) {
-    printf("cqrt_measure_f32(h%d) -> 0.000000\n", handle);
+    printf("cqrt_measure_f32(h%d) -> 0x0p+0\n", handle);
     fflush(stdout);
     return 0.0f;
 }
 
 double cqrt_measure_f64(int32_t handle) {
-    printf("cqrt_measure_f64(h%d) -> 0.000000\n", handle);
+    printf("cqrt_measure_f64(h%d) -> 0x0p+0\n", handle);
     fflush(stdout);
     return 0.0;
 }
 
 _Float16 cqrt_measure_f16(int32_t handle) {
-    printf("cqrt_measure_f16(h%d) -> 0.000000\n", handle);
+    printf("cqrt_measure_f16(h%d) -> 0x0p+0\n", handle);
     fflush(stdout);
     return (_Float16)0;
 }
 
 long double cqrt_measure_f80(int32_t handle) {
-    printf("cqrt_measure_f80(h%d) -> 0.000000\n", handle);
+    printf("cqrt_measure_f80(h%d) -> 0x0p+0\n", handle);
     fflush(stdout);
     return (long double)0;
 }
@@ -174,51 +200,54 @@ long double cqrt_measure_f80(int32_t handle) {
 /* ---------------------------------------------------------------------
  * Ry rotation bodies — one per width. Void; like cqrt_free, no "-> "
  * arrow (nothing to return). The handle prints as h<N>, the angle as
- * %f (default 6-digit precision, matching the float trace format).
+ * %a (hex float, matching the float trace format). The angle is the one
+ * classical value in this ABI that IS the quantum operation (Rule 3/5/7),
+ * so its label must be injective: under the old %f it was rounded to 6
+ * decimals and two distinct angles could render identically (bd `ni15`).
  * ------------------------------------------------------------------- */
 
 void cqrt_ry_i1(int32_t handle, double angle) {
-    printf("cqrt_ry_i1(h%d, %f)\n", handle, angle);
+    printf("cqrt_ry_i1(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_i8(int32_t handle, double angle) {
-    printf("cqrt_ry_i8(h%d, %f)\n", handle, angle);
+    printf("cqrt_ry_i8(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_i16(int32_t handle, double angle) {
-    printf("cqrt_ry_i16(h%d, %f)\n", handle, angle);
+    printf("cqrt_ry_i16(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_i32(int32_t handle, double angle) {
-    printf("cqrt_ry_i32(h%d, %f)\n", handle, angle);
+    printf("cqrt_ry_i32(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_i64(int32_t handle, double angle) {
-    printf("cqrt_ry_i64(h%d, %f)\n", handle, angle);
+    printf("cqrt_ry_i64(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_f32(int32_t handle, double angle) {
-    printf("cqrt_ry_f32(h%d, %f)\n", handle, angle);
+    printf("cqrt_ry_f32(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_f64(int32_t handle, double angle) {
-    printf("cqrt_ry_f64(h%d, %f)\n", handle, angle);
+    printf("cqrt_ry_f64(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_f16(int32_t handle, double angle) {
-    printf("cqrt_ry_f16(h%d, %f)\n", handle, angle);
+    printf("cqrt_ry_f16(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_f80(int32_t handle, double angle) {
-    printf("cqrt_ry_f80(h%d, %f)\n", handle, angle);
+    printf("cqrt_ry_f80(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
@@ -227,47 +256,47 @@ void cqrt_ry_f80(int32_t handle, double angle) {
  * ------------------------------------------------------------------- */
 
 void cqrt_rz_i1(int32_t handle, double angle) {
-    printf("cqrt_rz_i1(h%d, %f)\n", handle, angle);
+    printf("cqrt_rz_i1(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i8(int32_t handle, double angle) {
-    printf("cqrt_rz_i8(h%d, %f)\n", handle, angle);
+    printf("cqrt_rz_i8(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i16(int32_t handle, double angle) {
-    printf("cqrt_rz_i16(h%d, %f)\n", handle, angle);
+    printf("cqrt_rz_i16(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i32(int32_t handle, double angle) {
-    printf("cqrt_rz_i32(h%d, %f)\n", handle, angle);
+    printf("cqrt_rz_i32(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i64(int32_t handle, double angle) {
-    printf("cqrt_rz_i64(h%d, %f)\n", handle, angle);
+    printf("cqrt_rz_i64(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f32(int32_t handle, double angle) {
-    printf("cqrt_rz_f32(h%d, %f)\n", handle, angle);
+    printf("cqrt_rz_f32(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f64(int32_t handle, double angle) {
-    printf("cqrt_rz_f64(h%d, %f)\n", handle, angle);
+    printf("cqrt_rz_f64(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f16(int32_t handle, double angle) {
-    printf("cqrt_rz_f16(h%d, %f)\n", handle, angle);
+    printf("cqrt_rz_f16(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f80(int32_t handle, double angle) {
-    printf("cqrt_rz_f80(h%d, %f)\n", handle, angle);
+    printf("cqrt_rz_f80(h%d, %a)\n", handle, angle);
     fflush(stdout);
 }
 
@@ -280,92 +309,92 @@ void cqrt_rz_f80(int32_t handle, double angle) {
  * ------------------------------------------------------------------- */
 
 void cqrt_rz_i1_controlled(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i1_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i1_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i8_controlled(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i8_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i8_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i16_controlled(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i16_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i16_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i32_controlled(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i32_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i32_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i64_controlled(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i64_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i64_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f32_controlled(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_f32_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_f32_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f64_controlled(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_f64_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_f64_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f16_controlled(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_f16_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_f16_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f80_controlled(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_f80_controlled(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_f80_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i1_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i1_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i1_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i8_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i8_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i8_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i16_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i16_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i16_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i32_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i32_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i32_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_i64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_i64_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_i64_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_f32_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_f32_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_f64_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_f64_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f16_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_f16_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_f16_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_rz_f80_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_rz_f80_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_rz_f80_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
@@ -375,37 +404,37 @@ void cqrt_rz_f80_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
  * controlled rz inverse block above; only the `ry` stem differs.
  * --------------------------------------------------------------------- */
 void cqrt_ry_i1_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_ry_i1_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_ry_i1_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_i8_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_ry_i8_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_ry_i8_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_i16_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_ry_i16_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_ry_i16_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_i32_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_ry_i32_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_ry_i32_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_i64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_ry_i64_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_ry_i64_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_f32_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_ry_f32_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_ry_f32_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 
 void cqrt_ry_f64_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
-    printf("cqrt_ry_f64_controlled_inv(h%d, h%d, %f)\n", ctrl, handle, angle);
+    printf("cqrt_ry_f64_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);
     fflush(stdout);
 }
 

@@ -1,5 +1,5 @@
 cqrt_alloc_i32(3) -> h0
-cqrt_ry_i32(h0, 0.500000)
+cqrt_ry_i32(h0, 0x1p-1)
 cq_template_shl_i32_hl(h0, 2) -> h1
 cq_template_xor_i32_hl(h1, 9) -> h2
 cq_template_mul_i32_hl(h0, 3) -> h3
@@ -27,5 +27,5 @@ cqrt_free(h3)
 cqrt_free(h4)
 cqrt_free(h5)
 cqrt_free(h6)
-cqrt_rz_i32(h7, 3.140000)
+cqrt_rz_i32(h7, 0x1.91eb851eb851fp+1)
 cqrt_measure_i32(h7) -> 0

@@ -57,7 +57,9 @@
  * (or "<symbol>(<args>)" for the void ops — cqrt_free, the ry/rz
  * rotations, and the gate primitives — which have no return value).
  * Handles are printed as h<N>, N starting at 0. The ry/rz rotations
- * print "cqrt_<op>_<W>(h<handle>, <angle>)" (angle as %f, 6 digits);
+ * print "cqrt_<op>_<W>(h<handle>, <angle>)" (angle as %a — HEX FLOAT,
+ * round-trip exact; bd `ni15` moved every fp trace field off the
+ * non-injective 6-digit %f);
  * the gate primitives print their handle args only. None of the
  * void ops mint a handle, so the monotonic counter never advances on
  * them.
@@ -118,7 +120,7 @@ long double cqrt_measure_f80 (int32_t handle);  /* bd 3c6m.4 — long double (x8
  * Ry rotation — one per width. Takes a handle + double angle; void.
  * Applies Ry(angle) to each qubit of the register (backend.md §11.3);
  * the lowered theta calls emit these. Trace (no return-value suffix):
- *     "cqrt_ry_<W>(h<handle>, <angle>)"   (angle as %f, 6 digits).
+ *     "cqrt_ry_<W>(h<handle>, <angle>)"   (angle as %a, hex float).
  * ----------------------------------------------------------------- */
 void cqrt_ry_i1 (int32_t handle, double angle);
 void cqrt_ry_i8 (int32_t handle, double angle);
@@ -133,7 +135,7 @@ void cqrt_ry_f80 (int32_t handle, double angle);  /* bd 3c6m.4 — long double (
 /* -----------------------------------------------------------------
  * Rz rotation — one per width. Same shape as Ry; the lowered phi
  * calls emit these on tainted operands. Trace (no return suffix):
- *     "cqrt_rz_<W>(h<handle>, <angle>)"   (angle as %f, 6 digits).
+ *     "cqrt_rz_<W>(h<handle>, <angle>)"   (angle as %a, hex float).
  * ----------------------------------------------------------------- */
 void cqrt_rz_i1 (int32_t handle, double angle);
 void cqrt_rz_i8 (int32_t handle, double angle);

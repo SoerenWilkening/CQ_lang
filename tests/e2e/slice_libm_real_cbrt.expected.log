@@ -1,5 +1,5 @@
-cqrt_alloc_f64(0.500000) -> h0
-cqrt_ry_f64(h0, 0.500000)
+cqrt_alloc_f64(0x1p-1) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
 cq_template_bitcast_f64_to_i64(h0) -> h1
 cq_template_lshr_i64_hl(h1, 32) -> h2
 cq_template_trunc_i64_to_i32(h2) -> h3
@@ -7,7 +7,7 @@ cq_template_trunc_i64_to_i32(h1) -> h4
 cq_template_and_i32_hl(h3, -2147483648) -> h5
 cq_template_and_i32_hl(h3, 2147483647) -> h6
 cq_template_or_i32(h4, h6) -> h7
-cq_template_fmul_f64_hl(h0, 18014398509481984.000000) -> h8
+cq_template_fmul_f64_hl(h0, 0x1p+54) -> h8
 cq_template_bitcast_f64_to_i64(h8) -> h9
 cq_template_lshr_i64_hl(h9, 32) -> h10
 cq_template_trunc_i64_to_i32(h10) -> h11
@@ -67,11 +67,11 @@ cq_template_bitcast_i64_to_f64(h37) -> h38
 cq_template_fmul_f64(h38, h38) -> h39
 cq_template_fdiv_f64(h38, h0) -> h40
 cq_template_fmul_f64(h39, h40) -> h41
-cq_template_fma_f64_qll(h41, 1.621430, -1.884980) -> h42
-cq_template_fma_f64_qql(h41, h42, 1.875952) -> h43
+cq_template_fma_f64_qll(h41, 0x1.9f1604a49d6c2p+0, -0x1.e28e092f0242p+0) -> h42
+cq_template_fma_f64_qql(h41, h42, 0x1.e03e60f61e692p+0) -> h43
 cq_template_fmul_f64(h41, h41) -> h44
 cq_template_fmul_f64(h41, h44) -> h45
-cq_template_fma_f64_qll(h41, 0.145996, -0.758398) -> h46
+cq_template_fma_f64_qll(h41, 0x1.2b000d4e4edd7p-3, -0x1.844cbbee751d9p-1) -> h46
 cq_template_fma_f64(h45, h46, h43) -> h47
 cq_template_fmul_f64(h38, h47) -> h48
 cq_template_bitcast_f64_to_i64(h48) -> h49
@@ -100,7 +100,7 @@ cqrt_alloc_i1(0) -> h68
 cqrt_cnot(h65, h68)
 cqrt_cnot(h67, h68)
 cqrt_toffoli(h65, h67, h68)
-cqrt_alloc_f64(0.000000) -> h69
+cqrt_alloc_f64(0x0p+0) -> h69
 cqrt_copy_f64_controlled(h68, h59, h69)
 cqrt_x(h68)
 cqrt_copy_f64_controlled(h68, h0, h69)
@@ -124,11 +124,11 @@ cqrt_free(h62)
 cq_template_icmp_ule_i32_hl_inv(h6, 2146435071) -> h73
 cqrt_free(h61)
 cq_template_icmp_ugt_i32_hl(h6, 2146435071) -> h74
-cqrt_alloc_f64(0.000000) -> h75
+cqrt_alloc_f64(0x0p+0) -> h75
 cqrt_copy_f64_controlled(h74, h60, h75)
 cqrt_x(h74)
 cqrt_copy_f64_controlled(h74, h69, h75)
 cqrt_x(h74)
 cq_template_icmp_ugt_i32_hl_inv(h6, 2146435071) -> h76
 cqrt_free(h74)
-cqrt_measure_f64(h75) -> 0.000000
+cqrt_measure_f64(h75) -> 0x0p+0

@@ -1,8 +1,8 @@
 cqrt_qram_alloc_i32(8) -> a0
 cqrt_alloc_i32(0) -> h1
-cqrt_ry_i32(h1, 0.500000)
+cqrt_ry_i32(h1, 0x1p-1)
 cqrt_alloc_i32(1) -> h2
-cqrt_ry_i32(h2, 0.500000)
+cqrt_ry_i32(h2, 0x1p-1)
 cqrt_alloc_i32(7) -> h3
 cqrt_qram_store_i32(a0, h1, h3)
 cqrt_qram_load_i32(a0, h2) -> h4
@@ -11,8 +11,8 @@ cqrt_copy_i32(h4, h5)
 cqrt_qram_load_i32_unc(h4, a0, h2)
 cqrt_free(h4)
 cqrt_qram_store_i32_unc(a0, h1, h3)
-cqrt_ry_i32(h2, -0.500000)
+cqrt_ry_i32(h2, -0x1p-1)
 cqrt_free(h2)
-cqrt_ry_i32(h1, -0.500000)
+cqrt_ry_i32(h1, -0x1p-1)
 cqrt_free(h1)
 cqrt_measure_i32(h5) -> 0

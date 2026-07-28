@@ -1,16 +1,16 @@
 cqrt_alloc_i64(1099511627775) -> h0
-cqrt_ry_i64(h0, 0.250000)
+cqrt_ry_i64(h0, 0x1p-2)
 cqrt_alloc_i64(1) -> h1
-cqrt_ry_i64(h1, 0.500000)
+cqrt_ry_i64(h1, 0x1p-1)
 cq_template_add_i64(h0, h1) -> h2
 cq_template_and_i64_hl(h2, 1099511627775) -> h3
 cqrt_measure_i64(h3) -> 0
 cqrt_alloc_i64(1099511627775) -> h4
-cqrt_ry_i64(h4, 0.100000)
+cqrt_ry_i64(h4, 0x1.999999999999ap-4)
 cq_template_and_i64_hl(h4, 1099511627775) -> h5
-cqrt_rz_i64(h5, 0.300000)
-cqrt_rz_i64(h5, -0.300000)
+cqrt_rz_i64(h5, 0x1.3333333333333p-2)
+cqrt_rz_i64(h5, -0x1.3333333333333p-2)
 cq_template_and_i64_hl_unc(h5, h4, 1099511627775)
 cqrt_free(h5)
-cqrt_ry_i64(h4, -0.100000)
+cqrt_ry_i64(h4, -0x1.999999999999ap-4)
 cqrt_free(h4)

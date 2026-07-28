@@ -530,7 +530,7 @@ python3 tools/free_pairing_check.py /tmp/s2.ll                                  
 they link, because **the golden byte-diff cannot witness "freed at |0⟩"**: a
 generated `cq_template_…_inv` prints its forward operands and a fresh return
 handle but **never the rail it restores** (four textually identical
-`fcmp_olt_f80_hl_inv(h67, 0.707107)` lines in `slice_libm_real_log1pl.expected.log`
+`fcmp_olt_f80_hl_inv(h67, 0xb.504f333f9de6484p-4)` lines in `slice_libm_real_log1pl.expected.log`
 pair with four *different* `cqrt_free`s), so a golden stays byte-stable across a
 reversal re-paired to the wrong rail or a free whose uncompute never ran. The two
 gates are **complementary** — the trace sees the angles and not the rail

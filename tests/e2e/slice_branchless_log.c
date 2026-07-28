@@ -26,10 +26,11 @@
    unspecified results — openlibm handles those with the very data-dependent
    branches source injection is measured without).
 
-   Golden-reading note: the trace runtime prints literals with %f (6 decimals),
-   so the dk*ln2_lo line renders as `fmul_f64_hl(h24, 0.000000)` — the compiled
-   IR carries the full-precision immediate 0x3DEA39EF35793C76 (1.9082e-10), not
-   zero. */
+   Golden-reading note: since bd `ni15` the trace runtime prints fp literals
+   as HEX FLOAT (%a), so the dk*ln2_lo line renders as
+   `fmul_f64_hl(h24, 0x1.a39ef35793c76p-33)` — the exact immediate
+   0x3DEA39EF35793C76 (1.9082e-10). Under the old %f it printed `0.000000`,
+   indistinguishable from a genuine zero. */
 static double blog(double x) {
     long long bits;
     __builtin_memcpy(&bits, &x, 8);                    /* bitcast f64->i64 (EXTRACT_WORDS) */

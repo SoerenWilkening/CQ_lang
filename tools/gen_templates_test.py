@@ -13,6 +13,12 @@ Asserts:
   8. The void in-place `_unc` uncompute family (Phase 5, PRD §2.3 / DD-3):
      void return, `out` prepended as arg 0, forward operands following in
      original order; trace-only bodies (no alloc, no return, no `-> h`).
+  9. TRACE-LABEL INJECTIVITY (bd `ni15`): every fp width renders through hex
+     float, the >64-bit widths through fixed-width hex halves, each width's
+     printf conversion count matches its arg_exprs() argument count, and no
+     emitted body carries a lossy %f/%e/%g. A width that renders two distinct
+     IR constants to one string makes a miscompile of that constant invisible
+     to the Rule-2 golden byte-diff.
 
 Run: python3 tools/gen_templates_test.py
 """
@@ -24,6 +30,11 @@ import yaml
 REPO = pathlib.Path(__file__).resolve().parent.parent
 GEN = REPO / "tools" / "gen_templates.py"
 YAML_PATH = REPO / "tools" / "opcode_table.yaml"
+
+# The width table itself is asserted on directly (bd `ni15` label-injectivity
+# guard), so import the emitter module the generator uses.
+sys.path.insert(0, str(REPO / "tools"))
+import abi_codegen  # noqa: E402
 
 
 def _generate(out_dir):
@@ -303,6 +314,66 @@ class GenTemplatesTest(unittest.TestCase):
             for sub in d.common_dirs:
                 sd = filecmp.dircmp(os.path.join(a, sub), os.path.join(b, sub))
                 self.assertFalse(sd.diff_files, f"non-idempotent in {sub}: {sd.diff_files}")
+
+    # ---- bd `ni15`: the trace label must stay INJECTIVE -------------------
+    # The Rule-2 golden byte-diff is the only gate that witnesses an emitted
+    # immediate. If a width renders two distinct IR constants to one string, a
+    # miscompile of that constant is invisible — that is a silent-miscompile
+    # blind spot, and it is exactly what %lld-of-i80 and %f-of-f80 were. These
+    # assertions are the standing guard on the WIDTH_INFO invariant; a future
+    # width row that reintroduces a lossy conversion fails here rather than in
+    # a golden nobody re-derives.
+
+    def test_fp_widths_use_hex_float(self):
+        """No fp width may render through a lossy decimal conversion."""
+        for w, info in abi_codegen.WIDTH_INFO.items():
+            if not w.startswith("f"):
+                continue
+            self.assertIn(info["fmt"], ("%a", "%La"),
+                          f"width {w} renders fp with {info['fmt']!r}; %f/%e/%g are "
+                          "NOT injective (0x1p-128 and +0.0 both print 0.000000)")
+
+    def test_wide_int_widths_use_fixed_width_hex(self):
+        """Widths above 64 bits have no printf specifier, so they must expand to
+        fixed-width hex halves — variable width would let two different
+        (high, low) splits concatenate to the same string."""
+        for w in ("i80", "i128"):
+            info = abi_codegen.WIDTH_INFO[w]
+            self.assertTrue(info["fmt"].startswith("0x"),
+                            f"{w} fmt {info['fmt']!r} is not a hex rendering")
+            widths = re.findall(r'%0(\d+)llx', info["fmt"])
+            self.assertEqual(len(widths), 2, f"{w} fmt {info['fmt']!r}: expected two "
+                                             "zero-padded fixed-width hex conversions")
+            self.assertEqual(sum(int(d) for d in widths), int(w[1:]) // 4,
+                             f"{w} fmt {info['fmt']!r} does not spell exactly "
+                             f"{int(w[1:]) // 4} hex digits")
+
+    def test_fmt_conversion_count_matches_arg_count(self):
+        """The `fmt`/`args` coupling introduced with arg_exprs(): a mismatch is
+        UB at runtime (garbage label) yet only a -Wformat warning at build, so
+        nothing else in the tree catches it."""
+        for w, info in abi_codegen.WIDTH_INFO.items():
+            conversions = len(re.findall(r'%(?!%)', info["fmt"]))
+            expr = abi_codegen.arg_exprs(w, "v")
+            depth, args = 0, 1
+            for ch in expr:
+                if ch in "([":
+                    depth += 1
+                elif ch in ")]":
+                    depth -= 1
+                elif ch == "," and depth == 0:
+                    args += 1
+            self.assertEqual(conversions, args,
+                             f"width {w}: fmt {info['fmt']!r} has {conversions} "
+                             f"conversion(s) but arg_exprs gives {args} argument(s)")
+
+    def test_emitted_bodies_carry_no_lossy_fp_conversion(self):
+        """End-to-end: the generated artifacts themselves must be free of the
+        old %f/%Lf prints, across all three emitted table pairs."""
+        for rel in ("cq_templates.c", "cq_intrinsic_templates.c", "cq_libm_templates.c"):
+            body = (self.out / rel).read_text()
+            for bad in ("%f", "%Lf", "%e", "%Le", "%g", "%Lg"):
+                self.assertNotIn(bad, body, f"{rel} still renders through {bad}")
 
     def test_check_mode_clean_and_tampered(self):
         clean = subprocess.run(

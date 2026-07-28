@@ -1,23 +1,23 @@
 cqrt_alloc_i32(3) -> h0
-cqrt_ry_i32(h0, 0.250000)
+cqrt_ry_i32(h0, 0x1p-2)
 cqrt_alloc_i32(7) -> h1
-cqrt_ry_i32(h1, 0.500000)
+cqrt_ry_i32(h1, 0x1p-1)
 cq_template_icmp_slt_i32(h0, h1) -> h2
 cq_template_zext_i1_to_i32(h2) -> h3
 cqrt_measure_i32(h3) -> 0
 cqrt_alloc_i32(3) -> h4
-cqrt_ry_i32(h4, 0.100000)
+cqrt_ry_i32(h4, 0x1.999999999999ap-4)
 cqrt_alloc_i32(7) -> h5
-cqrt_ry_i32(h5, 0.200000)
+cqrt_ry_i32(h5, 0x1.999999999999ap-3)
 cq_template_icmp_eq_i32(h4, h5) -> h6
 cq_template_zext_i1_to_i32(h6) -> h7
-cqrt_rz_i32(h7, 0.300000)
-cqrt_rz_i32(h7, -0.300000)
+cqrt_rz_i32(h7, 0x1.3333333333333p-2)
+cqrt_rz_i32(h7, -0x1.3333333333333p-2)
 cq_template_zext_i1_to_i32_unc(h7, h6)
 cqrt_free(h7)
 cq_template_icmp_eq_i32_unc(h6, h4, h5)
 cqrt_free(h6)
-cqrt_ry_i32(h5, -0.200000)
+cqrt_ry_i32(h5, -0x1.999999999999ap-3)
 cqrt_free(h5)
-cqrt_ry_i32(h4, -0.100000)
+cqrt_ry_i32(h4, -0x1.999999999999ap-4)
 cqrt_free(h4)

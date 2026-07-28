@@ -1,5 +1,5 @@
 cqrt_qram_alloc_i32(8) -> a0
 cqrt_alloc_i32(0) -> h1
-cqrt_ry_i32(h1, 0.500000)
+cqrt_ry_i32(h1, 0x1p-1)
 cqrt_qram_load_i32(a0, h1) -> h2
 cqrt_measure_i32(h2) -> 0

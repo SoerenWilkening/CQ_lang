@@ -1,22 +1,22 @@
-cqrt_alloc_f80(0.500000) -> h0
-cqrt_ry_f80(h0, 0.500000)
+cqrt_alloc_f80(0x8p-4) -> h0
+cqrt_ry_f80(h0, 0x1p-1)
 cq_template_bitcast_f80_to_i80(h0) -> h1
 cq_template_trunc_i80_to_i64(h1) -> h2
 cq_template_and_i64_hl(h2, 9223372036854775807) -> h3
-cq_template_lshr_i80_hl(h1, 64) -> h4
+cq_template_lshr_i80_hl(h1, 0x00000000000000000040) -> h4
 cq_template_trunc_i80_to_i16(h4) -> h5
 cq_template_zext_i16_to_i64(h5) -> h6
 cq_template_and_i64_hl(h6, 32767) -> h7
 cq_template_and_i64_hl(h2, 4294967295) -> h8
-cq_template_fadd_f80_hl(h0, -0.500000) -> h9
-cq_template_fcmp_ogt_f80_hl(h0, 0.500000) -> h10
-cqrt_alloc_f80(0.000000) -> h11
+cq_template_fadd_f80_hl(h0, -0x8p-4) -> h9
+cq_template_fcmp_ogt_f80_hl(h0, 0x8p-4) -> h10
+cqrt_alloc_f80(0x0p+0) -> h11
 cqrt_copy_f80_controlled(h10, h9, h11)
 cqrt_x(h10)
-cqrt_alloc_f80(0.000000) -> h12
+cqrt_alloc_f80(0x0p+0) -> h12
 cqrt_copy_f80_controlled(h10, h12, h11)
 cqrt_x(h10)
-cq_template_fcmp_ogt_f80_hl_inv(h0, 0.500000) -> h13
+cq_template_fcmp_ogt_f80_hl_inv(h0, 0x8p-4) -> h13
 cqrt_free(h10)
 cq_template_icmp_ne_i64_hl(h7, 32767) -> h14
 cq_template_icmp_eq_i64_hl(h7, 32767) -> h15
@@ -30,7 +30,7 @@ cqrt_alloc_i1(0) -> h20
 cqrt_cnot(h14, h20)
 cqrt_cnot(h19, h20)
 cqrt_toffoli(h14, h19, h20)
-cqrt_alloc_f80(0.000000) -> h21
+cqrt_alloc_f80(0x0p+0) -> h21
 cqrt_copy_f80_controlled(h20, h11, h21)
 cqrt_x(h20)
 cqrt_copy_f80_controlled(h20, h0, h21)
@@ -51,4 +51,4 @@ cq_template_icmp_eq_i64_hl_inv(h7, 32767) -> h24
 cqrt_free(h15)
 cq_template_icmp_ne_i64_hl_inv(h7, 32767) -> h25
 cqrt_free(h14)
-cqrt_measure_f80(h21) -> 0.000000
+cqrt_measure_f80(h21) -> 0x0p+0

@@ -1,5 +1,5 @@
 cqrt_alloc_i32(5) -> h0
-cqrt_ry_i32(h0, 0.500000)
+cqrt_ry_i32(h0, 0x1p-1)
 cq_template_ctpop_i32(h0) -> h1
 cq_template_add_i32_hl(h1, 1) -> h2
 cqrt_alloc_i32(0) -> h3

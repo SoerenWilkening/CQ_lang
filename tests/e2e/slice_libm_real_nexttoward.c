@@ -23,14 +23,25 @@
  * clang -O1's OWN stage-1 output emits `select i1 %c, double undef, double %v`
  * for the x==y / NaN early-exit merge, which lowers to
  * `call i32 @cqrt_alloc_f64(double undef)` — recorded in the golden as the
- * second `cqrt_alloc_f64(0.000000)` on that merge. That printed `0.000000` is
- * register residue, not a value the program computes. It is SOUND: the undef
- * arm is the dead edge of clang's own select, and the merge consumes the rail
- * only under the complementary flag, so it never reaches the measured register
- * (independently verified). But because the byte is not determined by program
- * semantics, a future clang or libc change could shift it and produce a
- * SPURIOUS golden-diff failure here. If this test ever fails on that single
- * line with everything else identical, suspect the toolchain, not the pass.
+ * second `cqrt_alloc_f64` on that merge, which since bd `ni15` reads
+ * `0x1.100000002p-1038` (it read `0.000000` while the runtime printed %f).
+ * That value is register residue, not a value the program computes. It is
+ * SOUND: the undef arm is the dead edge of clang's own select, and the merge
+ * consumes the rail only under the complementary flag, so it never reaches the
+ * measured register (independently verified). But because the byte is not
+ * determined by program semantics, a future clang or libc change could shift it
+ * and produce a SPURIOUS golden-diff failure here. If this test ever fails on
+ * that single line with everything else identical, suspect the toolchain, not
+ * the pass.
+ *
+ * ni15 SHARPENED THIS, deliberately. Under %f the golden asserted only that the
+ * residue rounds to `0.000000` — i.e. that it lands anywhere below 5e-7 — so the
+ * fragility was masked by a wide tolerance rather than absent. The hex-float
+ * label pins the residue exactly, which is the correct trade: the same tolerance
+ * that hid this byte is what hid a real 0x1p-128 -> +0.0 miscompile elsewhere in
+ * this corpus. Measured after the change: 20 runs of one binary and 5 independent
+ * full-pipeline rebuilds all produce a byte-identical trace, so it is stable for
+ * a pinned LLVM 19 toolchain.
  *
  * The probe pins the census cell: x = theta-tainted f64, y = 0.5L (classical
  * long double — the census `ldbl` arg kind), so the y-side word extract and NaN

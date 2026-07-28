@@ -1,7 +1,7 @@
-cqrt_alloc_f64(0.500000) -> h0
-cqrt_ry_f64(h0, 0.500000)
-cq_template_fdiv_f64_lh(0.500000, h0) -> h1
+cqrt_alloc_f64(0x1p-1) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
+cq_template_fdiv_f64_lh(0x1p-1, h0) -> h1
 cq_template_trunc_f64(h1) -> h2
 cq_template_fneg_f64(h2) -> h3
-cq_template_fma_f64_qql(h0, h3, 0.500000) -> h4
-cqrt_measure_f64(h4) -> 0.000000
+cq_template_fma_f64_qql(h0, h3, 0x1p-1) -> h4
+cqrt_measure_f64(h4) -> 0x0p+0

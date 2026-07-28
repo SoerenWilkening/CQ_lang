@@ -34,34 +34,34 @@ int32_t cq_template_add_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_add_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_add_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_add_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_add_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_add_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_add_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_add_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_add_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_add_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_add_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_add_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_add_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_add_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_add_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_add_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -430,34 +430,34 @@ int32_t cq_template_and_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_and_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_and_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_and_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_and_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_and_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_and_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_and_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_and_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_and_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_and_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_and_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_and_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_and_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_and_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_and_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -760,34 +760,34 @@ int32_t cq_template_and_i80_controlled_inv(int32_t ctrl_flag, int32_t a_handle, 
 
 int32_t cq_template_and_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_and_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_and_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_and_i80_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_and_i80_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_and_i80_hl_controlled(h%d, h%d, 0x%04llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_and_i80_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_and_i80_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_and_i80_hl_controlled_inv(h%d, h%d, 0x%04llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_and_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_and_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_and_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_and_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_and_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_and_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -892,34 +892,34 @@ int32_t cq_template_ashr_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle
 
 int32_t cq_template_ashr_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_ashr_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_ashr_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_ashr_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_ashr_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_ashr_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_ashr_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_ashr_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_ashr_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_ashr_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_ashr_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_ashr_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_ashr_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_ashr_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_ashr_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -932,34 +932,34 @@ int32_t cq_template_ashr_i128_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_ashr_i128_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_ashr_i128_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_ashr_i128_lh(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_ashr_i128_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_ashr_i128_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_ashr_i128_lh_controlled(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_ashr_i128_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_ashr_i128_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_ashr_i128_lh_controlled_inv(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_ashr_i128_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_ashr_i128_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_ashr_i128_lh_inv(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_ashr_i128_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_ashr_i128_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_ashr_i128_lh_unc(h%d, 0x%016llx%016llx, h%d)\n", out_handle, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -1631,34 +1631,34 @@ int32_t cq_template_fadd_f16_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fadd_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fadd_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f16_hl_controlled(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f16_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fadd_f16_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f16_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f16_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fadd_f16_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fadd_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fadd_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fadd_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fadd_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -1697,34 +1697,34 @@ int32_t cq_template_fadd_f32_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fadd_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fadd_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f32_hl_controlled(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f32_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fadd_f32_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f32_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f32_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fadd_f32_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fadd_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fadd_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fadd_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fadd_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -1763,34 +1763,34 @@ int32_t cq_template_fadd_f64_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fadd_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fadd_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f64_hl_controlled(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f64_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fadd_f64_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f64_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f64_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fadd_f64_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fadd_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fadd_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fadd_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fadd_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -1829,34 +1829,34 @@ int32_t cq_template_fadd_f80_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fadd_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fadd_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f80_hl_controlled(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f80_hl_controlled(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fadd_f80_hl_controlled(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f80_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f80_hl_controlled_inv(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fadd_f80_hl_controlled_inv(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fadd_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fadd_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fadd_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fadd_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fadd_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fadd_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -1881,20 +1881,20 @@ int32_t cq_template_fcmp_oeq_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_oeq_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oeq_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_oeq_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_oeq_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oeq_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_oeq_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_oeq_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_oeq_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_oeq_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -1919,20 +1919,20 @@ int32_t cq_template_fcmp_oeq_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_oeq_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oeq_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_oeq_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_oeq_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oeq_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_oeq_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_oeq_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_oeq_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_oeq_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -1957,20 +1957,20 @@ int32_t cq_template_fcmp_oeq_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_oeq_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oeq_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_oeq_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_oeq_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oeq_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_oeq_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_oeq_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_oeq_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_oeq_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -1995,20 +1995,20 @@ int32_t cq_template_fcmp_oeq_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_oeq_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oeq_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_oeq_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_oeq_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oeq_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_oeq_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_oeq_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_oeq_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_oeq_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2033,20 +2033,20 @@ int32_t cq_template_fcmp_oge_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_oge_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oge_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_oge_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_oge_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oge_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_oge_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_oge_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_oge_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_oge_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2071,20 +2071,20 @@ int32_t cq_template_fcmp_oge_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_oge_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oge_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_oge_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_oge_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oge_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_oge_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_oge_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_oge_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_oge_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2109,20 +2109,20 @@ int32_t cq_template_fcmp_oge_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_oge_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oge_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_oge_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_oge_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oge_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_oge_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_oge_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_oge_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_oge_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2147,20 +2147,20 @@ int32_t cq_template_fcmp_oge_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_oge_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oge_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_oge_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_oge_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_oge_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_oge_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_oge_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_oge_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_oge_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2185,20 +2185,20 @@ int32_t cq_template_fcmp_ogt_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ogt_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ogt_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ogt_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ogt_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ogt_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ogt_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ogt_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_ogt_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ogt_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2223,20 +2223,20 @@ int32_t cq_template_fcmp_ogt_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ogt_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ogt_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ogt_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ogt_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ogt_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ogt_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ogt_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_ogt_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ogt_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2261,20 +2261,20 @@ int32_t cq_template_fcmp_ogt_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ogt_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ogt_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ogt_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ogt_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ogt_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ogt_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ogt_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_ogt_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ogt_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2299,20 +2299,20 @@ int32_t cq_template_fcmp_ogt_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ogt_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ogt_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ogt_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ogt_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ogt_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ogt_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ogt_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_ogt_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ogt_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2337,20 +2337,20 @@ int32_t cq_template_fcmp_ole_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ole_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ole_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ole_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ole_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ole_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ole_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ole_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_ole_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ole_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2375,20 +2375,20 @@ int32_t cq_template_fcmp_ole_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ole_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ole_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ole_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ole_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ole_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ole_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ole_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_ole_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ole_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2413,20 +2413,20 @@ int32_t cq_template_fcmp_ole_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ole_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ole_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ole_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ole_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ole_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ole_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ole_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_ole_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ole_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2451,20 +2451,20 @@ int32_t cq_template_fcmp_ole_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ole_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ole_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ole_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ole_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ole_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ole_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ole_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_ole_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ole_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2489,20 +2489,20 @@ int32_t cq_template_fcmp_olt_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_olt_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_olt_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_olt_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_olt_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_olt_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_olt_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_olt_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_olt_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_olt_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2527,20 +2527,20 @@ int32_t cq_template_fcmp_olt_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_olt_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_olt_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_olt_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_olt_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_olt_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_olt_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_olt_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_olt_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_olt_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2565,20 +2565,20 @@ int32_t cq_template_fcmp_olt_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_olt_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_olt_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_olt_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_olt_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_olt_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_olt_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_olt_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_olt_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_olt_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2603,20 +2603,20 @@ int32_t cq_template_fcmp_olt_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_olt_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_olt_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_olt_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_olt_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_olt_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_olt_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_olt_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_olt_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_olt_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2641,20 +2641,20 @@ int32_t cq_template_fcmp_one_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_one_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_one_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_one_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_one_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_one_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_one_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_one_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_one_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_one_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2679,20 +2679,20 @@ int32_t cq_template_fcmp_one_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_one_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_one_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_one_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_one_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_one_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_one_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_one_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_one_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_one_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2717,20 +2717,20 @@ int32_t cq_template_fcmp_one_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_one_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_one_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_one_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_one_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_one_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_one_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_one_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_one_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_one_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2755,20 +2755,20 @@ int32_t cq_template_fcmp_one_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_one_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_one_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_one_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_one_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_one_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_one_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_one_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_one_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_one_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2793,20 +2793,20 @@ int32_t cq_template_fcmp_ord_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ord_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ord_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ord_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ord_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ord_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ord_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ord_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_ord_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ord_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2831,20 +2831,20 @@ int32_t cq_template_fcmp_ord_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ord_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ord_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ord_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ord_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ord_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ord_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ord_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_ord_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ord_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2869,20 +2869,20 @@ int32_t cq_template_fcmp_ord_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ord_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ord_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ord_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ord_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ord_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ord_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ord_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_ord_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ord_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2907,20 +2907,20 @@ int32_t cq_template_fcmp_ord_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ord_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ord_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ord_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ord_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ord_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ord_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ord_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_ord_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ord_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -2945,20 +2945,20 @@ int32_t cq_template_fcmp_ueq_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ueq_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ueq_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ueq_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ueq_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ueq_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ueq_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ueq_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_ueq_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ueq_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -2983,20 +2983,20 @@ int32_t cq_template_fcmp_ueq_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ueq_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ueq_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ueq_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ueq_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ueq_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ueq_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ueq_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_ueq_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ueq_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3021,20 +3021,20 @@ int32_t cq_template_fcmp_ueq_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ueq_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ueq_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ueq_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ueq_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ueq_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ueq_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ueq_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_ueq_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ueq_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3059,20 +3059,20 @@ int32_t cq_template_fcmp_ueq_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ueq_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ueq_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ueq_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ueq_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ueq_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ueq_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ueq_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_ueq_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ueq_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3097,20 +3097,20 @@ int32_t cq_template_fcmp_uge_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_uge_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uge_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_uge_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_uge_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uge_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_uge_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_uge_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_uge_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_uge_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3135,20 +3135,20 @@ int32_t cq_template_fcmp_uge_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_uge_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uge_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_uge_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_uge_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uge_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_uge_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_uge_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_uge_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_uge_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3173,20 +3173,20 @@ int32_t cq_template_fcmp_uge_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_uge_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uge_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_uge_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_uge_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uge_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_uge_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_uge_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_uge_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_uge_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3211,20 +3211,20 @@ int32_t cq_template_fcmp_uge_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_uge_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uge_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_uge_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_uge_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uge_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_uge_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_uge_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_uge_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_uge_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3249,20 +3249,20 @@ int32_t cq_template_fcmp_ugt_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ugt_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ugt_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ugt_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ugt_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ugt_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ugt_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ugt_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_ugt_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ugt_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3287,20 +3287,20 @@ int32_t cq_template_fcmp_ugt_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ugt_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ugt_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ugt_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ugt_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ugt_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ugt_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ugt_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_ugt_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ugt_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3325,20 +3325,20 @@ int32_t cq_template_fcmp_ugt_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ugt_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ugt_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ugt_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ugt_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ugt_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ugt_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ugt_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_ugt_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ugt_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3363,20 +3363,20 @@ int32_t cq_template_fcmp_ugt_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ugt_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ugt_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ugt_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ugt_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ugt_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ugt_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ugt_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_ugt_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ugt_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3401,20 +3401,20 @@ int32_t cq_template_fcmp_ule_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ule_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ule_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ule_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ule_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ule_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ule_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ule_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_ule_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ule_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3439,20 +3439,20 @@ int32_t cq_template_fcmp_ule_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ule_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ule_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ule_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ule_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ule_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ule_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ule_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_ule_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ule_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3477,20 +3477,20 @@ int32_t cq_template_fcmp_ule_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ule_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ule_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ule_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ule_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ule_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ule_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ule_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_ule_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ule_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3515,20 +3515,20 @@ int32_t cq_template_fcmp_ule_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ule_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ule_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ule_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ule_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ule_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ule_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ule_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_ule_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ule_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3553,20 +3553,20 @@ int32_t cq_template_fcmp_ult_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ult_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ult_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ult_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ult_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ult_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ult_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ult_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_ult_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ult_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3591,20 +3591,20 @@ int32_t cq_template_fcmp_ult_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ult_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ult_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ult_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ult_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ult_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_ult_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ult_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_ult_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_ult_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3629,20 +3629,20 @@ int32_t cq_template_fcmp_ult_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ult_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ult_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ult_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ult_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ult_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ult_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ult_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_ult_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ult_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3667,20 +3667,20 @@ int32_t cq_template_fcmp_ult_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_ult_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ult_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ult_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_ult_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_ult_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_ult_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_ult_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_ult_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_ult_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3705,20 +3705,20 @@ int32_t cq_template_fcmp_une_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_une_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_une_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_une_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_une_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_une_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_une_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_une_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_une_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_une_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3743,20 +3743,20 @@ int32_t cq_template_fcmp_une_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_une_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_une_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_une_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_une_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_une_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_une_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_une_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_une_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_une_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3781,20 +3781,20 @@ int32_t cq_template_fcmp_une_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_une_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_une_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_une_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_une_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_une_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_une_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_une_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_une_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_une_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3819,20 +3819,20 @@ int32_t cq_template_fcmp_une_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_une_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_une_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_une_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_une_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_une_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_une_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_une_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_une_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_une_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3857,20 +3857,20 @@ int32_t cq_template_fcmp_uno_f16(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_uno_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uno_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_uno_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_uno_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uno_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_uno_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_uno_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fcmp_uno_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_uno_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3895,20 +3895,20 @@ int32_t cq_template_fcmp_uno_f32(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_uno_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uno_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_uno_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_uno_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uno_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fcmp_uno_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_uno_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fcmp_uno_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fcmp_uno_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -3933,20 +3933,20 @@ int32_t cq_template_fcmp_uno_f64(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_uno_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uno_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_uno_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_uno_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uno_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_uno_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_uno_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fcmp_uno_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_uno_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -3971,20 +3971,20 @@ int32_t cq_template_fcmp_uno_f80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fcmp_uno_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uno_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_uno_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fcmp_uno_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fcmp_uno_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fcmp_uno_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fcmp_uno_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fcmp_uno_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fcmp_uno_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -4023,34 +4023,34 @@ int32_t cq_template_fdiv_f16_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fdiv_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fdiv_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f16_hl_controlled(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f16_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fdiv_f16_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f16_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f16_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fdiv_f16_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fdiv_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fdiv_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fdiv_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fdiv_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -4063,34 +4063,34 @@ int32_t cq_template_fdiv_f16_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fdiv_f16_lh(_Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f16_lh(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_fdiv_f16_lh(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f16_lh_controlled(int32_t ctrl_flag, _Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f16_lh_controlled(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_fdiv_f16_lh_controlled(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f16_lh_controlled_inv(int32_t ctrl_flag, _Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f16_lh_controlled_inv(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_fdiv_f16_lh_controlled_inv(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f16_lh_inv(_Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f16_lh_inv(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_fdiv_f16_lh_inv(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fdiv_f16_lh_unc(int32_t out_handle, _Float16 a_classical, int32_t b_handle) {
-    printf("cq_template_fdiv_f16_lh_unc(h%d, %f, h%d)\n", out_handle, (double)a_classical, b_handle);
+    printf("cq_template_fdiv_f16_lh_unc(h%d, %a, h%d)\n", out_handle, (double)a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -4122,34 +4122,34 @@ int32_t cq_template_fdiv_f32_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fdiv_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fdiv_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f32_hl_controlled(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f32_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fdiv_f32_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f32_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f32_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fdiv_f32_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fdiv_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fdiv_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fdiv_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fdiv_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -4162,34 +4162,34 @@ int32_t cq_template_fdiv_f32_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fdiv_f32_lh(float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f32_lh(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_fdiv_f32_lh(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f32_lh_controlled(int32_t ctrl_flag, float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f32_lh_controlled(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_fdiv_f32_lh_controlled(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f32_lh_controlled_inv(int32_t ctrl_flag, float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f32_lh_controlled_inv(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_fdiv_f32_lh_controlled_inv(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f32_lh_inv(float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f32_lh_inv(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_fdiv_f32_lh_inv(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fdiv_f32_lh_unc(int32_t out_handle, float a_classical, int32_t b_handle) {
-    printf("cq_template_fdiv_f32_lh_unc(h%d, %f, h%d)\n", out_handle, (double)a_classical, b_handle);
+    printf("cq_template_fdiv_f32_lh_unc(h%d, %a, h%d)\n", out_handle, (double)a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -4221,34 +4221,34 @@ int32_t cq_template_fdiv_f64_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fdiv_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fdiv_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f64_hl_controlled(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f64_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fdiv_f64_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f64_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f64_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fdiv_f64_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fdiv_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fdiv_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fdiv_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fdiv_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -4261,34 +4261,34 @@ int32_t cq_template_fdiv_f64_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fdiv_f64_lh(double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f64_lh(%f, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_fdiv_f64_lh(%a, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f64_lh_controlled(int32_t ctrl_flag, double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f64_lh_controlled(h%d, %f, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_fdiv_f64_lh_controlled(h%d, %a, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f64_lh_controlled_inv(int32_t ctrl_flag, double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f64_lh_controlled_inv(h%d, %f, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_fdiv_f64_lh_controlled_inv(h%d, %a, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f64_lh_inv(double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f64_lh_inv(%f, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_fdiv_f64_lh_inv(%a, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fdiv_f64_lh_unc(int32_t out_handle, double a_classical, int32_t b_handle) {
-    printf("cq_template_fdiv_f64_lh_unc(h%d, %f, h%d)\n", out_handle, a_classical, b_handle);
+    printf("cq_template_fdiv_f64_lh_unc(h%d, %a, h%d)\n", out_handle, a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -4320,34 +4320,34 @@ int32_t cq_template_fdiv_f80_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fdiv_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fdiv_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f80_hl_controlled(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f80_hl_controlled(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fdiv_f80_hl_controlled(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f80_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f80_hl_controlled_inv(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fdiv_f80_hl_controlled_inv(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fdiv_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fdiv_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fdiv_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fdiv_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -4360,34 +4360,34 @@ int32_t cq_template_fdiv_f80_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fdiv_f80_lh(long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f80_lh(%Lf, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_fdiv_f80_lh(%La, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f80_lh_controlled(int32_t ctrl_flag, long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f80_lh_controlled(h%d, %Lf, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_fdiv_f80_lh_controlled(h%d, %La, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f80_lh_controlled_inv(int32_t ctrl_flag, long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f80_lh_controlled_inv(h%d, %Lf, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_fdiv_f80_lh_controlled_inv(h%d, %La, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fdiv_f80_lh_inv(long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fdiv_f80_lh_inv(%Lf, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_fdiv_f80_lh_inv(%La, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fdiv_f80_lh_unc(int32_t out_handle, long double a_classical, int32_t b_handle) {
-    printf("cq_template_fdiv_f80_lh_unc(h%d, %Lf, h%d)\n", out_handle, a_classical, b_handle);
+    printf("cq_template_fdiv_f80_lh_unc(h%d, %La, h%d)\n", out_handle, a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -4419,34 +4419,34 @@ int32_t cq_template_fmul_f16_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fmul_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fmul_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f16_hl_controlled(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f16_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fmul_f16_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f16_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f16_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fmul_f16_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fmul_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fmul_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fmul_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fmul_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -4485,34 +4485,34 @@ int32_t cq_template_fmul_f32_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fmul_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fmul_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f32_hl_controlled(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f32_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fmul_f32_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f32_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f32_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fmul_f32_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fmul_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fmul_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fmul_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fmul_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -4551,34 +4551,34 @@ int32_t cq_template_fmul_f64_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fmul_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fmul_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f64_hl_controlled(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f64_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fmul_f64_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f64_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f64_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fmul_f64_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fmul_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fmul_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fmul_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fmul_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -4617,34 +4617,34 @@ int32_t cq_template_fmul_f80_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fmul_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fmul_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f80_hl_controlled(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f80_hl_controlled(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fmul_f80_hl_controlled(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f80_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f80_hl_controlled_inv(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fmul_f80_hl_controlled_inv(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fmul_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fmul_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fmul_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fmul_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fmul_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fmul_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -5671,34 +5671,34 @@ int32_t cq_template_frem_f16_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_frem_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_frem_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f16_hl_controlled(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f16_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_frem_f16_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f16_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f16_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_frem_f16_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_frem_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_frem_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_frem_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_frem_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -5711,34 +5711,34 @@ int32_t cq_template_frem_f16_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_frem_f16_lh(_Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f16_lh(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_frem_f16_lh(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f16_lh_controlled(int32_t ctrl_flag, _Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f16_lh_controlled(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_frem_f16_lh_controlled(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f16_lh_controlled_inv(int32_t ctrl_flag, _Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f16_lh_controlled_inv(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_frem_f16_lh_controlled_inv(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f16_lh_inv(_Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f16_lh_inv(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_frem_f16_lh_inv(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_frem_f16_lh_unc(int32_t out_handle, _Float16 a_classical, int32_t b_handle) {
-    printf("cq_template_frem_f16_lh_unc(h%d, %f, h%d)\n", out_handle, (double)a_classical, b_handle);
+    printf("cq_template_frem_f16_lh_unc(h%d, %a, h%d)\n", out_handle, (double)a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -5770,34 +5770,34 @@ int32_t cq_template_frem_f32_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_frem_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_frem_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f32_hl_controlled(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f32_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_frem_f32_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f32_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f32_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_frem_f32_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_frem_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_frem_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_frem_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_frem_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -5810,34 +5810,34 @@ int32_t cq_template_frem_f32_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_frem_f32_lh(float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f32_lh(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_frem_f32_lh(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f32_lh_controlled(int32_t ctrl_flag, float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f32_lh_controlled(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_frem_f32_lh_controlled(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f32_lh_controlled_inv(int32_t ctrl_flag, float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f32_lh_controlled_inv(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_frem_f32_lh_controlled_inv(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f32_lh_inv(float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f32_lh_inv(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_frem_f32_lh_inv(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_frem_f32_lh_unc(int32_t out_handle, float a_classical, int32_t b_handle) {
-    printf("cq_template_frem_f32_lh_unc(h%d, %f, h%d)\n", out_handle, (double)a_classical, b_handle);
+    printf("cq_template_frem_f32_lh_unc(h%d, %a, h%d)\n", out_handle, (double)a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -5869,34 +5869,34 @@ int32_t cq_template_frem_f64_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_frem_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_frem_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f64_hl_controlled(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f64_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_frem_f64_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f64_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f64_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_frem_f64_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_frem_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_frem_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_frem_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_frem_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -5909,34 +5909,34 @@ int32_t cq_template_frem_f64_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_frem_f64_lh(double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f64_lh(%f, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_frem_f64_lh(%a, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f64_lh_controlled(int32_t ctrl_flag, double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f64_lh_controlled(h%d, %f, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_frem_f64_lh_controlled(h%d, %a, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f64_lh_controlled_inv(int32_t ctrl_flag, double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f64_lh_controlled_inv(h%d, %f, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_frem_f64_lh_controlled_inv(h%d, %a, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f64_lh_inv(double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f64_lh_inv(%f, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_frem_f64_lh_inv(%a, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_frem_f64_lh_unc(int32_t out_handle, double a_classical, int32_t b_handle) {
-    printf("cq_template_frem_f64_lh_unc(h%d, %f, h%d)\n", out_handle, a_classical, b_handle);
+    printf("cq_template_frem_f64_lh_unc(h%d, %a, h%d)\n", out_handle, a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -5968,34 +5968,34 @@ int32_t cq_template_frem_f80_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_frem_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_frem_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f80_hl_controlled(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f80_hl_controlled(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_frem_f80_hl_controlled(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f80_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f80_hl_controlled_inv(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_frem_f80_hl_controlled_inv(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_frem_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_frem_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_frem_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_frem_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -6008,34 +6008,34 @@ int32_t cq_template_frem_f80_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_frem_f80_lh(long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f80_lh(%Lf, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_frem_f80_lh(%La, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f80_lh_controlled(int32_t ctrl_flag, long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f80_lh_controlled(h%d, %Lf, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_frem_f80_lh_controlled(h%d, %La, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f80_lh_controlled_inv(int32_t ctrl_flag, long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f80_lh_controlled_inv(h%d, %Lf, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_frem_f80_lh_controlled_inv(h%d, %La, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_frem_f80_lh_inv(long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_frem_f80_lh_inv(%Lf, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_frem_f80_lh_inv(%La, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_frem_f80_lh_unc(int32_t out_handle, long double a_classical, int32_t b_handle) {
-    printf("cq_template_frem_f80_lh_unc(h%d, %Lf, h%d)\n", out_handle, a_classical, b_handle);
+    printf("cq_template_frem_f80_lh_unc(h%d, %La, h%d)\n", out_handle, a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -6067,34 +6067,34 @@ int32_t cq_template_fsub_f16_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fsub_f16_hl(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f16_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fsub_f16_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f16_hl_controlled(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f16_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fsub_f16_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f16_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f16_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fsub_f16_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f16_hl_inv(int32_t a_handle, _Float16 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f16_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fsub_f16_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fsub_f16_hl_unc(int32_t out_handle, int32_t a_handle, _Float16 b_classical) {
-    printf("cq_template_fsub_f16_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fsub_f16_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -6107,34 +6107,34 @@ int32_t cq_template_fsub_f16_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fsub_f16_lh(_Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f16_lh(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_fsub_f16_lh(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f16_lh_controlled(int32_t ctrl_flag, _Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f16_lh_controlled(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_fsub_f16_lh_controlled(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f16_lh_controlled_inv(int32_t ctrl_flag, _Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f16_lh_controlled_inv(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_fsub_f16_lh_controlled_inv(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f16_lh_inv(_Float16 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f16_lh_inv(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_fsub_f16_lh_inv(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fsub_f16_lh_unc(int32_t out_handle, _Float16 a_classical, int32_t b_handle) {
-    printf("cq_template_fsub_f16_lh_unc(h%d, %f, h%d)\n", out_handle, (double)a_classical, b_handle);
+    printf("cq_template_fsub_f16_lh_unc(h%d, %a, h%d)\n", out_handle, (double)a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -6166,34 +6166,34 @@ int32_t cq_template_fsub_f32_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fsub_f32_hl(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f32_hl(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fsub_f32_hl(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f32_hl_controlled(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f32_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fsub_f32_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f32_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f32_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
+    printf("cq_template_fsub_f32_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f32_hl_inv(int32_t a_handle, float b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f32_hl_inv(h%d, %f) -> h%d\n", a_handle, (double)b_classical, h);
+    printf("cq_template_fsub_f32_hl_inv(h%d, %a) -> h%d\n", a_handle, (double)b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fsub_f32_hl_unc(int32_t out_handle, int32_t a_handle, float b_classical) {
-    printf("cq_template_fsub_f32_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, (double)b_classical);
+    printf("cq_template_fsub_f32_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, (double)b_classical);
     fflush(stdout);
 }
 
@@ -6206,34 +6206,34 @@ int32_t cq_template_fsub_f32_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fsub_f32_lh(float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f32_lh(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_fsub_f32_lh(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f32_lh_controlled(int32_t ctrl_flag, float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f32_lh_controlled(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_fsub_f32_lh_controlled(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f32_lh_controlled_inv(int32_t ctrl_flag, float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f32_lh_controlled_inv(h%d, %f, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
+    printf("cq_template_fsub_f32_lh_controlled_inv(h%d, %a, h%d) -> h%d\n", ctrl_flag, (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f32_lh_inv(float a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f32_lh_inv(%f, h%d) -> h%d\n", (double)a_classical, b_handle, h);
+    printf("cq_template_fsub_f32_lh_inv(%a, h%d) -> h%d\n", (double)a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fsub_f32_lh_unc(int32_t out_handle, float a_classical, int32_t b_handle) {
-    printf("cq_template_fsub_f32_lh_unc(h%d, %f, h%d)\n", out_handle, (double)a_classical, b_handle);
+    printf("cq_template_fsub_f32_lh_unc(h%d, %a, h%d)\n", out_handle, (double)a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -6265,34 +6265,34 @@ int32_t cq_template_fsub_f64_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fsub_f64_hl(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f64_hl(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fsub_f64_hl(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f64_hl_controlled(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f64_hl_controlled(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fsub_f64_hl_controlled(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f64_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f64_hl_controlled_inv(h%d, h%d, %f) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fsub_f64_hl_controlled_inv(h%d, h%d, %a) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f64_hl_inv(int32_t a_handle, double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f64_hl_inv(h%d, %f) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fsub_f64_hl_inv(h%d, %a) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fsub_f64_hl_unc(int32_t out_handle, int32_t a_handle, double b_classical) {
-    printf("cq_template_fsub_f64_hl_unc(h%d, h%d, %f)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fsub_f64_hl_unc(h%d, h%d, %a)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -6305,34 +6305,34 @@ int32_t cq_template_fsub_f64_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fsub_f64_lh(double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f64_lh(%f, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_fsub_f64_lh(%a, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f64_lh_controlled(int32_t ctrl_flag, double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f64_lh_controlled(h%d, %f, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_fsub_f64_lh_controlled(h%d, %a, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f64_lh_controlled_inv(int32_t ctrl_flag, double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f64_lh_controlled_inv(h%d, %f, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_fsub_f64_lh_controlled_inv(h%d, %a, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f64_lh_inv(double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f64_lh_inv(%f, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_fsub_f64_lh_inv(%a, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fsub_f64_lh_unc(int32_t out_handle, double a_classical, int32_t b_handle) {
-    printf("cq_template_fsub_f64_lh_unc(h%d, %f, h%d)\n", out_handle, a_classical, b_handle);
+    printf("cq_template_fsub_f64_lh_unc(h%d, %a, h%d)\n", out_handle, a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -6364,34 +6364,34 @@ int32_t cq_template_fsub_f80_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_fsub_f80_hl(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f80_hl(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fsub_f80_hl(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f80_hl_controlled(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f80_hl_controlled(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fsub_f80_hl_controlled(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f80_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f80_hl_controlled_inv(h%d, h%d, %Lf) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
+    printf("cq_template_fsub_f80_hl_controlled_inv(h%d, h%d, %La) -> h%d\n", ctrl_flag, a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f80_hl_inv(int32_t a_handle, long double b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f80_hl_inv(h%d, %Lf) -> h%d\n", a_handle, b_classical, h);
+    printf("cq_template_fsub_f80_hl_inv(h%d, %La) -> h%d\n", a_handle, b_classical, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fsub_f80_hl_unc(int32_t out_handle, int32_t a_handle, long double b_classical) {
-    printf("cq_template_fsub_f80_hl_unc(h%d, h%d, %Lf)\n", out_handle, a_handle, b_classical);
+    printf("cq_template_fsub_f80_hl_unc(h%d, h%d, %La)\n", out_handle, a_handle, b_classical);
     fflush(stdout);
 }
 
@@ -6404,34 +6404,34 @@ int32_t cq_template_fsub_f80_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_fsub_f80_lh(long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f80_lh(%Lf, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_fsub_f80_lh(%La, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f80_lh_controlled(int32_t ctrl_flag, long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f80_lh_controlled(h%d, %Lf, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_fsub_f80_lh_controlled(h%d, %La, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f80_lh_controlled_inv(int32_t ctrl_flag, long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f80_lh_controlled_inv(h%d, %Lf, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
+    printf("cq_template_fsub_f80_lh_controlled_inv(h%d, %La, h%d) -> h%d\n", ctrl_flag, a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_fsub_f80_lh_inv(long double a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_fsub_f80_lh_inv(%Lf, h%d) -> h%d\n", a_classical, b_handle, h);
+    printf("cq_template_fsub_f80_lh_inv(%La, h%d) -> h%d\n", a_classical, b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_fsub_f80_lh_unc(int32_t out_handle, long double a_classical, int32_t b_handle) {
-    printf("cq_template_fsub_f80_lh_unc(h%d, %Lf, h%d)\n", out_handle, a_classical, b_handle);
+    printf("cq_template_fsub_f80_lh_unc(h%d, %La, h%d)\n", out_handle, a_classical, b_handle);
     fflush(stdout);
 }
 
@@ -6608,20 +6608,20 @@ int32_t cq_template_icmp_eq_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_eq_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_eq_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_eq_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_eq_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_eq_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_eq_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_eq_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_eq_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_eq_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -6836,20 +6836,20 @@ int32_t cq_template_icmp_ne_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_ne_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_ne_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_ne_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_ne_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_ne_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_ne_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_ne_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_ne_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_ne_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -7064,20 +7064,20 @@ int32_t cq_template_icmp_sge_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_sge_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_sge_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_sge_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_sge_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_sge_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_sge_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_sge_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_sge_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_sge_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -7292,20 +7292,20 @@ int32_t cq_template_icmp_sgt_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_sgt_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_sgt_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_sgt_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_sgt_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_sgt_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_sgt_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_sgt_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_sgt_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_sgt_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -7520,20 +7520,20 @@ int32_t cq_template_icmp_sle_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_sle_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_sle_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_sle_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_sle_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_sle_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_sle_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_sle_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_sle_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_sle_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -7748,20 +7748,20 @@ int32_t cq_template_icmp_slt_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_slt_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_slt_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_slt_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_slt_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_slt_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_slt_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_slt_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_slt_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_slt_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -7976,20 +7976,20 @@ int32_t cq_template_icmp_uge_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_uge_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_uge_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_uge_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_uge_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_uge_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_uge_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_uge_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_uge_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_uge_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -8204,20 +8204,20 @@ int32_t cq_template_icmp_ugt_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_ugt_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_ugt_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_ugt_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_ugt_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_ugt_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_ugt_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_ugt_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_ugt_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_ugt_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -8432,20 +8432,20 @@ int32_t cq_template_icmp_ule_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_ule_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_ule_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_ule_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_ule_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_ule_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_ule_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_ule_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_ule_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_ule_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -8660,20 +8660,20 @@ int32_t cq_template_icmp_ult_i80(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_icmp_ult_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_ult_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_ult_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_icmp_ult_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_icmp_ult_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_icmp_ult_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_icmp_ult_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_icmp_ult_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_icmp_ult_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -8750,34 +8750,34 @@ int32_t cq_template_lshr_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle
 
 int32_t cq_template_lshr_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_lshr_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_lshr_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_lshr_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_lshr_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_lshr_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_lshr_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_lshr_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -8790,34 +8790,34 @@ int32_t cq_template_lshr_i128_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_lshr_i128_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i128_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_lshr_i128_lh(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i128_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i128_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_lshr_i128_lh_controlled(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i128_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i128_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_lshr_i128_lh_controlled_inv(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i128_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i128_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_lshr_i128_lh_inv(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_lshr_i128_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_lshr_i128_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_lshr_i128_lh_unc(h%d, 0x%016llx%016llx, h%d)\n", out_handle, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -9245,34 +9245,34 @@ int32_t cq_template_lshr_i80_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_lshr_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_lshr_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i80_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i80_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_lshr_i80_hl_controlled(h%d, h%d, 0x%04llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i80_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i80_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_lshr_i80_hl_controlled_inv(h%d, h%d, 0x%04llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_lshr_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_lshr_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_lshr_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_lshr_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -9285,34 +9285,34 @@ int32_t cq_template_lshr_i80_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_lshr_i80_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i80_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_lshr_i80_lh(0x%04llx%016llx, h%d) -> h%d\n", (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i80_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i80_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_lshr_i80_lh_controlled(h%d, 0x%04llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i80_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i80_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_lshr_i80_lh_controlled_inv(h%d, 0x%04llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_lshr_i80_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_lshr_i80_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_lshr_i80_lh_inv(0x%04llx%016llx, h%d) -> h%d\n", (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_lshr_i80_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_lshr_i80_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_lshr_i80_lh_unc(h%d, 0x%04llx%016llx, h%d)\n", out_handle, (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -9443,34 +9443,34 @@ int32_t cq_template_mul_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_mul_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_mul_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_mul_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_mul_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_mul_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_mul_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_mul_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_mul_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_mul_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_mul_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_mul_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_mul_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_mul_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_mul_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_mul_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -9839,34 +9839,34 @@ int32_t cq_template_or_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle, 
 
 int32_t cq_template_or_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_or_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_or_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_or_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_or_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_or_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_or_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_or_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_or_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_or_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_or_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_or_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_or_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_or_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_or_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -10169,34 +10169,34 @@ int32_t cq_template_or_i80_controlled_inv(int32_t ctrl_flag, int32_t a_handle, i
 
 int32_t cq_template_or_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_or_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_or_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_or_i80_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_or_i80_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_or_i80_hl_controlled(h%d, h%d, 0x%04llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_or_i80_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_or_i80_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_or_i80_hl_controlled_inv(h%d, h%d, 0x%04llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_or_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_or_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_or_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_or_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_or_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_or_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -10301,34 +10301,34 @@ int32_t cq_template_sdiv_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle
 
 int32_t cq_template_sdiv_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sdiv_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_sdiv_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sdiv_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sdiv_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_sdiv_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sdiv_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sdiv_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_sdiv_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sdiv_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sdiv_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_sdiv_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_sdiv_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_sdiv_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_sdiv_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -10341,34 +10341,34 @@ int32_t cq_template_sdiv_i128_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_sdiv_i128_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sdiv_i128_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_sdiv_i128_lh(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sdiv_i128_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sdiv_i128_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_sdiv_i128_lh_controlled(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sdiv_i128_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sdiv_i128_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_sdiv_i128_lh_controlled_inv(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sdiv_i128_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sdiv_i128_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_sdiv_i128_lh_inv(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_sdiv_i128_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_sdiv_i128_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_sdiv_i128_lh_unc(h%d, 0x%016llx%016llx, h%d)\n", out_handle, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -11180,34 +11180,34 @@ int32_t cq_template_shl_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_shl_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_shl_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_shl_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_shl_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_shl_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_shl_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_shl_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_shl_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -11220,34 +11220,34 @@ int32_t cq_template_shl_i128_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_shl_i128_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i128_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_shl_i128_lh(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i128_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i128_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_shl_i128_lh_controlled(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i128_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i128_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_shl_i128_lh_controlled_inv(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i128_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i128_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_shl_i128_lh_inv(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_shl_i128_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_shl_i128_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_shl_i128_lh_unc(h%d, 0x%016llx%016llx, h%d)\n", out_handle, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -11675,34 +11675,34 @@ int32_t cq_template_shl_i80_controlled_inv(int32_t ctrl_flag, int32_t a_handle, 
 
 int32_t cq_template_shl_i80_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i80_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_shl_i80_hl(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i80_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i80_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_shl_i80_hl_controlled(h%d, h%d, 0x%04llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i80_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i80_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_shl_i80_hl_controlled_inv(h%d, h%d, 0x%04llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i80_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i80_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_shl_i80_hl_inv(h%d, 0x%04llx%016llx) -> h%d\n", a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_shl_i80_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_shl_i80_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_shl_i80_hl_unc(h%d, h%d, 0x%04llx%016llx)\n", out_handle, a_handle, (unsigned long long)(((unsigned __int128)(b_classical) >> 64) & 0xFFFFu), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -11715,34 +11715,34 @@ int32_t cq_template_shl_i80_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_shl_i80_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i80_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_shl_i80_lh(0x%04llx%016llx, h%d) -> h%d\n", (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i80_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i80_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_shl_i80_lh_controlled(h%d, 0x%04llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i80_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i80_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_shl_i80_lh_controlled_inv(h%d, 0x%04llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_shl_i80_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_shl_i80_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_shl_i80_lh_inv(0x%04llx%016llx, h%d) -> h%d\n", (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_shl_i80_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_shl_i80_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_shl_i80_lh_unc(h%d, 0x%04llx%016llx, h%d)\n", out_handle, (unsigned long long)(((unsigned __int128)(a_classical) >> 64) & 0xFFFFu), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -12177,34 +12177,34 @@ int32_t cq_template_srem_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle
 
 int32_t cq_template_srem_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_srem_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_srem_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_srem_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_srem_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_srem_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_srem_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_srem_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_srem_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_srem_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_srem_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_srem_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_srem_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_srem_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_srem_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -12217,34 +12217,34 @@ int32_t cq_template_srem_i128_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_srem_i128_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_srem_i128_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_srem_i128_lh(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_srem_i128_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_srem_i128_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_srem_i128_lh_controlled(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_srem_i128_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_srem_i128_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_srem_i128_lh_controlled_inv(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_srem_i128_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_srem_i128_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_srem_i128_lh_inv(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_srem_i128_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_srem_i128_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_srem_i128_lh_unc(h%d, 0x%016llx%016llx, h%d)\n", out_handle, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -12771,34 +12771,34 @@ int32_t cq_template_sub_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_sub_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sub_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_sub_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sub_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sub_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_sub_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sub_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sub_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_sub_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sub_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sub_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_sub_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_sub_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_sub_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_sub_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -12811,34 +12811,34 @@ int32_t cq_template_sub_i128_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_sub_i128_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sub_i128_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_sub_i128_lh(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sub_i128_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sub_i128_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_sub_i128_lh_controlled(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sub_i128_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sub_i128_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_sub_i128_lh_controlled_inv(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_sub_i128_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_sub_i128_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_sub_i128_lh_inv(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_sub_i128_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_sub_i128_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_sub_i128_lh_unc(h%d, 0x%016llx%016llx, h%d)\n", out_handle, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -13745,34 +13745,34 @@ int32_t cq_template_udiv_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle
 
 int32_t cq_template_udiv_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_udiv_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_udiv_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_udiv_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_udiv_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_udiv_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_udiv_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_udiv_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_udiv_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_udiv_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_udiv_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_udiv_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_udiv_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_udiv_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_udiv_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -13785,34 +13785,34 @@ int32_t cq_template_udiv_i128_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_udiv_i128_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_udiv_i128_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_udiv_i128_lh(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_udiv_i128_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_udiv_i128_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_udiv_i128_lh_controlled(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_udiv_i128_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_udiv_i128_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_udiv_i128_lh_controlled_inv(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_udiv_i128_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_udiv_i128_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_udiv_i128_lh_inv(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_udiv_i128_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_udiv_i128_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_udiv_i128_lh_unc(h%d, 0x%016llx%016llx, h%d)\n", out_handle, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -14719,34 +14719,34 @@ int32_t cq_template_urem_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle
 
 int32_t cq_template_urem_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_urem_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_urem_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_urem_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_urem_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_urem_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_urem_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_urem_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_urem_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_urem_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_urem_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_urem_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_urem_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_urem_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_urem_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 
@@ -14759,34 +14759,34 @@ int32_t cq_template_urem_i128_inv(int32_t a_handle, int32_t b_handle) {
 
 int32_t cq_template_urem_i128_lh(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_urem_i128_lh(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_urem_i128_lh(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_urem_i128_lh_controlled(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_urem_i128_lh_controlled(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_urem_i128_lh_controlled(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_urem_i128_lh_controlled_inv(int32_t ctrl_flag, __int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_urem_i128_lh_controlled_inv(h%d, %lld, h%d) -> h%d\n", ctrl_flag, (long long)a_classical, b_handle, h);
+    printf("cq_template_urem_i128_lh_controlled_inv(h%d, 0x%016llx%016llx, h%d) -> h%d\n", ctrl_flag, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_urem_i128_lh_inv(__int128 a_classical, int32_t b_handle) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_urem_i128_lh_inv(%lld, h%d) -> h%d\n", (long long)a_classical, b_handle, h);
+    printf("cq_template_urem_i128_lh_inv(0x%016llx%016llx, h%d) -> h%d\n", (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle, h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_urem_i128_lh_unc(int32_t out_handle, __int128 a_classical, int32_t b_handle) {
-    printf("cq_template_urem_i128_lh_unc(h%d, %lld, h%d)\n", out_handle, (long long)a_classical, b_handle);
+    printf("cq_template_urem_i128_lh_unc(h%d, 0x%016llx%016llx, h%d)\n", out_handle, (unsigned long long)((unsigned __int128)(a_classical) >> 64), (unsigned long long)(a_classical), b_handle);
     fflush(stdout);
 }
 
@@ -15313,34 +15313,34 @@ int32_t cq_template_xor_i128_controlled_inv(int32_t ctrl_flag, int32_t a_handle,
 
 int32_t cq_template_xor_i128_hl(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_xor_i128_hl(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_xor_i128_hl(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_xor_i128_hl_controlled(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_xor_i128_hl_controlled(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_xor_i128_hl_controlled(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_xor_i128_hl_controlled_inv(int32_t ctrl_flag, int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_xor_i128_hl_controlled_inv(h%d, h%d, %lld) -> h%d\n", ctrl_flag, a_handle, (long long)b_classical, h);
+    printf("cq_template_xor_i128_hl_controlled_inv(h%d, h%d, 0x%016llx%016llx) -> h%d\n", ctrl_flag, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 int32_t cq_template_xor_i128_hl_inv(int32_t a_handle, __int128 b_classical) {
     int32_t h = cqrt_alloc_handle();
-    printf("cq_template_xor_i128_hl_inv(h%d, %lld) -> h%d\n", a_handle, (long long)b_classical, h);
+    printf("cq_template_xor_i128_hl_inv(h%d, 0x%016llx%016llx) -> h%d\n", a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical), h);
     fflush(stdout);
     return h;
 }
 
 void cq_template_xor_i128_hl_unc(int32_t out_handle, int32_t a_handle, __int128 b_classical) {
-    printf("cq_template_xor_i128_hl_unc(h%d, h%d, %lld)\n", out_handle, a_handle, (long long)b_classical);
+    printf("cq_template_xor_i128_hl_unc(h%d, h%d, 0x%016llx%016llx)\n", out_handle, a_handle, (unsigned long long)((unsigned __int128)(b_classical) >> 64), (unsigned long long)(b_classical));
     fflush(stdout);
 }
 

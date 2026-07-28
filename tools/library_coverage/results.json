@@ -2262,7 +2262,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_sqrt_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_sqrt_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2286,7 +2286,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_sqrt_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_sqrt_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2310,7 +2310,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_sqrt_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_sqrt_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2332,7 +2332,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fabs_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_fabs_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2354,7 +2354,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fabs_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fabs_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2376,7 +2376,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fabs_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_fabs_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2866,7 +2866,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_ceil_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_ceil_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2888,7 +2888,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_ceil_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_ceil_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2910,7 +2910,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_ceil_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_ceil_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2932,7 +2932,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_floor_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_floor_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2954,7 +2954,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_floor_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_floor_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2976,7 +2976,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_floor_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_floor_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -2998,7 +2998,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_trunc_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_trunc_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3020,7 +3020,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_trunc_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_trunc_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3042,7 +3042,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_trunc_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_trunc_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3064,7 +3064,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_round_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_round_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3086,7 +3086,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_round_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_round_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3108,7 +3108,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_round_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_round_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3130,7 +3130,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_nearbyint_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_nearbyint_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3152,7 +3152,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_nearbyint_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_nearbyint_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3174,7 +3174,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_nearbyint_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_nearbyint_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3196,7 +3196,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_rint_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_rint_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3218,7 +3218,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_rint_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_rint_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3240,7 +3240,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_rint_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_rint_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             }
           ],
@@ -3262,7 +3262,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_lrint_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_lrint_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
@@ -3284,7 +3284,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_lrint_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_lrint_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
@@ -3306,7 +3306,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_lrint_f80_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_lrint_f80_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
@@ -3328,7 +3328,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_llrint_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_llrint_f32_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
@@ -3350,7 +3350,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_llrint_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_llrint_f64_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
@@ -3372,7 +3372,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_llrint_f80_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_llrint_f80_to_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
@@ -3528,7 +3528,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_frem_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_frem_f32_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3537,7 +3537,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_frem_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_frem_f32_lh(0x1.8p+0, h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3546,7 +3546,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_frem_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncqrt_alloc_f32(0x1.8p+0) -> h1\ncqrt_ry_f32(h1, 0x1.3333333333333p-1)\ncq_template_frem_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -3570,7 +3570,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_frem_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_frem_f64_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3579,7 +3579,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_frem_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_frem_f64_lh(0x1.8p+0, h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3588,7 +3588,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_frem_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_frem_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -3612,7 +3612,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_frem_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_frem_f80_hl(h0, 0xcp-3) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3621,7 +3621,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_frem_f80_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_frem_f80_lh(0xcp-3, h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3630,7 +3630,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_frem_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncqrt_alloc_f80(0xcp-3) -> h1\ncqrt_ry_f80(h1, 0x1.3333333333333p-1)\ncq_template_frem_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -3904,7 +3904,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fabs_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_fabs_f32(h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3913,7 +3913,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_copysign_f32_lh(1.500000, h0) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_copysign_f32_lh(0x1.8p+0, h0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3922,7 +3922,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_copysign_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncqrt_alloc_f32(0x1.8p+0) -> h1\ncqrt_ry_f32(h1, 0x1.3333333333333p-1)\ncq_template_copysign_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -3944,7 +3944,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fabs_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fabs_f64(h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3953,7 +3953,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_copysign_f64_lh(1.500000, h0) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_copysign_f64_lh(0x1.8p+0, h0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3962,7 +3962,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_copysign_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_copysign_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -3984,7 +3984,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fabs_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_fabs_f80(h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -3993,7 +3993,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_copysign_f80_lh(1.500000, h0) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_copysign_f80_lh(0xcp-3, h0) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4002,7 +4002,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_copysign_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncqrt_alloc_f80(0xcp-3) -> h1\ncqrt_ry_f80(h1, 0x1.3333333333333p-1)\ncq_template_copysign_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -4348,7 +4348,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fmax_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_fmax_f32_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4357,7 +4357,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fmax_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_fmax_f32_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4366,7 +4366,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_fmax_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncqrt_alloc_f32(0x1.8p+0) -> h1\ncqrt_ry_f32(h1, 0x1.3333333333333p-1)\ncq_template_fmax_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -4388,7 +4388,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fmax_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fmax_f64_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4397,7 +4397,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fmax_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fmax_f64_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4406,7 +4406,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fmax_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fmax_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -4428,7 +4428,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fmax_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_fmax_f80_hl(h0, 0xcp-3) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4437,7 +4437,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fmax_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_fmax_f80_hl(h0, 0xcp-3) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4446,7 +4446,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_fmax_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncqrt_alloc_f80(0xcp-3) -> h1\ncqrt_ry_f80(h1, 0x1.3333333333333p-1)\ncq_template_fmax_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -4468,7 +4468,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fmin_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_fmin_f32_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4477,7 +4477,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fmin_f32_hl(h0, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_fmin_f32_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4486,7 +4486,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_fmin_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncqrt_alloc_f32(0x1.8p+0) -> h1\ncqrt_ry_f32(h1, 0x1.3333333333333p-1)\ncq_template_fmin_f32(h0, h1) -> h2\ncqrt_measure_f32(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -4508,7 +4508,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fmin_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fmin_f64_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4517,7 +4517,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fmin_f64_hl(h0, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fmin_f64_hl(h0, 0x1.8p+0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4526,7 +4526,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fmin_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fmin_f64(h0, h1) -> h2\ncqrt_measure_f64(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -4548,7 +4548,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fmin_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_fmin_f80_hl(h0, 0xcp-3) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4557,7 +4557,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fmin_f80_hl(h0, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_fmin_f80_hl(h0, 0xcp-3) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4566,7 +4566,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_fmin_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncqrt_alloc_f80(0xcp-3) -> h1\ncqrt_ry_f80(h1, 0x1.3333333333333p-1)\ncq_template_fmin_f80(h0, h1) -> h2\ncqrt_measure_f80(h2) -> 0x0p+0\n"
               }
             }
           ],
@@ -4588,7 +4588,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fma_f32_qll(h0, 1.500000, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_fma_f32_qll(h0, 0x1.8p+0, 0x1.8p+0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4597,7 +4597,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncq_template_fma_f32_qll(h0, 1.500000, 1.500000) -> h1\ncqrt_measure_f32(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncq_template_fma_f32_qll(h0, 0x1.8p+0, 0x1.8p+0) -> h1\ncqrt_measure_f32(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4606,7 +4606,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_fma_f32_qql(h0, h1, 1.500000) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncqrt_alloc_f32(0x1.8p+0) -> h1\ncqrt_ry_f32(h1, 0x1.3333333333333p-1)\ncq_template_fma_f32_qql(h0, h1, 0x1.8p+0) -> h2\ncqrt_measure_f32(h2) -> 0x0p+0\n"
               }
             },
             {
@@ -4624,7 +4624,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_fma_f32_qlq(h0, 1.500000, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncqrt_alloc_f32(0x1.8p+0) -> h1\ncqrt_ry_f32(h1, 0x1.3333333333333p-1)\ncq_template_fma_f32_qlq(h0, 0x1.8p+0, h1) -> h2\ncqrt_measure_f32(h2) -> 0x0p+0\n"
               }
             },
             {
@@ -4633,7 +4633,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncq_template_fma_f32_qlq(h0, 1.500000, h1) -> h2\ncqrt_measure_f32(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncqrt_alloc_f32(0x1.8p+0) -> h1\ncqrt_ry_f32(h1, 0x1.3333333333333p-1)\ncq_template_fma_f32_qlq(h0, 0x1.8p+0, h1) -> h2\ncqrt_measure_f32(h2) -> 0x0p+0\n"
               }
             },
             {
@@ -4642,7 +4642,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f32(1.500000) -> h0\ncqrt_ry_f32(h0, 0.500000)\ncqrt_alloc_f32(1.500000) -> h1\ncqrt_ry_f32(h1, 0.600000)\ncqrt_alloc_f32(1.500000) -> h2\ncqrt_ry_f32(h2, 0.700000)\ncq_template_fma_f32(h0, h1, h2) -> h3\ncqrt_measure_f32(h3) -> 0.000000\n"
+                "trace": "cqrt_alloc_f32(0x1.8p+0) -> h0\ncqrt_ry_f32(h0, 0x1p-1)\ncqrt_alloc_f32(0x1.8p+0) -> h1\ncqrt_ry_f32(h1, 0x1.3333333333333p-1)\ncqrt_alloc_f32(0x1.8p+0) -> h2\ncqrt_ry_f32(h2, 0x1.6666666666666p-1)\ncq_template_fma_f32(h0, h1, h2) -> h3\ncqrt_measure_f32(h3) -> 0x0p+0\n"
               }
             }
           ],
@@ -4664,7 +4664,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fma_f64_qll(h0, 1.500000, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fma_f64_qll(h0, 0x1.8p+0, 0x1.8p+0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4673,7 +4673,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fma_f64_qll(h0, 1.500000, 1.500000) -> h1\ncqrt_measure_f64(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fma_f64_qll(h0, 0x1.8p+0, 0x1.8p+0) -> h1\ncqrt_measure_f64(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4682,7 +4682,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fma_f64_qql(h0, h1, 1.500000) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fma_f64_qql(h0, h1, 0x1.8p+0) -> h2\ncqrt_measure_f64(h2) -> 0x0p+0\n"
               }
             },
             {
@@ -4700,7 +4700,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fma_f64_qlq(h0, 1.500000, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fma_f64_qlq(h0, 0x1.8p+0, h1) -> h2\ncqrt_measure_f64(h2) -> 0x0p+0\n"
               }
             },
             {
@@ -4709,7 +4709,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fma_f64_qlq(h0, 1.500000, h1) -> h2\ncqrt_measure_f64(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fma_f64_qlq(h0, 0x1.8p+0, h1) -> h2\ncqrt_measure_f64(h2) -> 0x0p+0\n"
               }
             },
             {
@@ -4718,7 +4718,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncqrt_alloc_f64(1.500000) -> h2\ncqrt_ry_f64(h2, 0.700000)\ncq_template_fma_f64(h0, h1, h2) -> h3\ncqrt_measure_f64(h3) -> 0.000000\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h2\ncqrt_ry_f64(h2, 0x1.6666666666666p-1)\ncq_template_fma_f64(h0, h1, h2) -> h3\ncqrt_measure_f64(h3) -> 0x0p+0\n"
               }
             }
           ],
@@ -4740,7 +4740,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fma_f80_qll(h0, 1.500000, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_fma_f80_qll(h0, 0xcp-3, 0xcp-3) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4749,7 +4749,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncq_template_fma_f80_qll(h0, 1.500000, 1.500000) -> h1\ncqrt_measure_f80(h1) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncq_template_fma_f80_qll(h0, 0xcp-3, 0xcp-3) -> h1\ncqrt_measure_f80(h1) -> 0x0p+0\n"
               }
             },
             {
@@ -4758,7 +4758,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_fma_f80_qql(h0, h1, 1.500000) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncqrt_alloc_f80(0xcp-3) -> h1\ncqrt_ry_f80(h1, 0x1.3333333333333p-1)\ncq_template_fma_f80_qql(h0, h1, 0xcp-3) -> h2\ncqrt_measure_f80(h2) -> 0x0p+0\n"
               }
             },
             {
@@ -4776,7 +4776,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_fma_f80_qlq(h0, 1.500000, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncqrt_alloc_f80(0xcp-3) -> h1\ncqrt_ry_f80(h1, 0x1.3333333333333p-1)\ncq_template_fma_f80_qlq(h0, 0xcp-3, h1) -> h2\ncqrt_measure_f80(h2) -> 0x0p+0\n"
               }
             },
             {
@@ -4785,7 +4785,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncq_template_fma_f80_qlq(h0, 1.500000, h1) -> h2\ncqrt_measure_f80(h2) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncqrt_alloc_f80(0xcp-3) -> h1\ncqrt_ry_f80(h1, 0x1.3333333333333p-1)\ncq_template_fma_f80_qlq(h0, 0xcp-3, h1) -> h2\ncqrt_measure_f80(h2) -> 0x0p+0\n"
               }
             },
             {
@@ -4794,7 +4794,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f80(1.500000) -> h0\ncqrt_ry_f80(h0, 0.500000)\ncqrt_alloc_f80(1.500000) -> h1\ncqrt_ry_f80(h1, 0.600000)\ncqrt_alloc_f80(1.500000) -> h2\ncqrt_ry_f80(h2, 0.700000)\ncq_template_fma_f80(h0, h1, h2) -> h3\ncqrt_measure_f80(h3) -> 0.000000\n"
+                "trace": "cqrt_alloc_f80(0xcp-3) -> h0\ncqrt_ry_f80(h0, 0x1p-1)\ncqrt_alloc_f80(0xcp-3) -> h1\ncqrt_ry_f80(h1, 0x1.3333333333333p-1)\ncqrt_alloc_f80(0xcp-3) -> h2\ncqrt_ry_f80(h2, 0x1.6666666666666p-1)\ncq_template_fma_f80(h0, h1, h2) -> h3\ncqrt_measure_f80(h3) -> 0x0p+0\n"
               }
             }
           ],
@@ -4878,7 +4878,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fabs_f64(h0) -> h1\ncq_template_fcmp_one_f64_hl(h1, inf) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fabs_f64(h0) -> h1\ncq_template_fcmp_one_f64_hl(h1, inf) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
@@ -4902,7 +4902,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fabs_f64(h0) -> h1\ncq_template_fcmp_oeq_f64_hl(h1, inf) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fabs_f64(h0) -> h1\ncq_template_fcmp_oeq_f64_hl(h1, inf) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
@@ -4926,7 +4926,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_uno_f64_hl(h0, 0.000000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_uno_f64_hl(h0, 0x0p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             }
           ],
@@ -4974,7 +4974,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_bitcast_f64_to_i64(h0) -> h1\ncq_template_lshr_i64_hl(h1, 63) -> h2\ncq_template_trunc_i64_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_bitcast_f64_to_i64(h0) -> h1\ncq_template_lshr_i64_hl(h1, 63) -> h2\ncq_template_trunc_i64_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
@@ -4998,7 +4998,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_ogt_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_ogt_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5007,7 +5007,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_olt_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_olt_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5016,7 +5016,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fcmp_ogt_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fcmp_ogt_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
@@ -5040,7 +5040,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_oge_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_oge_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5049,7 +5049,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_ole_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_ole_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5058,7 +5058,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fcmp_oge_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fcmp_oge_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
@@ -5082,7 +5082,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_olt_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_olt_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5091,7 +5091,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_ogt_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_ogt_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5100,7 +5100,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fcmp_olt_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fcmp_olt_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
@@ -5124,7 +5124,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_ole_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_ole_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5133,7 +5133,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_oge_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_oge_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5142,7 +5142,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fcmp_ole_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fcmp_ole_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
@@ -5166,7 +5166,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_one_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_one_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5175,7 +5175,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_one_f64_hl(h0, 1.500000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_one_f64_hl(h0, 0x1.8p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5184,7 +5184,7 @@
                 "status": "accepted",
                 "reason": "lowers+links+runs; golden not yet committed",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fcmp_one_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fcmp_one_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
@@ -5208,7 +5208,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_uno_f64_hl(h0, 0.000000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_uno_f64_hl(h0, 0x0p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5217,7 +5217,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncq_template_fcmp_uno_f64_hl(h0, 0.000000) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncq_template_fcmp_uno_f64_hl(h0, 0x0p+0) -> h1\ncq_template_zext_i1_to_i32(h1) -> h2\ncqrt_measure_i32(h2) -> 0\n"
               }
             },
             {
@@ -5226,7 +5226,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_f64(1.500000) -> h0\ncqrt_ry_f64(h0, 0.500000)\ncqrt_alloc_f64(1.500000) -> h1\ncqrt_ry_f64(h1, 0.600000)\ncq_template_fcmp_uno_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
+                "trace": "cqrt_alloc_f64(0x1.8p+0) -> h0\ncqrt_ry_f64(h0, 0x1p-1)\ncqrt_alloc_f64(0x1.8p+0) -> h1\ncqrt_ry_f64(h1, 0x1.3333333333333p-1)\ncq_template_fcmp_uno_f64(h0, h1) -> h2\ncq_template_zext_i1_to_i32(h2) -> h3\ncqrt_measure_i32(h3) -> 0\n"
               }
             }
           ],
@@ -5257,7 +5257,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0.500000)\ncq_template_abs_i32(h0) -> h1\ncqrt_measure_i32(h1) -> 0\n"
+                "trace": "cqrt_alloc_i32(2) -> h0\ncqrt_ry_i32(h0, 0x1p-1)\ncq_template_abs_i32(h0) -> h1\ncqrt_measure_i32(h1) -> 0\n"
               }
             }
           ],
@@ -5279,7 +5279,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_i64(2) -> h0\ncqrt_ry_i64(h0, 0.500000)\ncq_template_abs_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "trace": "cqrt_alloc_i64(2) -> h0\ncqrt_ry_i64(h0, 0x1p-1)\ncq_template_abs_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],
@@ -5301,7 +5301,7 @@
                 "status": "verified",
                 "reason": "",
                 "raw": "",
-                "trace": "cqrt_alloc_i64(2) -> h0\ncqrt_ry_i64(h0, 0.500000)\ncq_template_abs_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
+                "trace": "cqrt_alloc_i64(2) -> h0\ncqrt_ry_i64(h0, 0x1p-1)\ncq_template_abs_i64(h0) -> h1\ncqrt_measure_i64(h1) -> 0\n"
               }
             }
           ],

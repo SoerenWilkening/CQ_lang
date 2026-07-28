@@ -1,6 +1,6 @@
 cqrt_alloc_i32(3) -> h0
-cqrt_ry_i32(h0, 0.500000)
-cqrt_rz_i32(h0, 0.900000)
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_rz_i32(h0, 0x1.ccccccccccccdp-1)
 cq_template_icmp_sgt_i32_hl(h0, 5) -> h1
 cqrt_alloc_i32(0) -> h2
 cqrt_alloc_i32(0) -> h3
@@ -8,9 +8,9 @@ cqrt_cswap(h1, h0, h2)
 cqrt_x(h1)
 cqrt_cswap(h1, h0, h3)
 cqrt_x(h1)
-cqrt_rz_i32(h2, 0.250000)
-cqrt_rz_i32(h2, 0.125000)
-cqrt_rz_i32(h3, 0.750000)
+cqrt_rz_i32(h2, 0x1p-2)
+cqrt_rz_i32(h2, 0x1p-3)
+cqrt_rz_i32(h3, 0x1.8p-1)
 cqrt_cswap(h1, h0, h2)
 cqrt_x(h1)
 cqrt_cswap(h1, h0, h3)

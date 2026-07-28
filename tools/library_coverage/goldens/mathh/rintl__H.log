@@ -1,4 +1,4 @@
-cqrt_alloc_f80(1.500000) -> h0
-cqrt_ry_f80(h0, 0.500000)
+cqrt_alloc_f80(0xcp-3) -> h0
+cqrt_ry_f80(h0, 0x1p-1)
 cq_template_rint_f80(h0) -> h1
-cqrt_measure_f80(h1) -> 0.000000
+cqrt_measure_f80(h1) -> 0x0p+0

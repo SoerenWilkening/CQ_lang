@@ -106,7 +106,8 @@ int main(void) {
      * existing handle of the matching width. The 4 gate placeholders
      * (cqrt_x/h/cnot/toffoli) are intentionally left unexercised —
      * they are declared + defined but not emitted until Phase 8.
-     * Angle 0.785398 prints byte-exact at %f's default 6 digits. */
+     * Angle 0.785398 prints byte-exact as the hex float 0x1.921fb54442d18p-1
+     * (bd `ni15` moved the angle field off %f's lossy 6 digits). */
     cqrt_ry_i1(h_i1, 0.785398);
     cqrt_rz_i1(h_i1, 0.785398);
     cqrt_ry_i8(h_i8, 0.785398);
@@ -162,7 +163,8 @@ int main(void) {
      * fp copy family exists since the fp-DATA select un-staging. Appended
      * at the end so every existing handle ID (h0..h32) is unchanged; the
      * monotonic counter resumes at h33. 1.5 and 0.5 are exactly representable
-     * in f16, so the (double)-promoted %f prints byte-stable. */
+     * in f16, so the (double)-promoted %a prints byte-stable (and, since
+     * bd `ni15`, exactly: 0x1.8p+0 / 0x1p-1). */
     int32_t h_f16   = cqrt_alloc_f16((_Float16)1.5);   /* h33 */
     (void) cqrt_measure_f16(h_f16);
     int32_t h_f16_b = cqrt_alloc_f16((_Float16)0.5);   /* h34 */
@@ -180,7 +182,7 @@ int main(void) {
      * controlled-copy block above. f80 has no earlier handles, so two are
      * allocated HERE (h37/h38 — appended after every existing handle so all
      * prior h-IDs stay stable, the f16 precedent); 1.5/0.5 are exact in
-     * x86_fp80, so the %Lf print is byte-stable. */
+     * x86_fp80, so the %La print is byte-stable (bd `ni15`). */
     cqrt_copy_f16_controlled(h_c, h_f16, h_f16_b);
     cqrt_copy_f32_controlled(h_c, h_f32, h_f32_b);
     cqrt_copy_f64_controlled(h_c, h_f64, h_f64_b);

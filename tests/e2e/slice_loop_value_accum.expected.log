@@ -1,5 +1,5 @@
 cqrt_alloc_i32(3) -> h0
-cqrt_ry_i32(h0, 0.250000)
+cqrt_ry_i32(h0, 0x1p-2)
 cqrt_xorc_i32(h0, 9)
 cqrt_xorc_i32(h0, 9)
 cqrt_xorc_i32(h0, 9)

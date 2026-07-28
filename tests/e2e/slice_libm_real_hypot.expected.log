@@ -1,5 +1,5 @@
-cqrt_alloc_f64(0.500000) -> h0
-cqrt_ry_f64(h0, 0.500000)
+cqrt_alloc_f64(0x1p-1) -> h0
+cqrt_ry_f64(h0, 0x1p-1)
 cq_template_bitcast_f64_to_i64(h0) -> h1
 cq_template_lshr_i64_hl(h1, 32) -> h2
 cq_template_trunc_i64_to_i32(h2) -> h3
@@ -8,8 +8,8 @@ cq_template_umax_i32_hl(h4, 1071644672) -> h5
 cq_template_umin_i32_hl(h4, 1071644672) -> h6
 cq_template_fabs_f64(h0) -> h7
 cq_template_icmp_ult_i32_hl(h4, 1071644672) -> h8
-cqrt_alloc_f64(0.000000) -> h9
-cqrt_alloc_f64(0.500000) -> h10
+cqrt_alloc_f64(0x0p+0) -> h9
+cqrt_alloc_f64(0x1p-1) -> h10
 cqrt_copy_f64_controlled(h8, h10, h9)
 cqrt_x(h8)
 cqrt_copy_f64_controlled(h8, h7, h9)
@@ -18,10 +18,10 @@ cq_template_icmp_ult_i32_hl_inv(h4, 1071644672) -> h11
 cqrt_free(h8)
 cq_template_fabs_f64(h0) -> h12
 cq_template_icmp_ult_i32_hl(h4, 1071644672) -> h13
-cqrt_alloc_f64(0.000000) -> h14
+cqrt_alloc_f64(0x0p+0) -> h14
 cqrt_copy_f64_controlled(h13, h12, h14)
 cqrt_x(h13)
-cqrt_alloc_f64(0.500000) -> h15
+cqrt_alloc_f64(0x1p-1) -> h15
 cqrt_copy_f64_controlled(h13, h15, h14)
 cqrt_x(h13)
 cq_template_icmp_ult_i32_hl_inv(h4, 1071644672) -> h16
@@ -48,7 +48,7 @@ cqrt_toffoli(h32, h33, h34)
 cq_template_icmp_ule_i32_hl(h4, 2146435071) -> h35
 cqrt_alloc_i1(0) -> h36
 cqrt_toffoli(h34, h35, h36)
-cqrt_alloc_f64(0.000000) -> h37
+cqrt_alloc_f64(0x0p+0) -> h37
 cqrt_copy_f64_controlled(h36, h31, h37)
 cqrt_x(h36)
 cqrt_copy_f64_controlled(h36, h14, h37)
@@ -138,7 +138,7 @@ cqrt_toffoli(h70, h71, h72)
 cq_template_icmp_ule_i32_hl(h4, 2146435071) -> h73
 cqrt_alloc_i1(0) -> h74
 cqrt_toffoli(h72, h73, h74)
-cqrt_alloc_f64(0.000000) -> h75
+cqrt_alloc_f64(0x0p+0) -> h75
 cqrt_copy_f64_controlled(h74, h25, h75)
 cqrt_x(h74)
 cqrt_copy_f64_controlled(h74, h9, h75)
@@ -171,11 +171,11 @@ cq_template_bitcast_i64_to_f64(h92) -> h93
 cq_template_bitcast_f64_to_i64(h37) -> h94
 cq_template_trunc_i64_to_i32(h94) -> h95
 cq_template_or_i32(h66, h95) -> h96
-cq_template_fmul_f64_hl(h37, 44942328371557897693232629769725618340449424473557664318357520289433168951375240783177119330601884005280028469967848339414697442203604155623211857659868531094441973356216371319075554900311523529863270738021251442209537670585615720368478277635206809290837627671146574559986811484619929076208839082406056034304.000000) -> h97
-cq_template_fmul_f64_hl(h75, 44942328371557897693232629769725618340449424473557664318357520289433168951375240783177119330601884005280028469967848339414697442203604155623211857659868531094441973356216371319075554900311523529863270738021251442209537670585615720368478277635206809290837627671146574559986811484619929076208839082406056034304.000000) -> h98
+cq_template_fmul_f64_hl(h37, 0x1p+1022) -> h97
+cq_template_fmul_f64_hl(h75, 0x1p+1022) -> h98
 cq_template_or_i32_hl(h46, -1022) -> h99
 cq_template_icmp_eq_i32_hl(h96, 0) -> h100
-cqrt_alloc_f64(0.000000) -> h101
+cqrt_alloc_f64(0x0p+0) -> h101
 cqrt_copy_f64_controlled(h100, h37, h101)
 cqrt_x(h100)
 cqrt_copy_f64_controlled(h100, h97, h101)
@@ -191,7 +191,7 @@ cqrt_x(h103)
 cq_template_icmp_eq_i32_hl_inv(h96, 0) -> h105
 cqrt_free(h103)
 cq_template_icmp_eq_i32_hl(h96, 0) -> h106
-cqrt_alloc_f64(0.000000) -> h107
+cqrt_alloc_f64(0x0p+0) -> h107
 cqrt_copy_f64_controlled(h106, h75, h107)
 cqrt_x(h106)
 cqrt_copy_f64_controlled(h106, h98, h107)
@@ -218,7 +218,7 @@ cqrt_toffoli(h116, h117, h118)
 cq_template_icmp_sge_i32_hl(h66, 1048576) -> h119
 cqrt_alloc_i1(0) -> h120
 cqrt_toffoli(h118, h119, h120)
-cqrt_alloc_f64(0.000000) -> h121
+cqrt_alloc_f64(0x0p+0) -> h121
 cqrt_copy_f64_controlled(h120, h93, h121)
 cqrt_x(h120)
 cqrt_copy_f64_controlled(h120, h37, h121)
@@ -272,7 +272,7 @@ cqrt_toffoli(h137, h138, h139)
 cq_template_icmp_ne_i32_hl(h96, 0) -> h140
 cqrt_alloc_i1(0) -> h141
 cqrt_toffoli(h139, h140, h141)
-cqrt_alloc_f64(0.000000) -> h142
+cqrt_alloc_f64(0x0p+0) -> h142
 cqrt_copy_f64_controlled(h141, h101, h142)
 cqrt_x(h141)
 cqrt_copy_f64_controlled(h141, h121, h142)
@@ -654,7 +654,7 @@ cqrt_toffoli(h280, h281, h282)
 cq_template_icmp_sge_i32_hl(h66, 1048576) -> h283
 cqrt_alloc_i1(0) -> h284
 cqrt_toffoli(h282, h283, h284)
-cqrt_alloc_f64(0.000000) -> h285
+cqrt_alloc_f64(0x0p+0) -> h285
 cqrt_copy_f64_controlled(h284, h87, h285)
 cqrt_x(h284)
 cqrt_copy_f64_controlled(h284, h75, h285)
@@ -708,7 +708,7 @@ cqrt_toffoli(h301, h302, h303)
 cq_template_icmp_ne_i32_hl(h96, 0) -> h304
 cqrt_alloc_i1(0) -> h305
 cqrt_toffoli(h303, h304, h305)
-cqrt_alloc_f64(0.000000) -> h306
+cqrt_alloc_f64(0x0p+0) -> h306
 cqrt_copy_f64_controlled(h305, h107, h306)
 cqrt_x(h305)
 cqrt_copy_f64_controlled(h305, h285, h306)
@@ -812,7 +812,7 @@ cqrt_toffoli(h359, h361, h362)
 cq_template_fcmp_ule_f64(h314, h142) -> h363
 cqrt_alloc_i1(0) -> h364
 cqrt_toffoli(h362, h363, h364)
-cqrt_alloc_f64(0.000000) -> h365
+cqrt_alloc_f64(0x0p+0) -> h365
 cqrt_copy_f64_controlled(h364, h331, h365)
 cqrt_x(h364)
 cqrt_copy_f64_controlled(h364, h342, h365)
@@ -874,15 +874,15 @@ cq_template_zext_i32_to_i64(h378) -> h379
 cq_template_shl_i64_hl(h379, 32) -> h380
 cq_template_bitcast_i64_to_f64(h380) -> h381
 cq_template_fmul_f64(h376, h381) -> h382
-cq_template_fadd_f64_hl(h0, 0.000000) -> h383
+cq_template_fadd_f64_hl(h0, 0x0p+0) -> h383
 cq_template_fabs_f64(h383) -> h384
-cq_template_fadd_f64_hl(h384, -0.500000) -> h385
+cq_template_fadd_f64_hl(h384, -0x1p-1) -> h385
 cq_template_bitcast_f64_to_i64(h9) -> h386
 cq_template_trunc_i64_to_i32(h386) -> h387
 cq_template_and_i32_hl(h5, 1048575) -> h388
 cq_template_or_i32(h387, h388) -> h389
 cq_template_icmp_eq_i32_hl(h389, 0) -> h390
-cqrt_alloc_f64(0.000000) -> h391
+cqrt_alloc_f64(0x0p+0) -> h391
 cqrt_copy_f64_controlled(h390, h9, h391)
 cqrt_x(h390)
 cqrt_copy_f64_controlled(h390, h385, h391)
@@ -913,7 +913,7 @@ cqrt_toffoli(h403, h404, h405)
 cq_template_icmp_eq_i32_hl(h96, 0) -> h406
 cqrt_alloc_i1(0) -> h407
 cqrt_toffoli(h405, h406, h407)
-cqrt_alloc_f64(0.000000) -> h408
+cqrt_alloc_f64(0x0p+0) -> h408
 cqrt_copy_f64_controlled(h407, h75, h408)
 cqrt_x(h407)
 cqrt_copy_f64_controlled(h407, h376, h408)
@@ -998,7 +998,7 @@ cqrt_toffoli(h437, h439, h440)
 cq_template_icmp_ne_i32_hl(h183, 0) -> h441
 cqrt_alloc_i1(0) -> h442
 cqrt_toffoli(h440, h441, h442)
-cqrt_alloc_f64(0.000000) -> h443
+cqrt_alloc_f64(0x0p+0) -> h443
 cqrt_copy_f64_controlled(h442, h382, h443)
 cqrt_x(h442)
 cqrt_copy_f64_controlled(h442, h408, h443)
@@ -1072,7 +1072,7 @@ cqrt_toffoli(h456, h457, h458)
 cq_template_icmp_ugt_i32_hl(h4, 2146435071) -> h459
 cqrt_alloc_i1(0) -> h460
 cqrt_toffoli(h458, h459, h460)
-cqrt_alloc_f64(0.000000) -> h461
+cqrt_alloc_f64(0x0p+0) -> h461
 cqrt_copy_f64_controlled(h460, h391, h461)
 cqrt_x(h460)
 cqrt_copy_f64_controlled(h460, h443, h461)
@@ -1088,11 +1088,11 @@ cqrt_free(h457)
 cq_template_icmp_ule_i32_hl_inv(h17, 62914560) -> h464
 cqrt_free(h456)
 cq_template_icmp_ugt_i32_hl(h17, 62914560) -> h465
-cqrt_alloc_f64(0.000000) -> h466
+cqrt_alloc_f64(0x0p+0) -> h466
 cqrt_copy_f64_controlled(h465, h393, h466)
 cqrt_x(h465)
 cqrt_copy_f64_controlled(h465, h461, h466)
 cqrt_x(h465)
 cq_template_icmp_ugt_i32_hl_inv(h17, 62914560) -> h467
 cqrt_free(h465)
-cqrt_measure_f64(h466) -> 0.000000
+cqrt_measure_f64(h466) -> 0x0p+0

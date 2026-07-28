@@ -31,7 +31,39 @@ would free a dirty rail (a hidden measurement, Rule 6/8); `_unc` does not.
 from __future__ import annotations
 
 # Per-width C type + printf format + (optional) cast for the Q+C trace body.
-# Mirrors the existing add/fadd stub format exactly.
+#
+# LABEL INJECTIVITY (bd `ni15`, 2026-07-28) is the governing invariant here:
+# the classical-operand field of a trace label MUST be a one-to-one function of
+# the IR constant, because the Rule-2 golden byte-diff is the only gate that
+# witnesses an emitted immediate at all. Two distinct IR constants that render
+# to the same label make a miscompile of that constant INVISIBLE — which is a
+# silent-miscompile blind spot, not a cosmetic issue. Every entry below is
+# therefore round-trip exact for its width:
+#   * i1..i64  — decimal via (long long)/%lld (or %d for bool). Already
+#                injective: every value fits the promoted type losslessly.
+#   * i80/i128 — FIXED-WIDTH HEX of the full bit pattern, printed as two
+#                unsigned-long-long halves because printf has no >64-bit
+#                specifier (see the per-entry notes).
+#   * f16..f80 — HEX FLOAT (%a / %La). Exact for every finite value and for
+#                ±inf at every width, and mechanically comparable against the
+#                IR's own hex constant. Supersedes the old %f/%Lf 6-digit
+#                prints, under which 0x1p-128 and +0.0 both rendered
+#                `0.000000`.
+# RESIDUE, stated so nobody reads the invariant as total: every NaN encoding
+# still renders as the bare string `nan` — sign, quiet/signalling bit and
+# payload are all dropped. NaN<->NaN is the ONE surviving collision class (no
+# NaN can alias a finite, an inf, or a signed zero); it is unchanged from the
+# %f era rather than a regression, and closing it needs raw-bit-pattern
+# printing, not another format specifier. Tracked on bd `ni15`.
+# PORTABILITY: the leading-digit style of `%La` is implementation-defined. Apple
+# libc and glibc both use the explicit-integer-bit nibble (1.5L -> `0xcp-3`), so
+# the f80 goldens are byte-identical on macOS and Linux; musl normalizes via
+# frexpl and would render differently. That is a loud spurious golden diff (the
+# safe direction), on a corpus already pinned to x86-64 + clang-19 by Rule 9.
+# `arg_exprs()` below turns a C expression into the matching printf argument
+# list; every body builder in this module routes through it, so a width's
+# rendering is defined in exactly one place. If you add a width, it must be
+# injective at that width or the golden gate silently weakens.
 WIDTH_INFO = {
     "i1":  {"ctype": "bool",    "fmt": "%d",   "cast": "(int)"},
     "i8":  {"ctype": "int8_t",  "fmt": "%lld", "cast": "(long long)"},
@@ -39,61 +71,70 @@ WIDTH_INFO = {
     "i32": {"ctype": "int32_t", "fmt": "%lld", "cast": "(long long)"},
     "i64": {"ctype": "int64_t", "fmt": "%lld", "cast": "(long long)"},
     # i128 (n0ui Tier-1): __int128 is a valid C type but printf has NO 128-bit
-    # specifier, so the trace-only body prints the classical operand via the same
-    # (long long)/%lld path as the other int widths. A literal that does not fit in
-    # 64 bits is TRUNCATED in the trace label (deterministic; the trace is a gate-
-    # sequence contract, not a value simulation). Tier-1 literals (shift amounts,
-    # small masks) fit; a genuine >64-bit literal prints its low 64 bits.
-    "i128": {"ctype": "__int128", "fmt": "%lld", "cast": "(long long)"},
-    # i80 (bd 3c6m.51): the x86_fp80 bit-pattern extraction width. Like i128 it
-    # rides __int128 (i80 is not a C type) and prints via the (long long)/%lld path
-    # — printf has no 80-bit specifier. Every shipped i80 literal is a mask or a
-    # shift amount that fits in 64 bits (fdiml: `and i80 %h, 0x7fff..`=2^63-1,
-    # `lshr i80 %bc, 64`; the Inc-3 RMW packs: field [64,80) keep-mask = 2^64-1,
-    # `shl i80 .., 64`), so every shipped trace label is faithful; a >64-bit
-    # literal would print its low 64 bits (deterministic gate-sequence contract,
-    # not a value simulation — same as i128). NOTE (Inc 3): a LIVE field-insert
-    # at a sub-64 offset would emit an and-clear keep-mask above 2^64 (e.g.
-    # field [0,64) keeps 0xFFFF<<64) and print truncated — no shipped cell does
-    # (fdiml's offset-0 store-back is DEAD and elided; scalbnl/copysignl insert
-    # at offset 8 only). Revisit the label format before landing such a cell.
-    #   ⚠ THAT CELL HAS NOW LANDED (bd `3c6m.58`, 2026-07-25) — the note above is
-    #   STALE and the "every shipped i80 literal fits in 64 bits" argument no
-    #   longer holds. The verify-first sweep's SET_LDOUBLE_WORDS/IEEEl2bits
-    #   field-insert cells emit exactly the predicted >2^64 keep-mask: nextafterl,
-    #   modfl, lroundl, llroundl, frexpl (1 each) and sinhl (2). Example —
-    #   slice_libm_real_nextafterl golden line 1333 prints
-    #   `cq_template_and_i80_hl(h520, 4294967295)` for the true operand
-    #   i80 0xFFFF_00000000_FFFFFFFF, so a miscompile of ANY bit above 63 of that
-    #   mask is INVISIBLE to the Rule-2 golden diff. The f80 `%Lf` path has the
-    #   same defect in the fp domain (0x1p-128 renders as `0.000000`,
-    #   indistinguishable from +0.0 — expm1l golden line 34).
-    #   NOT fixed here on purpose: changing the label format regenerates the whole
-    #   cq_templates surface (Rule 15 + SHA-256 drift check) and re-blesses EVERY
-    #   committed ld80 golden — a deliberate baseline regeneration, never a reflex
-    #   (Rule 12). Tracked as bd `ni15` with a proposed hex/two-word (i80/i128) and
-    #   round-trip-exact `%La`/`%.21Lg` (f80) label format. The shipped goldens are
-    #   known-good regardless: the 3c6m.58 audit IR-verified each constant and
-    #   replayed the lowered IR against the vendored openlibm source over 36 edge
-    #   inputs + 200k random 80-bit patterns with 0 mismatches.
-    "i80": {"ctype": "__int128", "fmt": "%lld", "cast": "(long long)"},
+    # specifier, so the body prints the full 128-bit pattern as two %016llx
+    # halves — `0x` + 32 fixed hex digits, high word first. Fixed width keeps
+    # the concatenation unambiguous (a variable-width high word could alias a
+    # different (high, low) split).
+    "i128": {"ctype": "__int128", "fmt": "0x%016llx%016llx",
+             "args": "(unsigned long long)((unsigned __int128)({e}) >> 64), "
+                     "(unsigned long long)({e})"},
+    # i80 (bd 3c6m.51): the x86_fp80 bit-pattern extraction width. i80 is not a
+    # C type, so it rides __int128; LLVM promotes the i80 call argument into the
+    # i128 parameter and the 48 bits above bit 79 are ABI PADDING — the mask
+    # below drops them, so the label depends only on the 80 value bits and is
+    # independent of how the backend materialized the padding. Printed as `0x` +
+    # 20 fixed hex digits (4 for the high 16 bits, 16 for the low 64), i.e. the
+    # exact 80-bit pattern as LLVM writes it.
+    #
+    # HISTORY (bd `ni15`): this width used to print via (long long)/%lld — the
+    # LOW 64 BITS ONLY. bd 3c6m.58 landed the cells that note predicted (a LIVE
+    # SET_LDOUBLE_WORDS/IEEEl2bits field-insert at a sub-64 offset emits an
+    # and-clear keep-mask above 2^64): nextafterl, modfl, lroundl, llroundl,
+    # frexpl (1 each) and sinhl (2). slice_libm_real_nextafterl printed
+    # `cq_template_and_i80_hl(h520, 4294967295)` for the true operand
+    # i80 0xFFFF_00000000_FFFFFFFF, so a miscompile of ANY bit above 63 of that
+    # mask was invisible to the Rule-2 diff. It now reads
+    # `cq_template_and_i80_hl(h520, 0xffff00000000ffffffff)`.
+    "i80": {"ctype": "__int128", "fmt": "0x%04llx%016llx",
+            "args": "(unsigned long long)(((unsigned __int128)({e}) >> 64) & 0xFFFFu), "
+                    "(unsigned long long)({e})"},
     # _Float16: the explicit (double) cast is MANDATORY — a bare _Float16 passed
-    # to printf("%f") trips -Wdouble-promotion / a format-arg type mismatch under
-    # -Werror. f16 is fp-domain; it has a runtime template surface (fadd_f16 etc.)
-    # but, like all fp widths, NO cqrt_copy_f16 (copyFn null-guards on isIntegerTy
-    # — the f16-angle-vs-data fence; see WidthDispatch.cpp).
-    "f16": {"ctype": "_Float16", "fmt": "%f",   "cast": "(double)"},
-    "f32": {"ctype": "float",   "fmt": "%f",   "cast": "(double)"},
-    "f64": {"ctype": "double",  "fmt": "%f",   "cast": ""},
+    # to printf trips -Wdouble-promotion / a format-arg type mismatch under
+    # -Werror. The promotion to double is EXACT (f16 ⊂ f64), so %a of the
+    # promoted value is still injective on the f16 operand. f16 is fp-domain; it
+    # has a runtime template surface (fadd_f16 etc.) but, like all fp widths, NO
+    # cqrt_copy_f16 (copyFn null-guards on isIntegerTy — the f16-angle-vs-data
+    # fence; see WidthDispatch.cpp).
+    "f16": {"ctype": "_Float16", "fmt": "%a",   "cast": "(double)"},
+    # f32: the (double) promotion is likewise exact, so %a round-trips the float.
+    "f32": {"ctype": "float",   "fmt": "%a",   "cast": "(double)"},
+    "f64": {"ctype": "double",  "fmt": "%a",   "cast": ""},
     # f80 (bd 3c6m.4): the long-double width on x86-64, where `long double` IS
-    # x86_fp80. c_type `long double`, printed with the `%Lf` specifier (no cast;
-    # %Lf takes a bare long double). Cast templates are handle-only (i32→i32), so
-    # `long double` appears only in _hl/_lh classical-operand slots. f128 (IEEE
-    # quad, == long double on AArch64) is NOT shipped here: `long double` == fp80
-    # on x86-64, so an fp128 c_type of `long double` would be an fp128-into-fp80
+    # x86_fp80. c_type `long double`, printed with the `L` length modifier (no
+    # cast; %La takes a bare long double) — %Lf would round the 64-bit
+    # significand to 6 decimals, which is what made 0x1p-128 read as `0.000000`
+    # (bd ni15). Cast templates are handle-only (i32→i32), so `long double`
+    # appears only in _hl/_lh classical-operand slots. f128 (IEEE quad, ==
+    # long double on AArch64) is NOT shipped here: `long double` == fp80 on
+    # x86-64, so an fp128 c_type of `long double` would be an fp128-into-fp80
     # ABI miscompile — a tainted fp128 declines instead (deferred to AArch64).
-    "f80":  {"ctype": "long double", "fmt": "%Lf", "cast": ""},
+    "f80":  {"ctype": "long double", "fmt": "%La", "cast": ""},
 }
+
+
+def arg_exprs(width, expr):
+    """Return the printf argument list (a C expression string, possibly
+    comma-separated) rendering the classical operand `expr` at `width`.
+
+    Widths whose value fits a single promoted printf argument use the plain
+    `cast + expr` form. The wide integer widths (i80/i128) have no >64-bit
+    printf specifier, so they expand to TWO unsigned-long-long arguments
+    matching the two `%llx` conversions in their `fmt` — see WIDTH_INFO.
+    """
+    info = WIDTH_INFO[width]
+    if "args" in info:
+        return info["args"].format(e=expr)
+    return f"{info['cast']}{expr}" if info["cast"] else expr
 
 # Controlled shapes prepend an i32 control flag as parameter 0 (PRD §1.2).
 CONTROLLED_SHAPES = {"cqq", "chl", "clh"}
@@ -169,17 +210,18 @@ def stub_body(row):
             f"    printf(\"{sym}(h%d, h%d, h%d) -> h%d\\n\", a_handle, b_handle, c_handle, h);\n"
             "    fflush(stdout);\n    return h;\n"
         )
-    info = WIDTH_INFO[row["classical_w"]]
+    w = row["classical_w"]
+    info = WIDTH_INFO[w]
     if shape in ("hl", "chl"):  # handle on LHS, classical scalar on RHS
-        cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
+        cast_expr = arg_exprs(w, "b_classical")
         return (
             "    int32_t h = cqrt_alloc_handle();\n"
             f"    printf(\"{sym}({ctrl_fmt}h%d, {info['fmt']}) -> h%d\\n\", {ctrl_arg}a_handle, {cast_expr}, h);\n"
             "    fflush(stdout);\n    return h;\n"
         )
     if shape in ("qql", "qlq", "qll"):  # ternary fma, mixed handle/literal
-        b_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
-        c_expr = f"{info['cast']}c_classical" if info["cast"] else "c_classical"
+        b_expr = arg_exprs(w, "b_classical")
+        c_expr = arg_exprs(w, "c_classical")
         b_slot = info["fmt"] if shape in ("qlq", "qll") else "h%d"
         c_slot = info["fmt"] if shape in ("qql", "qll") else "h%d"
         b_arg = b_expr if shape in ("qlq", "qll") else "b_handle"
@@ -190,7 +232,7 @@ def stub_body(row):
             "    fflush(stdout);\n    return h;\n"
         )
     # shape lh/clh: classical scalar on LHS, handle on RHS; trace order classical, handle.
-    cast_expr = f"{info['cast']}a_classical" if info["cast"] else "a_classical"
+    cast_expr = arg_exprs(w, "a_classical")
     return (
         "    int32_t h = cqrt_alloc_handle();\n"
         f"    printf(\"{sym}({ctrl_fmt}{info['fmt']}, h%d) -> h%d\\n\", {ctrl_arg}{cast_expr}, b_handle, h);\n"
@@ -253,16 +295,17 @@ def _unc_body(row):
             f"    printf(\"{sym}(h%d, h%d, h%d, h%d)\\n\", out_handle, a_handle, b_handle, c_handle);\n"
             "    fflush(stdout);\n"
         )
-    info = WIDTH_INFO[row["classical_w"]]
+    w = row["classical_w"]
+    info = WIDTH_INFO[w]
     if shape == "uhl":
-        cast_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
+        cast_expr = arg_exprs(w, "b_classical")
         return (
             f"    printf(\"{sym}(h%d, h%d, {info['fmt']})\\n\", out_handle, a_handle, {cast_expr});\n"
             "    fflush(stdout);\n"
         )
     if shape in ("uqql", "uqlq", "uqll"):  # ternary mixed: out, a, then b/c by shape
-        b_expr = f"{info['cast']}b_classical" if info["cast"] else "b_classical"
-        c_expr = f"{info['cast']}c_classical" if info["cast"] else "c_classical"
+        b_expr = arg_exprs(w, "b_classical")
+        c_expr = arg_exprs(w, "c_classical")
         b_slot = info["fmt"] if shape in ("uqlq", "uqll") else "h%d"
         c_slot = info["fmt"] if shape in ("uqql", "uqll") else "h%d"
         b_arg = b_expr if shape in ("uqlq", "uqll") else "b_handle"
@@ -272,7 +315,7 @@ def _unc_body(row):
             "    fflush(stdout);\n"
         )
     # ulh: trace order out, classical, handle.
-    cast_expr = f"{info['cast']}a_classical" if info["cast"] else "a_classical"
+    cast_expr = arg_exprs(w, "a_classical")
     return (
         f"    printf(\"{sym}(h%d, {info['fmt']}, h%d)\\n\", out_handle, {cast_expr}, b_handle);\n"
         "    fflush(stdout);\n"

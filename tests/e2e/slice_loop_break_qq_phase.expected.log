@@ -1,8 +1,8 @@
 cqrt_alloc_i32(7) -> h0
-cqrt_ry_i32(h0, 0.500000)
-cqrt_rz_i32(h0, 0.300000)
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_rz_i32(h0, 0x1.3333333333333p-2)
 cqrt_alloc_i32(3) -> h1
-cqrt_ry_i32(h1, 0.250000)
+cqrt_ry_i32(h1, 0x1p-2)
 cqrt_alloc_i32(0) -> h2
 cqrt_alloc_i32(0) -> h3
 cqrt_alloc_i32(0) -> h4
