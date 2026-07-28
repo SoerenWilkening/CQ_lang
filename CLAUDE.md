@@ -493,14 +493,18 @@ cmake -S . -B build -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm -DCMAKE_B
 cmake --build build -j8
 cmake --build build --target CQPass        # just the pass → build/ir-pass/libCQPass.so
 
-# Full suite (10 ctest entries; ~50s, expect 100% pass)
+# Full suite (238 ctest entries; ~9-11 min wall, expect 100% pass)
+# NOTE: these figures are MEASURED (2026-07-28), not estimated, and they go stale
+# on every fixture batch — if yours disagree, re-measure and update rather than
+# trusting the doc. Budget command timeouts from the wall time, NOT from a guess:
+# a run that looks hung at 60s is almost certainly just running.
 cmake --build build && ctest --test-dir build --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # 136 *.ll lowering/control/uncompute fixtures (1 XFAIL: Phase-7 tracker)
-ctest --test-dir build -R frontend-lit --output-on-failure   # CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -R '^e2e-'      --output-on-failure   # 6 vertical slices — the only layer that LINKS
-ctest --test-dir build -R runtime      --output-on-failure   # trace golden-diff + header compile
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 922 *.ll fixtures (921 pass + 1 XFAIL: Phase-7 tracker); ~135s
+ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
+ctest --test-dir build -R '^e2e-'      --output-on-failure   # 234 entries (232 slices + free-pairing selftest + keepset vendor check) — the only layer that LINKS
+ctest --test-dir build -R runtime      --output-on-failure   # 2 entries — trace golden-diff + header compile
 
 # One fixture (lit --filter matches the test display name)
 cd build && lit -v ir-pass/test --filter 'lowering_basic'
