@@ -129,7 +129,59 @@ measured grounds** (mapped `!dbg` → source, 2026-07-28):
 
 ## How many `math.h` functions actually compile? (measured 2026-07-28)
 
-**THREE DISJOINT SCOREBOARDS. NEVER SUMMED.** A merged headline is the retired
+### The goal-aligned number: **42 of 56** — CAPABILITY REACH, never quote as progress
+
+The project's aim is *"automatically emit quantum routines for `math.h` functions."*
+That sentence fixes the metric, and it is **not** any of the three scoreboards below:
+
+* **"functions"** → the denominator is **user-callable functions: 56** (69 named
+  entities − 12 type-generic macros − `nan`). Macros and `nan` are not routines.
+* **"automatically"** → a hand-authored branchless leaf **does not count**, however
+  well it works. Scoreboard (3) is excluded from this number by definition.
+* **"emit a quantum routine"** → *any* automatic route counts, including recognition.
+  A user writing `sqrt(q)` gets `@llvm.sqrt.f64` → `cq_template_sqrt_f64`. That is an
+  automatically emitted quantum routine, and excluding it because there is no *source
+  to inject* would answer a different question than the one the goal asks.
+
+| | | |
+|---|---|---|
+| **all three widths** | **42 / 56 (75%)** | = **14** by recognition + **28** by injection |
+| every width golden-matched | 40 / 56 | `fabs` (runs, no golden) and `fma` (partial) fall short |
+| some widths | 6 / 56 | `exp` `lgamma` `log10` `logb` `nexttoward` `pow` — all f80-short |
+| no width | 8 / 56 | `sin` `cos` `tan` `fmod` `remainder` `remquo` `tgamma` `ilogb` |
+
+Per width, since most users target one: **f32 47/56 (84%) · f64 48/56 (86%) · f80 42/56 (75%)**.
+The f80 column is the gap.
+
+**⚠ THIS NUMBER MUST NEVER BE QUOTED AS CAMPAIGN PROGRESS.** Its recognition half is a
+**fixed floor** that does not move when we do compiler work — merging a fixed floor
+into a progress number is exactly the retired "165/174 = 95%" overclaim
+(bd `libm-scoreboard-two-numbers`). It is legitimate *only* for the question "what can
+CQ emit today?", it must always print its `14 + 28` composition, and the injection
+number (2) must appear beside it. For progress, use **(2)** and nothing else.
+
+**Two caveats that weaken it, stated because they are not visible in the number:**
+
+* **The two halves are not tested to the same standard.** The recognition half is
+  probed at **every applicable argument mixture** (`probe.py::rollup` requires all of
+  qc/cq/qq verified); the injection half is probed at **arg0-quantum only**. Split by
+  what is actually proven: **33 of the 42 are verified at every mixture their signature
+  allows** (14 recognition + 19 single-arg injection); **9 are proven at arg0 only**
+  (`atan2 fdim frexp hypot ldexp modf nextafter scalbln scalbn`). Of those 9, five have
+  a non-fp second parameter (`int`/`long`/by-ref out), so only **four have a genuinely
+  untested second quantum operand: `atan2` `fdim` `hypot` `nextafter`** — and those
+  exact four *are* exercised at q⊗q by the branchless route, which is the one place the
+  two scoreboards usefully complement rather than duplicate each other.
+* **`sin`/`cos`/`tan` read as 0/3 here and that is the metric working, not failing.**
+  CQ runs them today at f64 and f80 — but via a hand-written leaf, so they fail
+  *"automatically"*. The honest statement is: *the capability exists; automatic
+  emission from the library body does not.*
+
+---
+
+### Decomposition — three disjoint scoreboards
+
+**NEVER SUMMED.** A merged headline is the retired
 "165/174 = 95%" overclaim recurring, and this project treats that as a **bug**
 (bd `libm-scoreboard-two-numbers`, owner, emphatic; `probe.py::two_scoreboard_lines`).
 If you take one number from this file, take **(2)**.
