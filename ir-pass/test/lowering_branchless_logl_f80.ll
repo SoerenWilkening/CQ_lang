@@ -92,7 +92,7 @@ entry:
 ; CHECK: call void @cqrt_x(i32 %[[FLG]])
 ; CHECK: call void @cqrt_copy_f80_controlled(i32 %[[FLG]],
 ; CHECK: call void @cqrt_x(i32 %[[FLG]])
-; CHECK: call i32 @cq_template_fcmp_olt_f80_hl_inv(i32 %[[MBC]], x86_fp80 0xK3FFEB504F333F9DE6484)
+; CHECK: call void @cq_template_fcmp_olt_f80_hl_unc(i32 %[[FLG]], i32 %[[MBC]], x86_fp80 0xK3FFEB504F333F9DE6484)
 ; CHECK: call void @cqrt_free(i32 %[[FLG]])
 ; The exponent is carried to fp with sitofp i32->f80 (an i80->fp convert is unsupported).
 ; CHECK: call i32 @cq_template_sitofp_i32_to_f80(i32 %[[E]])

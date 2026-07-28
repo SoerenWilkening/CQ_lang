@@ -58,7 +58,7 @@ merge:
 ; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[T]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
 ; CHECK:     call void @cqrt_free(i32 %[[T]])
-; CHECK:     call i32 @cq_template_icmp_ne_i32_hl_inv(i32 %[[Q]], i32 7)
+; CHECK:     call void @cq_template_icmp_ne_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 7)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
 ; no-spurious-free + re-anchor + dephasing guards

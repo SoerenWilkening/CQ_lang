@@ -411,7 +411,7 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   //    flattenRegion). Do NOT hoist above step 7/8 (strip-after-R† is the
   //    documented order the accept class was cleared under).
   lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                     /*before=*/BI);
+                     /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag);
   CallInst *FlagFree = B.CreateCall(wd.freeFn(), {Flag});
   stamp(FlagFree);
 
@@ -639,7 +639,7 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     //    returns the flag to |0> with zero controlled gates. Reads `Cond`'s
     //    operands, so it MUST precede the erase of `Cond` (in flattenRegion).
     lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                       /*before=*/BI);
+                       /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag);
 
     // 8. Flag free.
     CallInst *FlagFree = B.CreateCall(wd.freeFn(), {Flag});

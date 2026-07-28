@@ -9,12 +9,14 @@
 #
 # Stage 2b (bd 8txa) is the Rule-6 free-pairing check over the SAME lowered IR
 # this slice links and traces. The golden byte-diff cannot witness "freed at
-# |0>": a generated `cq_template_..._inv` prints its forward operands and a
-# fresh return handle but NEVER the rail it restores, so a golden stays stable
-# across a reversal re-paired to the wrong rail or a free whose uncompute never
-# ran. Stage 2b reads the rail identities the trace has lost. The two gates are
-# complementary — the trace sees the angles and not the rails, stage 2b sees the
-# rails and not the angles — so BOTH run, and neither is redundant.
+# |0>" — no trace label can say whether a rail was ACTUALLY |0> at the free, at
+# any ABI. (bd 8txa did close the compare flag-strip half: the strip moved off
+# the fresh-minting `_inv`, which named no rail, onto the void out-first
+# `cq_template_..._unc(rail, operands...)`, so a strip now names the rail the
+# next line frees. Stage 2b still owns the whole-DAG spine's data `_unc` chains
+# and the loop reverse-play write history.) Stage 2b reads the rail identities
+# the trace cannot speak for. The two gates are complementary — the trace sees
+# the angles, stage 2b sees the rails — so BOTH run, and neither is redundant.
 set -euo pipefail
 CLANG=$1 OPT=$2 PASS=$3 INC=$4 SRC=$5 RT=$6 TPL=$7 GOLDEN=$8
 FREECHECK_FLAGS=${9:-}

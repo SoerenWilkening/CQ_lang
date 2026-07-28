@@ -35,7 +35,7 @@ entry:
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[Q1]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 ; both copies read existing handles — NO cqrt_alloc for a quantum operand:

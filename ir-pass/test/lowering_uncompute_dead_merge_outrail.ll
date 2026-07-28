@@ -14,6 +14,7 @@
 ; second free, and `opt` EXIT 0 (no spurious decline).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck --check-prefix=UNC %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
 declare i32 @cq_theta_si32(i32, double)
@@ -36,7 +37,14 @@ entry:
 ;
 ; The dead out-rail is Phase-4-owned: NO data-uncompute adjoint of the merge / the
 ; entangled operand, and NO free of the out-rail (left allocated, the §16.5 leak):
-; CHECK-NOT: _unc
+; bd `8txa`: the flag STRIP is itself a `_unc` now, so the pre-8txa blanket
+; `CHECK-NOT: _unc` cannot be restored verbatim. Pin the exact population
+; instead — EXACTLY ONE `_unc` call in the module, and it is the compare
+; strip. Strictly stronger than the blanket form for the double-strip case
+; (a second strip on an already-freed rail is a UAF + wrong unitary), and
+; it still forbids any DATA uncompute (that would be a second `_unc` call).
+; UNC-COUNT-1: call void @cq_template_{{[if]}}cmp_{{[a-zA-Z0-9_]+}}_unc(
+; UNC-NOT:     call {{.*}}_unc(
 ; CHECK-NOT: cqrt_free(i32 %[[OUT]])
 ;
 ; Exactly ONE free (the flag only) — the out-rail and both theta rails leak, never

@@ -43,7 +43,7 @@ merge:
 ; CHECK:     call void @cqrt_rz_i32(i32 %[[R0]], double 1.000000e-01)
 ; CHECK:     call void @cqrt_cswap(i32 %[[F0]], i32 %[[Q]], i32 %[[R0]])
 ; CHECK:     call void @cqrt_free(i32 %[[R0]])
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 0)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F0]], i32 %[[Q]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F0]])
 ; case 1 (full stream)
 ; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 1)
@@ -52,7 +52,7 @@ merge:
 ; CHECK:     call void @cqrt_rz_i32(i32 %[[R1]], double 2.000000e-01)
 ; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1]])
 ; CHECK:     call void @cqrt_free(i32 %[[R1]])
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 1)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 1)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ; case 2 is an EMPTY passthrough — NO stream — q is measured directly:
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])

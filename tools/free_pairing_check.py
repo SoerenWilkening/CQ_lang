@@ -10,24 +10,35 @@ adjoint template prints
 
     cq_template_<op>_<W>_hl_inv(<forward args>) -> h<fresh>
 
-and **never names the rail it is supposed to restore**. In
-`tests/e2e/slice_libm_real_log1pl.expected.log` four textually IDENTICAL
-`cq_template_fcmp_olt_f80_hl_inv(h67, 0xb.504f333f9de6484p-4)` lines differ only in their
-fresh return handle, while the emitted IR pairs each with a DIFFERENT
-`cqrt_free` (`%h_cmp68/71/74/77`). So a golden can stay byte-stable across a
-change that re-pairs an `_inv` with the wrong rail, or that frees a rail whose
-uncompute never ran. When bd `oudq` moved atanhl's `cqrt_free` count 300 -> 217,
-the golden alone could not distinguish "shared predicate, fewer rails" from
-"dropped uncompute" — closing that took two throwaway out-of-band tools. This
-file promotes the structural one to a committed gate at the IR layer, where the
-rail identity IS present (`%r` is an SSA name) even though the trace has lost it.
+and **never names the rail it is supposed to restore**. When bd `oudq` moved
+atanhl's `cqrt_free` count 300 -> 217, the golden alone could not distinguish
+"shared predicate, fewer rails" from "dropped uncompute" — closing that took two
+throwaway out-of-band tools. This file promotes the structural one to a committed
+gate at the IR layer, where the rail identity IS present (`%r` is an SSA name)
+even though the trace has lost it.
 
-The ticket's full fix — renaming the `_inv` ABI to take the rail as an explicit
-first argument, as the Phase-5 void `_unc` ABI already does — is FROZEN-ABI
-adjacent (`tools/opcode_table.yaml` + `gen_templates.py` + every `_inv` golden)
-and stays with the Phase-9/10 runtime-template work. This checker is the cheaper,
-weaker alternative named in the ticket, and it deliberately does NOT touch the
-ABI.
+WHAT bd `8txa` CHANGED, AND WHAT IT DID NOT
+-------------------------------------------
+The COMPARE FLAG-STRIP no longer has this defect. It used to be the flag-shaped
+instance of it — this docstring's own motivating example was four textually
+IDENTICAL `cq_template_fcmp_olt_f80_hl_inv(h67, …)` lines in
+`slice_libm_real_log1pl.expected.log` that paired with four DIFFERENT
+`cqrt_free`s. 8txa switched that strip to the void, out-first `_unc` ABI, so the
+same four lines now read
+
+    cq_template_fcmp_olt_f80_hl_unc(h78,  h60, 0xb.504f333f9de6484p-4)
+    cq_template_fcmp_olt_f80_hl_unc(h80,  h60, 0xb.504f333f9de6484p-4)
+    cq_template_fcmp_olt_f80_hl_unc(h106, h60, 0xb.504f333f9de6484p-4)
+    cq_template_fcmp_olt_f80_hl_unc(h110, h60, 0xb.504f333f9de6484p-4)
+
+— each naming the rail it zeroes, and the golden byte-diff DOES now witness that
+pairing for compare flags.
+
+This checker is NOT thereby redundant. It still owns every rail the trace label
+cannot speak for: the whole-DAG uncompute spine's data `_unc` chains, the loop
+reverse-play write history, and the "was this rail actually |0> at the free"
+question, which no label can answer at any ABI. Read `classify()` and the
+obligation below for exactly what it does and does not witness.
 
 THE OBLIGATION IT WITNESSES
 ===========================

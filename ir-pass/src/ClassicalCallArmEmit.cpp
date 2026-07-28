@@ -194,7 +194,7 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   //    the flag to |0> (provably free-able). Reads Cond's operands — MUST precede
   //    the erase of Cond (in flattenRegion). See [[6-5-classical-call-arm]].
   lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                     /*before=*/BI);
+                     /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag);
   stamp(B.CreateCall(wd.freeFn(), {Flag}));
 
   // 6. REWIRE — RAUW %phi -> %out, scrub, erase the phi, then FLATTEN the diamond

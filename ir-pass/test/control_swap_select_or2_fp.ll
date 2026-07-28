@@ -39,9 +39,9 @@ entry:
 ; CHECK:     call void @cqrt_cnot(i32 %[[F2]], i32 %[[G]])
 ; CHECK:     call void @cqrt_cnot(i32 %[[F1]], i32 %[[G]])
 ; CHECK:     call void @cqrt_free(i32 %[[G]])
-; CHECK:     call i32 @cq_template_fcmp_ogt_f64_hl_inv(i32 %[[Q]], double 7.500000e-01)
+; CHECK:     call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[F2]], i32 %[[Q]], double 7.500000e-01)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
-; CHECK:     call i32 @cq_template_fcmp_olt_f64_hl_inv(i32 %[[Q]], double 2.500000e-01)
+; CHECK:     call void @cq_template_fcmp_olt_f64_hl_unc(i32 %[[F1]], i32 %[[Q]], double 2.500000e-01)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ; CHECK:     call double @cqrt_measure_f64(i32 %[[OUT]])
 ; CHECK-NOT: select i1

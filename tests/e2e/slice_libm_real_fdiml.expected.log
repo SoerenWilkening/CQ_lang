@@ -16,39 +16,39 @@ cqrt_x(h10)
 cqrt_alloc_f80(0x0p+0) -> h12
 cqrt_copy_f80_controlled(h10, h12, h11)
 cqrt_x(h10)
-cq_template_fcmp_ogt_f80_hl_inv(h0, 0x8p-4) -> h13
+cq_template_fcmp_ogt_f80_hl_unc(h10, h0, 0x8p-4)
 cqrt_free(h10)
-cq_template_icmp_ne_i64_hl(h7, 32767) -> h14
-cq_template_icmp_eq_i64_hl(h7, 32767) -> h15
-cq_template_icmp_eq_i64_hl(h8, 0) -> h16
-cq_template_icmp_ult_i64_hl(h3, 4294967296) -> h17
+cq_template_icmp_ne_i64_hl(h7, 32767) -> h13
+cq_template_icmp_eq_i64_hl(h7, 32767) -> h14
+cq_template_icmp_eq_i64_hl(h8, 0) -> h15
+cq_template_icmp_ult_i64_hl(h3, 4294967296) -> h16
+cqrt_alloc_i1(0) -> h17
+cqrt_toffoli(h15, h16, h17)
 cqrt_alloc_i1(0) -> h18
-cqrt_toffoli(h16, h17, h18)
+cqrt_toffoli(h14, h17, h18)
 cqrt_alloc_i1(0) -> h19
-cqrt_toffoli(h15, h18, h19)
-cqrt_alloc_i1(0) -> h20
-cqrt_cnot(h14, h20)
-cqrt_cnot(h19, h20)
-cqrt_toffoli(h14, h19, h20)
-cqrt_alloc_f80(0x0p+0) -> h21
-cqrt_copy_f80_controlled(h20, h11, h21)
-cqrt_x(h20)
-cqrt_copy_f80_controlled(h20, h0, h21)
-cqrt_x(h20)
-cqrt_toffoli(h14, h19, h20)
-cqrt_cnot(h19, h20)
-cqrt_cnot(h14, h20)
-cqrt_free(h20)
-cqrt_toffoli(h15, h18, h19)
+cqrt_cnot(h13, h19)
+cqrt_cnot(h18, h19)
+cqrt_toffoli(h13, h18, h19)
+cqrt_alloc_f80(0x0p+0) -> h20
+cqrt_copy_f80_controlled(h19, h11, h20)
+cqrt_x(h19)
+cqrt_copy_f80_controlled(h19, h0, h20)
+cqrt_x(h19)
+cqrt_toffoli(h13, h18, h19)
+cqrt_cnot(h18, h19)
+cqrt_cnot(h13, h19)
 cqrt_free(h19)
-cqrt_toffoli(h16, h17, h18)
+cqrt_toffoli(h14, h17, h18)
 cqrt_free(h18)
-cq_template_icmp_ult_i64_hl_inv(h3, 4294967296) -> h22
+cqrt_toffoli(h15, h16, h17)
 cqrt_free(h17)
-cq_template_icmp_eq_i64_hl_inv(h8, 0) -> h23
+cq_template_icmp_ult_i64_hl_unc(h16, h3, 4294967296)
 cqrt_free(h16)
-cq_template_icmp_eq_i64_hl_inv(h7, 32767) -> h24
+cq_template_icmp_eq_i64_hl_unc(h15, h8, 0)
 cqrt_free(h15)
-cq_template_icmp_ne_i64_hl_inv(h7, 32767) -> h25
+cq_template_icmp_eq_i64_hl_unc(h14, h7, 32767)
 cqrt_free(h14)
-cqrt_measure_f80(h21) -> 0x0p+0
+cq_template_icmp_ne_i64_hl_unc(h13, h7, 32767)
+cqrt_free(h13)
+cqrt_measure_f80(h20) -> 0x0p+0

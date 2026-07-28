@@ -41,13 +41,13 @@ cqrt_x(h34)
 cqrt_alloc_f80(0x0p+0) -> h37
 cqrt_copy_f80_controlled(h34, h37, h35)
 cqrt_x(h34)
-cq_template_fcmp_olt_f80_hl_inv(h33, 0x8p-4) -> h38
+cq_template_fcmp_olt_f80_hl_unc(h34, h33, 0x8p-4)
 cqrt_free(h34)
-cq_template_fsub_f80_lh(0x8p-3, h35) -> h39
-cq_template_fneg_f80(h30) -> h40
-cq_template_fmul_f80(h39, h40) -> h41
-cq_template_fma_f80(h35, h17, h41) -> h42
-cq_template_fmul_f80(h17, h39) -> h43
-cq_template_fma_f80(h35, h30, h43) -> h44
-cq_template_fdiv_f80(h42, h44) -> h45
-cqrt_measure_f80(h45) -> 0x0p+0
+cq_template_fsub_f80_lh(0x8p-3, h35) -> h38
+cq_template_fneg_f80(h30) -> h39
+cq_template_fmul_f80(h38, h39) -> h40
+cq_template_fma_f80(h35, h17, h40) -> h41
+cq_template_fmul_f80(h17, h38) -> h42
+cq_template_fma_f80(h35, h30, h42) -> h43
+cq_template_fdiv_f80(h41, h43) -> h44
+cqrt_measure_f80(h44) -> 0x0p+0

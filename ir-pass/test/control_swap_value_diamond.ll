@@ -65,7 +65,7 @@ merge:
 ; CHECK:     call void @cqrt_free(i32 %[[T]])
 ; 9: strip the boolean + reclaim the flag (the flag-strip stays `_inv` — direct
 ;    emitEqFlag, not the spine)
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; the merge phi RAUWs to %out — the measure reads the copied answer
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])

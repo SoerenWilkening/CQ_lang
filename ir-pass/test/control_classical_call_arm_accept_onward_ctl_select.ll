@@ -48,7 +48,7 @@ attributes #0 = { nounwind willreturn memory(none) }
 ; CHECK:     %[[NN:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 99)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F2]], i32 %[[NN]], i32 %[[OUT2]])
 ; CHECK:     call void @cqrt_x(i32 %[[F2]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[OUT]], i32 7)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[OUT]], i32 7)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT2]])
 

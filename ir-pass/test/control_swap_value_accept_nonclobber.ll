@@ -48,7 +48,7 @@ merge:
 ; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[V1]], i32 %[[T]], i32 3)
 ; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[T]])
 ; CHECK:     call void @cqrt_free(i32 %[[T]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 ; no third free (neither %out nor the restored source %p — hidden measurement)

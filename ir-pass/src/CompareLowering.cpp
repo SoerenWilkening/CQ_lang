@@ -78,7 +78,7 @@ bool isDataPositionCompare(CmpInst *cmp) {
 static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
                                StringRef qqWidth, bool inverse,
                                Instruction *before, Value *railBase,
-                               bool negate) {
+                               bool negate, Value *railToStrip) {
   // `op` is the family stem the symbol table uses: "icmp" / "fcmp". The
   // predicate range partition is authoritative (an fcmp predicate is < 32;
   // an icmp predicate is in [32,..]); `isa<ICmpInst>` would do as well.
@@ -202,25 +202,46 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
     // data path and the control path mint byte-identical signatures.
     Callee = wd.compareTemplateFn(Op, PredName, AbiWidth, ShapeSel);
   } else {
-    // Uncompute (§1.5): the `_inv` twin of the SAME plain compare template
-    // (these are plain compares, NOT controlled). Mint it directly via the
-    // TemplateName inverse axis with the identical HL/QQ signature so it
-    // matches the generated `cq_template_icmp_<pred>_<W>_hl_inv` C decl. Kept
-    // local (not a new `WidthDispatch` parameter) so the data-path resolver
-    // stays untouched.
+    // Uncompute (§1.5) = the flag STRIP: the VOID `_unc` twin of the SAME plain
+    // compare template, `_unc(railToStrip, <forward operands…>)`.
+    //
+    // bd `8txa`: this used to mint the fresh-returning `_inv` twin, which was
+    // wrong on BOTH counts the project cares about. (i) SEMANTICS — the strip is
+    // an IN-PLACE operation on the flag rail, but `_inv(q, k)` never named that
+    // rail and returned a fresh handle instead, so 23342 shipped trace lines
+    // minted a phantom rail that was never freed and never used, and no backend
+    // could have known which rail to strip. (ii) EVIDENCE — because the rail was
+    // absent from the label, the Rule-2 golden byte-diff could not witness the
+    // pairing at all: a strip re-paired to the WRONG rail, or a `cqrt_free` whose
+    // strip never ran, left the golden byte-identical. The void `_unc` ABI is the
+    // one this project already settled on for exactly this shape (`EmitInverse`
+    // DD-2: emit the void in-place `_unc`, never the fresh-minting `_inv`, because
+    // a fresh mint frees a dirty rail = a hidden measurement, Rule 6/8), and the
+    // §6.0 compare `_unc` grid already ships every symbol this needs — so this
+    // reuses a frozen ABI rather than adding one (Rule 14).
+    //
+    // The rail is REQUIRED here. A null rail cannot be lowered to anything
+    // correct, so it declines loudly rather than falling back to a form that
+    // silently drops the pairing again (Prime Directive).
+    if (!railToStrip) {
+      diagnoseNoTemplate(cmp);
+      return nullptr;
+    }
     Module &M = *cmp->getModule();
     LLVMContext &Ctx = M.getContext();
     Type *Handle = Type::getInt32Ty(Ctx);
+    Type *Void = Type::getVoidTy(Ctx);
     std::string Name = compareName(Op, PredName, AbiWidth, ShapeSel,
-                                   /*controlled=*/false, /*inverse=*/true);
+                                   /*controlled=*/false, /*inverse=*/false) +
+                       "_unc";
     if (ShapeSel == Shape::QQ) {
       Callee = M.getOrInsertFunction(
-          Name, FunctionType::get(Handle, {Handle, Handle}, false));
+          Name, FunctionType::get(Void, {Handle, Handle, Handle}, false));
     } else {
       Type *Classical = wd.llvmWidthType(AbiWidth);
       if (Classical)
         Callee = M.getOrInsertFunction(
-            Name, FunctionType::get(Handle, {Handle, Classical}, false));
+            Name, FunctionType::get(Void, {Handle, Handle, Classical}, false));
     }
   }
   if (!Callee) {
@@ -234,7 +255,11 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
   // NOT RAUW or erase `cmp` — that is `rewriteCompare`'s data-path job; the
   // control path leaves `cmp` standing until linearization (§1.3).
   IRBuilder<> Builder(before ? before : cmp);
-  CallInst *T = Builder.CreateCall(Callee, {Lhs, Rhs}, "h_cmp");
+  // The strip form is VOID and out-first (`_unc(rail, lhs, rhs)`), so it takes no
+  // value name; the forward form mints the i32 flag handle (bd `8txa`).
+  CallInst *T = inverse
+                    ? Builder.CreateCall(Callee, {railToStrip, Lhs, Rhs})
+                    : Builder.CreateCall(Callee, {Lhs, Rhs}, "h_cmp");
   if (DebugLoc DL = cmp->getDebugLoc())
     T->setDebugLoc(DL);
   return T;
@@ -242,9 +267,10 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
 
 Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
                           StringRef qqWidth, bool inverse,
-                          Instruction *before, bool negate) {
+                          Instruction *before, bool negate,
+                          Value *railToStrip) {
   return lowerCompareImpl(cmp, wd, taint, qqWidth, inverse, before,
-                          /*railBase=*/nullptr, negate);
+                          /*railBase=*/nullptr, negate, railToStrip);
 }
 
 // bd adia (3c6m.55 Lever C): logical ABI width of a (possibly already-RAUW'd) tainted
@@ -311,15 +337,15 @@ bool compareFlagMintable(CmpInst *cmp, TaintSet &taint) {
 
 Value *lowerCompareToFlagRail(CmpInst *cmp, Value *railBase, WidthDispatch &wd,
                               TaintSet &taint, StringRef qqWidth, bool inverse,
-                              Instruction *before) {
+                              Instruction *before, Value *railToStrip) {
   // Nested-control mint is never negated (the swap-route nest has no FALSE-
   // successor store arm); pass negate=false.
   return lowerCompareImpl(cmp, wd, taint, qqWidth, inverse, before, railBase,
-                          /*negate=*/false);
+                          /*negate=*/false, railToStrip);
 }
 
 Value *emitEqFlag(Value *handle, ConstantInt *caseValue, WidthDispatch &wd,
-                  bool inverse, Instruction *before) {
+                  bool inverse, Instruction *before, Value *railToStrip) {
   if (!handle || !caseValue || !before)
     return nullptr;
   StringRef AbiWidth = abiWidthFromType(caseValue->getType());
@@ -328,26 +354,46 @@ Value *emitEqFlag(Value *handle, ConstantInt *caseValue, WidthDispatch &wd,
 
   // HL form: handle on the left, the case constant (at its real width) on the
   // right. Forward = the shared resolver (byte-identical to the data path);
-  // inverse = the `_inv` twin minted directly (same shape), mirroring
-  // `lowerCompareToFlag`.
+  // the STRIP = the VOID `_hl_unc` twin `_unc(rail, handle, caseValue)`,
+  // mirroring `lowerCompareImpl`. bd `8txa`: this was the fresh-returning
+  // `_inv` twin, which named no rail (so the Rule-2 golden could not witness
+  // the strip/free pairing) and minted a phantom handle that was never freed
+  // and never used. The rail is REQUIRED — a null rail declines rather than
+  // silently dropping the pairing again.
   FunctionCallee Callee;
   if (!inverse) {
     Callee = wd.compareTemplateFn("icmp", "eq", AbiWidth, Shape::HL);
   } else {
+    // A null rail here must NEVER be a silent no-op: every caller DISCARDS this
+    // return value and then emits `cqrt_free(flag)` regardless, so emitting
+    // nothing would leave an UNSTRIPPED flag being freed — a dirty free, i.e. a
+    // hidden measurement that collapses `q` (Rule 6/8). That is precisely the
+    // silent-miscompile shape bd `8txa` exists to remove, so it declines LOUDLY
+    // (Rule 1) rather than returning a value nobody checks. Unreachable today —
+    // all three strip callers pass their flag — but the failure mode, not the
+    // reachability, is what decides between loud and silent here.
+    if (!railToStrip) {
+      diagnoseNoTemplate(before, "flag strip without the rail it zeroes");
+      return nullptr;
+    }
     Module &M = *before->getModule();
     Type *Handle = Type::getInt32Ty(M.getContext());
+    Type *Void = Type::getVoidTy(M.getContext());
     Type *Classical = wd.llvmWidthType(AbiWidth);
     if (!Classical)
       return nullptr;
     std::string Name = compareName("icmp", "eq", AbiWidth, Shape::HL,
-                                   /*controlled=*/false, /*inverse=*/true);
+                                   /*controlled=*/false, /*inverse=*/false) +
+                       "_unc";
     Callee = M.getOrInsertFunction(
-        Name, FunctionType::get(Handle, {Handle, Classical}, false));
+        Name, FunctionType::get(Void, {Handle, Handle, Classical}, false));
   }
   if (!Callee)
     return nullptr;
 
   IRBuilder<> Builder(before);
+  if (inverse)  // void, out-first: no value name.
+    return Builder.CreateCall(Callee, {railToStrip, handle, caseValue});
   return Builder.CreateCall(Callee, {handle, caseValue}, "h_cmp");
 }
 

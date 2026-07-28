@@ -677,7 +677,7 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
     //     (provably free-able). Reads Cond's operands — MUST precede the flatten's
     //     erase of Cond.
     lowerCompareToFlag(C.Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                       /*before=*/C.BI);
+                       /*before=*/C.BI, /*negate=*/false, /*railToStrip=*/Flag);
     stamp(B.CreateCall(wd.freeFn(), {Flag}));
 
     // 7d'. REWIRE the mixed value φ → the data-mux rail, then scrub + erase it —

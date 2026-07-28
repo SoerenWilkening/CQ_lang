@@ -21,8 +21,9 @@
 #
 # Stage 3b (bd 8txa) mirrors run_slice.sh: the Rule-6 free-pairing check over
 # the same lowered IR this slice links and traces, because the golden cannot
-# witness "freed at |0>" (a `cq_template_..._inv` never names the rail it
-# restores). See run_slice.sh for the full rationale.
+# witness "freed at |0>" — no label can say a rail was ACTUALLY |0> at the free,
+# at any ABI. See run_slice.sh for the full rationale, including what bd 8txa's
+# compare-flag-strip fix did and did not close.
 set -euo pipefail
 CLANG=$1 OPT=$2 LLVMLINK=$3 PASS=$4 INC=$5 CQSRC=$6 LIBSRCS=$7 RT=$8 TPL=$9 GOLDEN=${10}
 FREECHECK_FLAGS=${11:-}

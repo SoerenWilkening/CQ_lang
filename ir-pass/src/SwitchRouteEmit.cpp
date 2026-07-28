@@ -180,7 +180,8 @@ void emitSwitchPhaseRegion(const ControlRegion &R, WidthDispatch &wd,
 
     // 7. Strip flag — q == q0 (Rz preserves the basis value), so icmp_inv(q,c_i)
     //    returns the flag to |0> with zero controlled gates.
-    emitEqFlag(Q, CaseVal, wd, /*inverse=*/true, /*before=*/SI);
+    emitEqFlag(Q, CaseVal, wd, /*inverse=*/true, /*before=*/SI,
+               /*railToStrip=*/Flag);
 
     // 8. Free flag.
     CallInst *FlagFree = B.CreateCall(wd.freeFn(), {Flag});

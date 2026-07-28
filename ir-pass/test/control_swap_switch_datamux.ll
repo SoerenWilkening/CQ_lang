@@ -65,9 +65,9 @@ merge:
 ; CHECK:     %[[D1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 10)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[D1]], i32 %[[OUT]])
 ; --- strip + free both flags (each strip reads pristine q == q0) ---
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 0)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F0]], i32 %[[Q]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F0]])
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 1)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 1)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ; --- the merge phi RAUWs to %out — the measure reads the muxed answer ---
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
@@ -96,8 +96,8 @@ merge:
 ; ORD:     @cq_template_icmp_eq_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
 ; ORD:     @cqrt_alloc_i32(i32 10)
 ; ORD:     @cqrt_copy_i32_controlled(
-; ORD:     @cq_template_icmp_eq_i32_hl_inv(i32 %{{[a-zA-Z0-9_.]+}}, i32 0)
-; ORD:     @cq_template_icmp_eq_i32_hl_inv(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
+; ORD:     @cq_template_icmp_eq_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 0)
+; ORD:     @cq_template_icmp_eq_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
 
 ; the switch ACCEPTS — no decline anywhere:
 ; ACC-NOT: under quantum control

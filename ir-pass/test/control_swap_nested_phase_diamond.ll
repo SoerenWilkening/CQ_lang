@@ -52,12 +52,12 @@ merge:
 ; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[R1]], i32 %[[R2]])
 ; 4 inner clean-up (LIFO): free rail2, STRIP f2 vs rail1, free f2
 ; CHECK:     call void @cqrt_free(i32 %[[R2]])
-; CHECK:     call i32 @cq_template_icmp_slt_i32_hl_inv(i32 %[[R1]], i32 9)
+; CHECK:     call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2]], i32 %[[R1]], i32 9)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
 ; 5 outer route-back + clean-up
 ; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1]])
 ; CHECK:     call void @cqrt_free(i32 %[[R1]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ; q (not the phi) is measured
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
@@ -78,7 +78,7 @@ merge:
 ; exclude a strip hoisted BEFORE the inner route-back — that distinct misorder is
 ; caught by the main block's inner-route-back→free-rail2→strip ordering.)
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=ORD
-; ORD:     call i32 @cq_template_icmp_slt_i32_hl_inv(i32 %{{.*}}, i32 9)
+; ORD:     call void @cq_template_icmp_slt_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{.*}}, i32 9)
 ; ORD:     call void @cqrt_cswap(i32 %{{.*}}, i32 %{{.*}}, i32 %{{.*}})
 
 ; Exactly four frees (rail2, %f2, rail1, %f1) — no fifth from uncompute.

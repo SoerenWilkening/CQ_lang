@@ -56,7 +56,7 @@ merge:
 ; CHECK:     call void @cqrt_rz_i32(i32 %[[R0]], double 1.000000e-01)
 ; CHECK:     call void @cqrt_cswap(i32 %[[F0]], i32 %[[Q]], i32 %[[R0]])
 ; CHECK:     call void @cqrt_free(i32 %[[R0]])
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 0)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F0]], i32 %[[Q]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F0]])
 ; case 1
 ; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 1)
@@ -65,7 +65,7 @@ merge:
 ; CHECK:     call void @cqrt_rz_i32(i32 %[[R1]], double 2.000000e-01)
 ; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1]])
 ; CHECK:     call void @cqrt_free(i32 %[[R1]])
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 1)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 1)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ; case 2
 ; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 2)
@@ -74,7 +74,7 @@ merge:
 ; CHECK:     call void @cqrt_rz_i32(i32 %[[R2]], double 3.000000e-01)
 ; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[Q]], i32 %[[R2]])
 ; CHECK:     call void @cqrt_free(i32 %[[R2]])
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 2)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[Q]], i32 2)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
 ; q (not the phi) is measured — RAUW merge phi -> q
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
@@ -89,13 +89,13 @@ merge:
 ; θ -> its strip, in case order, with case i's strip BEFORE case i+1's mint:
 ; ORD: @cq_template_icmp_eq_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 0)
 ; ORD: @cqrt_rz_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 1.000000e-01)
-; ORD: @cq_template_icmp_eq_i32_hl_inv(i32 %{{[a-zA-Z0-9_.]+}}, i32 0)
+; ORD: @cq_template_icmp_eq_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 0)
 ; ORD: @cq_template_icmp_eq_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
 ; ORD: @cqrt_rz_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 2.000000e-01)
-; ORD: @cq_template_icmp_eq_i32_hl_inv(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
+; ORD: @cq_template_icmp_eq_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
 ; ORD: @cq_template_icmp_eq_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 2)
 ; ORD: @cqrt_rz_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 3.000000e-01)
-; ORD: @cq_template_icmp_eq_i32_hl_inv(i32 %{{[a-zA-Z0-9_.]+}}, i32 2)
+; ORD: @cq_template_icmp_eq_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 2)
 
 ; route BALANCE — exactly 2 cswaps per case (route-in + route-back) = 6, no
 ; SEVENTH (a stray/dropped route is a wrong unitary the multiset alone misses):

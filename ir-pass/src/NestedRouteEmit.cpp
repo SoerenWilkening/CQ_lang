@@ -179,14 +179,16 @@ void lowerNestedRegion(const ControlRegion &Outer, const ControlRegion &Inner,
   //    rail1=|0⟩ and dirty-frees `%f2` = a hidden measurement (verify-clean).
   freeHandle(Rail2);
   lowerCompareToFlagRail(InnerCond, Rail1, wd, taint, /*qqWidth=*/{},
-                         /*inverse=*/true, /*before=*/OuterBI);  // STRIP f2 vs rail1
+                         /*inverse=*/true, /*before=*/OuterBI,
+                         /*railToStrip=*/F2);                    // STRIP f2 vs rail1
   freeHandle(F2);
 
   // 5. OUTER route-back + clean-up (the flat-diamond outer level verbatim).
   emitRoute(B, csyms, F1, Q, Rail1, Outer.ArmNegated, DL);      // outer route-BACK
   freeHandle(Rail1);                                            // rail1 |0> free
   lowerCompareToFlag(OuterCond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                     /*before=*/OuterBI);                       // STRIP f1 vs q
+                     /*before=*/OuterBI, /*negate=*/false,
+                     /*railToStrip=*/F1);                       // STRIP f1 vs q
   freeHandle(F1);
 
   // 6. REWIRE + FLATTEN. `flattenRegionTree` owns the FULL ordered teardown: RAUW

@@ -64,9 +64,16 @@ struct TaintSet;
 // this emits the template call directly off the operands the way
 // `lowerCompareToFlag` does, sharing the same symbol grammar. Returns the i32
 // flag `Value*` (inserted before `before`), or nullptr on an unsupported width.
+// bd `8txa`: when `inverse`, this emits the VOID strip `_hl_unc(railToStrip,
+// handle, caseValue)` and `railToStrip` — the flag rail the strip zeroes — is
+// REQUIRED (null declines). The strip used to be the fresh-returning `_inv`
+// twin, which named no rail: the Rule-2 golden byte-diff therefore could not
+// witness which rail a strip paired with, and every call minted a phantom
+// handle that was never freed and never used.
 llvm::Value *emitEqFlag(llvm::Value *handle, llvm::ConstantInt *caseValue,
                         WidthDispatch &wd, bool inverse,
-                        llvm::Instruction *before);
+                        llvm::Instruction *before,
+                        llvm::Value *railToStrip = nullptr);
 
 // A tainted compare is lowered ONLY when its result is in pure data/measure
 // position: no user is a `BranchInst`, nor a `SelectInst` using it as the
@@ -115,11 +122,16 @@ bool rewriteCompare(llvm::CmpInst *cmp, WidthDispatch &wd, TaintSet &taint);
 // The insertion point is `before` when non-null, else immediately before
 // `cmp` (the forward compute). For the uncompute, callers pass the region's
 // post-body insertion point.
+// bd `8txa`: when `inverse`, this emits the VOID flag STRIP
+// `..._unc(railToStrip, <forward operands…>)` rather than the fresh-returning
+// `_inv` twin, and `railToStrip` (the flag rail being zeroed) is REQUIRED — a
+// null rail declines loudly instead of emitting a form that drops the pairing.
 llvm::Value *lowerCompareToFlag(llvm::CmpInst *cmp, WidthDispatch &wd,
                                 TaintSet &taint, llvm::StringRef qqWidth = {},
                                 bool inverse = false,
                                 llvm::Instruction *before = nullptr,
-                                bool negate = false);
+                                bool negate = false,
+                                llvm::Value *railToStrip = nullptr);
 
 // 3c6m.12 (L4) — detection-side DRY-RUN of the HL flag mint above: TRUE iff
 // `lowerCompareToFlag(cmp, …, qqWidth={}, negate=false)` would mint without
@@ -161,11 +173,15 @@ llvm::StringRef qqSelectLeafWidth(llvm::CmpInst *cmp, TaintSet &taint);
 // operand (the classical that fixes the width) is read in place. `inverse`
 // spells the `_hl_inv` twin for the inner-flag STRIP. The distinct `Rail`
 // suffix makes the substitution intent unmistakable at every call site.
+// NOTE the two distinct rails: `railBase` substitutes for the parent-routed
+// HANDLE OPERAND the compare reads, while `railToStrip` (bd `8txa`) is the FLAG
+// rail the void `_unc` strip zeroes. Required when `inverse`.
 llvm::Value *lowerCompareToFlagRail(llvm::CmpInst *cmp, llvm::Value *railBase,
                                     WidthDispatch &wd, TaintSet &taint,
                                     llvm::StringRef qqWidth = {},
                                     bool inverse = false,
-                                    llvm::Instruction *before = nullptr);
+                                    llvm::Instruction *before = nullptr,
+                                    llvm::Value *railToStrip = nullptr);
 
 }  // namespace cq
 

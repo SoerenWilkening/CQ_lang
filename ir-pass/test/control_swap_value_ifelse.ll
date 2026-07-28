@@ -80,7 +80,7 @@ merge:
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[EE]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[TT]])
 ; 9: strip the boolean + reclaim the flag
-; CHECK-NEXT: call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; the merge phi RAUWs to %out — the measure reads the copied answer
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[OUT]])

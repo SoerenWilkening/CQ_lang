@@ -51,7 +51,7 @@ m2:
 ; CHECK:     call void @cqrt_rz_i32(i32 %[[RAIL]], double 2.500000e-01)
 ; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[OUT]], i32 %[[RAIL]])
 ; CHECK:     call void @cqrt_free(i32 %[[RAIL]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[OUT]], i32 8)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[OUT]], i32 8)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 

@@ -75,7 +75,7 @@ merge:
 ; CHECK:     call void @cqrt_free(i32 %[[EE]])
 ; strip: Rz (pre-region AND arms) preserves the basis value, so icmp_inv(q)
 ; returns the flag to |0> with zero controlled gates
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
 ; no-spurious-free + dephasing guard (§8.2/§8.5)

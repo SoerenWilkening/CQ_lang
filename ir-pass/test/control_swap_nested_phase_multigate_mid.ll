@@ -48,11 +48,11 @@ merge:
 ; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[R1]], i32 %[[R2]])
 ; 4 inner clean-up (LIFO) + 5 outer route-back + clean-up
 ; CHECK:     call void @cqrt_free(i32 %[[R2]])
-; CHECK:     call i32 @cq_template_icmp_slt_i32_hl_inv(i32 %[[R1]], i32 9)
+; CHECK:     call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2]], i32 %[[R1]], i32 9)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
 ; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1]])
 ; CHECK:     call void @cqrt_free(i32 %[[R1]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
 

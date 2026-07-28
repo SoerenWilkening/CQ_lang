@@ -56,9 +56,9 @@ merge:
 ; the conjunction ancilla self-inverts and frees at |0>, then the leaves strip:
 ; CHECK:     call void @cqrt_toffoli(i32 %[[C1]], i32 %[[NC2]], i32 %[[G]])
 ; CHECK:     call void @cqrt_free(i32 %[[G]])
-; CHECK:     call i32 @cq_template_icmp_sge_i32_hl_inv(i32 %[[Q]], i32 9)
+; CHECK:     call void @cq_template_icmp_sge_i32_hl_unc(i32 %[[NC2]], i32 %[[Q]], i32 9)
 ; CHECK:     call void @cqrt_free(i32 %[[NC2]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[C1]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[C1]])
 ; CHECK:     %[[NC1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sle_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK:     %[[OUT5:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
@@ -66,7 +66,7 @@ merge:
 ; CHECK:     call void @cqrt_x(i32 %[[NC1]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[NC1]], i32 %[[OUT]], i32 %[[OUT5]])
 ; CHECK:     call void @cqrt_x(i32 %[[NC1]])
-; CHECK:     call i32 @cq_template_icmp_sle_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sle_i32_hl_unc(i32 %[[NC1]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[NC1]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT5]])
 ; No CFG diamond and no live phi/select survives:

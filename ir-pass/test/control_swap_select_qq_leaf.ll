@@ -45,8 +45,8 @@ entry:
 ; then the HL `_inv` twin — every flag rail freed proven-|0>.
 ; CHECK: call void @cqrt_toffoli(i32 %[[HL]], i32 %[[QQ]], i32 %[[G]])
 ; CHECK: call void @cqrt_free(i32 %[[G]])
-; CHECK: call i32 @cq_template_icmp_sgt_i32_inv(i32 %[[H0]], i32 %[[H1]])
+; CHECK: call void @cq_template_icmp_sgt_i32_unc(i32 %[[QQ]], i32 %[[H0]], i32 %[[H1]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[QQ]])
-; CHECK: call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[H0]], i32 5)
+; CHECK: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[HL]], i32 %[[H0]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[HL]])
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[OUT]])

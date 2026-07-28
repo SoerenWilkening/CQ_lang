@@ -39,7 +39,7 @@ merge:
 ; CHECK:     call void @cqrt_rz_f64(i32 %[[T]], double %a)
 ; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[T]])
 ; CHECK:     call void @cqrt_free(i32 %[[T]])
-; CHECK:     call i32 @cq_template_fcmp_ogt_f64_hl_inv(i32 %[[Q]], double 5.000000e+00)
+; CHECK:     call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[F]], i32 %[[Q]], double 5.000000e+00)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call double @cqrt_measure_f64(i32 %[[Q]])
 ; CHECK-NOT: call void @cqrt_free

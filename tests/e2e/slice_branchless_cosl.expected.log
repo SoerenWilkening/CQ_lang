@@ -45,18 +45,18 @@ cqrt_x(h38)
 cqrt_alloc_f80(0x0p+0) -> h41
 cqrt_copy_f80_controlled(h38, h41, h39)
 cqrt_x(h38)
-cq_template_fcmp_olt_f80_hl_inv(h37, 0x8p-4) -> h42
+cq_template_fcmp_olt_f80_hl_unc(h38, h37, 0x8p-4)
 cqrt_free(h38)
-cq_template_fsub_f80_lh(0x8p-3, h39) -> h43
-cq_template_fmul_f80(h30, h43) -> h44
-cq_template_fma_f80(h39, h17, h44) -> h45
-cq_template_fneg_f80(h45) -> h46
-cq_template_fcmp_olt_f80_hl(h36, 0x8p-4) -> h47
-cqrt_alloc_f80(0x0p+0) -> h48
-cqrt_copy_f80_controlled(h47, h45, h48)
-cqrt_x(h47)
-cqrt_copy_f80_controlled(h47, h46, h48)
-cqrt_x(h47)
-cq_template_fcmp_olt_f80_hl_inv(h36, 0x8p-4) -> h49
-cqrt_free(h47)
-cqrt_measure_f80(h48) -> 0x0p+0
+cq_template_fsub_f80_lh(0x8p-3, h39) -> h42
+cq_template_fmul_f80(h30, h42) -> h43
+cq_template_fma_f80(h39, h17, h43) -> h44
+cq_template_fneg_f80(h44) -> h45
+cq_template_fcmp_olt_f80_hl(h36, 0x8p-4) -> h46
+cqrt_alloc_f80(0x0p+0) -> h47
+cqrt_copy_f80_controlled(h46, h44, h47)
+cqrt_x(h46)
+cqrt_copy_f80_controlled(h46, h45, h47)
+cqrt_x(h46)
+cq_template_fcmp_olt_f80_hl_unc(h46, h36, 0x8p-4)
+cqrt_free(h46)
+cqrt_measure_f80(h47) -> 0x0p+0

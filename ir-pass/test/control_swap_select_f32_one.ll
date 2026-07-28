@@ -161,7 +161,7 @@ entry:
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; THE RESTORED WITNESS: the adjoint twin, same DD-3 slot order as the forward call,
 ; reading the STILL-LIVE root %[[H]] and the same literal.
-; CHECK-NEXT: call i32 @cq_template_fcmp_one_f32_hl_inv(i32 %[[H]], float 1.000000e+00)
+; CHECK-NEXT: call void @cq_template_fcmp_one_f32_hl_unc(i32 %[[F]], i32 %[[H]], float 1.000000e+00)
 ; Flag rail is now provably |0> — free THAT rail, the copies' control.
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call float @cqrt_measure_f32(i32 %[[OUT]])

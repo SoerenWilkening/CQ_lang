@@ -60,7 +60,7 @@ merge:
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
 ; CHECK:     call void @cqrt_free(i32 %[[TT]])
 ; CHECK:     call void @cqrt_free(i32 %[[EE]])
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 7)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 7)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
 
@@ -98,7 +98,7 @@ merge:
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
 ; CHECK:     call void @cqrt_free(i32 %[[KK]])
 ; CHECK:     call void @cqrt_free(i32 %[[FF]])
-; CHECK:     call i32 @cq_template_icmp_ne_i32_hl_inv(i32 %[[Q]], i32 7)
+; CHECK:     call void @cq_template_icmp_ne_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 7)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
 

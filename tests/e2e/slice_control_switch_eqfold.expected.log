@@ -7,6 +7,6 @@ cqrt_rz_i32(h2, 0x1p-2)
 cqrt_rz_i32(h2, 0x1.8p-1)
 cqrt_cswap(h1, h0, h2)
 cqrt_free(h2)
-cq_template_icmp_eq_i32_hl_inv(h0, 7) -> h3
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 7)
 cqrt_free(h1)
 cqrt_measure_i32(h0) -> 0

@@ -52,6 +52,6 @@ merge:
 ; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
 ; CHECK:     call void @cqrt_copy_f64_controlled(i32 %[[FLAG]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[FLAG]])
-; CHECK:     call i32 @cq_template_fcmp_olt_f64_hl_inv(
+; CHECK:     call void @cq_template_fcmp_olt_f64_hl_unc(i32 %[[FLAG]], 
 ; CHECK:     call void @cqrt_free(i32 %[[FLAG]])
 ; CHECK:     call double @cqrt_measure_f64(i32 %[[OUT]])

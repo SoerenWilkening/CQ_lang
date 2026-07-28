@@ -34,9 +34,9 @@ entry:
 ; CHECK:     %[[OUT1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[GA]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT1]])
 ; CHECK:     call void @cqrt_free(i32 %[[GA]])
-; CHECK:     call i32 @cq_template_icmp_slt_i32_hl_inv
+; CHECK:     call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2A]],
 ; CHECK:     call void @cqrt_free(i32 %[[F2A]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1A]],
 ; CHECK:     call void @cqrt_free(i32 %[[F1A]])
 ; second region — an INDEPENDENT re-mint (fresh flags, fresh ancilla):
 ; CHECK:     %[[F1B:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl
@@ -46,9 +46,9 @@ entry:
 ; CHECK:     %[[OUT2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[GB]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT2]])
 ; CHECK:     call void @cqrt_free(i32 %[[GB]])
-; CHECK:     call i32 @cq_template_icmp_slt_i32_hl_inv
+; CHECK:     call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2B]],
 ; CHECK:     call void @cqrt_free(i32 %[[F2B]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1B]],
 ; CHECK:     call void @cqrt_free(i32 %[[F1B]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT1]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT2]])

@@ -281,7 +281,8 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
   //    controlled gates. Each strip reads the same pristine `q`, so the order is
   //    free; flow forward to mirror the per-case mint order.
   for (CaseStream &CS : Cases) {
-    emitEqFlag(Q, CS.Val, wd, /*inverse=*/true, /*before=*/SI);
+    emitEqFlag(Q, CS.Val, wd, /*inverse=*/true, /*before=*/SI,
+               /*railToStrip=*/CS.Flag);
     CallInst *FlagFree = B.CreateCall(wd.freeFn(), {CS.Flag});
     stamp(FlagFree);
   }

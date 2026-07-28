@@ -39,7 +39,9 @@ merge:
 ; CHECK:         call i32 @cq_template_zext_i1_to_i32(i32 %[[F]])
 ; CHECK:         call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %{{[a-zA-Z0-9_.]+}})
 ; The flag is NEITHER stripped NOR freed (its data lineage is measured):
-; CHECK-NOT:     cq_template_icmp_sgt_i32_hl_inv
+; bd `8txa` retarget: the flag STRIP is spelled `_unc` now, so asserting
+; the absence of `_inv` here would be VACUOUS — nothing emits `_inv`.
+; CHECK-NOT:     cq_template_icmp_sgt_i32_hl_unc
 ; CHECK-NOT:     _controlled
 
 ; CNT-COUNT-1: call i32 @cq_template_icmp_sgt_i32_hl(

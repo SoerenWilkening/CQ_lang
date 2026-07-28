@@ -42,7 +42,7 @@ merge:
 ; CHECK:         call void @cqrt_rz_i32(i32 %[[EE]], double %b)
 ; CHECK:         call void @cqrt_free(i32 %[[TT]])
 ; CHECK:         call void @cqrt_free(i32 %[[EE]])
-; CHECK:         call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:         call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:         call void @cqrt_free(i32 %[[F]])
 ; q escapes to the caller — returned LIVE, never freed:
 ; CHECK:         ret i32 %[[Q]]

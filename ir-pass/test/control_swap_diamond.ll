@@ -50,7 +50,7 @@ merge:
 ; rail is |0> (Rz|0>=|0>): clean free — NOT a measurement
 ; CHECK:     call void @cqrt_free(i32 %[[T]])
 ; strip the boolean: q==q0, so icmp_inv(q) returns the flag to |0>; reclaim it
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; q (not the phi) is measured — RAUW merge-phi -> q
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])

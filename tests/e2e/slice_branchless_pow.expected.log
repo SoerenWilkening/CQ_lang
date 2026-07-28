@@ -53,21 +53,21 @@ cqrt_x(h46)
 cqrt_alloc_f64(0x1p-1) -> h49
 cqrt_copy_f64_controlled(h46, h49, h47)
 cqrt_x(h46)
-cq_template_fcmp_olt_f64_hl_inv(h45, 0x0p+0) -> h50
+cq_template_fcmp_olt_f64_hl_unc(h46, h45, 0x0p+0)
 cqrt_free(h46)
-cq_template_fadd_f64(h47, h45) -> h51
-cq_template_fptosi_f64_to_i32(h51) -> h52
-cq_template_sitofp_i32_to_f64(h52) -> h53
-cq_template_fneg_f64(h53) -> h54
-cq_template_fma_f64_qlq(h54, 0x1.62e42fefa39efp-1, h44) -> h55
-cq_template_fma_f64_qll(h55, 0x1.11111059d0921p-7, 0x1.5555554c2bb56p-5) -> h56
-cq_template_fma_f64_qql(h55, h56, 0x1.5555555554bf3p-3) -> h57
-cq_template_fma_f64_qql(h55, h57, 0x1p-1) -> h58
-cq_template_fma_f64_qql(h55, h58, 0x1p+0) -> h59
-cq_template_fma_f64_qql(h55, h59, 0x1p+0) -> h60
-cq_template_add_i32_hl(h52, 1023) -> h61
-cq_template_zext_i32_to_i64(h61) -> h62
-cq_template_shl_i64_hl(h62, 52) -> h63
-cq_template_bitcast_i64_to_f64(h63) -> h64
-cq_template_fmul_f64(h60, h64) -> h65
-cqrt_measure_f64(h65) -> 0x0p+0
+cq_template_fadd_f64(h47, h45) -> h50
+cq_template_fptosi_f64_to_i32(h50) -> h51
+cq_template_sitofp_i32_to_f64(h51) -> h52
+cq_template_fneg_f64(h52) -> h53
+cq_template_fma_f64_qlq(h53, 0x1.62e42fefa39efp-1, h44) -> h54
+cq_template_fma_f64_qll(h54, 0x1.11111059d0921p-7, 0x1.5555554c2bb56p-5) -> h55
+cq_template_fma_f64_qql(h54, h55, 0x1.5555555554bf3p-3) -> h56
+cq_template_fma_f64_qql(h54, h56, 0x1p-1) -> h57
+cq_template_fma_f64_qql(h54, h57, 0x1p+0) -> h58
+cq_template_fma_f64_qql(h54, h58, 0x1p+0) -> h59
+cq_template_add_i32_hl(h51, 1023) -> h60
+cq_template_zext_i32_to_i64(h60) -> h61
+cq_template_shl_i64_hl(h61, 52) -> h62
+cq_template_bitcast_i64_to_f64(h62) -> h63
+cq_template_fmul_f64(h59, h63) -> h64
+cqrt_measure_f64(h64) -> 0x0p+0

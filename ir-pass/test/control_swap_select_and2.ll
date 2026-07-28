@@ -37,9 +37,9 @@ entry:
 ; strip: the self-inverse toffoli, ancilla free, then leaf strips (f2 first):
 ; CHECK:     call void @cqrt_toffoli(i32 %[[F1]], i32 %[[F2]], i32 %[[G]])
 ; CHECK:     call void @cqrt_free(i32 %[[G]])
-; CHECK:     call i32 @cq_template_icmp_slt_i32_hl_inv(i32 %[[Q]], i32 100)
+; CHECK:     call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[F2]], i32 %[[Q]], i32 100)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
-; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %[[Q]], i32 5)
+; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 ; CHECK-NOT: cqrt_cnot

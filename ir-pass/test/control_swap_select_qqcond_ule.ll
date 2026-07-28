@@ -152,7 +152,7 @@ entry:
 ; Step 6 — THE WITNESS. The strip recomputes the SAME non-strict unsigned predicate
 ; over the SAME still-live rails in the SAME slot order as the mint; only then is the
 ; flag rail provably |0> and eligible for cqrt_free.
-; CHECK-NEXT: call i32 @cq_template_icmp_ule_i32_inv(i32 %[[HQ]], i32 %[[HY]])
+; CHECK-NEXT: call void @cq_template_icmp_ule_i32_unc(i32 %[[F]], i32 %[[HQ]], i32 %[[HY]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; The measurement reads the merged out rail — the only measurement in the module, and
 ; the user wrote it (Rule 5).

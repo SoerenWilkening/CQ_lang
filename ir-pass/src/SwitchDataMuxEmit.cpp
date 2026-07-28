@@ -210,7 +210,8 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
   //    with zero controlled gates and is free-able. The strips run AFTER all
   //    copies (the §4C ORDER), flowing forward to mirror the per-case mint order.
   for (size_t i = 0; i < Flags.size(); ++i) {
-    emitEqFlag(Q, CaseVals[i], wd, /*inverse=*/true, /*before=*/SI);
+    emitEqFlag(Q, CaseVals[i], wd, /*inverse=*/true, /*before=*/SI,
+               /*railToStrip=*/Flags[i]);
     stamp(B.CreateCall(wd.freeFn(), {Flags[i]}));
   }
 

@@ -26,6 +26,6 @@ entry:
 ; CHECK-NEXT: %[[XS:.*]] = call i32 @cqrt_alloc_f64(double %x)
 ; CHECK-NEXT: call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[XS]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call i32 @cq_template_fcmp_ogt_f64_inv(i32 %[[HQ]], i32 %[[HY]])
+; CHECK-NEXT: call void @cq_template_fcmp_ogt_f64_unc(i32 %[[F]], i32 %[[HQ]], i32 %[[HY]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK: call double @cqrt_measure_f64(i32 %[[OUT]])

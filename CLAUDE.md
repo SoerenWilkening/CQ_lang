@@ -531,12 +531,16 @@ python3 tools/free_pairing_check.py /tmp/s2.ll                                  
 
 **Stage 2b — the Rule-6 free-pairing gate (bd `8txa`).** `run_slice.sh` /
 `run_slice_multi.sh` run `tools/free_pairing_check.py` on the same lowered IR
-they link, because **the golden byte-diff cannot witness "freed at |0⟩"**: a
-generated `cq_template_…_inv` prints its forward operands and a fresh return
-handle but **never the rail it restores** (four textually identical
-`fcmp_olt_f80_hl_inv(h67, 0xb.504f333f9de6484p-4)` lines in `slice_libm_real_log1pl.expected.log`
-pair with four *different* `cqrt_free`s), so a golden stays byte-stable across a
-reversal re-paired to the wrong rail or a free whose uncompute never ran. The two
+they link, because **the golden byte-diff cannot witness "freed at |0⟩"** — no
+trace label can answer whether a rail was actually `|0⟩` when freed, at any ABI.
+(The *compare flag-strip* half of this gap is now closed: bd `8txa` moved the
+strip off the fresh-minting `_inv` — which named no rail and minted a phantom
+handle 23342 times, never freed and never used — onto the void out-first
+`cq_template_…_unc(rail, operands…)`, so a strip now names the rail the next line
+frees and the golden DOES witness that pairing. The four once-identical
+`fcmp_olt_f80_hl_inv(h67, …)` lines in `slice_libm_real_log1pl.expected.log` now
+read `…_hl_unc(h78/h80/h106/h110, h60, …)`. Stage 2b still owns every other rail:
+the whole-DAG spine's data `_unc` chains and the loop reverse-play write history.) The two
 gates are **complementary** — the trace sees the angles and not the rail
 identities; the checker sees the rail identities and not the angles (`cqrt_rz` is
 deliberately transparent to it, being diagonal). Read the file header for exactly

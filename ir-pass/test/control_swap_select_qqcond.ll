@@ -27,6 +27,6 @@ entry:
 ; CHECK-NEXT: %[[XS:.*]] = call i32 @cqrt_alloc_i32(i32 %x)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[XS]], i32 %[[OUT]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call i32 @cq_template_icmp_sgt_i32_inv(i32 %[[HQ]], i32 %[[HY]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_unc(i32 %[[F]], i32 %[[HQ]], i32 %[[HY]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[OUT]])

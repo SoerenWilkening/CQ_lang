@@ -265,7 +265,8 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     lowerCompareToFlag(LF.first, wd, taint,
                        /*qqWidth=*/qqSelectLeafWidth(LF.first, taint),
                        /*inverse=*/true,
-                       /*before=*/Sel);
+                       /*before=*/Sel, /*negate=*/false,
+                       /*railToStrip=*/LF.second);
     stamp(B.CreateCall(wd.freeFn(), {LF.second}));
   }
 

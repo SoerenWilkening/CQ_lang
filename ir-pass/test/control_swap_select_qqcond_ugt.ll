@@ -133,7 +133,7 @@ entry:
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; Step 6 — the strip recomputes the SAME predicate over the SAME still-live rails
 ; in the SAME slot order as the mint, then the flag rail is a proven-|0> free.
-; CHECK-NEXT: call i32 @cq_template_icmp_ugt_i32_inv(i32 %[[HQ]], i32 %[[HY]])
+; CHECK-NEXT: call void @cq_template_icmp_ugt_i32_unc(i32 %[[F]], i32 %[[HQ]], i32 %[[HY]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; The measurement reads the merged out rail — the only measurement in the module,
 ; and the user wrote it (Rule 5). `ret` is pinned to that measurement's result so

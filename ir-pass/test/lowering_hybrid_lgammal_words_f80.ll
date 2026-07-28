@@ -93,6 +93,6 @@ entry:
 ; CHECK: call void @cqrt_x(i32 %[[FLG]])
 ; CHECK: call void @cqrt_copy_f80_controlled(i32 %[[FLG]],
 ; CHECK: call void @cqrt_x(i32 %[[FLG]])
-; CHECK: call i32 @cq_template_icmp_ult_i32_hl_inv(i32 %[[IX]], i32 1073577984)
+; CHECK: call void @cq_template_icmp_ult_i32_hl_unc(i32 %[[FLG]], i32 %[[IX]], i32 1073577984)
 ; CHECK: call void @cqrt_free(i32 %[[FLG]])
 ; CHECK: call x86_fp80 @cqrt_measure_f80(

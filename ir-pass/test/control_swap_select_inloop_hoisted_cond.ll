@@ -50,7 +50,7 @@ exit:
 ; CHECK:     %[[XH:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %fi)
 ; CHECK:     call void @cqrt_copy_f64_controlled(i32 %[[F]], i32 %[[XH]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call i32 @cq_template_fcmp_ogt_f64_hl_inv(
+; CHECK:     call void @cq_template_fcmp_ogt_f64_hl_unc(i32 %[[F]], 
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call double @cqrt_measure_f64(i32 %[[OUT]])
 ; CHECK:     br i1 %{{[a-zA-Z0-9_.]+}}, label %loop, label %exit

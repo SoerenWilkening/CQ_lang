@@ -51,7 +51,7 @@ merge:
 ; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[T]])
 ; CHECK:     call void @cqrt_free(i32 %[[T]])
 ; Strip the boolean with icmp_eq_inv(q) and reclaim the flag.
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 0)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; q (NOT the phi, NOT the folded 0) is measured — RAUW merge-phi -> q.
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])

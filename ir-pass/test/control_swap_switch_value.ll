@@ -76,9 +76,9 @@ merge:
 ; CHECK:     call void @cqrt_free(i32 %[[R1]])
 ; CHECK:     call void @cqrt_free(i32 %[[R0]])
 ; --- Flag strip + free (each reads pristine q == q0) ---
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 0)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F0]], i32 %[[Q]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F0]])
-; CHECK:     call i32 @cq_template_icmp_eq_i32_hl_inv(i32 %[[Q]], i32 1)
+; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 1)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ; --- the merge phi RAUWs to %out — the measure reads the copied answer ---
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])

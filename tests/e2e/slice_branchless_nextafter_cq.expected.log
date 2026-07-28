@@ -10,8 +10,8 @@ cqrt_x(h3)
 cqrt_alloc_i64(4602678819172646912) -> h6
 cqrt_copy_i64_controlled(h3, h6, h4)
 cqrt_x(h3)
-cq_template_fcmp_ogt_f64_hl_inv(h0, 0x1p-1) -> h7
+cq_template_fcmp_ogt_f64_hl_unc(h3, h0, 0x1p-1)
 cqrt_free(h3)
-cq_template_add_i64(h4, h2) -> h8
-cq_template_bitcast_i64_to_f64(h8) -> h9
-cqrt_measure_f64(h9) -> 0x0p+0
+cq_template_add_i64(h4, h2) -> h7
+cq_template_bitcast_i64_to_f64(h7) -> h8
+cqrt_measure_f64(h8) -> 0x0p+0
