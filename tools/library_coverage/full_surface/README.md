@@ -150,6 +150,26 @@ percentage (28/42 = 67% vs a merged 42/56 = 75%), it does not inflate it.
 Measured: **36 verified · 3 accepted** (`fabs{,f,l}`) **· 3 partial** (`fma{,f,l}`).
 
 ### (2) Real-openlibm source injection — ***THE* campaign number**
+
+**What `123` is** — it is the **injectable subset**, not `math.h`:
+
+```
+183 modelled cells  =  42 hardware keep-set (no injectable body, Rule 18)
+                     + 12 type-generic macro cells (modelled at 1 width each)
+                     +  3 nan (by-design, no taintable input)
+                     + 126 nominally injectable
+                            − 3 ilogb (int-return, SKIPPED by the harness, bd bcv4)
+                     = 123 actually probed   <- the census denominator
+```
+
+So **95/123 = 77% of the injectable subset** — which is **52%** of the 183 modelled
+cells and **41%** of the 69 named entities. **Never write "77% of `math.h`".**
+Two properties of this denominator worth knowing before quoting it: it is
+**contingent on a harness bug** (fixing `bcv4` makes it 126 and moves every
+percentage), and it contains **one cell with no body to inject at all**
+(`nexttowardl.f80`), so the strict *"can openlibm's body be lowered"* denominator
+is **122**.
+
 **Cells: 95/123 injection-covered, all 95 ship-floor verified** — *90 fully inlined +
 5 Phase-6 clone-specialized*, which `wprobe.py` requires never be merged into plain
 `COMPILES`. That the two numbers coincide is a **measurement, not an invariant**

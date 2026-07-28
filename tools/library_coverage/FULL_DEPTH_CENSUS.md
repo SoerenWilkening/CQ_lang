@@ -111,8 +111,28 @@
 
 ## 1. Headline
 
-Over the **reconciled 123-cell** ISO C11 `<math.h>` surface (real openlibm bodies,
-source-injected per Rule 18, at every width f32/f64/f80 + by-ref + int-ret).
+Over the **reconciled 123-cell census surface** (real openlibm bodies,
+source-injected per Rule 18, at every width f32/f64/f80 + by-ref).
+
+> **⚠ 123 IS NOT THE ISO C11 `<math.h>` SURFACE — it is the INJECTABLE SUBSET.**
+> This sentence read "the reconciled 123-cell ISO C11 `<math.h>` surface … + int-ret"
+> until 2026-07-28 and was wrong twice over: 123 excludes most of `math.h`, and it
+> excludes int-ret *specifically*. The composition, measured:
+> ```
+> 183 modelled cells  =  42 hardware keep-set (no injectable body, Rule 18)
+>                      + 12 type-generic macro cells (modelled at 1 width each)
+>                      +  3 nan (by-design, no taintable input)
+>                      + 126 nominally injectable
+>                             − 3 ilogb (int-return, SKIPPED by the harness, bd bcv4)
+>                      = 123 actually probed   <- the census denominator
+> ```
+> So **`95/123` is 77% of the injectable subset**, which is **52% of the 183 modelled
+> cells** and **41% of the 69 named entities**. Never write "77% of `math.h`".
+> Two further properties of this denominator, both measured: it is **contingent on a
+> harness bug** (fixing `bcv4` moves it to 126 and shifts every published percentage),
+> and it contains **one cell with no body to inject at all** (`nexttowardl.f80` —
+> openlibm ships no `s_nexttowardl.c`), so for the strict question *"can openlibm's
+> body be lowered?"* the honest denominator is **122**.
 **All numbers below are cross-checked by an independent 4-lens adversarial
 verification (§10); the honest, verification-adjusted headline is:**
 
