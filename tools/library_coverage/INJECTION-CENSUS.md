@@ -23,11 +23,17 @@
 > cells → **79 verified**; bd `q2wk` (PredMux L6 increment 5 — path-predicated branch
 > conditions, the first COMPILER move of the three) then took **80 → 92 with 0
 > regressions**, and all 12 new cells goldened and HELD at the ship floor → **91 verified**.
-> The one remaining gap is still `hypotl.f80`, which census-COMPILES and DECLINES at the
-> plain -O1 ship floor (bd `3c6m.61`; its gate is now precisely known — `E4-dataflow` on an
-> `i80` fp80-union compare, a width issue rather than a control shape) — so the two numbers
-> are 1 apart, for that one cell, and must never be conflated (Rule 2, bd
-> `libm-scoreboard-two-numbers`).
+> The last remaining gap was `hypotl.f80`, and bd `3c6m.61` CLOSED it on 2026-07-28. The
+> post-`q2wk` diagnosis recorded here was right and the ticket's original one was wrong: the
+> gate was `E4-dataflow` on an `i80` fp80-union compare — a WIDTH issue wearing a
+> control-shape costume, not a control shape. Measured with `CQ_PREDMUX_DBG`, PredMux's ROOT
+> region passed E1/E2/E3 on the 5-way multi-exit funnel all along; every `E3-sideentry`/
+> `E3-mergepred` line in the trace was a sub-region candidate probed AFTER the root was left.
+> The fix admits the provably-`_hl` (exactly-one-`ConstantInt`-operand) arm-resident
+> `icmp i80`, which lowers on the already-frozen §6.0 grid — no new symbol, no YAML edit.
+> So the two numbers now COINCIDE at **95 / 95**. They are still measured separately and
+> must never be conflated (Rule 2, bd `libm-scoreboard-two-numbers`): coincidence today is a
+> measurement, not an invariant, and the next census widening can re-open the gap.
 >
 > What is still current in this file: the **p119 / Rule-18 doctrine** immediately below
 > (source injection is the only way a library function counts; per-fn name recognition

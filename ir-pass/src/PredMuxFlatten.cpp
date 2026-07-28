@@ -434,7 +434,19 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
 // ONLY from the pending-spec pure-callee proof (`isSpeculatablePureCalleeBody`);
 // `recoverRegion`'s E4 body walk handles load/gep by the STRICTER, taint-aware
 // `classifyQromReadUnderControl` BEFORE it ever falls through to here.
-bool isSpeculatableDataflow(const Instruction &I) {
+// `AdmitI80Compare` (bd 3c6m.61) is passed TRUE by exactly ONE caller: the E4
+// REGION-BODY walk in `recoverRegion`. It must NOT default on, because this
+// predicate is shared by `isSpeculatablePureCalleeBodyImpl`, whose result is
+// (a) E4's call-admission AND (b) exported as `isSpeculatablePureCallee` and
+// consumed by the fp80-union SEED-CONE walk in a different module
+// (`Fp80Union.cpp`). Widening the i80 compare for the region walk therefore
+// silently widened THREE accept decisions when it was written unparameterized —
+// found by the Rule-13 round, which reproduced a tainted arm-call being newly
+// admitted and specialized into a Phase-6 Bennett clone. Only the region-walk
+// consumer is in this increment's scope and only it has a fixture family, so
+// the other two keep the old blanket i80-compare exclusion. Widening them is a
+// separate increment with its own probes (bd 3c6m.14.1).
+bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) {
   // No vector lane and no non-template width anywhere — such an op would only
   // decline loudly post-flatten at lowerOps/castInScope; gate it here so a
   // claimed region can never half-lower (detect-before-mutate).
@@ -448,7 +460,57 @@ bool isSpeculatableDataflow(const Instruction &I) {
                   // its type separately)
   if (isa<ICmpInst>(I) || isa<FCmpInst>(I)) {
     Type *OpTy = I.getOperand(0)->getType();
-    return !OpTy->isPointerTy() && isTemplateWidthType(OpTy);
+    if (OpTy->isPointerTy())
+      return false;
+    // i80 (bd 3c6m.61): the x86_fp80 bit-pattern compare — hypotl's
+    // `manh == LDBL_NBIT && manl == 0` NaN test, which clang -O1 fuses into
+    // `icmp eq i80 (and i80 %bits, 0xFFFF'FFFF'FFFF'FFFF), 0x8000'0000'0000'0000`
+    // INSIDE the Inf/NaN arm. This is the shape the old blanket
+    // `isTemplateWidthType` exclusion here declared impossible ("the canonical
+    // promotion never puts those inside an arm") — a claim hypotl falsifies.
+    //
+    // ADMIT ONLY THE PROVABLY-`_hl` SHAPE (detect mirrors lower, Rule 12/13).
+    // i80 ships the `_hl` compare row for all 10 predicates plus its `_inv`/
+    // `_unc` twins. It ALSO ships a QQ row — so, precisely (this was measured;
+    // an earlier draft of this comment named the wrong fence and a Rule-13 lens
+    // caught it):
+    //   * a Q+Q `icmp i80` in the DATA position LOWERS fine, straight through
+    //     `lowerCompareImpl` to `cq_template_icmp_<pred>_i80`;
+    //   * a Q+Q `icmp i80` used as a SELECT CONDITION cannot mint a flag —
+    //     `qqSelectLeafWidth` (CompareLowering.cpp) fences `i80` out of the
+    //     select-leaf grid — so a claimed region containing one would flatten
+    //     and only THEN decline: verify-clean, loud, but POST-MUTATION, the
+    //     detect-before-mutate half-lower the Inc-1 fp128 finding closed.
+    // PredMux cannot cheaply tell those two positions apart pre-flatten (the
+    // consuming select may not exist yet, and `valueWillTaintAfterFlatten`
+    // makes a taint query unreliable here anyway), so ONE conservative gate
+    // covers both: exactly one `ConstantInt` operand. That is TAINT-BLIND and
+    // MONOTONE — a constant is never tainted, before or after the flatten, so
+    // the `_hl` classification cannot drift. Admitting the data-position Q+Q
+    // form would be a separate, deliberate widening (bd 3c6m.14.1); declining it
+    // here is an over-decline, always safe.
+    //
+    // WHAT THIS DOES *NOT* EXCLUDE (stated because the natural reading is
+    // wrong): a `Constant` that is not a `ConstantInt` — `undef`, `poison`, a
+    // `ConstantExpr` — paired with a ConstantInt PASSES this test, and such a
+    // compare is CLASSICAL, so the region is claimed and flattens before
+    // declining downstream (`declineClassicalMuxes` / SelectClassify GATE-2).
+    // That is NOT new and NOT i80-specific: `icmp i32` behaves identically
+    // today and always has (measured, exact parity), and it is the residual
+    // class PRD §4.4b already documents for classical leaves inside a tainted
+    // region. Making i80 the ONE width that also fenced this would be
+    // inconsistent, not safer.
+    //
+    // i80 `select`/`freeze` stay UNCLAIMED (`isTemplateWidthType` excludes
+    // i80): a merged i80 value would need `cqrt_copy_i80_controlled`, which
+    // does not exist. i80 as a BRANCH condition also stays unclaimed —
+    // `isSupportedCompareLeaf` (E6's `isSupportedCondTree` leaf) is NOT
+    // widened here; no measured cell needs it and over-declining a shape we
+    // did not set out to build is correct (Rule 17).
+    if (OpTy->isIntegerTy(80))
+      return AdmitI80Compare && (isa<ConstantInt>(I.getOperand(0)) !=
+                                 isa<ConstantInt>(I.getOperand(1)));
+    return isTemplateWidthType(OpTy);
   }
   if (isa<SelectInst>(I) || isa<FreezeInst>(I))
     return !I.getType()->isPointerTy() && isTemplateWidthType(I.getType());
@@ -476,11 +538,14 @@ bool isSpeculatableDataflow(const Instruction &I) {
     // (and/lshr/or/shl — the shared i80BinaryInScope, mirroring the
     // ArithLowering fence); add/sub/mul/xor/ashr/div/rem at i80 have no
     // template and leave the region (detect-before-mutate). NOTE the mirror is
-    // one-directional by design elsewhere: icmp/select/freeze at i80 stay
-    // conservatively UNCLAIMED here (isTemplateWidthType excludes i80) even
-    // though CompareLowering could lower a straight-line icmp i80 — an
-    // over-decline, always safe; the canonical promotion never puts those
-    // inside an arm.
+    // one-directional by design elsewhere: select/freeze at i80 stay
+    // conservatively UNCLAIMED here (isTemplateWidthType excludes i80) — a
+    // merged i80 value has no `cqrt_copy_i80_controlled`. i80 `icmp` USED to
+    // ride that same blanket over-decline on the claim that "the canonical
+    // promotion never puts those inside an arm"; bd 3c6m.61 (hypotl's
+    // `manh == LDBL_NBIT && manl == 0` NaN test) falsified it, so the icmp case
+    // above now admits the provably-`_hl` (one-ConstantInt-operand) shape and
+    // only that.
     if (BO->getType()->isIntegerTy(80))
       return i80BinaryInScope(binaryStem(BO->getOpcode()));
     if (!isTemplateWidthType(BO->getType()))
@@ -1223,7 +1288,38 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
           continue;
         return leave("E4-dataflow", &I);
       }
-      if (!isSpeculatableDataflow(I))
+      // The SOLE `AdmitI80Compare` call site (bd 3c6m.61) — the region-body
+      // walk — and it is gated on `!ClaimAll`. Both halves are load-bearing:
+      //
+      //  * the pure-callee proof above deliberately does NOT get the flag (it
+      //    is shared with `Fp80Union`'s exported seed-cone walk); and
+      //  * `recoverRegion` runs in TWO contexts, the TOP-LEVEL region flatten
+      //    and the `ClaimAll` Bennett-CLONE body flatten (threaded from
+      //    `Specialization.cpp`). Only the top-level one is this increment's
+      //    target and only it has an i80 fixture family, so clone mode keeps
+      //    the old blanket exclusion.
+      //
+      // THE CLONE CONTEXT IS REACHABLE — do not re-derive otherwise. A first
+      // draft of this comment claimed it was unreachable and listed three
+      // measured fences (fp80 args laundered to i32 handles; the fp-copy
+      // specialization fence; the quantum-lift fence). The Rule-13 JUDGE
+      // falsified all three with one probe that evades them simultaneously: an
+      // i32 parameter (no fp80 anywhere), i80 reached via the in-grid
+      // `zext i32 -> i80`, inside a callee carrying its own tainted diamond.
+      // Un-gated, that CLAIMED in clone mode and emitted
+      // `cq_template_icmp_eq_i80_hl` + its `_unc` inside `@__cq_q_leaf_1`.
+      // The judge audited that emission and found it SOUND — so this gate is a
+      // SCOPE decision, not a correctness one: it is a new accept surface in
+      // the Phase-6 clone + Bennett-wrap path rather than the reviewed select
+      // substrate, and Rule 12 wants its own probe family before it ships
+      // (bd 3c6m.14.1). Pinned by control_predmux_reject_i80_cmp_clonemode.ll.
+      //
+      // NOTE FOR WHOEVER LIFTS THIS: that is now TWICE this clause has carried
+      // a false "this shape cannot occur here" claim — the first being "the
+      // canonical promotion never puts those inside an arm", which hypotl
+      // falsified and which is the entire reason bd 3c6m.61 exists. Measure;
+      // do not reason about reachability here.
+      if (!isSpeculatableDataflow(I, /*AdmitI80Compare=*/!ClaimAll))
         return leave("E4-dataflow", &I);  // E4
     }
   }

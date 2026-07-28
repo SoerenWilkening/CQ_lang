@@ -12,10 +12,15 @@
 >    dropping it left `@acos` **outlined** and broke 10 baseline-COMPILES cells. The keep-set
 >    correction belongs at the **defmap** (`keep_shims()`), never at the probe flag. The corpus's
 >    blanket flag must stay too (a libm source built with builtins ON self-recurses).
-> 2. **§4's honesty gate earned its keep.** `hypotl.f80` census-COMPILES and **DECLINES** at the
->    plain -O1 ship floor (`nested control flow under quantum control`) — the one
->    census-pipeline-only cell, so the two numbers are 1 apart again (bd `3c6m.61`). Its faithful
->    vendoring is parked at `tests/e2e/slice_libm_real_hypotl.c.DECLINED`.
+> 2. **§4's honesty gate earned its keep.** `hypotl.f80` census-COMPILED and **DECLINED** at the
+>    plain -O1 ship floor — the one census-pipeline-only cell, so the two numbers went 1 apart
+>    again. *Resolved 2026-07-28 by bd `3c6m.61`:* the vendoring moved from
+>    `tests/e2e/slice_libm_real_hypotl.c.DECLINED` to a wired
+>    `tests/e2e/slice_libm_real_hypotl.c` + golden, and the gap is 0. The decline text quoted
+>    here (`nested control flow under quantum control`) was MISLEADING about the cause —
+>    PredMux's root region reduced the funnel all along; the real gate was an arm-resident
+>    `icmp eq i80` (the fp80 Inf/NaN mantissa test). The honesty gate still earned its keep:
+>    without it the cell would have been quoted as verified for three days.
 > 3. Two probe-convention scope notes surfaced and are now recorded (bd `3c6m.62`): `pow`/`powf`'s
 >    numeric core is const-folded away by the `arg1 = 0.5` convention, and `lgamma`/`lgammaf`'s
 >    `signgam` side effect is dead-stripped.

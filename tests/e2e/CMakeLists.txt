@@ -2845,10 +2845,12 @@ add_test(NAME e2e-slice-libm-real-sinhl
 # Each vendors the REAL openlibm body and spells its inner keep-set calls `__builtin_<keep>` —
 # the SAME `@llvm.<fn>.f<W>` construct plain `clang -O1` emits for the named call at the ship
 # floor (Rule 18), which is exactly what the corpus's blanket `-fno-builtin` used to defeat.
-# hypotl.f80 is DELIBERATELY ABSENT: it census-COMPILES but DECLINES at the plain -O1 ship floor
-# (`nested control flow under quantum control`) — the one census-pipeline-only cell in this
-# baseline. Its faithful vendoring is parked at slice_libm_real_hypotl.c.DECLINED as the
-# ready-made re-test for bd q2wk; do NOT wire it until that lever lands (bd 3c6m.61).
+# hypotl.f80 WAS deliberately absent (parked at slice_libm_real_hypotl.c.DECLINED) as the one
+# census-pipeline-only cell: census-COMPILES, ship-floor-DECLINES. bd 3c6m.61 closed it and it is
+# wired below with the other ld80 cells. The blocker was NOT the control shape the park header
+# blamed — PredMux's root region passed E1/E2/E3 on the 5-way funnel all along; the single
+# E4-dataflow leave was the arm-resident `icmp eq i80` of the Inf/NaN mantissa test. See the
+# slice header for the full diagnosis.
 
 # acos.f64 — the classification cascade over the tainted exponent word (|x|>=1 / |x|<0.5 /
 # x<-0.5 / x>0.5) flattened through PredMux; the pS/qS Horner polynomials; the `pio2_lo`
@@ -3041,6 +3043,28 @@ add_test(NAME e2e-slice-libm-real-asinhf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinhf.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_asinhf.expected.log")
+
+# hypotl.f80 — bd 3c6m.61, the last census-pipeline-only cell. The E4 i80-COMPARE EMISSION
+# witness (precisely: it pins that the compares lower, link, signature-match, strip and free —
+# NOT that the mux routes the right value; for this cell's arguments the source-level Inf/NaN
+# branch is not the taken path, and the runtime is trace-only. Value routing is pinned at the
+# ir-pass level by control_predmux_accept_i80_cmp_arm.ll, whose CHECKs are mutation-validated
+# against arm-swap and mask-drop. See the slice header). Its sole blocker was the Inf/NaN arm's
+# `manh == LDBL_NBIT && manl == 0`, which clang -O1 +
+# promoteFp80Union fuse into `icmp eq i80 (and i80 %bits, ~0u64), 0x8000000000000000` feeding an
+# f80 select. Now lowered on the frozen §6.0 grid (cq_template_icmp_eq_i80_hl + its void `_unc`),
+# one of the two under a cqrt_toffoli AND with the `hb >= ESW(MAX_EXP)` i32 flag. Its three
+# SET_LDBL_EXPSIGN RMWs survive -O1 as alloca/gep/store/load and are consumed by promoteFp80Union
+# — they do NOT reach the Shadow store model (the lowered module has zero cqrt_qram_* and zero
+# memory ops; an earlier draft of this comment claimed otherwise). fabsl (x3) / sqrtl (x2) are
+# Rule-18 hardware KEEPS.
+add_test(NAME e2e-slice-libm-real-hypotl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_hypotl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_hypotl.expected.log")
 
 # hypotf.f32 — the E6 SUB-RULE (B) witness: its blocker was `icmp eq i32 %k, 0` over an UNTAINTED
 # phi-merged scale accumulator, admitted now by valueWillTaintAfterFlatten. sqrtf/fabsf are keeps.

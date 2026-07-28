@@ -1,7 +1,16 @@
 /* slice_libm_real_hypotl.c — bd 3c6m.60: the REAL openlibm hypotl body over
    x86_fp80 `long double`.
 
-   Corpus files vendored (intact clone /private/tmp/openlibm_reclone):
+   Corpus files vendored (intact clone /private/tmp/openlibm — NOT the
+   /private/tmp/openlibm_reclone the parked header cited, which lacks
+   src/e_hypotl.c and src/amd64_fpmath.h entirely; corrected 2026-07-28 after a
+   Rule-13 lens found the citation unreproducible at the stated path). NB two
+   hypotl variants exist in the corpus, src/e_hypotl.c and ld80/e_hypotl.c, and
+   they DIFFER; the one vendored here is src/, which is the one openlibm's own
+   CMakeLists.txt:284 puts in the build (ld80/e_hypotl.c appears in no build
+   list). Re-verified 2026-07-28: the body and all four vendored macro/union
+   blocks are byte-identical to the corpus after normalising comments,
+   whitespace and the two keep-set spellings.
      - src/e_hypotl.c   : the whole algorithm — the local GET_LDBL_MAN /
                           GET_HIGH_WORD / SET_HIGH_WORD / DESW / ESW / MANT_DIG /
                           MAX_EXP macro block, the man_t typedef, and the
@@ -35,44 +44,80 @@
    restored: under the old blanket -fno-builtin census these resolved to
    openlibm's SOFTWARE bodies and dragged their loops into the cell.
 
-   STATUS — THIS CELL DECLINES AT THE SHIP FLOOR. There is deliberately NO
-   slice_libm_real_hypotl.expected.log and this file is NOT wired into
-   tests/e2e/CMakeLists.txt. Measured 2026-07-25 on branch 3c6m.14-control-l6:
+   STATUS — SHIPS AT THE PLAIN -O1 SHIP FLOOR since bd 3c6m.61 (2026-07-28).
+   This file was parked as `.c.DECLINED` from 2026-07-25 until then; it is now
+   wired into tests/e2e/CMakeLists.txt with a golden, and it was the LAST
+   census-pipeline-only cell (a cell the census scored COMPILES that did not
+   actually ship). With it, injection-covered and verified coincide again.
 
-     clang -Iinclude -include CQ.h -O1 -emit-llvm -S  ->  exit 0
-     opt -passes=cq-lowering                          ->  exit 1, stderr:
-       error: tests/e2e/slice_libm_real_hypotl.c:<L>:5: in function slice
-       x86_fp80 (): cq controlled lowering: nested control flow under quantum
-       control
-     where <L> (a line number, deliberately not pinned here since this comment
-     shifts it) is the `if((ha-hb)>DESW(MANT_DIG+7)) {return a+b;}` line. Built
-     without -g the same message prints with an <unknown>:0:0 anchor.
-     (reproduced identically on two consecutive runs; s2.ll is 0 bytes, so
-     NOTHING was lowered — this is a clean Prime-Directive decline, not a
-     partial emission.)
+   WHAT ACTUALLY BLOCKED IT — and what did not. The parked header and the
+   original bd 3c6m.61 description both blamed the CONTROL SHAPE: a 5-way
+   multi-exit funnel with the `(manh|manl)==0` condition re-used below its
+   merge, "outside every shipped accept shape". That was the pre-q2wk PredMux
+   leave reason, and it was WRONG as a diagnosis of the residual. Measured with
+   CQ_PREDMUX_DBG on the -O1 IR, the ROOT region (entry -> the 5-incoming exit
+   phi, i.e. the whole funnel) passes E1/E2/E3 outright: PredMux's grammar DOES
+   reduce this funnel. Its one leave was `E4-dataflow`, and every other
+   `E3-sideentry`/`E3-mergepred` line in the trace is a SUB-region candidate
+   probed after the root was left — a consequence, not an independent blocker.
 
-   That line is the first tainted early exit, `if((ha-hb)>DESW(MANT_DIG+7))
-   {return a+b;}`. It is the outermost arm of a 5-way multi-exit funnel: at -O1
-   @slice carries 9 tainted `br i1`, 13 phis, and one exit phi with FIVE
-   incoming edges (the a+b early return, the Inf/NaN `w`, the subnormal `return
-   a`, the k==0 `w`, and the k!=0 `t1*w`), plus a re-used condition (`%81`, the
-   `(manh|manl)==0` test) branching to the exit from a block BELOW the merge it
-   was minted above. That is outside every shipped accept shape — the 4.x fence
-   tops out at the depth-2 homogeneous nest, and PredMux's flattening grammar
-   does not reduce a multi-exit funnel with a condition re-used across a merge.
-   The decline is a CAPABILITY gap (an honest over-decline, Prime Directive),
-   not a correctness defect; the census `-fno-builtin` harness fix is orthogonal
-   and did land here (fabsl/sqrtl are @llvm.fabs.f80/@llvm.sqrt.f80 in the -O1
-   IR, with NO openlibm software sqrt loop dragged in).
+   The real gate was one instruction: the Inf/NaN arm's
 
-   Had it lowered, the cell would exercise: the tainted `xbits.expsign` extract
-   of x (the classical y = 0.5L one const-folds), the SET_LDBL_EXPSIGN exponent
-   read-modify-writes on a and b (promoteFp80Union + Shadow store — these ARE
-   present in the -O1 IR as alloca/gep/store/load pairs), the bits.manh/manl
-   subnormal and Inf/NaN mantissa tests, the w>b two-product split with its
-   `bits.manl = 0` i80 mask truncations, and cq_template_fabs_f80 /
-   cq_template_sqrt_f80 for the two curated keep-intrinsics. Re-run this file
-   unchanged when the control fence widens. */
+       GET_LDBL_MAN(manh, manl, a);
+       if (manh == LDBL_NBIT && manl == 0) w = a;
+
+   which clang -O1 + promoteFp80Union fuse into
+       icmp eq i80 (and i80 %bits, 0xFFFF'FFFF'FFFF'FFFF), 0x8000'0000'0000'0000
+   feeding an f80 select. PredMux's E4 clause blanket-excluded EVERY i80
+   compare, on a comment that asserted "the canonical promotion never puts
+   those inside an arm" — a claim this body falsifies. 3c6m.61 admits the
+   provably-`_hl` form (exactly one ConstantInt operand), which lowers on the
+   already-frozen §6.0 grid: `cq_template_icmp_eq_i80_hl` + its void `_unc`
+   twin. NO new gate sequence, NO new frozen symbol, NO YAML edit. The Q+Q i80
+   compare stays declined, as does an i80 BRANCH condition and an i80 compare
+   inside a speculated pure CALLEE body — see the three decline fixtures
+   ir-pass/test/control_predmux_reject_i80_cmp_{qq,branchcond,purecallee}.ll.
+   (Precisely, since an earlier draft of this header got it wrong: i80 DOES ship
+   a QQ compare row and a Q+Q i80 compare in the DATA position lowers fine; what
+   is fenced is the SELECT-LEAF flag mint, `qqSelectLeafWidth`. The one-
+   ConstantInt gate is a single conservative rule covering both positions,
+   because PredMux cannot cheaply tell them apart pre-flatten.)
+
+   So this was a WIDTH-axis gap wearing a control-shape costume, exactly as the
+   post-q2wk bd note concluded. It is a recognizer gap, never a physics wall
+   (Bennett.jl ground truth, 3c6m.50: zero C-physics walls in this surface).
+
+   WHAT THE CELL EXERCISES (1207 trace lines, 249 cqrt_free sites, all
+   free-pairing verified): the tainted `xbits.expsign` extract of x (the
+   classical y = 0.5L one const-folds); the three SET_LDBL_EXPSIGN exponent
+   read-modify-writes on a and b, which survive -O1 as alloca/gep/store/load
+   pairs and are consumed by promoteFp80Union; the
+   bits.manh/manl subnormal and Inf/NaN mantissa tests (the two i80 compares
+   this ticket unblocked — one plain, one under a `cqrt_toffoli` AND with the
+   `hb >= ESW(MAX_EXP)` i32 flag); the w>b two-product split with its
+   `bits.manl = 0` i80 mask truncations; and cq_template_fabs_f80 /
+   cq_template_sqrt_f80 for the two curated keep-intrinsics.
+
+   IT DOES *NOT* EXERCISE THE SHADOW STORE PATH. The parked header predicted it
+   would ("a second reason to keep the artifact"), and an earlier draft of THIS
+   header repeated that prediction as fact until a Rule-13 lens checked it: the
+   LOWERED module contains ZERO `cqrt_qram_*` symbols and zero store/load/alloca.
+   promoteFp80Union rewrites every union RMW to pure bitcast/lshr/and/or/shl/
+   zext/trunc, so nothing reaches the Shadow model; only the two
+   `@llvm.lifetime.*` markers survive, and they are no-ops.
+
+   WHAT THE GOLDEN DOES AND DOES NOT WITNESS. It witnesses that every emitted
+   symbol resolves, signature-matches, links and runs, and that the gate stream
+   is byte-deterministic — which, together with stage 2b's rail-level free
+   pairing, is the Rule-2 contract. It does NOT witness VALUE ROUTING: the
+   runtime is trace-only (no simulation at this stage, owner decision
+   2026-06-10), and for this cell's concrete arguments the source-level Inf/NaN
+   branch — the sole home of BOTH newly-admitted i80 compares — is not the taken
+   path. Post-flatten every arm's gates execute unconditionally, so the compares
+   ARE minted, stripped and freed, and that pairing IS pinned here. Which value
+   the merge selects rests on the analytic argument plus the Rule-13 round, not
+   on this trace. That is true of every slice in this corpus; it is spelled out
+   here because this is the cell that motivated the increment. */
 #include <stdint.h>
 
 typedef unsigned int u_int32_t;

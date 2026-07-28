@@ -8,13 +8,25 @@
 > because the capability→function *map* and the peel methodology are still the best
 > analysis of WHY cells decline — that part has aged well; the tallies have not.
 >
-> **CURRENT AUTHORITATIVE NUMBERS (2026-07-26, after bd `oudq`):**
-> - **95 / 123 injection-covered (77%)**; **28 decline**; **94 verified** (the one gap is still
->   `hypotl.f80`, bd `3c6m.61`). bd `oudq` (PredMux L6 Inc 6, the W6 stranded-merge claim
->   witness) took 92 → 95 and 91 → 94: `log1pl.f80`, `logl.f80`, `log2l.f80`, each with a
->   committed real-openlibm slice + golden, so injection-covered and verified moved TOGETHER.
+> **CURRENT AUTHORITATIVE NUMBERS (2026-07-28, after bd `3c6m.61`):**
+> - **95 / 123 injection-covered (77%)** (33 f32 + 34 f64 + 28 f80); **28 decline**;
+>   **95 verified — the gap is 0**. bd `3c6m.61` closed the last census-pipeline-only cell,
+>   `hypotl.f80`, by admitting the provably-`_hl` arm-resident `icmp i80` at PredMux E4; the
+>   cell now has a committed slice + golden. Its blocker was NOT the control shape it was
+>   filed under (PredMux's root region reduced the 5-way multi-exit funnel all along — the
+>   `CQ_PREDMUX_DBG` trace's only root leave was `E4-dataflow`, and the `E3-*` lines were
+>   sub-region candidates probed after the root was left) but the fp80 Inf/NaN mantissa
+>   compare. Injection-covered did NOT move (the census already scored the cell COMPILES);
+>   only verified did, 94 → 95. Coincidence of the two numbers is a MEASUREMENT, not an
+>   invariant.
+> - The step before: bd `oudq` (PredMux L6 Inc 6, the W6 stranded-merge claim witness) took
+>   92 → 95 and 91 → 94: `log1pl.f80`, `logl.f80`, `log2l.f80`, each with a committed
+>   real-openlibm slice + golden, so injection-covered and verified moved TOGETHER.
 >   Re-census `REGRESSIONS: NONE` and no other cell's status changed. The three cells left the
 >   **L6 nested control** bucket, which is now EMPTY.
+> - The 28 declines by bucket (derived from `full_census_O1.json`, 2026-07-28): loop-carried
+>   10 · memory-store/Shadow 7 · unsupported opcode 3 · control (flat/diamond) 3 · fp80
+>   value-arm 2 · fp-copy/specialization 2 · unknown callee 1.
 > - **ARITHMETIC CORRECTION carried into the block below (it was wrong by exactly the 5
 >   spec-clone cells):** injection-covered counts plain `COMPILES` **plus** `COMPILES
 >   (spec-clone)`, so at the q2wk baseline 87 + 5 = 92 covered and **31** declined — the "36
@@ -476,12 +488,13 @@ only under this census's O2 measurement pipeline, so they are NOT verifiable at 
 
 > **⏭ SUPERSEDED — §11 records the post-L6 *O2* measurement as it stood; do not quote
 > its numbers as current.** The live baseline is the all-widths **O1**
-> `full_surface/full_census_O1.json`, regenerated 2026-07-25 by bd `3c6m.60`:
-> **80/123 injection-covered, 79 verified**. History: bd `3c6m.58` closed the gap at 68
-> (verified 53 → 68 = injection-covered); bd `3c6m.60`'s keep-set harness fix then took
-> injection-covered 68 → 80 with 0 regressions and goldened 11 of the 12 new cells —
-> `hypotl.f80` census-COMPILES but declines at the -O1 ship floor (bd `3c6m.61`), so
-> verified trails by exactly one. Two
+> `full_surface/full_census_O1.json`: **95/123 injection-covered, 95 verified** (2026-07-28,
+> after bd `3c6m.61` — see the CURRENT AUTHORITATIVE NUMBERS block at the top of this file).
+> History: bd `3c6m.58` closed the gap at 68 (verified 53 → 68 = injection-covered);
+> bd `3c6m.60`'s keep-set harness fix took injection-covered 68 → 80 with 0 regressions and
+> goldened 11 of the 12 new cells, leaving `hypotl.f80` as the one census-pipeline-only cell;
+> bd `q2wk` took 80 → 92 / 79 → 91; bd `oudq` took 92 → 95 / 91 → 94; bd `3c6m.61` closed
+> `hypotl.f80` → **94 → 95 verified, gap 0**. Two
 > consequences for how §11 above should be read: (a) the O1 baseline no longer carries an
 > O1/O2 discrepancy — `log1p{,f}`/`atanh{,f}` are honest *declines* in
 > `full_census_O1.json`, not phantom COMPILES; and (b) the "compile, golden PENDING" row is

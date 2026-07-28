@@ -632,6 +632,7 @@ diagnoses, not guesses):
 - `hypotl.f80` (bd `3c6m.61`) — `E4-dataflow` at
   `icmp eq i80 %24, 9223372036854775808`, an i80 compare from the fp80-union
   bit pattern (not a template width). fp80-union/width axis.
+  **CLOSED by Inc 7 — see §4.4d.**
 
 ### 4.4c Inc 6 (bd `oudq`) — W6, the STRANDED-MERGE claim witness
 
@@ -783,6 +784,121 @@ block's own terminator is CLASSICAL, so no PredMux candidate roots there at all;
 and a `switch`-rooted upstream region (W6 is gated to the `br` arm — no measured
 cell needs it and the 4.5 switch owners' accept surface would need its own
 anti-overlap argument).
+
+### 4.4d Inc 7 (bd `3c6m.61`) — the arm-resident `icmp i80` (fp80 bit-pattern compare)
+
+The smallest increment of the campaign: **one clause of `isSpeculatableDataflow`**,
+no flatten change, no new symbol, no YAML edit. It closes `hypotl.f80`, the last
+census-pipeline-only cell (census-COMPILES, ship-floor-DECLINES), restoring
+`injection-covered == verified` at 95 / 95.
+
+**The diagnosis this increment had to correct.** The ticket was filed as a
+control-shape gap — a 5-way multi-exit funnel with the `(manh|manl)==0` condition
+re-used below its merge, "outside every shipped accept shape". Re-measured
+root-first with `CQ_PREDMUX_DBG=1` over `opt -passes=instnamer`, that is refuted:
+PredMux's **root** region (`entry` → the 5-incoming exit phi, i.e. the entire
+funnel) clears E1/E2/E3 and leaves at a single `E4-dataflow`. The eight
+`E3-sideentry` / seven `E3-mergepred` lines in the same trace belong to SUB-region
+candidates probed after the root was left. **Methodological lesson worth keeping:
+read a leave trace root-first — a multi-exit funnel makes every sub-region look
+side-entered, and the sub-region leaves are consequences, not causes.**
+
+**The shape.** openlibm `e_hypotl.c`'s Inf/NaN arm does
+`GET_LDBL_MAN(manh, manl, a); if (manh == LDBL_NBIT && manl == 0) w = a;`, which
+`clang -O1` + `promoteFp80Union` fuse into
+`icmp eq i80 (and i80 %bits, 0xFFFF'FFFF'FFFF'FFFF), 0x8000'0000'0000'0000`
+feeding an f80 `select`, INSIDE the arm. The E4 clause excluded every i80 compare
+via `isTemplateWidthType`, under a comment asserting *"the canonical promotion
+never puts those inside an arm"* — false for this body.
+
+**The gate, and why it is `isa<ConstantInt>` and not a taint query.** i80 ships the
+`_hl` compare row for all 10 icmp predicates plus `_inv`/`_unc` twins. It also
+ships a QQ row — so, stated precisely (the Rule-13 round corrected an earlier
+draft that named the wrong fence): a Q+Q `icmp i80` in the **DATA** position
+lowers fine through `lowerCompareImpl`; what is fenced is the **select-leaf flag
+mint**, `CompareLowering::qqSelectLeafWidth`, which declines `WA == "i80"`. So a
+claimed region containing a Q+Q i80 compare *used as a select condition* would
+flatten and only THEN decline — verify-clean and loud, but POST-MUTATION: the
+detect-before-mutate half-lower the Inc-1 fp128 finding closed. PredMux cannot
+cheaply tell those two positions apart pre-flatten, so E4 uses ONE conservative
+rule covering both: **exactly one `ConstantInt` operand**. That test is
+taint-BLIND and MONOTONE, which is the point — PredMux runs pre-flatten where
+taint is not final (`valueWillTaintAfterFlatten`), so a taint-based claim could
+flatten a region whose compare only becomes Q+Q afterwards. A constant is never
+tainted, before or after. Admitting the data-position Q+Q form is a separate,
+deliberate widening (bd `3c6m.14.1`).
+
+**SCOPE — the Rule-13 round's load-bearing correction.** `isSpeculatableDataflow`
+is NOT private to the E4 region walk. It is also the per-instruction predicate of
+`isSpeculatablePureCalleeBodyImpl`, whose result is (a) E4's CALL admission and
+(b) exported as `isSpeculatablePureCallee` and consumed by the fp80-union
+SEED-CONE walk in `Fp80Union.cpp` — a different module, a different accept
+decision. Written unparameterized, this one clause widened THREE accept decisions;
+a lens reproduced a tainted arm-call being newly admitted and specialized into a
+Phase-6 Bennett clone. Only the region-walk consumer is in scope and only it has a
+fixture family, so the clause takes an `AdmitI80Compare` parameter, default false,
+pinned by `control_predmux_reject_i80_cmp_purecallee.ll`.
+
+**And the SCOPE fix needed a second fence, which the JUDGE found after a lens got
+it wrong.** `recoverRegion` — which holds the one `AdmitI80Compare` call site —
+runs in TWO contexts: the top-level region flatten and the `ClaimAll`
+Bennett-CLONE body flatten (threaded from `Specialization.cpp`). A lens graded the
+clone context "unreachable for this shape today (measured)" and named three
+fences; that grading was written into the source, and the judge falsified all
+three with a single probe evading them simultaneously — an i32 parameter (no fp80
+to launder), i80 reached via the in-grid `zext i32 -> i80`, in a callee carrying
+its own tainted diamond. Un-gated it CLAIMED in clone mode and emitted the compare
+and its `_unc` inside `@__cq_q_leaf_1` (verify-clean, free-pairing 6/6, links and
+runs — the judge audited it and found the emission SOUND, so this is a scope call,
+not a correctness one). The flag is therefore passed as `!ClaimAll`, pinned by
+`control_predmux_reject_i80_cmp_clonemode.ll` (the judge's probe verbatim; it
+red-greens — with the fence removed there is no leave line at all).
+
+**Two generalizable lessons, both paid for:**
+1. **Before widening a shared eligibility predicate, enumerate its callers.** The
+   E-gate ladder's predicates are reused across modules by design (Rule 14) —
+   which is exactly what makes an unparameterized widening leak.
+2. **A predicate's call SITE is not its call CONTEXT.** One `true` at one line was
+   live in two lowering contexts with different downstream owners. And note the
+   meta-pattern: this clause has now carried a false "this shape cannot occur
+   here" claim TWICE — first "the canonical promotion never puts those inside an
+   arm" (falsified by hypotl, the reason this ticket exists), then the clone-mode
+   unreachability claim (falsified by the judge in one probe). **Measure
+   reachability here; do not reason about it.**
+
+**What stays declined (deliberately, Rule 17 — these are inputs outside the target
+shape, not the target shape itself):** i80 `select`/`freeze` (a merged i80 value
+would need `cqrt_copy_i80_controlled`, which does not exist); the Q+Q i80 compare;
+and i80 as a tainted BRANCH condition — `isSupportedCompareLeaf`, the leaf of E6's
+`isSupportedCondTree`, is NOT widened, because PredMux would have to build both
+polarities of it as an edge literal. The sibling FLAT-diamond form declines
+identically today via SelectClassify/ArmClassify. Each has a pinned fixture.
+
+**Blast radius, measured rather than argued:** across all 233 compiling e2e
+slices, `hypotl` is the ONLY one whose stage-1 IR contains an `icmp` with an i80
+operand, and `Fp80Union.cpp` mints no compares (only bitcast/lshr/trunc/and/or/
+shl/zext), so an `icmp i80` can only come from `clang -O1` itself. No other cell's
+lowering can change.
+
+Fixtures: 2 accept — `control_predmux_accept_i80_cmp_arm.ll` (mutation-validated:
+its CHECKs were shown to miss an arm inversion and a dropped mantissa mask, and
+were strengthened until both fail) and `control_predmux_accept_i80_cmp_const_left.ll`
+(ConstantInt on the LEFT + a non-`eq` predicate, pinning the `flipPredicate` path
+at i80) — plus 3 leave: `_reject_i80_cmp_qq.ll`, `_reject_i80_cmp_branchcond.ll`,
+`_reject_i80_cmp_purecallee.ll`, `_reject_i80_cmp_clonemode.ll`. E2E: the
+`slice_libm_real_hypotl` slice + golden.
+
+**Honest limits of the evidence** (Rule 2): the golden witnesses symbol
+resolution, signature match, link, run and byte-determinism, and stage 2b
+witnesses rail-level free pairing — but NOT value routing, since the runtime is
+trace-only and the Inf/NaN arm is not the taken path for this cell's arguments.
+The `_reject_i80_cmp_{qq,branchcond}` fixtures are FORWARD regression pins, not
+red-green ones: measured against a pre-Inc-7 plugin, both their diagnostic string
+and their `CQ_PREDMUX_DBG` leave line are byte-identical on both plugins. The
+boundary evidence for the Q+Q case is instead the DIFFERENTIAL against the accept
+fixture — same region, one operand different, opposite outcome. The two SCOPE
+fixtures (`_purecallee`, `_clonemode`) do genuinely split, each against the
+over-reaching draft it was written to close.
 
 ### 4.5 Normalizations (each proof-gated, each part of the claimed region only)
 
@@ -1023,6 +1139,12 @@ loudly. The matrix pins that the leave→decline composition stays intact:
 | **Inc 6** stranding-position phi whose incomings are off the strict grammar, so `convertPhis` would build a select CHAIN, not boolean algebra | leave (W6 does not fire — the phi is not admissible under the `Convertible` scope either) → existing decline | `control_predmux_leave_w6_selectchain_phi.ll`. NB the decline STRING is the same with or without the gate (both leave the downstream at `E6-condtree`); the fixture discriminates through the `CQ_PREDMUX_DBG` leave line, which the Rule-13 prose lens had to establish by delete-the-guard measurement |
 | **Inc 6** merge phi read only through an `icmp` over i1 operands (the q2wk shield) | leave (W6 does not fire — an opaque compare leaf strands nothing) → existing decline | `control_predmux_leave_w6_i1cmp_shield.ll` |
 | **Inc 6** merge's branch CLASSICAL (untainted, incl. untainted-but-will-taint) | leave (W6's taint gate) — the deliberate over-decline that keeps the anti-overlap argument exact | `control_predmux_leave_w6_classical_merge_br.ll` — the shipped owner keeps the diamond (measured: with the taint half removed, its disposition moves from `value-arm swap-route` to the generic `control flow`) |
+| **Inc 7** arm-resident `icmp i80` with exactly one `ConstantInt` operand (the fp80-union bit-pattern test) | **accept** — provably `_hl`, lowers on the frozen §6.0 compare grid | `control_predmux_accept_i80_cmp_arm.ll` + the `slice_libm_real_hypotl` e2e golden |
+| **Inc 7** arm-resident `icmp i80` with BOTH operands tainted (Q+Q) | leave → existing decline. Claiming it would flatten and only THEN decline at `lowerCompareImpl`'s QQ fence — a post-mutation half-lower | `control_predmux_reject_i80_cmp_qq.ll` |
+| **Inc 7** `icmp i80` as a tainted BRANCH condition (E6 leaf, `isSupportedCompareLeaf` NOT widened) | leave → existing decline. PredMux would have to build both polarities as an edge literal; no measured cell needs it (Rule 17: outside the target shape) | `control_predmux_reject_i80_cmp_branchcond.ll` |
+| **Inc 7** `icmp i80` inside a speculated PURE CALLEE body (and hence the `Fp80Union` seed cone, which consumes the same exported proof) | leave — `AdmitI80Compare` defaults false. Two further accept decisions ride this predicate; neither is in scope nor probed, so both keep the old blanket exclusion (bd `3c6m.14.1`) | `control_predmux_reject_i80_cmp_purecallee.ll` — red-greens against the over-reaching first draft |
+| **Inc 7** `icmp i80` in an arm inside a `ClaimAll` Bennett-CLONE body flatten | leave — the flag is passed as `!ClaimAll`. Un-gated this ACCEPTS and emits the compare + `_unc` inside `@__cq_q_leaf_1`; the emission is sound, but it is the Phase-6 clone + Bennett-wrap path, not the reviewed select substrate, so it needs its own probe family first (bd `3c6m.14.1`) | `control_predmux_reject_i80_cmp_clonemode.ll` — the judge's probe verbatim; red-greens (no leave line at all without the fence) |
+| **Inc 7** i80 `select`/`freeze`/`add`… inside an arm (unchanged) | leave — no `cqrt_copy_i80_controlled`; only the four i80 bitwise rows + the castInScope grid are admitted | `control_predmux_reject_i80_arm_op.ll` (pre-existing, still declines) |
 | `ret` inside region (multi-exit) | leave → existing decline (`non-reconverging value exit` / 7.2 paths) | existing fixtures |
 | merge phi `i128`/vector/`fp128` (E7) | leave → existing decline | existing G4-family fixtures |
 | volatile access other than the (c)-proven form | leave | new negative fixture (Inc 3) |
@@ -1098,6 +1220,19 @@ workflow-model-tiering directive)
   only — verified cells need goldens, Rule 2 + the scoreboard-honesty rule);
   update 3c6m.14 / file follow-ups (f32 siblings `scalbnf/lroundf/...` are
   expected near-free wins — separate ticket with its own verification).
+- **Inc 7 (bd `3c6m.61`) — the arm-resident `icmp i80`; §4.4d.** The smallest
+  increment of the campaign: ONE clause of `isSpeculatableDataflow` admits an
+  `icmp` at i80 when exactly one operand is a `ConstantInt` (provably `_hl`).
+  No flatten change, no new frozen symbol, no YAML edit — it lowers on the §6.0
+  compare grid that already ships all 10 i80 predicates with `_inv`/`_unc`
+  twins. Fixtures: 1 accept (`_accept_i80_cmp_arm`) + 2 leave (`_reject_i80_cmp_qq`
+  for the fenced Q+Q shape, `_reject_i80_cmp_branchcond` for the deliberately
+  un-widened E6 leaf), with `_reject_i80_arm_op` re-verified still declining.
+  E2E: `hypotl.f80` flips at the **ship floor** with a committed slice + golden
+  (1207 lines, 249 free sites all free-pairing-verified), closing the LAST
+  census-pipeline-only cell → injection-covered 95 == verified 95, gap 0. The
+  increment also had to CORRECT the ticket's own root-cause diagnosis (see
+  §4.4d): the funnel shape was never the blocker.
 
 ---
 

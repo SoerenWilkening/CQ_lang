@@ -1,5 +1,54 @@
 # Full-surface libm injection census (bd 3c6m.49 / 3c6m.50)
 
+**⚡ PredMux L6 INCREMENT 7 — THE GAP IS 0 AGAIN: 95/123 injection-covered,
+94 → 95 VERIFIED (2026-07-28, bd `3c6m.61`).** Injection-covered did NOT move —
+the census already scored `hypotl.f80` COMPILES. What moved is the *ship floor*:
+`hypotl.f80` was the ONE census-pipeline-only cell (a cell counted as covered that
+did not actually ship), and it now ships with a committed slice + golden. That
+restores the `3c6m.58` "the two numbers coincide" property, re-opened by
+`3c6m.60`. **It is a measurement, not an invariant** — the next census widening
+can re-open it again.
+
+**THE TICKET WAS WRONG ABOUT ITS OWN ROOT CAUSE — twice over, and the second
+correction is the interesting one.** It was FILED as a control-shape gap ("a 5-way
+multi-exit funnel with the `(manh|manl)==0` condition re-used below its merge …
+outside every shipped accept shape"). The post-`q2wk` re-test corrected that to a
+width issue. Re-measured from scratch for this increment with
+`CQ_PREDMUX_DBG=1` + `opt -passes=instnamer`, the second diagnosis holds and the
+first is refuted outright: PredMux's **ROOT** region (`entry` → the 5-incoming
+exit phi, i.e. the whole funnel) passes E1/E2/E3 — the flattening grammar DOES
+reduce this funnel — and leaves at a single `E4-dataflow`. The eight
+`E3-sideentry` / seven `E3-mergepred` lines in the same trace are SUB-region
+candidates probed *after* the root was left; they are consequences, not
+independent blockers. **Read a leave trace root-first: a multi-exit funnel makes
+every sub-region look side-entered.**
+
+**THE ACTUAL GATE** was the Inf/NaN arm's `manh == LDBL_NBIT && manl == 0`, which
+`clang -O1` + `promoteFp80Union` fuse into
+`icmp eq i80 (and i80 %bits, 0xFFFF'FFFF'FFFF'FFFF), 0x8000'0000'0000'0000`
+feeding an f80 select. PredMux's E4 clause blanket-excluded every i80 compare on a
+comment asserting *"the canonical promotion never puts those inside an arm"* — a
+claim this body falsifies. The fix admits the **provably-`_hl`** form (exactly one
+`ConstantInt` operand), which lowers on the already-frozen §6.0 grid
+(`cq_template_icmp_eq_i80_hl` + its void `_unc` twin): **no new gate sequence, no
+new frozen symbol, no YAML edit.** The Q+Q i80 compare stays declined, as does an
+i80 BRANCH condition and an i80 compare inside a speculated pure CALLEE body.
+(Precisely — the Rule-13 round corrected this: i80 DOES ship a QQ row and a Q+Q
+i80 compare in the DATA position lowers fine; what is fenced is the SELECT-LEAF
+flag mint `qqSelectLeafWidth`. One conservative rule covers both positions because
+PredMux cannot tell them apart pre-flatten.) The `isa<ConstantInt>` test is
+deliberate rather than a taint query: PredMux runs pre-flatten where taint is not
+final, and a constant is monotone.
+**THE ROUND ALSO CAUGHT A REAL OVER-REACH,** worth carrying forward:
+`isSpeculatableDataflow` is shared with the pure-callee purity proof, which is
+itself exported and consumed by `Fp80Union.cpp`'s seed-cone walk — so the first
+draft silently widened THREE accept decisions from one clause. It now takes an
+`AdmitI80Compare` parameter that exactly one caller passes. **Before widening a
+shared E-gate predicate, enumerate its callers.**
+**BLAST RADIUS, MEASURED:** `hypotl` is the ONLY one of 233 compiling e2e slices
+whose stage-1 IR contains an `icmp` with an i80 operand, and `Fp80Union.cpp` mints
+no compares, so no other cell's lowering can change. Full ctest green.
+
 **⚡ PredMux L6 INCREMENT 6 — 92 → 95/123 injection-covered, 91 → 94 VERIFIED,
 0 REGRESSIONS (2026-07-26, bd `oudq`).** The direct `q2wk` successor, and a
 claim-gate widening again — the flatten was not touched. PredMux's **W anti-overlap
@@ -18,8 +67,9 @@ phase-07-expressiveness/3c6m.14-L6-control-predication/PRD.md` §4.4c.
 **THE 3 THAT FLIP** — `log1pl.f80` `logl.f80` `log2l.f80` — were all GOLDENED
 BEFORE this number was published, and all three hold at the true `clang -O1` ship
 floor (`e2e-slice-libm-real-<fn>`, `opt` exit 0, deterministic byte-identical
-trace), so **injection-covered and verified moved together** (95 / 94; the single
-remaining gap is still `hypotl.f80`, bd `3c6m.61`). The **L6 nested control**
+trace), so **injection-covered and verified moved together** (95 / 94 at the time;
+the single remaining gap was `hypotl.f80`, CLOSED by bd `3c6m.61` — see the Inc-7
+banner at the top, the scoreboard is now 95 / 95). The **L6 nested control**
 decline bucket is now EMPTY.
 **THE WITNESS IS WRITTEN AS TWO CALLS TO THE GATE IT PREDICTS**
 (`isSupportedCondTree` with and without the entry fence over `{merge}`), not as a
@@ -78,7 +128,9 @@ bound for anything not yet goldened (Rule 2). `REGRESSIONS: NONE` over the full
    now precisely known: `E4-dataflow` on `icmp eq i80 …` — an fp80-union bit-pattern
    compare at a non-template width. That is a width/union issue, not a control shape.
    So the two numbers remain **1 apart, for that same one cell**: 92 covered / 91
-   verified.
+   verified. *(This diagnosis was CORRECT and was confirmed by independent
+   re-measurement; bd `3c6m.61` acted on it and closed the cell on 2026-07-28 —
+   the "1 apart" is superseded, the width diagnosis is not.)*
 **A FAITHFULNESS DEFECT the golden round caught (bd `tkju`, filed):** 47 committed
 `slice_libm_real_*.c` vendor openlibm's **software `copysign`/`copysignl` body** for
 a Rule-18 **hardware keep**. Measured live, not dead code — fixing the spelling on
@@ -132,6 +184,11 @@ ready-made re-test (bd `3c6m.61`).
 **SO THE SCOREBOARD IS `80` INJECTION-COVERED / `79` VERIFIED** — deliberately *not* merged.
 The `3c6m.58` "the two numbers coincide" property held for that baseline and is now
 re-opened by exactly one cell; do not quote 80 as verified.
+⚠ *Historical. Superseded twice: `q2wk`/`oudq` took the numbers to 95 / 94, and bd
+`3c6m.61` closed `hypotl.f80` on 2026-07-28 → 95 / 95, gap 0. The multi-exit-funnel
+diagnosis stated above was ALSO wrong — see the Inc-7 banner at the top of this file:
+PredMux's root region reduced that funnel all along; the real gate was an arm-resident
+`icmp eq i80`.*
 **Faithfulness of the 11 new goldens was cleared by an independent 11-lens adversarial audit**
 (mechanical reverse-rename diff of every vendored body, every fp literal re-encoded and compared
 in order, qualifier/signedness/comparison-operator checks, keep-set legitimacy per Rule 18, and a
@@ -153,8 +210,10 @@ externally-linked spelling declines today. Same family as the already-recorded b
 
 **⚡ VERIFY-FIRST SWEEP — THE TWO NUMBERS COINCIDED AT 68 (2026-07-25, bd `3c6m.58`).**
 ⚠ *Historical: true of the 68-cell baseline this banner describes. The `3c6m.60` banner ABOVE
-supersedes it — the scoreboard is now `80` injection-covered / `79` verified, because
-`hypotl.f80` census-COMPILES and declines at the ship floor.*
+supersedes it — and is itself superseded: the scoreboard is now **95 injection-covered /
+95 verified**, gap 0, after bd `3c6m.61` closed `hypotl.f80` (2026-07-28). The "two numbers
+coincide" property this banner celebrates therefore holds again — as a measurement, never as
+an invariant.*
 The standing caveat below — *"injection-covered is an UPPER BOUND; verified is its own
 separate, LOWER number"* — has been **closed by measurement, not by assertion**. At the
 start of this sweep the O1 baseline was **68/123 injection-covered but only 53 verified**
