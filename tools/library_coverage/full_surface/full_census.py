@@ -228,7 +228,15 @@ def main():
             buckets[b].append(key)
             n_cells += 1
             print(f"  {spelling:12s} {width:4s} {b}", file=sys.stderr)
-    json.dump(results, open("full_census_results.json","w"), indent=1)
+    # Write DIRECTLY to the opt-level-named authoritative baseline, in this
+    # script's own directory. This used to write a fixed "full_census_results.json"
+    # into the CWD and the real baseline (full_census_O1.json) was produced by a
+    # MANUAL RENAME — and that manual step is where the artifact family drifted
+    # apart every time (bd o22d / eyfm: a stale duplicate quoted for planning is a
+    # silent PLANNING miscompile). No rename step means no drift.
+    out = Path(__file__).resolve().parent / f"full_census_{WP.CENSUS_OPTLEVEL}.json"
+    json.dump(results, open(out, "w"), indent=1)
+    print(f"wrote {out.name}", file=sys.stderr)
     print(f"\n=== FULL-SURFACE CENSUS: {n_cells} injectable cells ===")
     comp = len(buckets.get("COMPILES", []))
     print(f"COMPILES: {comp}/{n_cells}   DECLINE: {n_cells-comp}/{n_cells}\n")

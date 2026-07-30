@@ -11,8 +11,12 @@ place to resume from instead of reconstructing the boundary from census buckets.
 
 **Companion docs:** `SCOPING-payne-hanek-trig-reduction.md` (the trig trio in
 depth) · `p119-libm-coverage-honesty/PRD.md` (Rule 18) · the exhaustive per-cell
-census lives in `tools/library_coverage/full_surface/ld80_census_O1.json` +
-`FULL_DEPTH_CENSUS.md` — this doc is the capability-level map over it.
+census lives in `tools/library_coverage/full_surface/full_census_O1.json`
+(filter keys on the `.f80` suffix for the ld80 view) + `FULL_DEPTH_CENSUS.md` —
+this doc is the capability-level map over it. *(Repointed 2026-07-30, bd `eyfm`:
+this used to name `ld80_census_O1.json`, a separately-probed subset snapshot that
+drifted on every f80 increment and has been deleted. Read `scope`, not `bucket` —
+bd memory `libm-census-scope-axis-2026-07-28`.)*
 
 ---
 
@@ -231,4 +235,5 @@ body*.
 - Memories: `payne-hanek-trig-scoping-2026-07-24`, `predmux-l6-inc4-recensus`,
   `ld80-o1-recensus-3c6m51`, `libm-scoreboard-two-numbers`,
   `branchless-f80-leaf-recipe`, `consult-bennett-jl-always`.
-- Census JSON: `tools/library_coverage/full_surface/ld80_census_O1.json`.
+- Census JSON: `tools/library_coverage/full_surface/full_census_O1.json` (the one
+  source of truth; filter on the `.f80` key suffix for the ld80 view).

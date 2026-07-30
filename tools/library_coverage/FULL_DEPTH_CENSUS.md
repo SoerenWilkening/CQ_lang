@@ -8,7 +8,22 @@
 > because the capability→function *map* and the peel methodology are still the best
 > analysis of WHY cells decline — that part has aged well; the tallies have not.
 >
-> **CURRENT AUTHORITATIVE NUMBERS (2026-07-28, after bd `3c6m.61`):**
+> **CURRENT AUTHORITATIVE NUMBERS (2026-07-30, after bd `0rwu`):**
+> - **97 / 123 injection-covered (79%)** (33 f32 + 34 f64 + **30** f80); **26 decline**;
+>   **97 verified — the gap is 0**. bd `0rwu` shipped PredMux witness **W7** (the
+>   const-fallthrough integer sole-phi diamond, the `fdlibm __isnanl` shape) and moved
+>   exactly two cells — `expl.f80` → `COMPILES` and `log10l.f80` → `exit0-spec:['ldexpl']`
+>   — each with a committed real-openlibm slice + golden in the same increment, so
+>   injection-covered and verified moved together. Both live in the **f80** column and
+>   nowhere else; the **`fp80 value-arm` bucket that held exactly those two is now EMPTY**.
+> - The 26 declines by bucket: loop-carried 10 · memory-store/Shadow 7 · unsupported opcode
+>   5 · control (flat/diamond) 3 · unknown callee 1.
+> - **By `scope` — the axis to plan off: `lever-gap` 3** (`tgamma.f64`, `tgammaf.f32` — ONE
+>   lever, `tgammaf` is `(float)tgamma(x)` — plus `nexttowardf.f32`) · `deferred-capability`
+>   1 (`powl.f80`) · `corpus-gap` 1 (`nexttowardl.f80`) · **`decided-decline` 21**.
+>   **The actionable set is 3 cells, not 26.**
+>
+> **PREVIOUS NUMBERS (2026-07-28, after bd `3c6m.61`) — superseded by the block above:**
 > - **95 / 123 injection-covered (77%)** (33 f32 + 34 f64 + 28 f80); **28 decline**;
 >   **95 verified — the gap is 0**. bd `3c6m.61` closed the last census-pipeline-only cell,
 >   `hypotl.f80`, by admitting the provably-`_hl` arm-resident `icmp i80` at PredMux E4; the
@@ -523,8 +538,8 @@ only under this census's O2 measurement pipeline, so they are NOT verifiable at 
 
 > **⏭ SUPERSEDED — §11 records the post-L6 *O2* measurement as it stood; do not quote
 > its numbers as current.** The live baseline is the all-widths **O1**
-> `full_surface/full_census_O1.json`: **95/123 injection-covered, 95 verified** (2026-07-28,
-> after bd `3c6m.61` — see the CURRENT AUTHORITATIVE NUMBERS block at the top of this file).
+> `full_surface/full_census_O1.json`: **97/123 injection-covered, 97 verified** (2026-07-30,
+> after bd `0rwu` — see the CURRENT AUTHORITATIVE NUMBERS block at the top of this file).
 > History: bd `3c6m.58` closed the gap at 68 (verified 53 → 68 = injection-covered);
 > bd `3c6m.60`'s keep-set harness fix took injection-covered 68 → 80 with 0 regressions and
 > goldened 11 of the 12 new cells, leaving `hypotl.f80` as the one census-pipeline-only cell;

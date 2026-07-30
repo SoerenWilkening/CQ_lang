@@ -1,6 +1,19 @@
 #!/usr/bin/env python3
 # Focused ld80 (f80) re-census at a chosen opt level. Reuses full_census's cell
 # derivation + bucketing; filters to the 37 long-double cells. bd 3c6m.51 epic.
+#
+# *** DO NOT USE THIS TO MINT A FRESH O1 BASELINE (bd eyfm). ***  The f80 view of
+# the CURRENT census is derived by FILTERING the one source of truth:
+#
+#     python3 -c "import json;d=json.load(open('full_census_O1.json'));\
+#     print({k:v for k,v in d.items() if k.endswith('.f80')})"
+#
+# A separately-probed ld80_census_O1.json existed until 2026-07-30 and drifted on
+# EVERY increment that moved an f80 cell, because nothing regenerated it: by the
+# time it was deleted it disagreed with the live census on 8 statuses and 13
+# buckets, and its stale buckets 4x over-counted the very 'unknown callee' label
+# bd 12c26a4 exists to prove was an artifact. This script is retained ONLY to
+# reproduce the frozen O2 methodology snapshot (ld80_census_O2.json).
 import sys, os, json
 from pathlib import Path
 HERE = Path("/Users/sorenwilkening/Desktop/CQ_lang/tools/library_coverage/full_surface")

@@ -813,7 +813,10 @@ C-physics wall.** See `FULL_DEPTH_CENSUS.md` and bd memory
 ## Harness files
 - `wprobe.py` — width-parametric probe (build + closure-link + inline pipeline).
 - `full_census.py` — first-blocker census (imports `probe.py` MATHH_SPEC, one
-  blocker/cell). Writes `full_census_results.json`.
+  blocker/cell). Writes `full_census_<CENSUS_OPTLEVEL>.json` **into this
+  directory** — i.e. `full_census_O1.json` is written DIRECTLY, with no manual
+  rename step (changed 2026-07-30, bd `o22d`: the rename was the drift source for
+  the whole artifact family).
 - `peel_census.py` — **full-depth** census. In normal mode = first-blocker
   (`first_blocker_refreshed.json`); with `CQ_PEEL_CENSUS=1` + the census-mode
   plugin = the complete blocker stack per cell (`peel_census_results.json`).

@@ -8,9 +8,16 @@
 > *"Do not quote '48 verified' — quote 48 injection-covered, 8 verified"* is itself now
 > out of date on both halves.
 >
-> **CURRENT AUTHORITATIVE NUMBERS (2026-07-26, after bd `oudq`):** the all-widths **O1**
-> baseline `full_surface/full_census_O1.json` gives **95 / 123 injection-covered (77%)**
-> and **94 verified**, **28** declining. bd `oudq` (PredMux L6 increment 6 — the W6
+> **CURRENT AUTHORITATIVE NUMBERS (2026-07-30, after bd `0rwu`):** the all-widths **O1**
+> baseline `full_surface/full_census_O1.json` gives **97 / 123 injection-covered (79%)**
+> and **97 verified**, **26** declining — of which only **3 are actionable** (read the
+> `scope` field, never `bucket`: `lever-gap` 3 · `deferred-capability` 1 · `corpus-gap` 1 ·
+> `decided-decline` 21). bd `0rwu` shipped PredMux witness **W7** and took 95 → 97 / 95 → 97,
+> moving `expl.f80` and `log10l.f80` (both f80, both goldened in the same increment).
+>
+> **History — bd `3c6m.61`** then took verified 94 → 95 by goldening `hypotl.f80`, the last
+> census-pipeline-only cell. Before that, at **95 / 123 and 94 verified, 28 declining**,
+> bd `oudq` (PredMux L6 increment 6 — the W6
 > stranded-merge claim witness) took 92 → 95 / 91 → 94 with **0 regressions**, goldening
 > all three new cells (`log1pl.f80` `logl.f80` `log2l.f80`) at the ship floor, and emptied
 > the **L6 nested control** decline bucket. (The "36 declining" this line used to carry was

@@ -2,6 +2,7 @@
  "acos.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -13,17 +14,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "acosf.f32": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "LOOP"
   ],
   "compiles": false,
@@ -34,17 +38,20 @@
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "LOOP"
   ]
  },
  "acosh.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -56,17 +63,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "acoshf.f32": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "LOOP"
   ],
   "compiles": false,
@@ -77,17 +87,20 @@
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "LOOP"
   ]
  },
  "acoshl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ],
@@ -101,11 +114,13 @@
    "classical-mux",
    "control-flat-diamond",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ]
@@ -113,6 +128,7 @@
  "acosl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ],
@@ -126,11 +142,13 @@
    "classical-mux",
    "control-flat-diamond",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ]
@@ -138,6 +156,7 @@
  "asin.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -149,17 +168,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "asinf.f32": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -171,17 +193,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "asinh.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -193,17 +218,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "asinhf.f32": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "LOOP"
   ],
   "compiles": false,
@@ -214,17 +242,20 @@
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "LOOP"
   ]
  },
  "asinhl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ],
@@ -238,11 +269,13 @@
    "classical-mux",
    "control-flat-diamond",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ]
@@ -250,6 +283,7 @@
  "asinl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ],
@@ -263,75 +297,81 @@
    "classical-mux",
    "control-flat-diamond",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ]
  },
  "atan.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "atan2.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "atan2f.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "control-flat-diamond"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "atan2l.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW",
    "SPECIALIZE"
   ],
@@ -345,75 +385,81 @@
    "classical-mux",
    "control-flat-diamond",
    "fp-specialization",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW",
    "SPECIALIZE"
   ]
  },
  "atanf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "atanh.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "atanhf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "atanhl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -425,17 +471,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "atanl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -447,55 +496,60 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "cbrt.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "cbrtf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "cbrtl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -506,17 +560,20 @@
   "census_classes": [
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "cos.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "LOOP",
    "OPCODE",
@@ -533,12 +590,14 @@
    "control-flat-diamond",
    "in-loop-control",
    "shadow-store",
+   "taint-escape",
    "unknown-callee",
    "unsupported-opcode"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "LOOP",
    "OPCODE",
@@ -547,6 +606,7 @@
  },
  "cosf.f32": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -555,60 +615,59 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL",
-   "INNER-CALL",
-   "LOOP",
-   "OPCODE",
-   "SHADOW"
+   "ESCAPE",
+   "INNER-CALL"
   ]
  },
  "cosh.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "coshf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "coshl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW",
    "SPECIALIZE"
   ],
@@ -622,17 +681,20 @@
    "classical-mux",
    "control-flat-diamond",
    "fp-specialization",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW",
    "SPECIALIZE"
   ]
  },
  "cosl.f80": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -641,80 +703,79 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL",
-   "INNER-CALL",
-   "LOOP",
-   "OPCODE",
-   "SHADOW"
+   "ESCAPE",
+   "INNER-CALL"
   ]
  },
  "erf.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "erfc.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "erfcf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "erfcl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ],
@@ -728,38 +789,41 @@
    "classical-mux",
    "control-flat-diamond",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ]
  },
  "erff.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "erfl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ],
@@ -773,77 +837,80 @@
    "classical-mux",
    "control-flat-diamond",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ]
  },
  "exp.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "exp2.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "exp2f.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "exp2l.f80": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -852,36 +919,39 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL"
+   "ESCAPE",
+   "INNER-CALL"
   ]
  },
  "expf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "expl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -893,55 +963,60 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "expm1.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "expm1f.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "expm1l.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -953,35 +1028,50 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "fdim.f64": {
-  "levers": [],
-  "compiles": true,
+  "levers": [
+   "ESCAPE"
+  ],
+  "compiles": false,
   "fully_inlined": true,
   "first_blocker": [],
-  "census_classes": [],
+  "census_classes": [
+   "taint-escape"
+  ],
   "uninlined_calls": false,
-  "projected_levers": []
+  "projected_levers": [
+   "ESCAPE"
+  ]
  },
  "fdimf.f32": {
-  "levers": [],
-  "compiles": true,
+  "levers": [
+   "ESCAPE"
+  ],
+  "compiles": false,
   "fully_inlined": true,
   "first_blocker": [],
-  "census_classes": [],
+  "census_classes": [
+   "taint-escape"
+  ],
   "uninlined_calls": false,
-  "projected_levers": []
+  "projected_levers": [
+   "ESCAPE"
+  ]
  },
  "fdiml.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -993,156 +1083,45 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "fmod.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
   "fully_inlined": true,
   "first_blocker": [
-   "qram-read-under-control"
+   "unknown-callee"
   ],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "fmodf.f32": {
   "levers": [
-   "CONTROL"
-  ],
-  "compiles": false,
-  "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
-  "census_classes": [
-   "L6-nested-control",
-   "classical-mux",
-   "qram-read-under-control"
-  ],
-  "uninlined_calls": false,
-  "projected_levers": [
-   "CONTROL"
-  ]
- },
- "fmodl.f80": {
-  "levers": [
-   "INNER-CALL"
-  ],
-  "compiles": false,
-  "fully_inlined": false,
-  "first_blocker": [
-   "unknown-callee"
-  ],
-  "census_classes": [
-   "unknown-callee"
-  ],
-  "uninlined_calls": true,
-  "projected_levers": [
    "CONTROL",
-   "INNER-CALL"
-  ]
- },
- "frexp.f64": {
-  "levers": [
-   "CONTROL"
-  ],
-  "compiles": false,
-  "fully_inlined": true,
-  "first_blocker": [
-   "control-flat-diamond"
-  ],
-  "census_classes": [
-   "classical-mux",
-   "control-flat-diamond"
-  ],
-  "uninlined_calls": false,
-  "projected_levers": [
-   "CONTROL"
-  ]
- },
- "frexpf.f32": {
-  "levers": [
-   "CONTROL"
-  ],
-  "compiles": false,
-  "fully_inlined": true,
-  "first_blocker": [
-   "clobber-3c"
-  ],
-  "census_classes": [
-   "classical-mux",
-   "clobber-3c"
-  ],
-  "uninlined_calls": false,
-  "projected_levers": [
-   "CONTROL"
-  ]
- },
- "frexpl.f80": {
-  "levers": [
-   "CONTROL",
-   "SHADOW"
-  ],
-  "compiles": false,
-  "fully_inlined": true,
-  "first_blocker": [
-   "shadow-store"
-  ],
-  "census_classes": [
-   "classical-mux",
-   "control-flat-diamond",
-   "shadow-store"
-  ],
-  "uninlined_calls": false,
-  "projected_levers": [
-   "CONTROL",
-   "SHADOW"
-  ]
- },
- "hypot.f64": {
-  "levers": [
-   "CONTROL",
-   "INNER-CALL"
-  ],
-  "compiles": false,
-  "fully_inlined": true,
-  "first_blocker": [
-   "unknown-callee"
-  ],
-  "census_classes": [
-   "L6-nested-control",
-   "classical-mux",
-   "control-flat-diamond",
-   "unknown-callee"
-  ],
-  "uninlined_calls": false,
-  "projected_levers": [
-   "CONTROL",
-   "INNER-CALL"
-  ]
- },
- "hypotf.f32": {
-  "levers": [
-   "CONTROL",
+   "ESCAPE",
    "LOOP"
   ],
   "compiles": false,
@@ -1153,17 +1132,154 @@
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
+   "LOOP"
+  ]
+ },
+ "fmodl.f80": {
+  "levers": [
+   "ESCAPE",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": false,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "taint-escape",
+   "unknown-callee"
+  ],
+  "uninlined_calls": true,
+  "projected_levers": [
+   "ESCAPE",
+   "INNER-CALL"
+  ]
+ },
+ "frexp.f64": {
+  "levers": [
+   "CONTROL",
+   "ESCAPE"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "control-flat-diamond"
+  ],
+  "census_classes": [
+   "classical-mux",
+   "control-flat-diamond",
+   "taint-escape"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "ESCAPE"
+  ]
+ },
+ "frexpf.f32": {
+  "levers": [
+   "CONTROL",
+   "ESCAPE"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "clobber-3c"
+  ],
+  "census_classes": [
+   "classical-mux",
+   "clobber-3c",
+   "taint-escape"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "ESCAPE"
+  ]
+ },
+ "frexpl.f80": {
+  "levers": [
+   "CONTROL",
+   "ESCAPE",
+   "SHADOW"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "shadow-store"
+  ],
+  "census_classes": [
+   "classical-mux",
+   "control-flat-diamond",
+   "shadow-store",
+   "taint-escape"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "ESCAPE",
+   "SHADOW"
+  ]
+ },
+ "hypot.f64": {
+  "levers": [
+   "CONTROL",
+   "ESCAPE",
+   "INNER-CALL"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "unknown-callee"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "taint-escape",
+   "unknown-callee"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "ESCAPE",
+   "INNER-CALL"
+  ]
+ },
+ "hypotf.f32": {
+  "levers": [
+   "CONTROL",
+   "ESCAPE",
+   "LOOP"
+  ],
+  "compiles": false,
+  "fully_inlined": true,
+  "first_blocker": [
+   "loop-carried"
+  ],
+  "census_classes": [
+   "L6-nested-control",
+   "classical-mux",
+   "control-flat-diamond",
+   "taint-escape"
+  ],
+  "uninlined_calls": false,
+  "projected_levers": [
+   "CONTROL",
+   "ESCAPE",
    "LOOP"
   ]
  },
  "hypotl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ],
@@ -1177,56 +1293,61 @@
    "classical-mux",
    "control-flat-diamond",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ]
  },
  "ldexp.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "control-flat-diamond"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "ldexpf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "control-flat-diamond"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "ldexpl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1238,17 +1359,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "lgamma.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SPECIALIZE"
   ],
   "compiles": false,
@@ -1260,17 +1384,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "fp-specialization"
+   "fp-specialization",
+   "taint-escape"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SPECIALIZE"
   ]
  },
  "lgammaf.f32": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SPECIALIZE"
   ],
   "compiles": false,
@@ -1282,17 +1409,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "fp-specialization"
+   "fp-specialization",
+   "taint-escape"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SPECIALIZE"
   ]
  },
  "lgammal.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW",
    "SPECIALIZE"
@@ -1308,11 +1438,13 @@
    "control-flat-diamond",
    "fp-specialization",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW",
    "SPECIALIZE"
@@ -1320,45 +1452,48 @@
  },
  "llround.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "llroundf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "llroundl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1370,74 +1505,80 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "log.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "log10.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "log10f.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "log10l.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1449,55 +1590,60 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "log1p.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "log1pf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "log1pl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1509,55 +1655,60 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "log2.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "log2f.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "log2l.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1569,55 +1720,60 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "logb.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "logbf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "logbl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1629,36 +1785,40 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "logf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "logl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1670,55 +1830,60 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "lround.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "lroundf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "lroundl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1730,55 +1895,60 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "modf.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "modff.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "modfl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1790,17 +1960,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "nextafter.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1812,17 +1985,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "nextafterf.f32": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1834,17 +2010,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "nextafterl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1856,17 +2035,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "nexttoward.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ],
@@ -1880,11 +2062,13 @@
    "classical-mux",
    "control-flat-diamond",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW"
   ]
@@ -1892,6 +2076,7 @@
  "nexttowardf.f32": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -1903,16 +2088,19 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "nexttowardl.f80": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -1921,18 +2109,19 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL",
-   "INNER-CALL",
-   "SHADOW"
+   "ESCAPE",
+   "INNER-CALL"
   ]
  },
  "pow.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -1944,17 +2133,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "powf.f32": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "LOOP"
   ],
   "compiles": false,
@@ -1965,17 +2157,20 @@
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "LOOP"
   ]
  },
  "powl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW",
    "SPECIALIZE"
   ],
@@ -1990,11 +2185,13 @@
    "control-flat-diamond",
    "fp-specialization",
    "qram-read-under-control",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW",
    "SPECIALIZE"
   ]
@@ -2002,48 +2199,55 @@
  "remainder.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
   "fully_inlined": true,
   "first_blocker": [
-   "qram-read-under-control"
+   "unknown-callee"
   ],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "remainderf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE",
+   "LOOP"
   ],
   "compiles": false,
   "fully_inlined": true,
   "first_blocker": [
-   "qram-read-under-control"
+   "loop-carried"
   ],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE",
+   "LOOP"
   ]
  },
  "remainderl.f80": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -2052,59 +2256,65 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "remquo.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
   "fully_inlined": true,
   "first_blocker": [
-   "qram-read-under-control"
+   "unknown-callee"
   ],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "remquof.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
   "first_blocker": [
-   "qram-read-under-control"
+   "control-flat-diamond"
   ],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "remquol.f80": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -2113,55 +2323,59 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL",
+   "ESCAPE",
    "INNER-CALL"
   ]
  },
  "scalbln.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "control-flat-diamond"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "scalblnf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "control-flat-diamond"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "scalblnl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -2173,55 +2387,60 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "scalbn.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "control-flat-diamond"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "scalbnf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "control-flat-diamond"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "scalbnl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -2233,17 +2452,20 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "sin.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "LOOP",
    "OPCODE",
@@ -2260,12 +2482,14 @@
    "control-flat-diamond",
    "in-loop-control",
    "shadow-store",
+   "taint-escape",
    "unknown-callee",
    "unsupported-opcode"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "LOOP",
    "OPCODE",
@@ -2274,6 +2498,7 @@
  },
  "sinf.f32": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -2282,60 +2507,59 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL",
-   "INNER-CALL",
-   "LOOP",
-   "OPCODE",
-   "SHADOW"
+   "ESCAPE",
+   "INNER-CALL"
   ]
  },
  "sinh.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "sinhf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "qram-read-under-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "qram-read-under-control"
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "sinhl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW",
    "SPECIALIZE"
   ],
@@ -2349,17 +2573,20 @@
    "classical-mux",
    "control-flat-diamond",
    "fp-specialization",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW",
    "SPECIALIZE"
   ]
  },
  "sinl.f80": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -2368,20 +2595,19 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL",
-   "INNER-CALL",
-   "LOOP",
-   "OPCODE",
-   "SHADOW"
+   "ESCAPE",
+   "INNER-CALL"
   ]
  },
  "tan.f64": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "LOOP",
    "OPCODE",
@@ -2398,12 +2624,14 @@
    "control-flat-diamond",
    "in-loop-control",
    "shadow-store",
+   "taint-escape",
    "unknown-callee",
    "unsupported-opcode"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "LOOP",
    "OPCODE",
@@ -2412,6 +2640,7 @@
  },
  "tanf.f32": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -2420,58 +2649,59 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL",
-   "INNER-CALL",
-   "LOOP",
-   "OPCODE",
-   "SHADOW"
+   "ESCAPE",
+   "INNER-CALL"
   ]
  },
  "tanh.f64": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "tanhf.f32": {
   "levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ],
   "compiles": false,
   "fully_inlined": true,
-  "first_blocker": [
-   "L6-nested-control"
-  ],
+  "first_blocker": [],
   "census_classes": [
    "L6-nested-control",
    "classical-mux",
-   "control-flat-diamond"
+   "control-flat-diamond",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
-   "CONTROL"
+   "CONTROL",
+   "ESCAPE"
   ]
  },
  "tanhl.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ],
   "compiles": false,
@@ -2483,16 +2713,19 @@
    "L6-nested-control",
    "classical-mux",
    "control-flat-diamond",
-   "shadow-store"
+   "shadow-store",
+   "taint-escape"
   ],
   "uninlined_calls": false,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "SHADOW"
   ]
  },
  "tanl.f80": {
   "levers": [
+   "ESCAPE",
    "INNER-CALL"
   ],
   "compiles": false,
@@ -2501,19 +2734,18 @@
    "unknown-callee"
   ],
   "census_classes": [
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
-   "CONTROL",
-   "INNER-CALL",
-   "LOOP",
-   "OPCODE",
-   "SHADOW"
+   "ESCAPE",
+   "INNER-CALL"
   ]
  },
  "tgamma.f64": {
   "levers": [
+   "ESCAPE",
    "SPECIALIZE"
   ],
   "compiles": false,
@@ -2522,15 +2754,18 @@
    "fp-specialization"
   ],
   "census_classes": [
-   "fp-specialization"
+   "fp-specialization",
+   "taint-escape"
   ],
   "uninlined_calls": true,
   "projected_levers": [
+   "ESCAPE",
    "SPECIALIZE"
   ]
  },
  "tgammaf.f32": {
   "levers": [
+   "ESCAPE",
    "SPECIALIZE"
   ],
   "compiles": false,
@@ -2539,16 +2774,19 @@
    "fp-specialization"
   ],
   "census_classes": [
-   "fp-specialization"
+   "fp-specialization",
+   "taint-escape"
   ],
   "uninlined_calls": true,
   "projected_levers": [
+   "ESCAPE",
    "SPECIALIZE"
   ]
  },
  "tgammal.f80": {
   "levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW",
    "SPECIALIZE"
@@ -2564,11 +2802,13 @@
    "control-flat-diamond",
    "fp-specialization",
    "shadow-store",
+   "taint-escape",
    "unknown-callee"
   ],
   "uninlined_calls": true,
   "projected_levers": [
    "CONTROL",
+   "ESCAPE",
    "INNER-CALL",
    "SHADOW",
    "SPECIALIZE"
