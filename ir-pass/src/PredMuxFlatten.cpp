@@ -132,6 +132,42 @@ bool isTemplateWidthType(Type *Ty) {
 // A compare whose flag the substrate can mint (icmp on int ≤ 64 / fcmp on the
 // scalar fp widths; never vectors or pointers).
 bool isSupportedCompareLeaf(const CmpInst *Cmp) {
+  // Self-operand LEAF fence (bd 7q3s) — the PredMux copy of the fence that lives
+  // in `collectCondTree` (SelectClassify.cpp) and `comparePredLowerable`
+  // (ArmClassify.cpp). Both PredMux condition walks (`isSupportedCondTree` E6 and
+  // `isBooleanCondTree` Inc 2) route their leaf case through here, so this is the
+  // one place that covers both.
+  //
+  // WITHOUT IT the fence was still EFFECTIVE but the POSTURE was wrong, and the
+  // difference is measurable: PredMux would CLAIM the region and FLATTEN it, and
+  // only the resulting select would decline at `collectCondTree` — a
+  // claim-then-decline (Rule 9 detect-before-mutate; the bd tzfg class). Declining
+  // the claim is the correct posture.
+  //
+  // MEASURED before the fence, on a top-level W7-shaped diamond whose condition is
+  // `icmp eq i32 %q, %q`: the pre-fence plugin lowered it at EXIT 0 emitting
+  //     %h_cmp = call i32 @cq_template_icmp_ne_i32(i32 %h, i32 %h)
+  //     call void @cq_template_icmp_ne_i32_unc(i32 %h_cmp, i32 %h, i32 %h)
+  // — one rail in BOTH operand slots of a two-register reversible comparator,
+  // frozen into a golden. (Note the emitted predicate is `ne`, not the source
+  // `eq`: -O1 branch-polarity inversion, Rule 9. A probe that greps for the SOURCE
+  // predicate misses this — mine did at first.)
+  //
+  // `isBooleanCondTree` already fenced the NODE axis (`getOperand(0) !=
+  // getOperand(1)`) and its comment claimed to mirror collectCondTree's
+  // "self-operand and i1-operand-leaf fences"; that claim is only now true.
+  //
+  // SCOPE — SSA-IDENTITY ONLY, like the ArmClassify fence and unlike
+  // `collectCondTree`'s, which uses the rail-aware `operandsAlias`. The rail form
+  // (SSA-distinct operands RAUW'd to one handle by an in-place `cq_phi`) reaches
+  // a mint only through the select route, which is rail-fenced; a PredMux region
+  // whose condition is rail-aliased still ends at that same select. Kept here for
+  // POSTURE: it moves the decline to CLAIM time (`gate=E6-condtree`, before the
+  // flatten mutates anything — Rule 9) instead of leaving a claim-then-decline.
+  // An adversarial reviewer measured deleting it to be a semantic no-op over the
+  // known input space, so do not mistake it for load-bearing.
+  if (Cmp->getOperand(0) == Cmp->getOperand(1))
+    return false;
   Type *OpTy = Cmp->getOperand(0)->getType();
   if (OpTy->isPointerTy() || OpTy->isVectorTy())
     return false;
@@ -393,7 +429,8 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
 // isSupportedCondTree): compare leaves and distinct-operand `and i1`/`or i1`
 // nodes only — no xor-true, no trunc/freeze/select, no compares OVER i1
 // operands. This mirrors `collectCondTree` (SelectClassify.cpp) plus its
-// self-operand and i1-operand-leaf fences, because an i1 phi converted to
+// self-operand fences on BOTH axes (the node one is inline below; the LEAF one
+// lives in `isSupportedCompareLeaf`, bd 7q3s) and its i1-operand-leaf fence, because an i1 phi converted to
 // boolean algebra composes its incomings INTO a select condition the 3c6m.12
 // flag-mint must accept verbatim. i1 constants are additionally admitted —
 // they never reach the tree (the composer folds ∧true/∧false away). Anything

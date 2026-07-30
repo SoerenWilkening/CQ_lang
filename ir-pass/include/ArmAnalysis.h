@@ -132,9 +132,21 @@ CondDataDisp condDataUseDisposition(llvm::Instruction *Cond,
                                     const llvm::BasicBlock *RouteBlock,
                                     const TaintSet &Taint);
 
-// Whether a control/data `CmpInst`'s predicate has a lowering template — the
-// predicate axis of `compareInScope`, with the icmp/fcmp family derived from the
-// instruction. An out-of-scope fcmp predicate (outside {oeq,une,olt,ogt,ole,oge})
+// Whether a flag can be minted from a control/data `CmpInst`, on TWO axes.
+//
+// (2) SELF-OPERAND (bd 7q3s, added 2026-07-30 — note this is why the name is
+// narrower than the contract): a compare whose two operands are the SAME SSA
+// value would mint a two-register reversible comparator with ONE rail in both
+// slots, an ill-formed physical gate no backend can realize, frozen into the
+// golden at exit 0. It is the `br`-path twin of `collectCondTree`'s node and
+// leaf fences. Non-canonical (InstCombine folds a self-compare away) and
+// measured at zero occurrences corpus-wide, so declining is correct, not a punt.
+// Kept inside this one predicate rather than at its five call sites so a new
+// caller cannot forget it.
+//
+// (1) PREDICATE — the predicate axis of `compareInScope`, with the icmp/fcmp
+// family derived from the instruction.
+// An out-of-scope fcmp predicate (outside {oeq,une,olt,ogt,ole,oge})
 // has NO template (test_C_libtooling-jvun); a control region whose CONDITION uses
 // one must decline in DETECTION, before emit mints a flag from it. The flat flag
 // mint is emit step 1, but a NESTED inner mint follows the outer route/replay, so

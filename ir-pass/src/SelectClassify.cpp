@@ -381,6 +381,53 @@ bool collectCondTree(Value *Root, CondTree &Tree) {
     if (!Seen.insert(V).second)
       continue;  // shared subtree — already collected once.
     if (auto *Leaf = dyn_cast<CmpInst>(V)) {
+      // Self-operand LEAF fence (bd 7q3s) — the exact twin of the node fence
+      // below, on the axis that was missing it. A compare whose two operands are
+      // the SAME SSA value mints a TWO-REGISTER reversible comparator with ONE
+      // rail in both slots when the operand is tainted (`cq_template_fcmp_uno_f64
+      // (i32 %h, i32 %h)` + its `_unc`): the identical hazard the node fence
+      // exists for — value-correct in trace semantics yet an ill-formed physical
+      // gate no backend can realize, frozen into the golden at exit 0.
+      //
+      // THE TEST IS RAIL IDENTITY, NOT SSA IDENTITY, and that distinction IS this
+      // fence (Rule-13 finding, 2026-07-31). The first draft used
+      // `getOperand(0) == getOperand(1)`, justified by "the shape is non-canonical
+      // — 0 aliased compares in the committed corpus, and slice_libm_real_modff.c's
+      // `x != x` isnan idiom folds to `fcmp uno %1, 0.0` at -O1". That is true of
+      // the SSA-identical form and IRRELEVANT to the hazard, because the dangerous
+      // alias is created by ROTATION LOWERING — i.e. AFTER any pre-mutation SSA
+      // test has run. `cq_phi` (Rz) is an IN-PLACE gate whose result RAUWs to its
+      // argument's i32 handle, so four lines of ordinary C
+      //     q = cq_theta(u,.5);  r = cq_phi(q,.25);  s = (q < r) ? 11 : 22;
+      // leave `%q` and `%r` SSA-DISTINCT — InstCombine cannot fold this compare,
+      // unlike `x==x` — yet BOTH lower to `%h`, emitting
+      //     cq_template_icmp_slt_i32(i32 %h, i32 %h)      (+ its `_unc`)
+      // at EXIT 0. MEASURED from real C at the -O1 ship floor, integer and fp, and
+      // also via the `if (q<r)` form, which -O1 if-converts into this same select.
+      //
+      // `operandsAlias` is the correct predicate and it already existed 60 lines
+      // above FOR EXACTLY THIS REASON (Rule 14 — reuse, never reinvent a weaker
+      // twin): it materializes A's pre-region `cq_phi` arg-0 closure and tests B
+      // against it through `diagonalAliasHit`, answering "do these resolve to the
+      // SAME post-lowering register?", which pre-mutation SSA cannot. It SUBSUMES
+      // the SSA test (for A == B the closure hits on the first step), so nothing
+      // is lost. A `Constant` operand never aliases a handle, so ordinary `q < 5`
+      // is untouched, and genuinely distinct rails still accept — verified: two
+      // independent thetas emit `(i32 %h, i32 %h2)`.
+      //
+      // Declining is still the fix, not a punt (Rule 17): an aliased compare is a
+      // ONE-register predicate (`fcmp uno x,x` IS isnan(x)), and a two-register
+      // gate with one rail in both slots is not a realizable approximation of it.
+      // Lowering it as a genuine 1-register predicate is a separate feature.
+      //
+      // Placed in `collectCondTree` because it is the SHARED walk: this single
+      // fence covers the top-level 4.4 select (SelectClassify detect +
+      // SelectMergeEmit emit) AND the Phase-6 clone select (Specialization's
+      // `lowerCloneSelect`/`mintCondNetwork`), so the two cannot drift apart
+      // (Rule 14). A clone body is rotation-free (`scanBody` rejects `cq_phi`), so
+      // there `operandsAlias` degenerates to the SSA test — correct, not weaker.
+      if (operandsAlias(Leaf->getOperand(0), Leaf->getOperand(1)))
+        return false;
       Tree.Leaves.push_back(Leaf);
       continue;
     }

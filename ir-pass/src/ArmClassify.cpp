@@ -522,6 +522,37 @@ bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
 // `cq` namespace (declared in `ArmAnalysis.h`) so `RegionTreeDetect` (ziov.3)
 // reuses the one predicate for the nested-path decline (Rule 14).
 bool comparePredLowerable(const CmpInst *Cmp) {
+  // Self-operand fence (bd 7q3s) — the `br`-path twin of `collectCondTree`'s
+  // node and leaf fences (SelectClassify.cpp). A compare whose two operands are
+  // the SAME SSA value mints a TWO-REGISTER reversible comparator with ONE rail
+  // in both slots when that operand is tainted — value-correct in trace
+  // semantics yet an ill-formed physical gate no backend can realize, frozen
+  // into the golden at exit 0. That is precisely the hazard the node fence was
+  // written for; the leaf/condition axis simply never got it.
+  //
+  // Placed HERE rather than at the five call sites (classifyArms,
+  // classifyClassicalCallArm, recoverRegionTree, classifyAbortPark,
+  // GuardedStoreArmEmit) so a new caller cannot forget it — missing one site is
+  // a worse failure than a name that now covers two axes.
+  //
+  // SCOPE — THIS ONE IS SSA-IDENTITY ONLY, DELIBERATELY, and the asymmetry is
+  // recorded rather than papered over. The RAIL-identity form (SSA-distinct
+  // operands that RAUW to one handle through an in-place `cq_phi`) is caught by
+  // `collectCondTree`'s leaf fence, which uses the stronger `operandsAlias`.
+  // Using it here too would mean exporting a file-local predicate across a layer;
+  // MEASURED 2026-07-31, that buys nothing today: an `if (q < cq_phi(q,·))` form
+  // is if-converted by -O1 into the select route (already rail-fenced), and every
+  // true-CFG-diamond shape probed declines for unrelated reasons. An adversarial
+  // reviewer independently measured that deleting this fence is a SEMANTIC NO-OP
+  // over the entire known input space — it is defense in depth, not load-bearing.
+  // If a rail-aliased condition is ever shown to reach a mint through this path,
+  // upgrade it to `operandsAlias` rather than widening the SSA test.
+  //
+  // The SSA form itself is NON-CANONICAL (InstCombine folds a self-compare away;
+  // 0 occurrences across the committed fixture corpus), so declining is safe and
+  // costs nothing.
+  if (Cmp->getOperand(0) == Cmp->getOperand(1))
+    return false;
   // Predicate axis of `compareInScope`; icmp vs fcmp family from the instruction
   // (their predicate-name strings overlap — `ugt`/`uge`/`ult`/`ule`). Width is
   // gated elsewhere (`abiWidthFromType`); this is the predicate-only check (jvun).
