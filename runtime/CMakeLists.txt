@@ -124,3 +124,36 @@ add_test(
     COMMAND ${_RT_PYTHON} ${CMAKE_SOURCE_DIR}/tools/gen_templates.py
             --output-dir ${CMAKE_CURRENT_SOURCE_DIR} --check
 )
+
+# bd qwcy — the other half of the link witness: the HAND-WRITTEN cqrt_* core ABI.
+# runtime_link_smoke above covers only the YAML-GENERATED cq_template_* surface,
+# because enumerating a hand-written header from a YAML-driven emitter is the
+# wrong layering. This check owns that half and lives outside gen_templates.py
+# for exactly that reason.
+#
+# WHY: cqrt_* is FROZEN-DESIGNATE (the 7.5 cqrt_qram_*, the 7.6 cqrt_tape_*, and
+# the kjd1 cqrt_copy_f{16,32,64,80}_controlled families are named freeze gates).
+# Every e2e slice already witnesses the COMMON core more strongly than this does
+# — the goldens see ARGUMENTS too — so the gap closed here is the RARE half:
+# controlled twins and widths no committed slice reaches.
+#
+# Measured at introduction: 173 declared / 173 defined / 0 mismatch either way.
+# Another REGRESSION gate, not a bug-finder.
+add_test(
+    NAME runtime_core_abi_link
+    COMMAND ${_RT_PYTHON} ${CMAKE_SOURCE_DIR}/tools/core_abi_link_check.py
+            --archive $<TARGET_FILE:cq_runtime>
+)
+
+# Mutant validation. The two-direction (declared vs defined) comparison is
+# self-validating BY DESIGN and that is load-bearing: the header is hand-written,
+# so an extractor over it is fragile — the first draft used a return-type
+# alternation and silently missed `bool cqrt_measure_i1` / `_Float16
+# cqrt_measure_f16`, i.e. it UNDER-COVERED while reporting success. M2 pins that
+# a defined-but-undeclared symbol is still caught, so an extractor gap can never
+# quietly shrink the covered set.
+add_test(
+    NAME runtime_core_abi_link_selftest
+    COMMAND ${_RT_PYTHON} ${CMAKE_SOURCE_DIR}/tools/core_abi_link_check.py
+            --archive $<TARGET_FILE:cq_runtime> --selftest
+)
