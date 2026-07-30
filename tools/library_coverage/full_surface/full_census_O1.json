@@ -223,11 +223,9 @@
   "diag": "surv:[]"
  },
  "expl.f80": {
-  "status": "decline",
-  "bucket": "other: probe x86_fp80 (): cq controlled lowering: value-a",
-  "diag": "probe x86_fp80 (): cq controlled lowering: value-arm swap-route under quantum control",
-  "scope": "lever-gap",
-  "scope_ref": "ONE lever with log10l: tainted-cond if-diamond in __isnanl (s_isnan.c:63) whose arm yields an integer merge phi = the BRANCH form of the select shape 4.4 already handles"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]"
  },
  "exp2f.f32": {
   "status": "COMPILES",
@@ -285,11 +283,9 @@
   "diag": "surv:[]"
  },
  "log10l.f80": {
-  "status": "decline",
-  "bucket": "other: probe x86_fp80 (): cq controlled lowering: value-a",
-  "diag": "probe x86_fp80 (): cq controlled lowering: value-arm swap-route under quantum control",
-  "scope": "lever-gap",
-  "scope_ref": "same __isnanl value-arm lever as expl.f80 (bd zco4's later ldexpl comment is stale \u2014 tegx gave ldexpl a body)"
+  "status": "exit0-spec:['ldexpl']",
+  "bucket": "COMPILES (spec-clone)",
+  "diag": "surv:['ldexpl']"
  },
  "log2f.f32": {
   "status": "COMPILES",
@@ -507,7 +503,7 @@
  "tgammal.f80": {
   "status": "decline",
   "bucket": "unsupported opcode",
-  "diag": " sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+  "diag": "sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
   "scope": "decided-decline",
   "scope_ref": "its OWN reduction loops ld80/e_tgammal.c:271/277/286, SCEV Unpredictable, quantum-governed trip"
  },
@@ -524,7 +520,7 @@
  "lgammal.f80": {
   "status": "decline",
   "bucket": "unsupported opcode",
-  "diag": " sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+  "diag": "sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
   "scope": "decided-decline",
   "scope_ref": "inherited Payne-Hanek via sinl: all 10 Unpredictable-BTC loops are in k_rem_pio2/rem_pio2l, none lgammal's own"
  },

@@ -3153,6 +3153,55 @@ add_test(NAME e2e-slice-libm-real-log2l
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log2l.expected.log")
 
+# ── bd 0rwu (PredMux W7, the CONST-FALLTHROUGH integer sole-phi diamond) ────────
+# expl.f80 / log10l.f80 — the last two cells blocked by the SAME fdlibm __isnanl
+# early-exit as the W6 trio above, but through the OTHER consumer shape, and that
+# contrast is the point. In log1pl/logl/log2l the isnan merge phi is an i1 OR-ed
+# into its own block's tainted branch, so it STRANDS a downstream cond tree and W6
+# claims it. Here `if (isnan(x)) return x;` stands ALONE (log10l's `x <= 0` domain
+# test is a separate downstream block), so nothing is stranded, W6 correctly does
+# not fire, and at the f80 ship floor the phi is the INTEGER
+# `phi i32 [ 0, %entry ], [ %zext, %arm ]` — a sole 2-incoming integer merge with a
+# ConstantInt fall-through, which W5 left to the 4.2 value emitter and which that
+# emitter cannot take either (`Routed = StraightThrough` = the folded `0`, and no
+# accept path matches a ConstantInt). Both declined `value-arm swap-route under
+# quantum control` at ArmClassify.cpp:1171, instruction-for-instruction, with no
+# owner anywhere.
+#
+# HOW THE BLAST RADIUS WAS MEASURED, stated carefully because an earlier draft of
+# this comment drew it from the wrong population (Rule-13 round). It is NOT
+# "2 cells decline-anchor at 1171, therefore the radius is 2": W7's predicate says
+# nothing about a decline ANCHOR, so the 1171-anchor population does not bound it —
+# a W7-shaped diamond declining at `non-routable value multiplexer` or `control
+# flow` would move too and would not be in that count. The radius was measured
+# DIRECTLY instead, by re-running the full 123-cell injection census under both
+# plugins and diffing cell by cell: EXACTLY 2 cells changed status
+# (expl.f80 decline -> COMPILES, log10l.f80 decline -> exit0-spec) and ZERO
+# regressed. Independently, all 932 ir-pass fixtures were swept under both plugins
+# comparing exit code AND emitted IR: the only differences are the 4 intended
+# decline -> accept flips. Note the census bounds the CENSUS and nothing else —
+# three committed e2e goldens (erfl/erfcl/sinhl) also moved, by claim-order churn,
+# and only the e2e layer surfaced that.
+# Both slices run stage 2b STRICT (no --allow-unproven).
+add_test(NAME e2e-slice-libm-real-expl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_expl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_expl.expected.log")
+
+# log10l additionally pins the bd zco4 volatile scalar-local promotion: e_log10l.c
+# declares `volatile long double z` (the Moshier ***CAUTION*** anti-reassociation
+# idiom) and the slice keeps it verbatim, exactly as its log2l sibling does.
+add_test(NAME e2e-slice-libm-real-log10l
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log10l.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_log10l.expected.log")
+
 # ---------------------------------------------------------------------------
 # bd test_C_libtooling-8txa — the Rule-6 free-pairing checker's OWN gate.
 #

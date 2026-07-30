@@ -12,13 +12,17 @@
 //
 // Eligibility (PRD §4.2, E-ladder) in brief:
 //   W  — claim witnesses: only shapes today's detection DECLINES are claimed
-//        (nested tainted terminators; multi-phi / >2-incoming br merges; and —
+//        (nested tainted terminators; multi-phi / >2-incoming br merges; —
 //        W5, bd vyqi — the flat sole-2-incoming SCALAR-FP-phi diamond with
 //        distinct incomings, which ArmClassify's fp fence categorically
-//        declines). A flat sole-2-incoming-phi INTEGER diamond, a
-//        straight-line-arm switch, and the depth-2 homogeneous-phase nest
-//        (its arms hold cq_phi CALLS, excluded by E4) all stay with their
-//        shipped owners byte-identically.
+//        declines; and — W7, bd 0rwu — the flat sole-2-incoming INTEGER-phi
+//        diamond whose ENTRY-edge incoming is a ConstantInt and whose other
+//        incoming is a region-INTERIOR instruction, the fdlibm __isnanl tail).
+//        Every OTHER flat sole-2-incoming-phi INTEGER diamond (a non-constant
+//        straight-through — the 4.2 routed method-B accepts — and the a8c0
+//        empty-arm const-fold re-anchor), a straight-line-arm switch, and the
+//        depth-2 homogeneous-phase nest (its arms hold cq_phi CALLS, excluded
+//        by E4) all stay with their shipped owners byte-identically.
 //   E2 — acyclic: no region block (incl. entry) on any CFG cycle.
 //   E3 — single-entry/single-exit: successors ⊆ region ∪ {merge}; merge preds
 //        ⊆ region; no side entry; only br/switch terminators inside.
@@ -972,9 +976,11 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     // PredMux claim; the 6.5 classical-call arm is i32-only. The
     // distinct-incomings fence keeps the degenerate empty-arm identity phi
     // (`phi [%q,%arm],[%q,%entry]`, an ACCEPTED empty phase arm) with its
-    // owner. INTEGER sole-phi diamonds are deliberately NOT claimed — the
-    // 4.2 value emitter owns their accepts (routed method-B), and the
-    // two-base integer mux stays the owner-declined 65wb.5 surface. So W5
+    // owner. INTEGER sole-phi diamonds are not claimed HERE — the 4.2 value
+    // emitter owns their accepts (routed method-B), and the two-base integer
+    // mux stays the owner-declined 65wb.5 surface; W7 below claims the ONE
+    // integer subset that provably has no such owner (a `ConstantInt`
+    // straight-through, which no accept path can match). So W5
     // claims only currently-DECLINING shapes: containment (every existing
     // accept byte-identical) holds by construction, and the flattened
     // select is adjudicated by the kjd1 six-gate ladder (angle fence,
@@ -985,6 +991,223 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         SoleMergePhi->getType()->isFloatingPointTy() &&
         isMuxableType(SoleMergePhi->getType()) &&
         SoleMergePhi->getIncomingValue(0) != SoleMergePhi->getIncomingValue(1);
+    // W7 (bd 0rwu) — the CONST-FALLTHROUGH INTEGER sole-phi diamond: a flat br
+    // region whose merge holds EXACTLY ONE 2-incoming muxable INTEGER phi with
+    // DISTINCT incomings, whose ENTRY-edge incoming is a `ConstantInt`, and whose
+    // other incoming is an instruction defined in a region INTERIOR block. This
+    // is the fdlibm `__isnanl` tail — `s_isnan.c:63`'s
+    // `exp == 32767 && (manl != 0 || manh != 0)` short-circuit, which at the f80
+    // ship floor is `%isnan = phi i32 [ 0, %entry ], [ %zext, %arm ]` — and it is
+    // the ONLY multi-cell compiler lever left in the libm injection census
+    // (`expl.f80` + `log10l.f80`), and both reach `opt` exit 0 once the diamond is
+    // flattened. MEASURED 2026-07-30 by re-running the full census under both
+    // plugins and diffing CELL BY CELL: exactly 2 of the 123 cells changed status,
+    // zero regressed. Do NOT restate that as "only 2 cells decline-anchor at
+    // ArmClassify.cpp:1171, so the radius is 2" — the Rule-13 round showed that
+    // inference is unsound (W7's predicate says nothing about a decline anchor;
+    // a W7-shaped diamond declining `non-routable value multiplexer` moves too),
+    // and the census bounds the census alone: three committed e2e goldens also
+    // moved by claim-order churn, which only the e2e layer surfaced. The gap was never the merge MECHANICS
+    // but only the `br`-CFG SPELLING of them: write the SAME two-base integer mux
+    // as a tainted `select` and the 4.4/kjd1 controlled-XOR copy merge has lowered
+    // it since kjd1. The Rule-13 round made that concrete rather than plausible —
+    // it built the `select` spelling of the value-arm fixture's program and the
+    // lowered gate stream is IDENTICAL instruction-for-instruction to the
+    // flattened `br` spelling's, so a PredMux claim is exactly the missing
+    // adapter and W7 reuses the cleared substrate verbatim.
+    // (An earlier draft justified this by claiming the same idiom "arrives as a
+    // `select` in `nexttowardf` because it fits SimplifyCFG's one-instruction
+    // speculation budget". That is FALSE and was refuted in the Rule-13 round:
+    // `ld80/s_nexttowardf.c` never calls `isnan` at all — it hand-writes the NaN
+    // test as `(iy >= 0x7fff && ((hy|ly) != 0))`, one `or` plus one `icmp`, a
+    // DIFFERENT idiom from `__isnanl`'s two OR-ed compares. Do not reinstate it.)
+    //
+    // W5 above deliberately claimed only the SCALAR-FP sole-phi diamond and left
+    // every INTEGER one to the 4.2 value emitter, which owns their accepts. W7
+    // re-admits only the subset no shipped `br` owner CAN accept, and — as with
+    // every other witness — that disjointness is BY CONSTRUCTION out of
+    // `ArmClassify::classifyArms`, not by measurement. Its `Routed` for a diamond
+    // is exactly `StraightThrough`, the ENTRY-edge merge incoming, which clause
+    // (c) pins to a `ConstantInt`:
+    //   * the 4.2 VALUE path requires `Chain.Base == Routed`, but `walkValueChain`
+    //     threads only the TAINTED operand of a tainted `BinaryOperator`, so
+    //     `Chain.Base` is always a tainted value and never a `ConstantInt` — the
+    //     region declines `non-routable value multiplexer`;
+    //   * the 4.1 PHASE path requires `Base == Routed` where
+    //     `Base = walkPhaseSpine(ArmIncoming, ArmBB)`, and that walk steps ONLY
+    //     through IN-ARM `cq_phi_*` calls, which E4 excludes (an external
+    //     declaration fails the pure-callee proof). Under clause (d) `Base` is the
+    //     interior instruction itself, never a `ConstantInt`;
+    //   * `straightThroughConstFoldHandle` (a8c0) is the ONLY path that accepts a
+    //     `ConstantInt` straight-through at all, and it demands `H == Base` where
+    //     `H` is the non-constant operand of the ENTRY block's equality condition
+    //     — hence defined in the entry or earlier, NEVER in an interior block.
+    //     *** CLAUSE (d) IS LOAD-BEARING FOR THE *EMPTY*-ARM ROW, WHERE NOTHING
+    //     ELSE COVERS IT. *** An a8c0 EMPTY arm (`phi [k, E], [%q, arm]`, arm a
+    //     bare `br`) holds no call for clause (e) and nothing for E4 to reject,
+    //     and it satisfies (a)-(c) — so without (d) this clause would STEAL A
+    //     SHIPPED ACCEPT; measured, that shape compiles today. Pinned from that
+    //     side by control_predmux_leave_int_diamond_constfall_prereg.ll. The
+    //     NON-empty a8c0 arm and the 4.5 `tryEqFoldArm` twin hold an in-arm
+    //     `cq_phi` CALL and are fenced by clause (e)
+    //     (control_swap_straightthrough_constfold.ll). Note for whoever edits
+    //     this: the Rule-13 round measured that those rows' W7 witness DOES fire,
+    //     i.e. they were relying on a single fence, which is why (e) exists and
+    //     does not defer to E4;
+    //   * the 4.2 IF/ELSE value accept anchors `Routed` on arm 1's chain
+    //     PRECISELY BECAUSE it has no entry-edge phi incoming — clause (b)'s
+    //     `getBasicBlockIndex(E) >= 0` excludes it (and the pre-existing
+    //     control_predmux_leave_int_diamond_solephi.ll pins that direction);
+    //   * every CALL-BASED owner — the 6.5 classical-call arm, a bd-adia
+    //     pending-specialization call, `lowerControlledIOSinks`' sink call,
+    //     `classifyAbortPark`'s noreturn call, and the a8c0 / 4.5 `tryEqFoldArm`
+    //     NON-empty arms' in-arm `cq_phi` — is fenced by clause (e) below, WHICH
+    //     DOES NOT DELEGATE TO E4. An earlier draft claimed E4 fenced them
+    //     ("admits a call only with >= 1 TAINTED argument"); the Rule-13 round
+    //     REFUTED that with a reproducer, because E4's first call clause is
+    //     taint-blind for curated readnone intrinsics. See clause (e);
+    //   * `classifyGuardedStoreArm` needs a STORE, which E4 genuinely does reject
+    //     (`isSpeculatableDataflow` is false for a `StoreInst`); `classifyAbortPark`
+    //     additionally needs an `unreachable` arm, which leaves `preds(Mg) = {E}`
+    //     so no 2-incoming merge phi exists at all, failing clause (a).
+    // Switch owners are unreachable from this `br` arm of the witness, and E2
+    // excludes every loop owner. So W7, like every other witness, claims only
+    // shapes that decline today — with ONE deliberate exception recorded in
+    // control_predmux_accept_straightthrough_value_arm.ll: the a8c0 VALUE-arm sibling
+    // (`if (q != 0) q1 = q + 1` merged against the folded literal) was an
+    // OVER-decline, and it now flattens and lowers. That is a real accept-surface
+    // widening inside W7's own shape class, not a leak: the §3c clobber hazard
+    // that motivated its decline is a SWAP-ROUTE hazard (route the register in,
+    // rewrite it in place, then strip a flag that must re-read the same basis),
+    // and the flattened form never rewrites `%q` at all — it writes a FRESH out
+    // rail and strips against the untouched `%q`. The Rule-13 round strengthened
+    // that from an inspection of one region to a STRUCTURAL fact: E4's region-body
+    // walk admits only pure speculatable dataflow (a `StoreInst` fails
+    // `isSpeculatableDataflow`; `cq_phi`/`cq_theta` are external declarations that
+    // fail the pure-callee proof; every `cq_template_*` is out-of-place), so NO
+    // W7-claimed region can write ANY pre-existing rail — the flag-strip operand
+    // cone is untouched by construction, for the whole witness class.
+    //
+    // MEASURED CLAIM-ORDER CHURN — 3 committed e2e goldens moved, and they were
+    // REGENERATED DELIBERATELY (bd `8dwo` class; never regenerate a golden by
+    // reflex, Rule 12). `slice_libm_real_{erfl,erfcl,sinhl}` inline `olm_expl`
+    // ALWAYS_INLINE, so `expl`'s `__isnanl` diamond lands at top level in each and
+    // W7 now claims it. Before W7 those regions were LEFT at `W-witness`
+    // (measured: erfl left 15 such regions; with W7, ZERO remain) and were then
+    // absorbed into a LARGER enclosing `NestedTainted` claim on a later fixpoint
+    // round, whose whole-nest edge-predicate algebra is far more expensive than
+    // flattening the inner diamonds first. Result: each trace got ~300 lines
+    // SHORTER (2480→2182, 2686→2374, 2703→2447). The change was adjudicated, not
+    // assumed — for all three: `opt` exit 0, verify-clean, deterministic, ZERO
+    // residual `@cq_*`, stage 2b STRICT pass, Rule 5 intact (1 `cqrt_ry_f80` + 1
+    // `cqrt_measure_f80`), every compare-stem delta PAIRED with its `_unc` strip,
+    // ZERO `cqrt_cswap` in BOTH streams (so no 4.2 method-B accept existed to
+    // steal), IDENTICAL `cqrt_copy_{i32,f80}_controlled` counts (same data muxes),
+    // and — the decisive check — ZERO arithmetic/data stems differing: every
+    // changed stem is flag/conjunction machinery (compare mints+strips,
+    // `cqrt_alloc_i1`, `cqrt_toffoli`, `cqrt_cnot`, `cqrt_free`). The computation
+    // is byte-identical; only the control ENCODING got cheaper. `coshl` is
+    // deliberately unaffected because its `olm_expl` is plain `static` and rides
+    // the Phase-6 clone + `claimAll` path instead.
+    //
+    // *** i1 IS DELIBERATELY EXCLUDED — this is a SCOPE fence, not a soundness
+    // one, and it is measured. *** The anti-overlap argument above is
+    // width-independent, and an i1 sole-phi const-fallthrough diamond is a real
+    // shape (the f64 spelling of this very `__isnanl` tail is
+    // `phi i1 [ false, %entry ], [ %lo, %chk ]`). Admitting it is nonetheless
+    // wrong for THIS increment on two measured grounds. (1) PAYOFF: zero. The
+    // census's f64/f32 isnan prologues already compile; re-measured 2026-07-30,
+    // admitting i1 moves no cell that i32 does not already move. (2) COST: i1
+    // merge phis are W6's OWN design territory — W6 exists precisely to claim an
+    // i1 merge phi that strands a downstream cond tree — so an i1 W7 claim makes
+    // two witnesses race for the same region in the most silent-miscompile-prone
+    // file in the project. Measured, it CLAIMED the upstream diamond in all four
+    // `control_predmux_leave_w6_*` fixtures, which still declined (no
+    // over-accept) but with a different string, destroying the "left at
+    // `gate=W-witness`" observable those pins are built on — i.e. it would have
+    // cost four W6 pins to buy nothing. Claim-order churn of exactly the bd
+    // `8dwo` kind, and here it is NOT in the favourable direction. Whoever lifts
+    // this must re-pin the W6 family on a different observable first.
+    // KNOWN RESIDUAL, filed as bd `tzfg` and deliberately NOT fixed here:
+    // `isMuxableType` admits ANY integer width <= 64, but the runtime family is
+    // only `cqrt_copy_i{1,8,16,32,64}_controlled`. So an off-family width (i24,
+    // i48, ...) CLAIMS, the flatten rewrites the CFG, and the emitter only then
+    // declines — which contradicts the E4 width gate's own "a claimed region can
+    // never half-lower" comment. Measured harmless (`opt` exit 1, ZERO module
+    // bytes written on a DS_Error, so the user sees a plain loud decline), and
+    // PRE-EXISTING: the W5 fp path shares the helper. Left to its own increment
+    // because a fix moves W5's claim surface too and needs its own Rule-12 pair.
+    bool IntConstFallthroughMux = false;
+    if (NumMergePhis == 1 && SolePhiIncomings == 2 && SoleMergePhi &&
+        SoleMergePhi->getType()->isIntegerTy() &&
+        !SoleMergePhi->getType()->isIntegerTy(1) &&
+        isMuxableType(SoleMergePhi->getType()) &&
+        SoleMergePhi->getIncomingValue(0) != SoleMergePhi->getIncomingValue(1)) {
+      // (b) DIAMOND: the merge is a direct successor of the entry, so the phi
+      // carries an entry-edge incoming — `ArmClassify`'s `StraightThrough`.
+      const int EIdx = SoleMergePhi->getBasicBlockIndex(E);
+      // (c) that incoming is a `ConstantInt` — the whole disjointness argument.
+      if (EIdx >= 0 && isa<ConstantInt>(SoleMergePhi->getIncomingValue(EIdx))) {
+        // (d) the other incoming is defined in a region INTERIOR block. A
+        // degenerate `br i1 %c, label %Mg, label %Mg` leaves BOTH incoming
+        // blocks equal to `E`, so `getParent() != E` rejects it here too (and
+        // `R.InRegion == {E}` rejects it independently).
+        auto *OtherI = dyn_cast<Instruction>(
+            SoleMergePhi->getIncomingValue(EIdx == 0 ? 1 : 0));
+        IntConstFallthroughMux = OtherI && OtherI->getParent() != E &&
+                                 R.InRegion.count(OtherI->getParent()) != 0;
+        // (e) NO CALL anywhere in the region INTERIOR — the anti-overlap fence
+        // for every CALL-BASED owner, and it must NOT be delegated to E4.
+        //
+        // *** THIS CLAUSE EXISTS BECAUSE THE RULE-13 ROUND REFUTED THE FIRST
+        // DRAFT'S CONTAINMENT ARGUMENT WITH A WORKING REPRODUCER. *** That draft
+        // fenced the 6.5 classical-call arm by claiming "E4 admits a call only
+        // with >= 1 TAINTED argument". E4 does no such thing: its call handling
+        // (see `isCuratedReversibleIntrinsic(CI) && CI->doesNotAccessMemory()`
+        // below) has a FIRST, TAINT-BLIND clause that admits any curated readnone
+        // intrinsic — `bswap bitreverse fshl fshr ctpop ctlz cttz abs
+        // smin smax umin umax *_sat lrint llrint` + the fp keep-set — regardless
+        // of its arguments' taint. An ALL-CLASSICAL curated intrinsic in the arm
+        // is EXACTLY `classifyClassicalCallArm`'s admission criterion, so without
+        // this clause W7 and the 6.5 owner both claim it and W7 wins: measured on
+        // `if (q > 5) y = llvm.smax(x, 11);` merged against a folded literal, both
+        // plugins exit 0 but emit DIFFERENT streams (inverted flag predicate,
+        // swapped copy order) — a trace-observable stolen accept. Every shipped
+        // 6.5 accept fixture already satisfies (a)-(d) and survives only because
+        // its callee is an external `declare`; swap one for `@llvm.bswap.i64` and
+        // the theft reproduces. Two further decline->accept flips rode the same
+        // hole: the 6.5 WI-5.8 arm-size fence (`Region.Arm->size() != 2`, which
+        // deliberately declines a larger arm because the flatten would ERASE the
+        // extra instruction) was bypassed, reachable from ordinary C at -O1 via
+        // `if (q > 5) y = __builtin_popcountll(t);`; and a bd-adia
+        // pending-specialization call as the arm's merge value flipped to an
+        // accept that routes quantum data through a Phase-6 Bennett clone.
+        // No wrong unitary was found in any of them — but a stolen accept is a
+        // silent GOLDEN divergence and a scope widening past this increment's
+        // reviewed surface, and the Prime Directive says narrow.
+        //
+        // Interior-only is the right scope: `E`'s instructions are never
+        // speculated or erased, and `classifyClassicalCallArm` requires its call
+        // in the ARM. This subsumes what the draft wrongly attributed to E4 — the
+        // a8c0 / 4.5 `tryEqFoldArm` NON-empty arms (an in-arm `cq_phi` CALL,
+        // whose W7 witness genuinely does fire, so E4 was their single point of
+        // failure), `lowerControlledIOSinks`' sink call, and `classifyAbortPark`'s
+        // noreturn call — and it costs the target cells nothing: `__isnanl`'s arm
+        // is `and`/`icmp`/`or`/`zext`, call-free by construction.
+        if (IntConstFallthroughMux)
+          for (BasicBlock *B : R.InRegion) {
+            if (B == E)
+              continue;
+            for (Instruction &I : *B)
+              if (isa<CallInst>(&I)) {
+                IntConstFallthroughMux = false;
+                break;
+              }
+            if (!IntConstFallthroughMux)
+              break;
+          }
+      }
+    }
     // W6 (bd oudq) — the MERGE block's own TAINTED conditional branch reads one
     // of the merge's i1 phis as an and/or cond-tree NODE. That downstream region
     // (rooted at `Mg`) can NEVER be claimed while the phi lives: rule (A)
@@ -1095,7 +1318,7 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
       }
     Claim = NestedTainted || ClaimableRead || NumMergePhis >= 2 ||
             (NumMergePhis == 1 && SolePhiIncomings > 2) || FpSolePhiMux ||
-            StrandedCondPhi;
+            IntConstFallthroughMux || StrandedCondPhi;
   }
   // ClaimAll (5po2 I2): inside a Bennett clone the anti-overlap witness is
   // irrelevant (no top-level emitter runs there), so claim ANY acyclic SESE

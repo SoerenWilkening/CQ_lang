@@ -136,11 +136,27 @@ SCOPE = {
     "lgammal.f80": ("decided-decline",
                     "inherited Payne-Hanek via sinl: all 10 Unpredictable-BTC loops are in k_rem_pio2/rem_pio2l, none lgammal's own"),
 
-    # -- THE ACTIONABLE SET (5 cells).
-    "expl.f80":       ("lever-gap",
-                       "ONE lever with log10l: tainted-cond if-diamond in __isnanl (s_isnan.c:63) whose arm yields an integer merge phi = the BRANCH form of the select shape 4.4 already handles"),
-    "log10l.f80":     ("lever-gap",
-                       "same __isnanl value-arm lever as expl.f80 (bd zco4's later ldexpl comment is stale — tegx gave ldexpl a body)"),
+    # -- THE ACTIONABLE SET (3 cells).
+    #
+    # RETIRED 2026-07-30 (bd 0rwu, PredMux W7): "expl.f80" and "log10l.f80" were
+    # this table's only 2-cell lever and they now BOTH reach `opt` exit 0 — so they
+    # are deliberately ABSENT rather than relabelled (a scope entry whose cell no
+    # longer declines is a dead entry, and check_scope() fails loudly on one; that
+    # is exactly how this edit was prompted). Their shared blocker was the fdlibm
+    # __isnanl `&&` diamond (s_isnan.c:63), whose f80 merge phi is the INTEGER
+    # `phi i32 [ 0, %entry ], [ %zext, %arm ]` — a const-fallthrough sole-phi
+    # diamond that W5 left to the 4.2 value emitter and that the 4.2 emitter could
+    # not take either (`Routed = StraightThrough` = the folded `0`; no accept path
+    # matches a ConstantInt), so it declined `value-arm swap-route` at
+    # ArmClassify.cpp:1171 with no owner anywhere. The W7 claim witness gives the
+    # diamond to PredMux, which flattens it to the tainted `select` the 4.4/kjd1
+    # controlled-copy merge already lowered. Both are e2e-VERIFIED, not merely
+    # compiling (Rule 2): slice_libm_real_expl / slice_libm_real_log10l, strict
+    # stage 2b. Measured effect on this census: injection-covered 95 -> 97,
+    # declines 28 -> 26, and EXACTLY those two cells changed status (zero
+    # regressions). NOTE log10l lands in `exit0-spec` (its `ldexpl` rides the
+    # Phase-6 clone), not plain COMPILES — the two-numbers discipline says never
+    # merge those buckets.
     "tgammaf.f32":    ("lever-gap",
                        "fcmp-conditioned fp select in a spec callee (isLiftableFpSelect requires ICmpInst, SpecializeReject.cpp:180-183); multi-lever, none owner-decided"),
     "tgamma.f64":     ("lever-gap",

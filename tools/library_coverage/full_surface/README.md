@@ -2,10 +2,10 @@
 
 ## ⚠ READ THIS FIRST — `bucket` is NOT a work list. `scope` is.
 
-**The 28 declines contain 5 cells of actionable work, not 28** (measured 2026-07-28,
-bd `3c6m.14`). Every `decline` record now carries a **`scope`** field alongside
-`bucket`, because those two answer different questions and only one of them is a
-plan:
+**The 26 declines contain 3 cells of actionable work, not 26** (re-measured
+2026-07-30, bd `0rwu`; the axis itself is bd `3c6m.14`, 2026-07-28). Every
+`decline` record carries a **`scope`** field alongside `bucket`, because those two
+answer different questions and only one of them is a plan:
 
 | | question it answers |
 |---|---|
@@ -13,12 +13,38 @@ plan:
 | `scope`  | **is it work** — decided-out, actionable, deferred, or not a compiler fact |
 
 ```
-BY SCOPE (28 declines)
+BY SCOPE (26 declines)
   21  decided-decline       fmod/remainder/remquo x3 · sin/cos/tan x3 · tgammal · lgammal · logbl
-   5  lever-gap    <-- THE WORK   expl.f80 · log10l.f80 · tgammaf.f32 · tgamma.f64 · nexttowardf.f32
+   3  lever-gap    <-- THE WORK   tgammaf.f32 · tgamma.f64 · nexttowardf.f32
    1  deferred-capability   powl.f80
    1  corpus-gap            nexttowardl.f80
 ```
+
+**⚡ 2026-07-30 (bd `0rwu`, PredMux W7): the 2-cell lever is SPENT — 95 → 97
+injection-covered, 28 → 26 declines, lever-gap 5 → 3.** The measurement is
+RECORDED, not asserted: `full_census_O1.json` in this directory is that run's
+output (`BC=/private/tmp/bc OPENLIBM=/private/tmp/openlibm CENSUS_OPTLEVEL=O1
+python3 full_census.py`), and the pre-W7 baseline it is diffed against is
+reproducible from commit `8ec56ac`. `expl.f80` and
+`log10l.f80` shared one blocker: the fdlibm `__isnanl` `&&` (`s_isnan.c:63`),
+whose f80 merge phi is the INTEGER `phi i32 [ 0, %entry ], [ %zext, %arm ]`. W5
+had left every integer sole-phi diamond to the 4.2 value emitter, and that emitter
+could not take this one either — `ArmClassify` sets `Routed = StraightThrough` =
+the folded `0`, and no accept path matches a `ConstantInt` — so both declined
+`value-arm swap-route` at `ArmClassify.cpp:1171`, instruction-for-instruction,
+with **no owner anywhere**. The new W7 claim witness hands the diamond to PredMux,
+which flattens it into exactly the tainted `select` the 4.4/kjd1 controlled-copy
+merge has always lowered. Both cells are **e2e VERIFIED, not merely compiling**
+(Rule 2): `slice_libm_real_expl` (796-line trace) and `slice_libm_real_log10l`
+(1198-line trace), both stage-2b STRICT. Measured blast radius: **exactly those 2
+of 123 cells changed status, zero regressions** — `expl.f80` → `COMPILES`,
+`log10l.f80` → `exit0-spec` (its `ldexpl` rides the Phase-6 clone; never merge
+that bucket into plain `COMPILES`). Two earlier framings of this cell pair are now
+retired: it was **not** the Q+Q gate at `ArmClassify.cpp:1127` (removing the Q+Q
+link changed nothing — refuted by experiment), and the blast radius was **not**
+wider than the pair despite `isnan` being a common openlibm prologue (the f64/f32
+`isnan` prologues already compiled; their phi is `i1`, which W7 deliberately
+excludes as W6's territory).
 
 > **⚠ A DECLINING CELL IS NOT A DECLINING FUNCTION. READ THE `scope_ref`.**
 > This census measures **one thing**: can openlibm's real body be lowered *as
@@ -127,9 +153,9 @@ measured grounds** (mapped `!dbg` → source, 2026-07-28):
   loops resolve into `__kernel_rem_pio2` / `__ieee754_rem_pio2l`, **none** is
   `lgammal`'s own. No gamma-specific ground at all.
 
-## How many `math.h` functions actually compile? (measured 2026-07-28)
+## How many `math.h` functions actually compile? (measured 2026-07-28; re-measured 2026-07-30 after bd `0rwu`)
 
-### The goal-aligned number: **42 of 56** — CAPABILITY REACH, never quote as progress
+### The goal-aligned number: **44 of 56** — CAPABILITY REACH, never quote as progress
 
 The project's aim is *"automatically emit quantum routines for `math.h` functions."*
 That sentence fixes the metric, and it is **not** any of the three scoreboards below:
@@ -148,23 +174,26 @@ defensible and they answer different questions — quote whichever you mean, exp
 
 | denominator | | |
 |---|---|---|
-| **stems** — `sin` counted once | **42 / 56 (75%)** | covered at **all three** widths |
-| **callable spellings** — `sinf`/`sin`/`sinl` counted separately, and this is what the census cells actually are | **137 / 168 (82%)** | = **42** recognition + **95** injection |
+| **stems** — `sin` counted once | **44 / 56 (79%)** | covered at **all three** widths |
+| **callable spellings** — `sinf`/`sin`/`sinl` counted separately, and this is what the census cells actually are | **139 / 168 (83%)** | = **42** recognition + **97** injection |
 
 The spelling count is the one a user recognizes (`sinf` and `sinl` are distinct ABI
-functions) and it is higher, because the 6 partial-width stems still contribute real
-coverage. `137 = 47 + 48 + 42`, i.e.:
+functions) and it is higher, because the 4 partial-width stems still contribute real
+coverage. `139 = 47 + 48 + 44`, i.e.:
 
-**f32 47/56 (84%) · f64 48/56 (86%) · f80 42/56 (75%) — the f80 column is the gap**,
-and every one of the 6 partial stems is f80-short.
+**f32 47/56 (84%) · f64 48/56 (86%) · f80 44/56 (79%) — the f80 column is still the
+gap**, and every one of the 4 remaining partial stems is f80-short. bd `0rwu` moved
+the f80 column 42 → 44 (`exp`, `log10`), which is the only column any of the three
+2026-07-30 numbers moved: recognition is a fixed floor and f32/f64 were already
+complete for those two stems.
 
 Stem-level detail:
 
 | | | |
 |---|---|---|
-| **all three widths** | **42 / 56** | = **14** by recognition + **28** by injection |
-| every width golden-matched | 40 / 56 | `fabs` (runs, no golden) and `fma` (partial) fall short |
-| some widths | 6 / 56 | `exp` `lgamma` `log10` `logb` `nexttoward` `pow` — all f80-short |
+| **all three widths** | **44 / 56** | = **14** by recognition + **30** by injection |
+| every width golden-matched | 42 / 56 | `fabs` (runs, no golden) and `fma` (partial) fall short |
+| some widths | 4 / 56 | `lgamma` `logb` `nexttoward` `pow` — all f80-short |
 | no width | 8 / 56 | `sin` `cos` `tan` `fmod` `remainder` `remquo` `tgamma` `ilogb` |
 
 ### …and openlibm ships MORE than ISO C11 `math.h`, none of it modelled (bd `sj30`)
@@ -246,25 +275,27 @@ Measured: **36 verified · 3 accepted** (`fabs{,f,l}`) **· 3 partial** (`fma{,f
                      = 123 actually probed   <- the census denominator
 ```
 
-So **95/123 = 77% of the injectable subset** — which is **52%** of the 183 modelled
-cells and **41%** of the 69 named entities. **Never write "77% of `math.h`".**
+So **97/123 = 79% of the injectable subset** — which is **53%** of the 183 modelled
+cells and **42%** of the 69 named entities. **Never write "79% of `math.h`".**
 Two properties of this denominator worth knowing before quoting it: it is
 **contingent on a harness bug** (fixing `bcv4` makes it 126 and moves every
 percentage), and it contains **one cell with no body to inject at all**
 (`nexttowardl.f80`), so the strict *"can openlibm's body be lowered"* denominator
 is **122**.
 
-**Cells: 95/123 injection-covered, all 95 ship-floor verified** — *90 fully inlined +
-5 Phase-6 clone-specialized*, which `wprobe.py` requires never be merged into plain
+**Cells: 97/123 injection-covered, all 97 ship-floor verified** — *91 fully inlined +
+6 Phase-6 clone-specialized*, which `wprobe.py` requires never be merged into plain
 `COMPILES`. That the two numbers coincide is a **measurement, not an invariant**
-(closed by `3c6m.58`, re-opened by `3c6m.60`, re-closed by `3c6m.61`).
+(closed by `3c6m.58`, re-opened by `3c6m.60`, re-closed by `3c6m.61`, held across
+`0rwu` — whose 2 new cells shipped with their goldens in the same increment).
 
-**By function — 28 of 42 compile at ALL THREE widths:**
+**By function — 30 of 42 compile at ALL THREE widths** (`exp` and `log10` completed
+their f80 width in bd `0rwu`; they were the two entries that made this row 28):
 
 | | n | functions |
 |---|---|---|
-| **all 3 widths** | **28** | `acos acosh asin asinh atan atan2 atanh cbrt cosh erf erfc exp2 expm1 fdim frexp hypot ldexp llround log log1p log2 lround modf nextafter scalbln scalbn sinh tanh` |
-| some widths | 6 | `exp lgamma log10 logb nexttoward pow` |
+| **all 3 widths** | **30** | `acos acosh asin asinh atan atan2 atanh cbrt cosh erf erfc exp exp2 expm1 fdim frexp hypot ldexp llround log log10 log1p log2 lround modf nextafter scalbln scalbn sinh tanh` |
+| some widths | 4 | `lgamma logb nexttoward pow` |
 | no width | 8 | 7 measured at zero (`cos fmod remainder remquo sin tan tgamma`) **+ `ilogb`, which is UNMEASURED** |
 
 All 42 carry exactly 3 variants, so "all widths" is a genuine 3/3 for every one of the
@@ -509,8 +540,9 @@ externally-linked spelling declines today. Same family as the already-recorded b
 
 **⚡ VERIFY-FIRST SWEEP — THE TWO NUMBERS COINCIDED AT 68 (2026-07-25, bd `3c6m.58`).**
 ⚠ *Historical: true of the 68-cell baseline this banner describes. The `3c6m.60` banner ABOVE
-supersedes it — and is itself superseded: the scoreboard is now **95 injection-covered /
-95 verified**, gap 0, after bd `3c6m.61` closed `hypotl.f80` (2026-07-28). The "two numbers
+supersedes it — and is itself superseded: the scoreboard is now **97 injection-covered /
+97 verified**, gap 0, after bd `3c6m.61` closed `hypotl.f80` (2026-07-28) and bd `0rwu` closed
+`expl.f80` + `log10l.f80` with their goldens in the same increment (2026-07-30). The "two numbers
 coincide" property this banner celebrates therefore holds again — as a measurement, never as
 an invariant.*
 The standing caveat below — *"injection-covered is an UPPER BOUND; verified is its own
