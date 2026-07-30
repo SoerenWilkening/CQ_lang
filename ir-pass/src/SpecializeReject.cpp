@@ -7,6 +7,7 @@
 
 #include "SpecializeReject.h"
 
+#include "ArmAnalysis.h"        // comparePredLowerable (Rule 14 — the one predicate gate)
 #include "IntrinsicLowering.h"
 #include "OpcodeSupport.h"
 #include "QramLowering.h"
@@ -179,8 +180,76 @@ bool isLiftableFpSelect(const SelectInst *SI) {
   StringRef W = abiWidthFromType(SI->getType());
   if (W != "f32" && W != "f64" && W != "f80")
     return false;  // bd adia whitelist: {f32,f64,f80} — f16 declines (no coverage)
-  if (!isa<ICmpInst>(SI->getCondition()))
-    return false;  // integer icmp condition only (fcmp is a deferred widening).
+  // bd tkmn (the tgamma lever, Inc 1): the condition may be an `icmp` OR — NEW —
+  // an `fcmp`. The fcmp clause was staged out as "a deferred widening" when this
+  // gate was written; the substrate it was waiting on has since shipped. The
+  // ONLY thing that changes is which conditions this SHAPE gate admits: the
+  // emitter beneath it is already fcmp-capable and untouched by this increment
+  // (`mintCondNetwork`'s leaves are generic `CmpInst`s lowered by
+  // `lowerCompareToFlag`, whose family stem is literally `IsFp ? "fcmp" :
+  // "icmp"`, and the YAML ships the full fcmp grid: 14 predicates x
+  // {f16,f32,f64,f80} x {fwd,inv,unc} x {hl,qq}).
+  //
+  // MEASURED shape that motivated it (openlibm bsdsrc/b_exp.c:171 `return
+  // isfinite(x) ? scalbn(1.0,5000) : x`, inlined into `tgamma`, which clang -O1
+  // if-converts to a straight-line select — so there is no control-flow work
+  // here at all, only this predicate):
+  //     %.inv.i        = fcmp one double %v, 0x7FF0000000000000
+  //     %spec.select.i = select i1 %.inv.i, double 0x7FF0000000000000, double %v
+  // const/value arms, already admitted by the 20xt.3 widening below; f64 result,
+  // already in the width whitelist above. The fcmp condition was the sole
+  // failing clause — PINNED by instrumentation (tagging both InBodyControl
+  // origins and all three `diagnoseReject` call sites, then rebuilding), NOT
+  // inferred from the diagnostic string, which is emitted from several sites.
+  //
+  // ANGLE SAFETY (the f64/angle miscompile family, and the reason the top-level
+  // kjd1 fp-select un-staging needed a three-legged fence this does not): a
+  // clone body is provably ROTATION-FREE — `scanBody` rejects every
+  // `cq_theta`/`cq_phi` as `QuantumPrimitive` (Sets.Rotations, above) and
+  // `buildClone` never lowers rotations — so there is no rotation arg-1 angle
+  // slot for a compared fp value to reach, and kjd1's gate-2c stale-condition
+  // wire guard (a chained in-place Ry between the compare and the select
+  // restaging the flag's basis) is VACUOUS here rather than merely unlikely.
+  // RE-VERIFIED at this increment, not inherited from the comment above.
+  auto *Cond = dyn_cast<CmpInst>(SI->getCondition());
+  if (!Cond)
+    return false;  // condition must be a single compare (an and/or tree is not
+                   // this gate's shape — see `collectCondTree` in the emitter).
+  // Predicate + compare-operand-width fences. HONEST STATUS — these are
+  // DEFENSE IN DEPTH, NOT the gate that stops the off-grid shapes today, and the
+  // distinction is recorded because a containment claim that names the wrong
+  // clause is how this file has been wrong before: the condition compare is
+  // ITSELF an instruction in the callee body, so `scanBody`'s data-op whitelist
+  // (`isa<CmpInst>` → `unsupportedWidth` / the predicate gate, below) reaches it
+  // independently of this select and declines FIRST. MEASURED, not reasoned: an
+  // `fcmp olt fp128` condition declines "(unsupported width)" and an `fcmp true`
+  // condition declines "(unsupported compare predicate)" — BOTH at that data-op
+  // gate, neither at these lines (spec_reject_fp_select_fcmp_fp128.ll /
+  // spec_reject_fp_select_fcmp_degenerate_pred.ll pin the messages that actually
+  // fire). They are kept anyway so this predicate is SELF-CONTAINED rather than
+  // silently coupled to another gate's reachability, which is the property a
+  // future caller of `isLiftableFpSelect` would assume it has.
+  //
+  // `comparePredLowerable` is the ONE shared predicate gate (Rule 14 — never a
+  // second copy of the policy). It is VACUOUS for `icmp` (all 10 integer
+  // predicates are in scope), so this narrows NOTHING on the pre-existing
+  // integer path.
+  if (!comparePredLowerable(Cond))
+    return false;
+  if (Cond->isFPPredicate()) {
+    // The compare's OPERAND width is independent of the select's RESULT width
+    // gated above (an `fcmp fp128` can feed a `double` select), so it takes its
+    // own check. `isFloatingPointTy()` is the right test HERE precisely because
+    // it EXCLUDES vectors — the one place the usual `isFPOrFPVectorTy` advice
+    // inverts, since a `<2 x double>` compare yields a `<2 x i1>` condition and
+    // must not be admitted.
+    Type *OpTy = Cond->getOperand(0)->getType();
+    if (!OpTy->isFloatingPointTy())
+      return false;
+    StringRef CW = abiWidthFromType(OpTy);
+    if (CW != "f16" && CW != "f32" && CW != "f64" && CW != "f80")
+      return false;  // outside the YAML fcmp grid (fp128/bf16) — no template.
+  }
   // 20xt.3 (the materialize-classical-arm widening — atan2l → inner atanl block
   // %20, the |x|≥2^64 overflow arm `select(sgn, +π/2, −π/2)`): each arm is EITHER
   // a derived (non-constant) fp value OR a concrete `ConstantFP`. A ConstantFP arm

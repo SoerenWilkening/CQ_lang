@@ -488,17 +488,17 @@
  },
  "tgammaf.f32": {
   "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "tgamma double (double): cq specialization: callee contains tainted control flow under quantum lift",
+  "bucket": "unsupported opcode",
+  "diag": "sin double (double): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
   "scope": "lever-gap",
-  "scope_ref": "fcmp-conditioned fp select in a spec callee (isLiftableFpSelect requires ICmpInst, SpecializeReject.cpp:180-183); multi-lever, none owner-decided"
+  "scope_ref": "alloca [20 x i32] (__kernel_rem_pio2 iq[20], Payne-Hanek scratch) inlined into `sin`, reached via neg_gam's reflection branch b_tgamma.c:290; needs fp-range DEAD-PATH PRUNING (the sin arg is provably in [0,pi/4], but scanBody scans the whole body regardless of reachability)"
  },
  "tgamma.f64": {
   "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "tgamma double (double): cq specialization: callee contains tainted control flow under quantum lift",
+  "bucket": "unsupported opcode",
+  "diag": "sin double (double): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
   "scope": "lever-gap",
-  "scope_ref": "same single blocker as tgammaf.f32 (tgammaf is (float)tgamma(x)); its b_tgamma.c:200 loop is STATICALLY bounded (trip<=5) so Rule 18 keeps it IN scope"
+  "scope_ref": "same single blocker as tgammaf.f32 (tgammaf is (float)tgamma(x)) \u2014 both advanced together in bd tkmn Inc 1. Layers BEHIND sin (the statically-bounded b_tgamma.c:200 fp-induction loop, trip<=5; the depth-1 self-recursion) are UNMEASURED, not known-remaining"
  },
  "tgammal.f80": {
   "status": "decline",

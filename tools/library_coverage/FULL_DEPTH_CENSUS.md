@@ -17,7 +17,10 @@
 >   injection-covered and verified moved together. Both live in the **f80** column and
 >   nowhere else; the **`fp80 value-arm` bucket that held exactly those two is now EMPTY**.
 > - The 26 declines by bucket: loop-carried 10 · memory-store/Shadow 7 · unsupported opcode
->   5 · control (flat/diamond) 3 · unknown callee 1.
+>   **7** · control (flat/diamond) **1** · unknown callee 1. (bd `tkmn` Inc 1 moved the two
+>   `tgamma` cells from `control (flat/diamond)` to `unsupported opcode` by clearing their
+>   fcmp-select layer — a bucket RELABEL, not progress: `scope` is unchanged and the
+>   actionable count is still 3. Exactly the reason `bucket` is not a work list.)
 > - **By `scope` — the axis to plan off: `lever-gap` 3** (`tgamma.f64`, `tgammaf.f32` — ONE
 >   lever, `tgammaf` is `(float)tgamma(x)` — plus `nexttowardf.f32`) · `deferred-capability`
 >   1 (`powl.f80`) · `corpus-gap` 1 (`nexttowardl.f80`) · **`decided-decline` 21**.

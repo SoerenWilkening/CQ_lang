@@ -1977,6 +1977,39 @@ add_test(NAME e2e-slice-specialize-fp-select-const
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_const_caller.expected.log")
 
+# bd tkmn Inc 1 (the fcmp-condition widening): an FCMP-conditioned CONST/VALUE fp
+# select in a source-injected helper lifted to a reversible clone — the openlibm
+# bsdsrc/b_exp.c:171 `isfinite(x) ? HUGE : x` shape (inlined into tgamma), which
+# clang -O1 if-converts to select(fcmp, const, value). Before Inc 1 the
+# specialization shape gate admitted only an ICmpInst condition, and that single
+# clause was the tgamma lever's first blocker.
+#
+# THIS SLICE EXISTS BECAUSE OF A RULE-13 COVERAGE FINDING, not to move a cell: the
+# new accept path fired in ZERO e2e slices and ZERO census cells, so the only
+# artifact exercising it was a lit fixture — and fixtures never LINK. e2e is the
+# one layer that proves every emitted symbol resolves and signature-matches
+# (Rule 2), so without this the newly reachable cq_template_fcmp_*_hl / _unc mints
+# had no standing regression proving they link.
+#
+# LINK-proves cq_template_fcmp_une_f64_hl(+_unc), cqrt_alloc_f64,
+# cqrt_copy_f64_controlled and cq_template_sitofp_i32_to_f64(+_unc) resolve. The
+# golden: 1 ry + 1 measure (Rule 5), the flag minted by an FCMP stem, the two
+# controlled copies ¬flag cqrt_x-bracketed, a palindromic forward/reverse, the
+# compare _unc NAMING the rail freed 3 lines later (the 8txa out-first form), the
+# materialized |2.5> const rail NEVER freed (Rule 6) and the four reversed rails
+# freed on |0> (0 double-frees). Stage 2b runs STRICT. The helper squares its input
+# first: clang -O1 folds a literal isfinite test away entirely and inverts
+# `v != 0.0` back into an integer compare, so `w = v*v` is what makes the fcmp
+# actually survive to the pass (see the lib TU header).
+add_test(NAME e2e-slice-specialize-fp-select-fcmp
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_fcmp_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_fcmp_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_select_fcmp_caller.expected.log")
+
 # Phase 7.1-E follow-up (test_C_libtooling-mvjc): a CURATED reversible llvm.* idiom
 # intrinsic INSIDE a specialized clone. specialize_intrinsic_caller.c routes a
 # theta-tainted `x` through the separate-TU classical helper popcount_helper

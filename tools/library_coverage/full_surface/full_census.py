@@ -157,10 +157,17 @@ SCOPE = {
     # regressions). NOTE log10l lands in `exit0-spec` (its `ldexpl` rides the
     # Phase-6 clone), not plain COMPILES — the two-numbers discipline says never
     # merge those buckets.
+    # bd tkmn Inc 1 (2026-07-30) CLEARED the fcmp-select layer these two entries
+    # used to name. Their FIRST blocker is now the Payne-Hanek scratch alloca in
+    # `sin`, which corrects the recorded LAYER ORDER: the ticket predicted the
+    # b_tgamma.c:200 loop and the :309/311 recursion behind the select, but BOTH
+    # sit behind `sin` and remain UNMEASURED (never reached). Still lever-gap and
+    # NOT decided-decline — the blocking path is mathematically dead here, which
+    # is a pruning capability we have not built, not an owner ruling.
     "tgammaf.f32":    ("lever-gap",
-                       "fcmp-conditioned fp select in a spec callee (isLiftableFpSelect requires ICmpInst, SpecializeReject.cpp:180-183); multi-lever, none owner-decided"),
+                       "alloca [20 x i32] (__kernel_rem_pio2 iq[20], Payne-Hanek scratch) inlined into `sin`, reached via neg_gam's reflection branch b_tgamma.c:290; needs fp-range DEAD-PATH PRUNING (the sin arg is provably in [0,pi/4], but scanBody scans the whole body regardless of reachability)"),
     "tgamma.f64":     ("lever-gap",
-                       "same single blocker as tgammaf.f32 (tgammaf is (float)tgamma(x)); its b_tgamma.c:200 loop is STATICALLY bounded (trip<=5) so Rule 18 keeps it IN scope"),
+                       "same single blocker as tgammaf.f32 (tgammaf is (float)tgamma(x)) — both advanced together in bd tkmn Inc 1. Layers BEHIND sin (the statically-bounded b_tgamma.c:200 fp-induction loop, trip<=5; the depth-1 self-recursion) are UNMEASURED, not known-remaining"),
     "nexttowardf.f32":("lever-gap",
                        "promoteVolatileScalarLocals forfeits a STORE-ONLY alloca (Loads.empty(), QramLowering.cpp:1458); its 3 compiling siblings all read u. A control layer sits behind it"),
 
