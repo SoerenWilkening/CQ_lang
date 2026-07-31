@@ -381,53 +381,75 @@ bool collectCondTree(Value *Root, CondTree &Tree) {
     if (!Seen.insert(V).second)
       continue;  // shared subtree — already collected once.
     if (auto *Leaf = dyn_cast<CmpInst>(V)) {
-      // Self-operand LEAF fence (bd 7q3s) — the exact twin of the node fence
-      // below, on the axis that was missing it. A compare whose two operands are
-      // the SAME SSA value mints a TWO-REGISTER reversible comparator with ONE
-      // rail in both slots when the operand is tainted (`cq_template_fcmp_uno_f64
-      // (i32 %h, i32 %h)` + its `_unc`): the identical hazard the node fence
-      // exists for — value-correct in trace semantics yet an ill-formed physical
-      // gate no backend can realize, frozen into the golden at exit 0.
+      // NO ALIASED-OPERAND LEAF FENCE HERE, DELIBERATELY (bd big5, 2026-07-31 —
+      // the revert of bd 7q3s / dd2c103). DO NOT RE-ADD ONE.
       //
-      // THE TEST IS RAIL IDENTITY, NOT SSA IDENTITY, and that distinction IS this
-      // fence (Rule-13 finding, 2026-07-31). The first draft used
-      // `getOperand(0) == getOperand(1)`, justified by "the shape is non-canonical
-      // — 0 aliased compares in the committed corpus, and slice_libm_real_modff.c's
-      // `x != x` isnan idiom folds to `fcmp uno %1, 0.0` at -O1". That is true of
-      // the SSA-identical form and IRRELEVANT to the hazard, because the dangerous
-      // alias is created by ROTATION LOWERING — i.e. AFTER any pre-mutation SSA
-      // test has run. `cq_phi` (Rz) is an IN-PLACE gate whose result RAUWs to its
-      // argument's i32 handle, so four lines of ordinary C
-      //     q = cq_theta(u,.5);  r = cq_phi(q,.25);  s = (q < r) ? 11 : 22;
-      // leave `%q` and `%r` SSA-DISTINCT — InstCombine cannot fold this compare,
-      // unlike `x==x` — yet BOTH lower to `%h`, emitting
-      //     cq_template_icmp_slt_i32(i32 %h, i32 %h)      (+ its `_unc`)
-      // at EXIT 0. MEASURED from real C at the -O1 ship floor, integer and fp, and
-      // also via the `if (q<r)` form, which -O1 if-converts into this same select.
+      // A leaf whose two operands resolve to ONE post-lowering rail mints
+      // `cq_template_icmp_slt_i32(i32 %h, i32 %h)` (+ its `_unc`). dd2c103
+      // declined that on the premise that it is "an ill-formed physical gate no
+      // backend can realize". THE PREMISE IS FALSE (owner ruling, same day):
       //
-      // `operandsAlias` is the correct predicate and it already existed 60 lines
-      // above FOR EXACTLY THIS REASON (Rule 14 — reuse, never reinvent a weaker
-      // twin): it materializes A's pre-region `cq_phi` arg-0 closure and tests B
-      // against it through `diagonalAliasHit`, answering "do these resolve to the
-      // SAME post-lowering register?", which pre-mutation SSA cannot. It SUBSUMES
-      // the SSA test (for A == B the closure hits on the first step), so nothing
-      // is lost. A `Constant` operand never aliases a handle, so ordinary `q < 5`
-      // is untouched, and genuinely distinct rails still accept — verified: two
-      // independent thetas emit `(i32 %h, i32 %h2)`.
+      //   CASE A — aliasing the INPUTS of an OUT-OF-PLACE gate whose output is a
+      //   FRESH |0> rail. REALIZABLE, and the proof is a THEOREM rather than a
+      //   list of lucky degeneracies: the generated ABI's out-of-place shape is
+      //   `out(fresh |0>) ^= f(in0, in1)`, so aliasing the inputs gives
+      //   `out ^= g(a)` with `g(a) := f(a,a)`, and `(a, 0) -> (a, g(a))` is the
+      //   standard reversible embedding of a classical function — self-inverse
+      //   and unitary for ANY `g`. Degeneracy only changes COST, never
+      //   realizability. Cheap: `icmp_eq/sle/sge(a,a)` is constant TRUE (one X on
+      //   the flag rail), `icmp_slt/sgt/ne(a,a)` is constant FALSE (nothing at
+      //   all). Genuinely unary: `fcmp uno(a,a)` IS `isnan(a)`, every ORDERED
+      //   fcmp on aliased operands is `!isnan(a)` or constant FALSE, `fmul(a,a)`
+      //   is squaring. DO NOT write `fsub(a,a) == 0` or `fdiv(a,a) == 1` — both
+      //   are NaN on inf/NaN (and `fdiv` also on ±0), which is precisely what
+      //   tests/e2e/slice_libm_real_acos.c:98 `(x-x)/(x-x)` RELIES on; a backend
+      //   implementing them as constants would turn acos(2.0) from NaN into 1.0.
+      //   The generic fallback for a non-degenerate `g` is the copy sandwich:
+      //   CNOT×W copy, gate, EXACT uncopy (the copy rail is a deterministic
+      //   function of a source that STAYS LIVE), free at a provable |0>. Rule 8
+      //   is untouched — it forbids freeing a SOURCE by copy+uncompute, not a
+      //   COPY. So this is a PHASE-9 BACKEND OBLIGATION, not a compiler defect.
       //
-      // Declining is still the fix, not a punt (Rule 17): an aliased compare is a
-      // ONE-register predicate (`fcmp uno x,x` IS isnan(x)), and a two-register
-      // gate with one rail in both slots is not a realizable approximation of it.
-      // Lowering it as a genuine 1-register predicate is a separate feature.
+      //   CASE B — an input aliasing a rail the gate WRITES (`cqrt_cnot(c,c)`
+      //   erases; `cqrt_cswap(c,c,b)` is not unitary) is genuinely unrealizable.
+      //   A compare leaf can never be Case B: its forward mint is an
+      //   unconditional `CreateCall(Callee, {Lhs, Rhs}, "h_cmp")`
+      //   (CompareLowering.cpp:262), so the flag rail is a NEW value whatever
+      //   the operands are, and the `_unc` strip writes that same flag rail
+      //   while reading the operands. Fence Case B where it can actually arise,
+      //   not here. (A 2026-07-31 adversarial round checked the whole pass for
+      //   Case B and found none EMITTED, at any mint site.)
       //
-      // Placed in `collectCondTree` because it is the SHARED walk: this single
-      // fence covers the top-level 4.4 select (SelectClassify detect +
-      // SelectMergeEmit emit) AND the Phase-6 clone select (Specialization's
-      // `lowerCloneSelect`/`mintCondNetwork`), so the two cannot drift apart
-      // (Rule 14). A clone body is rotation-free (`scanBody` rejects `cq_phi`), so
-      // there `operandsAlias` degenerates to the SSA test — correct, not weaker.
-      if (operandsAlias(Leaf->getOperand(0), Leaf->getOperand(1)))
-        return false;
+      // THE CONSISTENCY ARGUMENT, STATED AS MEASURED. 118 of 226 committed e2e
+      // goldens already ship an aliased-operand forward template call —
+      // slice_libm_real_acos.c:102 `z = x*x` -> `cq_template_fmul_f64(h0, h0)`.
+      // Those goldens were GREEN WITH THE FENCE IN, because this walk inspects a
+      // select CONDITION tree and never an arithmetic instruction. So the fence
+      // did not CONTRADICT them — it was INCONSISTENT with them: the DATA path
+      // has always emitted aliased Case-A mints unfenced, so the compiler already
+      // depends on Case A being realizable, and fencing the CONDITION path
+      // contradicted a premise the tree relies on. DO NOT restate this as "the
+      // fence would have condemned 118 goldens", and DO NOT generalize it into
+      // "if a fence would condemn a golden the fence is wrong" — this project
+      // routinely accepts a shape as data and declines it under control (kjd1
+      // accepts fp at the select and declines it at every non-select consumer).
+      //
+      // SOUNDNESS, not just realizability: the alias here is created by a
+      // DIAGONAL gate (Rz), so both SSA names denote the same BASIS LABEL and
+      // collapsing `icmp(a,a)` is the CORRECT answer. The NON-diagonal twin
+      // (`r = cq_theta(q,·)`, an in-place Ry that also RAUWs to one rail but
+      // CHANGES the basis) must NOT lower, and does not — it is owned by
+      // ArmClassify's gate 2c (`findNonDiagonalWireGate`) and pinned by
+      // control_swap_reject_select_theta_alias_cond.ll. That pairing is the
+      // invariant; read the two fixtures together.
+      //
+      // Pinned by control_swap_accept_select_rail_alias_cond.ll (canonical, with
+      // the measured per-site fence-coverage matrix),
+      // control_swap_accept_select_aliased_leaf.ll, and
+      // control_swap_accept_select_and_aliased_leaf.ll (the aliased leaf composed
+      // with an `and i1` NODE — two leaves over one source rail still mint two
+      // DISTINCT flag rails, which is what makes the retained node fence's
+      // rationale below true).
       Tree.Leaves.push_back(Leaf);
       continue;
     }
@@ -436,12 +458,34 @@ bool collectCondTree(Value *Root, CondTree &Tree) {
         (BO->getOpcode() != Instruction::And &&
          BO->getOpcode() != Instruction::Or))
       return false;  // off-grammar: xor / freeze / i1-select / phi / trunc / …
-    // Self-operand node fence (design-review MAJOR): `or/and i1 %c, %c` would
-    // emit a toffoli whose two CONTROL slots resolve to ONE rail (per-Value
-    // memo) — value-correct in trace semantics yet an ill-formed physical
-    // 3-qubit gate no backend can realize, frozen into the golden at exit 0.
-    // The shape is non-canonical (InstCombine folds x∨x/x∧x to x), so decline
-    // it rather than peephole an unprobed accept (Prime Directive).
+    // Self-operand node fence. `or/and i1 %c, %c` emits a toffoli whose two
+    // CONTROL slots resolve to ONE rail (per-Value memo).
+    //
+    // ITS ORIGINAL JUSTIFICATION IS RETRACTED (bd big5, 2026-07-31). It read
+    // "an ill-formed physical 3-qubit gate no backend can realize"; that premise
+    // is FALSE — this is CASE A (aliased INPUTS, fresh |0> output rail `G`), and
+    // `toffoli(c,c,G)` is exactly `cnot(c,G)` (owner ruling: AND of x with
+    // itself is x). MEASURED here, and it is not even a peephole obligation —
+    // the network as WRITTEN is already alias-correct, because the OR node is
+    // `cnot(L,G); cnot(Rv,G); toffoli(L,Rv,G)` (XOR-XOR-AND), NOT an X-bracketed
+    // De Morgan. With L == Rv: AND gives G = c∧c = c; OR gives
+    // G = c ⊕ c ⊕ (c∧c) = c — both equal `c ∨ c` / `c ∧ c`, and the §5 reverse
+    // strip returns G to |0> exactly, so Rule 6 holds. There is no defect here.
+    //
+    // THE FENCE IS KEPT ANYWAY, as a SCOPED conservative decline (Prime
+    // Directive), and the distinction from the leaf axis above is deliberate:
+    //   * the LEAF axis was reachable from four lines of plain C at the -O1 ship
+    //     floor (via the `cq_phi` RAUW rail merge) AND its decline contradicted
+    //     109 committed goldens — so fencing it was an actual defect;
+    //   * this NODE axis is reachable from NEITHER. InstCombine folds x∨x / x∧x
+    //     to x, and rail-aliasing cannot create it either (every leaf mints its
+    //     OWN fresh flag rail via an independent `CreateCall`, so two distinct
+    //     leaves are never one rail even when their OPERANDS alias — PINNED by
+    //     control_swap_accept_select_and_aliased_leaf.ll, which composes exactly
+    //     that: an aliased leaf feeding an `and i1` node, emitting
+    //     `cqrt_toffoli(%h_cmp, %h_cmp1, %g)` over THREE distinct rails).
+    // So widening here would buy nothing measurable while adding an unprobed
+    // accept path. Tracked as a follow-on rather than done blind (bd big5).
     if (BO->getOperand(0) == BO->getOperand(1))
       return false;
     Stack.push_back({V, true});  // node slot AFTER both children.

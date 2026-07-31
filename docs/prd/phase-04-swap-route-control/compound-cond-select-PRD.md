@@ -92,11 +92,24 @@ fresh rails — two independent realizations, each with its own balanced strip
 
 **Self-operand nodes decline** (design-review MAJOR): `or/and i1 %c, %c`
 would resolve BOTH controls of one `cqrt_toffoli` to a single rail (per-Value
-memo) — value-correct in trace semantics yet an ill-formed physical 3-qubit
-gate (duplicated control wire) frozen into the golden at exit 0. Non-canonical
-(InstCombine folds `x∨x`/`x∧x`), so `collectCondTree` rejects any node with
-`op0 == op1` rather than acquiring an unprobed peephole
+memo), so `collectCondTree` rejects any node with `op0 == op1`
 (`control_swap_reject_select_or_selfdup.ll`).
+
+> **Rationale corrected 2026-07-31 (bd big5).** This entry previously justified
+> the decline as "an ill-formed physical 3-qubit gate (duplicated control wire)
+> frozen into the golden at exit 0". **That premise is false** (owner ruling —
+> the same claim bd big5 removed from three code sites and one fixture). Aliased
+> CONTROLS of an out-of-place gate whose TARGET is a fresh `|0⟩` rail are
+> **Case A**: `toffoli(c,c,G)` is exactly `cnot(c,G)`. The node network is
+> already alias-correct as written — the OR node is `cnot(L,G); cnot(Rv,G);
+> toffoli(L,Rv,G)` (XOR-XOR-AND), *not* an X-bracketed De Morgan — so `L == Rv`
+> gives `G = c` for both `and` and `or`, and the §5 reverse strip returns `G` to
+> `|0⟩` exactly. The fence is retained purely as a **scoped conservative
+> decline** (Prime Directive) of a shape reachable from neither `-O1` C
+> (InstCombine folds `x∨x`/`x∧x`) nor rail aliasing (each leaf mints its own
+> fresh flag rail). Its **leaf**-axis sibling was reachable from four lines of
+> plain C and is now *accepted* — see `docs`/bd `big5` and
+> `control_swap_accept_select_rail_alias_cond.ll`.
 
 **No new frozen symbol.** `cqrt_cnot` / `cqrt_toffoli` / `cqrt_alloc_i1` /
 `cqrt_free` are existing hand-written core-ABI symbols (`runtime/cq_runtime.h`

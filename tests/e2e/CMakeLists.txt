@@ -251,6 +251,43 @@ add_test(NAME e2e-slice-control-select-fp
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_fp.expected.log")
 
+# bd big5 (2026-07-31): the ALIASED-RAIL condition compare -- `%q` and
+# `%r = cq_phi(%q,.25)` are SSA-DISTINCT (InstCombine cannot fold them, unlike
+# `x==x`) yet lower to ONE rail, because cq_phi (Rz) is an IN-PLACE gate whose
+# result RAUWs to its argument's handle. bd 7q3s fenced this for one day on the
+# premise that `cq_template_icmp_slt_i32(h0, h0)` is "an ill-formed physical gate
+# no backend can realize"; the owner refuted that premise and the fence was
+# reverted. Aliased INPUTS of an OUT-OF-PLACE gate with a FRESH |0> output rail
+# (CASE A) make it a UNARY function of the shared operand -- realizable, usually
+# free, and a Phase-9 backend obligation rather than a compiler defect. What is
+# genuinely unrealizable is CASE B, an input aliasing a rail the gate WRITES;
+# the golden emits none, and every `_unc` line's written rail is distinct from
+# its reads.
+# The only layer that LINKS, so the only proof the aliased mint and its void
+# out-first `_unc` twin resolve and signature-match the ABI. Stage 2b
+# (free_pairing_check.py) verifies all FOUR flag frees at a proven |0>.
+# Five lineages in one TU: (A) integer select, (B) f64 select through the kjd1
+# fp copy family, (C) the ARITHMETIC Case A `p*p` -- the consistency witness,
+# since 118 of 226 committed goldens already ship an aliased-operand template
+# call AND WERE GREEN WITH THE FENCE IN (the condition walk never inspects
+# arithmetic), so the defect was an inconsistency of principle, not a
+# contradiction; (D) the CONSTANT-TRUE `icmp eq(a,a)`, the demanding half of
+# Rule 6 -- its flag rail is |1> at the mint, so the `_unc` strip must actually
+# return it to |0> before `cqrt_free`, whereas (A)/(B) are FALSE-valued and leave
+# it at |0> trivially; and (E) the ENTANGLED-flag f64 case -- `fcmp oge(a,a)` is
+# NOT constant TRUE, it is ord(a) == !isnan(a) (no ORDERED fcmp is constant on
+# aliased operands), which is a STRICTLY HARDER Rule-6 witness than a constant.
+# Two extension traps, both measured: `q <= r` does not survive -O1 as itself
+# (canonicalized to `icmp sgt`, arms swapped, Rule 9), and surviving as the same
+# PREDICATE is not the same as being constant on aliased operands.
+add_test(NAME e2e-slice-select-rail-alias-cond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_select_rail_alias_cond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_select_rail_alias_cond.expected.log")
+
 # bd 9ymx (owner decision 2026-07-03): the tainted fp ternary INSIDE a classical
 # bounded loop -- the -O1-natural shape (LICM-hoisted compare in the guard
 # block, select in the body). Pins the per-iteration contract: 3 iterations,
