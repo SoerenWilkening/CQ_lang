@@ -74,9 +74,24 @@ a known basis state and the free is sound iff it is still in one:
 
   (A1) every basis-changing write is a classical-immediate in-place update
        (`cqrt_addc_<W>` / `cqrt_xorc_<W>`, whose second operand is by ABI a
-       classical literal). A known classical state plus a classical offset is
-       still a known classical state — no superposition, no entanglement. This
-       is the dtzb `break` index rail (`alloc(k)`, `addc(-k)`, free).
+       classical literal) AND that operand is one this file can SHOW is not a
+       rail. A known classical state plus a classical offset is still a known
+       classical state — no superposition, no entanglement. This is the dtzb
+       `break` index rail (`alloc(k)`, `addc(-k)`, free).
+       The second half is not pedantry (bd az1h): the ABI's declaration that
+       the slot is classical is an ASSERTION, and until 2026-07-31 this rule
+       converted it straight into a Rule-6 clearance without ever looking. A
+       planted `cqrt_xorc_i32(%r, %h)` entangles `%r` with the rail `%h`, and
+       the next line's `cqrt_free(%r)` is then the hidden measurement Rules 6/8
+       forbid — yet it reported `OK … via A1-classical-immediate`, exit 0. At
+       W=i32 BOTH parameters are `int32_t`, so the verifier cannot see it, and
+       `cq_runtime.c` prints the immediate slot as a bare decimal, so rail h13
+       renders as `13` and the GOLDEN TRACE CANNOT SEE IT EITHER. Both gates
+       blind on the same axis is precisely the complementarity bd 8txa claims,
+       so the assertion is now CHECKED (`provably_not_a_rail`); an immediate
+       that cannot be shown classical falls through to (A2), which still
+       discharges a genuine `xorc(%r,%h) … xorc(%r,%h)` bracket, and otherwise
+       reports `A1-imm-not-classical`.
   (A2) otherwise the write history REDUCES TO IDENTITY, returning the rail to
        its alloc-time classical `v`. Reduction repeatedly cancels a write
        against an earlier ADJOINT write when every write between them commutes
@@ -93,12 +108,63 @@ Plus two whole-stream invariants:
        construct in the lowered IR that writes a rail its signature does not
        name, so an unclaimed one is an adjoint whose target cannot be
        identified — the "re-paired to the wrong rail" defect in its purest
-       form. Across the 232 committed e2e slices the pairing is an exact
-       bijection: 25174 `_inv` tokens, 25174 claims, 0 orphans.
+       form. The "exact bijection: 25174 `_inv` tokens, 25174 claims, 0
+       orphans" this paragraph used to quote was measured BEFORE bd 8txa moved
+       the compare flag-strip onto the void `_unc` ABI. RE-MEASURED 2026-07-31
+       over the 237 registered slices: the ship floor now emits **ZERO** `_inv`
+       calls. So (W) and the (T1b) `_inv` matching arm have NO corpus coverage
+       left at all — their only live exercise is the POSITIVE fixtures in
+       tools/free_pairing_check_test.py, which are therefore HISTORICAL rather
+       than current lowerings and must not be "refreshed" from today's output
+       without replacing that coverage. Do not quote the old bijection as
+       evidence the rule is exercised; it is evidence about a corpus that no
+       longer exists.
   (F)  the lifetime hygiene that has no other gate anywhere in the project:
        double free, use after free, freeing a measured handle, and freeing a
        non-rail resource token (a `cqrt_qram_alloc_*` array or a
        `cqrt_tape_alloc` tape).
+
+THE SECOND OBLIGATION: THE CASE-A / CASE-B PARTITION  (bd 6f3o)
+===============================================================
+Independent of any free site, EVERY emitted gate must satisfy:
+
+    *** NO INPUT OPERAND MAY ALIAS A RAIL THE GATE WRITES. ***
+
+  CASE A — aliased INPUTS, output a FRESH |0> rail. REALIZABLE, ALLOWED, and
+    deliberately NOT flagged. The generated ABI's out-of-place shape is
+    `out(fresh |0>) ^= f(in0, in1)`, so aliasing the inputs gives `out ^= g(a)`
+    with `g(a) := f(a, a)`, and `(a, 0) -> (a, g(a))` is the standard
+    reversible embedding of a classical function — unitary and self-inverse for
+    ANY `g`. Realizability is UNCONDITIONAL; aliasing changes only COST, and
+    the argument needs no per-op identity (which is exactly why it is the one
+    to use — do NOT justify Case A by enumerating degeneracies; `fsub(a,a)==0`
+    and `fdiv(a,a)==1` are both WRONG under IEEE-754 and both ship in
+    `slice_libm_real_acos`). MEASURED over this corpus: 638 Case-A calls across
+    27 template symbols, plus 15 `_unc` twins of the same shape. A rule that
+    flags those is a WRONG RULE, not a discovery.
+  CASE B — an input aliases a rail the gate WRITES. NOT realizable:
+    `cswap(c,c,b)` maps both |1,0> and |0,1> to |0,1>, which is not injective,
+    so no unitary implements it. Reported `B1-input-aliases-written-rail`.
+    `B2-two-written-rails-alias` covers the adjacent spelling — a symbol whose
+    TWO write slots are the same rail — and its ground is DIFFERENT, so do not
+    quote B1's non-unitarity argument for it: `cswap(f,x,x)` is the IDENTITY,
+    hence perfectly unitary. It is flagged as DEGENERATE (no router can have
+    meant to swap a register with itself), which is a decline of intent rather
+    than of physics, and is what the bd 6f3o write-set table specifies.
+
+The write-sets are `classify()`'s, not a second table: `cnot(c,t)` writes t,
+`toffoli(c1,c2,t)` writes t (c1==c2 is Case A), `cswap(f,x,y)` writes BOTH x
+and y, `copy_W(s,d)` writes d, `copy_W_controlled(f,s,d)` writes d, a
+`cq_template_OP_W(ins)` writes NO operand, `cq_template_OP_W_unc(out, ins...)`
+writes out. A `classical_imm` slot counts as an input, so `xorc(%r,%r)` is
+Case B like any other; a slot that is both read and written at the SAME index
+is an in-place update, not aliasing (`cqrt_measure_<W>(%h)`), and is skipped.
+
+A 14-agent audit (bd big5, 2026-07-31) swept every rail-writing mint in the
+pass and found ZERO Case B emitted; this rule is what keeps that true. It is a
+STATIC check over SSA-value identity and deliberately does not depend on the
+runtime's monotonic never-recycling handle counter — that counter is a property
+of the TRACE-ONLY STUB, not of the ABI contract a Phase-9 backend must honour.
 
 TWO MODELLING DECISIONS THAT ARE PHYSICS, NOT CONVENIENCE
 =========================================================
@@ -149,6 +215,42 @@ WHAT IT DOES **NOT** WITNESS  (read this before quoting the tool)
   * ESCAPE analysis (`ret` / `cq_invert_*` handles) beyond "was it measured in
     this function", and anything cross-function or cross-stream (below).
   * The FORWARD program. It checks reversal, not computation.
+  * ALIASING THAT IS NOT SSA-IDENTITY. The Case-B rule compares operand SSA
+    names, so it sees `cqrt_cnot(%c, %c)` and not two DISTINCT names that carry
+    the same rail at run time. Three ways that can happen, none witnessed here:
+    a `phi` that merges a handle with itself; a callee whose two parameters
+    receive the same handle at the call site (the check is intra-procedural —
+    MEASURED: no `@__cq_q_*` call in the corpus passes a repeated argument, so
+    nothing is being hidden today); and a handle laundered through classical
+    arithmetic. What makes SSA identity the right layer anyway is that it is
+    the one an emitter bug actually produces — a `CreateCall` with the same
+    `Value*` twice — and it is exactly the layer a later RAUW can retarget.
+    The live example, cited precisely because the two halves are often
+    conflated: SwapRouteEmit.cpp:589 only RECORDS
+    `taint.SharedCondFlags[Cond] = Flag` and deliberately does NOT RAUW there
+    (read its comment); CompareLowering.cpp:415 later runs
+    `cmp->replaceAllUsesWith(Shared)`, and THAT is what can rewrite an
+    already-emitted gate operand. See bd
+    `case-b-cswap-603-near-miss-2026-07-31` for why it cannot reach the routing
+    `cqrt_cswap` today, and for the ArmClassify gate that is load-bearing here.
+  * SYMBOLS `classify()` DOES NOT MODEL. Write-sets exist only for the symbols
+    it knows, so the Case-B rule's coverage is exactly that set. MEASURED
+    2026-07-31: of the 173 `cqrt_*` functions declared in `runtime/cq_runtime.h`
+    it models 145; the 28 it does not are the entire `_controlled` /
+    `_controlled_inv` reserve family (`cqrt_x_controlled`, `cqrt_cnot_controlled`,
+    `cqrt_h_controlled`, `cqrt_rz_<W>_controlled[_inv]`,
+    `cqrt_ry_<W>_controlled_inv`), retained per CLAUDE.md only as a reserve for
+    the optional §6a control-in-place peephole and emitted by nothing today.
+    This is NOT a silent gap: any of them being CALLED in lowered IR raises
+    `Unclassified` and fails the whole run, so the failure mode is a loud stop,
+    never an unchecked call. (A bare `declare` does not — only a call is
+    parsed — which is correct: an unused declaration acts on no rail.) It IS a
+    standing obligation: whoever un-shelves that family must add its read/write
+    sets here first, or the run will refuse to render a verdict.
+  * NON-CALL instructions. Only calls are modelled; a rail handle reaching a
+    gate through `select`/`phi`/integer arithmetic is invisible to both the
+    alias rule and `provably_not_a_rail` (which answers "not a rail" for any
+    non-call SSA value that is not a formal parameter).
 
 STREAMS / CFG SCOPE. Execution order is only knowable without a simulator on
 straight-line code, so the analysis runs per STREAM: a maximal chain of basic
@@ -168,23 +270,43 @@ symbol. The last is deliberate and mirrors the Prime Directive: a new `cqrt_*`
 symbol whose read/write effects this file does not know makes the model
 unsound, so it fails loudly rather than checking the rest and reporting success.
 
-MEASURED STANDING (2026-07-26, the 232 committed e2e slices at their stage-2
-`opt` output): 54049 `cqrt_free` sites, 54029 VERIFIED, 0 VIOLATIONS, 20
-UNPROVEN. All 20 are in the five `slice_loop_break*` slices and are the dtzb
-whole-loop reverse-play (10 `A-not-reducible` on the `cq.brk.fire` ancilla,
-which a correct Bennett RECOMPUTE zeroes rather than a palindrome, and 10
-`U1-cross-stream` on `cq.brk.R`/`cq.brk.idx`, whose write history spans the loop
-back-edge). Those five e2e entries therefore pass `--allow-unproven` with that
-reason written at the call site; every other slice runs strict.
+MEASURED STANDING (2026-07-31, the 237 registered e2e slices at their stage-2
+`opt` output — 218 single-file + 19 multi-file): 50504 `cqrt_free` sites, 50484
+VERIFIED, 0 VIOLATIONS, 20 UNPROVEN, and 0 Case-B findings. All 20 UNPROVEN are
+in the five `slice_loop_break*` slices and are the dtzb whole-loop reverse-play
+(10 `A-not-reducible` on the `cq.brk.fire` ancilla, which a correct Bennett
+RECOMPUTE zeroes rather than a palindrome, and 10 `U1-cross-stream` on
+`cq.brk.R`/`cq.brk.idx`, whose write history spans the loop back-edge). Those
+five e2e entries therefore pass `--allow-unproven` with that reason written at
+the call site; every other slice runs strict. Adding the (A1) immediate check
+and the Case-B rule moved ZERO of the 237 verdicts.
 
-VALIDATED BEFORE USE. Proof-targeted mutation over the same corpus — blank or
-corrupt an instruction some VERIFIED site's own proof consumes, then re-check —
-kills 6569 of 6579 mutants (99.8%). All 10 survivors are the same by-design
-case: perturbing a classical `cqrt_addc` on an (A1) rail changes WHICH known
-classical basis state the rail holds, never whether it holds one, so the free
-stays Rule-6 sound. tools/free_pairing_check_test.py is the committed,
-ctest-wired subset of that experiment (positive fixtures + hand-planted named
-defects + a proof-targeted sweep).
+VALIDATED BEFORE USE. Proof-targeted mutation — blank or corrupt an instruction
+some VERIFIED site's own proof consumes, then re-check — killed 6569 of 6579
+mutants (99.8%) when it was run, ON THE 2026-07-26 CORPUS OF 232 SLICES. That
+figure is dated, not current: the same experiment over today's 237-slice corpus
+generates ~160k mutants and has not been re-run at that scale. All 10 survivors
+were the same by-design case: perturbing a classical `cqrt_addc` on an (A1)
+rail changes WHICH known classical basis state the rail holds, never whether it
+holds one, so the free stays Rule-6 sound.
+tools/free_pairing_check_test.py is the committed, ctest-wired subset of that
+experiment (positive fixtures + hand-planted named defects + a proof-targeted
+sweep), and it IS current.
+
+The Case-B rule was validated the same way before being trusted, because a
+rule that has never fired is a rule nobody should believe. Over the SAME 237
+lowered slices — the ship floor, not hand-written .ll — write-bearing calls had
+one input operand retargeted onto a slot the call writes (and, for the
+two-write `cswap`, its two written slots aliased): 392 planted aliases, 392
+CAUGHT, 0 SURVIVED, with all 237 slices Case-B-clean before mutation.
+
+THE CAP, STATED RATHER THAN IMPLIED (Rule 12, no silent caps): those 392 are
+not every candidate. The corpus offers 109759 (call, alias-plan) candidates
+across 165 (symbol, kind) families, and the experiment plants at most 3 per
+FAMILY — so coverage is complete across families and a 0.36% sample within
+them. That is the right axis to be exhaustive on, because the rule branches on
+the symbol's Effect and not on the call site; but it is a sample, and 392/392
+must not be read as "every aliasable call in the corpus was tried".
 
 USAGE
     tools/free_pairing_check.py [options] lowered1.ll [lowered2.ll ...]
@@ -235,13 +357,18 @@ class Effect:
     `diagonal` marks a write that changes no computational-basis label.
     `controls` are the operand indices whose value selects the branch the write
     acts on (used only by the complementary-branch commutation rule).
+    `classical_imm` is the tuple of operand INDICES the ABI declares to be
+    classical literals rather than rail handles (`addc`/`xorc` slot 1). It is
+    an ASSERTION ABOUT THE ABI, never a fact about the call — rule (A1) must
+    CHECK the slot before relying on it (bd az1h), and the Case-B scan treats
+    these slots as inputs like any other.
     """
 
     __slots__ = ("role", "reads", "writes", "mints", "adjoint_of", "base",
                  "diagonal", "controls", "classical_imm")
 
     def __init__(self, role, reads=(), writes=(), mints=None, adjoint_of=None,
-                 base=None, diagonal=False, controls=(), classical_imm=False):
+                 base=None, diagonal=False, controls=(), classical_imm=()):
         self.role = role
         self.reads = reads
         self.writes = tuple(writes)
@@ -251,7 +378,9 @@ class Effect:
         self.base = base            # forward stem for an _inv/_unc twin
         self.diagonal = diagonal    # phase-only: invisible to the basis ledger
         self.controls = tuple(controls)
-        self.classical_imm = classical_imm  # addc/xorc: keeps a classical state
+        # addc/xorc: the slot the ABI says is a classical literal. CHECKED, not
+        # trusted — see `provably_not_a_rail` / rule (A1).
+        self.classical_imm = tuple(classical_imm)
 
 
 def classify(sym):
@@ -307,10 +436,10 @@ def classify(sym):
                       controls=(0,))
     if re.fullmatch(rf"cqrt_addc_{_W}", sym):
         return Effect("gate", writes=(0,), adjoint_of="negate-arg1",
-                      classical_imm=True)
+                      classical_imm=(1,))
     if re.fullmatch(rf"cqrt_xorc_{_W}", sym):
         return Effect("gate", writes=(0,), adjoint_of="self",
-                      classical_imm=True)
+                      classical_imm=(1,))
 
     # ---- output tape (7.6) ------------------------------------------------
     if re.fullmatch(rf"cqrt_tape_write_{_W}", sym):
@@ -450,11 +579,34 @@ class Call:
 
 
 class Function:
-    def __init__(self, name):
+    def __init__(self, name, params=()):
         self.name = name
+        # The formal parameters. A parameter's value ARRIVES FROM OUTSIDE this
+        # function, so nothing here can show it is (or is not) a rail handle —
+        # a Phase-6 clone's quantum arguments are rails, a loop trip count is
+        # classical, and both spell `%0`. `provably_not_a_rail` therefore
+        # refuses to vouch for one, the same way `U3-extern-rail` refuses to
+        # vouch for a handle minted outside the stream.
+        self.params = frozenset(params)
         self.blocks = []          # [(label, [Call], terminator_text)]
         self.succ = {}
         self.preds = {}
+
+
+def balanced(s, open_at):
+    """Index of the `)` matching the `(` at `open_at` (or len(s) if unbalanced)."""
+    depth = 0
+    for j in range(open_at, len(s)):
+        if s[j] == "(":
+            depth += 1
+        elif s[j] == ")":
+            depth -= 1
+            if depth == 0:
+                return j
+    return len(s)
+
+
+SSA_NAME_RE = re.compile(r"%(?:\"[^\"]+\"|[-\w.$]+)")
 
 
 def parse_module(text):
@@ -467,7 +619,11 @@ def parse_module(text):
         if not m:
             i += 1
             continue
-        fn = Function(m.group(1))
+        # Formal parameters: the balanced `(...)` the define's `@name` opens.
+        popen = lines[i].index("(", m.end() - 1)
+        params = SSA_NAME_RE.findall(lines[i][popen + 1:balanced(lines[i],
+                                                                 popen)])
+        fn = Function(m.group(1), params)
         i += 1
         cur_label, cur_calls, term = "%__entry", [], ""
         while i < len(lines) and lines[i] != "}":
@@ -481,15 +637,7 @@ def parse_module(text):
             cm = CALL_RE.match(ln)
             if cm:
                 open_at = ln.index("(", cm.end() - 1)
-                depth, j = 0, open_at
-                while j < len(ln):
-                    if ln[j] == "(":
-                        depth += 1
-                    elif ln[j] == ")":
-                        depth -= 1
-                        if depth == 0:
-                            break
-                    j += 1
+                j = balanced(ln, open_at)
                 cur_calls.append(Call(i + 1, cm.group(1),
                                       cm.group(2).strip('"'),
                                       split_args(ln[open_at + 1:j]), ln.strip()))
@@ -613,9 +761,12 @@ class Rail:
 
 
 class StreamAnalysis:
-    def __init__(self, fnname, calls, module_defs):
+    def __init__(self, fnname, calls, module_defs, params=frozenset(),
+                 rail_defs=frozenset()):
         self.fnname, self.calls = fnname, calls
         self.module_defs = module_defs
+        self.params = params
+        self.rail_defs = rail_defs
         self.rails = {}
         self.findings = []
         self.verified = self.sites = 0
@@ -633,6 +784,7 @@ class StreamAnalysis:
             if c.eff is None:
                 continue
             e = c.eff
+            self.check_case_b(c)
             for v in c.vals:
                 if v in self.freed_names and e.role != "free":
                     self.add(VIOLATION, "F2-use-after-free", c, v,
@@ -674,8 +826,14 @@ class StreamAnalysis:
         signature does not name (bd 8txa). If no free claims it, this file
         cannot say which rail it acted on — and one extra adjoint on a live rail
         is precisely the "re-paired to the wrong rail" defect the golden trace
-        is blind to. Across the committed e2e corpus the pairing is an exact
-        bijection (25174 tokens, 25174 claims), so an orphan is a real signal.
+        is blind to. The old "exact bijection (25174 tokens, 25174 claims)"
+        justification is STALE — since bd 8txa moved the compare flag-strip to
+        the void `_unc` ABI the ship floor emits ZERO `_inv` (re-measured over
+        all 237 slices, 2026-07-31), so this rule's only live exercise is the
+        selftest's historical fixtures. It stays because an `_inv` is still the
+        one construct whose target the ABI does not name, so if one ever comes
+        back an orphan is still a real signal — but do not cite corpus counts
+        for it.
         """
         for positions in self.inv_pool.values():
             for p in positions:
@@ -706,6 +864,111 @@ class StreamAnalysis:
             r = Rail(name, "extern", None, -1)
             self.rails[name] = r
         return r
+
+    # -- CASE B: an input aliasing a rail the gate WRITES (bd 6f3o) ---------
+    def check_case_b(self, c):
+        """No emitted gate may take an INPUT that aliases a rail it WRITES.
+
+        THE PARTITION (bd big5, 2026-07-31). For every gate, ask: can an input
+        operand alias a rail the gate writes?
+
+          CASE A — aliased INPUTS, output a FRESH |0> rail. REALIZABLE, ALLOWED,
+            and NOT flagged here. The generated ABI's out-of-place shape is
+            `out(fresh |0>) ^= f(in0, in1)`; aliasing the inputs gives
+            `out ^= g(a)` with `g(a) := f(a, a)`, and `(a, 0) -> (a, g(a))` is
+            the standard reversible embedding of a classical function — unitary
+            for ANY `g`. Realizability is UNCONDITIONAL; aliasing only changes
+            COST. 638 calls across 27 template symbols in the committed corpus
+            are Case A (`cq_template_fmul_f64(%h, %h)` — `x*x`), plus 15 `_unc`
+            twins of the same shape (`..._unc(%out, %h, %h)`). All must stay
+            silent, so this rule compares inputs against WRITE slots only and
+            never against each other.
+
+          CASE B — an input aliases a rail the gate WRITES. NOT realizable:
+            `cswap(c, c, b)` sends both |1,0> and |0,1> to |0,1>, which is not
+            injective, so no unitary implements it. A backend handed one cannot
+            honour the ABI contract.
+
+        The write-sets come straight from `classify()`, so this rule needs no
+        per-symbol table of its own: `cnot(c,t)` writes t, `toffoli(c1,c2,t)`
+        writes t (c1==c2 is Case A), `cswap(f,x,y)` writes BOTH x and y,
+        `copy_W(s,d)` writes d, `copy_W_controlled(f,s,d)` writes d, a
+        `cq_template_OP_W(ins)` writes NO operand (it returns a fresh rail), and
+        `cq_template_OP_W_unc(out, ins...)` writes out.
+
+        A `classical_imm` slot counts as an input here: `xorc(%r, %r)` is Case B
+        exactly as `cnot(%r, %r)` is. A slot that is BOTH read and written by
+        the same index is an in-place update, not aliasing (`measure(%h)`), and
+        is skipped.
+        """
+        e = c.eff
+        ws = [i for i in e.writes if i < len(c.vals)]
+        if not ws:
+            return
+        ins = sorted(set(c.read_idx()) | set(e.classical_imm))
+        for wi in ws:
+            for ri in ins:
+                if ri == wi or ri >= len(c.vals) or c.vals[ri] != c.vals[wi]:
+                    continue
+                self.add(VIOLATION, "B1-input-aliases-written-rail", c,
+                         c.vals[wi],
+                         f"`{c.text}`: operand {ri} aliases operand {wi}, a "
+                         f"rail @{c.sym} WRITES. An input that aliases a "
+                         f"written rail is CASE B — not a unitary, so no "
+                         f"backend can realize it (aliased inputs with a fresh "
+                         f"output, CASE A, are allowed and not flagged)")
+                return
+        for a in range(len(ws)):
+            for b in range(a + 1, len(ws)):
+                if c.vals[ws[a]] != c.vals[ws[b]]:
+                    continue
+                self.add(VIOLATION, "B2-two-written-rails-alias", c,
+                         c.vals[ws[a]],
+                         f"`{c.text}`: operands {ws[a]} and {ws[b]} are the "
+                         f"same rail and @{c.sym} WRITES BOTH through two "
+                         f"distinct write ports, which is outside the ABI "
+                         f"contract. Note this one is DEGENERATE rather than "
+                         f"non-unitary — `cqrt_cswap(f,x,x)` is the identity, "
+                         f"so it is flagged because no router can have meant "
+                         f"it, not because no backend could run it")
+                return
+
+    # -- is an operand PROVABLY not a rail handle? (bd az1h) ---------------
+    def provably_not_a_rail(self, v):
+        """Can this file SHOW that operand value `v` is not a rail handle?
+
+        `classify()` records which slots the ABI DECLARES classical, but a
+        declaration is not an observation: at W=i32 both `cqrt_xorc_i32`
+        parameters are `int32_t`, so a rail handle in the immediate slot is
+        verify-clean, and the runtime prints that slot as a bare decimal, so
+        the golden trace renders rail h13 as `13`. Both gates are blind on the
+        SAME axis — which is why the assertion has to be CHECKED here.
+
+        Answers True only on positive evidence:
+          * a literal constant (no `%`), or
+          * an SSA value that is neither a known rail nor a formal parameter
+            nor the result of a rail-minting call anywhere in THIS FUNCTION —
+            i.e. a plain classical instruction result (`sub i32 0, %k`, a
+            counter `phi`) or a classical call result such as `cqrt_measure_W`.
+
+        MEASURED over the 237-slice corpus: there are 41 `addc`/`xorc` CALL
+        sites (11 with a literal immediate, 30 with an SSA one), and every one
+        of the 30 is non-call integer arithmetic — `sub i32 0, %6`,
+        `add i32 %cq.brk.ip, 1`, `add nuw nsw i32 %5, 1`. So this answers True
+        for all 41 and rule (A1) still discharges every site it used to. (41,
+        not 52: a `grep -c` over the corpus also counts the 11 `declare`
+        prototype lines. And no immediate is a `phi` DIRECTLY — the loop
+        counter reaches the slot through an `add` — so do not cite one.)
+        """
+        if not v.startswith("%"):
+            return True                              # a literal constant
+        if v in self.rails:
+            return False       # minted in, or written in, this stream
+        if v in self.params:
+            return False       # arrives from outside; nothing here can vouch
+        if v in self.rail_defs:
+            return False       # rail minted elsewhere in this function
+        return True
 
     def add(self, kind, code, c, handle, msg):
         self.findings.append(Finding(kind, code, self.fnname, c.line, handle,
@@ -828,8 +1091,18 @@ class StreamAnalysis:
                        f"left after reduction)"), frozenset(witness)
 
     def pair_operands_unchanged(self, c1, p1, p2, depth):
+        # `classical_imm` slots are checked ALONGSIDE the declared reads. They
+        # are not in `reads` because the ABI calls them literals, and for a
+        # genuine literal the extra check costs nothing (a constant is not in
+        # `self.rails`, so it is skipped). It matters when the slot holds a
+        # RAIL: `xorc(%r,%h); ry(%h,0.75); xorc(%r,%h)` cancels on `key()`
+        # equality alone otherwise, because xorc declares reads=() and this
+        # loop would inspect ZERO operands — so (A2) would VERIFY the very
+        # entangle-then-free that (A1) had just declined, and the az1h hole
+        # would simply move one rule down. Found by the bd az1h/6f3o Rule-13
+        # round, 2026-07-31, in the fall-through this change itself introduced.
         acc = set()
-        for ri in c1.read_idx():
+        for ri in list(c1.read_idx()) + list(c1.eff.classical_imm):
             if ri >= len(c1.vals):
                 continue
             v = c1.vals[ri]
@@ -885,14 +1158,34 @@ class StreamAnalysis:
 
     def check_alloc_rail(self, pos, c, r):
         ws = [(p, w) for p, w in r.writes if r.pos < p < pos]
-        # (A1) classical-immediate updates keep a known classical basis state.
-        if ws and all(w.eff.classical_imm for _, w in ws):
+        # (A1) classical-immediate updates keep a known classical basis state —
+        # but ONLY if the immediate really is classical. The ABI's word for it
+        # is not evidence (bd az1h): a rail in that slot ENTANGLES the two, and
+        # the free then collapses both. Check every declared immediate slot, and
+        # fall through to (A2) when one cannot be shown classical — a genuine
+        # `xorc(%r,%h); xorc(%r,%h)` bracket still reduces to identity there, so
+        # this tightening declines nothing that (A2) can prove.
+        dirty = [(w, i) for _, w in ws for i in w.eff.classical_imm
+                 if i < len(w.vals) and not self.provably_not_a_rail(w.vals[i])]
+        if ws and not dirty and all(w.eff.classical_imm for _, w in ws):
             self.ok(c, r, "A1-classical-immediate", {w.line for _, w in ws})
             return
         # (A2) otherwise the history must return the rail to its alloc value.
         ok, why, wit = self.reduces_to_identity(ws)
         if ok:
             self.ok(c, r, "A2-reduces-to-identity", wit)
+        elif dirty:
+            w, i = dirty[0]
+            self.add(UNPROVEN, "A1-imm-not-classical", c, r.name,
+                     f"`{w.text}` (line {w.line}) puts {w.vals[i]} in the "
+                     f"classical-immediate slot {i} of @{w.sym}, and this file "
+                     f"cannot show {w.vals[i]} is not a rail handle; if it is "
+                     f"one, the update ENTANGLES the two and the free at line "
+                     f"{c.line} collapses both (Rules 6/8). The ABI declares "
+                     f"that slot classical, but at i32 both parameters are "
+                     f"int32_t and the trace prints the slot as a bare decimal, "
+                     f"so neither the verifier nor the golden can see it. "
+                     f"(A2) did not rescue it either: {why}")
         else:
             self.add(UNPROVEN, "A-not-reducible", c, r.name,
                      f"rail allocated at line {r.origin.line} by "
@@ -983,17 +1276,34 @@ def check_module(text):
     """
     funcs = parse_module(text)
     module_defs = {}
+    # Rails minted anywhere in a FUNCTION, keyed per function. `self.rails`
+    # knows only the current stream, so without this a rail minted in another
+    # block of the same function is invisible to `provably_not_a_rail`. It is
+    # deliberately NOT module-wide: LLVM reuses `%0` / `%h` / `%h_op` across
+    # functions, so a module-wide table both over- and UNDER-reports — a `%h`
+    # that names a rail here and a `cqrt_measure` result elsewhere would
+    # resolve to whichever definition was parsed last. Per function it is
+    # exact. (`classify` may raise Unclassified here rather than in the stream
+    # scan; that is the same loud failure, one step earlier.)
+    rail_defs = {}
     for fn in funcs:
+        mints = set()
         for _, calls, _ in fn.blocks:
             for c in calls:
-                if c.res:
-                    module_defs[c.res] = (fn.name, c.sym)
+                if not c.res:
+                    continue
+                module_defs[c.res] = (fn.name, c.sym)
+                eff = classify(c.sym)
+                if eff is not None and eff.mints is not None:
+                    mints.add(c.res)
+        rail_defs[fn.name] = mints
     findings, verified, sites, proofs = [], 0, 0, []
     for fn in funcs:
         for _chain, calls in build_streams(fn):
             if not calls:
                 continue
-            sa = StreamAnalysis(fn.name, calls, module_defs)
+            sa = StreamAnalysis(fn.name, calls, module_defs, fn.params,
+                                rail_defs.get(fn.name, frozenset()))
             findings.extend(sa.run())
             verified += sa.verified
             sites += sa.sites

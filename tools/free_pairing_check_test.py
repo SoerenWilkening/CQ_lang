@@ -8,11 +8,24 @@ stamp that passes everything.
 
 It runs three layers:
 
-  1. POSITIVE — every fixture below is VERBATIM lowered IR from a committed e2e
-     slice (the file and function are named in each docstring; regenerate by
-     running stage 2 of tests/e2e/run_slice.sh and copying the function out).
-     Each must verify with ZERO findings. This is what stops the checker being
-     tightened into something that flags shipped, reviewed lowerings.
+  1. POSITIVE — lowered IR from a committed e2e slice (the file and function are
+     named in each docstring; regenerate by running stage 2 of
+     tests/e2e/run_slice.sh and copying the function out). Each must verify with
+     ZERO findings. This is what stops the checker being tightened into
+     something that flags shipped, reviewed lowerings.
+
+     TWO HONEST CAVEATS on "verbatim", both re-measured 2026-07-31:
+       * The fixtures carrying `cq_template_..._inv` calls are HISTORICAL, not
+         current. Since bd 8txa moved the compare flag-strip onto the void
+         `_unc` ABI, the ship floor emits ZERO `_inv` across all 237 registered
+         slices. They are kept deliberately: they are now the ONLY exercise the
+         (T1b) `_inv` matching arm and the (W) orphan rule get anywhere. Do not
+         "refresh" them from today's output — that would silently delete two
+         rules' entire coverage. Regenerate them only alongside a replacement.
+       * `a2-stable-immediate-bracket` is hand-built, not slice output; the
+         emitter cannot produce a rail in a classical-immediate slot at all,
+         which is exactly why it needs a planted control.
+     Everything else is verbatim, and BREAK_INDEX names its one substitution.
 
   2. NAMED MUTANTS — the three defects bd 8txa says the golden trace CANNOT
      see, plus the lifetime-hygiene family, each planted by hand with the exact
@@ -26,6 +39,39 @@ It runs three layers:
         * double free, use after free, free after measure, free of a QRAM
           array token, a stray write after the reversal, a mutated forward
           operand, an orphan `_inv`, an unclassified `cqrt_*` symbol.
+        * a RAIL parked in a slot the ABI only ASSERTS is classical (bd az1h)
+          -> A1-imm-not-classical. FOUR of them, one per accept-arm of
+          `provably_not_a_rail` plus the laundered spelling, because a
+          predicate with three arms and one probe lets two arms be deleted with
+          a green suite (the arms are individually kill-tested: deleting any
+          one turns this file red).
+        * the (A1) -> (A2) FALL-THROUGH, which is where that hole would move if
+          (A2) cancelled an `xorc` bracket without checking the immediate
+          stayed put — planted with a `cqrt_ry` between the two halves, and
+          paired with a POSITIVE control whose immediate does stay put so the
+          fix cannot be faked by refusing every bracket.
+        * one CASE B spelling per write-set in the model (bd 6f3o): a cnot
+          whose target is its control, a toffoli whose target is a control, a
+          cswap whose flag is one of the two rails it swaps, a cswap that
+          writes one rail twice, a copy into its own source, a controlled copy
+          into its flag, an `_unc` (template, Phase-6 clone, and QRAM load)
+          whose `out` slot is one of its inputs, a classical-immediate update
+          whose immediate is the rail it writes, and a QRAM store whose array
+          token is its index -> B1/B2. `cqrt_tape_write_<W>` is the one
+          modelled write-set with NO committed mutant here, for want of a tape
+          fixture; it is covered only by the out-of-band corpus sweep described
+          in free_pairing_check.py's VALIDATED BEFORE USE section.
+
+  2b. CASE-A NEGATIVES — the other half of the Case-B validation, and the half
+     that actually costs something to get wrong. Aliased INPUTS with a fresh
+     output are REALIZABLE (`out ^= f(a,a)` is unitary for any f) and 638 calls
+     across 27 template symbols in the committed corpus ship exactly that. Each
+     entry plants an aliasing a naive "no operand may repeat" rule would flag
+     and asserts NO `B*` finding results. (One shape is asserted WITHOUT a
+     plant, and is documented at the table rather than listed in it: an
+     in-place gate whose single slot is both read and written, `cqrt_measure`,
+     where the aliasing is the signature itself and no mutation can introduce
+     it. Every POSITIVE fixture covers that one.)
 
   3. PROOF-TARGETED SWEEP — for every free site a fixture VERIFIES, blank each
      source line that site's own proof consumed (`--explain` shows them) and
@@ -308,18 +354,123 @@ define void @slice() local_unnamed_addr #0 {
      # is byte-stable (modulo a renumber) under a dropped or swapped reversal.
 
 BREAK_INDEX = """
-define void @run(i32 noundef %0) local_unnamed_addr #0 {
+define void @run(i32 noundef %0, i32 noundef %1) local_unnamed_addr #0 {
   %cq.brk.idx = call i32 @cqrt_alloc_i32(i32 0)
-  %cq.brk.k = call i32 @cqrt_alloc_i32(i32 %0)
-  call void @cqrt_copy_i32_controlled(i32 %cq.brk.idx, i32 %cq.brk.k, i32 %cq.brk.idx)
-  %cq.brk.negk = sub i32 0, %0
+  %cq.brk.fire = call i32 @cqrt_alloc_i1(i1 false)
+  %6 = add nuw nsw i32 %1, 1
+  %cq.brk.k = call i32 @cqrt_alloc_i32(i32 %6)
+  call void @cqrt_copy_i32_controlled(i32 %cq.brk.fire, i32 %cq.brk.k, i32 %cq.brk.idx)
+  %cq.brk.negk = sub i32 0, %6
   call void @cqrt_addc_i32(i32 %cq.brk.k, i32 %cq.brk.negk)
   call void @cqrt_free(i32 %cq.brk.k)
   ret void
 }
 """  # tests/e2e/slice_loop_break.c @run (loop body excerpt) — the dtzb
      # index-gated capture rail: allocated at a CLASSICAL k, brought back by a
-     # classical `cqrt_addc`, freed. Rule A1, not a palindrome.
+     # classical `cqrt_addc`, freed. Rule A1, not a palindrome. The ONE
+     # substitution the excerpt makes, because the loop itself is excerpted
+     # away: the real `%6 = add nuw nsw i32 %5, 1` counts off the loop's
+     # induction phi `%5`, which here is the parameter `%1`. Everything else is
+     # the emitted stream verbatim.
+     #
+     # 2026-07-31 (bd 6f3o): the control slot of the `copy_i32_controlled` used
+     # to read `%cq.brk.idx` — the DESTINATION — which the Case-B rule correctly
+     # flags. It was a fixture defect, not a finding: the emitter passes the
+     # fire flag (BreakReversePlay.cpp `{Fire, Ip1, E.Idx}`), and the real
+     # stage-2 output of this very slice is
+     #   call void @cqrt_copy_i32_controlled(i32 %cq.brk.fire, i32 %cq.brk.k,
+     #                                       i32 %cq.brk.idx)
+     # — three distinct rails. Verified against the lowered IR (Rule 11), not
+     # against the emitter alone, and repaired to it. The moral is the file's
+     # own: an excerpt that is not VERBATIM is a fixture that can teach a
+     # checker to accept something the compiler never emits — this one had
+     # taught it to accept a shape the compiler has never emitted.
+
+CASE_A_ALIASED = """
+define void @slice(i32 noundef %0, double noundef %1) local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 %0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  call void @cqrt_rz_i32(i32 %h, double 2.500000e-01)
+  %h_cmp = call i32 @cq_template_icmp_slt_i32(i32 %h, i32 %h)
+  %out = call i32 @cqrt_alloc_i32(i32 0)
+  %selop = call i32 @cqrt_alloc_i32(i32 11)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  %selop1 = call i32 @cqrt_alloc_i32(i32 22)
+  call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop1, i32 %out)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cq_template_icmp_slt_i32_unc(i32 %h_cmp, i32 %h, i32 %h)
+  call void @cqrt_free(i32 %h_cmp)
+  %m = call i32 @cqrt_measure_i32(i32 %out)
+  %h14 = call i32 @cqrt_alloc_f64(double %1)
+  call void @cqrt_ry_f64(i32 %h14, double 7.500000e-01)
+  call void @cqrt_rz_f64(i32 %h14, double 1.250000e-01)
+  %h_cmp2 = call i32 @cq_template_fcmp_olt_f64(i32 %h14, i32 %h14)
+  %out3 = call i32 @cqrt_alloc_f64(double 0.000000e+00)
+  %selop4 = call i32 @cqrt_alloc_f64(double 1.000000e+00)
+  call void @cqrt_copy_f64_controlled(i32 %h_cmp2, i32 %selop4, i32 %out3)
+  call void @cqrt_x(i32 %h_cmp2)
+  %selop5 = call i32 @cqrt_alloc_f64(double 2.000000e+00)
+  call void @cqrt_copy_f64_controlled(i32 %h_cmp2, i32 %selop5, i32 %out3)
+  call void @cqrt_x(i32 %h_cmp2)
+  call void @cq_template_fcmp_olt_f64_unc(i32 %h_cmp2, i32 %h14, i32 %h14)
+  call void @cqrt_free(i32 %h_cmp2)
+  %m18 = call double @cqrt_measure_f64(i32 %out3)
+  %h15 = call i32 @cqrt_alloc_i32(i32 %0)
+  call void @cqrt_ry_i32(i32 %h15, double 1.000000e-01)
+  %h_op = call i32 @cq_template_mul_i32(i32 %h15, i32 %h15)
+  %m19 = call i32 @cqrt_measure_i32(i32 %h_op)
+  ret void
+}
+"""  # tests/e2e/slice_select_rail_alias_cond.c @slice — the CASE-A NEGATIVE,
+     # and the reason it is here rather than a hand-written aliased line: this
+     # is the slice bd big5 UN-FENCED, so every aliased form it ships is
+     # reviewed, committed output. It carries all three Case-A spellings at
+     # once — an aliased-input template MINT (`icmp_slt_i32(%h, %h)`,
+     # `fcmp_olt_f64(%h14, %h14)`, `mul_i32(%h15, %h15)` = `x*x`), the aliased
+     # -input `_unc` TWIN of the same compare, and (in the wider corpus) 638
+     # more calls of that shape across 27 symbols. The Case-B rule must be
+     # SILENT on every one: aliasing the INPUTS of a gate whose output is a
+     # fresh |0> rail is unconditionally realizable. If a tightening ever flags
+     # this fixture, the tightening is wrong — not the fixture.
+
+# The (A1) -> (A2) FALL-THROUGH must not become the new hiding place. When (A1)
+# declines a non-classical immediate it hands the rail to (A2), and (A2) cancels
+# adjoint pairs. `cqrt_xorc_<W>` is self-adjoint and declares reads=(), so
+# without treating the immediate as an operand whose stability matters, (A2)
+# cancels this pair on `key()` equality alone and VERIFIES the very
+# entangle-then-free (A1) just refused — the az1h hole moving one rule down
+# rather than closing. Found by the bd az1h/6f3o Rule-13 round, 2026-07-31, in
+# the fall-through that change introduced. Hand-built (not slice output): the
+# emitter cannot produce it, which is exactly why only a planted probe can hold
+# the line here.
+A2_MOVED_IMMEDIATE = """
+define void @f(i32 %u) {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  %r = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_xorc_i32(i32 %r, i32 %h)
+  call void @cqrt_ry_i32(i32 %h, double 7.500000e-01)
+  call void @cqrt_xorc_i32(i32 %r, i32 %h)
+  call void @cqrt_free(i32 %r)
+  ret void
+}
+"""
+
+# Its CONTROL: the same bracket with the immediate left alone is genuinely
+# self-cancelling and MUST still verify, via (A2). Without this pair the fix
+# above could be "passed" by simply refusing every xorc bracket.
+A2_STABLE_IMMEDIATE = """
+define void @f(i32 %u) {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  %r = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_xorc_i32(i32 %r, i32 %h)
+  call void @cqrt_xorc_i32(i32 %r, i32 %h)
+  call void @cqrt_free(i32 %r)
+  ret void
+}
+"""
 
 POSITIVE = [
     ("phase-diamond", PHASE_DIAMOND),
@@ -332,6 +483,8 @@ POSITIVE = [
     ("qram-store-load-lifo", QRAM_LOCAL),
     ("identical-inv-group", IDENTICAL_INV),
     ("break-index-rail", BREAK_INDEX),
+    ("case-a-aliased-inputs", CASE_A_ALIASED),
+    ("a2-stable-immediate-bracket", A2_STABLE_IMMEDIATE),
 ]
 
 
@@ -455,7 +608,157 @@ MUTANTS = [
      insert_after(QRAM_LOCAL, "@cqrt_qram_alloc_i32",
                   "  call void @cqrt_free(i32 %arr)"),
      "F9-free-of-nonrail"),
+
+    # ---- bd az1h: a RAIL in a slot the ABI only ASSERTS is classical -------
+    # Rule (A1) used to convert `classify()`'s `classical_imm` declaration
+    # straight into a Rule-6 clearance without ever looking at the operand.
+    # Neither other gate can see this: at W=i32 both `cqrt_xorc_i32` parameters
+    # are `int32_t` (verify-clean) and the runtime prints the immediate slot as
+    # a bare decimal, so rail h13 renders as `13` in the golden trace.
+    # `provably_not_a_rail` has THREE independent accept-arms, and a probe that
+    # only exercises one lets the other two be deleted with a green suite. One
+    # mutant per arm (Rule-13 round, 2026-07-31 — the earlier draft had a single
+    # witness, and it happened to satisfy two arms at once):
+    #   arm 1, `self.rails`     — a value this stream has OBSERVED being used as
+    #   a rail (a gate wrote it), reached through a `select` so that it is NOT a
+    #   call result and therefore invisible to arms 2 and 3. This is the arm
+    #   that still catches a handle laundered through stock integer/select/phi
+    #   code, PROVIDED the stream also uses it as a rail somewhere.
+    ("a1-immediate-slot-holds-a-laundered-rail",
+     sub(insert_after(BREAK_INDEX, "%cq.brk.fire = call",
+                      "  %cq.brk.laundered = select i1 true, i32 %cq.brk.idx, "
+                      "i32 %cq.brk.idx\n"
+                      "  call void @cqrt_x(i32 %cq.brk.laundered)"),
+         "@cqrt_addc_i32", "i32 %cq.brk.negk", "i32 %cq.brk.laundered", 0),
+     "A1-imm-not-classical"),
+    #   arm 1 again, the direct spelling: a rail minted in THIS stream
+    ("a1-immediate-slot-holds-a-rail",
+     sub(BREAK_INDEX, "@cqrt_addc_i32", "i32 %cq.brk.negk",
+         "i32 %cq.brk.idx", 0),
+     "A1-imm-not-classical"),
+    #   arm 2, `self.params`    — a bare formal parameter, whose rail-ness
+    #   arrives from outside and which nothing in this file can vouch for (a
+    #   Phase-6 clone's quantum argument and a loop trip count both spell `%0`)
+    ("a1-immediate-slot-holds-a-formal-parameter",
+     sub(BREAK_INDEX, "@cqrt_addc_i32", "i32 %cq.brk.negk", "i32 %0", 0),
+     "A1-imm-not-classical"),
+    #   arm 3, `self.rail_defs` — a rail minted elsewhere in the SAME function
+    #   but outside this straight-line stream, which `self.rails` cannot see
+    ("a1-immediate-slot-holds-a-rail-from-another-stream",
+     sub(sub(BREAK_INDEX, "%cq.brk.idx = call", "%cq.brk.idx = call",
+             "%cq.brk.idx = call", 0),
+         "@cqrt_addc_i32", "i32 %cq.brk.negk", "i32 %cq.brk.other", 0)
+     .replace("define void @run(i32 noundef %0, i32 noundef %1) "
+              "local_unnamed_addr #0 {",
+              "define void @run(i32 noundef %0, i32 noundef %1) "
+              "local_unnamed_addr #0 {\n"
+              "  %cq.brk.other = call i32 @cqrt_alloc_i32(i32 0)\n"
+              "  br label %body\n\nbody:"),
+     "A1-imm-not-classical"),
+
+    # ---- bd 6f3o: CASE B — an input aliasing a rail the gate WRITES --------
+    # One spelling per write-set in the model. Each is planted into REAL
+    # lowered IR, because the shape a checker must reject is the shape an
+    # emitter bug produces, not a hand-written approximation of it.
+    ("case-b-cnot-target-aliases-control",
+     sub(FLAG_NETWORK, "@cqrt_cnot", "i32 %h_cmp2, i32 %g",
+         "i32 %g, i32 %g", 0),
+     "B1-input-aliases-written-rail"),
+    ("case-b-toffoli-target-aliases-control",
+     sub(FLAG_NETWORK, "@cqrt_toffoli", "i32 %h_cmp2, i32 %h_cmp3, i32 %g",
+         "i32 %g, i32 %h_cmp3, i32 %g", 0),
+     "B1-input-aliases-written-rail"),
+    # cqrt_cswap writes BOTH x and y, so the flag aliasing EITHER is Case B —
+    # this is the SwapRouteEmit.cpp:603 near-miss the bd big5 audit chased
+    # (`cswap(c,c,b)` maps both |1,0> and |0,1> to |0,1>: not injective).
+    ("case-b-cswap-flag-aliases-a-routed-rail",
+     sub(PHASE_DIAMOND, "@cqrt_cswap", "i32 %h_cmp, i32 %h, i32 %rail",
+         "i32 %rail, i32 %h, i32 %rail", 0),
+     "B1-input-aliases-written-rail"),
+    ("case-b-cswap-writes-the-same-rail-twice",
+     sub(PHASE_DIAMOND, "@cqrt_cswap", "i32 %h_cmp, i32 %h, i32 %rail",
+         "i32 %h_cmp, i32 %rail, i32 %rail", 0),
+     "B2-two-written-rails-alias"),
+    ("case-b-copy-source-aliases-destination",
+     sub(VALUE_DIAMOND, "@cqrt_copy_i32(", "i32 %h7, i32 %out",
+         "i32 %out, i32 %out", 0),
+     "B1-input-aliases-written-rail"),
+    ("case-b-controlled-copy-destination-aliases-the-flag",
+     sub(SELECT_MERGE, "@cqrt_copy_i32_controlled",
+         "i32 %h_cmp, i32 %h_op1, i32 %cqq.sel",
+         "i32 %h_cmp, i32 %h_op1, i32 %h_cmp", 0),
+     "B1-input-aliases-written-rail"),
+    ("case-b-unc-out-slot-aliases-an-input",
+     sub(SELECT_MERGE, "@cq_template_add_i32_hl_unc",
+         "i32 %h_op3, i32 %h_op2, i32 300", "i32 %h_op2, i32 %h_op2, i32 300",
+         0),
+     "B1-input-aliases-written-rail"),
+    ("case-b-clone-unc-out-slot-aliases-its-argument",
+     sub(CLONE_UNC, "@__cq_q_inner_1_unc", "i32 %2, i32 %0", "i32 %0, i32 %0",
+         0),
+     "B1-input-aliases-written-rail"),
+    # The classical-immediate slot is an INPUT like any other, so the az1h axis
+    # and the 6f3o axis meet here: `xorc(%r, %r)` writes %r and reads %r.
+    ("case-b-classical-immediate-aliases-the-written-rail",
+     sub(BREAK_INDEX, "@cqrt_addc_i32", "i32 %cq.brk.negk", "i32 %cq.brk.k", 0),
+     "B1-input-aliases-written-rail"),
+    ("case-b-qram-array-token-aliases-the-index",
+     sub(QRAM_LOCAL, "@cqrt_qram_store_i32(", "i32 %arr, i32 %h, i32 %qval",
+         "i32 %arr, i32 %arr, i32 %qval", 0),
+     "B1-input-aliases-written-rail"),
+    ("case-b-qram-load-unc-out-slot-aliases-its-array",
+     sub(QRAM_LOCAL, "@cqrt_qram_load_i32_unc", "i32 %1, i32 %arr, i32 %h1",
+         "i32 %arr, i32 %arr, i32 %h1", 0),
+     "B1-input-aliases-written-rail"),
+
+    # ---- the (A1) -> (A2) fall-through must not become the hiding place ----
+    ("a2-cancels-an-xorc-bracket-whose-rail-immediate-moved",
+     A2_MOVED_IMMEDIATE, "A1-imm-not-classical"),
 ]
+
+# CASE-A NEGATIVES — aliasing that IS realizable and must stay UNFLAGGED.
+#
+# This table is the load-bearing half of the Case-B validation, not a courtesy.
+# The expensive failure mode for an alias rule is a FALSE POSITIVE: 638 calls
+# across 27 template symbols in the committed corpus ship aliased inputs
+# (`cq_template_fmul_f64(%h, %h)` for `x*x`), plus 15 `_unc` twins of the same
+# shape. Each entry below PLANTS an aliasing that a naive "no operand may repeat"
+# rule would flag, and asserts NO `B*` finding comes out. Other findings are
+# expected and ignored — perturbing a real fixture usually breaks its palindrome
+# — so the assertion is precisely "the Case-B rule stayed silent".
+CASE_A_NEGATIVES = [
+    # out-of-place mint: `out(fresh |0>) ^= f(a, a)` is unitary for ANY f.
+    ("case-a-template-mint-with-aliased-inputs",
+     sub(PHASE_DIAMOND, "icmp_sgt_i32_hl(", "i32 %h, i32 5", "i32 %h, i32 %h",
+         0)),
+    # the `_unc` twin of that same forward: out distinct, inputs aliased.
+    ("case-a-unc-twin-with-aliased-inputs",
+     sub(VALUE_DIAMOND, "@cq_template_mul_i32_hl_unc",
+         "i32 %h_op, i32 %rail, i32 5", "i32 %h_op, i32 %rail, i32 %rail", 0)),
+    # toffoli(c, c, G) degenerates to cnot(c, G) — a permutation, still unitary.
+    ("case-a-toffoli-with-both-controls-the-same",
+     sub(FLAG_NETWORK, "@cqrt_toffoli", "i32 %h_cmp2, i32 %h_cmp3, i32 %g",
+         "i32 %h_cmp2, i32 %h_cmp2, i32 %g", 0)),
+    # A QRAM store's INDEX and VALUE are both reads; aliasing them writes the
+    # cell arr[q] with q itself, which is a permutation, not a Case B. Only the
+    # ARRAY token is written, and it stays distinct.
+    ("case-a-qram-store-index-aliases-value",
+     sub(QRAM_LOCAL, "@cqrt_qram_store_i32(", "i32 %arr, i32 %h, i32 %qval",
+         "i32 %arr, i32 %h, i32 %h", 0)),
+    # An `_unc` twin whose two INPUT slots alias while `out` stays distinct —
+    # the shape 15 calls in the committed corpus actually ship.
+    ("case-a-qram-load-unc-inputs-aliased",
+     sub(QRAM_LOCAL, "@cqrt_qram_load_i32_unc", "i32 %1, i32 %arr, i32 %h1",
+         "i32 %1, i32 %arr, i32 %arr", 0)),
+]
+# NOTE on a row that is deliberately NOT here: "an in-place gate whose one slot
+# is both read and written" (`cqrt_measure_<W>(%h)`, reads=(0,) writes=(0,)) has
+# nothing to plant — the aliasing is the symbol's own signature, not something a
+# mutation can introduce. It is covered instead by every POSITIVE fixture, all of
+# which contain a measure and all of which must produce zero findings. An earlier
+# draft listed it here as an unmutated copy of PHASE_DIAMOND; that row asserted a
+# strict subset of POSITIVE[0] and was removed rather than left looking like
+# coverage (bd az1h/6f3o Rule-13 round, 2026-07-31).
 
 # A `cqrt_*` symbol the effect model does not know must abort the run, not be
 # quietly skipped: its read/write behaviour is exactly what every verdict rests
@@ -479,7 +782,7 @@ def findings(text):
 def main():
     verbose = "-v" in sys.argv
     fails = []
-    n_pos = n_mut = n_sweep = 0
+    n_pos = n_mut = n_sweep = n_neg = 0
 
     # ---- layer 1: the shipped lowerings must verify clean -----------------
     for name, text in POSITIVE:
@@ -510,6 +813,17 @@ def main():
         if verbose:
             print(f"  ok  mutant    {'unclassified-runtime-symbol':32s} -> {e}")
 
+    # ---- layer 2b: Case-A aliasing must NOT be flagged --------------------
+    for name, text in CASE_A_NEGATIVES:
+        n_neg += 1
+        b = [x for x in findings(text) if x.code.startswith("B")]
+        if b:
+            fails.append(f"CASE-A NEGATIVE {name}: the Case-B rule fired on "
+                         f"realizable aliasing — "
+                         + "; ".join(str(x) for x in b))
+        elif verbose:
+            print(f"  ok  case-A    {name:32s} -> no B* finding")
+
     # ---- layer 3: blank every line a verified proof rests on --------------
     exempt = 0
     for name, text in POSITIVE:
@@ -534,8 +848,9 @@ def main():
             print(f"  ok  sweep     {name:32s} {len(proofs)} proof(s)")
 
     print(f"free_pairing_check_test: {n_pos} positive fixture(s), {n_mut} "
-          f"named mutant(s), {n_sweep} proof-targeted mutant(s) "
-          f"({exempt} exempt by rule), {len(fails)} failure(s)")
+          f"named mutant(s), {n_neg} Case-A negative(s), {n_sweep} "
+          f"proof-targeted mutant(s) ({exempt} exempt by rule), "
+          f"{len(fails)} failure(s)")
     for x in fails:
         print("  FAIL " + x, file=sys.stderr)
     return 1 if fails else 0
