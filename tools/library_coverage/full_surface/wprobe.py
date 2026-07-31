@@ -168,6 +168,120 @@ def keep_shims():
                 _KEEP_SHIMS[name] = bc
     return _KEEP_SHIMS
 
+# ---------------------------------------------------------------------------
+# bd guwr (2026-07-31): CQ-PROVIDED LEAF INJECTION — the Rule 18 AMENDMENT.
+#
+# For an owner-ruled, condition-(ii)-verified spelling, the pipeline injects CQ's
+# OWN reversible leaf (`tools/library_coverage/branchless/<spelling>.c`) INSTEAD
+# OF upstream openlibm's body. Structurally this is the SAME MOVE as
+# `keep_shims()` above — a defmap registration that changes WHICH SOURCE resolves
+# a name — and that identity is the whole argument for it: the hardware keep-set
+# is already never injected, and an injected body that CALLS a keep-set fn still
+# counts as injection-covered (which is exactly why `ceil` does not block
+# `tgamma`). Rule 18's two conditions are independent; for the trig family only
+# condition (1) fails, while Bennett backs sin/cos/tan with a CONCRETE BRANCHLESS
+# gate sequence (rev e15ea23, fsin.jl:468/683/739, ftan.jl:200) so condition (2)
+# holds robustly. What is ruled out is openlibm's SOURCE FORM (k_rem_pio2.c's
+# nested data-dependent-trip loops), never the function.
+#
+# *** TWO THINGS THIS IS NOT. *** It is NOT a name recognizer — Rule 18 calls
+# that path fiction and explicitly retires it (the old 3c6m.2 direct-libm
+# matcher): no pass change, no per-fn `cq_template_<fn>`, no new frozen symbol,
+# ONLY a different source on the injection side. And it does NOT make the cell
+# injection-covered: `full_census.py` records these cells under their own
+# PROVIDER and the scoreboard carries a THIRD row (amendment condition (iii),
+# bd `libm-scoreboard-two-numbers`). Merging them into the injection number is
+# the retired 165/174 overclaim recurring, and is treated as a bug.
+#
+# WHICH SPELLINGS: NOT a list here. `probe.cq_provided_cells()` owns the gate and
+# MEASURES condition (ii) on disk (leaf + e2e slice + committed golden + ctest
+# registration). Day one that is exactly 6 (sin/cos/tan.f64 + sinl/cosl/tanl.f80)
+# and it REJECTS sinf/cosf/tanf, which have no f32 leaf (bd `eur4`).
+#
+# COMPILE FLAGS — `-fno-builtin-<spelling>` ONLY, deliberately NOT the corpus's
+# blanket `-fno-builtin`. A CQ leaf is not "one more corpus body": its VERIFICATION
+# ARTIFACT is the committed e2e golden, which `tests/e2e/run_slice.sh:26` produces
+# at plain `clang -O1` with builtins ON. Matching that is what makes condition (ii)
+# mean anything, and Rule 18's own prescription is per-fn (`-fno-builtin-<fn>` on
+# the caller), never blanket. The per-fn flag is still needed: it is the standard
+# guard against a definition of `sin` being folded into a self-call.
+#
+# MEASURED 2026-07-31, and the measurement is why the choice is free rather than a
+# trade-off: for all six leaves the emitted INSTRUCTION STREAM is BYTE-IDENTICAL
+# across `-fno-builtin-<fn>` / blanket `-fno-builtin` / no flag at all — the only
+# delta is the fn attribute (`"no-builtin-sin"` vs `"no-builtins"` vs none). The
+# leaves reach their hardware-keep-set leaves through EXPLICIT `__builtin_rint` /
+# `__builtin_floor` / `__builtin_fmin` / `__builtin_fmax` spellings, which no
+# `-fno-builtin` variant touches. So today the flag cannot change the measurement.
+#
+# WHAT IT BUYS IS TOMORROW. If a future leaf edit ever spells a bare `floor(...)`
+# instead of `__builtin_floor(...)`, blanket `-fno-builtin` would silently split
+# the two paths — the golden's slice folding it to `@llvm.floor.f64` while the
+# census emitted `call @floor` and closure-linked openlibm's BRANCHY soft body —
+# i.e. the census would measure a program no golden has ever verified, with every
+# ctest still green. The per-fn flag closes that at the root, and it is the one
+# drift the body-text sync check in `probe._leaf_in_sync` structurally cannot see
+# (both files would agree; only the FLAGS differ).
+#
+# INLINING IS NOT A HAZARD EITHER WAY (measured, full 2x3 matrix). The constraint
+# documented at `probe()` below is ONE-DIRECTIONAL: a `"no-builtins"` CALLEE needs
+# a `"no-builtins"` CALLER. Our callee now carries only `"no-builtin-<fn>"`, whose
+# veto set is a strict subset of the blanket-vetoed @probe scaffold's, so it
+# inlines — verified `inlined_away=True, surv=[]` for all six at O1 and O2.
+_CQ_SHIM_DIR = None
+_CQ_SHIMS = None        # spelling -> .bc path (built once, memoized)
+_CQ_SKIPPED = []        # spellings whose leaf did NOT compile (no shim; upstream wins)
+
+def _cq_shim_dir():
+    global _CQ_SHIM_DIR
+    if _CQ_SHIM_DIR is None:
+        _CQ_SHIM_DIR = Path(tempfile.mkdtemp(prefix="cq_provided_"))
+    return _CQ_SHIM_DIR
+
+def _synth_cq_shim(spelling, leaf, outdir):
+    """Compile ONE CQ leaf to bitcode under corpus conditions. Returns the .bc
+    path, or None if it did not compile or did not define @<spelling> — in which
+    case we DECLINE to shim and upstream's body keeps winning, exactly as before.
+    (A shim that silently failed would make the census UNDER-report here, which is
+    the safe direction; a shim that defined the wrong symbol would make it
+    over-report, which is why the define check below is not optional.)"""
+    bc = outdir / ("_cq_%s.bc" % spelling)
+    r = subprocess.run([CLANG, "-O1", "-g", f"-fno-builtin-{spelling}", "-emit-llvm", "-c"]
+                       + INC.split() + [str(leaf), "-o", str(bc)],
+                       capture_output=True, text=True)
+    if r.returncode != 0 or not bc.exists():
+        return None
+    ir = subprocess.run([DIS, str(bc), "-o", "-"], capture_output=True, text=True).stdout
+    if not re.search(r'^define[^@\n]*@%s\(' % re.escape(spelling), ir, re.M):
+        return None
+    return bc
+
+def cq_provided_shims():
+    """spelling -> CQ-leaf .bc, for every cell `probe.cq_provided_cells()` admits."""
+    global _CQ_SHIMS
+    if _CQ_SHIMS is not None:
+        return _CQ_SHIMS
+    _CQ_SHIMS = {}
+    # A broken gate must NOT quietly revert the amendment to upstream bodies: that
+    # would silently answer the CQ-provided row with 0/6 and hand every dependent
+    # cell (tgamma, j0/j1, the ld80 gammas) a different first blocker, with no
+    # signal but a missing stderr line. Swallowing the exception is the SAFE
+    # direction for the numbers (it under-reports), but a census whose methodology
+    # changed under it is exactly the artifact drift bd o22d/eyfm exist to prevent.
+    # So: raise. `full_census.py` imports `probe` directly anyway, so an unusable
+    # gate cannot get past this point in any case.
+    sys.path.insert(0, str(HERE.parent))
+    import probe as _P
+    cells = _P.cq_provided_cells()
+    outdir = _cq_shim_dir()
+    for spelling, leaf in sorted(cells.items()):
+        bc = _synth_cq_shim(spelling, leaf, outdir)
+        if bc is None:
+            _CQ_SKIPPED.append(spelling)
+        else:
+            _CQ_SHIMS[spelling] = bc
+    return _CQ_SHIMS
+
 def _parse_define_sig(line, name):
     """Parse a `define ... @name(...)` header into (ret_type, [param_types]).
     Returns None unless it is a clean by-value scalar/pointer signature (the only
@@ -226,7 +340,14 @@ def _synth_alias_shim(alias, definer, ret, ptypes, dl_triple, outdir):
     r = subprocess.run([AS, str(ll), "-o", str(bc)], capture_output=True, text=True)
     return bc if r.returncode == 0 else None
 
-def build_defmap():
+def build_defmap(cq_provided=True):
+    """`cq_provided=False` builds the UPSTREAM-ONLY defmap (no CQ leaves). Used
+    by full_census.py's A/B: a cell whose closure merely LINKED a CQ leaf has not
+    thereby come to REST on it, and the linkset alone cannot tell those apart
+    (measured: lgamma.f64 links sinl/cosl and its status is identical either
+    way). Re-probing against this defmap is the decisive test, and "which
+    injection-covered cells rest on a CQ-provided leaf" is precisely the audit
+    question amendment condition (iii) exists to keep answerable."""
     defmap = {}
     sig_lines = {}         # fn name -> its full `define ...` header (for aliases)
     set_pairs = []         # module-asm (alias, definer) strong_reference pairs
@@ -272,6 +393,17 @@ def build_defmap():
     # shimmed file is never pulled in for some other symbol it also defines.
     for name, bc in keep_shims().items():
         defmap[name] = [bc] + defmap.get(name, [])
+    # bd guwr: CQ-PROVIDED leaves REPLACE the entry outright rather than merely
+    # sitting in front of it. The keep-set prepend is enough for a keep (the soft
+    # body is a legitimate fallback if the shim failed), but "CQ ships its own
+    # reversible sin" means upstream's body must not be reachable for that name
+    # by ANY route — a fallback here would silently answer the injection question
+    # with the CQ row's cell, which is the one merge condition (iii) forbids.
+    # Failure stays loud-by-absence: `_synth_cq_shim` returning None leaves the
+    # upstream entry untouched and the spelling in `_CQ_SKIPPED`.
+    if cq_provided:
+        for name, bc in cq_provided_shims().items():
+            defmap[name] = [bc]
     return defmap
 
 def undefined_syms(bc):
@@ -283,7 +415,9 @@ def undefined_syms(bc):
     gdfn  = set(m.group(1) for m in re.finditer(r'^@([A-Za-z0-9_.$]+) = (?!external)', ir, re.M))
     return (decl - dfn) | (gdecl - gdfn)
 
-def closure_link(probe_bc, defmap, wd):
+def closure_link(probe_bc, defmap, wd, linkset_out=None):
+    """`linkset_out`, if given, is EXTENDED with every .bc actually linked (bd
+    guwr). Optional so the four existing callers keep their 2-tuple contract."""
     linkset, seen = [probe_bc], {probe_bc}
     for _ in range(60):
         cur = wd/"cur.bc"
@@ -296,6 +430,8 @@ def closure_link(probe_bc, defmap, wd):
                 if f not in seen:
                     linkset.append(f); seen.add(f); added = True; break
         if not added:
+            if linkset_out is not None:
+                linkset_out.extend(linkset)
             return cur, None
     return None, "closure-did-not-converge"
 
@@ -343,7 +479,14 @@ def make_src(fn, retW, args, ti):
   return {rmeas}(r);
 }}'''
 
-def probe(fn, retW, args, ti, defmap):
+def probe(fn, retW, args, ti, defmap, deps_out=None):
+    """`deps_out`, if given, is EXTENDED with the sorted spellings of every
+    CQ-PROVIDED leaf this cell's closure actually linked (bd guwr). That is the
+    honesty artifact the third scoreboard row needs: after the amendment an
+    INJECTION-covered cell may rest on a CQ-provided leaf (`tgamma` calls `sin`),
+    exactly as it may already rest on a hardware-keep-set shim, and a number
+    whose dependencies are invisible is a number nobody can audit. Optional, so
+    the three existing callers keep their 3-tuple contract."""
     src = make_src(fn, retW, args, ti)
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
@@ -365,9 +508,13 @@ def probe(fn, retW, args, ti, defmap):
                            capture_output=True, text=True)
         if r.returncode != 0:
             return ("build-fail", r.stderr.strip().split('\n')[-1][:80], src)
-        linked, err = closure_link(pbc, defmap, td)
+        linkset = []
+        linked, err = closure_link(pbc, defmap, td, linkset_out=linkset)
         if linked is None:
             return ("link-fail", err, src)
+        if deps_out is not None:
+            cqbc = {str(v): k for k, v in cq_provided_shims().items()}
+            deps_out.extend(sorted({cqbc[str(f)] for f in linkset if str(f) in cqbc}))
         inl = td/"inl.bc"
         subprocess.run([OPT,f"-passes=internalize,always-inline,globaldce,default<{CENSUS_OPTLEVEL}>,scalarizer,instcombine,dce",
                         "-internalize-public-api-list=probe","-inline-threshold=2000000",

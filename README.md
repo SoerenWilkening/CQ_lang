@@ -60,18 +60,28 @@ a committed golden trace.
 > reports **32/32 injection-covered**, but read it precisely: those 32 are **hand-authored
 > branchless bodies** (`branchless/`, bd `3c6m.10`) for the **double** surface, deliberately
 > written to bypass the open lowering levers. The [**full-surface census**](tools/library_coverage/full_surface/)
-> injects the **real off-the-shelf openlibm** at every width over a reconciled 123-cell
-> surface and, as of 2026-07-28 (O1 baseline, bd `3c6m.61`), compiles
-> **95/123 (77%)** — 33 f32 + 34 f64 + 28 f80 — **all 95 of which are also VERIFIED**
-> (a committed `slice_libm_real_*` golden that links, runs and byte-matches at the true
-> `clang -O1 → cq-lowering` ship floor). The two numbers are still measured apart and
-> never merged; that they coincide today is a MEASUREMENT, not an invariant. The last
-> census-pipeline-only cell was `hypotl.f80`, closed by bd `3c6m.61` — its blocker was not
-> the control shape it was filed under but a single arm-resident `icmp eq i80` (the fp80
-> Inf/NaN mantissa test). The remaining **28 decline** on the tracked levers:
-> loop-carried 10 · Shadow scratch 7 · unsupported opcode 3 · control (flat/diamond) 3 ·
-> fp80 value-arm 2 · fp-copy/specialization 2 · unknown callee 1. **L6 nested control is
+> injects the **real off-the-shelf openlibm** at every width and, as of **2026-07-31**
+> (O1 baseline, bd `guwr`), compiles **97/117 upstream-injectable cells (83%)** —
+> **all 97 of which are also VERIFIED** (a committed `slice_libm_real_*` golden that
+> links, runs and byte-matches at the true `clang -O1 → cq-lowering` ship floor). The
+> two numbers are still measured apart and never merged; that they coincide today is a
+> MEASUREMENT, not an invariant. The remaining **20 decline** on the tracked levers:
+> loop-carried 10 · unsupported opcode 4 · control (flat/diamond) 2 ·
+> fp-copy/specialization 2 · Shadow scratch 1 · unknown callee 1. **L6 nested control is
 > no longer a decline bucket at all.**
+>
+> **⚡ A THIRD ROW exists as of 2026-07-31 (Rule 18 amendment, owner ruling, bd `guwr`):
+> CQ-PROVIDED — 6/6.** For `sin`/`cos`/`tan` at f64 and `sinl`/`cosl`/`tanl` at f80, CQ
+> **ships its own reversible libm source** and the pipeline injects **CQ's leaf instead
+> of upstream's body** — what openlibm is to a C compiler, not "CQ compiled openlibm's
+> `sin`". Admission is gated on Bennett concrete-branchless backing **and** a committed
+> e2e golden **at that width** **and** an explicit owner ruling per function, so
+> `sinf`/`cosf`/`tanf` are **rejected** (no f32 leaf; bd `eur4`) and still decline above.
+> It is **never merged into** the injection number and, like recognition, is **not
+> campaign progress** — it moves only when a leaf is authored.
+> **The injection numerator did not move: 97 before the amendment, 97 after.** All six
+> cells that left were declines, so the earlier `97/123 (79%)` became `97/117 (83%)` by
+> **denominator alone**. Track the numerator.
 > Read the two numbers precisely (Rule 2, bd `libm-scoreboard-two-numbers`):
 > *injection-covered* and *verified* are measured SEPARATELY and merely happen to coincide
 > right now — and **"verified" certifies the LOWERING, not the unitary**. The runtime is
@@ -103,7 +113,7 @@ Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches t
 | [`math.h`](tools/library_coverage/coverage/mathh.md) | 52/183 (28%) | 45/183 (25%) | 25/183 (14%) | 51 | 45 | 84 | 3 |
 | [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 3/39 (8%) | 6 | 0 | 0 | 8 |
 
-> **Two DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **95/123 injection-covered (77%), 95 verified** of the reconciled 123-cell surface ([full-depth census](tools/library_coverage/FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`123 injectable + 42 recognition + 12 macros + 6 int-ret/str`). The double-only authored-branchless number (**32/32**, [source-injection census](tools/library_coverage/INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
+> **Three DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **97/117 injection-covered (83%), 97 verified** of the reconciled 117-cell surface ([full-depth census](tools/library_coverage/FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`117 injection + 6 CQ-provided + 42 recognition + 12 macros + 6 int-ret/str`). A **third** row, **CQ-PROVIDED** (**6/6 CQ-provided (6 with a committed e2e golden)**), covers functions whose reversible leaf **CQ ships itself** and injects instead of upstream's body (Rule 18 amendment, bd `guwr`) — `sin`/`cos`/`tan` at f64+f80 only; it is **never merged into** the injection number and is not campaign progress. The double-only authored-branchless number (**32/32**, [source-injection census](tools/library_coverage/INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
 
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->
@@ -114,11 +124,21 @@ The table above is the **recognition floor** — the hardware-backed intrinsic s
 any more (Rule 18 retired that). The genuine library functions are measured **separately and
 disjointly** by [`INJECTION-CENSUS.md`](tools/library_coverage/INJECTION-CENSUS.md) — the
 **source-injection** strategy (inject a real libm body's source so LLVM inlines it to stock
-opcodes *before* the pass, no per-function template). Current: **7 / 32 genuine `math.h`
-library bodies compile** — `exp`, `log`, `cbrt`, `log1p`, `expm1`, `atan`, and `tanh`, all via
-**hand-authored branchless soft-bodies** (`tools/library_coverage/branchless/`, bd `3c6m.10` L1;
-each with a linked+diffed e2e golden slice and validated ≤3.1 ulp vs host libm). The off-the-shelf openlibm
-baseline remains 0/32: every branchy libm body declines on
+opcodes *before* the pass, no per-function template).
+
+> **⚠ The "7 / 32 … off-the-shelf openlibm baseline remains 0/32" text that stood here
+> was from the 2026-07-10 double-only era and had been contradicted by this page's own
+> badge for weeks. Corrected 2026-07-31 (bd `guwr`).** The authoritative measurement is
+> the **full-surface** census linked in the badge above, not the legacy 32-cell one:
+> **97 / 117 upstream-injectable cells compile and are golden-verified**, on **real
+> off-the-shelf openlibm bodies at every width** — so the openlibm baseline is emphatically
+> not 0. Of the 20 that still decline, only **3 are actionable** (`scope: lever-gap`); the
+> rest are owner-decided, deferred, or corpus gaps. The `branchless/` hand-authored bodies
+> are a **separate, retired** scoreboard — except for the six that now pass the Rule 18
+> **CQ-PROVIDED** gate (`sin`/`cos`/`tan` at f64+f80), which are counted on their own third
+> row and never merged into the injection number.
+
+Every remaining decline is on
 **tainted control flow**, **scratch memory**, a **nested transcendental**, or a
 **dynamic-index table read**, and *not one* on a missing opcode (the opcode surface is
 already sufficient; branchy/memory-heavy libm bodies are the blocker). `fabs`/`copysign` are

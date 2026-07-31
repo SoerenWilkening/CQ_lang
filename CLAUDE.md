@@ -351,6 +351,54 @@ declining library cell (bd `fmod-frem-keep-2026-07-24` / `3c6m.56`). See
 name-recognition of library functions (the old `3c6m.2` direct-libm matcher and
 the `iw81.4.b` transcendental-intrinsic rows).
 
+**AMENDMENT — the CQ-PROVIDED set (owner ruling 2026-07-31, bd `guwr`).** The
+keep/cut line above admits a **third** category beside *recognition* and
+*injection*: a function whose implementation **CQ itself ships**. The rationale is
+that Rule 18's two conditions are independent, and for the trig family only
+condition **(1)** fails: Bennett backs `sin`/`cos`/`tan` with a **concrete
+branchless** gate sequence (re-verified at rev `e15ea23` — `soft_sin`
+`src/softfloat/fsin.jl:683`, `soft_cos` `:739`, `soft_tan` `ftan.jl:200`,
+`_rp_paynehanek` `:468`; zero `for`/`while`, ≤2 ULP), so condition **(2)** holds
+*robustly* — what is ruled out is only openlibm's **source form**
+(`k_rem_pio2.c`'s nested data-dependent-trip loops). The precedent is already in
+the tree: the hardware keep-set is never injected, and an injected body that
+**calls** a keep-set fn still counts as injection-covered (`keep_shims()` in
+`tools/library_coverage/full_surface/wprobe.py` — this is exactly why `ceil` does
+not block `tgamma`). Extending that set is structurally the same move.
+
+**The rule stays extremely strict everywhere else.** Admission to the CQ-provided
+set requires **ALL THREE** of the following **plus an explicit owner ruling per
+function**. It is **not** developer discretion and **not** an escape hatch — Rule
+17 posture applies verbatim (a decline is not the development escape hatch, and
+neither is authoring a leaf instead of doing the lowering):
+
+- **(i)** Bennett ships a **concrete branchless** gate sequence for it —
+  condition (2) above, **unchanged**; a K-parameterized unroller is still **not**
+  one.
+- **(ii)** CQ itself ships a **verified branchless implementation with a
+  committed e2e golden AT THAT WIDTH**. This is checked **mechanically**, never
+  asserted: the leaf `tools/library_coverage/branchless/<spelling>.c`, the slice
+  `tests/e2e/slice_branchless_<spelling>.c`, its `.expected.log` golden, and its
+  `tests/e2e/CMakeLists.txt` registration must all exist, and the leaf body must
+  not have **drifted** from the slice the golden pins.
+- **(iii)** it is recorded as **CQ-PROVIDED** and **NEVER merged into the
+  injection number** (bd [`libm-scoreboard-two-numbers`] — now *three* numbers).
+
+**Day-one consequence, measured:** exactly **6 cells** qualify — `sin`/`cos`/`tan`
+at f64 and `sinl`/`cosl`/`tanl` at f80 — and `sinf`/`cosf`/`tanf` are **rejected**
+because no leaf exists at f32 (bd `eur4`). A change that "covers" 9 has broken
+condition (ii).
+
+**Mechanism — this is the whole design.** CQ ships its own reversible libm
+source, and for the admitted set the pipeline **injects CQ's leaf instead of
+upstream's body**. Everything stays inside the existing injection machinery:
+**no new recognizer, no per-fn `cq_template_<fn>`, no new frozen symbols.** Do
+**NOT** build a name recognizer — this Rule calls that path *fiction* and
+explicitly retires it. The **only** thing that changes is *which source is
+injected* for the named functions. That is also what makes the honesty claim
+defensible: "CQ ships its own reversible `sin`" (what openlibm is to a C
+compiler), **not** "CQ compiled openlibm's `sin`".
+
 ---
 
 ## Pipeline Architecture

@@ -8,7 +8,28 @@
 > because the capability→function *map* and the peel methodology are still the best
 > analysis of WHY cells decline — that part has aged well; the tallies have not.
 >
-> **CURRENT AUTHORITATIVE NUMBERS (2026-07-30, after bd `0rwu`):**
+> **⚡ CURRENT AUTHORITATIVE NUMBERS (2026-07-31, after bd `guwr` — Rule 18's
+> CQ-PROVIDED amendment):** THREE disjoint rows now, never merged (owner ruling; the
+> retired `165/174` overclaim is what merging produces).
+> - **(2) INJECTION — the campaign number: 97 / 117 upstream-injectable (83%)**;
+>   **20 decline**; **97 verified — the gap is 0**.
+> - **(3) CQ-PROVIDED: 6 / 6** — `sin`/`cos`/`tan`.f64 + `sinl`/`cosl`/`tanl`.f80, where
+>   CQ ships the reversible leaf and the pipeline injects it **instead of** upstream's
+>   body. `sinf`/`cosf`/`tanf` are **REJECTED** by the same gate (no f32 leaf; bd `eur4`)
+>   and still decline in (2). **Never merged into (2)**, and never campaign progress.
+> - **THE NUMERATOR DID NOT MOVE: 97 before, 97 after.** All six cells that left row (2)
+>   were declines, so only the DENOMINATOR changed (123 → 117) and the percentage moved
+>   79% → 83% for that reason alone. Quote both forms or neither; track the numerator.
+> - Measured in the same run: **zero** injection cells' COVERAGE depends on a CQ leaf.
+>   Three had their first blocker MOVE — `tgamma.f64`/`tgammaf.f32` (the Payne-Hanek
+>   `sin` layer is CLEARED; the next layer is `large_gam`'s `{double,double}` fp return
+>   under specialization — **neither** of the two layers the record predicted) and
+>   `lgammal.f80` (now a `logl` tainted-control layer, so its `decided-decline` ground
+>   is spent and it needs re-scoping). **`actionable lever-gap` stayed 3.**
+> - By `scope` (20 declines): `lever-gap` **3** · `deferred-capability` 1 · `corpus-gap`
+>   1 · `decided-decline` **15**.
+>
+> **PREVIOUS NUMBERS (2026-07-30, after bd `0rwu`) — superseded by the block above:**
 > - **97 / 123 injection-covered (79%)** (33 f32 + 34 f64 + **30** f80); **26 decline**;
 >   **97 verified — the gap is 0**. bd `0rwu` shipped PredMux witness **W7** (the
 >   const-fallthrough integer sole-phi diamond, the `fdlibm __isnanl` shape) and moved

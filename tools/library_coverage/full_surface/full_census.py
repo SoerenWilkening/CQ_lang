@@ -17,6 +17,13 @@ import probe as P
 # variant key -> (census width, c-type, spelling suffix, fp-const literal)
 VAR = {"f": ("f32","float","f","0.5f"), "": ("f64","double","","0.5"), "l": ("f80","long double","l","0.5L")}
 KEEP = set(P.HARDWARE_KEEP_SET.split())   # recognition-covered; no injectable body
+# bd guwr (Rule 18 AMENDMENT, owner 2026-07-31): the CQ-PROVIDED spellings. These
+# ARE probed and DO stay in this census — unlike the keep-set, which has no
+# injectable body at all — but they are probed against CQ's OWN leaf and are
+# reported on their own row. Amendment condition (iii): NEVER merged into the
+# injection number. The gate is measured on disk by `probe.cq_provided_cells()`;
+# day one that is exactly 6 and it rejects sinf/cosf/tanf (bd `eur4`).
+CQPROV = set(P.cq_provided_cells())
 
 def cell_args(spec, width, ctype, lit):
     """Map a spec's arg kinds to wprobe arg descriptors (arg0 tainted)."""
@@ -131,10 +138,23 @@ SCOPE = {
     # -- ld80 gamma pair. NOT decided for the reason bd 20xt's 2026-07-24 comment
     #    gives ("no soft_lgamma in Bennett") — that premise is analytically WRONG
     #    (see README "THE GAMMA GATE"). The real, measured grounds are loops:
+    # BOTH REFS RE-MEASURED 2026-07-31 (bd guwr) — and both were describing a
+    # blocker the pass does not actually hit first. Keep the ruling, fix the
+    # evidence: an unverifiable scope_ref is exactly the assertion this table
+    # exists to retire.
     "tgammal.f80": ("decided-decline",
-                    "its OWN reduction loops ld80/e_tgammal.c:271/277/286, SCEV Unpredictable, quantum-governed trip"),
+                    "RULING STANDS (its own reduction loops ld80/e_tgammal.c:271/277/286, SCEV "
+                    "Unpredictable, quantum-governed trip) but that is NOT the measured first "
+                    "blocker and was not on the 2026-07-30 baseline either: pre-amendment it "
+                    "blocked at `sinl` (unsupported instruction), post-amendment at `stirf` "
+                    "(unsupported instruction) — the CQ-provided sinl cleared the sinl layer. "
+                    "The loops sit behind stirf and remain UNMEASURED"),
     "lgammal.f80": ("decided-decline",
-                    "inherited Payne-Hanek via sinl: all 10 Unpredictable-BTC loops are in k_rem_pio2/rem_pio2l, none lgammal's own"),
+                    "RULING STANDS but its stated ground is SPENT: 'inherited Payne-Hanek via "
+                    "sinl' was true only while sinl was openlibm's. Post-amendment sinl is "
+                    "CQ-provided, and the measured first blocker moved to `logl` (tainted "
+                    "control flow under quantum lift) — a control layer, not a loop. Re-scope "
+                    "before quoting this cell: it may no longer be decided at all"),
 
     # -- THE ACTIONABLE SET (3 cells).
     #
@@ -164,10 +184,26 @@ SCOPE = {
     # sit behind `sin` and remain UNMEASURED (never reached). Still lever-gap and
     # NOT decided-decline — the blocking path is mathematically dead here, which
     # is a pruning capability we have not built, not an owner ruling.
+    # ADVANCED ONE LAYER 2026-07-31 (bd guwr). The Payne-Hanek `sin` blocker these
+    # two carried since bd tkmn is GONE — CQ's own branchless sin is injected now,
+    # so the `iq[20]` scratch alloca never enters the module and the fp-range
+    # DEAD-PATH PRUNING capability is no longer needed to move these cells.
+    # And for the THIRD time on this pair the next layer was NOT what the record
+    # predicted: neither the b_tgamma.c:200 loop nor the :309/311 depth-1
+    # recursion, but a struct-valued fp return under Phase-6 specialization.
+    # Do not quote the loop or the recursion as known-remaining; they are still
+    # UNMEASURED, now behind `large_gam`.
     "tgammaf.f32":    ("lever-gap",
-                       "alloca [20 x i32] (__kernel_rem_pio2 iq[20], Payne-Hanek scratch) inlined into `sin`, reached via neg_gam's reflection branch b_tgamma.c:290; needs fp-range DEAD-PATH PRUNING (the sin arg is provably in [0,pi/4], but scanBody scans the whole body regardless of reachability)"),
+                       "`large_gam { double, double } (double)`: cq specialization: floating-point "
+                       "quantum argument or return has no reversible copy — an AGGREGATE-typed fp "
+                       "return under quantum lift. Needs multi-value/struct return support in the "
+                       "Phase-6 specializer (or SROA-ing the pair), NOT the fp-range pruning the "
+                       "previous ref named"),
     "tgamma.f64":     ("lever-gap",
-                       "same single blocker as tgammaf.f32 (tgammaf is (float)tgamma(x)) — both advanced together in bd tkmn Inc 1. Layers BEHIND sin (the statically-bounded b_tgamma.c:200 fp-induction loop, trip<=5; the depth-1 self-recursion) are UNMEASURED, not known-remaining"),
+                       "same single blocker as tgammaf.f32 (tgammaf is (float)tgamma(x)) — both "
+                       "advanced together in bd tkmn Inc 1 and again in bd guwr. `large_gam`'s "
+                       "{double,double} return is the layer; b_tgamma.c:200's bounded loop and the "
+                       "depth-1 self-recursion sit BEHIND it and are still UNMEASURED"),
     "nexttowardf.f32":("lever-gap",
                        "promoteVolatileScalarLocals forfeits a STORE-ONLY alloca (Loads.empty(), QramLowering.cpp:1458); its 3 compiling siblings all read u. A control layer sits behind it"),
 
@@ -195,8 +231,15 @@ def check_scope(results):
     """Rule-12 analog for the scope table: a stale SCOPE is a silent PLANNING
     miscompile, so drift fails loudly instead of being quietly carried forward."""
     declines = {k for k, v in results.items() if v["status"] == "decline"}
+    # bd guwr: a CQ-PROVIDED cell stops declining because the pipeline stopped
+    # injecting UPSTREAM's body — not because upstream's body became lowerable.
+    # Its SCOPE entry (openlibm's k_rem_pio2.c is decided-decline) is therefore
+    # still TRUE and is deliberately RETAINED, re-attached to the cell record as
+    # `upstream_scope`. Dropping it would erase the only record of why CQ ships
+    # its own leaf. So these are exempt from the staleness sweep — and ONLY these.
+    cqcells = {k for k, v in results.items() if v.get("provider") == "cq"}
     missing  = sorted(declines - set(SCOPE))
-    stale    = sorted(set(SCOPE) - declines)
+    stale    = sorted(set(SCOPE) - declines - cqcells)
     if missing:
         print(f"\n!! SCOPE INCOMPLETE — {len(missing)} declining cell(s) unclassified: {missing}")
         print("   Classify each before quoting any lever ranking off this census.")
@@ -209,6 +252,9 @@ def main():
     print("indexing openlibm corpus...", file=sys.stderr)
     defmap = WP.build_defmap()
     print(f"  {len(defmap)} syms / {len(list(WP.BC.glob('*.bc')))} bc", file=sys.stderr)
+    print(f"  CQ-PROVIDED leaves injected: {sorted(WP.cq_provided_shims())} "
+          f"(skipped: {WP._CQ_SKIPPED or 'none'})", file=sys.stderr)
+    up_defmap = None          # built lazily; only the A/B below needs it
     results = {}
     buckets = defaultdict(list)
     n_cells = 0
@@ -225,16 +271,48 @@ def main():
             rw = ret_width(spec, width)
             if rw is None: continue
             # ld80 f80 uses x86_fp80; sqrt-family keep already skipped.
-            st, diag, src = WP.probe(spelling, rw, args, 0, defmap)
+            linked_cq = []
+            st, diag, src = WP.probe(spelling, rw, args, 0, defmap,
+                                     deps_out=linked_cq)
             b = bucket(st, diag)
             key = f"{spelling}.{width}"
-            rec = {"status": st, "bucket": b, "diag": diag}
-            if st == "decline" and key in SCOPE:
-                rec["scope"], rec["scope_ref"] = SCOPE[key]
+            provider = "cq" if spelling in CQPROV else "openlibm"
+            rec = {"status": st, "bucket": b, "diag": diag, "provider": provider}
+            if provider == "cq":
+                # The upstream ruling stays attached to the cell (see check_scope).
+                if key in SCOPE:
+                    rec["upstream_scope"], rec["upstream_scope_ref"] = SCOPE[key]
+            else:
+                if linked_cq:
+                    # A/B: LINKED is not RESTS-ON. Re-probe upstream-only and let
+                    # the status difference decide (bd guwr).
+                    #
+                    # `rests_on_cq` means exactly "this cell's COVERAGE depends on
+                    # a CQ leaf" — status or bucket changed. It deliberately does
+                    # NOT fire when a still-declining cell merely got a DIFFERENT
+                    # first blocker: measured 2026-07-31, `tgammal.f80` moved from
+                    # blocking at `sinl` to blocking at `stirf`, same bucket, same
+                    # decline. That move is real and worth knowing, but it is not a
+                    # coverage dependency and folding it in would inflate the audit
+                    # list with cells the CQ leaves did not cover. Blocker-only
+                    # moves are recoverable by diffing the `diag` field against the
+                    # previous census json, which is the comparison every gate runs
+                    # anyway — they are not lost, just not labelled here.
+                    if up_defmap is None:
+                        up_defmap = WP.build_defmap(cq_provided=False)
+                    ust, udiag, _ = WP.probe(spelling, rw, args, 0, up_defmap)
+                    rec["cq_linked"] = sorted(set(linked_cq))
+                    if ust != st or bucket(ust, udiag) != b:
+                        rec["rests_on_cq"] = True
+                        rec["upstream_status"], rec["upstream_diag"] = ust, udiag
+                if st == "decline" and key in SCOPE:
+                    rec["scope"], rec["scope_ref"] = SCOPE[key]
             results[key] = rec
             buckets[b].append(key)
             n_cells += 1
-            print(f"  {spelling:12s} {width:4s} {b}", file=sys.stderr)
+            tag = "  [CQ-PROVIDED]" if provider == "cq" else (
+                  "  [rests on CQ leaf]" if rec.get("rests_on_cq") else "")
+            print(f"  {spelling:12s} {width:4s} {b}{tag}", file=sys.stderr)
     # Write DIRECTLY to the opt-level-named authoritative baseline, in this
     # script's own directory. This used to write a fixed "full_census_results.json"
     # into the CWD and the real baseline (full_census_O1.json) was produced by a
@@ -245,8 +323,75 @@ def main():
     json.dump(results, open(out, "w"), indent=1)
     print(f"wrote {out.name}", file=sys.stderr)
     print(f"\n=== FULL-SURFACE CENSUS: {n_cells} injectable cells ===")
+    # -----------------------------------------------------------------------
+    # THREE DISJOINT ROWS — never merged (Rule 18 amendment (iii), owner
+    # 2026-07-31; bd `libm-scoreboard-two-numbers` / `guwr`). A single merged
+    # headline is the retired 165/174 "95%" overclaim recurring and is a bug.
+    # Row 1 (RECOGNITION) is not a census cell at all — it has no injectable
+    # body — so it is named here only so the reader knows what this file does
+    # NOT count; probe.py owns its number.
+    # -----------------------------------------------------------------------
+    cq   = {k: v for k, v in results.items() if v.get("provider") == "cq"}
+    inj  = {k: v for k, v in results.items() if v.get("provider") != "cq"}
+    cov  = lambda d: sum(1 for v in d.values() if v["status"] != "decline")
+    icov, ntot = cov(inj), len(inj)
+    ccov, ctot = cov(cq), len(cq)
+    pct  = lambda a, b: f"{round(100*a/b)}%" if b else "n/a"
+    print("\nTHREE DISJOINT ROWS — never merged (Rule 18 amendment (iii)):")
+    print(f"  1. RECOGNITION  — the hardware keep-set; NOT a cell here (no injectable")
+    print(f"                    body). A FIXED FLOOR, never progress. See probe.py.")
+    print(f"  2. INJECTION    — real upstream openlibm bodies, source-injected:")
+    print(f"                    {icov}/{ntot} covered ({pct(icov,ntot)}), "
+          f"{ntot-icov} decline.  *** THE CAMPAIGN NUMBER ***")
+    print(f"  3. CQ-PROVIDED  — CQ ships the leaf; upstream's body is NOT injected:")
+    print(f"                    {ccov}/{ctot} covered ({pct(ccov,ctot)}) — "
+          f"{', '.join(sorted(cq)) or 'none'}")
+    rej = P.cq_provided_rejected()
+    if rej:
+        print(f"                    NOT qualified (owner-ruled stem, condition (ii) "
+              f"unmet): {', '.join(sorted(rej))}")
+    # CONTINUITY — the one way this change could soft-overclaim, stated in the
+    # output rather than left for a reader to reconstruct. The CQ-provided cells
+    # were ALL declines before the amendment, so moving them out of the injection
+    # denominator raises the injection PERCENTAGE with zero compiler work.
+    print(f"\n  CONTINUITY: on the pre-amendment denominator (all {n_cells} cells "
+          f"counted as injection) this reads {icov}/{n_cells} ({pct(icov,n_cells)}).")
+    print(f"  The {ctot} CQ-provided cells were ALL declines before the amendment, so any "
+          f"gap between\n  those two percentages is DENOMINATOR, NOT compiler work. "
+          f"Quote both or neither.")
+    # The audit question the third row exists to keep answerable, split into the
+    # two things it could mean — because they carry VERY different weight and
+    # printing them as one number reads as an overclaim in whichever direction the
+    # reader guesses.
+    covdep = sorted(k for k, v in inj.items() if v.get("rests_on_cq")
+                    and (v["status"] != "decline") != (v["upstream_status"] != "decline"))
+    moved  = sorted(k for k, v in inj.items() if v.get("rests_on_cq") and k not in covdep)
+    print(f"\n  INJECTION cells whose COVERAGE depends on a CQ-provided leaf "
+          f"(A/B-measured, upstream-only re-probe): {len(covdep)}")
+    for k in covdep:
+        print(f"      {k}: with CQ leaf -> {inj[k]['status'][:38]} | "
+              f"upstream-only -> {inj[k]['upstream_status'][:38]}")
+    if not covdep:
+        print("      NONE. *** The injection numerator above is entirely independent "
+              "of the amendment. ***")
+    print(f"\n  INJECTION cells that still decline but whose FIRST BLOCKER MOVED: "
+          f"{len(moved)}")
+    for k in moved:
+        print(f"      {k}: {bucket(inj[k]['upstream_status'], inj[k]['upstream_diag'])}"
+              f"  ->  {inj[k]['bucket']}")
+    print("      (Not coverage — a layer was cleared and the next one is now visible.\n"
+          "       A same-BUCKET blocker move is invisible here by construction; recover\n"
+          "       those by diffing the `diag` field against the previous census json.)")
+    print("      Precedent for depending on a leaf at all: an injected body calling a\n"
+          "      hardware keep-set fn already counts as injection-covered — that is why\n"
+          "      `ceil` does not block `tgamma`. Listed so the dependency is auditable.")
+    print()
     comp = len(buckets.get("COMPILES", []))
-    print(f"COMPILES: {comp}/{n_cells}   DECLINE: {n_cells-comp}/{n_cells}\n")
+    print(f"RAW BUCKET TALLY (all {n_cells} cells, both providers): "
+          f"plain-COMPILES {comp}, other {n_cells-comp}")
+    print("NB `COMPILES` is the plain bucket ONLY — a Phase-6 spec-clone survivor "
+          "lands in\n   `COMPILES (spec-clone)` and is covered but NOT in this "
+          "tally (bd 3c6m.58).\n")
     print("BY BUCKET (what blocks it):")
     for b, fns in sorted(buckets.items(), key=lambda x: -len(x[1])):
         print(f"  {len(fns):3d}  {b}")
@@ -262,8 +407,13 @@ def main():
         if s in scopes:
             print(f"  {len(scopes[s]):3d}  {s}")
             print(f"       {', '.join(sorted(scopes[s]))}")
+    # `n_cells - comp` was WRONG here and had been since the spec-clone bucket
+    # existed: `comp` is the PLAIN-COMPILES tally, so it counted every spec-clone
+    # survivor as a decline (measured 2026-07-31: it printed "of 26 declines" when
+    # there are 20). Use the actual decline count.
+    ndecl = sum(1 for v in results.values() if v["status"] == "decline")
     print(f"\nACTIONABLE LEVER GAP: {len(scopes.get('lever-gap', []))} cell(s) "
-          f"of {n_cells - comp} declines. Quote THIS, not the decline count.")
+          f"of {ndecl} declines. Quote THIS, not the decline count.")
     check_scope(results)
 
 if __name__ == "__main__":

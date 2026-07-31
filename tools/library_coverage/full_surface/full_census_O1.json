@@ -3,561 +3,707 @@
   "status": "decline",
   "bucket": "unsupported opcode",
   "diag": "probe float (): cq taint escape: tainted value reaches an unsupported instruction",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "openlibm BODY only (same k_rem_pio2.c loops; CLAUDE.md Rule 18 names rem_pio2). UNLIKE the f64/f80 six, NO branchless leaf exists at f32 for any function \u2014 so this width of the function is genuinely NOT covered yet. bd eur4."
  },
  "cos.f64": {
-  "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe double (): cq taint escape: tainted value stored to memory",
-  "scope": "decided-decline",
-  "scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/cos.c + e2e slice_branchless_cos (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "cq",
+  "upstream_scope": "decided-decline",
+  "upstream_scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/cos.c + e2e slice_branchless_cos (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
  },
  "cosl.f80": {
-  "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory",
-  "scope": "decided-decline",
-  "scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/cosl.c + e2e slice_branchless_cosl (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "cq",
+  "upstream_scope": "decided-decline",
+  "upstream_scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/cosl.c + e2e slice_branchless_cosl (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
  },
  "sinf.f32": {
   "status": "decline",
   "bucket": "unsupported opcode",
   "diag": "probe float (): cq taint escape: tainted value reaches an unsupported instruction",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "openlibm BODY only (same k_rem_pio2.c loops; CLAUDE.md Rule 18 names rem_pio2). UNLIKE the f64/f80 six, NO branchless leaf exists at f32 for any function \u2014 so this width of the function is genuinely NOT covered yet. bd eur4."
  },
  "sin.f64": {
-  "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe double (): cq taint escape: tainted value stored to memory",
-  "scope": "decided-decline",
-  "scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/sin.c + e2e slice_branchless_sin (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "cq",
+  "upstream_scope": "decided-decline",
+  "upstream_scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/sin.c + e2e slice_branchless_sin (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
  },
  "sinl.f80": {
-  "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory",
-  "scope": "decided-decline",
-  "scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/sinl.c + e2e slice_branchless_sinl (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "cq",
+  "upstream_scope": "decided-decline",
+  "upstream_scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/sinl.c + e2e slice_branchless_sinl (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
  },
  "tanf.f32": {
   "status": "decline",
   "bucket": "unsupported opcode",
   "diag": "probe float (): cq taint escape: tainted value reaches an unsupported instruction",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "openlibm BODY only (same k_rem_pio2.c loops; CLAUDE.md Rule 18 names rem_pio2). UNLIKE the f64/f80 six, NO branchless leaf exists at f32 for any function \u2014 so this width of the function is genuinely NOT covered yet. bd eur4."
  },
  "tan.f64": {
-  "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe double (): cq taint escape: tainted value stored to memory",
-  "scope": "decided-decline",
-  "scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/tan.c + e2e slice_branchless_tan (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "cq",
+  "upstream_scope": "decided-decline",
+  "upstream_scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/tan.c + e2e slice_branchless_tan (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
  },
  "tanl.f80": {
-  "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory",
-  "scope": "decided-decline",
-  "scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/tanl.c + e2e slice_branchless_tanl (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "cq",
+  "upstream_scope": "decided-decline",
+  "upstream_scope_ref": "openlibm BODY only (nested data-dependent-trip loops in k_rem_pio2.c; CLAUDE.md Rule 18 names rem_pio2). THE FUNCTION IS COVERED AND SHIPS: branchless/tanl.c + e2e slice_branchless_tanl (registered in tests/e2e/CMakeLists.txt). Bennett backs it the same way (branchless fsin.jl:468). Cell stays declined per the campaign honesty rule."
  },
  "acosf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "acos.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "acosl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "asinf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "asin.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "asinl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "atanf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "atan.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "atanl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "atan2f.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "atan2.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "atan2l.f80": {
   "status": "exit0-spec:['atanl']",
   "bucket": "COMPILES (spec-clone)",
-  "diag": "surv:['atanl']"
+  "diag": "surv:['atanl']",
+  "provider": "openlibm"
  },
  "coshf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "cosh.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm",
+  "cq_linked": [
+   "cos",
+   "sin"
+  ]
  },
  "coshl.f80": {
   "status": "exit0-spec:['expl']",
   "bucket": "COMPILES (spec-clone)",
-  "diag": "surv:['expl']"
+  "diag": "surv:['expl']",
+  "provider": "openlibm"
  },
  "sinhf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "sinh.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm",
+  "cq_linked": [
+   "cos",
+   "sin"
+  ]
  },
  "sinhl.f80": {
   "status": "exit0-spec:['expl']",
   "bucket": "COMPILES (spec-clone)",
-  "diag": "surv:['expl']"
+  "diag": "surv:['expl']",
+  "provider": "openlibm"
  },
  "tanhf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "tanh.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "tanhl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "acoshf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "acosh.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "acoshl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "asinhf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "asinh.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "asinhl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "atanhf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "atanh.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "atanhl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "expf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "exp.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "expl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "exp2f.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "exp2.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "exp2l.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "expm1f.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "expm1.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "expm1l.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "logf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "log.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "logl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "log10f.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "log10.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "log10l.f80": {
   "status": "exit0-spec:['ldexpl']",
   "bucket": "COMPILES (spec-clone)",
-  "diag": "surv:['ldexpl']"
+  "diag": "surv:['ldexpl']",
+  "provider": "openlibm"
  },
  "log2f.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "log2.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "log2l.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "log1pf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "log1p.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "log1pl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "logbf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "logb.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "logbl.f80": {
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "owner ruling 2026-07-28: quantum-dependent trip count is out even with a purely CLASSICAL loop recurrence (strict read of the 2026-07-27 line)"
  },
  "ldexpf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "ldexp.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "ldexpl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "scalbnf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "scalbn.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "scalbnl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "scalblnf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "scalbln.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "scalblnl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "frexpf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "frexp.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "frexpl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "modff.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "modf.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "modfl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "powf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "pow.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "powl.f80": {
   "status": "decline",
   "bucket": "control (flat/diamond)",
   "diag": "frexpl x86_fp80 (x86_fp80, ptr): cq specialization: callee contains tainted control flow under quantum lift",
+  "provider": "openlibm",
   "scope": "deferred-capability",
   "scope_ref": "by-ref out-param under specialization = the g387/7.5 Shadow axis, scoped OUT per bd 20xt"
  },
  "cbrtf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "cbrt.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "cbrtl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "hypotf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "hypot.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "hypotl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "erff.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "erf.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "erfl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "erfcf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "erfc.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "erfcl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "tgammaf.f32": {
   "status": "decline",
-  "bucket": "unsupported opcode",
-  "diag": "sin double (double): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+  "bucket": "fp-copy/specialization",
+  "diag": "large_gam { double, double } (double): cq specialization: floating-point quantum argument or return has no reversible copy",
+  "provider": "openlibm",
+  "cq_linked": [
+   "cos",
+   "sin"
+  ],
+  "rests_on_cq": true,
+  "upstream_status": "decline",
+  "upstream_diag": "sin double (double): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
   "scope": "lever-gap",
-  "scope_ref": "alloca [20 x i32] (__kernel_rem_pio2 iq[20], Payne-Hanek scratch) inlined into `sin`, reached via neg_gam's reflection branch b_tgamma.c:290; needs fp-range DEAD-PATH PRUNING (the sin arg is provably in [0,pi/4], but scanBody scans the whole body regardless of reachability)"
+  "scope_ref": "`large_gam { double, double } (double)`: cq specialization: floating-point quantum argument or return has no reversible copy \u2014 an AGGREGATE-typed fp return under quantum lift. Needs multi-value/struct return support in the Phase-6 specializer (or SROA-ing the pair), NOT the fp-range pruning the previous ref named"
  },
  "tgamma.f64": {
   "status": "decline",
-  "bucket": "unsupported opcode",
-  "diag": "sin double (double): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+  "bucket": "fp-copy/specialization",
+  "diag": "large_gam { double, double } (double): cq specialization: floating-point quantum argument or return has no reversible copy",
+  "provider": "openlibm",
+  "cq_linked": [
+   "cos",
+   "sin"
+  ],
+  "rests_on_cq": true,
+  "upstream_status": "decline",
+  "upstream_diag": "sin double (double): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
   "scope": "lever-gap",
-  "scope_ref": "same single blocker as tgammaf.f32 (tgammaf is (float)tgamma(x)) \u2014 both advanced together in bd tkmn Inc 1. Layers BEHIND sin (the statically-bounded b_tgamma.c:200 fp-induction loop, trip<=5; the depth-1 self-recursion) are UNMEASURED, not known-remaining"
+  "scope_ref": "same single blocker as tgammaf.f32 (tgammaf is (float)tgamma(x)) \u2014 both advanced together in bd tkmn Inc 1 and again in bd guwr. `large_gam`'s {double,double} return is the layer; b_tgamma.c:200's bounded loop and the depth-1 self-recursion sit BEHIND it and are still UNMEASURED"
  },
  "tgammal.f80": {
   "status": "decline",
   "bucket": "unsupported opcode",
-  "diag": "sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+  "diag": "stirf x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+  "provider": "openlibm",
+  "cq_linked": [
+   "sinl"
+  ],
   "scope": "decided-decline",
-  "scope_ref": "its OWN reduction loops ld80/e_tgammal.c:271/277/286, SCEV Unpredictable, quantum-governed trip"
+  "scope_ref": "RULING STANDS (its own reduction loops ld80/e_tgammal.c:271/277/286, SCEV Unpredictable, quantum-governed trip) but that is NOT the measured first blocker and was not on the 2026-07-30 baseline either: pre-amendment it blocked at `sinl` (unsupported instruction), post-amendment at `stirf` (unsupported instruction) \u2014 the CQ-provided sinl cleared the sinl layer. The loops sit behind stirf and remain UNMEASURED"
  },
  "lgammaf.f32": {
   "status": "exit0-spec:['logf']",
   "bucket": "COMPILES (spec-clone)",
-  "diag": "surv:['logf']"
+  "diag": "surv:['logf']",
+  "provider": "openlibm",
+  "cq_linked": [
+   "cosl",
+   "sinl"
+  ]
  },
  "lgamma.f64": {
   "status": "exit0-spec:['__kernel_cos', 'log']",
   "bucket": "COMPILES (spec-clone)",
-  "diag": "surv:['__kernel_cos', 'log']"
+  "diag": "surv:['__kernel_cos', 'log']",
+  "provider": "openlibm",
+  "cq_linked": [
+   "cosl",
+   "sinl"
+  ]
  },
  "lgammal.f80": {
   "status": "decline",
-  "bucket": "unsupported opcode",
-  "diag": "sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
+  "bucket": "control (flat/diamond)",
+  "diag": "logl x86_fp80 (x86_fp80): cq specialization: callee contains tainted control flow under quantum lift",
+  "provider": "openlibm",
+  "cq_linked": [
+   "cosl",
+   "sinl"
+  ],
+  "rests_on_cq": true,
+  "upstream_status": "decline",
+  "upstream_diag": "sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
   "scope": "decided-decline",
-  "scope_ref": "inherited Payne-Hanek via sinl: all 10 Unpredictable-BTC loops are in k_rem_pio2/rem_pio2l, none lgammal's own"
+  "scope_ref": "RULING STANDS but its stated ground is SPENT: 'inherited Payne-Hanek via sinl' was true only while sinl was openlibm's. Post-amendment sinl is CQ-provided, and the measured first blocker moved to `logl` (tainted control flow under quantum lift) \u2014 a control layer, not a loop. Re-scope before quoting this cell: it may no longer be decided at all"
  },
  "lroundf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "lround.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "lroundl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "llroundf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "llround.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "llroundl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "fmodf.f32": {
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe float (): cq loop lowering: multiple early-break sites",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
  },
@@ -565,6 +711,7 @@
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe double (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
  },
@@ -572,6 +719,7 @@
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe x86_fp80 (): cq loop lowering: multiple early-break sites",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
  },
@@ -579,6 +727,7 @@
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe float (): cq loop lowering: multiple early-break sites",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
  },
@@ -586,6 +735,7 @@
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe double (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
  },
@@ -593,6 +743,7 @@
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
  },
@@ -600,6 +751,7 @@
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe float (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
  },
@@ -607,6 +759,7 @@
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe double (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
  },
@@ -614,56 +767,66 @@
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
  },
  "nextafterf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "nextafter.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "nextafterl.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "nexttowardf.f32": {
   "status": "decline",
   "bucket": "memory-store (Shadow)",
   "diag": "probe float (): cq taint escape: tainted value stored to memory",
+  "provider": "openlibm",
   "scope": "lever-gap",
   "scope_ref": "promoteVolatileScalarLocals forfeits a STORE-ONLY alloca (Loads.empty(), QramLowering.cpp:1458); its 3 compiling siblings all read u. A control layer sits behind it"
  },
  "nexttoward.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "nexttowardl.f80": {
   "status": "decline",
   "bucket": "unknown callee (inner-call)",
   "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+  "provider": "openlibm",
   "scope": "corpus-gap",
   "scope_ref": "openlibm ships no s_nexttowardl.c. NB the recorded 'would land on nextafterl's blocker anyway' rider is REFUTED: nextafterl.f80 COMPILES today"
  },
  "fdimf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "fdim.f64": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "fdiml.f80": {
   "status": "COMPILES",
   "bucket": "COMPILES",
-  "diag": "surv:[]"
+  "diag": "surv:[]",
+  "provider": "openlibm"
  }
 }
