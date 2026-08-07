@@ -50,6 +50,24 @@ It runs three layers:
           stayed put — planted with a `cqrt_ry` between the two halves, and
           paired with a POSITIVE control whose immediate does stay put so the
           fix cannot be faked by refusing every bracket.
+        * a `cqrt_cswap` route-pair cancelling while a rail it WRITES moved
+          (bd 0gwl) -> A-not-reducible on the work rail, T2-operand-mutated on
+          the base, plus the ticket's own reproducer as a third row. Three
+          spellings because the two write slots reach two different rules and
+          only the reproducer exits 0 pre-change.
+          The rule has FOUR admissions to keep, and each has its own POSITIVE
+          control, three of them shipped lowerings rather than hand-built:
+            - no intervening write, and DIAGONAL-only intervening writes on the
+              co-written rail                                  (PHASE_DIAMOND)
+            - intervening writes that REDUCE TO IDENTITY        (VALUE_DIAMOND)
+            - intervening writes on the COMPLEMENTARY flag branch
+                                                              (IFELSE_DERIVED)
+            - the `v == target` skip, where the caller's commutation window and
+              this path's disagree            (A2_CO_WRITTEN_TARGET_SKIP, the
+              one hand-built control, and the one the FIRST arm-kill round
+              missed — see its fixture comment)
+          All four are individually kill-tested: deleting any one of them turns
+          THIS FILE red, each via a different fixture.
         * one CASE B spelling per write-set in the model (bd 6f3o): a cnot
           whose target is its control, a toffoli whose target is a control, a
           cswap whose flag is one of the two rails it swaps, a cswap that
@@ -115,6 +133,16 @@ define i32 @slice() local_unnamed_addr #0 {
   ret i32 %m
 }
 """  # tests/e2e/slice_control_phase_diamond.c @slice — the 4.1 routed phase arm.
+     #
+     # POSITIVE CONTROL for two of the four bd 0gwl co-written-slot admissions,
+     # and the reason no hand-built fixture was added for them: (i) a co-written
+     # rail with NO intervening write (`%h` across the route-pair), and (ii) a
+     # co-written rail written only DIAGONALLY — the two `cqrt_rz` on `%rail`
+     # sit inside the pair and must stay invisible, because Rz relabels nothing
+     # and so cannot invalidate the route-back. A rule that demanded literal
+     # operand silence rather than basis-label stability would flag this
+     # shipped, reviewed arm. See also `MUTANTS` — the same two lines with a
+     # non-diagonal `cqrt_ry` in that slot are the two 0gwl mutants.
 
 VALUE_DIAMOND = """
 define i32 @slice() local_unnamed_addr #0 {
@@ -144,6 +172,14 @@ define i32 @slice() local_unnamed_addr #0 {
 }
 """  # tests/e2e/slice_control_value_diamond.c @slice — 4.2 method-B (chain
      # shortened to 3 links; the `_unc` reverse-play shape is unchanged).
+     #
+     # POSITIVE CONTROL for the third bd 0gwl admission: a co-written rail whose
+     # intervening writes REDUCE TO IDENTITY rather than being absent. Freeing
+     # `%rail` cancels the outer route-pair, whose co-written `%h7` is written
+     # twice in between — by the inner `%h_op2` route-pair, which cancels in its
+     # own right. So the co-written check has to RECURSE into the same reduction
+     # rather than demand an empty write history; a rule that demanded the
+     # latter fails this shipped method-B arm.
 
 IFELSE_DERIVED = """
 define i32 @slice() local_unnamed_addr #0 {
@@ -174,6 +210,18 @@ define i32 @slice() local_unnamed_addr #0 {
 """  # tests/e2e/slice_control_phase_ifelse_derived.c @slice — the two-arm
      # `¬flag cqrt_x` bracket. `%h` is routed A B A B: only the
      # complementary-branch commutation rule reduces that to identity.
+     #
+     # POSITIVE CONTROL for the fourth and most expensive bd 0gwl admission, and
+     # the fixture the ticket named as the one at risk. Freeing `%rail` cancels
+     # its route-pair, and the co-written base `%h` IS genuinely written in
+     # between — by the `%rail1` route of the OTHER arm. Only complementary-
+     # branch commutation explains why that pair still cancels: the two routes
+     # are supported on opposite sides of the `¬flag cqrt_x` bracket, so on the
+     # branch where the pair acts the intervening route is the identity.
+     # Without that admission this correct, reviewed lowering reports
+     # A-not-reducible — i.e. the GATE FAILS A GOOD BUILD, which is the
+     # expensive direction for a gate and the reason bd 0gwl was scoped out of
+     # the az1h/6f3o change rather than folded into it.
 
 FLAG_NETWORK = """
 define double @slice() local_unnamed_addr #0 {
@@ -472,6 +520,70 @@ entry:
 }
 """
 
+# The bd 0gwl `v == target` clause is an ACCEPT-ARM, and this is the fixture that
+# proves it. Hand-built, not slice output — like `a2-stable-immediate-bracket`,
+# and for the same reason: the emitter does not put a non-`cqrt_x` write on a
+# live routing flag, so only a planted control can hold this line.
+#
+# SHAPE. `%rail` is routed A B A B, the `IFELSE_DERIVED` two-arm pattern, PLUS a
+# self-cancelling `cqrt_cnot(%g, %f)` pair on the flag inside the first route.
+# That pair is what separates the two commutation windows: the caller licenses
+# the intervening write over (w, p2) and sees only a `cqrt_x`, while re-deriving
+# the target's own stability here would look over (p1, w) and see two `cqrt_cnot`s.
+#
+# IT MUST VERIFY, and that is a claim about physics, not about the checker: every
+# operator is block-diagonal in `%f`, so on the f=1 block the stream is
+# SWAP·I·SWAP·I = I and on the f=0 block I·SWAP·I·SWAP = I, and the `cnot` pair is
+# literally the identity. `%rail` is EXACTLY |0> at the free for ANY superposition
+# of `%f`. Deleting the clause reports `A-not-reducible` — a gate failing a
+# correct build. Found by the bd 0gwl Rule-13 round, which refuted this file's
+# own earlier claim that the clause was redundant and could not be distinguished.
+A2_CO_WRITTEN_TARGET_SKIP = """
+define i32 @slice() local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 3)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h2 = call i32 @cqrt_alloc_i32(i32 4)
+  call void @cqrt_ry_i32(i32 %h2, double 2.500000e-01)
+  %g = call i32 @cqrt_alloc_i1(i1 false)
+  %f = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 5)
+  %rail = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_cswap(i32 %f, i32 %h, i32 %rail)
+  call void @cqrt_cnot(i32 %g, i32 %f)
+  call void @cqrt_cnot(i32 %g, i32 %f)
+  call void @cqrt_x(i32 %f)
+  call void @cqrt_cswap(i32 %f, i32 %h2, i32 %rail)
+  call void @cqrt_x(i32 %f)
+  call void @cqrt_cswap(i32 %f, i32 %h, i32 %rail)
+  call void @cqrt_x(i32 %f)
+  call void @cqrt_cswap(i32 %f, i32 %h2, i32 %rail)
+  call void @cqrt_x(i32 %f)
+  call void @cqrt_free(i32 %rail)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+}
+"""
+
+# The bd 0gwl ticket's VERBATIM reproducer, committed so the claim "the old tool
+# reported OK via A2-reduces-to-identity, exit 0" names something that can be
+# re-run. The two PHASE_DIAMOND-derived mutants below are planted into real
+# lowered IR and are the better regression tests, but neither of them is this —
+# each carries a second free site that the OLD tool already flagged, so neither
+# reproduces the ticket's exit-0 observation on its own.
+A2_CO_WRITTEN_TICKET_REPRO = """
+define i32 @slice() local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 3)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %f = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 5)
+  %rail = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_cswap(i32 %f, i32 %h, i32 %rail)
+  call void @cqrt_ry_i32(i32 %h, double 7.500000e-01)
+  call void @cqrt_cswap(i32 %f, i32 %h, i32 %rail)
+  call void @cqrt_free(i32 %rail)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+}
+"""
+
 POSITIVE = [
     ("phase-diamond", PHASE_DIAMOND),
     ("value-diamond", VALUE_DIAMOND),
@@ -485,6 +597,7 @@ POSITIVE = [
     ("break-index-rail", BREAK_INDEX),
     ("case-a-aliased-inputs", CASE_A_ALIASED),
     ("a2-stable-immediate-bracket", A2_STABLE_IMMEDIATE),
+    ("a2-co-written-target-skip", A2_CO_WRITTEN_TARGET_SKIP),
 ]
 
 
@@ -714,6 +827,45 @@ MUTANTS = [
     # ---- the (A1) -> (A2) fall-through must not become the hiding place ----
     ("a2-cancels-an-xorc-bracket-whose-rail-immediate-moved",
      A2_MOVED_IMMEDIATE, "A1-imm-not-classical"),
+
+    # ---- bd 0gwl: the CO-WRITTEN slot of a two-write gate ------------------
+    # `pair_operands_unchanged` used to iterate `read_idx()` only, and
+    # `cqrt_cswap` is modelled `reads=(0,) writes=(1,2)` (a Fredkin physically
+    # reads all three) — so a route-pair cancelled with only the FLAG's
+    # stability ever checked. Both spellings below are the same defect on the
+    # two different write slots, and they land in two different rules, which is
+    # why both are here rather than one standing in for the other. Each was
+    # ATTRIBUTED against the pre-change tool rather than assumed: the code
+    # asserted is one the checker did NOT emit before this rule existed.
+    #
+    #   The ticket's VERBATIM reproducer, on its own: routing psi onto %rail
+    #   leaves |0> on %h; dirtying %h and routing back parks Ry(0.75)|0> on
+    #   %rail, and the free is the hidden measurement Rules 6/8 forbid. THIS is
+    #   the module the old tool discharged with `OK ... via
+    #   A2-reduces-to-identity` and exit 0 — the row below is not, and an
+    #   earlier draft of this comment wrongly attributed that observation to it.
+    ("a2-co-written-ticket-reproducer",
+     A2_CO_WRITTEN_TICKET_REPRO, "A-not-reducible"),
+    #   slot 1, planted into REAL lowered IR — the better regression test, since
+    #   hand-written .ll is not the ship floor. Note it is NOT the ticket's
+    #   repro: PHASE_DIAMOND carries a second free site (%h_cmp) that the old
+    #   tool ALREADY flagged `T2-operand-mutated`, so pre-change this module
+    #   exited 1. What is attributable to bd 0gwl is the asserted code —
+    #   `A-not-reducible` on %rail is one the old tool did not emit here.
+    ("a2-cswap-route-pair-whose-co-written-rail-was-dirtied",
+     insert_after(PHASE_DIAMOND, "@cqrt_cswap",
+                  "  call void @cqrt_ry_i32(i32 %h, double 7.500000e-01)", 0),
+     "A-not-reducible"),
+    #   slot 2 — the mirror, reached through (T2) instead of (A2). Dirtying the
+    #   WORK rail between the routes means the base %h comes back changed, so
+    #   `icmp_sgt_i32_hl_inv(%h, 5)` recomputes a different flag and does not
+    #   zero %h_cmp. This is also the row that pins the `v == target` skip to
+    #   the right operand: get that backwards and this direction is invisible.
+    ("t2-cswap-route-pair-whose-work-rail-was-dirtied",
+     insert_after(PHASE_DIAMOND, "@cqrt_cswap",
+                  "  call void @cqrt_ry_i32(i32 %rail, double 7.500000e-01)",
+                  0),
+     "T2-operand-mutated"),
 ]
 
 # CASE-A NEGATIVES — aliasing that IS realizable and must stay UNFLAGGED.

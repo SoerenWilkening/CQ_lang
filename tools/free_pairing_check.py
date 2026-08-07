@@ -101,6 +101,16 @@ a known basis state and the free is sound iff it is still in one:
        even-length adjoint palindrome the ticket asks for is the common case of
        this reduction; a deleted uncompute toffoli leaves an odd, unpairable
        history and fails here.
+       A pair cancels only if everything ITS action depends on held still in
+       between: the declared reads, the `classical_imm` slots (bd az1h), and —
+       for the one symbol in the model that writes two rails — the CO-WRITTEN
+       slot (bd 0gwl). `cqrt_cswap` is modelled `reads=(0,) writes=(1,2)`
+       though a Fredkin physically reads all three, so until 2026-08-07 a
+       route-pair cancelled with only the FLAG ever checked:
+       `cswap(%f,%q,%rail); ry(%q,0.75); cswap(%f,%q,%rail); free(%rail)`
+       reported `A2-reduces-to-identity`, exit 0, while the route-back parked
+       `Ry(0.75)|0>` on the rail it then freed. See
+       `pair_operands_unchanged` / `co_written_stable`.
 
 Plus two whole-stream invariants:
 
@@ -183,6 +193,13 @@ TWO MODELLING DECISIONS THAT ARE PHYSICS, NOT CONVENIENCE
   disjoint branches of the same flag. That is the `¬flag cqrt_x` bracket the
   two-arm emitter emits (§5b), and it is what makes the if/else `A B A B`
   routing of a shared base reduce to identity. No other reordering is allowed.
+  The same admission — and no wider one — governs the co-written slot check
+  (bd 0gwl): an intervening write on the complementary branch of a flag the
+  pair also carries is dropped before that slot's history is reduced. Two
+  operators supported on complementary blocks of one flag commute exactly, so
+  on the branch where the pair acts such a write is the identity. Without it
+  the `A B A B` two-arm route stops reducing and a correct, reviewed lowering
+  is reported UNPROVEN — for a GATE, that is failing a good build.
 
 WHAT IT DOES **NOT** WITNESS  (read this before quoting the tool)
 ================================================================
@@ -279,7 +296,9 @@ RECOMPUTE zeroes rather than a palindrome, and 10 `U1-cross-stream` on
 `cq.brk.R`/`cq.brk.idx`, whose write history spans the loop back-edge). Those
 five e2e entries therefore pass `--allow-unproven` with that reason written at
 the call site; every other slice runs strict. Adding the (A1) immediate check
-and the Case-B rule moved ZERO of the 237 verdicts.
+and the Case-B rule moved ZERO of the 237 verdicts; RE-MEASURED 2026-08-07,
+adding the (A2) co-written-slot check (bd 0gwl) moved ZERO of them as well —
+same 50504/50484/20/0, no slice changed a single finding.
 
 VALIDATED BEFORE USE. Proof-targeted mutation — blank or corrupt an instruction
 some VERIFIED site's own proof consumes, then re-check — killed 6569 of 6579
@@ -307,6 +326,35 @@ FAMILY — so coverage is complete across families and a 0.36% sample within
 them. That is the right axis to be exhaustive on, because the rule branches on
 the symbol's Effect and not on the call site; but it is a sample, and 392/392
 must not be read as "every aliasable call in the corpus was tried".
+
+The (A2) CO-WRITTEN-SLOT rule (bd 0gwl) was validated the same way, 2026-08-07,
+and here the population is small enough to be EXHAUSTIVE rather than sampled —
+so unlike the Case-B figure above, this one has no cap to state. Instrumenting
+`pair_operands_unchanged` over the same 237 lowered slices finds 60 co-written
+cancellations, all `cqrt_cswap`, across 10 slices (the 11th cswap-bearing
+slice, `slice_control_abort`, routes to a grave rail that is never routed back
+and never freed, so no pair forms). Planting a dirtying `cqrt_ry` on the
+co-written register INSIDE each: 60 planted, 60 CAUGHT, 0 survived.
+Then the ARM-KILL MATRIX, because a predicate with N accept-arms and one probe
+lets N-1 be deleted with a green suite (the az1h lesson): each arm was deleted
+individually and the committed selftest re-run, and each of the FOUR turns it
+RED via a DIFFERENT fixture — the co-written loop itself (the three 0gwl
+mutants; with it gone the ticket's own reproducer is silently VERIFIED again),
+the `v == target` skip (`a2-co-written-target-skip`), the complementary-branch
+commutation filter (`IFELSE_DERIVED`), and the nested reduction rather than a
+demand for an empty history (`VALUE_DIAMOND`).
+
+THE ARM COUNT IS FOUR BECAUSE THE FIRST ANSWER WAS WRONG, AND THAT IS THE
+LESSON WORTH KEEPING. The `v == target` skip survived its first kill test, and
+this file then recorded it as "redundant by construction … no input can
+distinguish the two". The bd 0gwl Rule-13 round refuted that with a runnable
+stream: the caller's `commutes` filter and the one this path would use are
+evaluated over DISJOINT intervals ((w, p2) versus (p1, w)), so they disagree
+whenever a non-`cqrt_x` write touches the flag on one side of `w`. Surviving a
+kill test means the PROBE was too weak, and "redundant by construction" is a
+claim about all inputs that a corpus sweep cannot establish — measuring zero
+moved verdicts shows only that the corpus lacks the distinguishing shape. Build
+the probe; do not promote its absence into a proof.
 
 USAGE
     tools/free_pairing_check.py [options] lowered1.ll [lowered2.ll ...]
@@ -995,7 +1043,7 @@ class StreamAnalysis:
         # cycle guard: assume not stable while recursing
         self._stable_memo[memo] = (False, frozenset())
         ok, _why, lines = self.reduces_to_identity(
-            self.writes_in(name, lo, hi), depth + 1)
+            self.writes_in(name, lo, hi), name, depth + 1)
         self._stable_memo[memo] = (ok, lines)
         return ok, lines
 
@@ -1054,15 +1102,23 @@ class StreamAnalysis:
                     return True
         return False
 
-    def reduces_to_identity(self, ws, depth=0):
-        """Cancel adjoint pairs (commutation-aware).
+    def reduces_to_identity(self, ws, target, depth=0):
+        """Cancel adjoint pairs in `target`'s write history (commutation-aware).
+
+        `ws` is the write history of the rail `target` over some interval, and
+        the question is whether those writes net to identity ON THAT RAIL.
+        Threading `target` through is not cosmetic (bd 0gwl):
+        `pair_operands_unchanged` needs it to tell a gate's CO-WRITTEN slots —
+        which must hold still for the pair to cancel — from the slot carrying
+        `target` itself, whose stability is the very thing this reduction is
+        establishing and so cannot be an input to it.
 
         Returns (ok, reason, witness) where `witness` is the set of SOURCE LINES
         the proof consumed — every cancelled pair, plus the pairs any nested
         operand-stability check consumed. Deleting or corrupting any witness
         line must break this proof; that is what the mutant self-test targets.
         """
-        stack, witness = [], set()
+        stack, witness, rejects = [], set(), []
         for p, c in ws:
             placed = False
             for k in range(len(stack) - 1, -1, -1):
@@ -1072,8 +1128,10 @@ class StreamAnalysis:
                 if not all(self.commutes(stack[m][0], stack[m][1], p, c)
                            for m in range(k + 1, len(stack))):
                     continue
-                ok, sub = self.pair_operands_unchanged(ck, pk, p, depth)
+                ok, sub, blocker = self.pair_operands_unchanged(
+                    ck, pk, p, depth, target)
                 if not ok:
+                    rejects.append((ck, c, blocker))
                     continue
                 witness |= sub
                 witness.add(ck.line)
@@ -1086,21 +1144,57 @@ class StreamAnalysis:
         if not stack:
             return True, None, frozenset(witness)
         p, c = stack[0]
-        return False, (f"write `{c.text}` (line {c.line}) is never cancelled "
-                       f"by an adjoint ({len(stack)} of {len(ws)} write(s) "
-                       f"left after reduction)"), frozenset(witness)
+        why = (f"write `{c.text}` (line {c.line}) is never cancelled "
+               f"by an adjoint ({len(stack)} of {len(ws)} write(s) "
+               f"left after reduction)")
+        if rejects:
+            # A matched adjoint that was REJECTED is a much sharper signal than
+            # "nothing cancelled it" — it says the shape was right and an
+            # operand moved. Name it, or the ticket's own repro reports only
+            # that two identical `cqrt_cswap`s failed to pair, which reads as a
+            # checker bug rather than as the dirty rail it is.
+            ck, cc, blocker = rejects[-1]
+            why += (f"; the nearest adjoint candidate (lines {ck.line} and "
+                    f"{cc.line}) matched but was REJECTED because operand "
+                    f"{blocker} is not provably unchanged between them")
+        return False, why, frozenset(witness)
 
-    def pair_operands_unchanged(self, c1, p1, p2, depth):
-        # `classical_imm` slots are checked ALONGSIDE the declared reads. They
-        # are not in `reads` because the ABI calls them literals, and for a
-        # genuine literal the extra check costs nothing (a constant is not in
-        # `self.rails`, so it is skipped). It matters when the slot holds a
-        # RAIL: `xorc(%r,%h); ry(%h,0.75); xorc(%r,%h)` cancels on `key()`
-        # equality alone otherwise, because xorc declares reads=() and this
-        # loop would inspect ZERO operands — so (A2) would VERIFY the very
-        # entangle-then-free that (A1) had just declined, and the az1h hole
-        # would simply move one rule down. Found by the bd az1h/6f3o Rule-13
-        # round, 2026-07-31, in the fall-through this change itself introduced.
+    def pair_operands_unchanged(self, c1, p1, p2, depth, target):
+        """(ok, witness, blocker) — everything `c1`'s action depends on holds.
+
+        THREE operand classes, each here for a reason that was once a hole:
+
+        * the DECLARED READS. A gate acts on its live sources; if one moved in
+          between, the second call is not the adjoint of the first.
+        * the `classical_imm` slots (bd az1h). They are not in `reads` because
+          the ABI calls them literals, and for a genuine literal the check
+          costs nothing (a constant is not in `self.rails`, so it is skipped).
+          It matters when the slot holds a RAIL: `xorc(%r,%h); ry(%h,0.75);
+          xorc(%r,%h)` cancels on `key()` equality alone otherwise, because
+          xorc declares reads=() and this loop would inspect ZERO operands — so
+          (A2) would VERIFY the very entangle-then-free that (A1) had just
+          declined, and the az1h hole would simply move one rule down. Found by
+          the bd az1h/6f3o Rule-13 round, 2026-07-31, in the fall-through that
+          change itself introduced.
+        * the CO-WRITTEN slots (bd 0gwl, 2026-08-07) — every write slot except
+          the one carrying `target`. `cqrt_cswap` is the ONLY symbol in the
+          model that writes two rails (`reads=(0,) writes=(1,2)`; a Fredkin
+          physically reads all three), so this loop used to iterate `read_idx()`
+          alone and never look at the other routed register:
+
+              %rail = cqrt_alloc_i32(0)
+              cqrt_cswap(%f, %q, %rail)   ; f=1 routes psi onto %rail, |0> onto %q
+              cqrt_ry_i32(%q, 0.75)       ; dirties %q
+              cqrt_cswap(%f, %q, %rail)   ; route-back parks Ry(0.75)|0> on %rail
+              cqrt_free(%rail)            ; hidden measurement — NOT |0>
+
+          reported `OK … via A2-reduces-to-identity`, exit 0, because the pair
+          matched on `key()` equality and only `%f`'s stability was ever
+          checked. The slot carrying `target` is skipped because proving it is
+          this reduction's job, not its premise.
+
+        `blocker` is the operand that failed, for the diagnostic; None on ok.
+        """
         acc = set()
         for ri in list(c1.read_idx()) + list(c1.eff.classical_imm):
             if ri >= len(c1.vals):
@@ -1110,9 +1204,125 @@ class StreamAnalysis:
                 continue
             ok, lines = self.unchanged_over(v, p1, p2, depth)
             if not ok:
-                return False, frozenset()
+                return False, frozenset(), v
             acc |= lines
-        return True, frozenset(acc)
+        for wi in c1.eff.writes:
+            if wi >= len(c1.vals):
+                continue
+            v = c1.vals[wi]
+            # `v == target` is the rail under reduction, and skipping it is
+            # what keeps this loop from taking its own conclusion as a premise.
+            # It is also why single-write gates add NO work here: their one
+            # write slot IS the target, so only `cqrt_cswap` ever reaches
+            # `co_written_stable` at all.
+            #
+            # THIS CLAUSE IS AN ACCEPT-ARM. It is kill-tested by the POSITIVE
+            # fixture `a2-co-written-target-skip`, which the checker VERIFIES
+            # today and reports `A-not-reducible` on with only this clause
+            # removed — a false decline of a stream whose net unitary is the
+            # identity on the freed rail in BOTH branches of its flag.
+            #
+            # An earlier draft of this comment claimed the clause was
+            # "redundant by construction … no input can distinguish the two",
+            # on the argument that a target write inside (p1, p2) either already
+            # cancelled or survived onto the stack, where `reduces_to_identity`
+            # made it COMMUTE with the pair using "the same `commutes` call"
+            # this path would use. THAT ARGUMENT IS FALSE, on both horns, and
+            # the bd 0gwl Rule-13 round refuted it with a runnable input:
+            #   * IT IS NOT THE SAME CALL. The caller filters with
+            #     `commutes(stack[m], …, p, c)` — interval (w, p2), against the
+            #     LATER pair member. This path would filter with
+            #     `commutes(p, w, p1, c1)` — interval (p1, w), against the
+            #     EARLIER one. `adjoint_matches` does force the two calls to
+            #     agree on control register and `cqrt_x` parity, but NOT on the
+            #     interval, and `commutes` demands the flag see nothing but
+            #     `cqrt_x` inside its own interval. One non-`cqrt_x` write on
+            #     the flag placed on a single side of `w` makes the two answers
+            #     differ.
+            #   * THE OTHER HORN LEAKS TOO. A target write inside (p1, p2) whose
+            #     adjoint partner lies OUTSIDE that window cannot cancel in a
+            #     reduction restricted to `writes_in(target, p1, p2)`, however
+            #     the caller disposed of it.
+            # The lesson is the file's own (bd az1h): a model's assertion about
+            # itself is not an observation. Both statements were checkable and
+            # neither had been checked — the corpus being unmoved (still true:
+            # dropping the clause moves 0 of 237 slices) says only that the
+            # corpus does not contain the distinguishing shape.
+            #
+            # DIRECTION, so the risk is not overstated: re-deriving the target's
+            # stability here can only ADD declines, never accept more. So the
+            # clause guards against a FALSE POSITIVE — which for a gate wired
+            # into every e2e slice means failing a CORRECT build.
+            if v == target or v not in self.rails:
+                continue
+            ok, lines = self.co_written_stable(v, p1, p2, c1, depth)
+            if not ok:
+                return False, frozenset(), v
+            acc |= lines
+        return True, frozenset(acc), None
+
+    def co_written_stable(self, v, p1, p2, c1, depth):
+        """(ok, witness) — co-written register `v` holds still across the pair.
+
+        The same question `unchanged_over` answers, with ONE extra admission:
+        an intervening write that provably acts on the COMPLEMENTARY BRANCH of
+        a flag `c1` also acts on is dropped BEFORE the reduction runs. Two
+        operators supported on complementary blocks of the same flag commute
+        exactly, so on the branch where the pair acts such a write is the
+        identity. That is not a new physics claim — it is the argument
+        `commutes` already makes for the target rail's own intervening writes,
+        applied to a co-written one.
+
+        WITHOUT this admission the rule fails a CORRECT, REVIEWED build, which
+        for a gate is the expensive direction. In
+        `slice_control_phase_ifelse_derived` the shared base `%h` is routed
+        `A B A B`: the `%rail` route-pair has the `%rail1` route sitting inside
+        it, on the far side of the `¬flag cqrt_x` bracket. `%h` is genuinely
+        written in between, and only complementary-branch commutation explains
+        why the `%rail` pair still cancels. Pinned BOTH ways, by fixtures that
+        EXIST — name them, never invent one (a docstring that cites a fixture
+        nobody can grep sends the next maintainer to duplicate coverage that is
+        already there): deleting this admission turns the POSITIVE
+        `ifelse-derived-two-rail` red, and widening it into "any intervening
+        write is fine" is caught by the MUTANTS
+        `a2-cswap-route-pair-whose-co-written-rail-was-dirtied` and
+        `t2-cswap-route-pair-whose-work-rail-was-dirtied`. All three live in
+        tools/free_pairing_check_test.py.
+
+        WHY `c1` ALONE IS CONSULTED, AND NOT THE PAIR. `adjoint_matches` forces
+        both calls to carry the same control REGISTERS at the same `cqrt_x`
+        PARITY (`self` compares whole keys; `negate-arg<N>` never negates a
+        control slot, since no symbol with that adjoint has controls; `twin:`
+        compares whole value lists). It does NOT make `commutes(…, c1)` and
+        `commutes(…, c2)` agree, and an earlier draft of this docstring wrongly
+        said it did: `commutes` also demands the flag see nothing but `cqrt_x`
+        inside ITS OWN interval, and those intervals are (p1, w) and (w, p2) —
+        disjoint. The bd 0gwl Rule-13 round built a stream where the two answers
+        differ, so do not repeat that claim.
+
+        The argument that actually holds splits the window in two, and the two
+        halves are established by two DIFFERENT checks:
+          * (p1, w) — this `commutes` call. Only `cqrt_x` touched the flag, so
+            the flag at `w` really is `ctl_parity`'s complement of the flag at
+            `p1`, and `w` therefore acts on the other branch from `c1`.
+          * (w, p2) — NOT re-checked here, because `pair_operands_unchanged`
+            has ALREADY run its READS loop before reaching this one, and that
+            loop required `unchanged_over(flag, p1, p2)` over the whole window.
+            So the flag at `p2` carries the same basis label as at `p1`, and
+            `c2` acts on the same branch as `c1`.
+        Together: the pair acts on one branch throughout and `w` on the other.
+        That rests on the shared control register being one of `c1`'s READS,
+        which holds for every symbol `classify()` models — controls ⊆ reads for
+        cnot, toffoli, cswap, copy_controlled, qram_store_controlled and the
+        `_controlled` template/`_unc` arms alike. A future symbol with a control
+        outside its read-set would break this argument, so put it in `reads`.
+        """
+        if depth > 6:
+            return False, frozenset()
+        ws = [(p, w) for p, w in self.writes_in(v, p1, p2)
+              if not self.commutes(p, w, p1, c1)]
+        ok, _why, lines = self.reduces_to_identity(ws, v, depth + 1)
+        return ok, lines
 
     # -- the free site -----------------------------------------------------
     def check_free(self, pos, c):
@@ -1171,7 +1381,7 @@ class StreamAnalysis:
             self.ok(c, r, "A1-classical-immediate", {w.line for _, w in ws})
             return
         # (A2) otherwise the history must return the rail to its alloc value.
-        ok, why, wit = self.reduces_to_identity(ws)
+        ok, why, wit = self.reduces_to_identity(ws, r.name)
         if ok:
             self.ok(c, r, "A2-reduces-to-identity", wit)
         elif dirty:
@@ -1219,7 +1429,7 @@ class StreamAnalysis:
             # If the rail's own writes net to identity it DEMONSTRABLY still
             # holds f(args) at the free; only an unrecognised write history
             # leaves room for some other zeroing mechanism.
-            inert, _why, _wit = self.reduces_to_identity(pre)
+            inert, _why, _wit = self.reduces_to_identity(pre, r.name)
             self.add(VIOLATION if inert else UNPROVEN, "T1-no-reversal", c,
                      r.name,
                      f"rail minted at line {fwd.line} by `{fwd.text}` is freed "
@@ -1233,7 +1443,7 @@ class StreamAnalysis:
         witness = {fwd.line, rev.line}
         # (T3) rail unchanged mint->reversal, untouched reversal->free.
         ok, why, wit = self.reduces_to_identity(
-            [(p, w) for p, w in r.writes if r.pos < p < rev_pos])
+            [(p, w) for p, w in r.writes if r.pos < p < rev_pos], r.name)
         if not ok:
             self.add(UNPROVEN, "T3-rail-written-before-reversal", c, r.name,
                      f"rail minted at line {fwd.line}: {why}, so the "
