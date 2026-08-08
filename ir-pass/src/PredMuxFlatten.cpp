@@ -149,26 +149,173 @@ bool isSupportedCompareLeaf(const CmpInst *Cmp) {
          OpTy->isX86_FP80Ty();
 }
 
-// bd adia (fwd decl — defined with the E4 pure-callee machinery below).
-bool isSpeculatablePureCalleeBody(const Function *F);
+// bd 3c6m.14.2 — a literal `undef`/`poison` is NOT a defined leaf, however
+// deeply it is buried in a constant aggregate/expression. `PoisonValue` derives
+// from `UndefValue`, so the `isa` catches both spellings. The walk carries a
+// visited set rather than a depth budget on purpose: a budget inside a yes/no
+// predicate makes the ANSWER depend on the cut-off (bd memory
+// [[budget-in-a-memo-and-probes-with-no-power-2026-08-08]]), and constants form
+// a finite DAG that a visited set terminates on structurally.
+//
+// KNOWN INCOMPLETENESS, deliberately not closed here and filed instead: this
+// tests for a CONTAINED `UndefValue`, so a constant expression that GENERATES
+// poison without containing one — e.g. an out-of-bounds
+// `ptrtoint (ptr getelementptr inbounds (...) to i64)` — still reads as a
+// defined leaf. Measured PRE-EXISTING and BASE-identical, and a Constant is
+// state-INDEPENDENT, so the flatten adds no observation the shielded select had
+// not already made. (The Rule-13 round's headline evidence for it — a trace that
+// differs between two runs of the same binary — was refuted: that is ASLR of a
+// relocated global address, reproducible with a provably-DEFINED
+// `ptrtoint (ptr @g to i64)` and with PredMux absent from the module entirely.)
+bool constantCarriesUndef(const Constant *C,
+                          SmallPtrSetImpl<const Constant *> &Seen) {
+  if (isa<UndefValue>(C))
+    return true;
+  if (!Seen.insert(C).second)
+    return false;
+  for (const Value *Op : C->operands())
+    if (const auto *CO = dyn_cast<Constant>(Op))
+      if (constantCarriesUndef(CO, Seen))
+        return true;
+  return false;
+}
 
-// bd adia: is every instruction in `V`'s backward cone TOTAL (defined on all
-// inputs) once its poison-generating flags/metadata are dropped? The
-// admissibility proof for canonicalizing a poison-shielded short-circuit
-// select-form into a plain and/or (which observes the shielded operand on
-// basis states the original never did). Whitelist, mirroring the
-// isSpeculatableDataflow families but STRICTER — definedness, not just
-// speculation safety:
+bool valueCarriesUndef(const Value *V) {
+  const auto *C = dyn_cast<Constant>(V);
+  if (!C)
+    return false;
+  SmallPtrSet<const Constant *, 8> Seen;
+  return constantCarriesUndef(C, Seen);
+}
+
+// bd 3c6m.14.2 — the three curated intrinsics that can return POISON, and the
+// reason they cannot be handled the way every other poison source here is.
+//
+// `llvm.ctlz(x, is_zero_poison)` / `llvm.cttz(x, is_zero_poison)` return poison
+// for x==0, and `llvm.abs(x, is_int_min_poison)` returns poison for INT_MIN,
+// when the trailing `i1` is true. That `i1` is an **immarg** — an OPERAND, not
+// an annotation. `Instruction::hasPoisonGeneratingAnnotations()` does not see
+// it, no `drop*` API can strip it, and it is a `ConstantInt`, so
+// `valueCarriesUndef` does not see it either. Every mechanism this file has for
+// neutralising poison structurally misses it, so the only sound handling is to
+// REFUSE — conservatively, including when the immarg is not a ConstantInt.
+//
+// This was found by the bd 3c6m.14.2 Rule-13 round, on the FIRST draft of that
+// ticket's own fix, and reproduced by the orchestrator: a shielded cone over
+// `ctlz(0, true)` was claimed and flattened with `opt` exit 0, `opt -verify`
+// clean and `free_pairing_check` STRICT 6/6, and the linked trace fired
+// `cq_template_icmp_sgt_i32_hl(h32, 0)` — a gate on a rail index `cqrt_alloc_*`
+// never returned. Every OTHER member of the curated set is genuinely total:
+// bswap/bitreverse/ctpop, smin/smax/umin/umax, the four `*_sat`, fshl/fshr (the
+// rotate amount is taken modulo the width), and the p119 hardware fp survivors
+// (which return NaN, never poison). See `intrinsicStem` in IntrinsicLowering.cpp
+// for the authoritative set — these two lists are coupled with nothing
+// mechanical holding them together, so re-read it when either moves.
+bool curatedIntrinsicCanBePoison(const CallInst *CI) {
+  const Function *F = CI->getCalledFunction();
+  if (!F)
+    return true;
+  Intrinsic::ID Id = F->getIntrinsicID();
+  if (Id != Intrinsic::ctlz && Id != Intrinsic::cttz && Id != Intrinsic::abs)
+    return false;
+  const auto *Flag = CI->arg_size() >= 2
+                         ? dyn_cast<ConstantInt>(CI->getArgOperand(1))
+                         : nullptr;
+  return !Flag || !Flag->isZero();
+}
+
+// bd 3c6m.14.2 — the per-instruction core of the shielded-cone definedness
+// proof, given a name because the fence it draws is referenced from three
+// comments and was previously buried inside the walk. Calls are NOT decided
+// here; `coneDefinedAfterFlagDrop` owns that.
+//
+// STRICTER than the `isSpeculatableDataflow` families, because this asks
+// DEFINEDNESS, not speculation safety:
 //   * icmp/fcmp (FMF dropped), add/sub/mul/and/or/xor (nsw/nuw dropped),
 //     udiv/sdiv/urem/srem by the isSpeculatableDataflow-safe CONSTANT only;
 //   * shl/lshr/ashr ONLY by an in-range ConstantInt amount (a runtime
 //     amount >= bit width is INHERENT poison — no flag to drop);
 //   * the defined casts zext/sext/trunc/fpext/fptrunc/sitofp/uitofp/bitcast
 //     (fptosi/fptoui are inherent poison on out-of-range inputs — fail);
-//   * select/phi/freeze, curated memory(none) intrinsics (total fns);
-//   * Constant/Argument leaves (arguments are assumed runtime-defined — the
-//     same leaf assumption every existing flatten makes; undef phi
-//     incomings are zero-frozen by convertPhis).
+//   * select/phi/freeze.
+// Everything else — loads, geps, fneg, and every call — fails HERE. Those are
+// over-declines and they are safe; `fneg` in particular is total and could be
+// admitted, but nothing measured needs it and widening a definedness proof is
+// not what this ticket is for (Rule 17).
+bool definedOpAfterFlagDrop(const Instruction &I) {
+  if (isa<CmpInst>(&I) || isa<SelectInst>(&I) || isa<PHINode>(&I) ||
+      isa<FreezeInst>(&I))
+    return true;
+  if (const auto *BO = dyn_cast<BinaryOperator>(&I)) {
+    switch (BO->getOpcode()) {
+    case Instruction::Add:
+    case Instruction::Sub:
+    case Instruction::Mul:
+    case Instruction::And:
+    case Instruction::Or:
+    case Instruction::Xor:
+    case Instruction::FAdd:
+    case Instruction::FSub:
+    case Instruction::FMul:
+    case Instruction::FDiv:
+    case Instruction::FRem:
+      return true;
+    case Instruction::Shl:
+    case Instruction::LShr:
+    case Instruction::AShr:
+      // `APInt::ult`, NOT `getZExtValue() <` (bd 3c6m.14.2 Rule-13 round). In a
+      // Release plugin the `getZExtValue` assert is compiled out and it returns
+      // the LOW WORD, so `shl i128 %w, 1<<100` — whose low word is 0 — read as
+      // an in-range amount of 0 and was ADMITTED, while the same shift by 200
+      // correctly declined. Measured on the shipped plugin before the fix.
+      if (const auto *C = dyn_cast<ConstantInt>(BO->getOperand(1)))
+        return C->getValue().ult(BO->getType()->getScalarSizeInBits());
+      return false;
+    case Instruction::UDiv:
+    case Instruction::SDiv:
+    case Instruction::URem:
+    case Instruction::SRem: {
+      const auto *C = dyn_cast<ConstantInt>(BO->getOperand(1));
+      return C && !C->isZero() &&
+             !((BO->getOpcode() == Instruction::SDiv ||
+                BO->getOpcode() == Instruction::SRem) &&
+               C->isMinusOne());
+    }
+    default:
+      return false;
+    }
+  }
+  if (const auto *CI = dyn_cast<CastInst>(&I)) {
+    switch (CI->getOpcode()) {
+    case Instruction::ZExt:
+    case Instruction::SExt:
+    case Instruction::Trunc:
+    case Instruction::FPExt:
+    case Instruction::FPTrunc:
+    case Instruction::SIToFP:
+    case Instruction::UIToFP:
+    case Instruction::BitCast:
+      return true;
+    default:  // fptosi/fptoui/ptr casts — inherent poison / out of scope.
+      return false;
+    }
+  }
+  return false;
+}
+
+// bd adia: is every instruction in `V`'s backward cone TOTAL (defined on all
+// inputs) once its poison-generating annotations are dropped? The admissibility
+// proof for canonicalizing a poison-shielded short-circuit select-form into a
+// plain and/or (which observes the shielded operand on basis states the original
+// never did). The per-instruction whitelist is `definedOpAfterFlagDrop`; leaves
+// are:
+//   * Argument — assumed runtime-defined (the same leaf assumption every
+//     existing flatten makes);
+//   * Constant — defined UNLESS it carries `undef`/`poison` (see
+//     `valueCarriesUndef`);
+//   * a `cq_theta`/`cq_phi` rotation result — runtime data, never poison;
+//   * a curated `memory(none)` intrinsic that is not one of the three
+//     poison-immarg cells (see `curatedIntrinsicCanBePoison`).
 // Anything else fails and the select-form stays unclaimed (accept-only).
 bool coneDefinedAfterFlagDrop(const Value *Root) {
   SmallPtrSet<const Value *, 16> Seen;
@@ -178,65 +325,13 @@ bool coneDefinedAfterFlagDrop(const Value *Root) {
     const Value *V = WL.pop_back_val();
     if (!Seen.insert(V).second)
       continue;
+    if (valueCarriesUndef(V))
+      return false;  // bd 3c6m.14.2 — an undef/poison leaf is not defined.
     const auto *I = dyn_cast<Instruction>(V);
     if (!I)
       continue;  // Constant / Argument leaf — defined.
     bool Ok = false;
-    if (isa<CmpInst>(I) || isa<SelectInst>(I) || isa<PHINode>(I) ||
-        isa<FreezeInst>(I)) {
-      Ok = true;
-    } else if (const auto *BO = dyn_cast<BinaryOperator>(I)) {
-      switch (BO->getOpcode()) {
-      case Instruction::Add:
-      case Instruction::Sub:
-      case Instruction::Mul:
-      case Instruction::And:
-      case Instruction::Or:
-      case Instruction::Xor:
-      case Instruction::FAdd:
-      case Instruction::FSub:
-      case Instruction::FMul:
-      case Instruction::FDiv:
-      case Instruction::FRem:
-        Ok = true;
-        break;
-      case Instruction::Shl:
-      case Instruction::LShr:
-      case Instruction::AShr:
-        if (const auto *C = dyn_cast<ConstantInt>(BO->getOperand(1)))
-          Ok = C->getZExtValue() <
-               BO->getType()->getScalarSizeInBits();
-        break;
-      case Instruction::UDiv:
-      case Instruction::SDiv:
-      case Instruction::URem:
-      case Instruction::SRem: {
-        const auto *C = dyn_cast<ConstantInt>(BO->getOperand(1));
-        Ok = C && !C->isZero() &&
-             !((BO->getOpcode() == Instruction::SDiv ||
-                BO->getOpcode() == Instruction::SRem) &&
-               C->isMinusOne());
-        break;
-      }
-      default:
-        break;
-      }
-    } else if (const auto *CI = dyn_cast<CastInst>(I)) {
-      switch (CI->getOpcode()) {
-      case Instruction::ZExt:
-      case Instruction::SExt:
-      case Instruction::Trunc:
-      case Instruction::FPExt:
-      case Instruction::FPTrunc:
-      case Instruction::SIToFP:
-      case Instruction::UIToFP:
-      case Instruction::BitCast:
-        Ok = true;
-        break;
-      default:  // fptosi/fptoui/ptr casts — inherent poison / out of scope.
-        break;
-      }
-    } else if (const auto *Call = dyn_cast<CallInst>(I)) {
+    if (const auto *Call = dyn_cast<CallInst>(I)) {
       // A cq_theta/cq_phi rotation result is RUNTIME DATA minted by the
       // runtime ABI — a defined leaf, never poison (do not recurse into the
       // classical seed/angle operands: the result's definedness does not
@@ -248,34 +343,52 @@ bool coneDefinedAfterFlagDrop(const Value *Root) {
                  CF->getName().starts_with("cq_phi_"))) {
         continue;  // defined leaf — skip operand recursion.
       }
-      // A curated memory(none) intrinsic and a proven pure/total pending-spec
-      // callee are total functions of their operands.
+      // *** THIS CLAUSE ADMITS ONLY THE PROJECT'S OWN CURATED SET. IT USED TO
+      // ADMIT ANY `isSpeculatablePureCalleeBody` CALLEE, AND THAT WAS A SILENT
+      // MISCOMPILE (bd 3c6m.14.2). ***
       //
-      // S4 of the bd 3c6m.14.1 widening, and the one nobody had enumerated:
-      // this proof is DEFINEDNESS, and it already admits `isa<CmpInst>` inline
-      // at ANY width (see the whitelist above), so a callee that was rejected
-      // only for carrying an `icmp i80` was being held to a stricter standard
-      // here than the same compare written inline. That inconsistency is what
-      // the widening removes. Pinned by
-      // control_predmux_accept_i80_cmp_purecallee_conedef.ll, which measured as
-      // a red-green split on the `gate=E6-condtree` leave line.
+      // The purity proof answers "pure + total + terminating". That is NOT
+      // "returns a defined value", in two independent ways: it reaches its
+      // verdict through `isSpeculatableDataflow`, which admits a variable-amount
+      // `shl/lshr/ashr` and `fptosi/fptoui` UNCONDITIONALLY — the very ops
+      // `definedOpAfterFlagDrop` refuses inline, because their poison is
+      // INHERENT and `stripPoisonCone` walks only `I->operands()` and so never
+      // enters a callee body — and it SKIPS TERMINATORS, so a body of just
+      // `ret i32 poison` passes VACUOUSLY. Exhibited end-to-end: the emitted
+      // Bennett clone returned literal poison AS AN i32 QUBIT HANDLE, which at
+      // the shipped -O0 stage 3 materialised as the `%q` rail itself, so the
+      // circuit computed `(q>3) ∧ (q>0)` instead of `(q>3) ∧ (leaf(q)>0)` —
+      // `opt` exit 0, `opt -verify` clean, `free_pairing_check` STRICT 6/6.
       //
-      // *** BUT A DIFFERENT INCONSISTENCY REMAINS HERE, AND IT IS OLDER. *** The
-      // whitelist above deliberately FAILS a variable-amount `shl/lshr/ashr` and
-      // `fptosi/fptoui` inline, because their poison is INHERENT — there is no
-      // flag to drop, and `stripPoisonCone` walks only `I->operands()`, so it
-      // never enters a callee body at all. This clause nevertheless admits any
-      // callee passing `isSpeculatablePureCalleeBodyImpl`, which admits those
-      // very ops unconditionally. A callee's RETURN VALUE can therefore be
-      // poison on some inputs while this proof calls its cone defined.
-      // MEASURED to be entirely PRE-EXISTING (bd adia Lever C), NOT widened by
-      // bd 3c6m.14.1: a callee whose only inherent-poison op is `shl i32 %a, %a`
-      // — no i80 anywhere — canonicalizes the shielded `a && b` into the same
-      // Toffoli conjunction on the pre-change and post-change plugins alike.
-      // Found by the 3c6m.14.1 Rule-13 round; filed, not fixed here.
-      Ok = (isCuratedReversibleIntrinsic(Call) &&
-            Call->doesNotAccessMemory()) ||
-           isSpeculatablePureCalleeBody(CF);
+      // WHY DELETION RATHER THAN A SECOND PROOF (the ticket offered both, and
+      // asked for the measurement first). MEASURED: the pure-callee disjunct is
+      // reached by 1 of 949 ir-pass fixtures and 0 of 238 e2e slices; and of the
+      // 39 poison-shielded select-forms `clang -O1` emits across 248 real
+      // openlibm TUs, the 5 with a call in the shielded cone carry ONLY curated
+      // intrinsics. Its real-code population is EMPTY. The ticket's reason for
+      // keeping it — "the plain -O1 expl→floorl shape" — is a DIFFERENT surface:
+      // that accept is S1, `recoverRegion`'s E4 call admission, where the call
+      // sits in an ARM and this proof never sees it (pinned by
+      // lowering_predmux_speccall_flatten.ll, which still passes).
+      //
+      // A definedness proof over an arbitrary callee body WAS written first, and
+      // the Rule-13 round found a fresh verify-clean silent miscompile inside it
+      // (the immarg cell below) plus an unsound shift-width check, in ~40 lines
+      // serving zero measured inputs. Nobody set out to build "an arbitrary pure
+      // callee inside a poison-shielded `&&`" — it was an incidental widening of
+      // a SPECULATION clause into a context carrying a strictly stronger
+      // obligation — so Rule 17 does not protect it, and the Prime Directive says
+      // an unproven, unpopulated accept surface should not exist.
+      //
+      // The curated disjunct STAYS: those are the project's own set, their
+      // totality is a fact about code we ship rather than an inference about
+      // user code, and they are the only call shape with any measured
+      // population. `curatedIntrinsicCanBePoison` carves out the three cells
+      // whose poison rides an immarg no drop can reach.
+      Ok = isCuratedReversibleIntrinsic(Call) && Call->doesNotAccessMemory() &&
+           !curatedIntrinsicCanBePoison(Call);
+    } else {
+      Ok = definedOpAfterFlagDrop(*I);
     }
     if (!Ok)
       return false;
@@ -502,21 +615,32 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
 //     (reject_i80_cmp_purecallee_armdiamond.ll: the callee's OWN tainted diamond
 //     hits the clone-mode `!ClaimAll` fence above and loud-declines).
 //
-// WHAT THE PURE-CALLEE `true` WIDENS — FIVE call paths, not the three bd
-// 3c6m.61's comment and bd memory [[predmux-shared-predicate-leak-3c6m61]]
-// counted. Every one is re-derived by grep, not inherited:
-//   S1 E4 CALL admission, top-level  (:1524-ish under !ClaimAll)
+// WHAT THE PURE-CALLEE `true` WIDENS — FOUR call paths as of bd 3c6m.14.2, and
+// STATE THE COUNTING UNIT, because that is what a future agent re-derives and
+// the previous unit was not uniform. There are THREE textual call sites plus one
+// recursion; S1/S2 are the SAME site (:1812-ish) counted twice because its
+// answer is context-sensitive (`ClaimAll` threaded from Specialization.cpp).
+// Re-derive by grep over ALL of ir-pass/, never inherit the number — bd 3c6m.61's
+// comment and bd memory [[predmux-shared-predicate-leak-3c6m61]] both said
+// THREE and both were wrong:
+//   S1 E4 CALL admission, top-level  (under !ClaimAll)
 //   S2 E4 CALL admission, CLONE mode (same site under ClaimAll — the call site
 //      has NO context gate; deliberately widened, see the note there)
 //   S3 `isSpeculatablePureCallee` -> `Fp80Union.cpp`'s AdmitArgDerived seed cone
-//   S4 `coneDefinedAfterFlagDrop` -> `isSupportedCondTree`'s E6 poison-shielded
-//      `select i1 a, i1 b, false` admissibility proof, in BOTH contexts, plus
-//      the `StrandedCondPhi` W witness.  *** S4 WAS ENUMERATED NOWHERE — not in
-//      the ticket, not in the old comment, not in bd memory. ***
 //   S5 the proof's own recursion — a clean outer callee over a compare-bearing
 //      inner one.
-// All five have a red-green fixture; all five were measured to split against a
-// pinned pre-change plugin before the change was written.
+// Each has a red-green fixture and each was measured to split against a pinned
+// pre-change plugin before bd 3c6m.14.1 was written.
+//
+// *** S4 IS GONE — DELIBERATELY, AND IT IS THE POINT OF bd 3c6m.14.2. *** S4 was
+// `coneDefinedAfterFlagDrop`'s shielded-cone CALL admission: this PURITY proof
+// being used as a DEFINEDNESS proof, at a surface nobody had enumerated when the
+// clause was widened. It produced a verify-clean silent miscompile (a Bennett
+// clone returning literal poison as a qubit handle). The clause was DELETED
+// rather than reinforced, because its measured population was empty. Do not
+// re-add it: if a future ticket wants a call admitted in a shielded cone, the
+// obligation is DEFINEDNESS OF THE RETURN VALUE on states the source shielded,
+// which this predicate does not and cannot answer.
 bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) {
   // No vector lane and no non-template width anywhere — such an op would only
   // decline loudly post-flatten at lowerOps/castInScope; gate it here so a
@@ -733,9 +857,20 @@ bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) 
 // bd 3c6m.14.1: the per-instruction predicate runs with `AdmitI80Compare=true`.
 // READ THAT AS A SCOPE STATEMENT ABOUT THIS FUNCTION, not as a general lift —
 // what this proof asserts is purity/totality/termination, and `icmp` has all
-// three at every width. Four callers ride this (S1/S2 the E4 call admission in
-// both contexts, S3 `Fp80Union`'s seed cone, S4 `coneDefinedAfterFlagDrop`'s
-// definedness proof) plus the recursion below (S5); each has a fixture.
+// three at every width. Two call SITES ride this — the E4 call admission in
+// both contexts (S1/S2) and S3 `Fp80Union`'s seed cone — plus the recursion
+// below (S5); each has a fixture.
+//
+// bd 3c6m.14.2 — *** DO NOT READ THIS AS A DEFINEDNESS PROOF, AND DO NOT WIRE IT
+// TO ONE. *** It asserts pure + total + terminating, and it gets there through
+// `isSpeculatableDataflow`, which admits a variable-amount `shl/lshr/ashr` and
+// `fptosi/fptoui` unconditionally; it also skips terminators, so a body of just
+// `ret i32 poison` passes VACUOUSLY. `coneDefinedAfterFlagDrop` used to consume
+// it (the deleted S4) and that was a verify-clean silent miscompile. The three
+// surviving consumers are sound because they SPECULATE THE CALL into a program
+// that already executed it — they never observe its RESULT on a state the source
+// shielded, which is the strictly stronger obligation S4 carried and this
+// predicate cannot discharge.
 bool isSpeculatablePureCalleeBodyImpl(
     const Function *F, SmallPtrSetImpl<const Function *> &OnStack) {
   // hasExactDefinition: a body this proof reads must be the body that LINKS —
@@ -1834,6 +1969,43 @@ private:
     }
     while (!WL.empty()) {
       Instruction *I = WL.pop_back_val();
+      // bd 3c6m.14.2 — this drops TWO of LLVM 19's THREE poison-generating
+      // annotation families. `Instruction::hasPoisonGeneratingAnnotations()`
+      // names three — flags, metadata, and CALL RETURN ATTRIBUTES
+      // (`range`/`nonnull`/`align`) — so the claim's promise ("defined AFTER the
+      // drop") is not literally kept for the third. Switching to
+      // `dropPoisonGeneratingAnnotations()` was TRIED and REVERTED. The reason
+      // is stated carefully, because the Rule-13 round FALSIFIED the first
+      // draft of this note and the wrong version read more confidently than the
+      // right one:
+      //
+      //  * WRONG (do not restore it): "no admitted call can carry a return
+      //    attribute into emission — a tainted curated intrinsic is replaced by
+      //    its `cq_template_*`, and a classical one declines downstream." The
+      //    first half holds. THE SECOND HALF IS FALSE, on real C as well as on
+      //    hand-written IR: a CLASSICAL curated call in a MIXED compare leaf
+      //    (`icmp sgt i32 %q_tainted, %r_classical`) is neither replaced nor
+      //    declined — it survives verbatim into the emitted module, attribute
+      //    and all. MEASURED: a `call range(i32 8, 9) i32 @llvm.ctpop.i32(...)`
+      //    comes out the far side still carrying `range(i32 8, 9)`.
+      //  * RIGHT, and it is why the revert still stands: (i) the surviving
+      //    value lands ONLY in an `_hl` template's LITERAL slot, never in a rail
+      //    HANDLE slot — which is the categorical difference from the round-one
+      //    `ctlz` finding, where poison became the handle a gate fired on — and
+      //    the forward call and its `_unc` twin read the SAME literal, so the
+      //    adjoint stays paired; no `and i1` survives at all (the predicate
+      //    becomes `cqrt_toffoli` over per-leaf rails, which reconstructs the
+      //    shield physically), and stage 3 is deliberately -O0 (bd szpr pin), so
+      //    nothing downstream can refine the two uses differently. (ii) THIS
+      //    WALK PROVABLY EXCEEDS THE PROOF'S WALK: it recurses past the
+      //    `cq_theta`/`cq_phi` leaf — where `coneDefinedAfterFlagDrop`
+      //    `continue`s WITHOUT operand recursion — into the classical seed
+      //    subtree, and strips `nsw`/`nuw` off instructions the whitelist
+      //    refuses and the proof never visited. Widening the DROP without first
+      //    narrowing the WALK makes that over-reach worse.
+      // The accept itself is PRE-EXISTING and BASE-identical (byte-for-byte), so
+      // nothing here is a regression of this change. Both halves are filed
+      // together; FIX THE WALK FIRST, then revisit the third family.
       I->dropPoisonGeneratingFlags();
       I->dropPoisonGeneratingMetadata();
       for (Value *Op : I->operands())
