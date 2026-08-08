@@ -250,6 +250,29 @@ bool coneDefinedAfterFlagDrop(const Value *Root) {
       }
       // A curated memory(none) intrinsic and a proven pure/total pending-spec
       // callee are total functions of their operands.
+      //
+      // S4 of the bd 3c6m.14.1 widening, and the one nobody had enumerated:
+      // this proof is DEFINEDNESS, and it already admits `isa<CmpInst>` inline
+      // at ANY width (see the whitelist above), so a callee that was rejected
+      // only for carrying an `icmp i80` was being held to a stricter standard
+      // here than the same compare written inline. That inconsistency is what
+      // the widening removes. Pinned by
+      // control_predmux_accept_i80_cmp_purecallee_conedef.ll, which measured as
+      // a red-green split on the `gate=E6-condtree` leave line.
+      //
+      // *** BUT A DIFFERENT INCONSISTENCY REMAINS HERE, AND IT IS OLDER. *** The
+      // whitelist above deliberately FAILS a variable-amount `shl/lshr/ashr` and
+      // `fptosi/fptoui` inline, because their poison is INHERENT — there is no
+      // flag to drop, and `stripPoisonCone` walks only `I->operands()`, so it
+      // never enters a callee body at all. This clause nevertheless admits any
+      // callee passing `isSpeculatablePureCalleeBodyImpl`, which admits those
+      // very ops unconditionally. A callee's RETURN VALUE can therefore be
+      // poison on some inputs while this proof calls its cone defined.
+      // MEASURED to be entirely PRE-EXISTING (bd adia Lever C), NOT widened by
+      // bd 3c6m.14.1: a callee whose only inherent-poison op is `shl i32 %a, %a`
+      // — no i80 anywhere — canonicalizes the shielded `a && b` into the same
+      // Toffoli conjunction on the pre-change and post-change plugins alike.
+      // Found by the 3c6m.14.1 Rule-13 round; filed, not fixed here.
       Ok = (isCuratedReversibleIntrinsic(Call) &&
             Call->doesNotAccessMemory()) ||
            isSpeculatablePureCalleeBody(CF);
@@ -452,18 +475,48 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
 // ONLY from the pending-spec pure-callee proof (`isSpeculatablePureCalleeBody`);
 // `recoverRegion`'s E4 body walk handles load/gep by the STRICTER, taint-aware
 // `classifyQromReadUnderControl` BEFORE it ever falls through to here.
-// `AdmitI80Compare` (bd 3c6m.61) is passed TRUE by exactly ONE caller: the E4
-// REGION-BODY walk in `recoverRegion`. It must NOT default on, because this
-// predicate is shared by `isSpeculatablePureCalleeBodyImpl`, whose result is
-// (a) E4's call-admission AND (b) exported as `isSpeculatablePureCallee` and
-// consumed by the fp80-union SEED-CONE walk in a different module
-// (`Fp80Union.cpp`). Widening the i80 compare for the region walk therefore
-// silently widened THREE accept decisions when it was written unparameterized —
-// found by the Rule-13 round, which reproduced a tainted arm-call being newly
-// admitted and specialized into a Phase-6 Bennett clone. Only the region-walk
-// consumer is in this increment's scope and only it has a fixture family, so
-// the other two keep the old blanket i80-compare exclusion. Widening them is a
-// separate increment with its own probes (bd 3c6m.14.1).
+//
+// `AdmitI80Compare` (bd 3c6m.61) — THE PARAMETER EXISTS BECAUSE THIS PREDICATE
+// HAS EXACTLY TWO CALL SITES THAT WANT DIFFERENT ANSWERS. Both are named here;
+// keep this list in sync with `grep -n isSpeculatableDataflow` or it rots:
+//
+//   * `recoverRegion`'s E4 REGION-BODY walk passes `!ClaimAll` — an arm-resident
+//     i80 compare enters the flattened SELECT PROGRAM of the region being
+//     walked, and only the TOP-LEVEL substrate is reviewed for that. Clone mode
+//     keeps the blanket exclusion (pinned: reject_i80_cmp_clonemode.ll).
+//   * `isSpeculatablePureCalleeBodyImpl` passes TRUE (bd 3c6m.14.1). There the
+//     predicate answers a DIFFERENT question — "is this callee a pure, total,
+//     terminating function of its arguments?" — and an `icmp` is pure and total
+//     at every width, so the width exclusion was never about that question. The
+//     compare stays INSIDE the callee: it is lowered by the callee's own
+//     Phase-6 clone, never by the caller's flatten. Stated precisely, because a
+//     Rule-13 lens correctly rejected the first wording ("the pass does no
+//     inlining"): the pass DOES have one body-splicer, `lowerByRefInline`
+//     (ByRefInline.cpp), and it admits `isa<CmpInst>` at any width — but it runs
+//     at CQLoweringPass.cpp step ~87, BEFORE the PredMux fixpoint at ~178, so it
+//     cannot introduce callee instructions into a region after a claim.
+//     Specialization's `CloneFunctionInto` only mints new functions. MEASURED in
+//     every accepting probe: the original callee is byte-untouched in the output
+//     and the caller's clone contains only the CALL. Its own lowering
+//     obligation is discharged separately and it still declines when unmet
+//     (reject_i80_cmp_purecallee_armdiamond.ll: the callee's OWN tainted diamond
+//     hits the clone-mode `!ClaimAll` fence above and loud-declines).
+//
+// WHAT THE PURE-CALLEE `true` WIDENS — FIVE call paths, not the three bd
+// 3c6m.61's comment and bd memory [[predmux-shared-predicate-leak-3c6m61]]
+// counted. Every one is re-derived by grep, not inherited:
+//   S1 E4 CALL admission, top-level  (:1524-ish under !ClaimAll)
+//   S2 E4 CALL admission, CLONE mode (same site under ClaimAll — the call site
+//      has NO context gate; deliberately widened, see the note there)
+//   S3 `isSpeculatablePureCallee` -> `Fp80Union.cpp`'s AdmitArgDerived seed cone
+//   S4 `coneDefinedAfterFlagDrop` -> `isSupportedCondTree`'s E6 poison-shielded
+//      `select i1 a, i1 b, false` admissibility proof, in BOTH contexts, plus
+//      the `StrandedCondPhi` W witness.  *** S4 WAS ENUMERATED NOWHERE — not in
+//      the ticket, not in the old comment, not in bd memory. ***
+//   S5 the proof's own recursion — a clean outer callee over a compare-bearing
+//      inner one.
+// All five have a red-green fixture; all five were measured to split against a
+// pinned pre-change plugin before the change was written.
 bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) {
   // No vector lane and no non-template width anywhere — such an op would only
   // decline loudly post-flatten at lowerOps/castInScope; gate it here so a
@@ -525,6 +578,33 @@ bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) 
     // `isSupportedCompareLeaf` (E6's `isSupportedCondTree` leaf) is NOT
     // widened here; no measured cell needs it and over-declining a shape we
     // did not set out to build is correct (Rule 17).
+    // The `!=` (exactly one ConstantInt) rather than `||` (at least one) IS
+    // LOAD-BEARING, and the story of how that was established is worth keeping
+    // because it is a methodology trap, not an i80 one.
+    //
+    // The bd 3c6m.14.1 arm-kill matrix flipped this to `||` — which changes
+    // behaviour for the const/const shape ALONE, since Q+Q fails both spellings
+    // — and the whole suite stayed green. The first explanation written here was
+    // that the shape is unreachable, because `flattenPredMuxRegions` calls
+    // `foldConstantConesInFunction(F)` and returns on any fold before
+    // `recoverRegion` runs. *** THAT EXPLANATION IS FALSE AT THE PURE-CALLEE
+    // CALL SITE, and two independent Rule-13 lenses falsified it with a run. ***
+    // The folder is applied only to functions that CARRY TAINTED CONTROL, and
+    // only to the function being flattened; `isSpeculatablePureCalleeBodyImpl`
+    // walks the CALLEE's body, which pre-specialization has neither taint nor a
+    // tainted terminator and is therefore never folded. The two probes behind
+    // the wrong explanation were both written at the REGION walk — they could
+    // not reach the site being defended, which is exactly the
+    // probe-with-no-power failure bd memory
+    // [[budget-in-a-memo-and-probes-with-no-power-2026-08-08]] is about.
+    //
+    // What the spelling actually buys, measured on both plugins: under `!=` the
+    // proof fails AT THE COMPARE, nothing is claimed and nothing is mutated;
+    // under `||` the region is claimed and FLATTENED and the clone is built,
+    // and a different diagnostic fires from inside `@__cq_q_leaf_1` — a
+    // POST-MUTATION decline, the detect-before-mutate class the Inc-1 fp128
+    // finding closed. Pinned by
+    // control_predmux_reject_i80_cmp_purecallee_constconst.ll.
     if (OpTy->isIntegerTy(80))
       return AdmitI80Compare && (isa<ConstantInt>(I.getOperand(0)) !=
                                  isa<ConstantInt>(I.getOperand(1)));
@@ -649,6 +729,13 @@ bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) 
 // another body passing this same proof (the plain -O1 expl→floorl nesting);
 // `OnStack` breaks call-graph cycles (a recursive callee has no termination
 // bound → false).
+//
+// bd 3c6m.14.1: the per-instruction predicate runs with `AdmitI80Compare=true`.
+// READ THAT AS A SCOPE STATEMENT ABOUT THIS FUNCTION, not as a general lift —
+// what this proof asserts is purity/totality/termination, and `icmp` has all
+// three at every width. Four callers ride this (S1/S2 the E4 call admission in
+// both contexts, S3 `Fp80Union`'s seed cone, S4 `coneDefinedAfterFlagDrop`'s
+// definedness proof) plus the recursion below (S5); each has a fixture.
 bool isSpeculatablePureCalleeBodyImpl(
     const Function *F, SmallPtrSetImpl<const Function *> &OnStack) {
   // hasExactDefinition: a body this proof reads must be the body that LINKS —
@@ -689,7 +776,12 @@ bool isSpeculatablePureCalleeBodyImpl(
                        << " fails at call: " << I << "\n";
         return false;
       }
-      if (!isSpeculatableDataflow(I)) {
+      // bd 3c6m.14.1 — TRUE, deliberately, and it is the whole functional
+      // change of that increment. See the `AdmitI80Compare` block on
+      // `isSpeculatableDataflow` for why this question ("pure + total") is not
+      // the region walk's question ("speculatable into THIS select program"),
+      // and for the full S1..S5 list of what one `true` here widens.
+      if (!isSpeculatableDataflow(I, /*AdmitI80Compare=*/true)) {
         if (::getenv("CQ_PREDMUX_DBG"))
           llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
                        << " fails at: " << I << "\n";
@@ -1520,21 +1612,63 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
             TaintedArg = true;
             break;
           }
+        //
+        // CLONE MODE IS DELIBERATELY NOT FENCED HERE (bd 3c6m.14.1) — this line
+        // has no `ClaimAll` gate and that is a DECISION, not an oversight. The
+        // pure-callee proof now admits an i80 `_hl` compare, so as of that
+        // increment this site accepts, in BOTH contexts, a call whose callee
+        // carries one. MEASURED before deciding, against a pinned pre-change
+        // plugin: the shape is reachable in clone mode (fixture
+        // accept_i80_cmp_purecallee_clonecall.ll — the region claimed inside
+        // `@__cq_q_mid_1` and the compare landed in the transitively-specialized
+        // `@__cq_q_inner_1`).
+        //
+        // The reason it is not fenced, in one sentence: the callee's compare
+        // NEVER ENTERS THIS REGION'S FLATTENED PROGRAM — only the CALL moves —
+        // so the walk's own top-level/clone context is causally unrelated to how
+        // that compare is lowered, and a `!ClaimAll` here would be a fence with
+        // no correctness content. The compare's lowering obligation is
+        // discharged where it lives, by the callee's own clone, under gates that
+        // still bite: straight-line it lowers to the frozen
+        // `cq_template_icmp_<pred>_i80_hl` (a shape that already lowers today
+        // with NO region involved — measured on the pre-change plugin); inside
+        // the callee's OWN tainted diamond it hits the `!ClaimAll` bare-compare
+        // fence one screen down and loud-declines. Both pinned, and the second
+        // one was reproduced on real C as well as on hand-written IR.
+        //
+        // A THIRD discharge path exists and the first draft of this comment did
+        // not name it (found by the Rule-13 clone-mode lens): if the callee takes
+        // a TAINTED argument of a width the specialization ABI cannot carry —
+        // i80 among them — the proof passes, the ClaimAll region claims AND
+        // FLATTENS, and only then does `SpecializeReject`'s site-ABI gate
+        // decline. That is a post-mutation decline, and it is PRE-EXISTING
+        // (reachable on the pre-change plugin through a compare-free i80-arg
+        // callee), but this widening enlarges its reachable set. Filed, not
+        // fixed here — see the bd follow-up; do not read the two paths above as
+        // exhaustive.
+        //
+        // This does NOT lift that bare-compare fence below, and the asymmetry is
+        // real but principled: there the compare joins the clone's select
+        // program, here it does not. `reject_i80_cmp_clonemode.ll` still
+        // declines, with a byte-identical message, DBG leave line and exit code
+        // (diffed, not assumed).
         if (TaintedArg && isTemplateWidthType(CI->getType()) &&
             isSpeculatablePureCalleeBody(CI->getCalledFunction()))
           continue;
         return leave("E4-dataflow", &I);
       }
-      // The SOLE `AdmitI80Compare` call site (bd 3c6m.61) — the region-body
-      // walk — and it is gated on `!ClaimAll`. Both halves are load-bearing:
+      // The `!ClaimAll` half of the `AdmitI80Compare` story (bd 3c6m.61), and
+      // as of bd 3c6m.14.1 the ONLY site that still passes anything but `true`:
       //
-      //  * the pure-callee proof above deliberately does NOT get the flag (it
-      //    is shared with `Fp80Union`'s exported seed-cone walk); and
       //  * `recoverRegion` runs in TWO contexts, the TOP-LEVEL region flatten
       //    and the `ClaimAll` Bennett-CLONE body flatten (threaded from
-      //    `Specialization.cpp`). Only the top-level one is this increment's
-      //    target and only it has an i80 fixture family, so clone mode keeps
-      //    the old blanket exclusion.
+      //    `Specialization.cpp`). Only the top-level one is in scope and only
+      //    it has an i80 fixture family, so clone mode keeps the old blanket
+      //    exclusion.
+      //  * The pure-callee proof above now passes TRUE (bd 3c6m.14.1) — it
+      //    answers "pure + total", not "speculatable into THIS select program",
+      //    and its compare never reaches this region. That is a different
+      //    clause, not a lift of this one; see the call-admission note above.
       //
       // THE CLONE CONTEXT IS REACHABLE — do not re-derive otherwise. A first
       // draft of this comment claimed it was unreachable and listed three
@@ -1548,8 +1682,12 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
       // The judge audited that emission and found it SOUND — so this gate is a
       // SCOPE decision, not a correctness one: it is a new accept surface in
       // the Phase-6 clone + Bennett-wrap path rather than the reviewed select
-      // substrate, and Rule 12 wants its own probe family before it ships
-      // (bd 3c6m.14.1). Pinned by control_predmux_reject_i80_cmp_clonemode.ll.
+      // substrate, and Rule 12 wants its own probe family before it ships.
+      // bd 3c6m.14.1 CONSIDERED AND KEPT IT (that ticket scopes (A)+(B) only;
+      // this is the bare-compare-into-a-clone-select-program axis, a different
+      // construct from the widened pure-callee CALL). Pinned by
+      // control_predmux_reject_i80_cmp_clonemode.ll, which after 3c6m.14.1 still
+      // declines with a byte-identical message, DBG line and exit code.
       //
       // NOTE FOR WHOEVER LIFTS THIS: that is now TWICE this clause has carried
       // a false "this shape cannot occur here" claim — the first being "the

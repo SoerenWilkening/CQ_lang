@@ -900,6 +900,200 @@ fixture — same region, one operand different, opposite outcome. The two SCOPE
 fixtures (`_purecallee`, `_clonemode`) do genuinely split, each against the
 over-reaching draft it was written to close.
 
+### 4.4e Inc 8 (bd `3c6m.14.1`) — the same compare in the PURE-CALLEE proof
+
+Inc 7 admitted the arm-resident `icmp i80` at the E4 **region-body** walk and
+deliberately withheld it from `isSpeculatablePureCalleeBodyImpl`, which shares
+the same per-instruction predicate. Inc 8 removes that withholding: the proof
+now runs with `AdmitI80Compare=true`. **One functional line**
+(`PredMuxFlatten.cpp`, `isSpeculatablePureCalleeBodyImpl`); everything else in
+the increment is comment, fixture and measurement.
+
+**Why the two sites legitimately disagree.** `isSpeculatableDataflow` is doing
+double duty. At the region walk it answers *"may this instruction be speculated
+into THIS select program?"* — a question about the region, which is why its i80
+clause mirrors the lowering grid and why clone mode is fenced. Inside the
+pure-callee proof it answers *"is this callee a pure, total, terminating
+function of its arguments?"* — and `icmp` is pure and total at **every** width,
+so the width exclusion was never about that question. The compare is not
+speculated anywhere by this decision: **only the CALL moves**, because the pass
+does not splice callee bodies into a caller *after* a claim. Stated precisely,
+because a Rule-13 lens rejected the first wording ("the pass performs no
+inlining"): `lowerByRefInline` **is** a body-splicer and admits `isa<CmpInst>` at
+any width, but it runs at `CQLoweringPass.cpp` step ~87, **before** the PredMux
+fixpoint at ~178; `CloneFunctionInto` only mints new functions; and in every
+accepting probe the original callee is byte-untouched and the caller's clone
+holds only the CALL. The compare stays in the callee and is lowered by the
+callee's own Phase-6 clone, where the existing gates still apply.
+
+**The consumer map — FIVE call paths, not three.** Inc 7's comment and bd memory
+[`predmux-shared-predicate-leak-3c6m61`] both record "THREE accept surfaces".
+Re-running the grep that memory prescribes (rather than trusting its count)
+found a fourth predicate chain, and the recursion is a fifth path:
+
+| | consumer | what it decides | fixture |
+|---|---|---|---|
+| **S1** | E4 CALL admission, top level | speculate a tainted arm's call | `control_predmux_accept_i80_cmp_purecallee.ll` |
+| **S2** | E4 CALL admission, `ClaimAll` clone mode | same, inside a Bennett clone | `control_predmux_accept_i80_cmp_purecallee_clonecall.ll` |
+| **S3** | `isSpeculatablePureCallee` → `Fp80Union.cpp` seed cone | promote an fp80 union | `lowering_fp80_union_seed_purecall_i80cmp.ll` |
+| **S4** | `coneDefinedAfterFlagDrop` → `isSupportedCondTree` (E6) | canonicalize a poison-shielded `a && b` | `control_predmux_accept_i80_cmp_purecallee_conedef.ll` |
+| **S5** | the proof's own recursion | a clean outer callee over a compare-bearing inner one | `control_predmux_accept_i80_cmp_purecallee_transitive.ll` |
+
+**S4 was enumerated nowhere** — not in the ticket, not in the source comment,
+not in bd memory. It is a *definedness* proof whose own whitelist already admits
+`isa<CmpInst>` inline at any width, so a callee rejected only for carrying an
+`icmp i80` was being held to a stricter standard than the same compare written
+inline; the widening removes that inconsistency. It splits on a distinct gate
+(`gate=E6-condtree`), which is why it could not ride S1's fixture.
+
+**The clone-mode decision (S2), made explicitly.** The E4 CALL-admission line has
+no `ClaimAll` gate, so widening the proof reaches clone mode whether or not
+anyone intends it. **Measured first, on a pinned pre-change plugin**: the shape
+is reachable — a call inside a clone's region printed `leave @__cq_q_mid_1 …
+gate=E4-dataflow` and the whole module declined. It is **deliberately widened,
+not fenced**, because the callee's compare never enters the flattening region's
+select program, so a `!ClaimAll` there would be a fence with no correctness
+content. What discharges the obligation instead is the fence where the compare
+actually lives, and it still bites:
+`control_predmux_reject_i80_cmp_purecallee_armdiamond.ll` — the callee's own
+tainted diamond hits the **unchanged** `!ClaimAll` bare-compare fence and
+loud-declines *from the clone* (`leave @__cq_q_inner_1`), reproduced on real C
+at all three call surfaces. The bare-compare clone-mode fence itself is **kept**:
+`control_predmux_reject_i80_cmp_clonemode.ll` still declines with a
+byte-identical message, DBG leave line and exit code (diffed, not assumed).
+
+**Still declining, unchanged:** the Q+Q i80 compare in a callee body ((C), open —
+`_reject_i80_cmp_purecallee_qq.ll`, the one-operand differential of the accept);
+`icmp i80` as a tainted branch condition (`isSupportedCompareLeaf` still caps at
+64 bits); a bare i80 compare in a clone-mode region; recursive, weak/interposable,
+varargs, impure and store-bearing callees.
+
+**Evidence, and the honest limits of each measurement.**
+
+1. **Corpus verdict diff, 237 registered slices, PRE vs POST: 0 moved.** That is
+   *not* validation — it is a statement that the corpus has **no power** here.
+   Measured why: `slice_libm_real_hypotl` is the only slice whose stage-1 IR
+   carries an `icmp <pred> i80` (2 sites), and it carries it at **top level**,
+   never through a callee, so no registered slice reaches any of S1–S5.
+   *A first draft of this bullet "corrected" Inc 7 by claiming the stage-1 census
+   finds zero; that was an artefact of a broken harness of mine which spliced
+   `-include CQ.h` between `-I` and its argument, so every single-TU slice failed
+   to compile and was silently skipped. A Rule-13 lens caught it. Inc 7's original
+   statement was right; the corrected census is the figure above.*
+2. **Real upstream openlibm bodies.** All 37 corpus sources using
+   `union IEEEl2bits`, compiled unmodified at `-O1` as their own TU (so entry
+   points stay outlined) and called under a tainted diamond: 22 (file, entry)
+   probes, cap `MAXFN=8`, 9 entry points skipped for unsupported signatures and
+   4 files that would not compile. Reach: 11/22 got as far as PredMux, 2/22
+   consulted the proof, **1/22 (`hypotl`) had its verdict decided by the widened
+   clause**. Its proof answer flips `fail → pass` and its *verdict does not
+   change*: the call is now speculated, and the callee's own multi-exit tainted
+   control still declines at the clone with a byte-identical message. That is the
+   containment property, observed on a real body.
+3. **The population that actually lands** — 76 probes, all real C compiled by
+   `clang -O1`, callee and caller in separate TUs, **100 % measured reach** (a
+   probe counts only if the callee's own `-O1` IR contains an `icmp i80`; a first
+   round was discarded because most of its probes could not reach the clause at
+   all). 42 newly accept across S1/S2/S4, **all 42 clean** under an exact oracle:
+   `opt` exit 0, `-passes=verify`, `free_pairing_check` **strict**, links **and
+   runs**, no QQ i80 compare emitted, and every forward `icmp_<pred>_i80_hl`
+   matched by an `_unc` twin on the **same rail** with the **same predicate and
+   operands**. 15 must-declines all hold. For S3 the oracle is union promotion,
+   not exit code: 14/14 accept shapes promote (`False → True`), and
+   recursive/weak/varargs/store callees still do not.
+   *Limit worth recording:* real C at `-O1` yields essentially only `icmp **eq**
+   i80` for this family — an ordered mantissa test compiles to an i64 compare,
+   and the `!=`/`||` spelling canonicalizes back to `eq`. The other nine
+   predicates are reachable from hand-written IR only, which is where they stay
+   pinned.
+4. **Arm-kill matrix, 8 mutants**, each rebuilt with a forced mtime bump and a
+   `.so`-hash assertion (a same-second write after a build is silently treated as
+   up to date by cmake, which would report a mutant as "survived" while lit ran
+   against the previous plugin — that hazard bit once during this increment and
+   is why the assertion exists). Seven turned the suite red on exactly the
+   intended fixtures. **The eighth survived, and the first explanation of why was
+   WRONG — this is the most instructive result in the increment.**
+
+   The survivor flips the provably-`_hl` test from "exactly one ConstantInt" to
+   "at least one", which changes behaviour for the const/const shape alone. The
+   excuse written first was that the shape is unreachable, because
+   `flattenPredMuxRegions` calls `foldConstantConesInFunction` and returns on any
+   fold before `recoverRegion` — "no E-gate can ever see an all-constant
+   instruction". **Two independent Rule-13 lenses falsified that with a run.**
+   The folder is applied only to functions that carry *tainted control*, and only
+   to the function being flattened; `isSpeculatablePureCalleeBodyImpl` walks the
+   **callee's** body, which pre-specialization has neither, so it is never
+   folded. Both probes behind the excuse were written at the region walk and
+   could not reach the site being defended — the probe-with-no-power failure,
+   committed against my own claim.
+
+   The `!=` spelling is genuinely load-bearing, and the difference is a
+   detect-before-mutate one: under `!=` the proof fails at the compare and
+   nothing is claimed or mutated; under `||` the region is claimed and
+   **flattened**, the clone is built, and only then does a different diagnostic
+   fire from inside `@__cq_q_leaf_1`. Now pinned by
+   `control_predmux_reject_i80_cmp_purecallee_constconst.ll`, so the matrix is
+   **8 mutants, 8 pinned, 0 survivors**.
+
+**What the Rule-13 round changed (6 lenses, 2 refuters per finding, 1 judge).**
+The round found NO silent miscompile and NO over-accept in the one-line widening,
+and it corrected six of my own claims — three of them measurements I had
+mis-taken:
+
+* **The surviving arm-kill mutant is pinnable after all** (two independent
+  lenses, both with runs). See item 4 above; a fixture now closes it.
+* **My stage-1 census was run through a broken harness** and its "correction" of
+  Inc 7 was wrong in the opposite direction. See item 1.
+* **Two Fp80Union claims are false in both directions** — the widening *can*
+  mint a new loud `kMsgFp80I80Merge`, and *can* remove a sibling promotion.
+  Corrected at the admission site, in the fixture header, and in the table above;
+  fixtures filed.
+* **Three fixtures were mutation-blind or carried inert directives** — an unbound
+  ¬flag copy source in the S1 accept (an arm inversion passed green), the same in
+  the S5 transitive fixture at two sites, and a structurally inert trailing
+  `CHECK-NOT: load` in the S3 fixture. All three strengthened.
+* **The "the pass does no inlining" justification was wrong as written** —
+  `lowerByRefInline` does splice bodies; the property that actually holds is
+  temporal (it runs before the PredMux fixpoint). Reworded everywhere it appears.
+* **The e2e header credited the GOLDEN with rail free pairing**, which no golden
+  can witness at any ABI; that figure is stage 2b's.
+
+**A METHOD DEFECT OF MINE THAT THE ROUND CAUGHT, recorded because it invalidates
+evidence rather than code.** Twice during the review I swapped a mutant plugin
+into `build/ir-pass/libCQPass.so` in place — the path the reviewers were told to
+use — ran lit, and restored it. A refuter noticed and timestamped one window
+(15:52:03–15:53:42). Any measurement a reviewer took from that path in those two
+short windows measured a mutant, not the shipped plugin. Blast radius is narrow
+(one window differs only in the const/const admission, the other is the
+pre-change plugin), and every load-bearing finding was re-verified by the
+orchestrator against pinned, immutable copies afterwards — but the rule is
+simple and was violated: **never mutate the artifact under review while it is
+under review; hand reviewers a pinned copy and mutate only private ones.** The
+same session also hit the two related build hazards: `git checkout <file>` on an
+uncommitted tree destroys the change, and cmake silently skips a rebuild when the
+source is rewritten within the same second as the previous object, which can
+present a stale plugin as a fresh mutant.
+
+Two PRE-EXISTING fence gaps were found and filed rather than fixed here, both
+confirmed independently by the orchestrator to be unrelated to this widening:
+bd `3c6m.14.2` (`coneDefinedAfterFlagDrop`'s pure-callee clause admits the
+inherent-poison ops its own inline whitelist rejects — reproduced with **no i80
+anywhere**, identical on both plugins) and bd `3c6m.14.3` (the E4 call admission
+flattens before `SpecializeReject`'s site-ABI gate, a post-mutation decline seam
+for a tainted non-ABI-width argument). Also filed: bd `3c6m.14.4` (the
+unmemoized `O(2^D)` proof recursion), `3c6m.14.5`, `3c6m.14.6`.
+
+**E2E:** `e2e-predmux-purecallee-i80cmp` — a multi-TU slice whose lib TU carries
+the openlibm `union IEEEl2bits` two-word test and stays **outlined**, so the
+clone really does carry `cq_template_icmp_eq_i80_hl` + its `_unc`. Multi-file
+deliberately: inlined, it would be an ordinary Inc-7 arm-resident compare and
+would prove nothing new. Same honest limit as Inc 7 — the golden witnesses
+emission, order, linkage and signature match, **not** value routing. It also does
+**not** witness "freed at |0⟩": the 6/6-verified strict free-pairing figure is
+`tools/free_pairing_check.py`'s at e2e **stage 2b**, over the lowered IR, which is
+the entire reason that stage exists (CLAUDE.md). A first draft of this sentence
+credited it to the golden.
+
 ### 4.5 Normalizations (each proof-gated, each part of the claimed region only)
 
 - **(a) Poison-flag strip.** Every instruction moved out of its guarding
@@ -1142,8 +1336,16 @@ loudly. The matrix pins that the leave→decline composition stays intact:
 | **Inc 7** arm-resident `icmp i80` with exactly one `ConstantInt` operand (the fp80-union bit-pattern test) | **accept** — provably `_hl`, lowers on the frozen §6.0 compare grid | `control_predmux_accept_i80_cmp_arm.ll` + the `slice_libm_real_hypotl` e2e golden |
 | **Inc 7** arm-resident `icmp i80` with BOTH operands tainted (Q+Q) | leave → existing decline. Claiming it would flatten and only THEN decline at `lowerCompareImpl`'s QQ fence — a post-mutation half-lower | `control_predmux_reject_i80_cmp_qq.ll` |
 | **Inc 7** `icmp i80` as a tainted BRANCH condition (E6 leaf, `isSupportedCompareLeaf` NOT widened) | leave → existing decline. PredMux would have to build both polarities as an edge literal; no measured cell needs it (Rule 17: outside the target shape) | `control_predmux_reject_i80_cmp_branchcond.ll` |
-| **Inc 7** `icmp i80` inside a speculated PURE CALLEE body (and hence the `Fp80Union` seed cone, which consumes the same exported proof) | leave — `AdmitI80Compare` defaults false. Two further accept decisions ride this predicate; neither is in scope nor probed, so both keep the old blanket exclusion (bd `3c6m.14.1`) | `control_predmux_reject_i80_cmp_purecallee.ll` — red-greens against the over-reaching first draft |
-| **Inc 7** `icmp i80` in an arm inside a `ClaimAll` Bennett-CLONE body flatten | leave — the flag is passed as `!ClaimAll`. Un-gated this ACCEPTS and emits the compare + `_unc` inside `@__cq_q_leaf_1`; the emission is sound, but it is the Phase-6 clone + Bennett-wrap path, not the reviewed select substrate, so it needs its own probe family first (bd `3c6m.14.1`) | `control_predmux_reject_i80_cmp_clonemode.ll` — the judge's probe verbatim; red-greens (no leave line at all without the fence) |
+| ~~**Inc 7** `icmp i80` inside a speculated PURE CALLEE body~~ | **SUPERSEDED by Inc 8 — now ACCEPT.** The proof answers "pure + total", not "speculatable into this select program", and an `icmp` is both at every width; the compare stays in the callee and is lowered by the callee's own Phase-6 clone | `control_predmux_accept_i80_cmp_purecallee.ll` (the same module, verdict flipped) |
+| **Inc 8** `icmp i80` in a pure callee — S1 top-level CALL admission | **accept** — the call is speculated; the callee specializes into a Bennett clone carrying `cq_template_icmp_<pred>_i80_hl` + its `_unc` | `control_predmux_accept_i80_cmp_purecallee.ll` + the `e2e-predmux-purecallee-i80cmp` multi-TU golden |
+| **Inc 8** the same, in a `ClaimAll` CLONE-mode region (S2) | **accept**, deliberately unfenced. The call site has no `ClaimAll` gate and adding one would fence nothing real: only the CALL moves into the flattened region, so the caller's context is causally unrelated to the compare's lowering. Reachability MEASURED on a pinned pre-change plugin before deciding | `control_predmux_accept_i80_cmp_purecallee_clonecall.ll` |
+| **Inc 8** the same, in the `Fp80Union` seed cone (S3) | **accept** — the union promotes. A different module's accept decision on the same exported proof. A §4.1 PADDING violation on an opportunistic candidate still drops the class and re-runs strict rather than diagnosing — but do NOT generalise that to "can only add a promotion": a Rule-13 lens falsified both directions with runs (a new promotion can reach the post-promotion i80-phi scan and draw `kMsgFp80I80Merge`; and a walk-failing widened candidate can drag down a walk-clean sibling that used to promote). Both safe, neither pinned — filed | `lowering_fp80_union_seed_purecall_i80cmp.ll` |
+| **Inc 8** the same, in `coneDefinedAfterFlagDrop` (S4) | **accept** — the poison-shielded `a && b` canonicalizes. THE SURFACE NOBODY HAD ENUMERATED; it splits on a distinct gate (`E6-condtree`). Sound because this proof already admits `isa<CmpInst>` INLINE at any width, so the callee was being held to a stricter standard than the same compare written inline | `control_predmux_accept_i80_cmp_purecallee_conedef.ll` |
+| **Inc 8** the same, one frame down in the proof's own recursion (S5) | **accept** — a clean outer callee over a compare-bearing inner one; one clone per level, inner reversed in the outer wrap by its `_unc` twin | `control_predmux_accept_i80_cmp_purecallee_transitive.ll` |
+| **Inc 8** a pure callee's i80 compare inside the CALLEE'S OWN tainted diamond | **leave/decline** — the call is admitted, then the callee's clone-mode flatten hits the UNCHANGED `!ClaimAll` bare-compare fence and declines loudly FROM THE CLONE. This is the containment that makes the S2 decision defensible, not a leftover | `control_predmux_reject_i80_cmp_purecallee_armdiamond.ll` (splits: pre-change the same module declined from the CALLER instead) — plus 3 real-C reproductions |
+| **Inc 8** a pure callee's `icmp i80` with BOTH operands derived (Q+Q) | leave → existing decline. (C) stays open: the select-leaf mint `qqSelectLeafWidth` still fences i80, so claiming it would flatten and only then decline | `control_predmux_reject_i80_cmp_purecallee_qq.ll` — the ONE-OPERAND differential of the accept fixture |
+| **Inc 8** recursive / weak-or-interposable / varargs / impure (store-bearing) callee carrying an i80 compare | leave → existing declines, all unchanged by the widening | measured on real C at all three call surfaces (5 shapes x 3, 15/15 hold) |
+| **Inc 7** BARE `icmp i80` in an arm inside a `ClaimAll` Bennett-CLONE body flatten | leave — the flag is passed as `!ClaimAll`. Un-gated this ACCEPTS and emits the compare + `_unc` inside `@__cq_q_leaf_1`; the emission is sound, but it is the Phase-6 clone + Bennett-wrap path, not the reviewed select substrate. **Inc 8 CONSIDERED AND KEPT this fence** — it is a different construct from the widened pure-callee CALL (there the compare joins the clone's select program; here it does not), and after Inc 8 the fixture still declines with a byte-identical message, DBG leave line and exit code (diffed) | `control_predmux_reject_i80_cmp_clonemode.ll` — the judge's probe verbatim; red-greens (no leave line at all without the fence) |
 | **Inc 7** i80 `select`/`freeze`/`add`… inside an arm (unchanged) | leave — no `cqrt_copy_i80_controlled`; only the four i80 bitwise rows + the castInScope grid are admitted | `control_predmux_reject_i80_arm_op.ll` (pre-existing, still declines) |
 | `ret` inside region (multi-exit) | leave → existing decline (`non-reconverging value exit` / 7.2 paths) | existing fixtures |
 | merge phi `i128`/vector/`fp128` (E7) | leave → existing decline | existing G4-family fixtures |

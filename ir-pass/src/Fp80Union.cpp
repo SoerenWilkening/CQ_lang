@@ -596,6 +596,38 @@ bool fpSeedValueOk(Value *Root, TaintSet &taint,
         // — an earlier fixpoint round, so the cascade converges naturally.
         // Wide-admitted candidates classify OPPORTUNISTIC (strict predicate
         // byte-identical; walk failure = today's silent drop).
+        //
+        // bd 3c6m.14.1 (S3 of the pure-callee widening): that proof now admits
+        // a body whose only off-grid instruction is an fp80 BIT-PATTERN compare
+        // (`icmp i80` with one ConstantInt), so callees of the openlibm
+        // `GET_LDBL_MAN`-test shape become transparent here and their unions
+        // promote. This module makes an INDEPENDENT accept decision on the
+        // shared proof — it is not a PredMux surface — so it carries its own
+        // fixture (lowering_fp80_union_seed_purecall_i80cmp.ll, which measured
+        // as a genuine red-green: the alloca survives on the pre-change plugin
+        // and is gone after).
+        //
+        // *** TWO THINGS THAT ARE NOT TRUE OF THIS WIDENING, both written here
+        // first and both falsified with a run by the Rule-13 seed-cone lens. ***
+        // Keep them written down: the tempting summary is "it can only add a
+        // promotion", and that summary is wrong in BOTH directions.
+        //   (1) IT CAN CREATE A NEW LOUD DECLINE — just not a `kMsgFp80Padding`
+        //       one. The §4.1 walk/opportunistic-drop argument below is sound as
+        //       far as it goes, but a newly promoted union reaches the
+        //       POST-promotion i80-phi scan, so a pre-existing i80 phi in the
+        //       same function can now draw `kMsgFp80I80Merge` where the
+        //       pre-change plugin exited 0.
+        //   (2) IT CAN REMOVE A PROMOTION. A walk failure drops the WHOLE
+        //       opportunistic class, so a walk-FAILING pure-callee-seeded
+        //       candidate admitted only by this widening can drag down a
+        //       walk-CLEAN arg-seeded (bd vqlq) sibling that promoted before.
+        // Both directions are SAFE (a loud decline and a memory-form
+        // over-decline respectively — never a silent miscompile), which is why
+        // they are recorded rather than fixed here; but neither is pinned by a
+        // fixture, and "opportunistic ⇒ invisible" must not be repeated as if it
+        // were an invariant. What IS true is the narrow statement: a §4.1
+        // PADDING violation on an opportunistic candidate drops the
+        // opportunistic set and re-runs strict (below) rather than diagnosing.
         if (AdmitArgDerived && isSpeculatablePureCallee(CI->getCalledFunction())) {
           for (Value *Op : CI->args())
             Work.push_back(Op);

@@ -58,6 +58,21 @@ bool flattenPredMuxRegions(llvm::Module &M, TaintSet &taint,
 // True ⇒ the call is a pure, total, terminating function of its arguments —
 // safe to speculate (PredMux E4) and transparent as an fp seed derivation
 // (Fp80Union wide mode).
+//
+// bd 3c6m.14.1: the per-instruction predicate runs with `AdmitI80Compare=true`,
+// so a body whose only off-grid instruction is an x86_fp80 BIT-PATTERN compare
+// (`icmp <pred> i80` with exactly one ConstantInt operand — provably `_hl`) now
+// PASSES. An `icmp` is pure and total at every width, so the old exclusion was
+// never about this predicate's question; it was the region walk's grid mirror,
+// and it is still enforced where the compare actually lowers (the callee's own
+// Phase-6 clone). A Q+Q i80 compare still fails, and so does an i80 op with no
+// template row. NOTE what that does NOT say (a Rule-13 lens corrected an earlier,
+// over-broad sentence here): the four SHIPPED i80 bitwise rows — and/or/shl/lshr,
+// admitted by the operand-blind `i80BinaryInScope` — pass this proof in their Q+Q
+// form too and lower to `cq_template_<op>_i80` + `_unc`. That is pre-existing
+// bd 3c6m.51 behaviour, unchanged here; only the COMPARE carries a
+// one-ConstantInt restriction, and only because the select-leaf flag mint
+// (`qqSelectLeafWidth`) fences i80.
 bool isSpeculatablePureCallee(const llvm::Function *F);
 
 }  // namespace cq

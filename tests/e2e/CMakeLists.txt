@@ -996,6 +996,26 @@ add_test(NAME e2e-spec-fp-arg
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_arg_caller.expected.log")
 
+# bd 3c6m.14.1 — the pure-callee proof widened to admit an fp80 BIT-PATTERN
+# `icmp i80` (one ConstantInt operand ⇒ provably `_hl`). A tainted arm's call to
+# such a callee is now speculated by PredMux E4 and the callee specialized into a
+# Phase-6 Bennett clone, so `cq_template_icmp_eq_i80_hl` + its void `_unc` (plus
+# the `and_i80_hl` / `bitcast_f80_to_i80` twins) must RESOLVE and SIGNATURE-MATCH
+# — which only this layer proves (Rule 2/16). MULTI-file deliberately: inlined,
+# the compare would be an ordinary arm-resident one (bd 3c6m.61's shipped
+# surface) and the slice would prove nothing new. This is also the increment's
+# real-body anchor: all 237 registered slices moved zero bytes under the change
+# (measured), because hypotl is the only one emitting an i80 compare at all and
+# it does so at top level, never through a callee.
+add_test(NAME e2e-predmux-purecallee-i80cmp
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/predmux_purecallee_i80cmp_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/predmux_purecallee_i80cmp_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/predmux_purecallee_i80cmp_caller.expected.log")
+
 add_test(NAME e2e-slice-libm-real-lround
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
