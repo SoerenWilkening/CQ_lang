@@ -584,6 +584,199 @@ define i32 @slice() local_unnamed_addr #0 {
 }
 """
 
+# ---------------------------------------------------------------------------
+# bd test_C_libtooling-xzdx — VERDICT INVARIANCE UNDER `cqrt_free` ORDER.
+#
+# The checker memoises `unchanged_over` on `(name, lo, hi)` in a cache that
+# lives for the whole STREAM, so it is shared by every free site in it. Until
+# 2026-08-08 that function ALSO refused at `depth > 6`, and the depth was not
+# part of the key — so a `False` produced by exhausting the budget deep in one
+# free's proof was served to a later free whose own proof would have reached the
+# same query one level shallower and succeeded. Moving a `cqrt_free` changed the
+# answer.
+#
+# The ladder below is the minimal witness, and every step of it is measured
+# rather than asserted (instrumented against the pre-change tool, 2026-08-08):
+#
+#   frees %R then %c0   PRE: 0 of 2 verified   POST: 2 of 2
+#   frees %c0 then %R   PRE: 2 of 2 verified   POST: 2 of 2
+#
+# In the first order, %R's proof reaches `('%c7', 16, 17)` at depth 7, one past
+# the budget, and is cut. That interval is EMPTY — there is no instruction
+# between positions 16 and 17 at all, so the honest answer is a trivial "yes,
+# unchanged" — yet `False` was cached, propagated up through all seven levels,
+# and then handed to %c0's proof as a MEMO HIT. In the second order %c0 asks
+# first, from one level up, so the same query lands at depth 6, answers True,
+# and %R then reads the True.
+#
+# Committed as a PAIR because that is the property: not "this file verifies"
+# but "these two files agree". A budget re-added anywhere in the recursion turns
+# the pair red.
+# ---------------------------------------------------------------------------
+
+def order_ladder(D, frees, dirty_at=None):
+    """A nested CNOT ladder `D` levels deep, freeing `frees` in that order.
+
+        cnot(%c0, %R)        <- the pair on %R; its READ operand is %c0
+          cnot(%c1, %c0)     <- so %c0 must hold still: this pair must cancel,
+            ...                 which needs %c1 to hold still, which needs ...
+          cnot(%c1, %c0)
+        cnot(%c0, %R)
+
+    Proving the outer pair cancels therefore recurses D levels through the
+    READS loop of `pair_operands_unchanged` — deliberately that loop and not the
+    co-written one, because `unchanged_over` is the MEMOISED edge and the memo
+    is where the defect lived.
+
+    `cqrt_cnot` is an involution and the stream is an exact palindrome
+    S . reverse(S), so the net unitary is the identity: every rail is back at
+    its `cqrt_alloc_i32(0)` value and EVERY free here is Rule-6 sound. That is
+    what makes a decline a false positive rather than a taste question.
+
+    `dirty_at=k` plants one `cqrt_ry` (non-diagonal, no adjoint in the stream)
+    on %ck at the palindrome centre. Nothing can cancel it, so the level-k
+    stability check must fail and the free must NOT verify — the pin that the
+    budget was removed rather than the checking disabled.
+    """
+    L = ["", "define i32 @slice() local_unnamed_addr #0 {",
+         "  %R = call i32 @cqrt_alloc_i32(i32 0)"]
+    for i in range(D + 1):
+        L.append(f"  %c{i} = call i32 @cqrt_alloc_i32(i32 0)")
+    fwd = ["  call void @cqrt_cnot(i32 %c0, i32 %R)"]
+    for i in range(D):
+        fwd.append(f"  call void @cqrt_cnot(i32 %c{i + 1}, i32 %c{i})")
+    L += fwd
+    if dirty_at is not None:
+        L.append(f"  call void @cqrt_ry_i32(i32 %c{dirty_at}, "
+                 f"double 5.000000e-01)")
+    L += list(reversed(fwd))
+    for f in frees:
+        L.append(f"  call void @cqrt_free(i32 {f})")
+    L += ["  ret i32 0", "}", ""]
+    return "\n".join(L)
+
+
+ORDER_LADDER_RAIL_FIRST = order_ladder(7, ("%R", "%c0"))
+ORDER_LADDER_INNER_FIRST = order_ladder(7, ("%c0", "%R"))
+
+# The DEEP positive. 500 levels is far past any budget anyone would re-add by
+# hand, so this is the fixture that says the recursion is bounded by INTERVAL
+# NARROWING and nothing else. It is also the one that pins
+# `ensure_recursion_headroom`: MEASURED 2026-08-08 with this very generator and
+# the default limit of 1000, `order_ladder(D)` verifies at D=300 and raises
+# `RecursionError` from D=350 once the headroom call is removed — not a finding,
+# a traceback, i.e. a correct build failing on a crash. D=500 is chosen to sit
+# clear of that wall in any harness, since the frames a caller has already
+# pushed count against the same limit.
+#   It is deliberately NOT in POSITIVE: layer 3 would blank each of its ~1000
+# witness lines in turn and re-check, which buys no new SHAPE (the same ladder
+# is swept at D=7) for two orders of magnitude more wall time.
+DEEP_LADDER = order_ladder(500, ("%R",))
+
+# The bd xzdx ticket's own reproducer, kept verbatim so its measured claim names
+# something re-runnable: 18 gates, an exact palindrome of involutions, differing
+# ONLY in where `cqrt_free(i32 %r1)` sits. PRE 2026-08-08: the A file reported 2
+# UNPROVEN and exited 1, the B file verified all three sites and exited 0. It is
+# a different shape from the ladder — a fuzzer's find, mixing `cqrt_cswap`
+# route-pairs (the CO-WRITTEN edge) with `cqrt_cnot` (the READS edge) — so the
+# two fixtures do not cover the same path.
+XZDX_TICKET_A = """
+define i32 @slice() local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 3)
+  %f0 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 0)
+  %f1 = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 1)
+  %r0 = call i32 @cqrt_alloc_i32(i32 0)
+  %r1 = call i32 @cqrt_alloc_i32(i32 0)
+  %r2 = call i32 @cqrt_alloc_i32(i32 0)
+  %r4 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_cswap(i32 %f1, i32 %r1, i32 %r0)
+  call void @cqrt_cnot(i32 %r2, i32 %r1)
+  call void @cqrt_cswap(i32 %f0, i32 %r2, i32 %r0)
+  call void @cqrt_cswap(i32 %f1, i32 %r4, i32 %r1)
+  call void @cqrt_cswap(i32 %f0, i32 %r4, i32 %r0)
+  call void @cqrt_cswap(i32 %f0, i32 %r2, i32 %r4)
+  call void @cqrt_cswap(i32 %f0, i32 %r2, i32 %r0)
+  call void @cqrt_cswap(i32 %f1, i32 %r4, i32 %r0)
+  call void @cqrt_cswap(i32 %f0, i32 %r4, i32 %r2)
+  call void @cqrt_cswap(i32 %f0, i32 %r4, i32 %r2)
+  call void @cqrt_cswap(i32 %f1, i32 %r4, i32 %r0)
+  call void @cqrt_cswap(i32 %f0, i32 %r2, i32 %r0)
+  call void @cqrt_cswap(i32 %f0, i32 %r2, i32 %r4)
+  call void @cqrt_cswap(i32 %f0, i32 %r4, i32 %r0)
+  call void @cqrt_cswap(i32 %f1, i32 %r4, i32 %r1)
+  call void @cqrt_cswap(i32 %f0, i32 %r2, i32 %r0)
+  call void @cqrt_cnot(i32 %r2, i32 %r1)
+  call void @cqrt_cswap(i32 %f1, i32 %r1, i32 %r0)
+  call void @cqrt_free(i32 %r2)
+  call void @cqrt_free(i32 %r0)
+  call void @cqrt_free(i32 %r1)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+}
+"""
+
+XZDX_TICKET_B = XZDX_TICKET_A.replace(
+    "  call void @cqrt_free(i32 %r2)\n"
+    "  call void @cqrt_free(i32 %r0)\n"
+    "  call void @cqrt_free(i32 %r1)\n",
+    "  call void @cqrt_free(i32 %r1)\n"
+    "  call void @cqrt_free(i32 %r2)\n"
+    "  call void @cqrt_free(i32 %r0)\n")
+assert XZDX_TICKET_B != XZDX_TICKET_A, "the ticket pair must differ"
+
+def cswap_braid(D):
+    """D nested `cqrt_cswap` route pairs over ONE register pair, one flag each.
+
+        cswap(%f0, %A, %B) … cswap(%f19, %A, %B)
+        cswap(%f19, %A, %B) … cswap(%f0, %A, %B)      free(%A)
+
+    A palindrome of involutions again, so it verifies — but the interesting
+    property is COST, not the verdict. Reducing %A recurses into
+    `co_written_stable(%B, …)`, which recurses back into %A over every strictly
+    inner window, so the two edges call each other and the same window is
+    reachable along 4^(D/2) paths. This is the shape that made the bd xzdx
+    Rule-13 round reject the first draft of the budget removal, which left
+    `co_written_stable` uncached: at D=20 — SIXTY-THREE calls, a 66-line file —
+    it took 44.6 s instead of 0.017 s, and D=30 never finished.
+    """
+    L = ["", "define i32 @slice() local_unnamed_addr #0 {",
+         "  %A = call i32 @cqrt_alloc_i32(i32 0)",
+         "  %B = call i32 @cqrt_alloc_i32(i32 0)"]
+    for i in range(D):
+        L.append(f"  %f{i} = call i32 @cqrt_alloc_i32(i32 0)")
+    for i in range(D):
+        L.append(f"  call void @cqrt_cswap(i32 %f{i}, i32 %A, i32 %B)")
+    for i in reversed(range(D)):
+        L.append(f"  call void @cqrt_cswap(i32 %f{i}, i32 %A, i32 %B)")
+    L += ["  call void @cqrt_free(i32 %A)", "  ret i32 0", "}", ""]
+    return "\n".join(L)
+
+
+COST_BRAID = cswap_braid(20)
+
+# The memo pin, asserted as a CALL COUNT rather than a wall time so it cannot go
+# flaky on a loaded machine. MEASURED 2026-08-08: 381 `co_written_stable` calls
+# with the cache, 4^10 - 1 = 1048575 without it. The bound below sits 13x above
+# the first and 200x below the second, so it fails only on a real regression.
+COST_BRAID_MAX_CO_WRITTEN_CALLS = 5000
+
+# (name, file A, file B) — every free site must get the SAME verdict in both.
+ORDER_PAIRS = [
+    ("xzdx-ladder-d7-free-order", ORDER_LADDER_RAIL_FIRST,
+     ORDER_LADDER_INNER_FIRST),
+    ("xzdx-ticket-repro-free-order", XZDX_TICKET_A, XZDX_TICKET_B),
+]
+
+# Checked in layer 1 only; see DEEP_LADDER for why it skips the sweep. The braid
+# is here for the same reason (a 63-call palindrome has ~40 witness lines per
+# proof and the shape is already covered by the ladder sweep) plus one of its
+# own: layer 1c re-analyses it under instrumentation, and sweeping it too would
+# double that.
+DEEP_POSITIVE = [
+    ("xzdx-deep-ladder-d500", DEEP_LADDER),
+    ("xzdx-cswap-braid-d20", COST_BRAID),
+]
+
 POSITIVE = [
     ("phase-diamond", PHASE_DIAMOND),
     ("value-diamond", VALUE_DIAMOND),
@@ -598,6 +791,10 @@ POSITIVE = [
     ("case-a-aliased-inputs", CASE_A_ALIASED),
     ("a2-stable-immediate-bracket", A2_STABLE_IMMEDIATE),
     ("a2-co-written-target-skip", A2_CO_WRITTEN_TARGET_SKIP),
+    ("xzdx-ladder-d7-rail-freed-first", ORDER_LADDER_RAIL_FIRST),
+    ("xzdx-ladder-d7-inner-freed-first", ORDER_LADDER_INNER_FIRST),
+    ("xzdx-ticket-repro-a", XZDX_TICKET_A),
+    ("xzdx-ticket-repro-b", XZDX_TICKET_B),
 ]
 
 
@@ -694,6 +891,52 @@ MUTANTS = [
                   "@cqrt_copy_i32(i32 %1",
                   "  call void @cqrt_qram_store_i32(i32 %arr, i32 %h, i32 %qval)"),
      "T2-operand-mutated"),
+
+    # ---- bd xzdx: deep is still CHECKED, not waved through ----------------
+    # Removing the depth budget must not become "stop looking past depth 6".
+    # Both defects sit at the BOTTOM of a 7-level ladder, where the pre-change
+    # tool declined for the wrong reason (it ran out of budget) and where a
+    # tool that had simply stopped recursing would now report OK.
+    ("deep-nest-dirtied-at-the-bottom",
+     order_ladder(7, ("%R",), dirty_at=7),
+     "A-not-reducible"),
+    ("deep-nest-innermost-adjoint-deleted",
+     drop(ORDER_LADDER_RAIL_FIRST, "@cqrt_cnot(i32 %c7", 1),
+     "A-not-reducible"),
+    # A self-aliased `cqrt_cnot` is a Case-B input and must be reported as one.
+    # It is committed here for a SECOND reason, so that it is greppable: it is
+    # the arm-kill probe for the `unchanged_over` re-entry assertion, and the
+    # only one that works. The obvious way to break the narrowing invariant —
+    # weakening `writes_in` to `lo <= p <= hi` — runs away through
+    # `co_written_stable` on every `cqrt_cswap`-bearing fixture, so it kills the
+    # OTHER guard and leaves this one standing. This module has no `cqrt_cswap`
+    # at all, so `co_written_stable` is never entered; the aliased `%a` is both
+    # a READ and a written rail of the same call, which is what lets the READS
+    # edge re-enter its own query. Under that mutation the shipped tool raises
+    # `NarrowingViolation` naming `('%a', 3, 4)`; with the assertion deleted the
+    # same input dies on a `RecursionError` that names nothing.
+    ("case-b-self-aliased-cnot-aka-the-narrowing-probe", """
+define i32 @slice() local_unnamed_addr #0 {
+  %a = call i32 @cqrt_alloc_i32(i32 0)
+  %r = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_cnot(i32 %a, i32 %r)
+  call void @cqrt_cnot(i32 %a, i32 %a)
+  call void @cqrt_cnot(i32 %a, i32 %a)
+  call void @cqrt_cnot(i32 %a, i32 %r)
+  call void @cqrt_free(i32 %r)
+  ret i32 0
+}
+""", "B1-input-aliases-written-rail"),
+
+    # …and the same defect 500 levels down, because the two rows above only
+    # reach depth 7. A regression that stops recursing past ANY depth N >= 9 and
+    # answers TRUE — the unsound direction, the one a re-added budget would take
+    # if someone "optimised" it the wrong way — leaves the D=500 POSITIVE
+    # verifying and every shallow mutant caught, so without this row the suite
+    # would be entirely green. Found by the bd xzdx Rule-13 round.
+    ("deep-nest-dirtied-500-levels-down",
+     order_ladder(500, ("%R",), dirty_at=500),
+     "A-not-reducible"),
 
     # A handle that arrives from outside the stream but is written inside it:
     # its state on entry is unknown, so no in-stream history can discharge it.
@@ -931,13 +1174,22 @@ def findings(text):
     return f
 
 
+def verdict_map(text):
+    """{handle: verdict} for every free site — what an ORDER_PAIR compares."""
+    f, _v, _s, proofs = fpc.check_module(text)
+    d = {handle: "OK:" + rule for _fn, _l, handle, rule, _w in proofs}
+    for x in f:
+        d[x.handle] = x.kind + ":" + x.code
+    return d
+
+
 def main():
     verbose = "-v" in sys.argv
     fails = []
-    n_pos = n_mut = n_sweep = n_neg = 0
+    n_pos = n_mut = n_sweep = n_neg = n_pair = 0
 
     # ---- layer 1: the shipped lowerings must verify clean -----------------
-    for name, text in POSITIVE:
+    for name, text in POSITIVE + DEEP_POSITIVE:
         n_pos += 1
         f = findings(text)
         if f:
@@ -946,6 +1198,50 @@ def main():
         elif verbose:
             _f, v, s, _p = fpc.check_module(text)
             print(f"  ok  positive  {name:32s} {v}/{s} free sites verified")
+
+    # ---- layer 1b: the verdict may not depend on `cqrt_free` ORDER --------
+    # Layer 1 already demands both members verify clean; this layer states the
+    # PROPERTY, so a future regression that declines both members consistently
+    # is reported as the false positive it is rather than as an order bug.
+    for name, ta, tb in ORDER_PAIRS:
+        n_pair += 1
+        va, vb = verdict_map(ta), verdict_map(tb)
+        if va != vb:
+            fails.append(f"ORDER PAIR {name}: moving a cqrt_free changed the "
+                         f"verdict — {va} vs {vb}")
+        elif verbose:
+            print(f"  ok  order     {name:32s} {va}")
+
+    # ---- layer 1c: the recursion stays CHEAP on the braid -----------------
+    # Removing the depth budget removed the only bound on WORK as well as on
+    # depth, and the co-written edge calls itself through the reads edge. This
+    # counts the calls rather than the seconds so it cannot go flaky.
+    n_cost = 1
+    calls = [0]
+    orig_co = fpc.StreamAnalysis.co_written_stable
+
+    def counted(self, *a, **k):
+        calls[0] += 1
+        return orig_co(self, *a, **k)
+
+    fpc.StreamAnalysis.co_written_stable = counted
+    try:
+        f = findings(COST_BRAID)
+    finally:
+        fpc.StreamAnalysis.co_written_stable = orig_co
+    if f:
+        fails.append(f"COST xzdx-cswap-braid-d20: expected 0 findings, got "
+                     + "; ".join(str(x) for x in f))
+    if calls[0] > COST_BRAID_MAX_CO_WRITTEN_CALLS:
+        fails.append(
+            f"COST xzdx-cswap-braid-d20: co_written_stable was entered "
+            f"{calls[0]} times, over the bound of "
+            f"{COST_BRAID_MAX_CO_WRITTEN_CALLS} — the recursion is no longer "
+            f"being memoised on that edge, which is exponential (4^(D/2)) and "
+            f"turns a 66-line input into a hung build gate")
+    elif verbose:
+        print(f"  ok  cost      {'xzdx-cswap-braid-d20':32s} "
+              f"{calls[0]} co_written_stable call(s)")
 
     # ---- layer 2: each named defect must produce its named code -----------
     for name, text, want in MUTANTS:
@@ -999,10 +1295,10 @@ def main():
         if verbose:
             print(f"  ok  sweep     {name:32s} {len(proofs)} proof(s)")
 
-    print(f"free_pairing_check_test: {n_pos} positive fixture(s), {n_mut} "
-          f"named mutant(s), {n_neg} Case-A negative(s), {n_sweep} "
-          f"proof-targeted mutant(s) ({exempt} exempt by rule), "
-          f"{len(fails)} failure(s)")
+    print(f"free_pairing_check_test: {n_pos} positive fixture(s), {n_pair} "
+          f"free-order pair(s), {n_cost} cost bound(s), {n_mut} named "
+          f"mutant(s), {n_neg} Case-A negative(s), {n_sweep} proof-targeted "
+          f"mutant(s) ({exempt} exempt by rule), {len(fails)} failure(s)")
     for x in fails:
         print("  FAIL " + x, file=sys.stderr)
     return 1 if fails else 0

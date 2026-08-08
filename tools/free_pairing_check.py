@@ -101,6 +101,13 @@ a known basis state and the free is sound iff it is still in one:
        even-length adjoint palindrome the ticket asks for is the common case of
        this reduction; a deleted uncompute toffoli leaves an odd, unpairable
        history and fails here.
+       Those stability questions recurse (proving an operand held still means
+       reducing ITS write history, whose pairs have operands of their own), and
+       the recursion has NO STEP BUDGET: it terminates because every recursive
+       edge strictly narrows the position interval. There used to be a
+       `depth > 6` cut-off and it was a defect, not a safety net — see
+       `unchanged_over` for the argument and for what the budget did to the
+       memo (bd xzdx).
        A pair cancels only if everything ITS action depends on held still in
        between: the declared reads, the `classical_imm` slots (bd az1h), and —
        for the one symbol in the model that writes two rails — the CO-WRITTEN
@@ -265,9 +272,21 @@ WHAT IT DOES **NOT** WITNESS  (read this before quoting the tool)
     standing obligation: whoever un-shelves that family must add its read/write
     sets here first, or the run will refuse to render a verdict.
   * NON-CALL instructions. Only calls are modelled; a rail handle reaching a
-    gate through `select`/`phi`/integer arithmetic is invisible to both the
-    alias rule and `provably_not_a_rail` (which answers "not a rail" for any
-    non-call SSA value that is not a formal parameter).
+    gate through `select`/`phi`/integer arithmetic is invisible to the alias
+    rule, to `provably_not_a_rail` (which answers "not a rail" for any non-call
+    SSA value that is not a formal parameter), AND — the sharper consequence,
+    named here after the bd xzdx round found this bullet understated it — to the
+    WRITE HISTORY itself. `Rail.writes` is keyed on the literal SSA operand
+    string, so `%v = select …, %h, …` followed by `cqrt_x(%v)` records the flip
+    against a fresh EXTERN rail called `%v` and leaves `%h`'s history empty;
+    (T2), (T3) and (A2) then all report `%h` unchanged and the free VERIFIES,
+    where the same flip written directly on `%h` correctly declines. Nothing
+    inside this checker stands behind that — what stands in front of it is the
+    PASS: `declineClassicalMuxes` (ir-pass/src/TaintPropagation.cpp) loudly
+    rejects a live select/phi over tainted data, so stage 2b never sees one, and
+    MEASURED over the 237 slices no phi or select result reaches a runtime-call
+    argument. It is a standing obligation on whoever widens that (the 8h7d loop
+    work, Phase-8 `cq_invert`), and it is filed rather than left implicit.
 
 STREAMS / CFG SCOPE. Execution order is only knowable without a simulator on
 straight-line code, so the analysis runs per STREAM: a maximal chain of basic
@@ -298,7 +317,13 @@ five e2e entries therefore pass `--allow-unproven` with that reason written at
 the call site; every other slice runs strict. Adding the (A1) immediate check
 and the Case-B rule moved ZERO of the 237 verdicts; RE-MEASURED 2026-08-07,
 adding the (A2) co-written-slot check (bd 0gwl) moved ZERO of them as well —
-same 50504/50484/20/0, no slice changed a single finding.
+same 50504/50484/20/0, no slice changed a single finding. RE-MEASURED AGAIN
+2026-08-08 on a freshly regenerated corpus after removing the recursion's depth
+budget (bd xzdx): same 50504/50484/20/0, again no slice changed a finding —
+expected, because the recursion nests at most 3 frames deep on any of the 237
+slices (a `depth` of 2 against a budget that refused at 7), so the ship floor
+never touched it. That is a statement about the corpus, NOT about the defect:
+see VALIDATED BEFORE USE for where it bites.
 
 VALIDATED BEFORE USE. Proof-targeted mutation — blank or corrupt an instruction
 some VERIFIED site's own proof consumes, then re-check — killed 6569 of 6579
@@ -343,6 +368,98 @@ mutants; with it gone the ticket's own reproducer is silently VERIFIED again),
 the `v == target` skip (`a2-co-written-target-skip`), the complementary-branch
 commutation filter (`IFELSE_DERIVED`), and the nested reduction rather than a
 demand for an empty history (`VALUE_DIAMOND`).
+
+REMOVING THE DEPTH BUDGET (bd xzdx, 2026-08-08) is the one change here that
+WIDENS what verifies, so it was measured on the axis that matters — is anything
+it newly accepts actually dirty? The corpus cannot answer that (it never nests
+past 3 frames, so all 237 verdicts are unmoved), and the flat random
+streams the Case-B work used cannot either (4-30 gates, 8000 modules, ZERO
+sites changed verdict — a probe with no power on this change, which is worth
+saying rather than quoting as a pass). The population that does have power is
+LADDERS: nested adjoint pairs 5 to 14 levels deep, built from
+`cqrt_x`/`cnot`/`toffoli`/`cswap` only — all classical permutations, so the same
+exact oracle the Case-B validation used decides the truth by evaluating the
+network over every assignment of the unknown rails — with HALF the modules
+deliberately perturbed (a gate dropped, duplicated, or inserted) so the
+population is not clean by construction. Over 12000 such modules — SEEDS 41 AND
+77, 6000 each, named because a count nobody can re-derive is not a measurement —
+4201 sites that the old tool declined now verify, and the oracle says every one
+of them is genuinely |0> at the free; 0 sites moved the other way; and across
+all 23278 OK verdicts the new tool issues there, 0 over-accepts (the old tool:
+19077 OK verdicts, also 0). Other seeds give the same picture with different
+counts: the invariant being claimed is the two ZEROS, not the 4201.
+
+Read that 23278 as a denominator with care: most of those OK verdicts are on
+rails the old tool ALSO cleared, so the figure the widening actually rests on is
+the 4201 — every one of which was adjudicated, none of which was dirty.
+
+AND READ THE POPULATION'S SCOPE, which is a real limit and not a formality: it
+is permutation-only BECAUSE that is the class the oracle can decide, and that
+deliberately excludes the superposition class — `cqrt_ry` / `cqrt_h`. This file
+does not witness that class at all (see WHAT IT DOES **NOT** WITNESS: "The
+ENTANGLEMENT half of Rule 8"), at any depth, before or after this change: a
+`cqrt_ry(R,t) … <a CNOT-class READ of R> … cqrt_ry(R,-t)` pair cancels here
+while R is left entangled with the reader, because the reduction reasons over
+WRITES to R and never asks what read it. The bd xzdx Rule-13 round confirmed
+both halves of the attribution — the hole is HEAD's (patch HEAD's `depth > 6` to
+`> 100` and HEAD accepts the same input at any depth), and removing the budget
+widens its REACH from depth <= 6 to any depth. So the two zeros above are zeros
+over the permutation class only; the superposition class is the pre-existing
+8txa "expensive half" and needs the basis-state evaluator, not a deeper fuzz.
+It is filed, with its one live corpus instance, rather than left implicit.
+
+The other three measurements: verdict diff over the 237 slices, 0 moved (above);
+proof-targeted mutants planted in the SHIPPED lowered IR, 735 planted (at most 4
+per slice, out of 160229 witness lines — a cap, stated), 735 caught by BOTH
+tools, 0 catches lost; and the order property itself — 4000 random modules per
+seed whose trailing `cqrt_free`s are permuted, where the old tool moved a
+verdict on 27 (seed 7) and 19 (seed 99) of them and the new tool on 0 of either.
+On real IR that last probe is nearly powerless and says so: only 25 of the 237
+slices have two `cqrt_free`s on adjacent lines at all, and swapping them moved
+nothing under EITHER tool.
+
+WHAT IT COSTS, since a budget also caps work. With both edges cached the
+recursion is polynomial, and the corpus does not notice: the 237-slice sweep is
+6-8 s before and after. A deep SYNTHETIC nest does pay, because it now runs to
+completion instead of being cut — MEASURED on `order_ladder`, 2026-08-08:
+D=2000 / 6005 calls 0.09 s -> 0.31 s, D=8000 / 24005 calls 0.38 s -> 3.73 s
+(~10x, growing about quadratically in the nesting depth, mostly in the
+`witness |= sub` frozenset unions that `reduces_to_identity` accumulates one per
+level). Every one of those PRE timings is the tool declining a stream it should
+verify, so the extra time buys the right answer; it is recorded because a gate
+with no timeout should have its cost curve written down somewhere.
+
+Its ARM-KILL MATRIX has five rows, and rows (3b) and (4b) exist because the
+first pass of it was wrong twice. All five re-measured 2026-08-08 against the
+committed selftest as it stands today; the counts move when fixtures are added,
+so re-measure rather than quote.
+  (1) THE BUDGET REMOVAL ITSELF — run the PRE-change tool against today's
+      selftest: 7 FAIL rows over 6 distinct fixtures (both order pairs, the two
+      D=7 ladder positives, the deep D=500 positive, the braid, the ticket
+      repro).
+  (2) `ensure_recursion_headroom` — delete the call and `xzdx-deep-ladder-d500`
+      dies on `RecursionError` mid-run, with no summary line at all.
+  (3a) THE `co_written_stable` RE-ENTRY ASSERTION — break narrowing by weakening
+      `writes_in` to `lo <= p <= hi`. With both assertions in place the tool
+      stops loudly and NAMES the re-entered query; delete this one and the same
+      input dies on a `RecursionError` that names nothing. The runaway goes
+      through this edge on every fixture carrying a `cqrt_cswap` route pair,
+      7 of the 19.
+  (3b) THE `unchanged_over` RE-ENTRY ASSERTION — which SURVIVES the probe in
+      (3a), because that runaway never reaches this edge. Surviving means the
+      probe was too weak for this arm, not that the arm is spare. The probe that
+      does kill it is the committed mutant
+      `case-b-self-aliased-cnot-aka-the-narrowing-probe`: no `cqrt_cswap` at
+      all, so `co_written_stable` is never entered, and a self-aliased
+      `cqrt_cnot` makes the READS edge re-enter `('%a', 3, 4)`. Guard present:
+      named `NarrowingViolation`. Guard deleted: unnamed `RecursionError`.
+  (4a) `_stable_memo` IS A PURE CACHE, which is checkable rather than
+      assertable: delete its writes and both the selftest and all 237 corpus
+      verdicts are byte-identical (slower, and that is the only difference).
+  (4b) `_co_written_memo` IS NOT — do not read row (4a) as covering both. Delete
+      ITS writes and the selftest turns RED on the `xzdx-cswap-braid-d20` cost
+      bound at 1048575 entries against a bound of 5000. That cache is load
+      bearing for termination-in-practice, not a speed-up.
 
 THE ARM COUNT IS FOUR BECAUSE THE FIRST ANSWER WAS WRONG, AND THAT IS THE
 LESSON WORTH KEEPING. The `v == target` skip survived its first kill test, and
@@ -393,6 +510,27 @@ class Unclassified(Exception):
     def __init__(self, sym):
         super().__init__(f"unclassified runtime symbol: @{sym}")
         self.sym = sym
+
+
+class NarrowingViolation(Exception):
+    """The stability recursion re-entered a query it was already computing.
+
+    This is an INTERNAL INVARIANT FAILURE, not a property of the input. The
+    reduction terminates because every recursive edge strictly narrows the
+    position interval (see `unchanged_over`), so a re-entry means an edge that
+    does not narrow was added and the recursion is no longer known to
+    terminate. It is raised rather than answered `False` on purpose: a silent
+    `False` here is exactly the depth-budget artefact bd
+    test_C_libtooling-xzdx removed — an over-decline whose value depends on the
+    order queries happen to run in. Fix the edge; do not re-add a budget.
+    """
+
+    def __init__(self, key):
+        super().__init__(
+            f"free_pairing_check INTERNAL: stability query {key} re-entered "
+            f"itself, so some recursive edge no longer narrows the position "
+            f"interval; the termination argument in `unchanged_over` is void")
+        self.key = key
 
 
 class Effect:
@@ -822,7 +960,10 @@ class StreamAnalysis:
         self.inv_claimed = set()
         self.freed_names = {}
         self.x_parity = {}          # register -> `cqrt_x` count so far
-        self._stable_memo = {}
+        self._stable_memo = {}      # (name, lo, hi) -> (ok, witness lines)
+        self._stable_active = set()  # queries currently being computed
+        self._co_written_memo = {}   # (v, p1, p2, id(c1)) -> (ok, lines)
+        self._co_written_active = set()   # ditto, the co-written edge
         self.proofs = []            # [(fn, free_line, handle, rule, lines)]
 
     # -- main scan ---------------------------------------------------------
@@ -1033,17 +1174,118 @@ class StreamAnalysis:
         r = self.rails.get(name)
         return [] if r is None else [(p, c) for p, c in r.writes if lo < p < hi]
 
-    def unchanged_over(self, name, lo, hi, depth=0):
-        """(ok, witness lines) — `name`'s writes inside (lo, hi) net to identity."""
-        if depth > 6:
-            return False, frozenset()
+    def unchanged_over(self, name, lo, hi):
+        """(ok, witness lines) — `name`'s writes inside (lo, hi) net to identity.
+
+        WHY THERE IS NO STEP BUDGET HERE (bd test_C_libtooling-xzdx, 2026-08-08)
+        ----------------------------------------------------------------------
+        There used to be a `depth > 6` cut-off, and it was UNSOUND IN THE MEMO:
+        the cache is keyed `(name, lo, hi)` with no depth, so a `False` produced
+        by exhausting the budget deep in one recursion was served to a later,
+        SHALLOWER query for the same interval that had budget to succeed. The
+        cache outlives the free site (it is per STREAM), so the artefact leaked
+        ACROSS free sites and the verdict came to depend on the ORDER of the
+        `cqrt_free` calls. The committed demonstration is the two PAIRS in
+        `ORDER_PAIRS`, tools/free_pairing_check_test.py — `xzdx-ladder-d7-*`
+        (16 gates, hand-explainable) and `xzdx-ticket-repro-*` (the ticket's own
+        18-gate find). Each pair is one stream written twice with the frees in a
+        different order, and the OLD tool split both: 0 of 2 sites verified
+        versus 2 of 2 for the ladder, 1 of 3 versus 3 of 3 for the repro.
+        The direction was always safe (an artefact `False` over-declines, never
+        over-accepts), but a GATE whose answer moves when you move a free is a
+        gate people route around with `--allow-unproven`.
+
+        The budget is gone rather than depth-keyed because IT WAS NEVER WHAT
+        MADE THIS TERMINATE. Every recursive edge STRICTLY NARROWS the position
+        interval, and the interval is a pair of integer stream positions:
+
+          * `unchanged_over(name, lo, hi)` reduces exactly `writes_in(name, lo,
+            hi)`, whose members satisfy `lo < p < hi` STRICTLY (the comparison
+            is `lo < p < hi`, not `<=`), and it does not widen `(lo, hi)`.
+          * `reduces_to_identity` only ever pairs two of those members, an
+            earlier `pk` against a later `p`, so any interval it hands down
+            satisfies `lo < pk < p < hi`.
+          * `pair_operands_unchanged(c1, p1, p2, …)` passes exactly that pair
+            down, to `unchanged_over(v, p1, p2)` and to `co_written_stable(v,
+            p1, p2, …)`, and the latter reduces a SUBSET of `writes_in(v, p1,
+            p2)` — the complementary-branch filter only removes members.
+          * the three entry points (`check_alloc_rail`, the two in
+            `check_minted_rail`) start from a write list drawn the same strict
+            way, from `(r.pos, pos)` or `(r.pos, rev_pos)`.
+
+        So `hi - lo` strictly decreases by at least 2 down every edge and is
+        bounded below by 0: the recursion is at most `(hi - lo) / 2` deep and
+        cannot cycle, for ANY input, including adversarial ones. MEASURED on the
+        237-slice corpus (2026-08-08): the recursion nests at most 3 frames deep
+        — a `depth` of 2 in the units the deleted budget used, which refused at 7
+        — so the budget was hit ZERO times and removing it moves no corpus
+        verdict; it only removes the artefact.
+
+        The re-entry check below is therefore an ASSERTION on that argument, not
+        a policy: it can only fire if a future edit adds an edge that does not
+        narrow, and it fires LOUDLY (see `NarrowingViolation`) instead of
+        answering `False`, because a silent `False` is the very bug this
+        replaced. It has never fired. `co_written_stable` carries the SAME
+        assertion, and it has to: they are the two edges that re-enter the
+        reduction, and a tripwire on only one of them is not a tripwire. That
+        is not a hypothetical — it is what the arm-kill probe found. Weakening
+        `writes_in` to `lo <= p <= hi` (the one-character way to break
+        narrowing) sends every committed fixture carrying a `cqrt_cswap` route
+        pair — 7 of the 19 as of 2026-08-08, a count that moves whenever
+        fixtures are added — into an unbounded `co_written_stable` recursion
+        that this check never sees, so with the guard here alone they died on
+        `RecursionError` instead of naming the broken invariant. The converse
+        also holds and is why BOTH assertions ship: that same probe leaves the
+        guard here untouched, and killing it needs the committed mutant
+        `case-b-self-aliased-cnot-aka-the-narrowing-probe` (no `cqrt_cswap`, so
+        the co-written edge is never entered).
+
+        THE MEMO IS SOUND WITH NO DEPTH IN THE KEY, which is the other half of
+        the fix, and the cache is shared by every free site in the stream — so
+        "pure function of `(name, lo, hi)`" has to hold ACROSS sites, while
+        `run()` is still mutating the analysis between them. Three reads matter:
+
+          * `Rail.writes`, via `writes_in`. Every query a free site at position
+            `pos` issues has `hi <= pos`, and `run()` appends a write when it
+            scans it, so every write inside `(lo, hi)` was already appended
+            before that site was checked. The list can grow later; the WINDOW
+            cannot gain a member.
+          * `self.rails` MEMBERSHIP, which the scan grows — `rail_for_write`
+            materialises an extern record the first time a handle is written.
+            `pair_operands_unchanged` skips an operand that is `not in
+            self.rails`, but an operand with a write inside `(p1, p2)` was
+            written before `p2 < hi <= pos`, so it is already present whenever
+            skipping it could change anything; a later-materialised record can
+            only carry writes at positions past the window.
+          * the same membership test inside `commutes`, which is the one that
+            looks dangerous — it declines the complementary-branch claim for a
+            register this stream has never seen, and a later site might have
+            seen it. It CANNOT differ, because the test is only reached after
+            `pu != pw`, and a `ctl_parity` that differs means `run()` scanned a
+            `cqrt_x` on that register between the two calls; `cqrt_x` is
+            non-diagonal with `writes=(0,)` and is the only thing that bumps
+            `x_parity`, so that same scan step already put the register in
+            `self.rails`. MEASURED over the 237 slices: 30 `commutes` calls, 6
+            of them with differing parity, the membership guard fired 0 times.
+
+        Nothing else the scan mutates (`inv_claimed`, `freed_names`, `x_parity`
+        itself) is read on this path — `ctl_parity` is frozen onto each Call at
+        scan time. And the whole argument has a cheap standing check: the memo
+        is a PURE CACHE, so deleting its writes must not move a verdict, which
+        is measured (all 237 slices byte-identical) rather than asserted.
+        """
         memo = (name, lo, hi)
-        if memo in self._stable_memo:
-            return self._stable_memo[memo]
-        # cycle guard: assume not stable while recursing
-        self._stable_memo[memo] = (False, frozenset())
-        ok, _why, lines = self.reduces_to_identity(
-            self.writes_in(name, lo, hi), name, depth + 1)
+        hit = self._stable_memo.get(memo)
+        if hit is not None:
+            return hit
+        if memo in self._stable_active:
+            raise NarrowingViolation(memo)
+        self._stable_active.add(memo)
+        try:
+            ok, _why, lines = self.reduces_to_identity(
+                self.writes_in(name, lo, hi), name)
+        finally:
+            self._stable_active.discard(memo)
         self._stable_memo[memo] = (ok, lines)
         return ok, lines
 
@@ -1102,7 +1344,7 @@ class StreamAnalysis:
                     return True
         return False
 
-    def reduces_to_identity(self, ws, target, depth=0):
+    def reduces_to_identity(self, ws, target):
         """Cancel adjoint pairs in `target`'s write history (commutation-aware).
 
         `ws` is the write history of the rail `target` over some interval, and
@@ -1129,7 +1371,7 @@ class StreamAnalysis:
                            for m in range(k + 1, len(stack))):
                     continue
                 ok, sub, blocker = self.pair_operands_unchanged(
-                    ck, pk, p, depth, target)
+                    ck, pk, p, target)
                 if not ok:
                     rejects.append((ck, c, blocker))
                     continue
@@ -1159,7 +1401,7 @@ class StreamAnalysis:
                     f"{blocker} is not provably unchanged between them")
         return False, why, frozenset(witness)
 
-    def pair_operands_unchanged(self, c1, p1, p2, depth, target):
+    def pair_operands_unchanged(self, c1, p1, p2, target):
         """(ok, witness, blocker) — everything `c1`'s action depends on holds.
 
         THREE operand classes, each here for a reason that was once a hole:
@@ -1202,7 +1444,7 @@ class StreamAnalysis:
             v = c1.vals[ri]
             if v not in self.rails:
                 continue
-            ok, lines = self.unchanged_over(v, p1, p2, depth)
+            ok, lines = self.unchanged_over(v, p1, p2)
             if not ok:
                 return False, frozenset(), v
             acc |= lines
@@ -1255,13 +1497,13 @@ class StreamAnalysis:
             # into every e2e slice means failing a CORRECT build.
             if v == target or v not in self.rails:
                 continue
-            ok, lines = self.co_written_stable(v, p1, p2, c1, depth)
+            ok, lines = self.co_written_stable(v, p1, p2, c1)
             if not ok:
                 return False, frozenset(), v
             acc |= lines
         return True, frozenset(acc), None
 
-    def co_written_stable(self, v, p1, p2, c1, depth):
+    def co_written_stable(self, v, p1, p2, c1):
         """(ok, witness) — co-written register `v` holds still across the pair.
 
         The same question `unchanged_over` answers, with ONE extra admission:
@@ -1316,12 +1558,53 @@ class StreamAnalysis:
         cnot, toffoli, cswap, copy_controlled, qram_store_controlled and the
         `_controlled` template/`_unc` arms alike. A future symbol with a control
         outside its read-set would break this argument, so put it in `reads`.
+
+        NO STEP BUDGET, for the reason `unchanged_over` gives at length: this
+        edge narrows too (`writes_in(v, p1, p2)` is strict and the
+        complementary-branch filter only DROPS members), so the recursion is
+        bounded by the interval.
+
+        IT IS MEMOISED, AND THAT IS NOT OPTIONAL — the bd xzdx Rule-13 round
+        found this out the expensive way. The first draft of the budget removal
+        left this edge uncached, on the argument that its population is tiny:
+        `cqrt_cswap` is the only multi-write symbol in `classify()`, so nothing
+        else reaches here at all, and the whole 237-slice corpus makes just 66
+        calls here against 90671 to `unchanged_over`. That argument is the
+        corpus-has-no-power error in its purest form. The deleted budget was the
+        only thing bounding the WORK on this edge, and without a cache the cost
+        is EXPONENTIAL: on a braid of cswap route pairs over one register pair
+        with a distinct flag per level (`cswap(f0,A,B) … cswap(f19,A,B)
+        cswap(f19,A,B) … cswap(f0,A,B)`), reducing A recurses into
+        `co_written_stable(B, …)`, which recurses back into A over every
+        strictly-inner window, and the same window is recomputed along
+        4^(D/2) paths. MEASURED 2026-08-08 on a 63-CALL module: 0.017 s
+        pre-change (which declined it on the budget), 44.6 s uncached, 0.008 s
+        with this cache — and D=30 never finished. A build gate that a 66-line
+        input can hang is a denial of service on every e2e slice.
+
+        The key is `(v, p1, p2, id(c1))` and both the cache and the re-entry
+        assertion use it. `c1` is in it by IDENTITY rather than by position
+        because this file never needs `c1` to be the call AT `p1` and does not
+        check that it is — keying on `(v, p1, p2)` alone would bake in an
+        unstated assumption, and `commutes` reads `c1`. `id()` is safe here
+        precisely because it is scoped to one `StreamAnalysis`: every `c1` that
+        reaches this method is an element of `self.calls`, which outlives the
+        analysis, so no id can be recycled underneath the table.
         """
-        if depth > 6:
-            return False, frozenset()
-        ws = [(p, w) for p, w in self.writes_in(v, p1, p2)
-              if not self.commutes(p, w, p1, c1)]
-        ok, _why, lines = self.reduces_to_identity(ws, v, depth + 1)
+        key = (v, p1, p2, id(c1))
+        hit = self._co_written_memo.get(key)
+        if hit is not None:
+            return hit
+        if key in self._co_written_active:
+            raise NarrowingViolation(key[:3])
+        self._co_written_active.add(key)
+        try:
+            ws = [(p, w) for p, w in self.writes_in(v, p1, p2)
+                  if not self.commutes(p, w, p1, c1)]
+            ok, _why, lines = self.reduces_to_identity(ws, v)
+        finally:
+            self._co_written_active.discard(key)
+        self._co_written_memo[key] = (ok, lines)
         return ok, lines
 
     # -- the free site -----------------------------------------------------
@@ -1475,6 +1758,50 @@ class StreamAnalysis:
         self.ok(c, r, "T1-" + rev_kind.strip("_") + "-reversal", witness)
 
 
+# Python frames the stability recursion burns per nesting level: the chain is
+# `unchanged_over -> reduces_to_identity -> pair_operands_unchanged ->
+# {unchanged_over | co_written_stable -> reduces_to_identity -> ...}`, so three
+# to four, and 4 is the generous count.
+_FRAMES_PER_LEVEL = 4
+
+
+def ensure_recursion_headroom(stream_len):
+    """Raise the interpreter's recursion limit to cover this stream's WORST CASE.
+
+    The stability recursion is bounded by INTERVAL NARROWING, not by a step
+    budget (bd test_C_libtooling-xzdx — see `unchanged_over` for why the budget
+    had to go). Narrowing bounds the DEPTH at `stream_len / 2`, since every
+    level consumes at least two stream positions, so the interpreter stack is
+    the only thing left that can stop the proof — and it stops it by CRASHING,
+    which for a gate wired into every e2e slice is a correct build failing on a
+    traceback. MEASURED 2026-08-08 against the SHIPPED code path, with this call
+    removed and the default limit of 1000: `order_ladder(D)` from
+    tools/free_pairing_check_test.py — a perfectly nested chain of self-inverse
+    `cqrt_cnot`s, an exact palindrome, so the free IS sound — verifies at D=300
+    and raises `RecursionError` from D=350. Measure that BARE: a tracer that
+    adds one frame per level moves the wall a long way and will flatter you.
+
+    So size the limit from the input rather than capping the proof. The figures
+    this rests on are measured, not assumed:
+      * the deepest nesting any of the 237 registered slices actually reaches is
+        3 frames — the headroom is for adversarial input, not the ship floor;
+      * the longest single stream in that corpus is 14135 calls
+        (`slice_libm_real_lgammaf`), which makes this function set the limit to
+        57540. That is the CEILING it grants, not a frame count anything
+        reaches: narrowing caps that stream at 7067 levels and the measured cost
+        is 3 frames per level, so its true worst case is ~21k frames;
+      * either number is far inside what the interpreter takes — a plain
+        300000-deep pure-Python recursion completes on CPython 3.11 here without
+        a segfault (3.11 does not consume C stack for Python-to-Python calls,
+        and nothing on this recursion path goes through C).
+    The limit is only ever RAISED, never lowered, so importing this module
+    cannot shrink a caller's headroom.
+    """
+    need = _FRAMES_PER_LEVEL * stream_len + 1000
+    if sys.getrecursionlimit() < need:
+        sys.setrecursionlimit(need)
+
+
 def check_module(text):
     """Returns (findings, verified_count, free_site_count, proofs).
 
@@ -1512,6 +1839,7 @@ def check_module(text):
         for _chain, calls in build_streams(fn):
             if not calls:
                 continue
+            ensure_recursion_headroom(len(calls))
             sa = StreamAnalysis(fn.name, calls, module_defs, fn.params,
                                 rail_defs.get(fn.name, frozenset()))
             findings.extend(sa.run())
