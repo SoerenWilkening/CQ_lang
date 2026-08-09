@@ -171,6 +171,17 @@ bool constantCarriesUndef(const Constant *C,
                           SmallPtrSetImpl<const Constant *> &Seen) {
   if (isa<UndefValue>(C))
     return true;
+  // KNOWN OVER-DECLINE, DELIBERATELY LEFT: a `GlobalValue`'s operands are its
+  // INITIALIZER, and the value being tested is the global's ADDRESS, which is
+  // defined no matter what it is initialised to. So
+  // `@u = global {i32 1, [4 x i8] undef}` reached through a `ptrtoint` reads as
+  // an undef leaf and the cone declines. An `isa<GlobalValue>` early return
+  // fixes it in two lines and was written — then REVERTED, because measurement
+  // showed it is an accept WIDENING relative to the shipped plugin (which
+  // declines that shape today for exactly this reason), and a widening does not
+  // belong in a commit whose whole purpose is tightening. Direction is safe,
+  // measured population is zero across 963 fixtures + 257 slices + 251 openlibm
+  // modules. Filed as its own ticket with its own red-green pair.
   if (!Seen.insert(C).second)
     return false;
   for (const Value *Op : C->operands())
@@ -303,46 +314,100 @@ bool definedOpAfterFlagDrop(const Instruction &I) {
   return false;
 }
 
-// bd adia: is every instruction in `V`'s backward cone TOTAL (defined on all
-// inputs) once its poison-generating annotations are dropped? The admissibility
-// proof for canonicalizing a poison-shielded short-circuit select-form into a
-// plain and/or (which observes the shielded operand on basis states the original
-// never did). The per-instruction whitelist is `definedOpAfterFlagDrop`; leaves
-// are:
-//   * Argument — assumed runtime-defined (the same leaf assumption every
-//     existing flatten makes);
-//   * Constant — defined UNLESS it carries `undef`/`poison` (see
-//     `valueCarriesUndef`);
-//   * a `cq_theta`/`cq_phi` rotation result — runtime data, never poison;
-//   * a curated `memory(none)` intrinsic that is not one of the three
-//     poison-immarg cells (see `curatedIntrinsicCanBePoison`).
-// Anything else fails and the select-form stays unclaimed (accept-only).
-bool coneDefinedAfterFlagDrop(const Value *Root) {
-  SmallPtrSet<const Value *, 16> Seen;
-  SmallVector<const Value *, 16> WL;
-  WL.push_back(Root);
-  while (!WL.empty()) {
-    const Value *V = WL.pop_back_val();
-    if (!Seen.insert(V).second)
-      continue;
-    if (valueCarriesUndef(V))
-      return false;  // bd 3c6m.14.2 — an undef/poison leaf is not defined.
-    const auto *I = dyn_cast<Instruction>(V);
-    if (!I)
-      continue;  // Constant / Argument leaf — defined.
-    bool Ok = false;
-    if (const auto *Call = dyn_cast<CallInst>(I)) {
-      // A cq_theta/cq_phi rotation result is RUNTIME DATA minted by the
-      // runtime ABI — a defined leaf, never poison (do not recurse into the
-      // classical seed/angle operands: the result's definedness does not
-      // depend on them being poison-free in this proof's sense — the
-      // rotation call itself would be the UB-observing consumer, which the
-      // original program already executed unconditionally here).
-      const Function *CF = Call->getCalledFunction();
-      if (CF && (CF->getName().starts_with("cq_theta_") ||
-                 CF->getName().starts_with("cq_phi_"))) {
-        continue;  // defined leaf — skip operand recursion.
-      }
+// bd u1rp — THE ONE CLASSIFICATION THE PROOF AND THE STRIP BOTH READ.
+//
+// `coneDefinedAfterFlagDrop` (claim time) decides whether the cone is defined
+// once its poison-generating annotations are dropped; `stripPoisonCone` (emit
+// time) performs that drop. Those are two halves of ONE statement, and before
+// this they were two independent walks that had silently diverged: the strip had
+// no `cq_theta`/`cq_phi` leaf case, so it recursed straight past the rotation
+// into the CLASSICAL SEED subtree and dropped `nsw`/`nuw` off instructions the
+// whitelist REFUSES and the proof never visited. MEASURED on the shipped plugin:
+// `%seed = add nsw nuw i32 %u, 1` feeding `cq_theta_si32` came out
+// `%seed = add i32 %u, 1`.
+//
+// Sharing the classifier is the same discipline `PhiCondScope` applies to the
+// phi conversion (see `isConvertiblePhiCond`): claim and emit consume ONE
+// decision instead of re-deriving it, which is what makes a divergence between
+// them impossible rather than merely unobserved.
+//
+//   Fail        — the proof refuses; the select-form stays unclaimed.
+//   Leaf        — defined WITHOUT any drop: no mutation, NO OPERAND RECURSION.
+//   Interior    — admitted *conditionally on the drop*: exactly the set the
+//                 strip must mutate, and the set to recurse through.
+//   PassThrough — the node's VALUE IS ITS OPERAND 0. Recurse into operand 0
+//                 only; mutate nothing (there is no annotation on it that could
+//                 make operand 0 more defined).
+enum class ConeNode { Fail, Leaf, Interior, PassThrough };
+
+ConeNode classifyConeNode(const Value *V) {
+  if (valueCarriesUndef(V))
+    return ConeNode::Fail;  // bd 3c6m.14.2 — an undef/poison leaf is not defined.
+  const auto *I = dyn_cast<Instruction>(V);
+  if (!I)
+    return ConeNode::Leaf;  // Constant / Argument leaf — defined.
+  if (const auto *Call = dyn_cast<CallInst>(I)) {
+    // *** THE TWO ROTATIONS ARE NOT THE SAME KIND OF NODE, AND TREATING THEM
+    // ALIKE WAS A VERIFY-CLEAN SILENT MISCOMPILE. ***
+    //
+    // `cq_theta` is a genuine defined LEAF: `RotationLowering` replaces it with
+    // `cqrt_alloc_<W>(seed)` and the returned handle does not depend on `seed`
+    // at all (`cq_runtime.c` — the allocator ignores the init value), so the
+    // seed's definedness cannot reach the predicate. Poison in the seed lands in
+    // exactly ONE place, the allocator's literal argument, so there is no
+    // forward/`_unc` pair to break.
+    //
+    // `cq_phi` IS NOT A LEAF. `RotationLowering` does
+    // `Phi->replaceAllUsesWith(Op)` — the result IS OPERAND 0, verbatim, tainted
+    // or not. So its definedness is exactly operand 0's definedness and the
+    // cone must continue through it. Calling it a leaf let three separate
+    // defects through, all measured on the pre-fix plugin:
+    //
+    //   (1) LITERAL POISON, at any chain depth. `cq_phi(poison)` feeding the
+    //       shielded compare emitted a forward call and its `_unc` adjoint
+    //       reading the SAME `i32 poison` operand — which at the shipped -O0
+    //       stage 3 materialised as TWO DIFFERENT literals, deterministically
+    //       and identically across runs (NOT the ASLR artefact refuted in
+    //       bd bu96):
+    //           cq_template_icmp_slt_i32_hl(h0, 73896)      -> h4
+    //           cq_template_icmp_slt_i32_hl_unc(h4, h0, 1401299752)
+    //           cqrt_free(h4)
+    //       `poison` lowers to `IMPLICIT_DEF`, which LLVM may materialise
+    //       differently PER USE, so the adjoint inverts a different predicate
+    //       than the forward computed; the compare rail is left dirty AND
+    //       entangled with `h0`, and the free is a hidden measurement that
+    //       collapses `q` — Rules 6 and 8. `opt` exit 0, `opt -verify` clean,
+    //       `free_pairing_check` STRICT 6/6. *** An arguments-only check fixed
+    //       ONLY depth 1: `cq_phi(cq_phi(poison))` walked straight past it, and
+    //       the Rule-13 round exhibited exactly that, reachable from stock
+    //       `clang -O1` via an uninitialised local through two chained phases.
+    //       Recursion is the fix; an operand check is not. ***
+    //   (2) INHERENT-POISON OPS, which have no flag to drop. `shl i32 %c, %d`
+    //       (variable amount) correctly DECLINES directly in the cone, and was
+    //       ACCEPTED one `cq_phi` hop above it. The hop turned a correct decline
+    //       into an unsound accept.
+    //   (3) POISON-GENERATING FLAGS below the hop were never proved and — once
+    //       the bd u1rp narrowing stopped the strip at the leaf — no longer
+    //       dropped either.
+    //
+    // Recursing through operand 0 closes all three at a measured cost of ZERO:
+    // no rotation call site in 963 fixtures + 257 slice modules + 251 openlibm
+    // modules has an `undef`/`poison` argument, and an ordinary chain
+    // (`cq_phi` over a `cq_theta` result, or over whitelisted arithmetic on one)
+    // classifies exactly as before.
+    const Function *CF = Call->getCalledFunction();
+    if (CF && (CF->getName().starts_with("cq_theta_") ||
+               CF->getName().starts_with("cq_phi_"))) {
+      // The ANGLE (arg 1) never becomes the result, but a poison angle is still
+      // a garbage `cqrt_ry`/`cqrt_rz` parameter, so refuse it for both families.
+      // For `cq_theta` this is also the only protection its seed gets, since the
+      // seed is not recursed into.
+      for (const Use &A : Call->args())
+        if (valueCarriesUndef(A.get()))
+          return ConeNode::Fail;
+      return CF->getName().starts_with("cq_phi_") ? ConeNode::PassThrough
+                                                  : ConeNode::Leaf;
+    }
       // *** THIS CLAUSE ADMITS ONLY THE PROJECT'S OWN CURATED SET. IT USED TO
       // ADMIT ANY `isSpeculatablePureCalleeBody` CALLEE, AND THAT WAS A SILENT
       // MISCOMPILE (bd 3c6m.14.2). ***
@@ -380,19 +445,53 @@ bool coneDefinedAfterFlagDrop(const Value *Root) {
       // obligation — so Rule 17 does not protect it, and the Prime Directive says
       // an unproven, unpopulated accept surface should not exist.
       //
-      // The curated disjunct STAYS: those are the project's own set, their
-      // totality is a fact about code we ship rather than an inference about
-      // user code, and they are the only call shape with any measured
-      // population. `curatedIntrinsicCanBePoison` carves out the three cells
-      // whose poison rides an immarg no drop can reach.
-      Ok = isCuratedReversibleIntrinsic(Call) && Call->doesNotAccessMemory() &&
-           !curatedIntrinsicCanBePoison(Call);
-    } else {
-      Ok = definedOpAfterFlagDrop(*I);
-    }
-    if (!Ok)
+    // The curated disjunct STAYS: those are the project's own set, their
+    // totality is a fact about code we ship rather than an inference about
+    // user code, and they are the only call shape with any measured
+    // population. `curatedIntrinsicCanBePoison` carves out the three cells
+    // whose poison rides an immarg no drop can reach.
+    //
+    // NOTE `isCuratedReversibleIntrinsic` requires a real `IntrinsicInst`
+    // (IntrinsicLowering.cpp), so after bd 3c6m.14.2 EVERY call this clause can
+    // admit is an `llvm.*` intrinsic. That is what closes bd 94on(a) on this
+    // surface — see the note on the return-attribute drop in `stripPoisonCone`.
+    return isCuratedReversibleIntrinsic(Call) && Call->doesNotAccessMemory() &&
+                   !curatedIntrinsicCanBePoison(Call)
+               ? ConeNode::Interior
+               : ConeNode::Fail;
+  }
+  return definedOpAfterFlagDrop(*I) ? ConeNode::Interior : ConeNode::Fail;
+}
+
+// bd adia: is every instruction in `V`'s backward cone TOTAL (defined on all
+// inputs) once its poison-generating annotations are dropped? The admissibility
+// proof for canonicalizing a poison-shielded short-circuit select-form into a
+// plain and/or (which observes the shielded operand on basis states the original
+// never did). Node classification — including which leaves stop the walk — is
+// `classifyConeNode`, shared verbatim with `stripPoisonCone` (bd u1rp).
+bool coneDefinedAfterFlagDrop(const Value *Root) {
+  SmallPtrSet<const Value *, 16> Seen;
+  SmallVector<const Value *, 16> WL;
+  WL.push_back(Root);
+  while (!WL.empty()) {
+    const Value *V = WL.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    switch (classifyConeNode(V)) {
+    case ConeNode::Fail:
       return false;
-    for (const Value *Op : I->operands())
+    case ConeNode::Leaf:
+      continue;
+    case ConeNode::PassThrough:
+      // The node's value IS operand 0 (a `cq_phi` result, post-RAUW). Follow
+      // only that operand — the angle is already checked by the classifier and
+      // never becomes the result.
+      WL.push_back(cast<Instruction>(V)->getOperand(0));
+      continue;
+    case ConeNode::Interior:
+      break;
+    }
+    for (const Value *Op : cast<Instruction>(V)->operands())
       WL.push_back(Op);
   }
   return true;
@@ -615,14 +714,30 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
 //     (reject_i80_cmp_purecallee_armdiamond.ll: the callee's OWN tainted diamond
 //     hits the clone-mode `!ClaimAll` fence above and loud-declines).
 //
-// WHAT THE PURE-CALLEE `true` WIDENS — FOUR call paths as of bd 3c6m.14.2, and
-// STATE THE COUNTING UNIT, because that is what a future agent re-derives and
-// the previous unit was not uniform. There are THREE textual call sites plus one
-// recursion; S1/S2 are the SAME site (:1812-ish) counted twice because its
-// answer is context-sensitive (`ClaimAll` threaded from Specialization.cpp).
-// Re-derive by grep over ALL of ir-pass/, never inherit the number — bd 3c6m.61's
-// comment and bd memory [[predmux-shared-predicate-leak-3c6m61]] both said
-// THREE and both were wrong:
+// WHAT THE PURE-CALLEE `true` WIDENS. *** STATE THE COUNTING UNIT — this is the
+// third time the number has been re-derived and the first two were wrong,
+// including the draft of THIS comment, which said "THREE textual call sites plus
+// one recursion" and is not reproducible under ANY consistent unit (bd
+// 3c6m.14.4's census). Re-derive by grep over ALL of ir-pass/, never inherit. ***
+//
+//   grep -rnE "isSpeculatablePureCallee(Body(Impl|Walk)?)?\(" ir-pass/src ir-pass/include
+//
+// (The `Walk` alternative is load-bearing since bd 3c6m.14.4 split the body out
+// of `Impl`; a grep without it silently misses a call expression. The recursion
+// is now MUTUAL — `Impl` calls `Walk` calls `Impl` — not self-recursion.)
+//
+//   textual call EXPRESSIONS of any of the three names ........... 5
+//     ... minus the self-recursion ................................ 4
+//     ... minus the recursion AND the two pure forwarders ......... 2
+//   distinct CONSUMERS that make an accept decision ............... 2
+//   distinct CONTEXTS those 2 consumers run in .................... 3
+//   self-recursion ................................................ 1
+//
+// The two forwarders are `isSpeculatablePureCalleeBody` (mints the query
+// context) and the exported `isSpeculatablePureCallee`. S1/S2 are the SAME
+// consumer site counted twice because its answer is context-sensitive
+// (`ClaimAll` threaded from Specialization.cpp); the site itself has no context
+// gate. The surviving surfaces, by the CONSUMER unit:
 //   S1 E4 CALL admission, top-level  (under !ClaimAll)
 //   S2 E4 CALL admission, CLONE mode (same site under ClaimAll — the call site
 //      has NO context gate; deliberately widened, see the note there)
@@ -871,8 +986,64 @@ bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) 
 // that already executed it — they never observe its RESULT on a state the source
 // shielded, which is the strictly stronger obligation S4 carried and this
 // predicate cannot discharge.
-bool isSpeculatablePureCalleeBodyImpl(
-    const Function *F, SmallPtrSetImpl<const Function *> &OnStack) {
+// bd 3c6m.14.4 — ONE top-level query's context: the cycle breaker, the memo, and
+// the cost counters. *** THE MEMO IS PER-QUERY AND MUST STAY THAT WAY. ***
+//
+// The ticket asked for a memo "on the Function*", i.e. module-lifetime. THAT IS
+// UNSOUND, and it is measured, not argued: a pure-callee verdict flips
+// FALSE -> TRUE inside a SINGLE `opt` run. `unrollConstTripLoops`
+// (CQLoweringPass.cpp ~200) runs BETWEEN the two `flattenPredMuxRegions`
+// fixpoints (~178 and ~202) and removes CFG cycles, so a callee that failed the
+// `scc_iterator` check at the first fixpoint passes at the second. Reproduced
+// with a ONE-CHARACTER edit to a shipped fixture — take
+// `lowering_predmux_leave_speccall_loop.ll` and make its data-dependent loop
+// bound (`icmp slt i32 %i2, %a`) a constant (`, 4`): `opt` flips exit 1 -> 0, the
+// `gate=E4-dataflow` leave line is STILL printed by the first fixpoint, and
+// `__cq_q_purefn` is then minted by the second. A module-lifetime memo would
+// serve the stale FALSE and silently kill the composition. This is not a
+// contrived overlap: the unroller's tainted-callee cone seeds on the SAME
+// "direct call, visible callee, >=1 tainted argument" predicate the E4 site
+// requires, so every callee this proof can be asked about is in the unroller's
+// cone by construction. `promoteFp80Union`'s own fixpoint is a second
+// FALSE -> TRUE generator by design (Fp80Union.cpp: the proof only passes after
+// the callee's unions promote out of `alloca` form).
+//
+// A per-QUERY memo needs no staleness argument at all: `Impl` takes a
+// `const Function *` and mutates nothing, so within one query the module is
+// provably fixed. It removes THIS PROOF'S share of the blowup, because the
+// exponential is STRICTLY INTRA-QUERY — `OnStack` is erased on exit (it is a
+// cycle breaker, never a visited set), so two sibling calls to the same callee
+// re-walk the shared subtree in full and the invocation count is the number of
+// distinct PATHS through the call DAG. Cross-query cost stays a linear
+// multiplier in the number of queries, and that multiplier IS the soundness
+// price of re-deriving against a mutated module — do not "optimise" it away.
+//
+// *** IT DOES NOT DISCHARGE THE DoS, AND MUST NOT BE QUOTED AS DOING SO. *** A
+// Rule-13 round measured a SECOND, independent exponential on the same doubling
+// call graph: with the region deleted entirely, so this proof is never queried
+// and `CQ_PREDMUX_COUNT` prints nothing at all, D=20 still costs ~4.3 s on both
+// the pre-change and post-change plugins, still roughly doubling per unit depth.
+// It is off-file — the round's profile points at `SpecializeReject.cpp`'s
+// `scanBody`, which self-recurses with a fresh per-candidate `OnStack` popped on
+// exit, i.e. exactly the shape fixed here. Filed separately.
+//
+// Counters live HERE and never in a `static`: a static would accumulate across
+// queries and across modules in one `opt` process, making the pinned number a
+// function of query count and module order — exactly the flakiness bd xzdx's
+// call-count precedent forbids.
+struct PureCalleeQuery {
+  SmallPtrSet<const Function *, 8> OnStack;
+  DenseMap<const Function *, bool> Memo;
+  unsigned Invocations = 0;   // entries past the F-local guard
+  unsigned BodiesWalked = 0;  // entries that actually walked a body
+  unsigned MemoHits = 0;      // COUNTED, not inferred as Invocations-Bodies:
+                              // that difference also absorbs guard rejects and
+                              // cycle returns, which made `hits` a mislabel.
+};
+
+bool isSpeculatablePureCalleeBodyWalk(const Function *F, PureCalleeQuery &Q);
+
+bool isSpeculatablePureCalleeBodyImpl(const Function *F, PureCalleeQuery &Q) {
   // hasExactDefinition: a body this proof reads must be the body that LINKS —
   // an INTERPOSABLE definition (weak_any/linkonce_any/common/extern_weak) may be
   // replaced by the linker, so a purity/termination proof over the module-local
@@ -886,11 +1057,39 @@ bool isSpeculatablePureCalleeBodyImpl(
   // over-decline (Prime Directive) with zero corpus cost (openlibm has no weak
   // symbols); admitting the ODR variants would be a deliberate `!isInterposable()`
   // widening, a separate ticket. Declarations fail here too.
+  //
+  // F-local and cheap; deliberately NOT memoised. It is also counted BEFORE
+  // `Invocations` is bumped, so that `Invocations - BodiesWalked` really is the
+  // memo-hit count: counting guard rejects and cycle returns as "hits" made the
+  // number a mislabel (a module with one `declare`d callee and no memo activity
+  // at all reported `hits=1`), found by the bd u1rp Rule-13 round.
   if (!F || !F->hasExactDefinition() || F->isVarArg())
     return false;
-  if (!OnStack.insert(F).second)
-    return false;  // call-graph cycle: termination unprovable
-  auto pop = llvm::make_scope_exit([&] { OnStack.erase(F); });
+  ++Q.Invocations;
+  // The memo lookup sits BEFORE the OnStack insert on purpose. An in-flight `F`
+  // has no entry yet, so a genuine re-entry still falls through to the cycle
+  // test below; and the `OnStack` early-return is NOT memoised, which keeps the
+  // fix independent of whether a cycle-induced FALSE is permanent. (It is —
+  // an OnStack hit always witnesses a real call-graph cycle, and every node on
+  // the path to it inherits a permanently-false verdict — but nobody should have
+  // to re-derive that to trust the memo.)
+  auto It = Q.Memo.find(F);
+  if (It != Q.Memo.end()) {
+    ++Q.MemoHits;
+    return It->second;
+  }
+  if (!Q.OnStack.insert(F).second)
+    return false;  // call-graph cycle: termination unprovable. NOT memoised.
+  auto pop = llvm::make_scope_exit([&] { Q.OnStack.erase(F); });
+  ++Q.BodiesWalked;
+  bool R = isSpeculatablePureCalleeBodyWalk(F, Q);
+  Q.Memo[F] = R;  // only a COMPLETED walk is recorded.
+  return R;
+}
+
+// The body walk proper. Split out of `isSpeculatablePureCalleeBodyImpl` so the
+// memo records exactly one thing: the verdict of a full walk.
+bool isSpeculatablePureCalleeBodyWalk(const Function *F, PureCalleeQuery &Q) {
   for (scc_iterator<const Function *> It = scc_begin(F); !It.isAtEnd(); ++It)
     if (It->size() > 1 || It.hasCycle())
       return false;  // a CFG cycle: termination unprovable
@@ -904,7 +1103,7 @@ bool isSpeculatablePureCalleeBodyImpl(
       if (const auto *CI2 = dyn_cast<CallInst>(&I)) {
         if (isCuratedReversibleIntrinsic(CI2) && CI2->doesNotAccessMemory())
           continue;
-        if (isSpeculatablePureCalleeBodyImpl(CI2->getCalledFunction(), OnStack))
+        if (isSpeculatablePureCalleeBodyImpl(CI2->getCalledFunction(), Q))
           continue;
         if (::getenv("CQ_PREDMUX_DBG"))
           llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
@@ -928,8 +1127,30 @@ bool isSpeculatablePureCalleeBodyImpl(
 }
 
 bool isSpeculatablePureCalleeBody(const Function *F) {
-  SmallPtrSet<const Function *, 8> OnStack;
-  return isSpeculatablePureCalleeBodyImpl(F, OnStack);
+  PureCalleeQuery Q;
+  bool R = isSpeculatablePureCalleeBodyImpl(F, Q);
+  // bd 3c6m.14.4 — the COST PIN, asserted as a CALL COUNT and never a wall time
+  // so the fixture cannot go flaky (the bd xzdx precedent). On a chain-doubling
+  // call graph of depth D — every `f_i` calling `f_{i+1}` TWICE — the closed
+  // forms are:
+  //     no memo    : invocations = bodies = 2^(D+1) - 1
+  //     per-query  : invocations = 2D + 1,  bodies = D + 1,  hits = D
+  // `hits` is COUNTED at the memo lookup, not inferred as
+  // `invocations - bodies`: that difference also absorbs cycle returns, and
+  // before `Invocations` moved below the F-local guard it absorbed guard
+  // rejects too, so a module with one `declare`d callee and NO memo activity
+  // reported `hits=1`. On the doubling graph the divergence between
+  // `invocations` and `bodies` does witness that the memo is live — but that is
+  // a property of THAT graph, not a general rule; read `hits` instead.
+  // Its own env var, so the ten fixtures that FileCheck the CQ_PREDMUX_DBG
+  // stream do not drift.
+  if (::getenv("CQ_PREDMUX_COUNT"))
+    llvm::errs() << "CQ_PREDMUX_COUNT: pure-callee root="
+                 << (F ? F->getName() : "<null>") << " verdict=" << R
+                 << " invocations=" << Q.Invocations
+                 << " bodies=" << Q.BodiesWalked << " hits=" << Q.MemoHits
+                 << "\n";
+  return R;
 }
 
 // ---------------------------------------------------------------------------
@@ -1949,69 +2170,121 @@ private:
     return L;
   }
 
-  // bd adia (Lever C): strip poison-generating flags AND metadata over the
-  // full backward cone of a select-form's SHIELDED operand. The rewrite below
-  // turns `select(a,b,false)` into `and(a,b)`: in the ORIGINAL program `b` is
-  // never observed when `a` is false (the clang short-circuit shield), so a
-  // poison `b` on an a=false basis state was harmless there but would poison
-  // the rewritten `and`. The claim-time proof `coneDefinedAfterFlagDrop`
-  // already restricted the cone to ops that are TOTAL once flags are gone
-  // (inherent-poison ops — variable-amount shifts, fp->int casts — never
-  // reach here); this strip performs the drop, so the cone is then defined
-  // on every basis state. Flag/metadata-stripping only widens definedness,
-  // so every other user of a cone value is unaffected.
+  // bd adia (Lever C): drop the poison-generating annotations over the backward
+  // cone of a select-form's SHIELDED operand. The rewrite below turns
+  // `select(a,b,false)` into `and(a,b)`: in the ORIGINAL program `b` is never
+  // observed when `a` is false (the clang short-circuit shield), so a poison `b`
+  // on an a=false basis state was harmless there but would poison the rewritten
+  // `and`. The claim-time proof `coneDefinedAfterFlagDrop` already restricted
+  // the cone to ops that are TOTAL once the annotations are gone; this performs
+  // the drop, so the cone is then defined on every basis state.
+  //
+  // bd u1rp — WHAT CHANGED, AND WHY BOTH HALVES HAD TO CHANGE TOGETHER.
+  //
+  // HALF 1, THE WALK. This used to be an independent walk over `I->operands()`
+  // with no leaf cases at all, so it EXCEEDED the proof's walk: it recursed past
+  // the `cq_theta`/`cq_phi` leaf — where the proof stops WITHOUT operand
+  // recursion — into the classical seed subtree and mutated instructions the
+  // whitelist refuses and the proof never visited. MEASURED on the pre-change
+  // plugin: `%seed = add nsw nuw i32 %u, 1` feeding `cq_theta_si32` came out
+  // `%seed = add i32 %u, 1`. It now walks `classifyConeNode` — the SAME
+  // classification the proof reads — and mutates exactly the `Interior` set:
+  // the nodes whose admission was conditional on this drop. `Leaf` nodes are
+  // defined WITHOUT a drop, so skipping them loses nothing; `PassThrough`
+  // (`cq_phi`) is FOLLOWED to operand 0, which is where its value actually comes
+  // from; `Fail` cannot occur on a claimed cone, and mutating it would not
+  // rescue an inherent-poison op anyway (there is no flag to drop on a
+  // variable-amount shift).
+  //
+  // *** THE FIRST DRAFT OF THIS NARROWING GOT THAT WRONG AND A RULE-13 ROUND
+  // MEASURED IT. *** It treated `cq_phi` as a `Leaf` too, on the strength of the
+  // same "defined without a drop" sentence — but `cq_phi`'s value IS operand 0,
+  // so the sentence is false there. Measured regression on that draft:
+  // `%bad = add nsw nuw i32 %c, %d` one `cq_phi` hop below the shielded compare
+  // came out flag-STRIPPED on the pre-change plugin and flag-BEARING on the
+  // draft. `PassThrough` is what makes the sentence true again, by making
+  // `cq_phi` not a leaf in the first place. Do not re-flatten it back to `Leaf`.
+  //
+  // HALF 2, THE DROP. This used to call only `dropPoisonGeneratingFlags()` +
+  // `dropPoisonGeneratingMetadata()` — TWO of LLVM 19's THREE families named by
+  // `hasPoisonGeneratingAnnotations()`; the third is CALL RETURN ATTRIBUTES
+  // (`range`/`nonnull`/`align`). That gap is REACHABLE and it breaks the claim's
+  // literal promise: a CLASSICAL curated intrinsic in a MIXED compare leaf
+  // (`icmp sgt i32 %q_tainted, %r_classical`) is neither replaced by a
+  // `cq_template_*` nor declined downstream — it survives verbatim into the
+  // emitted module, attribute and all. MEASURED on real C: `clang -O1` on
+  // `q > 3 && q > __builtin_popcount(c)` with a two-merge-phi arm emits
+  // `tail call range(i32 0, 33) i32 @llvm.ctpop.i32` inside a genuine shielded
+  // diamond, and the pre-change plugin keeps the `range` while this one drops
+  // it. A lying `range` makes the call return POISON, which is precisely what
+  // the proof promised the drop would remove, so the wider drop is a soundness
+  // obligation and not tidiness — though note that every `range` clang actually
+  // emits is a TRUE range, so in practice this is defence in depth.
+  //
+  // A CITATION THAT DOES NOT HOLD, recorded so it is not restored: an earlier
+  // draft cited openlibm `sqrt`'s
+  // `tail call range(i32 12, 33) i32 @llvm.ctlz.i32(%x, i1 true)` as the
+  // real-code witness. That cone never reaches the strip — the `i1 true` immarg
+  // makes `curatedIntrinsicCanBePoison` refuse it at CLAIM time, so the region
+  // is never claimed. It is the only `call range(...)` shape in 251 openlibm
+  // TUs, and it is fenced by a different mechanism.
+  //
+  // The two halves ship together because widening the DROP over the OLD walk
+  // would have extended a known over-reach — that is why the earlier attempt at
+  // half 2 alone was reverted, and the revert was right. Narrow first, then
+  // widen; the order is the whole point.
+  //
+  // *** THE DROP IS NOT INVISIBLE TO THE REST OF THE PASS. *** The comment that
+  // used to stand here said "flag/metadata-stripping only widens definedness, so
+  // every other user of a cone value is unaffected". That is FALSE and a lens
+  // falsified it with a run. `qromIndexKnownInBounds` (QramLowering.cpp) reaches
+  // `computeKnownBits`, which CONSULTS `nuw` — so deleting it can turn a
+  // claimed+flattened QROM read into `leave("W-witness")` and a loud decline.
+  // That reader runs at `declineTaintEscapes` (CQLoweringPass.cpp ~228), AFTER
+  // both PredMux fixpoints (~178, ~202), so the ordering does not protect it.
+  // The direction is SAFE (accept -> loud decline, never a miscompile) and it is
+  // PRE-EXISTING; narrowing the walk strictly REDUCES the mutated set and so can
+  // only reduce it, but does NOT close it — an in-cone index is still stripped,
+  // and `moveBody` below drops the same flags over every arm instruction of
+  // every claimed region unconditionally, which is a far larger surface. Filed
+  // separately; do not re-derive the false claim.
+  //
+  // bd 94on(a) IS CLOSED BY CONSTRUCTION HERE, and this is a measurement, not an
+  // inference. `dropPoisonGeneratingReturnAttributes()` writes CALL-SITE attrs
+  // only, while `CallBase::getRetAttr` falls back to the callee DECLARATION
+  // (InstrTypes.h:1680) — so a lying declaration-level `range` would be neither
+  // seen nor dropped. It cannot arise: `classifyConeNode`'s call clause admits
+  // only `isCuratedReversibleIntrinsic`, which requires a real `IntrinsicInst`,
+  // and LLVM 19 NORMALISES intrinsic declarations at parse time. Verified with
+  // stock `opt -passes=verify` and NO plugin, over all eight curated stems:
+  // `declare range(i32 0, 33) i32 @llvm.ctpop.i32(i32)` reads back as
+  // `declare i32 @llvm.ctpop.i32(i32) #0`. Real `clang -O1` likewise puts
+  // `range` on the CALL SITE and nothing on the declaration. A declaration-level
+  // guard here would therefore be dead code with no reaching fixture, and
+  // Rule 12 forbids shipping an accept-predicate without one.
   void stripPoisonCone(Value *V) {
-    SmallPtrSet<Instruction *, 16> Seen;
-    SmallVector<Instruction *, 16> WL;
-    if (auto *I = dyn_cast<Instruction>(V)) {
-      Seen.insert(I);
-      WL.push_back(I);
-    }
+    SmallPtrSet<const Value *, 16> Seen;
+    SmallVector<Value *, 16> WL;
+    WL.push_back(V);
     while (!WL.empty()) {
-      Instruction *I = WL.pop_back_val();
-      // bd 3c6m.14.2 — this drops TWO of LLVM 19's THREE poison-generating
-      // annotation families. `Instruction::hasPoisonGeneratingAnnotations()`
-      // names three — flags, metadata, and CALL RETURN ATTRIBUTES
-      // (`range`/`nonnull`/`align`) — so the claim's promise ("defined AFTER the
-      // drop") is not literally kept for the third. Switching to
-      // `dropPoisonGeneratingAnnotations()` was TRIED and REVERTED. The reason
-      // is stated carefully, because the Rule-13 round FALSIFIED the first
-      // draft of this note and the wrong version read more confidently than the
-      // right one:
-      //
-      //  * WRONG (do not restore it): "no admitted call can carry a return
-      //    attribute into emission — a tainted curated intrinsic is replaced by
-      //    its `cq_template_*`, and a classical one declines downstream." The
-      //    first half holds. THE SECOND HALF IS FALSE, on real C as well as on
-      //    hand-written IR: a CLASSICAL curated call in a MIXED compare leaf
-      //    (`icmp sgt i32 %q_tainted, %r_classical`) is neither replaced nor
-      //    declined — it survives verbatim into the emitted module, attribute
-      //    and all. MEASURED: a `call range(i32 8, 9) i32 @llvm.ctpop.i32(...)`
-      //    comes out the far side still carrying `range(i32 8, 9)`.
-      //  * RIGHT, and it is why the revert still stands: (i) the surviving
-      //    value lands ONLY in an `_hl` template's LITERAL slot, never in a rail
-      //    HANDLE slot — which is the categorical difference from the round-one
-      //    `ctlz` finding, where poison became the handle a gate fired on — and
-      //    the forward call and its `_unc` twin read the SAME literal, so the
-      //    adjoint stays paired; no `and i1` survives at all (the predicate
-      //    becomes `cqrt_toffoli` over per-leaf rails, which reconstructs the
-      //    shield physically), and stage 3 is deliberately -O0 (bd szpr pin), so
-      //    nothing downstream can refine the two uses differently. (ii) THIS
-      //    WALK PROVABLY EXCEEDS THE PROOF'S WALK: it recurses past the
-      //    `cq_theta`/`cq_phi` leaf — where `coneDefinedAfterFlagDrop`
-      //    `continue`s WITHOUT operand recursion — into the classical seed
-      //    subtree, and strips `nsw`/`nuw` off instructions the whitelist
-      //    refuses and the proof never visited. Widening the DROP without first
-      //    narrowing the WALK makes that over-reach worse.
-      // The accept itself is PRE-EXISTING and BASE-identical (byte-for-byte), so
-      // nothing here is a regression of this change. Both halves are filed
-      // together; FIX THE WALK FIRST, then revisit the third family.
-      I->dropPoisonGeneratingFlags();
-      I->dropPoisonGeneratingMetadata();
+      Value *N = WL.pop_back_val();
+      if (!Seen.insert(N).second)
+        continue;
+      ConeNode C = classifyConeNode(N);
+      if (C == ConeNode::PassThrough) {
+        // A `cq_phi` node: its value is operand 0, so keep walking there. The
+        // call itself carries no annotation whose removal could make operand 0
+        // more defined, so it is not mutated.
+        WL.push_back(cast<Instruction>(N)->getOperand(0));
+        continue;
+      }
+      if (C != ConeNode::Interior)
+        continue;  // Leaf: defined without a drop. Fail: unreachable on a
+                   // claimed cone, and no drop would help it.
+      auto *I = cast<Instruction>(N);
+      I->dropPoisonGeneratingAnnotations();
       for (Value *Op : I->operands())
-        if (auto *OI = dyn_cast<Instruction>(Op))
-          if (Seen.insert(OI).second)
-            WL.push_back(OI);
+        WL.push_back(Op);
     }
   }
 
