@@ -63,6 +63,8 @@
 
 #include "Fp80Union.h"
 
+#include "LiteralIntegrity.h"  // removeUnreachableBlocksChecked (bd 7udx)
+
 #include "IntrinsicLowering.h"  // isCuratedReversibleIntrinsic
 #include "OpcodeSupport.h"      // abiWidthFromType
 #include "PredMuxFlatten.h"     // isSpeculatablePureCallee (adia seed widening)
@@ -1196,8 +1198,31 @@ bool foldConstantConeAndBranches(Function &F, const DataLayout &DL) {
       if (ConstantFoldTerminator(&BB, /*DeleteDeadConditionalBranches=*/true))
         Changed = Any = true;
   }
-  if (Any)
-    removeUnreachableBlocks(F);  // reap the now-unreachable classical dead arm.
+  if (Any) {
+    // bd 7udx — `removeUnreachableBlocks` reaps blocks with
+    // `BasicBlock::eraseFromParent()`, whose destructor RAUWs every
+    // `BlockAddress` of a destroyed block to `inttoptr (i32 1 to ptr)`
+    // MODULE-WIDE. That silently rewrites a compared-against address (and any
+    // classical `store ptr blockaddress ...` anywhere in the module) to 1, on a
+    // WELL-DEFINED source with no UB and no refinement argument to excuse it.
+    // MEASURED corrupting here (census row `Fp80Union removeUnreachableBlocks`,
+    // `lowering_fp80_union_multiblock.ll` + a holder: `%sub` and `%norm` corrupt).
+    // Reached from `promoteFp80Union` AND from `foldConstantConesInFunction`,
+    // which PredMux calls after every flatten — so this is not an fp80-only path.
+    // The overload names LLVM's own deletion set (unreachable-from-entry), so a
+    // SURVIVING address-taken block still lowers.
+    // Anchor the `!dbg` on the entry's first instruction (a better source
+    // location than a terminator), but never dereference `begin()` on an empty
+    // block — pass null and let the overload fall back to the offending block.
+    BasicBlock &EB = F.getEntryBlock();
+    Instruction *Anchor = EB.empty() ? nullptr : &*EB.begin();
+    // Drop-in for `removeUnreachableBlocks(F)` that also holds the bd 7udx
+    // invariant. It OBSERVES which blocks the utility actually deleted rather than
+    // predicting them — `markAliveBlocks` mutates first, so any prediction is a
+    // strict under-estimate (see LiteralIntegrity.h). Return value is unused here
+    // for the same reason the bare call's was: `Any` already records the change.
+    removeUnreachableBlocksChecked(F, Anchor);
+  }
   return Any;
 }
 

@@ -57,6 +57,7 @@
 
 #include "Fp80Union.h"      // foldConstantConesInFunction (adia fold residue)
 #include "IntrinsicLowering.h"
+#include "LiteralIntegrity.h"  // valueCarriesUndef (lifted); declineAddressTakenBlocks
 #include "OpcodeSupport.h"  // abiWidthFromType, binaryStem, castInScope, i80BinaryInScope
 #include "QramLowering.h"
 #include "TaintPropagation.h"
@@ -150,54 +151,23 @@ bool isSupportedCompareLeaf(const CmpInst *Cmp) {
 }
 
 // bd 3c6m.14.2 — a literal `undef`/`poison` is NOT a defined leaf, however
-// deeply it is buried in a constant aggregate/expression. `PoisonValue` derives
-// from `UndefValue`, so the `isa` catches both spellings. The walk carries a
-// visited set rather than a depth budget on purpose: a budget inside a yes/no
-// predicate makes the ANSWER depend on the cut-off (bd memory
-// [[budget-in-a-memo-and-probes-with-no-power-2026-08-08]]), and constants form
-// a finite DAG that a visited set terminates on structurally.
+// deeply it is buried in a constant aggregate/expression.
 //
-// KNOWN INCOMPLETENESS, deliberately not closed here and filed instead: this
-// tests for a CONTAINED `UndefValue`, so a constant expression that GENERATES
-// poison without containing one — e.g. an out-of-bounds
-// `ptrtoint (ptr getelementptr inbounds (...) to i64)` — still reads as a
-// defined leaf. Measured PRE-EXISTING and BASE-identical, and a Constant is
-// state-INDEPENDENT, so the flatten adds no observation the shielded select had
-// not already made. (The Rule-13 round's headline evidence for it — a trace that
-// differs between two runs of the same binary — was refuted: that is ASLR of a
-// relocated global address, reproducible with a provably-DEFINED
-// `ptrtoint (ptr @g to i64)` and with PredMux absent from the module entirely.)
-bool constantCarriesUndef(const Constant *C,
-                          SmallPtrSetImpl<const Constant *> &Seen) {
-  if (isa<UndefValue>(C))
-    return true;
-  // KNOWN OVER-DECLINE, DELIBERATELY LEFT: a `GlobalValue`'s operands are its
-  // INITIALIZER, and the value being tested is the global's ADDRESS, which is
-  // defined no matter what it is initialised to. So
-  // `@u = global {i32 1, [4 x i8] undef}` reached through a `ptrtoint` reads as
-  // an undef leaf and the cone declines. An `isa<GlobalValue>` early return
-  // fixes it in two lines and was written — then REVERTED, because measurement
-  // showed it is an accept WIDENING relative to the shipped plugin (which
-  // declines that shape today for exactly this reason), and a widening does not
-  // belong in a commit whose whole purpose is tightening. Direction is safe,
-  // measured population is zero across 963 fixtures + 257 slices + 251 openlibm
-  // modules. Filed as its own ticket with its own red-green pair.
-  if (!Seen.insert(C).second)
-    return false;
-  for (const Value *Op : C->operands())
-    if (const auto *CO = dyn_cast<Constant>(Op))
-      if (constantCarriesUndef(CO, Seen))
-        return true;
-  return false;
-}
-
-bool valueCarriesUndef(const Value *V) {
-  const auto *C = dyn_cast<Constant>(V);
-  if (!C)
-    return false;
-  SmallPtrSet<const Constant *, 8> Seen;
-  return constantCarriesUndef(C, Seen);
-}
+// *** `constantCarriesUndef` / `valueCarriesUndef` NOW LIVE IN
+// `LiteralIntegrity.{h,cpp}` (bd xy9n). They were LIFTED verbatim out of this
+// anonymous namespace, not reimplemented, so the cone proof here and the
+// module-wide emitted-operand guard there cannot drift apart (Rule 14). The
+// arguments that used to be written here are RESTATED there, not copied
+// verbatim — the visited-set-rather-than-depth-budget rationale and the
+// deliberate `GlobalValue` over-decline both moved; the ASLR refutation that
+// used to sit in this block did NOT, and the `canCreateUndefOrPoison` measurement
+// quoted there is NEW text (it was never in this file — it came from the bu96
+// decline-to-fix). Read that header before touching either caller. ***
+//
+// The two callers in this file are unchanged (`classifyConeNode`'s leaf test at
+// the compare-operand walk, and the rotation-argument scan), and the corpus
+// verdict diff over 966 fixtures + 257 slices + 251 openlibm modules is
+// byte-neutral for every pre-existing PredMux fixture.
 
 // bd 3c6m.14.2 — the three curated intrinsics that can return POISON, and the
 // reason they cannot be handled the way every other poison source here is.
@@ -2687,6 +2657,25 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
       PredMuxRegion R;
       if (!recoverRegion(T, PDT, DT, LInfo, OnCycle, Taint, R, ClaimAll))
         continue;  // leave: today's loud declines own it
+      // bd 7udx — at CLAIM, before `RegionFlattener::run()` erases
+      // `R.Topo \ {R.Entry}`. `BasicBlock::~BasicBlock()` replaces every
+      // `BlockAddress` of a destroyed block with `inttoptr (i32 1 to ptr)`,
+      // module-wide, silently rewriting a compared-against address to `i32 1` on
+      // a WELL-DEFINED source (no UB, no refinement argument). Checked HERE and
+      // not inside `run()` on purpose: `flattenPredMuxRegions` returns `true`
+      // unconditionally after `run()`, so an early bail inside `run()` would spin
+      // the caller's `while (flattenPredMuxRegions(...))` fixpoint on a host that
+      // installs its own diagnostic handler instead of `opt`'s exiting one.
+      // `R.Entry` survives the teardown and `R.Merge` is the branch target, so
+      // neither is doomed — the doomed set is exactly the erase loop's.
+      {
+        SmallVector<BasicBlock *, 8> Doomed;
+        for (BasicBlock *D : R.Topo)
+          if (D != R.Entry)
+            Doomed.push_back(D);
+        if (declineAddressTakenBlocks(Doomed, T))
+          continue;
+      }
       IRBuilder<> Builder(T);
       Builder.SetCurrentDebugLocation(T->getDebugLoc());
       RegionFlattener(R, Builder).run();

@@ -10,6 +10,7 @@
 #include "ControlPlan.h"
 #include "Fp80Union.h"
 #include "IOSinkLowering.h"
+#include "LiteralIntegrity.h"
 #include "LoopPlan.h"
 #include "LoopUnrollPrepass.h"
 #include "MeasureLowering.h"
@@ -367,6 +368,31 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // Phase 5 (PRD §2.8): per-op uncomputation runs LAST, after every other
   // mutation has settled `taint` into its final post-lowering state.
   uncompute(M, wd, taint);
+  // bd xy9n — the literal-integrity guard, AFTER `uncompute` and so after the
+  // last emitting stage: an `undef`/`poison` literal reaching TWO emitted gate
+  // operands is read as two DIFFERENT values at the shipped `-O0` stage 3
+  // (`IMPLICIT_DEF` materialises per use), so a forward gate and its adjoint
+  // compute inverses of different functions — dirty entangled rail, and the
+  // `cqrt_free` that follows is a hidden measurement (Rules 6, 8). This is the
+  // ONLY position that provably sees every emitted call, forward AND adjoint,
+  // and it is complete there for a PLACEMENT reason, not a provenance one: nothing
+  // after this point emits a call or mints a constant, so whatever sits in an emitted
+  // slot here is exactly what stage 3 reads. (Do NOT re-derive it from "the pass never
+  // synthesizes an undef/poison" — LiteralIntegrity.h explicitly DISOWNS that claim,
+  // and an earlier version of this very comment cited the header for it.)
+  // the mutation costs nothing observable — a `DS_Error` exits `opt` with zero
+  // stdout bytes (measured).
+  // The bool IS consumed — the Rule-13 round caught this discarded at first, which
+  // made the guard's correctness rest entirely on `diagnose` calling `exit(1)`,
+  // the exact dependency LiteralIntegrity.h says it was written to avoid. On a
+  // host that swallows `DS_Error` the pass now at least stops here instead of
+  // running on and reporting success. It still hands back a MUTATED module on such
+  // a host — that is a pass-wide property of every post-mutation decline
+  // (`Uncomputation`'s `kMsgLineageMeasured` / `kMsgUninvertible` are the
+  // precedent, not an exception this guard invents), and it is filed as its own
+  // follow-up rather than papered over here.
+  if (declineUnpairedUndefLiterals(M))
+    return PreservedAnalyses::none();
   eraseDeadDecls(M, wd);
 
   return PreservedAnalyses::none();
@@ -545,6 +571,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Phase 5 (PRD §2.8): uncomputation runs LAST in this entry point too — miss
   // one and unit-level callers diverge from `run()`.
   uncompute(M, wd, taint);
+  // bd xy9n — mirrored from `run()` (twin-pipeline parity, WI-1.12): miss it and
+  // a unit-level caller silently keeps the pairing break. See run() for why this
+  // position is the complete one, and for why the bool is consumed.
+  if (declineUnpairedUndefLiterals(M))
+    return true;
   eraseDeadDecls(M, wd);
   return true;
 }

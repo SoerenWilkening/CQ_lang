@@ -28,6 +28,7 @@
 #include "CompareLowering.h"    // lowerCompareToFlag (flag mint)
 #include "ControlPlan.h"        // ControlRegion / diagnoseUnderControl
 #include "ControlledSymbols.h"  // xFn (the ¬flag bracket for the tape record)
+#include "LiteralIntegrity.h"   // declineAddressTakenBlocks (bd 7udx)
 #include "OpcodeSupport.h"      // abiWidthFromType / widthHasReversibleCopy
 #include "SwapRouteEmit.h"      // emitRoute (the self-bracketed park cswap, Rule 14)
 #include "TaintPropagation.h"   // TaintSet
@@ -424,6 +425,14 @@ void emitAbortParkRegion(const ControlRegion &R, WidthDispatch &wd,
   // The sink arm has a single predecessor (the now-rewired Pred) and never
   // branched to the sibling, so it is unreachable and references nothing live —
   // erase it whole (the `unreachable` + the dead sink call go with it).
+  //
+  // bd 7udx — nothing else in this function erases a BasicBlock, so the guard
+  // sits immediately before the only one. `BasicBlock::~BasicBlock()` replaces
+  // every `BlockAddress` of a destroyed block with `inttoptr (i32 1 to ptr)`
+  // MODULE-WIDE, silently rewriting a compared-against address to `i32 1` on a
+  // WELL-DEFINED source (no UB, no refinement argument to excuse it).
+  if (declineAddressTakenBlocks({R.Arm}, R.Arm->getTerminator()))
+    return;
   R.Arm->eraseFromParent();
 }
 

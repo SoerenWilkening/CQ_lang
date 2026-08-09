@@ -17,6 +17,7 @@
 #include "ArmAnalysis.h"      // comparePredLowerable
 #include "CompareLowering.h"  // lowerCompareToFlag (flag mint)
 #include "ControlPlan.h"      // ControlRegion / diagnoseUnderControl
+#include "LiteralIntegrity.h" // declineAddressTakenBlocks (bd 7udx)
 #include "OpcodeSupport.h"    // abiWidthFromType / widthHasReversibleCopy
 #include "QramLowering.h"     // guardedShadowStoreShape (the shared shape predicate)
 #include "TaintPropagation.h" // TaintSet
@@ -230,6 +231,19 @@ void emitGuardedStoreArmRegion(const ControlRegion &R, WidthDispatch &wd,
     return bailLoud(R);
   BasicBlock *ArmBB = R.Arm, *Merge = R.MergeBB;
 
+  // bd 7udx — FIRST, before ANY mutation, not merely before the block erase.
+  // `hasAddressTaken()` is position-independent, so the check is free to sit here,
+  // and it MUST: step 3 below hoists the whole arm body — INCLUDING THE STORE —
+  // unconditionally into `Pred` and erases the conditional branch. A decline
+  // after that point would leave a module that performs, on every path, a store
+  // the source performed only under a tainted condition. That is a WRONG module,
+  // not an unlowered one, and it is only masked by `opt`'s diagnostic handler
+  // calling `exit(1)`. `ArmBB` is the only block this function erases (its merge
+  // survives), and it is the only block whose `BlockAddress` the erase would RAUW
+  // to `inttoptr (i32 1 to ptr)`.
+  if (declineAddressTakenBlocks({ArmBB}, BI))
+    return;
+
   // Re-derive the store by identity (the sole side-effect store in the arm) — a
   // pure consumer of the by-identity plan.
   StoreInst *SI = soleSideEffectStore(ArmBB);
@@ -292,6 +306,10 @@ void emitGuardedStoreArmRegion(const ControlRegion &R, WidthDispatch &wd,
   B.CreateBr(Merge);
   scrubTaint(BI, taint);
   BI->eraseFromParent();
+  // The bd 7udx guard for this erase already ran at the TOP of the function —
+  // deliberately, because by this line the arm body has been hoisted and the
+  // branch erased, so a decline here would leave a wrong module rather than an
+  // unlowered one. Do not move it back down to "just before the erase".
   ArmBB->eraseFromParent();  // unreachable (its sole predecessor Pred is rewired).
   if (Cond->use_empty()) {
     scrubTaint(Cond, taint);

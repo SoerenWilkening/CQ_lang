@@ -63,6 +63,7 @@ add_library(CQPass MODULE
   src/FreePoint.cpp
   src/IntrinsicLowering.cpp
   src/IOSinkLowering.cpp
+  src/LiteralIntegrity.cpp
   src/LoopLowering.cpp
   src/LoopUnrollPrepass.cpp
   src/MeasureLowering.cpp

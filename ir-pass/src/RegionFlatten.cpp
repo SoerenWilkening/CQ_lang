@@ -12,6 +12,7 @@
 #include "RegionFlatten.h"
 
 #include "ControlPlan.h"
+#include "LiteralIntegrity.h"  // declineAddressTakenBlocks (bd 7udx)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -53,6 +54,17 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint) {
     return;
   auto *BI = dyn_cast<BranchInst>(Pred->getTerminator());
   auto *Cond = dyn_cast_or_null<Instruction>(R.Condition);
+
+  // 0. bd 7udx — BEFORE the first erase. `BasicBlock::~BasicBlock()` replaces
+  //    every `BlockAddress` of a destroyed block with `inttoptr (i32 1 to ptr)`,
+  //    which folds through a `ptrtoint` to `i32 1` — so erasing an address-taken
+  //    arm/merge silently rewrites the compared-against address to 1, on a
+  //    WELL-DEFINED source with no UB and no refinement argument to excuse it.
+  //    The RAUW is module-wide on the `BlockAddress`, so a bare
+  //    `store ptr blockaddress(@f, %arm)` elsewhere is corrupted by the same
+  //    erase. `Pred` is NOT listed — it survives the flatten.
+  if (declineAddressTakenBlocks({Arm, ArmFalse, Merge}, BI))
+    return;
 
   // 1. Drop the conditional branch — control is now straight-line. This leaves
   //    Pred terminator-less for exactly the next statement (no verify runs in
@@ -123,6 +135,11 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   auto *InnerBI = dyn_cast<BranchInst>(Mid->getTerminator());
   auto *OuterCond = dyn_cast_or_null<Instruction>(Outer.Condition);
   auto *InnerCond = dyn_cast_or_null<Instruction>(Inner.Condition);
+
+  // 0. bd 7udx — BEFORE the first erase; see the twin note in `flattenRegion`
+  //    for the mechanism. All three doomed blocks are checked; `Pred` survives.
+  if (declineAddressTakenBlocks({Mid, InnerArm, Merge}, OuterBI))
+    return;
 
   // 1. Rewire the data: the 3-incoming merge phi collapses to the routed base `q`
   //    (a phase arm preserves q's basis value on every edge). RAUW → q so the
@@ -209,6 +226,15 @@ void flattenSwitchRegion(const ControlRegion &R, TaintSet &taint) {
     if (A.Block)
       Arms.push_back(A.Block);
   auto *SI = dyn_cast<SwitchInst>(Pred->getTerminator());
+
+  // 0. bd 7udx — BEFORE the first erase; see the twin note in `flattenRegion`
+  //    for the mechanism. Every doomed arm plus the merge; `Pred` survives.
+  {
+    SmallVector<BasicBlock *, 8> Doomed(Arms.begin(), Arms.end());
+    Doomed.push_back(Merge);
+    if (declineAddressTakenBlocks(Doomed, SI))
+      return;
+  }
 
   // 1. Drop the `switch` terminator — control is now straight-line. The switch is
   //    a USER of the tainted scrutinee `q` (TaintPropagation put it in

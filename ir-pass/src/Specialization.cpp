@@ -6,6 +6,7 @@
 #include "CompareLowering.h"
 #include "ControlledSymbols.h"
 #include "IntrinsicLowering.h"
+#include "LiteralIntegrity.h"  // findUndefOperandInBody (bd xy9n — the twin dup)
 #include "OpcodeLowering.h"
 #include "OpcodeSupport.h"
 #include "PredMuxFlatten.h"
@@ -645,6 +646,44 @@ Function *synthUncomputeTwin(Function &Clone) {
 // outer wrap's `emitInverseChain` mints the `@<clone>_unc` call, so the symbol
 // resolves to this definition, never a dangling declaration.
 void ensureTwin(Function *Clone) {
+  // bd xy9n — the DUPLICATION fence, and it lives HERE rather than inside
+  // `synthUncomputeTwin` for a measured reason.
+  //
+  // *** AN EARLIER DRAFT PUT IT IN `synthUncomputeTwin` AND THE RULE-13 DELTA ROUND
+  // SHIPPED THE FULL MISCOMPILE PAST IT. *** The short-circuit below returns as soon
+  // as a `<clone>_unc` DEFINITION already exists, so the fence was never reached
+  // when the twin was pre-supplied — and the outer wrap then calls a forward clone
+  // and an adjoint twin whose bodies each carry their OWN copy of the
+  // undef-bearing computation. `opt` exit 0, verify clean, free_pairing_check
+  // 4/4 verified. This is the choke point; the short-circuit is not.
+  //
+  // WHY THE FENCE EXISTS AT ALL: guard 1 (`declineUnpairedUndefLiterals`) counts
+  // literal undef/poison SLOTS on emitted calls, so it is blind to an `undef` sitting
+  // ONE classical instruction ABOVE the slot — `%c = xor i32 undef, 7` feeding
+  // `cq_template_mul_i32_hl(%a, %c)` counts ZERO. Harmless anywhere else, because one
+  // register is read twice with one value; but the twin is a VERBATIM COPY of the
+  // clone body, so the computation is DUPLICATED and each copy reads `undef`
+  // independently. Measured: forward `mul_i32_hl(h0, 73903)`, twin
+  // `mul_i32_hl(h0, 7)`, deterministic across runs — the adjoint inverts a different
+  // multiplier, the rail is dirty AND entangled, and the `cqrt_free` that follows is
+  // a hidden measurement (Rules 6, 8).
+  //
+  // Do NOT instead widen guard 1 to "an argument defined by an instruction with an
+  // undef operand": that over-declines every `clang -O1` dead-edge phi/select,
+  // `slice_libm_real_nexttoward`'s whole family included, for no pairing gain.
+  // Fencing at the DUPLICATION is the exact parallel of bd 7udx's fence at the ERASE.
+  //
+  // Rule-12 mirror, character-for-character: spec_reject_twin_undef_dup.ll (fence
+  // present) and spec_reject_twin_undef_dup_pretwin.ll (the pre-supplied-twin shape
+  // that pins THIS placement rather than the old one).
+  if (const Instruction *Bad = findUndefOperandInBody(*Clone)) {
+    Clone->getContext().diagnose(DiagnosticInfoUnsupported(
+        *Clone,
+        "cq literal integrity: undef/poison operand duplicated into the "
+        "uncompute twin",
+        Bad->getDebugLoc()));
+    return;
+  }
   std::string TName = (Clone->getName() + "_unc").str();
   if (Function *F = Clone->getParent()->getFunction(TName))
     if (!F->isDeclaration())
