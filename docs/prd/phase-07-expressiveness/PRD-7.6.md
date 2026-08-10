@@ -146,14 +146,66 @@ post-freeze). This is what makes append coherent: even a **controlled**
 conditional (`q` if the flag else `|0⟩`). There is never a superposition over "the
 tape has N vs N+1 entries."
 
-This is the **Bennett copy-out** semantically: the source `src` is *preserved*
-(the tape write is CNOT-class, control-preserving — not a destructive sink like
-`cqrt_measure`), so `src`'s own lineage uncomputes normally through the Phase-5
-spine; only the kept output rail is special. **A welcome consequence of the
-explicit symbol:** `cqrt_tape_write_<W>` is *not* a recognized reversible gate the
-uncompute spine re-emits, so the "involution re-emit XORs the rail back to `|0⟩`"
-collapse hazard cannot arise — the spine simply never reverses a tape write (it is
-sink-class, like `cqrt_measure`).
+The source `src` is *preserved as a register* — the tape write is CNOT-class,
+control-preserving, not a destructive sink like `cqrt_measure` — so it does not
+collapse `src` and does not consume it: `src` stays a terminal candidate and its
+DAG is still recovered. **A welcome consequence of the explicit symbol:**
+`cqrt_tape_write_<W>` is *not* a recognized reversible gate the uncompute spine
+re-emits, so the "involution re-emit XORs the rail back to `|0⟩`" collapse hazard
+cannot arise — the spine simply never reverses a tape write (it is sink-class,
+like `cqrt_measure`).
+
+> **NARROWED by owner ruling 2026-08-10 (bd `261j`).** This paragraph used to
+> continue "…so `src`'s own lineage **uncomputes normally** through the Phase-5
+> spine; only the kept output rail is special." **That step is false**, and it is
+> the false step that shipped a hidden measurement into `slice_io`. "Bennett
+> copy-out" is sound only when the *reversal* also restores the copy's
+> destination; here the destination is a **kept** rail the reversal never touches,
+> so the record leaves `src` **entangled** with it.
+>
+> The correct condition is per rail, not per surface. Let `R` be a rail, `W` its
+> forward chain, `cond(W)` the non-`R` SSA operands `W` reads, and `C` a record of
+> `R` on a kept carrier. Freeing `R` is Rule-6-legal iff `R` starts at `|0⟩`,
+> `W(|0⟩_R ⊗ |c⟩) = |g(c)⟩_R ⊗ |c⟩` on the reachable subspace (a basis permutation
+> of `cond(W)` up to a label-diagonal phase), the emitted reversal is `W†`, and
+> every register in `cond(W)` still holds its forward value when `W†` fires
+> (reverse program order already gives the last one). Then `W† C W` returns `R` to
+> `|0⟩` for **arbitrarily many** kept records — which is why a *derived* rail
+> still uncomputes and frees.
+>
+> **Clause (d) is the delicate one.** "Forward value" means the value the register
+> held *when the forward gate ran*, not its value at the end of the forward stream.
+> Reverse program order supplies (d) for free — but only because the reversal
+> adjoints **every** recovered gate, frozen rails included. The freeze therefore
+> suppresses the **`cqrt_free`, never an adjoint**: a frozen rail is still fully
+> reverse-played, and only its free is dropped. The first implementation of this
+> ruling skipped frozen rails' adjoints as well, and the Rule-13 round measured
+> **four** independent hidden measurements from it (a surviving reader's `_unc`
+> recomputing from a rail that a skipped rotation had moved), two of them on the
+> QRAM surface via `cqrt_qram_load_unc`'s index slot. Pinned by
+> `ir-pass/test/lowering_io_tape_{interleaved_rotation,qram_borrowed_index}.ll`.
+>
+> **Decisive corollary:** `cond(W) = ∅` ⇒ `R` is freeable only if `W` is trivial on
+> `|0⟩`. `cqrt_ry_<W>(H, θ)` has an empty condition set (its only other operand is
+> a **classical** angle, Rule 3) and is *not* trivial on `|0⟩` — it is the gate
+> that creates the superposition. So a recorded Ry rail freezes: **no
+> `cqrt_free`**, left allocated (Rule 6's stated fallback, not a decline) — while
+> still being reverse-played like any other rail.
+>
+> Decided in `DagTraversal` step 3b (`preservesBasisUnderRecord` +
+> `recordsIntoKeptCarrier`, backward-closed over the DAG ancestor edges), executed
+> in `Uncomputation::emitDagReversal` via `DataDag::FrozenRails`. Pinned by
+> `ir-pass/test/lowering_io_tape_*.ll` (eleven fixtures: the four shipped tape
+> shapes plus `chained_theta`, `frozen_two_writes`, `controlled_ctrl_slot`,
+> `partial_freeze_order`, `interleaved_rotation`, `qq_both_parents`,
+> `rz_preserving`, `qram_borrowed_index`) and the three
+> `lowering_reject_uncompute_*_taped.ll` mechanism negatives.
+>
+> **Honesty bound:** the observable damage was NIL. The free is local to `src`, so
+> it cannot change the kept tape's reduced density matrix (no-signalling) — the
+> copy had already mixed it. What was wrong is a violated hard invariant carrying a
+> provably false written justification inside a freeze-gating ABI. Do not quote
+> this as "`slice_io` printed the wrong answer."
 
 ### 2.5 Output rails are kept via a **dedicated `OutputRails` set** (owner decision 1), subtracted at **both** spine sites
 "Escaped" is recomputed every uncompute run in **two** independent places —

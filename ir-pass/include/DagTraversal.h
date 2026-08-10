@@ -22,6 +22,7 @@
 #define CQ_IRPASS_DAG_TRAVERSAL_H_
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
@@ -56,6 +57,27 @@ struct DataDag {
   // leading to a terminal we are NOT reversing, or any other unprovable user.
   // The sub-DAG is owned elsewhere — leave it allocated (Rule 6/8). Silent skip.
   bool NotClosed = false;
+
+  // bd 261j(a) — rails that are RECORDED into a kept carrier (an output tape,
+  // never uncomputed and never freed) AND whose forward chain is not a basis
+  // permutation of still-live conditions. Such a rail is ENTANGLED with the
+  // carrier at the free point, so re-emitting its adjoint does NOT return it to
+  // |0⟩ and `cqrt_free` on it would be a hidden projective measurement (Rules
+  // 5/6/8). A frozen rail gets NO FREE — it is LEFT ALLOCATED, the Rule-6
+  // fallback. This is a PER-RAIL subtraction, not a DAG-global bail: every
+  // non-frozen rail in the same DAG still frees.
+  //
+  // A frozen rail IS still fully reverse-played. The freeze suppresses the FREE and
+  // never an adjoint — dropping the adjoint breaks invariant (d) for every
+  // surviving rail that READS the frozen one, which the bd 261j(a) Rule-13 round
+  // measured as four separate hidden measurements. See the long note at the
+  // suppression site in `Uncomputation::emitDagReversal`.
+  //
+  // Consumed ONLY by `Uncomputation::emitDagReversal`, deliberately: `D.Calls`
+  // stays intact so the driver's invertibility / InLoop / dominance scans still
+  // see every recovered gate and still decline loudly. Pruning `Calls` instead
+  // would blind all three (bd 261j(a) risks 1-2, MEASURED rc=1 → rc=0).
+  llvm::SmallPtrSet<llvm::Value *, 4> FrozenRails;
 };
 
 // Recover the whole forward DAG of the registers whose live terminal handles are

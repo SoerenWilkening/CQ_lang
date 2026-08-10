@@ -75,19 +75,48 @@ bool isOutputSink(const CallInst *CI) {
   return Callee && Callee->getName().starts_with("cqrt_tape_write_");
 }
 
+bool recordsIntoKeptCarrier(const CallInst *S, const Value *H) {
+  // Tape-only and SLOT-BLIND — see the header for why both are load-bearing (the
+  // controlled twin records its ctrl at arg 0 and its src at arg 2, and the tape
+  // token is never a DAG rail so a blind scan cannot over-match).
+  if (!isOutputSink(S))
+    return false;
+  for (const Use &A : S->args())
+    if (A.get() == H)
+      return true;
+  return false;
+}
+
 bool isCopyOutSink(const CallInst *G, const Value *H) {
   const Function *Callee = G->getCalledFunction();
   if (!Callee)
     return false;
   StringRef N = Callee->getName();
   // The UNCONTROLLED 2-arg basis copy `cqrt_copy_<W>(src, dst)` reading `H` as its
-  // SOURCE (arg 0). Like a measure / tape-write sink it READS-and-PRESERVES H, so
-  // the spine treats it as a benign terminal user (H's lineage uncomputes normally
-  // — Bennett copy-out, sxuk); the copy DESTINATION (dst) is the kept carrier. The
-  // 3-arg `_controlled` data-mux copy (4.4/6.5) and any `_inv`/`_unc` twin fail.
+  // SOURCE (arg 0). Like a measure / tape-write sink it READS H without consuming
+  // it, so the spine treats it as a benign terminal user; the copy DESTINATION
+  // (dst) is the kept carrier. The 3-arg `_controlled` data-mux copy (4.4/6.5) and
+  // any `_inv`/`_unc` twin fail. NOT a `recordsIntoKeptCarrier` — bd 8gi5 owns
+  // whether this surface needs the 261j freeze (it has no live instance today).
   return N.starts_with("cqrt_copy_") && !N.contains("_controlled") &&
          !N.ends_with("_inv") && !N.ends_with("_unc") && G->arg_size() == 2 &&
          G->getArgOperand(0) == H;
+}
+
+Value *railOf(CallInst *G) {
+  const Function *Callee = G->getCalledFunction();
+  StringRef N = Callee ? Callee->getName() : StringRef();
+  if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_") || N == "cqrt_x") &&
+      G->arg_size() >= 1)
+    return G->getArgOperand(0);
+  // Phase 7.5 Inc 2: a QRAM store mutates its arg-0 ARRAY handle in place (like a
+  // rotation) — that handle is its rail. The `_unc` twin never reaches here (it is
+  // never recovered as a forward gate). See the header's MIS-ATTRIBUTION note: the
+  // `_controlled` form puts its flag at arg 0 and its array at arg 1.
+  if (N.starts_with("cqrt_qram_store_") && !N.ends_with("_unc") &&
+      G->arg_size() >= 1)
+    return G->getArgOperand(0);
+  return G;
 }
 
 bool isTerminalHandle(Value *Handle, const TaintSet &taint) {

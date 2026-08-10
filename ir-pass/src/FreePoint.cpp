@@ -62,13 +62,25 @@ bool isMeasureSink(const CallInst *CI) {
 
 // A `@cqrt_tape_write_<W>` I/O output-tape sink (Phase 7.6; FreePoint's local
 // mirror of ChainWalk::isOutputSink, matching the local isMeasureSink above). A
-// tape write READS-and-PRESERVES its src register — it is NOT a collapsing gate.
-// It is therefore EXEMPT from the post-measure-use reject below (writing a
-// measured, now-classical value to the tape is legitimate, not a gate after
-// measurement). It is NOT excluded from the post-dom Users set, though: it stays
-// an ordinary `cqrt_` use so a DEAD source's free lands AFTER the write — the
-// load-bearing Bennett ordering (excluding it would place the free before the
-// write, a use-after-free for tape-then-dead).
+// tape write READS its src register without collapsing it — it is not a gate. It
+// is therefore EXEMPT from the post-measure-use reject below (writing a measured,
+// now-classical value to the tape is legitimate, not a gate after measurement).
+// It is NOT excluded from the post-dom Users set, though: it stays an ordinary
+// `cqrt_` use so a DEAD source's free lands AFTER the write — the load-bearing
+// ordering (excluding it would place the free before the write, a use-after-free
+// for tape-then-dead).
+//
+// BOTH behaviours SURVIVE the bd 261j(a) record freeze unchanged, and neither is
+// the site of that fix — this was checked, not assumed:
+//   * The exemption is about the post-measure REJECT, not about freeing. Removing
+//     it (the ruling note's "mirror at FreePoint.cpp:198") flips
+//     ir-pass/test/lowering_io_tape_measure_then_tape.ll from ACCEPT to a loud
+//     kMsgPostMeasure — MEASURED; that fixture's header exists solely to pin the
+//     exemption. A measured rail is already `Measured` here and never freed.
+//   * Keeping the write in `Users` is what makes the DERIVED rail's free (which
+//     the freeze deliberately preserves) land after the write.
+// The freeze is decided in DagTraversal step 3b and executed in
+// Uncomputation::emitDagReversal. Do NOT mirror it here.
 bool isOutputSink(const CallInst *CI) {
   const Function *Callee = CI->getCalledFunction();
   return Callee && Callee->getName().starts_with("cqrt_tape_write_");

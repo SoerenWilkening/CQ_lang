@@ -2326,11 +2326,17 @@ add_test(NAME e2e-slice-control-spec-chained-ctl
 # signature-match against libcq_runtime (Rule 2/16; the .ll fixtures assert IR
 # text and never link). A theta-tainted `x` is APPENDED to the output tape twice
 # (printf + putchar -> ONE cqrt_tape_alloc t0, TWO cqrt_tape_write_i32 appends
-# with distinct out-handles h2/h3); x is then dead + UNMEASURED, so the source
-# lineage uncomputes through the Phase-5 spine (ry adjoint + cqrt_free of h1,
-# AFTER the tape captured the value — Bennett copy-out). The kept output rails are
-# never freed/reversed, and ZERO measurement is emitted (Rule 5). `noinline` is
-# load-bearing (uncompute is gated off in `main`, and -O1 would inline `emit`).
+# with distinct out-handles h2/h3); x is then dead + UNMEASURED. The kept output
+# rails are never freed/reversed, and ZERO measurement is emitted (Rule 5).
+# `noinline` is load-bearing (uncompute is gated off in `main`, and -O1 would
+# inline `emit`).
+#
+# The source rail h1 is reverse-played but NEVER FREED (bd 261j(a), owner ruling
+# 2026-08-10). This golden carried a final cqrt_free(h1) until that ruling and it
+# was a hidden measurement of a rail entangled with the kept tape; the ry adjoint
+# above it is unchanged and stays (the freeze suppresses frees, not reversals). See
+# slice_io.c's header for the algebra and the honesty bound — the printed answer
+# was never wrong, a local reset cannot change the tape's reduced state.
 add_test(NAME e2e-slice-io
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -2338,6 +2344,25 @@ add_test(NAME e2e-slice-io
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_io.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_io.expected.log")
+
+# bd 261j(a) — CHAINED THETA on a DERIVED rail. The second live instance the
+# ruling round found, and the one no shipped slice covered: a `cq_theta` applied to
+# an already-derived value puts `cqrt_ry` on a `cq_template_*` producer's rail, not
+# on a root. Before the fix this module emitted TWO defective `cqrt_free`s from six
+# lines of ordinary C (EXIT=0), and stage 2b certified BOTH — via two DIFFERENT
+# proof rules (T1-unc-reversal for the derived rail, A2-reduces-to-identity for its
+# ancestor), which is also the correction to bd 261j(b)'s "A2-only" framing.
+# Both rails are now frozen: the golden carries the full forward AND adjoint stream
+# and simply ends with no cqrt_free.
+# Registered here because e2e is the only layer that LINKS, and because it gives
+# the shape a STRICT stage-2b run (0 free sites, no --allow-unproven).
+add_test(NAME e2e-slice-io-chained-theta
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_io_chained_theta.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_io_chained_theta.expected.log")
 
 # Phase 7.6 Increment 2 (test_C_libtooling-9x4z.2): the CONTROLLED Tier-0
 # conditional output `if(q)printf` / `if(q)putchar`. The only layer that LINKS —
@@ -3323,6 +3348,27 @@ add_test(NAME e2e-slice-libm-real-log10l
 # It is pure Python over embedded fixtures: no clang, no opt, no plugin.
 add_test(NAME e2e-free-pairing-selftest
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/free_pairing_check_test.py")
+
+# bd test_C_libtooling-261j(a) — the record-freeze fixtures' OWN gate, and the same
+# argument as the entry above one level up: a negative nobody has tried to defeat
+# is a negative nobody should trust.
+#
+# The 261j freeze (never `cqrt_free` a rail RECORDED onto a kept output tape) is
+# INVISIBLE to every other gate in this suite: `opt -verify` is clean either way,
+# the golden byte-diff cannot witness "freed at |0>" at any ABI, and
+# free_pairing_check.py CERTIFIED the original defective frees through four
+# different proof paths. The ONLY regression protection is the `NOFREE*` FileCheck
+# negatives in ir-pass/test/lowering_io_tape_*.ll — and a FileCheck CHECK-NOT is
+# bounded by the next positive directive of its own prefix, so those negatives are
+# one careless anchor away from never executing while their fixture still passes.
+# That defect shipped TWICE in this family (the original CHECK-NOT placement, then
+# the repair that moved them into a shared prefix). This entry injects, per guard,
+# the exact `cqrt_free` the pre-261j compiler emitted and requires FileCheck to
+# fail; a guard that survives is reported DEAD. Auto-discovers prefixes, so new
+# fixtures are covered without editing it. Needs the built plugin (it lowers each
+# fixture), so it lives here rather than in ir-pass-lit.
+add_test(NAME e2e-fixture-guard-liveness
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/fixture_guard_liveness.py")
 
 # bd tkju prevention gate (Rule 18): no e2e slice may vendor openlibm's SOFTWARE
 # body for a function the pass curates as a HARDWARE KEEP. Such a body models a

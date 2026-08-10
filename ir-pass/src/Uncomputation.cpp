@@ -119,23 +119,11 @@ bool isQramArrayHandle(const Value *V) {
   return Callee && Callee->getName().starts_with("cqrt_qram_alloc_");
 }
 
-// The RAIL a gate creates — the value the gate's adjoint zeroes, then the driver
-// frees. An in-place rotation (`cqrt_ry/rz`, self-adjoint `cqrt_x`) acts on its
-// arg-0 handle; a template producer's result IS the rail. (PRD §2.11.)
-Value *railOf(CallInst *G) {
-  const Function *Callee = G->getCalledFunction();
-  StringRef N = Callee ? Callee->getName() : StringRef();
-  if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_") || N == "cqrt_x") &&
-      G->arg_size() >= 1)
-    return G->getArgOperand(0);
-  // Phase 7.5 Inc 2: a QRAM store mutates its arg-0 ARRAY handle in place (like a
-  // rotation) — that handle is its rail. The `_unc` twin never reaches here (it is
-  // never recovered as a forward gate).
-  if (N.starts_with("cqrt_qram_store_") && !N.ends_with("_unc") &&
-      G->arg_size() >= 1)
-    return G->getArgOperand(0);
-  return G;
-}
+// `railOf` (the rail a gate creates — the value its adjoint zeroes and the driver
+// then frees) lives in `ChainWalk` (Rule 14). The freeze DECISION (`DagTraversal`
+// step 3b) and this emission driver must agree on which rail a gate owns, so the
+// definition is shared, not duplicated per-TU — the same hoist `LiteralIntegrity`
+// applied to `valueCarriesUndef` "so cone proof and guard cannot drift".
 
 // The single insertion point for the whole-DAG reversal: the nearest common
 // POST-dominator of every terminal's last-use anchor, after the latest anchor in
@@ -175,7 +163,45 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
       continue;  // a shared-prefix gate already adjointed (once-per-gate)
     emitInverseCall(B, G, wd, /*CurHandle=*/nullptr);
     Value *R = railOf(G);
-    if (Earliest.lookup(R) == G && !isQramArrayHandle(R)) {
+    // bd 261j(a) — a FROZEN rail: RECORDED into a kept carrier (an output tape)
+    // AND carrying a gate that is not a basis permutation of live conditions, so
+    // its forward chain does NOT return it to |0⟩ (`DagTraversal` step 3b proves
+    // this). It gets NO `cqrt_free`: it is LEFT ALLOCATED, the Rule-6 fallback for
+    // a rail that is not provably |0⟩. Not a decline — no diagnostic, no new
+    // symbol — and PER-RAIL: every non-frozen rail in the same DAG still frees
+    // (lowering_io_tape_derived_uncompute.ll is the discrimination pin).
+    //
+    // THE FREEZE SUPPRESSES THE FREE, NEVER THE ADJOINT — and that distinction is
+    // the whole soundness argument, learned the hard way. Skipping the frozen
+    // rail's `emitInverseCall` as well (the first implementation of this ruling)
+    // is a SILENT MISCOMPILE, MEASURED four independent ways in the Rule-13 round:
+    // a surviving non-frozen rail's `_unc` READS the frozen rail, and it needs it
+    // at the value it held when the forward producer ran — not at its final
+    // forward value. Those differ exactly when a skipped non-diagonal gate on the
+    // frozen rail sits AFTER the reader's producer, e.g.
+    //     ry(%h,0.5); %op = add(%h,2); ry(%h,0.25); tape(%op)
+    // (six lines of ordinary C — a chained `cq_theta` lowers to an in-place `ry`
+    // on the EXISTING handle). Dropping `ry(%h,-0.25)` leaves `add_unc(%op,%h,2)`
+    // recomputing from a scrambled %h, so %op is NOT zeroed and `cqrt_free(%op)`
+    // becomes a hidden measurement — curing one Rule-6 violation by introducing
+    // another, on a rail that was previously freed SOUNDLY. Same mechanism reached
+    // the QRAM surface through `cqrt_qram_load_unc`'s idx slot.
+    //
+    // Emitting every adjoint keeps the gate stream BYTE-IDENTICAL to the
+    // pre-261j stream, so no ordering, dominance or use-after-free hazard can be
+    // introduced at all: the change is purely the removal of some `cqrt_free`s.
+    // Applying an adjoint to a rail we then leak is harmless — every adjoint is
+    // unitary, and `cqrt_free` is the only measurement-class op in the surface.
+    // On the kept carrier it is not even observable: a local unitary on a leaked
+    // rail cannot change the tape's reduced state.
+    //
+    // The suppression is SUBTRACTIVE and lands HERE, at the last step, rather than
+    // pruning `D.Calls` in recovery: the invertibility pre-scan, the InLoop
+    // backstop and the dominance scan above all iterate `D.Calls`, so a prune
+    // would silently convert their loud declines into rc-0 accepts (risk 1/2;
+    // lowering_reject_uncompute_uninvertible_taped.ll pins that it does not).
+    if (Earliest.lookup(R) == G && !isQramArrayHandle(R) &&
+        !D.FrozenRails.count(R)) {
       // R fully reversed → free it, UNLESS R is a QRAM array handle: that is a
       // classical resource token whose stores reverse (LIFO) but which is NEVER
       // freed — a `cqrt_free` on it would be a hidden measurement of the

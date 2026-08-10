@@ -4,4 +4,3 @@ cqrt_ry_i32(h1, 0x1p-1)
 cqrt_tape_write_i32(t0, h1) -> h2
 cqrt_tape_write_i32(t0, h1) -> h3
 cqrt_ry_i32(h1, -0x1p-1)
-cqrt_free(h1)
