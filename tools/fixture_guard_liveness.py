@@ -55,7 +55,12 @@ FILECHECK = os.path.join(LLVM, "FileCheck")
 PLUGIN = os.path.join(REPO, "build", "ir-pass", "libCQPass.so")
 TESTDIR = os.path.join(REPO, "ir-pass", "test")
 
-PREFIX_RE = re.compile(r"^;\s*([A-Z0-9]*NOFREE[A-Z0-9]*?)(-NOT)?:\s*(.*)$")
+# A FileCheck prefix may contain any of [A-Za-z0-9_-]; matching only [A-Z0-9] around
+# NOFREE silently DROPPED any guard spelled `NOFREE_IDX`, `NoFreeH`, … — a
+# test-of-tests that reports "0 DEAD" for a guard it never looked at is the exact
+# failure it exists to prevent. `-NOT` is stripped first so a `-` inside the prefix
+# name cannot be mistaken for it.
+PREFIX_RE = re.compile(r"^;\s*([A-Za-z0-9_-]*NOFREE[A-Za-z0-9_-]*?)(-NOT)?:\s*(.*)$")
 
 
 def anchor_to_regex(pat):
@@ -92,7 +97,7 @@ def guards_in(path):
     than silently dropped — an undercount in this tool's own success line is the
     same class of defect it exists to catch.
     """
-    anchors, has_not = {}, set()
+    anchors, has_not, extra_anchors = {}, set(), set()
     for line in open(path):
         m = PREFIX_RE.match(line.rstrip("\n"))
         if not m:
@@ -102,8 +107,16 @@ def guards_in(path):
             has_not.add(prefix)
         elif prefix not in anchors:
             anchors[prefix] = body
+        else:
+            # A SECOND positive directive in the same prefix CLOSES the first
+            # guard's window — the exact trap this tool exists for, and one this
+            # tool cannot see: it injects against the FIRST anchor only, so a
+            # later `-NOT` in a dead window is reported live. ONE ANCHOR PER
+            # PREFIX is the rule; flag the violation rather than mis-report.
+            extra_anchors.add(prefix)
     return ([(p, anchors[p]) for p in sorted(anchors) if p in has_not],
-            sorted(p for p in has_not if p not in anchors))
+            sorted(p for p in has_not if p not in anchors),
+            sorted(p for p in extra_anchors if p in has_not))
 
 
 def main():
@@ -125,11 +138,15 @@ def main():
     # Scanning every fixture costs one file READ each; `opt` runs only for the
     # handful that carry a guard, so the sweep stays ~as fast as the old one.
     fixtures = sorted(f for f in os.listdir(TESTDIR) if f.endswith(".ll"))
-    dead, checked, unanchored, skipped = [], 0, 0, []
+    dead, checked, unanchored, skipped, multi = [], 0, 0, [], []
     with tempfile.TemporaryDirectory() as tmp:
         for fx in fixtures:
             path = os.path.join(TESTDIR, fx)
-            guards, loose = guards_in(path)
+            guards, loose, extra = guards_in(path)
+            for p2 in extra:
+                multi.append((fx, p2))
+                print(f"  MULTI {fx} :: {p2} — >1 positive anchor CLOSES the first "
+                      f"guard's window; this tool checks only the first")
             for p in loose:
                 # No positive directive of its own ⇒ the window is the whole input,
                 # so the guard cannot be dead and there is nothing to inject
@@ -179,11 +196,19 @@ def main():
                 else:
                     print(f"  live  {fx} :: {prefix} (guarding {handle})")
     print(f"\nfixture_guard_liveness: {checked} guard(s) checked, {len(dead)} DEAD, "
-          f"{unanchored} unanchored (not checkable, not dead)")
+          f"{unanchored} unanchored (not checkable, not dead), "
+          f"{len(multi)} multi-anchored")
     if dead:
         print("A NOFREE guard that survives an injected cqrt_free is not a guard.")
         print("Give each guarded handle its OWN --check-prefix and RUN line: a")
         print("CHECK-NOT is bounded by the next positive directive of its prefix.")
+        return 1
+    if multi:
+        print("ONE ANCHOR PER PREFIX. A second positive directive bounds the first")
+        print("CHECK-NOT's window, and this checker only ever injects against the")
+        print("first anchor, so the later guards are unverified:")
+        for fx, p2 in multi:
+            print(f"  {fx}: prefix {p2}")
         return 1
     if skipped:
         print("An anchored NOFREE guard in a fixture the pass DECLINES cannot be")

@@ -125,6 +125,30 @@ bool isQramArrayHandle(const Value *V) {
 // definition is shared, not duplicated per-TU — the same hoist `LiteralIntegrity`
 // applied to `valueCarriesUndef` "so cone proof and guard cannot drift".
 
+// Can `BB` execute more than once — i.e. is it reachable from ITSELF? A plain
+// successor DFS, deliberately NOT `LoopInfo::getLoopFor` (§2.9's at-most-once
+// guard used that at first). `LoopInfo` recognizes only NATURAL loops — a single
+// back edge to a header that dominates the body — so an IRREDUCIBLE cycle (two
+// entries, no dominating header) returns null from it while still executing its
+// blocks repeatedly. Emitting the once-only whole-DAG reversal there applies every
+// adjoint K times and resets every rail K times (Rules 5/6). `clang -O1` rarely
+// builds an irreducible CFG, but the pass accepts hand-written IR, and "the
+// frontend probably won't" is not a proof. This test is a strict superset of the
+// natural-loop one and costs one DFS per reversed group.
+bool blockCanRepeat(BasicBlock *BB) {
+  SmallPtrSet<BasicBlock *, 16> Seen;
+  SmallVector<BasicBlock *, 16> Work(succ_begin(BB), succ_end(BB));
+  while (!Work.empty()) {
+    BasicBlock *B = Work.pop_back_val();
+    if (B == BB)
+      return true;
+    if (!Seen.insert(B).second)
+      continue;
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
+}
+
 // The single insertion point for the whole-DAG reversal: the nearest common
 // POST-dominator of every terminal's last-use anchor, after the latest anchor in
 // that block (else its first insertion point, after φ-nodes). Null if the anchors
@@ -169,13 +193,38 @@ Instruction *dagInsertPoint(ArrayRef<Instruction *> Ats, PostDominatorTree &PDT)
 // guarded-flag instance of it. Fixture:
 // lowering_uncompute_borrowed_operand_free_order.ll.
 //
-// THE FREED SET IS UNCHANGED — only positions move, and only LATER. A rail is
-// freeable iff some recovered gate WRITES it (`Freeable`), exactly as before; the
-// touch map decides WHERE, never WHETHER. First-touch is at or before first-write in
-// forward order, so in reverse the free moves later or stays put. Non-register
-// operands (a classical angle, a literal) are skipped: they can never be a rail, and
-// an off-ABI `cqrt_qram_store_*` with a literal in its array slot would otherwise
-// reach `cqrt_free(i32 5)`.
+// THIS RE-KEYING DOES NOT CHANGE THE FREED SET — only positions, and only LATER. A
+// rail is freeable iff some recovered gate WRITES it (`Freeable`), exactly as
+// before; the touch map decides WHERE, never WHETHER. First-touch is at or before
+// first-write in forward order, so in reverse the free moves later or stays put.
+// Non-register operands (a classical angle, a literal) are skipped: they can never
+// be a rail, and an off-ABI `cqrt_qram_store_*` with a literal in its array slot
+// would otherwise reach `cqrt_free(i32 5)`.
+//
+// SAY THAT PRECISELY, BECAUSE THE UNQUALIFIED VERSION IS FALSE. It holds for the
+// re-keying IN ISOLATION. Combined with the bd uow0 `railOf` correction it does NOT:
+// `railOf` of a guarded QRAM store moved from the arg-0 flag to the arg-1 array, so
+// `Freeable` loses that flag and gains the array — and the array is then dropped by
+// `isQramArrayHandle` anyway. A flag rail with no OTHER writing gate in the DAG
+// therefore stops being freed at all. That is the Rule-6 fallback (left allocated,
+// never freed dirty) and no shipped shape reaches it — `GuardedStoreArmEmit` always
+// mints its flag as a `cq_template_icmp_*` producer, which is its own writing gate —
+// but "the freed set is unchanged" full stop was an over-claim, and this file is
+// where the next agent would have read it (bd uow0 Rule-13 round 2).
+//
+// `Freeable` IS INTERSECTED WITH THE CLOSURE-SCANNED RAIL SET, and that is a
+// correctness fence, not tidiness. `recoverDataDag`'s step-3 scan — which sets
+// `MeasuredUpstream`, `NotClosed`, `Escaped` and now `PreservingSinks` — iterates
+// `D.Rails` (roots ∪ template producers), while `Freeable` is built from
+// `railOf(G)` over `D.Calls`. Those sets are not equal, and a member of the
+// difference would be FREED having never been measure-, closure- or sink-scanned:
+// a free of a possibly-measured, possibly-still-read register (Rule 6), invisible to
+// `opt -verify`. The one emitter-mintable member is a `@__cq_q_<callee>_<mask>`
+// specialization-clone call, which `isInverseEmittable` accepts. It is unreachable
+// today (both routes decline loudly — a hand-written `__cq_q_` declaration hits
+// `cq taint escape`, and the real specializer route hits the 7.6 continued-lineage
+// decline), but "unreachable" was the prior justification and it was recorded
+// WRONGLY, as "a downstream guard removes it". Intersecting makes it structural.
 void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
   DenseMap<Value *, CallInst *> FirstTouch;  // rail → earliest gate reading OR writing it
   SmallPtrSet<Value *, 8> Freeable;          // rails some recovered gate WRITES
@@ -189,8 +238,8 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
     };
     Value *R = railOf(G);
     note(R);
-    if (R && !isa<Constant>(R))
-      Freeable.insert(R);
+    if (R && !isa<Constant>(R) && D.Rails.count(R))
+      Freeable.insert(R);  // closure-scanned rails only — see the header note
     for (Value *Op : G->args())
       note(Op);
   }
@@ -356,26 +405,50 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
   //    uses: it returns `Latest->getNextNode()`). A `cqrt_*` sink is a CallInst and
   //    never a terminator, so the next node always exists.
   //
-  //    Moving `At` LATER is the safe direction on its face — it can only add
-  //    reverse-reads that already happened — but it is not free, so two guards
-  //    follow. (i) A sink inside a natural loop would drag the insertion point into
-  //    or past a backedge; the §2.9 acyclic backstop above scans `D.Calls` only, so
-  //    the same test is applied here and leaves the DAG allocated (a safe leak)
-  //    rather than placing a once-per-function free against a per-iteration read.
-  //    (ii) The every-gate-dominates-`At` scan below runs AFTER this, on the final
-  //    `At`, so a later point is re-proved, never assumed.
+  //    "MOVING `At` LATER CAN ONLY ADD REVERSE-READS THAT ALREADY HAPPENED" IS
+  //    FALSE, and it was this comment's first claim. It can also move the reversal
+  //    past a WRITE. Clause (d) of the record invariant (bd memory
+  //    [record-freeze-invariant-2026-08-10]) requires every register an adjoint
+  //    reads to hold the value it held when the forward gate ran, and reverse
+  //    program order delivers that only for gates the DAG WALKED. `recoverDataDag`
+  //    walks operands in `taint.Tainted` only, so an in-place gate on an UNTAINTED
+  //    live register is invisible to it — and if the anchors move `At` past such a
+  //    gate, an adjoint recomputes from a relabelled register. MEASURED: with
+  //    `cqrt_ry_i32(%idx, 0.9)` sitting between the old and new points,
+  //    `cqrt_qram_load_i32_unc(%L, %arr, %idx)` pops the wrong cell and
+  //    `cqrt_free(%L)` becomes a hidden measurement (stage 2b
+  //    `UNPROVEN T2-operand-mutated`), where HEAD was clean.
+  //
+  //    So the extension is CONDITIONAL: if the sinks actually move the point, every
+  //    register the adjoints will read must be free of in-place gates this DAG does
+  //    not own. That test is function-global rather than span-based on purpose —
+  //    a span between two blocks is exactly the kind of reasoning this ticket's
+  //    history says not to trust, and the conservative direction is a leak.
+  //
+  //    The two remaining hazards are re-proved on the FINAL `At` below, never
+  //    assumed here: the every-gate-dominates-`At` scan, and at-most-once (§2.9).
   SmallVector<Instruction *, 8> Anchors(InsertAts.begin(), InsertAts.end());
-  for (CallInst *S : D.PreservingSinks) {
-    if (LI.getLoopFor(S->getParent()) &&
-        !(IterLocal && taint.IterationLocalBlocks.count(S->getParent())))
-      return;  // (i) a loop-resident preserving read — safe leak, never a
-               // mis-placed free (mirrors the acyclic backstop above).
+  for (CallInst *S : D.PreservingSinks)
     if (Instruction *N = S->getNextNode())
       Anchors.push_back(N);
-  }
   Instruction *At = dagInsertPoint(Anchors, PDT);
   if (!At)
     return;
+  if (At != dagInsertPoint(InsertAts, PDT)) {
+    SmallPtrSet<Value *, 16> ReadByAdjoints;
+    for (CallInst *G : D.Calls)
+      for (Value *Op : G->args())
+        if (!isa<Constant>(Op))
+          ReadByAdjoints.insert(Op);
+    SmallPtrSet<const CallInst *, 16> InDag(D.Calls.begin(), D.Calls.end());
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB)
+        if (auto *CI = dyn_cast<CallInst>(&I))
+          if (!InDag.count(CI))
+            for (Value *Op : CI->args())
+              if (ReadByAdjoints.count(Op) && isInPlaceGateOn(CI, Op))
+                return;  // clause (d) unprovable at the moved point — safe leak.
+  }
 
   // Every gate must DOMINATE `At` (acyclic + dominating ⇒ ran exactly once on
   // every reaching path). For an iteration-local group this holds WITHIN the
@@ -388,10 +461,45 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
       NonDominating = G;
       break;
     }
+  // (§2.9) AT-MOST-ONCE. Dominance says every gate ran before `At`; it says NOTHING
+  // about how many TIMES `At` itself runs. If `At` sits in a natural loop, one
+  // emitted reversal executes K times: the adjoint of a once-run `cqrt_ry_i32(%h,
+  // +0.5)` is applied K times (the wrong unitary), and every `cqrt_free` resets a
+  // rail K times — iterations 2..K resetting a rail that is provably NOT |0⟩, i.e.
+  // K-1 hidden measurements plus a double free (Rules 5/6). Leave the DAG allocated
+  // instead (a safe leak), exactly as the acyclic backstop above does for a
+  // loop-resident GATE.
+  //
+  // THE TEST IS THE FINAL `At`'s BLOCK — and it is `blockCanRepeat`, a
+  // reachable-from-itself DFS, not `LoopInfo`: an IRREDUCIBLE cycle is not a
+  // natural loop and `getLoopFor` returns null for it while its blocks still run
+  // repeatedly (see that helper). Neither the `D.Calls` backstop above nor a test
+  // on the preserving SINKS is
+  // sufficient: `dagInsertPoint` takes the nearest common POST-dominator of the
+  // anchors, and the nearest common post-dominator of two divergent non-loop arms is
+  // routinely a LOOP-BODY block that both arms branch into. So `At` can land in a
+  // loop with no sink and no recovered gate in one. MEASURED two ways: a
+  // sink-anchored module whose reversal moved from an arm into `%loop` (the bd
+  // 8gi5/e4zs anchors' own regression, found by their Rule-13 round), and — with NO
+  // sink anchors at all — a terminal whose two tape-write uses sit in divergent
+  // arms, where `computeFreePoint`'s own NCA already put `cqrt_free` inside `%loop`
+  // at HEAD 1ec8c45. The second is PRE-EXISTING and this guard is what closes it.
+  //
+  // AFTER the dominance scan, deliberately. A pre-emptive placement swallows the
+  // loud `kMsgDivergentArm` decline into a silent rc-0 leak — bd 261j(a) risk 1,
+  // measured on the first draft of this guard.
+  //
+  // The 7.3 EXCEPTION is affirmative, not incidental: an ITERATION-LOCAL group is
+  // reversed IN-BODY once per iteration BY DESIGN, over rails re-minted each
+  // iteration, and `FreePoint` already re-checked that its anchor is in-body.
   if (NonDominating) {
     diagnose(NonDominating, kMsgDivergentArm);
     return;
   }
+
+  if (blockCanRepeat(At->getParent()) &&
+      !(IterLocal && taint.IterationLocalBlocks.count(At->getParent())))
+    return;  // safe leak — never a once-minted reversal on a per-iteration path.
 
   // 5. Reverse the whole DAG once at `At`.
   emitDagReversal(D, At, wd);

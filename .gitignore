@@ -11,6 +11,9 @@ transpiler/build*
 # so "this free was sound before the change" is MEASURED against a real artifact
 # instead of derived from reading the diff. Worth keeping around.
 /build-baseline/
+# A third configure, for compile-checking work-in-progress WITHOUT swapping the
+# plugin under a review that is measuring against /build/.
+/build-inc3/
 /Testing/
 .claude
 .idea

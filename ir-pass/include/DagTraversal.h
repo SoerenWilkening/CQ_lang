@@ -95,6 +95,20 @@ struct DataDag {
   // The driver folds these into the `dagInsertPoint` anchor set so the whole
   // reversal is placed after every preserving read of every rail it frees.
   llvm::SmallVector<llvm::CallInst *, 4> PreservingSinks;
+
+  // The rails the step-3 closure scan actually WALKED: `Roots` ∪ the template
+  // producers. Everything this DAG knows about a rail — `MeasuredUpstream`,
+  // `NotClosed`, `Escaped`, `PreservingSinks` — is set by iterating exactly this
+  // set, so a value OUTSIDE it carries none of those verdicts.
+  //
+  // Exported because `emitDagReversal` frees by `railOf(G)` over `Calls`, and those
+  // two sets are NOT equal. Freeing a member of the difference would reset a
+  // register that was never measure-, closure- or sink-scanned (Rule 6), so the
+  // driver intersects. The gap has exactly one emitter-mintable member today, a
+  // `@__cq_q_<callee>_<mask>` clone call, and it is unreachable — but this used to
+  // be justified in prose as "a DOWNSTREAM guard, `isInverseEmittable`, removes it",
+  // which is FALSE (that predicate accepts `__cq_q_`). Structure, not prose.
+  llvm::SmallPtrSet<llvm::Value *, 16> Rails;
 };
 
 // Recover the whole forward DAG of the registers whose live terminal handles are

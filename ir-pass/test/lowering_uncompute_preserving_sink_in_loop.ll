@@ -4,22 +4,36 @@
 ; That fix makes every source-preserving sink an anchor of the whole-DAG insertion
 ; point, so the reversal lands after every preserving read. Moving the insertion
 ; point LATER looks unconditionally safe — it only adds reads that already
-; happened — and it is not: a sink inside a natural LOOP would drag the insertion
-; point into the loop BODY, and the reversal would then run once per iteration over
-; rails minted once. That is a use-after-free plus (K-1) double frees, i.e. the
-; §2.9 hazard arriving through a new door.
+; happened — and it is not: the reversal can end up inside a natural LOOP, where one
+; emitted stream runs once per iteration over rails minted once. That is (K-1)
+; hidden measurements plus a double free, i.e. the §2.9 hazard through a new door.
 ;
 ; MEASURED with the backstop removed, on exactly this module: both adjoints and both
 ; `cqrt_free`s are emitted INSIDE `%loop`, and `free_pairing_check.py` reports both
 ; frees `UNPROVEN U3-extern-rail` (rc=1). With it, nothing is emitted and the DAG is
 ; LEFT ALLOCATED.
 ;
-; The backstop is the SAME test the acyclic §2.9 backstop already applies to
-; `D.Calls` (`LI.getLoopFor`, with the Phase-7.3 iteration-local exception), applied
-; to the sink anchors — deliberately the same rule and the same silent outcome, a
-; leak rather than a diagnostic, because that is what §2.9 already does for a
-; loop-resident GATE. Rule 6's fallback for a rail we cannot place a free for is to
-; leave it allocated; a leak is safe, a mis-placed free is not.
+; *** THE BACKSTOP TESTS THE FINAL INSERTION POINT, NOT THIS SINK. *** Its first
+; draft tested whether the SINK sat in a loop, and that was a silent miscompile
+; found by the bd 8gi5/e4zs Rule-13 round: `dagInsertPoint` takes the nearest common
+; POST-dominator of the anchors, and the nearest common post-dominator of two
+; divergent NON-loop arms is routinely a loop-body block both arms branch into — so
+; the reversal lands in a loop with no sink and no recovered gate in one, and a
+; sink-block test never fires. The sibling fixture
+; lowering_uncompute_reversal_point_in_loop.ll pins that shape, which needs no sink
+; at all and was ALREADY broken at HEAD. This fixture keeps its own value as the
+; case where sink and insertion point coincide.
+;
+; The draft was also COARSE (one loop-resident sink abandoned every terminal in the
+; group, leaking reversals HEAD placed correctly) and PRE-EMPTIVE (it sat before the
+; dominance scan, so it swallowed the loud `kMsgDivergentArm` decline into a silent
+; rc-0 leak — bd 261j(a) risk 1). The shipped guard runs AFTER that scan.
+;
+; The backstop is otherwise the SAME test the acyclic §2.9 backstop applies to
+; `D.Calls` (`LI.getLoopFor`, with the Phase-7.3 iteration-local exception) and has
+; the same silent outcome — a leak, not a diagnostic — because that is what §2.9
+; already does for a loop-resident GATE. Rule 6's fallback for a rail we cannot place
+; a free for is to leave it allocated; a leak is safe, a mis-placed free is not.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOFREELOOP

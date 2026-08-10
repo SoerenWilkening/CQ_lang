@@ -189,7 +189,10 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
   //    producer's result — the values the DAG zeroes and frees; rotations mint no
   //    rail). Every forward consumer of a rail must itself be a recovered gate;
   //    anything else means the rail is owned outside the DAG.
-  SmallPtrSet<Value *, 16> Rails;
+  //    EXPORTED as `D.Rails` (bd uow0 Rule-13 round 2): the driver frees by
+  //    `railOf(G)` over `D.Calls`, which is NOT the same set, and a value in the
+  //    difference would be freed carrying none of the verdicts this scan sets.
+  SmallPtrSet<Value *, 16> &Rails = D.Rails;
   for (Value *R : D.Roots)
     Rails.insert(R);
   for (CallInst *G : D.Calls)
@@ -323,8 +326,17 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
     // Seed: Rails ∪ {railOf(G)}. Those sets are NOT the same — a tainted non-alloc
     // CallInst enters `D.Calls` above but only a `cq_template_*`/`cqrt_qram_load_*`
     // enters `Rails`, while `emitDagReversal` frees by railOf. Seeding from `Rails`
-    // alone would be incomplete on its own terms (that gap is empty today only
-    // because a DOWNSTREAM guard — `isInverseEmittable` — removes it).
+    // alone would be incomplete on its own terms.
+    //
+    // THIS USED TO SAY the gap is "empty today only because a DOWNSTREAM guard —
+    // `isInverseEmittable` — removes it". THAT IS FALSE and was corrected here (bd
+    // uow0 Rule-13 round 2): `isInverseEmittable` explicitly ACCEPTS the one
+    // emitter-mintable member, a `@__cq_q_<callee>_<mask>` specialization-clone
+    // call. What actually keeps the gap empty is that no accepted input reaches such
+    // a rail (both routes decline loudly), and the driver no longer rests on that:
+    // it intersects its freeable set with `D.Rails`. Seeding WIDELY here is still
+    // right — the freeze is a subtraction, so over-seeding can only over-freeze,
+    // which is a leak.
     auto seedIfRecorded = [&](Value *R) {
       if (!R || Correlated.count(R))
         return;
