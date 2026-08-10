@@ -399,6 +399,74 @@ injected* for the named functions. That is also what makes the honesty claim
 defensible: "CQ ships its own reversible `sin`" (what openlibm is to a C
 compiler), **not** "CQ compiled openlibm's `sin`".
 
+**GATE WORDING — "9 cells" IS A TRIPWIRE, NOT A CAP (clarified by owner ruling
+2026-08-10).** The ruling is **per FUNCTION (stem)**; condition (ii) is
+**mechanical and per WIDTH** (`probe.cq_provided_cells()` measures leaf + slice +
+golden + whole-token ctest registration + `_leaf_in_sync` on disk — deliberately
+never a hand-maintained spelling list, because a hand list is how "verified at
+that width" rots into an assertion). So the earlier phrasing "a change that
+'covers' 9 has broken condition (ii)" must be read as: **9 reached WITHOUT three
+new genuinely verified f32 leaves and goldens** means condition (ii) has broken.
+Read literally it forbade bd `eur4` from ever succeeding, which was never the
+intent — `eur4` authoring real f32 leaves takes the count 6 → 9 **legitimately**.
+Note what `eur4` is worth, so it is never mis-quoted: `sinf`/`cosf`/`tanf` are
+**declines** today, so admitting them leaves the injection **numerator at 97** and
+shrinks its denominator — pure row-3 movement, **never** injection progress.
+
+**DECLINED 2026-08-10 (owner ruling): the `log` stem / `logl` spelling are NOT
+admitted.** Measured, not argued: `log.f64` and `logl.f80` **both already pass
+condition (ii) on disk AND are both already `COMPILES` by real openlibm
+injection**. Admitting the stem therefore moves two *covered* cells out of the
+injection row to buy one (`lgammal.f80`), taking the campaign number **97 → 96**;
+even the `logl`-only variant is **flat, not +1** (a survey claim of "+1 injection
+cell, the cheapest lever on the list" was wrong on this arithmetic). More
+fundamentally the amendment's *grounding* does not reach `log`: CQ-PROVIDED exists
+because openlibm's **source form** is un-injectable (trig's Payne–Hanek
+`k_rem_pio2.c`), whereas `log`'s source form works and is injected **today** —
+admitting it would trade the true claim "CQ compiled openlibm's `log`" for the
+weaker "CQ ships its own `log`". `lgammal.f80` is to be **re-scoped** instead; its
+census `scope_ref` already self-flags its decided-decline ground as SPENT.
+
+---
+
+## Scope of the semantic model — `fenv` is OUT (owner ruling 2026-08-10)
+
+**CQ does not model floating-point exception flags** (`FE_UNDERFLOW`,
+`FE_INEXACT`, the rest of `<fenv.h>`), and **a `volatile` access to a
+non-escaping function-local object is not observable** in CQ's model. There is no
+fenv concept anywhere in the runtime ABI, the pass, or `CQ.h`, and this ruling
+adds **no frozen symbol** — the Phase-11 freeze is untouched.
+
+**Why this needed ruling at all, and the lesson in it.** The sentence "fenv is out
+of scope project-wide" has been *shipped source prose* since `eb31e18`
+(2026-07-14, `ir-pass/include/QramLowering.h:172`), repeated in
+`PRD-3c6m.51.md:231`, and **load-bearing for two stages that already delete
+volatile accesses** — `foldVolatileConstGlobalLoads` and
+`foldVolatileConstAllocaLoads` (bd `etiq`, which erases the volatile store, the
+lifetime markers and the alloca). It appeared in **no** bd memory, **not** in this
+file, and **not** in the ROADMAP. It was an agent-authored justification that
+hardened by repetition into a de-facto ruling — exactly what bd
+[[bennett-grounding-asymmetry-2026-07-28]] warns against. It is now ruled, and the
+scope is deliberately narrower than the old prose: **non-escaping locals**, not
+"anything volatile". MMIO, external linkage, escaping addresses, and atomics are
+untouched and keep their existing loud declines.
+
+**What it licenses, and the bound on it.** An operation whose *only* consumer is a
+store to a never-read non-escaping `volatile` local may have that **store**
+removed. It does **not** license deleting the computation: openlibm's underflow
+idiom (`volatile float u = x*x; /* underflow */`,
+`ld80/s_nexttowardf.c:63`) exists to force the multiply, and the shipped
+implementation **keeps the `fmul` and removes only the dead store** — measured
+`opt` exit 0, fully inlined, `free_pairing_check` strict 81/81. Do not widen this
+to "CQ deletes computations the source demanded be evaluated"; that is a
+different ruling and has not been made.
+
+Note the pre-existing rationale at `QramLowering.h:222-226` — "volatile's only
+effect is to defeat FP reassociation, which taint lowering never does" — is
+**factually wrong for this idiom family** and must not be cited for it. openlibm's
+`volatile` here forces evaluation for the FPU flag, not to block reassociation.
+The correct ground is this ruling, not that sentence.
+
 ---
 
 ## Pipeline Architecture

@@ -170,12 +170,51 @@ SCOPE = {
                     "blocked at `sinl` (unsupported instruction), post-amendment at `stirf` "
                     "(unsupported instruction) — the CQ-provided sinl cleared the sinl layer. "
                     "The loops sit behind stirf and remain UNMEASURED"),
+    # RE-SCOPED 2026-08-10 by owner ruling. The previous entry ended "Re-scope
+    # before quoting this cell: it may no longer be decided at all" — that
+    # re-scope has now happened, and the answer is that the cell stays declined
+    # for a NEW and honest reason.
+    #
+    # THE CHEAP PATH WAS OFFERED AND DECLINED. bd 20xt.8 measured (2026-07-23)
+    # that with a branchless `logl` leaf injected this cell returns
+    # STATUS=COMPILES, surv:[]; sinl/cosl are already CQ-provided here
+    # (cq_linked: [cosl, sinl]), so `logl` was the only remaining variable, and
+    # probe._cq_provided_evidence('logl') returns all five condition-(ii)
+    # requirements satisfied on disk TODAY. The sole gate was the ruled stem
+    # tuple. OWNER RULING 2026-08-10: NOT ADMITTED. Two reasons, both measured:
+    #   (a) IT IS NOT +1. `log` and `logl` are BOTH already `COMPILES` by real
+    #       openlibm injection, so admitting the stem moves TWO covered cells out
+    #       of the injection row to buy ONE — campaign number 97 -> 96. Even a
+    #       logl-only admission (which would need the gate changed from per-stem
+    #       to per-spelling) is FLAT, not +1. A 2026-08-10 triage round pitched
+    #       this as "a measured +1 injection cell ... cheaper than any lever on
+    #       the list"; that was wrong on the arithmetic.
+    #   (b) THE AMENDMENT'S GROUNDING DOES NOT REACH IT. CQ-PROVIDED exists
+    #       because openlibm's SOURCE FORM is un-injectable (trig's Payne-Hanek
+    #       k_rem_pio2.c). log's source form works and is injected today, so
+    #       admitting it would trade the true claim "CQ compiled openlibm's log"
+    #       for the weaker "CQ ships its own log", and leave this cell resting on
+    #       THREE CQ leaves.
+    #
+    # SO WHAT WOULD ACTUALLY MOVE IT is a real capability, and it is NOT bd 5po2
+    # alone: measured on the injected body, ld80/e_logl.c at -O1 carries an
+    # `alloca i32`, two `store i32` into it and a by-ref `call @frexpl(x86_fp80,
+    # ptr)` — the SAME g387/7.5 by-ref out-param axis that owns powl.f80 — plus
+    # __isnanl/__polevll/__p1evll/ldexpl, and scanBody recurses into visible
+    # nested callees (SpecializeReject.cpp:503-510). Depth behind the control
+    # layer is UNMEASURED. Do not scope against a predicted next layer here: this
+    # table has mispredicted the next layer three times running on the adjacent
+    # gamma pair.
     "lgammal.f80": ("decided-decline",
-                    "RULING STANDS but its stated ground is SPENT: 'inherited Payne-Hanek via "
-                    "sinl' was true only while sinl was openlibm's. Post-amendment sinl is "
-                    "CQ-provided, and the measured first blocker moved to `logl` (tainted "
-                    "control flow under quantum lift) — a control layer, not a loop. Re-scope "
-                    "before quoting this cell: it may no longer be decided at all"),
+                    "RE-SCOPED 2026-08-10 (owner ruling). Original ground ('inherited Payne-Hanek "
+                    "via sinl') is SPENT — post-amendment sinl is CQ-provided and the measured "
+                    "first blocker moved to `logl` (tainted control flow under quantum lift). The "
+                    "cheap mover (admit log/logl to CQ-PROVIDED, measured by bd 20xt.8 to flip this "
+                    "cell) was OFFERED AND DECLINED: log.f64 and logl.f80 are BOTH already "
+                    "injection-COMPILES, so admitting the stem is 97->96 and logl-only is flat, and "
+                    "the amendment's grounding (upstream source form un-injectable) does not reach "
+                    "a function whose source form works today. Real mover is a capability: in-clone "
+                    "control (5po2) AND the g387/7.5 by-ref frexpl axis behind it — depth UNMEASURED"),
 
     # -- THE ACTIONABLE SET (3 cells).
     #

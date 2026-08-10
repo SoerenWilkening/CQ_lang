@@ -96,7 +96,27 @@ HARDWARE_KEEP_SET = ("sqrt fabs copysign floor ceil trunc round rint nearbyint "
 # how a "verified at that width" claim rots into an assertion. Day one this
 # qualifies exactly 6 cells (sin/cos/tan.f64 + sinl/cosl/tanl.f80) and REJECTS
 # sinf/cosf/tanf, which have no f32 leaf anywhere in the corpus (bd `eur4`).
-# If a change makes this "cover" 9, condition (ii) has been broken.
+#
+# "9" IS A TRIPWIRE, NOT A CAP (owner ruling 2026-08-10). This comment used to end
+# "If a change makes this 'cover' 9, condition (ii) has been broken", which read
+# literally forbade bd `eur4` from ever succeeding. The ruling is per STEM and
+# condition (ii) is per WIDTH, so authoring three REAL f32 leaves (+ slices,
+# goldens, whole-token ctest rows, in-sync bodies) takes this to 9 LEGITIMATELY.
+# What would mean condition (ii) is broken: reaching 9 WITHOUT that evidence —
+# i.e. cq_provided_cells() crediting a width whose leaf/slice/golden/registration
+# is missing or whose body has drifted from the twin the golden pins.
+# And note what eur4 is WORTH before quoting it: sinf/cosf/tanf are DECLINES
+# today, so admitting them leaves the injection NUMERATOR unchanged and only
+# shrinks its denominator. Row-3 movement, never injection progress.
+#
+# DECLINED 2026-08-10 (owner ruling): the `log` stem. `log` and `logl` BOTH pass
+# condition (ii) on disk today — and both cells are ALREADY `COMPILES` by real
+# openlibm injection, so admitting the stem would move two COVERED cells out of
+# the injection row to buy one (lgammal.f80): campaign number 97 -> 96. The
+# logl-only variant is flat, not +1. The amendment's grounding also does not
+# reach it: CQ-PROVIDED exists because openlibm's SOURCE FORM is un-injectable
+# (trig's Payne-Hanek), and log's source form works and is injected today.
+# Do not re-propose without new measurement. See CLAUDE.md Rule 18 amendment.
 CQ_PROVIDED_RULED = ("sin", "cos", "tan")     # owner ruling 2026-07-31 (bd guwr)
 CQ_PROVIDED_VARIANTS = ("f", "", "l")         # spelling suffixes, as MATHH_SPEC
 BRANCHLESS_DIR = HERE / "branchless"

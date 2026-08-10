@@ -458,9 +458,32 @@ into (2)**, and never campaign progress: this row moves only when a leaf is auth
 The gate is mechanical where it can be — `probe.py::cq_provided_cells` measures leaf +
 slice + committed golden + `ctest` registration + **body-sync between the leaf and the
 slice the golden pins** — and human where it must be (Bennett backing, owner ruling
-per function). It **rejects `sinf`/`cosf`/`tanf`** today; a change that "covers" 9 has
-broken the gate. Each cell's `upstream_scope` field retains the openlibm ruling, so
-*why CQ ships its own* stays on the record.
+per function). It **rejects `sinf`/`cosf`/`tanf`** today. Each cell's
+`upstream_scope` field retains the openlibm ruling, so *why CQ ships its own* stays on
+the record.
+
+> **"9" IS A TRIPWIRE, NOT A CAP — clarified by owner ruling 2026-08-10.** This
+> paragraph used to end "a change that 'covers' 9 has broken the gate", which read
+> literally forbade bd `eur4` from ever succeeding. The ruling is per **stem**;
+> condition (ii) is mechanical and per **width**. Authoring three REAL f32 leaves
+> (+ slices, goldens, whole-token ctest rows, in-sync bodies) takes this row to 9
+> **legitimately**. What would mean the gate broke: reaching 9 **without** that
+> evidence. And price `eur4` correctly before quoting it — `sinf`/`cosf`/`tanf` are
+> **declines**, so admitting them leaves the injection **numerator at 97** and only
+> shrinks its denominator (120 → 117, reading 81% → 83%). Row-3 movement with zero
+> compiler work; **never** injection progress.
+
+> **DECLINED 2026-08-10 (owner ruling): the `log` stem is NOT admitted.** Measured:
+> `log` and `logl` BOTH pass condition (ii) on disk **and both cells are already
+> `COMPILES` by real openlibm injection**. Admitting the stem moves two *covered*
+> cells out of this denominator to buy one (`lgammal.f80`) — campaign number
+> **97 → 96**; the `logl`-only variant is **flat, not +1**. A triage claim of "+1
+> injection cell, cheaper than any lever on the list" was wrong on that arithmetic.
+> The amendment's grounding also does not reach it: CQ-PROVIDED exists because
+> openlibm's **source form** is un-injectable (trig's Payne–Hanek `k_rem_pio2.c`),
+> and `log`'s source form works and is injected today — admitting it would trade
+> "CQ compiled openlibm's `log`" for "CQ ships its own `log`". `lgammal.f80` gets a
+> **re-scope** instead; its `scope_ref` already self-flags its ground as SPENT.
 
 ### (4) Authored-branchless substitutes — RETIRED, superseded, do not quote
 36 hand-written leaves, **f64/f80 only — zero f32 leaves exist**, with numerics that
