@@ -102,11 +102,37 @@ bool recordsIntoKeptCarrier(const llvm::CallInst *S, const llvm::Value *H);
 //
 // The "PRESERVES H ⇒ H's lineage uncomputes normally" rationale this predicate
 // used to carry is the SAME false step bd 261j(a) ruled out on the tape surface —
-// see `isOutputSink` above. It is not a LIVE defect here (bd 8gi5 censused all 5
-// emitter sites: the only copy src the spine ever reverses is a
-// `cqrt_qram_load_<W>` result, a permutation of live arr/idx, and the sxuk QRAM
-// index roots are measurement-immune by QramLowering.cpp:1749-1757). The freeze
-// below is deliberately NOT extended here — bd 8gi5 owns that surface.
+// see `isOutputSink` above. It is not a LIVE defect here, and the reason is a
+// CENSUS, not an argument (bd 8gi5). Exactly FIVE sites mint an uncontrolled 2-arg
+// `cqrt_copy_<W>`, and each is excluded for a DIFFERENT structural reason:
+//   * SwapRouteEmit.cpp   — the src's cswap users force `NotClosed`, so the spine
+//                           never reverses it.
+//   * SwitchValueEmit.cpp — same (routed base, cswap users).
+//   * BreakReversePlay.cpp— the capture rails are `ControlOwnedRails` (DD-4),
+//                           subtracted from the DAG before any of this runs.
+//   * BennettWrap.cpp     — inside a Phase-6 clone body, invisible to the spine
+//                           and rotation-free.
+//   * QramLowering.cpp    — the ONE case the spine does reverse, and it is the
+//                           SOUND Bennett case: the src is a `cqrt_qram_load_<W>`
+//                           result, a permutation of arr/idx that reverse program
+//                           order keeps at their producer-time values.
+// WRITE DOWN WHAT THAT DOES AND DOES NOT BUY. It says no emitter reaches the bad
+// shape TODAY; it does not say the predicate CHECKS anything. Nothing here stops a
+// future emitter from minting `ry(%h); copy(%h,%dst); ry(-%h); free(%h)` — a
+// hand-written module reproducing exactly that is accepted (rc=0) and
+// `free_pairing_check.py` certifies it. Adding the guard would mean admitting the
+// copy sink only when the destination is provably measured in-function (mirroring
+// QramLowering's own `Out->hasOneUse() && sole user is cq_measure_*` test, which is
+// what actually makes the shipped sxuk QRAM index-root frees measurement-immune).
+// That is an unruled behaviour change on a surface bd 261j(a) deliberately did not
+// rule — 8 lit fixtures and all 6 shipped QRAM goldens move — so it stays FILED as
+// bd 8gi5's owner scope question rather than being decided in an implementation.
+// If you add a sixth emitter site, this census is the thing you must re-run.
+//
+// ORDERING IS SEPARATE FROM FREEZING, and this predicate is consulted for both.
+// A copy is a benign terminal user for CLOSURE, but it is still a USE: the spine
+// records it in `DataDag::PreservingSinks` so the reversal is placed after it (bd
+// 8gi5 item 3 / bd e4zs — MEASURED use-after-free before that fix).
 bool isCopyOutSink(const llvm::CallInst *G, const llvm::Value *H);
 
 // The RAIL a gate creates — the value the gate's adjoint zeroes and the driver

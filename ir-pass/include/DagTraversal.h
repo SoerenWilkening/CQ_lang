@@ -78,6 +78,23 @@ struct DataDag {
   // see every recovered gate and still decline loudly. Pruning `Calls` instead
   // would blind all three (bd 261j(a) risks 1-2, MEASURED rc=1 → rc=0).
   llvm::SmallPtrSet<llvm::Value *, 4> FrozenRails;
+
+  // bd 8gi5(3) + bd e4zs — every SOURCE-PRESERVING SINK that reads a rail of this
+  // DAG: a `cqrt_tape_write_<W>[_controlled]` (`isOutputSink`) or a method-B
+  // `cqrt_copy_<W>(src, dst)` (`isCopyOutSink`). These READ a rail without
+  // consuming it, which is why the closure scan above lets them pass — but they
+  // are still USES, and the reversal's `cqrt_free` must land AFTER them.
+  //
+  // `FreePoint::computeFreePoint` cannot supply that ordering on its own: it is
+  // called per TERMINAL and scans `Terminal->users()`, so a preserving sink that
+  // reads a NON-TERMINAL upstream rail never joins the post-dominator user set and
+  // the insertion point can precede it. MEASURED on both surfaces (rc=0, `opt
+  // -passes=verify` clean, and stage 2b naming it `F2-use-after-free`):
+  //     %a = add %q, 1 ; %b = add %a, 2 (dead terminal) ; tape_write(tape, %a)
+  //     %a = add %q, 1 ; %b = add %a, 2 (dead terminal) ; copy(%a, %dst)
+  // The driver folds these into the `dagInsertPoint` anchor set so the whole
+  // reversal is placed after every preserving read of every rail it frees.
+  llvm::SmallVector<llvm::CallInst *, 4> PreservingSinks;
 };
 
 // Recover the whole forward DAG of the registers whose live terminal handles are

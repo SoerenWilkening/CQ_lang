@@ -340,7 +340,40 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
   // 4. Single insertion point (in-body for an iteration-local group — FreePoint
   //    returned the per-iteration anchor; for the regular group, the function
   //    post-dominator).
-  Instruction *At = dagInsertPoint(InsertAts, PDT);
+  //
+  //    THE ANCHOR SET INCLUDES EVERY SOURCE-PRESERVING SINK ON EVERY RAIL (bd
+  //    8gi5(3) + bd e4zs). `computeFreePoint` is called per TERMINAL and scans
+  //    `Terminal->users()`, so it sees a tape write / method-B copy only when the
+  //    rail it reads happens to BE a terminal. A preserving sink on an UPSTREAM
+  //    rail was invisible to it, and the reversal — including that rail's
+  //    `cqrt_free` — could be placed BEFORE the read. MEASURED on both surfaces
+  //    (`opt` rc=0, verify-clean, stage 2b `F2-use-after-free`); the fixtures are
+  //    lowering_uncompute_tape_nonterminal_rail.ll and
+  //    lowering_uncompute_copy_nonterminal_rail.ll.
+  //
+  //    A sink anchors at its NEXT node because `dagInsertPoint` treats anchors as
+  //    insert-BEFORE points (that is the convention `computeFreePoint` already
+  //    uses: it returns `Latest->getNextNode()`). A `cqrt_*` sink is a CallInst and
+  //    never a terminator, so the next node always exists.
+  //
+  //    Moving `At` LATER is the safe direction on its face — it can only add
+  //    reverse-reads that already happened — but it is not free, so two guards
+  //    follow. (i) A sink inside a natural loop would drag the insertion point into
+  //    or past a backedge; the §2.9 acyclic backstop above scans `D.Calls` only, so
+  //    the same test is applied here and leaves the DAG allocated (a safe leak)
+  //    rather than placing a once-per-function free against a per-iteration read.
+  //    (ii) The every-gate-dominates-`At` scan below runs AFTER this, on the final
+  //    `At`, so a later point is re-proved, never assumed.
+  SmallVector<Instruction *, 8> Anchors(InsertAts.begin(), InsertAts.end());
+  for (CallInst *S : D.PreservingSinks) {
+    if (LI.getLoopFor(S->getParent()) &&
+        !(IterLocal && taint.IterationLocalBlocks.count(S->getParent())))
+      return;  // (i) a loop-resident preserving read — safe leak, never a
+               // mis-placed free (mirrors the acyclic backstop above).
+    if (Instruction *N = S->getNextNode())
+      Anchors.push_back(N);
+  }
+  Instruction *At = dagInsertPoint(Anchors, PDT);
   if (!At)
     return;
 

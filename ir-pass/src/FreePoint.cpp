@@ -8,6 +8,7 @@
 
 #include "FreePoint.h"
 
+#include "ChainWalk.h"  // isMeasureSink / isOutputSink — ONE definition (Rule 14)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -51,24 +52,26 @@ void diagnose(Instruction *Where, StringRef Msg) {
       *Where->getFunction(), Msg, Where->getDebugLoc()));
 }
 
-// A `@cqrt_measure_<W>` sink (the lowered measure form Phase 5 sees; the
-// `isMeasureSink` prefix test, TaintPropagation.cpp:80). The front-end
-// `@cq_measure_<sfx>` form is gone by Phase 5's slot, so the prefix match
-// suffices; a measured handle is a sink, not an ordinary use.
-bool isMeasureSink(const CallInst *CI) {
-  const Function *Callee = CI->getCalledFunction();
-  return Callee && Callee->getName().starts_with("cqrt_measure_");
-}
-
-// A `@cqrt_tape_write_<W>` I/O output-tape sink (Phase 7.6; FreePoint's local
-// mirror of ChainWalk::isOutputSink, matching the local isMeasureSink above). A
-// tape write READS its src register without collapsing it — it is not a gate. It
-// is therefore EXEMPT from the post-measure-use reject below (writing a measured,
-// now-classical value to the tape is legitimate, not a gate after measurement).
-// It is NOT excluded from the post-dom Users set, though: it stays an ordinary
-// `cqrt_` use so a DEAD source's free lands AFTER the write — the load-bearing
-// ordering (excluding it would place the free before the write, a use-after-free
-// for tape-then-dead).
+// `isMeasureSink` and `isOutputSink` come from `ChainWalk` (Rule 14). They USED to
+// be re-spelt here as local anonymous-namespace copies of the same two prefix
+// tests — two definitions of one predicate, which bd test_C_libtooling-8gi5 item 4
+// flagged as a drift hazard and which bd test_C_libtooling-uow0 had just shown is
+// not hypothetical (`railOf` and `isInPlaceGateOn` re-spelt the same relation and
+// disagreed about the same gate). The re-spelling was deleted, not kept in sync.
+//
+// WHAT THE TAPE-WRITE PREDICATE DOES *HERE*, since the behaviour is subtle and both
+// halves are load-bearing. A tape write READS its src register without collapsing
+// it — it is not a gate. So it is EXEMPT from the post-measure-use reject below
+// (writing a measured, now-classical value to the tape is legitimate, not a gate
+// after measurement). It is NOT excluded from the post-dom `Users` set: it stays an
+// ordinary `cqrt_` use so a DEAD source's free lands AFTER the write.
+//
+// That second half only ever covered a sink on the TERMINAL — this scan is
+// `Terminal->users()`. A preserving sink on an UPSTREAM rail was invisible here and
+// the free could precede it (bd 8gi5 item 3 / bd e4zs, MEASURED); the ordering for
+// those is supplied by `DataDag::PreservingSinks` feeding `dagInsertPoint`, not by
+// this scan. Do not "fix" it by widening this loop: `computeFreePoint` is called
+// per terminal and has no view of the DAG.
 //
 // BOTH behaviours SURVIVE the bd 261j(a) record freeze unchanged, and neither is
 // the site of that fix — this was checked, not assumed:
@@ -81,10 +84,6 @@ bool isMeasureSink(const CallInst *CI) {
 //     the freeze deliberately preserves) land after the write.
 // The freeze is decided in DagTraversal step 3b and executed in
 // Uncomputation::emitDagReversal. Do NOT mirror it here.
-bool isOutputSink(const CallInst *CI) {
-  const Function *Callee = CI->getCalledFunction();
-  return Callee && Callee->getName().starts_with("cqrt_tape_write_");
-}
 
 // Does `U` consume `Terminal` as a RECOGNIZED escape that Phase 5 silently skips
 // (no adjoint, no free, no diagnostic — PRD §2.6)?

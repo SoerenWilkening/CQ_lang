@@ -236,7 +236,12 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
             D.UpstreamMeasure = CU;
           continue;
         }
-        if (isOutputSink(CU))
+        if (isOutputSink(CU)) {
+          // bd 8gi5(3)/e4zs: a preserving READ is still a use. Record it so the
+          // driver can place the reversal after it — `computeFreePoint` only sees
+          // the TERMINAL's users, so when R is an upstream rail this is the ONLY
+          // place the sink is visible to the ordering decision.
+          D.PreservingSinks.push_back(CU);
           continue;  // 7.6: a `cqrt_tape_write_<W>` SINK on R — it READS R (a
                      // CNOT-class copy; the kept out_handle is an OutputRails
                      // member, subtracted above), so it is NOT a forward data
@@ -251,7 +256,10 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
                      // recorded onto a kept tape and then freed is a hidden
                      // measurement). Step 3b below decides that per rail; the
                      // `continue` here only settles CLOSURE, never freeability.
-        if (isCopyOutSink(CU, R))
+        }
+        if (isCopyOutSink(CU, R)) {
+          D.PreservingSinks.push_back(CU);  // bd 8gi5(3): as above, the ordering
+                                            // half — a preserving read is a use.
           continue;  // sxuk: a method-B copy-out READS R as src (a CNOT-class copy)
                      // — like a tape write a benign source-preserving sink, NOT a
                      // forward data consumer, so it does NOT mark the DAG
@@ -266,6 +274,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
                      // are measurement-immune by QramLowering.cpp:1749-1757), and
                      // extending the freeze here is that ticket's call, not this
                      // one's.
+        }
         if (isInvertEscape(CU)) {
           D.Escaped = true;
           continue;
