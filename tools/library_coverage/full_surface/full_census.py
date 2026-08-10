@@ -41,10 +41,31 @@ def cell_args(spec, width, ctype, lit):
     return out
 
 def ret_width(spec, width):
+    """Census width of the cell's RETURN value. Never returns None: an
+    unrecognized `ret` RAISES.
+
+    bd bcv4 — this used to `return None` for anything that was not fp/long,
+    with the comment "int-return macros — skipped", and main() turned that None
+    into a silent `continue`. The comment misdescribed the only row it actually
+    dropped: `ilogb` is a FUNCTION, not a macro (every genuine macro is already
+    filtered by the `"macro" in spec["flags"]` test in main()). So ilogbf.f32 /
+    ilogb.f64 / ilogbl.f80 were NEVER PROBED, while a function-level rollup read
+    them as uncovered — the census reporting an unmeasured cell as a result.
+    That is the same class of error as the six recorded bucket miscounts, in the
+    opposite direction.
+
+    The raise is the point, not the mapping. A silent skip is how a whole
+    unmeasured row hides inside a number that gets quoted for planning, so a
+    future `ret` kind must fail loudly here rather than shrink the denominator
+    on its way past."""
     r = spec["ret"]
-    if r == "fp":   return width
-    if r == "long": return "sl"
-    return None   # int-return macros — skipped
+    if r == "fp":                return width
+    if r == "int":               return "si32"   # ilogb — the only int-return fn
+    if r in ("long", "llong"):   return "sl"
+    raise ValueError(
+        f"ret_width: unhandled ret={r!r} for base={spec['base']!r}. Add a width "
+        f"mapping (and a wprobe.W entry if the C type is new) — do NOT skip it, "
+        f"or the cell silently leaves the census denominator (bd bcv4).")
 
 def bucket(st, diag):
     d = diag.lower()
@@ -225,12 +246,49 @@ SCOPE = {
     #    cell is decided, and that epic is now a pure capability tracker.
     "logbl.f80":      ("decided-decline",
                        "owner ruling 2026-07-28: quantum-dependent trip count is out even with a purely CLASSICAL loop recurrence (strict read of the 2026-07-27 line)"),
+
+    # -- ilogb x3: FIRST MEASURED 2026-08-10 (bd bcv4 unblocked them; they had
+    #    never been probed, so they carried no scope). They are NOT a new ruling
+    #    — they are the 2026-07-28 ruling applied to its own stated general form
+    #    ("the test is the TRIP COUNT alone" ... "applies to every
+    #    data-dependent-trip library body ... and any future one").
+    #
+    #    The precedent is as direct as it gets: `ilogbl`'s subnormal loop is the
+    #    SAME LOOP, character-for-character, as the ADJUDICATED `logbl` cell's,
+    #    in the sibling file —
+    #        src/s_logbl.c:36   for (b = LDBL_MANH_SIZE; !(u.bits.manl & m); m >>= 1)
+    #        src/s_ilogbl.c:37  for (b = LDBL_MANH_SIZE; !(u.bits.manl & m); m >>= 1)
+    #    and f64/f32 are the same idiom in their own spelling (shift-until-the-
+    #    sign-bit plus a counter):
+    #        src/s_ilogb.c:40   for (ix = -1043; lx>0; lx<<=1) ix -=1;
+    #        src/s_ilogb.c:42   for (ix = -1022,hx<<=11; hx>0; hx<<=1) ix -=1;
+    #        src/s_ilogbf.c:35  for (ix = -126,hx<<=8; hx>0; hx<<=1) ix -=1;
+    #    All three: recurrence purely CLASSICAL (a counter + a shift register),
+    #    trip count QUANTUM-DEPENDENT (the mantissa is the probe's tainted
+    #    input). All three report the identical diagnostic `logbl.f80` reports,
+    #    "cq controlled lowering: loop under quantum control".
+    #
+    #    RE-OPENING CONDITION, stated because it is real and shared with logbl:
+    #    each of these loops is BOUNDED by the mantissa width (<=31 / <=23 / <=64
+    #    iterations), so a static-K unroll to a branchless fixed-trip kernel — the
+    #    `8h7d` widening, and the shape Bennett's 64-iteration restoring divider
+    #    already is — WOULD reach them. That is a capability decision, not a
+    #    physics wall. If it is ever taken, these 3 cells plus `logbl.f80` are the
+    #    population; until then the ruling stands and they are not compiler work.
+    **{c: ("decided-decline",
+           "owner ruling 2026-07-28 applied per its own general form; ilogbl's loop is character-identical to the adjudicated logbl (src/s_logbl.c:36 == src/s_ilogbl.c:37). Re-opens only via a static-K unroll (8h7d)")
+       for c in ("ilogb.f64", "ilogbf.f32", "ilogbl.f80")},
 }
 
 def check_scope(results):
     """Rule-12 analog for the scope table: a stale SCOPE is a silent PLANNING
     miscompile, so drift fails loudly instead of being quietly carried forward."""
-    declines = {k for k, v in results.items() if v["status"] == "decline"}
+    # bd keol: a `no-body` cell was never probed, so it is not a DECLINE — but it
+    # still carries (and still needs) a SCOPE entry, because "openlibm ships no
+    # body for this" is exactly a `corpus-gap` scope. Counting it here keeps the
+    # keol classification from reading as SCOPE STALE the moment it starts firing.
+    declines = {k for k, v in results.items()
+                if v["status"] in ("decline", "no-body")}
     # bd guwr: a CQ-PROVIDED cell stops declining because the pipeline stopped
     # injecting UPSTREAM's body — not because upstream's body became lowerable.
     # Its SCOPE entry (openlibm's k_rem_pio2.c is decided-decline) is therefore
@@ -258,6 +316,7 @@ def main():
     results = {}
     buckets = defaultdict(list)
     n_cells = 0
+    missing_entry = []        # bd keol — cells whose OWN body is not in the corpus
     for spec in P.MATHH_SPEC:
         base = spec["base"]
         if base in KEEP: continue                 # hardware keep-set (recognition)
@@ -269,13 +328,44 @@ def main():
             args = cell_args(spec, width, ctype, lit)
             if args is None: continue
             rw = ret_width(spec, width)
-            if rw is None: continue
             # ld80 f80 uses x86_fp80; sqrt-family keep already skipped.
+            key = f"{spelling}.{width}"
+
+            # --- bd keol: THE CELL'S OWN ENTRY SYMBOL MUST BE IN THE CORPUS ---
+            # A missing .bc does not fail loudly on its own. The probe's call to
+            # `spelling` simply stays an unresolved external, survives inlining,
+            # and the pass reports "unknown callee" — a TRUE diagnostic about a
+            # FAKE situation, which then masks the cell's real first blocker.
+            # That failure mode produced FIVE wrong bucket counts on this
+            # campaign (the vuy6 module-asm aliases, the 6 missing TUs, the ld80
+            # ieee.h retraction), and every one was found by hand, late.
+            #
+            # This is deliberately NOT a hard abort: `nexttowardl.f80` is a
+            # KNOWN, owner-recorded corpus gap (openlibm ships no
+            # s_nexttowardl.c at all), so the census must still complete and
+            # report it. What changes is that it is now classified by the
+            # HARNESS, from the corpus, instead of being inferred from a
+            # compiler diagnostic that cannot tell the two apart.
+            if spelling not in defmap:
+                missing_entry.append(key)
+                rec = {"status": "no-body", "bucket": "corpus-gap (no body)",
+                       "diag": f"{spelling}: no definition in the corpus defmap "
+                               f"— NOT PROBED, so this cell has no measured "
+                               f"blocker (bd keol)",
+                       "provider": "cq" if spelling in CQPROV else "openlibm"}
+                if key in SCOPE:
+                    rec["scope"], rec["scope_ref"] = SCOPE[key]
+                results[key] = rec
+                buckets["corpus-gap (no body)"].append(key)
+                n_cells += 1
+                print(f"  {spelling:12s} {width:4s} CORPUS-GAP (no body — not probed)",
+                      file=sys.stderr)
+                continue
+
             linked_cq = []
             st, diag, src = WP.probe(spelling, rw, args, 0, defmap,
                                      deps_out=linked_cq)
             b = bucket(st, diag)
-            key = f"{spelling}.{width}"
             provider = "cq" if spelling in CQPROV else "openlibm"
             rec = {"status": st, "bucket": b, "diag": diag, "provider": provider}
             if provider == "cq":
@@ -333,16 +423,40 @@ def main():
     # -----------------------------------------------------------------------
     cq   = {k: v for k, v in results.items() if v.get("provider") == "cq"}
     inj  = {k: v for k, v in results.items() if v.get("provider") != "cq"}
-    cov  = lambda d: sum(1 for v in d.values() if v["status"] != "decline")
+    # bd keol: `no-body` must be subtracted from the NUMERATOR explicitly. A
+    # not-equal-to-"decline" test silently counts every NEW status as COVERED,
+    # so introducing the keol classification would have moved this row 97 -> 98
+    # with no compiler change — the exact soft-overclaim the three-row split and
+    # the CONTINUITY line below exist to prevent. A cell with no injectable body
+    # is neither covered nor declining; it is UNMEASURED.
+    #
+    # It stays in the DENOMINATOR, which preserves this row's published meaning
+    # bit-for-bit (before keol, `nexttowardl.f80` was a `decline`: in the
+    # denominator, out of the numerator). The stricter "can openlibm's body be
+    # lowered" denominator that drops it too is one lower, and the README states
+    # both.
+    # ONE predicate, used everywhere "is this cell covered?" is asked, so the
+    # numerator and the A/B audit below cannot drift apart (Rule 14).
+    COVERED_EXCL = ("decline", "no-body")
+    is_covered = lambda st: st not in COVERED_EXCL
+    cov  = lambda d: sum(1 for v in d.values() if is_covered(v["status"]))
     icov, ntot = cov(inj), len(inj)
     ccov, ctot = cov(cq), len(cq)
     pct  = lambda a, b: f"{round(100*a/b)}%" if b else "n/a"
     print("\nTHREE DISJOINT ROWS — never merged (Rule 18 amendment (iii)):")
     print(f"  1. RECOGNITION  — the hardware keep-set; NOT a cell here (no injectable")
     print(f"                    body). A FIXED FLOOR, never progress. See probe.py.")
+    # bd keol: split the non-covered remainder. `ntot-icov` used to be printed
+    # flatly as "decline", which is now wrong by one and wrong in KIND: a
+    # `no-body` cell did not decline, it was never measured. Naming them apart
+    # here is the whole point of the keol classification — a reader must not have
+    # to know it to avoid scoping compiler work against a missing .bc.
+    inj_decl = sum(1 for v in inj.values() if v["status"] == "decline")
+    inj_nb   = sum(1 for v in inj.values() if v["status"] == "no-body")
+    tail = f"{inj_decl} decline" + (f" + {inj_nb} no-body (NOT probed)" if inj_nb else "")
     print(f"  2. INJECTION    — real upstream openlibm bodies, source-injected:")
     print(f"                    {icov}/{ntot} covered ({pct(icov,ntot)}), "
-          f"{ntot-icov} decline.  *** THE CAMPAIGN NUMBER ***")
+          f"{tail}.  *** THE CAMPAIGN NUMBER ***")
     print(f"  3. CQ-PROVIDED  — CQ ships the leaf; upstream's body is NOT injected:")
     print(f"                    {ccov}/{ctot} covered ({pct(ccov,ctot)}) — "
           f"{', '.join(sorted(cq)) or 'none'}")
@@ -364,7 +478,7 @@ def main():
     # printing them as one number reads as an overclaim in whichever direction the
     # reader guesses.
     covdep = sorted(k for k, v in inj.items() if v.get("rests_on_cq")
-                    and (v["status"] != "decline") != (v["upstream_status"] != "decline"))
+                    and is_covered(v["status"]) != is_covered(v["upstream_status"]))
     moved  = sorted(k for k, v in inj.items() if v.get("rests_on_cq") and k not in covdep)
     print(f"\n  INJECTION cells whose COVERAGE depends on a CQ-provided leaf "
           f"(A/B-measured, upstream-only re-probe): {len(covdep)}")
@@ -399,7 +513,7 @@ def main():
     # The axis that actually answers "where is the work?" — see SCOPE above.
     scopes = defaultdict(list)
     for k, v in results.items():
-        if v["status"] == "decline":
+        if v["status"] in ("decline", "no-body"):   # bd keol — see check_scope
             scopes[v.get("scope", "UNCLASSIFIED")].append(k)
     print("\nBY SCOPE (is it work?):")
     for s in ("lever-gap", "owner-ruling-needed", "deferred-capability",
@@ -414,6 +528,18 @@ def main():
     ndecl = sum(1 for v in results.values() if v["status"] == "decline")
     print(f"\nACTIONABLE LEVER GAP: {len(scopes.get('lever-gap', []))} cell(s) "
           f"of {ndecl} declines. Quote THIS, not the decline count.")
+    # bd keol — the corpus self-check. A cell reported here was NOT MEASURED, and
+    # the distinction matters more than it looks: before this check its probe's
+    # unresolved call surfaced as an ordinary "unknown callee" decline, i.e. the
+    # census reported an unmeasured cell as a compiler result. Print it as its own
+    # banner rather than a bucket row, because the corrective action is to fix the
+    # CORPUS (rebuild a .bc, add an alias shim) and not to fix the compiler.
+    if missing_entry:
+        print(f"\n!! CORPUS GAP — {len(missing_entry)} cell(s) have NO BODY in the "
+              f"defmap and were NOT PROBED: {sorted(missing_entry)}")
+        print("   These are NOT declines and carry no measured blocker. Rebuild the "
+              "corpus (README Reproduce step 1/1b) or add the alias shim, then "
+              "re-run; do not scope compiler work against them.")
     check_scope(results)
 
 if __name__ == "__main__":

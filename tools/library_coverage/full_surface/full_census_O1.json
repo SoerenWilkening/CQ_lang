@@ -405,6 +405,30 @@
   "scope": "decided-decline",
   "scope_ref": "owner ruling 2026-07-28: quantum-dependent trip count is out even with a purely CLASSICAL loop recurrence (strict read of the 2026-07-27 line)"
  },
+ "ilogbf.f32": {
+  "status": "decline",
+  "bucket": "loop-carried",
+  "diag": "probe i32 (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
+  "scope": "decided-decline",
+  "scope_ref": "owner ruling 2026-07-28 applied per its own general form; ilogbl's loop is character-identical to the adjudicated logbl (src/s_logbl.c:36 == src/s_ilogbl.c:37). Re-opens only via a static-K unroll (8h7d)"
+ },
+ "ilogb.f64": {
+  "status": "decline",
+  "bucket": "loop-carried",
+  "diag": "probe i32 (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
+  "scope": "decided-decline",
+  "scope_ref": "owner ruling 2026-07-28 applied per its own general form; ilogbl's loop is character-identical to the adjudicated logbl (src/s_logbl.c:36 == src/s_ilogbl.c:37). Re-opens only via a static-K unroll (8h7d)"
+ },
+ "ilogbl.f80": {
+  "status": "decline",
+  "bucket": "loop-carried",
+  "diag": "probe i32 (): cq controlled lowering: loop under quantum control",
+  "provider": "openlibm",
+  "scope": "decided-decline",
+  "scope_ref": "owner ruling 2026-07-28 applied per its own general form; ilogbl's loop is character-identical to the adjudicated logbl (src/s_logbl.c:36 == src/s_ilogbl.c:37). Re-opens only via a static-K unroll (8h7d)"
+ },
  "ldexpf.f32": {
   "status": "COMPILES",
   "bucket": "COMPILES",
@@ -804,9 +828,9 @@
   "provider": "openlibm"
  },
  "nexttowardl.f80": {
-  "status": "decline",
-  "bucket": "unknown callee (inner-call)",
-  "diag": "probe x86_fp80 (): cq taint escape: tainted value consumed by an unknown callee",
+  "status": "no-body",
+  "bucket": "corpus-gap (no body)",
+  "diag": "nexttowardl: no definition in the corpus defmap \u2014 NOT PROBED, so this cell has no measured blocker (bd keol)",
   "provider": "openlibm",
   "scope": "corpus-gap",
   "scope_ref": "openlibm ships no s_nexttowardl.c. NB the recorded 'would land on nextafterl's blocker anyway' rider is REFUTED: nextafterl.f80 COMPILES today"

@@ -2,10 +2,11 @@
 
 ## ⚠ READ THIS FIRST — `bucket` is NOT a work list. `scope` is.
 
-**The 20 declines contain 3 cells of actionable work, not 20** (re-measured
-2026-07-31, bd `guwr`; the axis itself is bd `3c6m.14`, 2026-07-28). Every
-`decline` record carries a **`scope`** field alongside `bucket`, because those two
-answer different questions and only one of them is a plan:
+**The 22 declines contain 3 cells of actionable work, not 22** (re-measured
+**2026-08-10 at HEAD `d057c31`**, bd `bcv4`/`keol`; the axis itself is bd
+`3c6m.14`, 2026-07-28). Every `decline` record carries a **`scope`** field
+alongside `bucket`, because those two answer different questions and only one of
+them is a plan:
 
 | | question it answers |
 |---|---|
@@ -13,12 +14,29 @@ answer different questions and only one of them is a plan:
 | `scope`  | **is it work** — decided-out, actionable, deferred, or not a compiler fact |
 
 ```
-BY SCOPE (20 declines)
-  15  decided-decline       fmod/remainder/remquo x3 · sinf/cosf/tanf · tgammal · lgammal · logbl
+BY SCOPE (22 declines + 1 no-body)
+  18  decided-decline       fmod/remainder/remquo x3 · ilogb x3 · sinf/cosf/tanf
+                            · tgammal · lgammal · logbl
    3  lever-gap    <-- THE WORK   tgammaf.f32 · tgamma.f64 · nexttowardf.f32
    1  deferred-capability   powl.f80
-   1  corpus-gap            nexttowardl.f80
+   1  corpus-gap            nexttowardl.f80   (status `no-body` — NOT probed)
 ```
+
+**⚡ 2026-08-10 RE-CENSUS AT HEAD — THE COMPILER DID NOT MOVE; THE MEASUREMENT
+DID.** Re-run against a corpus rebuilt from scratch (251 `.bc`, fingerprint
+`409 []`) with the plugin built at `d057c31`. Two results worth separating:
+
+* **Zero drift.** Before the harness fixes below, the freshly measured
+  `full_census_O1.json` was **byte-identical** (`sha256 1ea7eb10…`) to the one
+  committed at `19d0e06` on 2026-07-31. Five pass commits landed in between and
+  **not one is census-visible.** The "the decline partition is 10 days stale, do
+  not scope a lever off it" worry was reasonable and is now *measured false* for
+  this interval — but the check is what establishes that, not the assumption.
+* **Two harness defects closed, both moving numbers the un-flattering way**: the
+  denominator went **117 → 120** (`bcv4`, 3 never-probed cells entered) and one
+  cell left the decline set for a `no-body` corpus classification (`keol`). The
+  **numerator held at 97** and the **actionable lever-gap held at 3**. Details in
+  the injection-row section below.
 
 **⚡ 2026-07-31 (bd `guwr`, Rule 18 CQ-PROVIDED amendment): 26 → 20 declines, and
 NOT ONE OF THEM IS COMPILER WORK.** The six `sin`/`cos`/`tan`.f64 + `sinl`/`cosl`/
@@ -135,13 +153,22 @@ hiding in the trig bucket, and it is not a compiler lever at all.
 
 ### Two bucket labels that are measurement artifacts, not capabilities
 
-* **`fp-copy/specialization` (was 2) — WAS A STRING RACE, now empty.** `wprobe.py`
-  truncated the diagnostic at 120 chars, one character before `"unsupported
-  instruction"` completes, so `bucket()` fell past that arm into the
-  `"specialization"` arm — resurrecting a label bd `3c6m.54` had **emptied**.
-  Blast radius of the fix was exactly the ld80 gamma pair (every other decline
-  diagnostic measures < 115 chars). Corrected here to `unsupported opcode`.
-  **The census's sixth bucket measurement error.**
+* **`fp-copy/specialization` — a STRING RACE emptied it of the *ld80* gamma pair;
+  it is NOT empty.** `wprobe.py` truncated the diagnostic at 120 chars, one
+  character before `"unsupported instruction"` completes, so `bucket()` fell past
+  that arm into the `"specialization"` arm — resurrecting a label bd `3c6m.54` had
+  emptied. Blast radius of the fix was exactly the **ld80** gamma pair (every
+  other decline diagnostic measures < 115 chars), which correctly re-bucketed to
+  `unsupported opcode`. **The census's sixth bucket measurement error.**
+  > **CORRECTED 2026-08-10.** This bullet previously ended "now empty", which
+  > contradicted the `full_census_O1.json` committed in the same commit: the
+  > bucket holds **2 cells — `tgamma.f64` and `tgammaf.f32`** — and has
+  > throughout. Those are the **f64/f32** gamma cells, a different pair from the
+  > ld80 one the string-race fix moved, and they are 2 of the 3 `lever-gap` cells,
+  > so a reader taking "empty" at face value would have concluded the actionable
+  > set was one cell. The census output is the authority; this prose was not
+  > re-derived from it. **The census's seventh bucket-count error, and the first
+  > that lived only in the README.**
 * **`unsupported opcode` (5) contains ZERO opcode-surface work.** `full_census.py:52`
   assigns it by substring-matching `kMsgOther` (`TaintPropagation.cpp:413`) — the
   generic gep/atomicrmw/freeze/va_arg **catch-all**, not an opcode signal. The f32
@@ -230,8 +257,14 @@ Stem-level detail:
 |---|---|---|
 | **all three widths** | **44 / 56** | = **14** by recognition + **30** by injection + **0** CQ-provided (no CQ-provided stem has an f32 leaf) |
 | every width golden-matched | 42 / 56 | `fabs` (runs, no golden) and `fma` (partial) fall short |
-| some widths | 7 / 56 | `lgamma` `logb` `nexttoward` `pow` (f80-short) + `sin` `cos` `tan` (**f32**-short, CQ-provided at f64+f80 — bd `guwr`) |
-| no width | 5 / 56 | `fmod` `remainder` `remquo` `tgamma` `ilogb` |
+| some widths | 7 / 56 | `lgamma` `logb` `pow` (f80-short) + `nexttoward` (**short at BOTH ends** — f64 only; see below) + `sin` `cos` `tan` (**f32**-short, CQ-provided at f64+f80 — bd `guwr`) |
+| no width | 5 / 56 | `fmod` `remainder` `remquo` `tgamma` `ilogb` (all now MEASURED — `ilogb` was an unprobed skip until bd `bcv4`, 2026-08-10) |
+
+> **`nexttoward` was mis-grouped as `f80-short` until 2026-08-10.** It is covered
+> at **f64 only**: `nexttowardf.f32` is a `memory-store (Shadow)` decline and one
+> of the **3 actionable `lever-gap` cells**, and `nexttowardl.f80` is the
+> `corpus-gap` (no body ships). Grouping it with the genuinely f80-short trio hid
+> an actionable f32 cell inside a row that reads "only the hard width is missing".
 
 ### …and openlibm ships MORE than ISO C11 `math.h`, none of it modelled (bd `sj30`)
 
@@ -317,37 +350,72 @@ Measured: **36 verified · 3 accepted** (`fabs{,f,l}`) **· 3 partial** (`fma{,f
 
 ### (2) Real-openlibm source injection — ***THE* campaign number**
 
-**What `117` is** — it is the **upstream-injectable subset**, not `math.h`:
+**What `120` is** — it is the **upstream-injectable subset**, not `math.h`:
 
 ```
 183 modelled cells  =  42 hardware keep-set (no injectable body, Rule 18)
                      + 12 type-generic macro cells (modelled at 1 width each)
                      +  3 nan (by-design, no taintable input)
                      + 126 nominally injectable
-                            − 3 ilogb (int-return, SKIPPED by the harness, bd bcv4)
-                     = 123 actually probed
+                     = 126 actually probed   (bd bcv4 CLOSED 2026-08-10: the 3
+                            ilogb cells are no longer skipped — see below)
                             − 6 CQ-PROVIDED (bd guwr — probed, but against CQ's
                                  own leaf, so they answer scoreboard (3), not this one)
-                     = 117 upstream-injectable   <- THIS row's denominator
+                     = 120 upstream-injectable   <- THIS row's denominator
 ```
 
-So **97/117 = 83% of the upstream-injectable subset** — which is **53%** of the 183
-modelled cells and **42%** of the 69 named entities. **Never write "83% of
+So **97/120 = 81% of the upstream-injectable subset** — which is **53%** of the 183
+modelled cells and **42%** of the 69 named entities. **Never write "81% of
 `math.h`".**
 
-> **⚠ THE 123 → 117 DENOMINATOR CHANGE IS NOT PROGRESS, AND IT IS THE ONE WAY THIS
-> ROW COULD BE MISREAD.** All 6 cells that left were **declines**, so the numerator
-> is untouched (**97 before bd `guwr`, 97 after**) while the percentage moved 79% →
-> 83%. `full_census.py` prints both denominators on every run for exactly this
-> reason. Quote both or neither; if you are tracking progress over time, track the
-> **numerator**.
-Two properties of this denominator worth knowing before quoting it: it is
-**contingent on a harness bug** (fixing `bcv4` makes it 120 and moves every
-percentage), and it contains **one cell with no body to inject at all**
-(`nexttowardl.f80`), so the strict *"can openlibm's body be lowered"* denominator
-is **116**.
+> **⚠ THE DENOMINATOR CHANGES ARE NOT PROGRESS, AND THEY ARE THE ONE WAY THIS ROW
+> COULD BE MISREAD.** Two have happened, in opposite directions, and the
+> **numerator did not move for either one — 97 throughout**:
+>
+> | | denominator | % | why |
+> |---|---|---|---|
+> | pre-`guwr` | 123 | 79% | — |
+> | `guwr` (2026-07-31) | 117 | 83% | 6 CQ-PROVIDED cells left; all were declines |
+> | `bcv4` (2026-08-10) | **120** | **81%** | 3 ilogb cells ENTERED; all decline |
+>
+> `full_census.py` prints both the current and the pre-amendment denominator on
+> every run for exactly this reason. Quote both or neither; if you are tracking
+> progress over time, track the **numerator**.
 
-**Cells: 97/117 injection-covered, all 97 ship-floor verified** — *91 fully inlined +
+**⚡ 2026-08-10 (bd `bcv4` + `keol`): the denominator is no longer contingent on a
+harness bug, and the percentage got WORSE because it got HONEST.** The previous
+edition of this block flagged both defects as open; both are now closed, and each
+moved a number in the un-flattering direction:
+
+* **`bcv4`** — `full_census.py::ret_width` returned `None` for any `ret` that was
+  not `fp`/`long`, commented "int-return macros — skipped". That comment
+  misdescribed the only row it actually dropped: **`ilogb` is a function, not a
+  macro** (genuine macros are already filtered upstream by the `"macro" in flags`
+  test). So `ilogbf.f32` / `ilogb.f64` / `ilogbl.f80` were **never probed** for the
+  whole campaign while a function-level rollup read them as uncovered — the census
+  reporting an **unmeasured cell as a result**. Now probed: all 3 decline
+  `loop-carried`, classified `decided-decline`. `ret_width` now **raises** on an
+  unrecognized `ret` instead of silently shrinking the denominator.
+* **`keol`** — a missing `.bc` did not fail loudly; the probe's call stayed an
+  unresolved external and the cell recorded a **true-but-masking** "unknown callee
+  (inner-call)", i.e. a *compiler* blocker for a *corpus* problem. That mode
+  produced five wrong bucket counts on this campaign. The cell's own entry symbol
+  is now checked against the defmap first, and a miss records the distinct
+  `corpus-gap (no body)` bucket with status `no-body` plus a loud end-of-run
+  banner. **The `unknown callee (inner-call)` bucket is now empty** — it was always
+  a corpus artifact, never a compiler fact.
+
+> **`no-body` is NOT covered and NOT a decline.** It is *unmeasured*, and the
+> numerator subtracts it explicitly (`is_covered`, one predicate shared with the
+> A/B audit). This is not a detail: `cov()` originally tested `status != "decline"`,
+> so introducing `no-body` would have counted `nexttowardl.f80` as **covered** and
+> moved this row **97 → 98 with no compiler change**. Caught before it shipped;
+> recorded here because the next new status will have the same trap.
+
+The strict *"can openlibm's body be lowered"* denominator — dropping
+`nexttowardl.f80`, which has no body to inject at all — is **119**.
+
+**Cells: 97/120 injection-covered, all 97 ship-floor verified** — *91 fully inlined +
 6 Phase-6 clone-specialized*, which `wprobe.py` requires never be merged into plain
 `COMPILES`. (Row (3) adds **6** more plain-`COMPILES` cells that are **not** in this
 91 and must not be added to it: the census's raw plain-COMPILES tally is 97 across
@@ -368,7 +436,7 @@ their f80 width in bd `0rwu`; they were the two entries that made this row 28):
 > **⚠ bd `guwr` DID NOT MOVE THIS TABLE, and that is correct, not an oversight.**
 > `sin`/`cos`/`tan` stay in **no width** because this table answers *"can UPSTREAM's
 > body be lowered?"* — and it still cannot, at any width. Only their f32 cells remain
-> in this row's 117 (`sinf`/`cosf`/`tanf`, all declining); their f64/f80 cells left
+> in this row's 120 (`sinf`/`cosf`/`tanf`, all declining); their f64/f80 cells left
 > for row (3), which is a different question. If you want *"what can CQ emit?"*, that
 > is the goal-aligned number above, where these three read **2/3**. Reading a
 > CQ-provided width as upstream-injection coverage is precisely the merge condition
@@ -921,6 +989,22 @@ C-physics wall.** See `FULL_DEPTH_CENSUS.md` and bd memory
   LEVERS, emits the capability-combination -> function table + the
   cells-unlocked-per-lever ranking (`peel_census_merged.json`).
 - `dump_ir.py` / `batch_dump.py` — cache one cell's inlined IR + its diagnostic.
+- `keol_selfcheck.py` — **mutant validation of the bd `keol` corpus check.** The
+  check is silent on a good corpus by construction, so a clean census run is *not*
+  evidence it works (bd memory `gate-validation-not-corpus-silence-2026-07-31`).
+  This hides one cell's own `.bc` and asserts three things: **(1)** the UNGUARDED
+  probe of the now-bodyless cell really does report a *compiler* blocker
+  (`unknown callee (inner-call)`) — the masking is demonstrated, not quoted;
+  **(2)** the guard fires; **(3)** an unrelated WITNESS cell keeps its exact base
+  status and bucket, so the guard discriminates rather than blanket-declining.
+  Plus a restore assertion. Measured PASS 5/5, 2026-08-10.
+  ```bash
+  BC=<scratch>/bc OPENLIBM=<scratch>/openlibm CENSUS_OPTLEVEL=O1 python3 keol_selfcheck.py
+  ```
+  Takes ~3 defmap builds (minutes). It stashes the arm as a `.bc.keol-stash`
+  SIBLING rather than in a temp dir, so a killed run leaves the file recoverable
+  and the next run self-heals it — losing a `.bc` to the validator would create
+  exactly the corpus hole the checker exists to find.
 
 ## Census-mode plugin (THROWAWAY — never committed)
 The full-depth run needs a throwaway instrumentation of the pass (bd 3c6m.50):
@@ -1078,9 +1162,14 @@ clang -g -O1 -fno-builtin -emit-llvm -c -I "$SHIM" \
 #     BC=<scratch>/bc OPENLIBM=<scratch>/openlibm python3 -c "import sys;\
 #     sys.path.insert(0,'.');import wprobe;d=wprobe.build_defmap();print(len(d),\
 #     [n for n in ('cosf','sinf','tanf','fmodl','remquol') if n not in d])"
-#   Expect `409 []`. 404 / 407 or a non-empty list = an incomplete corpus, and a
-#   missing .bc does NOT fail loudly — it masks the cell's real blocker as
-#   "unknown callee".
+#   Expect `409 []`. 404 / 407 or a non-empty list = an incomplete corpus.
+#   SINCE bd keol (2026-08-10) a missing .bc DOES fail loudly: full_census.py
+#   checks each cell's own entry symbol against the defmap first and records
+#   `corpus-gap (no body)` + status `no-body` + an end-of-run banner, instead of
+#   the masking "unknown callee (inner-call)" it used to infer from the compiler.
+#   Keep running this fingerprint anyway — it is a PRE-FLIGHT over the whole
+#   corpus, whereas keol only sees the ~126 cells the census actually probes, so
+#   it would not notice a missing INNER-call body that no cell is an entry for.
 
 # 1b. CORPUS-GAP CLOSURES (bd 3c6m.50 Step 0c) — three openlibm public names are
 #     minted by the build's symbol aliasing, which the raw -emit-llvm corpus build

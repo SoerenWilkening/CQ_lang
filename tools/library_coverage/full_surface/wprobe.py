@@ -30,12 +30,19 @@ PASS = Path(os.environ.get("CQ_PASS",
 INC = "-I%s -I%s -I%s -I%s" % (OL/"include", OL/"src", OL/"amd64", OL/"bsdsrc")
 
 # width -> (c_type, theta_name, measure_name, theta_zero_literal)
+# `si32` is the RETURN width of the one int-returning math.h FUNCTION, `ilogb`
+# (bd bcv4). Every other int-return row in probe.MATHH_SPEC is a macro and is
+# filtered before it reaches here, which is exactly how ilogb's 3 cells stayed
+# unprobed — and were then read as failures — for the whole campaign. The
+# spelling is CQ.h's `_Generic` row for plain `int` (include/CQ.h:124/164), not
+# a name invented here.
 W = {
-    "f32": ("float",       "cq_theta_f32", "cq_measure_f32", "0.5f"),
-    "f64": ("double",      "cq_theta_f64", "cq_measure_f64", "0.5"),
-    "f80": ("long double", "cq_theta_f80", "cq_measure_f80", "0.5L"),
-    "sl":  ("long",        "cq_theta_sl",  "cq_measure_sl",  "2"),
-    "sll": ("long long",   "cq_theta_sll", "cq_measure_sll", "2"),
+    "f32":  ("float",       "cq_theta_f32",   "cq_measure_f32",   "0.5f"),
+    "f64":  ("double",      "cq_theta_f64",   "cq_measure_f64",   "0.5"),
+    "f80":  ("long double", "cq_theta_f80",   "cq_measure_f80",   "0.5L"),
+    "si32": ("int",         "cq_theta_si32",  "cq_measure_si32",  "2"),
+    "sl":   ("long",        "cq_theta_sl",    "cq_measure_sl",    "2"),
+    "sll":  ("long long",   "cq_theta_sll",   "cq_measure_sll",   "2"),
 }
 
 # bd 20xt (2026-07-18): the closure resolves DATA symbols too, not just
