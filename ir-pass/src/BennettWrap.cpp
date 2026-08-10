@@ -95,6 +95,14 @@ bool emitBennettWrap(Function &Clone, ArrayRef<CallInst *> ForwardStream,
   //     COMPLETE reverse returned true, never interleaved (Rule 6). `Out`
   //     escapes via `ret` (not in `ScratchRails`); borrowed params are read-only
   //     (never produced by the forward stream, so never here).
+  // bd urlv audit — NO KEPT-CARRIER RECORD REACHES A `ScratchRails` MEMBER, and
+  // this one is excluded a step earlier than the other emitters': these rails live
+  // inside a Phase-6 CLONE BODY, which the whole-DAG spine never walks, and each is
+  // inserted into `ControlOwnedRails` on the line below. The clone body mints no
+  // `cqrt_tape_write_*` (only `IOSinkLowering` and `AbortParkEmit` do) and the only
+  // copy here writes the escaping `Out`, reading a rail this loop then zeroes by its
+  // own `_unc` chain. The bd 261j(a) freeze is not owed here (bd memory
+  // [record-freeze-invariant-2026-08-10]).
   FunctionCallee Free = wd.freeFn();
   for (Value *Rail : ScratchRails) {
     B.CreateCall(Free, {Rail});

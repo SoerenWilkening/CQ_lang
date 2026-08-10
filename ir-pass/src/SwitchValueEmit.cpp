@@ -266,6 +266,13 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
     emitRoute(B, csyms, CS.Flag, P, CS.Rail, /*Negated=*/false, DL);    // route-in†
   }
 
+// bd urlv audit — NO KEPT-CARRIER RECORD REACHES THE RAILS AND FLAGS FREED IN 8-9. Each per-case work rail and eq-flag is minted BY THIS EMITTER at |0> and
+  // returned to |0> by its own route-in† / `_inv` strip immediately below. They are
+// never an operand of a gate that writes a carrier the reversal does not touch:
+// this module mints NO `cqrt_tape_write_*` (only `IOSinkLowering` and
+// `AbortParkEmit` do), and its copies write a fresh `out`. So the bd 261j(a)
+// freeze is not owed here and is deliberately not duplicated (bd memory
+// [record-freeze-invariant-2026-08-10]). Re-check if this emitter ever tapes.
   // 8. Rail frees, same reverse order, each on its case's WORK RAIL (`CS.Rail`) —
   //    provably |0> on every case only AFTER its route-in† (§3b: earlier the rail
   //    holds p0 / f(0) garbage entangled with its flag; a dirty free is a hidden

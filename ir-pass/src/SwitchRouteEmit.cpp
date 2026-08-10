@@ -171,6 +171,13 @@ void emitSwitchPhaseRegion(const ControlRegion &R, WidthDispatch &wd,
     //    self-inverse).
     emitRoute(B, csyms, Flag, Q, Rail, /*Negated=*/false, DL);
 
+    // bd urlv audit — NO KEPT-CARRIER RECORD REACHES THE RAIL AND FLAG FREED IN 6-8. Both are minted BY THIS EMITTER at |0> and returned to |0> by its own
+    // route-back / `_inv` strip immediately below. They are
+    // never an operand of a gate that writes a carrier the reversal does not touch:
+    // this module mints NO `cqrt_tape_write_*` (only `IOSinkLowering` and
+    // `AbortParkEmit` do), and its copies write a fresh `out`. So the bd 261j(a)
+    // freeze is not owed here and is deliberately not duplicated (bd memory
+    // [record-freeze-invariant-2026-08-10]). Re-check if this emitter ever tapes.
     // 6. Free rail — provably |0> (off-case the rail never moved; on-case the
     //    route round-trips a basis permutation and Rz|0>=|0>). A clean reset, NOT
     //    a measurement (SCOPING §3b).

@@ -205,6 +205,13 @@ void emitSwitchDataMuxRegion(const ControlRegion &R, WidthDispatch &wd,
   if (Flags.empty())
     return bailLoud(R);  // SawContent proved ≥1 content case.
 
+// bd urlv audit — NO KEPT-CARRIER RECORD REACHES THE N EQ-FLAGS FREED BELOW. Each is minted BY THIS EMITTER at |0> and stripped back to |0> by its own
+  // `icmp_eq_inv` immediately before its free. They are
+// never an operand of a gate that writes a carrier the reversal does not touch:
+// this module mints NO `cqrt_tape_write_*` (only `IOSinkLowering` and
+// `AbortParkEmit` do), and its copies write a fresh `out`. So the bd 261j(a)
+// freeze is not owed here and is deliberately not duplicated (bd memory
+// [record-freeze-invariant-2026-08-10]). Re-check if this emitter ever tapes.
   // 3. STRIP + FREE all N flags. Each `icmp_eq_inv(q, c_i)` reads PRISTINE q
   //    (q == q0 — the copies write %out, never q), so each flag returns to |0>
   //    with zero controlled gates and is free-able. The strips run AFTER all

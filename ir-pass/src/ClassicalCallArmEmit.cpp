@@ -193,6 +193,13 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   //    classical constant or any non-`q` value). The `_inv` therefore un-computes
   //    the flag to |0> (provably free-able). Reads Cond's operands — MUST precede
   //    the erase of Cond (in flattenRegion). See [[6-5-classical-call-arm]].
+// bd urlv audit — NO KEPT-CARRIER RECORD REACHES THE FLAG FREED HERE. It is minted BY THIS EMITTER at |0> and stripped back to |0> by the `_inv`
+  // on the line above. They are
+// never an operand of a gate that writes a carrier the reversal does not touch:
+// this module mints NO `cqrt_tape_write_*` (only `IOSinkLowering` and
+// `AbortParkEmit` do), and its copies write a fresh `out`. So the bd 261j(a)
+// freeze is not owed here and is deliberately not duplicated (bd memory
+// [record-freeze-invariant-2026-08-10]). Re-check if this emitter ever tapes.
   lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
                      /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag);
   stamp(B.CreateCall(wd.freeFn(), {Flag}));

@@ -393,6 +393,17 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
     emitRoute(B, csyms, Flag, Q, A.Rail, A.Negated, DL);     // route-in†
   }
 
+  // NO KEPT-CARRIER RECORD CAN REACH THE RAILS FREED IN 8-9 (bd urlv audit; the
+  // invariant is bd memory [record-freeze-invariant-2026-08-10]). Both classes —
+  // the per-arm work rail and the path-predicate flag — are minted BY THIS EMITTER
+  // at |0>, are returned to |0> by this emitter's own adjoint immediately below,
+  // and are never an operand of a gate that writes a carrier the reversal does not
+  // touch: the method-B copy-out writes the fresh `out` and READS a data rail this
+  // emitter never frees, and this module mints NO `cqrt_tape_write_*` (only
+  // `IOSinkLowering` and `AbortParkEmit` do). The 261j freeze is therefore not
+  // owed here, and is deliberately not duplicated. Re-check this if a copy
+  // destination ever becomes one of these rails, or if this emitter ever tapes.
+
   // 8. Rail frees, same reverse order, each on its arm's WORK RAIL (`A.Rail`) —
   //    provably |0> on both branches only AFTER its route-in† (§3b — earlier the
   //    rail holds p0 / f(0)-vs-0 garbage entangled with the flag: a dirty free is
@@ -615,7 +626,10 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL);
 
   // 6. Rail frees — each rail is |0> for free (Rz|0>=|0>); a clean reset, NOT a
-  //    measurement (SCOPING §3b).
+  //    measurement (SCOPING §3b). No kept-carrier record reaches these rails or the
+  //    flag freed at 8: both are minted here at |0>, adjointed here, and are never
+  //    an operand of a tape write or a copy destination — this module mints none
+  //    (bd urlv audit; the same reasoning as the value-arm note above).
   for (Value *Rail : Rails) {
     CallInst *RailFree = B.CreateCall(wd.freeFn(), {Rail});
     if (DL)

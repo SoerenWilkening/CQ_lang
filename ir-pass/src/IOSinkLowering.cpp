@@ -609,10 +609,20 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
     //     `flag` directly would commit on the WRONG branch — verify-clean-invisible,
     //     so the bracket span is pinned by the ordered CHECK). Each tainted target
     //     becomes ONE cqrt_tape_write_<W>_controlled(ctrl, tape, src): `src` is
-    //     PRESERVED (CNOT-class) so q stays coherent and `src`'s own lineage
-    //     uncomputes normally (Bennett); the copy DESTINATION is the fresh
-    //     out_handle, never a `Cond` operand (so q == q0 at strip time). The
-    //     out_handle is a KEPT output rail (`OutputRails`). BOTH arms ALWAYS append
+    //     PRESERVED (CNOT-class) so q stays coherent; the copy DESTINATION is the
+    //     fresh out_handle, never a `Cond` operand (so q == q0 at strip time). The
+    //     out_handle is a KEPT output rail (`OutputRails`).
+    //
+    //     "`src` is PRESERVED, THEREFORE `src`'s LINEAGE UNCOMPUTES NORMALLY
+    //     (Bennett)" — which this comment used to assert — IS FALSE, and it is the
+    //     exact sentence bd 261j(a) ruled out (owner ruling 2026-08-10). Preserving
+    //     the src REGISTER is true; concluding that src is then FREEABLE does not
+    //     follow, because the copy's DESTINATION is never restored, so src stays
+    //     CORRELATED with a carrier the reversal never touches. Whether src's
+    //     lineage may be freed is decided per rail by the `FrozenRails` freeze
+    //     (DagTraversal step 3b), never re-derived from "the tape preserves src".
+    //     261j corrected four copies of this sentence; this was the fifth, on the
+    //     emitter that actually mints the recording gate (bd urlv). BOTH arms ALWAYS append
     //     EXACTLY one entry per arg — only the CONTENT is gated (deterministic tape
     //     length; the inactive arm commits |0> content, accepted Bennett-tape
     //     semantics, pinned in the golden), never a superposition over entry count.
@@ -676,6 +686,24 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
     //     value `Cond` reads is pristine and the `_inv` un-computes the flag to |0>
     //     (provably free-able). Reads Cond's operands — MUST precede the flatten's
     //     erase of Cond.
+    //
+    //     THIS FLAG IS RECORDED ONTO THE KEPT TAPE, and the free is still sound —
+    //     the ONE emitter in the tree where that combination occurs, so state the
+    //     reason rather than leave it to be re-derived (bd urlv audit, and the
+    //     invariant is bd memory [record-freeze-invariant-2026-08-10]). Step 7b-c
+    //     above passes `Flag` as the CTRL of `cqrt_tape_write_<W>_controlled`, and a
+    //     controlled write records its ctrl's label in the entry's EXISTENCE
+    //     pattern exactly as it records `src`'s label in the content — which is why
+    //     `recordsIntoKeptCarrier` is slot-blind. So a kept-carrier record does
+    //     reach this rail. It is freeable because the flag's forward chain W is its
+    //     compare mint `cq_template_icmp_*(q, k)` — a BASIS PERMUTATION of a live
+    //     `cond(W) = {q}`, not an `Ry` — the `_inv` above is exactly W†, and q holds
+    //     its producer-time value because no copy destination is a `Cond` operand.
+    //     That is precisely the case `preservesBasisUnderRecord` whitelists, so the
+    //     spine's freeze would clear it too. The 261j defect was the opposite shape:
+    //     a recorded `cqrt_ry` rail, whose `cond(W)` is EMPTY and which is not
+    //     trivial on |0>, so nothing returns it to |0>. If a future widening ever
+    //     puts a rotation on this flag, this free becomes a hidden measurement.
     lowerCompareToFlag(C.Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
                        /*before=*/C.BI, /*negate=*/false, /*railToStrip=*/Flag);
     stamp(B.CreateCall(wd.freeFn(), {Flag}));

@@ -253,6 +253,14 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   //    copies write `%out`, never q), so every rail un-computes to |0> exactly
   //    and every free is a proven-|0> free (Rule 6). The single-leaf tree
   //    degenerates to the pre-L4 `_inv` + free pair, byte-identical.
+  // bd urlv audit — NO KEPT-CARRIER RECORD REACHES THE NODE RAILS OR LEAF FLAGS
+  // FREED BELOW. Each is minted BY THIS EMITTER at |0> and returned to |0> by its
+  // own toffoli/cnot undo or `_inv` strip on the line above its free. They are
+  // never an operand of a gate writing a carrier the reversal does not touch: the
+  // controlled copies write the fresh `%out` and never a leaf's condition lineage,
+  // and this module mints NO `cqrt_tape_write_*` (only `IOSinkLowering` and
+  // `AbortParkEmit` do). The bd 261j(a) freeze is not owed here and is deliberately
+  // not duplicated (bd memory [record-freeze-invariant-2026-08-10]).
   for (NodeRec &NR : llvm::reverse(NodeRecs)) {
     stamp(B.CreateCall(csyms.toffoliFn(), {NR.L, NR.R, NR.G}));
     if (NR.N->getOpcode() == Instruction::Or) {

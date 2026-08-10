@@ -413,6 +413,30 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
   // Free R / idx (now provably |0>) at the head of the exit tail, after the
   // reverse-play. The rail is left allocated at its pre-loop state (a dirty rail
   // is never freed — Rule 6); `out` escapes via the measure.
+  //
+  // R IS RECORDED ONTO A CARRIER THIS REVERSAL NEVER TOUCHES — `cqrt_copy_i32(R,
+  // out)` in the exit consolidation above — and `out` can then be TAPED (measured:
+  // a break loop followed by a `printf` compiles rc=0 and ends
+  // `free(R); free(idx); cqrt_tape_write_i32(tape, out)`). So the bd 261j(a) record
+  // invariant applies here (bd memory [record-freeze-invariant-2026-08-10]), and
+  // the free is sound for a REASON, not by accident of ordering — bd urlv proposed
+  // "sound only because the frees precede the record", which is the wrong way round
+  // and is not what makes it work:
+  //
+  //   R is a BENNETT SCRATCH. It is allocated at |0> by this emitter, is written
+  //   ONLY by `cqrt_copy_i32_controlled` (a basis permutation conditioned on
+  //   h/idx/fire), is copied out, and is then returned to |0> by the EXACT adjoint
+  //   replay this function emits — invariant clauses (a)-(d), with (b) holding
+  //   because W contains no rotation. `idx` is the same shape (`cqrt_addc`/
+  //   controlled copies). The 261j defect needed a recorded `cqrt_ry` rail, whose
+  //   cond(W) is EMPTY and which is not trivial on |0>.
+  //
+  // THE TRIPWIRE, since this is an analytic argument and not a mechanical one:
+  // stage 2b cannot prove it (`UNPROVEN U1-cross-stream` — the write history
+  // crosses a back edge), which is why the loop-break slices carry the documented
+  // `--allow-unproven` waiver. A ROTATION reaching R would break the argument. R is
+  // emitter-minted and unnameable from source, so no user program can put one
+  // there; a widening of the capture path could. Re-run this entry if you touch it.
   IRBuilder<> TB(&*ExitTail->getFirstInsertionPt());
   mintCall(TB, wd.freeFn(), {E.R}, E.DL);
   mintCall(TB, wd.freeFn(), {E.Idx}, E.DL);

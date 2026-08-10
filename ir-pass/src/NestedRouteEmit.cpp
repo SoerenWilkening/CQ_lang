@@ -140,6 +140,13 @@ void lowerNestedRegion(const ControlRegion &Outer, const ControlRegion &Inner,
         RzCall->setDebugLoc(PDL);
     }
   };
+  // bd urlv audit — NO KEPT-CARRIER RECORD REACHES ANYTHING THIS FREES. Every
+  // handle passed here is a per-level work rail or flag minted BY THIS EMITTER at
+  // |0> and returned to |0> by its own route-back / `_inv` strip beforehand; none
+  // is ever an operand of a gate writing a carrier the reversal does not touch, and
+  // this module mints NO `cqrt_tape_write_*` (only `IOSinkLowering` and
+  // `AbortParkEmit` do). The bd 261j(a) freeze is not owed here and is deliberately
+  // not duplicated (bd memory [record-freeze-invariant-2026-08-10]).
   auto freeHandle = [&](Value *H) {
     CallInst *F = B.CreateCall(wd.freeFn(), {H});
     if (DL)
