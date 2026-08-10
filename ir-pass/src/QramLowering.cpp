@@ -1325,6 +1325,87 @@ bool foldVolatileConstAllocaLoads(Module &M, const TaintSet &taint) {
   return Changed;
 }
 
+bool eraseDeadVolatileScalarStores(Module &M, const TaintSet &taint) {
+  bool Changed = false;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    // Static allocas live in the entry block at -O1. Snapshot first — the erase
+    // below removes from this very block.
+    SmallVector<AllocaInst *, 8> Cands;
+    for (Instruction &I : F.getEntryBlock())
+      if (auto *A = dyn_cast<AllocaInst>(&I))
+        if (A->isStaticAlloca())
+          Cands.push_back(A);
+    for (AllocaInst *A : Cands) {
+      // SCALAR only, and the name means it: one first-class int/fp slot, no
+      // array allocation. The idiom this stage exists for is a one-line local;
+      // an aggregate or a `[N x T]` is the QRAM Shadow path's shape, not ours.
+      Type *Ty = A->getAllocatedType();
+      if (A->isArrayAllocation() ||
+          !(Ty->isFloatingPointTy() || Ty->isIntegerTy()))
+        continue;
+      // Belt-and-braces with the Ty gate above: never touch an alloca the taint
+      // pass has claimed. A store-only shadow cell is not a shape we understand,
+      // and the Prime Directive says leave what we cannot prove.
+      if (taint.Tainted.count(A))
+        continue;
+      // Whole-alloca user scan, and it is the escape proof: EVERY user must be a
+      // direct non-atomic exact-type store with `A` as the POINTER operand, or a
+      // lifetime marker. Any other user — a load, a call, a gep (even offset 0),
+      // a ptrtoint/cmp/phi/select, or `A` as a store's VALUE operand — means the
+      // address is read, escapes, or is viewed off-type, and forfeits.
+      SmallVector<StoreInst *, 4> Stores;
+      SmallVector<IntrinsicInst *, 4> Lifetimes;
+      bool Clean = true, SawVolatile = false;
+      for (User *U : A->users()) {
+        if (auto *SI = dyn_cast<StoreInst>(U)) {
+          if (SI->getValueOperand() == A || SI->isAtomic() ||
+              SI->getValueOperand()->getType() != Ty) {
+            Clean = false;
+            break;
+          }
+          SawVolatile |= SI->isVolatile();
+          Stores.push_back(SI);
+          continue;
+        }
+        if (auto *II = dyn_cast<IntrinsicInst>(U)) {
+          if (II->getIntrinsicID() == Intrinsic::lifetime_start ||
+              II->getIntrinsicID() == Intrinsic::lifetime_end) {
+            Lifetimes.push_back(II);
+            continue;
+          }
+        }
+        Clean = false;  // a LOAD lands here too — see the zero-loads note above.
+        break;
+      }
+      // At least one VOLATILE access, or this is not the idiom: a plain
+      // store-only alloca is ordinary dead code that -O1 already removed, and
+      // claiming it here would widen this stage into a general DSE it is not.
+      if (!Clean || Stores.empty() || !SawVolatile)
+        continue;
+      // Erase the STORES, the markers, and the alloca. THIS STAGE does not touch
+      // the stored VALUE — but do not read that as "the computation survives".
+      // Once its only consumer is gone the value is trivially dead, and inside a
+      // PredMux region the pre-existing cleanup at PredMuxFlatten.cpp:2618 takes
+      // it; the shipped `slice_libm_real_nexttowardf` trace has ZERO `fmul_f32`.
+      // That outcome is what the fenv ruling actually licenses (an op whose only
+      // purpose is raising a flag has no observable effect), and the owner
+      // re-affirmed it on the measured facts after the ruling was first requested
+      // on the tidier, false summary. Outside a region the dead product is
+      // instead lowered, uncomputed and freed — harmless, and pinned by
+      // lowering_volatile_scalar_deadstore.ll.
+      for (StoreInst *SI : Stores)
+        SI->eraseFromParent();
+      for (IntrinsicInst *II : Lifetimes)
+        II->eraseFromParent();
+      A->eraseFromParent();
+      Changed = true;
+    }
+  }
+  return Changed;
+}
+
 namespace {
 
 // bd zco4 — undef-safety proof for a promotion candidate: every load of `A` must

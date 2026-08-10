@@ -451,15 +451,39 @@ scope is deliberately narrower than the old prose: **non-escaping locals**, not
 "anything volatile". MMIO, external linkage, escaping addresses, and atomics are
 untouched and keep their existing loud declines.
 
-**What it licenses, and the bound on it.** An operation whose *only* consumer is a
-store to a never-read non-escaping `volatile` local may have that **store**
-removed. It does **not** license deleting the computation: openlibm's underflow
-idiom (`volatile float u = x*x; /* underflow */`,
-`ld80/s_nexttowardf.c:63`) exists to force the multiply, and the shipped
-implementation **keeps the `fmul` and removes only the dead store** — measured
-`opt` exit 0, fully inlined, `free_pairing_check` strict 81/81. Do not widen this
-to "CQ deletes computations the source demanded be evaluated"; that is a
-different ruling and has not been made.
+**What it licenses — and say it plainly, because the comfortable version is
+false.** An operation whose *only* consumer is a store to a never-read
+non-escaping `volatile` local may have that **store** removed. **The computation
+then usually disappears too, and the ruling accepts that.** For openlibm's
+underflow idiom (`volatile float u = x*x; /* underflow */`,
+`ld80/s_nexttowardf.c:63`) the emitted circuit ends up with **no multiply at
+all** — measured: zero `fmul_f32` in `slice_libm_real_nexttowardf`'s trace.
+
+The mechanism is ordinary and pre-existing, not something the k710 stage does:
+once the store is gone the `fmul` is trivially dead, and
+`PredMuxFlatten.cpp:2618`'s `RecursivelyDeleteTriviallyDeadInstructions` takes
+it — a cleanup that exists for a Rule-6/8 reason of its own (a dead *tainted* op
+left alive lowers to a forward gate that is never uncomputed and never freed, a
+dangling entangled flag). So "we only delete the store" is true of the *stage*
+and false of the *pipeline*, and only the second one matters.
+
+> **This correction is recorded because the ruling was first granted on the wrong
+> summary.** The claim "the implementation keeps the `fmul`, so nothing the source
+> demanded be evaluated is removed" was put to the owner and was an artifact of a
+> fixture with **no control flow** — nothing there invokes that DCE path. Owner
+> re-affirmed the ruling on the corrected facts (2026-08-10): "fenv is out of the
+> model" *means* an operation whose only purpose is raising a flag has no
+> observable effect, and unobservable dead code gets deleted. The reassurance was
+> the wrong reason for a decision that stands without it.
+
+Note the asymmetry, which is real and worth knowing before reading a trace: with
+**no** enclosing tainted control flow the dead product IS lowered, uncomputed and
+freed (a useless but harmless gate pair — see
+`lowering_volatile_scalar_deadstore.ll`); inside a PredMux region it is deleted
+outright. Both are sound here; they are not the same circuit. And the contrast
+that makes the whole family legible: `nexttoward.f64` and `nextafterf.f32` each
+keep exactly **one** `fmul` in their committed goldens, because they **read** the
+scalar — the multiply is live, and nothing in this ruling touches it.
 
 Note the pre-existing rationale at `QramLowering.h:222-226` — "volatile's only
 effect is to defeat FP reassociation, which taint lowering never does" — is

@@ -198,6 +198,57 @@ bool foldVolatileConstGlobalLoads(llvm::Module &M);
 // folded.
 bool foldVolatileConstAllocaLoads(llvm::Module &M, const TaintSet &taint);
 
+// bd k710 — DEAD VOLATILE SCALAR STORE elimination: the write-only sibling of the
+// two folds above (curation, runs immediately after them in BOTH pipeline entry
+// points). Erases a static scalar alloca whose EVERY user is a direct non-atomic
+// exact-type store with the alloca as the POINTER operand, or a lifetime marker —
+// so ZERO loads, and the address demonstrably never escapes — provided at least
+// one access is volatile. Stores, markers and alloca go; THE STORED VALUE STAYS.
+//
+// GROUND: the fenv ruling (owner 2026-08-10, CLAUDE.md "Scope of the semantic
+// model"). CQ does not model FP exception flags, and a volatile access to a
+// non-escaping function-local is not observable — so the store is dead, full stop.
+// *** Do NOT cite the zco4 rationale at :222-226 ("volatile's only effect is to
+// defeat FP reassociation") for this stage: it is FACTUALLY WRONG for this idiom
+// family. *** openlibm's `volatile float u = x*x; /* underflow */`
+// (ld80/s_nexttowardf.c:63, `u` never read) exists to force the multiply so the
+// FPU raises FE_UNDERFLOW, not to block reassociation.
+//
+// *** THIS STAGE ERASES ONLY THE STORE, BUT THE PIPELINE USUALLY LOSES THE
+// COMPUTATION TOO — AND THAT IS RULED, NOT ACCIDENTAL. *** Once the store is gone
+// the stored value is trivially dead, and PredMuxFlatten.cpp:2618's pre-existing
+// `RecursivelyDeleteTriviallyDeadInstructions` removes it (a cleanup that exists
+// for its own Rule-6/8 reason: a dead TAINTED op left alive lowers to a forward
+// gate that is never uncomputed and never freed). Measured on the motivating
+// cell: the shipped `slice_libm_real_nexttowardf` trace contains ZERO
+// `fmul_f32`. Do not write "we only delete the store" in a summary — it is true
+// of this function and false of the pass, and the ruling was first requested on
+// exactly that too-comfortable phrasing before being re-affirmed on the measured
+// facts.
+//
+// ASYMMETRY WORTH KNOWING BEFORE READING A TRACE: with NO enclosing tainted
+// control flow the dead product IS lowered, uncomputed and freed — a useless but
+// harmless gate pair, pinned by lowering_volatile_scalar_deadstore.ll — because
+// nothing invokes that DCE path. Inside a PredMux region it is deleted outright.
+// Both are sound under the ruling; they are not the same circuit.
+//
+// WHY NOT just relax promoteVolatileScalarLocals' `Loads.empty()` clause at
+// QramLowering.cpp — the obvious-looking one-token fix, and it is wrong (bd k710
+// comment 2026-07-30): with zero loads there is nothing to PROMOTE, so
+// PromoteMemToReg would merely delete the store, silently changing that stage's
+// "promote a volatile accumulator" contract (bd zco4, :201-229) into "delete dead
+// volatile stores" and making its gate 5 `everyLoadIsStoreDefined` VACUOUS. Two
+// contracts in one stage is how a gate stops being checkable, so this is its own
+// narrowly-named stage.
+//
+// STRUCTURALLY RARE, and that is the design: every compiling sibling of the
+// motivating cell (nextafter{,f,l}, nexttoward) READS its volatile scalar at BOTH
+// underflow sites, so no sibling alloca is ever store-only and existing promotion
+// claims them. Anything short of the proof is left byte-untouched for the existing
+// loud declines (ACCEPT-ONLY, emits no diagnostic — the foldVolatileConstAllocaLoads
+// precedent). Returns true if anything was erased.
+bool eraseDeadVolatileScalarStores(llvm::Module &M, const TaintSet &taint);
+
 // bd zco4 — volatile scalar-local SSA promotion: the mem2reg sibling of
 // foldVolatileConstAllocaLoads above. The etiq fold folds a single-CONSTANT-store
 // volatile scalar to its constant; this generalizes to a MULTI-STORE COMPUTED

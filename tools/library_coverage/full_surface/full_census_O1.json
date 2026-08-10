@@ -685,7 +685,7 @@
   "upstream_status": "decline",
   "upstream_diag": "sinl x86_fp80 (x86_fp80): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)",
   "scope": "decided-decline",
-  "scope_ref": "RULING STANDS but its stated ground is SPENT: 'inherited Payne-Hanek via sinl' was true only while sinl was openlibm's. Post-amendment sinl is CQ-provided, and the measured first blocker moved to `logl` (tainted control flow under quantum lift) \u2014 a control layer, not a loop. Re-scope before quoting this cell: it may no longer be decided at all"
+  "scope_ref": "RE-SCOPED 2026-08-10 (owner ruling). Original ground ('inherited Payne-Hanek via sinl') is SPENT \u2014 post-amendment sinl is CQ-provided and the measured first blocker moved to `logl` (tainted control flow under quantum lift). The cheap mover (admit log/logl to CQ-PROVIDED, measured by bd 20xt.8 to flip this cell) was OFFERED AND DECLINED: log.f64 and logl.f80 are BOTH already injection-COMPILES, so admitting the stem is 97->96 and logl-only is flat, and the amendment's grounding (upstream source form un-injectable) does not reach a function whose source form works today. Real mover is a capability: in-clone control (5po2) AND the g387/7.5 by-ref frexpl axis behind it \u2014 depth UNMEASURED"
  },
  "lroundf.f32": {
   "status": "COMPILES",
@@ -814,12 +814,10 @@
   "provider": "openlibm"
  },
  "nexttowardf.f32": {
-  "status": "decline",
-  "bucket": "memory-store (Shadow)",
-  "diag": "probe float (): cq taint escape: tainted value stored to memory",
-  "provider": "openlibm",
-  "scope": "lever-gap",
-  "scope_ref": "promoteVolatileScalarLocals forfeits a STORE-ONLY alloca (Loads.empty(), QramLowering.cpp:1458); its 3 compiling siblings all read u. A control layer sits behind it"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "nexttoward.f64": {
   "status": "COMPILES",

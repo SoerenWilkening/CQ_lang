@@ -2895,6 +2895,22 @@ add_test(NAME e2e-slice-libm-real-nexttoward
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttoward.expected.log")
 
+# nexttowardf.f32 — bd k710, and the LINK-LAYER PROOF for the fenv ruling (owner 2026-08-10) and the
+# `eraseDeadVolatileScalarStores` stage it licensed. Structurally unique in this family: its final
+# underflow raise is a WRITE-ONLY `volatile float u = x*x;` (ld80/s_nexttowardf.c:63), where all four
+# compiling siblings READ their volatile scalar and are claimed by the zco4 promotion instead. Before
+# the ruling this cell died on `cq taint escape: tainted value stored to memory`.
+# THE GOLDEN'S JOB: show the store gone AND the multiply still present (cq_template_fmul_f32 + its
+# _unc, freed only after the adjoint). The ruling licensed deleting an unobservable STORE, never the
+# computation — if a later change DCEs the multiply, this trace moves and that is the alarm.
+add_test(NAME e2e-slice-libm-real-nexttowardf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardf.expected.log")
+
 
 # expm1l.f80 — ld80 exp kernel in Cephes rational form: Cody-Waite reduction via @llvm.floor.f80,
 # a P4/Q4 rational core, and 2^k reassembly through ldexpl==scalbnl -- one of the cells bd

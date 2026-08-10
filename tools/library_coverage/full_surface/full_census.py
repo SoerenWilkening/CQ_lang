@@ -264,8 +264,18 @@ SCOPE = {
                        "advanced together in bd tkmn Inc 1 and again in bd guwr. `large_gam`'s "
                        "{double,double} return is the layer; b_tgamma.c:200's bounded loop and the "
                        "depth-1 self-recursion sit BEHIND it and are still UNMEASURED"),
-    "nexttowardf.f32":("lever-gap",
-                       "promoteVolatileScalarLocals forfeits a STORE-ONLY alloca (Loads.empty(), QramLowering.cpp:1458); its 3 compiling siblings all read u. A control layer sits behind it"),
+    # RETIRED 2026-08-10 (bd k710 SPENT): "nexttowardf.f32" now reaches `opt` exit
+    # 0 and is deliberately ABSENT rather than relabelled — a scope entry whose
+    # cell no longer declines is a dead entry and check_scope() fails loudly on
+    # one (the same convention the 0rwu pair left behind). Its blocker was the
+    # store-only `volatile float u = x*x;` at ld80/s_nexttowardf.c:63, cleared by
+    # the fenv ruling + eraseDeadVolatileScalarStores.
+    #
+    # TWO THINGS THE OLD ENTRY GOT WRONG, both corrected on the ticket: it said
+    # "its 3 compiling siblings all read u" — there are FOUR (nextafter{,f,l} +
+    # nexttoward) and three of them name the scalar `t`; and "A control layer sits
+    # behind it" was STALE peel data from f92ba9f (2026-07-14), predating the
+    # PredMux work. Re-measured, nothing sits behind it: the cell lands.
 
     # -- not this bucket's work.
     "powl.f80":       ("deferred-capability",

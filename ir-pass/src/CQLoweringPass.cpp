@@ -121,6 +121,21 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // alloca. Folded values are classical — same no-re-propagate rationale.
   foldVolatileConstAllocaLoads(M, taint);
 
+  // bd k710 — DEAD volatile SCALAR STORE elimination (QramLowering.cpp): the
+  // WRITE-ONLY sibling of the two folds above, for openlibm's underflow idiom
+  // (`volatile float u = x*x; /* underflow */`, ld80/s_nexttowardf.c:63, `u`
+  // never read). Zero loads means neither fold above nor zco4's promotion can
+  // claim it, so the volatile store survives to `declineTaintEscapes` and the
+  // cell dies on kMsgStore. Grounded in the fenv ruling (owner 2026-08-10): CQ
+  // models no FP exception flags and a volatile access to a non-escaping local
+  // is not observable. Erases the stores/markers/alloca; the stored VALUE is then
+  // trivially dead and, inside a PredMux region, is removed by the pre-existing
+  // cleanup at PredMuxFlatten.cpp:2618 — so the emitted circuit generally loses
+  // the multiply too, which IS what the ruling licenses (measured: zero
+  // `fmul_f32` in slice_libm_real_nexttowardf). Outside a region it is instead
+  // lowered, uncomputed and freed. See QramLowering.h for the asymmetry.
+  eraseDeadVolatileScalarStores(M, taint);
+
   // bd zco4 — volatile scalar-local SSA promotion (QramLowering.cpp): the mem2reg
   // sibling of the etiq fold above, for the OpenBSD/Moshier "***CAUTION***" idiom
   // where the anti-reassociation `volatile` is on a MULTI-STORE COMPUTED
@@ -455,6 +470,21 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // post-global-fold / pre-PredMux placement rationale.
   foldVolatileConstAllocaLoads(M, taint);
+
+  // bd k710 — DEAD volatile SCALAR STORE elimination (QramLowering.cpp): the
+  // WRITE-ONLY sibling of the two folds above, for openlibm's underflow idiom
+  // (`volatile float u = x*x; /* underflow */`, ld80/s_nexttowardf.c:63, `u`
+  // never read). Zero loads means neither fold above nor zco4's promotion can
+  // claim it, so the volatile store survives to `declineTaintEscapes` and the
+  // cell dies on kMsgStore. Grounded in the fenv ruling (owner 2026-08-10): CQ
+  // models no FP exception flags and a volatile access to a non-escaping local
+  // is not observable. Erases the stores/markers/alloca; the stored VALUE is then
+  // trivially dead and, inside a PredMux region, is removed by the pre-existing
+  // cleanup at PredMuxFlatten.cpp:2618 — so the emitted circuit generally loses
+  // the multiply too, which IS what the ruling licenses (measured: zero
+  // `fmul_f32` in slice_libm_real_nexttowardf). Outside a region it is instead
+  // lowered, uncomputed and freed. See QramLowering.h for the asymmetry.
+  eraseDeadVolatileScalarStores(M, taint);
 
   // bd zco4 — volatile scalar-local SSA promotion, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the

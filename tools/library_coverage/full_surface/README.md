@@ -2,11 +2,11 @@
 
 ## ⚠ READ THIS FIRST — `bucket` is NOT a work list. `scope` is.
 
-**The 22 declines contain 3 cells of actionable work, not 22** (re-measured
-**2026-08-10 at HEAD `d057c31`**, bd `bcv4`/`keol`; the axis itself is bd
-`3c6m.14`, 2026-07-28). Every `decline` record carries a **`scope`** field
-alongside `bucket`, because those two answer different questions and only one of
-them is a plan:
+**The 21 declines contain 2 cells of actionable work, not 21** (re-measured
+**2026-08-10**, bd `bcv4`/`keol`/`k710`; the axis itself is bd `3c6m.14`,
+2026-07-28). Every `decline` record carries a **`scope`** field alongside
+`bucket`, because those two answer different questions and only one of them is a
+plan:
 
 | | question it answers |
 |---|---|
@@ -14,13 +14,35 @@ them is a plan:
 | `scope`  | **is it work** — decided-out, actionable, deferred, or not a compiler fact |
 
 ```
-BY SCOPE (22 declines + 1 no-body)
+BY SCOPE (21 declines + 1 no-body)
   18  decided-decline       fmod/remainder/remquo x3 · ilogb x3 · sinf/cosf/tanf
                             · tgammal · lgammal · logbl
-   3  lever-gap    <-- THE WORK   tgammaf.f32 · tgamma.f64 · nexttowardf.f32
+   2  lever-gap    <-- THE WORK   tgammaf.f32 · tgamma.f64
    1  deferred-capability   powl.f80
    1  corpus-gap            nexttowardl.f80   (status `no-body` — NOT probed)
 ```
+
+**⚡ 2026-08-10 (bd `k710`): `nexttowardf.f32` LANDS — 97 → 98 injection-covered,
+lever-gap 3 → 2.** The first numerator movement of this session, and the only one:
+a BASE-vs-SHIP diff over all 126 cells shows **exactly one cell moved**
+(`decline/memory-store (Shadow)` → `COMPILES/COMPILES`) and **zero regressions**.
+Its blocker was a **write-only** `volatile float u = x*x;` (`ld80/s_nexttowardf.c:63`)
+that no existing stage could claim — the etiq const fold needs loads, and zco4's
+promotion forfeits at `Loads.empty()` — so the volatile store reached
+`declineTaintEscapes` and the cell died on `kMsgStore`. Cleared by the **fenv
+ruling** (owner 2026-08-10, CLAUDE.md "Scope of the semantic model") plus a new
+narrowly-named `eraseDeadVolatileScalarStores` stage. Verified, not merely
+compiling (Rule 2): `slice_libm_real_nexttowardf` ships with a 369-line golden at
+stage-2b **strict** (81/81 free-pairing verified, 0 unproven).
+
+> **The emitted circuit loses the multiply, and that is the ruling, not a bug.**
+> This trace contains **zero** `fmul_f32`: once the store goes, the product is
+> trivially dead and `PredMuxFlatten.cpp:2618`'s pre-existing DCE takes it. The
+> ruling was first requested on a tidier summary — "the stage keeps the `fmul`" —
+> which was an artifact of a control-flow-free lit fixture and is **false** here;
+> the owner re-affirmed on the measured facts. The contrast worth carrying:
+> `nexttoward.f64` and `nextafterf.f32` each keep exactly **one** `fmul` in their
+> goldens because they **read** their volatile scalar, so the value is live.
 
 **⚡ 2026-08-10 RE-CENSUS AT HEAD — THE COMPILER DID NOT MOVE; THE MEASUREMENT
 DID.** Re-run against a corpus rebuilt from scratch (251 `.bc`, fingerprint
@@ -35,7 +57,8 @@ DID.** Re-run against a corpus rebuilt from scratch (251 `.bc`, fingerprint
 * **Two harness defects closed, both moving numbers the un-flattering way**: the
   denominator went **117 → 120** (`bcv4`, 3 never-probed cells entered) and one
   cell left the decline set for a `no-body` corpus classification (`keol`). The
-  **numerator held at 97** and the **actionable lever-gap held at 3**. Details in
+  **numerator held at 97** and the **actionable lever-gap held at 3**. (Both then
+  moved later the same day — see the `k710` entry above: 98 and 2.) Details in
   the injection-row section below.
 
 **⚡ 2026-07-31 (bd `guwr`, Rule 18 CQ-PROVIDED amendment): 26 → 20 declines, and
@@ -364,8 +387,8 @@ Measured: **36 verified · 3 accepted** (`fabs{,f,l}`) **· 3 partial** (`fma{,f
                      = 120 upstream-injectable   <- THIS row's denominator
 ```
 
-So **97/120 = 81% of the upstream-injectable subset** — which is **53%** of the 183
-modelled cells and **42%** of the 69 named entities. **Never write "81% of
+So **98/120 = 82% of the upstream-injectable subset** — which is **54%** of the 183
+modelled cells and **42%** of the 69 named entities. **Never write "82% of
 `math.h`".**
 
 > **⚠ THE DENOMINATOR CHANGES ARE NOT PROGRESS, AND THEY ARE THE ONE WAY THIS ROW
@@ -415,7 +438,7 @@ moved a number in the un-flattering direction:
 The strict *"can openlibm's body be lowered"* denominator — dropping
 `nexttowardl.f80`, which has no body to inject at all — is **119**.
 
-**Cells: 97/120 injection-covered, all 97 ship-floor verified** — *91 fully inlined +
+**Cells: 98/120 injection-covered, all 98 ship-floor verified** — *92 fully inlined +
 6 Phase-6 clone-specialized*, which `wprobe.py` requires never be merged into plain
 `COMPILES`. (Row (3) adds **6** more plain-`COMPILES` cells that are **not** in this
 91 and must not be added to it: the census's raw plain-COMPILES tally is 97 across
@@ -469,8 +492,8 @@ the record.
 > (+ slices, goldens, whole-token ctest rows, in-sync bodies) takes this row to 9
 > **legitimately**. What would mean the gate broke: reaching 9 **without** that
 > evidence. And price `eur4` correctly before quoting it — `sinf`/`cosf`/`tanf` are
-> **declines**, so admitting them leaves the injection **numerator at 97** and only
-> shrinks its denominator (120 → 117, reading 81% → 83%). Row-3 movement with zero
+> **declines**, so admitting them leaves the injection **numerator at 98** and only
+> shrinks its denominator (120 → 117, reading 82% → 84%). Row-3 movement with zero
 > compiler work; **never** injection progress.
 
 > **DECLINED 2026-08-10 (owner ruling): the `log` stem is NOT admitted.** Measured:
@@ -727,11 +750,13 @@ externally-linked spelling declines today. Same family as the already-recorded b
 
 **⚡ VERIFY-FIRST SWEEP — THE TWO NUMBERS COINCIDED AT 68 (2026-07-25, bd `3c6m.58`).**
 ⚠ *Historical: true of the 68-cell baseline this banner describes. The `3c6m.60` banner ABOVE
-supersedes it — and is itself superseded: the scoreboard is now **97 injection-covered /
-97 verified**, gap 0, after bd `3c6m.61` closed `hypotl.f80` (2026-07-28) and bd `0rwu` closed
-`expl.f80` + `log10l.f80` with their goldens in the same increment (2026-07-30). The "two numbers
-coincide" property this banner celebrates therefore holds again — as a measurement, never as
-an invariant.*
+supersedes it — and is itself superseded: the scoreboard is now **98 injection-covered /
+98 verified**, gap 0, after bd `3c6m.61` closed `hypotl.f80` (2026-07-28), bd `0rwu` closed
+`expl.f80` + `log10l.f80` with their goldens in the same increment (2026-07-30), and bd `k710`
+closed `nexttowardf.f32` with `slice_libm_real_nexttowardf` in the same increment (2026-08-10).
+The "two numbers coincide" property this banner celebrates therefore holds again — as a
+measurement, never as an invariant, and it holds only because each of those increments shipped
+its golden WITH the cell rather than promising one.*
 The standing caveat below — *"injection-covered is an UPPER BOUND; verified is its own
 separate, LOWER number"* — has been **closed by measurement, not by assertion**. At the
 start of this sweep the O1 baseline was **68/123 injection-covered but only 53 verified**
