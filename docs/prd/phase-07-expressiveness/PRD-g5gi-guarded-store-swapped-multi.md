@@ -72,7 +72,11 @@ fires iff `flag=1` iff the FALSE edge is taken ✓. Reversal (LIFO):
 `store_c_unc(flag,...)` un-pops iff `flag=1` (same polarity) → then
 `icmp_..._unc(flag,q,k)` recomputes-and-XORs `flag ^= ¬cond` → `flag=0` (q untouched
 by a store) → `cqrt_free(flag)`. Byte-for-byte the un-negated reversal with an
-inverse predicate. The `railOf`/`Earliest`/free-point reasoning is unchanged.
+inverse predicate. The rail-attribution / free-point reasoning is unchanged.
+*(Wording corrected 2026-08-10, bd `uow0`: `railOf(store)` now names the ARRAY, and
+each rail's free is keyed to the earliest gate that READS OR WRITES it. The
+conclusion here — free placement unchanged by the negated predicate — still holds,
+and was re-measured byte-identical across every guarded-store fixture and golden.)*
 
 **Impl.** Add `bool negate=false` (defaulted, END of the arg list — no existing
 call-site churn) to `lowerCompareImpl`/`lowerCompareToFlag`; when set, apply

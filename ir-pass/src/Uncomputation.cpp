@@ -147,13 +147,59 @@ Instruction *dagInsertPoint(ArrayRef<Instruction *> Ats, PostDominatorTree &PDT)
 }
 
 // Emit the whole-DAG adjoint at `At` (PRD §2.11): each gate's void `_unc` once, in
-// reverse program order; each rail freed right after the adjoint of its EARLIEST
-// forward gate — that adjoint is emitted LAST among the rail's reverse-touches
-// (SSA dominance), so the free lands after every reverse-read of the rail.
+// reverse program order; each rail freed right after the adjoint of the earliest
+// forward gate that TOUCHES it — which, in reverse, is the LAST of its
+// reverse-touches, so the free lands after every reverse-read of the rail.
+//
+// "TOUCHES" MEANS READS-OR-WRITES, AND THE DISTINCTION IS LOAD-BEARING (bd
+// test_C_libtooling-uow0 Rule-13 round). This used to key on the earliest gate whose
+// `railOf` IS the rail — i.e. only the gates that WRITE it. A rail is also
+// reverse-touched by every gate that merely READS it as a borrowed operand (a QRAM
+// store's flag / idx / val), and such a gate's `_unc` reads it too. If a rail's
+// first WRITE comes after a gate that READS it, keying on writes alone puts the
+// free ahead of that gate's `_unc`: a use-after-free.
+//
+// MEASURED, and it is why this is not a theoretical tidy-up. A tainted `cqrt_alloc_`
+// root used as a guarded store's flag and rotated only AFTER the store:
+//     %z = cqrt_alloc_i32(%q2) ; qram_store_ctl(%z,%h,3,4) ; ry(%z,0.75)
+// emitted `cqrt_free(%z)` BEFORE `cqrt_qram_store_i32_controlled_unc(%z, ...)`
+// (`opt` rc=0, verify-clean; stage 2b: `VIOLATION F2-use-after-free`). The same
+// hole exists for the PLAIN store's borrowed `idx`/`val` and PRE-DATES uow0 — uow0
+// merely stopped an unrelated mis-attribution from accidentally papering over the
+// guarded-flag instance of it. Fixture:
+// lowering_uncompute_borrowed_operand_free_order.ll.
+//
+// THE FREED SET IS UNCHANGED — only positions move, and only LATER. A rail is
+// freeable iff some recovered gate WRITES it (`Freeable`), exactly as before; the
+// touch map decides WHERE, never WHETHER. First-touch is at or before first-write in
+// forward order, so in reverse the free moves later or stays put. Non-register
+// operands (a classical angle, a literal) are skipped: they can never be a rail, and
+// an off-ABI `cqrt_qram_store_*` with a literal in its array slot would otherwise
+// reach `cqrt_free(i32 5)`.
 void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
-  DenseMap<Value *, CallInst *> Earliest;  // rail → its earliest forward gate
-  for (CallInst *G : D.Calls)              // D.Calls is forward program order
-    Earliest.try_emplace(railOf(G), G);    // first occurrence wins
+  DenseMap<Value *, CallInst *> FirstTouch;  // rail → earliest gate reading OR writing it
+  SmallPtrSet<Value *, 8> Freeable;          // rails some recovered gate WRITES
+  SmallVector<std::pair<CallInst *, Value *>, 16> TouchOrder;  // deterministic
+  for (CallInst *G : D.Calls) {              // D.Calls is forward program order
+    auto note = [&](Value *V) {
+      if (!V || isa<Constant>(V))
+        return;
+      if (FirstTouch.try_emplace(V, G).second)
+        TouchOrder.emplace_back(G, V);  // first occurrence wins
+    };
+    Value *R = railOf(G);
+    note(R);
+    if (R && !isa<Constant>(R))
+      Freeable.insert(R);
+    for (Value *Op : G->args())
+      note(Op);
+  }
+  // gate → the rails freed right after its adjoint, in first-touch order (a
+  // `DenseMap` walk would be non-deterministic and de-stabilize every FileCheck).
+  DenseMap<CallInst *, SmallVector<Value *, 2>> FreeAt;
+  for (const auto &P : TouchOrder)
+    if (Freeable.count(P.second))
+      FreeAt[P.first].push_back(P.second);
 
   IRBuilder<> B(At);
   SmallPtrSet<CallInst *, 16> Seen;
@@ -162,7 +208,6 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
     if (!Seen.insert(G).second)
       continue;  // a shared-prefix gate already adjointed (once-per-gate)
     emitInverseCall(B, G, wd, /*CurHandle=*/nullptr);
-    Value *R = railOf(G);
     // bd 261j(a) — a FROZEN rail: RECORDED into a kept carrier (an output tape)
     // AND carrying a gate that is not a basis permutation of live conditions, so
     // its forward chain does NOT return it to |0⟩ (`DagTraversal` step 3b proves
@@ -200,13 +245,15 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
     // backstop and the dominance scan above all iterate `D.Calls`, so a prune
     // would silently convert their loud declines into rc-0 accepts (risk 1/2;
     // lowering_reject_uncompute_uninvertible_taped.ll pins that it does not).
-    if (Earliest.lookup(R) == G && !isQramArrayHandle(R) &&
-        !D.FrozenRails.count(R)) {
-      // R fully reversed → free it, UNLESS R is a QRAM array handle: that is a
-      // classical resource token whose stores reverse (LIFO) but which is NEVER
-      // freed — a `cqrt_free` on it would be a hidden measurement of the
-      // (now-restored) classical cells (§2.9, Inc 1 "array-handle-never-freed").
-      CallInst *Free = B.CreateCall(wd.freeFn(), {R});
+    for (Value *FR : FreeAt.lookup(G)) {
+      if (isQramArrayHandle(FR) || D.FrozenRails.count(FR))
+        continue;  // a QRAM array handle is a classical resource token whose
+                   // stores reverse (LIFO) but which is NEVER freed — a
+                   // `cqrt_free` on it would be a hidden measurement of the
+                   // (now-restored) classical cells (§2.9, Inc 1
+                   // "array-handle-never-freed"); a frozen rail is the bd 261j(a)
+                   // case above.
+      CallInst *Free = B.CreateCall(wd.freeFn(), {FR});
       if (DebugLoc DL = G->getDebugLoc())
         Free->setDebugLoc(DL);
     }

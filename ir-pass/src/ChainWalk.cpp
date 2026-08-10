@@ -104,18 +104,44 @@ bool isCopyOutSink(const CallInst *G, const Value *H) {
 }
 
 Value *railOf(CallInst *G) {
+  // An in-place gate's rail is the operand it MUTATES, so ASK `isInPlaceGateOn`
+  // — the single definition of that relation — instead of re-spelling its
+  // arity/suffix tests here. Re-spelling them is exactly how the guarded QRAM
+  // store came to be mis-attributed (bd test_C_libtooling-uow0): this function
+  // returned the arg-0 FLAG of `cqrt_qram_store_<W>_controlled(flag, arr, idx,
+  // val)` while `isInPlaceGateOn` correctly matched the arg-1 ARRAY of the very
+  // same gate, so the two predicates disagreed about which register the gate
+  // writes. Driving one from the other makes them agree BY CONSTRUCTION rather
+  // than by two spellings being kept in sync (Rule 14).
+  //
+  // First match wins. That is unambiguous, not a tie-break: `isInPlaceGateOn`
+  // matches exactly ONE argument position per callee shape, and when the same
+  // SSA value is passed in two slots of one gate the answer is that value either
+  // way.
+  for (Value *Op : G->args())
+    if (isInPlaceGateOn(G, Op))
+      return Op;
   const Function *Callee = G->getCalledFunction();
   StringRef N = Callee ? Callee->getName() : StringRef();
-  if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_") || N == "cqrt_x") &&
-      G->arg_size() >= 1)
+  // `cqrt_x` is self-inverse and acts on its arg-0 handle. `isInPlaceGateOn`
+  // deliberately does not recognize it (the same reason it is absent from
+  // `preservesBasisUnderRecord`), so the loop above never returns for it.
+  //
+  // REACHABILITY, stated exactly — an earlier draft of this comment said
+  // "UNREACHABLE, a void call can never be a DAG handle" and that was WRONG
+  // (measured in the bd uow0 Rule-13 round). The premise holds for the real
+  // ABI symbol, which IS void; but `declineTaintEscapes` carves out `cqrt_*` by
+  // NAME with no signature check, so a user-declared NON-void `@cqrt_x` is
+  // recovered by the DAG walk's tainted-CallInst path and this arm does fire.
+  // Behaviour there is identical to the pre-uow0 spelling (arg 0) and is the safe
+  // direction (the fictional result is leaked, not freed). Kept because it AGREES
+  // with the loop above — were `isInPlaceGateOn` ever taught `cqrt_x` it would
+  // match this same arg-0 handle — so unlike the pre-uow0 spelling for the QRAM
+  // store, this arm cannot contradict it.
+  if (N == "cqrt_x" && G->arg_size() >= 1)
     return G->getArgOperand(0);
-  // Phase 7.5 Inc 2: a QRAM store mutates its arg-0 ARRAY handle in place (like a
-  // rotation) — that handle is its rail. The `_unc` twin never reaches here (it is
-  // never recovered as a forward gate). See the header's MIS-ATTRIBUTION note: the
-  // `_controlled` form puts its flag at arg 0 and its array at arg 1.
-  if (N.starts_with("cqrt_qram_store_") && !N.ends_with("_unc") &&
-      G->arg_size() >= 1)
-    return G->getArgOperand(0);
+  // A reassigning producer (`cq_template_*`, `cqrt_qram_load_<W>`): the fresh
+  // result IS the rail (PRD §2.11).
   return G;
 }
 

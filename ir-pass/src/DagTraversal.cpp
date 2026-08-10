@@ -345,24 +345,18 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
         D.FrozenRails.insert(R);
     }
 
-    // NOTE ON `railOf` MIS-ATTRIBUTION, and why no backstop is needed here.
-    // `cqrt_qram_store_<W>_controlled(flag, arr, idx, val)` WRITES its arg-1 array
-    // but `railOf` returns its arg-0 flag (bd test_C_libtooling-uow0, filed
-    // separately). An earlier draft of this freeze carried a fail-closed backstop
-    // for it, because that draft SKIPPED a frozen rail's gates — and skipping a
-    // gate whose `railOf` does not name what it writes would leave a different
-    // register dirty.
-    //
-    // `emitDagReversal` no longer skips any gate: the freeze suppresses only the
-    // `cqrt_free`. So the mis-attribution cannot leave anything dirty, and it
-    // cannot mis-target a free either, because the freeze decision and the free
-    // suppression consult the SAME `railOf` and therefore agree by construction.
-    // The worst it can do is decline to free the flag (an over-decline = a safe
-    // leak). The array is a `cqrt_qram_alloc_` handle, which `isQramArrayHandle`
-    // already excludes from freeing unconditionally. The backstop was removed
-    // rather than left in place: it was unreachable code on a hazard path,
-    // carrying a rationale that no longer holds (Rule 0 — a stale justification is
-    // how the next agent re-derives the wrong invariant).
+    // `railOf` NAMES WHAT THE GATE WRITES (bd test_C_libtooling-uow0, fixed). It
+    // used to return the arg-0 FLAG of `cqrt_qram_store_<W>_controlled(flag, arr,
+    // idx, val)` rather than its arg-1 array; it is now derived from
+    // `isInPlaceGateOn`, so the two agree by construction. Two earlier drafts
+    // reasoned around that gap and both are recorded here so neither rationale is
+    // re-derived: a fail-closed `isGuardedQramStore` backstop (needed only while
+    // the freeze SKIPPED a frozen rail's gates — skipping a gate whose `railOf`
+    // does not name what it writes leaves a different register dirty), and then
+    // the argument that the mis-attribution was inert because this decision and
+    // the `emitDagReversal` suppression consult the SAME `railOf`. That second
+    // argument was sound for the FREEZE and false for `Earliest` keying, which is
+    // the half uow0 fixed.
   }
   return D;
 }

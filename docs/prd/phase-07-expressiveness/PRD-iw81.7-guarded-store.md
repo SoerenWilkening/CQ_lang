@@ -285,9 +285,15 @@ control-dependence refinement, carve/detect divergence, flatten-CFG safety, cohe
 under superposed control, over-accept matrix). Outcome:
 
 - **CONFIRMED sound:** pred-lifetime ordering (store-reverse-before-strip is airtight
-  via reverse-program-order; the `railOf(store)==flag` / `Earliest` free-after-strip
-  is masked because the mint precedes the store — a load-bearing ordering now
-  commented); the control-dependence `instUnderTaintedControl` refinement (full
+  via reverse-program-order; the flag's free lands after the strip because the mint
+  precedes the store — a load-bearing ordering now commented). *(Corrected
+  2026-08-10, bd `uow0`: this originally read "the `railOf(store)==flag` / `Earliest`
+  free-after-strip is masked because…". `railOf(store)` is now the ARRAY, which is
+  what the gate writes; the free-after-strip conclusion is unchanged but now rests on
+  the driver keying each rail's free to the earliest gate that READS OR WRITES it,
+  not on the old mis-attribution. Kept and corrected rather than deleted — the old
+  sentence was true of the old code, and that is exactly how a stale justification
+  hardens into a wrong ruling.)* the control-dependence `instUnderTaintedControl` refinement (full
   idom-chain walk, post-dominates-ALL-dominating-brs AND-semantics, no 7.5
   regression); carve↔detect anti-divergence (every `DeferControl` funnels to accept
   or loud decline via the shared `guardedShadowStoreShape` + non-nested gate); the

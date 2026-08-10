@@ -84,7 +84,14 @@ def anchor_to_regex(pat):
 
 
 def guards_in(path):
-    """[(prefix, anchor_pattern)] — one entry per NOFREE* prefix that has a -NOT."""
+    """([(prefix, anchor_pattern)], [unanchored_prefix]) for this fixture.
+
+    A NOFREE* prefix with a `-NOT` but NO positive directive of its own is
+    UNANCHORED: its window is the whole input, so it cannot be dead and there is
+    nothing to inject against. Those are returned separately and COUNTED rather
+    than silently dropped — an undercount in this tool's own success line is the
+    same class of defect it exists to catch.
+    """
     anchors, has_not = {}, set()
     for line in open(path):
         m = PREFIX_RE.match(line.rstrip("\n"))
@@ -95,22 +102,40 @@ def guards_in(path):
             has_not.add(prefix)
         elif prefix not in anchors:
             anchors[prefix] = body
-    return [(p, anchors[p]) for p in sorted(anchors) if p in has_not]
+    return ([(p, anchors[p]) for p in sorted(anchors) if p in has_not],
+            sorted(p for p in has_not if p not in anchors))
 
 
 def main():
     if not os.path.exists(PLUGIN):
         print("fixture_guard_liveness: plugin not built:", PLUGIN, file=sys.stderr)
         return 2
-    fixtures = sorted(
-        f for f in os.listdir(TESTDIR)
-        if f.startswith("lowering_io_tape_") and f.endswith(".ll")
-    )
-    dead, checked = [], 0
+    # DISCOVERY IS BY PREFIX NAME, NOT BY FILENAME — and the distinction from
+    # "by guard" is deliberate, because the honest version of this sentence is the
+    # point of the tool. This used to scan only `lowering_io_tape_*`, the family bd
+    # 261j(a) created, so a NOFREE* prefix anywhere else fell outside the checker
+    # while the suite read green. That was NOT hypothetical and NOT new with bd uow0:
+    # `control_swap_abort_park.ll` has carried a NOFREE prefix since 2026-06-23.
+    #
+    # WHAT IS STILL OUTSIDE, stated so nobody mistakes this for full coverage: a
+    # negative spelled in the MAIN prefix (`CHECK-NOT: ... cqrt_free`) is not
+    # discovered — that is the majority spelling in this tree. The `NOFREE*`
+    # convention is what makes a guard checkable, so a Rule-6 negative that matters
+    # should be written with its own NOFREE* prefix and a single anchor.
+    # Scanning every fixture costs one file READ each; `opt` runs only for the
+    # handful that carry a guard, so the sweep stays ~as fast as the old one.
+    fixtures = sorted(f for f in os.listdir(TESTDIR) if f.endswith(".ll"))
+    dead, checked, unanchored, skipped = [], 0, 0, []
     with tempfile.TemporaryDirectory() as tmp:
         for fx in fixtures:
             path = os.path.join(TESTDIR, fx)
-            guards = guards_in(path)
+            guards, loose = guards_in(path)
+            for p in loose:
+                # No positive directive of its own ⇒ the window is the whole input,
+                # so the guard cannot be dead and there is nothing to inject
+                # against. Counted, never dropped silently.
+                unanchored += 1
+                print(f"  n/a   {fx} :: {p} (unanchored — window is the whole input)")
             if not guards:
                 continue
             out = os.path.join(tmp, "out.ll")
@@ -118,7 +143,14 @@ def main():
                                 "-passes=cq-lowering", "-S", path, "-o", out],
                                capture_output=True)
             if r.returncode != 0:
-                print(f"  SKIP  {fx}: pass declined (rc={r.returncode})")
+                # A guard we CANNOT check is not a guard we may assume good. The old
+                # code printed SKIP and still returned 0 — a test-of-tests reporting
+                # "0 DEAD" after checking nothing. Fail loudly instead: it fires only
+                # when someone adds an anchored NOFREE guard to a declining fixture,
+                # and that is exactly the moment to notice.
+                print(f"  SKIP  {fx}: pass declined (rc={r.returncode}) — "
+                      f"{len(guards)} anchored guard(s) UNCHECKED")
+                skipped.append((fx, r.returncode, len(guards)))
                 continue
             body = open(out).read()
             for prefix, anchor in guards:
@@ -146,11 +178,18 @@ def main():
                     print(f"  DEAD  {fx} :: {prefix} (guarding {handle})")
                 else:
                     print(f"  live  {fx} :: {prefix} (guarding {handle})")
-    print(f"\nfixture_guard_liveness: {checked} guard(s) checked, {len(dead)} DEAD")
+    print(f"\nfixture_guard_liveness: {checked} guard(s) checked, {len(dead)} DEAD, "
+          f"{unanchored} unanchored (not checkable, not dead)")
     if dead:
         print("A NOFREE guard that survives an injected cqrt_free is not a guard.")
         print("Give each guarded handle its OWN --check-prefix and RUN line: a")
         print("CHECK-NOT is bounded by the next positive directive of its prefix.")
+        return 1
+    if skipped:
+        print("An anchored NOFREE guard in a fixture the pass DECLINES cannot be")
+        print("checked, and an unchecked guard must not report green:")
+        for fx, rc, n in skipped:
+            print(f"  {fx}: pass rc={rc}, {n} guard(s) unchecked")
         return 1
     return 0
 

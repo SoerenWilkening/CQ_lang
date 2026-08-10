@@ -6,6 +6,11 @@
 cmake-build-debug
 transpiler/build*
 /build/
+# A second configure of the SAME tree, used to pin a BEFORE plugin while working:
+#   cmake -S . -B build-baseline -DLLVM_DIR=... && cmake --build build-baseline --target CQPass
+# so "this free was sound before the change" is MEASURED against a real artifact
+# instead of derived from reading the diff. Worth keeping around.
+/build-baseline/
 /Testing/
 .claude
 .idea

@@ -277,13 +277,22 @@ void emitGuardedStoreArmRegion(const ControlRegion &R, WidthDispatch &wd,
   //     same LIFO as the store, guaranteeing store-reverse-then-strip ordering.
   //     LOAD-BEARING ORDERING (Rule-13 landmine): the flag mint MUST precede the
   //     store in program order (it does — the mint is emitted `before BI`, the store
-  //     is spliced `before BI` AFTER it). The whole-DAG driver's `railOf` returns
-  //     arg 0 = the FLAG for the 4-arg guarded store (not the array), so the flag's
-  //     `cqrt_free` is keyed to the flag rail; `Earliest` (first-forward-occurrence)
-  //     maps the flag to the icmp (which precedes the store), so the free lands after
-  //     the `icmp_..._unc` STRIP, not after the earlier `store_..._controlled_unc`.
+  //     is spliced `before BI` AFTER it). The whole-DAG driver frees each rail after
+  //     the adjoint of the earliest forward gate that TOUCHES it; the flag's
+  //     earliest touch is its own icmp mint, so the free lands after the
+  //     `icmp_..._unc` STRIP, not after the earlier `store_..._controlled_unc`.
   //     A refactor that let the store precede its mint, or dropped the icmp from the
   //     DAG, would free a still-dirty flag (a hidden measurement collapse, Rule 6).
+  //
+  //     THAT CONCLUSION IS UNCHANGED BY bd test_C_libtooling-uow0, but its MECHANISM
+  //     is — the note is corrected rather than deleted because the old wording was a
+  //     true statement about the old code and a false one about this code, which is
+  //     exactly how a stale justification becomes a wrong de-facto ruling (Rule 0).
+  //     `railOf` USED to return arg 0 = the FLAG for the 4-arg guarded store, so the
+  //     store counted as a WRITE of the flag and the ordering came out right by
+  //     accident. It now returns arg 1 = the ARRAY (what the gate actually writes),
+  //     and the ordering is instead supplied by the driver keying on READS as well
+  //     as writes. Do not re-derive "the store's `railOf` is the flag" from here.
   if (auto *FlagI = dyn_cast<Instruction>(Flag)) {
     taint.Tainted.insert(FlagI);
     taint.BirthOrder[FlagI] = taint.NextBirth++;

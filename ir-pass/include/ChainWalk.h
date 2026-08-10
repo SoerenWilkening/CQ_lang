@@ -22,10 +22,18 @@ namespace cq {
 
 struct TaintSet;
 
-// An in-place, handle-threading gate on `H`: an UNCONTROLLED rotation
-// `cqrt_ry/rz_<W>(H, θ)` whose arg 0 IS the handle (arg_size 2). These mint no
-// new handle (void), so they belong to `H`'s link of the DAG. The 3-arg
-// controlled forms and `_inv`/`_unc` twins fail this predicate.
+// An in-place, handle-threading gate on `H` — a VOID gate that MUTATES `H` rather
+// than minting a fresh handle, so it belongs to `H`'s link of the DAG. Three
+// callee shapes, each with its own required arity and handle SLOT (see the .cpp):
+//   * `cqrt_ry/rz_<W>(H, θ)`                          — arg 0, arg_size 2
+//   * `cqrt_qram_store_<W>(H, idx, val)`              — arg 0, arg_size 3
+//   * `cqrt_qram_store_<W>_controlled(flag, H, idx, val)` — arg 1, arg_size 4
+// Every `_inv`/`_unc` twin fails (it is the adjoint, never a forward gate), as does
+// any other `_controlled` form. THIS PREDICATE IS THE SINGLE DEFINITION OF "which
+// register does this gate write": `railOf` is derived from it (bd
+// test_C_libtooling-uow0), so a new shape added here is automatically attributed
+// there. Callers pass a candidate handle; it does NOT test that `H` is a register,
+// so `railOf` filters constants before asking.
 bool isInPlaceGateOn(const llvm::CallInst *G, const llvm::Value *H);
 
 // A `cqrt_alloc_<W>` mint — a tainted register ROOT (the DAG bottoms out here).
@@ -108,13 +116,14 @@ bool isCopyOutSink(const llvm::CallInst *G, const llvm::Value *H);
 // decision (`DagTraversal` step 3b) so the two cannot drift — the same Rule-14
 // hoist `LiteralIntegrity` applied to `valueCarriesUndef`.
 //
-// KNOWN MIS-ATTRIBUTION (bd test_C_libtooling-uow0, filed separately): the GUARDED
-// store `cqrt_qram_store_<W>_controlled(flag, arr, idx, val)` writes `arr` at arg 1,
-// but this returns arg 0 (the flag). It is INERT for the bd 261j(a) freeze — that
-// freeze skips no gate, only a `cqrt_free`, and the decision and the suppression
-// consult this same function so they agree by construction; the array is a
-// `cqrt_qram_alloc_` handle that is never freed anyway. It is NOT inert for
-// `Earliest` keying, which is why uow0 exists.
+// DERIVED FROM `isInPlaceGateOn`, NOT RE-SPELT (bd test_C_libtooling-uow0, fixed):
+// for an in-place gate the rail is the argument that predicate matches, so the two
+// cannot disagree about which register a gate writes. They DID disagree before —
+// this returned the arg-0 FLAG of `cqrt_qram_store_<W>_controlled(flag, arr, idx,
+// val)` while `isInPlaceGateOn` matched its arg-1 ARRAY — which mis-keyed
+// `Earliest` (whose rail's free is anchored to which gate) on every guarded-store
+// module. A producer's fresh result is its own rail; `cqrt_x` is handled explicitly
+// and agrees with the derivation (see the .cpp).
 llvm::Value *railOf(llvm::CallInst *G);
 
 // Is `Handle` the TERMINAL of its register's def-use DAG? True when no OTHER
