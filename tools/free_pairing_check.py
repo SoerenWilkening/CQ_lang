@@ -352,6 +352,46 @@ them. That is the right axis to be exhaustive on, because the rule branches on
 the symbol's Effect and not on the call site; but it is a sample, and 392/392
 must not be read as "every aliasable call in the corpus was tried".
 
+THE (R1) RECORDED-RAIL rule (bd 261j(b)) was validated the same way, 2026-08-11,
+and it is the only rule here that does not go THROUGH a proof — so the evidence
+matters more, not less.
+
+ (1) VERDICT DIFF over every one of the 240 REGISTERED e2e slices (rebuilt from
+     build/tests/e2e/CTestTestfile.cmake so the list cannot drift from ctest),
+     comparing the FULL finding list and not just exit codes, against a pinned
+     pre-change copy of this file: 0 moved. False positives are the expensive
+     direction for a GATE and this is the only measurement that bears on them.
+ (2) FIRE TEST on synthetic IR: the pre-261j lowering, its controlled-twin
+     ctrl-slot form, a chained theta, and an ANCESTOR-only correlation all
+     VIOLATE; the three adjacent shapes it must stay silent on — a diagonal
+     `cqrt_rz_` rail, the DERIVED rail whose free bd 261j(a) deliberately KEPT,
+     and a rotated rail with no record — all still VERIFY. All six are committed
+     in free_pairing_check_test.py, which is what finally gives
+     `cqrt_tape_write_<W>` the mutant that file's own docstring admits it lacked.
+ (3) FIRE TEST ON REAL LOWERED IR, not hand-written .ll: plant a tape record on a
+     rail that the corpus module itself both rotates and frees. 19 planted, 19
+     caught, 0 survived. THE CAP, STATED: one plant per module, and only in the
+     19 of 240 modules that HAVE such a rail — the other 221 have none, because
+     the 261j fix already stopped the compiler emitting that shape. This is not
+     "every rotated rail in the corpus".
+ (4) ARM-KILL MATRIX, and it found two gaps in the first draft of the mutants
+     rather than confirming them. Deleting the ROTATION conjunct, the RECORDED
+     conjunct, or the BACKWARD CLOSURE each turns the self-test red (2, 5 and 1
+     failures) — but only after adding the ancestor mutant, WITHOUT which
+     deleting the closure entirely left the file green. The fourth arm, the
+     `cqrt_ry_` name test, could NOT be killed: an `rz` never enters a rail's
+     write history at all (`if not e.diagonal`), so the name test is defence in
+     depth over an exclusion made one layer earlier. Recorded rather than
+     claimed the other way round.
+
+THE LEAK CENSUS ships with it, for the reason bd 261j(b) names: this file counts
+free SITES, so a compiler that frees nothing scores "0 cqrt_free site(s): 0
+verified" and passes STRICT. The summary now always states how many rail mints
+were left allocated. Leaks are legal (Rule 6's fallback) so it never fails on
+them — but the number can no longer be silently zero. On the corpus it is what
+makes bd 261j(a)'s own effect visible: `slice_io` reads "1 rail mint(s) of which
+1 left allocated, 0 cqrt_free site(s)".
+
 The (A2) CO-WRITTEN-SLOT rule (bd 0gwl) was validated the same way, 2026-08-07,
 and here the population is small enough to be EXHAUSTIVE rather than sampled —
 so unlike the Case-B figure above, this one has no cap to state. Instrumenting
@@ -948,11 +988,14 @@ class Rail:
 
 class StreamAnalysis:
     def __init__(self, fnname, calls, module_defs, params=frozenset(),
-                 rail_defs=frozenset()):
+                 rail_defs=frozenset(), recorded=frozenset()):
         self.fnname, self.calls = fnname, calls
         self.module_defs = module_defs
         self.params = params
         self.rail_defs = rail_defs
+        # bd 261j(b): names correlated with a kept output carrier. Computed per
+        # FUNCTION, not per stream — a tape write in another block still records.
+        self.recorded = recorded
         self.rails = {}
         self.findings = []
         self.verified = self.sites = 0
@@ -1644,6 +1687,29 @@ class StreamAnalysis:
                      f"handle was measured at line {r.measured_at}; the "
                      f"measurement owns it (Rule 6)")
             return
+        # (R1) bd 261j(b) — RECORDED onto a kept carrier AND carrying a
+        # non-diagonal rotation. Checked BEFORE the proof rules and independently
+        # of them: all four rules that certified this defect ask only whether the
+        # write history returns the rail to its alloc value, and `Ry(-t) Ry(t)`
+        # does. What they cannot see is that the copy's DESTINATION is never
+        # restored, so the rail is entangled with it and the reduction is no
+        # longer a statement about the rail alone (Rules 5/6/8).
+        rot = [w for p, w in r.writes
+               if p < pos and w.sym.startswith("cqrt_ry_")]
+        if rot and r.name in self.recorded:
+            self.add(VIOLATION, "R1-recorded-rotated-rail", c, r.name,
+                     f"rail carries `{rot[0].text if rot else '<rotation>'}` "
+                     f"(line {rot[0].line if rot else 0}) and is "
+                     f"transitively RECORDED onto a kept output tape, which the "
+                     f"reversal never restores; it is therefore ENTANGLED with "
+                     f"that carrier at the free, so `cqrt_free` is a hardware "
+                     f"reset of an entangled rail = a hidden measurement (Rules "
+                     f"5/6/8). `cqrt_ry` has no live condition to be a "
+                     f"permutation OF, so no reverse-play returns it to |0>. "
+                     f"Leave it allocated instead (the Rule-6 fallback). NOTE "
+                     f"this fires REGARDLESS of the proof rules: each of them "
+                     f"certifies this exact shape.")
+            return
         if r.kind == "alloc":
             self.check_alloc_rail(pos, c, r)
         else:
@@ -1802,6 +1868,104 @@ def ensure_recursion_headroom(stream_len):
         sys.setrecursionlimit(need)
 
 
+# ---- bd 261j(b): rails CORRELATED with a kept output carrier ---------------
+#
+# THE HOLE THIS CLOSES. bd 261j(a) ruled that freeing a rail RECORDED onto a carrier
+# the reversal never touches is a hidden measurement unless the rail's own forward
+# chain is a basis permutation of live conditions (bd memory
+# [record-freeze-invariant-2026-08-10]). This checker CERTIFIED that defect — four
+# separate proof paths did (`A2-reduces-to-identity`, `T1-unc-reversal`, and two more
+# found on `p_i8`/`p_qram_qidx` shapes in the Rule-13 round) — because every one of
+# them asks only "does the write history return the rail to its alloc value", and
+# `Ry(-t) Ry(t)` does. What none of them can see is that a CNOT-class copy onto a
+# carrier that is never restored has already correlated the rail with it, so the
+# reduction is no longer a statement about the rail alone.
+#
+# So this is NOT a tightening of a proof rule: no rule change can close it, because
+# the correlation is absent from the EFFECT MODEL — `classify` records that
+# `cqrt_tape_write_<W>` reads its src and writes the tape token, which is true and
+# says nothing about the carrier being kept. The rule is layered ON TOP, and it
+# rejects regardless of which proof would otherwise have discharged the site.
+#
+# BOTH CONJUNCTS ARE REQUIRED and dropping either is a false-positive machine:
+#   (i)  the rail's own write history contains a NON-DIAGONAL rotation. `cqrt_rz_` is
+#        excluded — diagonal, trivial on |0>, and its label-phase cancels against a
+#        basis-label record (the ruling's own whitelist). SAY WHERE THAT EXCLUSION
+#        ACTUALLY HAPPENS, because the obvious answer is wrong: it is NOT the
+#        `cqrt_ry_` name test below. The stream scan appends to a rail's write
+#        history only `if not e.diagonal`, so an `rz` never enters it at all, and
+#        MEASURED by arm-kill, widening the name test to `cqrt_r` does not make the
+#        rz positive control fire. The name test is defence in depth over an
+#        exclusion the effect model already makes one layer earlier.
+#   (ii) the rail is transitively CORRELATED with a kept carrier.
+# (i) alone fires on all 36 legitimate Bennett straddles; (ii) alone fires on every
+# sound `cq_template_*` rail a tape ever reads — including the DERIVED rail whose
+# free bd 261j(a) deliberately KEPT (lowering_io_tape_derived_uncompute.ll).
+#
+# CORRELATION PROPAGATES BACKWARD ONLY, over ancestor edges, mirroring the pass: the
+# record reads a descendant's label, which is a function of its ancestors'. A
+# descendant of a recorded rail reverses cleanly (the record is diagonal on the
+# ancestor and commutes with the descendant's chain).
+#
+# SLOT-BLIND at the seed, deliberately, for the same reason the pass is: the
+# controlled twin `cqrt_tape_write_<W>_controlled(ctrl, tape, src)` records BOTH ctrl
+# and src, and a slot-indexed test would miss the controlled form's src. The tape
+# TOKEN swept in with them is a `tape`-kind resource that `F9-free-of-nonrail`
+# already refuses to free, so blindness costs nothing here.
+#
+# WHAT THE ARM-KILL MATRIX ACTUALLY MEASURED about that, because the tidy claim is
+# not the true one: replacing the blind seed with a slot-indexed one does NOT turn
+# the controlled-twin mutant red. The backward closure reaches the ctrl anyway — the
+# tape token is a WRITTEN slot of the same call, so closing over that call's operands
+# picks the ctrl up one hop later. The two mechanisms OVERLAP here. Slot-blindness is
+# kept because it is the direct statement of the physics and does not depend on the
+# token happening to be modelled as written; it is not, on this shape, independently
+# load-bearing, and saying otherwise would be exactly the unverified claim this
+# ticket's history is made of.
+#
+# The closure walks only names this function MINTS as rails — the same restriction
+# the pass's `taint.Tainted` test applies. Widening it to every operand would drag
+# classical immediates in and turn a GATE into a false-positive generator, which is
+# the expensive direction (bd memory [gate-validation-not-corpus-silence-2026-07-31]).
+_TAPE_SINK = re.compile(rf"cqrt_tape_write_{_W}(?:_controlled)?$")
+
+
+def recorded_rails(fn, mints):
+    """Names in `fn` transitively correlated with a kept output carrier."""
+    writers = {}
+    for _lbl, calls, _term in fn.blocks:
+        for c in calls:
+            eff = classify(c.sym)
+            if eff is None:
+                continue
+            targets = set()
+            if c.res:
+                targets.add(c.res)
+            for wi in eff.writes:
+                if wi < len(c.vals):
+                    targets.add(c.vals[wi])
+            for tgt in targets:
+                writers.setdefault(tgt, []).append(c)
+
+    seed, work = set(), []
+    for _lbl, calls, _term in fn.blocks:
+        for c in calls:
+            if not _TAPE_SINK.fullmatch(c.sym):
+                continue
+            for v in c.vals:            # SLOT-BLIND — see the note above
+                if v not in seed:
+                    seed.add(v)
+                    work.append(v)
+    while work:
+        x = work.pop()
+        for w in writers.get(x, ()):
+            for v in w.vals:
+                if v in mints and v not in seed:
+                    seed.add(v)
+                    work.append(v)
+    return seed
+
+
 def check_module(text):
     """Returns (findings, verified_count, free_site_count, proofs).
 
@@ -1834,6 +1998,32 @@ def check_module(text):
                 if eff is not None and eff.mints is not None:
                     mints.add(c.res)
         rail_defs[fn.name] = mints
+    recorded = {fn.name: recorded_rails(fn, rail_defs.get(fn.name, frozenset()))
+                for fn in funcs}
+    # bd 261j(b) — THE LEAK CENSUS. This file counts free SITES, so a compiler that
+    # stops freeing everything reports "0 cqrt_free site(s): 0 verified" and passes
+    # STRICT. That is not a hypothetical failure mode: bd 261j(a) is a change whose
+    # whole content is "emit fewer frees", and its blunt alternative would have
+    # emitted none at all. A count of verified proofs is not a coverage measure
+    # unless you also know what it did NOT have to prove. Rails left allocated are
+    # LEGAL (Rule 6's fallback) so this is reported, never failed on — but it is
+    # reported, so the number can never be silently zero.
+    minted = leaked = 0
+    for fn in funcs:
+        freed = set()
+        for _lbl, calls, _term in fn.blocks:
+            for c in calls:
+                if c.sym == "cqrt_free" and c.vals:
+                    freed.add(c.vals[0])
+        for _lbl, calls, _term in fn.blocks:
+            for c in calls:
+                if not c.res:
+                    continue
+                eff = classify(c.sym)
+                if eff is not None and eff.mints == "rail" and eff.role == "alloc":
+                    minted += 1
+                    if c.res not in freed:
+                        leaked += 1
     findings, verified, sites, proofs = [], 0, 0, []
     for fn in funcs:
         for _chain, calls in build_streams(fn):
@@ -1841,12 +2031,13 @@ def check_module(text):
                 continue
             ensure_recursion_headroom(len(calls))
             sa = StreamAnalysis(fn.name, calls, module_defs, fn.params,
-                                rail_defs.get(fn.name, frozenset()))
+                                rail_defs.get(fn.name, frozenset()),
+                                recorded.get(fn.name, frozenset()))
             findings.extend(sa.run())
             verified += sa.verified
             sites += sa.sites
             proofs.extend(sa.proofs)
-    return findings, verified, sites, proofs
+    return findings, verified, sites, proofs, (minted, leaked)
 
 
 def main(argv=None):
@@ -1864,6 +2055,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     all_findings, verified, sites, unclassified = [], 0, 0, []
+    minted_total = leaked_total = 0
     for path in args.files:
         try:
             with open(path) as fh:
@@ -1873,7 +2065,7 @@ def main(argv=None):
                   file=sys.stderr)
             return 2
         try:
-            f, v, s, proofs = check_module(text)
+            f, v, s, proofs, (mi, lk) = check_module(text)
         except Unclassified as e:
             unclassified.append((path, e.sym))
             continue
@@ -1882,6 +2074,8 @@ def main(argv=None):
         all_findings.extend(f)
         verified += v
         sites += s
+        minted_total += mi
+        leaked_total += lk
         if args.explain:
             for fn, line, handle, rule, lines in proofs:
                 print(f"{path}: OK @{fn} line {line} [{handle}] via {rule} "
@@ -1912,7 +2106,9 @@ def main(argv=None):
             print(f"{f.path}: {f}",
                   file=sys.stdout if args.allow_unproven else sys.stderr)
         if not args.quiet or viol or unpr or unclassified:
-            print(f"free_pairing_check: {len(args.files)} file(s), {sites} "
+            print(f"free_pairing_check: {len(args.files)} file(s), "
+                  f"{minted_total} rail mint(s) of which {leaked_total} left "
+                  f"allocated, {sites} "
                   f"cqrt_free site(s): {verified} verified, {len(viol)} "
                   f"violation(s), {len(unpr)} unproven"
                   + (f", {len(unclassified)} unclassified symbol(s)"

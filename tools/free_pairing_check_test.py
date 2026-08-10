@@ -830,6 +830,128 @@ def insert_after(text, needle, new_line, nth=0):
 
 
 # (name, mutated module, expected finding code)
+
+# ---- bd 261j(b): the RECORDED-RAIL rule (R1) -------------------------------
+#
+# THE MUTANTS THIS FILE ADMITTED IT LACKED. The docstring above says
+# `cqrt_tape_write_<W>` is "the one modelled write-set with NO committed mutant
+# here, for want of a tape fixture". These are it — and they are not synthetic
+# shapes invented to exercise a rule: TAPE_RECORDED_RY is the lowering the compiler
+# ACTUALLY EMITTED before bd 261j(a), which four different proof rules of this very
+# file certified as sound (`A2-reduces-to-identity`, `T1-unc-reversal`, and two more
+# found on `p_i8`/`p_qram_qidx` shapes). A checker that certifies a shipped hidden
+# measurement through four independent paths is the strongest possible argument for
+# a rule that does not go through any of them.
+#
+# The NEGATIVES matter as much as the positive, because a rule that declines the bad
+# input is worthless if it also declines the good one. Each isolates one conjunct:
+#   * TAPE_RECORDED_RZ    — diagonal rotation, trivial on |0>, must VERIFY.
+#   * TAPE_RECORDED_DERIV — the DERIVED rail whose free bd 261j(a) deliberately KEPT
+#     (lowering_io_tape_derived_uncompute.ll); recorded, but its own chain is a
+#     template permutation, so it must VERIFY. This is the discrimination case: a
+#     rule keyed on "recorded" alone drops it.
+#   * ROTATED_NO_TAPE     — an Ry rail with no record at all, must VERIFY.
+TAPE_RECORDED_RY = """
+define void @io(i32 %u0) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %t = call i32 @cqrt_tape_alloc()
+  %w = call i32 @cqrt_tape_write_i32(i32 %t, i32 %h)
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+TAPE_RECORDED_RY_CTRL = """
+define void @io(i32 %u0, i32 %s) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %t = call i32 @cqrt_tape_alloc()
+  %w = call i32 @cqrt_tape_write_i32_controlled(i32 %h, i32 %t, i32 %s)
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+TAPE_RECORDED_CHAINED = """
+define void @chained(i32 %u0) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %o = call i32 @cq_template_add_i32_hl(i32 %h, i32 1)
+  call void @cqrt_ry_i32(i32 %o, double 2.500000e-01)
+  %t = call i32 @cqrt_tape_alloc()
+  %w = call i32 @cqrt_tape_write_i32(i32 %t, i32 %o)
+  call void @cqrt_ry_i32(i32 %o, double -2.500000e-01)
+  call void @cq_template_add_i32_hl_unc(i32 %o, i32 %h, i32 1)
+  call void @cqrt_free(i32 %o)
+  ret void
+}
+"""
+
+TAPE_RECORDED_RZ = TAPE_RECORDED_RY.replace("cqrt_ry_i32", "cqrt_rz_i32")
+
+TAPE_RECORDED_DERIV = """
+define void @derived(i32 %u0) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %o = call i32 @cq_template_add_i32_hl(i32 %h, i32 1)
+  %t = call i32 @cqrt_tape_alloc()
+  %w = call i32 @cqrt_tape_write_i32(i32 %t, i32 %o)
+  call void @cq_template_add_i32_hl_unc(i32 %o, i32 %h, i32 1)
+  call void @cqrt_free(i32 %o)
+  ret void
+}
+"""
+
+ROTATED_NO_TAPE = """
+define void @norec(i32 %u0) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+# The ANCESTOR case, and the only one that exercises the BACKWARD CLOSURE: the tape
+# records the DESCENDANT `%o`, whose own free is sound (a template permutation), while
+# the rotated ANCESTOR `%h` is correlated only through the closure. Added because the
+# arm-kill matrix measured that without it, deleting the closure entirely left this
+# file GREEN — the other three mutants all record the rotated rail directly.
+TAPE_RECORDED_ANCESTOR = """
+define void @ancestor(i32 %u0) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %o = call i32 @cq_template_add_i32_hl(i32 %h, i32 1)
+  %t = call i32 @cqrt_tape_alloc()
+  %w = call i32 @cqrt_tape_write_i32(i32 %t, i32 %o)
+  call void @cq_template_add_i32_hl_unc(i32 %o, i32 %h, i32 1)
+  call void @cqrt_free(i32 %o)
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+RECORD_MUTANTS = [
+    ("tape-recorded-ancestor-via-closure", TAPE_RECORDED_ANCESTOR,
+     "R1-recorded-rotated-rail"),
+    ("tape-recorded-ry-rail", TAPE_RECORDED_RY, "R1-recorded-rotated-rail"),
+    ("tape-recorded-ry-ctrl-slot", TAPE_RECORDED_RY_CTRL,
+     "R1-recorded-rotated-rail"),
+    ("tape-recorded-chained-theta", TAPE_RECORDED_CHAINED,
+     "R1-recorded-rotated-rail"),
+]
+
+RECORD_POSITIVES = [
+    ("tape-recorded-rz-diagonal", TAPE_RECORDED_RZ),
+    ("tape-recorded-derived-permutation", TAPE_RECORDED_DERIV),
+    ("rotated-rail-no-record", ROTATED_NO_TAPE),
+]
+
+
 MUTANTS = [
     # ---- the three defects bd 8txa says the golden trace cannot see --------
     ("deleted-uncompute-toffoli",
@@ -1170,13 +1292,13 @@ SWEEP_EXEMPT_RULES = {"A1-classical-immediate"}
 
 
 def findings(text):
-    f, _v, _s, _p = fpc.check_module(text)
+    f, _v, _s, _p, _c = fpc.check_module(text)
     return f
 
 
 def verdict_map(text):
     """{handle: verdict} for every free site — what an ORDER_PAIR compares."""
-    f, _v, _s, proofs = fpc.check_module(text)
+    f, _v, _s, proofs, _c = fpc.check_module(text)
     d = {handle: "OK:" + rule for _fn, _l, handle, rule, _w in proofs}
     for x in f:
         d[x.handle] = x.kind + ":" + x.code
@@ -1196,7 +1318,7 @@ def main():
             fails.append(f"POSITIVE {name}: expected 0 findings, got "
                          + "; ".join(str(x) for x in f))
         elif verbose:
-            _f, v, s, _p = fpc.check_module(text)
+            _f, v, s, _p, _c = fpc.check_module(text)
             print(f"  ok  positive  {name:32s} {v}/{s} free sites verified")
 
     # ---- layer 1b: the verdict may not depend on `cqrt_free` ORDER --------
@@ -1252,6 +1374,24 @@ def main():
                          + (", ".join(codes) if codes else "NOTHING (survived)"))
         elif verbose:
             print(f"  ok  mutant    {name:32s} -> {want}")
+    # ---- layer 2b: bd 261j(b) recorded-rail rule, both directions ---------
+    for name, text, want in RECORD_MUTANTS:
+        n_mut += 1
+        codes = [x.code for x in findings(text)]
+        if want not in codes:
+            fails.append(f"RECORD MUTANT {name}: expected {want}, got "
+                         + (", ".join(codes) if codes else "NOTHING (survived)"))
+        elif verbose:
+            print(f"  ok  mutant    {name:32s} -> {want}")
+    for name, text in RECORD_POSITIVES:
+        n_mut += 1
+        bad = [x.code for x in findings(text) if x.code.startswith("R1-")]
+        if bad:
+            fails.append(f"RECORD POSITIVE CONTROL {name}: the rule must NOT "
+                         f"fire here, got " + ", ".join(bad))
+        elif verbose:
+            print(f"  ok  control   {name:32s} -> no R1")
+
     n_mut += 1
     try:
         findings(UNCLASSIFIED_MUTANT)
@@ -1277,7 +1417,7 @@ def main():
     for name, text in POSITIVE:
         lines = text.split("\n")
         base = len(findings(text))
-        _f, _v, _s, proofs = fpc.check_module(text)
+        _f, _v, _s, proofs, _c = fpc.check_module(text)
         for (fn, free_line, handle, rule, wlines) in proofs:
             for wl in wlines:
                 if rule in SWEEP_EXEMPT_RULES:
