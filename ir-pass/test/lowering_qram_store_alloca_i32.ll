@@ -13,7 +13,9 @@
 ; array (a dephasing silent miscompile). The fix copies the loaded value out to a
 ; kept carrier (`cqrt_alloc_i32(0)` + `cqrt_copy_i32`), which the user measures, so
 ; the load+store chain uncomputes (method-B): `cqrt_qram_load_i32_unc` then
-; `cqrt_qram_store_i32_unc`, the index rotation rails reverse-play and free, and the
+; `cqrt_qram_store_i32_unc`, the index rotation rails reverse-play and are then LEFT
+; ALLOCATED (frozen by the bd 5pio record freeze — they used to be freed; the
+; `CHECK-NOT`s below are the pin, and this header formerly contradicted them), and the
 ; array handle is left allocated but CLEAN |0> (a classical resource, never freed,
 ; §2.9). NO measurement is inserted that the user did not write (Rule 5).
 ;
@@ -59,6 +61,24 @@ entry:
 ; CHECK:     call void @cqrt_qram_load_i32_unc(i32 %[[V]], i32 %[[ARR]], i32 %[[IP]])
 ; CHECK:     call void @cqrt_qram_store_i32_unc(i32 %[[ARR]], i32 %[[IQ]], i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call void @cqrt_free(i32 %[[ARR]])
+;
+; THE INDEX ROOTS ARE FROZEN, NOT FREED (bd 5pio, owner ruling 2026-08-11), and this
+; is the LIT-layer pin for the ancestor half of that freeze. `%[[V]]` — the copy
+; SOURCE — is a `cqrt_qram_load_<W>` result, a basis permutation of arr/idx, so it
+; stays freeable and IS freed above. Its ANCESTORS `%[[IP]]`/`%[[IQ]]` reach the kept
+; carrier `%[[RET]]` through it, and their own gate is `cqrt_ry_`, which is not a
+; basis permutation — so they are fully reverse-played and then LEFT ALLOCATED.
+; Freeing them would be a hidden measurement of a rail the carrier is entangled with
+; (Rules 6/8).
+;
+; These are DISCRIMINATION CONTROLS, and the pin matters because of how the change was
+; found to be invisible: 8 of the 9 lit fixtures this ruling moved changed SILENTLY —
+; only one had a CHECK pinning any removed free, so the lit layer could not witness
+; the ancestor freeze at all and only the e2e goldens moved. Pre-ruling the pass
+; emitted `cqrt_free(%[[IP]])` and `cqrt_free(%[[IQ]])` on the two lines immediately
+; before the measure below, so this window catches a revert.
+; CHECK-NOT: call void @cqrt_free(i32 %[[IP]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[IQ]])
 ; The carrier — NOT the loaded value — is what gets measured:
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[RET]])
 ; CHECK-NOT: alloca

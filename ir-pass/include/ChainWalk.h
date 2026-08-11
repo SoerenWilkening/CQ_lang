@@ -112,11 +112,29 @@ bool isOutputSink(const llvm::CallInst *CI);
 // under-freeze risk on the controlled form and under-freeze is the unforgivable
 // direction. Do not "fix" it by indexing arguments.
 //
-// Deliberately TAPE-ONLY: `cqrt_copy_<W>` is NOT a recorded carrier here. Its
-// destination is the kept escaped/measured carrier of a method-B copy-out whose
-// safety rests on an emitter-side invariant (bd 8gi5) — a separate surface bd
-// 261j(a) did not rule, and including it drags the backward closure across every
-// shipped QRAM golden.
+// TWO SURFACES, and only the tape arm is slot-blind. The method-B copy-out
+// `cqrt_copy_<W>(src, dst)` now ALSO records (bd 5pio, owner ruling 2026-08-11): its
+// destination is a kept carrier the reversal never touches, the same relation the
+// tape has. That arm is SLOT-AWARE — it fires only when `H` is the SOURCE.
+//
+// NOT because seeding the destination would do harm: it would not, and a Rule-13
+// reviewer measured that. `FrozenRails` is read at exactly ONE site and only to skip
+// a `cqrt_free`, so the freeze is purely SUBTRACTIVE; and a copy destination is never
+// freeable to begin with (in that role it is not a benign closure user, so it forces
+// `D.NotClosed` and the whole DAG leaks). Seeding it would change nothing, and if it
+// ever did it would be a leak — the safe direction, exactly as the tape arm's own
+// slot-BLINDNESS argues above. The asymmetry is sound because of that `NotClosed`
+// compensation, which is what a future over-decline-reduction would remove. See the
+// .cpp for the same correction; an earlier draft asserted the harm in BOTH files and
+// only one was fixed.
+//
+// This replaces the previous "deliberately TAPE-ONLY" rule, which deferred the copy
+// surface to bd 8gi5/5pio on the grounds that its safety rested on an emitter-side
+// census. It did, and that is exactly the durability problem: `isCopyOutSink` is a
+// NAME-shaped predicate, so a future emitter minting a copy on a rotation-bearing
+// rail inherits a free with nothing checking. The census is now mechanical (zero
+// hazard-shape instances across 1241 lowered modules) and the freeze no longer rests
+// on it.
 bool recordsIntoKeptCarrier(const llvm::CallInst *S, const llvm::Value *H);
 
 // A method-B copy-out `cqrt_copy_<W>(src, dst)` reading `H` as its SOURCE (arg 0).
@@ -142,18 +160,28 @@ bool recordsIntoKeptCarrier(const llvm::CallInst *S, const llvm::Value *H);
 //                           SOUND Bennett case: the src is a `cqrt_qram_load_<W>`
 //                           result, a permutation of arr/idx that reverse program
 //                           order keeps at their producer-time values.
-// WRITE DOWN WHAT THAT DOES AND DOES NOT BUY. It says no emitter reaches the bad
-// shape TODAY; it does not say the predicate CHECKS anything. Nothing here stops a
-// future emitter from minting `ry(%h); copy(%h,%dst); ry(-%h); free(%h)` — a
-// hand-written module reproducing exactly that is accepted (rc=0) and
-// `free_pairing_check.py` certifies it. Adding the guard would mean admitting the
-// copy sink only when the destination is provably measured in-function (mirroring
-// QramLowering's own `Out->hasOneUse() && sole user is cq_measure_*` test, which is
-// what actually makes the shipped sxuk QRAM index-root frees measurement-immune).
-// That is an unruled behaviour change on a surface bd 261j(a) deliberately did not
-// rule — 8 lit fixtures and all 6 shipped QRAM goldens move — so it stays FILED as
-// bd 8gi5's owner scope question rather than being decided in an implementation.
-// If you add a sixth emitter site, this census is the thing you must re-run.
+// WHAT THAT CENSUS DID AND DID NOT BUY — and it is now HISTORY, not the rule. It
+// said no emitter reached the bad shape; it never said the predicate CHECKED
+// anything, and nothing in it stopped a future emitter minting
+// `ry(%h); copy(%h,%dst); ry(-%h); free(%h)`. That gap is CLOSED: bd 5pio ruled
+// (owner, 2026-08-11) and `isCopyOutSink` now SEEDS the 261j record freeze via
+// `recordsIntoKeptCarrier`, so the source's own chain is re-proved instead of
+// trusted. The census survives only as the reason the change was PROPHYLACTIC
+// against that direct shape rather than a fix for a live miscompile — and if you add
+// a sixth emitter site it is still the thing to re-run.
+//
+// THE RULING WENT AGAINST THE GUARD THIS BLOCK USED TO PROPOSE. Admitting the copy
+// sink only when the destination is provably measured was REFUTED, not merely left
+// unadopted: Bennett.jl requires nothing of a copy-out destination (not measured —
+// it has no measurement concept — not kept, not even fresh or zero) and ships three
+// kernels that copy out and then uncompute-and-free the SOURCE into a live register,
+// an accumulator and a scratch checkpoint. A dst-measured rule breaks all three.
+// It is also not SUFFICIENT: it says nothing about the source's correlation with its
+// own ancestors, which is what the backward `AncEdges` walk models — and in practice
+// the ancestors are where the behaviour change actually lands (the sxuk QRAM index
+// roots, whose frees the freeze now suppresses; 9 lit fixtures and 6 e2e goldens
+// moved, 30 frees, every changed line a removed `cqrt_free`).
+// (bd memory [bennett-copyout-destination-2026-08-11].)
 //
 // ORDERING IS SEPARATE FROM FREEZING, and this predicate is consulted for both.
 // A copy is a benign terminal user for CLOSURE, but it is still a USE: the spine

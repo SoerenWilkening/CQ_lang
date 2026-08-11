@@ -134,6 +134,12 @@ constexpr char kMsgQromUnderControlBounds[] =
 // tainted reversible ops, NOT through a measure/tape collapse sink) into a
 // `ret` / `cq_invert` of a NON-`main` function, the whole-DAG reversal uncomputes
 // and FREES the LOCAL (`cq_theta`) index rails it is entangled with — a dirty free
+// (STILL TRUE OF THIS DECLINED SHAPE after bd 5pio, and worth saying because the
+// sibling comment at `emitCopyOutIfDirectMeasure` now reads the other way: the 5pio
+// freeze is seeded by a `cqrt_copy_<W>`, and a coherent-`ret` shape mints NO copy —
+// `emitCopyOutIfDirectMeasure` returns early unless the sole direct user is a
+// measure — so nothing seeds the freeze and the reversal would indeed still free the
+// index rail. This decline is NOT made redundant by the freeze.)
 // (= hidden measurement, Rule 6) that DEPHASES the returned carrier to a classical
 // mixture (off-diagonal coherence exactly 0; reduced ρ = diag(2c²s², c⁴+s⁴)). By
 // no-cloning/monogamy NO reversible circuit can return a clean coherent `arr[p]`
@@ -1731,10 +1737,24 @@ namespace {
 // chain uncomputes via the EXISTING dead-array reversal (the spine treats
 // `cqrt_copy` reading src as a source-preserving sink, ChainWalk::isCopyOutSink),
 // while the copy DESTINATION is the kept measured carrier — and the local array's
-// stores reverse to |0>. The reversal frees the LOCAL index rails, which is sound
+// stores reverse to |0>.
+//
+// THE INDEX RAILS ARE NO LONGER FREED (bd 5pio, owner ruling 2026-08-11). This
+// comment used to continue "The reversal frees the LOCAL index rails, which is sound
 // HERE precisely because the value is MEASURED: the collapse makes the index-free
-// unobservable and the diagonal is the correct measurement distribution (memory
-// 7-5-qram-coherent-return-nocloning). A COHERENT `ret`/`cq_invert` escape is NOT
+// unobservable and the diagonal is the correct measurement distribution" — that
+// MEASUREMENT-IMMUNITY argument is still valid on its own terms, but it is no longer
+// what the compiler does. `isCopyOutSink` now seeds the 261j record freeze, the
+// correlation propagates BACKWARD to the copy source's ancestors, and an index root
+// whose gate is `cqrt_ry_` fails `preservesBasisUnderRecord` and is FROZEN: fully
+// reverse-played, then LEFT ALLOCATED rather than freed (Rule 6's fallback).
+//
+// So the freeze SUPERSEDES this carve-out rather than coexisting with it, and that is
+// a deliberate loss of resource cleanliness for a uniform rule — the ruling preferred
+// one source-side invariant over two independent justifications, since
+// measurement-immunity is a different claim from "the rail is |0>" and only the
+// latter is what Rule 6 licenses. The six shipped QRAM goldens were regenerated for
+// exactly these lines. (bd memory [bennett-copyout-destination-2026-08-11].) A COHERENT `ret`/`cq_invert` escape is NOT
 // handled here — it is loud-declined upstream (kMsgQramCohEscape) since no-cloning
 // forbids returning a clean coherent `arr[p]` once its local index is erased.
 //
@@ -1753,8 +1773,10 @@ void emitCopyOutIfDirectMeasure(CallInst *Out, StringRef ElemAbi, WidthDispatch 
     return;  // a coherent `ret` user is declined upstream (kMsgQramCohEscape).
   const Function *Callee = CI->getCalledFunction();
   if (!Callee || !Callee->getName().starts_with("cq_measure_"))
-    return;  // only a direct measure sink — measurement immunity makes the reversal
-             // (and its index frees) sound; everything else leaks safely.
+    return;  // only a direct measure sink — measurement immunity makes the REVERSAL
+             // sound; everything else leaks safely. (It used to make "and its index
+             // frees" sound too; since bd 5pio those index roots are frozen and left
+             // allocated, so only the store/load reversal is still bought here.)
   Instruction *U = CI;
   FunctionCallee Alloc = wd.allocFn(ElemAbi);
   // bd 38t2: `copyFnCell` (NOT the integer-only `copyFn`) so an fp cell load's
@@ -1997,7 +2019,8 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
       A.MemOp->replaceAllUsesWith(Out);
       // sxuk: if this loaded value's sole direct user is a `cq_measure` in a
       // non-main fn, copy it out to a kept carrier so the LOCAL array's stores
-      // uncompute (measurement immunity makes the index frees sound). No-op for the
+      // uncompute (the index rails themselves are FROZEN and left allocated since
+      // bd 5pio — measurement immunity no longer buys their frees). No-op for the
       // dead / taped / main / indirect cases; a COHERENT return was declined above.
       emitCopyOutIfDirectMeasure(Out, ElemAbi, wd, taint);
       ToErase.push_back(A.MemOp);  // the load

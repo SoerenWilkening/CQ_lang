@@ -11,6 +11,16 @@
 ; allocated only DEFERS the collapse. So the only correct action is a LOUD DECLINE
 ; (VERIFIED physics 2026-06-24; bd memory 7-5-qram-coherent-return-nocloning).
 ;
+; STILL TRUE AFTER bd 5pio, and worth saying because the sibling MEASURE path now
+; reads the other way. bd 5pio (2026-08-11) froze the QRAM index roots on the
+; direct-measure path, so there they are reverse-played and LEFT ALLOCATED rather than
+; freed. That freeze is seeded by a `cqrt_copy_<W>`, and this COHERENT shape mints no
+; copy at all — `emitCopyOutIfDirectMeasure` returns early unless the load result's
+; sole direct user is a `cq_measure_*` — so nothing seeds it here and the reversal
+; WOULD still free the index rail. This decline is NOT made redundant by the freeze,
+; and the "leaving the index allocated only DEFERS the collapse" sentence above is why
+; it could not be repaired by freezing anyway.
+;
 ; This supersedes the earlier sxuk return-form ACCEPT fixture (which copied the value
 ; out and reversed — itself the dephasing bug for the coherent case). The MEASURE
 ; form stays accepted (immune): lowering_qram_store_alloca_i32.ll / _flat_gep.ll. The

@@ -7,7 +7,8 @@
  * kept carrier via the UNCONTROLLED fp copy (cqrt_alloc_f64(0) + cqrt_copy_f64 —
  * the frozen-designate symbol minted by emitCopyOutIfDirectMeasure), then the
  * load+store chain reverses (cqrt_qram_load_f64_unc + cqrt_qram_store_f64_unc,
- * faithful Bennett LIFO: store_unc BEFORE the index rails' Ry† + free), and the
+ * faithful Bennett LIFO: store_unc BEFORE the index rails' Ry†; those rails are
+ * reverse-played but NOT freed since bd 5pio — see the integer twin), and the
  * array handle is left allocated but clean |0> (a classical resource, never
  * freed). `noinline` keeps the helper a separate function under clang -O1 (else it
  * inlines into main and degenerates into the no-reversal main-resident case). NO

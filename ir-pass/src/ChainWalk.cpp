@@ -130,6 +130,53 @@ bool isOutputSink(const CallInst *CI) {
 }
 
 bool recordsIntoKeptCarrier(const CallInst *S, const Value *H) {
+  // THE COPY-OUT SURFACE (bd test_C_libtooling-5pio, owner ruling 2026-08-11). A
+  // method-B `cqrt_copy_<W>(src, dst)` records `src`'s basis label onto `dst`, and
+  // `dst` is a KEPT carrier the whole-DAG reversal never touches — structurally the
+  // same relation to the reversal as a tape write, so it seeds the same freeze.
+  //
+  // SLOT-AWARE here, unlike the tape arm below: `isCopyOutSink` matches only when
+  // `H` is arg 0, the SOURCE.
+  //
+  // STATE THE REASON CORRECTLY, because the tempting one is FALSE. A draft of this
+  // comment said a blind scan "would seed the destination and freeze the very
+  // register the copy exists to produce". That harm CANNOT occur, and a Rule-13
+  // reviewer measured it three ways: a freeze suppresses only a `cqrt_free`, never
+  // an adjoint, and a copy DESTINATION is never freeable in the first place — in the
+  // destination role it is not a benign closure user, so it falls through to
+  // `D.NotClosed = true` and the whole DAG is left allocated, and it fails
+  // `isTerminalHandle` for the same reason. Seeding it would change nothing; if it
+  // ever did, it would be a leak — the safe direction, exactly as the tape arm's own
+  // slot-BLINDNESS argues four lines below.
+  //
+  // So the asymmetry is sound, but it is sound because of that `NotClosed`
+  // compensation, not because of any harm avoided. Written down here because the
+  // compensation is what a future over-decline-reduction would remove: make the
+  // destination slot benign for closure and this arm silently needs to become
+  // slot-blind. (bd 5pio Rule-13 round; CLAUDE.md's warning about agent-authored
+  // justifications hardening by repetition is exactly what this replaces.)
+  //
+  // WHY THIS AND NOT A PREDICATE ON THE DESTINATION. bd 5pio asked whether to admit
+  // the copy sink only when `dst` is provably measured. Bennett.jl — the project's
+  // standing ground truth for the compute/copy-out/uncompute model — requires
+  // NOTHING of a copy destination: not measured (it has no measurement concept), not
+  // kept, not even fresh or zero, and it ships three kernels that copy out and then
+  // uncompute-and-free the SOURCE into a live register, an accumulator and a scratch
+  // checkpoint respectively. A dst-measured rule would break all three. Bennett puts
+  // the entire reclamation license on the SOURCE's own chain, which is what this
+  // seed hands to `preservesBasisUnderRecord`. Note also what a dst-measured guard
+  // could not have caught: it says nothing about the source's correlation with its
+  // own ANCESTORS, which is exactly what the backward walk over `AncEdges` models.
+  // (bd memory [bennett-copyout-destination-2026-08-11].)
+  //
+  // CAUTION, because Bennett's own discipline does NOT discriminate CQ's hazard:
+  // `ry(%h); copy(%h,%dst); ry(-%h); free(%h)` SATISFIES it completely — exact whole
+  // -chain adjoint, copy strictly between — and the unitary is still wrong. The
+  // discrimination is `preservesBasisUnderRecord`'s rotation test, which is CQ's own
+  // and has no Bennett counterpart (Bennett's gate universe is closed at three basis
+  // permutations, so the invariant is vacuous there).
+  if (isCopyOutSink(S, H))
+    return true;
   // Tape-only and SLOT-BLIND — see the header for why both are load-bearing (the
   // controlled twin records its ctrl at arg 0 and its src at arg 2, and the tape
   // token is never a DAG rail so a blind scan cannot over-match).
@@ -150,11 +197,26 @@ bool isCopyOutSink(const CallInst *G, const Value *H) {
   // SOURCE (arg 0). Like a measure / tape-write sink it READS H without consuming
   // it, so the spine treats it as a benign terminal user; the copy DESTINATION
   // (dst) is the kept carrier. The 3-arg `_controlled` data-mux copy (4.4/6.5) and
-  // any `_inv`/`_unc` twin fail. NOT a `recordsIntoKeptCarrier` — bd 8gi5 owns
-  // whether this surface needs the 261j freeze (it has no live instance today).
+  // any `_inv`/`_unc` twin fail.
+  //
+  // IT IS ALSO A `recordsIntoKeptCarrier` (bd 5pio, owner ruling 2026-08-11), so
+  // this predicate is now load-bearing for the 261j record FREEZE and not only for
+  // closure. This comment used to read "NOT a `recordsIntoKeptCarrier` — bd 8gi5
+  // owns whether this surface needs the 261j freeze"; that ticket ruled.
+  //
+  // SRC AND DST MUST BE DISTINCT. `cqrt_copy_<W>(%x, %x)` is rejected, and the
+  // reason is that BOTH readers of this predicate — the closure scan
+  // (`DagTraversal`) and `isTerminalHandle` — `continue` on the FIRST match, so a
+  // value passed in both slots would be read purely as a preserved SOURCE and its
+  // WRITE role would vanish: the spine then frees a rail a CNOT wrote, with that
+  // write never adjointed (`opt` rc=0, verify-clean; stage 2b does catch it, as
+  // `VIOLATION B1-input-aliases-written-rail`). `railOf` already reasons explicitly
+  // about the same-value-in-two-slots case for in-place gates; this predicate never
+  // got that treatment until bd 5pio's Rule-13 round found it. Declining the aliased
+  // form is the over-declining direction and no emitter mints it.
   return N.starts_with("cqrt_copy_") && !N.contains("_controlled") &&
          !N.ends_with("_inv") && !N.ends_with("_unc") && G->arg_size() == 2 &&
-         G->getArgOperand(0) == H;
+         G->getArgOperand(0) == H && G->getArgOperand(0) != G->getArgOperand(1);
 }
 
 Value *railOf(CallInst *G) {

@@ -12,7 +12,5 @@ cqrt_qram_load_f64_unc(h4, a0, h2)
 cqrt_free(h4)
 cqrt_qram_store_f64_unc(a0, h1, h3)
 cqrt_ry_i32(h2, -0x1p-1)
-cqrt_free(h2)
 cqrt_ry_i32(h1, -0x1p-1)
-cqrt_free(h1)
 cqrt_measure_f64(h5) -> 0x0p+0

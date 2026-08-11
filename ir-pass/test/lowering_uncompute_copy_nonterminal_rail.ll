@@ -17,14 +17,36 @@
 ; `PreservingSinks` push individually turns exactly one of these two fixtures red
 ; (arm-kill matrix, bd memory gate-validation-not-corpus-silence-2026-07-31).
 ;
-; TWO THINGS THIS FIXTURE DOES NOT CLAIM. It does not rule on whether the copy-out
-; surface needs bd 261j(a)'s RECORD FREEZE — that is bd 8gi5's open scope question
-; for the owner, and `isCopyOutSink` is deliberately NOT a
-; `recordsIntoKeptCarrier`. And it does not claim the shape is emitter-reachable:
-; bd 8gi5 censused all five sites that mint an uncontrolled 2-arg `cqrt_copy_<W>`
-; and none of them produces it. Hand-written IR does (the pass carves every `cqrt_*`
-; callee out of `declineTaintEscapes`), and an ordering bug on accepted input is a
-; defect whether or not an emitter reaches it today.
+; IT NOW ALSO WITNESSES THE bd 5pio RECORD FREEZE, and that is a change of premise
+; worth stating rather than quietly re-baselining. This fixture used to say it "does
+; not rule on whether the copy-out surface needs bd 261j(a)'s RECORD FREEZE — that is
+; bd 8gi5's open scope question for the owner". That question was RULED (owner,
+; 2026-08-11): `isCopyOutSink` IS a `recordsIntoKeptCarrier` now, so a copy-out source
+; seeds the freeze and the correlation propagates BACKWARD to its ancestors.
+;
+; The consequence is visible below and is exactly the hazard the ruling targets. Three
+; rails, three different verdicts, all from one seed:
+;   %h_op1  a DESCENDANT of the copied rail — the walk is backward-only, so it is not
+;           correlated at all: reversed and FREED.
+;   %h_op   the copy SOURCE itself — correlated, but its gate is a `cq_template_*`
+;           producer, a basis permutation of its parents: reversed and FREED.
+;   %h      an ANCESTOR of the copy source — correlated, and its gate is `cqrt_ry_`,
+;           which is NOT a basis permutation: reversed but NOT FREED (left allocated).
+; Freeing `%h` would be a hidden measurement of a rail a function of which was copied
+; onto the kept carrier `%dst`, collapsing it (Rules 6/8). The leak is Rule 6's
+; sanctioned fallback.
+;
+; THE ORDERING TEST — the reason this fixture exists — SURVIVES INTACT. The freeze
+; suppresses a FREE, never an adjoint, so `cqrt_free(%h_op)` still exists and still
+; follows `cqrt_copy_i32(%h_op, %dst)`. Deleting the `PreservingSinks` push still
+; turns this fixture red (the arm-kill matrix is unaffected).
+;
+; IT STILL DOES NOT CLAIM THE SHAPE IS EMITTER-REACHABLE: bd 8gi5 censused all five
+; sites that mint an uncontrolled 2-arg `cqrt_copy_<W>` and none produces it, and a
+; mechanical re-census over 1241 lowered modules found 11 copies whose source is a
+; directly-rotated rail and ZERO of them freed. Hand-written IR does reach it (the
+; pass carves every `cqrt_*` callee out of `declineTaintEscapes`), and an ordering bug
+; on accepted input is a defect whether or not an emitter reaches it today.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
@@ -55,5 +77,14 @@ entry:
 ; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP]], i32 %[[H]], i32 1)
 ; CHECK:     call void @cqrt_free(i32 %[[OP]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+;
+; …and there the reversal STOPS. The Ry root is fully reverse-played but NOT freed:
+; it is a bd 5pio FROZEN rail (correlated with the kept copy destination through
+; %[[OP]], and `cqrt_ry_` is not a basis permutation). The rail is LEFT ALLOCATED.
+;
+; This `CHECK-NOT` is a real discrimination control, not decoration: before the ruling
+; the pass emitted `call void @cqrt_free(i32 %[[H]])` on the very next line, so an
+; accidental revert of the seed turns this fixture red. It is unbounded (no later
+; positive directive of this prefix), so the window runs to EOF.
+; CHECK-NOT: call void @cqrt_free(i32 %[[H]])
 ; CHECK-NOT: cqrt_measure

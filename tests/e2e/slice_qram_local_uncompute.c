@@ -5,8 +5,11 @@
  * scratch array MUST uncompute: the loaded value is copied out to a kept carrier
  * (cqrt_alloc_i32(0) + cqrt_copy_i32) which is what gets measured, then the
  * load+store chain reverses (cqrt_qram_load_i32_unc + cqrt_qram_store_i32_unc),
- * the index rotation rails reverse-play and free, and the array handle is left
- * allocated but clean |0> (a classical resource, never freed). WITHOUT the fix the
+ * the index rotation rails REVERSE-PLAY BUT ARE NOT FREED (bd 5pio: the copy
+ * destination is a kept carrier, so these ancestors of the copy source are frozen
+ * and left allocated — Rule 6's fallback; they were freed under the older
+ * measurement-immunity argument), and the array handle is left allocated but clean
+ * |0> (a classical resource, never freed). WITHOUT the fix the
  * stores would leak, entangling the measured value with dirty scratch — a
  * dephasing silent miscompile (bug sxuk). `noinline` keeps the helper a separate
  * function under clang -O1 (otherwise it inlines into main and degenerates into

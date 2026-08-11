@@ -56,10 +56,28 @@ carries the answer out. We do the same with a `cqrt_copy`:
 > across **both** the Shadow store/load path **and** the Inc-1 QROM read path
 > (`return tbl[q]` was the same latent bug). The copy-out below fires **only for the
 > direct `cq_measure` sink** (`emitCopyOutIfDirectMeasure`), where measurement
-> immunity makes the index frees sound and the diagonal is the correct distribution.
+> immunity makes the diagonal the correct distribution.
 > See `bd memory 7-5-qram-coherent-return-nocloning`. The original "disentangled
 > escaped return" claim (step 1 / the end of this section) is TRUE for the measure
 > sink and FALSE for a coherent return.
+>
+> **AMENDMENT 2026-08-11 (bd `5pio`, owner ruling).** The index rails described above
+> as *freed* are **no longer freed**, on either path. `ChainWalk::isCopyOutSink` now
+> seeds the bd 261j record freeze — a `cqrt_copy_<W>` **destination** is a kept
+> carrier exactly as an output tape is — so the correlation propagates **backward**
+> from the copy source and any ancestor whose gate is `cqrt_ry_` (these `cq_theta`
+> index roots) fails `preservesBasisUnderRecord`, is fully reverse-played, and is then
+> **left allocated** (Rule 6's fallback). The measurement-immunity argument above is
+> still *valid on its own terms*; it is simply no longer what the compiler relies on,
+> and the ruling deliberately preferred one uniform source-side invariant over two
+> independent justifications — measurement immunity is a different claim from "the
+> rail is |0⟩", and only the latter is what Rule 6 licenses. Measured cost: 9 lit
+> fixtures and 6 e2e goldens moved, 30 `cqrt_free`s removed, every changed line a
+> removed free. **The coherent-escape decline is NOT made redundant by this** — a
+> coherent `ret` mints no copy (`emitCopyOutIfDirectMeasure` returns early unless the
+> sole direct user is a measure), so nothing seeds the freeze on that path and the
+> reversal would still free the index rail. See bd memory
+> [`bennett-copyout-destination-2026-08-11`].
 
 1. **`QramLowering` (the integration point).** In `processShadowAlloca`'s **load
    branch**, right after `A.MemOp->replaceAllUsesWith(Out)`, if `Out` (the
@@ -87,10 +105,18 @@ carries the answer out. We do the same with a `cqrt_copy`:
 
 With those two pieces, `Out` becomes a non-escaped terminal and the **existing
 whole-DAG dead-array reversal** does the rest: `cqrt_qram_load_<W>_unc` then the
-`cqrt_qram_store_<W>_unc` chain (strict LIFO), the index/value rails freed, `Out`
-freed. The array handle is left allocated but now **clean `|0>`** (stores
-restored it), so it is a Rule-6-compliant safe leak — disentangled from the
-returned `%qret`.
+`cqrt_qram_store_<W>_unc` chain (strict LIFO), then `Out` freed. The array handle is
+left allocated but now **clean `|0>`** (stores restored it), so it is a
+Rule-6-compliant safe leak — disentangled from the returned `%qret`.
+
+> **AMENDED 2026-08-11 (bd `5pio`).** This step list used to read "…the index/value
+> rails **freed**, `Out` freed". The index/value rails are now fully reverse-played
+> and then **LEFT ALLOCATED**: `isCopyOutSink` seeds the bd 261j record freeze, the
+> correlation propagates backward from the copy source, and an ancestor whose gate is
+> `cqrt_ry_` fails `preservesBasisUnderRecord`. `Out` itself — a `cqrt_qram_load_<W>`
+> result, a basis permutation of `arr`/`idx` — stays freeable and is still freed, so
+> the LIFO store reversal this section exists to describe is unchanged. See the
+> amendment in the `l6xk` correction block above.
 
 ## Why each scope boundary
 

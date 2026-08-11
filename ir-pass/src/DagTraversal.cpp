@@ -279,13 +279,46 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
                      // carrier and is never recovered as a gate.
                      //
                      // Same narrowing as the tape sink above: this settles CLOSURE
-                     // only. It is NOT a `recordsIntoKeptCarrier` for step 3b — bd
-                     // 8gi5 censused this surface and found no live instance (the
-                     // only copy src the spine reverses is a `cqrt_qram_load_<W>`
-                     // result, a permutation of live arr/idx; the sxuk index roots
-                     // are measurement-immune by QramLowering.cpp:1749-1757), and
-                     // extending the freeze here is that ticket's call, not this
-                     // one's.
+                     // only, never freeability.
+                     //
+                     // IT IS NOW ALSO A `recordsIntoKeptCarrier` (bd 5pio, owner
+                     // ruling 2026-08-11) — the copy DESTINATION is a kept carrier
+                     // the reversal never touches, exactly like the tape, so step 3b
+                     // re-proves the SOURCE's own chain. This comment used to say
+                     // the extension was "that ticket's call, not this one's"; that
+                     // ticket ruled, and the ground is Bennett's: it puts the entire
+                     // reclamation license on the source's chain and requires
+                     // nothing whatever of a copy destination (see
+                     // `recordsIntoKeptCarrier` for why the proposed dst-measured
+                     // guard was refuted rather than merely unsupported).
+                     //
+                     // WHAT IT COSTS, measured rather than predicted: the sxuk QRAM
+                     // index-root frees are SUPPRESSED (they become Rule-6 leaks).
+                     // Those frees were justified by MEASUREMENT IMMUNITY — a valid
+                     // argument, but a different one from "the rail is |0>" — so this
+                     // freeze SUPERSEDES that carve-out rather than coexisting with
+                     // it. On slice_qram_local_uncompute stage 2b goes from "2 left
+                     // allocated, 3 free sites" to "4 left allocated, 1 free site",
+                     // 0 violations either way.
+                     //
+                     // TWO DIFFERENT NUMBERS, AND THEY MEASURE DIFFERENT PREDICATES —
+                     // do not quote the first as if it bounded the change. The
+                     // DIRECT hazard (`src` IS a rotated rail, then freed) is
+                     // prophylactic: across 1241 lowered modules there are 150
+                     // uncontrolled 2-arg copy sites, 11 whose source is a
+                     // directly-rotated rail, and ZERO of those also freed (their
+                     // cswap users already force `NotClosed`). But the seed
+                     // propagates BACKWARD, so what actually changes is the
+                     // ANCESTORS of a copy source — which that census never counted.
+                     // MEASURED separately: 9 lit fixtures and 6 e2e goldens move,
+                     // 30 `cqrt_free`s removed, and every single changed line in all
+                     // 15 modules is a removed `cqrt_free` (no adjoint dropped, no
+                     // ordering change, no rc change). A Rule-13 reviewer caught the
+                     // author quoting the first number for the second claim.
+                     //
+                     // What the change buys is durability in a NAME-shaped predicate:
+                     // a future emitter minting a copy on a rotation-bearing rail
+                     // would otherwise inherit a free with nothing checking.
         }
         if (isInvertEscape(CU)) {
           D.Escaped = true;

@@ -2461,8 +2461,17 @@ add_test(NAME e2e-slice-qram-store-fp
 # no reversal), the local scratch MUST uncompute: the loaded value is copied out to a
 # kept carrier (cqrt_alloc_i32(0) + cqrt_copy_i32) which is measured, then the
 # load+store chain reverses (cqrt_qram_load_i32_unc + cqrt_qram_store_i32_unc) and the
-# index rails reverse-play+free; the array handle is left clean |0> (never freed).
-# Without the fix the stores leak, entangling the measured value with dirty scratch.
+# index rails REVERSE-PLAY BUT ARE NOT FREED; the array handle is left clean |0>
+# (never freed). Without the fix the stores leak, entangling the measured value with
+# dirty scratch.
+#
+# The index rails used to be freed here, justified by MEASUREMENT IMMUNITY. bd 5pio
+# (owner ruling 2026-08-11) made a `cqrt_copy_<W>` destination a kept carrier for the
+# 261j record freeze, so the copy source's ANCESTORS — these `cq_theta` index roots,
+# whose gate is `cqrt_ry_` and so not a basis permutation — are frozen: fully
+# reverse-played, then LEFT ALLOCATED (Rule 6's fallback). The golden was regenerated
+# for exactly those lines. What this test still proves is the STORE REVERSAL, which is
+# the genuine sxuk fix; the index frees were never what it was pinning.
 add_test(NAME e2e-slice-qram-local-uncompute
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -2475,8 +2484,9 @@ add_test(NAME e2e-slice-qram-local-uncompute
 # The only layer that LINKS: proves the fp reversal family — the UNCONTROLLED
 # cqrt_copy_f64 copy-out (frozen-designate, its live consumer) + cqrt_qram_load_f64_unc
 # + cqrt_qram_store_f64_unc — resolves, signature-matches, and traces in faithful
-# Bennett LIFO order (store_unc BEFORE the index rails' Ry† + free) through a real
-# link. Byte-parallel to the integer golden with width-tagged symbols.
+# Bennett LIFO order (store_unc BEFORE the index rails' Ry†) through a real link.
+# Byte-parallel to the integer golden with width-tagged symbols. The index rails are
+# reverse-played but NOT freed since bd 5pio — see the integer twin above.
 add_test(NAME e2e-slice-qram-local-uncompute-fp
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

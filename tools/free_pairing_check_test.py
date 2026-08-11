@@ -362,14 +362,23 @@ define internal fastcc i32 @measured_local() unnamed_addr #1 {
   call void @cqrt_free(i32 %1)
   call void @cqrt_qram_store_i32_unc(i32 %arr, i32 %h, i32 %qval)
   call void @cqrt_ry_i32(i32 %h1, double -5.000000e-01)
-  call void @cqrt_free(i32 %h1)
   call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
-  call void @cqrt_free(i32 %h)
   %m = call i32 @cqrt_measure_i32(i32 %qret)
   ret i32 %m
 }
 """  # tests/e2e/slice_qram_local_uncompute.c @measured_local — the 7.5 Shadow
      # store/load pair and its LIFO reversal.
+     #
+     # THE INDEX RAILS ARE REVERSE-PLAYED BUT NOT FREED, and this fixture tracks the
+     # shipped lowering rather than an invented shape. It used to end
+     # `ry(-t); free(%h1); ry(-t); free(%h)`; bd 5pio (owner ruling 2026-08-11) made a
+     # `cqrt_copy_<W>` destination a kept carrier for the record freeze, so those two
+     # `cq_theta` roots — ancestors of the copy source `%1` — are frozen and left
+     # allocated. Keeping the old lines here would have made this POSITIVE fixture
+     # assert that a shape the compiler no longer emits must VERIFY, while the rule
+     # correctly rejects it. The self-test caught exactly that when the seed landed.
+     # `%1` (the load result, a basis permutation of arr/idx) is still freed, which is
+     # what keeps this a live free-pairing fixture rather than a leak-only one.
 
 IDENTICAL_INV = """
 define void @slice() local_unnamed_addr #0 {
@@ -935,6 +944,73 @@ define void @ancestor(i32 %u0) {
 }
 """
 
+# bd 5pio (owner ruling 2026-08-11): a `cqrt_copy_<W>` DESTINATION is a kept carrier
+# too, so the copy surface seeds R1 exactly as the tape does. These four fixtures are
+# the gate validation for that seed — without them the seed is an unexercised rule.
+#
+# COPY_RECORDED_RY is the canonical hazard the ruling exists to stop, and it is the
+# shape the PASS now refuses to emit (`ry(%h); copy(%h,%dst); ry(-%h); free(%h)`).
+# Before the seed this checker CERTIFIED it — "2 verified, 0 violations", rc=0.
+COPY_RECORDED_RY = """
+define void @cp(i32 %u0) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %dst = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %h, i32 %dst)
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+# The ANCESTOR arm, which is where the ruling's whole measured effect actually landed
+# (9 lit fixtures + 6 e2e goldens): the copied rail is a template permutation and is
+# freeable, but its Ry ROOT is correlated through it and must not be freed.
+COPY_RECORDED_ANCESTOR = """
+define void @cp(i32 %u0) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %o = call i32 @cq_template_add_i32_hl(i32 %h, i32 1)
+  %dst = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %o, i32 %dst)
+  call void @cq_template_add_i32_hl_unc(i32 %o, i32 %h, i32 1)
+  call void @cqrt_free(i32 %o)
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+# NEGATIVE — the DISCRIMINATION case, and the reason the seed is slot-AWARE. `%h` is
+# the copy DESTINATION, not its source; it records nothing, so a rule keyed on "is an
+# operand of a copy" would wrongly drop it. Must VERIFY.
+COPY_DEST_SLOT_RY = """
+define void @cp(i32 %u0) {
+  %src = call i32 @cqrt_alloc_i32(i32 %u0)
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  call void @cqrt_copy_i32(i32 %src, i32 %h)
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+# NEGATIVE — a copy-recorded rail whose own chain IS a basis permutation. Recorded but
+# still freeable, exactly like TAPE_RECORDED_DERIV on the tape surface: a rule keyed on
+# "recorded" alone drops it.
+COPY_RECORDED_DERIV = """
+define void @cp(i32 %u0) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u0)
+  %o = call i32 @cq_template_add_i32_hl(i32 %h, i32 1)
+  %dst = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %o, i32 %dst)
+  call void @cq_template_add_i32_hl_unc(i32 %o, i32 %h, i32 1)
+  call void @cqrt_free(i32 %o)
+  ret void
+}
+"""
+
 RECORD_MUTANTS = [
     ("tape-recorded-ancestor-via-closure", TAPE_RECORDED_ANCESTOR,
      "R1-recorded-rotated-rail"),
@@ -943,12 +1019,17 @@ RECORD_MUTANTS = [
      "R1-recorded-rotated-rail"),
     ("tape-recorded-chained-theta", TAPE_RECORDED_CHAINED,
      "R1-recorded-rotated-rail"),
+    ("copy-recorded-ry-rail", COPY_RECORDED_RY, "R1-recorded-rotated-rail"),
+    ("copy-recorded-ancestor-via-closure", COPY_RECORDED_ANCESTOR,
+     "R1-recorded-rotated-rail"),
 ]
 
 RECORD_POSITIVES = [
     ("tape-recorded-rz-diagonal", TAPE_RECORDED_RZ),
     ("tape-recorded-derived-permutation", TAPE_RECORDED_DERIV),
     ("rotated-rail-no-record", ROTATED_NO_TAPE),
+    ("copy-destination-slot-not-recorded", COPY_DEST_SLOT_RY),
+    ("copy-recorded-derived-permutation", COPY_RECORDED_DERIV),
 ]
 
 

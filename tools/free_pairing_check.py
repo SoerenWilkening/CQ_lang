@@ -1700,7 +1700,8 @@ class StreamAnalysis:
             self.add(VIOLATION, "R1-recorded-rotated-rail", c, r.name,
                      f"rail carries `{rot[0].text if rot else '<rotation>'}` "
                      f"(line {rot[0].line if rot else 0}) and is "
-                     f"transitively RECORDED onto a kept output tape, which the "
+                     f"transitively RECORDED onto a kept carrier (an output tape, or "
+                     f"since bd 5pio a `cqrt_copy_<W>` destination), which the "
                      f"reversal never restores; it is therefore ENTANGLED with "
                      f"that carrier at the free, so `cqrt_free` is a hardware "
                      f"reset of an entangled rail = a hidden measurement (Rules "
@@ -1929,6 +1930,25 @@ def ensure_recursion_headroom(stream_len):
 # the expensive direction (bd memory [gate-validation-not-corpus-silence-2026-07-31]).
 _TAPE_SINK = re.compile(rf"cqrt_tape_write_{_W}(?:_controlled)?$")
 
+# THE COPY-OUT SURFACE (bd 5pio, owner ruling 2026-08-11). A method-B
+# `cqrt_copy_<W>(src, dst)` records `src`'s basis label onto `dst`, and `dst` is a
+# kept carrier this reversal never restores — the SAME relation the tape has, so it
+# seeds R1 the same way. The pass made exactly this change to
+# `ChainWalk::recordsIntoKeptCarrier`; keeping the two gates' seeds in step is the
+# whole point, because they are INDEPENDENT and complementary (the trace sees the
+# angles and not the rail identities; this checker sees the identities and not the
+# angles). Before this, the pass froze the copy surface while stage 2b would still
+# have CERTIFIED the very shape it froze — a gate disagreement of exactly the class
+# bd uow0/1fim are about, found by the bd 5pio Rule-13 round.
+#
+# SLOT-AWARE, unlike the tape seed above, and it mirrors `isCopyOutSink` argument for
+# argument: only arg 0 (the SOURCE) is a recorded rail; arg 1 is the carrier itself.
+# The uncontrolled 2-arg form only — the `_controlled` data-mux copy and the
+# `_inv`/`_unc` twins are excluded — and the two slots must be DISTINCT (an aliased
+# `cqrt_copy_<W>(%x, %x)` is not a source-preserving read at all; the checker already
+# rejects it as `B1-input-aliases-written-rail`).
+_COPY_SINK = re.compile(rf"cqrt_copy_{_W}$")
+
 
 def recorded_rails(fn, mints):
     """Names in `fn` transitively correlated with a kept output carrier."""
@@ -1950,9 +1970,16 @@ def recorded_rails(fn, mints):
     seed, work = set(), []
     for _lbl, calls, _term in fn.blocks:
         for c in calls:
-            if not _TAPE_SINK.fullmatch(c.sym):
+            if _TAPE_SINK.fullmatch(c.sym):
+                for v in c.vals:        # SLOT-BLIND — see the note above
+                    if v not in seed:
+                        seed.add(v)
+                        work.append(v)
                 continue
-            for v in c.vals:            # SLOT-BLIND — see the note above
+            # bd 5pio: the copy-out SOURCE only (arg 0), distinct from its carrier.
+            if _COPY_SINK.fullmatch(c.sym) and len(c.vals) == 2 \
+                    and c.vals[0] != c.vals[1]:
+                v = c.vals[0]
                 if v not in seed:
                     seed.add(v)
                     work.append(v)
