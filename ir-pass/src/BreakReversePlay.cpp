@@ -32,6 +32,66 @@
 // `fire` ends `|0>`. The reverse-play runs the SAME classical `n` times, so the
 // rail walks back to `q0`. Every break-body handle joins `taint.ControlOwnedRails`
 // so the whole-DAG `uncompute` spine never double-reverses the construct.
+//
+// INVERTIBILITY (bd test_C_libtooling-zea5). Every call this module adjoints is
+// PRE-SCANNED with `isInverseEmittable` in `emitOneBreak`, BEFORE the first gate is
+// emitted — the same WI-5 treatment the whole-DAG driver got (`Uncomputation.cpp`,
+// PRD §2.12) and `emitBennettWrap` step (a). An un-invertible link declines LOUDLY
+// (`kMsgBreakUninvertible`, `opt` exits non-zero) and emits NOTHING.
+//
+// Before that scan this module reproduced the exact PRE-WI-5 defect
+// `lowering_uncompute_uninvertible.ll` documents: `emitInverseChain`'s un-invertible
+// `false` was DISCARDED and the `cqrt_free` of every chain member was emitted anyway
+// — a hardware reset of an un-reversed, still-entangled rail, i.e. a hidden
+// projective collapse (Rules 5/6/8). MEASURED on `lowering_reject_break_-
+// uninvertible_cond.ll`: `opt` rc=0, `opt -verify` clean, the compare's `_unc`
+// emitted while the un-invertible link's was not (a genuinely half-reversed chain),
+// and both members freed — in the forward body AND again in the backward companion
+// loop. Stage 2b cannot substitute for this gate: it reports the rails UNPROVEN, and
+// the loop-break slices necessarily run `--allow-unproven` (the whole-loop
+// reverse-play is a Bennett recompute whose write history crosses a back edge), so
+// the checker exits 0 on the broken module — as it does on the correct one.
+//
+// Soundness previously rested on an UNWRITTEN property of the discovery predicates,
+// and the gap was real: `isBreakCondTemplate` accepts a `cq_template_…_inv` call (it
+// excludes only `_controlled` / `_unc`) that `isInverseEmittable` REJECTS — the same
+// two-predicates-one-gate class as bd uow0 / 1fim.
+//
+// THE PREDICATES STAY ASYMMETRIC ON PURPOSE — but they are INCOMPARABLE, NOT NESTED,
+// and getting that backwards is how the next defect stays hidden. Along `_inv`
+// discovery is WIDER, which is why collecting-then-declining is the right call here:
+// the fix does NOT teach `isBreakCondTemplate` to skip `_inv`, because an uncollected
+// link gets neither an adjoint nor a diagnostic, whereas a collected one declines
+// loudly and source-located.
+//
+// Along OTHER axes discovery is NARROWER, and that direction is a live PRE-EXISTING
+// defect this pre-scan structurally CANNOT reach (bd test_C_libtooling-9g9n — filed,
+// not fixed here). `isInverseEmittable` ACCEPTS a specialization-clone call
+// `@__cq_q_*` (EmitInverse.cpp, the Phase-6.3 clause); `isBreakCondTemplate` requires
+// the `cq_template_` prefix and rejects it. `discoverLoweredBreak` returns true
+// anyway (it asks only for a rail handle plus one compare), so `cloneBreakCond` emits
+// a backward companion chain that still names the FORWARD body's SSA value.
+// MEASURED, from five lines of ordinary C (a `__attribute__((noinline))` pure helper
+// in the break condition, specialized by Phase 6): `opt` prints "Instruction does not
+// dominate all uses!" and dies with "LLVM ERROR: Broken module found", rc=134 — NOT a
+// source-located decline. The same shape reaches it through any producer minted into
+// the body AFTER `LoopLowering`'s E11 coverage check ran (e.g. a 4.4 select-merge
+// rail). E9's own comment names this exact failure mode as the thing it prevents; it
+// bails on an UNTAINTED body operand and waves TAINTED ones through, which is sound
+// only if every tainted break-cond op is later cloned — and `isBreakCondTemplate` is
+// narrower than "tainted", so that premise does not hold.
+//
+// AND CORRECT THE OBVIOUS-SOUNDING RATIONALE, because the comfortable version is
+// false: a skipped link does NOT produce a silent dirty free. Its rail is left
+// ALLOCATED (the sanctioned Rule-6 fallback), and the observable outcome is the
+// broken-module abort above. The reason to keep discovery wide-and-declining is the
+// DIAGNOSTIC, not a dirty free it averts.
+//
+// Every emission site ALSO checks its bool and suppresses the frees it owns
+// (`clearAndFree` / `clearChainAndFree`, and the `OK` thread through to the
+// `R`/`idx` frees). That is defense-in-depth — unreachable after the pre-scan, over
+// the SAME predicate — mirroring `emitBennettWrap` step (d), and it must stay a
+// runtime check, never an `assert`: the shipped build is `-DCMAKE_BUILD_TYPE=Release`.
 
 #include "LoopPlan.h"
 
@@ -62,6 +122,22 @@ using namespace llvm;
 namespace cq {
 
 namespace {
+
+// The two loud declines this stage owns. Both fire AFTER `emitBreakForward` has
+// already RAUW'd the exit phi to `out` and stripped the loop terminator, so a
+// SILENT return would leave a wrong answer behind — `opt` must exit non-zero.
+constexpr char kMsgBreakRederive[] =
+    "cq loop lowering: break reverse-play could not re-derive the lowered body";
+constexpr char kMsgBreakUninvertible[] =
+    "cq loop lowering: break reverse-play cannot invert a lowered body gate";
+
+void diagnoseAt(Value *Where, StringRef Msg) {
+  auto *I = dyn_cast_or_null<Instruction>(Where);
+  if (!I)
+    return;
+  I->getFunction()->getContext().diagnose(
+      DiagnosticInfoUnsupported(*I->getFunction(), Msg, I->getDebugLoc()));
+}
 
 // The fully-lowered handles of one break body, re-derived by a structural scan of
 // the proven single-block body (the recognizer + `emitBreakForward` guaranteed the
@@ -162,9 +238,32 @@ CallInst *emitEqZero(IRBuilder<> &B, WidthDispatch &wd, Value *IdxHandle,
 
 // Clear a flag/template result minted by `Fwd`: emit its void `_unc` (zero it in
 // place by recomputing from the live sources) then `cqrt_free` it.
-void clearAndFree(IRBuilder<> &B, CallInst *Fwd, WidthDispatch &wd, DebugLoc DL) {
-  emitInverseCall(B, Fwd, wd, /*CurHandle=*/nullptr);
+//
+// THE FREE IS CONDITIONAL ON THE ADJOINT (bd zea5). `emitInverseCall` returns false
+// for a callee outside `isInverseEmittable`'s set; freeing then resets a rail no
+// adjoint ever zeroed — a hidden projective collapse (Rule 6), not a lifetime op.
+// Returns the adjoint's verdict; the caller propagates it to the loud decline.
+[[nodiscard]] bool clearAndFree(IRBuilder<> &B, CallInst *Fwd, WidthDispatch &wd,
+                                DebugLoc DL) {
+  if (!emitInverseCall(B, Fwd, wd, /*CurHandle=*/nullptr))
+    return false;
   mintCall(B, wd.freeFn(), {Fwd}, DL);
+  return true;
+}
+
+// Clear a whole forward chain (reverse-program-order void `_unc`) and free every
+// member — the frees ONLY if the WHOLE chain inverted (bd zea5). `emitInverseChain`
+// ANDs its per-link results and emits the adjoints it CAN, so a partial `false` is
+// a genuinely half-reversed chain: the surviving members were recomputed from
+// sources no longer holding their forward values, and freeing them is unsound too.
+// Returns the chain's verdict.
+[[nodiscard]] bool clearChainAndFree(IRBuilder<> &B, ArrayRef<CallInst *> Chain,
+                                     WidthDispatch &wd, DebugLoc DL) {
+  if (!emitInverseChain(B, Chain, wd))
+    return false;
+  for (CallInst *C : Chain)
+    mintCall(B, wd.freeFn(), {C}, DL);
+  return true;
 }
 
 // Clone the break-cond template chain at `B`'s position, remapping each link's
@@ -221,18 +320,26 @@ struct BreakEmit {
 // the comparison is `(idx - K) == 0` bracketed so `idx` is restored. Used by BOTH
 // the forward fire-clear (so `fire`→0 after the idx-write) and the backward
 // fire-set (so `fire`→(idx==K) before the un-capture) — it is its own inverse.
-void xorEqKIntoFire(IRBuilder<> &B, BreakEmit &E, Value *Fire, Value *K) {
+// Returns `g`'s clear verdict (`g` is this function's own `emitEqZero` compare, so
+// false is unreachable — the bool is threaded, never discarded; bd zea5).
+[[nodiscard]] bool xorEqKIntoFire(IRBuilder<> &B, BreakEmit &E, Value *Fire,
+                                  Value *K) {
   Value *NegK = B.CreateNeg(K, "cq.brk.negk");
   mintCall(B, E.addcIdx(), {E.Idx, NegK}, E.DL);     // idx -= K
   CallInst *G = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);  // g = (idx-K == 0) = (idx==K)
   mintCall(B, cnotFn(E.M), {G, Fire}, E.DL);         // fire ^= g
-  clearAndFree(B, G, E.wd, E.DL);                    // g -> 0, free
+  bool OK = clearAndFree(B, G, E.wd, E.DL);          // g -> 0, free
   mintCall(B, E.addcIdx(), {E.Idx, K}, E.DL);        // idx += K  (restore)
+  return OK;
 }
 
 // ── (a) FORWARD CAPTURE — emitted into the loop body, after the break-cond ─────
 // Inserts before the loop terminator (where `K = i+1` and `brk` are both live).
-void emitForwardCapture(BreakEmit &E, Value *K) {
+// Returns false iff some adjoint it owns was un-invertible (bd zea5) — every clear
+// runs regardless (no `&&` short-circuit: skipping an emission would leave a
+// DIFFERENT half-built construct), only the frees are suppressed, and the caller
+// declines loudly.
+[[nodiscard]] bool emitForwardCapture(BreakEmit &E, Value *K) {
   BasicBlock *Body = E.LB.Brk->getParent();
   IRBuilder<> B(Body->getTerminator());
 
@@ -247,7 +354,7 @@ void emitForwardCapture(BreakEmit &E, Value *K) {
   E.captureRailToR(B, Fire);
 
   // clear e BEFORE the idx-write (idx still old) — then free it.
-  clearAndFree(B, Efl, E.wd, E.DL);
+  bool OK = clearAndFree(B, Efl, E.wd, E.DL);
 
   // IDX-WRITE: idx ^= fire ? (i+1) : 0  via a materialised `K` register.
   CallInst *Ip1 = mintCall(B, E.allocIdx(), {K}, E.DL, "cq.brk.k");
@@ -257,16 +364,19 @@ void emitForwardCapture(BreakEmit &E, Value *K) {
   mintCall(B, E.wd.freeFn(), {Ip1}, E.DL);
 
   // clear fire via (idx == i+1) (true iff this iteration first fired), then free.
-  xorEqKIntoFire(B, E, Fire, K);
-  mintCall(B, E.wd.freeFn(), {Fire}, E.DL);
+  // `fire` itself is this emitter's own `cqrt_alloc_i1` |0> ancilla returned to |0>
+  // by the line above, so its free rides `OK` (never freed on a failed clear).
+  bool FireOK = xorEqKIntoFire(B, E, Fire, K);
+  OK = FireOK && OK;
+  if (FireOK)
+    mintCall(B, E.wd.freeFn(), {Fire}, E.DL);
 
   // clear the break-cond IN-ITERATION (rail intact ⇒ recompute-and-XOR), free it.
-  emitInverseChain(B, E.LB.BreakCond, E.wd);
-  for (CallInst *C : E.LB.BreakCond)
-    mintCall(B, E.wd.freeFn(), {C}, E.DL);
+  OK = clearChainAndFree(B, E.LB.BreakCond, E.wd, E.DL) && OK;
 
   // The eq-flags / fire / Ip1 are pass-invented scratch already freed; the
   // capture's controlled copies act on the excluded R/idx/rail.
+  return OK;
 }
 
 // ── (b) EXIT CONSOLIDATION + COPY-OUT + CONSOLIDATION-REVERSE ───────────────────
@@ -274,25 +384,30 @@ void emitForwardCapture(BreakEmit &E, Value *K) {
 //   never-broke branches (idx==0): R ^= rail_final  ⇒ R holds the full-trip value;
 //   out ^= R (the basis copy-out);  then UNDO the consolidation (it pairs with the
 //   reverse-play, which un-captures the FIRED branches and walks the rail back).
-void emitExitConsolidation(BreakEmit &E, BasicBlock *ExitBlk) {
+[[nodiscard]] bool emitExitConsolidation(BreakEmit &E, BasicBlock *ExitBlk) {
   IRBuilder<> B(&*ExitBlk->getFirstInsertionPt());
   // consolidate
   CallInst *E0 = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);
   mintCall(B, E.copyCtrlR(), {E0, E.Rail, E.R}, E.DL);
-  clearAndFree(B, E0, E.wd, E.DL);
+  bool OK = clearAndFree(B, E0, E.wd, E.DL);
   // copy out:  out ^= R
   mintCall(B, E.wd.copyFn(E.RW), {E.R, E.Out}, E.DL);
   // consolidation REVERSE (self-inverse — pairs with the above; the reverse-play
   // companion loop then un-captures the fired branches + walks the rail back).
   CallInst *E0b = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);
   mintCall(B, E.copyCtrlR(), {E0b, E.Rail, E.R}, E.DL);
-  clearAndFree(B, E0b, E.wd, E.DL);
+  OK = clearAndFree(B, E0b, E.wd, E.DL) && OK;  // both clears run — no short-circuit.
+  return OK;
 }
 
 // ── (c) the BACKWARD iteration body `C†` (self-contained; counter `i'`) ────────
 // Reverses the forward capture `C` AND the rail mutation, for one iteration, using
 // the backward counter `IPrime` (so `K = i'+1`). `Rail` holds `r_{i'}` on entry.
-void emitBackwardBody(BreakEmit &E, IRBuilder<> &B, Value *IPrime) {
+// Returns false iff some adjoint it owns was un-invertible (bd zea5). It still emits
+// the full block either way — the caller has CFG surgery in flight and a bare early
+// return here would leave a terminator-less block (a malformed module `opt -verify`
+// rejects, which is a WORSE outcome than the loud decline the caller then renders).
+[[nodiscard]] bool emitBackwardBody(BreakEmit &E, IRBuilder<> &B, Value *IPrime) {
   Value *One = ConstantInt::get(E.IdxLogTy, 1);
   Value *K = B.CreateAdd(IPrime, One, "cq.brk.kp");  // K = i'+1
 
@@ -300,7 +415,7 @@ void emitBackwardBody(BreakEmit &E, IRBuilder<> &B, Value *IPrime) {
   CallInst *Fire = mintCall(B, E.wd.allocFn("i1"),
                             {ConstantInt::getFalse(E.M.getContext())}, E.DL,
                             "cq.brk.fire");
-  xorEqKIntoFire(B, E, Fire, K);
+  bool OK = xorEqKIntoFire(B, E, Fire, K);
 
   // un-write idx: idx ^= fire ? K : 0  (idx → its pre-fire value)
   CallInst *Ip1 = mintCall(B, E.allocIdx(), {K}, E.DL, "cq.brk.k");
@@ -318,16 +433,24 @@ void emitBackwardBody(BreakEmit &E, IRBuilder<> &B, Value *IPrime) {
   SmallVector<CallInst *, 4> Cond = cloneBreakCond(B, E.LB.BreakCond);
   CallInst *BrkP = Cond.back();
   mintCall(B, toffoliFn(E.M), {BrkP, Efl, Fire}, E.DL);
-  // clear the recomputed break-cond + e, free everything.
-  emitInverseChain(B, Cond, E.wd);
-  for (CallInst *C : Cond)
-    mintCall(B, E.wd.freeFn(), {C}, E.DL);
-  clearAndFree(B, Efl, E.wd, E.DL);
-  mintCall(B, E.wd.freeFn(), {Fire}, E.DL);
+  // clear the recomputed break-cond + e, free everything. `Cond` is a CLONE of
+  // `E.LB.BreakCond` — same callees, same arities — so the pre-scan of the original
+  // covers it exactly (the clone is what makes that identity load-bearing).
+  OK = clearChainAndFree(B, Cond, E.wd, E.DL) && OK;
+  bool EflOK = clearAndFree(B, Efl, E.wd, E.DL);
+  OK = EflOK && OK;
+  // `fire` is |0> only once BOTH the recomputed-cond Toffoli above and the
+  // `xorEqKIntoFire` set are accounted for; free it only on a clean sheet.
+  if (OK)
+    mintCall(B, E.wd.freeFn(), {Fire}, E.DL);
 
   // rail-mut INVERSE (xorc self-inverse / addc immediate-negate), reverse order.
+  // No free here — the rail is left allocated at its pre-loop state (Rule 6) — but
+  // a failure still poisons `OK`: an un-walked rail makes the caller's R/idx frees
+  // dirty, which is precisely the free this bead is about.
   for (CallInst *G : reverse(E.LB.RailGates))
-    emitInverseCall(B, G, E.wd, /*CurHandle=*/nullptr);
+    OK = emitInverseCall(B, G, E.wd, /*CurHandle=*/nullptr) && OK;
+  return OK;
 }
 
 void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
@@ -344,13 +467,33 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
     // `cq_template_icmp` templates, tripping `discoverLoweredBreak`'s single-compare
     // invariant. So if the re-scan fails, fail LOUD (`opt` exits non-zero) rather than
     // emit a wrong unitary (the Rule-13 reviews 2026-06-26).
-    if (auto *OR = dyn_cast<Instruction>(Rgn.OutReg))
-      OR->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
-          *OR->getFunction(),
-          "cq loop lowering: break reverse-play could not re-derive the lowered body",
-          OR->getDebugLoc()));
+    diagnoseAt(Rgn.OutReg, kMsgBreakRederive);
     return;
   }
+
+  // ── INVERTIBILITY PRE-SCAN (bd zea5; the WI-5 treatment, PRD §2.12/§2.10) ────
+  // Every call this stage will adjoint, checked with the CANONICAL accept predicate
+  // BEFORE the first gate is emitted — so an un-invertible link yields NO
+  // half-reversed chain and, above all, NO free of a rail no adjoint zeroed. Both
+  // discovered sets are scanned even though each is currently a subset of
+  // `isInverseEmittable` by construction (`isInPlaceRailGate` re-spells that
+  // predicate's xorc/addc clause; `isBreakCondTemplate` is WIDER — it admits the
+  // `_inv` twin). Resting on that census is exactly what bd uow0 / 8gi5 / e4zs /
+  // 1fim each proved unsafe: this scan is the mechanical statement of it, and it
+  // stays correct if either discovery predicate is later widened.
+  // `E.LB.BreakCond` is also cloned verbatim into the backward companion loop
+  // (`cloneBreakCond` copies callee and arity), so scanning the original covers the
+  // clone; `emitBackwardBody` re-states that identity at the use.
+  for (CallInst *G : LB.RailGates)
+    if (!isInverseEmittable(G)) {
+      diagnoseAt(G, kMsgBreakUninvertible);
+      return;
+    }
+  for (CallInst *G : LB.BreakCond)
+    if (!isInverseEmittable(G)) {
+      diagnoseAt(G, kMsgBreakUninvertible);
+      return;
+    }
 
   // Exclude the whole break construct from the whole-DAG uncompute spine.
   taint.ControlOwnedRails.insert(LB.RailHandle);
@@ -365,8 +508,12 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
   // K = i+1 = the counter's latch-incoming (`i.next`), live at the terminator.
   Value *K = Rgn.CounterPhi->getIncomingValueForBlock(Body);
 
-  // (a) forward capture.
-  emitForwardCapture(E, K);
+  // (a) forward capture. `OK` accumulates the DEFENSE-IN-DEPTH verdict of every
+  // adjoint the three stages emit — unreachable-false after the pre-scan above (same
+  // predicate), and a runtime check rather than an `assert` because the shipped build
+  // is Release. On false the construct is finished structurally (so the module stays
+  // well-formed for `opt -verify`) but NOTHING is freed and the stage declines loudly.
+  bool OK = emitForwardCapture(E, K);
 
   // (b) exit consolidation + copy-out, at the loop-exit block. Capture the split
   // point (the FIRST original instruction — the measure of `out`) BEFORE emitting
@@ -374,7 +521,7 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
   // and the split cleaves only the measure into the tail.
   BasicBlock *ExitBlk = Rgn.ExitMerge;
   Instruction *SplitAt = &*ExitBlk->getFirstInsertionPt();
-  emitExitConsolidation(E, ExitBlk);
+  OK = emitExitConsolidation(E, ExitBlk) && OK;
 
   // (c) the backward reverse-play companion loop. Split the exit block AFTER the
   // consolidation/copy-out; insert a guarded backward loop counting `i' = n-1 … 0`
@@ -404,7 +551,7 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
   Value *NMinus1 = BinaryOperator::CreateSub(
       N, ConstantInt::get(IdxLog, 1), "cq.brk.n1", ExitBlk->getTerminator());
   IPrime->addIncoming(NMinus1, ExitBlk);
-  emitBackwardBody(E, RB, IPrime);
+  OK = emitBackwardBody(E, RB, IPrime) && OK;
   Value *IDec = RB.CreateSub(IPrime, ConstantInt::get(IdxLog, 1), "cq.brk.ipdec");
   IPrime->addIncoming(IDec, RevBody);
   Value *More = RB.CreateICmpNE(IPrime, ConstantInt::get(IdxLog, 0), "cq.brk.more");
@@ -437,6 +584,17 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
   // `--allow-unproven` waiver. A ROTATION reaching R would break the argument. R is
   // emitter-minted and unnameable from source, so no user program can put one
   // there; a widening of the capture path could. Re-run this entry if you touch it.
+  //
+  // AND THE ARGUMENT'S PRECONDITION IS `OK` (bd zea5): "returned to |0> by the EXACT
+  // adjoint replay this function emits" is FALSE the moment one of those adjoints was
+  // not emitted. So a failed replay suppresses BOTH frees and declines loudly —
+  // R/idx are left allocated (the Rule-6 fallback for a rail not provably |0>), never
+  // reset dirty. Unreachable after the pre-scan; the check is what makes it a
+  // property rather than a census.
+  if (!OK) {
+    diagnoseAt(Rgn.OutReg, kMsgBreakUninvertible);
+    return;
+  }
   IRBuilder<> TB(&*ExitTail->getFirstInsertionPt());
   mintCall(TB, wd.freeFn(), {E.R}, E.DL);
   mintCall(TB, wd.freeFn(), {E.Idx}, E.DL);
