@@ -13,22 +13,83 @@ using namespace llvm;
 
 namespace cq {
 
+bool isAbiQramStore(const CallInst *G) {
+  const Function *Callee = G ? G->getCalledFunction() : nullptr;
+  if (!Callee)
+    return false;
+  StringRef N = Callee->getName();
+  if (!N.starts_with("cqrt_qram_store_"))
+    return false;
+  // The `_unc` adjoint twins (`..._unc`, `..._controlled_unc`) are never a FORWARD
+  // store — they are what the spine EMITS, not what it recognizes.
+  if (N.ends_with("_unc"))
+    return false;
+  // VOID IS THE LOAD-BEARING TEST, NOT THE ARITY (bd 1fim Rule-13 round, 2026-08-11).
+  // "A store MINTS NO RAIL" is the semantic property this whole predicate stands on:
+  // it is the ONLY reason `emitInverseCall` may adjoint a store with a SAME-ARGS
+  // `_unc` instead of the out-first form every rail-minting producer gets. Arity is
+  // merely a proxy for it, and an INCOMPLETE one — the first draft of this fix checked
+  // arity alone, and three reviewers independently reproduced the ORIGINAL defect at
+  // the FROZEN arity by flipping only the return type:
+  //     %s = call i32 @cqrt_qram_store_i32(i32 %h, i32 3, i32 4)  ; arity 3, NON-void
+  //     call void @cqrt_qram_store_i32_unc(i32 %h, i32 3, i32 4)  ; cannot name %s
+  //     call void @cqrt_free(i32 %h)                              ; freed anyway
+  // `opt` rc=0, verify-clean, and `free_pairing_check.py` reports "2 verified, 0
+  // violation(s)". Test the property itself; do not proxy it again.
+  if (!G->getType()->isVoidTy())
+    return false;
+  // EVERY OPERAND IS AN `i32` HANDLE, at every width — Rule 15 ("a runtime handle is
+  // always `i32` regardless of width"), and the header is uniform on it:
+  // `void cqrt_qram_store_<W>(int32_t arr, int32_t idx, int32_t val)` for all nine
+  // widths (runtime/cq_runtime.h:541-549), plus a leading `int32_t pred` on the
+  // guarded twin. THE THIRD AXIS, added after a Rule-13 verifier built
+  // `declare void @cqrt_qram_store_i32(i32, i32, double)` — VOID and arity 3, so the
+  // void+arity draft ACCEPTED it — and the pass then minted an `_unc` whose signature
+  // does not match the frozen body. That is not caught at link: C symbols carry no
+  // signature, so the name resolves to the real 3×i32 body and the call runs with a
+  // reinterpreted operand. With this test the predicate matches the frozen PROTOTYPE,
+  // not a proxy for it.
+  for (const Use &A : G->args())
+    if (!A.get()->getType()->isIntegerTy(32))
+      return false;
+  // The two frozen forward shapes, and their EXACT arities:
+  //   plain      `cqrt_qram_store_<W>(arr, idx, val)`              — 3
+  //   guarded    `cqrt_qram_store_<W>_controlled(flag, arr, idx, val)` — 4
+  if (N.ends_with("_controlled"))
+    return G->arg_size() == 4;
+  // A name that CONTAINS `_controlled` without ending in it is an off-pattern
+  // spelling of neither frozen form — decline rather than fall through to the
+  // plain-arity test (the Prime Directive; over-declining is the safe direction).
+  if (N.contains("_controlled"))
+    return false;
+  return G->arg_size() == 3;
+}
+
 bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   const Function *Callee = G->getCalledFunction();
   if (!Callee)
     return false;
   StringRef N = Callee->getName();
-  // iw81.7: the GUARDED QRAM store `cqrt_qram_store_<W>_controlled(flag, arr, idx,
-  // val)` — a VOID in-place mutation on its ARG-1 array handle (arg 0 is the path
-  // predicate flag; the plain store has the array at arg 0). arg_size 4. Recognized
-  // BEFORE the generic `_controlled` bail below (a controlled gate is normally NOT
-  // an in-place gate, but this store IS on its array). The `_controlled_unc` twin
-  // ends `_unc`, not `_controlled`, so it is EXCLUDED (it is the adjoint). The flag
-  // (arg 0) is a borrowed tainted operand `DagTraversal` enqueues as a parent — its
-  // producer (the flag-mint compare) reverses AFTER this gate's `_unc` (the strip).
-  if (N.starts_with("cqrt_qram_store_") && N.ends_with("_controlled") &&
-      G->arg_size() == 4 && G->getArgOperand(1) == H)
-    return true;
+  // iw81.7 / Phase 7.5 Inc 2: a QRAM store is a VOID in-place mutation on its ARRAY
+  // handle — arg 1 for the GUARDED form `cqrt_qram_store_<W>_controlled(flag, arr,
+  // idx, val)` (arg 0 is the path-predicate flag), arg 0 for the plain
+  // `cqrt_qram_store_<W>(arr, idx, val)`. Recognized BEFORE the generic
+  // `_controlled` bail below (a controlled gate is normally NOT an in-place gate,
+  // but this store IS on its array). The borrowed tainted operands (flag / idx /
+  // val) are enqueued as DAG parents by `DagTraversal`; the flag-mint compare
+  // reverses AFTER this gate's `_unc` (the strip).
+  //
+  // The ABI-shape test is `isAbiQramStore` — the ONE definition, shared with
+  // `EmitInverse::isInverseEmittable` (bd test_C_libtooling-1fim). That predicate
+  // used to re-spell the match as a bare PREFIX test with no arity check, so an
+  // off-ABI-arity store was invertible over there and not an in-place gate over
+  // here: two predicates, one gate, different answers — the same defect shape as
+  // the `railOf` mis-attribution below (bd uow0). Driving both from one definition
+  // makes them agree BY CONSTRUCTION rather than by two spellings being kept in
+  // sync (Rule 14).
+  if (isAbiQramStore(G))
+    return N.ends_with("_controlled") ? G->getArgOperand(1) == H
+                                      : G->getArgOperand(0) == H;
   if (N.contains("_controlled"))
     return false;
   // Uncontrolled rotation `cqrt_ry/rz_<W>(H, θ)` — arg_size 2, arg 0 is the
@@ -36,15 +97,8 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) &&
       G->arg_size() == 2 && G->getArgOperand(0) == H)
     return true;
-  // Phase 7.5 Inc 2: an uncontrolled QRAM store `cqrt_qram_store_<W>(arr, idx,
-  // val)` — a VOID in-place mutation on its arg-0 ARRAY handle (mints no new
-  // value, keeps the handle live), structurally the same in-place-gate shape as
-  // a rotation but with two MORE borrowed tainted operands (idx, val) that
-  // `DagTraversal` enqueues as parents. arg_size 3. The `_unc` twin is EXCLUDED
-  // (it ends `_unc`) — it is the adjoint, never a forward in-place gate.
-  if (N.starts_with("cqrt_qram_store_") && !N.ends_with("_unc") &&
-      G->arg_size() == 3 && G->getArgOperand(0) == H)
-    return true;
+  // (The plain QRAM store is handled by the `isAbiQramStore` arm above, together
+  // with its guarded twin — one definition for both frozen shapes.)
   return false;
 }
 

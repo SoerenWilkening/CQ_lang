@@ -111,7 +111,16 @@ bool preservesBasisUnderRecord(const CallInst *G) {
   // producer-time values by the same every-gate reverse-play as above (NOT merely
   // "kept live"; a rotated index reaching `cqrt_qram_store_<W>_unc` pops the wrong
   // cell, which is what the skip-the-adjoint draft actually did).
-  if (N.starts_with("cqrt_qram_store_") && !N.ends_with("_unc"))
+  //
+  // ASK `isAbiQramStore` — this was the THIRD live spelling of that relation and the
+  // only one whose bare-prefix form answered in the UNSAFE direction (bd 1fim
+  // Rule-13 round): `true` here means basis-preserving, hence NOT frozen, hence
+  // FREED. An off-ABI store — wrong arity, or the frozen arity with a non-void
+  // return that mints a rail — is not a permutation of its parents at all, and
+  // claiming it is would clear a rail for freeing that the reversal never zeroed.
+  // The other two consumers (`isInPlaceGateOn`, `isInverseEmittable`) now share the
+  // one definition; this makes it three of three (Rule 14).
+  if (isAbiQramStore(G))
     return true;
   return false;  // `cqrt_ry_<W>` lands here — and so does anything new.
 }

@@ -22,6 +22,32 @@ namespace cq {
 
 struct TaintSet;
 
+// A FORWARD QRAM store in one of the two FROZEN ABI shapes, and the ONE definition
+// of that relation (Rule 14):
+//   * plain   `cqrt_qram_store_<W>(arr, idx, val)`                   — VOID, arg_size 3
+//   * guarded `cqrt_qram_store_<W>_controlled(flag, arr, idx, val)`  — VOID, arg_size 4
+// The `_unc` adjoint twins are excluded (the spine EMITS those; it never recognizes
+// one as a forward gate), as is any other spelling — a declaration contradicting the
+// frozen ABI on EITHER axis (arity or void-ness) is off-pattern input and declines
+// (Prime Directive).
+//
+// BOTH AXES ARE CHECKED, and the second one is the load-bearing one. The property the
+// spine actually needs is "this gate MINTS NO RAIL" — that alone is why a store may be
+// adjointed by a SAME-ARGS `_unc` rather than the out-first form every rail-minting
+// producer gets. Arity is a proxy for it; VOID-ness IS it. Checking arity alone leaves
+// the original defect fully reachable at the frozen arity (see the .cpp).
+//
+// SHARED, deliberately, between `isInPlaceGateOn` (which register does this gate
+// write?) and `EmitInverse::isInverseEmittable` (can the spine adjoint it?). Those
+// two used to answer from independent spellings — the second a bare PREFIX match at
+// ANY arity — so an off-ABI-arity store was invertible to one and not an in-place
+// gate to the other, and the spine emitted an adjoint that zeroed no rail while
+// still freeing a register (bd test_C_libtooling-1fim; MEASURED silent, `opt` rc=0,
+// verify-clean, and CERTIFIED by `free_pairing_check.py`). Same class as the bd uow0
+// `railOf` mis-attribution: two predicates, one gate, different answers. Ask this
+// function; do not re-spell its arity tests.
+bool isAbiQramStore(const llvm::CallInst *G);
+
 // An in-place, handle-threading gate on `H` — a VOID gate that MUTATES `H` rather
 // than minting a fresh handle, so it belongs to `H`'s link of the DAG. Three
 // callee shapes, each with its own required arity and handle SLOT (see the .cpp):

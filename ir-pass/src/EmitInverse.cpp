@@ -11,6 +11,8 @@
 
 #include "EmitInverse.h"
 
+#include "ChainWalk.h"  // isAbiQramStore — the shared frozen-ABI store shape (Rule 14)
+
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/DebugLoc.h"
@@ -94,8 +96,20 @@ bool isInverseEmittable(const CallInst *Forward) {
   // mutation on the array handle (Inc 2): inverted by its void `_unc` twin, which
   // POPS the backend's per-store tape. UNLIKE every other `_unc` above, the store
   // `_unc` takes the SAME args (arr, idx, val), NOT out-first — a store mints no
-  // rail to zero. The `_unc` form is excluded (never a forward link).
-  if (Name.starts_with("cqrt_qram_store_") && !Name.ends_with("_unc"))
+  // rail to zero. The `_unc` forms are excluded (never a forward link).
+  //
+  // THE ARITY IS LOAD-BEARING, and asking `isAbiQramStore` is how it stays that way
+  // (bd test_C_libtooling-1fim). This clause used to be a bare PREFIX match at ANY
+  // arity while `ChainWalk::isInPlaceGateOn` demanded the frozen 3/4 — so an
+  // off-ABI-arity store was invertible HERE and not an in-place gate THERE. Because
+  // the store `_unc` is the one same-args (not out-first) adjoint in this function,
+  // an off-ABI store that MINTS a value got an adjoint naming only its operands: the
+  // minted rail was never zeroed, and the spine still freed the register the store
+  // read. MEASURED silent — `opt` rc=0, `opt -verify` clean, and stage 2b reports
+  // "2 verified, 0 violation(s)" on the broken module
+  // (`lowering_reject_uncompute_offabi_qram_store.ll`). Do NOT re-spell the arity
+  // test here; that re-spelling IS the bug.
+  if (isAbiQramStore(Forward))
     return true;
   // Phase 6.3 transitive: a call to a specialization CLONE `@__cq_q_<callee>_<mask>`
   // (a Bennett-wrapped reversible body `|x⟩|0⟩ → |x⟩|f(x)⟩`) is inverted by its
@@ -269,7 +283,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // fire in strict reverse program order — LIFO — §2.8(ii)). The minted
   // FunctionType `void(i32 arr, i32 idx, i32 val)` matches the hand-written
   // runtime body and WidthDispatch::qramStoreUncFn. `CurHandle` is ignored.
-  if (Name.starts_with("cqrt_qram_store_") && !Name.ends_with("_unc")) {
+  if (isAbiQramStore(Forward)) {
     SmallVector<Value *, 3> Args(Forward->args());  // (arr, idx, val), as-is.
     SmallVector<Type *, 3> ParamTys;
     for (Value *Op : Forward->args())
