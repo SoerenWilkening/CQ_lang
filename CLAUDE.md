@@ -649,7 +649,7 @@ cmake -S . -B build -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm -DCMAKE_B
 cmake --build build -j8
 cmake --build build --target CQPass        # just the pass → build/ir-pass/libCQPass.so
 
-# Full suite (252 ctest entries). RUN IT PARALLEL — `-j` is the default, not an
+# Full suite (253 ctest entries). RUN IT PARALLEL — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
 # serial: 5.1x. Four independent changes got that, each verified green:
 #   -j6 itself            825 -> 349s   (the single biggest win is scheduling)
@@ -717,6 +717,33 @@ Note the three `ld: warning: object file … built for newer 'macOS' version`
 lines are **pre-existing** — CMake builds the archives with `/usr/bin/cc`
 (minos 26.0) while stage 3 uses Homebrew clang 19 (minos 16.0), and the plain
 driver emits the same three warnings today. They are not from the split.
+
+**`%cq-opt` is NOT stock `opt` — it is `build/ir-pass/cq-opt`.** Every invocation
+in this tree runs the identical `-passes=cq-lowering` pipeline, and the pass
+itself takes **~5ms**, while stock `opt` costs **0.238s** of fixed per-spawn cost
+(dyld-binding 140MB of `libLLVM.dylib` plus static initializers for every
+component and target backend). At ~1330 spawns a run that dominated everything.
+`cq-opt` (`ir-pass/tools/cq_opt_main.cpp`, built from the **same** `CQPass`
+sources so the two cannot drift) links only the components the pass needs:
+fixed cost **0.124s**. It accepts and IGNORES `-load-pass-plugin`, so RUN lines
+and the e2e runners are **byte-identical under either binary**, and it hard-errors
+on any pipeline other than `cq-lowering` rather than silently no-op'ing. It is
+**one process per invocation** — not a compile server — so lit's isolation,
+per-fixture diagnostics and `not` exit-code inversion are unchanged.
+Equivalence is **gated, not assumed** (`tools/cq_opt_equivalence.py`): stdout,
+stderr **and** exit code, 0 mismatches over all 1027 fixtures. The routine ctest
+entry samples (`--stride 8`, ~13s) because the full sweep costs ~658s of CPU —
+*more than the swap saves*; run the full one after any change to the pass's
+diagnostic or analysis surface:
+`cmake --build build --target cq-opt-equivalence-full`.
+
+> **TRAP, cost one 551-fixture red suite.** `lit.cfg.py` puts the LLVM tools dir
+> on `PATH` so the `not` wrapper resolves. That must be derived from **FileCheck**
+> (or `config.llvm_tools_dir`), **never** from `dirname(cq_opt)` — `%cq-opt` now
+> lives in the build tree, which contains no `not`. The failure is vicious rather
+> than obvious: `not: command not found` goes down the same `2>&1` pipe the
+> fixture FileChecks, so 551 negative fixtures failed on a *missing diagnostic*
+> and read exactly like a lowering regression.
 
 **The standalone `opt -passes=verify` RUN line is GONE, and must not come back.**
 451 fixtures carried a `… | %cq-opt -passes=verify -disable-output -` round-trip.

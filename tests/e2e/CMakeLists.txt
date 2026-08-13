@@ -6,7 +6,18 @@
 # the plugin and libs are resolved via generator expressions so the test
 # tracks the just-built artifacts.
 set(_E2E_CLANG "${LLVM_TOOLS_BINARY_DIR}/clang")
-set(_E2E_OPT   "${LLVM_TOOLS_BINARY_DIR}/opt")
+# Stage 2 runs the same single pipeline the lit layer does, so it uses the same
+# purpose-built driver: cq-opt links only the LLVM components the pass needs and
+# costs 0.124s of fixed per-spawn cost against stock opt's 0.238s. It accepts
+# and ignores `-load-pass-plugin`, so the runners' command line is unchanged.
+# Equivalence to stock opt is gated by the cq-opt-equivalence ctest entry over
+# all 1027 lit fixtures (stdout + stderr + exit code). Falls back to stock opt
+# if the target is somehow unavailable.
+if(TARGET cq-opt)
+  set(_E2E_OPT "$<TARGET_FILE:cq-opt>")
+else()
+  set(_E2E_OPT "${LLVM_TOOLS_BINARY_DIR}/opt")
+endif()
 # Phase 6 (DD-6 §7.2): llvm-link for the multi-file harness run_slice_multi.sh,
 # mirroring _E2E_CLANG/_E2E_OPT (C19). Resolves to the same LLVM-19 toolchain
 # (/usr/local/opt/llvm@19/bin/llvm-link). NOTE: new add_test entries require a

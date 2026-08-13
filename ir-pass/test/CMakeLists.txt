@@ -18,11 +18,27 @@ if(NOT DEFINED LLVM_TOOLS_BINARY_DIR)
   find_package(LLVM CONFIG QUIET)
 endif()
 
-# Resolve `opt` (binary names vary across LLVM packaging).
-find_program(CQ_OPT_EXECUTABLE
+# Resolve `opt` (binary names vary across LLVM packaging). This STOCK opt stays
+# the reference for the cq-opt-equivalence gate below and is the fallback when
+# the cq-opt target is unavailable; it is no longer what the fixtures run.
+find_program(CQ_OPT_STOCK
   NAMES opt opt-19
   HINTS ${LLVM_TOOLS_BINARY_DIR}
 )
+
+# What `%cq-opt` in a RUN line actually expands to. Every fixture runs the SAME
+# `-passes=cq-lowering` pipeline and the pass takes ~5ms, so stock opt's 0.238s
+# of fixed per-spawn cost (dyld-binding 140MB of libLLVM.dylib + static
+# initializers for every component and target backend) dominated the layer at
+# ~1087 spawns. cq-opt links only what the pass needs and costs 0.124s.
+# Fixtures keep passing `-load-pass-plugin %cq-pass`, which cq-opt accepts and
+# ignores — so RUN lines are IDENTICAL under either binary and the fallback
+# below is a genuine drop-in, not a different test.
+if(TARGET cq-opt)
+  set(CQ_OPT_EXECUTABLE "$<TARGET_FILE:cq-opt>")
+else()
+  set(CQ_OPT_EXECUTABLE "${CQ_OPT_STOCK}")
+endif()
 
 # Resolve `FileCheck`. Versioned name comes first on Debian/Ubuntu installs.
 find_program(CQ_FILECHECK_EXECUTABLE
@@ -101,6 +117,47 @@ if(_use_lit)
     NAME ir-pass-lit
     COMMAND ${CQ_LIT_INVOCATION} -v "${CMAKE_CURRENT_BINARY_DIR}"
   )
+
+  # The equivalence gate for the %cq-opt swap. ir-pass-lit above runs `cq-opt`,
+  # not stock `opt`; this replays every fixture through BOTH and compares
+  # stdout, stderr and exit code. Without it, a pass change that made the two
+  # diverge would leave the suite green while testing a tool that is no longer
+  # the tool — and 520 negative fixtures assert on diagnostic TEXT, so "same
+  # exit code" is nowhere near sufficient. See tools/cq_opt_equivalence.py.
+  # Resolve python independently: Python3_EXECUTABLE above is only set inside
+  # the lit-detection branches, so it cannot be relied on here.
+  find_program(CQ_EQUIV_PYTHON NAMES python3 python)
+  if(CQ_OPT_STOCK AND TARGET cq-opt AND CQ_EQUIV_PYTHON)
+    # ROUTINE entry: a strided SAMPLE. The full sweep spawns 2 processes per
+    # fixture and costs ~658s of CPU — MORE than the cq-opt swap saves — so
+    # paying it on every `ctest` would make the optimisation self-defeating.
+    # A stride-8 sample is ~128 fixtures / ~13s and still crosses every fixture
+    # family. Note what already backs it up: ir-pass-lit itself runs cq-opt over
+    # ALL 1027 fixtures and asserts stdout, stderr and exit code, so a divergence
+    # is only invisible if it still satisfies the CHECK patterns. This sample is
+    # the cheap tripwire for that narrow residue.
+    add_test(
+      NAME cq-opt-equivalence
+      COMMAND "${CQ_EQUIV_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/cq_opt_equivalence.py"
+              --opt "${CQ_OPT_STOCK}"
+              --cq-opt "$<TARGET_FILE:cq-opt>"
+              --plugin "$<TARGET_FILE:CQPass>"
+              --fixtures "${CMAKE_CURRENT_SOURCE_DIR}"
+              --stride 8
+    )
+    # FULL sweep, on demand: `cmake --build build --target cq-opt-equivalence-full`.
+    # Run it after ANY change to the pass's diagnostic surface or analysis usage
+    # — that is where cq-opt and stock opt could drift apart.
+    add_custom_target(cq-opt-equivalence-full
+      COMMAND "${CQ_EQUIV_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/cq_opt_equivalence.py"
+              --opt "${CQ_OPT_STOCK}"
+              --cq-opt "$<TARGET_FILE:cq-opt>"
+              --plugin "$<TARGET_FILE:CQPass>"
+              --fixtures "${CMAKE_CURRENT_SOURCE_DIR}"
+              --stride 1
+      DEPENDS cq-opt CQPass
+      COMMENT "cq-opt vs stock opt: full 1027-fixture equivalence sweep")
+  endif()
 else()
   # Fallback: shell-grep loop. Same correctness, less diagnostic polish.
   if(NOT CQ_LIT_INVOCATION)

@@ -111,6 +111,41 @@ if(APPLE)
   target_link_options(CQPass PRIVATE "LINKER:-undefined,dynamic_lookup")
 endif()
 
+# ---------------------------------------------------------------------------
+# cq-opt — purpose-built driver for the ONE pipeline this project ever runs.
+#
+# MEASURED: every `opt` invocation in the tree (1087 in ir-pass-lit + 2 per e2e
+# slice) runs the identical `-passes=cq-lowering`, and the pass itself takes
+# ~5ms. Generic `opt` costs 0.238s of FIXED per-spawn cost (dyld-binding the
+# 140MB libLLVM.dylib plus static initializers for every LLVM component and
+# target backend it links). That is ~50x the useful work, ~1330 times a run.
+#
+# Linking ONLY the components the pass needs, statically, halves it: cq-opt's
+# fixed cost is 0.124s. Same pass code, same LLVM, one process per invocation —
+# so lit's isolation model, per-fixture diagnostics and `not` exit-code
+# inversion are all unchanged. This is NOT a compile server; nothing is shared
+# between invocations.
+#
+# EQUIVALENCE IS GATED, NOT ASSUMED: tools/cq_opt_equivalence.py replays all
+# 1027 fixtures through both binaries and compares stdout, stderr AND exit code
+# (0 mismatches at introduction). It is wired as the `cq-opt-equivalence` ctest
+# entry so a future pass change cannot silently make the two diverge — which
+# matters because 520 negative fixtures FileCheck the diagnostic TEXT, not just
+# the exit status.
+#
+# Sources come from the CQPass target so the two can never drift apart.
+# Plugin.cpp comes along harmlessly: llvmGetPassPluginInfo is simply unused
+# here, since the pass is linked in rather than dlopen'd.
+get_target_property(_CQ_PASS_SOURCES CQPass SOURCES)
+add_executable(cq-opt tools/cq_opt_main.cpp ${_CQ_PASS_SOURCES})
+target_include_directories(cq-opt PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/include" ${LLVM_INCLUDE_DIRS})
+target_compile_features(cq-opt PRIVATE cxx_std_17)
+target_compile_definitions(cq-opt PRIVATE ${LLVM_DEFINITIONS})
+llvm_map_components_to_libnames(_CQ_OPT_LLVM_LIBS
+  core irreader passes analysis transformutils bitwriter support)
+target_link_libraries(cq-opt PRIVATE ${_CQ_OPT_LLVM_LIBS})
+
 # LIT/FileCheck harness for the pass. Lives in test/ alongside the *.ll
 # fixtures from issue -345; gated on the CQPass target existing (which it
 # now does), so the harness will switch from shell fallback to real LIT

@@ -28,10 +28,19 @@ config.substitutions.append(("%cq-pass", cq_pass))
 config.substitutions.append(("%filecheck", filecheck))
 
 # Add the LLVM tools directory to PATH so bundled wrappers like `not`
-# (used by negative LIT fixtures to invert opt's exit code) resolve.
-# `cq_opt` is typically `/usr/lib/llvm-19/bin/opt`; the wrapper sits in
-# the same directory. Falls back gracefully if `cq_opt` is a bare name.
-_llvm_bin = os.path.dirname(cq_opt) if os.path.dirname(cq_opt) else ""
+# (used by the 553 negative fixtures to invert cq-opt's exit code) resolve.
+#
+# DERIVE THIS FROM FileCheck, NEVER FROM cq_opt. It used to be
+# `dirname(cq_opt)`, which held only while %cq-opt was stock LLVM `opt` living
+# beside `not`. %cq-opt is now the project's own build/ir-pass/cq-opt, whose
+# directory contains no `not` — and the failure mode is vicious rather than
+# obvious: every `not %cq-opt ...` line dies with "not: command not found",
+# that message goes down the same 2>&1 pipe the fixture FileChecks, and the
+# test fails on a MISSING DIAGNOSTIC rather than on a missing tool. It reads
+# exactly like a lowering regression. 551 fixtures failed this way.
+# FileCheck is still the real LLVM binary, so its directory is the right anchor;
+# llvm_tools_dir from the site config wins when present.
+_llvm_bin = getattr(config, "llvm_tools_dir", None) or os.path.dirname(filecheck)
 if _llvm_bin:
     config.environment["PATH"] = _llvm_bin + os.pathsep + os.environ.get(
         "PATH", ""
