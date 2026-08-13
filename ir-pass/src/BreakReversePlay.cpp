@@ -64,22 +64,26 @@
 // link gets neither an adjoint nor a diagnostic, whereas a collected one declines
 // loudly and source-located.
 //
-// Along OTHER axes discovery is NARROWER, and that direction is a live PRE-EXISTING
-// defect this pre-scan structurally CANNOT reach (bd test_C_libtooling-9g9n — filed,
-// not fixed here). `isInverseEmittable` ACCEPTS a specialization-clone call
-// `@__cq_q_*` (EmitInverse.cpp, the Phase-6.3 clause); `isBreakCondTemplate` requires
-// the `cq_template_` prefix and rejects it. `discoverLoweredBreak` returns true
-// anyway (it asks only for a rail handle plus one compare), so `cloneBreakCond` emits
-// a backward companion chain that still names the FORWARD body's SSA value.
-// MEASURED, from five lines of ordinary C (a `__attribute__((noinline))` pure helper
-// in the break condition, specialized by Phase 6): `opt` prints "Instruction does not
-// dominate all uses!" and dies with "LLVM ERROR: Broken module found", rc=134 — NOT a
-// source-located decline. The same shape reaches it through any producer minted into
-// the body AFTER `LoopLowering`'s E11 coverage check ran (e.g. a 4.4 select-merge
-// rail). E9's own comment names this exact failure mode as the thing it prevents; it
-// bails on an UNTAINTED body operand and waves TAINTED ones through, which is sound
-// only if every tainted break-cond op is later cloned — and `isBreakCondTemplate` is
-// narrower than "tainted", so that premise does not hold.
+// Along OTHER axes discovery is NARROWER, and THAT direction is what the body-coverage
+// gate `coversLoweredBody` closes (bd test_C_libtooling-9g9n — fixed here; the pre-scan
+// above structurally CANNOT reach it, because it iterates the COLLECTED sets and the
+// defect is a link that was never collected). `isInverseEmittable` ACCEPTS a
+// specialization-clone call `@__cq_q_*` (EmitInverse.cpp, the Phase-6.3 clause);
+// `isBreakCondTemplate` requires the `cq_template_` prefix and rejects it.
+// `discoverLoweredBreak` returns true anyway (it asks only for a rail handle plus one
+// compare), so `cloneBreakCond` emitted a backward companion chain that still named the
+// FORWARD body's SSA value. MEASURED, from five lines of ordinary C (a
+// `__attribute__((noinline))` pure helper in the break condition, specialized by
+// Phase 6): `opt` printed "Instruction does not dominate all uses!" and died with
+// "LLVM ERROR: Broken module found", rc=134 — NOT a source-located decline. The same
+// shape reaches it through any producer minted into the body AFTER `LoopLowering`'s E11
+// coverage check ran (e.g. a 4.4 select-merge rail). E9's own comment names this exact
+// failure mode as the thing it prevents; it bails on an UNTAINTED body operand and
+// waves TAINTED ones through, which is sound only if every tainted break-cond op is
+// later cloned — and `isBreakCondTemplate` is narrower than "tainted", so that premise
+// does not hold. Both entry paths now decline loudly
+// (`lowering_reject_break_uncollected_{clone,mint}.ll`, each measured at rc=134 against
+// the pre-fix pass, so the fixtures discriminate rather than merely pass).
 //
 // AND CORRECT THE OBVIOUS-SOUNDING RATIONALE, because the comfortable version is
 // false: a skipped link does NOT produce a silent dirty free. Its rail is left
@@ -103,6 +107,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"  // is_contained
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -123,13 +128,15 @@ namespace cq {
 
 namespace {
 
-// The two loud declines this stage owns. Both fire AFTER `emitBreakForward` has
+// The three loud declines this stage owns. All fire AFTER `emitBreakForward` has
 // already RAUW'd the exit phi to `out` and stripped the loop terminator, so a
 // SILENT return would leave a wrong answer behind — `opt` must exit non-zero.
 constexpr char kMsgBreakRederive[] =
     "cq loop lowering: break reverse-play could not re-derive the lowered body";
 constexpr char kMsgBreakUninvertible[] =
     "cq loop lowering: break reverse-play cannot invert a lowered body gate";
+constexpr char kMsgBreakUncovered[] =
+    "cq loop lowering: break reverse-play cannot re-emit an uncollected body value";
 
 void diagnoseAt(Value *Where, StringRef Msg) {
   auto *I = dyn_cast_or_null<Instruction>(Where);
@@ -205,6 +212,222 @@ bool discoverLoweredBreak(BasicBlock *Body, const TaintSet &taint,
   return LB.RailHandle && LB.Brk && !LB.RailGates.empty();
 }
 
+// ── (E11′) POST-LOWERING BODY COVERAGE — the mirror of LoopLowering's E11 ───────
+// bd test_C_libtooling-9g9n. E11 is the ONLY coverage check today and it runs at
+// `lowerLoops` (CQLoweringPass.cpp step ~279) — BEFORE `lowerControlRegions` (292),
+// `lowerIOSinks` (317), `lowerQramReads` (327) and `lowerShadowMemory` (339), all of
+// which are structurally INSIDE the window between the loop claim and this stage. E11
+// cannot see any of them, and neither can `emitOneBreak`'s invertibility pre-scan (bd
+// zea5), which iterates the COLLECTED sets. This is the post-lowering statement of the
+// same invariant, at the one point where nothing further is minted.
+//
+// EXACTLY ONE OF THOSE FOUR IS DEMONSTRATED TO REACH A CLAIMED BODY, and say so rather
+// than inflating the hazard surface (the Rule-13 round measured all four): only
+// `lowerControlRegions` (292) mints into a claimed break body today — the 4.4 select
+// merge, path (2) below. The other three never get the chance, because the operative
+// fence for a CLAIMED body is LoopLowering's own B4 block: an I/O sink (317) is a
+// side-effecting call B4 rejects, and a tainted-index memory access (327/339) is a
+// GEP/load/store with a tainted operand that B4 also rejects — so the loop is never
+// claimed in the first place. `kMsgQramLoop` (QramLowering.cpp) usually declines those
+// programs even earlier, but do NOT cite it as the guarantee here: it is not the
+// blanket an earlier draft of this comment claimed (it carries a tainted-control
+// carve-out ahead of its loop test), and B4 is what this stage actually depends on.
+// Re-check this paragraph if B4 moves.
+//
+// THE INVARIANT, stated over what this stage actually re-emits rather than over
+// "tainted": `emitBackwardBody` rebuilds the break construct in a SEPARATE block
+// (`cq.brk.rev`) that the forward body does NOT dominate. It rebuilds the break-cond
+// chain via `cloneBreakCond`, which remaps ONLY operands it has a clone for (the
+// `VMap` of collected members) and carries every OTHER operand VERBATIM; and it
+// rebuilds the rail mutation via `emitInverseCall`, which re-uses the forward gate's
+// own argument values. So an operand of a re-emitted gate that is DEFINED IN THE BODY
+// and is NOT itself re-emitted becomes a cross-block SSA reference — "Instruction does
+// not dominate all uses!", i.e. a BROKEN MODULE and an `LLVM ERROR` abort, not a
+// Rule-1 source-located decline.
+//
+// MEASURED, both reachable entry paths, each from ordinary C at `clang -O1` (rc=134):
+//   (1) `if (g(q) == 0) break;` with a `noinline` pure `g` — `detectSpecializations`
+//       retargets it to the Phase-6 clone `@__cq_q_g_1`; LoopLowering's B4 body fence
+//       is `mayHaveSideEffects()` alone, so the pure call is ADMITTED, and E9 records
+//       it in `BreakCondOps` (it is tainted) so E11 whitelists it. Post-lowering
+//       `isBreakCondTemplate` requires the `cq_template_` prefix and does NOT collect
+//       it — yet `discoverLoweredBreak` still returns true (it asks only for a rail
+//       handle plus one compare). The predicates are INCOMPARABLE, not nested: the
+//       canonical `isInverseEmittable` ACCEPTS `@__cq_q_*` (EmitInverse.cpp, the
+//       Phase-6.3 clause) while `isBreakCondTemplate` rejects it — the opposite
+//       direction from the `_inv` axis bd zea5 closed (bd memory
+//       [break-discovery-vs-accept-incomparable-2026-08-11]).
+//   (2) `int s = (q&1) ? 3 : 5; if ((q & s) == 0) break;` — the 4.4 `SelectMergeEmit`
+//       mints `%out = cqrt_alloc_i32(0)` INTO the body at step 292, after E11 ran.
+//       That `%out` is an ARGUMENT of the collected `cq_template_and_i32` — a body
+//       definition that is not a call the chain collects.
+//
+// WHY THIS IS A COVERAGE CHECK AND NOT A REPAIR (the hazard the bead names): the
+// uncollected producer's result is a rail that is minted per-iteration, never
+// uncomputed, never freed, and never in `ControlOwnedRails` (verified with
+// `-disable-verify`: no `@__cq_q_g_1_unc` and no `cqrt_free` naming it anywhere).
+// HOISTING it, or re-deriving it to satisfy the verifier, would convert an
+// always-loud abort into a silent dephasing of `out` — trading the one failure mode
+// this project tolerates for the one it does not (Prime Directive).
+//
+// CLAUSE (A) USES A PER-MECHANISM CLOSURE SET, and that distinction is the whole
+// correctness of it (the Rule-13 round found the single-set version had a latent hole
+// of precisely this bead's own class — a predicate resting on an unwritten census):
+//
+//   * `LB.BreakCond` is re-emitted by `cloneBreakCond`, whose `VMap` holds exactly the
+//     BreakCond members. It CAN remap an operand that is another collected chain
+//     member, so its correct closure set is `BreakCond`.
+//   * `LB.RailGates` is re-emitted by `emitInverseCall`, which remaps NOTHING — it
+//     re-uses the forward gate's own argument Values verbatim. Its correct closure set
+//     is therefore EMPTY: every body-defined operand of a rail gate dangles, INCLUDING
+//     one that happens to be a collected break-cond call.
+//
+// A single shared `Emitted` set would admit that last case. It is unreachable today —
+// `cqrt_{xorc,addc}_<W>` are VOID, so a rail-gate result is never anyone's operand, and
+// E10 already forces every rail immediate to dominate `ExitMerge` — but both of those
+// are fences elsewhere, and "rail gates happen never to take a body operand" is exactly
+// the kind of census bd uow0 / 8gi5 / e4zs / 1fim / zea5 each proved unsafe to rest on.
+// The empty set makes it a property. It also makes the rail-handle claim TRUE rather
+// than merely lucky: `LB.RailHandle` is arg 0 of every rail gate and `RailGates` is
+// non-empty by construction, so a body-defined rail handle — which `captureRailToR`
+// and `emitExitConsolidation` would name in blocks the body does not dominate — now
+// declines here mechanically.
+//
+// Clause (A) scans `args()` rather than `operands()` for TWO reasons, only the first of
+// which is obvious: it skips the trailing callee operand (already a `Function` — both
+// discovery predicates required `getCalledFunction()` non-null), AND it skips operand
+// BUNDLE operands, which `CallInst::clone()` preserves while `cloneBreakCond` only
+// `setArgOperand`s. A bundle operand naming a body value would therefore dangle unseen.
+// No collected call carries a bundle today (every one is pass-minted by `lowerOps` /
+// `lowerLoops`), which is the real reason that is safe.
+//
+// WHICH CLAUSE ACTUALLY CARRIES WHICH SHAPE — the full red-green matrix, MEASURED by
+// disabling each clause in turn and rebuilding, because the plausible answer is the
+// wrong one and an earlier draft of this comment asserted it:
+//
+//     fixture                          (A) only     (B) only     both
+//     uncollected_clone.ll             decline      decline      decline
+//     uncollected_mint.ll              decline      decline      decline
+//     uncollected_stray.ll             rc=0 LOWERS  decline      decline
+//
+// (B) SUBSUMES (A) on every input anyone has reached, because every reachable
+// uncollected producer is a CALL (a Phase-6 clone; a select-merge `cqrt_alloc`) and (B)
+// sweeps calls while (A) sweeps operands. So `lowering_reject_break_uncollected_stray.ll`
+// is the ONLY fixture that discriminates either clause, and it pins (B).
+//
+// CLAUSE (A) HAS NO DISCRIMINATING FIXTURE. Say it plainly rather than implying the
+// clone/mint fixtures pin it — they do not. It is kept because it is the PRECISE
+// statement of the dangling invariant where (B) is a coarse over-approximation, and it
+// uniquely covers two shapes (B) structurally cannot see: a body-defined NON-call
+// operand of a collected gate, and a rail-gate operand that IS a collected break-cond
+// call (per the closure-set split above). Both are unreachable today — the first
+// because E9 partitions break-cond operands into untainted-Header-defined (declines)
+// and tainted, and a tainted one lowers to a CALL, hence is swept by (B); the second
+// because E10 fences rail immediates loop-invariant. A future stage that mints a
+// NON-call body value is caught by (A) and missed by (B).
+//
+// AND NOTE THE WORDING OF THAT FIRST REASON, because the natural phrasing is the very
+// belief this bead disproves: a tainted body op lowers to a CALL — NOT necessarily to
+// a `cq_template_*` call, and NOT necessarily to a COLLECTED one. The `@__cq_q_*`
+// clone in `lowering_reject_break_uncollected_clone.ll` is precisely a tainted body op
+// that lowers to a call `isBreakCondTemplate` does not collect. "Tainted ⇒ collected"
+// is exactly the premise E9 rested on, and it is false; "tainted ⇒ a call, hence swept
+// by (B)" is what actually holds.
+//
+// AND (B) IS NOT REACHABLE FROM C EITHER: no input is known to reach it without (A)
+// also firing. The Rule-13 round could not construct one at any `-O` level, because the
+// only post-claim minting stage surviving its upstream fences is the 4.4 select merge,
+// whose merged rail is necessarily an ARGUMENT of a collected gate. Both clauses are
+// therefore DEFENSE-IN-DEPTH against a future minting stage; the stray fixture is
+// hand-written lowered-adjacent IR for exactly that reason.
+//
+// AND (B) IS BROADER THAN ITS MOTIVATION, deliberately: as written it rejects EVERY
+// uncollected call, including a purely classical side-effect-free one that carries no
+// rail at all and would have been harmless. That over-declines (safe — Prime Directive)
+// and it is NOT to be narrowed to a `cqrt_`/`cq_template_`/`__cq_q_` prefix test or to
+// `taint.Tainted` membership: a name-prefix test over a re-emission gate is the exact
+// mistake that made `isBreakCondTemplate` and `isInverseEmittable` incomparable and let
+// the Phase-6 clone through in the first place.
+//
+// Non-call body instructions are deliberately NOT swept: the classical loop scaffolding
+// `clang -O1` leaves in a canonical body (the counter phi, `%i.next = add`, the bound
+// `icmp`, the terminator) is exactly that, it is never re-emitted backward, and clause
+// (A) already fences it at the one place it could matter — as an operand of a gate
+// that IS.
+//
+// Returns false and names the offending instruction (its `!dbg` locates the decline).
+[[nodiscard]] bool coversLoweredBody(BasicBlock *Body, const LoopBreakRegion &Rgn,
+                                     const LoweredBreak &LB, Instruction *&Offender) {
+  SmallPtrSet<const Value *, 16> Emitted;
+  for (CallInst *C : LB.RailGates)
+    Emitted.insert(C);
+  for (CallInst *C : LB.BreakCond)
+    Emitted.insert(C);
+
+  // (A) OPERAND CLOSURE, per re-emission mechanism (see the header above for why the
+  //     two collected sets get DIFFERENT closure sets and why that is load-bearing).
+  auto operandsClosed = [&](CallInst *C,
+                            const SmallPtrSetImpl<const Value *> &Closure) {
+    for (Value *Op : C->args()) {
+      auto *OI = dyn_cast<Instruction>(Op);
+      if (OI && OI->getParent() == Body && !Closure.count(OI)) {
+        Offender = OI;
+        return false;
+      }
+    }
+    return true;
+  };
+  const SmallPtrSet<const Value *, 1> NoRemap;  // `emitInverseCall` remaps nothing.
+  SmallPtrSet<const Value *, 16> CondClosure;   // `cloneBreakCond`'s VMap domain.
+  for (CallInst *C : LB.BreakCond)
+    CondClosure.insert(C);
+  for (CallInst *C : LB.RailGates)
+    if (!operandsClosed(C, NoRemap))
+      return false;
+  for (CallInst *C : LB.BreakCond)
+    if (!operandsClosed(C, CondClosure))
+      return false;
+
+  // (A′) THE UN-SWEPT OPERANDS — FIVE, and the count is the point of the paragraph, so
+  //      it is enumerated rather than asserted. The out-of-body emissions
+  //      (`emitExitConsolidation` into `ExitMerge`, `emitBackwardBody` into
+  //      `cq.brk.rev` — neither dominated by `Body`) name exactly: `Rgn.BoundLimit` and
+  //      `Rgn.GuardCond` (the reverse-play's trip count and entry guard, both named in
+  //      `ExitBlk`), and the `R` / `idx` / `out` registers. Those five are checked here.
+  //      The rail handle is a SIXTH such value but is NOT in this list because it is
+  //      arg 0 of every collected rail gate and is therefore already covered by clause
+  //      (A) against the empty closure set. Everything else the backward body names is
+  //      emitter-local (`IPrime`, its own `K = IPrime+1`) or a clone. `K =
+  //      Rgn.CounterPhi->getIncomingValueForBlock(Body)` IS body-defined and correctly
+  //      absent: it is used only by `emitForwardCapture`, which inserts into `Body`.
+  //
+  //      Each of the five is loop-invariant or pre-loop by a LoopLowering fence
+  //      evaluated on the step-279 CFG — E4 for `BoundLimit`, E6/E12 for `GuardCond`
+  //      and the three registers — i.e. protected only by an EARLIER stage, which is
+  //      the same shape of assumption this bead was filed against. (Do not extend that
+  //      basket to E10/E15: those fence the rail IMMEDIATES and the rail mint, which
+  //      are clause-(A) concerns and protect none of the five.) Restating it
+  //      mechanically here, at the point of use, costs nothing: none can be body-defined
+  //      today.
+  for (Value *V : {Rgn.BoundLimit, Rgn.GuardCond, Rgn.RReg, Rgn.IdxReg, Rgn.OutReg}) {
+    auto *VI = dyn_cast_or_null<Instruction>(V);
+    if (VI && VI->getParent() == Body) {
+      Offender = VI;
+      return false;
+    }
+  }
+
+  // (B) GATE COVERAGE — no call in the body outside the two collected sets.
+  for (Instruction &I : *Body) {
+    auto *CI = dyn_cast<CallInst>(&I);
+    if (!CI || Emitted.count(CI))
+      continue;
+    Offender = CI;
+    return false;
+  }
+  return true;
+}
+
 // ── Gate-emission helpers (all VOID side-effecting `cqrt_*` / `cq_template_*`) ──
 
 CallInst *mintCall(IRBuilder<> &B, FunctionCallee Fn, ArrayRef<Value *> Args,
@@ -268,12 +491,23 @@ CallInst *emitEqZero(IRBuilder<> &B, WidthDispatch &wd, Value *IdxHandle,
 
 // Clone the break-cond template chain at `B`'s position, remapping each link's
 // operands to the cloned predecessors (the rail handle stays — it is the same
-// loop-invariant i32). Returns the cloned chain (program order); the last is the
-// recomputed break flag.
-SmallVector<CallInst *, 4> cloneBreakCond(IRBuilder<> &B,
-                                          ArrayRef<CallInst *> Chain) {
+// loop-invariant i32). Returns the cloned chain (program order) and, via `BrkClone`,
+// the clone of the FORWARD break flag `Brk`.
+//
+// `BrkClone` IS THE CLONE OF `Brk` BY IDENTITY, NOT THE LAST LINK BY POSITION. Those
+// coincide today — `discoverLoweredBreak` admits exactly one compare and the recognized
+// chain ends at it — but "the chain's last element is the break flag" is an unwritten
+// ordering census of exactly the kind bd 9g9n was filed against, and getting it wrong
+// here is WORSE than the crash this bead fixes: `emitBackwardBody` feeds this value to
+// the Toffoli that uncomputes `fire`, so a mis-picked control is a verify-clean WRONG
+// UNITARY, silent at every gate the project has (Rule 13 round, 2026-08-12). Selecting
+// by identity makes the backward control provably the same wire the forward capture
+// used, for any ordering a future stage might produce.
+SmallVector<CallInst *, 4> cloneBreakCond(IRBuilder<> &B, ArrayRef<CallInst *> Chain,
+                                          CallInst *Brk, CallInst *&BrkClone) {
   DenseMap<Value *, Value *> VMap;
   SmallVector<CallInst *, 4> Out;
+  BrkClone = nullptr;
   for (CallInst *C : Chain) {
     auto *NC = cast<CallInst>(C->clone());
     B.Insert(NC);
@@ -283,6 +517,8 @@ SmallVector<CallInst *, 4> cloneBreakCond(IRBuilder<> &B,
         NC->setArgOperand(i, It->second);
     }
     VMap[C] = NC;
+    if (C == Brk)
+      BrkClone = NC;
     Out.push_back(NC);
   }
   return Out;
@@ -430,8 +666,20 @@ struct BreakEmit {
   // recompute e = (idx == 0) (idx now pre-fire) and the break-cond, then uncompute
   // fire via the SAME Toffoli `fire ^= brk' ∧ e` (≡ forward) ⇒ fire → 0.
   CallInst *Efl = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);
-  SmallVector<CallInst *, 4> Cond = cloneBreakCond(B, E.LB.BreakCond);
-  CallInst *BrkP = Cond.back();
+  CallInst *BrkP = nullptr;
+  SmallVector<CallInst *, 4> Cond =
+      cloneBreakCond(B, E.LB.BreakCond, E.LB.Brk, BrkP);
+  // `BrkP` is the clone of the SAME call the forward capture controlled on, selected by
+  // IDENTITY (see `cloneBreakCond`). `emitOneBreak` has already gated `Brk ∈ BreakCond`
+  // pre-emission, so this cannot miss. The fallback is deliberately NOT an early return
+  // — this function must emit its full block either way (see the header note: the
+  // caller has CFG surgery in flight) — it poisons `OK` instead, so the caller declines
+  // loudly and frees nothing rather than shipping a wrongly-controlled Toffoli. A
+  // runtime check, never an `assert`: the shipped build is Release.
+  if (!BrkP) {
+    BrkP = Cond.back();
+    OK = false;
+  }
   mintCall(B, toffoliFn(E.M), {BrkP, Efl, Fire}, E.DL);
   // clear the recomputed break-cond + e, free everything. `Cond` is a CLONE of
   // `E.LB.BreakCond` — same callees, same arities — so the pre-scan of the original
@@ -494,6 +742,36 @@ void emitOneBreak(LoopBreakRegion &Rgn, Module &M, WidthDispatch &wd,
       diagnoseAt(G, kMsgBreakUninvertible);
       return;
     }
+
+  // The break flag must be a MEMBER of the chain that gets cloned, so the backward
+  // Toffoli can select its control by identity rather than by position
+  // (`cloneBreakCond`). True by construction — `discoverLoweredBreak` only ever sets
+  // `Brk` to a call it has just pushed — and checked here rather than assumed, because
+  // the failure it guards is a verify-clean WRONG UNITARY (a Toffoli on the wrong
+  // control wire), which is strictly worse than the broken module this bead fixes.
+  if (!llvm::is_contained(LB.BreakCond, LB.Brk)) {
+    diagnoseAt(LB.Brk, kMsgBreakRederive);
+    return;
+  }
+
+  // ── BODY-COVERAGE GATE (bd 9g9n; the post-lowering mirror of E11) ────────────
+  // The two pre-emission declines are ORDER-INDEPENDENT — MEASURED, not assumed: with
+  // this gate moved ahead of the invertibility pre-scan both bd zea5 fixtures still
+  // print `kMsgBreakUninvertible` and the whole lit suite stays green, because neither
+  // gate fires on the other's fixture. It sits second for readability only; do not
+  // write a rationale that implies the ordering protects a message (an earlier draft
+  // did, and the counterfactual is false).
+  //
+  // Like the scan above it emits NOTHING — the construct is left exactly as
+  // `emitBreakForward` shaped it, which is well-formed (`opt -verify` clean), so the
+  // decline is what the user sees, not an `LLVM ERROR` from a module we half-rebuilt.
+  {
+    Instruction *Offender = nullptr;
+    if (!coversLoweredBody(Body, Rgn, LB, Offender)) {
+      diagnoseAt(Offender, kMsgBreakUncovered);
+      return;
+    }
+  }
 
   // Exclude the whole break construct from the whole-DAG uncompute spine.
   taint.ControlOwnedRails.insert(LB.RailHandle);
