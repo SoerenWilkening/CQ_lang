@@ -6,7 +6,6 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare half     @cq_theta_f16(half, double)
 declare float    @cq_theta_f32(float, double)

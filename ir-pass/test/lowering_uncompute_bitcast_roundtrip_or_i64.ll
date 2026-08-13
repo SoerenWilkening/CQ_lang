@@ -78,7 +78,6 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; WHY THIS WHOLE BLOCK IS `CHECK-NEXT` (verified contiguous in the real lowered
 ; output — the emitted `@slice` body is one straight run from `cqrt_alloc_f64` to

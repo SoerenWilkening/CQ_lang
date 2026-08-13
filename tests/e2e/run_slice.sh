@@ -23,8 +23,44 @@ FREECHECK_FLAGS=${9:-}
 PY=${CQ_PYTHON:-python3}
 HERE=$(cd "$(dirname "$0")" && pwd)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
-"$CLANG" -I"$INC" -include CQ.h -O1 -emit-llvm -S "$SRC" -o "$TMP/s1.ll"                # Stage 1
-"$OPT" -load-pass-plugin "$PASS" -passes=cq-lowering -S "$TMP/s1.ll" -o "$TMP/s2.ll"   # Stage 2
+# Stage 1 — frontend. CONTENT-ADDRESSED CACHE (bd dgn5 follow-on): stage 1 is a
+# pure function of (this clang, its flags, the .c source, the headers in $INC)
+# and is INDEPENDENT OF THE PASS PLUGIN — which is the thing that actually
+# changes between runs. So the plugin can be rebuilt all day and stage 1 is
+# still a hit. MEASURED 0.428s of CPU per slice, ~104s across the layer.
+# The key hashes the clang IDENTITY AND ITS BINARY, every header in $INC, the
+# source, and the literal flag string; a miss is a normal compile that then
+# populates the cache. A stale hit would need a SHA-256 collision, not a
+# timestamp accident. Cache lives under the build dir, so `rm -rf build` is a
+# full reset; CQ_S1CACHE unset (by-hand invocation) disables it entirely.
+# $CQ_S1_BASE is the toolchain half of the key (clang bytes + version + every
+# header in $INC + the flag string), computed ONCE by CMake via
+# tools/s1_cache_key.py -- hashing the compiler 220 times would cost more than
+# it saves. Here we add only the source bytes: one `openssl dgst` over one small
+# .c, MEASURED 0.006s CPU against the 0.428s of stage 1 it replaces.
+s1="$TMP/s1.ll"
+if [ -n "${CQ_S1CACHE:-}" ] && [ -n "${CQ_S1_BASE:-}" ]; then
+    # The PATH is keyed as well as the content: clang bakes the source path into
+    # `ModuleID`/`source_filename`, so two byte-identical slices at different
+    # paths do NOT produce byte-identical IR and must not share an entry.
+    key=$({ printf '%s\0%s\0' "$CQ_S1_BASE" "$SRC"; cat "$SRC"; } \
+          | /usr/bin/openssl dgst -sha256 | awk '{print $NF}')
+    hit="$CQ_S1CACHE/$key.ll"
+    if [ -f "$hit" ]; then
+        s1="$hit"
+    else
+        "$CLANG" -I"$INC" -include CQ.h -O1 -emit-llvm -S "$SRC" -o "$TMP/s1.ll"
+        mkdir -p "$CQ_S1CACHE"
+        # Atomic publish. Under -j many slices populate this dir at once, and a
+        # sibling must never observe a half-written .ll -- rename(2) within one
+        # filesystem is atomic, a plain `cp` into place is not. $$ keeps two
+        # concurrent misses on the SAME key from sharing a temp name.
+        cp -f "$TMP/s1.ll" "$hit.$$.tmp" && mv -f "$hit.$$.tmp" "$hit"
+    fi
+else
+    "$CLANG" -I"$INC" -include CQ.h -O1 -emit-llvm -S "$SRC" -o "$TMP/s1.ll"
+fi
+"$OPT" -load-pass-plugin "$PASS" -passes=cq-lowering -S "$s1" -o "$TMP/s2.ll"          # Stage 2
 # shellcheck disable=SC2086  # $FREECHECK_FLAGS is an intentional word-split
 "$PY" "$HERE/../../tools/free_pairing_check.py" -q $FREECHECK_FLAGS "$TMP/s2.ll"       # Stage 2b
 # Stage 3 (link) — deliberately NO -O flag (clang default -O0): the lowered IR

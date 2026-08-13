@@ -8,7 +8,6 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i8 @cq_theta_si8(i8, double)
 declare i8 @cq_measure_si8(i8)
 define i8 @example(i8 %u0, i8 %x) {

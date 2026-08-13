@@ -12,7 +12,6 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 @ln2 = internal unnamed_addr constant [2 x double] [double 0x3FE62E42FEE00000, double 0xBFE62E42FEE00000]
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)

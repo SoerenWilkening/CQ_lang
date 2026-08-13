@@ -36,7 +36,6 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare float @cq_theta_f32(float, double)
 declare float @cq_measure_f32(float)
 declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture)

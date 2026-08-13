@@ -16,7 +16,6 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CLEAN < %t.cqd0.ll
 ;
 ; Mint + Ry in the preheader, in place; the classical zero-trip guard is UNTOUCHED:

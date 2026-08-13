@@ -56,6 +56,36 @@ endif()
 # original single clang command, which is exactly equivalent and merely slower.
 # That is why this is a WARNING and not a FATAL_ERROR — a perf optimisation
 # must never be able to break the build.
+# Stage-1 frontend cache. Stage 1 does NOT depend on the cq-lowering plugin --
+# only on this clang, its flags, CQ.h and the slice source -- so it is a byte-
+# identical recompute on every run while the plugin (the thing you actually
+# iterate on) changes underneath it. MEASURED 0.428s CPU per slice, ~104s across
+# the layer. tools/s1_cache_key.py hashes the EXPENSIVE half (clang's own bytes,
+# its --version, every header under include/, the flag string) exactly once,
+# here; run_slice.sh adds only the source bytes per slice. Read that file's
+# header before touching this: a stale hit would not make a test slow, it would
+# make it LIE, so every key component is content and never a timestamp.
+# Cache lives under the build dir => `rm -rf build` is a full reset.
+# NOTE: run_slice_multi.sh is deliberately NOT cached -- it compiles several TUs
+# per test and there are only 20 such entries (~9s CPU), so the added key
+# surface is not worth it.
+set(_E2E_S1_CACHE "${CMAKE_CURRENT_BINARY_DIR}/.s1cache")
+execute_process(
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/s1_cache_key.py"
+          "${_E2E_CLANG}" "${CMAKE_SOURCE_DIR}/include"
+          -- "-I${CMAKE_SOURCE_DIR}/include" -include CQ.h -O1 -emit-llvm -S
+  RESULT_VARIABLE _E2E_S1_RV
+  OUTPUT_VARIABLE _E2E_S1_BASE
+  ERROR_VARIABLE _E2E_S1_ERR)
+if(_E2E_S1_RV EQUAL 0 AND _E2E_S1_BASE)
+  message(STATUS "cq e2e: stage-1 cache key ${_E2E_S1_BASE}")
+else()
+  message(WARNING "cq e2e: stage-1 cache key failed (${_E2E_S1_ERR}); "
+                  "caching disabled, tests stay correct and merely slower.")
+  set(_E2E_S1_BASE "")
+  set(_E2E_S1_CACHE "")
+endif()
+
 set(_E2E_LINK_WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/cq_link.sh")
 execute_process(
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/derive_link_line.py"
@@ -3450,4 +3480,4 @@ add_test(NAME e2e-keepset-vendor-check
 # — it must stay the LAST statement in this file for that sweep to be complete.
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
-  ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER}")
+  ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")

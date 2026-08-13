@@ -16,7 +16,6 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ; Independent EXACT free-count scan (§8.2): two cqrt_free and no third anywhere —
 ; the ¬flag X-bracket adds cqrt_x, NOT extra frees.
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll

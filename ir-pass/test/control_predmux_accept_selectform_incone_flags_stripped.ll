@@ -37,7 +37,6 @@
 ; parses it out of a comment and fails with "found empty check string".)
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s  --implicit-check-not='br i1' --implicit-check-not='select i1'  --implicit-check-not='add nsw' --implicit-check-not='add nuw' < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"

@@ -19,7 +19,6 @@
 ; the test even if opt still exits 0.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s  --implicit-check-not='select i1' --implicit-check-not='phi i32'  --implicit-check-not='br i1' --implicit-check-not='cq_template_icmp_eq' < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 

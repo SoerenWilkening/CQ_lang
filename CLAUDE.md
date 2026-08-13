@@ -678,7 +678,7 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1027 *.ll fixtures (1026 pass + 1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker). NO -j here: it is a single entry that already forks 12 lit workers itself. MEASURED 104s — still the suite's long pole and its Amdahl floor (~45% of a -j6 wall). It is SPAWN-bound, not work-bound: `opt` costs 0.44s of libLLVM.dylib startup and ~0.02s of actual work, so fixture COUNT is nearly free and opt INVOCATIONS are not. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do not re-run the pass per prefix.
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1027 *.ll fixtures (1026 pass + 1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
 ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 243 entries (240 slices = 220 single + 20 multi, + free-pairing selftest, fixture-guard-liveness, keepset vendor check) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
@@ -717,6 +717,21 @@ Note the three `ld: warning: object file … built for newer 'macOS' version`
 lines are **pre-existing** — CMake builds the archives with `/usr/bin/cc`
 (minos 26.0) while stage 3 uses Homebrew clang 19 (minos 16.0), and the plain
 driver emits the same three warnings today. They are not from the split.
+
+**The standalone `opt -passes=verify` RUN line is GONE, and must not come back.**
+451 fixtures carried a `… | %cq-opt -passes=verify -disable-output -` round-trip.
+It was removed (owner ruling 2026-08-13) after establishing — by measurement, not
+assumption — that **`opt` already verifies the pass output in-process**:
+`-debug-pass-manager` shows the order is `cq::CQLoweringPass` → **`VerifierPass`**
+→ `PrintModulePass`, and `opt` exits non-zero when the verifier fails. So every
+fixture still verifies, on the RUN line it already had; what the extra spawn
+uniquely added was a **print→reparse→re-verify** round-trip, i.e. a check on
+LLVM's own printer/parser symmetry rather than on CQ lowering. That property is
+still covered end-to-end by **all 243 e2e slices**, where stage 2 writes textual
+IR and stage 3's `clang` reparses it and fails loudly if it cannot. Net: 451
+spawns × 0.345s ≈ **156s of CPU** for a check that was structurally redundant.
+Do not re-add it per fixture; if you ever need to prove printer/parser symmetry
+specifically, do it once, not 451 times.
 
 **Stage 2b — the Rule-6 free-pairing gate (bd `8txa`).** `run_slice.sh` /
 `run_slice_multi.sh` run `tools/free_pairing_check.py` on the same lowered IR

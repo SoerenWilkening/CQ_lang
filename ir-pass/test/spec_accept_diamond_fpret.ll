@@ -11,7 +11,6 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare double @cq_theta_f64(double, double)
 declare i32 @cq_measure_si32(i32)
@@ -48,8 +47,15 @@ entry:
 ; Clone signature rewritten to i32 (both args + return are i32 handles — the fix;
 ; it was `double` with a mistyped `ret i32` before). The fp arm muxes use the fp
 ; controlled copy, the escaping copy-out is fp-to-handle, and the terminator is a
-; consistent `ret i32`. The 2nd RUN line (`opt -passes=verify`) is the real guard:
-; it FAILED on the pre-fix broken module (return-type/signature mismatch). The
+; consistent `ret i32`. VERIFICATION is the real guard here, not the CHECKs: it
+; FAILED on the pre-fix broken module (return-type/signature mismatch). That
+; guard is INTACT after the standalone `opt -passes=verify` RUN line was dropped
+; — `opt` runs `VerifierPass` on the module by default, and MEASURED via
+; `-debug-pass-manager` the order is cq::CQLoweringPass -> VerifierPass ->
+; PrintModulePass, so the pass output is verified BEFORE it is printed and opt
+; exits non-zero if it is invalid. The dropped line only added a print->reparse
+; round-trip, which is a printer/parser asymmetry check, not a CQ-lowering one.
+; The
 ; CHECK-LABEL scopes the negative checks to the clone body only (the original
 ; unspecialized `helper` legitimately still carries `ret double`).
 ; CHECK-LABEL: define internal i32 @__cq_q_helper_{{[0-9]+}}(i32 %s, i32 %b)

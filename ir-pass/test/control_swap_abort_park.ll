@@ -20,7 +20,6 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREE < %t.cqd0.ll
-; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 
 ; The ORDERED park stream (order IS the contract — a reordered cswap/record is
 ; trace-plausible yet wrong; mint-before-park is load-bearing so the flag reads q0).
