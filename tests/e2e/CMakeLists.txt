@@ -39,6 +39,39 @@ if(_E2E_PYTHON_REAL AND EXISTS "${_E2E_PYTHON_REAL}")
   set(_E2E_PYTHON "${_E2E_PYTHON_REAL}")
 endif()
 
+# bd dgn5 — stage-3 link. `clang s2.ll tpl.a rt.a -o slice` spawns THREE
+# processes (driver, -cc1, ld), two of which dyld-bind libclang-cpp.dylib
+# (77MB) + libLLVM.dylib (140MB), and the driver hands ld `-lto_library`
+# unconditionally so ld ALSO dlopens libLTO -> libLLVM. Nothing here uses LTO
+# (stage 3 is deliberately -O0, bd szpr). Splitting into `clang -c` + a direct
+# ld call MEASURED 0.74-0.94s -> 0.35-0.44s per slice.
+#
+# The link line is DERIVED from the driver itself (`clang -###`) and re-derived
+# on every reconfigure, so SDK / platform-version / clang-runtime drift is
+# picked up automatically; see tools/derive_link_line.py for exactly what is
+# stripped and why. A stale line fails LOUDLY at link, never silently.
+#
+# DEGRADES GRACEFULLY BY DESIGN: if derivation fails (a non-Darwin driver, an
+# unrecognised job list), CQ_LD stays empty and both runners fall back to the
+# original single clang command, which is exactly equivalent and merely slower.
+# That is why this is a WARNING and not a FATAL_ERROR — a perf optimisation
+# must never be able to break the build.
+set(_E2E_LINK_WRAPPER "${CMAKE_CURRENT_BINARY_DIR}/cq_link.sh")
+execute_process(
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/derive_link_line.py"
+          "${_E2E_CLANG}" "${_E2E_LINK_WRAPPER}"
+  RESULT_VARIABLE _E2E_LINK_RV
+  OUTPUT_QUIET
+  ERROR_VARIABLE _E2E_LINK_ERR)
+if(_E2E_LINK_RV EQUAL 0 AND EXISTS "${_E2E_LINK_WRAPPER}")
+  message(STATUS "cq e2e: stage-3 link via derived ${_E2E_LINK_WRAPPER}")
+else()
+  message(WARNING "cq e2e: could not derive the stage-3 link line "
+                  "(${_E2E_LINK_ERR}); falling back to the clang driver. "
+                  "Tests stay correct, the e2e layer is just slower.")
+  set(_E2E_LINK_WRAPPER "")
+endif()
+
 # Phase 2 canonical slice: theta -> add_hl -> measure.
 add_test(NAME e2e-slice-theta-add-measure
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
@@ -3417,4 +3450,4 @@ add_test(NAME e2e-keepset-vendor-check
 # — it must stay the LAST statement in this file for that sweep to be complete.
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
-  ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON}")
+  ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER}")

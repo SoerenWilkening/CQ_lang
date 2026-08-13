@@ -31,5 +31,17 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # is the verified artifact; an optimized stage 3 could const-fold/reorder the
 # classical remainder (e.g. the volatile-const-fold literals) and desynchronize
 # the trace from the golden. Do not add -O here (bd szpr pin).
-"$CLANG" "$TMP/s2.ll" "$TPL" "$RT" -o "$TMP/slice"
+#
+# $CQ_LD (bd dgn5) is a linker wrapper CMake DERIVED from this same clang via
+# `clang -###`, minus the `-lto_library` that makes ld dlopen libLTO->libLLVM
+# (140MB) on every slice for an -O0 link that never uses LTO. Splitting codegen
+# from the link MEASURED 0.74-0.94s -> 0.35-0.44s per slice. Unset (by-hand
+# invocation, or a platform CMake could not derive a line for) -> the original
+# single driver command, which is exactly equivalent and only slower.
+if [ -n "${CQ_LD:-}" ] && [ -x "${CQ_LD}" ]; then
+    "$CLANG" -c "$TMP/s2.ll" -o "$TMP/s2.o"
+    "$CQ_LD" -o "$TMP/slice" "$TMP/s2.o" "$TPL" "$RT"
+else
+    "$CLANG" "$TMP/s2.ll" "$TPL" "$RT" -o "$TMP/slice"
+fi
 "$TMP/slice" | diff -u - "$GOLDEN"                                                     # Stage 4 (run + diff)

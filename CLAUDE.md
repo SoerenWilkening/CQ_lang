@@ -650,15 +650,19 @@ cmake --build build -j8
 cmake --build build --target CQPass        # just the pass → build/ir-pass/libCQPass.so
 
 # Full suite (252 ctest entries). RUN IT PARALLEL — `-j` is the default, not an
-# optimization. MEASURED 228s at -j6, 252/252 pass (2026-08-13), down from 825s
-# serial: 3.6x. Three independent changes got that, all verified green:
-#   -j6 itself                825 -> 349s  (the whole win is scheduling)
-#   lit opt-spawn dedup       -> lit 143 -> 104s wall / 925 -> 671s CPU
-#   python shim bypass        -> stage 2b 0.39 -> 0.145s per slice
-# -j scaling, all 252/252: -j4 322s · -j6 265-349s · -j8 284s · -j12 308-341s.
-# -j6 is the pick; -j12 oversubscribes (6 physical / 12 logical cores) AND
-# ir-pass-lit already forks 12 lit workers internally, so -j6 is ~17-way
-# concurrent already. Do NOT compare a -j figure to the historical serial ones.
+# optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
+# serial: 5.1x. Four independent changes got that, each verified green:
+#   -j6 itself            825 -> 349s   (the single biggest win is scheduling)
+#   lit opt-spawn dedup   -> lit 143 -> 104s wall, 925 -> 671s CPU
+#   python shim bypass    -> stage 2b 0.39 -> 0.145s per slice
+#   stage-3 link split    228 -> 162s, 1140 -> 778s CPU  (bd dgn5)
+# NONE of this deleted a test or regenerated a golden. The suite was slow
+# because it re-spawned processes, not because it had too many tests.
+# -j scaling (measured BEFORE the last three, so the absolute numbers are
+# stale but the ORDERING holds): -j4 322s · -j6 265-349s · -j8 284s · -j12
+# 308-341s. -j6 is the pick; -j12 oversubscribes (6 physical / 12 logical
+# cores) AND ir-pass-lit already forks 12 lit workers internally, so -j6 is
+# ~17-way concurrent already. Never compare a -j figure to a serial one.
 # The suite is embarrassingly parallel by construction — every slice works in
 # its own `mktemp -d`, every lit fixture on `%t`, every python gate in a
 # TemporaryDirectory; there are ZERO RUN_SERIAL / FIXTURES_* / RESOURCE_LOCK
@@ -701,6 +705,18 @@ python3 tools/free_pairing_check.py /tmp/s2.ll                                  
 
 \* **Link order is load-bearing:** `libcq_templates.a` **before** `libcq_runtime.a`
 (template `_hl` symbols call `cqrt_*`; single-pass `ld` needs the caller first).
+The by-hand stage 3 above is the clang driver, which is correct and is exactly
+what the harness falls back to. The harness itself splits it (bd `dgn5`): CMake
+derives a linker wrapper from this same clang via `clang -###`, drops the
+`-lto_library` that makes `ld` dlopen libLTO→libLLVM (140MB) on every slice for
+an `-O0` link that never uses LTO, and exports it as `CQ_LD`. MEASURED 0.74–0.94s
+→ 0.35–0.44s per slice. It is re-derived on every reconfigure, so SDK /
+platform-version drift is picked up automatically, and a stale line fails
+**loudly** at link. Unset `CQ_LD` ⇒ the driver command, exactly equivalent.
+Note the three `ld: warning: object file … built for newer 'macOS' version`
+lines are **pre-existing** — CMake builds the archives with `/usr/bin/cc`
+(minos 26.0) while stage 3 uses Homebrew clang 19 (minos 16.0), and the plain
+driver emits the same three warnings today. They are not from the split.
 
 **Stage 2b — the Rule-6 free-pairing gate (bd `8txa`).** `run_slice.sh` /
 `run_slice_multi.sh` run `tools/free_pairing_check.py` on the same lowered IR

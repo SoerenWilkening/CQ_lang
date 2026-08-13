@@ -64,7 +64,14 @@ set +f
 # NO -O flag (clang default -O0): the lowered IR is the verified artifact; an
 # optimized link stage could const-fold/reorder the classical remainder and
 # desynchronize the trace from the golden (bd szpr pin, mirrors run_slice.sh).
-"$CLANG" "$TMP/s2.ll" "$TPL" "$RT" -o "$TMP/slice"
+# $CQ_LD is the derived linker wrapper (bd dgn5) — see run_slice.sh stage 3 for
+# the rationale; unset falls back to the driver, exactly equivalent, slower.
+if [ -n "${CQ_LD:-}" ] && [ -x "${CQ_LD}" ]; then
+    "$CLANG" -c "$TMP/s2.ll" -o "$TMP/s2.o"
+    "$CQ_LD" -o "$TMP/slice" "$TMP/s2.o" "$TPL" "$RT"
+else
+    "$CLANG" "$TMP/s2.ll" "$TPL" "$RT" -o "$TMP/slice"
+fi
 
 # Stage 5 — run + byte-diff the trace against the golden.
 "$TMP/slice" | diff -u - "$GOLDEN"
