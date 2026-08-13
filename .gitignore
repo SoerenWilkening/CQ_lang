@@ -32,3 +32,6 @@ __pycache__/
 
 # Local-only demos (regenerate with demo/*/build.sh; not tracked)
 demo/
+
+# bd embedded-dolt gate lock — runtime artifact, never versioned
+.beads.gate.lock
