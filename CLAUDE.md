@@ -427,6 +427,50 @@ admitting it would trade the true claim "CQ compiled openlibm's `log`" for the
 weaker "CQ ships its own `log`". `lgammal.f80` is to be **re-scoped** instead; its
 census `scope_ref` already self-flags its decided-decline ground as SPENT.
 
+**Rule 19 — Run what can WITNESS the change; the full suite is a GATE, not a
+heartbeat** (owner ruling 2026-08-13). The default inner loop is **targeted**:
+run the layer that can actually observe what you edited, and nothing else. The
+full suite is expensive attention as much as expensive wall-clock — a 3-minute
+run after every keystroke trains you to skim its output, which is how a real red
+turns into "probably contention". Measured inner-loop costs, all on a quiet box:
+
+| you edited | run | cost |
+|---|---|---|
+| one `.ll` fixture | `cd build && lit ir-pass/test --filter '<name>'` | **1.5s** |
+| one e2e slice or its golden | `ctest --test-dir build -R '^e2e-slice-<name>$'` | **1.7s** |
+| `tools/opcode_table.yaml`, `runtime/*` | `ctest --test-dir build -R runtime -j6` **+** an e2e slice (the only layer that LINKS) | **~5s** |
+| `include/CQ.h` | `ctest --test-dir build -R frontend-lit` **+** e2e | **~5s** |
+| pass source, iterating | `ctest --test-dir build -R ir-pass-lit` | **~60–105s** |
+| docs / comments only | nothing | 0s |
+
+**The full `ctest -j6` is MANDATORY, no judgement call, at these five moments:**
+1. **Before any commit touching the Rule-13 lowering core** (`TaintPropagation`,
+   the swap-route / control emitters, `FreePoint`, `EmitInverse`, `ChainWalk`,
+   `Uncomputation`, `RotationLowering`). Rule 13 is untouched by this rule.
+2. **Before `git push` / at session end**, whenever the push contains any change
+   to code, fixtures, goldens, or the harness — the Session Completion gate. A
+   push that is *purely* docs/comments (this file, `ROADMAP.md`, a `//` block)
+   does not need it; that is the one case where the docs-only row above wins.
+3. **After any change to the harness itself** (`run_slice*.sh`, any
+   `CMakeLists.txt`, `lit.cfg.py`, `cq-opt`, the caches). A harness edit changes
+   how *every* test runs, so no subset can witness it. This is not theoretical:
+   a `lit.cfg.py` PATH edit in this repo turned 551 fixtures red in a way that
+   read exactly like a lowering regression, and only the full suite caught it.
+4. **After regenerating the templates** (Rule 15) — the ABI moved under every layer.
+5. **When an accept/decline predicate changed** — Rule 12's probe families live
+   across both `ir-pass-lit` and e2e, and a widened predicate is exactly the
+   over-accept shape the Prime Directive exists to stop.
+
+**Report only what you ran.** If you ran `ir-pass-lit`, say "lit green (1027)",
+never "tests pass" — an unqualified green claim about layers you did not execute
+is a false statement about verification, and this project's whole defence is that
+verification claims are literal. Same for a sampled gate: say it sampled.
+
+**A skipped layer is a deferred cost, not a saved one.** The full suite is ~5x
+cheaper than it was (825s → ~160–200s at `-j6`), so when in doubt about which
+bucket a change falls in, just run it — this rule exists to stop reflexive
+full-suite runs, not to make skipping the default.
+
 ---
 
 ## Scope of the semantic model — `fenv` is OUT (owner ruling 2026-08-10)
@@ -649,7 +693,12 @@ cmake -S . -B build -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm -DCMAKE_B
 cmake --build build -j8
 cmake --build build --target CQPass        # just the pass → build/ir-pass/libCQPass.so
 
-# Full suite (253 ctest entries). RUN IT PARALLEL — `-j` is the default, not an
+# Full suite. NOT the inner loop — see Rule 19: run the layer that can WITNESS
+# your change (one fixture 1.5s, one slice 1.7s), and keep the full run for the
+# five gate moments (Rule-13 core commit · pre-push · harness change · template
+# regen · accept/decline predicate change).
+#
+# 253 ctest entries. RUN IT PARALLEL — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
 # serial: 5.1x. Four independent changes got that, each verified green:
 #   -j6 itself            825 -> 349s   (the single biggest win is scheduling)
