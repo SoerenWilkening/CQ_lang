@@ -15,9 +15,9 @@
 ; per level, the inner one reversed inside the outer wrap by its synthesized
 ; void twin `@__cq_q_deep_1_unc`.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s \
-; RUN:  --implicit-check-not='phi x86_fp80'
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s  --implicit-check-not='phi x86_fp80' < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ; RUN: env CQ_PREDMUX_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
 ; RUN:   -S %s -o /dev/null 2>&1 | %filecheck %s --check-prefix=DBG --allow-empty
 

@@ -5,8 +5,9 @@
 ; Phase 5 emits NO adjoint and NO `cqrt_free` for it, and NO diagnostic
 ; (`cq_invert_*` is a RECOGNIZED escape, silently skipped).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; The forward rotation still lowers, the invert handoff is preserved, but the
 ; handle is never freed by Phase 5:

@@ -23,8 +23,9 @@
 ; multiset); CHECK-NOT pins that no INTEGER copy symbol is minted for an fp
 ; merge (the width tags the symbol name only; handles stay i32, Rule 15).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)
 

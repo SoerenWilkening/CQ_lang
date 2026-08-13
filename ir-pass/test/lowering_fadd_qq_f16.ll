@@ -3,8 +3,9 @@
 ; flow through `fadd half` and lower to `cq_template_fadd_f16(handle, handle)`.
 ; Proves the f16 binary surface (fadd_f16 Q+Q), regenerated from the YAML.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f16(half 0xH4000)
 ; CHECK:     call void @cqrt_ry_f16(

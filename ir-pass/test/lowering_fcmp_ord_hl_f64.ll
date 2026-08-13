@@ -4,8 +4,9 @@
 ; `cq_template_fcmp_ord_f64_hl(i32, double)`. `ord` is one of the order-test trio
 ; (`one`/`ord`/`uno`) 8rvn adds; its i1 result is a flag, never a rotation angle.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f64(double 2.000000e+00)
 ; CHECK:     call i32 @cq_template_fcmp_ord_f64_hl(i32 %{{[a-zA-Z0-9_.]+}}, double 1.000000e+00)

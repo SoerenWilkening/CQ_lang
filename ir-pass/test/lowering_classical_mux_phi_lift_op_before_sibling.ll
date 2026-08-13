@@ -10,8 +10,9 @@
 ; Ry on `%q`'s wire cannot touch that rail. The lift still fires (the phi is a
 ; pure renaming) AND the add lowers — a legitimate use-then-re-rotate program.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:      call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:      %[[D:.*]] = call i32 @cq_template_add_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 3)

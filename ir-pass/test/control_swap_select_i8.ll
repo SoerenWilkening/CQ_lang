@@ -6,8 +6,9 @@
 ; (the handle is always i32). A post-RAUW width read would force i32 — a silent
 ; width miscompile this fixture forecloses.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i8 @cq_theta_si8(i8, double)
 declare i8 @cq_measure_si8(i8)
 define i8 @example(i8 %u0, i8 %x) {

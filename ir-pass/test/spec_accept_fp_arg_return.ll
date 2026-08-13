@@ -6,8 +6,9 @@
 ; caller's theta result becomes the i32 handle (RAUW-to-handle), the retargeted
 ; call returns an i32 handle, and `cq_measure_f64` reads it directly.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)
 

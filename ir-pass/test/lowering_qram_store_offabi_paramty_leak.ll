@@ -30,8 +30,9 @@
 ; is an ACCEPT-with-leak fixture rather than a decline: nothing here is a shape we set
 ; out to lower (Rule 17), it is off-ABI input that is UB before the pass runs.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 
 declare i32 @cq_theta_si32(i32, double)
 ; VOID and FROZEN ARITY 3 — but `val` is `double`, not the frozen `i32` handle.

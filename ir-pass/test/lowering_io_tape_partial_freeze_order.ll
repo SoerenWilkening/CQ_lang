@@ -35,10 +35,11 @@
 ; and the FIRST repair, which moved them into one shared NOFREE prefix, reproduced
 ; the same bug with two anchors in that prefix. See the note above the guards below.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOFREEH
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOFREEOP1
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEH < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEOP1 < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @printf(ptr, ...)
 @.str = private constant [3 x i8] c"%d\00"

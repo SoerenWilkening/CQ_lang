@@ -19,10 +19,9 @@
 ; complementary flags driving oppositely-ordered copies — and together the two
 ; fixtures pin that the choice tracks phi order and nothing else.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s \
-; RUN:  --implicit-check-not='br i1' --implicit-check-not='phi i32' \
-; RUN:  --implicit-check-not='cqrt_cswap' --implicit-check-not='cqrt_rz'
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s  --implicit-check-not='br i1' --implicit-check-not='phi i32'  --implicit-check-not='cqrt_cswap' --implicit-check-not='cqrt_rz' < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 

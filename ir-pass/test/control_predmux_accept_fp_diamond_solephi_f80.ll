@@ -4,9 +4,9 @@
 ; carries `cqrt_copy_f80_controlled`, so the flattened select lowers at f80
 ; with no new symbol.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s \
-; RUN:  --implicit-check-not='br i1' --implicit-check-not='phi x86_fp80'
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s  --implicit-check-not='br i1' --implicit-check-not='phi x86_fp80' < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare x86_fp80 @cq_theta_f80(x86_fp80, double)
 declare x86_fp80 @cq_measure_f80(x86_fp80)
 

@@ -12,11 +12,12 @@
 ; appear in the differential; its power is arm-kill (make the guard refuse on
 ; `hasAddressTaken()` alone, or check the whole function up front, and it goes red).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
 ; CHECK: store ptr blockaddress(@f, %live_ba), ptr @slot
 ;
 ; A NOT-only prefix so it scans the WHOLE input for the corrupted form:
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOCORRUPT
+; RUN: %filecheck %s --check-prefix=NOCORRUPT < %t.cqd0.ll
 ; NOCORRUPT-NOT: inttoptr (i32 1 to ptr)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"

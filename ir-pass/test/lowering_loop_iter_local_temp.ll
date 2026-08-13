@@ -22,8 +22,9 @@
 ; (undo keep-alive) -> xor `_unc` (reads the live `q`) -> free t-rail -> ry(-0.25)
 ; (undo mint) -> free q-rail.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; The whole compute+uncompute pair lives INSIDE the loop body, before the backedge:
 ; CHECK:      loop:

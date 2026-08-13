@@ -3,8 +3,9 @@
 ; no 16-bit-multiple constraint). `@llvm.bitreverse.i8` lowers to the unary
 ; additive producer `cq_template_bitreverse_i8(handle)`. Self-inverse involution.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_i8(i8 %u)
 ; CHECK:     call i32 @cq_template_bitreverse_i8(i32 %{{[a-zA-Z0-9_.]+}})

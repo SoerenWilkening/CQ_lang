@@ -13,9 +13,10 @@
 ; operands tainted, fcmp-ogt-minted flag, result measured (data, not an angle).
 ; 0xH4500 = 5.0, 0xH3C00 = 1.0 (exact in f16).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck --check-prefix=UNC %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=UNC %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 
 declare half @cq_theta_f16(half, double)
 declare half @cq_measure_f16(half)

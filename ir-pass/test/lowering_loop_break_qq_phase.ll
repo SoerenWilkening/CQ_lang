@@ -32,8 +32,9 @@
 ; the phase — there method-B's CNOT copy-out would dephase, Rule 7); a phase on the
 ; COMPARAND is never copied out, so Rule 7 does not bite.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=PLEAK
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=PLEAK < %t.cqd0.ll
 ;
 ; --- p built as cq_theta THEN cq_phi (the Rz is the relative phase) ------------
 ; CHECK: %[[P:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)

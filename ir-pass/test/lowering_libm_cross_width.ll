@@ -10,8 +10,9 @@
 ; The measured result is a live terminal (no `_unc` here). The `from` width is
 ; read from the intrinsic's declared param type — laundering-proof.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; lrint: f64 → i64; llrint: f64 → i64. Both templates are emitted, then both
 ; measured through the i32 handle (source-order schedule):

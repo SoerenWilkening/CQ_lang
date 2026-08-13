@@ -649,22 +649,35 @@ cmake -S . -B build -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm -DCMAKE_B
 cmake --build build -j8
 cmake --build build --target CQPass        # just the pass → build/ir-pass/libCQPass.so
 
-# Full suite (249 ctest entries — MEASURED 825s on one uncontended run 2026-08-09, 100% pass;
-# the earlier 479/512/572s figures are from 2026-08-08 and the suite has grown 24 fixtures since)
-# NOTE: these figures are MEASURED (2026-08-08, re-measured while closing bd xzdx), not estimated, and they go stale
-# on every fixture batch — if yours disagree, re-measure and update rather than
-# trusting the doc. Budget command timeouts from the wall time, NOT from a guess:
-# a run that looks hung at 60s is almost certainly just running. Measure it
-# UNCONTENDED: a background clangd or a parallel review workflow has pushed the
-# same green run to 1427s, and contention causes false FAILURES (never false
-# passes), so never quote a contended run as either the cost or a regression.
-cmake --build build && ctest --test-dir build --output-on-failure
+# Full suite (252 ctest entries). RUN IT PARALLEL — `-j` is the default, not an
+# optimization. MEASURED 228s at -j6, 252/252 pass (2026-08-13), down from 825s
+# serial: 3.6x. Three independent changes got that, all verified green:
+#   -j6 itself                825 -> 349s  (the whole win is scheduling)
+#   lit opt-spawn dedup       -> lit 143 -> 104s wall / 925 -> 671s CPU
+#   python shim bypass        -> stage 2b 0.39 -> 0.145s per slice
+# -j scaling, all 252/252: -j4 322s · -j6 265-349s · -j8 284s · -j12 308-341s.
+# -j6 is the pick; -j12 oversubscribes (6 physical / 12 logical cores) AND
+# ir-pass-lit already forks 12 lit workers internally, so -j6 is ~17-way
+# concurrent already. Do NOT compare a -j figure to the historical serial ones.
+# The suite is embarrassingly parallel by construction — every slice works in
+# its own `mktemp -d`, every lit fixture on `%t`, every python gate in a
+# TemporaryDirectory; there are ZERO RUN_SERIAL / FIXTURES_* / RESOURCE_LOCK
+# properties in the tree, and 10+ full parallel runs have never failed.
+# Use -j1 ONLY to isolate a suspected flake. Contention causes false FAILURES,
+# never false passes (a parallel run cannot hide a miscompile), so the rule is:
+# re-run any -j failure serially BEFORE calling it a regression.
+# NOTE: these figures are MEASURED, not estimated, and they go stale on every
+# fixture batch — if yours disagree, re-measure and update rather than trusting
+# the doc. Budget command timeouts from the wall time, NOT from a guess: a run
+# that looks hung at 60s is almost certainly just running. Parallel figures are
+# NOT comparable to the historical serial 825s / 1427s numbers.
+cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 990 *.ll fixtures (989 pass + 1 XFAIL: Phase-7 tracker); MEASURED 114s uncontended 2026-08-09
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1027 *.ll fixtures (1026 pass + 1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker). NO -j here: it is a single entry that already forks 12 lit workers itself. MEASURED 104s — still the suite's long pole and its Amdahl floor (~45% of a -j6 wall). It is SPAWN-bound, not work-bound: `opt` costs 0.44s of libLLVM.dylib startup and ~0.02s of actual work, so fixture COUNT is nearly free and opt INVOCATIONS are not. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do not re-run the pass per prefix.
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -R '^e2e-'      --output-on-failure   # 240 entries (238 slices = 218 single + 20 multi, + free-pairing selftest + keepset vendor check) — the only layer that LINKS
-ctest --test-dir build -R runtime      --output-on-failure   # 7 entries — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
+ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 243 entries (240 slices = 220 single + 20 multi, + free-pairing selftest, fixture-guard-liveness, keepset vendor check) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min.
+ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
 
 # One fixture (lit --filter matches the test display name)
 cd build && lit -v ir-pass/test --filter 'lowering_basic'

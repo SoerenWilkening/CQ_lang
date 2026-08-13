@@ -31,12 +31,11 @@
 ; arm-kill — widen `declineAddressTakenBlocks` from the doomed-block set to the
 ; whole function and this fixture goes red.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; The region still flattens (no `br i1` / `select i1` survives) …
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
-; RUN:   | %filecheck %s --check-prefix=FLAT \
-; RUN:       --implicit-check-not='br i1' --implicit-check-not='select i1'
+; RUN: %filecheck %s --check-prefix=FLAT  --implicit-check-not='br i1' --implicit-check-not='select i1' < %t.cqd0.ll
 ; FLAT: define i32 @probe
 ;
 ; … and the address is intact in BOTH the forward gate and the adjoint — never
@@ -47,7 +46,7 @@
 ;
 ; A `*-NOT`-only prefix so it scans the WHOLE input rather than only from the last
 ; CHECK match to EOF: the corrupted form must appear nowhere at all.
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOCORRUPT
+; RUN: %filecheck %s --check-prefix=NOCORRUPT < %t.cqd0.ll
 ; NOCORRUPT-NOT: cq_template_icmp_sgt_i32_hl(i32 %h, i32 1)
 ; NOCORRUPT-NOT: store ptr inttoptr
 

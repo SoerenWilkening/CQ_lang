@@ -4,8 +4,9 @@
 ; unary data op; the template is `(i32)->i32` (the handle's SSA type stays i32,
 ; the ABI width selects the symbol).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f16(half 0xH4000)
 ; CHECK:     call i32 @cq_template_fneg_f16(i32 %{{[a-zA-Z0-9_.]+}})

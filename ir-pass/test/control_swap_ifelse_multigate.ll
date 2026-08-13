@@ -12,10 +12,11 @@
 ; collapses q); and ZERO controlled gates / copies (method-B copy on a PHASE arm
 ; dephases the answer — verified P0 0.585->0.500), NO surviving data mux.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ; Independent EXACT free-count scan (§8.2): three cqrt_free and no fourth anywhere.
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
+; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

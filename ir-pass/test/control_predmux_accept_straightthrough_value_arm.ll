@@ -47,10 +47,9 @@
 ; same program with the same branch and only the phi order swapped, and they mint
 ; opposite predicates with opposite copy order.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s \
-; RUN:  --implicit-check-not='br i1' --implicit-check-not='phi i32' \
-; RUN:  --implicit-check-not='cqrt_rz' --implicit-check-not='cqrt_cswap'
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s  --implicit-check-not='br i1' --implicit-check-not='phi i32'  --implicit-check-not='cqrt_rz' --implicit-check-not='cqrt_cswap' < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 

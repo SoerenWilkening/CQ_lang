@@ -14,8 +14,9 @@
 ; WI-3 lands NestedRouteEmit — the proven nest now LOWERS to the §5g routed
 ; stream below (XFAIL removed at WI-3 XPASS).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -77,11 +78,11 @@ merge:
 ; measurement collapsing q, invisible to `opt -verify`. (It does not by itself
 ; exclude a strip hoisted BEFORE the inner route-back — that distinct misorder is
 ; caught by the main block's inner-route-back→free-rail2→strip ordering.)
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=ORD
+; RUN: %filecheck %s --check-prefix=ORD < %t.cqd0.ll
 ; ORD:     call void @cq_template_icmp_slt_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{.*}}, i32 9)
 ; ORD:     call void @cqrt_cswap(i32 %{{.*}}, i32 %{{.*}}, i32 %{{.*}})
 
 ; Exactly four frees (rail2, %f2, rail1, %f1) — no fifth from uncompute.
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
+; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ; CNT-COUNT-4: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(

@@ -5,8 +5,9 @@
 ; both fwd and `_unc` use the same total f, so the rail zeroes correctly; poison-
 ; on-INT_MIN is a valid refinement of the source UB). Width i8 from the result.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_i8(i8 %u)
 ; CHECK:     call i32 @cq_template_abs_i8(i32 %{{[a-zA-Z0-9_.]+}})

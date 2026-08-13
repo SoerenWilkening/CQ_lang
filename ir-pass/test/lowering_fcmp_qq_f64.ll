@@ -6,8 +6,9 @@
 ; `fcmp` (the fp predicate range), not `icmp`; (3) `compareInScope` admits the
 ; in-scope `olt` predicate on the QQ path exactly as it does on HL.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f64(double 2.000000e+00)
 ; CHECK:     call i32 @cqrt_alloc_f64(double 3.000000e+00)

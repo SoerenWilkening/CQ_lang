@@ -4,8 +4,9 @@
 ; commutative (carries qq+hl, no lh) — contrast usub.sat which adds the lh shape.
 ; The op-name underscores the LLVM dotted id (uadd.sat -> uadd_sat).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cq_template_uadd_sat_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 9)
 ; CHECK-NOT: @llvm.uadd.sat

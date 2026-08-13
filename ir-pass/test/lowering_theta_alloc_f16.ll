@@ -5,8 +5,9 @@
 ; the verify RUN line). f16 rides the same width-parametric rotation path as
 ; f32/f64; abiWidthFromType maps `half` → "f16" (isHalfTy, NOT bfloat).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f16(half 0xH3C00)
 ; CHECK:     call void @cqrt_ry_f16(i32 %{{[a-zA-Z0-9_.]+}}, double

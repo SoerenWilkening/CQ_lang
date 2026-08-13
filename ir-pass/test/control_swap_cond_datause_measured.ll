@@ -10,9 +10,10 @@
 ; free. (This is the shape the flat 4.1 path declined as "condition used outside
 ; the branch"; ziov upgrades that decline to a correct shared-flag accept.)
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

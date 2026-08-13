@@ -5,8 +5,9 @@
 ; Proves the whole reversible-fp width set {f16,f32,f64,f80} rides the same ABI;
 ; f80 is the widest and the census-critical one.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare x86_fp80 @cq_theta_f80(x86_fp80, double)
 declare x86_fp80 @cq_measure_f80(x86_fp80)
 

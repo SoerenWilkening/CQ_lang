@@ -6,8 +6,9 @@
 ; the select condition stays an and/or-over-fcmp-leaves tree (kjd1 fcmp flag
 ; mints); the fp data merge rides the kjd1 controlled-copy family.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare double @cq_theta_f64(double, double)
 declare i64 @cq_measure_sl(i64)
 

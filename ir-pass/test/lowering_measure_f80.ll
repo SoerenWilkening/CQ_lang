@@ -4,8 +4,9 @@
 ; on x86-64 (unlike the deferred i128, whose C ABI shreds to {i64,i64}): the
 ; runtime returns x86_fp80 (trace-only 0). Proves cqrt_alloc_f80 + cqrt_measure_f80.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f80(x86_fp80 %u0)
 ; CHECK:     call x86_fp80 @cqrt_measure_f80(i32 %{{[a-zA-Z0-9_.]+}})

@@ -27,14 +27,15 @@
 ; GREEN ON BOTH plugins by design, so absent from the differential; its power is
 ; arm-kill — drop the `use_empty()` test and it goes red.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; The real address, intact — never the `i32 1` placeholder:
 ; CHECK: store ptr blockaddress(@helper, %then), ptr @slot
 ; The clone still gets lowered rather than declined:
 ; CHECK: define internal i32 @__cq_q_helper_1
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOCORRUPT
+; RUN: %filecheck %s --check-prefix=NOCORRUPT < %t.cqd0.ll
 ; NOCORRUPT-NOT: inttoptr (i32 1 to ptr)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"

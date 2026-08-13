@@ -9,8 +9,9 @@
 ; and lowers to cq_template_fptosi_f64_to_i32. (The same handle-width invariant
 ; every other producer — theta / arith / cast — already upholds.)
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f64(double
 ; CHECK:     call i32 @cqrt_alloc_f64(double 0.000000e+00)

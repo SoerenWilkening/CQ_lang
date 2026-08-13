@@ -13,8 +13,9 @@
 ; sequence, so it is NOT a keep and stays a declining library cell (bd 3c6m.56 /
 ; 3c6m.57 frem-inversion). The e2e proofs are tests/e2e/slice_libm_keep_*.c.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cq_template_rint_f80(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     call i32 @cq_template_nearbyint_f80(i32 %{{[a-zA-Z0-9_.]+}})

@@ -20,6 +20,25 @@ set(_E2E_LLVM_LINK "${LLVM_TOOLS_BINARY_DIR}/llvm-link")
 # tools/gen_templates.py, so a missing interpreter is a hard configure error.
 find_program(_E2E_PYTHON NAMES python3 python REQUIRED)
 
+# ...and then resolve THROUGH it to the real interpreter. `python3` on PATH is
+# very often a version-manager SHIM (pyenv/asdf/rbenv-style): a bash script that
+# re-execs `pyenv exec`, which on this machine costs ~0.25s of pure shell
+# version-resolution BEFORE CPython even starts — MEASURED 0.39s via the shim vs
+# 0.145s via the interpreter it selects, 8 interleaved reps, on a real lowered
+# .ll. Stage 2b runs once per e2e entry, so that is ~60s of CPU spent on shell
+# bookkeeping across the layer. `sys.executable` is exactly the interpreter the
+# shim would have chosen, so this changes WHICH BINARY IS SPAWNED and nothing
+# else — same interpreter, same version, same site config. Guarded: if the probe
+# fails or names a path that is not there, keep whatever find_program resolved.
+execute_process(
+  COMMAND "${_E2E_PYTHON}" -c "import sys; sys.stdout.write(sys.executable)"
+  OUTPUT_VARIABLE _E2E_PYTHON_REAL
+  ERROR_QUIET)
+if(_E2E_PYTHON_REAL AND EXISTS "${_E2E_PYTHON_REAL}")
+  message(STATUS "cq e2e: python ${_E2E_PYTHON} -> ${_E2E_PYTHON_REAL}")
+  set(_E2E_PYTHON "${_E2E_PYTHON_REAL}")
+endif()
+
 # Phase 2 canonical slice: theta -> add_hl -> measure.
 add_test(NAME e2e-slice-theta-add-measure
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"

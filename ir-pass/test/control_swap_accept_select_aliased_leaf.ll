@@ -27,8 +27,9 @@
 ; control_swap_accept_select_rail_alias_cond.ll — do not infer coverage from the
 ; diagnostic string, which named the wrong owner in the pre-revert drafts.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOCASEB
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOCASEB < %t.cqd0.ll
 ;
 ; CASE A, pinned verbatim — the aliasing is confined to the READ slots of a gate
 ; whose OUT rail (%h_cmp) is freshly minted by `lowerCompareToFlag`. Arm polarity

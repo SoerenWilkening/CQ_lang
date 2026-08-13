@@ -10,8 +10,9 @@
 ; gep's trailing operand at emit time. Both tables get their own array handle;
 ; the outer load's index is the INNER load's new handle.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 @tbl1 = internal constant [4 x i32] [i32 0, i32 1, i32 2, i32 3]
 @tbl2 = internal constant [4 x i32] [i32 7, i32 6, i32 5, i32 4]
 declare i32 @cq_theta_si32(i32, double)

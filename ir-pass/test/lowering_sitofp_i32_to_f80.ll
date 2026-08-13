@@ -9,8 +9,9 @@
 ; cast body; the f128 c_type hazard categorically cannot reach casts. RE-PINNED
 ; from lowering_reject_sitofp_i32_to_f80.ll (Rule 12 baseline flip).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_i32(i32 5)
 ; CHECK:     call i32 @cq_template_sitofp_i32_to_f80(i32 %{{[a-zA-Z0-9_.]+}})

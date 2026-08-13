@@ -10,8 +10,9 @@
 ; `cqrt_qram_load_f64_unc` (out-first, un-copies the dead value rail using the
 ; preserved cell) then the value rail is freed clean.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 
 @T = internal unnamed_addr constant [4 x double] [double 1.500000e+00, double 2.500000e+00, double 3.500000e+00, double 4.500000e+00], align 16
 

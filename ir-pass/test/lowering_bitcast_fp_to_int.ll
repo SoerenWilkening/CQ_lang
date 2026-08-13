@@ -8,8 +8,9 @@
 ; the f64-as-angle hazard that motivated the old decline is now owned by the
 ; authoritative angle guard (see lowering_reject_bitcast_angle.ll).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f64(double 5.000000e-01)
 ; CHECK:     call i32 @cq_template_bitcast_f64_to_i64(i32 %{{[a-zA-Z0-9_.]+}})

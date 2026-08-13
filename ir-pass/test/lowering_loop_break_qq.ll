@@ -43,8 +43,9 @@
 ; FileCheck reads); a regression to a loud decline is still caught — the positive
 ; CHECKs above fail on the empty stdout `opt` then emits.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=PLEAK
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=PLEAK < %t.cqd0.ll
 ;
 ; --- the rail (%h1) + the second qubit p (%h), bound at their alloc points ---
 ; CHECK: %[[P:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)

@@ -17,8 +17,9 @@
 ; exit phi's every incoming peels to the mint's rail). Without the exit-phi
 ; collapse this would still decline at `declineClassicalMuxes` (kMsgClassicalPhi).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; Mint + Ry in the preheader (entry), in place; the classical zero-trip guard is
 ; UNTOUCHED (a classical condition over `%n`):

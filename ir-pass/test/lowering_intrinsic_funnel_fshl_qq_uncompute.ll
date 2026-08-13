@@ -9,8 +9,9 @@
 ; Sources are kept live through the forward pass and uncomputed in strict reverse
 ; program order; every rail is freed only after being returned to |0> (Rule 6/8).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; Forward: alloc both, forward funnel producer, phase-arm Rz.
 ; CHECK:     %[[HA:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)

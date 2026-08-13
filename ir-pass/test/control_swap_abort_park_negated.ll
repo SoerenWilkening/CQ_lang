@@ -6,8 +6,9 @@
 ; aborted), not its complement. The bracket SPAN is verify-clean-invisible (a
 ; mis-span commits on the wrong basis branch), so it is pinned by an ORDERED CHECK.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 
 ; The park cswap is X-bracketed (fires on ¬flag = the abort branch)...
 ; CHECK: %[[FLAG:.+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:.+]], i32 5)

@@ -94,8 +94,9 @@
 ;     `declare i32 @cq_theta_si32`, so its absence from the whole lowered module,
 ;     declares included, is the intrinsic-erasure lock.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; Forward chain: theta -> alloc + ry, the widening cast, then the two i64 shifts.
 ; The classical shift amounts stay i64; every handle is i32. The alloc is the only

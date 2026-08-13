@@ -105,6 +105,17 @@ add_test(NAME runtime_link_smoke COMMAND cq_link_smoke)
 # silently vacuous — which is why emit_smoke gives the table EXTERNAL linkage.
 find_program(_RT_PYTHON NAMES python3 python REQUIRED)
 
+# Resolve through a version-manager shim to the real interpreter — see the
+# matching block in tests/e2e/CMakeLists.txt for the measurement and rationale.
+# Far fewer entries here (4) than in e2e, so this is consistency, not savings.
+execute_process(
+  COMMAND "${_RT_PYTHON}" -c "import sys; sys.stdout.write(sys.executable)"
+  OUTPUT_VARIABLE _RT_PYTHON_REAL
+  ERROR_QUIET)
+if(_RT_PYTHON_REAL AND EXISTS "${_RT_PYTHON_REAL}")
+  set(_RT_PYTHON "${_RT_PYTHON_REAL}")
+endif()
+
 add_test(
     NAME runtime_link_smoke_selftest
     COMMAND ${_RT_PYTHON} ${CMAKE_SOURCE_DIR}/tools/link_smoke_selftest.py

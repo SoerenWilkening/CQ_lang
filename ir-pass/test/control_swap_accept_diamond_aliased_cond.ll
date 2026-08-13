@@ -26,8 +26,9 @@
 ; pre-revert decline was the SPECIALIZATION diagnostic, not a control one — a
 ; diagnostic string does NOT identify which fence owns a decline.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOCASEB
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOCASEB < %t.cqd0.ll
 ;
 ; The diamond is flattened and the aliased leaf mints CASE A — aliased READ slots,
 ; FRESH out rail (%h_cmp):

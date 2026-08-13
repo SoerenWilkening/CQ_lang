@@ -23,8 +23,9 @@
 ; operand-order regression; only an asymmetric predicate (slt/ult/…) pins it. `p` is
 ; loop-INVARIANT and left allocated (Rule 6, see lowering_loop_break_qq.ll).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=PLEAK
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=PLEAK < %t.cqd0.ll
 ;
 ; --- the rail (%h1) + the second qubit p (%h), bound at their alloc points ---
 ; CHECK: %[[P:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)

@@ -13,8 +13,9 @@
 ; never i1) flows straight to `cq_measure_i1` → `cqrt_measure_i1`, which
 ; launders the cross-type i1→i32 RAUW; the second RUN line guards it (risk R2).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_i32(i32 9)
 ; CHECK:     call i32 @cqrt_alloc_i32(i32 4)

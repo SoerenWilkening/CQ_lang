@@ -26,11 +26,9 @@
 ; The negative half is a GLOBAL implicit-check-not: the claim is that NO
 ; poison-generating return attribute survives anywhere in the output, and a
 ; positional CHECK-NOT would only cover the span between two CHECKs.
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s \
-; RUN:  --implicit-check-not='br i1' --implicit-check-not='select i1' \
-; RUN:  --implicit-check-not='range('
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
-; RUN:  | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s  --implicit-check-not='br i1' --implicit-check-not='select i1'  --implicit-check-not='range(' < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"

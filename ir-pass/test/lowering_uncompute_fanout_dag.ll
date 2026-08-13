@@ -14,10 +14,11 @@
 ; after `add_unc(h1,h)` (its own producer's adjoint, emitted last among its
 ; reverse-touches) — never before a sibling's adjoint still reads it.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=UNC
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=FRE
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=UNC < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FRE < %t.cqd0.ll
 ;
 ; Forward DAG (theta root, then the fan-out):
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)

@@ -8,8 +8,9 @@
 ; a power-of-two check (the surviving decline
 ; lowering_reject_qram_read_under_control_nonpow2*.ll is the UNprovable twin).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 @t3 = internal unnamed_addr constant [3 x double] [double 1.0, double 2.0, double 3.0]
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)

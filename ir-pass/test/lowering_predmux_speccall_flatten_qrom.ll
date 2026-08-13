@@ -17,8 +17,9 @@
 ; `lowerQramReads(inBennettClone=true)`), and the 4.4 copy merge selects the
 ; result under the compound edge predicate.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 @T = internal unnamed_addr constant [4 x i32] [i32 11, i32 22, i32 33, i32 44], align 16
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

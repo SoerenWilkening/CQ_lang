@@ -19,8 +19,9 @@
 ; OPERATION, which would free a dirty rail = a hidden measurement, Rule 6/8). The
 ; `cqrt_free` targets the recovered ROOT (`h0`), now |0> after the un-rotation.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; Forward chain (theta → alloc + ry, then the two reassignments):
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H0:[a-zA-Z0-9_.]+]], double 2.500000e-01)

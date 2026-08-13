@@ -42,7 +42,8 @@
 ; conclude from its absence in the differential that it pins nothing (bd memory
 ; [[predmux-decline-fixture-discrimination]] trap 1).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; The `undef` survives verbatim into the seed slot — pinned, because a future
 ; normalise-to-zero would change the committed golden of the real slice:
@@ -62,7 +63,7 @@
 ; plain CHECK-NOT scans only from the last CHECK match to EOF, so it would have
 ; been blind to a `cqrt_free(%selop)` emitted ABOVE the flag free (bd memory
 ; [[predmux-decline-fixture-discrimination]] trap 3's sibling).
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOSELOPFREE
+; RUN: %filecheck %s --check-prefix=NOSELOPFREE < %t.cqd0.ll
 ; NOSELOPFREE-NOT: cqrt_free(i32 %selop)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"

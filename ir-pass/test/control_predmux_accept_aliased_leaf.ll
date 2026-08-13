@@ -33,8 +33,9 @@
 ; The Rule-9 branch-polarity warning is real too, but it is a separate fact about
 ; the `.c` ship floor; do not conflate the two stages.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOCASEB
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOCASEB < %t.cqd0.ll
 ;
 ; CASE A, pinned — note the inverted predicate:
 ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %u0)

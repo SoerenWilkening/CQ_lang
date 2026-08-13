@@ -26,8 +26,9 @@
 ; ArmClassify fence and by the SelectClassify fence, NOT by the PredMux one. Full
 ; matrix in control_swap_accept_select_rail_alias_cond.ll.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOCASEB
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOCASEB < %t.cqd0.ll
 ;
 ; CASE A, pinned — aliased READ slots, FRESH out rail:
 ; CHECK: %h_cast = call i32 @cq_template_sitofp_i32_to_f64(i32 %{{[a-z0-9]+}})

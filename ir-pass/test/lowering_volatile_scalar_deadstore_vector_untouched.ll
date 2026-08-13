@@ -21,8 +21,9 @@
 ; `<2 x double>`), so a scalar assumption silently applied to a vector is a
 ; recorded failure mode here, not a hypothetical.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare float @cq_theta_f32(float, double)
 declare float @cq_measure_f32(float)
 

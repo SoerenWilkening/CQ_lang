@@ -6,8 +6,9 @@
 ; SwitchValueEmit recording HandleWidth[out]="i64", the trunc reads the laundered
 ; i32 and over-declines; with the fix it lowers to cq_template_trunc_i64_to_i32.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=INPUT < %s
 ;
 ; CHECK:     call i32 @cq_template_trunc_i64_to_i32(i32 %{{[a-zA-Z0-9_.]+}})

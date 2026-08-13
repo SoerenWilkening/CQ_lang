@@ -4,8 +4,9 @@
 ; `cq_template_fshr_i32_hl(handle, i32 7)`. Distinct adjoint from fshl
 ; ((fshr by n)⁻¹ = rotate-left by n) — both directions are curated.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cq_template_fshr_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
 ; CHECK-NOT: @llvm.fshr

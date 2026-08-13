@@ -35,8 +35,9 @@
 ; the poison-shielded `select i1 %4, i1 %5, i1 false` short-circuit form, which is
 ; off the `and i1`/`or i1` grammar and declines. MEASURED — do not assume `&&`.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOCASEB
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOCASEB < %t.cqd0.ll
 ;
 ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %{{[a-z0-9]+}})
 ; CHECK: call void @cqrt_rz_i32(i32 %h, double 2.500000e-01)

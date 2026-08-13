@@ -8,8 +8,9 @@
 ; sxuk method-B copy-out fires (copy to a kept carrier, then the local array's
 ; load+store uncompute). NO measurement inserted beyond the user's (Rule 5).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

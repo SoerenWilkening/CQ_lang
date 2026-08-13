@@ -13,8 +13,9 @@
 ; result type is read at phase-1 before the trunc itself lowers), then the
 ; `zext i8 -> i32` under test records cw.To = i32 on its result handle.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cq_template_trunc_i32_to_i8(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     call i32 @cq_template_zext_i8_to_i32(i32 %{{[a-zA-Z0-9_.]+}})

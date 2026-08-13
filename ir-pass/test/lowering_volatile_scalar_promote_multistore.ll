@@ -12,8 +12,9 @@
 ; order-respecting value (0x3E00.., the last store — NOT the first store 0x41F0..,
 ; which a buggy fold would pick) proves promotion, not a mis-fold.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)
 

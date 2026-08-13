@@ -16,10 +16,11 @@
 ; `unreachable` are erased; the graveyard + flag are KEPT, NEVER `cqrt_free`'d (a
 ; parked entangled rail freed dirty is a hidden measurement, Rule 6).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOFREE
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREE < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 
 ; The ORDERED park stream (order IS the contract — a reordered cswap/record is
 ; trace-plausible yet wrong; mint-before-park is load-bearing so the flag reads q0).

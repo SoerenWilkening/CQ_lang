@@ -81,9 +81,10 @@
 ; textually distinguishable, and they are reversed in REVERSE allocation order —
 ; q2 before q1 — the same LIFO discipline one level out; that order is pinned too.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ;
 ; The CHECK-LABEL + unbroken CHECK-NEXT chain below seals the WHOLE function body,
 ; from `entry:` to the last free, against any inserted instruction — including the

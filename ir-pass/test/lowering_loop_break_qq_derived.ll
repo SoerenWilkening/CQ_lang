@@ -33,8 +33,9 @@
 ; xor — that rides the E8 `kMsgBreakUnemittable` decline (over-declining is safe),
 ; not this accept.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=PLEAK
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=PLEAK < %t.cqd0.ll
 ;
 ; --- p0 minted, THEN the pre-loop deriving add p = p0 + 5 (out-of-place template) -
 ; CHECK: %[[P0:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)

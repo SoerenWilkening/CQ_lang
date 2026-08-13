@@ -12,8 +12,9 @@
 ; lowering_reject_qram_read_under_control_nonpow2.ll (bounds) and the
 ; _nonconst/_wide/_cohescape family (shape/width/no-cloning).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 @switch.table.example = private unnamed_addr constant [4 x i32] [i32 7, i32 9, i32 11, i32 13]
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

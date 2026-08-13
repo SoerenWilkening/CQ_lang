@@ -7,8 +7,9 @@
 ; f16->f32 widen is in scope; the reverse narrow is an `fptrunc`, not `fpext`
 ; (a literal `fpext float to half` is malformed IR the verifier rejects).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f16(half 0xH3C00)
 ; CHECK:     call i32 @cq_template_fpext_f16_to_f32(i32 %{{[a-zA-Z0-9_.]+}})

@@ -32,7 +32,8 @@
 ; GREEN ON BOTH plugins by design, so absent from the differential; its power is
 ; arm-kill — restore module-wide counting and it goes red.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; One undef-seeded rail per function, and neither is freed:
 ; CHECK-LABEL: define double @cell_a
@@ -40,7 +41,7 @@
 ; CHECK-LABEL: define double @cell_b
 ; CHECK: %selop = call i32 @cqrt_alloc_f64(double undef)
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOSELOPFREE
+; RUN: %filecheck %s --check-prefix=NOSELOPFREE < %t.cqd0.ll
 ; NOSELOPFREE-NOT: cqrt_free(i32 %selop)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"

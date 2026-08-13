@@ -18,8 +18,9 @@
 ; `declineStaleRecordOps` (runs BEFORE this guard; WireWalk finds the arm
 ; theta forward of the base).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; One allocation only (the chained theta must NOT mint a second register):
 ; CHECK:      call i32 @cqrt_alloc_i32(i32 7)

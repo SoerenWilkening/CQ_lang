@@ -11,8 +11,9 @@
 ; so the trunc lowers in the round-2 repropagateControlMerges re-seed — proving the
 ; recorded width persists across the second pass.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=INPUT < %s
 ;
 ; CHECK:     call void @cqrt_copy_i64_controlled(

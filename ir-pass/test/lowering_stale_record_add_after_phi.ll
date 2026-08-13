@@ -10,8 +10,9 @@
 ; (WireWalk::findNonDiagonalWireGate) walks THROUGH diagonal gates and must
 ; not decline this shape.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:      %[[H:.*]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double %g)

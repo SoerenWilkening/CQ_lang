@@ -20,8 +20,9 @@
 ; src, lit) — recompute-and-XOR from the live source, exactly like any `and` (the
 ; _unc-shape proof the D5 follow-up requires; no masking-specific uncompute code).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i64 @cq_theta_sll(i64, double)
 declare i64 @cq_measure_sll(i64)
 declare i64 @cq_phi_sll(i64, double)

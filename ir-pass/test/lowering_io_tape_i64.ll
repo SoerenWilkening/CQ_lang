@@ -10,9 +10,10 @@
 ; lowering_io_tape_printf_i32.ll for the full algebra and for why the adjoint stays;
 ; the point HERE is only that the freeze does not accidentally key on i32.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOFREE
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREE < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i64 @cq_theta_sll(i64, double)
 declare i32 @printf(ptr, ...)
 @.str = private constant [5 x i8] c"%lld\00"

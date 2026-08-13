@@ -5,8 +5,9 @@
 ; (a1 shape; handle is i32 on both sides). Result is i64, so the sink is the i64
 ; measure. Covers lrintl/llrintl/lroundl/llroundl.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f80(x86_fp80 %u0)
 ; CHECK:     call i32 @cq_template_lrint_f80_to_i64(i32 %{{[a-zA-Z0-9_.]+}})

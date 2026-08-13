@@ -20,8 +20,9 @@
 ; against it — so gg's mask is re-widened 0b10 -> 0b11 and the driver clones `@__cq_q_gg_11`
 ; with a bare-QQ `cq_template_mul_i32` over TWO quantum handles (%out2 read as a HANDLE).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

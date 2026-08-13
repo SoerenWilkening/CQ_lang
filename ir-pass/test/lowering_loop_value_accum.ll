@@ -14,9 +14,10 @@
 ; zero-trip/exit merge phi collapse to the one rail, ZERO uncompute, ZERO frees.
 ; Bennett.jl's in-place adder (src/adder.jl): the result OVERWRITES the rail.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CLEAN
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=CLEAN < %t.cqd0.ll
 ;
 ; Mint + Ry in the preheader, in place; the classical zero-trip guard is UNTOUCHED:
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{.*}})

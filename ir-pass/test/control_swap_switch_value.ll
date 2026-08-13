@@ -16,19 +16,20 @@
 ; routed), and the flag frees. EXACTLY FOUR frees (2 rails + 2 flags); %p (restored
 ; to p0) and %out (the result) are NEVER freed (either free is a hidden measurement).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ; Independent EXACT free-count scan (§8 probe): four cqrt_free, no fifth anywhere.
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
+; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ; Accept (no decline anywhere).
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=ACC
+; RUN: %filecheck %s --check-prefix=ACC < %t.cqd0.ll
 ; Whole-output stray-x scan (WI-7 §8.2 lit-robustness, 4.4 XCT precedent): the
 ; value emitter is positive-polarity (NO ¬-bracket) — ZERO cqrt_x anywhere. The
 ; default ordered CHECK's CHECK-NOT block only scans post-measure, so a stray
 ; cqrt_x BEFORE the measure (swapped operands / dirty flag, an identical-multiset
 ; miscompile) would slip the default prefix; this independent whole-file scan
 ; closes it at the lit layer (was e2e-only).
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=XCT
+; RUN: %filecheck %s --check-prefix=XCT < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %p0) {

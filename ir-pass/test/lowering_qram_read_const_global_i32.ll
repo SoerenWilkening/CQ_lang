@@ -11,8 +11,9 @@
 ; coherent return is loud-declined: lowering_reject_qram_read_coherent_return.ll). NO
 ; measurement is inserted (Rule 5); no `getelementptr`/`load` survives.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 @tbl = internal unnamed_addr constant [8 x i32] [i32 3, i32 1, i32 4, i32 1, i32 5, i32 9, i32 2, i32 6]
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

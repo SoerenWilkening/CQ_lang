@@ -2,8 +2,9 @@
 ; gate-triggered allocation + Ry (and the §1 cross-type-RAUW invariant via the verify RUN
 ; line — the double theta result is RAUW'd to the i32 alloc handle).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f64(double 9.900000e+01)
 ; CHECK:     call void @cqrt_ry_f64(i32 %{{[a-zA-Z0-9_.]+}}, double

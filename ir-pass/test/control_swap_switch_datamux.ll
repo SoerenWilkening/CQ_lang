@@ -22,16 +22,17 @@
 ; detection `declineTaintEscapes` gep/load decline.) WI-1 reached the would-be-ACCEPT
 ; and fired the TRANSITIONAL "switch" decline; WI-4 graduates: push + emit + flatten.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=CNT
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=ORD
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=ORD < %t.cqd0.ll
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
 ; Whole-output stray-x/-cswap scan (WI-7 §8.2 lit-robustness): the §4C recipe is a
 ; preload + XOR-delta controlled copy — NO route cswap, NO ¬-bracket cqrt_x. The
 ; default CHECK-NOT block scans only post-measure; this independent whole-file scan
 ; also rejects a stray x/cswap BEFORE the measure (an identical-multiset miscompile).
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=XCT
+; RUN: %filecheck %s --check-prefix=XCT < %t.cqd0.ll
 ; The fixture exercises the real switch path (not the jump-table gep/load decline):
 ; RUN: %filecheck %s --check-prefix=INPUT < %s
 declare i32 @cq_theta_si32(i32, double)

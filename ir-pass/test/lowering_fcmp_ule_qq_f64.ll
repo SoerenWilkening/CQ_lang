@@ -4,8 +4,9 @@
 ; `cq_template_fcmp_ule_f64(i32, i32)` (logical width f64 recovered from
 ; `HandleWidth` at each `cq_theta_f64` mint).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f64(double 2.000000e+00)
 ; CHECK:     call i32 @cqrt_alloc_f64(double 3.000000e+00)

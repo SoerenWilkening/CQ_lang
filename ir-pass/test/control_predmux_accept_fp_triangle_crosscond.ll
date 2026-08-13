@@ -16,9 +16,9 @@
 ; guarantee the old pin protected is untouched — only the `_controlled` family
 ; fires).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s \
-; RUN:  --implicit-check-not='br i1' --implicit-check-not='phi double' --implicit-check-not='call i32 @cqrt_copy_f64('
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s  --implicit-check-not='br i1' --implicit-check-not='phi double' --implicit-check-not='call i32 @cqrt_copy_f64(' < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)

@@ -3,8 +3,9 @@
 ; `cq_template_uitofp_i32_to_f80(handle)`. uitofp INCLUDES i1 (unlike sitofp);
 ; i32 is a representative width. Companion to lowering_sitofp_i32_to_f80.ll.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cq_template_uitofp_i32_to_f80(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     call x86_fp80 @cqrt_measure_f80(i32 %{{[a-zA-Z0-9_.]+}})

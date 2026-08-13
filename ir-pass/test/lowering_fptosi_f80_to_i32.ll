@@ -3,8 +3,9 @@
 ; lowers to `cq_template_fptosi_f80_to_i32(handle)`. Mirror of the int→f80
 ; direction; the f80 SOURCE is tainted via cq_theta_f80.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f80(
 ; CHECK:     call i32 @cq_template_fptosi_f80_to_i32(i32 %{{[a-zA-Z0-9_.]+}})

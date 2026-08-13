@@ -10,8 +10,9 @@
 ; `@__cq_q_inner_1_unc`, reversed inside the outer Bennett wrap. This proves the re-plan
 ; needs NO new transitive code — updating the top mask is consumed by the 6.3 recursion.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

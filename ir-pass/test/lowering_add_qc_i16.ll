@@ -2,8 +2,9 @@
 ; One theta handle + one i16 literal flow through `add i16` and lower
 ; to `cq_template_add_i16_hl(handle, classical)`.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_i16(i16 21)
 ; CHECK:     call i32 @cq_template_add_i16_hl(i32 %{{[a-zA-Z0-9_.]+}}, i16 100)

@@ -7,8 +7,9 @@
 ; token (exactly like the binary QQ form, so its `_unc` twin attaches to the bare
 ; base). The `op` stem is `fma` for BOTH llvm.fma and llvm.fmuladd.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f64(double %u)
 ; CHECK:     call i32 @cqrt_alloc_f64(double %v)

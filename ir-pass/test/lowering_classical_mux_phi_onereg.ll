@@ -30,8 +30,9 @@
 ; phi_crossblock_chain (pre-branch gate), phi_loop (back-edge staleness),
 ; and the pinned wi5 mixed-incoming fixtures (phi_measured et al.).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; Mint + Ry in entry:
 ; CHECK:      call i32 @cqrt_alloc_i32(i32 7)

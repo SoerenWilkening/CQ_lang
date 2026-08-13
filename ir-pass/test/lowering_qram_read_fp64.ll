@@ -8,8 +8,9 @@
 ; which PERMANENTLY declined a double cell — 38t2 lifts that fence for cells while the
 ; angle fence stays: see lowering_reject_math_result_as_fp_cell_angle.ll.)
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 @tblf = internal unnamed_addr constant [4 x double] [double 1.0, double 2.0, double 3.0, double 4.0]
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)

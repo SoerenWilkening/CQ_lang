@@ -5,8 +5,9 @@
 ; the `HandleWidth` side-table at each `cq_theta_f32` mint, Increment-A reader),
 ; and `compareInScope` admits `ueq` on the QQ path exactly as on HL.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f32(float 2.000000e+00)
 ; CHECK:     call i32 @cqrt_alloc_f32(float 3.000000e+00)

@@ -30,8 +30,9 @@
 ; `cqrt_measure_i32`); the second RUN line GUARDS the cross-type RAUWs
 ; (risk R2).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK:     call i32 @cq_template_trunc_i32_to_i8(i32 %{{[a-zA-Z0-9_.]+}})

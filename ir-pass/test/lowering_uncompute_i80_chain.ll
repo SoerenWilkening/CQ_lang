@@ -91,8 +91,9 @@
 ; `__int128` because C has no 80-bit integer — identical to the `and_i80_hl_unc`
 ; shape that the surviving goldens link and run today.)
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; The lowered body is ONE contiguous stream — verified against the real lowered
 ; output, not assumed — so every directive after the anchor is a `-NEXT` form, and

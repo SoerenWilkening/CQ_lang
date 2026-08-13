@@ -88,8 +88,9 @@
 ; The end-to-end witness (link + run + trace + the Rule-6 free-pairing gate) is
 ; tests/e2e/slice_select_rail_alias_cond.c.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s --check-prefix=NOCASEB
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOCASEB < %t.cqd0.ll
 ;
 ; The aliased CASE A mint is the point — pin it verbatim so a re-added fence
 ; cannot pass:

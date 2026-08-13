@@ -2,8 +2,9 @@
 ; One theta handle + one float literal flow through `fadd float` and lower
 ; to `cq_template_fadd_f32_hl(handle, classical)`.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %cq-opt -passes=verify -disable-output -
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %cq-opt -passes=verify -disable-output - < %t.cqd0.ll
 ;
 ; CHECK:     call i32 @cqrt_alloc_f32(float 1.500000e+00)
 ; CHECK:     call i32 @cq_template_fadd_f32_hl(i32 %{{[a-zA-Z0-9_.]+}}, float 4.500000e+00)
