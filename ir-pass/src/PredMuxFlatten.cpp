@@ -57,6 +57,7 @@
 
 #include "Fp80Union.h"      // foldConstantConesInFunction (adia fold residue)
 #include "IntrinsicLowering.h"
+#include "PoisonFacts.h"  // curatedIntrinsicCanBePoison (lifted, bd s6ao)
 #include "LiteralIntegrity.h"  // valueCarriesUndef (lifted); declineAddressTakenBlocks
 #include "OpcodeSupport.h"  // abiWidthFromType, binaryStem, castInScope, i80BinaryInScope
 #include "QramLowering.h"
@@ -192,18 +193,17 @@ bool isSupportedCompareLeaf(const CmpInst *Cmp) {
 // (which return NaN, never poison). See `intrinsicStem` in IntrinsicLowering.cpp
 // for the authoritative set — these two lists are coupled with nothing
 // mechanical holding them together, so re-read it when either moves.
-bool curatedIntrinsicCanBePoison(const CallInst *CI) {
-  const Function *F = CI->getCalledFunction();
-  if (!F)
-    return true;
-  Intrinsic::ID Id = F->getIntrinsicID();
-  if (Id != Intrinsic::ctlz && Id != Intrinsic::cttz && Id != Intrinsic::abs)
-    return false;
-  const auto *Flag = CI->arg_size() >= 2
-                         ? dyn_cast<ConstantInt>(CI->getArgOperand(1))
-                         : nullptr;
-  return !Flag || !Flag->isZero();
-}
+// *** THE BODY MOVED TO PoisonFacts.cpp (bd s6ao) — this is now a using-decl. ***
+// It was lifted because `qromIndexKnownInBounds` (QramLowering.cpp) needs THE
+// SAME answer: the `is_zero_poison` immarg is an ordinary call OPERAND, so no
+// flag-stripping API reaches it, and a QROM index bounded by it is bounded by a
+// fact Rule 15's ABI discards. Keeping two copies is exactly the drift Rule 14
+// exists to stop — and the asymmetry was real, not hypothetical: this predicate
+// refused `ctlz(0,true)` correctly HERE while the QROM bounds proof accepted the
+// identical intrinsic one ticket later, shipping an out-of-bounds read reachable
+// from `__builtin_ctzll`. Same poison source, same file family, two consumers,
+// one of them wrong. See PoisonFacts.h for the full channel taxonomy.
+using cq::curatedIntrinsicCanBePoison;
 
 // bd 3c6m.14.2 — the per-instruction core of the shielded-cone definedness
 // proof, given a name because the fence it draws is referenced from three
@@ -2208,7 +2208,9 @@ private:
   // used to stand here said "flag/metadata-stripping only widens definedness, so
   // every other user of a cone value is unaffected". That is FALSE and a lens
   // falsified it with a run. `qromIndexKnownInBounds` (QramLowering.cpp) reaches
-  // `computeKnownBits`, which CONSULTS `nuw` — so deleting it can turn a
+  // `computeKnownBits` — which, SINCE bd s6ao, no longer consults `nuw` there
+  // (that call passes `UseInstrInfo=false` and the bound is re-derived
+  // poison-independently), so this hazard is CLOSED; historically deleting it turned a
   // claimed+flattened QROM read into `leave("W-witness")` and a loud decline.
   // That reader runs at `declineTaintEscapes` (CQLoweringPass.cpp ~228), AFTER
   // both PredMux fixpoints (~178, ~202), so the ordering does not protect it.

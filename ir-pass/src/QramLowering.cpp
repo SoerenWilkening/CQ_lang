@@ -11,6 +11,7 @@
 #include "QramLowering.h"
 
 #include "OpcodeSupport.h"      // abiWidthFromType / widthHasReversibleCopy
+#include "PoisonFacts.h"        // indexBoundIsPoisonConditional (bd s6ao)
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"
 
@@ -686,7 +687,96 @@ bool qromIndexKnownInBounds(Value *RawIndex, GetElementPtrInst *Gep,
   if (RawIndex->getType()->getScalarSizeInBits() !=
       DL.getIndexTypeSizeInBits(Gep->getType()))
     return false;
-  KnownBits KB = computeKnownBits(RawIndex, DL);
+  // *** THIS PROOF'S OBLIGATION IS TOTAL; `computeKnownBits` IS MODULO-POISON
+  // (bd s6ao). ***
+  //
+  // WHICH HALF DOES THE WORK, stated precisely, because an earlier draft of this
+  // comment said "both halves are REQUIRED" and that is wrong in the direction
+  // that invites a bad simplification. HALF 2 (`indexBoundIsPoisonConditional`)
+  // ALONE DISCHARGES THE OBLIGATION: it returns false only when a total,
+  // fact-free bound below `Count` exists, and such a bound holds on every basis
+  // state by construction. HALF 1 (`UseInstrInfo=false`) cannot make an accept
+  // sound that half 2 rejected — it only PRUNES accepts half 2 would allow. Keep
+  // both (defence in depth on a frozen ABI, and half 1 is free), but do not
+  // delete half 2 believing half 1 covers it: that is the R1 miscompile.
+  //
+  // `classifyQromReadUnderControlImpl`'s contract (below) is that "the
+  // SPECULATED read runs on every basis state, so in-bounds must hold
+  // UNCONDITIONALLY … not merely on the originally-guarded path".
+  // `computeKnownBits` guarantees something strictly weaker: "these bits hold,
+  // OR the value is poison". A poison-conditional bound is precisely a bound
+  // that holds only on the paths the SOURCE executes — i.e. exactly the
+  // originally-guarded path the speculation removes. So every channel by which a
+  // poison-conditional fact can enter the query must be closed, and there are
+  // more of them than the obvious one.
+  //
+  // HALF 1 — `UseInstrInfo=false`. MEASURED against LLVM 19's `InstrInfoQuery`
+  // (SimplifyQuery.h:25-59), this gates EXACTLY five accessors: `getMetadata`,
+  // `hasNoUnsignedWrap`, `hasNoSignedWrap`, `isExact`, `hasNoSignedZeros`. So it
+  // closes `nuw`, `nsw`, `exact` and ALL metadata (including `!range`) — AND
+  // NOTHING ELSE. *** It structurally cannot gate `nneg`, `disjoint` or
+  // `CallBase::getRange()`, because `InstrInfoQuery` has no accessor for them.
+  // Do not read this argument as "poison annotations are now ignored". *** It is
+  // passed rather than refusing on flag PRESENCE so that a cone merely CARRYING
+  // `nuw` still yields its sound opcode-structural bound (`shl nuw nsw i64 %h,1`
+  // bounds identically without its flags) — refusing on presence would be a pure
+  // over-decline, and would drop the 49 `zext nneg i32 -> i64` corpus sites,
+  // none of which is load-bearing.
+  //
+  // HALF 2 — `indexBoundIsPoisonConditional` (PoisonFacts.h) walks the cone for
+  // the channels half 1 cannot reach: the ungated annotations above, INHERENT
+  // poison (out-of-range/non-constant shift amounts, div/rem by a
+  // non-provably-nonzero divisor, fptosi/fptoui), and the poison-generating
+  // IMMARG of `llvm.ctlz`/`cttz`/`abs` — which is an ordinary call OPERAND, so
+  // no flag-stripping API touches it at all.
+  //
+  // TWO MEASURED SILENT MISCOMPILES, one per half, both `opt` exit 0,
+  // `opt -verify` clean and `free_pairing_check.py` clean, on the FROZEN-
+  // designate `cqrt_qram_load_<W>`:
+  //   * HALF 1: `%hi = lshr(bits,63)` (∈{0,1}) then `%sx = sub nuw i64 %hi, 1`
+  //     proved `%sx == 0`, emitting an UNMASKED read into a THREE-cell table
+  //     whose index rail carries 0xFFFF_FFFF_FFFF_FFFF wherever bit 63 is clear.
+  //   * HALF 2, and this one has a REAL C WITNESS: `__builtin_ctzll` into a
+  //     64-entry table — `llvm.cttz.i64(%bits, i1 true)` — whose `is_zero_poison`
+  //     immarg tightens the range from [0,64] to [0,63]. Emitted UNMASKED; on
+  //     the basis state `bits == 0` (`q == +0.0`, which the Ry rail genuinely
+  //     occupies) the true `cttz` is 64, one past the end.
+  // In BOTH, Rule 15's width-only ABI DISCARDS the fact the bound rests on
+  // (`sub nuw` -> the wrapping `cq_template_sub_i64_hl`; the immarg -> a
+  // byte-identical `cq_template_cttz_i64`), so the bound described a value the
+  // emitted circuit does not compute. That is the whole defect, twice.
+  //
+  // WHAT THIS DOES *NOT* CLOSE, stated plainly so the next reader keeps looking:
+  // the `llvm.assume` and dominating-condition channels are shut only because
+  // this call passes `AC`/`CxtI`/`DT` as null — ORTHOGONAL to both halves. If
+  // anyone ever threads an `AssumptionCache` or a `DomConditionCache` in here
+  // for a tighter bound, those channels open with no flag and no immarg
+  // involved.
+  //
+  // *** DO NOT "fix" bd m9d2 by carrying a pre-flatten witness or by recording
+  // what `stripPoisonCone`/`moveBody` dropped. *** Both exist to make the
+  // flag-derived bound SURVIVE the flatten, and that bound IS the miscompile
+  // above. m9d2 is the SAFE face (a spurious decline) of this same defect, whose
+  // sign flips with block topology; it does not close onto this fix, because the
+  // ungated `range`-attribute channel still makes a claim/re-proof verdict
+  // topology-dependent.
+  //
+  // COST, MEASURED ZERO for half 1 and double-sourced: stripping those flags
+  // MODULE-WIDE (a strictly larger perturbation) changed exit code or the
+  // emitted gate stream in 0 of 220 cached e2e stage-1 modules. (An
+  // accompanying "0 of 196 flag-bearing fixtures" figure was quoted here and is
+  // WITHDRAWN — the 196 does not reproduce under any regex tried on re-audit;
+  // the fixture-layer evidence is the full suite, 253/253 with no golden
+  // regenerated.) Surviving bounded-index routes are a
+  // genuinely flag-free known-bits bound (`lshr 63`) and the pow2 `NeedsMask`
+  // fallback below — and the fallback is why half 2 is not a capability loss:
+  // the `__builtin_ctzll` cell above still lowers, now MASKED
+  // (control_predmux_accept_qrom_read_cttz_masked.ll).
+  if (indexBoundIsPoisonConditional(RawIndex, Count))
+    return false;
+  KnownBits KB = computeKnownBits(RawIndex, DL, /*Depth=*/0, /*AC=*/nullptr,
+                                  /*CxtI=*/nullptr, /*DT=*/nullptr,
+                                  /*UseInstrInfo=*/false);
   unsigned Wide = std::max<unsigned>(KB.getBitWidth(), 65);
   APInt MaxIdx = KB.getMaxValue().zext(Wide);
   APInt CountAP(Wide, Count);

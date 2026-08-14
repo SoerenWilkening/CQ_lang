@@ -68,6 +68,7 @@ add_library(CQPass MODULE
   src/LoopUnrollPrepass.cpp
   src/MeasureLowering.cpp
   src/NestedRouteEmit.cpp
+  src/PoisonFacts.cpp
   src/OpcodeLowering.cpp
   src/OpcodeSupport.cpp
   src/Plugin.cpp
@@ -127,7 +128,7 @@ endif()
 # between invocations.
 #
 # EQUIVALENCE IS GATED, NOT ASSUMED: tools/cq_opt_equivalence.py replays all
-# 1027 fixtures through both binaries and compares stdout, stderr AND exit code
+# 1035 fixtures through both binaries and compares stdout, stderr AND exit code
 # (0 mismatches at introduction). It is wired as the `cq-opt-equivalence` ctest
 # entry so a future pass change cannot silently make the two diverge — which
 # matters because 520 negative fixtures FileCheck the diagnostic TEXT, not just
