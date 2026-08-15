@@ -20,6 +20,7 @@
 #include "ControlPlan.h"        // ControlRegion (for flattenRegion)
 #include "ControlShape.h"       // uncondSucc (void-arm diamond recovery, Rule 14)
 #include "ControlledSymbols.h"  // tapeWriteControlledFn / xFn
+#include "LiteralIntegrity.h"   // slotCarriesUndef (bd c4ow — the co-arg fence)
 #include "OpcodeSupport.h"
 #include "RegionFlatten.h"      // flattenRegion (swap-route diamond flattener)
 #include "SelectMergeEmit.h"    // materializeCopySource (4.4 controlled-copy mux)
@@ -53,6 +54,13 @@ namespace {
 //   * lowering_reject_io_result_used.ll → kMsgIOResult
 constexpr char kMsgIOArg[] =
     "cq I/O output sink: tainted argument is not a lowerable integer scalar";
+// bd c4ow — the CLASSICAL co-argument definedness fence. Mirrored char-for-char
+// by lowering_reject_io_undef_coarg.ll (uncontrolled) and
+// lowering_reject_io_controlled_undef_coarg.ll (controlled); the accept side is
+// lowering_io_accept_literal_coarg.ll and lowering_io_accept_global_pad_coarg.ll.
+constexpr char kMsgIOUndefArg[] =
+    "cq I/O output sink: classical argument is undef/poison, not a "
+    "compile-time known value";
 constexpr char kMsgIOResult[] =
     "cq I/O output sink: result of a tainted output call is used";
 constexpr char kMsgIOFanout[] =
@@ -203,12 +211,99 @@ Value *ioTapeFor(Function *F, WidthDispatch &wd, TaintSet &taint,
 // (Rule 14). A tainted arg must be an integer scalar with a reversible-copy
 // width {i1,i8,i16,i32,i64}; an fp (`%f`), i128, vector or pointer tainted arg
 // DECLINES (kMsgIOArg); a non-constant classical co-arg DECLINES (a runtime
-// value / side effect we would silently drop); a constant classical arg (the
-// format-string ptr / a literal) is DROPPED. Every target must additionally have
-// CLOSED lineage — never a non-terminal rail the uncompute spine reverse-plays
-// out from under the tape write (kMsgIOFanout, the Rule-8 linear-lineage bail).
-// Returns true with `Targets` populated (non-empty) on success; false after
-// firing the precise loud decline on `Sink`. PRD-7.6 §2.6 / §6.3.
+// value / side effect we would silently drop); an undef/poison-bearing classical
+// co-arg DECLINES (kMsgIOUndefArg, bd c4ow — see below); a constant classical arg
+// (the format-string ptr / a literal) is DROPPED. Every target must additionally
+// have CLOSED lineage — never a non-terminal rail the uncompute spine
+// reverse-plays out from under the tape write (kMsgIOFanout, the Rule-8 linear-
+// lineage bail). Returns true with `Targets` populated (non-empty) on success;
+// false after firing the precise loud decline on `Sink`. PRD-7.6 §2.6 / §6.3.
+//
+// ─── bd c4ow: WHY A POISON CO-ARG IS A FENCE HOLE AND NOT A LOST TAPE FIELD ──
+//
+// *** STATE THIS ONE PRECISELY, BECAUSE THE OBVIOUS FRAMING IS FALSE AND A
+// REVIEWER FALSIFIES IT IN THIRTY SECONDS. *** The ticket read the defect as "a
+// printf argument the source writes does not appear in the output tape, so the
+// golden trace has one fewer field than the program specifies". MEASURED, on the
+// shipped plugin, from stock `clang -O1`: `printf("%d %d\n", q, <i32 7>)` and the
+// same call with `<i32 poison>` lower BYTE-IDENTICALLY — one
+// `cqrt_tape_write_i32`, `@printf` erased, `opt` exit 0. Dropping a CLASSICAL
+// co-arg is the shipped, documented 7.6 design (only tainted args are taped), so
+// nothing is lost relative to a defined literal and no observable moves.
+//
+// The real defect is an ACCEPT-PREDICATE hole on a UB input. The fence one line
+// below was written to mean "this co-arg is COMPILE-TIME KNOWN, so dropping it
+// costs the program nothing", and `isa<Constant>` is how that intent is spelled.
+// `undef`/`poison` ARE `Constant`s and they DENOTE NO VALUE, so the predicate
+// admits exactly the input its own justification excludes. The Prime Directive
+// settles the rest: an unproven accept surface should not exist, and
+// over-declining a UB input is free.
+//
+// *** DO NOT CALL THAT "THE ONE KIND OF `Constant`" — an earlier draft did and
+// the Rule-13 round falsified it. *** A `ConstantExpr` that GENERATES poison
+// without CONTAINING an `UndefValue` — the bd bu96 class, e.g.
+// `ptrtoint (ptr getelementptr inbounds ([4 x i32], ptr @g, i64 0, i64 99) to i32)`
+// — denotes no value just as much, and `slotCarriesUndef` returns false on it, so
+// it still passes here (measured: accepted, co-arg dropped, module byte-identical
+// to the `i32 7` accept fixture's). The fence discriminates on the SPELLING, not
+// on "denotes no value". That residual is knowingly inherited from bd bu96
+// (DECLINE TO FIX) — but note its licensing argument does NOT transfer to this
+// site: bu96 is sound on the PAIRING axis (a uniqued `ConstantExpr` is one
+// link-time relocation, so a forward and its adjoint read one value), and nothing
+// here is paired. What makes it harmless here is the measurement above — dropping
+// a classical co-arg is byte-neutral whatever it denotes.
+//
+// REACH IS PROVEN AND TRIVIAL, not hypothetical: `int y; printf("%d %d\n", x, y);`
+// makes `clang -O1` emit `i32 noundef undef` in the arg list, with no warning.
+//
+// ONE SITE, TWO CALLERS. This validator is already the shared Rule-14 gate for
+// BOTH emitters (`lowerIOSinks` and `lowerControlledIOSinks`, the latter once per
+// arm), and both call it BEFORE their first `CreateCall`, so there is no second
+// fence to keep in step *within the printf/putchar family*. SCOPE THAT CLAUSE:
+// the pass has a SECOND sink family that drops arguments on the identical "never
+// observable, so dropping is free" rationale with no definedness test at all —
+// `AbortParkEmit`'s 7.2 recognizer (`abort`/`exit`/`_exit`/`_Exit`/`quick_exit`/
+// `__assert_fail`/`__assert_rtn`/`llvm.trap`/`llvm.ubsantrap`) tests its arguments
+// only for TAINT and then erases the call, so `exit(undef)` and `exit(1)` compile
+// byte-identically (measured). That is almost certainly harmless — an argument to
+// a process-terminating call the park semantics never execute is unobservable
+// either way — but it is a RULING nobody has written down, which is precisely how
+// this defect class arises. Filed as its own ticket.
+//
+// CLAIM-TIME, ON THE ROUND-1 PATH. `lowerIOSinks`/`lowerControlledIOSinks` fire
+// before their own emitters mutate anything. They are NOT the whole story: the
+// round-2 `detectSpecializations` inside `repropagateControlMerges` runs after
+// `lowerControlledIOSinks`, `lowerLoops` and `lowerControlRegions` have already
+// emitted and FLATTENED a region, so on that path this decline (like every other
+// post-mutation decline in the pass — `Uncomputation`'s `kMsgLineageMeasured` is
+// the precedent) hands back a partly-lowered module. Under `opt`, the only
+// supported host, `DS_Error` exits with zero stdout bytes, so nothing mutated is
+// ever written.
+//
+// *** THE PREDICATE IS `slotCarriesUndef`, NEVER `valueCarriesUndef`. *** A
+// printf argument list is DOMINATED by global ADDRESSES — the format string is
+// one on every single call — and `valueCarriesUndef` descends into a global's
+// INITIALIZER, which is a different value from the address in the slot. The
+// fp80-union idiom this project is built on (`clang -O1` emits
+// `@v = global { i32, [12 x i8] } { i32 3, [12 x i8] undef }` for a
+// partially-initialised `union { long double f; int i; }`) would then decline a
+// WELL-DEFINED program. `lowering_io_accept_global_pad_coarg.ll` is that
+// arm-kill. The un-skipped `valueCarriesUndef` has exactly ONE caller — the
+// PredMux cone predicate — where its over-decline is PRE-EXISTING and removing it
+// is an accept WIDENING (bd ajw7); do not "unify" the two.
+//
+// A TAINTED arg cannot reach this test, and that is checked rather than assumed:
+// all 30 `Tainted.insert` sites in `ir-pass/src` insert a `CallInst`, an
+// `Instruction`, or (in the clone-LOCAL taint sets only) an `Argument` — never a
+// `Constant`. So the tainted branch above always wins for a non-`Constant`, and
+// the new check belongs on the classical branch, where it can fire.
+//
+// PLACEMENT NOTE: it sits inside the per-argument loop, so an undef co-arg now
+// PRE-EMPTS `kMsgIOFanout` and any later argument's `kMsgIOArg` for the same
+// sink. Both outcomes are loud declines, nothing is over-accepted, and no shipped
+// fixture changes message — but the message identity for a given module is not
+// what the base plugin gave, so do not treat a diagnostic diff here as a
+// regression without reading which fence fired.
 bool collectTapeTargets(CallInst *Sink, const TaintSet &taint,
                         SmallVectorImpl<std::pair<Value *, StringRef>> &Targets,
                         const Value *allowedExtraUser = nullptr,
@@ -227,6 +322,11 @@ bool collectTapeTargets(CallInst *Sink, const TaintSet &taint,
       Targets.emplace_back(Arg, Abi);
     } else if (!isa<Constant>(Arg)) {
       diagnose(Sink, kMsgIOArg);
+      return false;
+    } else if (slotCarriesUndef(Arg)) {
+      // A `Constant` that denotes NO value — the one kind for which "dropping a
+      // compile-time known co-arg is free" is false (bd c4ow, above).
+      diagnose(Sink, kMsgIOUndefArg);
       return false;
     }
   }
@@ -278,8 +378,9 @@ void lowerIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
 
     // 3. Validate every argument and collect the tainted integer-scalar targets
     //    (the shared `collectTapeTargets`, Rule 14: fp/i128/non-scalar →
-    //    kMsgIOArg, a non-constant classical co-arg → kMsgIOArg, a non-terminal
-    //    rail → kMsgIOFanout; a constant classical arg is dropped). On any
+    //    kMsgIOArg, a non-constant classical co-arg → kMsgIOArg, an undef/poison
+    //    classical co-arg → kMsgIOUndefArg (bd c4ow), a non-terminal rail →
+    //    kMsgIOFanout; a DEFINED constant classical arg is dropped). On any
     //    failure it has already fired the precise loud decline.
     SmallVector<std::pair<Value *, StringRef>, 4> Targets;
     if (!collectTapeTargets(Sink, taint, Targets))
@@ -529,8 +630,9 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
 
     // 5. ARG validation (shared `collectTapeTargets`, Rule 14): each tainted
     //    integer-scalar arg becomes a target; fp/i128/non-scalar/non-constant-
-    //    classical → kMsgIOArg, a non-terminal rail → kMsgIOFanout. A constant
-    //    classical arg (format string / literal) is dropped. Per arm:
+    //    classical → kMsgIOArg, an undef/poison classical co-arg →
+    //    kMsgIOUndefArg (bd c4ow), a non-terminal rail → kMsgIOFanout. A DEFINED
+    //    constant classical arg (format string / literal) is dropped. Per arm:
     //    `allowedExtraUser=C.Cond` whitelists the tainted condition compare as a
     //    co-user of EACH arm's taped value (both arms typically print the same `q`
     //    that the one compare reads — the second arm would else trip kMsgIOFanout).

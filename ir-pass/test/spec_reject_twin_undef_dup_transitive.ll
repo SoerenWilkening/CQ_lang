@@ -38,8 +38,33 @@
 ; RED-GREEN: the pre-change plugin ACCEPTS this module (`opt` exit 0) and emits both
 ; clone and twin calling the shared `@helper`.
 ;
+; ─── WHAT CHANGED WITH bd 3p2a, AND THE FINDING BURIED IN IT ─────────────────
+;
+; The bd 3p2a specialization fence now declines this module EARLIER: `scanBody`
+; already recurses into every nested visible callee, so it adjudicates `@helper`'s
+; own return cone in `@helper`'s frame and finds `ret i32 %c` -> `xor i32 undef, 7`.
+; The diagnostic below moved accordingly.
+;
+; *** AND THAT EXPOSES SOMETHING WORTH RECORDING RATHER THAN GLOSSING: THE
+; TRANSITIVE WALK NO LONGER HAS A HARMFUL CELL OF ITS OWN. *** A helper is a pure
+; value function, so its ONLY output is its return; an `undef` inside it either
+; reaches that return — in which case the bd 3p2a fence catches it here, one frame
+; down — or it does not, in which case it is dead in BOTH copies and the two
+; materialisations cancel. So `findUndefOperandInBody`'s transitive reach is now
+; defence in depth, and this file pins the EARLIER fence.
+;
+; IT IS STILL NOT DELETED, and that is deliberate: removing a fence because a
+; different one happens to cover its measured population is an accept WIDENING
+; inside a tightening commit, which is the standing bd ajw7 lesson. Its live
+; reaching fixture is spec_reject_twin_undef_dup_scratch.ll.
+;
+; Note this row's own header already said the divergence here was UNPROVEN (both
+; dynamic reads gave 7). It was fenced on principle, not on an exhibit; the
+; principle is unchanged and the decline is now issued at the accept predicate,
+; which is strictly the better place for it.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq literal integrity: undef/poison operand duplicated into the uncompute twin
+; CHECK: error{{.*}}cq specialization: callee return value denotes no value (undef/poison)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 declare i32 @cq_theta_si32(i32, double)

@@ -9,6 +9,7 @@
 
 #include "ArmAnalysis.h"        // comparePredLowerable (Rule 14 — the one predicate gate)
 #include "IntrinsicLowering.h"
+#include "LiteralIntegrity.h"   // slotCarriesUndef (bd 3p2a — the return-cone fence)
 #include "OpcodeSupport.h"
 #include "QramLowering.h"
 #include "SpecializePlan.h"
@@ -16,6 +17,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -275,6 +277,189 @@ bool isLiftableFpSelect(const SelectInst *SI) {
   return armLiftable(SI->getTrueValue()) && armLiftable(SI->getFalseValue());
 }
 
+// bd 3p2a — DOES THE CALLEE'S RETURNED VALUE DERIVE FROM A LITERAL
+// `undef`/`poison`? A backward walk over `RV`'s cone inside ONE function body,
+// terminated by a visited set (so a loop-carried `phi` cannot diverge; the body
+// is not proven acyclic here — `lowerCloneControl`'s post-flatten backstop owns
+// that).
+//
+// ─── WHAT THE HOLE IS, AND WHAT IT IS NOT ───────────────────────────────────
+//
+// `scanBody` certifies "this callee computes a reversible classical FUNCTION of
+// its arguments". That certificate is what licenses cloning the body, CACHING the
+// clone per `(callee, mask)`, DUPLICATING it verbatim into an uncompute twin, and
+// reversing it with an adjoint whose entire correctness argument is "the adjoint
+// reads the same operands the forward read". A body that returns `poison` earns
+// that certificate VACUOUSLY: the scan whitelists instruction OPCODES and
+// `continue`s past every terminator, so `define i32 @leaf(i32 %a) { ret i32
+// poison }` passes without a single check touching the returned value.
+//
+// *** BE HONEST ABOUT THE MEASURED HARM — the ticket's version is FALSE and a
+// reviewer falsifies it in one run. *** bd 3p2a says the clone's poison return
+// "is used as an i32 QUBIT HANDLE". It is not, and it structurally cannot be:
+// `buildClone` sets `ReturnTainted = cloneTaint.Tainted.count(RV)` and a
+// `Constant` is never in a taint set, so a literal-poison return is ALWAYS
+// classified classical and lands in a template's LITERAL slot, never a handle
+// slot. Measured end-to-end on the shipped plugin at the `-O0` stage 3, the whole
+// trace of the exhibit is
+//
+//     cqrt_alloc_i32(3) -> h0
+//     cqrt_ry_i32(h0, 0x1p-1)
+//     cq_template_add_i32_hl(h0, 0)      ; h0 is a REAL rail; 0 is the poison
+//
+// — `h0` came from `cqrt_alloc_i32`, and the poison is the classical addend. So
+// there is no gate on a phantom rail, and (checked) no forward/adjoint pairing
+// break either: an adjoint copies the forward's OPERANDS, so both read the one
+// SSA register and see one value.
+//
+// REACH IS PROVEN, though, and cheaply: `int leaf(int a) { int x; return x; }`
+// gives `ret i32 undef` under stock `clang -O1`. It is unreachable single-TU
+// (IPSCCP folds the call away), but CQ ships `run_slice_multi.sh` (per-TU `-O1` →
+// `llvm-link` → one `cq-lowering`), and there the clone IS minted — measured:
+// `opt` exit 0, `@__cq_q_leaf_1` emitted with a `ret i32 undef` body.
+//
+// SO WHY FENCE IT. Because the ONE mechanism in this pass that turns a shared
+// register into two INDEPENDENT materialisations — `synthUncomputeTwin`'s
+// verbatim `CloneFunctionInto` — is the measured bd xy9n miscompile, and the only
+// thing standing between this accept and it is `findUndefOperandInBody`'s
+// transitive walk at the duplication site (measured ON THE PRE-CHANGE PLUGIN: a
+// three-level probe whose poison-returning leaf is reached through a twinned
+// middle clone declined there). That is a fence at a DIFFERENT site, keyed on a
+// DIFFERENT property, and it is one widening away from not covering this — e.g.
+// any future change that lets a poison-derived value be `ReturnTainted` turns the
+// literal slot above into a real rail. Certifying "computes a function of its
+// arguments" for a body that computes nothing at all is exactly the unproven
+// accept surface the Prime Directive says should not exist, and the input is UB,
+// so declining it costs no capability.
+//
+// *** AND THAT FENCE HAS A HOLE OF ITS OWN, WHICH THIS ONE DOES NOT CLOSE — say
+// so rather than leaning on it. *** `ensureTwin` is called from EXACTLY ONE site
+// (`Specialization.cpp`, inside `buildClone`'s inner-call drain, gated on
+// `Rec.ReturnTainted`), while `EmitInverse` mints an `@__cq_q_<f>_<mask>_unc`
+// CALL for ANY `__cq_q_`-prefixed forward — including a TOP-LEVEL clone call the
+// whole-DAG spine reverses. On that path no twin is synthesized and NO
+// literal-integrity fence runs at all. Measured (Rule-13 round, IR-only reach):
+// `opt` exit 0 and `free_pairing_check.py` clean on a module referencing an
+// UNDEFINED `@__cq_q_leaf_1_unc` — only the stage-3 LINK catches it — and, if the
+// input DEFINES that symbol, it is used verbatim with zero validation. Filed as
+// its own ticket; do not cite "no twin is synthesized at the top level" as a
+// safety property, because nothing in the pass enforces it.
+//
+// ─── WHY THE RETURN CONE, AND WHAT IT DOES TO THE TWIN FENCE ────────────────
+//
+// The scope is the RETURN CONE: a backward walk from the returned value, not the
+// whole body. That is not a hedge — a body-wide scan would additionally refuse
+// undef in DEAD and SCRATCH positions, which is measurably harmless (below) and
+// would make this a pure over-decline widening on top of a real fix.
+//
+// *** AND SAY THE UNCOMFORTABLE PART PLAINLY, BECAUSE THE FIRST DRAFT OF THIS
+// COMMENT GOT IT WRONG AND THE FIXTURES CAUGHT IT. *** That draft asserted the
+// return-cone scope leaves `Specialization::ensureTwin`'s `findUndefOperandInBody`
+// fence (bd xy9n) untouched. FALSE, measured: all three of that fence's fixtures
+// (spec_reject_twin_undef_dup{,_pretwin,_transitive}.ll) are built on
+// `%c = xor i32 undef, 7` feeding `%y = mul i32 %a, %c` and then `ret i32 %y` —
+// the undef IS in the return cone, so this fence now declines all three EARLIER,
+// at detection.
+//
+// That is not an accident of those probes; it is EXACT SUBSUMPTION of the twin
+// fence's HARMFUL cell, and the argument is short. The twin's job is to zero the
+// clone's out rail, which it does by RE-EXECUTING the body and un-copying the
+// recomputed result: `cqrt_copy_i32(<recomputed ResultRail>, out)`. `ResultRail`
+// IS the clone's returned value. So the twin's un-copy fails — leaving `out`
+// dirty for the `cqrt_free` that follows, the Rule-6/8 hidden measurement — iff
+// the recomputed RETURN differs between the two bodies, iff the return derives
+// from `undef`. Every other divergence is self-cancelling: a SCRATCH gate's
+// forward and adjoint read the SAME materialisation, so each copy restores its own
+// rail.
+//
+// *** THAT SENTENCE USED TO READ "sit in the SAME body", AND THE RULE-13 ROUND
+// MEASURED IT FALSE FOR THE ONE CASE THAT MATTERS. *** A `ReturnTainted` INNER
+// clone call goes into `TaintedCloneCalls`, and the wrap reverses it via
+// `@__cq_q_inner_<mask>_unc` — a SEPARATE body, produced by the very
+// `CloneFunctionInto` this argument is about — so forward and adjoint demonstrably
+// do NOT share a body there. The CONCLUSION is unaffected and the correct reason is
+// one clause further along: that pair's operands are materialised ONCE in the
+// CALLER's body and passed to both calls (measured — `mul_i32_hl(h0, 73903)` on
+// both sides, out rail zeroed, stage 2b `4 verified, 0 violation(s)`), so its only
+// remaining divergence channel is the INNER clone's own RETURN, which THIS fence
+// adjudicates recursively one `scanBody` frame down. Do not restore the "same
+// body" wording: it is the load-bearing premise for any future decision about the
+// twin fence, and it named the wrong mechanism.
+//
+// MEASURED on the isolated shape (the undef feeds a scratch `mul`, the return is
+// clean) with this fence armed off — the trace does show two different multipliers,
+// `mul_i32_hl(h0, 73903)` in the clone and `mul_i32_hl(h0, 7)` in the twin, and the
+// out rail is still correctly zeroed because the twin un-copies via the recomputed
+// `add(h0,1)`, which never reads the undef-derived operand. (That last step is READ
+// OFF the trace, not observed: the runtime is trace-only and no gate reports whether
+// a rail is `|0⟩`.) That is spec_reject_twin_undef_dup_scratch.ll, kept precisely so
+// the twin fence retains a reaching fixture (Rule 12) — and labelled there as the
+// OVER-DECLINE it is.
+//
+// The twin fence STAYS. Deleting it now would be an accept WIDENING inside a
+// tightening commit, which is the one thing bd ajw7 exists to remember; and its
+// over-decline is free. Tracked for deliberate re-scoping, never a silent drop.
+//
+// The division of labour after this change, with every cell owned:
+//   * a literal in an emitted GATE SLOT      → `declineUnpairedUndefLiterals`
+//                                              (bd xy9n guard 1, counts ≥2 slots)
+//   * a literal reaching the RETURNED VALUE → HERE — the twin's un-copy channel,
+//                                              declined before a clone is minted
+//   * a literal in a DEAD or SCRATCH body
+//     position, duplicated into the twin    → `findUndefOperandInBody`, retained
+//                                              as defence in depth (over-decline)
+//
+// `spec_accept_undef_outside_return_cone.ll` pins the scope from the accept side:
+// a dead undef outside the return cone still lowers at the TOP level, where no
+// twin is synthesized at all.
+//
+// The walk stops at any non-`Instruction` (an `Argument` or a `Constant`, tested
+// by `slotCarriesUndef` on the way in) and descends through every operand of an
+// `Instruction`, INCLUDING a call's arguments. It never enters a callee's BODY —
+// a `Function` is not an `Instruction` — and it does not need to: `scanBody`
+// recurses into every nested visible callee in its own frame, so that callee's
+// return cone is adjudicated there (verified by
+// spec_reject_ret_poison_nested.ll).
+//
+// *** THE EFFECTIVE SCOPE IS THEREFORE WIDER THAN "THE RETURN CONE", and the
+// Rule-13 round measured the difference. *** "Return cone" is exact WITHIN one
+// function; across the transitive recursion it means "the return cone of the
+// candidate OR of any visible callee it reaches". So a nested callee whose result
+// is DEAD and whose arguments are ALL CLASSICAL — a shape `buildClone`'s inner
+// drain skips with `continue`, leaving it a plain classical subcall copied
+// verbatim into the clone — now kills the whole outer specialization. Measured:
+// pre-change `opt` exit 0 with the dead subcall harmlessly present, post-change a
+// loud `UndefReturn` naming the nested callee. That is a genuine ACCEPT LOSS on
+// top of the fix, it is a pure over-decline (safe, Prime Directive), and it is
+// deliberately not carved out — a carve-out would need its own proof that the
+// dead subcall is really dead in BOTH the clone and any twin, which is exactly
+// the kind of unproven accept surface this fence exists to remove.
+//
+// The predicate is `slotCarriesUndef`, the GlobalValue-address-skipping one: a
+// global's operands are its INITIALIZER while the value in the slot is its
+// ADDRESS, and `clang -O1` really emits a partially-`undef` initializer for the
+// fp80-union idiom this project is built on. Do NOT swap in `valueCarriesUndef`
+// — its one caller is the PredMux cone predicate, where the over-decline is
+// PRE-EXISTING and removing it would be an accept WIDENING (bd ajw7).
+bool returnDerivesFromUndef(const Value *RV) {
+  SmallPtrSet<const Value *, 16> Seen;
+  SmallVector<const Value *, 16> WL;
+  WL.push_back(RV);
+  while (!WL.empty()) {
+    const Value *V = WL.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    if (slotCarriesUndef(V))
+      return true;
+    const auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;  // Argument / Constant / global — a leaf, already tested above.
+    for (const Value *Op : I->operands())
+      WL.push_back(Op);
+  }
+  return false;
+}
+
 // The Callee-only body-shape verdict (arity cap, straight-line value shape, no
 // `cq_*`/measure/non-reversibilizable construct, integer-i32 return), recursing
 // through nested calls (Phase 6.3 transitive). `OnStack` is the DFS recursion
@@ -408,6 +593,18 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
         pop();
         return SpecReject::InBodyControl;
       }
+      // bd 3p2a — the ONE check this whitelist ever makes on a terminator, and
+      // the reason the scan is no longer VACUOUS on `ret i32 poison`. See
+      // `returnDerivesFromUndef` above for the full argument (incl. why the
+      // ticket's "used as a qubit handle" harm is measurably false, and why the
+      // walk is scoped to the return cone rather than the body).
+      if (const auto *R = dyn_cast<ReturnInst>(&I))
+        if (const Value *RV = R->getReturnValue())
+          if (returnDerivesFromUndef(RV)) {
+            WhereOut = &I;
+            pop();
+            return SpecReject::UndefReturn;
+          }
       continue;
     }
     // Calls: a quantum primitive (rejects), a recursion/cycle, inline asm, or a
@@ -789,6 +986,9 @@ void diagnoseReject(Instruction *Where, SpecReject Why, StringRef Kind) {
     break;
   case SpecReject::Interposable:
     Msg = kMsgInterposable;
+    break;
+  case SpecReject::UndefReturn:
+    Msg = kMsgUndefReturn;
     break;
   case SpecReject::NonReversibilizable:
     Msg = (Twine(kMsgNonRevizPrefix) + " (" + Kind + ")").str();

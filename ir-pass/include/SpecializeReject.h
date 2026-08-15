@@ -16,7 +16,10 @@
 // PURELY-CLASSICAL, NON-RECURSIVE, STRAIGHT-LINE value function — no `cq_*`
 // primitive, no measurement, no tainted in-body control flow (`br`/`select`/
 // `switch` reached by a tainted param), no fp/i128/vector/half quantum ABI, no
-// non-reversibilizable construct, every forward gate `isInverseEmittable`.
+// non-reversibilizable construct, every forward gate `isInverseEmittable`, and
+// (bd 3p2a) a RETURNED VALUE that actually denotes a value — the whitelist scans
+// instruction OPCODES and used to `continue` past every terminator, so a body of
+// just `ret i32 poison` passed VACUOUSLY.
 
 #ifndef CQ_IRPASS_SPECIALIZE_REJECT_H_
 #define CQ_IRPASS_SPECIALIZE_REJECT_H_
@@ -52,6 +55,7 @@ enum class SpecReject {
   InBodyControl,
   ArityOverflow,
   Interposable,
+  UndefReturn,
 };
 
 // Pinned diagnostic strings (Rule 12; the negative fixtures mirror each
@@ -83,6 +87,12 @@ constexpr char kMsgArityOverflow[] =
 constexpr char kMsgInterposable[] =
     "cq specialization: callee has a non-link-exact definition "
     "(interposable/derefinable linkage); the linker may bind a different body";
+// bd 3p2a: a callee whose RETURNED VALUE is derived from a literal
+// `undef`/`poison`, so it computes no function of its arguments at all. See
+// `returnDerivesFromUndef` (SpecializeReject.cpp) for the full argument and for
+// why the walk is scoped to the RETURN CONE rather than the whole body.
+constexpr char kMsgUndefReturn[] =
+    "cq specialization: callee return value denotes no value (undef/poison)";
 
 // The single authoritative accept predicate. Returns `SpecReject::Accept` iff
 // `Cand` is provably liftable; otherwise the rejecting reason and, in

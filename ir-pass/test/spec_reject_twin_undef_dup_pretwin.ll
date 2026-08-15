@@ -46,8 +46,25 @@
 ; RED-GREEN: the pre-change plugin ACCEPTS this module (`opt` exit 0), and so did the
 ; mis-placed draft.
 ;
+; ─── WHAT CHANGED WITH bd 3p2a ───────────────────────────────────────────────
+;
+; The bd 3p2a specialization fence now refuses `@inner` at the ACCEPT PREDICATE
+; (its `ret i32 %y` derives from `%c` derives from `undef`), before `ensureTwin` is
+; reached, so this module now renders the specialization diagnostic. Everything
+; above still describes the module and the placement lesson correctly; see
+; spec_reject_twin_undef_dup.ll's own "WHAT CHANGED" section for the subsumption
+; argument (the twin's un-copy channel IS the return value).
+;
+; *** WHAT THIS ROW STILL UNIQUELY PINS, honestly: NOTHING ABOUT PLACEMENT ANY
+; MORE. *** With the earlier fence in front of it, moving the twin fence back
+; inside `synthUncomputeTwin` would leave this file GREEN. Its placement arm now
+; lives on spec_reject_twin_undef_dup_scratch.ll, which reaches `ensureTwin` with a
+; clean return cone and carries a `_pretwin`-style pre-supplied twin for exactly
+; that reason. This file is kept as the historical record of the delta-round
+; finding, not as the live pin — say so rather than let a reader assume otherwise.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq literal integrity: undef/poison operand duplicated into the uncompute twin
+; CHECK: error{{.*}}cq specialization: callee return value denotes no value (undef/poison)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"

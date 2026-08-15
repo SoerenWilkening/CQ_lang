@@ -33,10 +33,41 @@
 ; control_predmux_reject_selectform_curated_poison_immarg.ll) was itself found by
 ; the Rule-13 round to be a fresh silent miscompile. The clause was deleted.
 ;
+; ─── WHAT CHANGED WITH bd 3p2a, AND WHAT THIS ROW STILL PINS ─────────────────
+;
+; A SECOND fence now stands in front of this module, and it is aimed at the very
+; same sentence quoted above ("a body whose only instruction IS a terminator passes
+; VACUOUSLY. Nothing about the RETURNED VALUE was ever examined"). bd 3p2a fixed
+; that hole in the OTHER proof it was true of — `SpecializeReject::scanBody`, which
+; also whitelists opcodes and also skipped terminators. `@leaf` is called with the
+; tainted `%q`, so it is a specialization candidate, and `detectSpecializations`
+; (CQLoweringPass ~235) now declines it before `detectControlRegions` (~276) is
+; reached. Hence the CHECK below is the specialization message.
+;
+; *** THE PredMux ARM THIS FILE EXISTS FOR IS UNAFFECTED, AND THE DBG LINE IS WHY.
+; *** `flattenPredMuxRegions` runs EARLIER still (~194), so the region is visited,
+; refused, and the `leave … gate=E6-condtree` trace is emitted before either
+; diagnostic. The DBG RUN below is therefore the live arm-kill: restore the deleted
+; pure-callee disjunct in `classifyConeNode` and the gate flips off E6-condtree,
+; turning this row red exactly as it always did. Only the second RUN's message
+; moved. (Verified: with the bd 3p2a fence in place the DBG RUN passes unchanged
+; and only the first RUN needed updating.)
+;
+; TWO SIBLING ROWS ALSO PIN THE DELETED DISJUNCT and are untouched by bd 3p2a —
+; control_predmux_reject_selectform_purecallee_inherentpoison.ll and
+; control_predmux_reject_i80_cmp_purecallee_conedef.ll — so the clause's regression
+; protection does not rest on this file alone.
+;
+; ONE RESIDUAL, RECORDED RATHER THAN GLOSSED: because the specialization decline
+; now fires for this module, restoring the pure-callee disjunct would leave the
+; PredMux hole LATENT here rather than observable in the final message. That is
+; what the DBG line is for, and it is the reason it was kept rather than folded
+; into the CHECK.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; RUN: env CQ_PREDMUX_DBG=1 not %cq-opt -load-pass-plugin %cq-pass \
 ; RUN:   -passes=cq-lowering -S %s -o /dev/null 2>&1 | %filecheck %s --check-prefix=DBG
-; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
+; CHECK: error{{.*}}cq specialization: callee return value denotes no value (undef/poison)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"

@@ -51,8 +51,31 @@
 ; RED-GREEN: the pre-change plugin ACCEPTS this module (`opt` exit 0) and emits both
 ; duplicated bodies, so the decline below is genuinely new.
 ;
+; ─── WHAT CHANGED WITH bd 3p2a, AND WHY THE MESSAGE MOVED ────────────────────
+;
+; Everything above is the ORIGINAL bd xy9n exhibit and remains an accurate account
+; of what this module does. What changed is WHERE it is declined: the bd 3p2a
+; specialization fence (`returnDerivesFromUndef`, SpecializeReject.cpp) now refuses
+; `@inner` at the ACCEPT PREDICATE, before a clone is minted at all, because the
+; returned `%y` derives from `%c` derives from `undef`. So this file now asserts
+; the specialization diagnostic, not the twin one.
+;
+; THAT IS EXACT SUBSUMPTION OF THIS DEFECT, NOT A COVERAGE LOSS, and the argument
+; is the one in `returnDerivesFromUndef`'s header: the twin zeroes the clone's out
+; rail by re-executing the body and un-copying the RECOMPUTED RETURN VALUE, so the
+; un-copy fails — the dirty rail, the hidden measurement — exactly when the return
+; derives from `undef`. That is precisely the cell the new fence now owns, and it
+; owns it EARLIER (decline before cloning, rather than after emitting).
+;
+; THE TWIN FENCE IS STILL PRESENT AND MUST STAY. Its remaining reach is undef in
+; DEAD or SCRATCH body positions, whose divergence is measurably self-cancelling —
+; an over-decline, kept as defence in depth, and pinned by
+; spec_reject_twin_undef_dup_scratch.ll so it never becomes a fence with no
+; reaching fixture. Deleting it because "3p2a covers it" would be an accept
+; WIDENING (bd ajw7's standing lesson).
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq literal integrity: undef/poison operand duplicated into the uncompute twin
+; CHECK: error{{.*}}cq specialization: callee return value denotes no value (undef/poison)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"
