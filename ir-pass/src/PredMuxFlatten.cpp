@@ -318,124 +318,154 @@ ConeNode classifyConeNode(const Value *V) {
   const auto *I = dyn_cast<Instruction>(V);
   if (!I) {
     // bd 615s — AN ARGUMENT IS NOT AN UNCONDITIONALLY DEFINED LEAF, and the bare
-    // `Constant / Argument leaf — defined` shortcut said it was.
+    // `Constant / Argument leaf — defined` shortcut said it was. A caller may pass
+    // `poison` to ANY parameter, and `coneDefinedAfterFlagDrop`'s promise ("the
+    // cone is DEFINED once its poison-generating annotations are dropped") then
+    // licenses rewriting a poison-SHIELDED `select(a, b, false)` into a plain
+    // `and(a, b)` — which OBSERVES `b` on the basis states the shield excluded.
+    // An argument's poison arrives from OUTSIDE the function, where no drop this
+    // pass performs can reach it: `dropPoisonGeneratingAnnotations()` mutates
+    // INSTRUCTIONS, while the fact that would have to go lives on the caller's
+    // CALL SITE in another function. Refusing beats mutating.
     //
-    // LLVM 19 has FOUR parameter attributes that make the argument POISON when
-    // the caller violates them, and each is exactly as much a lie-detector
-    // problem as a lying `range` on a call return: `nofpclass(<classes>)`,
-    // `range(...)`, `nonnull` and `align(n)`. `coneDefinedAfterFlagDrop`'s
-    // promise is "the cone is DEFINED once its poison-generating annotations are
-    // dropped", and it then licenses rewriting a poison-SHIELDED
-    // `select(a, b, false)` into a plain `and(a, b)` — which OBSERVES `b` on the
-    // basis states the shield excluded. An attributed parameter is `b`'s poison
-    // arriving from outside the function, where no drop this pass performs can
-    // reach it: `dropPoisonGeneratingAnnotations()` mutates INSTRUCTIONS, and a
-    // caller's argument attribute lives on the CALL SITE in another function.
+    // *** THE TEST IS `noundef`, AND THAT IS THE WHOLE POINT — DO NOT TURN IT BACK
+    // INTO AN ENUMERATION OF POISON CHANNELS. *** Increment 1 of this fix listed
+    // the four LLVM 19 attributes that make a parameter poison-if-violated
+    // (`nofpclass` / `range` / `nonnull` / `align`) and failed those. That is a
+    // PRESENCE SCAN — "is a poison-conditional fact present?" — which is exactly
+    // the framing bd s6ao's post-mortem says not to use, because the enumeration
+    // is the thing LLVM keeps moving. Ask the CONVERSE question instead: can this
+    // argument be proven defined WITHOUT any such fact? LLVM answers it directly.
+    // *** QUOTE THE CLAUSE, NOT THE GENERALISATION — the Rule-13 round showed the
+    // general form IS the bd s6ao move. *** An earlier draft grounded this on
+    // "either the value is fully defined, or the program is already UB, so no
+    // transformation is licensed or unlicensed by us". At that generality it is a
+    // reusable licence, and applied to a QROM bound or a rail index it is exactly
+    // the "in bounds OR poison" reasoning s6ao ruled out. The fact that actually
+    // makes THIS case safe is narrower and stronger, and it is a verbatim LangRef
+    // 19 clause — from the list of positions where a poison value triggers
+    // IMMEDIATE UB:
     //
-    // *** NOT HAND-WRITTEN-IR-ONLY, MEASURED: *** stock `clang -O1
-    // -ffinite-math-only` on `float f(float x, float y){ return x<y?x:y; }` emits
-    //     define nofpclass(nan inf) float @f(float noundef nofpclass(nan inf) %0,
-    //                                        float noundef nofpclass(nan inf) %1)
-    // and the fp survivors of the curated set (sqrt/fabs/copysign/floor/…) are
-    // exactly where a fast-math build puts such parameters.
+    //     "The parameter operand of a `call` or `invoke` instruction, when the
+    //      function OR INVOKING CALL SITE has a `noundef` attribute in the
+    //      corresponding position."
     //
-    // THE CHANGE IS MONOTONE-RESTRICTIVE, and it is worth saying so because it
-    // tells a reviewer where to look: it can only turn `Leaf` into `Fail`, so it
-    // can only shrink the claimed set. It is also inert on the EMIT side —
-    // `stripPoisonCone` treats `Fail` exactly like `Leaf` (`C != Interior` →
-    // `continue`), an `Argument` has no operands to recurse into and no
-    // annotation to drop, and the claim runs first anyway, so a cone reaching
-    // here at emit time was already refused.
+    // The UB is located AT THE CALL, which happens-before every instruction of the
+    // callee body. So there is no ordering objection to answer: on any execution
+    // that REACHES the rewritten code, the parameter was defined. And "the
+    // function or …" is why reading the DEFINITION's attribute is the
+    // universally-binding side.
     //
-    // *** SCOPE, STATED HONESTLY BECAUSE THE FIXTURE NAME WILL OTHERWISE BE
-    // QUOTED AS CLOSING THE CLASS. THE POPULATED HALF OF bd 615s STAYS OPEN. ***
-    // This closes the ATTRIBUTED argument. A BARE `Argument` is still called
-    // defined by the line below, and that is literally false in the same way: a
-    // caller may pass `poison` to any parameter, and the select→and
-    // canonicalization then observes it on basis states the shield excluded.
+    // THE s6ao DISCRIMINATOR, since the two cases look alike from a distance:
+    // s6ao's escape hatch was a WELL-DEFINED execution (poison is not UB) on which
+    // CQ's artifact then did a concretely wrong thing — an out-of-bounds read.
+    // Here the escape hatch is NO EXECUTION AT ALL. Two independent
+    // corroborations: LLVM makes the identical inference on the identical
+    // construct (`isGuaranteedNotToBeUndefOrPoison` on an `Argument`, measured by
+    // an 11-case `freeze`-fold probe under stock `instcombine`), and the IR CQ
+    // consumes has ALREADY been transformed by `clang -O1` under that inference —
+    // so if it were unsound the miscompile happened upstream of CQ.
     //
-    // *** AND THE COST NUMBER THAT USED TO JUSTIFY LEAVING IT OPEN WAS WRONG BY
-    // ~14x, IN THE DIRECTION THAT DISCOURAGES CLOSING IT. The Rule-13 round
-    // caught it; do not restore it. *** An earlier draft wrote "28 of the 49
-    // shielded select-forms in the corpus" — without naming the corpus, in a file
-    // that names its corpora everywhere else — and then read that as an
-    // accept-loss budget ("refusing bare arguments would decline 28 REAL
-    // select-forms"). Both halves are false:
+    // COMPOSITION with the four attributes is settled by the same clause: `align`,
+    // `nonnull`, `range` and `nofpclass` all say a POISON VALUE is passed instead,
+    // and a poison value in a `noundef` parameter operand IS that immediate-UB
+    // case. Measured: LLVM folds `freeze` away for `noundef nofpclass(nan inf)`,
+    // i.e. `noundef` dominates a co-located attribute.
     //
-    //   * THE CORPUS IS `ir-pass/test` — THIS PASS'S OWN HAND-WRITTEN FIXTURES,
-    //     not real code. (Real code in this file means openlibm; that corpus has
-    //     39 forms, the number quoted 100 lines below.) 28 of the 49 do reach a
-    //     bare `Argument`, but 19 of those 28 are `RUN: not` DECLINE rows that
-    //     already decline for other reasons, and 27 of the 28 reach a bare arg
-    //     only because hand-written fixtures do not bother to write `noundef`.
-    //   * A SHAPE CENSUS IS NOT A FENCE MEASUREMENT — the census tool's own
-    //     header says exactly that, and the arm-kill says what the fence does.
-    //     MEASURED, `CQ_ARMKILL_ALLARG` (every `Argument` → `Fail`), IR + exit
-    //     code per module: **3 of 1048 fixtures change** (this clause's own
-    //     `..._bare_arg` pin plus the two u1rp controls `..._incone_flags_
-    //     stripped` and `..._retattr_dropped`, all exit 0 → 1) and **0 of 220
-    //     e2e stage-1 modules**, with the full e2e ctest layer green under the
-    //     arm. The non-`noundef`-only arm gives the identical 3 / 0.
+    // KNOWN AND DELIBERATE INCOMPLETENESS, so nobody "completes" it into the
+    // enumeration this comment forbids: LLVM's own Argument clause is
+    // `noundef || dereferenceable || dereferenceable_or_null`, and this predicate
+    // takes only the first. The other two are a pure over-decline (safe), and both
+    // are unreachable here anyway — a pointer cone leaf needs `ptrtoint`, which
+    // `definedOpAfterFlagDrop` refuses (measured: `ptr noundef nonnull align 8`
+    // through a `ptrtoint` declines under BOTH the old and the new predicate).
+    // Likewise a `freeze` does NOT stop the walk (`definedOpAfterFlagDrop` makes it
+    // `Interior`), so `freeze(bare_arg)` declines even though LangRef guarantees a
+    // freeze is well-defined — the one-line widening is correct and is filed
+    // SEPARATELY, because a widening does not belong in a tightening commit.
     //
-    // So the pre-existing accept genuinely lost by closing the populated half is
-    // TWO fixture rows and ZERO real code — and adding `noundef` to their
-    // parameters (what `clang -O1` would have emitted anyway) makes both accept
-    // again with byte-identical lowering.
+    // IT IS STRICTLY BETTER THAN THE ENUMERATION IN BOTH DIRECTIONS, measured:
+    //   * TIGHTER — a BARE parameter (no attributes at all) now fails. That was
+    //     the POPULATED half the enumeration left open.
+    //   * LOOSER WHERE IT SHOULD BE — the enumeration DECLINED
+    //     `double noundef nofpclass(nan inf) %x`, which is exactly what stock
+    //     `clang -O1 -ffinite-math-only` emits (`float noundef nofpclass(nan inf)`),
+    //     even though the `noundef` sitting right beside it IS the proof. That was
+    //     a latent over-decline on the one build mode the ticket names as the
+    //     source of these attributes. It is gone.
     //
-    // *** THE OTHER HALF IS THEREFORE OPEN BECAUSE THIS WORK WAS SCOPED TO
-    // OPTION 1 BY OWNER RULING, NOT BECAUSE CLOSING IT IS EXPENSIVE. *** Say it
-    // that way round. And note the ground it currently rests on is itself
-    // falsifiable: "`clang -O1` stamps `noundef` on real parameters" holds for
-    // 428/428 openlibm and 60/60 e2e stage-1 formal parameters, but NOT for a
-    // RECORD-TYPED parameter coerced to an integer — clang deliberately omits
-    // `noundef` there because the struct padding may be undef, and such a
-    // parameter was measured reaching an ACCEPTED shielded cone from ordinary C
-    // (`struct{int a,b;}` by value → `define i32 @probe(i64 %0, i32 noundef %1)`,
-    // cone `icmp` ← `trunc nuw` ← `lshr` ← the bare `%0`). No correctness
-    // consequence was exhibited — an `Argument` is ONE register at the ABI
-    // boundary, so it cannot produce the bd u1rp per-use divergence, which needs
-    // a literal `undef` Constant in two lowered gate slots — but the RULING's
-    // stated reason is narrower than it reads. bd 615s carries the numbers.
+    // *** THE ACCEPT THIS COSTS, STATED PLAINLY — AN EARLIER DRAFT OF THIS BULLET
+    // SAID "ZERO REAL MODULES" AND THAT WAS A NO-REACH ZERO. *** `clang` omits
+    // `noundef` from EVERY register-coerced by-value RECORD parameter (measured
+    // across struct/union/small-vector shapes at every `-O` level), so ordinary C
+    // like
     //
-    // Do NOT read control_predmux_reject_selectform_nofpclass_arg.ll (or its
-    // `_redgreen` sibling) as having closed the Argument-leaf class.
+    //     struct Box { double lo, hi; };
+    //     int probe(int u, double uf, struct Box b) { ... q > 3 && qf > b.hi ... }
     //
-    // PER-ATTRIBUTE REACHABILITY, measured rather than assumed, because two of
-    // the four have no fixture that can witness them:
-    //   * `range`     — clean red-green (exit 0 → 1):
-    //                   control_predmux_reject_selectform_range_arg.ll
-    //   * `nofpclass` — clean red-green, and it is a real accept LOSS, not a
-    //                   relocated decline: BASE emits 18 controlled gates for
-    //                   control_predmux_reject_selectform_nofpclass_arg_redgreen.ll
-    //                   and SHIP declines it. (Its older sibling `..._arg.ll`
-    //                   uses an all-classical fp leaf that declines downstream
-    //                   either way, so only its `CQ_PREDMUX_DBG` gate line
-    //                   discriminates — that row shows the RELOCATION, the
-    //                   `_redgreen` row shows the loss.)
-    //   * `nonnull` / `align` — NO reaching fixture exists, measured: a pointer
-    //                   cast is refused by `definedOpAfterFlagDrop` and a
-    //                   pointer-typed compare leaf declines upstream, so a bare
-    //                   `ptr` control declines identically. They ship anyway
-    //                   because this is ONE predicate over the complete LangRef
-    //                   poison-on-violation parameter set, not four predicates:
-    //                   the bd s6ao lesson is that the ENUMERATION is what LLVM
-    //                   keeps moving, and a partial one invites the
-    //                   which-channel-did-we-forget bug. Cost is two
-    //                   `hasAttribute` calls inside an already monotone-
-    //                   restrictive predicate.
+    // gives `define i32 @probe(i32 noundef %0, double noundef %1, double %2,
+    // double %3)` and now DECLINES where it previously lowered a 144-gate circuit
+    // — and the decline is MODULE-wide, so a perfectly lowerable sibling function
+    // is lost with it. That is a real capability loss for record-taking programs
+    // and it must not be described as free.
     //
-    // bd 615s OPTION 2 — stripping `nofpclass` alongside the three declared
-    // families in `stripPoisonCone` — is DEFERRED, not forgotten: zero
-    // population, zero readers (`grep nofpclass ir-pass/` was empty before this
-    // comment), and it is a DROP-widening on the exact surface where bd u1rp
-    // reverted one. Refusing beats mutating here.
+    // IT IS ALSO EXACTLY THE HOLE, NOT A SIDE-COST. `clang` omits the attribute
+    // there BECAUSE the coerced value may genuinely contain undef padding bits, so
+    // a coerced record parameter IS a bare `Argument` that may carry undef — the
+    // very cell the tightening exists to refuse. Closing the hole necessarily
+    // declines it. The fence is coarse rather than wrong: the cone usually reads a
+    // DEFINED field out of that value (`lshr`+`trunc`), and CQ has no per-field
+    // proof to offer. A field-granular admission is a separate, additive
+    // increment with its own red-green pair owed; it is filed, not smuggled in.
+    //
+    // *** AND BE HONEST ABOUT WHAT THE CORPUS NUMBERS ARE WORTH, because this file
+    // has already been forced to retract one powerless number. *** MEASURED with
+    // the MAXIMAL arm (`Fail` on EVERY `Argument`, i.e. the strictest setting this
+    // predicate can take) over the 220 e2e stage-1 modules, comparing exit code
+    // AND emitted IR: **0 differ**. Nothing in any real-code corpus available here
+    // can distinguish ANY setting of this clause — not the enumeration, not the
+    // `noundef` test, not refuse-everything (0 of 252 openlibm modules carry a
+    // `cq_*` intrinsic at all, so the pass early-outs on them as passthrough).
+    // So "0 of 220 real modules moved" is LITERALLY TRUE AND CARRIES NO
+    // INFORMATION about the predicate, and the same goes for "428/428 openlibm
+    // and 60/60 e2e formal parameters carry `noundef`" — that explains why two
+    // arms agree, never why every arm does. THE ENTIRE EVIDENTIARY BASIS FOR THIS
+    // CLAUSE IS HAND-AUTHORED IR plus the purpose-built C exhibits above. Say that
+    // rather than quoting a zero. (A shape census is not a fence measurement — and
+    // neither is a fence measurement with no reach.)
+    //
+    // MONOTONE-RESTRICTIVE relative to the ORIGINAL leaf rule (every `Argument` a
+    // leaf): `Leaf` → `Fail` only, so the claimed set can only shrink. Relative to
+    // increment 1 it is not monotone — it re-admits the `noundef`-attributed cell
+    // above, deliberately, because that cell carries its own proof. Inert on the
+    // EMIT side either way: `stripPoisonCone` treats `Fail` exactly like `Leaf`
+    // (`C != Interior` → `continue`), an `Argument` has no operands to recurse
+    // into and no annotation to drop, and the claim runs first regardless.
+    //
+    // Fixtures: `..._reject_selectform_bare_arg.ll` (the bare parameter — the half
+    // increment 1 left open), `..._reject_selectform_range_arg.ll` and
+    // `..._reject_selectform_nofpclass_arg_redgreen.ll` (attributed but NOT
+    // `noundef`; the `_redgreen` row is the one where BASE emits a working circuit,
+    // so it witnesses a real accept LOSS rather than a relocated decline), and
+    // `..._accept_selectform_noundef_arg.ll` (the over-decline this increment
+    // removes — `noundef nofpclass(nan inf)`, which increment 1 declined).
+    // Recorded in bd 615s and bd memory [[predmux-argument-leaf-615s]].
+    //
+    // WHAT THIS DOES *NOT* CLOSE, so nobody reads it as more than it is. The
+    // RETURN-attribute half of bd 615s (a lying `nofpclass`/`range` on a CALL
+    // return inside the cone) is a different route, closed by construction rather
+    // than here: `classifyConeNode`'s call clause admits only
+    // `isCuratedReversibleIntrinsic`, which requires a real `IntrinsicInst`, and
+    // LLVM 19 NORMALISES intrinsic declarations at parse time. And bd 615s
+    // OPTION 2 — stripping `nofpclass` alongside the three declared families in
+    // `stripPoisonCone` — stays DEFERRED and is now further from needed than it
+    // was: zero population, zero readers, a DROP-widening on the exact surface
+    // where bd u1rp reverted one, and this predicate never asks whether an
+    // annotation is present in the first place. Refusing beats mutating.
     if (const auto *A = dyn_cast<Argument>(V))
-      if (A->hasAttribute(Attribute::NoFPClass) ||
-          A->hasAttribute(Attribute::Range) ||
-          A->hasAttribute(Attribute::NonNull) ||
-          A->hasAttribute(Attribute::Alignment))
+      if (!A->hasAttribute(Attribute::NoUndef))
         return ConeNode::Fail;
-    return ConeNode::Leaf;  // Constant / bare Argument leaf — defined (see above).
+    return ConeNode::Leaf;  // Constant, or a `noundef` Argument — defined.
   }
   if (const auto *Call = dyn_cast<CallInst>(I)) {
     // *** THE TWO ROTATIONS ARE NOT THE SAME KIND OF NODE, AND TREATING THEM

@@ -2,14 +2,20 @@
 ; ARM: the `nofpclass` cell of `classifyConeNode`'s Argument clause, as a CLEAN
 ; exit-0 → exit-1 RED-GREEN over a BASE that emits a WORKING CIRCUIT.
 ;
-; *** THIS ROW EXISTS BECAUSE ITS SIBLING COULD NOT DO THIS JOB, and the Rule-13
-; round is what established that. *** control_predmux_reject_selectform_nofpclass_
-; arg.ll uses an all-classical fp leaf, which declines DOWNSTREAM for an
-; independent pre-existing reason whether the attribute is present or not — so its
-; only discriminator is the `CQ_PREDMUX_DBG` gate line, and it witnesses the
-; RELOCATION of a decline, never the LOSS of an accept. Rule 12 asks for a fixture
-; that actually witnesses the predicate; for `nofpclass` there was none, and the
-; four-attribute enumeration rested entirely on the `range` row.
+; *** THIS ROW EXISTS BECAUSE THE Rule-13 ROUND SHOWED ITS FIRST SIBLING COULD NOT
+; DO THIS JOB. *** That sibling (`..._nofpclass_arg.ll`, since removed) used an
+; all-classical fp leaf, which declines DOWNSTREAM for an independent pre-existing
+; reason whether the attribute is present or not — so its only discriminator was a
+; `CQ_PREDMUX_DBG` gate line, and it witnessed the RELOCATION of a decline, never
+; the LOSS of an accept. Rule 12 asks for a fixture that actually witnesses the
+; predicate; this one does.
+;
+; UNDER THE SHIPPED PREDICATE IT DECLINES BECAUSE `%x` CARRIES NO `noundef`, not
+; because of the `nofpclass` — increment 2 replaced increment 1's four-attribute
+; enumeration with that one question. Add `noundef` beside the `nofpclass`, which
+; is what stock `clang -O1 -ffinite-math-only` actually emits, and it lowers:
+; that is control_predmux_accept_selectform_noundef_arg.ll, and the pair is the
+; whole predicate.
 ;
 ; THE DIFFERENCE IS THE TAINTED fcmp. Here the shielded operand compares a TAINTED
 ; `cq_theta_f64` rail against the attributed parameter, so the whole region is a

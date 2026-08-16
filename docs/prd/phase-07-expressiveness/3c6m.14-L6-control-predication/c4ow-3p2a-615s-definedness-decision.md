@@ -373,6 +373,93 @@ one**. Refusing beats mutating.
 
 ---
 
+## 3bis. bd 615s INCREMENT 2 — THE ENUMERATION REPLACED BY ONE QUESTION
+
+**Status:** shipped on top of `b5fb9f2`, 2026-08-16. `classifyConeNode`: an
+`Argument` is a defined cone leaf **iff it carries `noundef`**.
+
+### 3bis.1 Why the enumeration was the wrong shape
+
+Increment 1 listed the four poison-on-violation parameter attributes and failed
+those. That is a **presence scan** — "is a poison-conditional fact present?" — the
+framing bd s6ao's post-mortem names as the error, because the enumeration is what
+LLVM keeps moving. The **converse** question has a direct LLVM answer, and it is
+better in both directions at once:
+
+| cell | increment 1 | increment 2 |
+|---|---|---|
+| bare `Argument`, no attributes | accepted (the open half) | **declined** |
+| register-coerced by-value record param | accepted | **declined** |
+| `noundef nofpclass(nan inf)` — what real fast-math clang emits | **declined** (over-decline) | accepted |
+
+### 3bis.2 The ground, quoted rather than generalised
+
+Verbatim LangRef 19, from the list of positions where a poison value triggers
+**immediate UB**:
+
+> "The parameter operand of a `call` or `invoke` instruction, when the function
+> **or invoking call site** has a `noundef` attribute in the corresponding
+> position."
+
+The UB is located **at the call**, which happens-before every instruction of the
+callee body — so on any execution that *reaches* the rewritten code, the parameter
+was defined. There is no ordering objection to answer.
+
+**The first draft did not say this.** It said "either the value is defined, or the
+program is already UB, so nothing we do is licensed or unlicensed", and the round
+pointed out that at that generality it is the s6ao move in different clothes.
+**The discriminator:** s6ao's escape hatch was a *well-defined* execution on which
+the artifact then read out of bounds; this one is *no execution at all*.
+
+Corroborated twice, independently: LLVM makes the identical inference on the
+identical construct (`isGuaranteedNotToBeUndefOrPoison` on an `Argument` is
+`noundef || dereferenceable || dereferenceable_or_null`, measured by an 11-case
+`freeze`-fold probe under stock `instcombine`, with `noundef` dominating a
+co-located attribute), and the IR CQ consumes has *already* been transformed by
+`clang -O1` under that inference.
+
+### 3bis.3 THE COST — and the second powerless number this file had to retract
+
+Increment 2's first draft justified the tightening with "3 fixtures and **zero
+real modules**; real code always carries the attribute (428/428 openlibm, 60/60
+e2e)". **Retracted, for the same reason increment 1's "28 of 49" was.**
+
+Measured with the **maximal arm** — `Fail` on *every* `Argument`, the strictest
+this predicate can be — over the 220 e2e stage-1 modules, comparing exit code and
+emitted IR: **0 differ**. No real-code corpus available in this project can
+distinguish *any* setting of this clause (and 0 of 252 openlibm modules carry a
+`cq_*` intrinsic at all, so the pass early-outs on them as passthrough). The zero
+is literally true and carries no information.
+
+> **A shape census is not a fence measurement — and neither is a fence measurement
+> with no reach.** The entire evidentiary basis for this predicate is hand-authored
+> IR plus purpose-built C exhibits. That is worth saying twice, because this one
+> comment has now shipped a powerless number in *both* directions: increment 1's
+> discouraged closing the hole, increment 2's understated the price of closing it.
+
+**The real cost is not zero.** `clang` omits `noundef` from every register-coerced
+by-value record parameter, so ordinary C passing a `struct` by value now declines
+**module-wide** where it previously lowered a 144-gate circuit. It is the *same
+cell* as the hole — clang omits the attribute there because the coerced value may
+carry undef padding — so closing the hole necessarily declines it. The fence is
+**coarse, not wrong**: the cone usually reads a defined *field* out of that value
+and CQ has no per-field proof. Filed as an additive widening.
+
+### 3bis.4 Residuals, each filed
+
+* field-granular admission for a coerced record parameter (the accept above);
+* `freeze(bare_arg)` over-declines — one line, but a widening;
+* the `Constant` half of the same `return ConeNode::Leaf` line still rests on bd
+  bu96's **pairing** axis while the `Argument` half now rests on **definedness** —
+  one line, two standards, and the weak one admits a poison `ConstantExpr` leaf
+  from ordinary `-O1` C. Pre-existing under both increments;
+* on a UB input CQ **emits** rather than declines, and for a caller passing literal
+  `undef` the emitted circuit is bd u1rp-shaped. Permitted (UB at the call), and
+  `declineUnpairedUndefLiterals` cannot see it because at guard time the value is
+  an `Argument`, not a literal.
+
+---
+
 ## 4. VERIFICATION
 
 * `ctest --test-dir build -j6` — **253/253 PASS**, all 243 e2e slices and their

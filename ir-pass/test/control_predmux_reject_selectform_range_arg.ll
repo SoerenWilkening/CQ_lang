@@ -1,6 +1,18 @@
-; control_predmux_reject_selectform_range_arg.ll — DECLINE (bd 615s, Option 1).
-; ARM: `classifyConeNode`'s ARGUMENT clause — a parameter carrying a
-; poison-generating attribute is not an unconditionally defined cone leaf.
+; control_predmux_reject_selectform_range_arg.ll — DECLINE (bd 615s).
+; ARM: `classifyConeNode`'s ARGUMENT clause — an attribute does NOT rescue a
+; parameter that carries no `noundef`.
+;
+; *** READ THE REASON THIS ROW DECLINES UNDER THE SHIPPED PREDICATE, because the
+; file name says `range` and that is no longer why. *** Increment 1 enumerated the
+; four poison-generating parameter attributes and failed the cone on any of them;
+; increment 2 replaced that enumeration with ONE question — is the argument
+; `noundef`? — and `%c` below carries no `noundef`, so it fails for the same
+; reason a BARE parameter does (control_predmux_reject_selectform_bare_arg.ll).
+; What THIS row adds over that one is the composition: an attribute sitting on a
+; non-`noundef` parameter does not make it defined, and the exhibit below is still
+; the clearest statement of WHY the obligation exists at all. Its mirror is
+; control_predmux_accept_selectform_noundef_arg.ll, where the same attribute
+; alongside a `noundef` DOES lower.
 ;
 ; THE OBLIGATION. `coneDefinedAfterFlagDrop` promises "this cone is DEFINED once
 ; its poison-generating annotations are dropped", and on the strength of that

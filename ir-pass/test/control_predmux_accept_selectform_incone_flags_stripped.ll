@@ -35,6 +35,15 @@
 ; ANYWHERE in the output" and a positional one covers only the span between two
 ; CHECKs. (Do not write the bare not-directive spelling in prose here — FileCheck
 ; parses it out of a comment and fails with "found empty check string".)
+;
+; bd 615s INCREMENT 2 NOTE: the `noundef` on `@probe`'s parameters is load-bearing
+; and was added by that increment, not by the original author of this row.
+; `classifyConeNode` now treats an `Argument` as a defined cone leaf IFF it carries
+; `noundef` -- the direct LLVM proof that the value has no undef/poison bits -- so
+; without it this row's shielded cone would (correctly) fail the proof and the
+; region would go unclaimed. It is exactly what `clang -O1` emits for a real
+; parameter, and the lowering with it is BYTE-IDENTICAL to this file's committed
+; pre-increment output (measured, module-name lines aside). Do not remove it.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s  --implicit-check-not='br i1' --implicit-check-not='select i1'  --implicit-check-not='add nsw' --implicit-check-not='add nuw' < %t.cqd0.ll
 
@@ -45,7 +54,7 @@ declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare i32 @llvm.ctpop.i32(i32)
 
-define i32 @probe(i32 %u, i32 %c) {
+define i32 @probe(i32 noundef %u, i32 noundef %c) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u, double 5.000000e-01)
   %a = icmp sgt i32 %q, 3
