@@ -13,9 +13,13 @@
 // count-only CHECK). The flag is stripped by `icmp_inv` (q is untouched — the
 // copies write `out`, never q — so q == q0) and freed; q, `%out`, the
 // materialized scratch, and the hoisted call are left allocated (Rule 6/8).
-// Because the callee is PURE (the §2.13 / WI-5.4 rejection set), hoisting it into
-// `Pred` so it runs unconditionally is observationally inert — its result on the
-// inactive branch is computed-and-discarded.
+// Hoisting the call into `Pred` so it runs UNCONDITIONALLY needs TWO properties,
+// not one. PURITY (the §2.13 / WI-5.4 rejection set) is why nothing observable
+// moves — its result on the inactive branch is computed-and-discarded. TOTALITY
+// is why the extra execution is not UB the source never had, and purity does not
+// imply it: bd wve8 shipped a `memory(none) nounwind willreturn` callee whose body
+// divided by its argument, and the program SIGFPEd on a source whose guard has
+// zero amplitude. `classifyClassicalCallArm` proves both before this file runs.
 
 #include "ClassicalCallArmEmit.h"
 
@@ -122,13 +126,28 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
 
   const DebugLoc DL = Cond->getDebugLoc();
 
-  // 0. HOIST the pure call to just before the conditional `br` (it runs
-  //    unconditionally — inert, the callee is pure). Moving it OUT of the arm is
-  //    mandatory: `flattenRegion` (step 6) erases the arm block, which would
-  //    otherwise drop the call (and its result). Its args are all classical and
-  //    external to the arm (the arm is exactly call + br, by classification), so
-  //    they dominate this insertion point. `materializeCopySource(call)` below
-  //    then reads the hoisted result.
+  // 0. HOIST the call to just before the conditional `br`, where it runs
+  //    UNCONDITIONALLY. Moving it OUT of the arm is mandatory: `flattenRegion`
+  //    (step 6) erases the arm block, which would otherwise drop the call (and
+  //    its result). Its args are all classical and external to the arm (the arm
+  //    is exactly call + br, by classification), so they dominate this insertion
+  //    point. `materializeCopySource(call)` below then reads the hoisted result.
+  //
+  //    *** "INERT, THE CALLEE IS PURE" WAS THIS COMMENT'S JUSTIFICATION AND IT
+  //    WAS NOT ENOUGH (bd wve8). *** Purity makes the hoist inert only in the
+  //    sense that nothing OBSERVABLE moves; it says nothing about whether the
+  //    callee is DEFINED on the arguments, and `mayHaveSideEffects()` — write ||
+  //    throw || !willReturn — does not cover immediate UB. A `memory(none)
+  //    nounwind willreturn` callee whose body was `return 100 / x;` was hoisted
+  //    here and the program SIGFPEd on a source that never evaluates it (the
+  //    guard has zero amplitude). `classifyClassicalCallArm` now additionally
+  //    proves TOTALITY — `isSafeToSpeculativelyExecute` (the `speculatable`
+  //    attribute, which clang really does emit on the intrinsics it lowers
+  //    builtins to) or `isSpeculatableTotalCallee` (the STRICT body walk, not the
+  //    lax `isSpeculatablePureCallee`, whose memory and terminator clauses defer
+  //    their obligation to a clone 6.5 never mints) — plus an argument clause for
+  //    `noundef` parameters. Read the full argument at that gate; if you widen it,
+  //    THIS is the line that cashes the widening.
   Call->moveBefore(BI);
 
   IRBuilder<> B(BI);  // every emitted call lands before the conditional br.

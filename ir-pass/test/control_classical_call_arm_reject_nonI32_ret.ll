@@ -20,7 +20,17 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}tainted value returned at non-i32 width
 declare i32 @cq_theta_si32(i32, double)
-declare i64 @f(i64) #0
+; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its
+; quantum guard, so it now needs a TOTALITY proof as well as a purity one, and a
+; visible pure body is what supplies it (`isSpeculatablePureCallee`). The old
+; opaque `declare` carried no evidence of totality and now DECLINES — see
+; control_classical_call_arm_reject_opaque_callee.ll (the crash it shipped) and
+; control_classical_call_arm_reject_partial_callee.ll (a VISIBLE partial body,
+; also declined). Nothing else in this fixture changes; the body is inert.
+define i64 @f(i64 %a) #0 {
+  %s = add i64 %a, 100
+  ret i64 %s
+}
 
 define i64 @example(i32 %u0, i64 %a) {
 entry:

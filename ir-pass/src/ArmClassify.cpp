@@ -26,12 +26,14 @@
 #include "ControlPlan.h"
 #include "EqFoldArm.h"
 #include "OpcodeSupport.h"
+#include "PredMuxFlatten.h"
 #include "TaintPropagation.h"
 #include "WireWalk.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
@@ -1312,16 +1314,142 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
     return ClassicalCallDisp::Declined;
   }
 
-  // PURITY (§2.13 / WI-5.4): the unconditional hoist into `Pred` is observationally
-  // inert ONLY for a side-effect-free, memory-independent, will-return callee.
+  // PURITY (§2.13 / WI-5.4): the unconditional hoist into `Pred` requires a
+  // side-effect-free, memory-independent, will-return callee.
   // `doesNotAccessMemory()` (readnone) makes the result depend solely on its args;
   // `!mayHaveSideEffects()` adds nounwind + willreturn (no throw, no infinite loop).
   // A readonly / writing / throwing / non-returning callee DECLINES (over-decline
   // is safe; the rejection set is load-bearing for the inert-hoist claim).
+  //
+  // *** THIS PAIR IS NECESSARY AND IS NOT SUFFICIENT — bd wve8. *** The sentence
+  // that stood here said the hoist is observationally inert "ONLY for a
+  // side-effect-free, memory-independent, will-return callee", which reads as
+  // SUFFICIENCY and is false; it is necessity at best. `mayHaveSideEffects()` is
+  // `mayWriteToMemory() || mayThrow() || !willReturn()`, and IMMEDIATE UB INSIDE
+  // THE CALLEE IS NONE OF THOSE. So `__attribute__((const)) int recip100(int x)`
+  // with the body `return 100 / x;` passed this gate cleanly, and
+  //     int q = cq_theta_si32(0, 0.0);  int y = q;
+  //     if (q > 3) y = recip100(0);     return cq_measure_si32(y);
+  // — a source with NO UB on ANY basis state, because Ry(0) is the identity so
+  // `q == 0` everywhere and `q > 3` has ZERO AMPLITUDE — compiled to a program
+  // that calls `recip100(0)` unconditionally and SIGFPEd. Reproduced end to end
+  // at commit 9dc909e: `opt` exit 0, in-process verifier clean,
+  // `free_pairing_check.py` 1 verified / 0 violations / 0 unproven, run_exit=136.
+  // (`__attribute__((const))` puts `mustprogress nofree nosync nounwind willreturn
+  // memory(none)` on the declaration; the CALL SITE carries exactly
+  // `nounwind willreturn memory(none)`, which is the set the fixtures use.)
+  // The trap is the LOUD form. The SILENT form is the same defect with a
+  // pure-but-partial callee that returns garbage instead of trapping — hoisted
+  // identically and route-merged into `%out` by `cqrt_copy_<W>_controlled`, where
+  // NO gate in this tree can see it. PURITY IS NOT TOTALITY.
+  //
+  // The shape of the mistake is bd s6ao's, one level up: do not scan for which
+  // bad properties are PRESENT; ask whether the call can be proven SAFE TO
+  // SPECULATE. LLVM asks precisely that, and its answer for a call is the
+  // `speculatable` attribute and nothing weaker — ValueTracking's own reason,
+  // verbatim, is "The called function could have undefined behavior or
+  // side-effects, even if marked readnone nounwind", which is bd wve8's finding
+  // in LLVM's words. MEASURED: stock clang refuses this very hoist at -O1/-O2/-O3
+  // on the source above (the call stays inside the guarded block at all three).
+  // CQ was performing a transform LLVM declines, on a strictly weaker proof than
+  // LLVM demands for it.
+  //
+  // TOTALITY, therefore, by either of two proofs, plus an argument clause below:
+  //
+  //   * `isSafeToSpeculativelyExecute` — LLVM's own answer. *** THIS ROW HAS REAL
+  //     C POPULATION; an earlier draft of this comment claimed it had none and
+  //     that "C has no spelling for `speculatable`", and BOTH were false. *** No
+  //     C *function declaration* syntax spells it, but clang stamps it on the
+  //     INTRINSICS it emits for builtins, and those reach this gate. MEASURED:
+  //     `if (q > 3) y = __builtin_abs(a);` at -O1 emits
+  //     `call i32 @llvm.abs.i32(i32 %0, i1 true)` whose declaration carries
+  //     `speculatable`, and it lowers here — while declining without this
+  //     disjunct, since an intrinsic declaration has no body to walk. So the
+  //     disjunct is load-bearing for ordinary C, not a formality.
+  //   * `isSpeculatableTotalCallee` (PredMuxFlatten.h) — the in-tree body walk,
+  //     in its STRICT mode. Read that function's definition before touching this:
+  //     the LAX form (`isSpeculatablePureCallee`, which S1/S2/S3 use) is NOT a
+  //     totality proof, because two of its clauses defer their obligation to a
+  //     clone that 6.5 never mints. Using the lax form here was the FIRST bd wve8
+  //     fix and a Rule-13 lens broke it with six lines of C: a `static const`
+  //     lookup table read, hoisted out of a zero-amplitude guard, SIGSEGV.
+  //     Content clauses of the strict walk, each with its own decline fixture:
+  //     visible + non-interposable (`hasExactDefinition`) + non-varargs; no
+  //     call-graph cycle; no CFG cycle; every block ending br/ret; NO memory op
+  //     at all; NO conditional branch; and every remaining instruction
+  //     `isSpeculatableDataflow` — which is where the division guard lives:
+  //     `udiv`/`urem`/`sdiv`/`srem` are admitted only on a ConstantInt divisor
+  //     that is non-zero, and the extra `-1` exclusion applies to the SIGNED
+  //     forms only (`udiv`/`urem` by -1 are total and are admitted).
+  //
+  // *** DO NOT READ THE BODY WALK AS A DEFINEDNESS PROOF *** — the caps warning
+  // is at `PureCalleeQuery` in PredMuxFlatten.cpp (the deleted S4, bd 3c6m.14.2);
+  // the header carries no such caveat. This site does not need one. The
+  // obligation HERE is that EXECUTING the call must not introduce UB the source
+  // did not have. The RESULT's definedness is a different question, and it is not
+  // observed on a shielded state: `cqrt_copy_<W>_controlled` is the identity
+  // wherever the flag is 0, so on exactly the basis states the source shielded,
+  // the hoisted value never reaches `%out`. What reaches `%out` on the states the
+  // source did take is the value the source itself computed. That asymmetry is
+  // pinned deliberately by control_classical_call_arm_accept_poisonselect_callee.ll,
+  // which KEEPS a poison-producing `shl` in the callee and still lowers.
+  //
+  // COST, MEASURED, AND STATED IN FULL — an earlier draft said only "what narrows
+  // is the OPAQUE-DECLARATION shape", which is false. Six shapes accepted before
+  // this gate and decline after it: an opaque declaration; a visible body with any
+  // memory op (including the ordinary alloca/store/load helper); a body with a
+  // conditional branch; a body with any CFG loop; `available_externally` /
+  // `linkonce_odr` / `weak_odr` / interposable linkage; and a call passing a
+  // not-provably-defined value to a `noundef` parameter. All are over-declines
+  // (Prime Directive) and none is exotic — `available_externally` is what a C99
+  // `inline` becomes in an importing TU. What that costs on the corpus: NOTHING.
+  // Over the whole e2e layer the 6.5 arm accepts at TWELVE sites, all `ext_f` from
+  // classical_call_under_control_lib.c, and all twelve pass the strict walk
+  // (`run_slice_multi.sh` llvm-links every TU before the single cq-lowering run,
+  // so the definition IS visible — the structural guarantee that slice's own
+  // header describes). ZERO of the 220 single-TU stage-1 modules reach this gate
+  // at all, so libm coverage is untouched.
+
   if (!Call->doesNotAccessMemory() || Call->mayHaveSideEffects()) {
     diagnoseUnderControl(Call, "control flow");
     return ClassicalCallDisp::Declined;
   }
+  if (!llvm::isSafeToSpeculativelyExecute(Call) &&
+      !isSpeculatableTotalCallee(Callee)) {
+    diagnoseUnderControl(Call, "control flow");
+    return ClassicalCallDisp::Declined;
+  }
+
+  // TOTALITY, THE ARGUMENT HALF. The two proofs above are about the CALLEE. A
+  // call can also be UB for a reason that lives entirely at the CALL: passing
+  // `poison` to a parameter attributed `noundef` is immediate UB, and the hoist
+  // creates it out of nothing when the source's guard excluded the call. Probed
+  // and REACHED post-fix: `%p = shl i32 1, %n` (poison for `%n >= 32`) computed
+  // in the pred and passed as `call i32 @pf(i32 noundef %p)` accepted at exit 0
+  // with both callee proofs satisfied, because `@pf`'s own body is impeccable.
+  //
+  // `noundef` IS THE WHOLE CHECK, and that is a completeness argument rather than
+  // an enumeration (bd s6ao: never scan for the channels you happened to think
+  // of). If a parameter is NOT `noundef`, passing it poison is simply not UB. The
+  // pointer-side attributes do not reopen it: a `nonnull`/`align`/`dereferenceable`
+  // violation yields poison rather than UB, and the place that would turn such a
+  // pointer INTO UB is a memory access inside the callee — which the strict twin
+  // refuses outright. Note clang -O1 stamps `noundef` on scalar parameters as a
+  // matter of course, so this is the live surface for real input, not a corner.
+  //
+  // AND `isGuaranteedNotToBeUndefOrPoison` IS SOUND *HERE* THOUGH IT IS CIRCULAR
+  // ONE GATE OVER. Measured at this exact position on the probe above: `gnp=0`
+  // for the `shl`. Contrast the branch-condition position inside the callee,
+  // where the same predicate answers 1 for `icmp(shl)` because it also reasons
+  // from USES and a `br` is UB on poison (see the terminator clause in
+  // PredMuxFlatten.cpp). Same predicate, opposite usefulness, decided by position
+  // — which is why both were measured rather than argued.
+  for (unsigned Ai = 0, Ae = Call->arg_size(); Ai != Ae; ++Ai)
+    if (Call->paramHasAttr(Ai, Attribute::NoUndef) &&
+        !llvm::isGuaranteedNotToBeUndefOrPoison(Call->getArgOperand(Ai))) {
+      diagnoseUnderControl(Call, "control flow");
+      return ClassicalCallDisp::Declined;
+    }
 
   // §3c (DD-7) — the call result `Call` and (by the classical-result gate above)
   // EVERY input are NON-TAINTED, hence disjoint from the condition's all-tainted

@@ -4,7 +4,7 @@
 ; DD-7). NO clone, NO cswap/route, NO reverse-play.
 ;
 ; SOURCE INTENT: `int y = q; if (q > 5) y = pure_f(7);  measure y;` — `pure_f` is
-; an external `memory(none)` (readnone) callee with a CLASSICAL constant arg, so
+; a VISIBLE `memory(none)` (readnone) callee with a CLASSICAL constant arg, so
 ; the diamond's merge phi is [%q (tainted, straight-through Pred edge), %r (a
 ; direct classical call result, arm edge)]. `classifyClassicalCallArm` recognizes
 ; it: the call is HOISTED into Pred (inert because pure), then the controlled-copy
@@ -29,7 +29,17 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
-declare i32 @pure_f(i32) #0
+; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its
+; quantum guard, so it now needs a TOTALITY proof as well as a purity one, and a
+; visible pure body is what supplies it (`isSpeculatablePureCallee`). The old
+; opaque `declare` carried no evidence of totality and now DECLINES — see
+; control_classical_call_arm_reject_opaque_callee.ll (the crash it shipped) and
+; control_classical_call_arm_reject_partial_callee.ll (a VISIBLE partial body,
+; also declined). Nothing else in this fixture changes; the body is inert.
+define i32 @pure_f(i32 %a) #0 {
+  %s = add i32 %a, 100
+  ret i32 %s
+}
 
 define i32 @example(i32 %u0) {
 entry:

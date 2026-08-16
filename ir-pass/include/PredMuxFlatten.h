@@ -75,6 +75,20 @@ bool flattenPredMuxRegions(llvm::Module &M, TaintSet &taint,
 // (`qqSelectLeafWidth`) fences i80.
 bool isSpeculatablePureCallee(const llvm::Function *F);
 
+// bd wve8 — THE STRICT TWIN. Same walk, but it refuses the two clauses whose
+// obligation `isSpeculatablePureCallee` DEFERS to a later stage: the
+// `qromReadShapeInScope` const-global read (whose BOUNDS proof is the clone
+// emitter's job) and the terminator skip (which never asks whether a conditional
+// branch's condition can be poison). Use this — never the lax form — from any
+// consumer that SPECULATES THE CALL ITSELF without cloning or lowering the
+// callee, i.e. one for which no later stage exists to discharge the deferral.
+// Its one caller today is `classifyClassicalCallArm` (the Phase-6.5
+// classical-call arm, which is clone-ORTHOGONAL and hoists the call to
+// unconditional execution). Reaching for the lax form there shipped an
+// out-of-bounds read that SIGSEGVed on a source with no UB; the full account is
+// at the definition in PredMuxFlatten.cpp.
+bool isSpeculatableTotalCallee(const llvm::Function *F);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_PREDMUXFLATTEN_H

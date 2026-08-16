@@ -133,7 +133,7 @@ if(_use_lit)
     # paying it on every `ctest` would make the optimisation self-defeating.
     # A stride-8 sample is ~128 fixtures / ~13s and still crosses every fixture
     # family. Note what already backs it up: ir-pass-lit itself runs cq-opt over
-    # ALL 1051 fixtures and asserts stdout, stderr and exit code, so a divergence
+    # ALL 1059 fixtures and asserts stdout, stderr and exit code, so a divergence
     # is only invisible if it still satisfies the CHECK patterns. This sample is
     # the cheap tripwire for that narrow residue.
     add_test(
@@ -156,7 +156,7 @@ if(_use_lit)
               --fixtures "${CMAKE_CURRENT_SOURCE_DIR}"
               --stride 1
       DEPENDS cq-opt CQPass
-      COMMENT "cq-opt vs stock opt: full 1051-fixture equivalence sweep")
+      COMMENT "cq-opt vs stock opt: full 1059-fixture equivalence sweep")
   endif()
 else()
   # Fallback: shell-grep loop. Same correctness, less diagnostic polish.

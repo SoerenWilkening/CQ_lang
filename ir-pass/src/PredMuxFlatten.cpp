@@ -847,12 +847,21 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
 // of `Impl`; a grep without it silently misses a call expression. The recursion
 // is now MUTUAL — `Impl` calls `Walk` calls `Impl` — not self-recursion.)
 //
-//   textual call EXPRESSIONS of any of the three names ........... 5
-//     ... minus the self-recursion ................................ 4
-//     ... minus the recursion AND the two pure forwarders ......... 2
-//   distinct CONSUMERS that make an accept decision ............... 2
-//   distinct CONTEXTS those 2 consumers run in .................... 3
+//   textual call EXPRESSIONS of any of the three names ........... 6
+//     ... minus the self-recursion ................................ 5
+//     ... minus the recursion AND the two pure forwarders ......... 3
+//   distinct CONSUMERS that make an accept decision ............... 3
+//   distinct CONTEXTS those 3 consumers run in .................... 4
 //   self-recursion ................................................ 1
+//
+// *** THE COUNTING UNIT, SPELLED OUT, because re-deriving it cost ten minutes and
+// the block above only implies it. *** "the three names" means
+// `isSpeculatablePureCallee` / `...Body` / `...BodyImpl` and EXCLUDES calls to
+// `...BodyWalk`, so the `Impl -> Walk` expression is NOT among the 6. (The grep
+// must still carry the `Walk` alternative — that is how you SEE that expression in
+// order to exclude it deliberately rather than miss it silently.) Under that unit
+// the pre-bd-wve8 numbers 5/4/2/2/3/1 were correct; bd wve8 added exactly one
+// consumer whose entry point calls `Impl` directly, so every delta is +1.
 //
 // The two forwarders are `isSpeculatablePureCalleeBody` (mints the query
 // context) and the exported `isSpeculatablePureCallee`. S1/S2 are the SAME
@@ -865,8 +874,16 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
 //   S3 `isSpeculatablePureCallee` -> `Fp80Union.cpp`'s AdmitArgDerived seed cone
 //   S5 the proof's own recursion — a clean outer callee over a compare-bearing
 //      inner one.
-// Each has a red-green fixture and each was measured to split against a pinned
-// pre-change plugin before bd 3c6m.14.1 was written.
+//   S6 `isSpeculatableTotalCallee` -> `ArmClassify.cpp`'s `classifyClassicalCallArm`
+//      (bd wve8; the Phase-6.5 classical-call arm). *** S6 RUNS THE WALK IN STRICT
+//      MODE AND IS THE ONLY CONSUMER THAT DOES. *** It is also the only one that
+//      speculates the CALL ITSELF with no clone and no lowering of the callee
+//      behind it — which is exactly why it cannot accept the two clauses S1/S2/S3
+//      defer. Fixtures: control_classical_call_arm_reject_{opaque,partial,qrom,
+//      poisonbr,poison_arg,interposable}_callee.ll, plus the accept pair
+//      accept_speculatable_decl.ll / accept_poisonselect_callee.ll.
+// Each has a red-green fixture; S1/S2/S3/S5 were each measured to split against a
+// pinned pre-change plugin before bd 3c6m.14.1 was written.
 //
 // *** S4 IS GONE — DELIBERATELY, AND IT IS THE POINT OF bd 3c6m.14.2. *** S4 was
 // `coneDefinedAfterFlagDrop`'s shielded-cone CALL admission: this PURITY proof
@@ -1102,11 +1119,30 @@ bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) 
 // `isSpeculatableDataflow`, which admits a variable-amount `shl/lshr/ashr` and
 // `fptosi/fptoui` unconditionally; it also skips terminators, so a body of just
 // `ret i32 poison` passes VACUOUSLY. `coneDefinedAfterFlagDrop` used to consume
-// it (the deleted S4) and that was a verify-clean silent miscompile. The three
+// it (the deleted S4) and that was a verify-clean silent miscompile.
+//
+// *** THE SENTENCE THAT STOOD HERE IS RETRACTED (bd wve8). *** It read: "The three
 // surviving consumers are sound because they SPECULATE THE CALL into a program
 // that already executed it — they never observe its RESULT on a state the source
-// shielded, which is the strictly stronger obligation S4 carried and this
-// predicate cannot discharge.
+// shielded." A FOURTH consumer now exists (S6, the Phase-6.5 classical-call arm)
+// for which the first half is simply untrue: it HOISTS the call out of a quantum
+// guard into unconditional execution, in a program that specifically might NOT
+// have executed it. Rather than patch the sentence, separate the two obligations,
+// because they are what actually differ between consumers:
+//   * DEFINEDNESS OF THE RESULT on a state the source shielded — S4's obligation,
+//     which this predicate does not and cannot discharge, which is why S4 was
+//     DELETED. S1/S2/S3 do not carry it, and neither does S6: a
+//     `cqrt_copy_<W>_controlled` is the identity wherever the flag is 0, so the
+//     speculated result is never observed on a shielded basis state.
+//   * TOTALITY — that executing the call introduces no UB the source did not
+//     have. S1/S2/S3 satisfy it WITH HELP: the callee is about to be cloned and
+//     lowered, and the clone's own flatten re-proves what this walk defers.
+//     *** S6 HAS NO SUCH HELP, AND ASSUMING IT DID SHIPPED A SIGSEGV. *** It runs
+//     the walk in STRICT mode instead (`isSpeculatableTotalCallee`), where the
+//     deferred clauses are named and refused.
+// So this predicate is a TOTALITY-MODULO-TWO-DEFERRALS proof and never a
+// definedness proof; which of those two a consumer needs is the first question to
+// ask about any new consumer.
 // bd 3c6m.14.4 — ONE top-level query's context: the cycle breaker, the memo, and
 // the cost counters. *** THE MEMO IS PER-QUERY AND MUST STAY THAT WAY. ***
 //
@@ -1160,6 +1196,15 @@ struct PureCalleeQuery {
   unsigned MemoHits = 0;      // COUNTED, not inferred as Invocations-Bodies:
                               // that difference also absorbs guard rejects and
                               // cycle returns, which made `hits` a mislabel.
+  // bd wve8 — *** THIS PROOF HAS TWO CLAUSES WHOSE OBLIGATION IS DISCHARGED BY
+  // SOMEONE ELSE, AND A CONSUMER THAT DOES NOT DISCHARGE THEM MUST SET THIS
+  // FALSE. *** See `isSpeculatableTotalCallee` for the full statement and for
+  // the SIGSEGV that established it. Default TRUE so S1/S2/S3 are byte-identical
+  // to their pre-wve8 behaviour; only `isSpeculatableTotalCallee` flips it. The
+  // flag lives in the QUERY, so the recursion inherits it and the per-query memo
+  // can never serve a lax verdict to a strict query (each top-level entry mints
+  // a fresh `PureCalleeQuery`).
+  bool AdmitDeferred = true;
 };
 
 bool isSpeculatablePureCalleeBodyWalk(const Function *F, PureCalleeQuery &Q);
@@ -1218,9 +1263,68 @@ bool isSpeculatablePureCalleeBodyWalk(const Function *F, PureCalleeQuery &Q) {
     const Instruction *Term = BB.getTerminator();
     if (!isa<BranchInst>(Term) && !isa<ReturnInst>(Term))
       return false;
+    // bd wve8, DEFERRED CLAUSE 2 — THE TERMINATOR SKIP. The instruction loop
+    // below `continue`s on every terminator, so nothing here ever looked at a
+    // conditional branch's CONDITION; and `isSpeculatableDataflow` admits a
+    // variable-amount `shl/lshr/ashr` and `fptosi/fptoui`, all of which produce
+    // POISON. `br i1 poison` is IMMEDIATE UB. For the lax consumers that is
+    // harmless — they never move the branch, and the callee's control flow is
+    // re-established by the clone — but a consumer that speculates the whole CALL
+    // executes that branch on a path the source did not take.
+    //
+    // STRICT MODE REFUSES A CONDITIONAL BRANCH OUTRIGHT. An unconditional `br` is
+    // admitted: it has no condition and cannot be UB.
+    //
+    // *** THE OBVIOUS FIX HERE IS A NO-OP THAT READS AS A FIX. MEASURED, DO NOT
+    // RE-TRY IT. *** The first draft asked
+    // `isGuaranteedNotToBeUndefOrPoison(BrI->getCondition())`, which is the
+    // natural spelling and is CIRCULAR at exactly this position. On the shipped
+    // probe body (`%s = shl i32 1, %x` / `%c = icmp eq i32 %s, 7` /
+    // `br i1 %c`, with `%x` noundef) LLVM 19 answers:
+    //     gnp(cond %c) = 1      gnp(op %s = shl i32 1, %x) = 0      gnp(i32 7) = 1
+    // `icmp` cannot CREATE poison, so a bottom-up analysis must return 0 for `%c`;
+    // it returns 1 because ValueTracking also reasons from USES — `%c` is the
+    // condition of a `br`, a use that is UB on poison, so a well-defined program
+    // implies `%c` is not poison. That is precisely the question being asked, run
+    // backwards. The whole fixture ACCEPTED with the check in place. Same family
+    // as the `canCreateUndefOrPoison` no-op recorded in LiteralIntegrity.h: a
+    // predicate whose name matches the obligation and whose answer does not.
+    //
+    // COST OF THE BLUNTER RULE, MEASURED: zero. Every callee body in the corpus
+    // that reaches this consumer is single-block (12 e2e sites, 25 fixtures). A
+    // branching classical helper is not a shape 6.5 set out to support, so
+    // declining it is a safe over-decline (Rule 17's carve-out), and widening it
+    // later needs a poison analysis that does not consult uses.
+    if (!Q.AdmitDeferred)
+      if (const auto *BrI = dyn_cast<BranchInst>(Term))
+        if (BrI->isConditional()) {
+          if (::getenv("CQ_PREDMUX_DBG"))
+            llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
+                         << " fails at poison-capable conditional branch: "
+                         << *Term << "\n";
+          return false;
+        }
     for (const Instruction &I : BB) {
       if (I.isTerminator())
         continue;
+      // bd wve8, DEFERRED CLAUSE 1 — THE QROM READ. `isSpeculatableDataflow`
+      // admits a const-global load and its address gep through
+      // `qromReadShapeInScope`, which proves the SHAPE and says in its own header
+      // that "the index-taint proof, the straight-line/loop gates AND the bounds
+      // proof are DEFERRED — re-proven by the emitter under the clone's own
+      // cloneTaint". A consumer with no clone never performs that re-proof, so
+      // the index is unbounded and the speculated call reads out of bounds.
+      // EXHIBITED: `static const int tab[4]; int lookup(int i){return tab[i];}`
+      // under `if (q > 3) y = lookup(idx);` with a zero-amplitude guard —
+      // SIGSEGV at idx=1e8, and a silent garbage word in the trace at idx=9.
+      // Refusing the gep as well as the load is deliberate: the gep case exists
+      // only to serve such a load, so admitting it alone would be dead surface.
+      if (!Q.AdmitDeferred && (isa<LoadInst>(I) || isa<GetElementPtrInst>(I))) {
+        if (::getenv("CQ_PREDMUX_DBG"))
+          llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
+                       << " fails at deferred-bounds memory op: " << I << "\n";
+        return false;
+      }
       if (const auto *CI2 = dyn_cast<CallInst>(&I)) {
         if (isCuratedReversibleIntrinsic(CI2) && CI2->doesNotAccessMemory())
           continue;
@@ -2731,6 +2835,70 @@ private:
 // intrinsics only). Shared with the Fp80Union seed walk (Rule 14).
 bool isSpeculatablePureCallee(const Function *F) {
   return isSpeculatablePureCalleeBody(F);
+}
+
+// bd wve8 — THE STRICT TWIN, AND THE REASON IT HAD TO EXIST.
+//
+// `isSpeculatablePureCallee` is documented as "pure + total + terminating", and
+// the TOTAL conjunct is not true unconditionally: two clauses of the walk carry
+// an obligation that is discharged by a LATER stage rather than by the walk.
+//   (1) THE QROM READ. `isSpeculatableDataflow` admits a const-global load and
+//       its address gep via `qromReadShapeInScope`, whose own header states that
+//       "the index-taint proof, the straight-line/loop gates AND the bounds proof
+//       are DEFERRED — re-proven by the emitter under the clone's own cloneTaint".
+//   (2) THE TERMINATOR SKIP. The walk `continue`s on terminators and never asks
+//       whether a conditional branch's condition can be poison; `br i1 poison` is
+//       immediate UB.
+// For S1/S2 (the E4 CALL admission) and S3 (Fp80Union's seed cone) that deferral
+// is real: the callee is about to be CLONED and LOWERED, and the clone's own
+// flatten re-proves the bounds and keeps the branch. Those consumers are
+// unchanged and must stay unchanged.
+//
+// The Phase-6.5 classical-call arm is the consumer for which the deferral is
+// VOID, and it is void by construction, not by accident: 6.5 is
+// clone-ORTHOGONAL — no clone is ever minted, the callee body is never lowered,
+// stage 3 compiles it verbatim, and `ClassicalCallArmEmit` HOISTS the call to
+// unconditional execution. Nothing downstream exists to discharge anything.
+//
+// *** THIS WAS NOT A THEORETICAL GAP. *** The first bd wve8 fix used
+// `isSpeculatablePureCallee` here and a Rule-13 lens broke it in one probe of
+// plain C at -O1, reproduced independently by the orchestrator:
+//     static const int tab[4] = {11,22,33,44};
+//     __attribute__((noinline)) static int lookup(int i) { return tab[i]; }
+//     int q = cq_theta_si32(0, 0.0);  int y = q;      /* Ry(0) = identity   */
+//     if (q > 3) y = lookup(idx);                     /* zero amplitude     */
+// clang infers `memory(none)` on `lookup` (a read of CONSTANT memory is not a
+// memory access to FunctionAttrs), so the purity gate passes on a function that
+// really does load; the index is a classical parameter no quantum guard can
+// constrain; the hoist executes the read. idx=1e8 -> SIGSEGV (run_exit=139).
+// idx=9 -> NO crash and `cqrt_alloc_i32(539780133)` in the trace: a word read
+// past the end of the table, route-merged on a run where the source never
+// evaluated the call. `cq-opt` exit 0, verifier clean, `free_pairing_check.py`
+// 2 verified / 0 violations / 0 unproven, every gate in the tree silent.
+// Pinned by control_classical_call_arm_reject_qrom_callee.ll (arm-kill: flip the
+// table's `constant` to `global` and it declines pre-fix too, which is how the
+// QROM clause was isolated as the admitting one).
+//
+// So: same walk, same memo discipline, one flag. A consumer that will NOT
+// discharge a deferred obligation must not be handed a proof that defers one.
+bool isSpeculatableTotalCallee(const Function *F) {
+  PureCalleeQuery Q;
+  Q.AdmitDeferred = false;
+  bool R = isSpeculatablePureCalleeBodyImpl(F, Q);
+  // Same `CQ_PREDMUX_COUNT` line as the lax entry point, with `mode=strict` so the
+  // two are distinguishable in one stream. Deliberate parity, not decoration: the
+  // wve8 Rule-13 round noted that without it S6 — the ONE clone-orthogonal
+  // consumer, i.e. the one whose verdict is load-bearing for a hoist nothing else
+  // re-proves — would be the only consumer with no verdict/cost observability and
+  // the only one that could not carry a call-count cost pin (the bd 3c6m.14.4
+  // discipline: pin a COUNT, never a wall time).
+  if (::getenv("CQ_PREDMUX_COUNT"))
+    llvm::errs() << "CQ_PREDMUX_COUNT: pure-callee mode=strict root="
+                 << (F ? F->getName() : "<null>") << " verdict=" << R
+                 << " invocations=" << Q.Invocations
+                 << " bodies=" << Q.BodiesWalked << " hits=" << Q.MemoHits
+                 << "\n";
+  return R;
 }
 
 // bd 20xt.5.1 blocker (e): fold the constant-fold RESIDUES the flatten's

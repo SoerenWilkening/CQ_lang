@@ -25,8 +25,17 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
-declare i32 @f(i32) #0
-
+; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its
+; quantum guard, so it now needs a TOTALITY proof as well as a purity one, and a
+; visible pure body is what supplies it (`isSpeculatablePureCallee`). The old
+; opaque `declare` carried no evidence of totality and now DECLINES — see
+; control_classical_call_arm_reject_opaque_callee.ll (the crash it shipped) and
+; control_classical_call_arm_reject_partial_callee.ll (a VISIBLE partial body,
+; also declined). Nothing else in this fixture changes; the body is inert.
+define i32 @f(i32 %a) #0 {
+  %s = add i32 %a, 100
+  ret i32 %s
+}
 ; the ROUND-1 Phase-6 candidate body (reads q -> round-1 Pending, mask 0b10).
 define i32 @gg(i32 %a, i32 %b) {
 entry:
