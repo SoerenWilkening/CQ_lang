@@ -2355,22 +2355,83 @@ private:
   // half 2 alone was reverted, and the revert was right. Narrow first, then
   // widen; the order is the whole point.
   //
-  // *** THE DROP IS NOT INVISIBLE TO THE REST OF THE PASS. *** The comment that
-  // used to stand here said "flag/metadata-stripping only widens definedness, so
-  // every other user of a cone value is unaffected". That is FALSE and a lens
-  // falsified it with a run. `qromIndexKnownInBounds` (QramLowering.cpp) reaches
-  // `computeKnownBits` — which, SINCE bd s6ao, no longer consults `nuw` there
-  // (that call passes `UseInstrInfo=false` and the bound is re-derived
-  // poison-independently), so this hazard is CLOSED; historically deleting it turned a
-  // claimed+flattened QROM read into `leave("W-witness")` and a loud decline.
-  // That reader runs at `declineTaintEscapes` (CQLoweringPass.cpp ~228), AFTER
-  // both PredMux fixpoints (~178, ~202), so the ordering does not protect it.
-  // The direction is SAFE (accept -> loud decline, never a miscompile) and it is
-  // PRE-EXISTING; narrowing the walk strictly REDUCES the mutated set and so can
-  // only reduce it, but does NOT close it — an in-cone index is still stripped,
-  // and `moveBody` below drops the same flags over every arm instruction of
-  // every claimed region unconditionally, which is a far larger surface. Filed
-  // separately; do not re-derive the false claim.
+  // *** THE DROP IS NOT INVISIBLE TO THE REST OF THE PASS — AND ITS DIRECTION IS
+  // NOT UNIFORM. *** TWO claims have stood here and BOTH were false. The first
+  // ("flag/metadata-stripping only widens definedness, so every other user of a
+  // cone value is unaffected") was falsified by a run. The second is RETRACTED
+  // HERE: "the direction is SAFE (accept -> loud decline, never a miscompile)".
+  // MEASURED — `Fp80Union.cpp:838-841` (`PaddingWalk::eval`) reads
+  // `hasNoSignedWrap()`/`hasNoUnsignedWrap()`/`isExact()` as BLOCKERS, doing
+  // `return I` = decline; remove the flag and it falls through to the divergence
+  // transfer and may `return nullptr` = ACCEPT. Those two lines are the ONLY
+  // direct readers of a dropped fact in the whole pass. So the drop CAN move a
+  // reader's verdict toward accept, and a future reader who preserves the old
+  // premise preserves nothing. Do not re-derive either false claim.
+  //
+  // WHAT IS TRUE IS STRONGER, AND IT IS AN INVARIANT RATHER THAN A POPULATION:
+  // NO DROP-INDUCED ACCEPT IS UNSOUND. Three legs (bd 2qvr round, 2026-08-16).
+  //
+  //   L1 — THE MUTATED SET IS NARROW BY CONSTRUCTION. The walk mutates only
+  //   `ConeNode::Interior` (below), and `classifyConeNode` admits Interior only
+  //   from `definedOpAfterFlagDrop` — which has NO Load clause and NO GEP clause
+  //   (:228-286 falls through to `return false` = `Fail`) — or from a curated
+  //   reversible intrinsic. A gep `inbounds` is therefore unreachable from HERE.
+  //   Note this walk and `moveBody` are NOT nested and must not be merged
+  //   (bd ei6c): this one calls `dropPoisonGeneratingAnnotations()` (all three
+  //   LLVM-19 families) over a narrow set, `moveBody` (:2635) calls
+  //   `dropPoisonGeneratingFlags()` (flags only) over every arm instruction of
+  //   every claimed region — a far larger instruction surface, a smaller fact
+  //   surface. Neither contains the other.
+  //
+  //   L2 — THE ONE NEGATIVE-POLARITY READER IS FENCED TWICE, AND THE SECOND
+  //   FENCE DOES NOT DEPEND ON PIPELINE ORDER. Fence (i), ORDERING: `PaddingWalk`
+  //   is instantiated ONLY at `Fp80Union.cpp:1385/:1393`, both inside
+  //   `promoteFp80Union`, whose fixpoint (`CQLoweringPass.cpp:170`) completes
+  //   before the first `flattenPredMuxRegions` (:194). *** NOTHING PINS THAT
+  //   ORDERING — no assertion, no test. *** Fence (ii), ORDER-INDEPENDENT:
+  //   `PaddingWalk`'s ONLY non-zero divergence seed is `setD(LI, M)` at
+  //   `Fp80Union.cpp:776`, guarded by `dyn_cast<LoadInst>` + `LoadAt.find` (a
+  //   straddle load) — every other `setD` is a transfer or sets zero — and the
+  //   blocker at :838 is reached only AFTER the `Da.isZero() && Db.isZero()`
+  //   early exit. So it only ever examines straddle-load-derived values, and a
+  //   cone containing a `load` is `Fail`, never claimed, never stripped. The two
+  //   sets are DISJOINT. Pinned by
+  //   `control_predmux_reject_selectform_load_in_cone.ll`. GROW
+  //   `definedOpAfterFlagDrop` A LOAD CLAUSE AND THIS FENCE VANISHES SILENTLY,
+  //   leaving only the unpinned ordering.
+  //
+  //   L3 — THE READER WHOSE VERDICT THE DROP *CAN* FLIP CANNOT BE MADE UNSOUND
+  //   BY IT. `qromIndexKnownInBounds` (`QramLowering.cpp:775-783`) is a
+  //   CONJUNCTION. Half 1 (`computeKnownBits`, `UseInstrInfo=false`) IS
+  //   drop-sensitive — that flag structurally cannot gate `nneg`, `disjoint` or
+  //   a `range` return attribute, as `QramLowering.cpp:717-718` already says in
+  //   source. But half 2 (`indexBoundIsPoisonConditional`) is annotation-blind BY
+  //   CONSTRUCTION: `PoisonFacts.cpp` contains ZERO flag/metadata/attribute
+  //   accessors, so no drop can move it. Per the shipped ruling at
+  //   `QramLowering.cpp:693-699`, half 2 ALONE discharges the total obligation
+  //   and half 1 only PRUNES. So an accept the drop manufactures at half 1 is an
+  //   accept half 2 had ALREADY licensed on a total, fact-free bound holding on
+  //   every basis state: a CAPABILITY move, not an over-accept. *** THIS READER
+  //   IS CLOSED BY HALF 2, NOT BY `UseInstrInfo=false` — that was the old
+  //   sentence here and it was wrong. ***
+  //
+  // THE ROUTES, corrected — every line number in the old text was stale and it
+  // named one route of two. That reader is reached from `declineTaintEscapes`
+  // (`CQLoweringPass.cpp:244`) AND from INSIDE this very fixpoint, via
+  // `classifyQromReadUnderControl` at :1535 (the W4 claim witness), :2034 and
+  // :2068 — so iteration N+1 re-proves a claim against IR iteration N stripped.
+  // And there are FIVE `flattenPredMuxRegions` call sites, not two:
+  // `CQLoweringPass.cpp:194`, :218, :515, :531 and `Specialization.cpp:484`.
+  // Ordering protects none of them; L3 does.
+  //
+  // STILL OPEN, FILED, AND NOT THIS WALK'S TO CLOSE:
+  // `boundComparesInductionToInvariant` (`LoopLowering.cpp:377-384`) ends
+  // `return Inv0 != Inv1` — an XOR of two SCEV loop-invariance queries, so
+  // NON-MONOTONE by construction — and it is a required conjunct at :1068, with
+  // `lowerLoops` (`CQLoweringPass.cpp:279`) running after both flatten fixpoints.
+  // It reads FLAGS only, which is exactly the family `moveBody` drops over a
+  // strictly larger instruction set, so it is a pass-wide flag exposure dominated
+  // by that surface rather than a property of this walk.
   //
   // bd 94on(a) IS CLOSED BY CONSTRUCTION HERE, and this is a measurement, not an
   // inference. `dropPoisonGeneratingReturnAttributes()` writes CALL-SITE attrs
