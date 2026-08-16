@@ -1418,7 +1418,11 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // (Prime Directive) and none is exotic — `available_externally` is what a C99
   // `inline` becomes in an importing TU. What that costs on the corpus: NOTHING.
   // Over the whole e2e layer the 6.5 arm accepts at TWELVE sites, all `ext_f` from
-  // classical_call_under_control_lib.c, and all twelve pass the strict walk
+  // classical_call_under_control_lib.c, and all twelve still ACCEPT — measured as
+  // a full `ctest -j6` 253/253 AFTER the argument clause landed, not merely as a
+  // callee-proof result, because that clause can decline a site whose callee is
+  // impeccable and the callee number alone would not establish it. All twelve
+  // also pass the strict walk
   // (`run_slice_multi.sh` llvm-links every TU before the single cq-lowering run,
   // so the definition IS visible — the structural guarantee that slice's own
   // header describes). ZERO of the 220 single-TU stage-1 modules reach this gate
@@ -1450,6 +1454,20 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // pointer INTO UB is a memory access inside the callee — which the strict twin
   // refuses outright. Note clang -O1 stamps `noundef` on scalar parameters as a
   // matter of course, so this is the live surface for real input, not a corner.
+  //
+  // *** AND IT COSTS AN ORDINARY SHAPE. SAY SO — THE CORPUS HAD NO POWER TO SEE
+  // IT. *** `if (q > 5) y = ext_f(u + 1);` DECLINES: clang stamps `nsw` on the
+  // `add`, which makes it poison-capable, and `ext_f`'s parameter is `noundef`.
+  // The "zero corpus cost" measured for this gate is real but PROVES LESS THAN IT
+  // LOOKS, because every 6.5 site in the corpus passes a CONSTANT argument — the
+  // probe could not have detected this cost. The decline is nevertheless exactly
+  // the UB condition and stays (over-accepting is the unforgivable direction).
+  // THE REMEDY IS KNOWN AND DELIBERATELY NOT TAKEN HERE: `freeze` the hoisted
+  // argument, which turns poison into an arbitrary DEFINED value and restores the
+  // shape. That is an EMITTER change on a Rule-13 path and needs its own round;
+  // filed rather than smuggled in at the end of this one. Do NOT instead reach for
+  // `dropPoisonGeneratingFlags` on the argument — 9dc909e established that flag
+  // drops have a live decline->ACCEPT inverter in `Fp80Union.cpp`'s PaddingWalk.
   //
   // AND `isGuaranteedNotToBeUndefOrPoison` IS SOUND *HERE* THOUGH IT IS CIRCULAR
   // ONE GATE OVER. Measured at this exact position on the probe above: `gnp=0`
