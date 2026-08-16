@@ -736,6 +736,64 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   // fp->int casts — have no flag to drop and fail the proof (the adia
   // Rule-13 board's inherent-poison note), leaving the region for the
   // existing loud declines.
+  // *** THE SELECT/PHI ASYMMETRY IS DELIBERATE AND ITS REASON IS A MEASUREMENT
+  // (bd 2qvr, resolved 2026-08-16). *** The poison-shielded short-circuit `a && b`
+  // reaches PredMux in TWO spellings under TWO standards, and until now nothing
+  // wrote down why:
+  //   * SELECT `select i1 %a, i1 %b, i1 false` — THIS clause -> the
+  //     `coneDefinedAfterFlagDrop` calls below. STANDARD = DEFINEDNESS. Refuses a
+  //     variable-amount shl/lshr/ashr, fptosi/fptoui, and a non-`noundef`
+  //     Argument.
+  //   * PHI `phi i1 [ false, %entry ], [ %b, %rhs ]` -> `isConvertiblePhiCond` ->
+  //     `isBooleanCondTree`, which calls `classifyConeNode` ZERO times; the arm
+  //     body is admitted by `recoverRegion`'s E4 `isSpeculatableDataflow`.
+  //     STANDARD = SPECULATION-SAFETY, which admits poison by design.
+  // So the same C lowers or declines on which spelling clang happened to emit.
+  // The owner ruled TIGHTENING the phi route out (it must not reduce libm
+  // coverage; 14 committed libm goldens run through it), leaving LOOSENING this
+  // one — an accept WIDENING on the surface five consecutive Rule-13 rounds have
+  // concentrated on. The precondition was: DOES IT BUY ANYTHING?
+  //
+  // MEASURED BY DIFFERENTIAL, TWICE, INDEPENDENTLY. A deliberately loosened
+  // plugin (these two conjuncts replaced by `true`, three changed lines total)
+  // was run against the shipped one over 496 REAL-CODE modules: 125 openlibm
+  // cells x {O1,O2} through the shipped census machinery + a 26-module
+  // all-tainted-argument extension + the 220 e2e stage-1 modules as a control.
+  // The openlibm corpus was rebuilt from scratch (the cached one had been
+  // tmp-reaped) and gated on the README's 409-symbol fingerprint, reproducing
+  // the shipped 104/125 lowering baseline.
+  //   decline -> accept ....... 0
+  //   accept  -> decline ....... 0
+  //   lowered modules with byte-IDENTICAL emitted IR ... 415/415
+  // *** AND IT IS NOT A NO-REACH ZERO, WHICH IS THE ONLY THING THAT MAKES A ZERO
+  // WORTH QUOTING HERE. *** An instrumented build shows the cone gate is
+  // CONSULTED on real code — 17-19 module-instances across 7 distinct O1 libm
+  // cells (acoshl, coshl, nextafterl, nexttoward.f64, pow.f64, sinhl, tanhl),
+  // every one inside a claimed region — and `cone=FAIL` is **0** in every run.
+  // The proof this clause performs SUCCEEDS every time real code asks it. There
+  // is nothing for a loosening to buy. (The same loosened build flips 14 of the
+  // 1059 committed fixtures decline->accept, so the probe demonstrably detects
+  // what it is looking for; those 17 refusals live only in hand-authored
+  // fixtures.)
+  //
+  // QUOTE IT WITH ITS REACH, NEVER AS "496 modules, zero delta". The confidence
+  // is set by the 17-19 REACHED instances, not by the denominator — quoting the
+  // denominator alone is the exact shape of the three numbers this file family
+  // has already had to retract (bd memory [[predmux-argument-leaf-615s]]).
+  //
+  // TWO LIMITS ON TRANSFER, both load-bearing:
+  //   1. The loosening measured is STRICTLY MORE PERMISSIVE than the phi
+  //      standard (`sdiv` accepts under it and declines on the phi route), so 0
+  //      is an UPPER BOUND over every narrower variant. Nothing in between can
+  //      buy more.
+  //   2. Only the CLAIM standard was loosened; `stripPoisonCone`'s MUTATED SET
+  //      was untouched. A widening that also widened the strip (admitting loads
+  //      and geps) is NOT covered by this measurement, and it would collapse two
+  //      of the three legs of the 9dc909e shared-mutation closure. That census
+  //      does not transfer and would have to be re-run.
+  // RESOLUTION: bd 2qvr option (3) — DOCUMENT the asymmetry, change no code.
+  // Rule 17's carve-out applies verbatim: an over-safe decline of a shape we were
+  // NOT trying to support is still correct, and this one is measurably free.
   if (const auto *Sel = dyn_cast<SelectInst>(V)) {
     if (!Sel->getType()->isIntegerTy(1))
       return false;
