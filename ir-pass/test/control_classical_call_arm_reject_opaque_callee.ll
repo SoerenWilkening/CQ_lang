@@ -13,9 +13,13 @@
 ;     return cq_measure_si32(y);
 ; `cq_theta(_, 0.0)` is Ry(0) = IDENTITY, so `q == 0` on every basis state and the
 ; predicate `q > 3` has ZERO AMPLITUDE: the source NEVER evaluates `recip100(0)`,
-; on any component, and has no UB anywhere. `__attribute__((const))` grants exactly
-; `memory(none) nounwind willreturn`, which is what the OLD gate asked for and what
-; `@opaque_pure_f` below carries — so the arm was claimed, the call was HOISTED
+; on any component, and has no UB anywhere. (The zero-amplitude narrative is about
+; that C SOURCE; the module below deliberately parameterises the seed as `%u0`, so
+; the physics claim is not a claim about this fixture's own theta argument.)
+; `__attribute__((const))` puts `mustprogress nofree nosync nounwind willreturn
+; memory(none)` on the declaration and exactly `nounwind willreturn memory(none)`
+; on the CALL SITE, which is what the OLD gate read and what `@opaque_pure_f`
+; below carries — so the arm was claimed, the call was HOISTED
 ; above the flag mint, and the compiled program called it UNCONDITIONALLY and
 ; SIGFPEd (run_exit=136) with `opt` exit 0, the in-process verifier clean and
 ; `free_pairing_check.py` reporting 1 verified / 0 violations / 0 unproven. The
@@ -26,7 +30,10 @@
 ; `mayHaveSideEffects()` is `mayWriteToMemory() || mayThrow() || !willReturn()` —
 ; IMMEDIATE UB INSIDE THE CALLEE IS NONE OF THOSE. The gate now additionally
 ; demands a TOTALITY proof: `isSafeToSpeculativelyExecute` (LLVM's own answer, the
-; `speculatable` attribute) or `isSpeculatablePureCallee` (the in-tree body walk).
+; `speculatable` attribute) or `isSpeculatableTotalCallee` (the in-tree body walk
+; in its STRICT mode — NOT the lax `isSpeculatablePureCallee`, whose memory and
+; terminator clauses defer their obligation to a clone 6.5 never mints; reaching
+; for the lax form here was the first, broken bd wve8 fix).
 ; An opaque declaration satisfies NEITHER and can satisfy neither, so it DECLINES
 ; loudly and lowers nothing (Prime Directive).
 ;

@@ -14,7 +14,7 @@
 ; whether the call is provably SAFE TO SPECULATE, never which hazards you happened
 ; to enumerate.
 ;
-; The gate now asks the converse question, and `isSpeculatablePureCallee` answers
+; The gate now asks the converse question, and `isSpeculatableTotalCallee` answers
 ; it here at the division: `isSpeculatableDataflow` admits `sdiv`/`udiv`/`srem`/
 ; `urem` only on a NON-ZERO ConstantInt divisor (with an additional `-1` exclusion
 ; for the SIGNED forms only — `udiv`/`urem` by -1 are total and ARE admitted), so a

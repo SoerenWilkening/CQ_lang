@@ -1356,16 +1356,30 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   //
   // TOTALITY, therefore, by either of two proofs, plus an argument clause below:
   //
-  //   * `isSafeToSpeculativelyExecute` — LLVM's own answer. *** THIS ROW HAS REAL
-  //     C POPULATION; an earlier draft of this comment claimed it had none and
-  //     that "C has no spelling for `speculatable`", and BOTH were false. *** No
-  //     C *function declaration* syntax spells it, but clang stamps it on the
-  //     INTRINSICS it emits for builtins, and those reach this gate. MEASURED:
-  //     `if (q > 3) y = __builtin_abs(a);` at -O1 emits
-  //     `call i32 @llvm.abs.i32(i32 %0, i1 true)` whose declaration carries
-  //     `speculatable`, and it lowers here — while declining without this
-  //     disjunct, since an intrinsic declaration has no body to walk. So the
-  //     disjunct is load-bearing for ordinary C, not a formality.
+  //   * `isSafeToSpeculativelyExecute` — LLVM's own answer. *** TWO DRAFTS OF
+  //     THIS BULLET WERE WRONG, IN OPPOSITE DIRECTIONS; READ THE THIRD. *** Draft
+  //     1 said "C has no spelling for `speculatable`, so this row has zero
+  //     population": the premise is FALSE — clang stamps the attribute on the
+  //     INTRINSICS it emits for builtins (`__builtin_abs` -> `llvm.abs.i32`
+  //     carries it at -O1). Draft 2 then concluded that
+  //     `if (q > 3) y = __builtin_abs(a);` LOWERS THROUGH THIS ROW and called the
+  //     disjunct "load-bearing for ordinary C": ALSO FALSE, and it was an
+  //     inference from an exit code rather than a measurement. That C never
+  //     reaches this gate — clang -O1's own SimplifyCFG speculates the lone
+  //     `speculatable` call into a `select`, so the module has ZERO `br i1`, the
+  //     pure-callee proof is queried ZERO times, and the accept comes from the
+  //     4.4 tainted-SELECT owner.
+  //     THE TRUTH IS STRUCTURAL, not accidental, and squeezes the witness out
+  //     from both sides: an arm that is exactly ONE `speculatable` call is
+  //     exactly the shape SimplifyCFG speculates into a select (4.4's), and an
+  //     arm SimplifyCFG declines to speculate has >= 2 instructions and fails
+  //     6.5's own arm-shape gate. 14 builtin probes (abs, popcount, clz, ctz,
+  //     bswap32/64, rotate, fabs, sqrt, ...) produced NO witness. So: no measured
+  //     C witness at this gate, for that reason — which is NOT the same claim as
+  //     "zero population" and must not be simplified back into it. The row is
+  //     kept because it is LLVM's own answer to precisely the question this gate
+  //     asks, and it is pinned at the IR level by
+  //     control_classical_call_arm_accept_speculatable_decl.ll.
   //   * `isSpeculatableTotalCallee` (PredMuxFlatten.h) — the in-tree body walk,
   //     in its STRICT mode. Read that function's definition before touching this:
   //     the LAX form (`isSpeculatablePureCallee`, which S1/S2/S3 use) is NOT a

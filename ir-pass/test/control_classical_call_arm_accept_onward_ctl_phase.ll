@@ -24,7 +24,7 @@ declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 ; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its
 ; quantum guard, so it now needs a TOTALITY proof as well as a purity one, and a
-; visible pure body is what supplies it (`isSpeculatablePureCallee`). The old
+; visible pure body is what supplies it (`isSpeculatableTotalCallee`). The old
 ; opaque `declare` carried no evidence of totality and now DECLINES — see
 ; control_classical_call_arm_reject_opaque_callee.ll (the crash it shipped) and
 ; control_classical_call_arm_reject_partial_callee.ll (a VISIBLE partial body,
