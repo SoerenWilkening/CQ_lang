@@ -28,7 +28,7 @@ config.substitutions.append(("%cq-pass", cq_pass))
 config.substitutions.append(("%filecheck", filecheck))
 
 # Add the LLVM tools directory to PATH so bundled wrappers like `not`
-# (used by the 575 negative fixtures to invert cq-opt's exit code) resolve.
+# (used by the 577 negative fixtures to invert cq-opt's exit code) resolve.
 #
 # DERIVE THIS FROM FileCheck, NEVER FROM cq_opt. It used to be
 # `dirname(cq_opt)`, which held only while %cq-opt was stock LLVM `opt` living

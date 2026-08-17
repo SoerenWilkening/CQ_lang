@@ -461,7 +461,7 @@ turns into "probably contention". Measured inner-loop costs, all on a quiet box:
    across both `ir-pass-lit` and e2e, and a widened predicate is exactly the
    over-accept shape the Prime Directive exists to stop.
 
-**Report only what you ran.** If you ran `ir-pass-lit`, say "lit green (1062)",
+**Report only what you ran.** If you ran `ir-pass-lit`, say "lit green (1066)",
 never "tests pass" — an unqualified green claim about layers you did not execute
 is a false statement about verification, and this project's whole defence is that
 verification claims are literal. Same for a sampled gate: say it sampled.
@@ -700,9 +700,11 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 #
 # 253 ctest entries. RUN IT PARALLEL — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
-# serial: 5.1x. RE-MEASURED 2026-08-17 on a QUIET box: 189s and 226s at -j6,
-# 253/253 — so treat ~160-230s as the quiet-box band, not 162s as a target. The
-# spread is real and mostly scheduling luck. UNDER CONCURRENT AGENT LOAD the owner
+# serial: 5.1x. RE-MEASURED 2026-08-17 on a QUIET box, 253/253 three times: 127s,
+# 189s, 226s at -j6. So there is no single number — the spread tracks how warm the
+# stage-1 content-addressed cache is (127s was a warm re-run; 189s/226s followed a
+# full rebuild) plus scheduling luck. Treat ~130-230s as the quiet-box band and
+# NEVER quote one figure as the expected time. UNDER CONCURRENT AGENT LOAD the owner
 # measured 256-368s, which is NOT comparable: budget command timeouts from the
 # loaded figure, and only ever compare two runs taken under the same load. Four independent changes got that, each verified green:
 #   -j6 itself            825 -> 349s   (the single biggest win is scheduling)
@@ -731,7 +733,7 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1062 *.ll fixtures (1061 pass + 1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1066 *.ll fixtures (1065 pass + 1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
 ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 243 entries (240 slices = 220 single + 20 multi, + free-pairing selftest, fixture-guard-liveness, keepset vendor check) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
@@ -784,7 +786,7 @@ on any pipeline other than `cq-lowering` rather than silently no-op'ing. It is
 **one process per invocation** — not a compile server — so lit's isolation,
 per-fixture diagnostics and `not` exit-code inversion are unchanged.
 Equivalence is **gated, not assumed** (`tools/cq_opt_equivalence.py`): stdout,
-stderr **and** exit code, 0 mismatches over all 1062 fixtures. The routine ctest
+stderr **and** exit code, 0 mismatches over all 1066 fixtures. The routine ctest
 entry samples (`--stride 8`, ~13s) because the full sweep costs ~658s of CPU —
 *more than the swap saves*; run the full one after any change to the pass's
 diagnostic or analysis surface:

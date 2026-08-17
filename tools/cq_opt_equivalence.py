@@ -7,7 +7,7 @@ pays 0.124s of fixed per-spawn cost instead of `opt`'s 0.238s (MEASURED; the pas
 itself is ~5ms, so almost all of it is process startup either way).
 
 That swap is only safe while the two are INDISTINGUISHABLE, and "indistinguishable"
-here is stricter than "same IR". 575 negative fixtures pipe stderr into FileCheck
+here is stricter than "same IR". 577 negative fixtures pipe stderr into FileCheck
 and assert on the DIAGNOSTIC TEXT, and every fixture depends on the exit code
 (lit's `not` inverts it). So this compares all three:
 

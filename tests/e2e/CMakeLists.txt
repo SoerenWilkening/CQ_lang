@@ -11,7 +11,7 @@ set(_E2E_CLANG "${LLVM_TOOLS_BINARY_DIR}/clang")
 # costs 0.124s of fixed per-spawn cost against stock opt's 0.238s. It accepts
 # and ignores `-load-pass-plugin`, so the runners' command line is unchanged.
 # Equivalence to stock opt is gated by the cq-opt-equivalence ctest entry over
-# all 1062 lit fixtures (stdout + stderr + exit code). Falls back to stock opt
+# all 1066 lit fixtures (stdout + stderr + exit code). Falls back to stock opt
 # if the target is somehow unavailable.
 if(TARGET cq-opt)
   set(_E2E_OPT "$<TARGET_FILE:cq-opt>")

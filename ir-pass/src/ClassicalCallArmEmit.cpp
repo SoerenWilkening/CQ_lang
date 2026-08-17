@@ -23,6 +23,8 @@
 
 #include "ClassicalCallArmEmit.h"
 
+#include "ArmClassify.h"      // freezeDischargesHoistedArg (bd 9hea; claim+emit share it)
+
 #include "CompareLowering.h"    // lowerCompareToFlag (mint + _inv strip)
 #include "ControlPlan.h"        // ControlRegion / diagnoseUnderControl
 #include "ControlledSymbols.h"  // copyControlledFn / xFn
@@ -33,6 +35,7 @@
 #include "WidthDispatch.h"      // allocFn / freeFn / llvmWidthType
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/ValueTracking.h"  // isGuaranteedNotToBeUndefOrPoison (bd 9hea)
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -148,7 +151,41 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   //    their obligation to a clone 6.5 never mints) — plus an argument clause for
   //    `noundef` parameters. Read the full argument at that gate; if you widen it,
   //    THIS is the line that cashes the widening.
+  // bd 9hea — COMPUTE THE FREEZE SET *BEFORE* THE MOVE, then hoist, then freeze.
+  //
+  // *** THE ORDER IS THE CORRECTNESS ARGUMENT, NOT A STYLE CHOICE (bd iwz1). ***
+  // `freezeDischargesHoistedArg` consults `isGuaranteedNotToBeUndefOrPoison`, which
+  // also reasons from USES. Once the call is unconditional, a `noundef` parameter
+  // operand is itself a use-based proof that the operand is defined, so the same
+  // query flips 0 -> 1 after `moveBefore` and the hoisted call SELF-LICENSES the very
+  // argument that needed freezing. Querying here — call still in `R.Arm`, exactly the
+  // position `classifyClassicalCallArm` used — makes claim and emit agree by
+  // construction rather than by coincidence.
+  SmallVector<unsigned, 4> NeedFreeze;
+  for (unsigned Ai = 0, Ae = Call->arg_size(); Ai != Ae; ++Ai)
+    if (Call->paramHasAttr(Ai, Attribute::NoUndef) &&
+        !llvm::isGuaranteedNotToBeUndefOrPoison(Call->getArgOperand(Ai))) {
+      // The classifier declined anything this predicate refuses, so a false here is
+      // unreachable; bail loudly rather than hoist an un-frozen poison argument.
+      if (!freezeDischargesHoistedArg(Call, Ai))
+        return bailLoud(R);
+      NeedFreeze.push_back(Ai);
+    }
+
   Call->moveBefore(BI);
+
+  // `freeze` each recorded argument, immediately before the now-unconditional call.
+  // The operands are all classical and external to the arm (the arm is exactly
+  // call + br by classification), so they dominate this point. `freeze` is a codegen
+  // no-op: it adds NO gate, and the emitted circuit is byte-identical to what the
+  // same module produced when the argument happened to be provably defined.
+  for (unsigned Ai : NeedFreeze) {
+    auto *Fr = new FreezeInst(Call->getArgOperand(Ai),
+                              Call->getArgOperand(Ai)->getName() + ".fr", Call);
+    if (DL)
+      Fr->setDebugLoc(DL);
+    Call->setArgOperand(Ai, Fr);
+  }
 
   IRBuilder<> B(BI);  // every emitted call lands before the conditional br.
   auto stamp = [&DL](CallInst *C) {

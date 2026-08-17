@@ -28,6 +28,10 @@
 #ifndef CQ_IRPASS_ARM_CLASSIFY_H_
 #define CQ_IRPASS_ARM_CLASSIFY_H_
 
+namespace llvm {
+class CallBase;
+}  // namespace llvm
+
 namespace cq {
 
 struct ControlRegion;
@@ -85,6 +89,34 @@ enum class ClassicalCallDisp { Accept, Declined, NotApplicable };
 
 ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
                                            TaintSet &Taint);
+
+// bd 9hea — does argument `Ai` of `Call` need, and admit, a `freeze` at the 6.5
+// hoist? True iff the parameter is `noundef`, the argument is NOT provably defined,
+// and `freeze` actually DISCHARGES the obligation.
+//
+// *** THE CLAIM AND THE EMIT SHARE THIS ONE DEFINITION ON PURPOSE. ***
+// `classifyClassicalCallArm` uses it to decide whether to accept, and
+// `emitClassicalCallArmRegion` uses it to decide what to freeze. If they could
+// disagree, the classifier would accept a call the emitter leaves un-frozen, which
+// is the UB the clause exists to prevent. Same reason bd q2wk made the phi route's
+// claim record what it proved instead of letting emit re-derive it.
+//
+// *** AND IT MUST BE CALLED BEFORE THE HOIST, AT BOTH SITES (bd iwz1). ***
+// `isGuaranteedNotToBeUndefOrPoison` also reasons from USES, and once the call is
+// unconditional a `noundef` parameter operand is itself a use-based proof that the
+// operand is defined — so re-queried AFTER `Call->moveBefore(BI)` this predicate
+// flips 0 -> 1 and the hoisted call SELF-LICENSES the very argument it should have
+// refused. Both callers query while the call is still in the arm.
+//
+// `freeze` yields an ARBITRARY DEFINED value, which discharges `noundef` and nothing
+// else — so the attribute test is a WHITELIST: the parameter's attributes must all be
+// freeze-inert. `range`/`nonnull`/`align`/`dereferenceable[_or_null]`/`nofpclass` each
+// say a POISON value is passed when violated, and an arbitrary defined value can
+// violate any of them, which would put poison back in a `noundef` operand. A
+// BLACKLIST would silently admit the fifth such attribute LLVM adds — the exact
+// failure mode bd s6ao's post-mortem names — so the safe spelling is to enumerate
+// what is INERT and refuse everything else (Prime Directive: over-declining is safe).
+bool freezeDischargesHoistedArg(const llvm::CallBase *Call, unsigned Ai);
 
 }  // namespace cq
 
