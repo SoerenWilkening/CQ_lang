@@ -348,6 +348,20 @@ namespace cq {
 // `isa<Constant>`; `canCreateUndefOrPoison` is a NO-OP THAT READS AS A FIX
 // (measured on libLLVM 19.1.7: 0 on the bu96 witness, 1 on a benign in-bounds
 // gep — it queries the OUTERMOST operator only).
+//
+// *** AND THAT PAIRING GROUND IS NOW A RULING, NOT JUST A DECLINE REASON (bd hg8s,
+// owner 2026-08-17). *** `classifyConeNode` (PredMuxFlatten.cpp) admits a Constant
+// on PAIRING and a `noundef` Argument on DEFINEDNESS, and those are two different
+// SUFFICIENT GROUNDS for one obligation — `ONE VALUE AT EVERY USE` — which each
+// kind can supply only one of. The asymmetry is deliberate; read the ruling at that
+// clause BEFORE re-grounding either half. The measurement that settled it, and the
+// reason it does not transfer between the kinds: a Constant's uniquing holds at
+// EVERY `-O` level (measured paired at `default<O1>`, 8507392 == 8507392), whereas
+// an ARGUMENT's one-value property is a property of the LINK and holds only at the
+// pinned `-O0` stage 3 — above it, argument forwarding turns one parameter into N
+// independent `undef` tokens and the forward/adjoint slots diverge with THIS file's
+// own recorded constants, 73896 vs 1401299752. So bu96's cell is safe for a reason
+// that is unavailable to an Argument, which is exactly why the two halves differ.
 bool constantCarriesUndef(const llvm::Constant *C,
                           llvm::SmallPtrSetImpl<const llvm::Constant *> &Seen);
 

@@ -462,10 +462,123 @@ ConeNode classifyConeNode(const Value *V) {
     // was: zero population, zero readers, a DROP-widening on the exact surface
     // where bd u1rp reverted one, and this predicate never asks whether an
     // annotation is present in the first place. Refusing beats mutating.
+    // *** THE RULING (bd hg8s, owner 2026-08-17): TWO KINDS SIT ON THIS LINE UNDER
+    // TWO DIFFERENT STANDARDS, AND THAT IS CORRECT. *** A `Constant` is admitted on
+    // bd bu96's PAIRING axis; a `noundef` `Argument` on DEFINEDNESS. They are two
+    // different SUFFICIENT GROUNDS for ONE obligation, and each kind can supply only
+    // the one it is checked against. Do NOT tidy them into a single standard — both
+    // candidate unifications were measured and both lose.
+    //
+    // THE OBLIGATION IS `ONE VALUE AT EVERY USE` — not "pairing", not "definedness".
+    // The lowering copies a cone leaf's operands into MORE slots than the source
+    // had: `canonicalizePred`'s forward tree, `buildNegation`'s leaf-inverted tree,
+    // and one `_unc` per forward gate. Nothing re-derives the value at those sites;
+    // each is a fresh copy of the same `Value *`.
+    //
+    // A CONSTANT SUPPLIES THE PAIRING GROUND AND CANNOT SUPPLY A DEFINEDNESS ONE.
+    // Uniqued, hence ONE link-time relocation: the forward gate, its adjoint and the
+    // inverted polarity read the same bits, whatever those bits are. MEASURED at the
+    // pinned stage-3 `-O0` (5 runs, paired) and — the load-bearing half — ALSO ABOVE
+    // THE PIN: `opt -passes='default<O1>'`, internal linkage, linked and run,
+    // 8507392 == 8507392. Uniquing is a property of the VALUE.
+    //   *** AND NOT BECAUSE "NOTHING POISON-CONDITIONAL ATTACHES TO A CONSTANT" —
+    //   THAT IS FALSE AND AN EARLIER DRAFT OF THIS COMMENT SAID IT. *** A
+    //   `ConstantExpr` carries `inbounds` (the bu96 witness has FOUR of them, and the
+    //   `inbounds` is precisely what makes it poison). The right statement is
+    //   narrower: a Constant's annotations are part of the UNIQUED VALUE, so they are
+    //   the same at every use — there is no PER-USE fact to diverge, which is the
+    //   only thing the obligation asks. An Instruction's `nneg`/`disjoint`/`exact`
+    //   are also per-value, but an Instruction is not what reaches this line.
+    // A poison-GENERATING constant expression (`ptrtoint (gep inbounds ...)` out of
+    // range) is therefore admissible here and bd bu96's decline-to-fix is RIGHT.
+    // *** WHAT IT IS NOT IS `DEFINED`.
+    // Do not re-describe it that way, and do not "fix" it by demanding definedness:
+    // that declines a cell whose obligation is already discharged, and trades the
+    // correct ground for a symmetry. ***
+    //
+    // AN ARGUMENT SUPPLIES THE DEFINEDNESS GROUND AND CANNOT SUPPLY THE PAIRING ONE.
+    // An `Argument` is a REGISTER in the emitted IR, not a value. Its one-value
+    // property holds only while no later pass rewrites the parameter's uses into the
+    // CALLER's value — and argument forwarding is a routine, LEGAL transform on a
+    // WELL-DEFINED module. MEASURED both ways: a bare `Argument` leaf pairs at `-O0`
+    // (5/5, and the value MOVES run-to-run, so the parameter really was undefined —
+    // that is the row's own power check), while at `default<O1>` with internal
+    // linkage the four slots become INDEPENDENT `undef` tokens and diverge, fwd 73896
+    // vs `_unc` 1401299752 — byte-identical to bd bu96's recorded literal-token
+    // break, reached by a legal transform. Attribute the mechanism precisely, because
+    // it changes what a fix would have to fence: the flip was measured under
+    // `default<O1>`, i.e. INLINING; `-passes=ipsccp` ALONE did NOT flip it even with
+    // internal linkage, and external linkage blocks it at every pipeline tried
+    // (ipsccp / O1 / O2). Internal linkage suffices, and CQ's own Phase-6 clones are
+    // `InternalLinkage` (`Specialization.cpp:611`). So for an Argument, pairing is a
+    // property of the LINK.
+    //
+    // WHICH IS WHY PAIRING CANNOT BE THIS CLAUSE'S STANDARD: IT FAILS ON BOTH SIDES
+    // OF THE FENCE. Feed a `noundef` parameter `undef` and the same divergence
+    // appears in the ACCEPT set with the same two constants. What separates the
+    // halves is not WHETHER they diverge but WHICH EXECUTIONS do. Decline half: the
+    // module is legal IR, well-defined exactly on the shielded states — which are
+    // exactly the states the rewrite newly evaluates — so the break lands on a
+    // well-defined execution. Accept half: the caller violated `noundef`, so by the
+    // LangRef clause quoted above no execution validly reaches the rewritten code at
+    // all. `noundef` buys that, and only that.
+    //
+    // THE RULING IS ROBUST TO HOW YOU READ THE `-O0` PIN, which is what makes it
+    // safe to carry. If the pin (`tests/e2e/run_slice.sh`, bd szpr) is inviolable,
+    // pairing is SILENT for an Argument in both halves and definedness is this
+    // clause's only content; if the pin is removable, pairing FAILS in both halves
+    // and again only definedness separates them. Same answer. *** THAT PIN IS
+    // LOAD-BEARING HERE AND IS WRITTEN DOWN NOWHERE NEAR IT — filed as bd mfae. ***
+    //
+    // AND bd 615s's OWN STATED HARM IS IMPRECISE — DO NOT QUOTE IT AS THE HARM. "The
+    // rewrite OBSERVES `b` on the basis states the shield excluded" names the right
+    // LOCATION (the flattened block does fire `b`'s cone on the states the short
+    // circuit skipped) and the WRONG harm, because for any ONE value of `b`,
+    // `select(a,b,false)` and `and(a,b)` agree on every input. MEASURED across all
+    // four guard forms — AND/OR by arm-TRUE/arm-FALSE, the negated rows demonstrably
+    // routing through `buildNegation` since they emit the INVERSE predicate at the
+    // leaves — every form ACCEPTS a poison `ConstantExpr` leaf and every emitted
+    // circuit is BYTE-IDENTICAL to its defined control. What actually goes wrong on
+    // those states is a rail written and then freed against a non-matching `_unc`.
+    // So "wrong flag" is discharged, but CONDITIONALLY on the leaf denoting one
+    // value: it collapses INTO this obligation rather than standing beside it.
+    //
+    // WHY THE FENCE IS SPELLING-SPECIFIC, AND WHY THAT IS NOT A HOLE.
+    // `select i1 %a, i1 %b, i1 false` is clang DECLINING to require that `%b` be
+    // defined when `%a` is false — the shield is what makes speculating `%b` legal.
+    // `canonicalizePred` rewrites it to `and i1 %a, %b`, which DOES require it,
+    // because `and` propagates poison. In the plain `and` spelling the SOURCE
+    // already imposes that requirement and CQ inherits the fact for free; in the
+    // shielded spelling the source withholds it and the REWRITE manufactures it, so
+    // the rewriter owes the proof. Consequence to keep: the plain `and` spelling of
+    // the same cone is accepted with a BARE Argument and can carry the identical
+    // divergence off the pin. That is NOT a hole for this clause to close, and NOT
+    // evidence that this clause buys nothing — it is the same guarantee reached by a
+    // different prover.
+    //
+    // AND WHY `ArmClassify`'s STRICTER STANDARD DOES NOT TRANSFER HERE. There
+    // (`paramHasAttr(NoUndef) && !isGuaranteedNotToBeUndefOrPoison` -> decline, bd
+    // wve8) CQ HOISTS a call whose `noundef` parameter would make poison IMMEDIATE UB
+    // in the EMITTED program — CQ would be CREATING UB. Here the canonicalized tree
+    // feeds the flag MINT and never a branch. Verified to that extent and no further:
+    // the pass emits `CreateCondBr` in exactly TWO places, both in
+    // `BreakReversePlay.cpp` (:823 over a `GuardCond`/`CreateNot`, :835 over a fresh
+    // `CreateICmpNE`) — neither is a canonicalized predicate tree — and
+    // `canonicalizePred` never RAUWs the original branch condition. Nothing in the
+    // emitted program is UB-sensitive to this leaf. Two `noundef` gates, two
+    // different obligations — do not unify them.
+    //
+    // WHOEVER PROPOSES TO RE-GROUND OR REMOVE EITHER HALF must say WHICH ground they
+    // are removing and what supplies it instead. Blast radius of the loosening,
+    // measured exactly: 3 of 1059 fixtures flip decline -> accept, and they are
+    // precisely the three rows this comment already names as its cost.
     if (const auto *A = dyn_cast<Argument>(V))
       if (!A->hasAttribute(Attribute::NoUndef))
         return ConeNode::Fail;
-    return ConeNode::Leaf;  // Constant, or a `noundef` Argument — defined.
+    // A `Constant` (admissible on PAIRING — uniqued, NOT necessarily defined) or a
+    // `noundef` `Argument` (admissible on DEFINEDNESS). See the bd hg8s ruling above
+    // for why those are two different grounds and why that is correct.
+    return ConeNode::Leaf;
   }
   if (const auto *Call = dyn_cast<CallInst>(I)) {
     // *** THE TWO ROTATIONS ARE NOT THE SAME KIND OF NODE, AND TREATING THEM
