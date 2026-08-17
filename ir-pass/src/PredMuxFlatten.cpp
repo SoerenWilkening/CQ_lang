@@ -2788,6 +2788,101 @@ private:
   // ¬V with the negation pushed to the leaves (PRD §4.3, the no-NOT
   // invariant). Shapes are pre-checked by isSupportedCondTree.
   Value *buildNegation(Value *V) {
+    // bd qesi — TRACK THE NODE WE ARE ABOUT TO REPLACE, or it is STRANDED.
+    //
+    // Every non-constant path below consumes `V` and returns something ELSE: a
+    // fresh inverse-predicate compare for a leaf, a fresh `or`/`and` for a node,
+    // `operand(0)` for xor-true. So `V` loses its last use as soon as the entry
+    // terminator is erased — and `sweepDead` erases only what is in `MaybeDead`.
+    // Before this line the ONLY tracked member of the original tree was its ROOT
+    // (`track(BI->getCondition())` in `run()`), so the leaves and every inner node
+    // survived with zero uses and `lowerOps` lowered them to forward
+    // `cq_template_*` gates never uncomputed and never freed — verbatim the hazard
+    // the sibling residue cleanup names ("an entangled which-path flag left
+    // dangling on a live rail ... trivially avoidable since the op is DEAD").
+    //
+    // MEASURED, FROM ORDINARY C: `if (q > 3 && q < 100)` at `clang -O1` puts the
+    // gate arm on the FALSE successor (Rule 9), which is what routes the condition
+    // through here instead of through `canonicalizePred`. Pre-fix that leaked 2
+    // dead gates; the nested `a && (b && c)` leaked 4 (three original compares
+    // plus the inner `and i1`). `opt` exited 0, the verifier was clean, and
+    // `free_pairing_check.py` reported "0 violation(s), 0 unproven" — it counts
+    // only `cqrt_alloc_*` mints and an orphan rail is TEMPLATE-minted (bd 1739).
+    //
+    // THE CAUSE HERE IS REPLACEMENT, NOT REBUILDING — but read the next paragraph
+    // before concluding anything about `canonicalizePred`. This function REPLACES
+    // each leaf, so the original is stranded. `canonicalizePred` also rebuilds (on a
+    // shield) yet REUSES the original compare leaves, so only the shield node itself
+    // dies. Pinned by `control_predmux_accept_positive_tree_orphan_armkill.ll`.
+    //
+    // *** AND THAT IS NOT A CLEAN BILL OF HEALTH FOR `canonicalizePred` — AN EARLIER
+    // DRAFT OF THIS COMMENT SAID IT ORPHANS "NOTHING, measured 0 at both
+    // polarities" AND TOLD YOU NOT TO FIX IT. BOTH WERE WRONG. *** The measurement
+    // was real but was taken only on shields that ARE the branch condition, where
+    // `run()`'s `track(BI->getCondition())` happens to cover the shield. One level
+    // down nothing tracks it: for `%inner = select i1 %b, i1 %c, i1 false` feeding
+    // `%sc = and i1 %a, %inner`, the arm=TRUE route emits an ENTIRE DEAD 4.4
+    // controlled-copy select merge — an `%out = cqrt_alloc_i1(false)` written by two
+    // `cqrt_copy_i1_controlled` and NEVER READ, plus a never-freed `%selop` and a
+    // never-uncomputed `icmp_ne` — while arm=FALSE (this function) emits zero
+    // orphans. 9 rail mints / 5 left allocated versus 7 / 3.
+    // FILED AS bd kqqv, WITH ITS REACH: latent, not shipping — 0 occurrences across
+    // 1284 corpus modules, and a census of all 1062 fixtures found ZERO carrying a
+    // non-root shielded select, which is the actual finding (nothing would have told
+    // us). The symmetric one-liner there is measured to work but is NOT taken here:
+    // it owes its own red-green pair and its own Rule-13 round.
+    //
+    // *** IT ALSO RESTORES A CAPABILITY, WHICH IS WORTH KNOWING BECAUSE IT IS A
+    // DECLINE -> ACCEPT FLIP AND THAT IS THE DIRECTION THE PRIME DIRECTIVE POLICES.
+    // *** The orphans were not merely inert garbage: the uncompute spine WALKED them.
+    // `int q = cq_theta(...); if (q > 3 && q < 100) { ... } cq_measure(q);` — ordinary
+    // C — DECLINED before this fix with
+    //     "cq uncompute: dead chain would free a measured register"
+    // and lowers at exit 0 after it (measured, pre-fix plugin vs post-fix plugin on
+    // the identical module). The decline was a FALSE POSITIVE the defect caused: the
+    // "dead chain" was the compiler's own stranded tree, and reversing it would have
+    // freed `q`, which the user measures. Removing the garbage removes the decline.
+    // The resulting accept is sound — `q` is measured and never freed, and
+    // `free_pairing_check` is clean on the output. A second measured cell moves a
+    // `declineStaleRecordOps` decline to a control-flow decline; both are loud, both
+    // exit non-zero, and no accept leaks. Blast radius on committed material is ZERO
+    // (0 stderr diffs byte-for-byte across the corpus), but Rule 12 mirrors
+    // diagnostic text character-for-character, so a future decline fixture in this
+    // shape class must expect the NEW owner.
+    //
+    // ONE LINE SUFFICES AND NO NEW MACHINERY IS OWED (Rule 14): `sweepDead` is
+    // already a `use_empty` FIXPOINT over `MaybeDead`, so tracking a parent and its
+    // children in any order converges — erasing the parent is what makes the
+    // children `use_empty`, and the next iteration takes them. `track` is inert on
+    // a node still live elsewhere (a compare shared with another region, or read by
+    // the arm body), because the sweep tests `use_empty` first. Safe against side
+    // effects by construction: `isSupportedCondTree` admits only ConstantInt /
+    // CmpInst / short-circuit SelectInst / and / or / xor-true here, all pure — a
+    // phi is converted to boolean algebra BEFORE this runs.
+    //
+    // *** READ "ONE LINE SUFFICES" WITH ITS CLAUSE: it means no recursive tracker is
+    // owed INSIDE THIS FUNCTION. It is NOT a class-wide closure, and the orphan class
+    // is NOT closed module-wide. *** Two other producers of use-free emitted gates are
+    // known and filed: bd kqqv (`canonicalizePred` on a non-root shield, above) and
+    // bd iwr7 (14 use-free `cq_template_zext_i32_to_i64` shipping in TEN committed
+    // real-openlibm goldens, beside a `cqrt_qram_load` of the un-widened index;
+    // root-caused to `if (CI->hasOneUse()) DeadCast = CI;` in `lowerQramReads`, a
+    // multi-use clang `zext nneg` whose geps are all erased). The durable fix is
+    // eventually a SWEEP-LEVEL INVARIANT — "no emitted gate may have a use-free
+    // result" — and any such detector MUST exempt `cqrt_alloc_*`, because Rule 6
+    // legitimately leaves a not-provably-|0> rail allocated and four committed
+    // fixtures declare their leak CORRECT.
+    //
+    // AND QUOTE THIS FIX'S 0-FLIP RESULT WITH ITS REACH, never its denominator — the
+    // same discipline this file already carries for bd 2qvr. Three independent
+    // pre-fix/post-fix censuses over ~1282-2001 module-pairs found 0 exit-code flips
+    // and 0 stderr diffs, but the fix DELETES something in only 3 real modules (12
+    // counting synthetic polarity swaps). The honest sentence is "0 flips, and the
+    // deletion reached 3 modules". Code-path reach is separately large — this function
+    // visits ~3752 nodes across 147 modules — which is what makes the `use_empty`
+    // inertness argument load-bearing rather than untested.
+    if (isa<Instruction>(V))
+      track(V);
     if (auto *C = dyn_cast<ConstantInt>(V))
       return C->isZero() ? ConstantInt::getTrue(C->getContext())
                          : ConstantInt::getFalse(C->getContext());
