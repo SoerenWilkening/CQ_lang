@@ -14,6 +14,17 @@ transpiler/build*
 # A third configure, for compile-checking work-in-progress WITHOUT swapping the
 # plugin under a review that is measuring against /build/.
 /build-inc3/
+# A fourth configure, with ASSERTIONS ENABLED (bd ziuw). The shipped plugin is
+# Release/-DNDEBUG, so every `assert` in the pass — e.g. the pure-callee driver's
+# frame-pairing and drain asserts — is compiled OUT and is documentation only.
+# This dir turns them back into a runnable gate:
+#   cmake -S . -B build-assert -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm \
+#         -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS= -DCMAKE_CXX_FLAGS_RELEASE=-O2
+# *** NOT `-DCMAKE_CXX_FLAGS=-UNDEBUG`: CMake appends CMAKE_CXX_FLAGS_RELEASE's
+# own `-DNDEBUG` AFTER it, so that spelling silently yields a binary with no
+# asserts at all. Prove the instrument is live before trusting its silence —
+# `strings build-assert/ir-pass/cq-opt | grep <your assert message>`. ***
+/build-assert/
 /build-5pio/
 /Testing/
 .claude

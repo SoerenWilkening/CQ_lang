@@ -128,10 +128,10 @@ endif()
 # between invocations.
 #
 # EQUIVALENCE IS GATED, NOT ASSUMED: tools/cq_opt_equivalence.py replays all
-# 1066 fixtures through both binaries and compares stdout, stderr AND exit code
+# 1069 fixtures through both binaries and compares stdout, stderr AND exit code
 # (0 mismatches at introduction). It is wired as the `cq-opt-equivalence` ctest
 # entry so a future pass change cannot silently make the two diverge — which
-# matters because 577 negative fixtures FileCheck the diagnostic TEXT, not just
+# matters because 579 negative fixtures FileCheck the diagnostic TEXT, not just
 # the exit status.
 #
 # Sources come from the CQPass target so the two can never drift apart.

@@ -3,6 +3,7 @@
 # into the `config` namespace before this file is loaded.
 
 import os
+import sys
 import lit.formats
 
 config.name = "CQ IR-pass"
@@ -27,8 +28,47 @@ config.substitutions.append(("%cq-opt", cq_opt))
 config.substitutions.append(("%cq-pass", cq_pass))
 config.substitutions.append(("%filecheck", filecheck))
 
+# %python — the interpreter lit itself is running under, for the handful of
+# fixtures whose INPUT is generated rather than committed (bd ziuw: the deep
+# pure-call-chain witness is 60k functions / 4.8MB of textual IR whose only
+# interesting property is its length; see Inputs/gen_deep_pure_chain.py).
+# `sys.executable` rather than a bare `python3` so the fixture cannot pick up a
+# different interpreter than the harness, and QUOTED because a path with a
+# space would otherwise split — this is byte-for-byte what upstream lit does
+# for the same name (`lit/llvm/config.py`).
+#
+# WHY IT IS NOT EATEN BY `%p`. `TestRunner.getDefaultSubstitutions` extends the
+# list with `test.config.substitutions` FIRST and appends its own `%s/%S/%p/%t`
+# family after, and `processLine` applies them in list order — so a user
+# substitution always wins. VERIFIED BY READING THE INSTALLED lit, which is
+# **18.1.8** here (`lit.__version__`; ctest invokes the pyenv shim, llvm@19
+# ships no lit) — NOT lit 19, which is not installed on this box and about
+# which nothing here is claimed. The durable ground is not the version anyway:
+# upstream lit registers `%python` through this very channel, so the ordering
+# is load-bearing for lit itself.
+config.substitutions.append(("%python", '"%s"' % sys.executable))
+
+# *** THE DIRECTORY NAME ALONE DOES NOT EXCLUDE IT. *** In the installed lit
+# (18.1.8, read — not assumed) `discovery.py` skips only `Output`, `.svn`,
+# `.git` and whatever is in `config.excludes`, and the string `Inputs` appears
+# in ZERO files of the lit package: the convention is enforced by each suite
+# setting this, by nothing else. Without the line below any `*.ll` dropped into
+# `test/Inputs/` becomes a collected test (measured in a scratch suite: an
+# `Inputs/helper.ll` was discovered and run). It fails loudly rather than
+# silently, but it fails for a reason nobody would look for. The other
+# consumers of this directory are all NON-recursive and so unexposed:
+# `cq_opt_equivalence.py`, `run_shell_tests.sh`, `CMakeLists.txt`'s `file(GLOB`
+# (not `GLOB_RECURSE`), `fixture_guard_liveness.py`, `dedup_lit_runs.py`.
+config.excludes = ["Inputs"]
+
 # Add the LLVM tools directory to PATH so bundled wrappers like `not`
-# (used by the 577 negative fixtures to invert cq-opt's exit code) resolve.
+# (used by the 579 negative fixtures to invert cq-opt's exit code) resolve.
+#
+# THE DERIVATION, so the next bump is a RE-MEASURE and not an increment:
+#     grep -lE '^; RUN:.*(^| )not ' ir-pass/test/*.ll | wc -l
+# *** NOT `grep -rl 'not %cq-opt'` — that returns 581 because it also matches
+# two fixtures that merely DISCUSS the idiom in prose. A Rule-13 lens used it
+# and reported this count as wrong by 2; it is not. Anchor on the RUN line. ***
 #
 # DERIVE THIS FROM FileCheck, NEVER FROM cq_opt. It used to be
 # `dirname(cq_opt)`, which held only while %cq-opt was stock LLVM `opt` living

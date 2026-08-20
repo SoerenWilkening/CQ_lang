@@ -1,15 +1,18 @@
 ; control_predmux_accept_i80_cmp_purecallee_transitive.ll — ACCEPT (bd 3c6m.14.1).
 ;
-; SURFACE S5 — the pure-callee proof's OWN recursion. `@leaf` is squeaky clean
-; (one call + one fadd); the i80 `_hl` compare is one level down, in `@deep`.
-; Pre-change the proof failed at the inner body and the failure propagated
-; outward through the recursion, so the OUTER call left the region:
+; SURFACE S5 — the pure-callee proof's OWN DESCENT into an inner call. (It was
+; a C++ recursion until bd ziuw made the walk an explicit worklist; the descent
+; is now a frame PUSH. Same surface, same cascade, different spelling — this
+; fixture is byte-identical under both.) `@leaf` is squeaky clean (one call +
+; one fadd); the i80 `_hl` compare is one level down, in `@deep`. Pre-change
+; the proof failed at the inner body and the failure propagated outward through
+; the descent, so the OUTER call left the region:
 ;   CQ_PREDMUX_DBG: pure-callee deep fails at:   %eq = icmp eq i80 %man, ...
 ;   CQ_PREDMUX_DBG: pure-callee leaf fails at call:   %d = call x86_fp80 @deep(...)
 ;   CQ_PREDMUX_DBG: leave @probe ... gate=E4-dataflow at:   %r = call x86_fp80 @leaf(...)
 ; That three-line cascade is why S5 is listed as its own surface rather than
 ; folded into S1: the widened clause fires on a function the region never names,
-; two frames below the instruction that was being judged.
+; two levels below the instruction that was being judged.
 ;
 ; It also pins the transitive SPECIALIZATION that follows (Phase 6.3): one clone
 ; per level, the inner one reversed inside the outer wrap by its synthesized

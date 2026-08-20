@@ -66,7 +66,6 @@
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SCCIterator.h"
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/InstructionSimplify.h"
@@ -1014,25 +1013,46 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
 //
 //   grep -rnE "isSpeculatablePureCallee(Body(Impl|Walk)?)?\(" ir-pass/src ir-pass/include
 //
-// (The `Walk` alternative is load-bearing since bd 3c6m.14.4 split the body out
-// of `Impl`; a grep without it silently misses a call expression. The recursion
-// is now MUTUAL — `Impl` calls `Walk` calls `Impl` — not self-recursion.)
+// *** bd ziuw MOVED THESE NUMBERS AND THE GREP NO LONGER FINDS THE DESCENT.
+// READ THIS BEFORE TRUSTING A RE-COUNT. *** The walk used to descend into an
+// inner call by CALLING ITSELF (`...BodyImpl` -> `...BodyWalk` ->
+// `...BodyImpl`), so the descent was one of the textual call expressions the
+// grep returned. It is now an explicit worklist: `...BodyWalk` no longer exists
+// and the descent is the `enter(CI2->getCalledFunction())` PUSH inside
+// `...BodyImpl`, which the grep above CANNOT see. The surface it implements —
+// S5 below — is unchanged and still has its fixture; only its spelling moved.
+// Keep the `Walk` alternative in the grep anyway: it costs nothing and it is how
+// a reader confirms the name is really gone rather than assuming it.
 //
-//   textual call EXPRESSIONS of any of the three names ........... 6
-//     ... minus the self-recursion ................................ 5
-//     ... minus the recursion AND the two pure forwarders ......... 3
+// *** THE GREP RETURNS 11 LINES AND SIX OF THEM ARE NOT CALL EXPRESSIONS. ***
+// The block used to name only one discard rule and a Rule-13 lens re-counted to
+// the PRE-ziuw number off the noise, so all six are listed: the grep STRING
+// itself (it self-matches), the three definitions, the header declaration in
+// `PredMuxFlatten.h`, and the prose quote in the resume-arm comment inside
+// `...BodyImpl` — which describes the old call in the past tense and is
+// deliberately written WITHOUT parentheses so it no longer looks like one.
+//
+//   textual call EXPRESSIONS of any of the three names ........... 5
+//     ... minus the two pure forwarders ........................... 3
 //   distinct CONSUMERS that make an accept decision ............... 3
 //   distinct CONTEXTS those 3 consumers run in .................... 4
-//   self-recursion ................................................ 1
+//   self-recursion ................................................ 0
+//   the descent, now un-greppable, spelled `enter(...)` ........... 1
 //
 // *** THE COUNTING UNIT, SPELLED OUT, because re-deriving it cost ten minutes and
 // the block above only implies it. *** "the three names" means
-// `isSpeculatablePureCallee` / `...Body` / `...BodyImpl` and EXCLUDES calls to
-// `...BodyWalk`, so the `Impl -> Walk` expression is NOT among the 6. (The grep
-// must still carry the `Walk` alternative — that is how you SEE that expression in
-// order to exclude it deliberately rather than miss it silently.) Under that unit
-// the pre-bd-wve8 numbers 5/4/2/2/3/1 were correct; bd wve8 added exactly one
-// consumer whose entry point calls `Impl` directly, so every delta is +1.
+// `isSpeculatablePureCallee` / `...Body` / `...BodyImpl`. THREE TABLES RATHER
+// THAN A DELTA RECIPE — the deltas do not compose, because ziuw did not
+// decrement the old row 2, it DELETED it and promoted row 3:
+//   pre-wve8  5 / 4 / 2 / 2 / 3 / 1   rows: exprs / minus-recursion /
+//                                     minus-both / consumers / contexts /
+//                                     self-recursion
+//   pre-ziuw  6 / 5 / 3 / 3 / 4 / 1   same rows (wve8 added one consumer whose
+//                                     entry point calls `Impl` directly; the
+//                                     self-recursion row was 1 before and after)
+//   now       5 / 3 / 3 / 4 / 0 / 1   rows: exprs / minus-FORWARDERS /
+//                                     consumers / contexts / self-recursion /
+//                                     descent
 //
 // The two forwarders are `isSpeculatablePureCalleeBody` (mints the query
 // context) and the exported `isSpeculatablePureCallee`. S1/S2 are the SAME
@@ -1043,8 +1063,26 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
 //   S2 E4 CALL admission, CLONE mode (same site under ClaimAll — the call site
 //      has NO context gate; deliberately widened, see the note there)
 //   S3 `isSpeculatablePureCallee` -> `Fp80Union.cpp`'s AdmitArgDerived seed cone
-//   S5 the proof's own recursion — a clean outer callee over a compare-bearing
-//      inner one.
+//   S5 the proof's own DESCENT into an inner call — a clean outer callee over a
+//      compare-bearing inner one. (bd ziuw: a worklist push, no longer a C++
+//      recursion. Same surface, same fixture, different spelling.)
+//      *** DO NOT READ A GREEN 1069 AS COVERAGE OF S5. *** Re-derive rather than
+//      inherit — `CQ_PREDMUX_COUNT=1` over every committed fixture, parsing the
+//      COUNT line. WITH the three ziuw fixtures landed:
+//        91 fixtures print >=1 pure-callee COUNT line; 98 (fixture,root) pairs
+//        5 roots reach `bodies>=2`, i.e. can observe the descent AT ALL, across
+//          FOUR fixtures: `..._transitive` (2), `..._memo_cost` (9 and 25),
+//          `..._multiblock_resume` (5), `..._cycle_under_memo` (5)
+//        4 roots have `hits>0`; 2 have a cycle return (`inv-bodies-hits>0`)
+//      BEFORE they landed it was 89 / 3 / 3 / 1. *** STATE WHICH SIDE OF ITS OWN
+//      COMMIT A CENSUS IS ON. *** The first draft of this note gave the BEFORE
+//      numbers in the present tense, so a Rule-11 re-count got a mismatch and read
+//      it as drift — the same trap this block spends thirty lines correcting for
+//      the call-expression count, re-laid one paragraph down.
+//      `..._deep_chain.ll` prints NOTHING here: its committed module is empty and
+//      its 60001 is measured on the GENERATED input, not on a committed fixture.
+//      Everything else walks a single body — which is why the ziuw no-regression
+//      claim rests on generated call-graph populations, not on the corpus.
 //   S6 `isSpeculatableTotalCallee` -> `ArmClassify.cpp`'s `classifyClassicalCallArm`
 //      (bd wve8; the Phase-6.5 classical-call arm). *** S6 RUNS THE WALK IN STRICT
 //      MODE AND IS THE ONLY CONSUMER THAT DOES. *** It is also the only one that
@@ -1282,8 +1320,9 @@ bool isSpeculatableDataflow(const Instruction &I, bool AdmitI80Compare = false) 
 // READ THAT AS A SCOPE STATEMENT ABOUT THIS FUNCTION, not as a general lift —
 // what this proof asserts is purity/totality/termination, and `icmp` has all
 // three at every width. Two call SITES ride this — the E4 call admission in
-// both contexts (S1/S2) and S3 `Fp80Union`'s seed cone — plus the recursion
-// below (S5); each has a fixture.
+// both contexts (S1/S2) and S3 `Fp80Union`'s seed cone — plus the DESCENT
+// below (S5; a worklist push since bd ziuw, not a recursion); each has a
+// fixture.
 //
 // bd 3c6m.14.2 — *** DO NOT READ THIS AS A DEFINEDNESS PROOF, AND DO NOT WIRE IT
 // TO ONE. *** It asserts pure + total + terminating, and it gets there through
@@ -1372,154 +1411,418 @@ struct PureCalleeQuery {
   // FALSE. *** See `isSpeculatableTotalCallee` for the full statement and for
   // the SIGSEGV that established it. Default TRUE so S1/S2/S3 are byte-identical
   // to their pre-wve8 behaviour; only `isSpeculatableTotalCallee` flips it. The
-  // flag lives in the QUERY, so the recursion inherits it and the per-query memo
+  // flag lives in the QUERY, so the descent inherits it and the per-query memo
   // can never serve a lax verdict to a strict query (each top-level entry mints
   // a fresh `PureCalleeQuery`).
   bool AdmitDeferred = true;
 };
 
-bool isSpeculatablePureCalleeBodyWalk(const Function *F, PureCalleeQuery &Q);
+// bd ziuw — ONE SUSPENDED ACTIVATION OF THE BODY WALK. The walk used to be a
+// C++ mutual recursion (`...BodyImpl` <-> `...BodyWalk`) which SIGILLed with
+// ZERO stderr on a ~37.4k-node pure call chain, i.e. A CRASH PRE-EMPTED THE
+// LOUD DECLINE (Prime Directive). It is now an explicit worklist over these
+// frames; the descent below is a `push`, so the only bound is heap.
+//
+// THE SHAPE OF THE OLD FAILURE, MEASURED, AND IT IS BUILD-CONFIGURATION
+// DEPENDENT — do not restate it as structure. A mutual recursion between two
+// functions is NOMINALLY two frames per node; in the shipped Release build it
+// was ONE, because the compiler inlines `Walk` into `Impl` (`nm -a` on a
+// pre-change `cq-opt` shows no `...BodyWalk` symbol at all). `otool -tvV` puts
+// that frame at 224 bytes, and the crash bisects to between D=37300 (rc=0) and
+// D=37400 (rc=132): 37350 x 224 = 7.98 MB against an 8 MB main-thread stack — a
+// one-frame-per-node fit, where two frames would have broken near 18.7k.
+//
+// *** THIS REMOVES ONE OF FOUR ONE-FRAME-PER-NODE RECURSIONS, AND THE OTHER
+// THREE PRODUCE THE IDENTICAL SIGNATURE — rc=132, ZERO stderr, no diagnostic.
+// DO NOT QUOTE THIS REWRITE AS HAVING REMOVED THE PREEMPTION GENERALLY. *** All
+// three are PRE-EXISTING and byte-identical on the pre-change binary, so ziuw
+// neither caused nor cured any of them; all were MEASURED by its Rule-13 round:
+//   `SpecializeReject::scanBody` .... ~4000 nodes, the cheapest to trigger. On
+//      the LAX S1/S2 path, which mints a Phase-6 clone. A 4000-node chain under
+//      the shipped E4 driver exits rc=132 with THIS walk's own successful
+//      `invocations=4001 verdict=1` COUNT line as the only stderr (bracket
+//      D=3500 rc=0 / D=4000 rc=132). bd 3c4i, which is also where the SECOND,
+//      independent `scanBody` exponential noted ~40 lines ABOVE belongs (the
+//      per-candidate `OnStack` re-walk — same function, a different cost axis).
+//   `ByRefInline::cloneExpr` ........ ~65k, one frame per operand-cone node.
+//   `RegionFlattener::edgePred` ..... ~42k — *** IN THIS FILE ***, and on a path
+//      that never queries the pure-callee walk at all, so "lax vs strict
+//      consumer" does not even describe it. The trigger is the merge phi's
+//      INCOMING ORDER alone: the byte-identical module with the two incomings
+//      swapped survives D=400000. bd t2fw, together with the separate finding
+//      that the region flatten is roughly CUBIC — that one needs no adversarial
+//      depth at all (a 1603-line file of flat `if`s costs 9.6s of CPU today).
+// WHAT IS GENUINELY FIXED: the STRICT/S6 entry, at any depth, because 6.5 is
+// clone-ORTHOGONAL and nothing recurses behind it.
+//
+// *** A DEPTH BUDGET IS STILL FORBIDDEN — BUT NOT FOR THE REASON THE TICKET AND
+// THE FIRST DRAFT OF THIS COMMENT GAVE, AND THE WRONG REASON IS WORSE THAN NONE
+// BECAUSE IT NAMES A MECHANISM A READER CAN CHECK AND FIND ABSENT. ***
+//
+// The draft said a cut-off FALSE "would be written into the memo and later
+// served to a SHALLOWER query in the same walk". `PureCalleeQuery::Memo` really
+// is keyed on `const Function *` with no depth component — but that particular
+// mechanism CANNOT FIRE HERE. Any FALSE returned to a caller aborts that caller
+// through the very same `if (!Ret) { … leave(F, false); }` arm, so one FALSE
+// unwinds every ancestor to the root and ENDS the query; no frame survives to
+// consult the entry that was just written. MEASURED by the ziuw Rule-13 round on
+// an instrumented build over 685 modules / 779 queries (600 of them cycle-dense):
+// 77 memo hits served TRUE, ZERO served FALSE.
+//
+// THE REASON THAT SURVIVES INSPECTION: a budget-induced FALSE propagates through
+// that same arm, so it poisons the WHOLE query up to the root — the verdict of a
+// perfectly provable callee becomes an artefact of how deep its call graph
+// happens to be, and the pinned `Invocations`/`BodiesWalked`/`MemoHits` triple
+// becomes depth-dependent. Say the direction plainly rather than inflating it:
+// that is an over-DECLINE, so it is safe under the Prime Directive and is a
+// capability + determinism defect, NOT a silent miscompile. It is still the shape
+// bd xzdx forbids (bd memory
+// [[budget-in-a-memo-and-probes-with-no-power-2026-08-08]]: "ANY cut-off inside a
+// memoised function is part of its answer" — and a gate whose answer depends on
+// entry order is a gate people learn to bypass), and it is why bd s6ao's QROM
+// walk took the same iterative rewrite rather than a cap.
+struct PureCalleeFrame {
+  const Function *F = nullptr;
+  Function::const_iterator BBIt{};   // block cursor; `== F->end()` ⇒ body passed
+  BasicBlock::const_iterator IIt{};  // instruction cursor inside `*BBIt`
+  bool CycleChecked = false;         // the CFG-SCC test has run for `F`
+  bool BlockEntered = false;         // the terminator prologue has run for `*BBIt`
+  // A callee verdict for the call at `IIt` is PENDING IN `Ret` — either a child
+  // frame was pushed, OR `enter` settled the callee outright (guard reject, memo
+  // hit, OnStack cycle). Both cases resume through the same arm, which is why
+  // the descent sets this UNCONDITIONALLY; "tightening" it to
+  // `if (!enter(...)) AwaitingCall = true;` would spin the driver forever on
+  // that instruction (and read `Fr` after a possible reallocation).
+  bool AwaitingCall = false;
+};
 
-bool isSpeculatablePureCalleeBodyImpl(const Function *F, PureCalleeQuery &Q) {
-  // hasExactDefinition: a body this proof reads must be the body that LINKS —
-  // an INTERPOSABLE definition (weak_any/linkonce_any/common/extern_weak) may be
-  // replaced by the linker, so a purity/termination proof over the module-local
-  // body would be baked into the speculated hoist and the Bennett clone while a
-  // different function runs at stage 3 (the adia Rule-13 board's confirmed fence
-  // gap; the ByRefInline hasLocalLinkage precedent). NOTE (bd gxhi, empirically
-  // verified against LLVM 19): `hasExactDefinition()` is `!isDeclaration() &&
-  // !mayBeDerefined()`, and `mayBeDerefined()` is TRUE for weak_odr/linkonce_odr/
-  // available_externally — so this predicate ALSO declines those ODR variants,
-  // NOT only the arbitrary-replacement interposable set. That is a SAFE
-  // over-decline (Prime Directive) with zero corpus cost (openlibm has no weak
-  // symbols); admitting the ODR variants would be a deliberate `!isInterposable()`
-  // widening, a separate ticket. Declarations fail here too.
+bool isSpeculatablePureCalleeBodyImpl(const Function *Root, PureCalleeQuery &Q) {
+  SmallVector<PureCalleeFrame, 16> Stack;
+  bool Ret = false;  // verdict of the most recently SETTLED node
+
+  // Everything the recursive `...BodyImpl` did BEFORE the body walk, unchanged
+  // and in the same order — which is what keeps `Invocations` / `BodiesWalked` /
+  // `MemoHits` identical to the recursive version, those three being the pinned
+  // cost observable (bd 3c6m.14.4). Either settles the node outright (returns
+  // true, verdict in `Ret`) or pushes its frame (returns false).
   //
-  // F-local and cheap; deliberately NOT memoised. It is also counted BEFORE
-  // `Invocations` is bumped, so that `Invocations - BodiesWalked` really is the
-  // memo-hit count: counting guard rejects and cycle returns as "hits" made the
-  // number a mislabel (a module with one `declare`d callee and no memo activity
-  // at all reported `hits=1`), found by the bd u1rp Rule-13 round.
-  if (!F || !F->hasExactDefinition() || F->isVarArg())
-    return false;
-  ++Q.Invocations;
-  // The memo lookup sits BEFORE the OnStack insert on purpose. An in-flight `F`
-  // has no entry yet, so a genuine re-entry still falls through to the cycle
-  // test below; and the `OnStack` early-return is NOT memoised, which keeps the
-  // fix independent of whether a cycle-induced FALSE is permanent. (It is —
-  // an OnStack hit always witnesses a real call-graph cycle, and every node on
-  // the path to it inherits a permanently-false verdict — but nobody should have
-  // to re-derive that to trust the memo.)
-  auto It = Q.Memo.find(F);
-  if (It != Q.Memo.end()) {
-    ++Q.MemoHits;
-    return It->second;
-  }
-  if (!Q.OnStack.insert(F).second)
-    return false;  // call-graph cycle: termination unprovable. NOT memoised.
-  auto pop = llvm::make_scope_exit([&] { Q.OnStack.erase(F); });
-  ++Q.BodiesWalked;
-  bool R = isSpeculatablePureCalleeBodyWalk(F, Q);
-  Q.Memo[F] = R;  // only a COMPLETED walk is recorded.
-  return R;
-}
-
-// The body walk proper. Split out of `isSpeculatablePureCalleeBodyImpl` so the
-// memo records exactly one thing: the verdict of a full walk.
-bool isSpeculatablePureCalleeBodyWalk(const Function *F, PureCalleeQuery &Q) {
-  for (scc_iterator<const Function *> It = scc_begin(F); !It.isAtEnd(); ++It)
-    if (It->size() > 1 || It.hasCycle())
-      return false;  // a CFG cycle: termination unprovable
-  for (const BasicBlock &BB : *F) {
-    const Instruction *Term = BB.getTerminator();
-    if (!isa<BranchInst>(Term) && !isa<ReturnInst>(Term))
-      return false;
-    // bd wve8, DEFERRED CLAUSE 2 — THE TERMINATOR SKIP. The instruction loop
-    // below `continue`s on every terminator, so nothing here ever looked at a
-    // conditional branch's CONDITION; and `isSpeculatableDataflow` admits a
-    // variable-amount `shl/lshr/ashr` and `fptosi/fptoui`, all of which produce
-    // POISON. `br i1 poison` is IMMEDIATE UB. For the lax consumers that is
-    // harmless — they never move the branch, and the callee's control flow is
-    // re-established by the clone — but a consumer that speculates the whole CALL
-    // executes that branch on a path the source did not take.
+  // *** SCOPE THAT EQUALITY, DO NOT UNIVERSALLY QUANTIFY IT. *** It holds on
+  // every input THE RECURSIVE VERSION COULD COMPLETE — above ~37.3k nodes that
+  // version emitted no counters and no stream at all, which is the whole reason
+  // this rewrite exists, so there is nothing to be equal to up there.
+  //
+  // *** IT MAY REALLOCATE `Stack`. NEVER HOLD A FRAME REFERENCE ACROSS IT. ***
+  auto enter = [&](const Function *F) -> bool {
+    // hasExactDefinition: a body this proof reads must be the body that LINKS —
+    // an INTERPOSABLE definition (weak_any/linkonce_any/common/extern_weak) may
+    // be replaced by the linker, so a purity/termination proof over the
+    // module-local body would be baked into the speculated hoist and the Bennett
+    // clone while a different function runs at stage 3 (the adia Rule-13 board's
+    // confirmed fence gap; the ByRefInline hasLocalLinkage precedent). NOTE (bd
+    // gxhi, empirically verified against LLVM 19): `hasExactDefinition()` is
+    // `!isDeclaration() && !mayBeDerefined()`, and `mayBeDerefined()` is TRUE for
+    // weak_odr/linkonce_odr/available_externally — so this predicate ALSO
+    // declines those ODR variants, NOT only the arbitrary-replacement
+    // interposable set. That is a SAFE over-decline (Prime Directive) with zero
+    // corpus cost (openlibm has no weak symbols); admitting the ODR variants
+    // would be a deliberate `!isInterposable()` widening, a separate ticket.
+    // Declarations fail here too.
     //
-    // STRICT MODE REFUSES A CONDITIONAL BRANCH OUTRIGHT. An unconditional `br` is
-    // admitted: it has no condition and cannot be UB.
-    //
-    // *** THE OBVIOUS FIX HERE IS A NO-OP THAT READS AS A FIX. MEASURED, DO NOT
-    // RE-TRY IT. *** The first draft asked
-    // `isGuaranteedNotToBeUndefOrPoison(BrI->getCondition())`, which is the
-    // natural spelling and is CIRCULAR at exactly this position. On the shipped
-    // probe body (`%s = shl i32 1, %x` / `%c = icmp eq i32 %s, 7` /
-    // `br i1 %c`, with `%x` noundef) LLVM 19 answers:
-    //     gnp(cond %c) = 1      gnp(op %s = shl i32 1, %x) = 0      gnp(i32 7) = 1
-    // `icmp` cannot CREATE poison, so a bottom-up analysis must return 0 for `%c`;
-    // it returns 1 because ValueTracking also reasons from USES — `%c` is the
-    // condition of a `br`, a use that is UB on poison, so a well-defined program
-    // implies `%c` is not poison. That is precisely the question being asked, run
-    // backwards. The whole fixture ACCEPTED with the check in place. Same family
-    // as the `canCreateUndefOrPoison` no-op recorded in LiteralIntegrity.h: a
-    // predicate whose name matches the obligation and whose answer does not.
-    //
-    // COST OF THE BLUNTER RULE, MEASURED: zero. Every callee body in the corpus
-    // that reaches this consumer is single-block (12 e2e sites, 25 fixtures). A
-    // branching classical helper is not a shape 6.5 set out to support, so
-    // declining it is a safe over-decline (Rule 17's carve-out), and widening it
-    // later needs a poison analysis that does not consult uses.
-    if (!Q.AdmitDeferred)
-      if (const auto *BrI = dyn_cast<BranchInst>(Term))
-        if (BrI->isConditional()) {
-          if (::getenv("CQ_PREDMUX_DBG"))
-            llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
-                         << " fails at poison-capable conditional branch: "
-                         << *Term << "\n";
-          return false;
-        }
-    for (const Instruction &I : BB) {
-      if (I.isTerminator())
-        continue;
-      // bd wve8, DEFERRED CLAUSE 1 — THE QROM READ. `isSpeculatableDataflow`
-      // admits a const-global load and its address gep through
-      // `qromReadShapeInScope`, which proves the SHAPE and says in its own header
-      // that "the index-taint proof, the straight-line/loop gates AND the bounds
-      // proof are DEFERRED — re-proven by the emitter under the clone's own
-      // cloneTaint". A consumer with no clone never performs that re-proof, so
-      // the index is unbounded and the speculated call reads out of bounds.
-      // EXHIBITED: `static const int tab[4]; int lookup(int i){return tab[i];}`
-      // under `if (q > 3) y = lookup(idx);` with a zero-amplitude guard —
-      // SIGSEGV at idx=1e8, and a silent garbage word in the trace at idx=9.
-      // Refusing the gep as well as the load is deliberate: the gep case exists
-      // only to serve such a load, so admitting it alone would be dead surface.
-      if (!Q.AdmitDeferred && (isa<LoadInst>(I) || isa<GetElementPtrInst>(I))) {
-        if (::getenv("CQ_PREDMUX_DBG"))
-          llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
-                       << " fails at deferred-bounds memory op: " << I << "\n";
-        return false;
-      }
-      if (const auto *CI2 = dyn_cast<CallInst>(&I)) {
-        if (isCuratedReversibleIntrinsic(CI2) && CI2->doesNotAccessMemory())
-          continue;
-        if (isSpeculatablePureCalleeBodyImpl(CI2->getCalledFunction(), Q))
-          continue;
-        if (::getenv("CQ_PREDMUX_DBG"))
-          llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
-                       << " fails at call: " << I << "\n";
-        return false;
-      }
-      // bd 3c6m.14.1 — TRUE, deliberately, and it is the whole functional
-      // change of that increment. See the `AdmitI80Compare` block on
-      // `isSpeculatableDataflow` for why this question ("pure + total") is not
-      // the region walk's question ("speculatable into THIS select program"),
-      // and for the full S1..S5 list of what one `true` here widens.
-      if (!isSpeculatableDataflow(I, /*AdmitI80Compare=*/true)) {
-        if (::getenv("CQ_PREDMUX_DBG"))
-          llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
-                       << " fails at: " << I << "\n";
-        return false;
-      }
+    // F-local and cheap; deliberately NOT memoised. It is also counted BEFORE
+    // `Invocations` is bumped, so that `Invocations - BodiesWalked` really is the
+    // memo-hit count: counting guard rejects and cycle returns as "hits" made the
+    // number a mislabel (a module with one `declare`d callee and no memo activity
+    // at all reported `hits=1`), found by the bd u1rp Rule-13 round.
+    if (!F || !F->hasExactDefinition() || F->isVarArg()) {
+      Ret = false;
+      return true;
     }
+    ++Q.Invocations;
+    // The memo lookup sits BEFORE the OnStack insert on purpose. An in-flight `F`
+    // has no entry yet, so a genuine re-entry still falls through to the cycle
+    // test below; and the `OnStack` early-return is NOT memoised, which keeps the
+    // fix independent of whether a cycle-induced FALSE is permanent. (It is —
+    // an OnStack hit always witnesses a real call-graph cycle, and every node on
+    // the path to it inherits a permanently-false verdict — but nobody should have
+    // to re-derive that to trust the memo.)
+    auto It = Q.Memo.find(F);
+    if (It != Q.Memo.end()) {
+      ++Q.MemoHits;
+      Ret = It->second;
+      return true;
+    }
+    if (!Q.OnStack.insert(F).second) {
+      Ret = false;  // call-graph cycle: termination unprovable. NOT memoised.
+      return true;
+    }
+    ++Q.BodiesWalked;
+    PureCalleeFrame Fr;
+    Fr.F = F;
+    Stack.push_back(Fr);
+    return false;
+  };
+
+  // Everything the recursive `...BodyImpl` did AFTER the body walk: the
+  // `make_scope_exit` OnStack pop and the memo write. It is called at exactly
+  // the points the old `...BodyWalk` `return`ed from — which is what preserves
+  // "only a COMPLETED walk is recorded" now that the two functions are one.
+  //
+  // *** THE `make_scope_exit` SAFETY NET IS GONE, SO THE PAIRING IS SPELLED OUT
+  // RATHER THAN LEFT CONVENTIONAL. *** The recursive version could not leak an
+  // OnStack entry: the scope guard fired on every return path, including ones a
+  // future editor added. Here the erase lives in this lambda, so the invariant
+  // would otherwise rest on two unwritten rules — that the driver has no early
+  // exit, and that nothing calls `leave` after `enter` has pushed. Both hold
+  // today (the driver's only `return` is after the loop and its only `break` is
+  // inside the SCC loop), but the natural future edits break them SILENTLY: a
+  // `return false;` for a new bail-out clause strands frames and OnStack entries,
+  // and writing the descent as `if (enter(C)) { if (!Ret) leave(…); }` would
+  // settle the CHILD with the PARENT's verdict whenever `enter` pushed.
+  //
+  // So `leave` NAMES the frame it settles and asserts the pairing, and the driver
+  // asserts it drained. TWO RULES for anyone editing the loop below:
+  //   (1) `leave` must be the last statement before a `continue`, and must never
+  //       follow `enter` in the same step;
+  //   (2) the loop must have no `return`/`break` of its own.
+  // NB the plugin ships `-DNDEBUG`, so these asserts are documentation plus a
+  // Debug-build net — NOT a runtime guard in the shipped build. They were still
+  // turned into EVIDENCE rather than left as decoration: an assertions-enabled
+  // `cq-opt` (a second build dir with `-DCMAKE_CXX_FLAGS_RELEASE=-O2` — NOT
+  // `-UNDEBUG` in `CMAKE_CXX_FLAGS`, which CMake overrides by appending
+  // `..._RELEASE`'s own `-DNDEBUG` after it, silently producing a binary with no
+  // asserts at all) swept the whole corpus and both generated populations, and a
+  // MUTANT built in a `git worktree` — one call site handed `Root` instead of the
+  // top frame — fires this exact assert on
+  // `lowering_predmux_purecallee_multiblock_resume.ll` while the clean binary
+  // passes it at rc=0. A checker nobody has tried to fool is a checker nobody
+  // should trust.
+  auto leave = [&](const Function *LF, bool R) {
+    assert(!Stack.empty() && Stack.back().F == LF &&
+           "leave() must settle the frame on top of the stack");
+    assert(Q.OnStack.count(LF) && "leave() without an OnStack entry");
+    Q.OnStack.erase(LF);
+    Q.Memo[LF] = R;
+    Stack.pop_back();
+    Ret = R;
+  };
+
+  if (enter(Root))
+    return Ret;
+
+  // The driver. One SMALL STEP per iteration, and every step that pushes or pops
+  // `continue`s immediately, because `Fr` is a reference INTO `Stack`. The order
+  // of steps below is the order of the recursive walk's statements, so the
+  // CQ_PREDMUX_DBG stream and the CQ_PREDMUX_COUNT triple come out byte-
+  // identical — including the interleaving where a child prints its own failure
+  // line before its caller prints "fails at call".
+  //
+  // THE EVIDENCE, WITH ITS POPULATIONS NAMED, because the corpus alone has
+  // almost no power here (only three committed fixtures reach `bodies>=2` — see
+  // the S5 note above). Against a `cq-opt` pinned at the pre-change commit,
+  // comparing stdout + stderr + EXIT CODE with both debug streams on:
+  //   * all 1069 committed fixtures ............................ 0 mismatches
+  //   * 2000 generated call-graph modules (DAG fan-out, memo hits, call-graph
+  //     cycles, vararg/declare/weak callees, every reject clause, both the lax
+  //     and strict drivers) .................................... 0 mismatches
+  //   * (Rule-13 lens 1, independently) 510 targeted + generated modules, 300
+  //     multi-block deep DAGs, and 18 chains of 3000..35000 nodes with the
+  //     reject planted at leaf / mid-depth ..................... 0 mismatches
+  //   * (lens 2) 690 cycle-dense modules, plus an instrumented comparison of the
+  //     MEMO SET itself rather than only the verdict ........... 0 mismatches
+  //   * (lens 3) 1060 modules incl. D=3000 and D=30000 ......... 0 mismatches
+  // Chains deeper than that CANNOT be differentially compared: one side crashes.
+  // One of the 1069 is a vacuous row — `..._deep_chain.ll`'s committed module is
+  // empty by construction; see its header.
+  //
+  // *** ONLY THE CHAIN BULLETS REACH THE REALLOC HAZARD THE NOTE ABOVE SINGLES
+  // OUT IN CAPITALS, AND A REPLACEMENT POPULATION THAT LOSES THAT LOSES THE ONLY
+  // EVIDENCE FOR IT. *** `SmallVector<PureCalleeFrame, 16>` holds 16 frames
+  // INLINE, so nothing reallocates below depth 17 — and the first two bullets are
+  // structurally under that line. MEASURED, and bodies-walked is an upper bound
+  // on simultaneous frame depth: the generated call-graph population maxes out at
+  // 8 (its modules are 2..9 functions with only forward edges), and the deepest
+  // committed fixture is `..._purecallee_memo_cost.ll`'s D=12 doubling chain at
+  // 13 — higher than the population, still under 16. Measured
+  // the other way too: the exact reorder the note forbids is byte-identical to
+  // the pre-change binary at every depth <= 16 and only corrupts the counter
+  // triple at depth 41. Any future population must exceed depth 16 or this
+  // hazard goes untested while the evidence block still reads as three
+  // independent confirmations.
+  while (!Stack.empty()) {
+    PureCalleeFrame &Fr = Stack.back();
+    const Function *F = Fr.F;
+
+    if (!Fr.CycleChecked) {
+      Fr.CycleChecked = true;
+      bool Cyclic = false;
+      for (scc_iterator<const Function *> It = scc_begin(F); !It.isAtEnd(); ++It)
+        if (It->size() > 1 || It.hasCycle()) {
+          Cyclic = true;  // a CFG cycle: termination unprovable
+          break;
+        }
+      if (Cyclic) {
+        leave(F, false);
+        continue;
+      }
+      Fr.BBIt = F->begin();
+      continue;
+    }
+
+    // Resume point: the callee at `Fr.IIt` has settled into `Ret`. This is the
+    // old `if isSpeculatablePureCalleeBodyImpl-returned-true then continue`,
+    // split across the descent. (Spelled without parentheses on purpose: the
+    // census grep above returns this line, and a reader discarding only
+    // definitions would count it as a call expression.)
+    if (Fr.AwaitingCall) {
+      Fr.AwaitingCall = false;
+      if (!Ret) {
+        if (::getenv("CQ_PREDMUX_DBG"))
+          llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
+                       << " fails at call: " << *Fr.IIt << "\n";
+        leave(F, false);
+        continue;
+      }
+      ++Fr.IIt;
+      continue;
+    }
+
+    if (Fr.BBIt == F->end()) {  // every block passed: the old trailing `return true`
+      leave(F, true);
+      continue;
+    }
+
+    if (!Fr.BlockEntered) {
+      const Instruction *Term = Fr.BBIt->getTerminator();
+      if (!isa<BranchInst>(Term) && !isa<ReturnInst>(Term)) {
+        leave(F, false);
+        continue;
+      }
+      // bd wve8, DEFERRED CLAUSE 2 — THE TERMINATOR SKIP. The instruction loop
+      // below `continue`s on every terminator, so nothing here ever looked at a
+      // conditional branch's CONDITION; and `isSpeculatableDataflow` admits a
+      // variable-amount `shl/lshr/ashr` and `fptosi/fptoui`, all of which produce
+      // POISON. `br i1 poison` is IMMEDIATE UB. For the lax consumers that is
+      // harmless — they never move the branch, and the callee's control flow is
+      // re-established by the clone — but a consumer that speculates the whole CALL
+      // executes that branch on a path the source did not take.
+      //
+      // STRICT MODE REFUSES A CONDITIONAL BRANCH OUTRIGHT. An unconditional `br` is
+      // admitted: it has no condition and cannot be UB.
+      //
+      // *** THE OBVIOUS FIX HERE IS A NO-OP THAT READS AS A FIX. MEASURED, DO NOT
+      // RE-TRY IT. *** The first draft asked
+      // `isGuaranteedNotToBeUndefOrPoison(BrI->getCondition())`, which is the
+      // natural spelling and is CIRCULAR at exactly this position. On the shipped
+      // probe body (`%s = shl i32 1, %x` / `%c = icmp eq i32 %s, 7` /
+      // `br i1 %c`, with `%x` noundef) LLVM 19 answers:
+      //     gnp(cond %c) = 1      gnp(op %s = shl i32 1, %x) = 0      gnp(i32 7) = 1
+      // `icmp` cannot CREATE poison, so a bottom-up analysis must return 0 for `%c`;
+      // it returns 1 because ValueTracking also reasons from USES — `%c` is the
+      // condition of a `br`, a use that is UB on poison, so a well-defined program
+      // implies `%c` is not poison. That is precisely the question being asked, run
+      // backwards. The whole fixture ACCEPTED with the check in place. Same family
+      // as the `canCreateUndefOrPoison` no-op recorded in LiteralIntegrity.h: a
+      // predicate whose name matches the obligation and whose answer does not.
+      //
+      // COST OF THE BLUNTER RULE, MEASURED: zero. Every callee body in the corpus
+      // that reaches this consumer is single-block (12 e2e sites, 25 fixtures). A
+      // branching classical helper is not a shape 6.5 set out to support, so
+      // declining it is a safe over-decline (Rule 17's carve-out), and widening it
+      // later needs a poison analysis that does not consult uses.
+      if (!Q.AdmitDeferred)
+        if (const auto *BrI = dyn_cast<BranchInst>(Term))
+          if (BrI->isConditional()) {
+            if (::getenv("CQ_PREDMUX_DBG"))
+              llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
+                           << " fails at poison-capable conditional branch: "
+                           << *Term << "\n";
+            leave(F, false);
+            continue;
+          }
+      Fr.BlockEntered = true;
+      Fr.IIt = Fr.BBIt->begin();
+      continue;
+    }
+
+    if (Fr.IIt == Fr.BBIt->end()) {  // next block
+      ++Fr.BBIt;
+      Fr.BlockEntered = false;
+      continue;
+    }
+
+    const Instruction &I = *Fr.IIt;
+    if (I.isTerminator()) {
+      ++Fr.IIt;
+      continue;
+    }
+    // bd wve8, DEFERRED CLAUSE 1 — THE QROM READ. `isSpeculatableDataflow`
+    // admits a const-global load and its address gep through
+    // `qromReadShapeInScope`, which proves the SHAPE and says in its own header
+    // that "the index-taint proof, the straight-line/loop gates AND the bounds
+    // proof are DEFERRED — re-proven by the emitter under the clone's own
+    // cloneTaint". A consumer with no clone never performs that re-proof, so
+    // the index is unbounded and the speculated call reads out of bounds.
+    // EXHIBITED: `static const int tab[4]; int lookup(int i){return tab[i];}`
+    // under `if (q > 3) y = lookup(idx);` with a zero-amplitude guard —
+    // SIGSEGV at idx=1e8, and a silent garbage word in the trace at idx=9.
+    // Refusing the gep as well as the load is deliberate: the gep case exists
+    // only to serve such a load, so admitting it alone would be dead surface.
+    if (!Q.AdmitDeferred && (isa<LoadInst>(I) || isa<GetElementPtrInst>(I))) {
+      if (::getenv("CQ_PREDMUX_DBG"))
+        llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
+                     << " fails at deferred-bounds memory op: " << I << "\n";
+      leave(F, false);
+      continue;
+    }
+    if (const auto *CI2 = dyn_cast<CallInst>(&I)) {
+      if (isCuratedReversibleIntrinsic(CI2) && CI2->doesNotAccessMemory()) {
+        ++Fr.IIt;
+        continue;
+      }
+      // THE DESCENT (surface S5). Formerly the mutual recursion; now a push.
+      // Set the resume flag BEFORE calling `enter`, which may reallocate `Stack`
+      // and leave `Fr` dangling. Whether `enter` pushes a child frame or settles
+      // the callee outright, the `AwaitingCall` arm above consumes `Ret`.
+      Fr.AwaitingCall = true;
+      enter(CI2->getCalledFunction());
+      continue;
+    }
+    // bd 3c6m.14.1 — TRUE, deliberately, and it is the whole functional
+    // change of that increment. See the `AdmitI80Compare` block on
+    // `isSpeculatableDataflow` for why this question ("pure + total") is not
+    // the region walk's question ("speculatable into THIS select program"),
+    // and for the full S1..S5 list of what one `true` here widens.
+    if (!isSpeculatableDataflow(I, /*AdmitI80Compare=*/true)) {
+      if (::getenv("CQ_PREDMUX_DBG"))
+        llvm::errs() << "CQ_PREDMUX_DBG: pure-callee " << F->getName()
+                     << " fails at: " << I << "\n";
+      leave(F, false);
+      continue;
+    }
+    ++Fr.IIt;
   }
-  return true;
+  // *** THE FIRST VERSION OF THIS WAS `assert(Stack.empty())` ALONE, WHICH IS
+  // TAUTOLOGICAL HERE — it sits directly after `while (!Stack.empty())` — AND
+  // MEASURED POWERLESS AGAINST THE LEAK IT WAS ADDED FOR. *** A Rule-13 mutant
+  // that removed `Q.OnStack.erase(LF)` from `leave` (stranding one entry per
+  // settled node) drains the frame stack perfectly normally: the `Stack` check
+  // passed and only the OnStack one fired. A `leave` handed the WRONG `F` also
+  // drains `Stack` cleanly — it erases the wrong entry and strands the right
+  // one — so the `Stack` check misses that too while the OnStack check catches
+  // it (in a Debug build `leave`'s own pairing assert fires first; this is the
+  // backstop for the day someone edits the erase). The OnStack check is
+  // therefore the load-bearing one —
+  // it is not implied by the loop condition, and a stranded entry is nasty
+  // precisely because `enter`'s memo lookup PRECEDES its OnStack test, so it is
+  // invisible on the memo path and only surfaces later as a spurious cycle-FALSE.
+  // Keep both: `Stack` names the `break`-with-live-frames case separately.
+  //
+  // NOTE WHAT NEITHER CATCHES, so rule (2) above is not over-read: a `return`
+  // added INSIDE the loop bypasses both asserts entirely. They enforce the
+  // `break` half of that rule and nothing enforces the `return` half.
+  assert(Q.OnStack.empty() && "driver exited with a stranded OnStack entry");
+  assert(Stack.empty() && "driver exited with a live frame");
+  return Ret;
 }
 
 bool isSpeculatablePureCalleeBody(const Function *F) {
@@ -1538,8 +1841,12 @@ bool isSpeculatablePureCalleeBody(const Function *F) {
   // reported `hits=1`. On the doubling graph the divergence between
   // `invocations` and `bodies` does witness that the memo is live — but that is
   // a property of THAT graph, not a general rule; read `hits` instead.
-  // Its own env var, so the ten fixtures that FileCheck the CQ_PREDMUX_DBG
-  // stream do not drift.
+  // Its own env var, so the fixtures that FileCheck the CQ_PREDMUX_DBG stream
+  // do not drift. STATE THE UNIT — the number that used to stand here ("ten")
+  // matched nothing in the tree and never had: 27 fixtures set
+  // `CQ_PREDMUX_DBG=1` in a RUN line, 27 use a DBG check-prefix, and 5 assert a
+  // `pure-callee` line specifically
+  //   grep -rlE '^; *[A-Za-z0-9_-]+(-NOT)?:.*pure-callee' ir-pass/test/*.ll
   if (::getenv("CQ_PREDMUX_COUNT"))
     llvm::errs() << "CQ_PREDMUX_COUNT: pure-callee root="
                  << (F ? F->getName() : "<null>") << " verdict=" << R
