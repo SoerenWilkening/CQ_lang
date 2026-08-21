@@ -20,7 +20,10 @@ The two corollaries that follow it (the CONSTRUCT-vs-injection distinction, and
 parity-not-physics) are **untouched**, as is everything about the keep-set, `fmod`, and
 the CQ-PROVIDED amendment.
 
-### REMOVE (one sentence, at `CLAUDE.md:327-328`)
+### REMOVE (one sentence, spanning `CLAUDE.md:326-327`)
+
+*Starts mid-326, after "only the trip count is quantum."; ends mid-327, before "**Two
+corollaries". The corollaries are KEPT — do not let a mechanical application swallow them.*
 
 > It still declines. So the test is the **trip count** alone, never the cleanliness of
 > the loop body.
@@ -61,10 +64,11 @@ the CQ-PROVIDED amendment.
 > circuit runs the **unguarded** one (PredMux removes every guard: measured `br i1`
 > 5→0, 4→0, `switch` 1→0), so more samples do not converge on the right answer. A flag
 > that merely *raises* an already-derived sound bound is wasteful, not unsound, and is
-> not what is at issue. **A derived bound needs seven conditions, every one a measured
+> not what is at issue. **A derived bound needs five conditions, every one a measured
 > over-accept hole:** constant ∧ non-negative ∧ small ∧ reachability-**total** ∧
 > `1 ≤ shift-amount ≤ W-1`, with the constant-max BTC read as an **APInt at its own
-> width** — `isa<SCEVConstant>` alone over-accepts **30 of the 49** loops it takes
+> width** *(a reading refinement of C2/C3, not a sixth condition)* — `isa<SCEVConstant>`
+> alone over-accepts **30 of the 49** loops it takes
 > (worst bound: 4 294 967 295 trips), and `getSmallConstantMaxTripCount` returns
 > `4294967295` on some vacuous bounds and `0` on others, so neither return value
 > distinguishes vacuity in either direction. **Measured payoff, stated so the rule is
@@ -81,7 +85,7 @@ the CQ-PROVIDED amendment.
 | text | verdict |
 |---|---|
 | *"A construct whose realization depends on an **unverifiable parameter** does not satisfy condition (2): it is a parity inversion and it declines."* | **KEEP VERBATIM.** This is the *ground* of the narrowing, not a casualty of it. Bennett's K is still refused. |
-| *"it applies to **every** data-dependent-trip library body (the `fmod`/`remainder`/`remquo` family, Payne–Hanek `rem_pio2`, and any future one)"* | **KEEP.** The *test* still applies to all of them, and measured (bd `19v3`) all 18 of those cells still decline. |
+| *"it applies to **every** data-dependent-trip library body (the `fmod`/`remainder`/`remquo` family, Payne–Hanek `rem_pio2`, and any future one)"* | **KEEP.** The *test* still applies to every one of those **bodies**, and this narrowing moves **none** of them. Stated as cells, not bodies, so it is not mis-quoted: of the 18, **12 decline** (the `fmod` nine + `sinf`/`cosf`/`tanf`.f32) and **6 already COMPILE** — `sin`/`cos`/`tan` at f64 and f80 are **CQ-PROVIDED**, so upstream's un-injectable body is not injected at all and their `decided-decline` lives on as `upstream_scope`. Either way the count this ruling changes is **zero**. |
 | the `logbl.f80` back-edge-excision measurement | **KEEP.** Still true, still the best case for the other reading, still declines. |
 | the two corollaries (CONSTRUCT-vs-injection; parity-not-physics) | **KEEP.** Untouched by this ruling. |
 | *"the `.f80` rounder variants are that same algorithm **widened**"*, the keep-set, `fmod`-is-not-a-keep, the CQ-PROVIDED amendment | **KEEP.** Out of scope. |
@@ -90,7 +94,7 @@ the CQ-PROVIDED amendment.
 
 "Failure to derive `B` is a loud decline" is the *only* thing standing between this
 narrowing and an over-accept, and Rule 18 is prose, not a fence. The fence has to be
-built in `LoopLowering.cpp` under Rule 12 red-green **and** Rule 13, with the seven
+built in `LoopLowering.cpp` under Rule 12 red-green **and** Rule 13, with the five
 conditions above as its decline partition. If the text is amended before that fence
 exists, the rule permits a lowering the compiler cannot yet safely emit. **Recommend
 amending only when the implementing increment lands, or amending now with the

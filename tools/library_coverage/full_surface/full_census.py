@@ -363,8 +363,11 @@ SCOPE = {
            "PredMux removing every guard. bd 19v3 measured this pair to be the WHOLE bucket-(A) "
            "population: 98 -> 100. LEVER UNDECIDED between bd m57l (roll at B=33 + predicated body; "
            "four measured rail problems, no IR counterpart to B) and bd ww4c (loop->llvm.ctlz idiom "
-           "recognizer; one gate, zero new frozen symbols, but the ctlz is_zero_poison/Rule-15 immarg "
-           "scar). NOT a static-K unroll — see the ilogbl/logbl entry for why that mechanism is dead")
+           "recognizer; zero new frozen symbols and no loop survives, but ~10 tainted ops rather than "
+           "the 'one gate' its ticket claims — measured 2026-08-21: LLVM's canonical form needs an "
+           "icmp+select repair at x==0, and ilogb.f64 has TWO such loops — plus an is_zero_poison trap "
+           "at PredMuxFlatten.cpp:177-196). NOT a static-K unroll — see the ilogbl/logbl entry for why "
+           "that mechanism is dead")
        for c in ("ilogb.f64", "ilogbf.f32")},
 
     # ---- HALF TWO: NO bound is derivable -> deferred-capability, NOT decided ----
@@ -404,9 +407,15 @@ SCOPE = {
     #    failing U3, U5 AND U6, and U6 is decisive STRUCTURALLY rather than by its
     #    cap — it demands the EXACT trip count (LoopUnrollPrepass.cpp:199), which a
     #    quantum-dependent trip count cannot have. Raising kMaxUnrollTrip from 8 to
-    #    33 would change NOTHING. Stock LLVM 19 also leaves both back edges intact
-    #    under -unroll-max-upperbound=64, -unroll-count=33 -unroll-allow-partial
-    #    -unroll-runtime, -unroll-force-peel-count=33 and default<O3>.
+    #    33 would change NOTHING. (That LoopUnrollPrepass claim IS four-cell — the
+    #    CQ_UNROLL_DBG probe was silent on all four.) Stock LLVM 19 also leaves both
+    #    back edges intact under -unroll-max-upperbound=64, -unroll-count=33
+    #    -unroll-allow-partial -unroll-runtime, -unroll-force-peel-count=33 and
+    #    default<O3> — but that one is MEASURED ON ilogb.f64 ONLY (bd eyhj). The f80
+    #    pair was never run under those flags, and it could not be: -unroll-count=33
+    #    and -unroll-max-upperbound=64 both presuppose a constant max BTC these two
+    #    cells do not have. Do not quote it as an f80 result — that would be exactly
+    #    the f64->f80 bridging this block's correction (a) above retires.
     **{c: ("deferred-capability",
            "DEFERRED 2026-08-21 by the owner GO on bd eyhj ('the others that cannot be compiled that "
            "way, such as ilogbl will be tackled later') — tracker bd ywws. NOT decided-decline: the "

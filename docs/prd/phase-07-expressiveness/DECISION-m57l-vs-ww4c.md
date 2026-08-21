@@ -179,9 +179,22 @@ accept/decline predicate).
 ```
 
 LLVM emits the `ctlz` **unconditionally** and repairs the zero case with a **`select`**.
-The same repair is unavoidable for `ilogb`: its loop runs `trips = ctlz(x)` for `x ≠ 0`
-but **`trips = 0` at `x == 0`**, where `ctlz(0) = 32` — and the `hx != 0` guard that would
-exclude that input is **tainted**, so PredMux removes it. So the emitted shape is
+The same repair is unavoidable for `ilogb`, and I measured it exhaustively rather than
+reasoning about it — sweeping the rotated `s_ilogb.c:42` loop over **all 2³² start
+values** with the guard removed:
+
+```
+max trips over all 2^32       : 31          <- independently reproduces 19v3's C4 figure
+trips at x==0                 : 0             (ctlz(0) = 32)
+mismatches vs PLAIN ctlz      : 1           <- exactly one input: x == 0
+mismatches vs (x==0) ? 0 : ctlz(x) : 0
+```
+
+So `trips = ctlz(x)` holds for every input **except** `x == 0`, where the loop does zero
+trips and `ctlz` says 32 — and the `hx != 0` guard that would exclude that input is
+**tainted**, so PredMux removes it. **The correction is needed for exactly one basis
+state, and it is precisely the basis state the guard used to hide.** So the emitted shape
+is
 `ctlz` + `sub` + `icmp` + a **tainted select**, and the tainted select is the 4.4/kjd1
 controlled-XOR copy merge (flag mint → two `cqrt_copy_<W>_controlled` → `cqrt_x` bracket
 → compare-`_inv` strip → one `cqrt_free`). **Shipped machinery, but not free** — and
@@ -206,8 +219,10 @@ path, and `ww4c`'s ticket does not name it.
 
 **(c) `cq_template_ctlz_i32` has never appeared in a linked e2e golden.** It has a lit
 fixture (`ir-pass/test/lowering_intrinsic_ctlz_i32.ll`) and it is in the archive, but
-**zero** of the 243 e2e slices' goldens contain `ctlz` — while `ctpop` and `bswap` each
-have one. So the only layer that **links** has never fired this symbol. Not alarming, but
+**zero** of the 240 e2e slices' goldens contain `ctlz` — in fact `grep -rc ctlz tests/e2e/`
+is empty across the whole directory — while `ctpop` has **two**
+(`slice_intrinsic_ctpop.expected.log` and the multi-TU
+`specialize_intrinsic_caller.expected.log`) and `bswap` one. So the only layer that **links** has never fired this symbol. Not alarming, but
 it means the "rides shipped machinery" claim is proven at the IR layer and **unproven at
 the link layer**, and the fix is trivial (below).
 
