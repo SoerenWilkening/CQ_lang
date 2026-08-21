@@ -42,11 +42,39 @@ BC=/private/tmp/bc OPENLIBM=/private/tmp/openlibm \
 $LLVM/opt -load-pass-plugin build/LoopBoundProbe.so \
     -passes='cq-spike-scev' -disable-output <cell>/inl.ll
 
-# 2b. the SAME report using the ScalarEvolution the PASS builds
-#     (hand-constructed, conservative TLI — not the pass manager's)
+# 2b. the SAME report using the ScalarEvolution the PASS hand-constructs
+#     (triple-derived TLI, unbound to a Function — not the pass manager's)
 $LLVM/opt -load-pass-plugin build/LoopBoundProbe.so \
     -passes='cq-spike-scev-passstyle' -disable-output <cell>/inl.ll
+
+# 2c. the (A)-vs-(B) discriminator: replace every outside integer/fp value used
+#     inside each loop with an opaque call, then re-report. ONE-SIDED — read the
+#     header block in LoopBoundProbe.cpp for its THREE measured holes first.
+$LLVM/opt -load-pass-plugin build/LoopBoundProbe.so \
+    -passes='cq-spike-opaque' -disable-output <cell>/spec.ll
 ```
+
+## The whole-census sweep (bd `19v3`)
+
+`dump_cell.py` handles bd `8zj2`'s 8-cell hand list. For the full surface:
+
+```bash
+BC=/private/tmp/bc OPENLIBM=/private/tmp/openlibm CQ_SWEEP_OUT=/private/tmp/cq19v3 \
+  python3 sweep_cells.py -j 6          # enumerates cells the way full_census.main() does
+CQ_SWEEP_OUT=/private/tmp/cq19v3 python3 adjudicate.py
+```
+
+`sweep_cells.py` measures **three** module points (`inl`, `fp80`, `spec`) × both SE
+flavours, and validates itself by recomputing every cell's census status.
+`adjudicate.py` applies the five-condition test; it deliberately **never** promotes a
+loop to bucket (A) on its own authority — C4 is not mechanical.
+
+> **Trap 4 is bigger than it looks: `CQ_FP80_DBG` is NOT the module the loop lowerer
+> sees.** `LoopUnrollPrepass` runs *after* that dump and removes 96 loops across 15 f80
+> cells (33 cells / 172 loops at `inl` → **19 / 76** at the `CQ_SPEC_DBG` point). Use
+> `spec.ll`. And even that is a counterfactual for some cells: `lowerLoops` skips any
+> function with no tainted value, and `opt` exits at the first `DS_Error` by *stage*
+> order, so a cell can decline before the loop stage is reached at all.
 
 `dump_cell.py` reproduces `wprobe.probe()` (`full_surface/wprobe.py:497-536`)
 with `CENSUS_OPTLEVEL=O1`. **Nothing mechanical keeps the two in sync** — re-read
@@ -116,3 +144,4 @@ compile with `$LLVM/clang -O2` (`.c`) or feed to `$LLVM/opt` (`.ll`).
 | `norm_loop.c` | `SCOPING-L3` §6 item 1's normalize loop is **non-terminating** on the guard-excluded input — its bound is guard-conditional (bd `k02s`) |
 | `ctlz_probe.c` | CQ lowers a tainted `llvm.ctlz` end to end (`cq_template_ctlz_i32`, exit 0) |
 | `idiom_probe.c` | LLVM's `LoopIdiomRecognize` fires on `while (x != 0) x >>= 1` and on **neither** openlibm spelling, at -O1/-O2/-O3 (bd `ww4c`) |
+| `opaque_control.ll` | `cq-spike-opaque`'s **positive and negative controls** (a discriminator that never discriminates is not evidence — bd `66rz`), **plus** its three measured holes as runnable counterexamples: a bound carried by a pointer, one carried by `!range`, a poison out-of-range shift, and the i6 width trap that defeats "small" |
