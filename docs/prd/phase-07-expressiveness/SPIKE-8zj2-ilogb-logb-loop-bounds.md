@@ -4,6 +4,11 @@
 ruling** · **Tracker:** bd `8zj2`; feeds the gate ticket bd `eyhj`.
 **Companion memo:** `SCOPING-L3-data-dependent-trip-loops.md` (the 2026-07-27 memo
 whose load-bearing number this spike was filed to re-measure).
+**Tooling (committed 2026-08-21 at owner direction, so bd `19v3`'s 120-cell sweep
+measures with the same instrument):** `tools/library_coverage/loop_bounds/` — the
+SCEV reporter, the cell dumper, and standalone probes for every mechanism claim
+below. Read its README before reusing it; it lists the five traps and records why
+the 8zj2 peel script is deliberately **not** committed (bd `66rz`).
 
 > ## VERDICT: the claim transfers to HALF the family, and the family is not one increment.
 >
@@ -247,7 +252,7 @@ Both were found by pointing the instrument at cells in its own directory, and bo
 fail in the **over-accept** direction. Anyone writing the recognizer will reach for
 exactly these two predicates.
 
-**(i) `isa<SCEVConstant>` is the wrong "value-independent" test.** `SpikeScev.cpp`'s
+**(i) `isa<SCEVConstant>` is the wrong "value-independent" test.** `LoopBoundProbe.cpp`'s
 `reportLoop` prints `VERDICT bound-kind = CONSTANT (no SSA operand ⇒
 value-independent)` with no magnitude and no non-negativity condition — so it
 prints it for `fmod.f64`'s fix-point loop, whose constant max is **`-2` =
@@ -275,7 +280,7 @@ strip either clause and the fence opens.
 `opt` exit 0, verify-clean, and **zero** residual
 `@cq_theta`/`@cq_phi`/`@cq_measure`. Baseline declines reproduce verbatim on the
 un-excised modules. Stage-2b `free_pairing_check.py` — which the ticket did not
-ask for and `peel_test.sh` does not run — is **strict-clean on all four**
+ask for and the 8zj2 peel script did not run — is **strict-clean on all four**
 (23 / 9 / 45 / 45 free sites verified, 0 violations, 0 unproven).
 
 ### 3a. But back-edge excision is a KNOWN-FALSE-NEGATIVE deeper-layer probe

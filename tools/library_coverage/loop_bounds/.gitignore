@@ -1,0 +1,12 @@
+# The standalone configure of this tool. Local rather than root-level: the root
+# .gitignore's `/build/` is ANCHORED to the repo root and does NOT match here, so
+# without this file a `cmake -S . -B build` in this directory stages several
+# hundred CMake artifacts.
+build/
+# Compiled probe binaries (probes/*.c are built ad hoc; only the sources belong).
+probes/*.o
+probes/*.out
+probes/f80_term
+probes/norm_loop
+probes/rotated_ir
+probes/trip_exhaustive
