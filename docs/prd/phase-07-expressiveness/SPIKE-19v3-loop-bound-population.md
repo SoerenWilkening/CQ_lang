@@ -255,7 +255,7 @@ sign at different widths.
 > renders as 4294967295" is **false** — a constructed i64 control renders `-2`. `:372` is
 > the pair that actually proves it.
 
-Live in the shipped adjudication: `cosf.f32` alone has **7 vacuous loops with `C2 = 1``**,
+Live in the shipped adjudication: `cosf.f32` alone has **7 vacuous loops with `C2 = 1`**,
 including `:372`, whose numerically identical twin in `fmod.f64` gets `C2 = 0`.
 
 ### 2d. …and "magnitude alone decides" is false in BOTH directions
