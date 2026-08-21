@@ -402,32 +402,32 @@
   "bucket": "loop-carried",
   "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control",
   "provider": "openlibm",
-  "scope": "decided-decline",
-  "scope_ref": "owner ruling 2026-07-28: quantum-dependent trip count is out even with a purely CLASSICAL loop recurrence (strict read of the 2026-07-27 line)"
+  "scope": "deferred-capability",
+  "scope_ref": "DEFERRED 2026-08-21 by the owner GO on bd eyhj ('the others that cannot be compiled that way, such as ilogbl will be tackled later') \u2014 tracker bd ywws. NOT decided-decline: the 2026-07-28 parity ruling is NO LONGER the ground. New ground = 'no derivable bound exists', measured: CouldNotCompute on BOTH loops at every SCEV query under 12 pipelines and on the post-promoteFp80Union module, and that is CORRECT not conservative \u2014 on the rotated IR body 2 inputs (0, 0x80000000) never terminate. The only bound available is GUARD-CONDITIONAL on a TAINTED (manl|manh)!=0 guard that PredMux removes, so the SCOPING-L3 \u00a76 item 1 recognizer that would recover it is a silent-miscompile shape (bd k02s). Safety today is an ACCIDENT of SCEV reporting nothing. NOT re-openable by a static-K unroll: LoopUnrollPrepass visits these loops and claims none, failing U3/U5/U6, and U6 demands the EXACT trip count (LoopUnrollPrepass.cpp:199) \u2014 raising kMaxUnrollTrip 8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either (the divergent inputs are exactly what is_zero_poison would have to exclude)"
  },
  "ilogbf.f32": {
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe i32 (): cq controlled lowering: loop under quantum control",
   "provider": "openlibm",
-  "scope": "decided-decline",
-  "scope_ref": "owner ruling 2026-07-28 applied per its own general form; ilogbl's loop is character-identical to the adjudicated logbl (src/s_logbl.c:36 == src/s_ilogbl.c:37). Re-opens only via a static-K unroll (8h7d)"
+  "scope": "lever-gap",
+  "scope_ref": "RE-SCOPED 2026-08-21 (owner GO on bd eyhj, narrowed to DERIVATION): the 2026-07-28 parity ruling no longer grounds these two, because the bound the narrowed rule demands EXISTS TODAY \u2014 SCEV constant-max BTC = literal i32 32 (trip 33), a bit-width fact, measured TOTAL by exhaustive enumeration over all 2^32 starts on the rotated recurrence (max 31 trips, count(trips>33)=0) and stable under poison-flag stripping, so it survives PredMux removing every guard. bd 19v3 measured this pair to be the WHOLE bucket-(A) population: 98 -> 100. LEVER UNDECIDED between bd m57l (roll at B=33 + predicated body; four measured rail problems, no IR counterpart to B) and bd ww4c (loop->llvm.ctlz idiom recognizer; one gate, zero new frozen symbols, but the ctlz is_zero_poison/Rule-15 immarg scar). NOT a static-K unroll \u2014 see the ilogbl/logbl entry for why that mechanism is dead"
  },
  "ilogb.f64": {
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe i32 (): cq controlled lowering: loop under quantum control",
   "provider": "openlibm",
-  "scope": "decided-decline",
-  "scope_ref": "owner ruling 2026-07-28 applied per its own general form; ilogbl's loop is character-identical to the adjudicated logbl (src/s_logbl.c:36 == src/s_ilogbl.c:37). Re-opens only via a static-K unroll (8h7d)"
+  "scope": "lever-gap",
+  "scope_ref": "RE-SCOPED 2026-08-21 (owner GO on bd eyhj, narrowed to DERIVATION): the 2026-07-28 parity ruling no longer grounds these two, because the bound the narrowed rule demands EXISTS TODAY \u2014 SCEV constant-max BTC = literal i32 32 (trip 33), a bit-width fact, measured TOTAL by exhaustive enumeration over all 2^32 starts on the rotated recurrence (max 31 trips, count(trips>33)=0) and stable under poison-flag stripping, so it survives PredMux removing every guard. bd 19v3 measured this pair to be the WHOLE bucket-(A) population: 98 -> 100. LEVER UNDECIDED between bd m57l (roll at B=33 + predicated body; four measured rail problems, no IR counterpart to B) and bd ww4c (loop->llvm.ctlz idiom recognizer; one gate, zero new frozen symbols, but the ctlz is_zero_poison/Rule-15 immarg scar). NOT a static-K unroll \u2014 see the ilogbl/logbl entry for why that mechanism is dead"
  },
  "ilogbl.f80": {
   "status": "decline",
   "bucket": "loop-carried",
   "diag": "probe i32 (): cq controlled lowering: loop under quantum control",
   "provider": "openlibm",
-  "scope": "decided-decline",
-  "scope_ref": "owner ruling 2026-07-28 applied per its own general form; ilogbl's loop is character-identical to the adjudicated logbl (src/s_logbl.c:36 == src/s_ilogbl.c:37). Re-opens only via a static-K unroll (8h7d)"
+  "scope": "deferred-capability",
+  "scope_ref": "DEFERRED 2026-08-21 by the owner GO on bd eyhj ('the others that cannot be compiled that way, such as ilogbl will be tackled later') \u2014 tracker bd ywws. NOT decided-decline: the 2026-07-28 parity ruling is NO LONGER the ground. New ground = 'no derivable bound exists', measured: CouldNotCompute on BOTH loops at every SCEV query under 12 pipelines and on the post-promoteFp80Union module, and that is CORRECT not conservative \u2014 on the rotated IR body 2 inputs (0, 0x80000000) never terminate. The only bound available is GUARD-CONDITIONAL on a TAINTED (manl|manh)!=0 guard that PredMux removes, so the SCOPING-L3 \u00a76 item 1 recognizer that would recover it is a silent-miscompile shape (bd k02s). Safety today is an ACCIDENT of SCEV reporting nothing. NOT re-openable by a static-K unroll: LoopUnrollPrepass visits these loops and claims none, failing U3/U5/U6, and U6 demands the EXACT trip count (LoopUnrollPrepass.cpp:199) \u2014 raising kMaxUnrollTrip 8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either (the divergent inputs are exactly what is_zero_poison would have to exclude)"
  },
  "ldexpf.f32": {
   "status": "COMPILES",
@@ -650,7 +650,7 @@
    "sinl"
   ],
   "scope": "decided-decline",
-  "scope_ref": "RULING STANDS (its own reduction loops ld80/e_tgammal.c:271/277/286, SCEV Unpredictable, quantum-governed trip) but that is NOT the measured first blocker and was not on the 2026-07-30 baseline either: pre-amendment it blocked at `sinl` (unsupported instruction), post-amendment at `stirf` (unsupported instruction) \u2014 the CQ-provided sinl cleared the sinl layer. The loops sit behind stirf and remain UNMEASURED"
+  "scope_ref": "RULING STANDS (its own reduction loops ld80/e_tgammal.c:271/277/286, SCEV Unpredictable, quantum-governed trip) but that is NOT the measured first blocker and was not on the 2026-07-30 baseline either: pre-amendment it blocked at `sinl` (unsupported instruction), post-amendment at `stirf` (unsupported instruction) \u2014 the CQ-provided sinl cleared the sinl layer. CORRECTED 2026-08-21 (bd 19v3 \u00a74c): 'the loops sit behind stirf' is HALF WRONG \u2014 only the trip-33 @powil loop does (and it reaches nothing: 0 tainted defs, classical exit, and the first blocker precedes lowerLoops), while the three e_tgammal.c:271/277/286 reduction loops are in @probe on the OTHER ARM of the tainted branch q > 13.0, mutually exclusive with the stirf arm rather than behind it \u2014 and still UNMEASURED. The first blocker is now identified to the instruction: `%7 = alloca i32`, the int* out-param slot for frexpl(x,&e) in the inlined powl body = the g387/7.5 by-ref Shadow axis, the same axis lgammal.f80's ref already names"
  },
  "lgammaf.f32": {
   "status": "exit0-spec:['logf']",

@@ -2,11 +2,11 @@
 
 ## ⚠ READ THIS FIRST — `bucket` is NOT a work list. `scope` is.
 
-**The 21 declines contain 2 cells of actionable work, not 21** (re-measured
-**2026-08-10**, bd `bcv4`/`keol`/`k710`; the axis itself is bd `3c6m.14`,
-2026-07-28). Every `decline` record carries a **`scope`** field alongside
-`bucket`, because those two answer different questions and only one of them is a
-plan:
+**The 21 declines contain 4 cells of actionable work, not 21** (re-scoped
+**2026-08-21**, bd `eyhj`/`0bp8`; last re-measured **2026-08-10**, bd
+`bcv4`/`keol`/`k710`; the axis itself is bd `3c6m.14`, 2026-07-28). Every
+`decline` record carries a **`scope`** field alongside `bucket`, because those two
+answer different questions and only one of them is a plan:
 
 | | question it answers |
 |---|---|
@@ -15,12 +15,27 @@ plan:
 
 ```
 BY SCOPE (21 declines + 1 no-body)
-  18  decided-decline       fmod/remainder/remquo x3 · ilogb x3 · sinf/cosf/tanf
-                            · tgammal · lgammal · logbl
-   2  lever-gap    <-- THE WORK   tgammaf.f32 · tgamma.f64
-   1  deferred-capability   powl.f80
+  14  decided-decline       fmod/remainder/remquo x3 · sinf/cosf/tanf
+                            · tgammal · lgammal
+   4  lever-gap    <-- THE WORK   tgammaf.f32 · tgamma.f64 · ilogb.f64 · ilogbf.f32
+   3  deferred-capability   powl.f80 · ilogbl.f80 · logbl.f80
    1  corpus-gap            nexttowardl.f80   (status `no-body` — NOT probed)
 ```
+
+**⚡ 2026-08-21 (bd `eyhj` owner ruling — GO, narrowed to DERIVATION): the ilogb/logb
+four SPLIT 2+2, `decided-decline` 18 → 14, lever-gap 2 → 4.** No cell's status
+changed and the injection number is untouched at **98/120** — this is a re-scoping,
+not coverage. The 2026-07-28 ruling ("the test is the TRIP COUNT alone") was narrowed:
+a quantum-dependent trip count is admissible when the compiler **derives** a
+quantum-independent bound from the IR in front of it. `ilogb.f64`/`ilogbf.f32` have
+that bound **today** (SCEV constant-max BTC = `i32 32`, a bit-width fact, measured
+TOTAL over all 2³² starts), so they became the actionable set — bd `19v3` measured
+them to be the *entire* reachable population, i.e. **98 → 100 and no more**.
+`ilogbl.f80`/`logbl.f80` have **no derivable bound at all** (CouldNotCompute under 12
+pipelines, and genuinely non-terminating on 2 of 2³² inputs), so they are **deferred**
+(bd `ywws`), *not* re-declined — their ground changed, and recording them as
+decided-decline after a GO ruling would be the stale-scope planning miscompile
+`check_scope()` exists to catch.
 
 **⚡ 2026-08-10 (bd `k710`): `nexttowardf.f32` LANDS — 97 → 98 injection-covered,
 lever-gap 3 → 2.** The first numerator movement of this session, and the only one:
@@ -285,7 +300,9 @@ Stem-level detail:
 
 > **`nexttoward` was mis-grouped as `f80-short` until 2026-08-10.** It is covered
 > at **f64 only**: `nexttowardf.f32` is a `memory-store (Shadow)` decline and one
-> of the **3 actionable `lever-gap` cells**, and `nexttowardl.f80` is the
+> of the **3 actionable `lever-gap` cells** *(both clauses are the state ON
+> 2026-08-10 BEFORE `k710` landed later that same day — the cell `COMPILES` now,
+> and the live lever-gap count is 4; see the header block)*, and `nexttowardl.f80` is the
 > `corpus-gap` (no body ships). Grouping it with the genuinely f80-short trio hid
 > an actionable f32 cell inside a row that reads "only the hard width is missing".
 

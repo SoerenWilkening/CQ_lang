@@ -163,13 +163,40 @@ SCOPE = {
     # blocker the pass does not actually hit first. Keep the ruling, fix the
     # evidence: an unverifiable scope_ref is exactly the assertion this table
     # exists to retire.
+    # THE "behind stirf" CLAUSE WAS HALF WRONG — corrected 2026-08-21 from bd 19v3
+    # §4c, which located this cell's blocker to the INSTRUCTION for the first time.
+    # The cell has FOUR loops at the module the pass reaches, and they are not one
+    # population:
+    #   * the trip-33 `@powil` loop (openlibm's binary-exponentiation
+    #     `while(n){ ww*=ww; if(n&1) y*=ww; n>>=1; }`, e_powl.c:626-634) genuinely
+    #     DOES sit behind `stirf` — and it reaches NOTHING, for three independent
+    #     and individually sufficient reasons: `@powil` has 0 tainted defs so
+    #     `lowerLoops`'s AnyTainted gate skips it; its exit condition
+    #     `icmp ult i32 %66, 4` is CLASSICAL, so it is not a quantum-bounded loop
+    #     at all in the module the pass sees; and the cell's first blocker precedes
+    #     `lowerLoops` entirely. (Its `!dbg` line is 0 because rotation merged the
+    #     preheader and the in-body `n >>= 1`; the true line survives on
+    #     `!llvm.loop` as e_powl.c:628.)
+    #   * the THREE `ld80/e_tgammal.c:271/277/286` reduction loops the ruling
+    #     actually names are in `@probe`, on the OTHER ARM of the tainted branch
+    #     `q > 13.0` — MUTUALLY EXCLUSIVE with the `stirf` arm, not behind it. They
+    #     are 3 of the 5 fp-condition CouldNotCompute loops in bd 19v3 §2f and are
+    #     still UNMEASURED, so the ruling's own evidence is still unverified.
     "tgammal.f80": ("decided-decline",
                     "RULING STANDS (its own reduction loops ld80/e_tgammal.c:271/277/286, SCEV "
                     "Unpredictable, quantum-governed trip) but that is NOT the measured first "
                     "blocker and was not on the 2026-07-30 baseline either: pre-amendment it "
                     "blocked at `sinl` (unsupported instruction), post-amendment at `stirf` "
                     "(unsupported instruction) — the CQ-provided sinl cleared the sinl layer. "
-                    "The loops sit behind stirf and remain UNMEASURED"),
+                    "CORRECTED 2026-08-21 (bd 19v3 §4c): 'the loops sit behind stirf' is HALF "
+                    "WRONG — only the trip-33 @powil loop does (and it reaches nothing: 0 tainted "
+                    "defs, classical exit, and the first blocker precedes lowerLoops), while the "
+                    "three e_tgammal.c:271/277/286 reduction loops are in @probe on the OTHER ARM "
+                    "of the tainted branch q > 13.0, mutually exclusive with the stirf arm rather "
+                    "than behind it — and still UNMEASURED. The first blocker is now identified to "
+                    "the instruction: `%7 = alloca i32`, the int* out-param slot for frexpl(x,&e) "
+                    "in the inlined powl body = the g387/7.5 by-ref Shadow axis, the same axis "
+                    "lgammal.f80's ref already names"),
     # RE-SCOPED 2026-08-10 by owner ruling. The previous entry ended "Re-scope
     # before quoting this cell: it may no longer be decided at all" — that
     # re-scope has now happened, and the answer is that the cell stays declined
@@ -283,51 +310,128 @@ SCOPE = {
     "nexttowardl.f80":("corpus-gap",
                        "openlibm ships no s_nexttowardl.c. NB the recorded 'would land on nextafterl's blocker anyway' rider is REFUTED: nextafterl.f80 COMPILES today"),
 
-    # -- the one cell the 2026-07-27 ruling did not cleanly reach; ADJUDICATED
-    #    2026-07-28. Measured first: back-edge excision makes it lower COMPLETELY
-    #    (opt exit 0, verify clean, zero residual @cq_*, NO deeper layer), and its
-    #    loop recurrence is purely CLASSICAL (a counter + a shift register), so no
-    #    dirty rail crosses the back edge and L3 §6-item-1 is structurally absent.
-    #    Its TRIP COUNT is nevertheless quantum-dependent (SCEV Unpredictable on
-    #    both loops). OWNER RULING: a quantum-dependent trip count is out
-    #    REGARDLESS of the recurrence being classical — the strict reading of
-    #    "only a QUANTUM-DEPENDENT one is out". So `8h7d`'s last census-facing
-    #    cell is decided, and that epic is now a pure capability tracker.
-    "logbl.f80":      ("decided-decline",
-                       "owner ruling 2026-07-28: quantum-dependent trip count is out even with a purely CLASSICAL loop recurrence (strict read of the 2026-07-27 line)"),
+    # =======================================================================
+    # -- THE ilogb/logb QUANTUM-TRIP FAMILY — 2 + 2, NOT 4 (RE-SCOPED 2026-08-21)
+    # =======================================================================
+    # These four cells carried ONE label from 2026-08-10 to 2026-08-21 and it is
+    # now measured that they do not belong together. The split is the whole point
+    # of this block; do not re-merge them.
+    #
+    # HISTORY, so the change of ground is legible rather than looking like drift:
+    #   2026-07-28  owner ruling — "a quantum-dependent trip count is out EVEN
+    #               WHEN the loop recurrence is purely classical ... the test is
+    #               the TRIP COUNT alone". `logbl.f80` IS that ruling's worked
+    #               example. All four sat here as `decided-decline`.
+    #   2026-08-21  owner ruling on bd `eyhj` — **GO, NARROWED TO DERIVATION**:
+    #               a quantum-dependent trip count is ADMISSIBLE when the compiler
+    #               PROVES a quantum-independent upper bound B *from the IR in
+    #               front of it* and emits the loop ROLLED at classical trip count
+    #               B with a body predicated on a quantum still-running flag.
+    #               Failure to derive is a loud decline. A DERIVATION, never a
+    #               PARAMETER: an undersized bound becomes UNREACHABLE rather than
+    #               undetected, because failing to derive is a decline.
+    #               => the 2026-07-28 ruling no longer grounds ANY of these four,
+    #                  and the two halves move in OPPOSITE directions.
+    # Evidence: bd `8zj2` (8 cells) + bd `19v3` (whole census), memos
+    # `SPIKE-8zj2-ilogb-logb-loop-bounds.md` / `SPIKE-19v3-loop-bound-population.md`,
+    # bd memory [narrowed-quantum-trip-rule-2026-08-21].
+    #
+    # ---- HALF ONE: the bound EXISTS TODAY -> lever-gap (the ACTIONABLE set) ----
+    #    src/s_ilogb.c:40   for (ix = -1043; lx>0; lx<<=1) ix -=1;
+    #    src/s_ilogb.c:42   for (ix = -1022,hx<<=11; hx>0; hx<<=1) ix -=1;
+    #    src/s_ilogbf.c:35  for (ix = -126,hx<<=8; hx>0; hx<<=1) ix -=1;
+    #    SCEV constant-max BTC = literal `i32 32` (trip 33) — a BIT-WIDTH fact,
+    #    and TOTAL: exhaustive enumeration over ALL 2^32 start values on the
+    #    ROTATED recurrence gives max 31 trips and count(trips > 33) = 0, and the
+    #    bound survives stripping every poison flag (`shl nuw` -> `shl`) and
+    #    replacing the preheader incoming with an opaque call. So it survives
+    #    PredMux removing every dominating guard — which PredMux demonstrably does
+    #    (measured `br i1` 5->0 and 4->0, `switch` 1->0). Two of the three loops
+    #    are entered UNCONDITIONALLY in the shipped IR; there is no guard to
+    #    remove. True worst per loop 31/20/23 against the 33 ceiling.
+    #    bd `19v3` measured this pair to be the ENTIRE bucket-(A) population of the
+    #    census — 98 -> 100, with no larger payoff hiding anywhere. The three
+    #    nearby cells that LOOK reachable (fmod.f64, remainder.f64, remquo.f64)
+    #    are not: their blocker stack is exactly 4 loops deep and the back two are
+    #    vacuous (constant-max -2) or CouldNotCompute.
+    **{c: ("lever-gap",
+           "RE-SCOPED 2026-08-21 (owner GO on bd eyhj, narrowed to DERIVATION): the 2026-07-28 "
+           "parity ruling no longer grounds these two, because the bound the narrowed rule demands "
+           "EXISTS TODAY — SCEV constant-max BTC = literal i32 32 (trip 33), a bit-width fact, "
+           "measured TOTAL by exhaustive enumeration over all 2^32 starts on the rotated recurrence "
+           "(max 31 trips, count(trips>33)=0) and stable under poison-flag stripping, so it survives "
+           "PredMux removing every guard. bd 19v3 measured this pair to be the WHOLE bucket-(A) "
+           "population: 98 -> 100. LEVER UNDECIDED between bd m57l (roll at B=33 + predicated body; "
+           "four measured rail problems, no IR counterpart to B) and bd ww4c (loop->llvm.ctlz idiom "
+           "recognizer; one gate, zero new frozen symbols, but the ctlz is_zero_poison/Rule-15 immarg "
+           "scar). NOT a static-K unroll — see the ilogbl/logbl entry for why that mechanism is dead")
+       for c in ("ilogb.f64", "ilogbf.f32")},
 
-    # -- ilogb x3: FIRST MEASURED 2026-08-10 (bd bcv4 unblocked them; they had
-    #    never been probed, so they carried no scope). They are NOT a new ruling
-    #    — they are the 2026-07-28 ruling applied to its own stated general form
-    #    ("the test is the TRIP COUNT alone" ... "applies to every
-    #    data-dependent-trip library body ... and any future one").
-    #
-    #    The precedent is as direct as it gets: `ilogbl`'s subnormal loop is the
-    #    SAME LOOP, character-for-character, as the ADJUDICATED `logbl` cell's,
-    #    in the sibling file —
-    #        src/s_logbl.c:36   for (b = LDBL_MANH_SIZE; !(u.bits.manl & m); m >>= 1)
-    #        src/s_ilogbl.c:37  for (b = LDBL_MANH_SIZE; !(u.bits.manl & m); m >>= 1)
-    #    and f64/f32 are the same idiom in their own spelling (shift-until-the-
-    #    sign-bit plus a counter):
-    #        src/s_ilogb.c:40   for (ix = -1043; lx>0; lx<<=1) ix -=1;
-    #        src/s_ilogb.c:42   for (ix = -1022,hx<<=11; hx>0; hx<<=1) ix -=1;
-    #        src/s_ilogbf.c:35  for (ix = -126,hx<<=8; hx>0; hx<<=1) ix -=1;
-    #    All three: recurrence purely CLASSICAL (a counter + a shift register),
-    #    trip count QUANTUM-DEPENDENT (the mantissa is the probe's tainted
-    #    input). All three report the identical diagnostic `logbl.f80` reports,
-    #    "cq controlled lowering: loop under quantum control".
-    #
-    #    RE-OPENING CONDITION, stated because it is real and shared with logbl:
-    #    each of these loops is BOUNDED by the mantissa width (<=31 / <=23 / <=64
-    #    iterations), so a static-K unroll to a branchless fixed-trip kernel — the
-    #    `8h7d` widening, and the shape Bennett's 64-iteration restoring divider
-    #    already is — WOULD reach them. That is a capability decision, not a
-    #    physics wall. If it is ever taken, these 3 cells plus `logbl.f80` are the
-    #    population; until then the ruling stands and they are not compiler work.
-    **{c: ("decided-decline",
-           "owner ruling 2026-07-28 applied per its own general form; ilogbl's loop is character-identical to the adjudicated logbl (src/s_logbl.c:36 == src/s_ilogbl.c:37). Re-opens only via a static-K unroll (8h7d)")
-       for c in ("ilogb.f64", "ilogbf.f32", "ilogbl.f80")},
+    # ---- HALF TWO: NO bound is derivable -> deferred-capability, NOT decided ----
+    #    src/s_logbl.c:36  == src/s_ilogbl.c:37   for (b = LDBL_MANH_SIZE; !(u.bits.manl & m); m >>= 1)
+    #    src/s_logbl.c:40  == src/s_ilogbl.c:41   for (b = 0;              !(u.bits.manh & m); m >>= 1)
+    #    THREE corrections to what this block used to say (bd 0bp8, all measured):
+    #    (a) The old ref's bridging clause "f64/f32 are the same idiom in their own
+    #        spelling" is FALSE, and the difference is exactly what flips the
+    #        answer: f64/f32 shift the DATA and test its SIGN (SCEV bounds it at
+    #        i32 32, totally); f80 shifts a MASK and tests an `and`
+    #        (CouldNotCompute, and genuinely non-terminating on 2 inputs).
+    #    (b) There are TWO loops per cell, not one, and BOTH pairs are
+    #        byte-identical across the sibling files — but the pair the old ref
+    #        CITED (:36/:37) is NOT the pair either cell declines on. The shipped
+    #        first blockers are `s_ilogbl.c:41:4` and `s_logbl.c:40:4`, the OTHER
+    #        pair. (Every recorded diagnostic is a FIRST BLOCKER ONLY.)
+    #    (c) The recorded bounds "<=31 / <=23 / <=64 iterations": f64 (31) and f32
+    #        (23) are exactly right; the f80 "<=64" is WRONG. Each f80 loop runs
+    #        <=31 trips on the GUARD-ADMITTED domain and does not terminate at all
+    #        on 2 of 2^32 inputs once the guard is gone. 64 appears to have been
+    #        read off the mantissa width; the closest real quantity is the COUNTER
+    #        `b`, which reaches 63.
+    #    WHY THEY ARE DEFERRED AND NOT RE-DECLINED: their ground CHANGED. It is no
+    #    longer the 2026-07-28 parity ruling, it is "no derivable bound exists" —
+    #    CouldNotCompute on both loops at every SCEV query under 12 pipelines
+    #    incl. default<O2>/<O3> and on the post-promoteFp80Union module the pass
+    #    analyses, and SCEV is CORRECT there, not conservative. Recording them as
+    #    decided-decline after a GO ruling would be exactly the stale-scope
+    #    planning miscompile check_scope() exists to catch.
+    #    THEIR SAFETY TODAY IS AN ACCIDENT and that is the load-bearing fact:
+    #    SCEV reports nothing, so no unsound bound can be built from it. The only
+    #    bound that exists is GUARD-CONDITIONAL on a TAINTED guard, so the
+    #    "shift-until-normalized" recognizer of SCOPING-L3 §6 item 1 would recover
+    #    it and WOULD be a silent miscompile — bd `k02s` is its precondition.
+    #    THE OLD RE-OPENING MECHANISM IS DEAD, measured and stronger than bd eyhj
+    #    stated: the shipped LoopUnrollPrepass VISITS these loops and claims NONE,
+    #    failing U3, U5 AND U6, and U6 is decisive STRUCTURALLY rather than by its
+    #    cap — it demands the EXACT trip count (LoopUnrollPrepass.cpp:199), which a
+    #    quantum-dependent trip count cannot have. Raising kMaxUnrollTrip from 8 to
+    #    33 would change NOTHING. Stock LLVM 19 also leaves both back edges intact
+    #    under -unroll-max-upperbound=64, -unroll-count=33 -unroll-allow-partial
+    #    -unroll-runtime, -unroll-force-peel-count=33 and default<O3>.
+    **{c: ("deferred-capability",
+           "DEFERRED 2026-08-21 by the owner GO on bd eyhj ('the others that cannot be compiled that "
+           "way, such as ilogbl will be tackled later') — tracker bd ywws. NOT decided-decline: the "
+           "2026-07-28 parity ruling is NO LONGER the ground. New ground = 'no derivable bound "
+           "exists', measured: CouldNotCompute on BOTH loops at every SCEV query under 12 pipelines "
+           "and on the post-promoteFp80Union module, and that is CORRECT not conservative — on the "
+           "rotated IR body 2 inputs (0, 0x80000000) never terminate. The only bound available is "
+           "GUARD-CONDITIONAL on a TAINTED (manl|manh)!=0 guard that PredMux removes, so the "
+           "SCOPING-L3 §6 item 1 recognizer that would recover it is a silent-miscompile shape (bd "
+           "k02s). Safety today is an ACCIDENT of SCEV reporting nothing. NOT re-openable by a "
+           "static-K unroll: LoopUnrollPrepass visits these loops and claims none, failing U3/U5/U6, "
+           "and U6 demands the EXACT trip count (LoopUnrollPrepass.cpp:199) — raising kMaxUnrollTrip "
+           "8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either (the "
+           "divergent inputs are exactly what is_zero_poison would have to exclude)")
+       for c in ("ilogbl.f80", "logbl.f80")},
 }
+
+# The vocabulary of the `scope` field, enforced below. bd 0bp8 asked whether the
+# deferred ilogbl/logbl pair needed a NEW bucket: it does not — `deferred-capability`
+# already means "real, not owner-ruled out, and not this lever's work", which is
+# exactly their position — but the ANSWER only holds because the label now names a
+# tracker (bd ywws). A `deferred-capability` with no capability behind it is the same
+# unfalsifiable assertion as a `decided-decline` with no citation.
+VALID_SCOPES = ("lever-gap", "owner-ruling-needed", "deferred-capability",
+                "corpus-gap", "decided-decline")
 
 def check_scope(results):
     """Rule-12 analog for the scope table: a stale SCOPE is a silent PLANNING
@@ -347,13 +451,26 @@ def check_scope(results):
     cqcells = {k for k, v in results.items() if v.get("provider") == "cq"}
     missing  = sorted(declines - set(SCOPE))
     stale    = sorted(set(SCOPE) - declines - cqcells)
+    # bd 0bp8 — the THIRD drift direction, which this function did not check and
+    # which the BY SCOPE report silently swallows: a label that is not in the
+    # vocabulary. The report loop iterates a hardcoded tuple, so a typo'd or
+    # newly-invented label prints NOWHERE and the cell vanishes from the "is this
+    # work?" axis entirely — the failure mode is a cell that looks classified in
+    # the JSON and is absent from every ranking read off this census. Both ends are
+    # checked against the SAME tuple so they cannot drift apart (Rule 14).
+    badlabel = sorted(f"{k}={v[0]}" for k, v in SCOPE.items() if v[0] not in VALID_SCOPES)
+    if badlabel:
+        print(f"\n!! SCOPE VOCABULARY — {len(badlabel)} entr(ies) use a label that is not "
+              f"one of {VALID_SCOPES}: {badlabel}")
+        print("   Add the label to VALID_SCOPES *and* to the BY SCOPE report tuple, or fix "
+              "the entry. An unlisted label is invisible in every lever ranking.")
     if missing:
         print(f"\n!! SCOPE INCOMPLETE — {len(missing)} declining cell(s) unclassified: {missing}")
         print("   Classify each before quoting any lever ranking off this census.")
     if stale:
         print(f"\n!! SCOPE STALE — {len(stale)} cell(s) no longer decline: {stale}")
         print("   Drop them from SCOPE (a decided-decline that now COMPILES is a dead entry).")
-    return not (missing or stale)
+    return not (missing or stale or badlabel)
 
 def main():
     print("indexing openlibm corpus...", file=sys.stderr)
@@ -565,8 +682,7 @@ def main():
         if v["status"] in ("decline", "no-body"):   # bd keol — see check_scope
             scopes[v.get("scope", "UNCLASSIFIED")].append(k)
     print("\nBY SCOPE (is it work?):")
-    for s in ("lever-gap", "owner-ruling-needed", "deferred-capability",
-              "corpus-gap", "decided-decline", "UNCLASSIFIED"):
+    for s in VALID_SCOPES + ("UNCLASSIFIED",):
         if s in scopes:
             print(f"  {len(scopes[s]):3d}  {s}")
             print(f"       {', '.join(sorted(scopes[s]))}")

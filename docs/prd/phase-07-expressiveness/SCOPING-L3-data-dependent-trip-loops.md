@@ -83,7 +83,7 @@ corresponding header-phi incomings, `opt -passes=verify` clean on every output) 
 
 | Layer | Site | Static bound available **today**? |
 |---|---|---|
-| **L1/L2** — subnormal `ilogb` loops | `e_fmod.c:54,56` (+ `:63,65` when arg1 is quantum) | **YES** — SCEV constant max `i32 32`, and the bound is *quantum-independent* (an i32 width fact) |
+| **L1/L2** — subnormal `ilogb` loops | `e_fmod.c:54,56` (+ `:63,65` when arg1 is quantum) | **YES** — SCEV constant max `i32 32`, and the bound is *quantum-independent* (an i32 width fact). **This row UNDERSTATES itself — see the amendment below.** |
 | **L3** — the fix-point `while(n--)` | `e_fmod.c:96` / `s_remquo.c:106` | **NO sound one** — see §3 |
 | **L3a** — the in-body `return Zero[...]` | `e_fmod.c:101-102` (+ f32/f80 siblings; `remainder`/`remainderf` inherit via `e_remainder.c:55`) | multi-exit; **5 of 9 cells** |
 | **L4** — the normalize `while(hx<0x00100000)` | `e_fmod.c:112`, `e_fmodf.c:91`, `ld80/e_fmodl.c:128` | **NO — SCEV `Unpredictable`, 9/9 cells** |
@@ -106,6 +106,42 @@ remainder.f64 4 remainderf.f32 2 remainderl.f80 1   "Unpredictable"
 ```
 
 Every cell has at least one loop that SCEV cannot bound at all.
+
+> ### AMENDMENT 2026-08-21 (bd `0bp8`) — the L1/L2 row is STRONGER than it says
+>
+> "quantum-independent (an i32 width fact)" is true and is the weakest true form.
+> Measured since, by bd `8zj2` (8 cells) and bd `19v3` (whole census), the L1/L2
+> bound is **structural, guard-free and TOTAL**:
+>
+> * **Guard-free** — it survives *deleting* the entry guard and replacing the
+>   preheader incoming with an opaque call. Two of the three `ilogb` loops are
+>   entered **unconditionally** in the shipped IR: there is no guard to remove.
+> * **Total** — exhaustive enumeration over **all 2³² start values** on the
+>   **rotated** recurrence the pass sees (not source semantics) gives **max 31
+>   trips** with **count(trips > 33) = 0**, and every bound is **unchanged** after
+>   stripping the poison flags (`shl nuw` → `shl`). So `33` is a valid
+>   over-approximation of a true max of `31` **over arbitrary starts** — i.e. it
+>   survives PredMux removing every dominating guard.
+>
+> Why the strengthening matters rather than being pedantry: **totality is exactly
+> the leg that separates this row from the §6-item-1 hazard.** A bound that is
+> merely quantum-independent can still be *guard-conditional*, and a
+> guard-conditional bound is unsound here for the reason `QramLowering.cpp:703-708`
+> gives — the speculated computation runs on every basis state, so the bound must
+> hold **unconditionally**, not merely on the paths the source executes. bd `19v3`
+> §3 found a live example three lines from this family (`k_rem_pio2.c:404`: a
+> constant trip bound of **4** that rests **100 %** on one dominating guard, and
+> that does **not terminate** on `%509 = -1` once the guard is gone), whose sibling
+> loops `:310`/`:314` carry the **identical** bound and *are* total. Nothing in the
+> SCEV report distinguishes the three.
+>
+> **Consequence for this memo's verdict: none.** The verdict rests on L3/L4, which
+> are still unbounded in 9/9 cells. What changed is downstream — the 2026-07-28
+> ruling this memo's addendum records was **narrowed on 2026-08-21** (bd `eyhj`, GO
+> on *derivation*), and this row's two `ilogb` siblings (`ilogb.f64`, `ilogbf.f32`)
+> are now the census's `lever-gap` set on the strength of exactly this bound. The
+> `fmod`/`remainder`/`remquo` nine **stay out** — measured, their blocker stack is 4
+> loops deep and the back two are vacuous or `CouldNotCompute`.
 
 ---
 
@@ -297,6 +333,24 @@ Ranked by how decisively each flips it:
    not an AddRec. A domain-specific "shift-until-normalized" recognizer would remove
    the blocker. **Without this, nothing else matters: the peel is unemittable in
    9/9 cells.**
+
+   > **⚠ SAFETY — item 1 is NOT independent of item 2, and as written it carries no
+   > reachability obligation at all. bd `k02s` is its blocking precondition and must
+   > be discharged before any such recognizer is built.** The parenthetical *"since
+   > `hx|lx ≠ 0` on entry"* is load-bearing: that entry condition is
+   > `e_fmod.c:110`'s **tainted** early return, and CQ's PredMux demonstrably removes
+   > every guard (measured `br i1` 5→0 and 4→0, `switch` 1→0 on sibling cells). So
+   > the recognizer would recover a **guard-conditional** bound — precisely the
+   > R1-class silent miscompile `QramLowering.cpp:703-708` exists to prevent.
+   > Item 2's reachability clause is **what makes item 1 safe**. Two worked examples
+   > are now on record: this memo's own normalize loop (`hx=0 lx=0`, guard-excluded,
+   > **non-terminating**), and bd `19v3` §3's `k_rem_pio2.c:404` — the cleaner
+   > demonstration, because its sibling loops `:310`/`:314` carry the **identical**
+   > trip bound of 4, *are* total, and **nothing in the SCEV report separates them**.
+   > bd `k02s` owns the full amendment (including the five conditions any bound
+   > needs: constant ∧ non-negative ∧ small ∧ reachability-total ∧
+   > `1 ≤ shift-amount ≤ W-1`); this note exists so item 1 cannot be quoted alone in
+   > the meantime.
 2. **A sound K derivation** — *unsigned* max of the BTC range, `+1` for trip count,
    an explicit non-negativity/reachability check in the `QramLowering.cpp:687` style,
    and a validated multi-exit upper-bound argument.
@@ -321,6 +375,36 @@ Ranked by how decisively each flips it:
 - The f32 "true max trips = 24" is exhaustive over all 2³¹ non-negative bit patterns
   against `y=0.5f`; the f64 "≈53" is 4M random + a structured grid, **not**
   exhaustive.
+- **A THIRD caveat, added 2026-08-21 (bd `0bp8`), and it is the one that limits how a
+  COVERAGE claim on this family may be quoted: on x86-64 openlibm does not build the
+  C bodies this census injects.** `amd64/Make.files` substitutes hand-written x87
+  assembly, and the root `Makefile:28-33` `DUPLICATE_NAMES` filter drops the C twin
+  of every `.S` it names. **Measured at corpus `@82e90ae`: all 23 `amd64/*.S` entries
+  have a `src/*.c` twin, and all 23 twins are dropped** — so the substitution reaches
+  **13 census cells**, not the 3 originally filed:
+
+  | cells | built on x86-64 instead | the C body the census injects |
+  |---|---|---|
+  | `fmod`/`fmodf`/`fmodl` | `e_fmod{,f,l}.S` — an `fprem`/`fstsw`/`jne 1b` x87 loop | `src/e_fmod{,f}.c`, `ld80/e_fmodl.c` |
+  | `remainder{,f,l}` | `e_remainder{,f,l}.S` | `src/e_remainder{,f,l}.c` |
+  | `remquo{,f,l}` | `s_remquo{,f,l}.S` | `src/s_remquo{,f}.c`, `ld80/s_remquol.c` |
+  | `logbl` | `s_logbl.S` — a single `fxtract` | `src/s_logbl.c` |
+  | `scalbn{,f,l}` | `s_scalbn{,f,l}.S` | `src/s_scalbn{,f,l}.c` |
+
+  Two riders. **(i)** `ld80/e_fmodl.c` and `ld80/s_remquol.c` — the bodies the f80
+  cells actually inject — are **commented out of `ld80/Make.files`** as well, so they
+  are built on *no* platform by the standard build. **(ii) The caveat cuts in the
+  positive direction too:** `scalbn`/`scalbnf`/`scalbnl` are `COMPILES` in this
+  census, i.e. three cells of the published injection numerator are C bodies x86-64
+  never builds. (`e_sqrt*`, `s_lrint*`, `s_llrint*`, `s_rintl` are also substituted
+  but are hardware **keep-set**, so they are not census cells at all.)
+  `ilogb`/`ilogbf`/`ilogbl`/`logb`/`logbf` have **no** `amd64` override and are
+  genuinely C — which is worth knowing, because it means the `logbl` ⟷ `ilogbl`
+  sibling argument the census once leaned on straddles this line.
+  **This changes NO compiler fact.** The 2026-07-27/07-28 rulings are about the
+  *construct CQ is handed*, which is the C — only a *coverage* claim on these cells
+  needs the qualifier.
+
 - **Two census-convention caveats limit what these cells measure at all**, and both
   bear on any future attempt: the 2-arg convention pins `arg1` to the literal `0.5`
   (bd `3c6m.62`), so `iy` const-folds and the measured bounds are *not* the
