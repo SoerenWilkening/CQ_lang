@@ -1217,6 +1217,14 @@ add_test(NAME e2e-slice-libm-real-expm1
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_expm1.expected.log")
 
+add_test(NAME e2e-slice-libm-real-ilogb
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_ilogb.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_ilogb.expected.log")
+
 add_test(NAME e2e-slice-libm-real-ldexp
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -1352,6 +1360,14 @@ add_test(NAME e2e-slice-libm-real-expm1f
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_expm1f.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_expm1f.expected.log")
+
+add_test(NAME e2e-slice-libm-real-ilogbf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_ilogbf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_ilogbf.expected.log")
 
 add_test(NAME e2e-slice-libm-real-ldexpf
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"

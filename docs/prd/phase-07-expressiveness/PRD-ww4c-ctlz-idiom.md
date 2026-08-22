@@ -92,7 +92,29 @@ these two, so the choice was never about coverage.
 * **`fmod` / `remainder` / `remquo`.** Their blocker stack is exactly **four loops deep**
   and the back two are vacuous (constant-max `-2`) or `CouldNotCompute`. `fmodf.f32` /
   `fmodl.f80` / `remainderf.f32` die a gate earlier at `kMsgBreakMultiSite` (the 7.4
-  multi-break widening under `8h7d`). Nothing in this PRD touches them.
+  multi-break widening under `8h7d`). **They are out of scope and they stay declining.**
+
+  > ⚠ **CORRECTED 2026-08-22 (bd `ww4c.3` adversarial round).** This bullet used to end
+  > *"Nothing in this PRD touches them"*, and that is **measurably false**. `e_fmod.c`
+  > lines **54, 56, 63, 65** are four verbatim copies of this very idiom — `fmod` inlines
+  > `ilogb`'s exponent extraction for *both* operands — so the fence claims them, and the
+  > census diag of `fmod.f64` and `remainder.f64` moved one layer deeper as a result:
+  > `cq controlled lowering: loop under quantum control` → `cq loop lowering: multiple
+  > early-break sites`. **Both still decline, no cell regressed, and coverage is
+  > unchanged** (they stay in bucket `loop-carried`) — so the *scope* claim holds and only
+  > the *blast-radius* claim was wrong. Note this is a same-bucket move, invisible to a
+  > status/bucket A/B and recoverable only by diffing the `diag` field.
+  >
+  > **It is also the §1.1 honesty obligation discharged where it counts**: the predicate
+  > fires on the same idiom in a function that is not `ilogb`, which is precisely what a
+  > per-function recognizer in structural costume could not do.
+  >
+  > **And the loop bd `k02s` warns about is NOT claimed.** `e_fmod.c:112`'s
+  > `while (hx < 0x00100000) { hx = hx+hx+(lx>>31); lx = lx+lx; }` — the one that does not
+  > terminate on `hx==0, lx==0` once the tainted guard is speculated away — fails **Z3**
+  > (its latch value is an `add`, not `shl`), **Z5** (`icmp ult`, not `icmp sgt … 0`) and
+  > **Z4** (no counter at all). Three independent grounds, which is the defence-in-depth
+  > §5.1 argues for, doing its job on the one loop where it mattered most.
 * **`ilogbl.f80` / `logbl.f80`.** A different idiom (§5.3) with no derivable bound, deferred
   under bd `ywws`. They must **decline**, and §5.3 is the fence that makes them.
 * **`m57l`** — the rolled quantum-bounded loop. Not built, not closed, not superseded as a

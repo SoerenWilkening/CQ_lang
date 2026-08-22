@@ -2,11 +2,13 @@
 
 ## ⚠ READ THIS FIRST — `bucket` is NOT a work list. `scope` is.
 
-**The 21 declines contain 4 cells of actionable work, not 21** (re-scoped
-**2026-08-21**, bd `eyhj`/`0bp8`; last re-measured **2026-08-10**, bd
-`bcv4`/`keol`/`k710`; the axis itself is bd `3c6m.14`, 2026-07-28). Every
-`decline` record carries a **`scope`** field alongside `bucket`, because those two
-answer different questions and only one of them is a plan:
+**The 19 declines contain 2 cells of actionable work, not 19** (last re-measured
+**2026-08-22**, bd `ww4c.3`, when `ilogb.f64`/`ilogbf.f32` LANDED and left this
+table entirely; re-scoped **2026-08-21**, bd `eyhj`/`0bp8`; bd
+`bcv4`/`keol`/`k710` **2026-08-10**; the axis itself is bd `3c6m.14`,
+2026-07-28). Every `decline` record carries a **`scope`** field alongside
+`bucket`, because those two answer different questions and only one of them is a
+plan:
 
 | | question it answers |
 |---|---|
@@ -14,13 +16,50 @@ answer different questions and only one of them is a plan:
 | `scope`  | **is it work** — decided-out, actionable, deferred, or not a compiler fact |
 
 ```
-BY SCOPE (21 declines + 1 no-body)
+BY SCOPE (19 declines + 1 no-body)
   14  decided-decline       fmod/remainder/remquo x3 · sinf/cosf/tanf
                             · tgammal · lgammal
-   4  lever-gap    <-- THE WORK   tgammaf.f32 · tgamma.f64 · ilogb.f64 · ilogbf.f32
+   2  lever-gap    <-- THE WORK   tgammaf.f32 · tgamma.f64
    3  deferred-capability   powl.f80 · ilogbl.f80 · logbl.f80
    1  corpus-gap            nexttowardl.f80   (status `no-body` — NOT probed)
 ```
+
+> **A LANDED CELL LEAVES THIS TABLE — it is not relabelled "done".** `scope`
+> classifies **declines**, so `check_scope()` reports a now-covered cell that
+> still carries an entry as **STALE**. That is why `ilogb.f64`/`ilogbf.f32`
+> simply vanish from the box above rather than appearing as a fifth,
+> congratulatory label; their history now lives in the `full_census.py` comment
+> where the entry used to be. Read a shrinking `lever-gap` as *work removed*, and
+> check the injection numerator to see which way it went.
+
+**⚡ 2026-08-22 (bd `ww4c.3`): `ilogb.f64` + `ilogbf.f32` LAND — 98 → 100
+injection-covered, lever-gap 4 → 2.** The two cells bd `19v3` measured to be the
+*entire* remaining bucket-(A) population, so this exhausts that lever rather than
+merely advancing it: **98 → 100 and no more** was a prediction, and it is now the
+measurement. Cleared by bd `ww4c`, the loop→`llvm.ctlz` idiom recognizer
+(`CtlzIdiomPrepass`, fence Z1–Z9, shipped in Inc 1), which rewrites the rotated
+do-while to the closed form `(C0-1) − (ctlz_N(v<<1) & (N−1))` — four ops, **zero
+new frozen symbols**, and no loop survives, so the `eyhj` bound-derivation ruling
+is not needed for these two at all. Licensed as **injection** coverage by the
+owner ruling of 2026-08-22 — *"yes, it counts as injection coverage — the body
+stays openlibm's"*. Not CQ-PROVIDED, not a fourth row.
+
+> **Measured, at corpus fingerprint `409 syms / 251 bc`.** A whole-census A/B
+> against the prior baseline moved **exactly these two cells**
+> (`decline`/`loop-carried` → `COMPILES`) with **zero regressions**. Both ship
+> with committed ship-floor goldens at stage-2b **STRICT** — no
+> `--allow-unproven` — so injection-covered and verified moved **together**
+> (`slice_libm_real_ilogb`, 126 lines, 46/46 free-pairing verified;
+> `slice_libm_real_ilogbf`, 59 lines, 18/18). The closed form was re-swept
+> exhaustively over all 2³² inputs **at the shipped constants**: 0 mismatches,
+> true worst trips 31/20/23.
+>
+> **The two cells that look like these still decline, by fence and not by luck.**
+> `ilogbl.f80`/`logbl.f80` shift a **mask** and compare a **derived** value (Z5),
+> and their counter **increments** (Z4) — two independent grounds, and both were
+> re-measured `loop-carried` in the same run. That is the §1.1 honesty obligation
+> discharged where it is visible: a recognizer that had been widened until
+> `ilogb` fell inside it would have swallowed these too.
 
 **⚡ 2026-08-21 (bd `eyhj` owner ruling — GO, narrowed to DERIVATION): the ilogb/logb
 four SPLIT 2+2, `decided-decline` 18 → 14, lever-gap 2 → 4.** No cell's status
@@ -295,8 +334,8 @@ Stem-level detail:
 |---|---|---|
 | **all three widths** | **44 / 56** | = **14** by recognition + **30** by injection + **0** CQ-provided (no CQ-provided stem has an f32 leaf) |
 | every width golden-matched | 42 / 56 | `fabs` (runs, no golden) and `fma` (partial) fall short |
-| some widths | 7 / 56 | `lgamma` `logb` `pow` (f80-short) + `nexttoward` (**short at BOTH ends** — f64 only; see below) + `sin` `cos` `tan` (**f32**-short, CQ-provided at f64+f80 — bd `guwr`) |
-| no width | 5 / 56 | `fmod` `remainder` `remquo` `tgamma` `ilogb` (all now MEASURED — `ilogb` was an unprobed skip until bd `bcv4`, 2026-08-10) |
+| some widths | 8 / 56 | `lgamma` `logb` `pow` (f80-short) + **`ilogb`** (f80-short since bd `ww4c.3`, 2026-08-22) + `nexttoward` (**short at BOTH ends** — f64 only; see below) + `sin` `cos` `tan` (**f32**-short, CQ-provided at f64+f80 — bd `guwr`) |
+| no width | 4 / 56 | `fmod` `remainder` `remquo` `tgamma` (all MEASURED) |
 
 > **`nexttoward` was mis-grouped as `f80-short` until 2026-08-10.** It is covered
 > at **f64 only**: `nexttowardf.f32` is a `memory-store (Shadow)` decline and one
@@ -404,9 +443,18 @@ Measured: **36 verified · 3 accepted** (`fabs{,f,l}`) **· 3 partial** (`fma{,f
                      = 120 upstream-injectable   <- THIS row's denominator
 ```
 
-So **98/120 = 82% of the upstream-injectable subset** — which is **54%** of the 183
-modelled cells and **42%** of the 69 named entities. **Never write "82% of
+So **100/120 = 83% of the upstream-injectable subset** — which is **55%** of the 183
+modelled cells and **42%** of the 69 named entities. **Never write "83% of
 `math.h`".**
+
+> **Why the entity figure did NOT move when the cell figure did (2026-08-22, bd
+> `ww4c.3`).** `ilogb.f64` and `ilogbf.f32` landed, but `ilogbl.f80` still
+> declines (§5.3 of the `ww4c` PRD — it is a different idiom, and the Z4/Z5
+> fences exclude it deliberately). The entity row counts a **stem**, so a stem
+> covered at two of its three widths does not enter it, and `30 of 42 compile at
+> ALL THREE widths` below is unchanged for the same reason. Two cells of
+> genuine coverage, zero entities — that asymmetry is real and is exactly why
+> these two denominators are printed separately.
 
 > **⚠ THE DENOMINATOR CHANGES ARE NOT PROGRESS, AND THEY ARE THE ONE WAY THIS ROW
 > COULD BE MISREAD.** Two have happened, in opposite directions, and the
@@ -455,14 +503,17 @@ moved a number in the un-flattering direction:
 The strict *"can openlibm's body be lowered"* denominator — dropping
 `nexttowardl.f80`, which has no body to inject at all — is **119**.
 
-**Cells: 98/120 injection-covered, all 98 ship-floor verified** — *92 fully inlined +
+**Cells: 100/120 injection-covered, all 100 ship-floor verified** — *94 fully inlined +
 6 Phase-6 clone-specialized*, which `wprobe.py` requires never be merged into plain
 `COMPILES`. (Row (3) adds **6** more plain-`COMPILES` cells that are **not** in this
-91 and must not be added to it: the census's raw plain-COMPILES tally is 97 across
-both providers, which is numerically equal to this row's *covered* count for an
-unrelated reason. Two different 97s — do not conflate them.) That the two numbers coincide is a **measurement, not an invariant**
+94 and must not be added to it: the census's raw plain-`COMPILES` tally is **100**
+across *both* providers — 94 injection + 6 CQ-provided — which is numerically equal
+to this row's *covered* count of 100 for an unrelated reason, since this row's 100
+is 94 plain **plus 6 spec-clone**. Two different 100s, made of different cells — do
+not conflate them.) That the two numbers coincide is a **measurement, not an invariant**
 (closed by `3c6m.58`, re-opened by `3c6m.60`, re-closed by `3c6m.61`, held across
-`0rwu` — whose 2 new cells shipped with their goldens in the same increment).
+`0rwu` — whose 2 new cells shipped with their goldens in the same increment — and
+held again across `ww4c.3`, whose 2 new cells did the same on 2026-08-22).
 
 **By function — 30 of 42 compile at ALL THREE widths** (`exp` and `log10` completed
 their f80 width in bd `0rwu`; they were the two entries that made this row 28):
@@ -470,8 +521,8 @@ their f80 width in bd `0rwu`; they were the two entries that made this row 28):
 | | n | functions |
 |---|---|---|
 | **all 3 widths** | **30** | `acos acosh asin asinh atan atan2 atanh cbrt cosh erf erfc exp exp2 expm1 fdim frexp hypot ldexp llround log log10 log1p log2 lround modf nextafter scalbln scalbn sinh tanh` |
-| some widths | 4 | `lgamma logb nexttoward pow` |
-| no width | 8 | 7 measured at zero (`cos fmod remainder remquo sin tan tgamma`) **+ `ilogb`, which is UNMEASURED** |
+| some widths | 5 | `ilogb lgamma logb nexttoward pow` |
+| no width | 7 | measured at zero: `cos fmod remainder remquo sin tan tgamma` |
 
 > **⚠ bd `guwr` DID NOT MOVE THIS TABLE, and that is correct, not an oversight.**
 > `sin`/`cos`/`tan` stay in **no width** because this table answers *"can UPSTREAM's
@@ -483,10 +534,22 @@ their f80 width in bd `0rwu`; they were the two entries that made this row 28):
 > (iii) forbids.
 
 All 42 carry exactly 3 variants, so "all widths" is a genuine 3/3 for every one of the
-30 — no weak-denominator inflation. `ilogb` is **not a decline**: it is int-return and
-`full_census.py::ret_width` skips it (bd `bcv4`), an unfixed harness limitation. Note
-the rule is narrower than it sounds — `lround`/`llround` are *long*-return and *are*
-censused (both land in the 28).
+30 — no weak-denominator inflation.
+
+> **⚠ TWICE-STALE ROW, CORRECTED 2026-08-22 (bd `ww4c.3`).** This paragraph used to
+> read: *"`ilogb` is **not a decline**: it is int-return and `full_census.py::ret_width`
+> skips it (bd `bcv4`), an unfixed harness limitation."* Both halves are now wrong, and
+> they went wrong at **different times**, which is why this is flagged rather than
+> silently overwritten. bd `bcv4` **fixed** that harness limitation on **2026-08-10** —
+> `ret_width` returns `"si32"` for `ilogb` and now *raises* on an unhandled `ret` rather
+> than shrinking the denominator — so the "unfixed" clause was already false for twelve
+> days. And since bd `ww4c.3` the cells are not merely measured but **covered** at f64
+> and f32, so `ilogb` sits in **some widths**, short only at f80. An entry that
+> describes a cell as unmeasured *because of a bug that was already fixed* is exactly
+> the stale-planning failure `check_scope()` guards against on the other axis.
+
+Note the int-return rule is narrower than it sounds — `lround`/`llround` are
+*long*-return and *are* censused.
 
 ### (3) CQ-PROVIDED — CQ ships the leaf; upstream's body is NOT injected
 **6 / 6 cells**: `sin`/`cos`/`tan`.f64 + `sinl`/`cosl`/`tanl`.f80 (owner ruling
@@ -509,8 +572,8 @@ the record.
 > (+ slices, goldens, whole-token ctest rows, in-sync bodies) takes this row to 9
 > **legitimately**. What would mean the gate broke: reaching 9 **without** that
 > evidence. And price `eur4` correctly before quoting it — `sinf`/`cosf`/`tanf` are
-> **declines**, so admitting them leaves the injection **numerator at 98** and only
-> shrinks its denominator (120 → 117, reading 82% → 84%). Row-3 movement with zero
+> **declines**, so admitting them leaves the injection **numerator at 100** and only
+> shrinks its denominator (120 → 117, reading 83% → 85%). Row-3 movement with zero
 > compiler work; **never** injection progress.
 
 > **DECLINED 2026-08-10 (owner ruling): the `log` stem is NOT admitted.** Measured:
@@ -767,10 +830,12 @@ externally-linked spelling declines today. Same family as the already-recorded b
 
 **⚡ VERIFY-FIRST SWEEP — THE TWO NUMBERS COINCIDED AT 68 (2026-07-25, bd `3c6m.58`).**
 ⚠ *Historical: true of the 68-cell baseline this banner describes. The `3c6m.60` banner ABOVE
-supersedes it — and is itself superseded: the scoreboard is now **98 injection-covered /
-98 verified**, gap 0, after bd `3c6m.61` closed `hypotl.f80` (2026-07-28), bd `0rwu` closed
-`expl.f80` + `log10l.f80` with their goldens in the same increment (2026-07-30), and bd `k710`
-closed `nexttowardf.f32` with `slice_libm_real_nexttowardf` in the same increment (2026-08-10).
+supersedes it — and is itself superseded: the scoreboard is now **100 injection-covered /
+100 verified**, gap 0, after bd `3c6m.61` closed `hypotl.f80` (2026-07-28), bd `0rwu` closed
+`expl.f80` + `log10l.f80` with their goldens in the same increment (2026-07-30), bd `k710`
+closed `nexttowardf.f32` with `slice_libm_real_nexttowardf` in the same increment (2026-08-10),
+and bd `ww4c.3` closed `ilogb.f64` + `ilogbf.f32` with both goldens in the same increment
+(2026-08-22).
 The "two numbers coincide" property this banner celebrates therefore holds again — as a
 measurement, never as an invariant, and it holds only because each of those increments shipped
 its golden WITH the cell rather than promising one.*

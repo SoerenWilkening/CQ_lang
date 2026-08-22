@@ -336,40 +336,50 @@ SCOPE = {
     # `SPIKE-8zj2-ilogb-logb-loop-bounds.md` / `SPIKE-19v3-loop-bound-population.md`,
     # bd memory [narrowed-quantum-trip-rule-2026-08-21].
     #
-    # ---- HALF ONE: the bound EXISTS TODAY -> lever-gap (the ACTIONABLE set) ----
+    # ---- HALF ONE: LANDED 2026-08-22 (bd ww4c.3) — NO LONGER A SCOPE ENTRY ----
     #    src/s_ilogb.c:40   for (ix = -1043; lx>0; lx<<=1) ix -=1;
     #    src/s_ilogb.c:42   for (ix = -1022,hx<<=11; hx>0; hx<<=1) ix -=1;
     #    src/s_ilogbf.c:35  for (ix = -126,hx<<=8; hx>0; hx<<=1) ix -=1;
-    #    SCEV constant-max BTC = literal `i32 32` (trip 33) — a BIT-WIDTH fact,
-    #    and TOTAL: exhaustive enumeration over ALL 2^32 start values on the
-    #    ROTATED recurrence gives max 31 trips and count(trips > 33) = 0, and the
-    #    bound survives stripping every poison flag (`shl nuw` -> `shl`) and
-    #    replacing the preheader incoming with an opaque call. So it survives
-    #    PredMux removing every dominating guard — which PredMux demonstrably does
-    #    (measured `br i1` 5->0 and 4->0, `switch` 1->0). Two of the three loops
-    #    are entered UNCONDITIONALLY in the shipped IR; there is no guard to
-    #    remove. True worst per loop 31/20/23 against the 33 ceiling.
-    #    bd `19v3` measured this pair to be the ENTIRE bucket-(A) population of the
-    #    census — 98 -> 100, with no larger payoff hiding anywhere. The three
-    #    nearby cells that LOOK reachable (fmod.f64, remainder.f64, remquo.f64)
-    #    are not: their blocker stack is exactly 4 loops deep and the back two are
-    #    vacuous (constant-max -2) or CouldNotCompute.
-    **{c: ("lever-gap",
-           "RE-SCOPED 2026-08-21 (owner GO on bd eyhj, narrowed to DERIVATION): the 2026-07-28 "
-           "parity ruling no longer grounds these two, because the bound the narrowed rule demands "
-           "EXISTS TODAY — SCEV constant-max BTC = literal i32 32 (trip 33), a bit-width fact, "
-           "measured TOTAL by exhaustive enumeration over all 2^32 starts on the rotated recurrence "
-           "(max 31 trips, count(trips>33)=0) and stable under poison-flag stripping, so it survives "
-           "PredMux removing every guard. bd 19v3 measured this pair to be the WHOLE bucket-(A) "
-           "population: 98 -> 100. LEVER CHOSEN 2026-08-22 (owner): bd ww4c, the loop->llvm.ctlz idiom "
-           "recognizer — zero new frozen symbols, no loop survives, and it does not need the eyhj "
-           "ruling at all. NOT 'one gate' though: measured 2026-08-21 it is ~10 tainted ops (LLVM's "
-           "canonical form needs an icmp+select repair at x==0, and ilogb.f64 has TWO such loops), and "
-           "it must emit is_zero_poison=FALSE or PredMuxFlatten.cpp:177-196 refuses the cone. bd m57l "
-           "(roll at B=33 + predicated body) was NOT chosen — four measured rail problems and no IR "
-           "counterpart to B — and is deferred, not dead. NOT a static-K unroll — see the ilogbl/logbl "
-           "entry for why that mechanism is dead")
-       for c in ("ilogb.f64", "ilogbf.f32")},
+    #
+    #    `ilogb.f64` and `ilogbf.f32` COMPILE. They are deliberately ABSENT from
+    #    SCOPE rather than relabelled: SCOPE classifies DECLINES, and
+    #    `check_scope()` reports a covered cell that still carries an entry as
+    #    STALE — which is the whole point of that gate ("a decided-decline that
+    #    now COMPILES is a dead entry"). Leaving a triumphant `lever-gap` note
+    #    here would be exactly the silent PLANNING miscompile it exists to catch.
+    #    The history is kept HERE, in the comment, because the ticket trail is
+    #    worth more than the label was.
+    #
+    #    WHAT CLEARED THEM: bd `ww4c`, the loop->`llvm.ctlz` idiom recognizer
+    #    (`ir-pass/src/CtlzIdiomPrepass.cpp`, fence Z1-Z9), licensed as INJECTION
+    #    coverage by the owner ruling of 2026-08-22 — "yes, it counts as injection
+    #    coverage — the body stays openlibm's". It rewrites the rotated do-while
+    #    to the closed form `(C0-1) - (ctlz_N(v<<1) & (N-1))`: four ops, zero new
+    #    frozen symbols, and NO loop survives, so the eyhj bound-derivation ruling
+    #    is not needed for these two at all. bd `m57l` (roll at B=33 + predicated
+    #    body) was NOT chosen and is deferred, not dead.
+    #
+    #    MEASURED AT LANDING, not predicted (bd ww4c.3, corpus fingerprint
+    #    409 syms / 251 bc): both cells move `decline/loop-carried` -> `COMPILES`
+    #    under this census's own O1 pipeline, and a whole-census A/B against the
+    #    prior baseline moved EXACTLY these two with ZERO regressions. Both ship
+    #    with committed ship-floor goldens at stage-2b STRICT
+    #    (`tests/e2e/slice_libm_real_ilogb{,f}.c`; 46/46 and 18/18 free-pairing
+    #    verified, 0 unproven), so injection-covered and verified moved together.
+    #    The closed form was re-swept exhaustively over all 2^32 inputs at the
+    #    SHIPPED constants: 0 mismatches, true worst trips 31/20/23 — which
+    #    independently reproduces the 31/20/23 recorded against the old 33 ceiling.
+    #
+    #    THE OTHER TWO CELLS THAT LOOK LIKE THESE STILL DECLINE, BY FENCE AND NOT
+    #    BY LUCK — see HALF TWO. `ilogbl.f80`/`logbl.f80` shift a MASK and compare
+    #    a DERIVED value, so they fail Z5, and their counter INCREMENTS, so they
+    #    also fail Z4. Both were re-measured `loop-carried` in the same run.
+    #
+    #    NOT REACHED, and this was measured rather than hoped: bd `19v3` put this
+    #    pair at the ENTIRE bucket-(A) population, so the payoff is 98 -> 100 and
+    #    no more. fmod.f64 / remainder.f64 / remquo.f64 only LOOK adjacent — their
+    #    blocker stack is four loops deep and the back two are vacuous
+    #    (constant-max -2) or CouldNotCompute.
 
     # ---- HALF TWO: NO bound is derivable -> deferred-capability, NOT decided ----
     #    src/s_logbl.c:36  == src/s_ilogbl.c:37   for (b = LDBL_MANH_SIZE; !(u.bits.manl & m); m >>= 1)
@@ -429,8 +439,16 @@ SCOPE = {
            "k02s). Safety today is an ACCIDENT of SCEV reporting nothing. NOT re-openable by a "
            "static-K unroll: LoopUnrollPrepass visits these loops and claims none, failing U3/U5/U6, "
            "and U6 demands the EXACT trip count (LoopUnrollPrepass.cpp:199) — raising kMaxUnrollTrip "
-           "8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either (the "
-           "divergent inputs are exactly what is_zero_poison would have to exclude)")
+           "8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either — and "
+           "as of 2026-08-22 that is MEASURED rather than predicted (bd ww4c.3: both cells "
+           "re-probed `decline / loop-carried` in the same run that moved ilogb.f64/ilogbf.f32 "
+           "to COMPILES). CORRECTED GROUND, because the prediction named the wrong fence: it is "
+           "NOT is_zero_poison (the emitted ctlz is TOTAL, so the divergent inputs {0, "
+           "0x80000000} would need no excluding). It is Z5 — these shift a MASK (`lshr` of the "
+           "induction variable) and compare a DERIVED value (`and <rec>, <invariant data>`) with "
+           "predicate `eq`, where Z5 demands `icmp sgt <the recurrence's own latch value>, 0` — "
+           "AND Z4, because their counter INCREMENTS. Two independent grounds, which is exactly "
+           "the defence-in-depth PRD-ww4c §5.1 argues for")
        for c in ("ilogbl.f80", "logbl.f80")},
 }
 

@@ -406,20 +406,16 @@
   "scope_ref": "DEFERRED 2026-08-21 by the owner GO on bd eyhj ('the others that cannot be compiled that way, such as ilogbl will be tackled later') \u2014 tracker bd ywws. NOT decided-decline: the 2026-07-28 parity ruling is NO LONGER the ground. New ground = 'no derivable bound exists', measured: CouldNotCompute on BOTH loops at every SCEV query under 12 pipelines and on the post-promoteFp80Union module, and that is CORRECT not conservative \u2014 on the rotated IR body 2 inputs (0, 0x80000000) never terminate. The only bound available is GUARD-CONDITIONAL on a TAINTED (manl|manh)!=0 guard that PredMux removes, so the SCOPING-L3 \u00a76 item 1 recognizer that would recover it is a silent-miscompile shape (bd k02s). Safety today is an ACCIDENT of SCEV reporting nothing. NOT re-openable by a static-K unroll: LoopUnrollPrepass visits these loops and claims none, failing U3/U5/U6, and U6 demands the EXACT trip count (LoopUnrollPrepass.cpp:199) \u2014 raising kMaxUnrollTrip 8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either (the divergent inputs are exactly what is_zero_poison would have to exclude)"
  },
  "ilogbf.f32": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe i32 (): cq controlled lowering: loop under quantum control",
-  "provider": "openlibm",
-  "scope": "lever-gap",
-  "scope_ref": "RE-SCOPED 2026-08-21 (owner GO on bd eyhj, narrowed to DERIVATION): the 2026-07-28 parity ruling no longer grounds these two, because the bound the narrowed rule demands EXISTS TODAY \u2014 SCEV constant-max BTC = literal i32 32 (trip 33), a bit-width fact, measured TOTAL by exhaustive enumeration over all 2^32 starts on the rotated recurrence (max 31 trips, count(trips>33)=0) and stable under poison-flag stripping, so it survives PredMux removing every guard. bd 19v3 measured this pair to be the WHOLE bucket-(A) population: 98 -> 100. LEVER CHOSEN 2026-08-22 (owner): bd ww4c, the loop->llvm.ctlz idiom recognizer \u2014 zero new frozen symbols, no loop survives, and it does not need the eyhj ruling at all. NOT 'one gate' though: measured 2026-08-21 it is ~10 tainted ops (LLVM's canonical form needs an icmp+select repair at x==0, and ilogb.f64 has TWO such loops), and it must emit is_zero_poison=FALSE or PredMuxFlatten.cpp:177-196 refuses the cone. bd m57l (roll at B=33 + predicated body) was NOT chosen \u2014 four measured rail problems and no IR counterpart to B \u2014 and is deferred, not dead. NOT a static-K unroll \u2014 see the ilogbl/logbl entry for why that mechanism is dead"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "ilogb.f64": {
-  "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe i32 (): cq controlled lowering: loop under quantum control",
-  "provider": "openlibm",
-  "scope": "lever-gap",
-  "scope_ref": "RE-SCOPED 2026-08-21 (owner GO on bd eyhj, narrowed to DERIVATION): the 2026-07-28 parity ruling no longer grounds these two, because the bound the narrowed rule demands EXISTS TODAY \u2014 SCEV constant-max BTC = literal i32 32 (trip 33), a bit-width fact, measured TOTAL by exhaustive enumeration over all 2^32 starts on the rotated recurrence (max 31 trips, count(trips>33)=0) and stable under poison-flag stripping, so it survives PredMux removing every guard. bd 19v3 measured this pair to be the WHOLE bucket-(A) population: 98 -> 100. LEVER CHOSEN 2026-08-22 (owner): bd ww4c, the loop->llvm.ctlz idiom recognizer \u2014 zero new frozen symbols, no loop survives, and it does not need the eyhj ruling at all. NOT 'one gate' though: measured 2026-08-21 it is ~10 tainted ops (LLVM's canonical form needs an icmp+select repair at x==0, and ilogb.f64 has TWO such loops), and it must emit is_zero_poison=FALSE or PredMuxFlatten.cpp:177-196 refuses the cone. bd m57l (roll at B=33 + predicated body) was NOT chosen \u2014 four measured rail problems and no IR counterpart to B \u2014 and is deferred, not dead. NOT a static-K unroll \u2014 see the ilogbl/logbl entry for why that mechanism is dead"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "ilogbl.f80": {
   "status": "decline",
@@ -734,7 +730,7 @@
  "fmod.f64": {
   "status": "decline",
   "bucket": "loop-carried",
-  "diag": "probe double (): cq controlled lowering: loop under quantum control",
+  "diag": "probe double (): cq loop lowering: multiple early-break sites",
   "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
@@ -758,7 +754,7 @@
  "remainder.f64": {
   "status": "decline",
   "bucket": "loop-carried",
-  "diag": "probe double (): cq controlled lowering: loop under quantum control",
+  "diag": "probe double (): cq loop lowering: multiple early-break sites",
   "provider": "openlibm",
   "scope": "decided-decline",
   "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
