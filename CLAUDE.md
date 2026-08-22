@@ -313,18 +313,21 @@ keep/cut line, and it applies to *every* data-dependent-trip library body
 one). Note the contrast that makes the line coherent: Bennett's **fixed**-trip
 branchless kernels *are* concrete gate sequences (e.g. the 64-iteration restoring
 divider `src/divider.jl:22-36`), which is why a bounded, statically-known trip
-count stays in scope while a quantum-dependent one does not. Scoped, measured and
-recorded in
+count stays in scope while a quantum-dependent one does not (**narrowed
+2026-08-21 — read that clause with the NARROWED paragraph below**). Scoped,
+measured and recorded in
 `docs/prd/phase-07-expressiveness/SCOPING-L3-data-dependent-trip-loops.md` and bd
 [`l3-quantum-trip-loop-verdict-2026-07-27`]. **The line was sharpened by owner
 ruling 2026-07-28 on the one cell it did not cleanly reach (`logbl.f80`): a
 quantum-dependent trip count is out EVEN WHEN the loop recurrence is purely
-classical.** That cell measures as the best possible case for the other reading —
+classical** — *as ruled 2026-07-28; **NARROWED 2026-08-21**, below, and never
+quotable without it.* That cell measures as the best possible case for the other
+reading —
 back-edge excision makes it lower *completely* (`opt` exit 0, verify-clean, zero
 residual `@cq_*`, **no deeper layer at all**), and its loop-carried values are a
 counter and a shift register, so no dirty rail crosses the back edge and Rules 6/8
-are untouched; only the trip count is quantum. It still declines. So the test is
-the **trip count** alone, never the cleanliness of the loop body. **Two corollaries
+are untouched; only the trip count is quantum. It still declines — and the
+cleanliness of the loop body never enters the test. **Two corollaries
 worth carrying:** the ruling is about the CONSTRUCT the pass sees, so it says
 nothing about a library body reached by *source injection* — for those,
 Bennett-backing is owed by the **opcodes the body decomposes into**, not by a
@@ -332,7 +335,88 @@ Bennett-backing is owed by the **opcodes the body decomposes into**, not by a
 [`bennett-grounding-asymmetry-2026-07-28`]); and a decline ruled on these grounds
 is a **parity** wall, never a **physics** one, so it must not be quoted as
 "impossible" (the census records it as `scope: decided-decline` with its re-opening
-condition — bd [`libm-census-scope-axis-2026-07-28`]). On x86-64+SSE4.1 the keep-set is
+condition — **or, once a later ruling changes that ground,
+`deferred-capability`**; bd [`libm-census-scope-axis-2026-07-28`], which the
+2026-08-21 ruling says is **not quotable un-narrowed** — see below).
+
+**NARROWED by owner ruling 2026-08-21 (bd `eyhj`) — to a DERIVATION, never a
+parameter — and the narrowing is RULED BUT UNBUILT.** The 2026-07-28 test above was
+"the **trip count** alone"; it is one clause short. **A quantum-dependent trip count
+is ADMISSIBLE when the compiler PROVES a quantum-independent upper bound `B` from the
+IR in front of it and emits the loop ROLLED at classical trip count `B`, with the body
+predicated on a quantum still-running flag. Failure to derive `B` is a loud decline.**
+Why a *derivation* and never a cheaper `K` — this is the whole safety argument: a
+parameter can be wrong and still compile, whereas a derivation that fails to derive
+**stops the compiler**, so an undersized bound becomes **UNREACHABLE** rather than
+**UNDETECTED**. That asymmetry is load-bearing because **neither shipped gate can see
+an undersized bound** — the golden byte-diff records a gate stream self-consistent
+under whatever predicate was chosen, and `free_pairing_check.py` witnesses rail
+*pairing*, which stays clean; an undersized bound is a verify-clean silent miscompile,
+definitionally. So a user-supplied `K`, a `name → K` table, a flag that *supplies* `K`,
+and an **offline-measured** `K` are all still refused on that one ground (the last
+specifically because a classical run samples the **guard-admitted** domain while the
+emitted circuit runs the **unguarded** one — PredMux removes every guard — so more
+samples do not converge on the right answer), and **Bennett's user-`K` refusal above is
+untouched**. Nor does this weaken condition (2): a *derived* `B` makes the emitted
+circuit a **fixed-trip** `B`-iteration circuit, the same shape as Bennett's
+64-iteration restoring divider, which the line above already admits. *(That reading is
+analytic — the Bennett checkout was **absent when last measured (2026-08-22)**, so
+condition (i) is **unmeasurable** for this family and must not be asserted as checked.
+Re-measure before relying on it: restoring the checkout silently falsifies this
+sentence.)*
+
+> **DO NOT QUOTE THIS AS A CAPABILITY — NOTHING IMPLEMENTS IT, and Rule 18 is prose,
+> not a fence.** At HEAD `LoopLowering.cpp`'s Q1 quantum-bounded-exit decline is intact
+> and unconditional (`tryCaseA`'s L1: `taintedExit` ⇒ `diagnoseUnderControl(TE,
+> "loop")`, checked FIRST), and **no bound derivation for a quantum-trip loop exists
+> anywhere in the pass** — `hasFiniteClassicalTripBound` is the 7.4 `break` path, which
+> requires a **classical** bound already present in the exit condition, and is not
+> this. So **no quantum-dependent trip count is LOWERED AS A LOOP today** — `tryCaseA`'s
+> Q1 declines every one that reaches `lowerLoops`, exactly as before the ruling.
+> *(State it that way and never as "they all decline": `CtlzIdiomPrepass` — bd `ww4c` —
+> claims shift-count loops whose exiting condition **is** tainted and COMPETES WITH Q1
+> for them, but it wins by **erasing** the loop and substituting a closed form of fixed
+> gate count before `lowerLoops` runs. That is a **value** substitution, not a bound:
+> no `B` is computed, no loop survives, no still-running flag is minted.)* The
+> implementing increment (bd `m57l`) is **DEFERRED with no customer**: the two cells it
+> was scoped for — `ilogb.f64`, `ilogbf.f32`, 98 → 100 — were taken by that recognizer
+> instead. **The narrowing's marginal payoff at HEAD is therefore ZERO cells.**
+> Building the fence is Rule-12 red-green **plus** Rule 13, with the five measured
+> conditions as its decline partition — constant ∧ non-negative ∧ small ∧ reachability-**total** ∧
+> `1 ≤ shift-amount ≤ W-1`, the constant-max BTC read as an **APInt at its own width**,
+> every one of them a measured over-accept hole (C1–C4 on real census loops, C3 and C5
+> on committed constructed controls in `loop_bounds/probes/opaque_control.ll`, since
+> neither ever bound a classification on the census itself — `isa<SCEVConstant>` alone
+> over-accepts **30 of the 49** loops it takes; worst bound 4294967295 trips, and
+> `getSmallConstantMaxTripCount` returns `4294967295` on some vacuous bounds and `0` on
+> others, so neither return value distinguishes vacuity in either direction). Until
+> that fence exists, this paragraph licenses **nothing**.
+
+**What the 2026-08-21 ruling changes is one cell's GROUND, not any verdict.**
+`logbl.f80` above keeps its decline and loses its reason: it declines because SCEV
+reports `CouldNotCompute` on both its loops under **12 measured `opt` pipelines**
+(incl. `default<O2>`/`<O3>`) and on the post-`promoteFp80Union` module, and its rotated
+body genuinely does not terminate on 2 of 2^32 inputs — **not** because its trip count
+is quantum. *(Say "12 measured pipelines", never "every pipeline": the sweep is a
+finite measured set whose raw artifacts are not committed, and a universal quantifier
+over an unmeasured set is the fenv failure mode above.)* It and `ilogbl.f80` are
+accordingly recorded `scope: deferred-capability` (bd `ywws`), **not**
+`decided-decline`, and this paragraph exists so `CLAUDE.md` stops asserting a ground the
+census has already retired (`full_surface/full_census.py`: *"the 2026-07-28 ruling no
+longer grounds ANY of these four"*). The `fmod`/`remainder`/`remquo` nine and the
+Payne–Hanek nine are **unmoved** — bd `19v3` measured the whole census surface
+(2026-08-21, **pre-`ww4c`**: its §1 gate table counts Q1 at 10 cells and multi-site at
+3, which the census now reads as 6 and 5, because `ww4c` moved `fmod.f64` and
+`remainder.f64` to a later first blocker at identical status), not one family.
+**State those eighteen as CELLS, never as one block** — "all 18 data-dependent-trip
+cells decline" is FALSE: **12 decline** (the `fmod` nine + `sinf`/`cosf`/`tanf`.f32)
+and **6 already COMPILE** (`sin`/`cos`/`tan` at f64 and f80, which are CQ-PROVIDED, so
+upstream's un-injectable body is never injected and their `decided-decline` survives
+only as `upstream_scope`). Recorded in bd
+[`narrowed-quantum-trip-rule-2026-08-21`]; measurements in
+`docs/prd/phase-07-expressiveness/SPIKE-19v3-loop-bound-population.md`.
+
+On x86-64+SSE4.1 the keep-set is
 `sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma/fmuladd
 lrint llrint` (+ the non-`math.h` integer bit-intrinsics), **all Bennett-backed**
 (soft-float `soft_round`/`soft_trunc`/`soft_floor`/… + hardware ops; Bennett's

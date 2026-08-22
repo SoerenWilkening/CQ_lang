@@ -312,6 +312,11 @@ through a measurement phase and a design phase.**
    stays coherent because Bennett's **fixed**-trip branchless kernels *are* concrete
    gate sequences (`src/divider.jl:22-36`), so a statically-known bounded trip count
    remains in scope; only a quantum-dependent one is out.
+   **⚠ NARROWED 2026-08-21 (bd `eyhj`), recorded here because this clause is quotable
+   and has propagated:** a quantum-dependent trip count is admissible when the compiler
+   **derives** a quantum-independent bound `B` from the IR in front of it; failure to
+   derive is a loud decline. See `CLAUDE.md` Rule 18 (amended 2026-08-22, bd `qck7`).
+   The capability is **UNBUILT** (bd `m57l` deferred) — this narrowing licenses nothing.
 2. **Does the record get amended?** Recommendation: *append* evidence to PRD-7.3
    §2.6, leave the "permanent decline" language intact.
 3. **Does the f80 width get an explicit parity exemption?** Even under a hypothetical

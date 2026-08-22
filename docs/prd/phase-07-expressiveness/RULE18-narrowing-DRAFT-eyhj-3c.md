@@ -1,7 +1,66 @@
-# DRAFT ONLY — proposed replacement for CLAUDE.md Rule 18's 2026-07-28 paragraph
+# DRAFT — proposed replacement for CLAUDE.md Rule 18's 2026-07-28 paragraph
 
-**bd `eyhj` acceptance item 3c. NOT APPLIED. `CLAUDE.md` is untouched.** Whether
-Rule 18's text is amended is the owner's call and is not assumed here.
+> ## ⚖ RULED 2026-08-22 (bd `qck7`) — **A MODIFIED VERSION WAS APPLIED, NOT THIS ONE**
+>
+> **Owner ruling: "Modified: minimal, licenses nothing."** `CLAUDE.md` **is now amended**
+> at the sentence this draft targets. **Do not apply the text below** — read it as the
+> record of what was *proposed on 2026-08-21*, and `CLAUDE.md` itself as what was
+> *ruled*. §"What changes" below is superseded; §"What deliberately does NOT change"
+> was honoured with **one recorded exception** (below).
+>
+> **WHY A MODIFIED VERSION, and it is arithmetic, not taste.** This draft was written
+> **before** bd `ww4c` landed (`dc8f6c6`, 2026-08-22). Three of its claims went stale
+> the moment it did, each measured at HEAD:
+>
+> | draft claim | at HEAD |
+> |---|---|
+> | *"Measured payoff … **TWO cells** (`ilogb.f64`, `ilogbf.f32`; 98 → 100)"* | **STALE.** `ww4c`'s `llvm.ctlz` idiom recognizer banked **both** (`full_census_O1.json`: `status: COMPILES`). The **narrowing's** marginal payoff is **ZERO cells**. |
+> | *"the census already carries the narrowing (`ilogb.f64`/`ilogbf.f32` are `lever-gap`, not `decided-decline`)"* | **STALE.** `lever-gap` went 4 → 2 at `dc8f6c6`; neither cell is a scope entry any more. |
+> | table row *"the two corollaries \| **KEEP.** Untouched by this ruling."* | **FALSE.** Corollary 2 says *"the census records it as `scope: decided-decline`"* — which is exactly what changed for `ilogbl.f80`/`logbl.f80` (now `deferred-capability`, bd `ywws`). The table missed its own collision. |
+>
+> **THE ONE DEPARTURE FROM THE "DOES NOT CHANGE" TABLE, recorded rather than silent:**
+> corollary 2 received a **minimal parenthetical** — *"or, once a later ruling changes
+> that ground, `deferred-capability`"* — so the doctrine sentence stops mis-scoping the
+> very pair the ruling re-grounded. Everything else in that table was honoured verbatim:
+> Bennett's user-`K` refusal, the every-data-dependent-body clause, the `logbl.f80`
+> back-edge-excision measurement, corollary 1, the keep-set, `fmod`-is-not-a-keep, the
+> `.f80`-widened line, and the CQ-PROVIDED amendment are **untouched**.
+>
+> **THE FLAGGED WORDING RISK WAS HONOURED, NOT ACCEPTED.** This draft's closing section
+> warned that *"amending the text before that fence exists licenses a lowering the
+> compiler cannot yet safely emit"*, and recommended amending only alongside the
+> implementing increment. That increment (**bd `m57l`**) is **DEFERRED with no
+> customer** — `ww4c` took its two cells by dissolving the loop instead. So the applied
+> text is written to **license nothing**: it carries a blockquote reading *"DO NOT QUOTE
+> THIS AS A CAPABILITY — NOTHING IMPLEMENTS IT"*, states that `LoopLowering.cpp`'s Q1
+> decline is intact and unconditional, that no bound derivation for a quantum-trip loop
+> exists anywhere in the pass, that **every quantum-dependent trip count still declines
+> today**, and that building the fence is Rule-12 red-green **plus** Rule 13.
+>
+> **TWO PRECISION DEFECTS IN THE TEXT BELOW, found by the same audit — do not quote
+> either without its qualifier.** (1) *"SCEV reports `CouldNotCompute` … under **every
+> pipeline**"* is a universal quantifier over an unmeasured set; what was measured is
+> **12 `opt` pipelines** (incl. `default<O2>`/`<O3>`) plus the post-`promoteFp80Union`
+> module (`full_surface/README.md:73`), and the raw sweep artifacts are **not
+> committed**. The applied `CLAUDE.md` text says "12 measured pipelines". (2) The
+> *"PredMux removes every guard: measured `br i1` 5→0, 4→0, `switch` 1→0"* figures
+> reproduce exactly at HEAD, but **only on the back-edge-EXCISED variants** — the
+> unmodified cells decline before lowering and have no lowered output at all, so the
+> instrument must be named whenever the numbers are. The applied `CLAUDE.md` text drops
+> the numbers and keeps only the qualitative claim.
+>
+> **WHAT TIPPED IT AWAY FROM "leave parked"** (the standing recommendation at
+> `DECISION-m57l-vs-ww4c.md` §5.5 and `PRD-ww4c-ctlz-idiom.md:122`): that park was
+> conditioned — *"parked **while `ww4c` is the chosen path**"* — and `ww4c` has now
+> landed and closed. Meanwhile the un-amended text left **two committed authorities
+> contradicting each other on Rule 18's own worked example**: `CLAUDE.md` grounded
+> `logbl.f80`'s decline in the trip count, while `full_surface/full_census.py:334` says
+> *"the 2026-07-28 ruling no longer grounds ANY of these four"* and the cell's own
+> `scope_ref` says *"NOT decided-decline: the 2026-07-28 parity ruling is NO LONGER the
+> ground"*. The amendment resolves that contradiction **without** licensing a lowering.
+
+**bd `eyhj` acceptance item 3c.** Whether Rule 18's text was amended was the owner's
+call and was not assumed here; it was put to the owner on 2026-08-22 and ruled above.
 
 **Why this needs a decision at all:** the 2026-08-21 GO ruling (bd `eyhj`) narrowed a
 rule whose text is currently unqualified. Rule 18 says *"the test is the **trip count**

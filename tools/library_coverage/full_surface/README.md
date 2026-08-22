@@ -185,6 +185,15 @@ layer at all**) and its loop-carried values are a counter and a shift register, 
 no dirty rail crosses the back edge and Rules 6/8 are untouched. Only the trip
 count is quantum. The strict reading won. **Consequence: `8h7d` has no
 census-facing cell left and is now a pure capability tracker.**
+**⚠ NARROWED 2026-08-21 (bd `eyhj`) — do not quote the 2026-07-28 sentence above
+un-narrowed; it contradicts the ⚡2026-08-21 entry earlier in this same file.** A
+quantum-dependent trip count is admissible when the compiler **derives** a
+quantum-independent bound `B` from the IR in front of it; failure to derive is a
+loud decline. `logbl.f80` keeps its verdict and **changes its ground** — it is now
+`deferred-capability` (bd `ywws`) because no bound is derivable, **not**
+`decided-decline` on the trip count. `CLAUDE.md` Rule 18 was amended to match on
+2026-08-22 (bd `qck7`); the capability itself remains **UNBUILT** (bd `m57l`
+deferred), so nothing lowers a quantum-bounded loop today.
 
 **Why this axis exists.** `bucket` labels an owner-decided cell and an actionable
 one identically, and that has inverted the published lever ranking twice:
