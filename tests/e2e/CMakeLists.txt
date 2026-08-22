@@ -1868,6 +1868,22 @@ add_test(NAME e2e-slice-intrinsic-ctpop
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_ctpop.expected.log")
 
+# bd ww4c Increment 0 (PRD-ww4c-ctlz-idiom.md §9): ctlz = the same Class-2 shape as
+# ctpop, but it had ZERO hits across every e2e golden (measured 2026-08-21) while
+# ctpop had two and bswap one — proven at the IR layer and unproven at the only
+# layer that LINKS. The ww4c recognizer emits this exact call, so it is bought
+# FIRST. Its third lineage also MEASURES that the `is_zero_poison` immarg is
+# indistinguishable at the linked ABI (Rule 15 drops it); the immarg's real
+# consequence is the PredMux cone fence, an IR-layer property no golden can
+# witness, pinned by ir-pass/test/lowering_intrinsic_ctlz_i32.ll.
+add_test(NAME e2e-slice-intrinsic-ctlz
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_ctlz.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_ctlz.expected.log")
+
 # Phase 7.1 iw81.4.b (FROZEN ABI): the fp-math intrinsic family. The only layer
 # that LINKS, so the only proof the new generated fp symbols resolve and
 # signature-match: (A) a measured unary @llvm.floor.f64 proves the forward
