@@ -1,5 +1,16 @@
 # NEXT-SESSION PROMPT — libm compileability: status, taxonomy, and the next step
 
+> ## ⏭ SUPERSEDED FOR PLANNING — read [`LEVER-SURVEY-2026-08-22.md`](LEVER-SURVEY-2026-08-22.md) instead
+>
+> Every number below is the **2026-07-25 generation** (68/123, then 80/123). The
+> baseline is now **158/183 headline / 100/120 injection**, and the *shape* of the
+> question has changed too: the "which lever is biggest" framing this doc is built
+> around no longer has an answer that moves the campaign number, because **no lever
+> moves the injection numerator upward** (measured 2026-08-22). Keep this file for its
+> §0 history and its correction banners — they record how the 24-bounded-loop headline
+> turned out to be a census harness artifact, which is still the best worked example of
+> that failure mode in the tree.
+
 > **Purpose.** This is a **discussion prompt** for the next session (owner + agent).
 > It captures the *complete* libm-coverage compileability picture as measured at the
 > end of the 2026-07-25 session, so we can decide **what to do next** — verify, build
