@@ -496,6 +496,12 @@ intent — `eur4` authoring real f32 leaves takes the count 6 → 9 **legitimate
 Note what `eur4` is worth, so it is never mis-quoted: `sinf`/`cosf`/`tanf` are
 **declines** today, so admitting them leaves the injection **numerator at 97** and
 shrinks its denominator — pure row-3 movement, **never** injection progress.
+*(Both `97` figures in this and the next paragraph are **as-of-2026-08-10**, the
+numbers those two rulings were computed on. The campaign number is **100/120** at
+2026-08-22 — `k710` took 97→98 and `ww4c` 98→100. The rulings' **arithmetic and
+conclusions are unchanged** — both turn on a **difference**, not a level — so the
+figures are deliberately left as ruled rather than silently restated; re-deriving
+either conclusion at 100 is separate work and needs its own owner sign-off.)*
 
 **DECLINED 2026-08-10 (owner ruling): the `log` stem / `logl` spelling are NOT
 admitted.** Measured, not argued: `log.f64` and `logl.f80` **both already pass
