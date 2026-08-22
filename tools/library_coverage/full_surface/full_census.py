@@ -361,13 +361,14 @@ SCOPE = {
            "measured TOTAL by exhaustive enumeration over all 2^32 starts on the rotated recurrence "
            "(max 31 trips, count(trips>33)=0) and stable under poison-flag stripping, so it survives "
            "PredMux removing every guard. bd 19v3 measured this pair to be the WHOLE bucket-(A) "
-           "population: 98 -> 100. LEVER UNDECIDED between bd m57l (roll at B=33 + predicated body; "
-           "four measured rail problems, no IR counterpart to B) and bd ww4c (loop->llvm.ctlz idiom "
-           "recognizer; zero new frozen symbols and no loop survives, but ~10 tainted ops rather than "
-           "the 'one gate' its ticket claims — measured 2026-08-21: LLVM's canonical form needs an "
-           "icmp+select repair at x==0, and ilogb.f64 has TWO such loops — plus an is_zero_poison trap "
-           "at PredMuxFlatten.cpp:177-196). NOT a static-K unroll — see the ilogbl/logbl entry for why "
-           "that mechanism is dead")
+           "population: 98 -> 100. LEVER CHOSEN 2026-08-22 (owner): bd ww4c, the loop->llvm.ctlz idiom "
+           "recognizer — zero new frozen symbols, no loop survives, and it does not need the eyhj "
+           "ruling at all. NOT 'one gate' though: measured 2026-08-21 it is ~10 tainted ops (LLVM's "
+           "canonical form needs an icmp+select repair at x==0, and ilogb.f64 has TWO such loops), and "
+           "it must emit is_zero_poison=FALSE or PredMuxFlatten.cpp:177-196 refuses the cone. bd m57l "
+           "(roll at B=33 + predicated body) was NOT chosen — four measured rail problems and no IR "
+           "counterpart to B — and is deferred, not dead. NOT a static-K unroll — see the ilogbl/logbl "
+           "entry for why that mechanism is dead")
        for c in ("ilogb.f64", "ilogbf.f32")},
 
     # ---- HALF TWO: NO bound is derivable -> deferred-capability, NOT decided ----
