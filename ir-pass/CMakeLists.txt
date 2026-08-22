@@ -54,6 +54,7 @@ add_library(CQPass MODULE
   src/CompareLowering.cpp
   src/ControlDetect.cpp
   src/ControlledSymbols.cpp
+  src/CtlzIdiomPrepass.cpp
   src/DagTraversal.cpp
   src/GuardedStoreArmEmit.cpp
   src/CQLoweringPass.cpp

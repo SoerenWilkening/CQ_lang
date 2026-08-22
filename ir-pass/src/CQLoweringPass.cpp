@@ -8,6 +8,7 @@
 
 #include "ByRefInline.h"
 #include "ControlPlan.h"
+#include "CtlzIdiomPrepass.h"
 #include "Fp80Union.h"
 #include "IOSinkLowering.h"
 #include "LiteralIntegrity.h"
@@ -214,6 +215,32 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // that contained the loop (cyclic — PredMux never claims it) is acyclic and
   // claimable once the loop is gone.
   while (unrollConstTripLoops(M, taint)) {
+    taint = propagate(M, wd);
+    while (flattenPredMuxRegions(M, taint))
+      taint = propagate(M, wd);
+  }
+
+  // bd ww4c Inc 1 — the shift-count loop -> `llvm.ctlz` idiom recognizer
+  // (CtlzIdiomPrepass.cpp): a rotated do-while `do { c--; x <<= 1; } while
+  // ((signed)x > 0)` over a TAINTED entry value is replaced by its closed form
+  // (C0-1) - (ctlz(v<<1) & (N-1)) — four already-linked template ops, no new
+  // frozen symbol. Runs HERE, on the same reasoning as the unroll pre-pass
+  // above and for one reason of its own: AFTER the fp80-union + PredMux
+  // fixpoints (Z8 must read the SAME settled taint the rest of the pipeline
+  // reads — for the ld80 cells that taint arrives through the union
+  // promotion), BEFORE `detectSpecializations` (the spec-scan and any later
+  // clone must see the rewritten body), and BEFORE `lowerLoops` (a claimed
+  // loop is gone before Q1 would decline it). Same one-claim-per-call +
+  // full-re-propagate + nested-PredMux-fixpoint shape: the claim mints tainted
+  // SSA and erases the loop's, and the enclosing region was CYCLIC (PredMux
+  // never claims a region containing a loop) so it becomes claimable the
+  // moment the loop is gone. ACCEPT-ONLY, and note the ONE way this differs
+  // from the unroll pre-pass: that fence is DISJOINT from the rolled-in-place
+  // owners, while THIS ONE COMPETES WITH Q1 FOR THE SAME LOOPS (Q1 fires on a
+  // tainted exiting condition, which every loop here has). So its failure mode
+  // is a wrong CLAIM, not a wrong decline — see the Z1-Z9 contract in
+  // CtlzIdiomPrepass.h.
+  while (recognizeCtlzIdiomLoops(M, taint)) {
     taint = propagate(M, wd);
     while (flattenPredMuxRegions(M, taint))
       taint = propagate(M, wd);
@@ -524,6 +551,24 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // run() for the post-fixpoints / pre-`detectSpecializations` placement
   // rationale and the nested PredMux re-run.
   while (unrollConstTripLoops(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.MeasureCalls);
+    while (flattenPredMuxRegions(M, taint)) {
+      taint = propagate(M, wd);
+      onlyInF(taint.ThetaCalls);
+      onlyInF(taint.PhiCalls);
+      onlyInF(taint.MeasureCalls);
+    }
+  }
+
+  // bd ww4c Inc 1 — the shift-count -> ctlz idiom fixpoint, mirrored in this
+  // entry point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run()
+  // for the post-fixpoints / pre-`detectSpecializations` placement rationale,
+  // the nested PredMux re-run, and why this pre-pass (unlike the unroll one)
+  // competes with Q1 for the same loops.
+  while (recognizeCtlzIdiomLoops(M, taint)) {
     taint = propagate(M, wd);
     onlyInF(taint.ThetaCalls);
     onlyInF(taint.PhiCalls);

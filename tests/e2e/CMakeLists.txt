@@ -1884,6 +1884,21 @@ add_test(NAME e2e-slice-intrinsic-ctlz
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_intrinsic_ctlz.expected.log")
 
+# bd ww4c Increment 1: the shift-count loop -> llvm.ctlz recognizer
+# (CtlzIdiomPrepass.cpp), end to end. SYNTHETIC — the two real openlibm cells are
+# Increment 2. This is the only layer that LINKS, so the only proof the
+# substituted four-op chain resolves and signature-matches, all four void `_unc`
+# twins included, and the only place stage 2b can speak for its rails. Written in
+# openlibm's `hx > 0; hx <<= 1` spelling, which clang emits NO ctlz for at any -O
+# level, so a ctlz in this golden can only be CQ's.
+add_test(NAME e2e-slice-ctlz-idiom-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_ctlz_idiom_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_ctlz_idiom_loop.expected.log")
+
 # Phase 7.1 iw81.4.b (FROZEN ABI): the fp-math intrinsic family. The only layer
 # that LINKS, so the only proof the new generated fp symbols resolve and
 # signature-match: (A) a measured unary @llvm.floor.f64 proves the forward
