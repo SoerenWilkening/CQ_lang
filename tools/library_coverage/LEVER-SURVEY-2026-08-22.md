@@ -25,12 +25,15 @@
 
 ## 0. The answer, and the arithmetic
 
+**The live plan, after the owner deferred `fpclassify` on 2026-08-22 (bd `3c6m.65`):**
+
 | step | headline | injection (campaign) |
 |---|---|---|
 | today (measured) | **158/183 (86%)** | **100/120** |
-| + bd `eur4` f32 trig leaves | 161/183 (88%) | 100/**117** (denominator only) |
-| + `isnormal` + `fpclassify` | 163/183 (89%) | 100/117 (unchanged) |
-| + faithful corpus (§2.2) | **160/183 (87%)** | **97/117** |
+| + bd `eur4` f32 trig leaves (§2.1) | 161/183 (88%) | 100/**117** (denominator only) |
+| + `isnormal` (§2.3) | 162/183 (89%) | 100/117 (unchanged) |
+| + faithful corpus (§2.2) | **159/183 (87%)** | **97/117** |
+| *(deferred)* `fpclassify` (§3) | *+1 → 160/183* | *unchanged* |
 
 Read the middle column as *"CQ compiles N of the 183 modelled `math.h` cells"* and the
 right one as compiler progress, per the 2026-08-22 headline ruling (bd `fhas`)
@@ -39,8 +42,14 @@ only lever that ever could — the tgamma pair, ceiling `+2` — is measured dea
 
 The honest summary: **under the current modelled surface and the standing rulings,
 injection coverage is at its structural ceiling minus a couple of cells.** The remaining
-real movement is `eur4` plus the two macros, and one correction owed in the other
-direction.
+live movement is `eur4` plus `isnormal`, and one correction owed in the other direction.
+
+> **Note the sign of the whole board.** Once §2.2 lands, the *total* of every live lever
+> is **+1 headline cell** and **−3 injection cells**. That is not a discouraging result
+> to be worked around — it is the measured state, and the `−3` is the only item here
+> that changes what the published number *means*. Sequence §2.2 first for that reason:
+> shipping `eur4` first publishes `161/183` on a foundation already known to be off by
+> three.
 
 ---
 
@@ -197,6 +206,14 @@ census cell **without turning any test red** — the same silent-planning-miscom
 Tracked as bd `test_C_libtooling-3c6m.64`. Headline → 159 (with §2.1, 162); macros
 **10/12 → 11/12**. Injection untouched.
 
+> **One question travels with this ticket now that §3 is deferred.** `fpclassify`'s
+> decision (3) — *is the type-generic macros row compiler-progress-bearing?* — is not
+> `fpclassify`-specific. This cell also needs genuine compiler work (Rule 12 + Rule 13 +
+> Rule 19 gate 5) and also moves **only** the macros row, so under headline ruling (c) it
+> is real work that the campaign number cannot express. Decide that before shipping, not
+> after: the alternative is a changelog line claiming coverage progress for a row the
+> ruling says does not carry it.
+
 **The recorded reason is a mislabel.** `isnormal` expands to
 `@llvm.is.fpclass.f64(double, i32 264)` — an **LLVM intrinsic**, not a library call,
 with **no injectable body anywhere**. `264 = fcNegNormal|fcPosNormal = fcNormal`. The
@@ -234,9 +251,26 @@ system `<math.h>` compiles.
 
 ---
 
-## 3. Needs an owner ruling before any code
+## 3. DEFERRED — `fpclassify`
 
-### `fpclassify` — **+1 more** (→ 160, or 163 with §2.1 and §2.3)
+> **⏸ DEFERRED by owner ruling 2026-08-22** (*".65 is future work and therefore
+> deferred."*), tracked as bd `test_C_libtooling-3c6m.65`, status `DEFERRED`. This
+> section is **not an open question awaiting an answer** — the three decisions below are
+> deliberately not being made now, and no compiler work should be scoped against this
+> cell until they are. It is kept in full because the measurement is expensive to redo
+> and the decisions are exactly what a future session would otherwise re-derive.
+>
+> **What survives the deferral.** Decision **(3)** — *is the type-generic macros row
+> compiler-progress-bearing?* — binds **§2.3 (`isnormal`) too**, because that cell also
+> needs genuine compiler work and also moves only the macros row. Deferring this ticket
+> defers decisions (1) and (2), which are `fpclassify`-specific; it does **not** dispose
+> of (3). Answer it when `isnormal` is picked up.
+>
+> **Re-measure before acting.** The PredMuxFlatten witness asymmetry below is a live
+> source fact a future PredMux touch may change, and the three differentials were run at
+> HEAD `9dbce3f`.
+
+### `fpclassify` — **+1** (→ 160/183, on top of §2.1 and §2.3)
 
 Tracked as bd `test_C_libtooling-3c6m.65`. Unlike `isnormal` it **is** a real call
 (`@__fpclassifyd`, `SDK …/math.h:139-147`) and openlibm **does** ship an injectable body
@@ -528,7 +562,7 @@ corpus of §2.2 is **410**.
 | `test_C_libtooling-3c6m.63` | **P1** corpus collision, `-3` measurement integrity (§2.2) |
 | `test_C_libtooling-eur4` | f32 trig leaves — updated with the ULP finding (§2.1) |
 | `test_C_libtooling-3c6m.64` | `isnormal` / `llvm.is.fpclass` expansion prepass (§2.3) |
-| `test_C_libtooling-3c6m.65` | `fpclassify` — three owner decisions + the PredMux switch witness (§3) |
+| `test_C_libtooling-3c6m.65` | **⏸ DEFERRED** (owner, 2026-08-22) — `fpclassify`: three decisions + the PredMux switch witness (§3) |
 | `test_C_libtooling-3c6m.66` | `SCOPE` record fixes: stale `lever-gap` + three retired grounds (§5.1, §5.2) |
 | `test_C_libtooling-8zi1` | tgamma pair — layers 2/3/4 now measured (§4.1) |
 | `test_C_libtooling-sj30` | surface expansion — now priced (§4.3) |
