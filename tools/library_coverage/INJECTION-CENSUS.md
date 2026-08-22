@@ -8,16 +8,23 @@
 > *"Do not quote '48 verified' — quote 48 injection-covered, 8 verified"* is itself now
 > out of date on both halves.
 >
-> **⚡ CURRENT AUTHORITATIVE NUMBERS (2026-07-31, after bd `guwr`):** the all-widths **O1**
-> baseline `full_surface/full_census_O1.json` now carries **THREE disjoint rows** (Rule 18's
+> **⚡ CURRENT AUTHORITATIVE NUMBERS (re-derived 2026-08-22 from
+> `full_surface/full_census_O1.json`; three-row split from bd `guwr`, 2026-07-31):** the
+> all-widths **O1** baseline carries **THREE disjoint rows** (Rule 18's
 > CQ-PROVIDED amendment, owner ruling; never merged). **(2) INJECTION — the campaign
-> number: 97 / 117 upstream-injectable (83%)**, **97 verified**, **20** declining — of which
-> only **3 are actionable** (read the `scope` field, never `bucket`: `lever-gap` 3 ·
-> `deferred-capability` 1 · `corpus-gap` 1 · `decided-decline` 15). **(3) CQ-PROVIDED: 6 / 6**
+> number: 100 / 120 upstream-injectable (83%)**, **100 verified** (gap 0), **20** not
+> covered — of which only **2 are actionable** (read the `scope` field, never `bucket`:
+> `lever-gap` 2 · `deferred-capability` 3 · `corpus-gap` 1 · `decided-decline` 14).
+> **(3) CQ-PROVIDED: 6 / 6**
 > (`sin`/`cos`/`tan`.f64 + `sinl`/`cosl`/`tanl`.f80 — CQ ships the leaf and injects it
 > instead of upstream's body; `sinf`/`cosf`/`tanf` rejected, bd `eur4`).
-> **THE NUMERATOR DID NOT MOVE — 97 before, 97 after**; all six cells that left row (2)
-> were declines, so 79% → 83% is DENOMINATOR (123 → 117), not compiler work.
+> *Was `97 / 117` with a `3 · 1 · 1 · 15` scope split, three increments stale — bd `bcv4`
+> (denominator 117 → 120), bd `k710` (97 → 98), bd `ww4c.3` (98 → 100), the last of which
+> also re-scoped the `ilogb`/`logb` four 2+2 under bd `eyhj`, moving 2 cells from
+> `lever-gap` to covered and 2 from `decided-decline` to `deferred-capability`.*
+> **AT THE `guwr` EVENT ITSELF THE NUMERATOR DID NOT MOVE — 97 before, 97 after**
+> *(a 2026-07-31 statement, not a current figure)*; all six cells that left row (2)
+> were declines, so 79% → 83% was DENOMINATOR (123 → 117), not compiler work.
 > Before that, bd `0rwu` shipped PredMux witness **W7** and took 95 → 97 / 95 → 97,
 > moving `expl.f80` and `log10l.f80` (both f80, both goldened in the same increment).
 >

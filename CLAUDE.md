@@ -283,7 +283,12 @@ measured **only** by source injection — **never** by recognizing `@llvm.<fn>` 
 `@<fn>` by name and emitting a per-fn `cq_template_<fn>`. That name-recognition
 path is **fiction**: once the source is injected the named call is inlined away,
 so the recognizer never fires (this is why the old `math.h` 165/174 "95%"
-overclaimed — measured recognition, not injection). The **sole exception** is an
+overclaimed — measured recognition, not injection). *Note precisely what was
+wrong with it, because a labelled whole-surface TOTAL is now published (the
+2026-08-22 headline ruling under the CQ-PROVIDED amendment below): `165/174` was a
+**mislabelled** number — recognition counted **as** injection. The headline total
+is a **labelled** one, printed with its composition and never called injection.*
+The **sole exception** is an
 **in-grid IR construct CQ recognizes before codegen that Bennett.jl backs** — it
 has no injectable body and is lowered directly. The keep/cut line is **testable
 and target-dependent** (measure, never guess — Rule 11) and needs **BOTH**
@@ -467,6 +472,33 @@ neither is authoring a leaf instead of doing the lowering):
   not have **drifted** from the slice the golden pins.
 - **(iii)** it is recorded as **CQ-PROVIDED** and **NEVER merged into the
   injection number** (bd [`libm-scoreboard-two-numbers`] — now *three* numbers).
+  **This bullet is UNCHANGED by the 2026-08-22 headline ruling below** — the
+  *injection* number stays pure. What that ruling adds is a **separate, labelled
+  TOTAL**, not a bigger injection row.
+
+**HEADLINE — the whole-`math.h` total is now the number we quote (owner ruling
+2026-08-22, bd `fhas`).** Previously a merged headline was a documented **bug**
+here, and the ruling it replaces was right about a real hazard: the retired
+`165/174` (95%) claim is what merging produced. The owner asked for the merged
+number anyway, so the published headline is now **`math.h` coverage: 158/183 cells
+(86%)** — composed of `100/120` injection + `6/6` CQ-PROVIDED + `42/42` recognition
+keep-set + `10/12` type-generic macros + `0/3` by-design `nan`. *(Those figures are
+**as measured at the ruling, 2026-08-22**, and are the only hand-written copy of
+them in the tree — every PUBLISHED occurrence is generated from
+`probe.mathh_union_scoreboard()` into a marked region. If this paragraph ever
+disagrees with `README.md`, believe the generator and fix this line.)*
+**Three conditions make it honest, and they are not optional:**
+**(a)** the **composition is printed with the total, every time** — a total without
+it is the retired overclaim wearing a new denominator;
+**(b)** the total is read as *"CQ compiles 158 of the 183 modelled `math.h` cells"*
+(**true** — a user calling `sqrt()` gets a real lowering) and **never** as *"CQ
+compiled openlibm's body 158 times"* (**false** — 42 cells have **no injectable
+body at all** and 6 use **CQ's own leaf**);
+**(c)** **the campaign number for COMPILER progress remains the injection row
+alone** — rows (1) and (3) move with no compiler work, so quoting the total as
+progress would be the `165/174` error again.
+It is **computed, never hand-copied** (`probe.mathh_union_scoreboard()`; the bd
+`5ft3`/`aik2` lesson), and **-3** if `fma{,f,l}`'s *partial* cells are excluded.
 
 **Day-one consequence, measured:** exactly **6 cells** qualify — `sin`/`cos`/`tan`
 at f64 and `sinl`/`cosl`/`tanl` at f80 — and `sinf`/`cosf`/`tanf` are **rejected**

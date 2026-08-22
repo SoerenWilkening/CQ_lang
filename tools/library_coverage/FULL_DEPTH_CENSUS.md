@@ -8,16 +8,25 @@
 > because the capability→function *map* and the peel methodology are still the best
 > analysis of WHY cells decline — that part has aged well; the tallies have not.
 >
-> **⚡ CURRENT AUTHORITATIVE NUMBERS (2026-07-31, after bd `guwr` — Rule 18's
-> CQ-PROVIDED amendment):** THREE disjoint rows now, never merged (owner ruling; the
-> retired `165/174` overclaim is what merging produces).
-> - **(2) INJECTION — the campaign number: 97 / 117 upstream-injectable (83%)**;
->   **20 decline**; **97 verified — the gap is 0**.
+> **⚡ CURRENT AUTHORITATIVE NUMBERS (re-derived 2026-08-22 from
+> `full_surface/full_census_O1.json`; three-row split from bd `guwr`, 2026-07-31):**
+> THREE disjoint rows, never merged (owner ruling; the retired `165/174` overclaim is
+> what merging produces).
+> - **(2) INJECTION — the campaign number: 100 / 120 upstream-injectable (83%)**;
+>   **20 not covered** (19 decline + 1 `no-body`); **100 verified — the gap is 0**.
+>   *Was `97 / 117` here, three increments stale: bd `bcv4` took the denominator
+>   117 → 120 (the 3 never-probed `ilogb` cells entered, 2026-08-10), bd `k710` the
+>   numerator 97 → 98 (`nexttowardf.f32`, 2026-08-10), bd `ww4c.3` 98 → 100
+>   (`ilogb.f64` + `ilogbf.f32`, 2026-08-22). Same lesson as `COVERAGE.md`'s: a line
+>   that asserts AUTHORITY is exactly the one to re-derive rather than trust — the
+>   single source of truth is the census run itself.*
 > - **(3) CQ-PROVIDED: 6 / 6** — `sin`/`cos`/`tan`.f64 + `sinl`/`cosl`/`tanl`.f80, where
 >   CQ ships the reversible leaf and the pipeline injects it **instead of** upstream's
 >   body. `sinf`/`cosf`/`tanf` are **REJECTED** by the same gate (no f32 leaf; bd `eur4`)
 >   and still decline in (2). **Never merged into (2)**, and never campaign progress.
-> - **THE NUMERATOR DID NOT MOVE: 97 before, 97 after.** All six cells that left row (2)
+> - **THE NUMERATOR DID NOT MOVE: 97 before, 97 after** — *this is about the `guwr`
+>   event of 2026-07-31 specifically, not a current figure; it has since moved to 100.*
+>   All six cells that left row (2)
 >   were declines, so only the DENOMINATOR changed (123 → 117) and the percentage moved
 >   79% → 83% for that reason alone. Quote both forms or neither; track the numerator.
 > - Measured in the same run: **zero** injection cells' COVERAGE depends on a CQ leaf.

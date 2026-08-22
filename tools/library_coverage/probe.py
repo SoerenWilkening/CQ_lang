@@ -70,6 +70,29 @@ HARDWARE_KEEP_SET = ("sqrt fabs copysign floor ceil trunc round rint nearbyint "
                      "fmin fmax fma lrint llrint")
 
 # ---------------------------------------------------------------------------
+# THE covered-cell predicate — ONE definition, for BOTH scoreboard producers.
+#
+# It lives HERE and not in `full_surface/full_census.py` because that module
+# already imports THIS one (`P.HARDWARE_KEEP_SET`, `P.cq_provided_cells()`), so
+# the dependency only runs one way; defining it there and importing it here
+# would be a cycle.
+#
+# WHY IT IS A NAMED TUPLE AND NOT AN INLINE `!= "decline"` TEST (bd `keol`,
+# re-learned as bd `5ft3`): a not-equal-to-"decline" test silently counts every
+# NEW status as COVERED. `full_census.py` recorded exactly that — "introducing
+# the keol classification would have moved this row 97 -> 98 with no compiler
+# change — the exact soft-overclaim the three-row split exists to prevent" — and
+# was fixed on its own side ONLY. This file kept the loose test and so credited
+# the `no-body` cell (`nexttowardl.f80`, a corpus gap with no body to inject),
+# reporting 101/120 where the census reports 100/120. Since `update_readme()`
+# REWRITES the README badge from this number, the next `probe.py run` would have
+# republished a +1 overclaim over a correct committed file.
+#
+# So: add a new status here, deliberately, or it enters the numerator by default.
+COVERED_EXCL = ("decline", "no-body")
+is_covered = lambda st: st not in COVERED_EXCL
+
+# ---------------------------------------------------------------------------
 # The CQ-PROVIDED set — Rule 18 AMENDMENT (owner ruling 2026-07-31, bd `guwr`).
 #
 # A THIRD category beside recognition and injection: a function whose reversible
@@ -250,7 +273,7 @@ def _full_surface_scoreboard():
         o1 = fs / "full_census_O1.json"
         fb = json.loads((o1 if o1.exists() else fs / "first_blocker_refreshed.json").read_text())
         inj = {k: v for k, v in fb.items() if v.get("provider", "openlibm") != "cq"}
-        compiles = sum(1 for v in inj.values() if v.get("status", "decline") != "decline")
+        compiles = sum(1 for v in inj.values() if is_covered(v.get("status", "decline")))
         total = len(inj)
         verified = len(list((ROOT / "tests" / "e2e").glob("slice_libm_real_*.expected.log")))
         return (compiles, total, verified)
@@ -271,20 +294,87 @@ def _cq_provided_scoreboard():
         cq = {k: v for k, v in fb.items() if v.get("provider") == "cq"}
         if not cq:
             return None
-        covered = sum(1 for v in cq.values() if v.get("status", "decline") != "decline")
+        # Same predicate as row (2). No CQ-provided cell carries `no-body` today
+        # (all 6 are COMPILES), so this changes no number now — it is here so a
+        # future status cannot enter THIS numerator by default either.
+        covered = sum(1 for v in cq.values() if is_covered(v.get("status", "decline")))
         verified = len(cq_provided_cells())
         return (covered, len(cq), verified)
     except Exception:
         return None
 
+def mathh_union_scoreboard():
+    """THE HEADLINE (owner ruling 2026-08-22, bd `fhas`): whole-`math.h` coverage across
+    ALL routes — recognition keep-set + injection + CQ-PROVIDED + macros — over the full
+    183-cell modelled surface. Returns (covered, total, breakdown-list) or None.
+
+    *** THIS REVERSES A STANDING RULING, AND THE RULING IT REVERSES WAS RIGHT ABOUT A
+    REAL HAZARD. *** Until today a merged headline was a documented BUG here: the retired
+    `165/174` (95%) overclaim is what merging produced, and rows (1)/(3) move without any
+    compiler work (recognition is a fixed floor; CQ-PROVIDED moves only when a leaf is
+    authored). The owner asked for the merged number anyway, on 2026-08-22, and it is
+    honest under ONE phrasing and dishonest under another:
+
+        TRUE   "CQ compiles 158/183 math.h cells"      <- a user calling sqrt() works
+        FALSE  "CQ compiled openlibm's body for 158"   <- 42 have NO injectable body at
+                                                          all (Rule 18) and 6 use CQ's
+                                                          OWN leaf, not upstream's
+
+    So the mitigation is structural, not a promise: this function returns the BREAKDOWN
+    with the total, every caller prints them together, and the injection row keeps its
+    own separate number. A total printed WITHOUT its composition is the retired overclaim
+    wearing a new denominator — do not add such a call site.
+
+    Computed, never hard-coded (that is the bd `5ft3` / `aik2` lesson): joins the per-fn
+    probe rows in `results.json` with the injection census. A cell counts as covered iff
+    the route that owns it says so."""
+    try:
+        rows = None
+        for lib in json.loads(RESULTS.read_text()).get("libraries", []):
+            if "math" in lib.get("name", "").lower():
+                rows = lib.get("rows") or []
+        if not rows:
+            return None
+        fs = HERE / "full_surface"
+        o1 = fs / "full_census_O1.json"
+        cen = {}
+        for k, v in json.loads((o1 if o1.exists()
+                                else fs / "first_blocker_refreshed.json").read_text()).items():
+            cen[k.rsplit(".", 1)[0]] = v          # census key is "<spelling>.<width>"
+        acc = {}                                   # bucket -> [covered, total]
+        for r in rows:
+            v = cen.get(r.get("name"))
+            if v is not None:
+                b = "CQ-PROVIDED" if v.get("provider") == "cq" else "injection"
+                ok = is_covered(v.get("status", "decline"))
+            elif r.get("rollup") == "no-taintable-input":
+                b, ok = "nan (by design)", False   # nothing to taint; counted, not hidden
+            elif "macro" in (r.get("flags") or []):
+                b, ok = "type-generic macros", r.get("rollup") in ("verified", "accepted")
+            else:
+                # `partial` is fma{,f,l}: counted as covered, and SAID so below, because
+                # a bare 86% that quietly rests on 3 partial cells is the same defect in
+                # miniature. Dropping them gives 155/183.
+                b, ok = "recognition keep-set", r.get("rollup") in ("verified", "accepted",
+                                                                   "partial")
+            a = acc.setdefault(b, [0, 0])
+            a[1] += 1
+            a[0] += 1 if ok else 0
+        order = ["injection", "CQ-PROVIDED", "recognition keep-set",
+                 "type-generic macros", "nan (by design)"]
+        brk = [(b, acc[b][0], acc[b][1]) for b in order if b in acc]
+        return (sum(c for _, c, _ in brk), sum(t for _, _, t in brk), brk)
+    except Exception:
+        return None
+
 def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-CENSUS.md"):
-    """The DISJOINT coverage-scoreboard note (owner, emphatic 2026-07-09; never a merged
-    headline; bd libm-scoreboard-two-numbers). Emitted into the README badge, COVERAGE.md,
-    and the math.h detail page — `census_link` is the INJECTION-CENSUS.md path RELATIVE to
-    each. Since the Rule 18 amendment (owner 2026-07-31, bd `guwr`) this note carries
-    THREE disjoint rows, not two: recognition / injection / CQ-PROVIDED. The count is
-    derived from the census, so the prose says "DISJOINT rows" rather than hard-coding a
-    number that a fourth category would silently falsify."""
+    """The coverage-scoreboard note. Since the owner ruling of 2026-08-22 (bd `fhas`) it
+    LEADS with the whole-`math.h` union (`mathh_union_scoreboard`) and then prints the
+    rows as its COMPOSITION — they stay separately measured and separately quotable, and
+    the injection row keeps its own number, but they are no longer forbidden to sum.
+    Emitted into the README badge, COVERAGE.md, and the math.h detail page — `census_link`
+    is the INJECTION-CENSUS.md path RELATIVE to each. Every number here is derived, so a
+    new category cannot silently falsify a hard-coded one."""
     inj = _injection_scoreboard()
     if inj is not None:
         n, m = inj["injection_compiles"], inj["injection_candidates"]
@@ -320,14 +410,51 @@ def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-
                    f"body (Rule 18 amendment, bd `guwr`) — `sin`/`cos`/`tan` at f64+f80 "
                    f"only; it is **never merged into** the injection number and is not "
                    f"campaign progress.")
+        # bd `aik2`: the 4th term was `6 int-ret/str`, a PRE-`bcv4` FOSSIL. When 123
+        # cells were probed that reconciled — 42 + 123 + 12 + 6 = 183 — because the
+        # 6 excluded were 3 `nan` PLUS the 3 int-return `ilogb` cells the harness
+        # skipped. bd `bcv4` (2026-08-10) admitted those 3 into the probed set, so
+        # the probed count went 123 -> 126 and the excluded bucket 6 -> 3, leaving
+        # only `nan`. The term was never updated, so the printed decomposition summed
+        # to 186 against a stated 183-cell surface. Now: 120 + 6 + 42 + 12 + 3 = 183.
+        # Authoritative block: full_surface/README.md §"What `120` is".
         denom = (f"`{ftxt} injection + {ct} CQ-provided + 42 recognition + 12 macros + "
-                 f"6 int-ret/str`")
+                 f"3 nan`")
         nrows = "Three"
     else:
         cqrow, cqshort, nrows = None, "", "Two"
-        denom = f"`{ftxt} injectable + 42 recognition + 12 macros + 6 int-ret/str`"
-    head = (f"> **{nrows} DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — "
-            "never merged.**")
+        # Pre-amendment shape: the 6 CQ-PROVIDED cells are still inside `ftxt` here,
+        # so the same 183 reconciles as ftxt + 42 + 12 + 3.
+        denom = f"`{ftxt} injectable + 42 recognition + 12 macros + 3 nan`"
+    # THE HEADLINE — owner ruling 2026-08-22 (bd `fhas`). Built here so every consumer
+    # gets the total and its composition in the SAME sentence; see mathh_union_scoreboard
+    # for why that pairing is the whole mitigation and not decoration.
+    mu = mathh_union_scoreboard()
+    if mu is not None:
+        mc, mt, mbrk = mu
+        comp = " + ".join(f"{c}/{t} {b}" for b, c, t in mbrk)
+        headline = (f"> ## `math.h` coverage: **{mc}/{mt} cells ({round(100*mc/mt)}%)**\n"
+                    f">\n"
+                    f"> **Composition — {comp}.** The routes are measured SEPARATELY and "
+                    f"stay separately quotable; since the owner ruling of 2026-08-22 "
+                    f"(bd `fhas`) they may be summed, but **only with this composition "
+                    f"shown**. Read the total as *\"CQ compiles {mc} of the {mt} modelled "
+                    f"`math.h` cells\"* — which is true, a user calling `sqrt()` gets a "
+                    f"real lowering. It is **NOT** *\"CQ compiled openlibm's body {mc} "
+                    f"times\"*: the recognition cells have **no injectable body at all** "
+                    f"(Rule 18) and the CQ-PROVIDED cells use **CQ's own leaf**, not "
+                    f"upstream's. Sensitivity, so the figure is never quoted barer than it "
+                    f"is: **-3** if `fma{{,f,l}}`'s *partial* cells are excluded, and the "
+                    f"3 by-design `nan` cells arguably do not belong in a denominator at "
+                    f"all (nothing to taint). **The campaign number for COMPILER progress "
+                    f"remains the injection row alone** — rows (1) and (3) move with no "
+                    f"compiler work.\n>")
+    else:
+        headline = "> ## `math.h` coverage: **see the full-surface census**\n>"
+    head = (f"{headline}\n"
+            f"> **{nrows} separately-measured coverage scoreboards "
+            f"(bd `libm-scoreboard-two-numbers`) — summable ONLY as above, never "
+            f"silently blended.**")
     if short:
         return [f"{head} The `math.h` `Lowers`/`Verified` columns are the **recognition "
                 f"floor** — fns that lower because `clang -O1` emits a hardware-backed "
@@ -371,7 +498,16 @@ def scoreboard_lines(short=False, census_link="tools/library_coverage/INJECTION-
         f"measured SEPARATELY and printed apart on purpose — that they coincide today is a "
         f"MEASUREMENT, not an invariant. NB the census's **{ftxt}** is the INJECTABLE "
         f"subset of this table's **183-cell** surface ({denom}); it is a different, tighter "
-        f"denominator than the recognition columns below — not the same 174/183.",
+        f"denominator than the recognition columns below — not the same 174/183. "
+        f"*(That breakdown reconciles exactly — it summed to 186 until bd `aik2` replaced a "
+        f"pre-`bcv4` `6 int-ret/str` term with the `3 nan` that actually remains excluded. "
+        f"The authoritative decomposition is the block in "
+        f"`full_surface/README.md` §\"What `{ftxt}` is\". **The single source of truth for "
+        f"every figure on this line is the census run itself** (`full_census_O1.json`) — "
+        f"a line that asserts AUTHORITY is exactly the one to re-derive rather than trust, "
+        f"which is how the hand-copied variant of it sat three increments stale at `97/117` "
+        f"until 2026-08-22. This page is REGENERATED WHOLESALE, so corrections belong in "
+        f"`probe.py`, never in the rendered markdown.)*",
         *[x for x in cqitem if x],
         f"{4 if cqrow else 3}. **Authored-branchless doubles** — the earlier double-only "
         f"injection number, {injnum} of the `math.h` double surface "
@@ -1153,7 +1289,17 @@ def write_index(per_lib, agg):
          "> Regenerate: `python3 tools/library_coverage/probe.py run`", "",
          f"**All libraries — lowering-verified: {agg['verified']}/{agg['total']} "
          f"({agg['pct_verified']:.1f}%)** &nbsp;·&nbsp; backend-available: "
-         f"{agg['backend_available']}/{agg['total']} ({agg['pct_backend']:.1f}%).", "",
+         f"{agg['backend_available']}/{agg['total']} ({agg['pct_backend']:.1f}%).",
+         "",
+         # Two DIFFERENT instruments report a math.h number on this page and a reader
+         # meeting 86% and 25% for the same library needs the reason in the same breath.
+         "> *These two figures are the **per-function probe harness** (does the spelling "
+         "lower in a small C harness — the `Lowers`/`Verified`/`Backend-avail` columns "
+         "below), across ALL libraries. They are a DIFFERENT INSTRUMENT from the "
+         "`math.h` coverage headline that follows, which additionally counts the real "
+         "openlibm bodies the **source-injection census** compiles. Both are true of "
+         "`math.h`; they answer different questions, which is why neither replaces the "
+         "other.*", "",
          *scoreboard_lines(short=False, census_link="INJECTION-CENSUS.md"), "",
          "Coverage has **two orthogonal axes** (bd e4jv). **Lowering** = *every* applicable "
          "classical/quantum (C/Q) argument mixture lowers, links, runs, **and** matches a committed "
@@ -1195,13 +1341,36 @@ def write_index(per_lib, agg):
 
 README_START = "<!-- LIBRARY-COVERAGE:START -->"
 README_END = "<!-- LIBRARY-COVERAGE:END -->"
+# A SECOND generated region, for the `math.h` headline that leads the demonstrator
+# section (owner ruling 2026-08-22, bd `fhas`). It exists so that headline is DERIVED
+# like every other published figure: written by hand it would be a copy of a number that
+# moves every increment, which is precisely the defect bd `5ft3` (probe vs census
+# disagreeing by +1) and bd `aik2` (a decomposition term stale since bd `bcv4`) were.
+# Same lesson as `COVERAGE.md`: if a figure is not generated, it rots.
+HEADLINE_START = "<!-- MATHH-HEADLINE:START -->"
+HEADLINE_END = "<!-- MATHH-HEADLINE:END -->"
 
 def update_readme(per_lib, agg):
     if not README.exists():
         return
-    L = [f"**Standard-library quantum-coverage — lowering-verified: {agg['verified']}/{agg['total']} "
+    # The math.h union LEADS the badge (owner ruling 2026-08-22, bd `fhas`) — it is the
+    # number the owner wants quoted. The all-libraries probe-harness figures follow, and
+    # are explicitly named as the OTHER instrument so 86% and 25% cannot read as a
+    # contradiction about the same library.
+    mu = mathh_union_scoreboard()
+    L = []
+    if mu is not None:
+        mc, mt, mbrk = mu
+        L += [f"**`math.h` coverage: {mc}/{mt} cells ({round(100*mc/mt)}%)** — "
+              + " + ".join(f"{c}/{t} {b}" for b, c, t in mbrk)
+              + ". Summable only with that composition shown (bd `fhas`); the "
+                "COMPILER-progress number is the injection row alone.", ""]
+    L += [f"**Standard-library quantum-coverage — lowering-verified: {agg['verified']}/{agg['total']} "
          f"({agg['pct_verified']:.1f}%)** &nbsp;·&nbsp; backend-available: "
-         f"{agg['backend_available']}/{agg['total']} ({agg['pct_backend']:.1f}%).", "",
+         f"{agg['backend_available']}/{agg['total']} ({agg['pct_backend']:.1f}%) — "
+         f"*a DIFFERENT instrument: the per-function probe harness, across all libraries. "
+         f"It does not count injected openlibm bodies, which is why its `math.h` row is "
+         f"lower than the headline above.*", "",
          "Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches the "
          "reversible-template sequence. **Backend-available** = 🟩 `standard` (a correct reversible "
          "routine is directly obtainable) **and** it lowers — vs 🟨 `synthesizable` / 🟥 `open` "
@@ -1221,8 +1390,28 @@ def update_readme(per_lib, agg):
     badge = README_START + "\n" + "\n".join(L) + "\n" + README_END
     txt = README.read_text()
     if README_START in txt and README_END in txt:
-        README.write_text(txt.split(README_START)[0] + badge + txt.split(README_END)[1])
+        txt = txt.split(README_START)[0] + badge + txt.split(README_END)[1]
+        README.write_text(txt)
         print("updated README badge")
+    # The leading `math.h` headline (bd `fhas`), generated for the reason in the
+    # HEADLINE_START comment. Absent markers => nothing to do, never an error.
+    if mu is not None and HEADLINE_START in txt and HEADLINE_END in txt:
+        mc, mt, mbrk = mu
+        H = [f"> ### `math.h` coverage: **{mc}/{mt} cells ({round(100*mc/mt)}%)**", ">",
+             "> " + " · ".join(f"**{c}/{t}** {b}" for b, c, t in mbrk) + ".", ">",
+             f"> Read it as *\"CQ compiles {mc} of the {mt} modelled `math.h` cells\"* — a "
+             f"caller of `sqrt()` gets a real lowering. It is **not** *\"CQ compiled "
+             f"openlibm's body {mc} times\"*: the recognition cells have **no injectable "
+             f"body at all** (Rule 18) and the CQ-PROVIDED cells use **CQ's own reversible "
+             f"leaf**, not upstream's. **The number that tracks COMPILER progress is the "
+             f"injection row alone** — recognition and CQ-PROVIDED move without any "
+             f"compiler work. Computed, never hand-copied "
+             f"(`probe.mathh_union_scoreboard()`), and **-3** if `fma{{,f,l}}`'s *partial* "
+             f"cells are excluded. Owner ruling 2026-08-22, bd `fhas`; composition is "
+             f"mandatory wherever the total appears."]
+        head = HEADLINE_START + "\n" + "\n".join(H) + "\n" + HEADLINE_END
+        README.write_text(txt.split(HEADLINE_START)[0] + head + txt.split(HEADLINE_END)[1])
+        print("updated README math.h headline")
 
 def bless(lib_filter=None):
     """Write goldens for every currently-'accepted' cell from its captured trace, then

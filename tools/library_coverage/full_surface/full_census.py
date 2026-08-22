@@ -631,8 +631,14 @@ def main():
     # both.
     # ONE predicate, used everywhere "is this cell covered?" is asked, so the
     # numerator and the A/B audit below cannot drift apart (Rule 14).
-    COVERED_EXCL = ("decline", "no-body")
-    is_covered = lambda st: st not in COVERED_EXCL
+    # IT NOW LIVES IN `probe.py` (bd `5ft3`). This file used to define its own
+    # copy, and probe.py kept the loose `!= "decline"` form it was written to
+    # replace — so the two scoreboard producers disagreed by exactly the
+    # `no-body` cell (probe said 101/120, this said 100/120) and the README badge
+    # generator was the one that was wrong. Importing rather than mirroring is
+    # what makes "ONE predicate" true instead of aspirational.
+    COVERED_EXCL = P.COVERED_EXCL
+    is_covered = P.is_covered
     cov  = lambda d: sum(1 for v in d.values() if is_covered(v["status"]))
     icov, ntot = cov(inj), len(inj)
     ccov, ctot = cov(cq), len(cq)
