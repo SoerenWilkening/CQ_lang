@@ -20,9 +20,17 @@
  * recognizer to emit `i1 false`, but Rule 15's width-only ABI DROPS the immarg,
  * so the trace reads `cq_template_ctlz_i32(h10) -> h11` and would read
  * byte-identically had the pass emitted `i1 true`. The immarg is pinned at the
- * IR layer instead (ir-pass/test/lowering_ctlz_idiom_*.ll), which is exactly the
- * bd 8txa gap this project already records: the golden and the IR fixtures
- * witness different things, and neither alone is the contract.
+ * IR layer instead, which is exactly the bd 8txa gap this project already
+ * records: the golden and the IR fixtures witness different things, and neither
+ * alone is the contract.
+ *   NOTE (bd ww4c.4): when this comment was written the compensating control it
+ * names DID NOT EXIST — no `lowering_ctlz_idiom_*.ll` contained the string
+ * `i1 false`, and every positive CHECK asserted the LOWERED form, from which the
+ * immarg has already been dropped. It exists now: the `IMMARG` check prefix in
+ * lowering_ctlz_idiom_{unguarded_preshift,both_loops,chained}.ll reads the
+ * pre-`detectSpecializations` module dump on stderr and pins `i1 false`
+ * directly, mutant-validated against an `i1 true` doctoring. Cite those three
+ * files, not the glob.
  *
  * Seeds, and they are DERIVED from each loop
  * rather than hardcoded: loop A `sub -1044,m` (C0=-1043) and loop B

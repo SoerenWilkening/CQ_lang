@@ -278,11 +278,24 @@ Phase-11 freeze-surface movement.**
    `ctlz`/`cttz`/`abs` — so it reports *cannot be poison* **only** when the flag is a
    `ConstantInt` **zero**. `PredMuxFlatten.cpp:174-207` refuses to flatten any cone
    containing such an intrinsic when that predicate says it can be poison, and **LLVM's
-   canonical form emits `i1 true`**. Copying it verbatim declines the very cell this ticket
-   exists to unblock — and the enclosing `if (hx == 0)` diamond *must* flatten for the cell
-   to lower. The value is unaffected either way: `intrinsic_table.yaml:33-38` drops the
-   immarg and lowers the **total** function, so `ctlz(0) = N` honestly, and both `fwd` and
-   `_unc` use the same total `f`.
+   canonical form emits `i1 true`**. The value is unaffected either way:
+   `intrinsic_table.yaml:33-38` drops the immarg and lowers the **total** function, so
+   `ctlz(0) = N` honestly, and both `fwd` and `_unc` use the same total `f`.
+
+   > ⚠ **Inc-3 correction — the RULE STANDS, its JUSTIFICATION did not.** This item used to
+   > continue: *"Copying it verbatim declines the very cell this ticket exists to unblock —
+   > and the enclosing `if (hx == 0)` diamond must flatten for the cell to lower."*
+   > **Measured false, independently by two adversarial lenses:** both target cells rebuilt
+   > with `i1 true` lower **identically** — same exit code, same template count, lowered IR
+   > differing only in the `ModuleID` line. The reason is the one bd `ut09` records:
+   > PredMux's region claim is a **disjunction**, and the real cells' return merges carry
+   > **six** and **four** incomings, so they ride the `>2`-incoming disjunct and the
+   > poison-gated clause is never consulted for them. `i1 false` remains **required** — it
+   > keeps the chain admissible to the shielded-cone definedness proof on any claim path
+   > that *does* route through that clause (the 2-incoming merge of
+   > `…_guarded_no_preshift.ll` reaches it), and it is the honest spelling regardless — but
+   > it must not be quoted as the thing that unblocked `ilogb`. Nothing did; the cells were
+   > never blocked on it.
 2. **No `nsw` / `nuw` / `exact` on any emitted instruction.** They are poison-generating
    annotations; PredMux's neutralisation machinery has to strip them, and the closed form
    wants wrapping semantics anyway (the §4.2 oracle used them).
@@ -331,14 +344,14 @@ the two must not be assumed to coincide. Every condition below is checked on the
 
 | | condition | why it is not a formality |
 |---|---|---|
-| **Z1** | Innermost loop; **exactly one** latch, **exactly one** exiting block, and the exiting block **is** the latch (a rotated do-while); a unique preheader and a unique exit block. | §4.1 derives `f` for *this* control shape. Any other shape has a different closed form or none. |
+| **Z1** | ⚠ **Amended by Inc 3 — this row was stale in BOTH directions and the shipped fence is the authority.** **TOP-LEVEL** (`getParentLoop() == nullptr`), not merely "innermost"; **exactly one** latch, **exactly one** exiting block, and the exiting block **is** the latch (a rotated do-while); a unique **out-of-loop PREDECESSOR** — *not* a dedicated preheader, deliberately weaker so the guarded `s_ilogb.c:40` loop is not lost (§5.4, and `…_reject_two_preds.ll` is the decline fixture) — and a unique exit block. **Z1(c):** the exit must **not** be able to reach the header (`isPotentiallyReachable`). | §4.1 derives `f` for *this* control shape. Any other shape has a different closed form or none. **Z1(c) is the Inc-3 over-accept fix:** `getParentLoop()` is a *LoopInfo* property and LoopInfo models only **natural** loops, so an **irreducible** cycle around the header is invisible to it — a shift loop inside one was CLAIMED, putting the emitted gates inside a cycle. See `…_reject_irreducible_cycle.ll`. |
 | **Z2** | The header carries **exactly two** phis: a *shift recurrence* and a *counter*, each with exactly two incomings (preheader, latch). No other phi anywhere in the loop. | A third loop-carried value is a value we have no closed form for. |
 | **Z3** | The shift recurrence's latch value is `shl <recurrence>, 1` — opcode exactly `Shl`, amount a `ConstantInt` exactly `1`. **`ashr`, `lshr`, non-constant amounts and amounts ≠ 1 all decline.** | `ashr` never terminates toward the sign bit. Stride ≠ 1 has a *different* closed form, and 19v3 measured SCEV reporting 32 for strides 1/2/16/31 whose true maxima are 31/16/2/1 — a naive recognizer is wrong in both directions. |
 | **Z4** | The counter's latch value is `add <counter>, -1` — a `ConstantInt` exactly `-1`. The counter's preheader incoming is a `ConstantInt` `C0`. | Any other step is a different closed form (`C0 ± k·f`). See §5.2 for why this narrowness is scope and not evasion. |
 | **Z5** | The exiting condition is `icmp sgt <the recurrence's own latch value>, 0`. **The compared operand must BE that value** — not a value derived from it — and the constant must be `0` and the predicate exactly `sgt`. Both branch polarities are accepted by normalising the *continue* condition (Rule 9: `-O1` inverts). | **This is the fence that excludes the f80 family (§5.3), and it is also what guarantees termination.** A value repeatedly shifted left marches monotonically into the sign bit; a value *derived* from it has no such property. |
 | **Z6** | The loop contains **nothing else**: the two phis, the `shl`, the `add`, the `icmp`, the `br`. No calls, no memory access, no `alloca`/`gep`, no other instruction, no metadata-bearing side effect. | Far stricter than "no side effects", and it is exactly the measured shape. Relaxation is a later widening with its own review. |
 | **Z7** | Exactly one value escapes the loop, and it is the **counter's latch value**. The shift recurrence must have **no** out-of-loop user. | An escaping shift register would owe a second closed form (`v << f`). Deferred, not silently dropped. |
-| **Z8** | The shift recurrence's **preheader incoming is TAINTED**. | Quantum relevance, mirroring `LoopUnrollPrepass`'s U7. A purely classical loop is not ours to churn, and this is what keeps all 253 existing ctest entries byte-stable. |
+| **Z8** | The shift recurrence's **preheader incoming is TAINTED**. | Quantum relevance, mirroring `LoopUnrollPrepass`'s U7. A purely classical loop is not ours to churn. ⚠ **Inc-3 correction:** this cell used to add "and this is what keeps all 253 existing ctest entries byte-stable" — measured a **misattribution**. Z8 declines exactly **one** loop in the whole tree (`…_skip_classical.ll`, added by this branch); byte-stability is delivered 100 % by the structural fence Z1–Z7/Z9 and 0 % by Z8. It first carries load when §5.2's Z3/Z6/Z9 widenings land. |
 | **Z9** | The recurrence type is an integer of width in the shipped `ctlz` set **{i8, i16, i32, i64}**. `i1`, `i80`, `i128`, vectors and non-integers decline. | The mask needs a power-of-two width and a generated `ctlz` template at that width. |
 
 **Letter choice:** `Z` because every neighbouring letter is taken — `E1–E15` (the
@@ -413,8 +426,17 @@ Z-condition is left **byte-untouched** and keeps its existing loud owner — for
 shapes, `tryCaseA`'s **Q1** at `LoopLowering.cpp:1161`,
 `diagnoseUnderControl(TE, "loop")` → `cq controlled lowering: loop under quantum control`
 (`ControlDetect.cpp:53`). The recognizer **never diagnoses**, so it cannot turn an accept
-into a decline, and Rule 12's negative fixtures assert **that existing message**,
-character-for-character.
+into a decline, and Rule 12's negative fixtures assert **the existing message that owns the
+shape**, character-for-character.
+
+> ⚠ **Inc-3 correction.** This paragraph used to say the negatives assert *that* message —
+> Q1's — which is false for two of them, and the exceptions are the interesting ones:
+> `…_reject_multi_exit.ll` asserts `cq loop lowering: multiple early-break sites` (a
+> different loop owner claims it first), and `…_guarded_no_preshift.ll` asserts
+> `cq controlled lowering: control flow under quantum control` **after** the ctlz claim
+> succeeds — it is the one shipped fixture where the recognizer *does* claim and a
+> **different** owner then declines. Both are still loud, still character-for-character,
+> and still correct; what was wrong was the claim that Q1 is the universal owner.
 
 **Read this the right way, because it is the whole risk profile:** the failure mode of this
 pass is not a wrong decline. It is a **wrong claim**.
@@ -513,8 +535,14 @@ while (recognizeCtlzIdiomLoops(M, taint)) {
 
 The rationale is `LoopUnrollPrepass`'s, one item at a time:
 
-* **After the `promoteFp80Union` + PredMux fixpoints** — Z8 must read the same settled taint
-  the rest of the pipeline reads.
+* **After the `promoteFp80Union` + PredMux fixpoints** — Z8 must read taint that has
+  **settled through those two fixpoints**. ⚠ *Inc-3 correction: NOT "the same settled taint
+  the rest of the pipeline reads" — measured false. Z8 reads a **strictly smaller** set than
+  `lowerLoops`/`tryCaseA`, because **argument** taint is minted later by
+  `detectSpecializations`, which runs after this fixpoint and never re-triggers it. The
+  measured consequence is a real accept-set boundary: an idiom loop hosted in a **callee**,
+  reached only through a tainted call argument, is **never claimed** — it declines loudly
+  with `cq specialization: callee contains tainted control flow under quantum lift`.*
 * **Before `detectSpecializations`** — the spec-scan and any later clone must see the
   rewritten body.
 * **Before `lowerLoops`** — a claimed loop is gone before Q1 would decline it.
@@ -566,8 +594,10 @@ the only layer that links**.
 * Wired into `CQLoweringPass.cpp` at the §8 slot; `ir-pass/CMakeLists.txt` updated.
 * Full §10 lit matrix, **red-green per predicate** (Rule 12: write the fixture, watch it
   fail, implement minimally).
-* **Done:** `ctest -R ir-pass-lit` green; every existing fixture byte-stable (Z8 is what
-  guarantees this).
+* **Done:** `ctest -R ir-pass-lit` green; every existing fixture byte-stable. ⚠ *Inc-3
+  correction: not "Z8 is what guarantees this" — measured, Z8 declines exactly ONE loop in
+  the tree and it is a fixture this branch added. Byte-stability comes from the structural
+  fence Z1–Z7/Z9; nothing pre-existing has this shape at all.*
 
 ### Increment 2 — the two cells
 
@@ -607,8 +637,34 @@ Produce a written clearance in `docs/prd/phase-07-expressiveness/`, in the style
 
 ## 10. Test matrix (Rule 12 — red-green, every predicate)
 
+> ⚠ **AMENDED BY INCREMENT 3 (bd `ww4c.4`).** As written this section set a requirement no
+> fixture could meet and mis-filed one entry, and both were caught only when Inc 3 tried to
+> discharge it:
+>
+> 1. **"each must show … `i1 false`" was unsatisfiable at the layer these fixtures check.**
+>    A positive fixture FileChecks the pass's *stdout*, which is the fully lowered module —
+>    and Rule 15's width-only ABI has already dropped the immarg by then
+>    (`cq_template_ctlz_i32(i32 %h)` carries no flag). The requirement is now **met by a
+>    different mechanism**: `env CQ_SPEC_DBG=1 … 2> %t.spec.ll` captures the
+>    pre-`detectSpecializations` module on **stderr**, where the `@llvm.ctlz` call is still
+>    intact, and an `IMMARG` check prefix pins `i1 false` there. Stdout is byte-identical
+>    with the env var set (measured), so this costs **no extra `opt` spawn** and does not
+>    disturb the existing `CHECK`/`CLEAN` prefixes. Shipped in
+>    `…_{unguarded_preshift,both_loops,chained}.ll`, mutant-validated against `i1 true`.
+> 2. **`…_guarded_no_preshift.ll` is listed below as a POSITIVE and it is not one.** It
+>    ships as a `not` fixture: the recognizer *does* claim the loop (the fixture asserts the
+>    `CQ_CTLZ_DBG` line), and PredMux then declines the isolated 2-incoming
+>    const-fallthrough diamond via its W7 clause (e), so the module exits non-zero. It is
+>    the ACCEPT-then-different-owner-declines case, which is a category this table lacked.
+> 3. **Wildcards are not enough.** Every positive originally asserted the chain with
+>    `%{{…}}` operands, which pins symbols and literals but **not dataflow** — three genuine
+>    miscompiles of `c_exit` passed, including one that breaks the design at exactly `v == 0`
+>    (the mask drop), plus a `both_loops` variant that swaps which loop each constant
+>    terminates. All positives now use FileCheck **captures**, mutant-validated.
+
 **Positive lit fixtures** (`ir-pass/test/lowering_ctlz_idiom_*.ll`) — each must show the
-four-op chain, `i1 false`, and **no** residual loop:
+four-op chain **with captured operands**, the `i1 false` immarg **via the `IMMARG` stderr
+prefix**, and **no** residual loop:
 
 | fixture | pins |
 |---|---|

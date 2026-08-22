@@ -21,10 +21,12 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=CLEAN %s < %t.cqd0.ll
 ;
-; CHECK: call i32 @cq_template_shl_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
-; CHECK: call i32 @cq_template_ctlz_i32(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK: call i32 @cq_template_and_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 31)
-; CHECK: call i32 @cq_template_sub_i32_lh(i32 -1023, i32 %{{[a-zA-Z0-9_.]+}})
+; Operands CAPTURED, not wildcarded (bd ww4c.4).
+; CHECK: %[[S1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_shl_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
+; CHECK: %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ctlz_i32(i32 %[[S1]])
+; CHECK: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Z]], i32 31)
+; CHECK: %[[C:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i32_lh(i32 -1023, i32 %[[M]])
+; CHECK: call i32 @cqrt_measure_i32(i32 %[[C]])
 ;
 ; CLEAN-NOT: = phi
 ; CLEAN-NOT: br i1

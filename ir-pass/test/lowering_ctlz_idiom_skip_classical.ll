@@ -4,11 +4,22 @@
 ; byte-identical passthrough path, so this fixture proves a skip and not a no-op).
 ;
 ; Z8 requires the shift recurrence's preheader incoming to be TAINTED, mirroring
-; LoopUnrollPrepass's U7: a purely classical loop is not ours to churn. This is
-; the clause that keeps every existing ctest entry byte-stable, and it is the
-; cheapest one to get wrong — the recognizer is a pure structural matcher, and
+; LoopUnrollPrepass's U7: a purely classical loop is not ours to churn. It is the
+; cheapest clause to get wrong — the recognizer is a pure structural matcher, and
 ; structure alone does not distinguish openlibm's exponent scan from any other
 ; program's bit twiddling.
+;
+; *** BUT DO NOT CALL Z8 "the clause that keeps every existing ctest entry
+; byte-stable", which is what this header used to say. bd ww4c.4 measured that a
+; misattribution: across every module the pass can see — 1093 ir-pass fixtures,
+; 245 CQ.h e2e sources, 19 classical lib TUs — the recognizer emits ZERO claims,
+; and Z8 declines EXACTLY ONE loop in the entire tree: THIS ONE, which this
+; branch itself added. Byte-stability is delivered 100% by the structural fence
+; Z1-Z7/Z9 (nothing pre-existing has this shape at all) and 0% by Z8.
+; That is not an argument for deleting Z8 — it is the opposite. This fixture is
+; the ONLY thing standing between Z8 and being silently unexercised, and whoever
+; widens Z3/Z6/Z9 per PRD §5.2 is the first person for whom Z8 actually carries
+; load. It has to still be here, and still green, when they arrive. ***
 ;
 ; Note what makes this fixture different from every other negative here: it
 ; asserts NO DIAGNOSTIC AT ALL. The recognizer is accept-only and never speaks;

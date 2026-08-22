@@ -11,14 +11,44 @@
 ; turn twice, with a full re-propagate in between. TWO claims, two distinct
 ; emitted constants (-1044 and -1023), one function.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; ONE pass invocation; `CQ_SPEC_DBG=1` adds no spawn and captures the
+; pre-`detectSpecializations` module on stderr, where the immarg is still visible
+; (stdout is byte-identical with the env var set — measured, bd ww4c.4).
+; RUN: env CQ_SPEC_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.spec.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=CLEAN %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=IMMARG %s < %t.spec.ll
 ;
-; Two independent closed forms, one per loop. Order-insensitive: each constant is
-; unique to its loop, so these assert presence, not sequence.
-; CHECK-DAG: call i32 @cq_template_sub_i32_lh(i32 -1044, i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK-DAG: call i32 @cq_template_sub_i32_lh(i32 -1023, i32 %{{[a-zA-Z0-9_.]+}})
+; PRD §4.5(1): BOTH claims emit the literal `i1 false`, not just the first. LLVM's
+; canonical form for this idiom family emits `i1 true`, which PoisonFacts would
+; then report as can-be-poison; this is the only layer that can see the immarg
+; (Rule 15's width-only ABI drops it before the lowered form on stdout exists).
+; IMMARG: call i32 @llvm.ctlz.i32(i32 %{{[a-zA-Z0-9_.]+}}, i1 false)
+; IMMARG: call i32 @llvm.ctlz.i32(i32 %{{[a-zA-Z0-9_.]+}}, i1 false)
+; IMMARG-NOT: call i32 @llvm.ctlz.i32(i32 %{{[a-zA-Z0-9_.]+}}, i1 true)
+;
+; Two independent closed forms, one per loop, each CAPTURED end to end.
+;
+; *** THESE WERE `CHECK-DAG` ON THE `sub` ALONE UNTIL Inc 3 (bd ww4c.4), AND THAT
+; WAS BLIND TWICE OVER. With wildcard operands, (a) any mis-wiring of a chain
+; passed, and (b) SWAPPING WHICH LOOP EACH CONSTANT TERMINATES — the right
+; constants attached to the wrong loops, a genuine miscompile — also passed,
+; because DAG order-insensitivity is exactly what makes that mutant invisible.
+; Capturing each chain separately ties the constant to its OWN `and` result, and
+; the emission order is deterministic, so ordered CHECKs are correct here. ***
+;
+; Loop B (the unguarded, pre-shifted `hx` loop, C0 = -1022 -> -1023):
+; CHECK: %[[PRE:[a-zA-Z0-9_.]+]] = call i32 @cq_template_shl_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 11)
+; CHECK: %[[BS1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_shl_i32_hl(i32 %[[PRE]], i32 1)
+; CHECK: %[[BZ:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ctlz_i32(i32 %[[BS1]])
+; CHECK: %[[BM:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[BZ]], i32 31)
+; CHECK: call i32 @cq_template_sub_i32_lh(i32 -1023, i32 %[[BM]])
+;
+; Loop A (the guarded, un-pre-shifted `lx` loop, C0 = -1043 -> -1044):
+; CHECK: %[[AS1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_shl_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 1)
+; CHECK: %[[AZ:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ctlz_i32(i32 %[[AS1]])
+; CHECK: %[[AM:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[AZ]], i32 31)
+; CHECK: call i32 @cq_template_sub_i32_lh(i32 -1044, i32 %[[AM]])
 ;
 ; The intrinsic CALL is gone (the now-unused `declare` is left behind, as it is
 ; for every other lowered intrinsic — cf. lowering_intrinsic_ctlz_i32.ll).

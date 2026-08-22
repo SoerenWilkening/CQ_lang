@@ -226,9 +226,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // (C0-1) - (ctlz(v<<1) & (N-1)) — four already-linked template ops, no new
   // frozen symbol. Runs HERE, on the same reasoning as the unroll pre-pass
   // above and for one reason of its own: AFTER the fp80-union + PredMux
-  // fixpoints (Z8 must read the SAME settled taint the rest of the pipeline
-  // reads — for the ld80 cells that taint arrives through the union
-  // promotion), BEFORE `detectSpecializations` (the spec-scan and any later
+  // fixpoints (Z8 must read taint that has SETTLED through them — for the ld80
+  // cells that taint arrives through the union promotion; NOT "the same taint
+  // the rest of the pipeline reads", which bd ww4c.4 measured false: argument
+  // taint is minted later by `detectSpecializations`, so a callee-hosted idiom
+  // is never claimed — see CtlzIdiomPrepass.cpp), BEFORE `detectSpecializations`
+  // (the spec-scan and any later
   // clone must see the rewritten body), and BEFORE `lowerLoops` (a claimed
   // loop is gone before Q1 would decline it). Same one-claim-per-call +
   // full-re-propagate + nested-PredMux-fixpoint shape: the claim mints tainted

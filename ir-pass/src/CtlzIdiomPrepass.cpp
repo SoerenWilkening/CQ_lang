@@ -8,9 +8,19 @@
 // MANDATORY, WI-1.12): immediately after the `unrollConstTripLoops` fixpoint and
 // before `detectSpecializations`. One item at a time, all four reasons load-
 // bearing:
-//   * AFTER the promoteFp80Union + PredMux fixpoints — Z8 must read the SAME
-//     settled taint the rest of the pipeline reads, and the taint reaching one
-//     of these recurrences arrives through the ld80 union promotion;
+//   * AFTER the promoteFp80Union + PredMux fixpoints — Z8 must read taint that
+//     has SETTLED through those two fixpoints, because the taint reaching one of
+//     these recurrences arrives through the ld80 union promotion;
+//     *** BUT NOT "the SAME settled taint the rest of the pipeline reads", which
+//     is how this line read until bd ww4c.4 measured it FALSE. Z8 reads a
+//     STRICTLY SMALLER set than `lowerLoops`/`tryCaseA` do: ARGUMENT taint is
+//     minted later, by `detectSpecializations`, which runs AFTER this fixpoint
+//     and never re-triggers it. The measured consequence is a real accept-set
+//     boundary: an idiom loop hosted in a CALLEE, whose taint arrives only
+//     through the call argument, is NEVER CLAIMED — it declines loudly instead
+//     with `cq specialization: callee contains tainted control flow under
+//     quantum lift` on the clone. Safe (over-decline), coverage-limiting, and
+//     tracked; do not quote this placement as giving Z8 pipeline-wide taint. ***
 //   * BEFORE `detectSpecializations` — the spec-scan and any later clone must
 //     see the rewritten body;
 //   * BEFORE `lowerLoops` — a claimed loop is gone before Q1 would decline it;
@@ -48,6 +58,7 @@
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -94,9 +105,19 @@ bool isShippedCtlzWidth(unsigned Bits) {
   return Bits == 8 || Bits == 16 || Bits == 32 || Bits == 64;
 }
 
-// Every use of `I` is inside `L`. A non-Instruction user (a ConstantExpr, a
-// metadata or block-address use) is unprovable here and declines — PRD §7 item 3
-// names exactly this as a residual risk, so it is answered conservatively.
+// Every use of `I` is inside `L`.
+//
+// The `!UI` branch is DEFENSIVE ONLY and is UNREACHABLE — corrected bd ww4c.4,
+// which found this comment previously claimed it "answers PRD §7 item 3"
+// conservatively. It answers nothing, because none of the classes it names can
+// appear in an Instruction's `users()` list: a Constant may only reference other
+// Constants in LLVM, so a ConstantExpr cannot use an Instruction; metadata uses
+// go through `ValueAsMetadata`, not the use-list; and a `BlockAddress` names a
+// BasicBlock, never an Instruction. LLVM-19 debug records are likewise NOT users
+// and NOT instructions (see Z6). The branch is kept because it costs one
+// predicate and an unreachable decline is free — but it must not be cited as the
+// mitigation for anything. PRD §7 item 3's actual mitigation is Z6's exact
+// six-instruction identity check plus Z7's escape requirement.
 bool noEscapingUse(Instruction *I, Loop *L) {
   for (User *U : I->users()) {
     auto *UI = dyn_cast<Instruction>(U);
@@ -108,7 +129,8 @@ bool noEscapingUse(Instruction *I, Loop *L) {
 
 // The Z1-Z9 fence. PURE ANALYSIS by SSA-value identity on the still-unmutated
 // IR; a false return leaves the loop byte-untouched for its existing owner.
-bool fencePasses(Loop *L, const TaintSet &taint, CtlzIdiom &R) {
+bool fencePasses(Loop *L, const TaintSet &taint, DominatorTree &DT,
+                 CtlzIdiom &R) {
   // ── Z1 — the rotated do-while shape ────────────────────────────────────
   // TOP-LEVEL, not merely innermost. `getParentLoop()` is the stricter half and
   // it is deliberate: every target loop measured in PRD §3.1 is top-level, so
@@ -244,10 +266,27 @@ bool fencePasses(Loop *L, const TaintSet &taint, CtlzIdiom &R) {
   // ── Z6 — the loop contains these six instructions and no seventh ───────
   // Note this is an IDENTITY check, not a classification: every instruction must
   // BE one of the five already recognized plus the branch. So a `store`, a call,
-  // an `alloca`, a gep, a second compare or an old-format `llvm.dbg.value`
-  // intrinsic all decline without needing their own clause. (LLVM 19's debug
-  // records are not instructions and so do not appear here at all; the old
-  // intrinsic spelling declines, which is over-safe and correct.)
+  // an `alloca`, a gep or a second compare all decline without needing their own
+  // clause.
+  //
+  // DEBUG INFO IS INVISIBLE HERE, IN BOTH SPELLINGS — corrected bd ww4c.4, and
+  // found independently by three lenses. This comment used to add "or an
+  // old-format `llvm.dbg.value` intrinsic" to that list and assert that "the old
+  // intrinsic spelling declines, which is over-safe and correct." MEASURED
+  // FALSE: LLVM 19 auto-upgrades `llvm.dbg.value`/`llvm.dbg.declare` into
+  // `#dbg_value` DbgVariableRecords at .ll-parse and bitcode-read time, BEFORE
+  // any pass runs, so the old spelling never reaches this walk as a seventh
+  // instruction and a loop carrying it is CLAIMED, not declined.
+  //
+  // That outcome is SOUND, and is the reason this is a documentation fix rather
+  // than a code one: debug records carry no semantics, and LLVM's own erase-time
+  // salvage handles them — measured on a loop with records on both recurrences,
+  // the erased `%sh` becomes `#dbg_value(i32 undef, ...)` (the standard
+  // "optimized out") and the counter phi becomes its RAUW'd incoming, with
+  // `opt -passes=verify` clean. It is arguably BETTER than the documented
+  // behaviour, since no coverage is lost in a debug build.
+  // What must not survive is the framing: Z6 is DEBUG-BLIND BY CONSTRUCTION and
+  // may not be quoted as declining anything on debug-info grounds.
   unsigned Seen = 0;
   for (Instruction &I : *H) {
     if (&I != R.ShiftPhi && &I != R.CountPhi && &I != R.Shl && &I != R.Dec &&
@@ -297,6 +336,39 @@ bool fencePasses(Loop *L, const TaintSet &taint, CtlzIdiom &R) {
   // costs one predicate — defence in depth is the deliberate posture here (PRD
   // §5.1), given a loop campaign that is 3-for-3 at finding over-accepts.
   if (H->hasAddressTaken())
+    return false;
+
+  // ── Z1(c) — NOT INSIDE ANY CYCLE, not merely "top-level per LoopInfo" ──
+  // THIS CLAUSE IS THE bd ww4c.4 OVER-ACCEPT FIX, and it is the fourth
+  // consecutive adversarial round in the loop campaign to find one. Z1's
+  // `getParentLoop()` test above is a LOOPINFO property, and LoopInfo models
+  // only NATURAL loops — a back edge u->v where v dominates u. An IRREDUCIBLE
+  // cycle has no back edge, so LoopInfo reports no loop for it at all:
+  // `getParentLoop()` returns null and `isInnermost()` is true even though the
+  // header sits inside a cycle. Measured witness (bd ww4c.4,
+  // lowering_ctlz_idiom_reject_irreducible_cycle.ll): with `entry` branching to
+  // BOTH `A` and `B` neither dominates the other, so the cycle
+  // A -> pre -> scan -> out -> B -> A is irreducible, `opt -passes=print<loops>`
+  // reports exactly "Loop at depth 1 containing: %scan", and the fence claimed
+  // it — putting the four emitted gates INSIDE the cycle, re-executed and
+  // re-allocating a rail on every traversal. That is precisely the class Z1's
+  // own comment above declares unreviewed ("an outer loop carrying tainted
+  // values across iterations, adjudicated by owners nobody looked at for this"),
+  // and the A/B twin proves the transition is real: changing `shl 1` to `shl 2`
+  // — one token, taking the loop off-fence — makes the SAME module decline
+  // loudly at Q1. A claim that converts a loud decline into an unreviewed accept
+  // is the Prime Directive's one unforgivable direction.
+  //
+  // Reachability is the exact test rather than a proxy: H's only predecessors
+  // are PH and H itself (Z1/Z2), so H is inside some larger cycle IFF control
+  // can get from the exit back to the header. `isPotentiallyReachable` answers
+  // that on the CFG itself, so it is blind to nothing — deliberately WITHOUT
+  // `LoopInfo`, since LoopInfo's natural-loop blindness is the entire defect
+  // (passing `LI` here would reintroduce it). `DT` is exact and only speeds the
+  // query. A genuine parent loop is caught here too, redundantly with
+  // `getParentLoop()` — belt and braces, and it costs one bounded CFG walk on a
+  // candidate that has already passed every other clause.
+  if (isPotentiallyReachable(Ex, H, /*ExclusionSet=*/nullptr, &DT))
     return false;
 
   R.L = L;
@@ -394,7 +466,7 @@ bool recognizeCtlzIdiomLoops(Module &M, TaintSet &taint) {
 
     for (Loop *L : LI.getLoopsInPreorder()) {
       CtlzIdiom R;
-      if (!fencePasses(L, taint, R))
+      if (!fencePasses(L, taint, DT, R))
         continue;
       if (::getenv("CQ_CTLZ_DBG"))
         errs() << "CQ_CTLZ_DBG: claiming shift-count loop in @" << F.getName()

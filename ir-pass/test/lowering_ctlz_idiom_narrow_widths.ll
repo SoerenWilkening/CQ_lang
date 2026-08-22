@@ -16,15 +16,19 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=CLEAN %s < %t.cqd0.ll
 ;
-; CHECK: call i32 @cq_template_shl_i8_hl(i32 %{{[a-zA-Z0-9_.]+}}, i8 1)
-; CHECK: call i32 @cq_template_ctlz_i8(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK: call i32 @cq_template_and_i8_hl(i32 %{{[a-zA-Z0-9_.]+}}, i8 7)
-; CHECK: call i32 @cq_template_sub_i8_lh(i8 4, i32 %{{[a-zA-Z0-9_.]+}})
+; Operands CAPTURED, not wildcarded (bd ww4c.4). This matters MOST here: i8/i16
+; have no e2e golden, so lit is the only layer that pins these two widths at all.
+; CHECK: %[[S8:[a-zA-Z0-9_.]+]] = call i32 @cq_template_shl_i8_hl(i32 %{{[a-zA-Z0-9_.]+}}, i8 1)
+; CHECK: %[[Z8:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ctlz_i8(i32 %[[S8]])
+; CHECK: %[[M8:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i8_hl(i32 %[[Z8]], i8 7)
+; CHECK: %[[C8:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i8_lh(i8 4, i32 %[[M8]])
+; CHECK: call i8 @cqrt_measure_i8(i32 %[[C8]])
 ;
-; CHECK: call i32 @cq_template_shl_i16_hl(i32 %{{[a-zA-Z0-9_.]+}}, i16 1)
-; CHECK: call i32 @cq_template_ctlz_i16(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK: call i32 @cq_template_and_i16_hl(i32 %{{[a-zA-Z0-9_.]+}}, i16 15)
-; CHECK: call i32 @cq_template_sub_i16_lh(i16 -9, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK: %[[S16:[a-zA-Z0-9_.]+]] = call i32 @cq_template_shl_i16_hl(i32 %{{[a-zA-Z0-9_.]+}}, i16 1)
+; CHECK: %[[Z16:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ctlz_i16(i32 %[[S16]])
+; CHECK: %[[M16:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i16_hl(i32 %[[Z16]], i16 15)
+; CHECK: %[[C16:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i16_lh(i16 -9, i32 %[[M16]])
+; CHECK: call i16 @cqrt_measure_i16(i32 %[[C16]])
 ;
 ; CLEAN-NOT: = phi
 ; CLEAN-NOT: br i1

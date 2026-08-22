@@ -30,15 +30,22 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=CLEAN %s < %t.cqd0.ll
 ;
-; CHECK: call i32 @cq_template_shl_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 1)
-; CHECK: call i32 @cq_template_ctlz_i64(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK: call i32 @cq_template_and_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 63)
-; CHECK: call i32 @cq_template_sub_i64_lh(i64 99, i32 %{{[a-zA-Z0-9_.]+}})
+; Operands CAPTURED, not wildcarded (bd ww4c.4). The i64 row is the one the PRD
+; explicitly does NOT claim as exhaustively verified (§4.2), so its wiring is
+; worth pinning hardest.
+; CHECK: %[[S1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_shl_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 1)
+; CHECK: %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ctlz_i64(i32 %[[S1]])
+; CHECK: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[Z]], i64 63)
+; CHECK: %[[C:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i64_lh(i64 99, i32 %[[M]])
+; CHECK: call i64 @cqrt_measure_i64(i32 %[[C]])
 ;
 ; CHECK-LABEL: @widened_seed(
-; CHECK: call i32 @cq_template_ctlz_i64(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK: call i32 @cq_template_and_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 63)
-; CHECK: call i32 @cq_template_sub_i64_lh(i64 -1023, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK: %[[WS1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_shl_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 1)
+; CHECK: %[[WZ:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ctlz_i64(i32 %[[WS1]])
+; CHECK: %[[WM:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[WZ]], i64 63)
+; CHECK: %[[WC:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i64_lh(i64 -1023, i32 %[[WM]])
+; CHECK: %[[WT:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[WC]])
+; CHECK: call i32 @cqrt_measure_i32(i32 %[[WT]])
 ;
 ; CLEAN-NOT: = phi
 ; CLEAN-NOT: br i1

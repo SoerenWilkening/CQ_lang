@@ -60,9 +60,9 @@ a committed golden trace.
 > reports **32/32 injection-covered**, but read it precisely: those 32 are **hand-authored
 > branchless bodies** (`branchless/`, bd `3c6m.10`) for the **double** surface, deliberately
 > written to bypass the open lowering levers. The [**full-surface census**](tools/library_coverage/full_surface/)
-> injects the **real off-the-shelf openlibm** at every width and, as of **2026-07-31**
-> (O1 baseline, bd `guwr`), compiles **97/117 upstream-injectable cells (83%)** —
-> **all 97 of which are also VERIFIED** (a committed `slice_libm_real_*` golden that
+> injects the **real off-the-shelf openlibm** at every width and, as of **2026-08-22**
+> (O1 baseline, bd `ww4c.3`), compiles **100/120 upstream-injectable cells (83%)** —
+> **all 100 of which are also VERIFIED** (a committed `slice_libm_real_*` golden that
 > links, runs and byte-matches at the true `clang -O1 → cq-lowering` ship floor). The
 > two numbers are still measured apart and never merged; that they coincide today is a
 > MEASUREMENT, not an invariant. The remaining **20 decline** on the tracked levers:
@@ -81,7 +81,10 @@ a committed golden trace.
 > campaign progress** — it moves only when a leaf is authored.
 > **The injection numerator did not move: 97 before the amendment, 97 after.** All six
 > cells that left were declines, so the earlier `97/123 (79%)` became `97/117 (83%)` by
-> **denominator alone**. Track the numerator.
+> **denominator alone**. Track the numerator. *(It has moved since, on compiler work:
+> `97 → 98` (bd `k710`, `nexttowardf.f32`) and `98 → 100` (bd `ww4c.3`, `ilogb.f64` +
+> `ilogbf.f32`), while bd `bcv4` took the denominator `117 → 120` by entering three
+> never-probed cells — hence **100/120** today.)*
 > Read the two numbers precisely (Rule 2, bd `libm-scoreboard-two-numbers`):
 > *injection-covered* and *verified* are measured SEPARATELY and merely happen to coincide
 > right now — and **"verified" certifies the LOWERING, not the unitary**. The runtime is
@@ -113,7 +116,7 @@ Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches t
 | [`math.h`](tools/library_coverage/coverage/mathh.md) | 52/183 (28%) | 45/183 (25%) | 25/183 (14%) | 51 | 45 | 84 | 3 |
 | [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 3/39 (8%) | 6 | 0 | 0 | 8 |
 
-> **Three DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **97/117 injection-covered (83%), 97 verified** of the reconciled 117-cell surface ([full-depth census](tools/library_coverage/FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`117 injection + 6 CQ-provided + 42 recognition + 12 macros + 6 int-ret/str`). A **third** row, **CQ-PROVIDED** (**6/6 CQ-provided (6 with a committed e2e golden)**), covers functions whose reversible leaf **CQ ships itself** and injects instead of upstream's body (Rule 18 amendment, bd `guwr`) — `sin`/`cos`/`tan` at f64+f80 only; it is **never merged into** the injection number and is not campaign progress. The double-only authored-branchless number (**32/32**, [source-injection census](tools/library_coverage/INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
+> **Three DISJOINT coverage scoreboards (bd `libm-scoreboard-two-numbers`) — never merged.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **100/120 injection-covered (83%), 100 verified** of the reconciled 120-cell surface ([full-depth census](tools/library_coverage/FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`120 injection + 6 CQ-provided + 42 recognition + 12 macros + 6 int-ret/str`). A **third** row, **CQ-PROVIDED** (**6/6 CQ-provided (6 with a committed e2e golden)**), covers functions whose reversible leaf **CQ ships itself** and injects instead of upstream's body (Rule 18 amendment, bd `guwr`) — `sin`/`cos`/`tan` at f64+f80 only; it is **never merged into** the injection number and is not campaign progress. The double-only authored-branchless number (**32/32**, [source-injection census](tools/library_coverage/INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
 
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->

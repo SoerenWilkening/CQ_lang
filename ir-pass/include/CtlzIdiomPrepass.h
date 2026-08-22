@@ -31,13 +31,32 @@
 // mint, no controlled copy and no `cqrt_free` appear anywhere in this file.
 //
 // THREE EMISSION RULES THAT ARE NOT OPTIONAL (PRD §4.5):
-//   1. `is_zero_poison` MUST be the literal `i1 false`. PoisonFacts.cpp:27-38
-//      (`curatedIntrinsicCanBePoison`) returns `!Flag || !Flag->isZero()`, so
-//      PredMuxFlatten:174-207 accepts a cone containing ctlz/cttz/abs ONLY when
-//      the immarg is a ConstantInt ZERO — and LLVM's canonical form emits
-//      `i1 true`. Copying it verbatim DECLINES the very cell this pass exists to
-//      unblock. (The VALUE is honest either way: intrinsic_table.yaml:33-38
-//      drops the immarg and lowers the TOTAL function.)
+//   1. `is_zero_poison` MUST be the literal `i1 false`.
+//      `curatedIntrinsicCanBePoison` (PoisonFacts.cpp) returns
+//      `!Flag || !Flag->isZero()`, so PredMuxFlatten accepts a cone containing
+//      ctlz/cttz/abs ONLY when the immarg is a ConstantInt ZERO — and LLVM's
+//      canonical form for this idiom family emits `i1 true`.
+//      *** CORRECTED bd ww4c.4. This rule previously justified itself with
+//      "copying it verbatim DECLINES the very cell this pass exists to unblock."
+//      THAT IS MEASURABLY FALSE, found independently by two adversarial lenses:
+//      both target cells were rebuilt with `i1 true` and lower IDENTICALLY —
+//      same exit code, same template count, lowered IR differing only in the
+//      ModuleID line. The reason is the one bd ut09 records: PredMux's region
+//      claim is a DISJUNCTION, and the real cells' return merges carry SIX and
+//      FOUR incomings, so they ride the `>2`-incoming disjunct and the
+//      poison-gated clause is never consulted for them.
+//      So `i1 false` is a CONSERVATIVE choice, not a demonstrated unblocker: it
+//      keeps the chain admissible to the shielded-cone definedness proof on any
+//      claim path that DOES route through that clause (a 2-incoming merge — see
+//      lowering_ctlz_idiom_guarded_no_preshift.ll, which reaches it), and it is
+//      the honest spelling regardless. KEEP EMITTING IT — the correction is to
+//      the reason, not the rule. ***
+//      (The VALUE is honest either way: intrinsic_table.yaml drops the immarg
+//      and lowers the TOTAL function, so `ctlz(0) = N` in both fwd and `_unc`.)
+//      Pinned directly by the `IMMARG` prefix in
+//      lowering_ctlz_idiom_{unguarded_preshift,both_loops,chained}.ll, which
+//      read the pre-`detectSpecializations` dump on stderr — the ONLY layer at
+//      which the immarg is observable, since Rule 15's width-only ABI drops it.
 //   2. NO `nsw`/`nuw`/`exact` on anything emitted — they are poison-generating
 //      annotations PredMux would have to neutralise, and the closed form wants
 //      wrapping semantics anyway (the 2^32 oracle used them).
@@ -116,6 +135,20 @@ struct TaintSet;
 //      to reach (Rule 17's exact failure mode), and manufacturing a preheader
 //      with `simplifyLoop` would mutate loops the fence then rejects, breaking
 //      the accept-only contract. Nothing is inserted into that block anyway.
+//      Z1(c) NOT INSIDE ANY CYCLE — `isPotentiallyReachable(exit, header)` must
+//      be FALSE. Added by bd ww4c.4 after the Inc-3 Rule-13 round found a real
+//      OVER-ACCEPT: "top-level" was tested with `getParentLoop()`, a LoopInfo
+//      property, and LoopInfo models only NATURAL loops (a back edge u->v where
+//      v dominates u). An IRREDUCIBLE cycle has no back edge, so LoopInfo
+//      reports no loop for it, `getParentLoop()` is null and `isInnermost()` is
+//      true — and a shift loop sitting inside one was CLAIMED, putting the four
+//      emitted gates inside a cycle that re-executes them and re-allocates a
+//      rail on every traversal. The A/B twin proved the transition was real: one
+//      token (`shl 1` -> `shl 2`) made the same module decline loudly. See
+//      lowering_ctlz_idiom_reject_irreducible_cycle.ll. The clause is stated as
+//      REACHABILITY, not as a LoopInfo query, precisely because LoopInfo's
+//      blindness is the defect — and it is deliberately NOT given `LI`, which
+//      would reintroduce it.
 //   Z2 the header carries EXACTLY two phis — a shift recurrence and a counter —
 //      each with exactly two incomings, from the preheader and from the latch.
 //      A third loop-carried value is a value we have no closed form for.
@@ -148,8 +181,18 @@ struct TaintSet;
 //      counter has at least one. An escaping shift register would owe a second
 //      closed form (v << f) — deferred, not silently dropped.
 //   Z8 the shift recurrence's preheader incoming is TAINTED (mirroring
-//      `LoopUnrollPrepass`'s U7). A purely classical loop is not ours to churn,
-//      and this is the clause that keeps every existing ctest entry byte-stable.
+//      `LoopUnrollPrepass`'s U7). A purely classical loop is not ours to churn.
+//      *** DO NOT READ Z8 AS "the clause that keeps the suite byte-stable" —
+//      that was this header's wording and bd ww4c.4 measured it a
+//      MISATTRIBUTION. Across every module the pass can see (1093 ir-pass
+//      fixtures + 245 CQ.h e2e sources + 19 classical lib TUs) the recognizer
+//      emits ZERO claims, and Z8 declines EXACTLY ONE loop in the whole tree —
+//      `lowering_ctlz_idiom_skip_classical.ll`, a fixture this branch itself
+//      added. Byte-stability is therefore delivered 100% by the STRUCTURAL
+//      fence Z1-Z7/Z9 (nothing pre-existing has this shape at all) and 0% by
+//      Z8. This matters for exactly one reader: whoever widens Z3/Z6/Z9 per
+//      §5.2 is the first person for whom Z8 becomes load-bearing, and the old
+//      sentence would have told them it was already settled. ***
 //   Z9 the recurrence is an integer of a width in the SHIPPED ctlz set
 //      {i8,i16,i32,i64} (tools/intrinsic_table.yaml:136), and the counter is at
 //      that SAME width. i1/i80/i128, vectors and non-integers decline: the mask
@@ -157,13 +200,43 @@ struct TaintSet;
 //      `nm` confirms ctlz stops at i64 while and/shl/sub run to i128 — a fence
 //      keyed on the arithmetic alone would over-accept into a link failure.
 //
-// Z9's same-width clause is the one place this is NARROWER than PRD §5.: a
-// counter at a different width would need a zext/trunc whose own reversibility
-// and uncompute story is unreviewed surface, and all three target loops carry
-// both at i32. Like PRD §5.2's other narrowings (stride != 1, step != -1,
-// non-empty body, escaping shift register, i128/i80) it is an ADDITIVE widening
-// owed its own Rule-12/13 round, and it is scope rather than evasion under Rule
-// 17 because the target loops sit INSIDE the accept set, not outside it.
+// WHERE THIS FENCE DIFFERS FROM PRD §5's TABLE — all of it, in both directions.
+// *** This list previously read "Z9's same-width clause is the one place this is
+// NARROWER than PRD §5". bd ww4c.4 measured that false four ways over, and one
+// of them is a WIDENING, which is the direction that can actually hurt. The
+// count is given in full here because the design of record is what a later
+// reviewer is briefed from, and a reviewer briefed from a stale §5 attacks the
+// wrong fence. ***
+//
+// NARROWER than PRD §5:
+//   * Z1's TOP-LEVEL clause (`getParentLoop()`) — §5 says merely "innermost".
+//   * Z1(c)'s not-inside-any-cycle clause — §5 has no counterpart at all (it is
+//     the bd ww4c.4 over-accept fix).
+//   * Z9's SAME-WIDTH counter clause — a counter at a different width would need
+//     a zext/trunc whose reversibility and uncompute story is unreviewed
+//     surface, and all three target loops carry both at i32. It is ALSO the one
+//     narrowing whose absence is not merely semantic: the emitter builds the
+//     seed with `ConstantInt::get(R.Ty, ...)` and RAUWs `%dec` at that width, so
+//     a mismatched counter would mean a cross-width `sub` and a cross-type RAUW
+//     — guarded in LLVM by `assert` ONLY, and this toolchain builds with
+//     assertions OFF, so the failure would be SILENT malformed IR
+//     (lowering_ctlz_idiom_reject_counter_width_mismatch.ll).
+//   * `H->hasAddressTaken()` — not in §5
+//     (lowering_ctlz_idiom_reject_blockaddress_header.ll).
+//   * the EntryVal-not-in-loop structural check — not in §5.
+//   * Z3/Z4's "latch value defined IN the header" (`BO->getParent() != H`) — not
+//     in §5's rows.
+//
+// WIDER than PRD §5, and deliberately so:
+//   * Z1 asks for a unique OUT-OF-LOOP PREDECESSOR where §5's table says "a
+//     unique PREHEADER". That relaxation is load-bearing — see the Z1 note above
+//     — and its decline fixture is lowering_ctlz_idiom_reject_two_preds.ll.
+//
+// Like PRD §5.2's other narrowings (stride != 1, step != -1, non-empty body,
+// escaping shift register, escaping counter phi, i128/i80) every item above is
+// an ADDITIVE widening owed its own Rule-12/13 round, and each is scope rather
+// than evasion under Rule 17 because the target loops sit INSIDE the accept set,
+// not outside it.
 bool recognizeCtlzIdiomLoops(llvm::Module &M, TaintSet &taint);
 
 }  // namespace cq

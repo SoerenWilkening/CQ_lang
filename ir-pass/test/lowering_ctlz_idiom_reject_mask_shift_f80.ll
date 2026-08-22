@@ -11,17 +11,32 @@
 ; proposes exactly a "shift-until-normalized" recognizer and bd k02s records
 ; that as its blocking precondition. This file is that precondition, discharged.
 ;
-; It differs from the accepted idiom on FIVE axes (PRD §5.3's table), FOUR of
-; which are independently fatal:
+; *** THE COUNT WAS CORRECTED IN Inc 3 (bd ww4c.4). This header said "FIVE axes
+; ... FOUR of which are independently fatal". Measured, SEVEN fence clauses fail
+; on this body, and the missing three matter: the "what is shifted" row had no
+; fence letter at all (it is enforced by Z8, not Z5), and Z6 and Z9 went
+; unmentioned entirely. Undercounting the grounds on the fixture the PRD calls
+; "the single most important in this matrix" is how a later widener concludes a
+; clause is unguarded when it is not. ***
 ;
 ;   |                  | accepted (ilogb/ilogbf) | here (ilogbl/logbl)          |
 ;   | shift            | shl <rec>, 1            | lshr <mask>, 1        (Z3)   |
-;   | what is shifted  | the DATA                | a MASK; data is invariant    |
+;   | what is shifted  | the DATA (tainted)      | a MASK; its entry value is   |
+;   |                  |                         | the CONSTANT 2147483648, so  |
+;   |                  |                         | the recurrence is untainted   (Z8) |
 ;   | compared operand | the recurrence ITSELF   | and <rec>, <invariant> (Z5)  |
 ;   | predicate        | sgt ... 0               | eq ... 0              (Z5)   |
 ;   | counter          | add ..., -1             | add ..., 1            (Z4)   |
+;   | body size        | exactly six insns       | SEVEN (the extra `and`) (Z6) |
+;   | widths           | recurrence == counter   | mask i64, counter i32 (Z9)   |
 ;   | terminates?      | YES, max 31 (measured)  | NO — diverges when the       |
 ;   |                  |                         | tested word is 0             |
+;
+; THE SET IS BOUNDED, not merely enumerated: repairing all seven — counter to
+; i64 and step -1, entry value to the tainted `%data`, `lshr`->`shl`, the compare
+; onto `%next` with `sgt`, and the `and` deleted — makes the pass CLAIM the loop
+; (measured, bd ww4c.4). So exactly these seven clauses fail here and no eighth
+; is hiding behind them.
 ;
 ; That last row is why Z5's "the compared operand must BE the recurrence's own
 ; latch value" is the load-bearing clause rather than a stylistic one. A value
