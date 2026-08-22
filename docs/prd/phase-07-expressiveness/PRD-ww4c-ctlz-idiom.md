@@ -359,6 +359,27 @@ the two must not be assumed to coincide. Every condition below is checked on the
 `B1/B2` (`tryBreak`), `D1–D7` (eq-fold), `G0–G11` (switch), `C1–C5` (19v3's bound
 conditions). Do not reuse `C`.
 
+### 5.0b ⚠ Poison flags are IGNORED — added by Inc 3 (bd `ww4c.4`)
+
+`Z3`/`Z4` test opcode and operands and **never** inspect `nsw`/`nuw`, so every flag
+combination is inside the accept set (measured, 6/6 cells claim). That is not hypothetical:
+the **real** openlibm `-O1` IR carries `add nsw i32 %16, -1` and `shl nuw i32 %17, 1` on
+*both* `ilogb` recurrences, so **the two shipped cells are flagged loops**.
+
+Accepting them is **sound, and in the safe direction**. `shl nuw X, 1` is poison whenever
+`X`'s top bit is set, so a flagged source loop entered with such a value is immediate UB
+(poison compare → `br i1 poison`); the substituted chain carries **no** flags (§4.5 rule 2)
+and is **total**. Replacing UB with a defined value is **refinement** — we only ever remove
+undefined behaviour, never introduce it.
+
+**The qualifier this puts on §4.2, so the headline evidence is not mis-quoted:** *"exact on
+the whole domain, 0 mismatches over 2³²"* is a statement about the **unflagged** loop, which
+is what the oracle modelled (wrapping semantics). On a **flagged** loop the original has no
+defined value on the poison inputs at all, so agreement there is **refinement, not
+value-equality**. Correctness is unaffected in the direction that matters; what would be
+wrong is to read the sweep as proving the *source* loop computes that value on all 2³²
+inputs — it does not, it is UB on some of them and we define them.
+
 ### 5.1 Two independent grounds, on purpose
 
 `ilogbl`/`logbl` fail **Z5** *and* **Z4**. `ashr` fails **Z3** *and* (in every real spelling)

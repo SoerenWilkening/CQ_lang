@@ -200,6 +200,33 @@ struct TaintSet;
 //      `nm` confirms ctlz stops at i64 while and/shl/sub run to i128 — a fence
 //      keyed on the arithmetic alone would over-accept into a link failure.
 //
+// POISON FLAGS ON THE TWO RECURRENCES ARE IGNORED, AND THAT IS WHY THE "WHOLE
+// DOMAIN" CLAIM NEEDS ONE QUALIFIER (bd ww4c.4, found by the completeness lens —
+// no other reviewer raised it).
+// Z3 and Z4 test `getOpcode()` and the operands and NEVER inspect `nsw`/`nuw`, so
+// every flag combination is inside the accept set — measured, 6/6 cells claim.
+// This is not hypothetical: the REAL openlibm `-O1` IR carries
+// `%18 = add nsw i32 %16, -1` and `%19 = shl nuw i32 %17, 1` on BOTH ilogb
+// recurrences, so the two SHIPPED cells are flagged loops.
+//
+// Accepting them is SOUND, and the direction matters: `shl nuw X, 1` is poison
+// whenever X's top bit is set, so a flagged source loop entered with such a value
+// is immediate UB (poison compare -> `br i1 poison`), while the substituted chain
+// carries NO flags (emission rule 2) and is TOTAL. Replacing UB with a defined
+// value is REFINEMENT — we only ever remove undefined behaviour, never introduce
+// it. clang derived those flags precisely because openlibm's masked exponent
+// field cannot be negative there, so the UB is unreachable in the source's
+// intended domain anyway.
+//
+// THE QUALIFIER, so the headline evidence is not mis-quoted: "exact on the WHOLE
+// domain, 0 mismatches over 2^32" is a statement about the UNFLAGGED loop, which
+// is what the oracle modelled (wrapping semantics). On a FLAGGED loop the
+// original has no defined value on the poison inputs at all, so agreement there
+// is refinement, not value-equality. Correctness is unaffected in the direction
+// that matters; what would be wrong is to read the sweep as proving the SOURCE
+// loop computes that value on all 2^32 inputs. It does not — it is UB on some of
+// them, and we define them.
+//
 // WHERE THIS FENCE DIFFERS FROM PRD §5's TABLE — all of it, in both directions.
 // *** This list previously read "Z9's same-width clause is the one place this is
 // NARROWER than PRD §5". bd ww4c.4 measured that false four ways over, and one

@@ -6,9 +6,14 @@ Z1–Z9 fence and the §4.6 mutation, as landed by Inc 1 (`7385c4d`) and exercis
 (`dc8f6c6`).
 **Method:** 9 independent adversarial lenses, each prompted to **refute** a named claim, then
 **27 independent skeptics** — one per substantive finding, each prompted to refute *that*, with
-`REFUTED` as the default on non-reproduction. Analytic and trace-level reasoning plus
-arithmetic sweeps; **no quantum simulation** (owner decision 2026-06-10). Style follows
+`REFUTED` as the default on non-reproduction, then a **completeness critic** asked only *"what
+did nobody attack?"* (38 agents, 0 errors). Analytic and trace-level reasoning plus arithmetic
+sweeps; **no quantum simulation** (owner decision 2026-06-10). Style follows
 [`WI7_SWITCH_CLEARANCE.md`](../../design/rssa-swap-control/WI7_SWITCH_CLEARANCE.md).
+
+> **Read §3b first if you are auditing this document's own honesty.** The fix for the one
+> over-accept landed **after** the nine lenses reported, so they did not review it. The critic
+> caught exactly that, and then reviewed it. §3b is that account.
 
 ---
 
@@ -18,14 +23,14 @@ arithmetic sweeps; **no quantum simulation** (owner decision 2026-06-10). Style 
 
 | | count |
 |---|---|
-| adversarial lenses | 9 |
-| findings raised | 71 |
+| adversarial lenses | 9 + a completeness critic (10) |
+| findings raised | 79 |
 | independently refuted (dropped) | **1** |
 | **silent miscompiles found** | **0** |
 | **over-accepts found** | **1 — fixed in this round (Z1(c))** |
-| Rule-12 assertion-quality defects | 13 → all closed |
-| doc-drift corrections | 17 → all applied |
-| claims attacked and **survived** | 40 |
+| Rule-12 assertion-quality defects | 15 → all closed |
+| doc-drift corrections | 18 → all applied |
+| claims attacked and **survived** | 43 |
 
 The round did what the ticket budgeted it for. `bd ww4c.4` opened with *"the loop campaign is
 3-for-3 at finding over-accepts in adversarial rounds… assume this shape hides them too."*
@@ -298,7 +303,7 @@ real cells — still pass. The fix is a pure narrowing.
 |---|---|
 | `CtlzIdiomPrepass.cpp` | **Z1(c)** — the irreducible-cycle clause; `#include "llvm/Analysis/CFG.h"`; `fencePasses` now takes `DominatorTree &` |
 
-### 3.2 Fixtures (7 new, 8 rewired)
+### 3.2 Fixtures (8 new, 8 rewired)
 
 **New decline fixtures** — each isolated by a **verified delta pair** (a minimal edit that
 flips the file from declined to claimed):
@@ -311,6 +316,7 @@ flips the file from declined to claimed):
 | `…_reject_dead_counter.ll` | Z7's **require**-the-escape direction |
 | `…_reject_two_preds.ll` | Z1's unique-out-of-loop-predecessor clause — the one place the fence is deliberately **wider** than PRD §5 |
 | `…_reject_escaping_counter_phi.ll` | Z7 on the counter **phi** (closed form `C0−(f−1)`, a *different* one) |
+| `…_reject_callee_arg_taint.ll` | The **Z8 argument-taint boundary** — added last, after the completeness critic pointed out that this boundary had been promoted from an unmeasured lens assertion straight into shipped source prose (the fenv-prose pattern verbatim). It is an **ordering** fact, not a fence clause: argument taint is minted by `detectSpecializations`, which runs *after* this fixpoint |
 
 **New positive fixture:** `…_chained.ll` — two idiom loops in sequence where the second's entry
 value is the first's escapee. It is the **only** assertion that the driver's re-propagate is
@@ -368,6 +374,15 @@ The load-bearing ones, all measured false as written:
 8. **PRD §10 demanded an unsatisfiable assertion** ("each positive must show … `i1 false`") and
    filed a `not` fixture under "Positive". Both amended; the requirement is now met by the
    `IMMARG` mechanism.
+10. **Poison flags on the two recurrences are IGNORED, and nothing said so.** `Z3`/`Z4`
+    never inspect `nsw`/`nuw` (measured, 6/6 flag cells claim), and the **real** openlibm
+    `-O1` IR carries `add nsw` / `shl nuw` on *both* `ilogb` recurrences — so the two
+    shipped cells are flagged loops. Sound, and in the safe direction (the emitted chain
+    is unflagged and total, so we *remove* UB, never add it) — but it means §4.2's
+    "exact on the whole domain" is a claim about the **unflagged** loop, and on a flagged
+    one the agreement is **refinement, not value-equality**. Recorded in the header and
+    PRD §5.0b so the sweep is not mis-quoted as proving the *source* loop is defined on
+    all 2³² inputs. It is not; we define the inputs where it was UB.
 9. **PRD §5.5's "the negatives assert *that* message"** — false for two, and the exceptions are
    the interesting ones (a different loop owner; and the one fixture where the recognizer *does*
    claim and a different owner then declines).
@@ -403,6 +418,58 @@ merely made visible. None blocks clearance.
 
 ---
 
+## 3b. The tenth lens — and the gap it caught in this document
+
+A **completeness critic** ran last, asked only *"what did nobody attack?"*, and its first
+answer changed the round:
+
+> **The nine lenses cleared a codebase that no longer exists.** Z1(c) — an *entirely new fence
+> clause* — landed **in response to** the bypass-hunt finding, i.e. **after** every lens had
+> reported. Rule 13 is about accept/decline predicates, and Z1(c) is one. Filing the nine-lens
+> digest as the clearance for what ships would have cleared the code that had the bug, not the
+> code that fixes it.
+
+That is a fair hit on this document's framing, and it is answered rather than waved away: the
+critic **attacked Z1(c) itself, four ways, and it survived.**
+
+| probe | result |
+|---|---|
+| canonical accepted loop (control) | **claimed**, exit 0, verify-clean |
+| **40-block** irreducible cycle — past `isPotentiallyReachable`'s `Limit=32` cutoff | **declines** — the cutoff fails **safe** (answers "reachable" conservatively), it does not open a hole |
+| cycle closed through an `invoke`/`landingpad` **exception edge** | **declines** |
+| unreachable region | declines (`nested control flow`) |
+| **preheader** itself inside a cycle, header entered once | **claimed** — correct; the chain lands in a block entered once |
+
+…plus an **exactness proof** the original comment only gestured at: Z2's phi-arity check
+structurally pins `preds(H) = {PH, H}` (LLVM requires one phi entry per predecessor *edge*),
+and a non-null `getExitBlock()` makes `H → Ex` the only way out — so "H is inside a cycle" is
+**equivalent** to "Ex reaches H". Z1(c) is therefore **exact, not a proxy**. That reasoning is
+now recorded in the source.
+
+**The new `llvm/Analysis/CFG.h` dependency was also gated.** Z1(c) pulls in an LLVM analysis
+library, and `cq-opt` deliberately links only a subset of LLVM — precisely the failure class
+the equivalence gate's own docstring names ("the suite would stay green while testing a tool
+that is no longer the tool"). The routine ctest entry only samples at `--stride 8`, so the
+critic ran it at **`--stride 1`: 0 mismatches** (stdout, stderr and exit code) — and the main
+agent re-ran it after the follow-up landed, over all **33** ctlz-related fixtures: **0
+mismatches**.
+
+**Two further findings, both acted on:**
+
+* **Poison flags are ignored, and the "whole domain" claim needed a qualifier** — the one
+  finding no other lens made. See §3.3 item 10 and PRD §5.0b.
+* **The callee/argument-taint boundary had no fixture** — it had been promoted from an
+  unmeasured lens assertion straight into shipped source prose, which is the fenv-prose
+  hardening pattern verbatim. Now measured and pinned by
+  `…_reject_callee_arg_taint.ll`.
+
+One critic finding is **already discharged and is recorded here only so the record is
+complete**: it reported that Rule 19's full-suite gate "has still not been run by anyone."
+It had not been, *at the moment the critic looked* — it was run immediately afterwards, and
+the result is §4b below.
+
+---
+
 ## 4b. Verification run — reporting only what was executed (Rule 19)
 
 | gate | why it applies | result |
@@ -416,12 +483,20 @@ merely made visible. None blocks clearance.
 ```
 $ cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 100% tests passed, 0 tests failed out of 257
-Total Test time (real) = 286.47 sec        (257/257, ir-pass-lit 1100 fixtures)
+Total Test time (real) = 286.47 sec        (after the Z1(c) fix + 7 fixtures)
+
+$ (again, after the completeness critic's follow-ups landed)
+100% tests passed, 0 tests failed out of 257
+Total Test time (real) = 218.64 sec        (ir-pass-lit: 1101 fixtures)
 ```
+
+Run **twice** — once after the over-accept fix, and again after the critic's follow-ups (the
+callee fixture and the poison-flag / Z1(c)-exactness documentation), because the second round
+touched an accept/decline-adjacent file even though it added no logic. Both green.
 
 Additionally, and separately measured:
 
-* all **32** `lowering_ctlz_idiom*` lit entries green;
+* all **33** `lowering_ctlz_idiom*` + `lowering_intrinsic_ctlz_i32` lit entries green;
 * all **four** ctlz-touching e2e slices green — `libm-real-ilogb`, `libm-real-ilogbf`,
   `intrinsic-ctlz`, `ctlz-idiom-loop` — with stage-2b free-pairing **strict** (no
   `--allow-unproven`);

@@ -361,6 +361,18 @@ bool fencePasses(Loop *L, const TaintSet &taint, DominatorTree &DT,
   //
   // Reachability is the exact test rather than a proxy: H's only predecessors
   // are PH and H itself (Z1/Z2), so H is inside some larger cycle IFF control
+  // THE CLAUSE IS EXACT, NOT CONSERVATIVE, and the reason is worth naming because
+  // the informal argument below does not: `preds(H) = {PH, H}` is STRUCTURALLY
+  // PINNED by Z2's phi-arity check — LLVM requires exactly one phi entry per
+  // predecessor EDGE, and Z2 demands exactly two incomings indexed at PH and H —
+  // while `getExitBlock()` being non-null makes `H -> Ex` the only way out. So H
+  // can be re-executed only via a path `Ex ->* H`, which is precisely what this
+  // tests. Equivalence, not approximation.
+  // It also fails SAFE where it is approximate: `isPotentiallyReachable` gives up
+  // after a bounded search (Limit=32) and answers TRUE conservatively, so a long
+  // irreducible cycle declines rather than slipping through — measured on a
+  // 40-block cycle (bd ww4c.4).
+  //
   // can get from the exit back to the header. `isPotentiallyReachable` answers
   // that on the CFG itself, so it is blind to nothing — deliberately WITHOUT
   // `LoopInfo`, since LoopInfo's natural-loop blindness is the entire defect

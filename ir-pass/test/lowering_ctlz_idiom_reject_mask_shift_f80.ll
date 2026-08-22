@@ -38,6 +38,16 @@
 ; (measured, bd ww4c.4). So exactly these seven clauses fail here and no eighth
 ; is hiding behind them.
 ;
+; ONE COUPLING, recorded so a later reader reproducing the leave-one-out does not
+; conclude the count is wrong when a cell refuses to build: **Z5a and Z6 are not
+; separable in THIS body.** The derived compared operand (Z5a) exists only because
+; of the extra `and` instruction, which is also the seventh instruction (Z6) — so
+; you cannot un-repair Z5a alone while leaving Z6 repaired. Seven clauses fail;
+; six of them are independently un-repairable and the Z5a/Z6 pair moves together.
+; The Z5-ALONE isolation lives in lowering_ctlz_idiom_reject_derived_compare.ll,
+; which gets there by comparing the PHI — costing no extra instruction, so Z6
+; stays satisfied and Z5 stands alone.
+;
 ; That last row is why Z5's "the compared operand must BE the recurrence's own
 ; latch value" is the load-bearing clause rather than a stylistic one. A value
 ; repeatedly shifted left marches monotonically into the sign bit, so the loop
