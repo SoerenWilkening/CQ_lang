@@ -21,7 +21,7 @@
 ; reaches `lowerOps`, is emitted as a template call, and is then uncomputed and
 ; freed by the whole-DAG spine — a useless but harmless gate pair. INSIDE a
 ; PredMux region the same product is deleted outright, and the shipped
-; `slice_libm_real_nexttowardf` golden has ZERO `fmul_f32` for exactly that
+; `slice_libm_ld80_nexttowardf` golden has ZERO `fmul_f32` for exactly that
 ; reason. Both outcomes are sound under the fenv ruling; they are not the same
 ; circuit.
 ;

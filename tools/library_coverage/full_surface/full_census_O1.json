@@ -403,7 +403,7 @@
   "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control",
   "provider": "openlibm",
   "scope": "deferred-capability",
-  "scope_ref": "DEFERRED 2026-08-21 by the owner GO on bd eyhj ('the others that cannot be compiled that way, such as ilogbl will be tackled later') \u2014 tracker bd ywws. NOT decided-decline: the 2026-07-28 parity ruling is NO LONGER the ground. New ground = 'no derivable bound exists', measured: CouldNotCompute on BOTH loops at every SCEV query under 12 pipelines and on the post-promoteFp80Union module, and that is CORRECT not conservative \u2014 on the rotated IR body 2 inputs (0, 0x80000000) never terminate. The only bound available is GUARD-CONDITIONAL on a TAINTED (manl|manh)!=0 guard that PredMux removes, so the SCOPING-L3 \u00a76 item 1 recognizer that would recover it is a silent-miscompile shape (bd k02s). Safety today is an ACCIDENT of SCEV reporting nothing. NOT re-openable by a static-K unroll: LoopUnrollPrepass visits these loops and claims none, failing U3/U5/U6, and U6 demands the EXACT trip count (LoopUnrollPrepass.cpp:199) \u2014 raising kMaxUnrollTrip 8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either (the divergent inputs are exactly what is_zero_poison would have to exclude)"
+  "scope_ref": "DEFERRED 2026-08-21 by the owner GO on bd eyhj ('the others that cannot be compiled that way, such as ilogbl will be tackled later') \u2014 tracker bd ywws. NOT decided-decline: the 2026-07-28 parity ruling is NO LONGER the ground. New ground = 'no derivable bound exists', measured: CouldNotCompute on BOTH loops at every SCEV query under 12 pipelines and on the post-promoteFp80Union module, and that is CORRECT not conservative \u2014 on the rotated IR body 2 inputs (0, 0x80000000) never terminate. The only bound available is GUARD-CONDITIONAL on a TAINTED (manl|manh)!=0 guard that PredMux removes, so the SCOPING-L3 \u00a76 item 1 recognizer that would recover it is a silent-miscompile shape (bd k02s). Safety today is an ACCIDENT of SCEV reporting nothing. NOT re-openable by a static-K unroll: LoopUnrollPrepass visits these loops and claims none, failing U3/U5/U6, and U6 demands the EXACT trip count (LoopUnrollPrepass.cpp:199) \u2014 raising kMaxUnrollTrip 8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either \u2014 and as of 2026-08-22 that is MEASURED rather than predicted (bd ww4c.3: both cells re-probed `decline / loop-carried` in the same run that moved ilogb.f64/ilogbf.f32 to COMPILES). CORRECTED GROUND, because the prediction named the wrong fence: it is NOT is_zero_poison (the emitted ctlz is TOTAL, so the divergent inputs {0, 0x80000000} would need no excluding). It is Z5 \u2014 these shift a MASK (`lshr` of the induction variable) and compare a DERIVED value (`and <rec>, <invariant data>`) with predicate `eq`, where Z5 demands `icmp sgt <the recurrence's own latch value>, 0` \u2014 AND Z4, because their counter INCREMENTS. Two independent grounds, which is exactly the defence-in-depth PRD-ww4c \u00a75.1 argues for"
  },
  "ilogbf.f32": {
   "status": "COMPILES",
@@ -423,7 +423,7 @@
   "diag": "probe i32 (): cq controlled lowering: loop under quantum control",
   "provider": "openlibm",
   "scope": "deferred-capability",
-  "scope_ref": "DEFERRED 2026-08-21 by the owner GO on bd eyhj ('the others that cannot be compiled that way, such as ilogbl will be tackled later') \u2014 tracker bd ywws. NOT decided-decline: the 2026-07-28 parity ruling is NO LONGER the ground. New ground = 'no derivable bound exists', measured: CouldNotCompute on BOTH loops at every SCEV query under 12 pipelines and on the post-promoteFp80Union module, and that is CORRECT not conservative \u2014 on the rotated IR body 2 inputs (0, 0x80000000) never terminate. The only bound available is GUARD-CONDITIONAL on a TAINTED (manl|manh)!=0 guard that PredMux removes, so the SCOPING-L3 \u00a76 item 1 recognizer that would recover it is a silent-miscompile shape (bd k02s). Safety today is an ACCIDENT of SCEV reporting nothing. NOT re-openable by a static-K unroll: LoopUnrollPrepass visits these loops and claims none, failing U3/U5/U6, and U6 demands the EXACT trip count (LoopUnrollPrepass.cpp:199) \u2014 raising kMaxUnrollTrip 8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either (the divergent inputs are exactly what is_zero_poison would have to exclude)"
+  "scope_ref": "DEFERRED 2026-08-21 by the owner GO on bd eyhj ('the others that cannot be compiled that way, such as ilogbl will be tackled later') \u2014 tracker bd ywws. NOT decided-decline: the 2026-07-28 parity ruling is NO LONGER the ground. New ground = 'no derivable bound exists', measured: CouldNotCompute on BOTH loops at every SCEV query under 12 pipelines and on the post-promoteFp80Union module, and that is CORRECT not conservative \u2014 on the rotated IR body 2 inputs (0, 0x80000000) never terminate. The only bound available is GUARD-CONDITIONAL on a TAINTED (manl|manh)!=0 guard that PredMux removes, so the SCOPING-L3 \u00a76 item 1 recognizer that would recover it is a silent-miscompile shape (bd k02s). Safety today is an ACCIDENT of SCEV reporting nothing. NOT re-openable by a static-K unroll: LoopUnrollPrepass visits these loops and claims none, failing U3/U5/U6, and U6 demands the EXACT trip count (LoopUnrollPrepass.cpp:199) \u2014 raising kMaxUnrollTrip 8->33 changes NOTHING. bd ww4c's ctlz recognizer does not reach them either \u2014 and as of 2026-08-22 that is MEASURED rather than predicted (bd ww4c.3: both cells re-probed `decline / loop-carried` in the same run that moved ilogb.f64/ilogbf.f32 to COMPILES). CORRECTED GROUND, because the prediction named the wrong fence: it is NOT is_zero_poison (the emitted ctlz is TOTAL, so the divergent inputs {0, 0x80000000} would need no excluding). It is Z5 \u2014 these shift a MASK (`lshr` of the induction variable) and compare a DERIVED value (`and <rec>, <invariant data>`) with predicate `eq`, where Z5 demands `icmp sgt <the recurrence's own latch value>, 0` \u2014 AND Z4, because their counter INCREMENTS. Two independent grounds, which is exactly the defence-in-depth PRD-ww4c \u00a75.1 argues for"
  },
  "ldexpf.f32": {
   "status": "COMPILES",
@@ -761,11 +761,11 @@
  },
  "remainderl.f80": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory",
   "provider": "openlibm",
   "scope": "decided-decline",
-  "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
+  "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76. RULING STANDS on Leg A (Bennett ships no frem/fmod gate sequence at any width \u2014 body-independent) but its EVIDENCE LINE IS CORRECTED 2026-08-23 (bd 3c6m.63): on the body openlibm actually builds (src/s_remquol.c, not the ld80 variant the corpus used to reach through a basename collision) the measured first blocker is NOT a loop at all \u2014 it is `src/s_remquol.c:76:7 ux.e = x`, the union IEEEl2bits store, i.e. `cq taint escape: tainted value stored to memory` = the 3c6m.51 promoteFp80Union / 7.5 Shadow axis. Bucket moved loop-carried -> memory-store (Shadow). The loop the ruling's payoff sizing cites is BEHIND that store and is now UNMEASURED on this body; do NOT quote '9/9 have a loop SCEV cannot bound' for these two"
  },
  "remquof.f32": {
   "status": "decline",
@@ -785,11 +785,11 @@
  },
  "remquol.f80": {
   "status": "decline",
-  "bucket": "loop-carried",
-  "diag": "probe x86_fp80 (): cq controlled lowering: loop under quantum control",
+  "bucket": "memory-store (Shadow)",
+  "diag": "probe x86_fp80 (): cq taint escape: tainted value stored to memory",
   "provider": "openlibm",
   "scope": "decided-decline",
-  "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76"
+  "scope_ref": "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its \u00a76. RULING STANDS on Leg A (Bennett ships no frem/fmod gate sequence at any width \u2014 body-independent) but its EVIDENCE LINE IS CORRECTED 2026-08-23 (bd 3c6m.63): on the body openlibm actually builds (src/s_remquol.c, not the ld80 variant the corpus used to reach through a basename collision) the measured first blocker is NOT a loop at all \u2014 it is `src/s_remquol.c:76:7 ux.e = x`, the union IEEEl2bits store, i.e. `cq taint escape: tainted value stored to memory` = the 3c6m.51 promoteFp80Union / 7.5 Shadow axis. Bucket moved loop-carried -> memory-store (Shadow). The loop the ruling's payoff sizing cites is BEHIND that store and is now UNMEASURED on this body; do NOT quote '9/9 have a loop SCEV cannot bound' for these two"
  },
  "nextafterf.f32": {
   "status": "COMPILES",
@@ -804,30 +804,36 @@
   "provider": "openlibm"
  },
  "nextafterl.f80": {
-  "status": "COMPILES",
-  "bucket": "COMPILES",
-  "diag": "surv:[]",
-  "provider": "openlibm"
+  "status": "decline",
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control",
+  "provider": "openlibm",
+  "scope": "deferred-capability",
+  "scope_ref": "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nextafterl.c, a body openlibm does not build. On the shipped body the measured first blocker is src/s_nextafterl.c:42:29 \u2014 the nested `&&` of the NaN guard (ux.bits.exp==0x7fff && ((ux.bits.manh&~LDBL_NBIT)|ux.bits.manl)!=0) over the TAINTED x \u2014 `cq controlled lowering: nested control flow under quantum control`. Depth behind UNMEASURED. Tracker bd 3c6m.67. NB the f64/f32 siblings COMPILE"
  },
  "nexttowardf.f32": {
-  "status": "COMPILES",
-  "bucket": "COMPILES",
-  "diag": "surv:[]",
-  "provider": "openlibm"
+  "status": "decline",
+  "bucket": "control (flat/diamond)",
+  "diag": "probe float (): cq controlled lowering: control flow under quantum control",
+  "provider": "openlibm",
+  "scope": "deferred-capability",
+  "scope_ref": "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttowardf.c, a body openlibm does not build \u2014 and this cell is the campaign's own bd k710 +1 (97->98, 2026-08-10), so THAT +1 IS RETRACTED. It rested on the write-only `volatile float u = x*x;` at ld80/s_nexttowardf.c:63 cleared by the fenv ruling; src/'s scalar `t` IS READ (`t=x*x; if(t==x) return t; else return x;`) so the fenv path is never needed here. The shipped body blocks EARLIER and elsewhere: src/s_nexttowardf.c:45:5 `if((hx>=0) ^ (x < y))`, an XOR of two compares over tainted x \u2014 `cq controlled lowering: control flow under quantum control` (flat/diamond, NOT the L6 nest its two siblings hit). The fenv ruling and eraseDeadVolatileScalarStores are UNAFFECTED and keep their own lit coverage; what is retracted is only this cell's credit. Depth behind UNMEASURED. Tracker bd 3c6m.67"
  },
  "nexttoward.f64": {
-  "status": "COMPILES",
-  "bucket": "COMPILES",
-  "diag": "surv:[]",
-  "provider": "openlibm"
+  "status": "decline",
+  "bucket": "L6 nested control",
+  "diag": "probe double (): cq controlled lowering: nested control flow under quantum control",
+  "provider": "openlibm",
+  "scope": "deferred-capability",
+  "scope_ref": "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttoward.c, a body openlibm does not build. Shipped body's first blocker is src/s_nexttoward.c:44:22, the same nested NaN-guard `&&` shape as nextafterl.f80 spelled over EXTRACT_WORDS(hx,lx,x) \u2014 `nested control flow under quantum control`. Depth behind UNMEASURED. Tracker bd 3c6m.67"
  },
  "nexttowardl.f80": {
-  "status": "no-body",
-  "bucket": "corpus-gap (no body)",
-  "diag": "nexttowardl: no definition in the corpus defmap \u2014 NOT PROBED, so this cell has no measured blocker (bd keol)",
+  "status": "decline",
+  "bucket": "L6 nested control",
+  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control",
   "provider": "openlibm",
-  "scope": "corpus-gap",
-  "scope_ref": "openlibm ships no s_nexttowardl.c. NB the recorded 'would land on nextafterl's blocker anyway' rider is REFUTED: nextafterl.f80 COMPILES today"
+  "scope": "deferred-capability",
+  "scope_ref": "RE-SCOPED 2026-08-23 (bd 3c6m.63) \u2014 WAS `corpus-gap`, AND BOTH HALVES OF THAT ENTRY WERE WRONG. (1) openlibm does NOT ship no body for it: it mints the name as `openlibm_strong_reference(nextafterl, nexttowardl)` at src/s_nextafterl.c:80, exactly the shape wprobe's bd-vuy6 _synth_alias_shim resolves \u2014 the basename collision HID it, because ld80/s_nextafterl.c:90 has that alias COMMENTED OUT. The cell is now genuinely probed (no shim was added; the generic alias mechanism found it once the corpus became faithful, which is NOT the manufactured +1 the ticket's trap (a) forbids \u2014 it declines). (2) the rider 'would land on nextafterl's blocker anyway is REFUTED' is itself REFUTED and the original claim CONFIRMED to the COLUMN: this cell's diagnostic is src/s_nextafterl.c:42:29, byte-identical to nextafterl.f80's. The refutation rested on nextafterl.f80 compiling, which was the artifact. Tracker bd 3c6m.67"
  },
  "fdimf.f32": {
   "status": "COMPILES",

@@ -670,7 +670,7 @@ void ensureTwin(Function *Clone) {
   //
   // Do NOT instead widen guard 1 to "an argument defined by an instruction with an
   // undef operand": that over-declines every `clang -O1` dead-edge phi/select,
-  // `slice_libm_real_nexttoward`'s whole family included, for no pairing gain.
+  // `slice_libm_ld80_nexttoward`'s whole family included, for no pairing gain.
   // Fencing at the DUPLICATION is the exact parallel of bd 7udx's fence at the ERASE.
   //
   // Rule-12 mirror, character-for-character: spec_reject_twin_undef_dup.ll (fence

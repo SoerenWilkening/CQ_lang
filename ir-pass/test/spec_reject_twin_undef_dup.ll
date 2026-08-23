@@ -41,7 +41,7 @@
 ; "the argument is defined by an instruction with an undef operand" would instead
 ; over-decline every `clang -O1` dead-edge phi/select, taking
 ; `lowering_accept_undef_literal_single_slot.ll` and the whole
-; `slice_libm_real_nexttoward` family with it, for no pairing gain. Guarding at the
+; `slice_libm_ld80_nexttoward` family with it, for no pairing gain. Guarding at the
 ; DUPLICATION is the exact parallel of bd 7udx's fence living at the ERASE.
 ;
 ; DERIVATION: this is `ir-pass/test/spec_accept_transitive.ll`'s body with EXACTLY

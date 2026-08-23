@@ -3,7 +3,9 @@
 > ## ⏭ SUPERSEDED FOR PLANNING — read [`LEVER-SURVEY-2026-08-22.md`](LEVER-SURVEY-2026-08-22.md) instead
 >
 > Every number below is the **2026-07-25 generation** (68/123, then 80/123). The
-> baseline is now **158/183 headline / 100/120 injection**, and the *shape* of the
+> baseline is now **155/183 headline / 97/120 injection** *(2026-08-23, after bd
+> `3c6m.63` corrected a corpus defect that had three cells measured on bodies openlibm
+> does not build — it read 158/100 as surveyed on 2026-08-22)*, and the *shape* of the
 > question has changed too: the "which lever is biggest" framing this doc is built
 > around no longer has an answer that moves the campaign number, because **no lever
 > moves the injection numerator upward** (measured 2026-08-22). Keep this file for its

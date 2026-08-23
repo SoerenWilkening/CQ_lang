@@ -40,11 +40,11 @@ AST rewriter and no LLVM fork.
 ## Demonstrator — standard-library coverage under tainted inputs
 
 <!-- MATHH-HEADLINE:START -->
-> ### `math.h` coverage: **158/183 cells (86%)**
+> ### `math.h` coverage: **155/183 cells (85%)**
 >
-> **100/120** injection · **6/6** CQ-PROVIDED · **42/42** recognition keep-set · **10/12** type-generic macros · **0/3** nan (by design).
+> **97/120** injection · **6/6** CQ-PROVIDED · **42/42** recognition keep-set · **10/12** type-generic macros · **0/3** nan (by design).
 >
-> Read it as *"CQ compiles 158 of the 183 modelled `math.h` cells"* — a caller of `sqrt()` gets a real lowering. It is **not** *"CQ compiled openlibm's body 158 times"*: the recognition cells have **no injectable body at all** (Rule 18) and the CQ-PROVIDED cells use **CQ's own reversible leaf**, not upstream's. **The number that tracks COMPILER progress is the injection row alone** — recognition and CQ-PROVIDED move without any compiler work. Computed, never hand-copied (`probe.mathh_union_scoreboard()`), and **-3** if `fma{,f,l}`'s *partial* cells are excluded. Owner ruling 2026-08-22, bd `fhas`; composition is mandatory wherever the total appears.
+> Read it as *"CQ compiles 155 of the 183 modelled `math.h` cells"* — a caller of `sqrt()` gets a real lowering. It is **not** *"CQ compiled openlibm's body 155 times"*: the recognition cells have **no injectable body at all** (Rule 18) and the CQ-PROVIDED cells use **CQ's own reversible leaf**, not upstream's. **The number that tracks COMPILER progress is the injection row alone** — recognition and CQ-PROVIDED move without any compiler work. Computed, never hand-copied (`probe.mathh_union_scoreboard()`), and **-3** if `fma{,f,l}`'s *partial* cells are excluded. Owner ruling 2026-08-22, bd `fhas`; composition is mandatory wherever the total appears.
 <!-- MATHH-HEADLINE:END -->
 
 The headline demonstrator for CQ is **how much of the C standard library the IR pass
@@ -68,15 +68,24 @@ a committed golden trace.
 > reports **32/32 injection-covered**, but read it precisely: those 32 are **hand-authored
 > branchless bodies** (`branchless/`, bd `3c6m.10`) for the **double** surface, deliberately
 > written to bypass the open lowering levers. The [**full-surface census**](tools/library_coverage/full_surface/)
-> injects the **real off-the-shelf openlibm** at every width and, as of **2026-08-22**
-> (O1 baseline, bd `ww4c.3`), compiles **100/120 upstream-injectable cells (83%)** —
-> **all 100 of which are also VERIFIED** (a committed `slice_libm_real_*` golden that
+> injects the **real off-the-shelf openlibm** at every width and, as of **2026-08-23**
+> (O1 baseline, bd `3c6m.63`), compiles **97/120 upstream-injectable cells (81%)** —
+> **all 97 of which are also VERIFIED** (a committed `slice_libm_real_*` golden that
 > links, runs and byte-matches at the true `clang -O1 → cq-lowering` ship floor). The
 > two numbers are still measured apart and never merged; that they coincide today is a
-> MEASUREMENT, not an invariant. The remaining **20 decline** on the tracked levers:
-> loop-carried 10 · unsupported opcode 4 · control (flat/diamond) 2 ·
-> fp-copy/specialization 2 · Shadow scratch 1 · unknown callee 1. **L6 nested control is
-> no longer a decline bucket at all.**
+> MEASUREMENT, not an invariant — and it is now enforced by ctest `e2e-census-slice-sync`
+> rather than re-checked by hand. The remaining **23 decline** on the tracked levers:
+> loop-carried 9 · unsupported opcode 4 · control (flat/diamond) 3 · L6 nested control 3 ·
+> fp-copy/specialization 2 · memory-store (Shadow) 2.
+>
+> **⚠ THAT NUMERATOR WENT DOWN ON 2026-08-23 — 100 → 97 — AND IT IS A CORRECTION, NOT A
+> REGRESSION.** The census corpus was building ten openlibm translation units from
+> `ld80/` whose basenames also exist in `src/`, and openlibm's own build **excludes all
+> ten**, so three cells were scored as compiling **a program that ships nowhere**
+> (`nextafterl.f80`, `nexttoward.f64`, `nexttowardf.f32`). No compiler capability was
+> lost; the number stopped measuring the wrong program. This is the retired `165/174`
+> error class caught again, and the recipe is now an executable, self-checking script
+> (`full_surface/build_corpus.py`) instead of prose nobody ran.
 >
 > **⚡ A THIRD ROW exists as of 2026-07-31 (Rule 18 amendment, owner ruling, bd `guwr`):
 > CQ-PROVIDED — 6/6.** For `sin`/`cos`/`tan` at f64 and `sinl`/`cosl`/`tanl` at f80, CQ
@@ -89,10 +98,14 @@ a committed golden trace.
 > campaign progress** — it moves only when a leaf is authored.
 > **The injection numerator did not move: 97 before the amendment, 97 after.** All six
 > cells that left were declines, so the earlier `97/123 (79%)` became `97/117 (83%)` by
-> **denominator alone**. Track the numerator. *(It has moved since, on compiler work:
-> `97 → 98` (bd `k710`, `nexttowardf.f32`) and `98 → 100` (bd `ww4c.3`, `ilogb.f64` +
-> `ilogbf.f32`), while bd `bcv4` took the denominator `117 → 120` by entering three
-> never-probed cells — hence **100/120** today.)*
+> **denominator alone**. Track the numerator. *(It has moved since: `97 → 98` (bd `k710`,
+> `nexttowardf.f32`) and `98 → 100` (bd `ww4c.3`, `ilogb.f64` + `ilogbf.f32`) on compiler
+> work, while bd `bcv4` took the denominator `117 → 120` by entering three never-probed
+> cells — and then `100 → 97` (bd `3c6m.63`, the corpus correction above, which retracted
+> `k710`'s cell along with two others). Today's **97/120** is therefore NOT the same 97 as
+> the pre-amendment one even though the fraction is identical: it is that set minus
+> `nextafterl.f80` and `nexttoward.f64`, plus `ilogb.f64` and `ilogbf.f32`. Never diff two
+> generations of this number by their level.)*
 > Read the two numbers precisely (Rule 2, bd `libm-scoreboard-two-numbers`):
 > *injection-covered* and *verified* are measured SEPARATELY and merely happen to coincide
 > right now — and **"verified" certifies the LOWERING, not the unitary**. The runtime is
@@ -115,7 +128,7 @@ falls in **injection-required** (a library function — decline without source i
 the small **cannot-compile-at-all** by-design set (e.g. `nan(const char*)` has no quantum input).
 
 <!-- LIBRARY-COVERAGE:START -->
-**`math.h` coverage: 158/183 cells (86%)** — 100/120 injection + 6/6 CQ-PROVIDED + 42/42 recognition keep-set + 10/12 type-generic macros + 0/3 nan (by design). Summable only with that composition shown (bd `fhas`); the COMPILER-progress number is the injection row alone.
+**`math.h` coverage: 155/183 cells (85%)** — 97/120 injection + 6/6 CQ-PROVIDED + 42/42 recognition keep-set + 10/12 type-generic macros + 0/3 nan (by design). Summable only with that composition shown (bd `fhas`); the COMPILER-progress number is the injection row alone.
 
 **Standard-library quantum-coverage — lowering-verified: 48/222 (21.6%)** &nbsp;·&nbsp; backend-available: 28/222 (12.6%) — *a DIFFERENT instrument: the per-function probe harness, across all libraries. It does not count injected openlibm bodies, which is why its `math.h` row is lower than the headline above.*
 
@@ -126,11 +139,11 @@ Two axes (bd e4jv): **Lowering** = the compiler emits + links + golden-matches t
 | [`math.h`](tools/library_coverage/coverage/mathh.md) | 52/183 (28%) | 45/183 (25%) | 25/183 (14%) | 51 | 45 | 84 | 3 |
 | [`stdlib.h`](tools/library_coverage/coverage/stdlib.md) | 3/39 (8%) | 3/39 (8%) | 3/39 (8%) | 6 | 0 | 0 | 8 |
 
-> ## `math.h` coverage: **158/183 cells (86%)**
+> ## `math.h` coverage: **155/183 cells (85%)**
 >
-> **Composition — 100/120 injection + 6/6 CQ-PROVIDED + 42/42 recognition keep-set + 10/12 type-generic macros + 0/3 nan (by design).** The routes are measured SEPARATELY and stay separately quotable; since the owner ruling of 2026-08-22 (bd `fhas`) they may be summed, but **only with this composition shown**. Read the total as *"CQ compiles 158 of the 183 modelled `math.h` cells"* — which is true, a user calling `sqrt()` gets a real lowering. It is **NOT** *"CQ compiled openlibm's body 158 times"*: the recognition cells have **no injectable body at all** (Rule 18) and the CQ-PROVIDED cells use **CQ's own leaf**, not upstream's. Sensitivity, so the figure is never quoted barer than it is: **-3** if `fma{,f,l}`'s *partial* cells are excluded, and the 3 by-design `nan` cells arguably do not belong in a denominator at all (nothing to taint). **The campaign number for COMPILER progress remains the injection row alone** — rows (1) and (3) move with no compiler work.
+> **Composition — 97/120 injection + 6/6 CQ-PROVIDED + 42/42 recognition keep-set + 10/12 type-generic macros + 0/3 nan (by design).** The routes are measured SEPARATELY and stay separately quotable; since the owner ruling of 2026-08-22 (bd `fhas`) they may be summed, but **only with this composition shown**. Read the total as *"CQ compiles 155 of the 183 modelled `math.h` cells"* — which is true, a user calling `sqrt()` gets a real lowering. It is **NOT** *"CQ compiled openlibm's body 155 times"*: the recognition cells have **no injectable body at all** (Rule 18) and the CQ-PROVIDED cells use **CQ's own leaf**, not upstream's. Sensitivity, so the figure is never quoted barer than it is: **-3** if `fma{,f,l}`'s *partial* cells are excluded, and the 3 by-design `nan` cells arguably do not belong in a denominator at all (nothing to taint). **The campaign number for COMPILER progress remains the injection row alone** — rows (1) and (3) move with no compiler work.
 >
-> **Three separately-measured coverage scoreboards (bd `libm-scoreboard-two-numbers`) — summable ONLY as above, never silently blended.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **100/120 injection-covered (83%), 100 verified** of the reconciled 120-cell surface ([full-depth census](tools/library_coverage/FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`120 injection + 6 CQ-provided + 42 recognition + 12 macros + 3 nan`). A **third** row, **CQ-PROVIDED** (**6/6 CQ-provided (6 with a committed e2e golden)**), covers functions whose reversible leaf **CQ ships itself** and injects instead of upstream's body (Rule 18 amendment, bd `guwr`) — `sin`/`cos`/`tan` at f64+f80 only; it is **never merged into** the injection number and is not campaign progress. The double-only authored-branchless number (**32/32**, [source-injection census](tools/library_coverage/INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
+> **Three separately-measured coverage scoreboards (bd `libm-scoreboard-two-numbers`) — summable ONLY as above, never silently blended.** The `math.h` `Lowers`/`Verified` columns are the **recognition floor** — fns that lower because `clang -O1` emits a hardware-backed intrinsic the pass recognizes (`sqrt fabs copysign floor ceil trunc round rint nearbyint fmin fmax fma lrint llrint` + variants) — a *fixed floor, not injection progress*. The **AUTHORITATIVE libm-campaign number** is the full-surface REAL-openlibm injection census: **97/120 injection-covered (81%), 97 verified** of the reconciled 120-cell surface ([full-depth census](tools/library_coverage/FULL_DEPTH_CENSUS.md) §11) — the injectable subset of this table's denominator (`120 injection + 6 CQ-provided + 42 recognition + 12 macros + 3 nan`). A **third** row, **CQ-PROVIDED** (**6/6 CQ-provided (6 with a committed e2e golden)**), covers functions whose reversible leaf **CQ ships itself** and injects instead of upstream's body (Rule 18 amendment, bd `guwr`) — `sin`/`cos`/`tan` at f64+f80 only; it is **never merged into** the injection number and is not campaign progress. The double-only authored-branchless number (**32/32**, [source-injection census](tools/library_coverage/INJECTION-CENSUS.md)) is a hand-written-substitute subset, superseded by the full-surface census. The three sets are disjoint; a library function that declines under injection stays declined (and ticketed), never counted via recognition.
 
 Full tables: [`tools/library_coverage/COVERAGE.md`](tools/library_coverage/COVERAGE.md) (regenerate: `python3 tools/library_coverage/probe.py run`).
 <!-- LIBRARY-COVERAGE:END -->

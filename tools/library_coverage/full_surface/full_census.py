@@ -117,11 +117,37 @@ SCOPE = {
     #    at rev e15ea23 2026-07-28: the only rem|mod token in src/ is an error
     #    string), AND its data-dependent-loop mechanism is a K-parameterized
     #    unroller, not a concrete gate sequence (Leg B). Payoff of the best
-    #    design measured at ZERO cells: 9/9 have a loop SCEV cannot bound at all.
+    #    design measured at ZERO cells: 9/9 have a loop SCEV cannot bound at all
+    #    — *** that "9/9" is AS-MEASURED 2026-07-27 and is now 7/9: see the
+    #    remainderl/remquol entry below, whose bodies changed under bd 3c6m.63 and
+    #    which no longer block on a loop at all. The CONCLUSION (payoff zero) is
+    #    unchanged and in fact strengthened for those two — they block EARLIER. ***
     **{c: ("decided-decline", "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its §6")
        for c in ("fmod.f64", "fmodf.f32", "fmodl.f80",
-                 "remainder.f64", "remainderf.f32", "remainderl.f80",
-                 "remquo.f64", "remquof.f32", "remquol.f80")},
+                 "remainder.f64", "remainderf.f32",
+                 "remquo.f64", "remquof.f32")},
+    #    TWO OF THE NINE NO LONGER BLOCK ON A LOOP — corrected 2026-08-23 (bd
+    #    `3c6m.63`, the corpus-collision fix). The RULING IS UNTOUCHED: its Leg A
+    #    ("Bennett ships NO frem/fmod algorithm at ANY width") is body-independent
+    #    and grounds all nine. What is falsified is the block comment's EVIDENCE
+    #    line "9/9 have a loop SCEV cannot bound at all" — true of the ld80 bodies
+    #    the census used to measure, and NOT re-measured for these two on the
+    #    bodies openlibm actually builds. Both now block BEFORE any loop, on the
+    #    same instruction, and the loop behind it is UNMEASURED. Recording the
+    #    stale line would be exactly the unverifiable scope_ref this table exists
+    #    to retire (the tgammal.f80 precedent below).
+    **{c: ("decided-decline",
+           "SCOPING-L3-data-dependent-trip-loops.md (owner 2026-07-27); re-open only via its §6. "
+           "RULING STANDS on Leg A (Bennett ships no frem/fmod gate sequence at any width — "
+           "body-independent) but its EVIDENCE LINE IS CORRECTED 2026-08-23 (bd 3c6m.63): on the "
+           "body openlibm actually builds (src/s_remquol.c, not the ld80 variant the corpus used "
+           "to reach through a basename collision) the measured first blocker is NOT a loop at "
+           "all — it is `src/s_remquol.c:76:7 ux.e = x`, the union IEEEl2bits store, i.e. "
+           "`cq taint escape: tainted value stored to memory` = the 3c6m.51 promoteFp80Union / "
+           "7.5 Shadow axis. Bucket moved loop-carried -> memory-store (Shadow). The loop the "
+           "ruling's payoff sizing cites is BEHIND that store and is now UNMEASURED on this body; "
+           "do NOT quote '9/9 have a loop SCEV cannot bound' for these two")
+       for c in ("remainderl.f80", "remquol.f80")},
 
     # -- sin/cos/tan x3 widths: Payne-Hanek. SINGLY grounded, and the difference
     #    from fmod is load-bearing (measured 2026-07-28): Bennett DOES back
@@ -307,8 +333,79 @@ SCOPE = {
     # -- not this bucket's work.
     "powl.f80":       ("deferred-capability",
                        "by-ref out-param under specialization = the g387/7.5 Shadow axis, scoped OUT per bd 20xt"),
-    "nexttowardl.f80":("corpus-gap",
-                       "openlibm ships no s_nexttowardl.c. NB the recorded 'would land on nextafterl's blocker anyway' rider is REFUTED: nextafterl.f80 COMPILES today"),
+
+    # =======================================================================
+    # -- THE nextafterl/nexttoward FOUR — RE-SCOPED 2026-08-23 (bd `3c6m.63`)
+    # =======================================================================
+    # These four are the corpus-collision fix landing. Until 2026-08-23 the census
+    # built ten openlibm TUs from `ld80/` whose basenames also exist in `src/`, and
+    # openlibm's own build EXCLUDES all ten (ld80/Make.files:8-9 comments eight out
+    # and never mentions s_nexttoward{,f}.c; CMakeLists.txt names src/ for every
+    # one). Three of these cells were therefore measured `COMPILES` ON A BODY THAT
+    # SHIPS NOWHERE, and the fourth was reported as having no body at all.
+    #
+    # *** THIS IS A CORRECTION, NOT A REGRESSION. *** No compiler capability was
+    # lost on 2026-08-23; the number stopped measuring the wrong program. Injection
+    # 100/120 -> 97/120. Whoever reads a shrinking numerator here should read it as
+    # `165/174` being caught one more time, not as the pass getting worse.
+    #
+    # WHY `deferred-capability` AND NOT `lever-gap`. `lever-gap` asserts "a
+    # capability we could build WOULD move this cell", and that is UNMEASURED for
+    # all four: each first blocker below is located to the line, and the depth
+    # BEHIND it is not. This table has mispredicted the next layer three times
+    # running on the tgamma pair, and bd `ih70` (the open PredMux W6 residuals)
+    # carries the same instruction verbatim — "file-and-measure before implementing
+    # (the bucket counts on this campaign have been wrong three times)". Putting
+    # four unmeasured cells into the ACTIONABLE set is the exact over-count the
+    # SCOPE axis was created to stop. Tracker: bd `3c6m.67`.
+    #
+    # ONE MEASURED OBSERVATION, recorded because it narrows the search and NOT
+    # because it predicts the answer: `nextafter.f64` and `nextafterf.f32` both
+    # COMPILE today with a structurally similar NaN-guard conjunction, while
+    # `nextafterl.f80` declines on it — so the difference is at least partly the
+    # fp80 union / width dimension (3c6m.51 promoteFp80Union interacting with
+    # PredMux), not the `&&` shape alone. Whether that is the WHOLE difference is
+    # UNMEASURED; do not scope against it without measuring.
+    **{c: ("deferred-capability", ref) for c, ref in {
+        "nextafterl.f80":
+            "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nextafterl.c, a body "
+            "openlibm does not build. On the shipped body the measured first blocker is "
+            "src/s_nextafterl.c:42:29 — the nested `&&` of the NaN guard "
+            "(ux.bits.exp==0x7fff && ((ux.bits.manh&~LDBL_NBIT)|ux.bits.manl)!=0) over the "
+            "TAINTED x — `cq controlled lowering: nested control flow under quantum control`. "
+            "Depth behind UNMEASURED. Tracker bd 3c6m.67. NB the f64/f32 siblings COMPILE",
+        "nexttoward.f64":
+            "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttoward.c, a body "
+            "openlibm does not build. Shipped body's first blocker is src/s_nexttoward.c:44:22, "
+            "the same nested NaN-guard `&&` shape as nextafterl.f80 spelled over "
+            "EXTRACT_WORDS(hx,lx,x) — `nested control flow under quantum control`. Depth behind "
+            "UNMEASURED. Tracker bd 3c6m.67",
+        "nexttowardf.f32":
+            "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttowardf.c, a body "
+            "openlibm does not build — and this cell is the campaign's own bd k710 +1 (97->98, "
+            "2026-08-10), so THAT +1 IS RETRACTED. It rested on the write-only "
+            "`volatile float u = x*x;` at ld80/s_nexttowardf.c:63 cleared by the fenv ruling; "
+            "src/'s scalar `t` IS READ (`t=x*x; if(t==x) return t; else return x;`) so the fenv "
+            "path is never needed here. The shipped body blocks EARLIER and elsewhere: "
+            "src/s_nexttowardf.c:45:5 `if((hx>=0) ^ (x < y))`, an XOR of two compares over "
+            "tainted x — `cq controlled lowering: control flow under quantum control` "
+            "(flat/diamond, NOT the L6 nest its two siblings hit). The fenv ruling and "
+            "eraseDeadVolatileScalarStores are UNAFFECTED and keep their own lit coverage; what "
+            "is retracted is only this cell's credit. Depth behind UNMEASURED. Tracker bd 3c6m.67",
+        "nexttowardl.f80":
+            "RE-SCOPED 2026-08-23 (bd 3c6m.63) — WAS `corpus-gap`, AND BOTH HALVES OF THAT ENTRY "
+            "WERE WRONG. (1) openlibm does NOT ship no body for it: it mints the name as "
+            "`openlibm_strong_reference(nextafterl, nexttowardl)` at src/s_nextafterl.c:80, "
+            "exactly the shape wprobe's bd-vuy6 _synth_alias_shim resolves — the basename "
+            "collision HID it, because ld80/s_nextafterl.c:90 has that alias COMMENTED OUT. The "
+            "cell is now genuinely probed (no shim was added; the generic alias mechanism found "
+            "it once the corpus became faithful, which is NOT the manufactured +1 the ticket's "
+            "trap (a) forbids — it declines). (2) the rider 'would land on nextafterl's blocker "
+            "anyway is REFUTED' is itself REFUTED and the original claim CONFIRMED to the "
+            "COLUMN: this cell's diagnostic is src/s_nextafterl.c:42:29, byte-identical to "
+            "nextafterl.f80's. The refutation rested on nextafterl.f80 compiling, which was the "
+            "artifact. Tracker bd 3c6m.67",
+    }.items()},
 
     # =======================================================================
     # -- THE ilogb/logb QUANTUM-TRIP FAMILY — 2 + 2, NOT 4 (RE-SCOPED 2026-08-21)
@@ -360,7 +457,11 @@ SCOPE = {
     #    body) was NOT chosen and is deferred, not dead.
     #
     #    MEASURED AT LANDING, not predicted (bd ww4c.3, corpus fingerprint
-    #    409 syms / 251 bc): both cells move `decline/loop-carried` -> `COMPILES`
+    #    409 syms / 251 bc — *** that is the PRE-3c6m.63 DEFECTIVE fingerprint;
+    #    the faithful one is 410/252. Neither ilogb cell is affected: their bodies
+    #    are src/s_ilogb{,f}.c, which no ld80 file collides with, and both were
+    #    re-measured COMPILES on the corrected corpus 2026-08-23 ***): both cells
+    #    move `decline/loop-carried` -> `COMPILES`
     #    under this census's own O1 pipeline, and a whole-census A/B against the
     #    prior baseline moved EXACTLY these two with ZERO regressions. Both ship
     #    with committed ship-floor goldens at stage-2b STRICT
@@ -534,12 +635,23 @@ def main():
             # campaign (the vuy6 module-asm aliases, the 6 missing TUs, the ld80
             # ieee.h retraction), and every one was found by hand, late.
             #
-            # This is deliberately NOT a hard abort: `nexttowardl.f80` is a
-            # KNOWN, owner-recorded corpus gap (openlibm ships no
-            # s_nexttowardl.c at all), so the census must still complete and
-            # report it. What changes is that it is now classified by the
-            # HARNESS, from the corpus, instead of being inferred from a
-            # compiler diagnostic that cannot tell the two apart.
+            # This is deliberately NOT a hard abort: a real corpus gap must not
+            # stop the whole census, and it is now classified by the HARNESS,
+            # from the corpus, instead of being inferred from a compiler
+            # diagnostic that cannot tell the two apart.
+            #
+            # *** AS OF 2026-08-23 THIS BRANCH HAS NO CUSTOMER, and how it lost
+            # its only one is the point (bd `3c6m.63`). `nexttowardl.f80` was the
+            # standing example — "openlibm ships no s_nexttowardl.c at all" — and
+            # that was FALSE: openlibm mints the name as
+            # `openlibm_strong_reference(nextafterl, nexttowardl)` at
+            # src/s_nextafterl.c:80, which the bd-`vuy6` alias shim resolves. The
+            # census could not see it because a basename collision made
+            # ld80/s_nextafterl.c win the output slot, and THAT file has the alias
+            # COMMENTED OUT (ld80/s_nextafterl.c:90). So this classification was
+            # reporting a CORPUS-RECIPE defect as an UPSTREAM one. Keep the branch
+            # — it is a live guard — but do not read a `no-body` cell as proof
+            # that upstream ships nothing; check `build_corpus.py` first. ***
             if spelling not in defmap:
                 missing_entry.append(key)
                 rec = {"status": "no-body", "bucket": "corpus-gap (no body)",

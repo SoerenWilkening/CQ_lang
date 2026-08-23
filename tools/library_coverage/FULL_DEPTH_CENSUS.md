@@ -8,18 +8,25 @@
 > because the capability→function *map* and the peel methodology are still the best
 > analysis of WHY cells decline — that part has aged well; the tallies have not.
 >
-> **⚡ CURRENT AUTHORITATIVE NUMBERS (re-derived 2026-08-22 from
+> **⚡ CURRENT AUTHORITATIVE NUMBERS (re-derived 2026-08-23 from
 > `full_surface/full_census_O1.json`; three-row split from bd `guwr`, 2026-07-31):**
 > THREE disjoint rows, never merged (owner ruling; the retired `165/174` overclaim is
 > what merging produces).
-> - **(2) INJECTION — the campaign number: 100 / 120 upstream-injectable (83%)**;
->   **20 not covered** (19 decline + 1 `no-body`); **100 verified — the gap is 0**.
+> - **(2) INJECTION — the campaign number: 97 / 120 upstream-injectable (81%)**;
+>   **23 not covered** (23 decline, 0 `no-body`); **97 verified — the gap is 0**.
 >   *Was `97 / 117` here, three increments stale: bd `bcv4` took the denominator
 >   117 → 120 (the 3 never-probed `ilogb` cells entered, 2026-08-10), bd `k710` the
 >   numerator 97 → 98 (`nexttowardf.f32`, 2026-08-10), bd `ww4c.3` 98 → 100
->   (`ilogb.f64` + `ilogbf.f32`, 2026-08-22). Same lesson as `COVERAGE.md`'s: a line
->   that asserts AUTHORITY is exactly the one to re-derive rather than trust — the
->   single source of truth is the census run itself.*
+>   (`ilogb.f64` + `ilogbf.f32`, 2026-08-22) — and then bd `3c6m.63` took it back to
+>   **97** on 2026-08-23, RETRACTING `k710`'s cell along with `nextafterl.f80` and
+>   `nexttoward.f64`: all three had been measured on `ld80/` bodies openlibm does not
+>   build, reached through a basename collision in the corpus recipe.
+>   `nexttowardl.f80` moved `no-body` → `decline` in the same run (openlibm mints it by
+>   `strong_reference`, which the collision hid), which is why the `no-body` row is now
+>   empty. **The compiler did not regress; the number stopped measuring the wrong
+>   program.** Same lesson as `COVERAGE.md`'s: a line that asserts AUTHORITY is exactly
+>   the one to re-derive rather than trust — the single source of truth is the census
+>   run itself.*
 > - **(3) CQ-PROVIDED: 6 / 6** — `sin`/`cos`/`tan`.f64 + `sinl`/`cosl`/`tanl`.f80, where
 >   CQ ships the reversible leaf and the pipeline injects it **instead of** upstream's
 >   body. `sinf`/`cosf`/`tanf` are **REJECTED** by the same gate (no f32 leaf; bd `eur4`)

@@ -90,7 +90,7 @@ WIDTH_INFO = {
     # LOW 64 BITS ONLY. bd 3c6m.58 landed the cells that note predicted (a LIVE
     # SET_LDOUBLE_WORDS/IEEEl2bits field-insert at a sub-64 offset emits an
     # and-clear keep-mask above 2^64): nextafterl, modfl, lroundl, llroundl,
-    # frexpl (1 each) and sinhl (2). slice_libm_real_nextafterl printed
+    # frexpl (1 each) and sinhl (2). slice_libm_ld80_nextafterl printed
     # `cq_template_and_i80_hl(h520, 4294967295)` for the true operand
     # i80 0xFFFF_00000000_FFFFFFFF, so a miscompile of ANY bit above 63 of that
     # mask was invisible to the Rule-2 diff. It now reads

@@ -40,7 +40,7 @@ namespace {
 // THREE accept controls, each the sole guard against re-widening a decision this
 // change paid for:
 //   * lowering_accept_undef_literal_single_slot.ll      the THRESHOLD (2, not 1) —
-//       what keeps `tests/e2e/slice_libm_real_nexttoward`'s committed golden green
+//       what keeps `tests/e2e/slice_libm_ld80_nexttoward`'s committed golden green
 //   * lowering_accept_undef_literal_two_functions.ll    the PER-FUNCTION scope
 //   * lowering_accept_undef_literal_global_init_pad.ll  the GlobalValue-address skip
 constexpr char kMsgUndefPaired[] =
@@ -197,7 +197,7 @@ bool declineUnpairedUndefLiterals(Module &M) {
   // `cqrt_free` asserts `|0⟩` on its behalf. (Do NOT restate this as "one slot is
   // one materialisation": that is measurably false inside a rolled loop, where one
   // static slot is read once per trip. See LiteralIntegrity.h.) The measured
-  // real-code instance is `slice_libm_real_nexttoward` — 985 emitted calls, one
+  // real-code instance is `slice_libm_ld80_nexttoward` — 985 emitted calls, one
   // undef-bearing slot, rail never freed.
   //
   // The SECOND slot is the pairing channel, and it is where the diagnostic fires:

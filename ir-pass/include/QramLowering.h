@@ -220,7 +220,7 @@ bool foldVolatileConstAllocaLoads(llvm::Module &M, const TaintSet &taint);
 // `RecursivelyDeleteTriviallyDeadInstructions` removes it (a cleanup that exists
 // for its own Rule-6/8 reason: a dead TAINTED op left alive lowers to a forward
 // gate that is never uncomputed and never freed). Measured on the motivating
-// cell: the shipped `slice_libm_real_nexttowardf` trace contains ZERO
+// cell: the shipped `slice_libm_ld80_nexttowardf` trace contains ZERO
 // `fmul_f32`. Do not write "we only delete the store" in a summary — it is true
 // of this function and false of the pass, and the ruling was first requested on
 // exactly that too-comfortable phrasing before being re-affirmed on the measured

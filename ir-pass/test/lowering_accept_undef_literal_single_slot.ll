@@ -5,7 +5,7 @@
 ; *** IT EXISTS TO PROTECT A SHIPPED GOLDEN. *** The first draft of the bd xy9n
 ; guard refused ANY emitted gate operand carrying a literal undef/poison, and
 ; measurement over 966 fixtures + 257 e2e stage-1 modules + 251 openlibm modules
-; found exactly ONE real-code occurrence — `slice_libm_real_nexttoward`, whose
+; found exactly ONE real-code occurrence — `slice_libm_ld80_nexttoward`, whose
 ; lowered module holds 985 emitted calls and this one slot:
 ;
 ;   %selop = call i32 @cqrt_alloc_f64(double undef)
@@ -38,7 +38,7 @@
 ; by design, so it contributes nothing to the differential. Its discriminating
 ; power comes from ARM-KILL — raise the guard's threshold from two slots to one
 ; and this fixture goes red, which is exactly the regression that would have
-; broken `tests/e2e/slice_libm_real_nexttoward` and its committed golden. Do not
+; broken `tests/e2e/slice_libm_ld80_nexttoward` and its committed golden. Do not
 ; conclude from its absence in the differential that it pins nothing (bd memory
 ; [[predmux-decline-fixture-discrimination]] trap 1).
 ;

@@ -8,13 +8,13 @@
 > *"Do not quote '48 verified' — quote 48 injection-covered, 8 verified"* is itself now
 > out of date on both halves.
 >
-> **⚡ CURRENT AUTHORITATIVE NUMBERS (re-derived 2026-08-22 from
+> **⚡ CURRENT AUTHORITATIVE NUMBERS (re-derived 2026-08-23 from
 > `full_surface/full_census_O1.json`; three-row split from bd `guwr`, 2026-07-31):** the
 > all-widths **O1** baseline carries **THREE disjoint rows** (Rule 18's
 > CQ-PROVIDED amendment, owner ruling; never merged). **(2) INJECTION — the campaign
-> number: 100 / 120 upstream-injectable (83%)**, **100 verified** (gap 0), **20** not
+> number: 97 / 120 upstream-injectable (81%)**, **97 verified** (gap 0), **23** not
 > covered — of which only **2 are actionable** (read the `scope` field, never `bucket`:
-> `lever-gap` 2 · `deferred-capability` 3 · `corpus-gap` 1 · `decided-decline` 14).
+> `lever-gap` 2 · `deferred-capability` 7 · `corpus-gap` 0 · `decided-decline` 14).
 > **(3) CQ-PROVIDED: 6 / 6**
 > (`sin`/`cos`/`tan`.f64 + `sinl`/`cosl`/`tanl`.f80 — CQ ships the leaf and injects it
 > instead of upstream's body; `sinf`/`cosf`/`tanf` rejected, bd `eur4`).
@@ -22,6 +22,15 @@
 > (denominator 117 → 120), bd `k710` (97 → 98), bd `ww4c.3` (98 → 100), the last of which
 > also re-scoped the `ilogb`/`logb` four 2+2 under bd `eyhj`, moving 2 cells from
 > `lever-gap` to covered and 2 from `decided-decline` to `deferred-capability`.*
+> **⚡ 2026-08-23, bd `3c6m.63` — the numerator went DOWN, 100 → 97, and that is a
+> CORRECTION not a regression.** The corpus recipe was building ten openlibm TUs from
+> `ld80/` whose basenames also exist in `src/`, and openlibm's own build excludes all
+> ten; `nextafterl.f80`, `nexttoward.f64` and `nexttowardf.f32` (bd `k710`'s own cell)
+> were scored COMPILES on a program that ships nowhere. `nexttowardl.f80` moved
+> `no-body` → `decline` in the same run and the `corpus-gap` row emptied, because
+> openlibm DOES mint it — by `strong_reference` from the very file the collision was
+> hiding. Whole-census A/B: 6 cells moved, 120 byte-identical. The four are tracked at
+> bd `3c6m.67`.
 > **AT THE `guwr` EVENT ITSELF THE NUMERATOR DID NOT MOVE — 97 before, 97 after**
 > *(a 2026-07-31 statement, not a current figure)*; all six cells that left row (2)
 > were declines, so 79% → 83% was DENOMINATOR (123 → 117), not compiler work.

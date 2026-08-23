@@ -1484,7 +1484,7 @@ bool eraseDeadVolatileScalarStores(Module &M, const TaintSet &taint) {
       // the stored VALUE — but do not read that as "the computation survives".
       // Once its only consumer is gone the value is trivially dead, and inside a
       // PredMux region the pre-existing cleanup at PredMuxFlatten.cpp:2618 takes
-      // it; the shipped `slice_libm_real_nexttowardf` trace has ZERO `fmul_f32`.
+      // it; the shipped `slice_libm_ld80_nexttowardf` trace has ZERO `fmul_f32`.
       // That outcome is what the fenv ruling actually licenses (an op whose only
       // purpose is raising a flag has no observable effect), and the owner
       // re-affirmed it on the measured facts after the ruling was first requested

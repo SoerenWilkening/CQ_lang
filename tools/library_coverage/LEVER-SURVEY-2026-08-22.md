@@ -25,15 +25,32 @@
 
 ## 0. The answer, and the arithmetic
 
-**The live plan, after the owner deferred `fpclassify` on 2026-08-22 (bd `3c6m.65`):**
+> **⚑ §2.2 HAS LANDED — 2026-08-23, bd `3c6m.63`.** The survey recommended sequencing
+> it first and that is what happened, so the "today" row below is **superseded**: the
+> published state is now **155/183 (85%) headline / 97/120 injection**. The `−3`
+> measured exactly as predicted (`nextafterl.f80`, `nexttoward.f64`,
+> `nexttowardf.f32`), with one thing the survey did not predict: **`nexttowardl.f80`
+> was never a corpus gap either** — openlibm mints it by `strong_reference` from the
+> same `src/s_nextafterl.c` the collision was hiding, so it moved `no-body` →
+> `decline` and the `corpus-gap` row emptied. Whole-census A/B: **6 cells moved, 120
+> byte-identical.** Everything below in §2.2 is left as written (it is the evidence
+> that justified the work); the outcome is recorded in
+> `full_surface/README.md`'s 2026-08-23 entry, which is authoritative.
+
+**The live plan, after the owner deferred `fpclassify` on 2026-08-22 (bd `3c6m.65`),
+with §2.2 struck through as DONE:**
 
 | step | headline | injection (campaign) |
 |---|---|---|
-| today (measured) | **158/183 (86%)** | **100/120** |
-| + bd `eur4` f32 trig leaves (§2.1) | 161/183 (88%) | 100/**117** (denominator only) |
-| + `isnormal` (§2.3) | 162/183 (89%) | 100/117 (unchanged) |
-| + faithful corpus (§2.2) | **159/183 (87%)** | **97/117** |
+| ~~as surveyed 2026-08-22~~ | ~~158/183 (86%)~~ | ~~100/120~~ |
+| **✅ faithful corpus (§2.2) — LANDED 2026-08-23** | **155/183 (85%)** | **97/120** |
+| + bd `eur4` f32 trig leaves (§2.1) | 158/183 (87%) | 97/**117** (denominator only) |
+| + `isnormal` (§2.3) | 159/183 (88%) | 97/117 (unchanged) |
 | *(deferred)* `fpclassify` (§3) | *+1 → 160/183* | *unchanged* |
+
+*(The `eur4`/`isnormal` rows are the survey's own arithmetic re-based onto the landed
+`155`; they are **derived, not re-measured**, and each still owes its own measurement
+at the time it lands.)*
 
 Read the middle column as *"CQ compiles N of the 183 modelled `math.h` cells"* and the
 right one as compiler progress, per the 2026-08-22 headline ruling (bd `fhas`)
@@ -63,7 +80,7 @@ distinct things get collapsed into "we can't" if this is not written down:
 |---|---|---|
 | **worth 0 cells** | tgamma pair (§4.1); `uwnw` in-clone switch (§4.2) | build it and the census does not move — the cells stay blocked behind further layers |
 | **owner-ruled out** | the `fmod`/`remainder`/`remquo` nine; the Payne–Hanek six | scope, not physics. **Every `decided-decline` carries a named re-opening condition by construction** |
-| **not a compiler fact** | `nexttowardl.f80` | there is no body to compile — openlibm ships no `s_nexttowardl.c` |
+| **not a compiler fact** | ~~`nexttowardl.f80`~~ — **REFUTED 2026-08-23, this surface now has no member** | ~~there is no body to compile — openlibm ships no `s_nexttowardl.c`~~. openlibm **does** mint it, as `openlibm_strong_reference(nextafterl, nexttowardl)` at `src/s_nextafterl.c:80`; the corpus collision (§2.2) hid that file, and the ld80 twin has the alias commented out. The cell is now probed and **declines** like any other. The CATEGORY is still real and worth keeping — this is just a reminder that "upstream ships nothing" is a claim about the corpus recipe until you have checked it |
 | **presentation choice** | bd `sj30` surface expansion (§4.3) | fully doable today with zero compiler work; it is the *percentage* that is unattractive, and that is an owner call |
 
 The project's vocabulary has exactly **one** permanent category — the C-physics wall
@@ -143,7 +160,21 @@ HEAD — `wprobe.build_defmap` (`:411-413`) auto-injects the CQ leaf the moment
 `cq_provided_cells()` admits a spelling, measured. Its later 2026-08-10 note prices it
 correctly. Resolve which text governs before starting.
 
-### 2.2 The corpus collision — a **`-3`** measurement-integrity ticket
+### 2.2 The corpus collision — a **`-3`** measurement-integrity ticket ✅ **DONE 2026-08-23**
+
+> **LANDED, bd `test_C_libtooling-3c6m.63`.** Injection **100/120 → 97/120**, headline
+> **158/183 → 155/183**. Everything predicted below measured true; three things it did
+> not predict are recorded in `full_surface/README.md`'s 2026-08-23 entry — (1)
+> `nexttowardl.f80` was **not** a corpus gap (openlibm mints it by `strong_reference`
+> at `src/s_nextafterl.c:80`, which the collision hid, so it moved `no-body` →
+> `decline` and its diagnostic is byte-identical to `nextafterl.f80`'s); (2)
+> `remainderl.f80`/`remquol.f80` changed **bucket** (`loop-carried` →
+> `memory-store (Shadow)`), which falsifies the `9/9 have a loop SCEV cannot bound`
+> evidence line for two of the nine while leaving the ruling itself intact; and (3)
+> the `<machine/ieee.h>` shim is **retired** — it only ever existed to build the two
+> ld80 files openlibm does not build, and both `src/` bodies compile cleanly under the
+> plain flag set. The recipe is now `full_surface/build_corpus.py`, and trap (b) is
+> closed by a new ctest gate, `e2e-census-slice-sync`.
 
 **Not a lever. A defect in the number**, and it should land before anyone quotes 100
 again. Tracked as bd `test_C_libtooling-3c6m.63`.
@@ -312,6 +343,8 @@ merge (1 phi, 3 incomings) satisfies but cannot reach.
 2. **Bucketing.** Macro row, or a census cell? As a census cell it is injection
    `100/120 → 101/121` and macros `10/12 → 10/11` — **same 159 total**, but it moves the
    injection **denominator**, which is the edit class the `165/174` lesson is about.
+   *(Off the 2026-08-22 baseline; on the landed §2.2 one it reads `97/120 → 98/121`. The
+   point — a `+1` that moves the denominator too — is unchanged.)*
 3. **The doctrine tension underneath both macro cells.** Headline ruling (c) says the
    campaign number is the injection row alone because rows (1) and (3) move without
    compiler work. **The macros row does not fit that description** — both these cells
@@ -429,6 +462,10 @@ Measured, not predicted. Option (b) (POSIX/GNU: Bessel + `sincos` + `lgamma_r`) 
 
 - headline **158/183 (86%) → 161/197 (81.7%)**
 - injection **100/120 → 103/134 (76.9%)**
+
+*(Both computed off the 2026-08-22 baseline, which §2.2 has since moved to 155/183 and
+97/120. The **deltas** — +3 cells for +14 denominator — are what this section is about
+and they are unchanged; re-base before quoting the absolute figures.)*
 
 And all three movers are thin. **Two are double-counts in all but name**:
 `lgamma_r.f64` / `lgammaf_r.f32` measure **byte-identical status and byte-identical
@@ -551,7 +588,9 @@ BC=/tmp/bc OPENLIBM=/tmp/openlibm CENSUS_OPTLEVEL=O1 \
 
 The census corpus fingerprint at the time of this survey is **409 syms / 251 bc**. If
 yours differs, re-measure before quoting anything here — and note that the faithful
-corpus of §2.2 is **410**.
+corpus of §2.2 is **410 syms / 252 bc**, which is what shipped on **2026-08-23**. So
+`409/251` is now the *defective* fingerprint: seeing it means you are on the old
+corpus. Build with `full_surface/build_corpus.py`, never the retired shell block.
 
 ---
 

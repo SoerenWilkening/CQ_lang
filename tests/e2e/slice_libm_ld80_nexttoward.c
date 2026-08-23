@@ -1,4 +1,24 @@
-/* slice_libm_real_nexttoward.c — bd 3c6m.58: the REAL openlibm nexttoward body
+/* *** NOT A COVERAGE CLAIM — openlibm does NOT build this body (bd 3c6m.63). ***
+ *
+ * This slice vendors openlibm's `ld80/` variant. openlibm's own build EXCLUDES it
+ * on every target: `ld80/Make.files:8-9` comments `s_nextafterl.c` out and never
+ * mentions `s_nexttoward.c` / `s_nexttowardf.c`, while `CMakeLists.txt:174/297/309`
+ * name `src/` for each. Until 2026-08-23 the census reached these ld80 bodies
+ * through a basename collision in the corpus recipe and scored three cells
+ * `COMPILES` on a program that ships nowhere.
+ *
+ * ON THE BODY THAT SHIPS, THIS CELL DECLINES — census cell `nexttoward.f64` declines at `src/s_nexttoward.c:44:22`,
+ *   the same nested NaN-guard `&&`: `nested control flow under quantum control`.
+ *
+ * The slice is KEPT, and renamed out of the `slice_libm_real_*` namespace rather
+ * than deleted, because it still proves what its header describes: real
+ * BSD-licensed openlibm C that lowers, links, runs and byte-matches. What it must
+ * not do is COUNT — `probe.py`'s published `verified` number is the glob count of
+ * `slice_libm_real_*.expected.log`, so leaving it there would publish
+ * verified > injection-covered. `tools/slice_census_sync_check.py` (ctest
+ * `e2e-census-slice-sync`) enforces the split so this cannot drift back silently.
+ */
+/* slice_libm_ld80_nexttoward.c — bd 3c6m.58: the REAL openlibm nexttoward body
  * (ld80/s_nexttoward.c, fdlibm/OpenBSD-derived, BSD-licensed) — census cell
  * nexttoward.f64.
  *

@@ -133,7 +133,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // trivially dead and, inside a PredMux region, is removed by the pre-existing
   // cleanup at PredMuxFlatten.cpp:2618 — so the emitted circuit generally loses
   // the multiply too, which IS what the ruling licenses (measured: zero
-  // `fmul_f32` in slice_libm_real_nexttowardf). Outside a region it is instead
+  // `fmul_f32` in slice_libm_ld80_nexttowardf). Outside a region it is instead
   // lowered, uncomputed and freed. See QramLowering.h for the asymmetry.
   eraseDeadVolatileScalarStores(M, taint);
 
@@ -512,7 +512,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // trivially dead and, inside a PredMux region, is removed by the pre-existing
   // cleanup at PredMuxFlatten.cpp:2618 — so the emitted circuit generally loses
   // the multiply too, which IS what the ruling licenses (measured: zero
-  // `fmul_f32` in slice_libm_real_nexttowardf). Outside a region it is instead
+  // `fmul_f32` in slice_libm_ld80_nexttowardf). Outside a region it is instead
   // lowered, uncomputed and freed. See QramLowering.h for the asymmetry.
   eraseDeadVolatileScalarStores(M, taint);
 

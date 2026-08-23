@@ -2,13 +2,14 @@
 
 ## ⚠ READ THIS FIRST — `bucket` is NOT a work list. `scope` is.
 
-**The 19 declines contain 2 cells of actionable work, not 19** (last re-measured
-**2026-08-22**, bd `ww4c.3`, when `ilogb.f64`/`ilogbf.f32` LANDED and left this
-table entirely; re-scoped **2026-08-21**, bd `eyhj`/`0bp8`; bd
-`bcv4`/`keol`/`k710` **2026-08-10**; the axis itself is bd `3c6m.14`,
-2026-07-28). Every `decline` record carries a **`scope`** field alongside
-`bucket`, because those two answer different questions and only one of them is a
-plan:
+**The 23 declines contain 2 cells of actionable work, not 23** (last re-measured
+**2026-08-23**, bd `3c6m.63`, the corpus-collision fix — four cells entered this
+table and the `no-body` row emptied; **2026-08-22**, bd `ww4c.3`, when
+`ilogb.f64`/`ilogbf.f32` LANDED and left it entirely; re-scoped **2026-08-21**, bd
+`eyhj`/`0bp8`; bd `bcv4`/`keol`/`k710` **2026-08-10**; the axis itself is bd
+`3c6m.14`, 2026-07-28). Every `decline` record carries a **`scope`** field
+alongside `bucket`, because those two answer different questions and only one of
+them is a plan:
 
 | | question it answers |
 |---|---|
@@ -16,12 +17,15 @@ plan:
 | `scope`  | **is it work** — decided-out, actionable, deferred, or not a compiler fact |
 
 ```
-BY SCOPE (19 declines + 1 no-body)
+BY SCOPE (23 declines, 0 no-body)
   14  decided-decline       fmod/remainder/remquo x3 · sinf/cosf/tanf
                             · tgammal · lgammal
    2  lever-gap    <-- THE WORK   tgammaf.f32 · tgamma.f64
-   3  deferred-capability   powl.f80 · ilogbl.f80 · logbl.f80
-   1  corpus-gap            nexttowardl.f80   (status `no-body` — NOT probed)
+   7  deferred-capability   powl.f80 · ilogbl.f80 · logbl.f80
+                            · nextafterl.f80 · nexttoward.f64
+                            · nexttowardf.f32 · nexttowardl.f80   (bd 3c6m.67)
+   0  corpus-gap            (was nexttowardl.f80 — see the 2026-08-23 entry:
+                            openlibm DOES mint it, as a strong_reference alias)
 ```
 
 > **A LANDED CELL LEAVES THIS TABLE — it is not relabelled "done".** `scope`
@@ -32,8 +36,74 @@ BY SCOPE (19 declines + 1 no-body)
 > where the entry used to be. Read a shrinking `lever-gap` as *work removed*, and
 > check the injection numerator to see which way it went.
 
+**⚡ 2026-08-23 (bd `3c6m.63`): CENSUS INTEGRITY −3 — the corpus was measuring ten
+bodies openlibm does not build. Injection 100 → 97/120.** *Read this as the retired
+`165/174` error class caught one more time, **not** as the compiler regressing: no
+capability was lost on 2026-08-23, the number stopped measuring the wrong program.*
+
+The corpus recipe globbed `$OLA/src/*.c $OLA/bsdsrc/*.c $OLA/ld80/*.c` into
+`bc/$(basename ${c%.c}).bc` with **`ld80` last**, and **ten basenames exist in both
+directories**, so all ten resolved to the ld80 body. openlibm's own build EXCLUDES
+every one (`ld80/Make.files:8-9` comments eight out and never mentions
+`s_nexttoward{,f}.c`; `CMakeLists.txt` names `src/` for all ten). **No shipped gate
+saw it** — the old pre-flight (`251 .bc → 409 syms`, missing-list empty) passes on
+BOTH corpora, because it is a COMPLETENESS check and this was a FAITHFULNESS defect.
+
+**Measured, whole-census A/B against the byte-identical re-run of the prior
+baseline (`409/251` → `410/252`): exactly SIX cells move, 120 byte-identical.**
+
+| cell | was | is | why |
+|---|---|---|---|
+| `nextafterl.f80` | COMPILES | decline / L6 nested | `src/s_nextafterl.c:42:29`, the NaN-guard `&&` |
+| `nexttoward.f64` | COMPILES | decline / L6 nested | `src/s_nexttoward.c:44:22`, same shape |
+| `nexttowardf.f32` | COMPILES | decline / control | `src/s_nexttowardf.c:45:5`, `if((hx>=0) ^ (x<y))` |
+| `nexttowardl.f80` | **no-body** | decline / L6 nested | now genuinely probed — see below |
+| `remainderl.f80` | decline / loop-carried | decline / memory-store | `src/s_remquol.c:76:7` `ux.e = x` |
+| `remquol.f80` | decline / loop-carried | decline / memory-store | same instruction |
+
+**`nexttowardf.f32` is the campaign's own bd `k710` +1 (97 → 98, 2026-08-10), and
+that +1 IS RETRACTED.** It rested on the **write-only** `volatile float u = x*x;` at
+`ld80/s_nexttowardf.c:63`; `src/`'s scalar `t` **is read**, so the fenv path is never
+reached on the shipped body and the cell dies earlier, on control. **The fenv ruling
+and `eraseDeadVolatileScalarStores` are UNAFFECTED** — they keep their lit coverage
+and their e2e witness (see the slice note below); only the cell credit is withdrawn.
+
+**`nexttowardl.f80` was never a corpus gap.** openlibm mints it as
+`openlibm_strong_reference(nextafterl, nexttowardl)` at **`src/s_nextafterl.c:80`** —
+and `ld80/s_nextafterl.c:90` has that alias **commented out**, which is precisely how
+the collision hid it. Once the corpus is faithful the generic bd-`vuy6`
+`_synth_alias_shim` resolves it with no new shim, and it declines with a diagnostic
+**byte-identical to `nextafterl.f80`'s**. So the old entry's rider *"'would land on
+nextafterl's blocker anyway' is REFUTED"* is itself refuted, and the original claim is
+CONFIRMED to the column. This is **not** the manufactured `+1` the ticket's trap (a)
+forbids: that trap is about shimming the alias onto the **ld80** body, and this cell
+**declines** either way.
+
+**THREE e2e GOLDENS LEFT THE COVERAGE NAMESPACE, and were NOT deleted.**
+`slice_libm_real_{nextafterl,nexttoward,nexttowardf}` vendor those ld80 bodies, so
+they kept passing while their cells flipped — the exact silent desync the ticket
+recorded as a trap. They are now `slice_libm_ld80_*`, each carrying a *"NOT A
+COVERAGE CLAIM"* banner. Renaming rather than deleting is deliberate: `verified` is
+the glob count of `slice_libm_real_*.expected.log`, so leaving them published
+`97 covered / 100 verified`; but `slice_libm_ld80_nexttowardf` is the **only** e2e
+link-layer witness for the fenv ruling, and `slice_libm_ld80_nexttoward` is the only
+slice whose lowered module carries a real LLVM `undef`. **New gate:**
+`tools/slice_census_sync_check.py` (ctest `e2e-census-slice-sync`) now fails if any
+`slice_libm_real_*` golden names a cell the census does not report covered.
+
+**The recipe is now a script** — [`build_corpus.py`](build_corpus.py) — which derives
+the exclusion set **twice** (basename collision; absence from `ld80/Make.files`) and
+**hard-fails on disagreement**, so a future openlibm bump cannot silently restore
+this. The `<machine/ieee.h>` shim is **retired**: it existed only to build
+`ld80/e_fmodl.c` / `ld80/s_remquol.c`, and both `src/` bodies compile cleanly under
+the plain flag set. The four cells are tracked at bd `3c6m.67` (measure-first; they
+are **not** `lever-gap`, because the depth behind each is UNMEASURED).
+
 **⚡ 2026-08-22 (bd `ww4c.3`): `ilogb.f64` + `ilogbf.f32` LAND — 98 → 100
-injection-covered, lever-gap 4 → 2.** The two cells bd `19v3` measured to be the
+injection-covered, lever-gap 4 → 2.** *(Both figures are pre-`3c6m.63`; the
+numerator is **97** since 2026-08-23. Neither ilogb cell is affected — their bodies
+are `src/s_ilogb{,f}.c`, which no ld80 file collides with, and both were re-measured
+`COMPILES` on the corrected corpus.)* The two cells bd `19v3` measured to be the
 *entire* remaining bucket-(A) population, so this exhausts that lever rather than
 merely advancing it: **98 → 100 and no more** was a prediction, and it is now the
 measurement. Cleared by bd `ww4c`, the loop→`llvm.ctlz` idiom recognizer
@@ -44,7 +114,9 @@ is not needed for these two at all. Licensed as **injection** coverage by the
 owner ruling of 2026-08-22 — *"yes, it counts as injection coverage — the body
 stays openlibm's"*. Not CQ-PROVIDED, not a fourth row.
 
-> **Measured, at corpus fingerprint `409 syms / 251 bc`.** A whole-census A/B
+> **Measured, at corpus fingerprint `409 syms / 251 bc`** *(the pre-`3c6m.63`
+> defective corpus — see the 2026-08-23 entry above; re-measured `COMPILES` on the
+> faithful `410/252` corpus, so this result is unaffected)*. A whole-census A/B
 > against the prior baseline moved **exactly these two cells**
 > (`decline`/`loop-carried` → `COMPILES`) with **zero regressions**. Both ship
 > with committed ship-floor goldens at stage-2b **STRICT** — no
@@ -86,7 +158,7 @@ promotion forfeits at `Loads.empty()` — so the volatile store reached
 `declineTaintEscapes` and the cell died on `kMsgStore`. Cleared by the **fenv
 ruling** (owner 2026-08-10, CLAUDE.md "Scope of the semantic model") plus a new
 narrowly-named `eraseDeadVolatileScalarStores` stage. Verified, not merely
-compiling (Rule 2): `slice_libm_real_nexttowardf` ships with a 369-line golden at
+compiling (Rule 2): `slice_libm_ld80_nexttowardf` ships with a 369-line golden at
 stage-2b **strict** (81/81 free-pairing verified, 0 unproven).
 
 > **The emitted circuit loses the multiply, and that is the ruling, not a bug.**
@@ -353,6 +425,14 @@ Stem-level detail:
 > and the live lever-gap count is 4; see the header block)*, and `nexttowardl.f80` is the
 > `corpus-gap` (no body ships). Grouping it with the genuinely f80-short trio hid
 > an actionable f32 cell inside a row that reads "only the hard width is missing".
+>
+> **⚠ SUPERSEDED 2026-08-23 (bd `3c6m.63`) — `nexttoward` is now covered at NO width,
+> and `nexttowardl.f80` was never a corpus gap.** Both of this note's own claims were
+> artifacts of the ld80/src basename collision: `nexttoward.f64` and `nexttowardf.f32`
+> were measured on bodies openlibm does not build and now decline, and openlibm DOES
+> mint `nexttowardl` (as a `strong_reference` alias from `src/s_nextafterl.c:80`, which
+> the collision hid). The row's *lesson* survives intact and is worth more than its
+> numbers were — a width-rollup label can hide the actionable cell inside it.
 
 ### …and openlibm ships MORE than ISO C11 `math.h`, none of it modelled (bd `sj30`)
 
@@ -452,9 +532,20 @@ Measured: **36 verified · 3 accepted** (`fabs{,f,l}`) **· 3 partial** (`fma{,f
                      = 120 upstream-injectable   <- THIS row's denominator
 ```
 
-So **100/120 = 83% of the upstream-injectable subset** — which is **55%** of the 183
-modelled cells and **42%** of the 69 named entities. **Never write "83% of
+So **97/120 = 81% of the upstream-injectable subset** — which is **53%** of the 183
+modelled cells and **~42%** of the 69 named entities. **Never write "81% of
 `math.h`".**
+
+> *(The first two figures were `100/120 = 83%` and `55%` until bd `3c6m.63`,
+> 2026-08-23, and are recomputed from `full_census_O1.json`. **The 42% entity figure
+> was NOT re-derived and is carried forward unverified** — it is a hand-written
+> number with no generator behind it and no stated formula, and it very likely moved:
+> the entity row counts a stem covered at ALL its widths, `nextafter` just left that
+> set, and 42% of 69 is 29 while the injection all-widths count below is now **29**
+> (it was 30). Those two cannot both be right under one reading. Do not quote the
+> 42% for planning until someone derives it; the cell figures above are the measured
+> ones. Flagged rather than silently patched, because guessing a formula and writing
+> the answer it produces is how the `165/174` figure survived as long as it did.)*
 
 > **Why the entity figure did NOT move when the cell figure did (2026-08-22, bd
 > `ww4c.3`).** `ilogb.f64` and `ilogbf.f32` landed, but `ilogbl.f80` still
@@ -463,7 +554,9 @@ modelled cells and **42%** of the 69 named entities. **Never write "83% of
 > covered at two of its three widths does not enter it, and `30 of 42 compile at
 > ALL THREE widths` below is unchanged for the same reason. Two cells of
 > genuine coverage, zero entities — that asymmetry is real and is exactly why
-> these two denominators are printed separately.
+> these two denominators are printed separately. *(That `30` is the 2026-08-22
+> state; it is **29** since bd `3c6m.63` — `nextafter` left the all-widths set. The
+> reasoning above is unaffected.)*
 
 > **⚠ THE DENOMINATOR CHANGES ARE NOT PROGRESS, AND THEY ARE THE ONE WAY THIS ROW
 > COULD BE MISREAD.** Two have happened, in opposite directions, and the
@@ -509,29 +602,45 @@ moved a number in the un-flattering direction:
 > moved this row **97 → 98 with no compiler change**. Caught before it shipped;
 > recorded here because the next new status will have the same trap.
 
-The strict *"can openlibm's body be lowered"* denominator — dropping
-`nexttowardl.f80`, which has no body to inject at all — is **119**.
+The strict *"can openlibm's body be lowered"* denominator used to be **119**, dropping
+`nexttowardl.f80` as having no body to inject at all. **Since bd `3c6m.63`
+(2026-08-23) it is the full 120**, because that premise was false: openlibm mints
+`nexttowardl` as `openlibm_strong_reference(nextafterl, nexttowardl)` at
+`src/s_nextafterl.c:80`, and the corpus could not see it only because a basename
+collision let `ld80/s_nextafterl.c` — which has the alias **commented out** — win the
+output slot. **No cell now lacks a body**, so the strict and published denominators
+coincide and the `no-body` row is empty.
 
-**Cells: 100/120 injection-covered, all 100 ship-floor verified** — *94 fully inlined +
+**Cells: 97/120 injection-covered, all 97 ship-floor verified** — *91 fully inlined +
 6 Phase-6 clone-specialized*, which `wprobe.py` requires never be merged into plain
 `COMPILES`. (Row (3) adds **6** more plain-`COMPILES` cells that are **not** in this
-94 and must not be added to it: the census's raw plain-`COMPILES` tally is **100**
-across *both* providers — 94 injection + 6 CQ-provided — which is numerically equal
-to this row's *covered* count of 100 for an unrelated reason, since this row's 100
-is 94 plain **plus 6 spec-clone**. Two different 100s, made of different cells — do
-not conflate them.) That the two numbers coincide is a **measurement, not an invariant**
-(closed by `3c6m.58`, re-opened by `3c6m.60`, re-closed by `3c6m.61`, held across
-`0rwu` — whose 2 new cells shipped with their goldens in the same increment — and
-held again across `ww4c.3`, whose 2 new cells did the same on 2026-08-22).
+91 and must not be added to it: the census's raw plain-`COMPILES` tally is **97**
+across *both* providers — 91 injection + 6 CQ-provided — which is numerically equal
+to this row's *covered* count of 97 for an unrelated reason, since this row's 97
+is 91 plain **plus 6 spec-clone**. Two different 97s, made of different cells — do
+not conflate them. This numeric collision is a persistent nuisance rather than a
+one-off: it also read `100`/`100` before 2026-08-23, and it survives the change
+because both quantities moved by the same 3.) That covered and verified coincide is a
+**measurement, not an invariant** (closed by `3c6m.58`, re-opened by `3c6m.60`,
+re-closed by `3c6m.61`, held across `0rwu` — whose 2 new cells shipped with their
+goldens in the same increment — held again across `ww4c.3` on 2026-08-22, and held
+**in the other direction** across `3c6m.63` on 2026-08-23, where the three retired
+cells' goldens left the `slice_libm_real_*` namespace in the same commit rather than
+being deleted. That last one is the case the coincidence could most easily have
+broken, so it is now enforced by ctest `e2e-census-slice-sync` instead of being
+re-checked by hand.)
 
-**By function — 30 of 42 compile at ALL THREE widths** (`exp` and `log10` completed
-their f80 width in bd `0rwu`; they were the two entries that made this row 28):
+**By function — 29 of 42 compile at ALL THREE widths** (`exp` and `log10` completed
+their f80 width in bd `0rwu`, taking this row 28 → 30; bd `3c6m.63` took it back to
+**29** on 2026-08-23 when `nextafterl.f80` turned out to have been measured on a body
+openlibm does not build — see the header entry. `nexttoward` left the *some widths*
+row in the same move, in the other direction: it is now covered at **no** width):
 
 | | n | functions |
 |---|---|---|
-| **all 3 widths** | **30** | `acos acosh asin asinh atan atan2 atanh cbrt cosh erf erfc exp exp2 expm1 fdim frexp hypot ldexp llround log log10 log1p log2 lround modf nextafter scalbln scalbn sinh tanh` |
-| some widths | 5 | `ilogb lgamma logb nexttoward pow` |
-| no width | 7 | measured at zero: `cos fmod remainder remquo sin tan tgamma` |
+| **all 3 widths** | **29** | `acos acosh asin asinh atan atan2 atanh cbrt cosh erf erfc exp exp2 expm1 fdim frexp hypot ldexp llround log log10 log1p log2 lround modf scalbln scalbn sinh tanh` |
+| some widths | 5 | `ilogb lgamma logb nextafter pow` |
+| no width | 8 | measured at zero: `cos fmod nexttoward remainder remquo sin tan tgamma` |
 
 > **⚠ bd `guwr` DID NOT MOVE THIS TABLE, and that is correct, not an oversight.**
 > `sin`/`cos`/`tan` stay in **no width** because this table answers *"can UPSTREAM's
@@ -542,8 +651,12 @@ their f80 width in bd `0rwu`; they were the two entries that made this row 28):
 > CQ-provided width as upstream-injection coverage is precisely the merge condition
 > (iii) forbids.
 
-All 42 carry exactly 3 variants, so "all widths" is a genuine 3/3 for every one of the
-30 — no weak-denominator inflation.
+Each of those 29 carries exactly 3 variants, so "all widths" is a genuine 3/3 for
+every one of them — no weak-denominator inflation. *(39 of the 42 have 3 variants
+here; the exceptions are `sin`/`cos`/`tan`, whose f64/f80 cells left for row (3) under
+bd `guwr`, leaving only f32 in this denominator. The older phrasing "all 42 carry
+exactly 3 variants" predated that split and was wrong — corrected 2026-08-23. It never
+affected the claim, which is about the all-3 set.)*
 
 > **⚠ TWICE-STALE ROW, CORRECTED 2026-08-22 (bd `ww4c.3`).** This paragraph used to
 > read: *"`ilogb` is **not a decline**: it is int-return and `full_census.py::ret_width`
@@ -839,10 +952,11 @@ externally-linked spelling declines today. Same family as the already-recorded b
 
 **⚡ VERIFY-FIRST SWEEP — THE TWO NUMBERS COINCIDED AT 68 (2026-07-25, bd `3c6m.58`).**
 ⚠ *Historical: true of the 68-cell baseline this banner describes. The `3c6m.60` banner ABOVE
-supersedes it — and is itself superseded: the scoreboard is now **100 injection-covered /
-100 verified**, gap 0, after bd `3c6m.61` closed `hypotl.f80` (2026-07-28), bd `0rwu` closed
+supersedes it — and is itself superseded: the scoreboard is now **97 injection-covered /
+97 verified**, gap 0 *(it read 100/100 from 2026-08-22 until bd `3c6m.63` retired three
+cells on 2026-08-23; see the header entry)*, after bd `3c6m.61` closed `hypotl.f80` (2026-07-28), bd `0rwu` closed
 `expl.f80` + `log10l.f80` with their goldens in the same increment (2026-07-30), bd `k710`
-closed `nexttowardf.f32` with `slice_libm_real_nexttowardf` in the same increment (2026-08-10),
+closed `nexttowardf.f32` with `slice_libm_ld80_nexttowardf` in the same increment (2026-08-10),
 and bd `ww4c.3` closed `ilogb.f64` + `ilogbf.f32` with both goldens in the same increment
 (2026-08-22).
 The "two numbers coincide" property this banner celebrates therefore holds again — as a
@@ -1216,132 +1330,113 @@ pin the exact ship-floor construct.
 `fmod` compile has broken something.
 
 ## Reproduce
+
+> **THE RECIPE IS NOW A SCRIPT — [`build_corpus.py`](build_corpus.py).** It used to
+> be a shell block copied out of this file, and that is exactly how bd
+> `test_C_libtooling-3c6m.63` happened: the block globbed
+> `$OLA/src/*.c $OLA/bsdsrc/*.c $OLA/ld80/*.c` into `bc/$(basename ${c%.c}).bc`
+> with **`ld80` last**, and **ten basenames exist in both `src/` and `ld80/`**, so
+> all ten resolved to the ld80 body — which **openlibm's own build EXCLUDES on
+> every target**. Nothing executed the prose, so nothing checked it, and the
+> defect measured three cells `COMPILES` on a program that ships nowhere for the
+> whole campaign. Read `build_corpus.py`'s header for the mechanism, the two
+> independent derivations of the exclusion set, and what the script does *not*
+> claim.
+
 ```bash
 # 1. corpus (one-time source fetch; NOT a runtime dep)
-#    NB the blanket -fno-builtin below is CORRECT and must stay (a libm source built
-#    with builtins ON self-recurses: clang recognizes s_floor.c's body as `floor`).
-#    It does NOT defeat the Rule-18 hardware keep-set for INNER calls any more —
-#    wprobe.py::keep_shims() re-applies the ship-floor fold at the defmap. See the
-#    CENSUS METHODOLOGY section above before changing either half (bd 3c6m.60).
-#    clang here MUST be the LLVM-19 one (/usr/local/opt/llvm@19/bin/clang) — a
-#    newer system/Xcode clang writes bitcode LLVM-19 llvm-dis cannot read.
-#    -I "$OLA" (the openlibm ROOT) is LOAD-BEARING (bd 20xt, 2026-07-18): ld80
-#    files include "ld80/invtrig.h"-style root-relative paths; without it FIVE
-#    ld80 files (invtrig, e_fmodl, s_exp2l, s_remquol, s_truncl) silently fail
-#    (the 2>/dev/null swallows it) and the census then MASKS real blockers —
-#    invtrig.c is the DATA-ONLY TU holding the atanl/asinl/acosl coefficient
-#    tables (_ItL_*), so atanl mis-bucketed as "L6 nested control" when it
-#    actually COMPILES once the tables are linked.
 git clone --depth 1 https://github.com/JuliaMath/openlibm <scratch>/openlibm
-OLA=<scratch>/openlibm; mkdir <scratch>/bc
-for c in $OLA/src/*.c $OLA/bsdsrc/*.c $OLA/ld80/*.c; do   # ld80 = long double bodies
-  clang -g -O1 -fno-builtin -emit-llvm -c \
-    -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
-    "$c" -o <scratch>/bc/$(basename ${c%.c}).bc 2>/dev/null   # INLINE -I flags: zsh does
-done                                                          # NOT word-split unquoted $INC
-#   The trig entries need the BSD M_PI constants (same trick as b_tgamma in 1b
-#   below) — without them they drop out and census as a spurious "unknown
-#   callee". THE f32 SIBLINGS WERE MISSING FROM THIS LOOP until 2026-07-27 (the
-#   bd tkju scoping pass): s_cosf/s_sinf/s_tanf hit the same undeclared M_PI_2
-#   at src/s_cosf.c:33, so cosf/sinf/tanf mis-bucketed as "unknown callee" for
-#   the whole campaign. With them built, all three unmask to their REAL blocker,
-#   the Payne-Hanek reduction at src/k_rem_pio2.c:310 — i.e. the SAME capability
-#   as the f64/f80 trig cells, which is how the trig lever went from an apparent
-#   6 cells to a measured 9:
-for b in s_cosl s_sinl s_tanl s_cosf s_sinf s_tanf; do
-  clang -g -O1 -fno-builtin -DM_PI=3.14159265358979323846 -DM_PI_2=1.57079632679489661923 \
-    -DM_PI_4=0.78539816339744830962 -emit-llvm -c \
-    -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
-    "$OLA/src/$b.c" -o <scratch>/bc/$b.bc
-done
-#   THE RETRACTION WAS ITSELF WRONG — RE-MEASURED 2026-07-27 (bd tegx, the L3
-#   scoping pass). The 2026-07-27 tkju note claimed e_fmodl.c / s_remquol.c /
-#   s_truncl.c "all three compile with rc=0 and ZERO errors under the exact flag
-#   set above". MEASURED FALSE at that same corpus rev @82e90ae, this same host,
-#   those exact flags:
-#       e_fmodl   rc=1, 5 errors (incomplete type 'struct ieee_ext', EXT_FRAC*BITS)
-#       s_remquol rc=1, 1 error  (fatal: 'machine/ieee.h' file not found)
-#       s_truncl  rc=1, 2 errors (EXT_FRACHBITS undeclared)
-#   The ORIGINAL bd-20xt note was right: they need BSD <machine/ieee.h>, which
-#   openlibm does NOT ship anywhere in the tree (e_fmodl.c even has its #include
-#   COMMENTED OUT at line 14 while still using `struct ieee_ext`). This is the
-#   FIFTH corpus/bucket measurement error of the campaign; the lesson is the
-#   standing one — check rc AND the error count, never rc alone, and never with
-#   stderr redirected to /dev/null.
-#   DURABLE FIX (in-tree, survives every reclone — the bd vuy6 lesson that
-#   scratch-dir hand shims do not persist): shim/machine/ieee.h reconstructs the
-#   x86 i387 fp80 layout. Its field layout is validated EMPIRICALLY by
-#   shim/ieee_shim_check.c (struct view vs the raw 10 significant bytes over 7
-#   known values) and the resulting BODIES are validated against the host libm by
-#   shim/fmodl_remquol_check.c (1502 cases, PASS). NB s_truncl is NOT needed —
-#   `truncl` resolves from src/s_truncl.c, and `remainderl` from src/e_remainderl.c;
-#   only fmodl and remquol are genuine gaps. e_fmodl needs -include because its
-#   own #include is commented out:
-SHIM=<repo>/tools/library_coverage/full_surface/shim
-clang -g -O1 -fno-builtin -emit-llvm -c -I "$SHIM" -include machine/ieee.h \
-  -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
-  "$OLA/ld80/e_fmodl.c" -o <scratch>/bc/e_fmodl.bc
-clang -g -O1 -fno-builtin -emit-llvm -c -I "$SHIM" \
-  -I "$OLA" -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
-  "$OLA/ld80/s_remquol.c" -o <scratch>/bc/s_remquol.bc
-#   TWO UPSTREAM DEVIATIONS the body validation surfaced, both real and neither
-#   caused by the shim (recorded so a future run does not re-litigate them):
-#   (a) openlibm ld80 returns n=31 quotient bits from remquol, the host n=3 —
-#       both conform, C11 7.12.10.3 makes n implementation-defined (>= 3);
-#   (b) OPENLIBM BUG ld80/s_remquol.c:89 — the |x|==|y| branch does `*quo = 1;`
-#       where the f64 twin src/s_remquo.c:54 does `*quo = (sxy ? -1 : 1);`, so a
-#       negative unit quotient loses its sign. A literal constant, no dependence
-#       on <machine/ieee.h>. fmodl (the one that DOES use `struct ieee_ext`)
-#       matches the host bit-for-bit in all 1502 cases.
-#   STILL A GENUINE GAP: there is NO s_nexttowardl.c anywhere in the corpus
-#   (openlibm ships nexttoward/nexttowardf only). It needs an alias shim like
-#   ldexp's; it would land on nextafterl's volatile-runtime blocker anyway.
-#   nexttowardl.f80 is therefore the ONLY remaining honest "unknown callee" cell.
-#   VERIFY THE WHOLE CORPUS BEFORE ANY CENSUS RUN (251 .bc -> 409 syms):
-#     BC=<scratch>/bc OPENLIBM=<scratch>/openlibm python3 -c "import sys;\
-#     sys.path.insert(0,'.');import wprobe;d=wprobe.build_defmap();print(len(d),\
-#     [n for n in ('cosf','sinf','tanf','fmodl','remquol') if n not in d])"
-#   Expect `409 []`. 404 / 407 or a non-empty list = an incomplete corpus.
-#   SINCE bd keol (2026-08-10) a missing .bc DOES fail loudly: full_census.py
-#   checks each cell's own entry symbol against the defmap first and records
-#   `corpus-gap (no body)` + status `no-body` + an end-of-run banner, instead of
-#   the masking "unknown callee (inner-call)" it used to infer from the compiler.
-#   Keep running this fingerprint anyway — it is a PRE-FLIGHT over the whole
-#   corpus, whereas keol only sees the ~126 cells the census actually probes, so
-#   it would not notice a missing INNER-call body that no cell is an entry for.
+python3 build_corpus.py --openlibm <scratch>/openlibm --out <scratch>/bc --expect-bc 252
 
-# 1b. CORPUS-GAP CLOSURES (bd 3c6m.50 Step 0c) — three openlibm public names are
-#     minted by the build's symbol aliasing, which the raw -emit-llvm corpus build
-#     does not reproduce. Rebuild these so gamma/ldexp cells hit their REAL body
-#     (not a spurious "unknown callee"):
-#   tgamma double body (b_tgamma.c) needs the BSD M_PI constants:
-clang -g -O1 -fno-builtin -DM_PI=3.14159265358979323846 -DM_PI_2=1.57079632679489661923 \
-  -DM_PI_4=0.78539816339744830962 -emit-llvm -c \
-  -I "$OLA/include" -I "$OLA/src" -I "$OLA/amd64" -I "$OLA/bsdsrc" -I "$OLA/ld80" \
-  "$OLA/bsdsrc/b_tgamma.c" -o <scratch>/bc/b_tgamma.bc
-#   public non-reentrant lgamma/lgammaf/lgammal wrappers (openlibm aliases them):
-cat > /tmp/lgamma_public_shim.c <<'EOF'
-extern double lgamma_r(double,int*); extern float lgammaf_r(float,int*);
-extern long double lgammal_r(long double,int*); int signgam;
-double lgamma(double x){return lgamma_r(x,&signgam);}
-float lgammaf(float x){return lgammaf_r(x,&signgam);}
-long double lgammal(long double x){return lgammal_r(x,&signgam);}
-EOF
-clang -g -O1 -fno-builtin -emit-llvm -c /tmp/lgamma_public_shim.c -o <scratch>/bc/lgamma_public_shim.bc
-#   ldexp/ldexpf/ldexpl (openlibm strong_reference(scalbn, ldexp)):
-cat > /tmp/ldexp_shim.c <<'EOF'
-extern double scalbn(double,int); extern float scalbnf(float,int);
-extern long double scalbnl(long double,int);
-double ldexp(double x,int n){return scalbn(x,n);}
-float ldexpf(float x,int n){return scalbnf(x,n);}
-long double ldexpl(long double x,int n){return scalbnl(x,n);}
-EOF
-clang -g -O1 -fno-builtin -emit-llvm -c /tmp/ldexp_shim.c -o <scratch>/bc/ldexp_shim.bc
+# 2. PRE-FLIGHT over the whole corpus before any census run (252 .bc -> 410 syms):
+BC=<scratch>/bc OPENLIBM=<scratch>/openlibm python3 -c "import sys;\
+  sys.path.insert(0,'.');import wprobe;d=wprobe.build_defmap();print(len(d),\
+  [n for n in ('cosf','sinf','tanf','fmodl','remquol','truncl','nexttowardl') if n not in d])"
+#   Expect `410 []`.  A smaller count or a non-empty list = an incomplete corpus.
+#   *** 409 / 251 IS THE PRE-3c6m.63 DEFECTIVE FINGERPRINT *** — if you see it you
+#   are on the old corpus (10 ld80 bodies openlibm does not build, and no
+#   s_truncl.bc at all). The two differ by exactly `s_truncl.bc` and the symbol
+#   `nexttowardl`; every other name is present in BOTH, which is why this
+#   pre-flight PASSED on the defective corpus and caught nothing. It is a
+#   COMPLETENESS check, never a faithfulness one — faithfulness is
+#   `build_corpus.py`'s `source_filename` self-check.
 
-# 2. point BC / OPENLIBM at <scratch>, then:
-BC=<scratch>/bc OPENLIBM=<scratch>/openlibm python3 full_census.py     # first-blocker
+# 3. point BC / OPENLIBM at <scratch>, then:
+BC=<scratch>/bc OPENLIBM=<scratch>/openlibm CENSUS_OPTLEVEL=O1 python3 full_census.py
 BC=<scratch>/bc OPENLIBM=<scratch>/openlibm python3 peel_census.py     # first-blocker (refreshed)
 # rebuild the census-mode plugin (throwaway CQ_PEEL_CENSUS instrumentation), then:
 BC=<scratch>/bc OPENLIBM=<scratch>/openlibm CQ_PEEL_CENSUS=1 python3 peel_census.py   # full stack
 python3 synth_census.py                                               # -> peel_census_merged.json
 ```
+
+### What the script encodes, and why each part is load-bearing
+
+Kept here because these are the measurements that shaped the recipe; the code is
+in `build_corpus.py` and is the authority if the two ever disagree.
+
+* **The ld80/src exclusion (bd `3c6m.63`, 2026-08-23).** An `ld80/X.c` whose
+  basename also exists in `src/` is **not built by openlibm** and is skipped. The
+  set is DERIVED twice — basename collision, and absence from `ld80/Make.files`
+  `$(CUR_SRCS)` — and a disagreement is a **hard failure**, because a hard-coded
+  list of ten names would re-create the original defect one openlibm bump later.
+  Evidence: `ld80/Make.files:8-9` comments eight of them out and never mentions
+  `s_nexttoward.c`/`s_nexttowardf.c`; `CMakeLists.txt:174/275/280/284/289/293/297/298/307/309`
+  names `src/` for every one.
+  The fix is deliberately **not** "glob `src/` last so it wins": last-write-wins is
+  silent in the other direction too (a src-side build failure would silently
+  inherit the ld80 body), whereas skipping leaves **no** body, which
+  `full_census.py`'s bd-`keol` check reports as `no-body`.
+* **Blanket `-fno-builtin` is CORRECT and must stay** — a libm source built with
+  builtins ON self-recurses (clang recognizes `s_floor.c`'s body as `floor`). It
+  does **not** defeat the Rule-18 hardware keep-set for INNER calls:
+  `wprobe.py::keep_shims()` re-applies the ship-floor fold at the defmap (bd
+  `3c6m.60`). See CENSUS METHODOLOGY above before changing either half.
+* **clang MUST be the LLVM-19 one** (`/usr/local/opt/llvm@19/bin/clang`) — a newer
+  system/Xcode clang writes bitcode LLVM-19 `llvm-dis` cannot read.
+* **`-I "$OLA"` (the openlibm ROOT) is LOAD-BEARING** (bd `20xt`, 2026-07-18):
+  ld80 files include root-relative `"ld80/invtrig.h"` paths. Without it five ld80
+  files silently failed and the census MASKED real blockers — `invtrig.c` is the
+  DATA-ONLY TU holding the `atanl`/`asinl`/`acosl` coefficient tables (`_ItL_*`),
+  so `atanl` mis-bucketed as "L6 nested control" when it actually COMPILES once
+  the tables are linked.
+* **The BSD `M_PI` rebuild** (`s_cosl s_sinl s_tanl s_cosf s_sinf s_tanf`, and
+  `b_tgamma`). Without it they drop out and census as a spurious "unknown callee".
+  The f32 siblings were MISSING from the loop until 2026-07-27 (bd `tkju`), so
+  `cosf`/`sinf`/`tanf` mis-bucketed for the whole campaign; with them built all
+  three unmask to their REAL blocker, the Payne-Hanek reduction at
+  `src/k_rem_pio2.c:310` — the SAME capability as the f64/f80 trig cells, which is
+  how the trig lever went from an apparent 6 cells to a measured 9.
+* **The public `lgamma`/`ldexp` wrappers** (bd `3c6m.50` Step 0c): openlibm mints
+  these names through build-level symbol aliasing that a raw `-emit-llvm -c`
+  corpus does not reproduce. The module-asm `.set` aliases are handled generically
+  by `wprobe._synth_alias_shim` (bd `vuy6`) and are NOT duplicated in the script.
+* **Failures are reported, never swallowed.** The old loop sent stderr to
+  `/dev/null`; the script prints rc AND the error count, and distinguishes a
+  tolerated known-unbuildable TU from an unexpected one. That is the bd `tegx`
+  lesson — five corpus/bucket measurement errors of this campaign reached the
+  record by trusting `rc` alone.
+
+### RETIRED: the `<machine/ieee.h>` shim is no longer part of the recipe
+
+`shim/machine/ieee.h` was added (bd `tegx`, 2026-07-27) so `ld80/e_fmodl.c` and
+`ld80/s_remquol.c` — which need BSD `<machine/ieee.h>`, absent from openlibm's
+tree — could be built at all. **Under the corrected corpus those two files are not
+built, because openlibm does not build them**: `CMakeLists.txt:280/298` name
+`src/e_fmodl.c` and `src/s_remquol.c`, and both compile cleanly under the plain
+flag set (measured 2026-08-23, rc=0 / 0 errors) because they use openlibm's own
+`fpmath.h` rather than `<machine/ieee.h>`. The shim was solving a problem created
+by building the wrong files.
+
+The shim directory is **retained, not deleted**: `shim/ieee_shim_check.c` and
+`shim/fmodl_remquol_check.c` are the evidence of record for measured claims that
+`SCOPING-L3-data-dependent-trip-loops.md` and bd `20xt`/`tegx` still cite. Nothing
+in the census pipeline reads them any more. Read the note at the top of
+`shim/machine/ieee.h` before reusing it.
+
+> **A standing memory was REFUTED for this gap.** bd `census-corpus-ieee-shim-tegx`
+> concluded in bold that *"a corpus fix moves no cell across compile/decline, it
+> only tells the truth about WHY"* — true of the **missing-TU** gap it measured,
+> **false** of the **collision** gap, which moves three. Its rider *"s_truncl is NOT
+> needed: truncl resolves from src/s_truncl.c"* was right in intent and false in
+> effect: on the shipped corpus no `s_truncl.bc` existed at all, because the failing
+> ld80 build destroyed the shared output slot.

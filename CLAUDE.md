@@ -480,13 +480,29 @@ neither is authoring a leaf instead of doing the lowering):
 2026-08-22, bd `fhas`).** Previously a merged headline was a documented **bug**
 here, and the ruling it replaces was right about a real hazard: the retired
 `165/174` (95%) claim is what merging produced. The owner asked for the merged
-number anyway, so the published headline is now **`math.h` coverage: 158/183 cells
-(86%)** — composed of `100/120` injection + `6/6` CQ-PROVIDED + `42/42` recognition
+number anyway, so the published headline is now **`math.h` coverage: 155/183 cells
+(85%)** — composed of `97/120` injection + `6/6` CQ-PROVIDED + `42/42` recognition
 keep-set + `10/12` type-generic macros + `0/3` by-design `nan`. *(Those figures are
-**as measured at the ruling, 2026-08-22**, and are the only hand-written copy of
-them in the tree — every PUBLISHED occurrence is generated from
-`probe.mathh_union_scoreboard()` into a marked region. If this paragraph ever
-disagrees with `README.md`, believe the generator and fix this line.)*
+**as measured 2026-08-23** and are the only hand-written copy of them in the tree —
+every PUBLISHED occurrence is generated from `probe.mathh_union_scoreboard()` into a
+marked region. If this paragraph ever disagrees with `README.md`, believe the
+generator and fix this line.)*
+**They were `158/183` and `100/120` at the ruling (2026-08-22) and moved DOWN by
+three on 2026-08-23 — bd `3c6m.63`, and the direction is the whole point.** The
+census corpus was building ten openlibm TUs from `ld80/` whose basenames also exist
+in `src/`, and openlibm's own build **excludes all ten**, so `nextafterl.f80`,
+`nexttoward.f64` and `nexttowardf.f32` were scored `COMPILES` on **a program that
+ships nowhere**. Correcting the corpus flipped exactly those three (plus
+`nexttowardl.f80`, which was never the corpus gap it was recorded as — openlibm
+mints it by `strong_reference` from the same file), with 120 cells byte-identical.
+**No compiler capability was lost; the number stopped measuring the wrong program.**
+This is the retired `165/174` error class caught again, and it took one of the
+campaign's own recent `+1`s with it (bd `k710`'s `nexttowardf.f32`, 97→98 — its
+write-only `volatile` idiom is not in the shipped body; the **fenv ruling and
+`eraseDeadVolatileScalarStores` are unaffected**). The recipe is now an executable,
+self-checking script (`tools/library_coverage/full_surface/build_corpus.py`) and a
+new gate (`e2e-census-slice-sync`) stops the e2e goldens drifting out of step with
+the census.
 **Three conditions make it honest, and they are not optional:**
 **(a)** the **composition is printed with the total, every time** — a total without
 it is the retired overclaim wearing a new denominator;
@@ -529,11 +545,16 @@ Note what `eur4` is worth, so it is never mis-quoted: `sinf`/`cosf`/`tanf` are
 **declines** today, so admitting them leaves the injection **numerator at 97** and
 shrinks its denominator — pure row-3 movement, **never** injection progress.
 *(Both `97` figures in this and the next paragraph are **as-of-2026-08-10**, the
-numbers those two rulings were computed on. The campaign number is **100/120** at
-2026-08-22 — `k710` took 97→98 and `ww4c` 98→100. The rulings' **arithmetic and
-conclusions are unchanged** — both turn on a **difference**, not a level — so the
-figures are deliberately left as ruled rather than silently restated; re-deriving
-either conclusion at 100 is separate work and needs its own owner sign-off.)*
+numbers those two rulings were computed on. The campaign number went 97 → 98
+(`k710`) → 100 (`ww4c`) → **back to 97 on 2026-08-23** (bd `3c6m.63` retired three
+cells measured on a body openlibm does not build, `k710`'s among them). That the
+level has returned to `97/120` is a **coincidence of arithmetic, not a
+restoration** — the denominator really is the same 120, but the covered SET is not:
+today's 97 is 2026-08-10's **minus** `nextafterl.f80` and `nexttoward.f64`
+**plus** `ilogb.f64` and `ilogbf.f32`. Never diff the two by their level. The
+rulings' **arithmetic and conclusions are unchanged** either way, because both turn
+on a **difference**, not a level; the figures are deliberately left as ruled rather
+than silently restated.)*
 
 **DECLINED 2026-08-10 (owner ruling): the `log` stem / `logl` spelling are NOT
 admitted.** Measured, not argued: `log.f64` and `logl.f80` **both already pass
@@ -623,7 +644,7 @@ non-escaping `volatile` local may have that **store** removed. **The computation
 then usually disappears too, and the ruling accepts that.** For openlibm's
 underflow idiom (`volatile float u = x*x; /* underflow */`,
 `ld80/s_nexttowardf.c:63`) the emitted circuit ends up with **no multiply at
-all** — measured: zero `fmul_f32` in `slice_libm_real_nexttowardf`'s trace.
+all** — measured: zero `fmul_f32` in `slice_libm_ld80_nexttowardf`'s trace.
 
 The mechanism is ordinary and pre-existing, not something the k710 stage does:
 once the store is gone the `fmul` is trivially dead, and
@@ -647,9 +668,23 @@ Note the asymmetry, which is real and worth knowing before reading a trace: with
 freed (a useless but harmless gate pair — see
 `lowering_volatile_scalar_deadstore.ll`); inside a PredMux region it is deleted
 outright. Both are sound here; they are not the same circuit. And the contrast
-that makes the whole family legible: `nexttoward.f64` and `nextafterf.f32` each
-keep exactly **one** `fmul` in their committed goldens, because they **read** the
-scalar — the multiply is live, and nothing in this ruling touches it.
+that makes the whole family legible: the `nexttoward` (f64) and `nextafterf.f32`
+slices each keep exactly **one** `fmul` in their committed goldens, because they
+**read** the scalar — the multiply is live, and nothing in this ruling touches it.
+
+> **THE RULING STANDS; ITS CENSUS CELL DOES NOT (bd `3c6m.63`, 2026-08-23).** The
+> write-only idiom above is `ld80/s_nexttowardf.c`, and **openlibm does not build
+> that file** — `CMakeLists.txt:174` names `src/s_nexttowardf.c`, whose scalar `t`
+> **is read** (`t = x*x; if(t==x) return t; else return x;`). So the shipped body
+> never reaches this path, and bd `k710`'s `+1` for `nexttowardf.f32` is
+> **retracted** (the cell declines earlier, on control, at
+> `src/s_nexttowardf.c:45:5`). **Nothing about the ruling, the scope of the model,
+> or `eraseDeadVolatileScalarStores` changes** — the stage keeps its lit coverage
+> and `tests/e2e/slice_libm_ld80_nexttowardf` remains its only e2e witness, which
+> is why that slice was renamed out of the coverage namespace rather than deleted.
+> What is withdrawn is the *coverage credit*, not the *capability*. Read the
+> paragraphs above as being about the idiom, which is real openlibm source either
+> way; do not re-cite them as "this is why cell `nexttowardf.f32` is covered".
 
 Note the pre-existing rationale at `QramLowering.h:222-226` — "volatile's only
 effect is to defeat FP reassociation, which taint lowering never does" — is
@@ -820,7 +855,9 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 # five gate moments (Rule-13 core commit · pre-push · harness change · template
 # regen · accept/decline predicate change).
 #
-# 253 ctest entries. RUN IT PARALLEL — `-j` is the default, not an
+# 258 ctest entries (2026-08-23: +1 for `e2e-census-slice-sync`, bd 3c6m.63; the
+# figures below were taken at 252/253 and their RATIOS still hold). RUN IT PARALLEL
+# — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
 # serial: 5.1x. RE-MEASURED 2026-08-17 on a QUIET box, 253/253 three times: 127s,
 # 189s, 226s at -j6. So there is no single number — the spread tracks how warm the
@@ -855,9 +892,9 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1069 *.ll fixtures (1068 pass + 1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1101 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-23). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 243 entries (240 slices = 220 single + 20 multi, + free-pairing selftest, fixture-guard-liveness, keepset vendor check) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min.
+ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 248 entries (241 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, and the 3 spec/predmux entries) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-23 (`ctest -N -R '^e2e-'`); re-measure rather than trust them.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
 
 # One fixture (lit --filter matches the test display name)
@@ -966,6 +1003,15 @@ There is **no GitHub CI** (no `.github/` exists); all quality gates run locally
 through `ctest` (LIT+FileCheck for ir-pass/frontend, shell+golden-diff for e2e,
 `free_pairing_check.py` as e2e stage 2b) plus `gen_templates.py --check` drift
 verification. Do not add CI.
+
+**Three of those ctest entries are PURE-PYTHON RECORD gates, not compiler tests, and
+they exist because this project's other failure mode is a number that measures the
+wrong program** — `keepset_vendor_check.py` (no slice may vendor a software body for a
+Rule-18 hardware keep), `slice_census_sync_check.py` (no `slice_libm_real_*` golden may
+claim coverage the census does not report — bd `3c6m.63`), and
+`free_pairing_check_test.py` (the stage-2b checker's own mutant validation). They run
+in seconds, need no plugin, and each was added *after* the defect it catches shipped
+undetected through a fully green suite.
 
 ---
 
@@ -1101,6 +1147,7 @@ bd close <id>         # Complete work
 | `runtime/cq_templates.{h,c}` | **Autogenerated** `cq_template_*` bodies — edit `tools/opcode_table.yaml`, not these |
 | `include/CQ.h` | User-facing intrinsic surface (14 types × 3 families via `_Generic` + `cq_invert_*`) |
 | `tools/free_pairing_check.py` · `tools/free_pairing_check_test.py` | Rule-6 free-pairing gate over the **lowered IR** (e2e stage 2b — the rail identities the trace loses, bd `8txa`) · its mutant validation (ctest `e2e-free-pairing-selftest`) |
+| `tools/library_coverage/full_surface/build_corpus.py` · `tools/slice_census_sync_check.py` | **The two libm-census integrity gates (bd `3c6m.63`).** The corpus recipe as an executable, self-checking script — it skips the ten `ld80/` bodies openlibm does not build, DERIVES that exclusion twice and hard-fails on disagreement, and verifies every `.bc`'s `source_filename` (the defect it replaces kept the right file NAME and the wrong BODY, so a symbol count could not see it) · the gate that stops a `slice_libm_real_*` golden claiming coverage the census does not report, which is how the published `verified` count could exceed `injection-covered` with **no test red** (ctest `e2e-census-slice-sync`). Neither defect is a miscompile — both are **numbers measuring the wrong program**, the retired `165/174` class |
 
 **Docs map:** `ROADMAP.md` (plan of record) · `docs/frontend.md` (intrinsic
 surface) · `docs/backend.md` (IR pass + runtime ABI) ·

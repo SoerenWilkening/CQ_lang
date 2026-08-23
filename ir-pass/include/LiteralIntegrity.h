@@ -53,7 +53,7 @@
 // first draft of this guard refused ANY emitted call with a literal
 // undef/poison operand, and MEASUREMENT killed it: across 966 fixtures + 257
 // e2e stage-1 modules + 251 openlibm modules there is exactly ONE real-code
-// occurrence, `slice_libm_real_nexttoward` —
+// occurrence, `slice_libm_ld80_nexttoward` —
 //
 //     %selop = call i32 @cqrt_alloc_f64(double undef)
 //     call void @cqrt_copy_f64_controlled(i32 %h_cmp85, i32 %selop, i32 %out86)
@@ -440,7 +440,7 @@ bool isEmittedRuntimeCallee(const llvm::CallBase *CB);
 //
 // *** DO NOT instead widen GUARD 1 to "the argument is defined by an instruction
 // with an undef operand". *** That over-declines every `clang` dead-edge
-// phi/select — including `slice_libm_real_nexttoward`'s whole family — for no
+// phi/select — including `slice_libm_ld80_nexttoward`'s whole family — for no
 // pairing gain, because outside the twin there is only ever ONE copy of the
 // computation and both reads see the same register.
 const llvm::Instruction *findUndefOperandInBody(const llvm::Function &F);

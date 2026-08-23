@@ -1,5 +1,14 @@
 # Literal integrity — bd xy9n + bd 7udx
 
+> **PATH NOTE (2026-08-23, bd `3c6m.63`).** This document names
+> `tests/e2e/slice_libm_real_nexttoward` — the single real-code `undef` occurrence
+> that set the two-slot threshold. That slice is now
+> **`tests/e2e/slice_libm_ld80_nexttoward`**: it vendors openlibm's `ld80/` body,
+> which openlibm's own build excludes, so it was moved out of the coverage
+> namespace. **Nothing about this decision changes** — it is the same file, the same
+> `undef`, the same threshold argument, and the slice is still committed and still
+> green. Only the path moved. (Text below left as written, 2026-08-09.)
+
 **Status:** SHIPPED, branch `3c6m.14-control-l6`, 2026-08-09.
 **Scope:** one new TU (`ir-pass/src/LiteralIntegrity.{h,cpp}`) plus call sites in
 `CQLoweringPass.cpp`, `RegionFlatten.cpp`, `PredMuxFlatten.cpp`,

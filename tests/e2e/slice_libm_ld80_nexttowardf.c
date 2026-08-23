@@ -1,4 +1,28 @@
-/* slice_libm_real_nexttowardf.c — bd k710: the REAL openlibm nexttowardf body
+/* *** NOT A COVERAGE CLAIM — openlibm does NOT build this body (bd 3c6m.63). ***
+ *
+ * This slice vendors openlibm's `ld80/` variant. openlibm's own build EXCLUDES it
+ * on every target: `ld80/Make.files:8-9` comments `s_nextafterl.c` out and never
+ * mentions `s_nexttoward.c` / `s_nexttowardf.c`, while `CMakeLists.txt:174/297/309`
+ * name `src/` for each. Until 2026-08-23 the census reached these ld80 bodies
+ * through a basename collision in the corpus recipe and scored three cells
+ * `COMPILES` on a program that ships nowhere.
+ *
+ * ON THE BODY THAT SHIPS, THIS CELL DECLINES — census cell `nexttowardf.f32` declines at `src/s_nexttowardf.c:45:5`,
+ *   `if((hx>=0) ^ (x < y))`: `control flow under quantum control`. NB the shipped
+ *   `src/` body READS its volatile scalar `t`, so the write-only idiom this slice
+ *   exists to exercise is NOT present there and bd k710's +1 is RETRACTED. The fenv
+ *   ruling and `eraseDeadVolatileScalarStores` are UNAFFECTED — this slice remains
+ *   their only e2e witness, which is exactly why it was renamed and not deleted.
+ *
+ * The slice is KEPT, and renamed out of the `slice_libm_real_*` namespace rather
+ * than deleted, because it still proves what its header describes: real
+ * BSD-licensed openlibm C that lowers, links, runs and byte-matches. What it must
+ * not do is COUNT — `probe.py`'s published `verified` number is the glob count of
+ * `slice_libm_real_*.expected.log`, so leaving it there would publish
+ * verified > injection-covered. `tools/slice_census_sync_check.py` (ctest
+ * `e2e-census-slice-sync`) enforces the split so this cannot drift back silently.
+ */
+/* slice_libm_ld80_nexttowardf.c — bd k710: the REAL openlibm nexttowardf body
  * (ld80/s_nexttowardf.c, fdlibm/OpenBSD-derived, BSD-licensed) — census cell
  * nexttowardf.f32.
  *
@@ -43,7 +67,7 @@
  * lit fixture. The owner re-affirmed the ruling on these measured facts.
  *
  * THE CONTRAST THAT MAKES THE FAMILY LEGIBLE, and it is in the committed goldens:
- * `slice_libm_real_nexttoward` (f64) and `slice_libm_real_nextafterf` (f32) each
+ * `slice_libm_ld80_nexttoward` (f64) and `slice_libm_real_nextafterf` (f32) each
  * carry exactly ONE fmul, because they READ their volatile scalar — live value,
  * untouched by any of this. Only this cell's multiply is dead.
  *
@@ -54,7 +78,7 @@
  * math_private.h's f32 word macros expanded to the __builtin_memcpy idiom; the
  * openbsd ieee_extended_shape_type union + GET_LDOUBLE_WORDS taken verbatim
  * (ld80 word access is NEVER memcpy-shimmed — the 3c6m.51 promoteFp80Union
- * convention), matching slice_libm_real_nexttoward.c exactly.
+ * convention), matching slice_libm_ld80_nexttoward.c exactly.
  *
  * The probe pins the census cell: x = theta-tainted f32, y = 0.5L (classical long
  * double — the census `ldbl` arg kind), so the y-side word extract and the NaN

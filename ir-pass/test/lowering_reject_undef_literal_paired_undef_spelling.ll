@@ -8,7 +8,7 @@
 ; narrowing) goes red here instead of silently re-opening half the defect.
 ;
 ; `undef` is the spelling `clang -O1` and `mem2reg` actually emit — the one real
-; occurrence in the whole measured corpus (`slice_libm_real_nexttoward`) is an
+; occurrence in the whole measured corpus (`slice_libm_ld80_nexttoward`) is an
 ; `undef`, not a `poison`, so this row carries the reachable spelling and the
 ; other one carries the adversarial spelling.
 ;

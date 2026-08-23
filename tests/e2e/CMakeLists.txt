@@ -3048,43 +3048,86 @@ add_test(NAME e2e-slice-libm-real-nextafterf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterf.expected.log")
 
 
-# nextafterl.f80 — the hardest of the family: a THREE-word (esx/hx/lx) borrow-carry chain with the
-# explicit-integer-bit `(hx +- 1) | (hx & 0x80000000)` fixups, and block-scoped volatile locals.
-add_test(NAME e2e-slice-libm-real-nextafterl
+# ===========================================================================
+# THE `slice_libm_ld80_*` FAMILY — REAL openlibm source, but NOT a coverage claim
+# ===========================================================================
+# bd `test_C_libtooling-3c6m.63` (2026-08-23). These three slices vendor openlibm's
+# `ld80/` variant of a function, and openlibm's own build EXCLUDES all three on
+# every target: `ld80/Make.files:8-9` comments `s_nextafterl.c` out and never
+# mentions `s_nexttoward.c` / `s_nexttowardf.c`, while `CMakeLists.txt:174/297/309`
+# name `src/` for each. On the body that DOES ship, all three census cells DECLINE
+# (`nextafterl.f80` / `nexttoward.f64` at `src/s_nextafterl.c:42:29` and
+# `src/s_nexttoward.c:44:22`, nested control; `nexttowardf.f32` at
+# `src/s_nexttowardf.c:45:5`, flat control).
+#
+# WHY THEY ARE STILL HERE. They are real BSD-licensed openlibm C, they lower, link,
+# run and byte-match, and each proves something nothing else in the suite does (see
+# per-slice notes). What they must NOT do is COUNT: `probe.py`'s
+# `_full_surface_scoreboard()` computes the published `verified` number as the glob
+# count of `slice_libm_real_*.expected.log`, so leaving them under that prefix would
+# publish `97 injection-covered, 100 verified` — verified > covered, which probe.py's
+# own docstring names as an incoherent result. Renaming is what separates "CQ can
+# lower this body" (true, and worth a regression test) from "a user's `nextafterl()`
+# call is covered" (false).
+#
+# `tools/slice_census_sync_check.py` (ctest `e2e-census-slice-sync`) enforces the
+# split mechanically, because the ticket recorded this desync as a trap that turns
+# NO test red.
+# ===========================================================================
+
+# nextafterl (ld80 variant) — the hardest of the family: a THREE-word (esx/hx/lx) borrow-carry chain
+# with the explicit-integer-bit `(hx +- 1) | (hx & 0x80000000)` fixups, and block-scoped volatile
+# locals. NOT the shipped body (see the block above); census cell nextafterl.f80 declines.
+add_test(NAME e2e-slice-libm-ld80-nextafterl
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
     "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterl.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_ld80_nextafterl.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterl.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_ld80_nextafterl.expected.log")
 
 
-# nexttoward.f64 — the only MIXED-WIDTH cell (C11 7.12.11 fixes arg 2 at long double): drives BOTH the f64
-# memcpy word shim and the ld80 union in one body, plus the hand-aligned f64->fp80 field
-# comparison ladder.
-add_test(NAME e2e-slice-libm-real-nexttoward
+# nexttoward (ld80 variant) — the only MIXED-WIDTH body in the suite (C11 7.12.11 fixes arg 2 at long
+# double): drives BOTH the f64 memcpy word shim and the ld80 union in one function, plus the
+# hand-aligned f64->fp80 field comparison ladder. It is also the ONLY slice whose lowered module
+# contains a real LLVM `undef` (clang -O1's own select on the x==y/NaN early exit) — the
+# golden-fragility witness documented in its header. NOT the shipped body; nexttoward.f64 declines.
+add_test(NAME e2e-slice-libm-ld80-nexttoward
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
     "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttoward.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_ld80_nexttoward.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttoward.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_ld80_nexttoward.expected.log")
 
-# nexttowardf.f32 — bd k710, and the LINK-LAYER PROOF for the fenv ruling (owner 2026-08-10) and the
-# `eraseDeadVolatileScalarStores` stage it licensed. Structurally unique in this family: its final
-# underflow raise is a WRITE-ONLY `volatile float u = x*x;` (ld80/s_nexttowardf.c:63), where all four
-# compiling siblings READ their volatile scalar and are claimed by the zco4 promotion instead. Before
-# the ruling this cell died on `cq taint escape: tainted value stored to memory`.
-# THE GOLDEN'S JOB: show the store gone AND the multiply still present (cq_template_fmul_f32 + its
-# _unc, freed only after the adjoint). The ruling licensed deleting an unobservable STORE, never the
-# computation — if a later change DCEs the multiply, this trace moves and that is the alarm.
-add_test(NAME e2e-slice-libm-real-nexttowardf
+# nexttowardf (ld80 variant) — bd k710, and the ONLY e2e LINK-LAYER PROOF for the fenv ruling (owner
+# 2026-08-10) and the `eraseDeadVolatileScalarStores` stage it licensed. Structurally unique: its
+# final underflow raise is a WRITE-ONLY `volatile float u = x*x;` (ld80/s_nexttowardf.c:63), where
+# every compiling sibling READS its volatile scalar and is claimed by the zco4 promotion instead.
+# Before the ruling this body died on `cq taint escape: tainted value stored to memory`.
+#
+# THE GOLDEN'S JOB — and the previous wording here was WRONG, contradicting both this slice's own
+# header and CLAUDE.md: the trace contains ZERO `cq_template_fmul_f32`. Once the unobservable store
+# is gone the multiply is trivially dead and PredMuxFlatten's
+# `RecursivelyDeleteTriviallyDeadInstructions` takes it. That is sound and is what the owner
+# re-affirmed the ruling on (CLAUDE.md, "fenv is OUT"); the comfortable "we only delete the store"
+# reading is true of the STAGE and false of the PIPELINE. What the golden pins is the whole gate
+# stream under that reading — if a later change resurrects the multiply, or drops something else,
+# this trace moves and that is the alarm.
+#
+# *** ITS CENSUS CREDIT IS RETRACTED (bd 3c6m.63). *** k710's +1 (97->98) was measured on THIS body;
+# the shipped `src/s_nexttowardf.c` reads its volatile scalar `t`, so the fenv path is never reached
+# there and the cell declines earlier, on control. The RULING and the STAGE are unaffected and keep
+# their own lit coverage (`ir-pass/test/lowering_volatile_scalar_deadstore.ll`); only the coverage
+# credit is withdrawn. This slice is now the stage's e2e witness WITHOUT being a coverage claim,
+# which is exactly why it was renamed rather than deleted.
+add_test(NAME e2e-slice-libm-ld80-nexttowardf
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
     "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardf.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_ld80_nexttowardf.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardf.expected.log")
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_ld80_nexttowardf.expected.log")
 
 
 # expm1l.f80 — ld80 exp kernel in Cephes rational form: Cody-Waite reduction via @llvm.floor.f80,
@@ -3530,6 +3573,21 @@ add_test(NAME e2e-fixture-guard-liveness
 # no clang, no opt, no plugin.
 add_test(NAME e2e-keepset-vendor-check
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/keepset_vendor_check.py"
+          --root "${CMAKE_SOURCE_DIR}")
+
+# bd 3c6m.63 prevention gate — the same argument as the keepset gate above, one
+# axis over. The published libm scoreboard prints `verified` (the glob count of
+# `slice_libm_real_*.expected.log`) beside `injection-covered` (read off
+# `full_census_O1.json`); two mechanisms, one claim, and they can desynchronize.
+# When the corpus fix of 3c6m.63 flipped three cells COMPILES -> decline, their
+# three goldens — which vendor the ld80 bodies openlibm does not build — kept
+# passing and NOTHING turned red. This asserts the only direction that can go
+# wrong silently: no `slice_libm_real_<s>` may exist for a spelling whose census
+# cell is not injection-covered. It deliberately does NOT require the converse
+# (covered and verified are measured apart on purpose). Pure Python over the
+# committed census json and the slice filenames: no clang, no opt, no plugin.
+add_test(NAME e2e-census-slice-sync
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/slice_census_sync_check.py"
           --root "${CMAKE_SOURCE_DIR}")
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
