@@ -349,36 +349,69 @@ SCOPE = {
     # 100/120 -> 97/120. Whoever reads a shrinking numerator here should read it as
     # `165/174` being caught one more time, not as the pass getting worse.
     #
-    # WHY `deferred-capability` AND NOT `lever-gap`. `lever-gap` asserts "a
-    # capability we could build WOULD move this cell", and that is UNMEASURED for
-    # all four: each first blocker below is located to the line, and the depth
-    # BEHIND it is not. This table has mispredicted the next layer three times
-    # running on the tgamma pair, and bd `ih70` (the open PredMux W6 residuals)
-    # carries the same instruction verbatim — "file-and-measure before implementing
-    # (the bucket counts on this campaign have been wrong three times)". Putting
-    # four unmeasured cells into the ACTIONABLE set is the exact over-count the
-    # SCOPE axis was created to stop. Tracker: bd `3c6m.67`.
+    # *** ALL FOUR SHARE ONE BLOCKING CONSTRUCT — measured 2026-08-23, and it is NOT
+    # what the reported line numbers suggest. *** The diagnostic points at the NaN
+    # guard for three of them, which invites the reading "the nested `&&` is the
+    # problem". That reading is REFUTED by the ld80 twins: they carry the
+    # BYTE-IDENTICAL two-level `&&`/`||` guard with the same post-promotion CFG
+    # topology at that point, and they lower at `opt` exit 0. The guard is not the
+    # blocker; it is merely the OUTERMOST region, and it reads as *nested* only
+    # because a region further down survives as live control flow.
     #
-    # ONE MEASURED OBSERVATION, recorded because it narrows the search and NOT
-    # because it predicts the answer: `nextafter.f64` and `nextafterf.f32` both
-    # COMPILE today with a structurally similar NaN-guard conjunction, while
-    # `nextafterl.f80` declines on it — so the difference is at least partly the
-    # fp80 union / width dimension (3c6m.51 promoteFp80Union interacting with
-    # PredMux), not the `&&` shape alone. Whether that is the WHOLE difference is
-    # UNMEASURED; do not scope against it without measuring.
+    # THAT REGION IS THE ulp-DIRECTION TEST, which is where the two source families
+    # genuinely differ:
+    #     ld80 (lowers):   an INTEGER word ladder — ix>iy || ((ix==iy) && (hx>hy …))
+    #     src  (declines): an XOR OF TWO COMPARES on the tainted value —
+    #                      if((x>0.0)  ^ (x<y))   src/s_nextafterl.c:55
+    #                      if((hx>0.0) ^ (x<y))   src/s_nexttoward.c:54
+    #                      if((hx>=0)  ^ (x<y))   src/s_nexttowardf.c:45
+    # Measured with CQ_PREDMUX_DBG / CQ_CTRL_DBG on BOTH corpora:
+    #   nextafterl.f80   PredMux asked 16x, LEAVES all 16; the root it declines is
+    #                    the `^` branch at :55, gate E6-condtree (+ E3-sideentry /
+    #                    E3-mergepred on the rest). ControlDetect then declines the
+    #                    enclosing NaN guard as nested, reported at :42:29.
+    #   nexttoward.f64   same shape, root at :54, gate E6-condtree; reported :44:22.
+    #   nexttowardf.f32  PredMux NEVER INVOKED (0 leaves) — the `^` diamond at :45:5
+    #                    IS the region and declines FLAT. Same construct, different
+    #                    bucket, purely because here it is outermost.
+    #   ld80 twins       nextafterl: PredMux 0 leave / 0 claim — never consulted at
+    #                    all, ControlDetect claims the integer ladder directly. All
+    #                    three ld80 bodies: opt exit 0.
+    # `nexttowardl.f80` IS nextafterl (strong_reference alias), so same construct.
+    #
+    # WHY `deferred-capability` AND NOT `lever-gap`, even now. The FIRST blocker is
+    # shared, named and located; the DEPTH BEHIND IT IS STILL UNMEASURED, and
+    # `lever-gap` asserts a capability WOULD move the cell. This table has
+    # mispredicted the next layer three times running on the tgamma pair, and bd
+    # `ih70` carries the same instruction verbatim — "file-and-measure before
+    # implementing". What HAS changed is that bd `3c6m.67` is no longer four
+    # unknowns: it is ONE construct (an `xor i1` of two tainted compares used as a
+    # branch condition, which PredMux's condition-tree recognizer does not admit),
+    # ceiling +4 cells, 97 -> 101. Measure the next layer before promoting it.
+    #
+    # SUPERSEDED OBSERVATION, kept so it is not re-derived: an earlier draft of this
+    # block said `nextafter.f64`/`nextafterf.f32` COMPILE while `nextafterl.f80` does
+    # not, "so the difference is at least partly the fp80 union / width dimension".
+    # That was a coincidence of which bodies openlibm ships — those two come from
+    # src/s_nextafter{,f}.c, which use the INTEGER-WORD form. It is the CONSTRUCT,
+    # not the width.
     **{c: ("deferred-capability", ref) for c, ref in {
         "nextafterl.f80":
             "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nextafterl.c, a body "
-            "openlibm does not build. On the shipped body the measured first blocker is "
-            "src/s_nextafterl.c:42:29 — the nested `&&` of the NaN guard "
-            "(ux.bits.exp==0x7fff && ((ux.bits.manh&~LDBL_NBIT)|ux.bits.manl)!=0) over the "
-            "TAINTED x — `cq controlled lowering: nested control flow under quantum control`. "
-            "Depth behind UNMEASURED. Tracker bd 3c6m.67. NB the f64/f32 siblings COMPILE",
+            "openlibm does not build. Reported at src/s_nextafterl.c:42:29 (the NaN guard) — but "
+            "*** THE GUARD IS NOT THE BLOCKER ***: the ld80 twin carries the byte-identical "
+            "two-level `&&` and lowers at exit 0. The guard reads as NESTED only because PredMux "
+            "leaves the ulp-direction region below it — root `if((x>0.0) ^ (x<y))` at :55, gate "
+            "E6-condtree, 16 leaves / 0 claims, where the ld80 twin never invokes PredMux at all. "
+            "The real construct is an `xor i1` of two tainted compares used as a branch condition, "
+            "which the src/ family uses and the ld80 family replaces with an integer word ladder. "
+            "Depth behind UNMEASURED. Tracker bd 3c6m.67",
         "nexttoward.f64":
             "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttoward.c, a body "
-            "openlibm does not build. Shipped body's first blocker is src/s_nexttoward.c:44:22, "
-            "the same nested NaN-guard `&&` shape as nextafterl.f80 spelled over "
-            "EXTRACT_WORDS(hx,lx,x) — `nested control flow under quantum control`. Depth behind "
+            "openlibm does not build. Reported at src/s_nexttoward.c:44:22 (the NaN guard), but the "
+            "blocker is the SAME construct as nextafterl.f80 and NOT the guard: PredMux leaves "
+            "`if((hx>0.0) ^ (x<y))` at :54 on gate E6-condtree, so the enclosing guard reads as "
+            "nested. The ld80 twin lowers at exit 0 carrying the same guard. Depth behind "
             "UNMEASURED. Tracker bd 3c6m.67",
         "nexttowardf.f32":
             "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttowardf.c, a body "
@@ -388,8 +421,10 @@ SCOPE = {
             "src/'s scalar `t` IS READ (`t=x*x; if(t==x) return t; else return x;`) so the fenv "
             "path is never needed here. The shipped body blocks EARLIER and elsewhere: "
             "src/s_nexttowardf.c:45:5 `if((hx>=0) ^ (x < y))`, an XOR of two compares over "
-            "tainted x — `cq controlled lowering: control flow under quantum control` "
-            "(flat/diamond, NOT the L6 nest its two siblings hit). The fenv ruling and "
+            "tainted x — `cq controlled lowering: control flow under quantum control`. This is the "
+            "SAME construct its two siblings die on; it lands in a different BUCKET only because "
+            "here it is the OUTERMOST region (PredMux never invoked, 0 leaves), so it declines FLAT "
+            "rather than as an enclosing nest. The fenv ruling and "
             "eraseDeadVolatileScalarStores are UNAFFECTED and keep their own lit coverage; what "
             "is retracted is only this cell's credit. Depth behind UNMEASURED. Tracker bd 3c6m.67",
         "nexttowardl.f80":
@@ -403,8 +438,9 @@ SCOPE = {
             "trap (a) forbids — it declines). (2) the rider 'would land on nextafterl's blocker "
             "anyway is REFUTED' is itself REFUTED and the original claim CONFIRMED to the "
             "COLUMN: this cell's diagnostic is src/s_nextafterl.c:42:29, byte-identical to "
-            "nextafterl.f80's. The refutation rested on nextafterl.f80 compiling, which was the "
-            "artifact. Tracker bd 3c6m.67",
+            "nextafterl.f80's — it IS nextafterl, so it is the same `^` construct at :55 behind the "
+            "same guard. The refutation rested on nextafterl.f80 compiling, which was the artifact. "
+            "Tracker bd 3c6m.67",
     }.items()},
 
     # =======================================================================

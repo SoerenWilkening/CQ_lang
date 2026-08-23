@@ -54,12 +54,42 @@ baseline (`409/251` → `410/252`): exactly SIX cells move, 120 byte-identical.*
 
 | cell | was | is | why |
 |---|---|---|---|
-| `nextafterl.f80` | COMPILES | decline / L6 nested | `src/s_nextafterl.c:42:29`, the NaN-guard `&&` |
-| `nexttoward.f64` | COMPILES | decline / L6 nested | `src/s_nexttoward.c:44:22`, same shape |
-| `nexttowardf.f32` | COMPILES | decline / control | `src/s_nexttowardf.c:45:5`, `if((hx>=0) ^ (x<y))` |
+| `nextafterl.f80` | COMPILES | decline / L6 nested | reported `src/s_nextafterl.c:42:29` |
+| `nexttoward.f64` | COMPILES | decline / L6 nested | reported `src/s_nexttoward.c:44:22` |
+| `nexttowardf.f32` | COMPILES | decline / control | reported `src/s_nexttowardf.c:45:5` |
 | `nexttowardl.f80` | **no-body** | decline / L6 nested | now genuinely probed — see below |
 | `remainderl.f80` | decline / loop-carried | decline / memory-store | `src/s_remquol.c:76:7` `ux.e = x` |
 | `remquol.f80` | decline / loop-carried | decline / memory-store | same instruction |
+
+> **⚠ THE FIRST THREE REPORTED LOCATIONS ARE THE NaN GUARD, AND THE NaN GUARD IS NOT
+> THE BLOCKER.** This was measured after the fact, because "these declined on a nested
+> `&&`" is the obvious reading and it is **wrong**: the ld80 twins carry the
+> *byte-identical* two-level `&&`/`||` guard with the same post-promotion CFG topology
+> and lower at `opt` exit 0. The guard is only the OUTERMOST region; it reads as
+> *nested* because a region below it survives as live control flow.
+>
+> That region is the **ulp-direction test**, and it is the one place the two source
+> families genuinely differ:
+>
+> | | how it picks "subtract ulp" vs "add ulp" |
+> |---|---|
+> | `ld80/` (lowers) | an **integer word ladder** — `ix>iy \|\| ((ix==iy) && (hx>hy …))` |
+> | `src/` (declines) | an **XOR of two compares on the tainted value** — `if((x>0.0) ^ (x<y))` (`:55`), `if((hx>0.0) ^ (x<y))` (`:54`), `if((hx>=0) ^ (x<y))` (`:45`) |
+>
+> Measured with `CQ_PREDMUX_DBG` / `CQ_CTRL_DBG` on both corpora: for
+> `nextafterl.f80` PredMux is asked **16 times and leaves all 16**, the root being the
+> `^` branch at `:55` on gate **E6-condtree**; `nexttoward.f64` is the same at `:54`.
+> `nexttowardf.f32` never invokes PredMux at all — there the `^` diamond *is* the
+> outermost region, which is the whole reason it lands in a different bucket from its
+> two siblings. On the ld80 side PredMux is **never consulted** (0 leave / 0 claim):
+> ControlDetect claims the integer ladder directly.
+>
+> **So all four cells fail on ONE construct** — an `xor i1` of two tainted compares
+> used as a branch condition, which PredMux's condition-tree recognizer does not
+> admit. That is a materially better-scoped ticket than "four cells decline on
+> control": ceiling **+4, 97 → 101**, one capability. It stays `deferred-capability`
+> rather than `lever-gap` because the depth *behind* that construct is still
+> unmeasured — bd `3c6m.67`.
 
 **`nexttowardf.f32` is the campaign's own bd `k710` +1 (97 → 98, 2026-08-10), and
 that +1 IS RETRACTED.** It rested on the **write-only** `volatile float u = x*x;` at

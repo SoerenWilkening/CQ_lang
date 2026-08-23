@@ -8,7 +8,11 @@
  * `COMPILES` on a program that ships nowhere.
  *
  * ON THE BODY THAT SHIPS, THIS CELL DECLINES — census cell `nextafterl.f80` declines at `src/s_nextafterl.c:42:29`,
- *   the nested `&&` of the NaN guard: `nested control flow under quantum control`.
+ *   REPORTED there, but the NaN guard is NOT the blocker: THIS slice's ld80 body carries the
+ *   byte-identical two-level `&&` and lowers at exit 0. The guard reads as nested only because
+ *   PredMux leaves the ulp-direction region below it — `if((x>0.0) ^ (x<y))` at src/:55, gate
+ *   E6-condtree, 16 leaves / 0 claims. The construct is an `xor i1` of two tainted compares as
+ *   a branch condition, which src/ uses and ld80 replaces with an integer word ladder.
  *
  * The slice is KEPT, and renamed out of the `slice_libm_real_*` namespace rather
  * than deleted, because it still proves what its header describes: real

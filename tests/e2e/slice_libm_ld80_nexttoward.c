@@ -8,7 +8,9 @@
  * `COMPILES` on a program that ships nowhere.
  *
  * ON THE BODY THAT SHIPS, THIS CELL DECLINES — census cell `nexttoward.f64` declines at `src/s_nexttoward.c:44:22`,
- *   the same nested NaN-guard `&&`: `nested control flow under quantum control`.
+ *   REPORTED there, but as with nextafterl the guard is NOT the blocker (this slice's ld80 body
+ *   has the same guard and lowers at exit 0). PredMux leaves `if((hx>0.0) ^ (x<y))` at src/:54
+ *   on gate E6-condtree, so the enclosing guard reads as nested.
  *
  * The slice is KEPT, and renamed out of the `slice_libm_real_*` namespace rather
  * than deleted, because it still proves what its header describes: real

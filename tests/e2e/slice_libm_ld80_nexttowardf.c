@@ -8,7 +8,9 @@
  * `COMPILES` on a program that ships nowhere.
  *
  * ON THE BODY THAT SHIPS, THIS CELL DECLINES — census cell `nexttowardf.f32` declines at `src/s_nexttowardf.c:45:5`,
- *   `if((hx>=0) ^ (x < y))`: `control flow under quantum control`. NB the shipped
+ *   `if((hx>=0) ^ (x < y))`: `control flow under quantum control` — the SAME xor-of-two-compares
+ *   construct its two siblings die on, declining FLAT here only because it is the outermost
+ *   region (PredMux is never invoked on this body). NB the shipped
  *   `src/` body READS its volatile scalar `t`, so the write-only idiom this slice
  *   exists to exercise is NOT present there and bd k710's +1 is RETRACTED. The fenv
  *   ruling and `eraseDeadVolatileScalarStores` are UNAFFECTED — this slice remains
