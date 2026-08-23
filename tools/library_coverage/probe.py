@@ -354,7 +354,7 @@ def mathh_union_scoreboard():
             else:
                 # `partial` is fma{,f,l}: counted as covered, and SAID so below, because
                 # a bare 86% that quietly rests on 3 partial cells is the same defect in
-                # miniature. Dropping them gives 155/183.
+                # miniature. Dropping them gives 156/183.
                 b, ok = "recognition keep-set", r.get("rollup") in ("verified", "accepted",
                                                                    "partial")
             a = acc.setdefault(b, [0, 0])

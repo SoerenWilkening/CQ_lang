@@ -804,36 +804,28 @@
   "provider": "openlibm"
  },
  "nextafterl.f80": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control",
-  "provider": "openlibm",
-  "scope": "deferred-capability",
-  "scope_ref": "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nextafterl.c, a body openlibm does not build. Reported at src/s_nextafterl.c:42:29 (the NaN guard) \u2014 but *** THE GUARD IS NOT THE BLOCKER ***: the ld80 twin carries the byte-identical two-level `&&` and lowers at exit 0. The guard reads as NESTED only because PredMux leaves the ulp-direction region below it \u2014 root `if((x>0.0) ^ (x<y))` at :55, gate E6-condtree, 16 leaves / 0 claims, where the ld80 twin never invokes PredMux at all. The real construct is an `xor i1` of two tainted compares used as a branch condition, which the src/ family uses and the ld80 family replaces with an integer word ladder. Depth behind UNMEASURED. Tracker bd 3c6m.67"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "nexttowardf.f32": {
-  "status": "decline",
-  "bucket": "control (flat/diamond)",
-  "diag": "probe float (): cq controlled lowering: control flow under quantum control",
-  "provider": "openlibm",
-  "scope": "deferred-capability",
-  "scope_ref": "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttowardf.c, a body openlibm does not build \u2014 and this cell is the campaign's own bd k710 +1 (97->98, 2026-08-10), so THAT +1 IS RETRACTED. It rested on the write-only `volatile float u = x*x;` at ld80/s_nexttowardf.c:63 cleared by the fenv ruling; src/'s scalar `t` IS READ (`t=x*x; if(t==x) return t; else return x;`) so the fenv path is never needed here. The shipped body blocks EARLIER and elsewhere: src/s_nexttowardf.c:45:5 `if((hx>=0) ^ (x < y))`, an XOR of two compares over tainted x \u2014 `cq controlled lowering: control flow under quantum control`. This is the SAME construct its two siblings die on; it lands in a different BUCKET only because here it is the OUTERMOST region (PredMux never invoked, 0 leaves), so it declines FLAT rather than as an enclosing nest. The fenv ruling and eraseDeadVolatileScalarStores are UNAFFECTED and keep their own lit coverage; what is retracted is only this cell's credit. Depth behind UNMEASURED. Tracker bd 3c6m.67"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "nexttoward.f64": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe double (): cq controlled lowering: nested control flow under quantum control",
-  "provider": "openlibm",
-  "scope": "deferred-capability",
-  "scope_ref": "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttoward.c, a body openlibm does not build. Reported at src/s_nexttoward.c:44:22 (the NaN guard), but the blocker is the SAME construct as nextafterl.f80 and NOT the guard: PredMux leaves `if((hx>0.0) ^ (x<y))` at :54 on gate E6-condtree, so the enclosing guard reads as nested. The ld80 twin lowers at exit 0 carrying the same guard. Depth behind UNMEASURED. Tracker bd 3c6m.67"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "nexttowardl.f80": {
-  "status": "decline",
-  "bucket": "L6 nested control",
-  "diag": "probe x86_fp80 (): cq controlled lowering: nested control flow under quantum control",
-  "provider": "openlibm",
-  "scope": "deferred-capability",
-  "scope_ref": "RE-SCOPED 2026-08-23 (bd 3c6m.63) \u2014 WAS `corpus-gap`, AND BOTH HALVES OF THAT ENTRY WERE WRONG. (1) openlibm does NOT ship no body for it: it mints the name as `openlibm_strong_reference(nextafterl, nexttowardl)` at src/s_nextafterl.c:80, exactly the shape wprobe's bd-vuy6 _synth_alias_shim resolves \u2014 the basename collision HID it, because ld80/s_nextafterl.c:90 has that alias COMMENTED OUT. The cell is now genuinely probed (no shim was added; the generic alias mechanism found it once the corpus became faithful, which is NOT the manufactured +1 the ticket's trap (a) forbids \u2014 it declines). (2) the rider 'would land on nextafterl's blocker anyway is REFUTED' is itself REFUTED and the original claim CONFIRMED to the COLUMN: this cell's diagnostic is src/s_nextafterl.c:42:29, byte-identical to nextafterl.f80's \u2014 it IS nextafterl, so it is the same `^` construct at :55 behind the same guard. The refutation rested on nextafterl.f80 compiling, which was the artifact. Tracker bd 3c6m.67"
+  "status": "COMPILES",
+  "bucket": "COMPILES",
+  "diag": "surv:[]",
+  "provider": "openlibm"
  },
  "fdimf.f32": {
   "status": "COMPILES",

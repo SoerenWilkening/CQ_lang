@@ -37,13 +37,28 @@
 > that justified the work); the outcome is recorded in
 > `full_surface/README.md`'s 2026-08-23 entry, which is authoritative.
 
+> **⚑ AND THEN A LEVER THIS SURVEY DID NOT HAVE — bd `3c6m.67`, LANDED THE SAME DAY.**
+> The survey's headline conclusion was that **"no lever moves the injection numerator
+> upward"**. That was true of the levers it enumerated and **false of the surface as a
+> whole**, and the reason is worth carrying: the survey could only rank levers against
+> the census as it then read, and the census was measuring the wrong bodies for exactly
+> the cells that hid the lever. Correcting the corpus (§2.2) did not merely subtract 3 —
+> it **exposed** a shared first blocker on four cells, an `xor i1` of two tainted
+> compares used as a branch condition (`src/s_nextafterl.c:55` and siblings), excluded
+> from both condition-tree recognisers **with no recorded rationale**. Admitting it took
+> injection **97 → 101/120** and the headline **155 → 159/183 (87%)**.
+> *So the `−3` was not a cost that had to be paid back — it was the measurement that
+> made a `+4` findable.* Do not read the two moves as netting to `+1`: one is a
+> correction, the other is compiler work.
+
 **The live plan, after the owner deferred `fpclassify` on 2026-08-22 (bd `3c6m.65`),
 with §2.2 struck through as DONE:**
 
 | step | headline | injection (campaign) |
 |---|---|---|
 | ~~as surveyed 2026-08-22~~ | ~~158/183 (86%)~~ | ~~100/120~~ |
-| **✅ faithful corpus (§2.2) — LANDED 2026-08-23** | **155/183 (85%)** | **97/120** |
+| ~~✅ faithful corpus (§2.2) — LANDED 2026-08-23~~ | ~~155/183 (85%)~~ | ~~97/120~~ |
+| **✅ xor cond-tree (bd `3c6m.67`) — LANDED 2026-08-23** | **159/183 (87%)** | **101/120** |
 | + bd `eur4` f32 trig leaves (§2.1) | 158/183 (87%) | 97/**117** (denominator only) |
 | + `isnormal` (§2.3) | 159/183 (88%) | 97/117 (unchanged) |
 | *(deferred)* `fpclassify` (§3) | *+1 → 160/183* | *unchanged* |

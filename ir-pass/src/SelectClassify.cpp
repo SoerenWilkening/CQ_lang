@@ -456,8 +456,55 @@ bool collectCondTree(Value *Root, CondTree &Tree) {
     auto *BO = dyn_cast<BinaryOperator>(V);
     if (!BO || !BO->getType()->isIntegerTy(1) ||
         (BO->getOpcode() != Instruction::And &&
-         BO->getOpcode() != Instruction::Or))
-      return false;  // off-grammar: xor / freeze / i1-select / phi / trunc / …
+         BO->getOpcode() != Instruction::Or &&
+         BO->getOpcode() != Instruction::Xor))
+      return false;  // off-grammar: freeze / i1-select / phi / trunc / …
+    // *** XOR NODE — ADMITTED 2026-08-23 (bd 3c6m.67). ***
+    //
+    // This line used to read `!= And && != Or` with the bail commented
+    // "off-grammar: xor / freeze / …", and NO RATIONALE FOR EXCLUDING XOR WAS
+    // EVER RECORDED — one clause in an enumeration, in a function that argues
+    // its other two fences at 25 and 20 lines apiece (bd big5). It read as an
+    // ABSENCE OF A DECISION, not a decision against xor: the grammar was built
+    // for 3c6m.12 "compound-condition select", i.e. exactly the &&/|| that C
+    // short-circuit produces, and PredMux upstream normalizes NOT away by De
+    // Morgan, so no two-operand xor was ever on the input distribution that
+    // shaped it. (That inference is LABELLED as inference — nobody wrote a
+    // reason down, and this comment must not be quoted as though they had.)
+    //
+    // NOTHING ABOUT THE CONSTRUCT IS HARD, and the measurement says so three
+    // ways. `xor` is a first-class FROZEN opcode at every width including i1
+    // (`tools/opcode_table.yaml`, variants fwd_qq/fwd_hl/inv/unc/controlled), so
+    // `cq_template_xor_i1` and its adjoint already ship. The SAME `xor i1` of
+    // the SAME two tainted compares already lowers as DATA
+    // (`return cq_measure(a ^ b)` → exit 0) while declining as CONTROL — one
+    // construct, two verdicts, decided by this whitelist and nothing else. And
+    // the gate network is the OR node MINUS its toffoli (SelectMergeEmit §1/§5):
+    // `cnot(L,G); cnot(Rv,G)` onto a fresh |0⟩ ancilla, strictly FEWER gates
+    // than a node the emitter already ships, both CNOTs self-inverse, G back to
+    // |0⟩ exactly. NO new frozen symbol, NO new primitive, NO new Rule-6 proof
+    // obligation — it holds by the same argument as OR.
+    //
+    // WHAT IT BUYS, MEASURED BEFORE IT WAS BUILT (the Phase-0 gate on bd
+    // 3c6m.67): FOUR census cells — `nextafterl.f80`, `nexttowardl.f80`,
+    // `nexttoward.f64`, `nexttowardf.f32` — whose sole blocker is the
+    // ulp-direction test `if((x>0.0) ^ (x<y))` at `src/s_nextafterl.c:55` /
+    // `s_nexttoward.c:54` / `s_nexttowardf.c:45`. Rewriting ONLY that node at IR
+    // level into an in-grammar and/or tree (complementary compare leaves, no xor
+    // node anywhere) takes all four from a loud decline to census COMPILES, with
+    // `free_pairing_check.py` clean. So the depth behind the xor is ZERO: it was
+    // the only thing in the way, not the first of a stack.
+    //
+    // THE ADMISSION IS NARROW — TWO NON-CONSTANT i1 OPERANDS. A ConstantInt
+    // child has no compare leaf and therefore no flag rail, so the emitter's
+    // `FlagOf.lookup(child)` would resolve to null; `xor X, 1` (the logical NOT)
+    // accordingly stays declined here exactly as before, and the deliberate
+    // asymmetry with PredMux's E6 — which DOES admit `xor X, 1`, as the no-NOT
+    // invariant's own negation spelling — is unchanged and is pinned by
+    // control_swap_reject_select_xor_notform.ll.
+    if (BO->getOpcode() == Instruction::Xor &&
+        (isa<Constant>(BO->getOperand(0)) || isa<Constant>(BO->getOperand(1))))
+      return false;
     // Self-operand node fence. `or/and i1 %c, %c` emits a toffoli whose two
     // CONTROL slots resolve to ONE rail (per-Value memo).
     //
@@ -486,6 +533,15 @@ bool collectCondTree(Value *Root, CondTree &Tree) {
     //     `cqrt_toffoli(%h_cmp, %h_cmp1, %g)` over THREE distinct rails).
     // So widening here would buy nothing measurable while adding an unprobed
     // accept path. Tracked as a follow-on rather than done blind (bd big5).
+    //
+    // bd 3c6m.67 — THE FENCE NOW COVERS `xor i1 %c, %c` TOO, and by INHERITANCE
+    // rather than by a new line: it sits after the opcode check, so admitting
+    // Xor there admits it here. Kept deliberately, on the same reasoning and
+    // with even less to lose — for XOR the aliased network is `cnot(c,G);
+    // cnot(c,G)`, literally the identity, so G stays |0⟩, which IS the correct
+    // value of `c ⊕ c`. Nothing is wrong with it; it is simply unreachable
+    // (InstCombine folds `x ⊕ x` to false) and therefore unprobed.
+    // Pinned by control_swap_reject_select_xor_selfdup.ll.
     if (BO->getOperand(0) == BO->getOperand(1))
       return false;
     Stack.push_back({V, true});  // node slot AFTER both children.

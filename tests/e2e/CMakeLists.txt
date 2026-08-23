@@ -3048,6 +3048,74 @@ add_test(NAME e2e-slice-libm-real-nextafterf
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterf.expected.log")
 
 
+# ---------------------------------------------------------------------------
+# bd 3c6m.67 — THE FOUR XOR-CONDITION CELLS, on the bodies openlibm ACTUALLY
+# BUILDS. Read these together with the `slice_libm_ld80_*` block immediately
+# below: those vendor the SAME four functions from openlibm's excluded `ld80/`
+# directory and must never count, while THESE four are the coverage claim.
+#
+# All four declined on ONE construct — the ulp-direction test
+# `if((x>0.0) ^ (x<y))` at src/s_nextafterl.c:55 / s_nexttoward.c:54 /
+# s_nexttowardf.c:45 — an `xor i1` of two tainted compares in branch-condition
+# position, which neither condition-tree recogniser admitted. The `ld80/` bodies
+# use an integer word ladder instead, which is why they always lowered and why
+# the src/ld80 corpus collision hid the gap for the whole campaign. Admitting the
+# xor node (bd 3c6m.67) clears all four; measured payoff +4 injection cells.
+# ---------------------------------------------------------------------------
+
+# nextafterl.f80 — the fp80 `union IEEEl2bits` ulp walk under the xor-condition
+# region, plus the explicit-integer-bit (LDBL_NBIT) mantissa fixups.
+add_test(NAME e2e-slice-libm-real-nextafterl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nextafterl.expected.log")
+
+
+# nexttowardl.f80 — IS nextafterl: `openlibm_strong_reference(nextafterl,
+# nexttowardl)` at src/s_nextafterl.c:80, one body under two declared names. The
+# golden is byte-identical to nextafterl's by construction (verified, not
+# assumed); the cell is separate because `math.h` declares the spelling.
+add_test(NAME e2e-slice-libm-real-nexttowardl
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardl.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardl.expected.log")
+
+
+# nexttoward.f64 — the MIXED-WIDTH cell: f64 argument read through the
+# EXTRACT_WORDS memcpy idiom, f80 argument through `union IEEEl2bits`, so one
+# body exercises both word-access conventions. Its xor mixes an icmp leaf (on the
+# extracted word) with an fcmp leaf — the node operates on i1 flag rails, so the
+# leaf kinds are irrelevant to it.
+add_test(NAME e2e-slice-libm-real-nexttoward
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttoward.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttoward.expected.log")
+
+
+# nexttowardf.f32 — the cell that declined FLAT rather than nested, purely
+# because its xor diamond is the OUTERMOST region (PredMux never invoked, 0
+# leaves). Same construct as its three siblings; the different bucket was an
+# artifact of position. NB this is ALSO the cell whose bd k710 `+1` was retracted:
+# the write-only `volatile` fenv idiom lives in the ld80 body, and the shipped
+# body below READS its scalar. It re-earns the cell on the xor, not on fenv.
+add_test(NAME e2e-slice-libm-real-nexttowardf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_libm_real_nexttowardf.expected.log")
+
+
 # ===========================================================================
 # THE `slice_libm_ld80_*` FAMILY — REAL openlibm source, but NOT a coverage claim
 # ===========================================================================

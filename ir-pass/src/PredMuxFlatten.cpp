@@ -809,30 +809,144 @@ bool isConvertiblePhiCond(const PHINode *P, const PhiCondScope *S,
 }
 
 // E6 — a branch condition PredMux can take BOTH polarities of: a supported
-// compare, an and/or tree over such conditions, an xor-true (not), an i1
-// constant, or (Inc 5) a path-predicated i1 phi the flatten will convert. The
-// false-edge literal is built by pushing the negation to the leaves (De
-// Morgan), so every emitted predicate tree stays inside the 3c6m.12-cleared
-// and/or-over-compare-leaves shape (the no-NOT invariant).
+// compare, an and/or tree over such conditions, an xor-true (not), a TWO-OPERAND
+// `xor i1` of two in-grammar conditions (bd 3c6m.67), an i1 constant, or (Inc 5)
+// a path-predicated i1 phi the flatten will convert. The false-edge literal is
+// built by pushing the negation to the leaves (De Morgan for and/or, the
+// single-leaf identity ¬(a⊕b) = a ⊕ ¬b for xor), so every emitted predicate tree
+// stays inside the 3c6m.12-cleared and/or(/xor)-over-compare-leaves shape and no
+// leaf is ever duplicated (the no-NOT invariant).
+//
+// `Strict` (bd 3c6m.67) — THE SUB-GRAMMAR UNDER AN XOR NODE, and it is a
+// MEASURED over-accept fix, not caution for its own sake. Set only by the
+// two-operand xor clause below and inherited by everything beneath it, it drops
+// the three arms that are PERMISSIVE relative to `collectCondTree`: the i1
+// ConstantInt, the convertible i1 PHI, and clang's poison-shielded
+// short-circuit SELECT spellings. Under `Strict` the NODE grammar is
+// `collectCondTree`'s — compare leaves and distinct-operand and/or/xor over
+// them, self-operand fence included — so an xor admitted here is admissible at
+// every downstream consumer. (Read that as the NODE grammar precisely: the
+// per-LEAF taint and predicate checks still live where they always did, in
+// `classifySelectRegion` gate 2, and are unaffected either way.)
+//
+// WHY, MEASURED (the Rule-13 round on this very increment, four independent
+// reviewers). Without it, `xor(select(a,b,false), cmp)` was admitted, because
+// the select arm below accepts the shield. `buildNegation`'s xor arm then had to
+// route the KEPT operand through `canonicalizePred` to rewrite that shield into
+// `and` — and `canonicalizePred` does not `track()` what it replaces, so the
+// original SelectInst was STRANDED (the bd `kqqv` orphan class, newly reachable).
+// The stranded select was then lowered by the 4.4 select path into a WHOLE DEAD
+// controlled-copy merge: an `%out` written by two `cqrt_copy_i1_controlled` and
+// never read, `%out`/`%selop` never freed, and a `cq_template_icmp_slt_i32_hl`
+// flag never uncomputed and never freed — a dangling ENTANGLED rail (Rules 6/8).
+// MEASURED decline (HEAD, 34b7995) -> accept-with-orphans, i.e. exactly the
+// direction the Prime Directive polices. NEITHER SHIPPED GATE SEES IT:
+// `opt -verify` is clean and `free_pairing_check.py` reports "0 violations"
+// because it counts `cqrt_alloc_*` mints and an orphan flag is TEMPLATE-minted
+// (bd `1739`).
+//
+// The durable fix for the orphan CLASS is to make `canonicalizePred` track, and
+// that is bd `kqqv` — which the file already records as measured-to-work but
+// owing its own red-green pair and its own Rule-13 round. Taking it here would
+// have been fixing a second, larger thing under cover of this one. Narrowing
+// instead costs NOTHING measurable: the four census cells this increment exists
+// for (`src/s_nextafterl.c:55` and siblings) carry plain compare leaves, and a
+// shielded short-circuit under an xor is a shape nothing measured wants. It is
+// the Rule-17 carve-out exactly — the decline belongs to inputs OUTSIDE the
+// target shape, never to the target shape itself.
+//
+// Two things fall out, and both are simplifications rather than costs: the xor
+// arm of `buildNegation` no longer needs `canonicalizePred` (it is provably the
+// identity on a Strict operand), and `canonicalizePred` needs no xor recursion.
+// Pinned by control_predmux_reject_xor_shielded_select_operand.ll.
+//
+// AND THE COST IS MEASURED AT ZERO ON REAL C, not merely argued. The obvious
+// worry is `if ((a && b) ^ c)` — a short-circuit `&&` directly under an xor,
+// which is exactly what Strict refuses in its SHIELDED spelling. Compiled at the
+// -O1 ship floor, clang emits
+//     %5 = and i1 %3, %4          <- a PLAIN and, NOT select(a, b, false)
+//     %7 = xor i1 %6, %5
+// and it lowers at exit 0 (8 cnots / 2 toffolis, free_pairing_check strict
+// clean), because clang only reaches for the poison-shielded select when it
+// cannot speculate the RHS — and a compare leaf is always speculatable. So the
+// refused spelling is not what the C shape produces. HEAD declines that same
+// module, so this is a decline -> accept even for the compound case.
 bool isSupportedCondTree(const Value *V, unsigned Depth,
-                         const PhiCondScope *S = nullptr) {
+                         const PhiCondScope *S = nullptr, bool Strict = false) {
   if (Depth > 8)
     return false;
   if (const auto *P = dyn_cast<PHINode>(V))
-    return isConvertiblePhiCond(P, S, Depth);  // Inc 5 (bd q2wk)
+    return !Strict && isConvertiblePhiCond(P, S, Depth);  // Inc 5 (bd q2wk)
   if (isa<ConstantInt>(V))
-    return true;
+    return !Strict;
   if (const auto *Cmp = dyn_cast<CmpInst>(V))
     return isSupportedCompareLeaf(Cmp);
   if (const auto *BO = dyn_cast<BinaryOperator>(V)) {
     if (BO->getOpcode() == Instruction::And ||
         BO->getOpcode() == Instruction::Or)
-      return isSupportedCondTree(BO->getOperand(0), Depth + 1, S) &&
-             isSupportedCondTree(BO->getOperand(1), Depth + 1, S);
-    if (BO->getOpcode() == Instruction::Xor)
+      return isSupportedCondTree(BO->getOperand(0), Depth + 1, S, Strict) &&
+             isSupportedCondTree(BO->getOperand(1), Depth + 1, S, Strict);
+    if (BO->getOpcode() == Instruction::Xor) {
       if (const auto *C = dyn_cast<ConstantInt>(BO->getOperand(1)))
         if (C->isOne())
-          return isSupportedCondTree(BO->getOperand(0), Depth + 1, S);
+          // The xor-true NOT keeps its PERMISSIVE recursion, unchanged — it is
+          // the no-NOT invariant's own negation spelling and `buildNegation`
+          // consumes it as ¬¬x = x. Under `Strict` it is unreachable: a
+          // ConstantInt operand fails the two-non-constant test below, so no
+          // NOT node can sit beneath an xor.
+          return !Strict &&
+                 isSupportedCondTree(BO->getOperand(0), Depth + 1, S);
+      // *** TWO-OPERAND XOR — ADMITTED 2026-08-23 (bd 3c6m.67). ***
+      // The construct is the ulp-direction test `if((x>0.0) ^ (x<y))` at
+      // `src/s_nextafterl.c:55` / `s_nexttoward.c:54` / `s_nexttowardf.c:45` —
+      // the SOLE blocker on four census cells, measured (Phase-0 gate: rewriting
+      // only this node into an in-grammar and/or tree takes all four from a loud
+      // decline to census COMPILES).
+      //
+      // THE NO-NOT INVARIANT SURVIVES, which is the only thing that made this a
+      // question. E6's contract is that BOTH polarities stay inside the
+      // 3c6m.12-cleared and/or-over-compare-leaves shape, built by pushing
+      // negation to the leaves; XOR famously does NOT De Morgan-distribute
+      // without duplicating leaves, and that is presumably why it was excluded.
+      // But the cheap identity avoids the duplication entirely:
+      //     ¬(a ⊕ b) = a ⊕ ¬b
+      // — negate ONE leaf, keep a SINGLE xor node. The negation still lands at a
+      // leaf, no leaf is duplicated, and the emitted tree is still nothing but
+      // compare leaves and and/or/xor nodes. `buildNegation` implements exactly
+      // that, and DO NOT read this admission without reading that change: its
+      // pre-existing `Instruction::Xor` arm returned `operand(0)` unconditionally
+      // (correct only while `xor X, 1` was the sole admitted xor), so widening
+      // here ALONE would have made ¬(a⊕b) evaluate to `a` — verify-clean,
+      // free-pairing-clean, silently wrong. Pinned by
+      // control_predmux_accept_xor_negation.ll.
+      //
+      // Constant operands are excluded so this clause cannot swallow the
+      // `xor X, 1` NOT above (which has its own ¬¬x = x rule) — and, separately,
+      // so E6 does not admit a shape `collectCondTree` refuses outright.
+      // `Strict=true` on BOTH children is the over-accept fix documented at the
+      // head of this function: it forces the whole sub-tree into
+      // `collectCondTree`'s grammar, which is what makes the negation identity
+      // safe to apply without `canonicalizePred` and closes the stranded-shield
+      // orphan. It is inherited downward, so a shield nested three `and`s deep
+      // under an xor is refused too.
+      if (!isa<Constant>(BO->getOperand(0)) &&
+          !isa<Constant>(BO->getOperand(1)) &&
+          // …and `collectCondTree`'s SELF-OPERAND node fence, mirrored here so
+          // the "matches collectCondTree" claim above is literally true rather
+          // than nearly true (bd 3c6m.67, Rule-13 round 2). Without it
+          // `xor i1 %c, %c` passed the E6 CLAIM, the region was FLATTENED, and
+          // the decline then landed downstream in the 4.4 select path under a
+          // different diagnostic than HEAD's — a mutate-then-decline where HEAD
+          // declined pre-claim. Never a miscompile (both exit non-zero, nothing
+          // is consumed), and unreachable from -O1 C because InstCombine folds
+          // `x ^ x` to false — but a claim this file makes about its own grammar
+          // should hold exactly, and a pre-claim decline is strictly cleaner.
+          BO->getOperand(0) != BO->getOperand(1))
+        return isSupportedCondTree(BO->getOperand(0), Depth + 1, S,
+                                   /*Strict=*/true) &&
+               isSupportedCondTree(BO->getOperand(1), Depth + 1, S,
+                                   /*Strict=*/true);
+    }
   }
   // bd adia: clang -O1's poison-shielded short-circuit forms —
   // `select i1 a, i1 b, false` (a && b) and `select i1 a, true, i1 b`
@@ -909,6 +1023,14 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   if (const auto *Sel = dyn_cast<SelectInst>(V)) {
     if (!Sel->getType()->isIntegerTy(1))
       return false;
+    // bd 3c6m.67 — refused UNDER AN XOR. This is the arm whose admission
+    // stranded a shield in `buildNegation` and emitted a dead select merge with
+    // an un-freed entangled flag; see the `Strict` note at the head of this
+    // function for the measurement and for why the fix is narrowing here rather
+    // than making `canonicalizePred` track (that is bd `kqqv`, which owes its own
+    // round). Outside an xor this arm is completely unchanged.
+    if (Strict)
+      return false;
     if (const auto *FC = dyn_cast<ConstantInt>(Sel->getFalseValue()))
       if (FC->isZero())
         return coneDefinedAfterFlagDrop(Sel->getTrueValue()) &&
@@ -951,6 +1073,23 @@ bool isBooleanCondTree(const Value *V, unsigned Depth, const PhiCondScope *S) {
   if (const auto *Cmp = dyn_cast<CmpInst>(V))
     return isSupportedCompareLeaf(Cmp) &&
            !Cmp->getOperand(0)->getType()->isIntegerTy(1);
+  // bd 3c6m.67 — XOR IS DELIBERATELY *NOT* ADMITTED HERE, and this note exists
+  // so the absence reads as a decision rather than as the oversight that started
+  // 3c6m.67 in the first place (the `collectCondTree` xor bail carried no
+  // rationale for a year and hardened into a de-facto rule by repetition — the
+  // failure mode bd [[bennett-grounding-asymmetry-2026-07-28]] warns about).
+  // THE REASON: this is the STRICT substrate grammar gating i1-phi convertibility
+  // (Inc 5 / bd q2wk), deliberately narrower than the permissive
+  // `isSupportedCondTree` — it already refuses the xor-true that E6 admits, and
+  // control_predmux_reject_i1phi_offgrammar_xor.ll pins exactly that gap for a
+  // stated soundness reason (a permissive claim here would drop `convertPhis`
+  // into the Inc-1 select-chain fallback and hand `buildNegation` a general
+  // select whose arms are not the 0/1 constants its `cast<ConstantInt>` assumes
+  // — a BROKEN MODULE, not a decline). NOTHING MEASURED WANTS IT: the four
+  // 3c6m.67 census cells carry their xor as a plain branch condition, not as a
+  // phi incoming. So an xor under a phi keeps declining loudly, which is the
+  // safe direction. Widening it would owe its own red-green pair and its own
+  // Rule-13 round — do that, or leave it; do not do it in passing.
   if (const auto *BO = dyn_cast<BinaryOperator>(V))
     if (BO->getType()->isIntegerTy(1) &&
         (BO->getOpcode() == Instruction::And ||
@@ -3080,6 +3219,15 @@ private:
       return V;  // unreachable past isSupportedCondTree
     }
     if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+      // bd 3c6m.67 — NO XOR ARM HERE, DELIBERATELY. An earlier draft recursed
+      // through the two-operand xor so a shield nested under it would be
+      // rewritten. E6's `Strict` sub-grammar now refuses a shield (and a phi,
+      // and a constant) ANYWHERE under an xor, so there is nothing beneath an
+      // xor for this function to rewrite and the recursion would be dead code
+      // that implies otherwise. The draft was also actively harmful: every
+      // rebuild here strands the node it replaces (this function does not
+      // `track()` — bd `kqqv`), which is the defect the `Strict` note on
+      // `isSupportedCondTree` records in full.
       if (BO->getOpcode() == Instruction::And ||
           BO->getOpcode() == Instruction::Or) {
         Value *L = canonicalizePred(BO->getOperand(0));
@@ -3214,8 +3362,55 @@ private:
                                buildNegation(Sel->getFalseValue())));
     }
     auto *BO = cast<BinaryOperator>(V);
-    if (BO->getOpcode() == Instruction::Xor)
-      return BO->getOperand(0);  // xor-true: ¬¬x = x
+    if (BO->getOpcode() == Instruction::Xor) {
+      if (auto *C = dyn_cast<ConstantInt>(BO->getOperand(1)); C && C->isOne())
+        return BO->getOperand(0);  // xor-true: ¬¬x = x
+      // *** bd 3c6m.67 — ¬(a ⊕ b) = a ⊕ ¬b. NEGATE EXACTLY ONE OPERAND. ***
+      //
+      // READ THE GUARD ABOVE AS PART OF THIS FIX. Until 2026-08-23 this whole
+      // arm was an UNCONDITIONAL `return BO->getOperand(0)`, sound only because
+      // E6 admitted no xor but `xor X, 1`. The moment E6 admits a two-operand
+      // xor, that line makes the false-edge literal `a` instead of `¬(a⊕b)`:
+      // `opt` exits 0, the verifier is clean, `free_pairing_check.py` reports
+      // zero violations (the network is structurally perfect — only its VALUE is
+      // wrong), and the trace reads plausibly. The Prime Directive's exact
+      // failure mode, reachable by a one-line widening two functions away.
+      //
+      // TWO WAYS TO GET THIS WRONG, both of which look reasonable:
+      //   * negate BOTH operands — ¬a ⊕ ¬b = a ⊕ b, i.e. the IDENTITY. The false
+      //     edge would be predicated on the TRUE condition. Not a near-miss.
+      //   * expand to or(and(a,¬b), and(¬a,b)) — correct, but it DUPLICATES both
+      //     leaves, which is the very thing the no-NOT invariant's De Morgan
+      //     normal form exists to avoid, and doubles the flag mints.
+      // The single-negation form keeps one xor node, duplicates nothing, and
+      // leaves the negation at a leaf where the invariant wants it.
+      //
+      // THE KEPT OPERAND IS PASSED THROUGH VERBATIM, AND THAT IS LOAD-BEARING
+      // RATHER THAN LAZY. An earlier draft routed it through `canonicalizePred`
+      // to rewrite a poison-shielded short-circuit select on the kept side. That
+      // was a MEASURED silent defect: `canonicalizePred` does not `track()` what
+      // it replaces, so the shield was STRANDED and lowered into a whole dead 4.4
+      // select merge carrying an entangled flag that was never uncomputed and
+      // never freed (decline -> accept, invisible to `opt -verify` AND to
+      // `free_pairing_check.py`; found by the Rule-13 round on this increment).
+      // E6 now refuses a shield anywhere under an xor (`Strict`), so the kept
+      // operand is a compare leaf or an and/or/xor tree over compare leaves —
+      // shapes `canonicalizePred` is the IDENTITY on. Calling it would buy
+      // nothing and re-open the strand. Read the `Strict` note on
+      // `isSupportedCondTree` before touching either side of this.
+      //
+      // *** BUT KEEPING IT VERBATIM STILL OWES THE bd `qesi` TRACKING. *** This
+      // arm is the only path in this function that does NOT re-enter
+      // `buildNegation` on an operand, and re-entering is what tracks every
+      // other cone for free. Without `trackCondCone` the kept sub-tree is
+      // stranded whenever both literals die, and `lowerOps` lowers it into a
+      // forward gate that is never uncomputed and never freed — the round-2
+      // finding, measured, HEAD-declines. See `trackCondCone` for the full
+      // account and for why one `track()` would not have been enough.
+      trackCondCone(BO->getOperand(0));
+      return track(B.CreateXor(BO->getOperand(0),
+                               buildNegation(BO->getOperand(1))));
+    }
     Value *L = buildNegation(BO->getOperand(0));
     Value *Rr = buildNegation(BO->getOperand(1));
     return track(BO->getOpcode() == Instruction::And ? B.CreateOr(L, Rr)
@@ -3379,6 +3574,58 @@ private:
   Value *track(Value *V) {
     MaybeDead.push_back(V);
     return V;
+  }
+
+  // bd 3c6m.67 (Rule-13 round 2) — track a KEPT condition sub-tree, node AND
+  // every descendant, without rebuilding it.
+  //
+  // WHY IT EXISTS. `buildNegation`'s contract is "TRACK THE NODE WE ARE ABOUT TO
+  // REPLACE, or it is STRANDED" (bd `qesi`), and every pre-existing arm honours
+  // it for free by RE-ENTERING `buildNegation` on each operand, which tracks on
+  // entry. The two-operand xor arm is the first path that keeps an operand
+  // VERBATIM — that is the whole point of ¬(a⊕b) = a ⊕ ¬b, since re-entering on
+  // the kept side would negate it. So the kept cone needs tracking explicitly.
+  //
+  // MEASURED CONSEQUENCE OF NOT DOING IT (the round-2 finding, reproduced): when
+  // BOTH literals die — the original xor, tracked on entry, and the rebuilt xor
+  // — `sweepDead` erases both, the kept operand drops to zero uses, and being
+  // absent from `MaybeDead` it survives. `lowerOps` then lowers that stranded
+  // TAINTED compare into a forward `cq_template_icmp_*` with no `_unc` and no
+  // `cqrt_free`: a dangling ENTANGLED which-path flag on a rail the user goes on
+  // to measure (Rules 6/8). Measured on an all-`false` i1 merge phi (the BoolAlg
+  // ∧false rule computes each edge predicate and then DROPS it): HEAD declines,
+  // the un-tracked version accepted and leaked. The `or`/`and` twins of the same
+  // module emit NO compare at all — the leak was specific to this arm.
+  //
+  // A SINGLE `track(operand(0))` IS NOT ENOUGH, which is why this is a walk:
+  // `sweepDead` is a `use_empty` fixpoint over `MaybeDead` ONLY, so erasing a
+  // tracked parent makes its children `use_empty` but never erases them unless
+  // they are tracked too. Measured: a kept operand of `and i1 %ca, %cb` leaked
+  // THREE gates (both compares and the `and`), not one.
+  //
+  // It stops at the CmpInst leaf on purpose — the compare's OPERANDS are DATA
+  // (the theta rail), not condition-tree nodes, and `buildNegation`'s own leaf
+  // arm does not track them either. `track` is inert on anything still live
+  // (the sweep tests `use_empty` first), so a shared leaf or a node the arm body
+  // also reads is unaffected.
+  void trackCondCone(Value *V) {
+    SmallVector<Value *, 8> WL{V};
+    SmallPtrSet<Value *, 8> Seen;
+    while (!WL.empty()) {
+      Value *X = WL.pop_back_val();
+      if (!Seen.insert(X).second)
+        continue;
+      auto *I = dyn_cast<Instruction>(X);
+      if (!I)
+        continue;
+      track(I);
+      if (isa<CmpInst>(I))
+        continue;  // leaf — its operands are data, not tree.
+      if (auto *BO = dyn_cast<BinaryOperator>(I)) {
+        WL.push_back(BO->getOperand(0));
+        WL.push_back(BO->getOperand(1));
+      }
+    }
   }
 
   // Erase any moved/minted instruction that ended up unused (e.g. the unused

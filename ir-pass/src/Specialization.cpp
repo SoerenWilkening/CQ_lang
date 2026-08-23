@@ -174,11 +174,21 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
       CallInst *G =
           stamp(B.CreateCall(AllocI1, {Constant::getNullValue(I1Ty)}, "cqq.g"));
       NodeRails.insert(G);
-      if (BO->getOpcode() == Instruction::Or) {
+      // *** bd 3c6m.67 — THE XOR NODE MUST BE MIRRORED HERE TOO. ***
+      // This is the SECOND consumer of `collectCondTree` (the clone/lift path),
+      // and widening that one grammar without this switch would have emitted
+      // OR's `toffoli(L,Rv,G)` for an xor node — computing `L ∧ Rv` where the
+      // source says `L ⊕ Rv`, verify-clean, with every rail still pairing. The
+      // grammar and its emitters are coupled: a future node kind added to
+      // `collectCondTree` owes an arm HERE as well as in `SelectMergeEmit`
+      // (Rule 14 — one grammar, and every emitter that reads it).
+      const auto Opc = BO->getOpcode();
+      if (Opc == Instruction::Or || Opc == Instruction::Xor) {
         NodeMints.insert(stamp(B.CreateCall(csyms.cnotFn(), {L, G})));
         NodeMints.insert(stamp(B.CreateCall(csyms.cnotFn(), {Rv, G})));
       }
-      NodeMints.insert(stamp(B.CreateCall(csyms.toffoliFn(), {L, Rv, G})));
+      if (Opc != Instruction::Xor)
+        NodeMints.insert(stamp(B.CreateCall(csyms.toffoliFn(), {L, Rv, G})));
       FlagOf[V] = G;
       continue;
     }

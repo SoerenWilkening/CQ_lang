@@ -335,113 +335,97 @@ SCOPE = {
                        "by-ref out-param under specialization = the g387/7.5 Shadow axis, scoped OUT per bd 20xt"),
 
     # =======================================================================
-    # -- THE nextafterl/nexttoward FOUR — RE-SCOPED 2026-08-23 (bd `3c6m.63`)
+    # -- THE nextafterl/nexttoward FOUR — *** LANDED 2026-08-23 (bd `3c6m.67`).
+    #    NO SCOPE ENTRIES BELOW; ALL FOUR NOW COMPILE. Injection 97 -> 101/120.
     # =======================================================================
-    # These four are the corpus-collision fix landing. Until 2026-08-23 the census
-    # built ten openlibm TUs from `ld80/` whose basenames also exist in `src/`, and
-    # openlibm's own build EXCLUDES all ten (ld80/Make.files:8-9 comments eight out
-    # and never mentions s_nexttoward{,f}.c; CMakeLists.txt names src/ for every
-    # one). Three of these cells were therefore measured `COMPILES` ON A BODY THAT
-    # SHIPS NOWHERE, and the fourth was reported as having no body at all.
+    # THE ENTRIES ARE GONE ON PURPOSE — a `decided-decline`/`deferred-capability`
+    # that now COMPILES is a dead entry and `check_scope()` fails loudly on it
+    # (SCOPE STALE), which is exactly how this landing was confirmed. What is kept
+    # is the ANALYSIS, because it is the only place the two-source-family story is
+    # written down and re-deriving it cost two sessions.
     #
-    # *** THIS IS A CORRECTION, NOT A REGRESSION. *** No compiler capability was
-    # lost on 2026-08-23; the number stopped measuring the wrong program. Injection
-    # 100/120 -> 97/120. Whoever reads a shrinking numerator here should read it as
-    # `165/174` being caught one more time, not as the pass getting worse.
+    # WHAT HAPPENED, IN ORDER, BECAUSE THE SEQUENCE IS THE LESSON:
+    #  (1) Until 2026-08-23 the census built ten openlibm TUs from `ld80/` whose
+    #      basenames also exist in `src/`, and openlibm's build EXCLUDES all ten.
+    #      Three of these cells were scored `COMPILES` ON A BODY THAT SHIPS
+    #      NOWHERE and the fourth was reported as having no body (bd `3c6m.63`).
+    #      Correcting the corpus took injection 100 -> 97/120.
+    #  (2) That correction EXPOSED a real gap rather than creating one. All four
+    #      shared ONE blocking construct — and NOT the one the diagnostic named.
+    #  (3) bd `3c6m.67` fixed the construct. All four now COMPILE, on the bodies
+    #      openlibm actually builds, each with a committed ship-floor golden
+    #      (`tests/e2e/slice_libm_real_next*`), which is the standard bd `3c6m.63`
+    #      set for a landing: the census number and the `verified` glob count must
+    #      move together or `e2e-census-slice-sync` fires.
     #
-    # *** ALL FOUR SHARE ONE BLOCKING CONSTRUCT — measured 2026-08-23, and it is NOT
-    # what the reported line numbers suggest. *** The diagnostic points at the NaN
-    # guard for three of them, which invites the reading "the nested `&&` is the
-    # problem". That reading is REFUTED by the ld80 twins: they carry the
-    # BYTE-IDENTICAL two-level `&&`/`||` guard with the same post-promotion CFG
-    # topology at that point, and they lower at `opt` exit 0. The guard is not the
-    # blocker; it is merely the OUTERMOST region, and it reads as *nested* only
-    # because a region further down survives as live control flow.
+    # *** THE DIAGNOSTIC POINTED AT THE WRONG LINE FOR THREE OF THE FOUR, AND THAT
+    # IS THE PART WORTH REMEMBERING. *** It named the NaN guard (:42:29 / :44:22),
+    # which invites "the nested `&&` is the problem". REFUTED by the ld80 twins:
+    # they carry the BYTE-IDENTICAL two-level `&&`/`||` guard with the same
+    # post-promotion CFG topology and lower at exit 0. The guard was merely the
+    # OUTERMOST region, and read as *nested* only because a region below it
+    # survived as live control flow.
     #
-    # THAT REGION IS THE ulp-DIRECTION TEST, which is where the two source families
-    # genuinely differ:
-    #     ld80 (lowers):   an INTEGER word ladder — ix>iy || ((ix==iy) && (hx>hy …))
-    #     src  (declines): an XOR OF TWO COMPARES on the tainted value —
-    #                      if((x>0.0)  ^ (x<y))   src/s_nextafterl.c:55
-    #                      if((hx>0.0) ^ (x<y))   src/s_nexttoward.c:54
-    #                      if((hx>=0)  ^ (x<y))   src/s_nexttowardf.c:45
-    # Measured with CQ_PREDMUX_DBG / CQ_CTRL_DBG on BOTH corpora:
-    #   nextafterl.f80   PredMux asked 16x, LEAVES all 16; the root it declines is
+    # THAT REGION WAS THE ulp-DIRECTION TEST — the one place the two source
+    # families genuinely differ:
+    #     ld80 (always lowered): an INTEGER word ladder —
+    #                            ix>iy || ((ix==iy) && (hx>hy …))
+    #     src  (declined):       an XOR OF TWO COMPARES on the tainted value —
+    #                            if((x>0.0)  ^ (x<y))   src/s_nextafterl.c:55
+    #                            if((hx>0.0) ^ (x<y))   src/s_nexttoward.c:54
+    #                            if((hx>=0)  ^ (x<y))   src/s_nexttowardf.c:45
+    # `nexttowardl.f80` IS nextafterl (`openlibm_strong_reference` at :80), so it
+    # was never a separate construct — or, as its old `corpus-gap` entry claimed,
+    # a missing body.
+    #
+    # `nexttowardf.f32` declined FLAT rather than nested only because its `^`
+    # diamond is the OUTERMOST region there (PredMux never invoked, 0 leaves).
+    # Same construct, different bucket, purely positional — reading that split as
+    # two problems would have been a scoping error.
+    #
+    # TWO SUPERSEDED READINGS, kept so neither is re-derived:
+    #  * "nextafter.f64/nextafterf.f32 COMPILE while nextafterl.f80 does not, so
+    #    the difference is at least partly the fp80 union / width dimension" —
+    #    WRONG. Those two come from src/s_nextafter{,f}.c, which use the
+    #    INTEGER-WORD form. It was the CONSTRUCT, never the width. A width-shaped
+    #    investigation would have been wasted.
+    #  * bd `k710`'s +1 for `nexttowardf.f32` (97->98, 2026-08-10) stays RETRACTED
+    #    even though the cell is covered again. It rested on the write-only
+    #    `volatile float u = x*x;` at ld80/s_nexttowardf.c:63 and the fenv ruling;
+    #    src/'s scalar `t` IS READ, so that path is never reached in the shipped
+    #    body. The cell re-earns its place on the xor, on a different mechanism.
+    #    The fenv ruling and `eraseDeadVolatileScalarStores` are UNAFFECTED.
+    #
+    # AND THE SCOPE-AXIS LESSON, which the axis exists for: these four sat at
+    # `deferred-capability` and NOT `lever-gap` because the depth BEHIND the named
+    # first blocker was unmeasured, and this table had mispredicted the next layer
+    # three times running on the tgamma pair. Measuring it first (a structural
+    # probe that rewrote ONLY the xor into an in-grammar and/or tree, with
+    # complementary compare leaves so no xor node existed anywhere) showed the
+    # depth was ZERO — all four went straight to COMPILES. The conservative label
+    # cost one measurement and prevented a fifth misprediction; it did not cost
+    # the cells.
+    # =======================================================================
+    # THE PER-CELL MEASUREMENT, retained verbatim from the pre-landing entry
+    # because it is the evidence for everything above and nothing else records it
+    # (CQ_PREDMUX_DBG / CQ_CTRL_DBG, both corpora, 2026-08-23):
+    #   nextafterl.f80   PredMux asked 16x, LEAVES all 16; the root it declined was
     #                    the `^` branch at :55, gate E6-condtree (+ E3-sideentry /
-    #                    E3-mergepred on the rest). ControlDetect then declines the
+    #                    E3-mergepred on the rest). ControlDetect then declined the
     #                    enclosing NaN guard as nested, reported at :42:29.
     #   nexttoward.f64   same shape, root at :54, gate E6-condtree; reported :44:22.
     #   nexttowardf.f32  PredMux NEVER INVOKED (0 leaves) — the `^` diamond at :45:5
-    #                    IS the region and declines FLAT. Same construct, different
+    #                    WAS the region and declined FLAT. Same construct, different
     #                    bucket, purely because here it is outermost.
     #   ld80 twins       nextafterl: PredMux 0 leave / 0 claim — never consulted at
-    #                    all, ControlDetect claims the integer ladder directly. All
-    #                    three ld80 bodies: opt exit 0.
-    # `nexttowardl.f80` IS nextafterl (strong_reference alias), so same construct.
-    #
-    # WHY `deferred-capability` AND NOT `lever-gap`, even now. The FIRST blocker is
-    # shared, named and located; the DEPTH BEHIND IT IS STILL UNMEASURED, and
-    # `lever-gap` asserts a capability WOULD move the cell. This table has
-    # mispredicted the next layer three times running on the tgamma pair, and bd
-    # `ih70` carries the same instruction verbatim — "file-and-measure before
-    # implementing". What HAS changed is that bd `3c6m.67` is no longer four
-    # unknowns: it is ONE construct (an `xor i1` of two tainted compares used as a
-    # branch condition, which PredMux's condition-tree recognizer does not admit),
-    # ceiling +4 cells, 97 -> 101. Measure the next layer before promoting it.
-    #
-    # SUPERSEDED OBSERVATION, kept so it is not re-derived: an earlier draft of this
-    # block said `nextafter.f64`/`nextafterf.f32` COMPILE while `nextafterl.f80` does
-    # not, "so the difference is at least partly the fp80 union / width dimension".
-    # That was a coincidence of which bodies openlibm ships — those two come from
-    # src/s_nextafter{,f}.c, which use the INTEGER-WORD form. It is the CONSTRUCT,
-    # not the width.
-    **{c: ("deferred-capability", ref) for c, ref in {
-        "nextafterl.f80":
-            "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nextafterl.c, a body "
-            "openlibm does not build. Reported at src/s_nextafterl.c:42:29 (the NaN guard) — but "
-            "*** THE GUARD IS NOT THE BLOCKER ***: the ld80 twin carries the byte-identical "
-            "two-level `&&` and lowers at exit 0. The guard reads as NESTED only because PredMux "
-            "leaves the ulp-direction region below it — root `if((x>0.0) ^ (x<y))` at :55, gate "
-            "E6-condtree, 16 leaves / 0 claims, where the ld80 twin never invokes PredMux at all. "
-            "The real construct is an `xor i1` of two tainted compares used as a branch condition, "
-            "which the src/ family uses and the ld80 family replaces with an integer word ladder. "
-            "Depth behind UNMEASURED. Tracker bd 3c6m.67",
-        "nexttoward.f64":
-            "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttoward.c, a body "
-            "openlibm does not build. Reported at src/s_nexttoward.c:44:22 (the NaN guard), but the "
-            "blocker is the SAME construct as nextafterl.f80 and NOT the guard: PredMux leaves "
-            "`if((hx>0.0) ^ (x<y))` at :54 on gate E6-condtree, so the enclosing guard reads as "
-            "nested. The ld80 twin lowers at exit 0 carrying the same guard. Depth behind "
-            "UNMEASURED. Tracker bd 3c6m.67",
-        "nexttowardf.f32":
-            "RE-SCOPED 2026-08-23 (bd 3c6m.63): was COMPILES on ld80/s_nexttowardf.c, a body "
-            "openlibm does not build — and this cell is the campaign's own bd k710 +1 (97->98, "
-            "2026-08-10), so THAT +1 IS RETRACTED. It rested on the write-only "
-            "`volatile float u = x*x;` at ld80/s_nexttowardf.c:63 cleared by the fenv ruling; "
-            "src/'s scalar `t` IS READ (`t=x*x; if(t==x) return t; else return x;`) so the fenv "
-            "path is never needed here. The shipped body blocks EARLIER and elsewhere: "
-            "src/s_nexttowardf.c:45:5 `if((hx>=0) ^ (x < y))`, an XOR of two compares over "
-            "tainted x — `cq controlled lowering: control flow under quantum control`. This is the "
-            "SAME construct its two siblings die on; it lands in a different BUCKET only because "
-            "here it is the OUTERMOST region (PredMux never invoked, 0 leaves), so it declines FLAT "
-            "rather than as an enclosing nest. The fenv ruling and "
-            "eraseDeadVolatileScalarStores are UNAFFECTED and keep their own lit coverage; what "
-            "is retracted is only this cell's credit. Depth behind UNMEASURED. Tracker bd 3c6m.67",
-        "nexttowardl.f80":
-            "RE-SCOPED 2026-08-23 (bd 3c6m.63) — WAS `corpus-gap`, AND BOTH HALVES OF THAT ENTRY "
-            "WERE WRONG. (1) openlibm does NOT ship no body for it: it mints the name as "
-            "`openlibm_strong_reference(nextafterl, nexttowardl)` at src/s_nextafterl.c:80, "
-            "exactly the shape wprobe's bd-vuy6 _synth_alias_shim resolves — the basename "
-            "collision HID it, because ld80/s_nextafterl.c:90 has that alias COMMENTED OUT. The "
-            "cell is now genuinely probed (no shim was added; the generic alias mechanism found "
-            "it once the corpus became faithful, which is NOT the manufactured +1 the ticket's "
-            "trap (a) forbids — it declines). (2) the rider 'would land on nextafterl's blocker "
-            "anyway is REFUTED' is itself REFUTED and the original claim CONFIRMED to the "
-            "COLUMN: this cell's diagnostic is src/s_nextafterl.c:42:29, byte-identical to "
-            "nextafterl.f80's — it IS nextafterl, so it is the same `^` construct at :55 behind the "
-            "same guard. The refutation rested on nextafterl.f80 compiling, which was the artifact. "
-            "Tracker bd 3c6m.67",
-    }.items()},
+    #                    all, ControlDetect claimed the integer ladder directly. All
+    #                    three ld80 bodies: opt exit 0, which is what refuted the
+    #                    NaN-guard reading.
+    # Corpus provenance of the numerator move, so neither step is misread: the
+    # ld80/src collision fix took injection 100 -> 97/120 (a CORRECTION — the number
+    # had been measuring a program that ships nowhere, `165/174` caught again), and
+    # bd 3c6m.67 then took it 97 -> 101/120 (real compiler work). Those are two
+    # different kinds of change and must never be netted into "+1".
 
     # =======================================================================
     # -- THE ilogb/logb QUANTUM-TRIP FAMILY — 2 + 2, NOT 4 (RE-SCOPED 2026-08-21)

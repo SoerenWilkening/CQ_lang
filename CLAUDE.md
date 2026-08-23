@@ -480,8 +480,8 @@ neither is authoring a leaf instead of doing the lowering):
 2026-08-22, bd `fhas`).** Previously a merged headline was a documented **bug**
 here, and the ruling it replaces was right about a real hazard: the retired
 `165/174` (95%) claim is what merging produced. The owner asked for the merged
-number anyway, so the published headline is now **`math.h` coverage: 155/183 cells
-(85%)** — composed of `97/120` injection + `6/6` CQ-PROVIDED + `42/42` recognition
+number anyway, so the published headline is now **`math.h` coverage: 159/183 cells
+(87%)** — composed of `101/120` injection + `6/6` CQ-PROVIDED + `42/42` recognition
 keep-set + `10/12` type-generic macros + `0/3` by-design `nan`. *(Those figures are
 **as measured 2026-08-23** and are the only hand-written copy of them in the tree —
 every PUBLISHED occurrence is generated from `probe.mathh_union_scoreboard()` into a
@@ -503,6 +503,22 @@ write-only `volatile` idiom is not in the shipped body; the **fenv ruling and
 self-checking script (`tools/library_coverage/full_surface/build_corpus.py`) and a
 new gate (`e2e-census-slice-sync`) stops the e2e goldens drifting out of step with
 the census.
+**AND THEN THE SAME DAY THEY MOVED BACK UP BY FOUR — `159/183` and `101/120`, bd
+`3c6m.67` — WHICH IS A DIFFERENT KIND OF CHANGE AND MUST NOT BE NETTED AGAINST THE
+`-3`.** The `-3` was a **correction**: a number that had been measuring a program
+that ships nowhere. The `+4` is **compiler work**: all four cells — `nextafterl.f80`,
+`nexttowardl.f80`, `nexttoward.f64`, `nexttowardf.f32` — declined on ONE construct,
+the ulp-direction test `if((x>0.0) ^ (x<y))` at `src/s_nextafterl.c:55` and
+siblings, i.e. an `xor i1` of two tainted compares used as a **branch condition**.
+Two condition-tree recognizers whitelisted and/or-over-compare-leaves and neither
+admitted a two-operand xor; **no rationale for the exclusion was ever recorded**, in
+a function that documents its other fences at 25 and 20 lines apiece. It was an
+absence of a decision that hardened by repetition — the same failure mode as the
+pre-ruling `fenv` prose above. Admitting the node (it emits `cnot(L,G); cnot(Rv,G)`
+onto a fresh `|0⟩` ancilla — the OR node **minus** its toffoli, so strictly fewer
+gates and no new frozen symbol) cleared all four, each with a committed ship-floor
+golden. *Note what the two moves do NOT do together: `-3` then `+4` is not "+1". The
+covered SET changed twice for unrelated reasons, and quoting a net would hide both.*
 **Three conditions make it honest, and they are not optional:**
 **(a)** the **composition is printed with the total, every time** — a total without
 it is the retired overclaim wearing a new denominator;
@@ -546,13 +562,15 @@ Note what `eur4` is worth, so it is never mis-quoted: `sinf`/`cosf`/`tanf` are
 shrinks its denominator — pure row-3 movement, **never** injection progress.
 *(Both `97` figures in this and the next paragraph are **as-of-2026-08-10**, the
 numbers those two rulings were computed on. The campaign number went 97 → 98
-(`k710`) → 100 (`ww4c`) → **back to 97 on 2026-08-23** (bd `3c6m.63` retired three
-cells measured on a body openlibm does not build, `k710`'s among them). That the
-level has returned to `97/120` is a **coincidence of arithmetic, not a
-restoration** — the denominator really is the same 120, but the covered SET is not:
-today's 97 is 2026-08-10's **minus** `nextafterl.f80` and `nexttoward.f64`
-**plus** `ilogb.f64` and `ilogbf.f32`. Never diff the two by their level. The
-rulings' **arithmetic and conclusions are unchanged** either way, because both turn
+(`k710`) → 100 (`ww4c`) → **97 on 2026-08-23** (bd `3c6m.63` retired three
+cells measured on a body openlibm does not build, `k710`'s among them) → **101 the
+same day** (bd `3c6m.67`, the xor condition-tree widening, which took those same
+three cells back on the bodies openlibm DOES build, plus `nexttowardl.f80`). The
+momentary return to `97/120` was a **coincidence of arithmetic, not a
+restoration** — the denominator really is the same 120, but the covered SET was not:
+that 97 was 2026-08-10's **minus** `nextafterl.f80` and `nexttoward.f64`
+**plus** `ilogb.f64` and `ilogbf.f32`. Never diff two of these by their level. The
+rulings' **arithmetic and conclusions are unchanged** by any of it, because both turn
 on a **difference**, not a level; the figures are deliberately left as ruled rather
 than silently restated.)*
 

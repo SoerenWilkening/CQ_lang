@@ -142,9 +142,10 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   //    `collectCondTree` used: each leaf mints its flag via
   //    `lowerCompareToFlag` (`cq_template_(i|f)cmp_<pred>_<Wc>_hl(q, k)`; Wc
   //    resolved internally) at FIRST visit — a shared leaf mints ONCE — and
-  //    each `and`/`or` node computes onto a fresh `|0⟩` i1 ancilla:
+  //    each `and`/`or`/`xor` node computes onto a fresh `|0⟩` i1 ancilla:
   //      AND: toffoli(l, r, g)                        g = l∧r
   //      OR : cnot(l, g); cnot(r, g); toffoli(l,r,g)  g = l⊕r⊕lr = l∨r
+  //      XOR: cnot(l, g); cnot(r, g)                  g = l⊕r   (bd 3c6m.67)
   //    Controls are READ-ONLY (no transient X on shared rails — safe under
   //    sharing by construction). Ancillas/flags are NOT added to
   //    `taint.Tainted`: their only users are `cqrt_*` calls, so `uncompute`
@@ -181,11 +182,18 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
         CallInst *G =
             B.CreateCall(AllocI1, {Constant::getNullValue(I1Ty)}, "g");
         stamp(G);
-        if (BO->getOpcode() == Instruction::Or) {
+        // bd 3c6m.67 — XOR is the OR network MINUS its toffoli. Emitting OR's
+        // toffoli on an xor node would compute `L ∨ Rv` and still verify, still
+        // pair every free, and still print a plausible trace: the textbook
+        // verify-clean silent miscompile. Pinned by the whole-file
+        // `WHOLE-NOT: cqrt_toffoli` in control_swap_select_xor2.ll.
+        const auto Opc = BO->getOpcode();
+        if (Opc == Instruction::Or || Opc == Instruction::Xor) {
           stamp(B.CreateCall(csyms.cnotFn(), {L, G}));
           stamp(B.CreateCall(csyms.cnotFn(), {Rv, G}));
         }
-        stamp(B.CreateCall(csyms.toffoliFn(), {L, Rv, G}));
+        if (Opc != Instruction::Xor)
+          stamp(B.CreateCall(csyms.toffoliFn(), {L, Rv, G}));
         FlagOf[V] = G;
         NodeRecs.push_back({BO, L, Rv, G});
         continue;
@@ -262,8 +270,14 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // `AbortParkEmit` do). The bd 261j(a) freeze is not owed here and is deliberately
   // not duplicated (bd memory [record-freeze-invariant-2026-08-10]).
   for (NodeRec &NR : llvm::reverse(NodeRecs)) {
-    stamp(B.CreateCall(csyms.toffoliFn(), {NR.L, NR.R, NR.G}));
-    if (NR.N->getOpcode() == Instruction::Or) {
+    // bd 3c6m.67 — the XOR strip is the exact LIFO mirror of its two-CNOT
+    // forward and, like it, carries no toffoli. Both CNOTs are self-inverse and
+    // the controls are read-only, so G returns to |0⟩ EXACTLY and the free below
+    // is a proven-|0⟩ free (Rule 6) by the same argument as OR.
+    const auto Opc = NR.N->getOpcode();
+    if (Opc != Instruction::Xor)
+      stamp(B.CreateCall(csyms.toffoliFn(), {NR.L, NR.R, NR.G}));
+    if (Opc == Instruction::Or || Opc == Instruction::Xor) {
       stamp(B.CreateCall(csyms.cnotFn(), {NR.R, NR.G}));
       stamp(B.CreateCall(csyms.cnotFn(), {NR.L, NR.G}));
     }
