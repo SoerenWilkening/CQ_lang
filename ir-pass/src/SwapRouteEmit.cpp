@@ -772,42 +772,185 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
     return Doomed;
   };
 
-  // Pre-flight, while EVERY region's blocks are still valid (the block-lifetime
-  // rule): no accepted region may reference a block that flattening ANOTHER
-  // (non-coordinated) accepted region will erase (its Arm/ArmFalse/MergeBB).
-  // Detection forecloses the known sequential layouts (an if/else or diamond merge
-  // hosting the next tainted branch declines as nested), so this should be
-  // unreachable for independent regions — but a future shape that slips through
-  // must decline LOUDLY here, not dereference freed memory in emitRegion (the
-  // §8-confirmed sequential-region SIGSEGV family, 2026-06-10). Pointer-identity
-  // checks only; nothing is dereferenced.
-  for (size_t a = 0; a < Regions.size(); ++a)
-    for (size_t b = 0; b < Regions.size(); ++b) {
+  // Does region `i` own a coordinated Depth-(N+1) child (the 4.3 nest)?
+  auto hasChild = [&](size_t i) {
+    for (size_t j = 0; j < Regions.size(); ++j)
+      if (Regions[j].Depth == Regions[i].Depth + 1 && Regions[j].ParentIdx == i)
+        return true;
+    return false;
+  };
+
+  // The SEQUENTIAL-CHAIN alias (bd hcrg) — the one block alias that emission
+  // ORDER can resolve, and the only one this function is allowed to accept.
+  //
+  // `if (q){…} …; if (q'){…}` is, after clang -O1, two flat regions where the
+  // FIRST one's merge block hosts the SECOND one's conditional branch — i.e.
+  // `A.Pred == B.MergeBB` with B the earlier region. That alias used to be a
+  // detection-time decline (`nested control flow`) because `flattenRegion`
+  // splices B's merge into B's pred and ERASES it, dangling A's `Pred` pointer:
+  // a use-after-free, SIGSEGV on valid input (§8 adversarial review 2026-06-10).
+  //
+  // Nothing about that is semantic — it is a teardown-ORDER bug. Emit A FIRST
+  // and it cannot arise: A's blocks are all still live (B's flatten has not run),
+  // A's own flatten erases only {A.Arm, A.ArmFalse, A.MergeBB} — none of which is
+  // any block of B — and A's tail is spliced into A.Pred, which IS B's merge and
+  // SURVIVES its own flatten by construction (`flattenRegion` never erases a
+  // Pred). B then flattens with every one of its blocks intact, carrying A's
+  // already-emitted stream along in the splice. Program order of the emitted
+  // gates is unaffected: each emitter inserts POSITIONALLY into its own pred
+  // block, so B's stream still precedes A's in the final linear block.
+  //
+  // The predicate is deliberately narrow — the chain shape and nothing else:
+  // both regions flat, childless, Depth-0 `BranchRegion`s, and `A.Pred ==
+  // B.MergeBB` must be the ONLY block A shares with B's doomed set. A genuine
+  // OVERLAP (two regions sharing an arm or a merge) is not reorderable and keeps
+  // declining below, as does anything involving a nest, a switch, a select or any
+  // other kind. Over-declining is always safe (Prime Directive); this widens the
+  // accept set by exactly one proven shape.
+  //
+  // STRUCTURAL LEMMA (bd hcrg Rule-13 clearance, block-lifetime lens): among
+  // `BranchRegion`s, `A.Pred == B.MergeBB` is the ONLY block alias that can
+  // occur at all, so the "…and nothing else" loop below is defence-in-depth over
+  // a provably empty space. Three facts, each read off the recognizers:
+  //   1. A `Pred` ends in a CONDITIONAL br, and every recognizer in
+  //      `recoverRegion` requires `uncondSucc(arm)` non-null ⇒ `A.Pred` can never
+  //      be `B.Arm`/`B.ArmFalse`. (Same for the other kinds: an `AbortPark` arm
+  //      ends in `unreachable`, a `GuardedStoreArm`/`ClassicalCallArm` arm in an
+  //      unconditional br.)
+  //   2. A merge has exactly TWO predecessors (`soleMergePhi` demands a
+  //      2-incoming phi, and a phi must list every pred) while an arm has exactly
+  //      ONE (`getSinglePredecessor() == Pred`) ⇒ an arm and a merge are never
+  //      the same block, in either direction.
+  //   3. Two distinct `BranchRegion`s cannot SHARE a `MergeBB`: its pred set is
+  //      `{Pred, Arm}` or `{Arm, ArmFalse}`, and equality forces either the same
+  //      `Pred` (hence the same terminator, hence the same region) or an arm
+  //      ending in a conditional br, which (1) excludes.
+  // The loop stays because the lemma is a property of TODAY's recognizers: a
+  // future shape that relaxes any of the three must fail this predicate LOUDLY
+  // rather than silently acquire a reorder it was never cleared for.
+  //
+  // KNOWN AND ACCEPTED, worth writing down before someone rediscovers it in a
+  // trace (bd hcrg Rule-13 clearance, unitary lens): a chain of VALUE (method-B)
+  // regions stacks ONE B-keep leftover PER REGION — each region's copied-out
+  // `%out` plus its source rail stay allocated and entangled with the answer.
+  // Every region is individually correct and `free_pairing_check.py` is clean on
+  // the chain (Rule 6 leaves a not-provably-|0> rail ALLOCATED rather than
+  // freeing it dirty), but the leak is now linear in chain length where before
+  // it was capped at one, because chained value arms used to decline outright.
+  // Qubits are not scarce in this regime (PRD §8.2); if that ever changes, this
+  // is the shape to revisit first.
+  auto sequentialChainAlias = [&](size_t ai, size_t bi) {
+    const ControlRegion &A = Regions[ai], &B = Regions[bi];
+    if (A.Kind != ControlRegion::BranchRegion ||
+        B.Kind != ControlRegion::BranchRegion)
+      return false;
+    if (A.Depth != 0 || B.Depth != 0 || hasChild(ai) || hasChild(bi))
+      return false;
+    if (!A.Pred || !B.MergeBB || A.Pred != B.MergeBB)
+      return false;
+    // …and NOTHING else of A's aliases a block B's flatten will erase.
+    for (BasicBlock *Doomed : doomedBlocks(B)) {
+      if (!Doomed)
+        continue;
+      if (A.Arm == Doomed || A.ArmFalse == Doomed || A.MergeBB == Doomed)
+        return false;  // a real overlap, not a chain.
+      if (A.Pred == Doomed && Doomed != B.MergeBB)
+        return false;  // A's pred aliases an ARM — not the chain shape.
+    }
+    return true;
+  };
+
+  // Fail-loud decline shared by the overlap and cycle paths below.
+  // INVARIANT (WI-5 §8 review, NIT — keep this path fail-loud): every region
+  // recovered today sets BOTH `Condition = BI->getCondition()` (an Instruction)
+  // AND `Merge` (a PHINode), so one of the two diagnose arms ALWAYS fires — this
+  // never silently skips a tainted br (Rule 1). A FUTURE region kind that leaves
+  // both null (e.g. a synthesized flag-combination Value) MUST add a fallback
+  // diagnostic here (anchor on a region block's terminator); a bare return past
+  // both arms would be a silent accept of quantum-controlled flow — the one
+  // unforgivable bug (Prime Directive).
+  auto declineRegion = [&](const ControlRegion &A) {
+    if (auto *Anchor = dyn_cast_or_null<Instruction>(A.Condition))
+      diagnoseUnderControl(Anchor, "control flow");
+    else if (A.Merge)
+      diagnoseUnderControl(A.Merge, "control flow");
+  };
+
+  // Pre-flight + emission order, computed while EVERY region's blocks are still
+  // valid (the block-lifetime rule): no accepted region may be emitted AFTER
+  // another (non-coordinated) accepted region has erased a block it names
+  // (Arm/ArmFalse/MergeBB). Every such alias is either resolved by ordering (the
+  // proven sequential chain above) or declined LOUDLY here — never dereferenced
+  // in emitRegion (the §8-confirmed sequential-region SIGSEGV family,
+  // 2026-06-10). Pointer-identity checks only; nothing is dereferenced.
+  //
+  // `Precedes[a]` lists the regions that must be emitted AFTER `a`; `Pending[b]`
+  // counts how many regions must be emitted BEFORE `b`.
+  const size_t N = Regions.size();
+  SmallVector<SmallVector<size_t, 2>, 8> Precedes(N);
+  SmallVector<unsigned, 8> Pending(N, 0);
+  for (size_t a = 0; a < N; ++a)
+    for (size_t b = 0; b < N; ++b) {
       if (a == b || coordinated(a, b))
         continue;
       const ControlRegion &A = Regions[a], &B = Regions[b];
+      bool Aliases = false;
       for (BasicBlock *Doomed : doomedBlocks(B)) {
         if (!Doomed)
           continue;
         if (A.Pred == Doomed || A.Arm == Doomed || A.ArmFalse == Doomed ||
-            A.MergeBB == Doomed) {
-          // INVARIANT (WI-5 §8 review, NIT — keep this path fail-loud): every
-          // region recovered today sets BOTH `Condition = BI->getCondition()` (an
-          // Instruction) AND `Merge` (a PHINode), so one of the two diagnose arms
-          // ALWAYS fires before the `return` — this never silently skips a tainted
-          // br (Rule 1). A FUTURE region kind that leaves both null (e.g. a
-          // synthesized flag-combination Value) MUST add a fallback diagnostic here
-          // (anchor on a region block's terminator); a bare `return` past both arms
-          // would be a silent accept of quantum-controlled flow — the one
-          // unforgivable bug (Prime Directive).
-          if (auto *Anchor = dyn_cast_or_null<Instruction>(A.Condition))
-            diagnoseUnderControl(Anchor, "control flow");
-          else if (A.Merge)
-            diagnoseUnderControl(A.Merge, "control flow");
-          return;  // lower NOTHING — over-declining is always safe.
-        }
+            A.MergeBB == Doomed)
+          Aliases = true;
       }
+      if (!Aliases)
+        continue;
+      if (!sequentialChainAlias(a, b)) {
+        declineRegion(A);
+        return;  // lower NOTHING — over-declining is always safe.
+      }
+      Precedes[a].push_back(b);  // A names a block B's flatten erases → A first.
+      ++Pending[b];
     }
+
+  // Kahn topological order. Ties break on plan index, so a module with no alias
+  // at all keeps the exact plan order it has always had (`Pending` all zero →
+  // `Order` == 0,1,2,…): this reordering is INERT for every shape that lowered
+  // before — which is why the whole 241-golden e2e layer is byte-identical
+  // across this change. Each ordered pair contributes AT MOST ONE edge (the
+  // `Aliases` flag is a bool, not a counter), so `Pending` cannot underflow and
+  // `Done` cannot admit a region twice.
+  //
+  // A cycle (mutual aliasing that no order can satisfy) leaves regions
+  // unscheduled — decline loudly rather than pick one and dereference the other.
+  // UNREACHABLE TODAY, DELIBERATELY KEPT, AND IT CANNOT BE GIVEN A FIXTURE (bd
+  // hcrg Rule-13 clearance): a precedence cycle needs `A.Pred == B.MergeBB`
+  // transitively back to `A`, which IS a CFG cycle through the region entries —
+  // and `regionEntryInLoop` declines every flat region on a cycle at DETECTION,
+  // before the plan is built (`control_swap_reject_seq_in_loop.ll`). So no input
+  // can exercise this branch while that guard stands. Do not delete it as dead
+  // code: it is the backstop for the day the loop guard is narrowed, and a bare
+  // fall-through here would emit a partial region set over freed blocks.
+  SmallVector<size_t, 8> Order;
+  Order.reserve(N);
+  SmallVector<bool, 8> Done(N, false);
+  for (bool Progress = true; Progress;) {
+    Progress = false;
+    for (size_t i = 0; i < N; ++i)
+      if (!Done[i] && Pending[i] == 0) {
+        Done[i] = true;
+        Order.push_back(i);
+        for (size_t j : Precedes[i])
+          --Pending[j];
+        Progress = true;
+      }
+  }
+  if (Order.size() != N) {
+    for (size_t i = 0; i < N; ++i)
+      if (!Done[i]) {
+        declineRegion(Regions[i]);
+        return;  // lower NOTHING — over-declining is always safe.
+      }
+  }
 
   ControlledSymbols csyms(M, wd);
   // Emit. A Depth-0 region with a coordinated Depth-1 child is the proven depth-2
@@ -817,7 +960,9 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // is already outer→inner (detection pushes Outer before Inner, §3.1), so no sort
   // is needed (the plan is `const`, COMPLETENESS#7). A flat (Depth-0, childless)
   // region takes the unchanged `emitRegion` path.
-  for (size_t i = 0; i < Regions.size(); ++i) {
+  // Iterate the ORDER computed above, not the plan order — `i` stays the real
+  // plan index so the `ParentIdx` child lookup below is unaffected.
+  for (size_t i : Order) {
     const ControlRegion &R = Regions[i];
     if (R.Kind == ControlRegion::SelectRegion) {
       // 4.4 — a tainted-condition integer-data select: the controlled-XOR copy

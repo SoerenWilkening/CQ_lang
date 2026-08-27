@@ -33,6 +33,18 @@
 ; The DBG line at the bottom is therefore the actual pin: it asserts the upstream
 ; region is LEFT at `W-witness`, which is exactly what the guard buys.
 ;
+;
+; DECLINE-STRING UPDATE (bd hcrg, convertibility half): this module used to decline at DETECTION
+; with `nested control flow` — `recoverRegion` saw a tainted conditional branch
+; on the merge successor and returned `RegionShape::Nested`. hcrg reclassified
+; that signal as SEQUENTIAL, so the upstream diamond is now recovered as a flat
+; region and declines one step later, in ArmClassify, on its own arm content
+; (`value-arm swap-route`). Still a loud decline, one stage further down.
+;
+; THIS FILE'S PIN IS UNAFFECTED, which is the point of having it: the assertion
+; that matters is the `gate=W-witness` DBG line — the header above already says
+; the decline STRING does not discriminate the W6 guard. The CHECK line is
+; updated to the string the code now emits so the two cannot drift.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; RUN: env CQ_PREDMUX_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck --check-prefix=DBG %s
 declare i32 @cq_theta_si32(i32, double)
@@ -70,7 +82,7 @@ out:
   ret i32 %m
 }
 
-; CHECK: error{{.*}}cq controlled lowering: nested control flow under quantum control
+; CHECK: error{{.*}}cq controlled lowering: value-arm swap-route under quantum control
 ; (Deliberately NO trailing "no rail was allocated" negative checks here, unlike
 ; most decline fixtures in this suite: `opt` writes ZERO bytes of module on a
 ; `DS_Error`, so FileCheck only ever scans the stderr line and such a check can

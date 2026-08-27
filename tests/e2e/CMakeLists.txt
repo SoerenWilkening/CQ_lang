@@ -395,6 +395,33 @@ add_test(NAME e2e-slice-control-select-loop
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_loop.expected.log")
 
+# bd hcrg — TWO SEQUENTIAL tainted-condition regions in one function (region 2's
+# Pred IS region 1's MergeBB after clang -O1). These lower only because
+# `lowerControlRegions` ORDERS the emission: region 2's emitter runs FIRST, while
+# all of its blocks are still live. The claim that the emitted GATE STREAM is
+# nevertheless in SOURCE order rests on each emitter inserting positionally into
+# its own pred block, and these two goldens are the byte-level proof of it — the
+# lit fixtures pin the IR, but a plan-order regression would still verify clean
+# and still pair every free. Two slices, deliberately: `seq_regions` is the
+# minimal adjacent pair on an untouched wire; `seq_grover` is the customer shape,
+# with a reversible sub AND an in-place Ry between the regions, i.e. the case
+# where a stale flag would surface as a wrong unitary.
+add_test(NAME e2e-slice-control-seq-regions
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_seq_regions.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_seq_regions.expected.log")
+
+add_test(NAME e2e-slice-control-seq-grover
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_seq_grover.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_seq_grover.expected.log")
+
 # bd 3c6m.5: cross-domain int<->long-double casts. Two direction slices — the
 # LINK-proof that the 18 new int<->f80 cast symbols resolve + signature-match the
 # runtime. A non-integer f80 factor (1.5L) keeps clang -O1 from folding the cast

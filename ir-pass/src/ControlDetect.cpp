@@ -149,10 +149,35 @@ RegionShape recoverRegion(BranchInst *BI, TaintSet &Taint, ControlRegion &R) {
   R.Pred = Pred;
   R.Kind = ControlRegion::BranchRegion;
 
-  // Nested control first: an immediate successor that is itself a
-  // tainted-condition branch (the outer/mid arm of `if(q){if(q'){…}}`).
-  if (hasTaintedCondBranch(S0, Taint) || hasTaintedCondBranch(S1, Taint))
-    return RegionShape::Nested;
+  // Nested control — an ARM that is itself a tainted-condition branch (the
+  // outer/mid arm of `if(q){if(q'){…}}`) — is recognized at the END of this
+  // function, AFTER the diamond / if-else recognizers have had their turn.
+  //
+  // THE ORDER IS LOAD-BEARING, and it is what admits the SEQUENTIAL pair (bd
+  // hcrg). Both shapes arrive here as "an immediate successor ends in a tainted
+  // conditional br", but they are not the same shape:
+  //   * ARM-hosted  → a real depth-2 NEST. The arm is not single-succ, so
+  //     `uncondSucc(arm)` is null and EVERY recognizer below fails; control
+  //     falls through to the `Nested` return at the bottom, unchanged.
+  //   * MERGE-hosted → two SEQUENTIAL regions (`if(q){…} …; if(q'){…}` — the
+  //     clang -O1 shape of two consecutive tainted ifs). Here both arms are
+  //     clean single-succ blocks, so a recognizer below MATCHES and we return a
+  //     real Diamond / IfElse.
+  // The two can never be confused, because every recognizer below REQUIRES
+  // `uncondSucc(arm)` to be non-null: a matched region's arms cannot host a
+  // conditional branch of any kind, tainted or not.
+  //
+  // The sequential pair used to decline right here as `nested control flow`,
+  // for a purely STRUCTURAL reason — block lifetime, never semantics.
+  // Flattening region 1 splices + ERASES its merge block, which is exactly
+  // region 2's Pred, so emitting both dereferenced freed memory (SIGSEGV on
+  // valid input; §8 adversarial review 2026-06-10). That hazard is now handled
+  // where it actually lives: `lowerControlRegions` ORDERS the emission so no
+  // region is emitted after another has erased a block it names, and still
+  // declines loudly on any alias ordering cannot resolve (the precedence graph +
+  // Kahn order inline in `SwapRouteEmit::lowerControlRegions`, keyed on its
+  // `sequentialChainAlias` predicate). Detection's job is to classify the shape;
+  // it is not the place to work around an emitter's teardown order.
 
   // Diamond, orientation A — arm = S0 (true successor), merge = S1: the arm is
   // single-pred(Pred), single-succ(merge), and the merge is reached directly by
@@ -188,17 +213,11 @@ RegionShape recoverRegion(BranchInst *BI, TaintSet &Taint, ControlRegion &R) {
     if (M == uncondSucc(S1) && M != S0 && M != S1 &&
         S0->getSinglePredecessor() == Pred &&
         S1->getSinglePredecessor() == Pred) {
-      // The MERGE hosting the next region's tainted branch (sequential
-      // `if/else; if`) must decline HERE, while every block is still valid: an
-      // accepted if/else's flattenRegion splices + ERASES its merge block,
-      // which is exactly the second region's Pred — emitting both is a
-      // use-after-free (SIGSEGV on valid input; §8 adversarial review
-      // 2026-06-10). A DIAMOND gets this protection incidentally (its merge is
-      // an immediate successor, caught by the Nested check above); the if/else
-      // merge is one hop further, so check it explicitly. Same imprecise-but-
-      // safe "nested" label as the sequential-diamond case (known-limits §3).
-      if (hasTaintedCondBranch(M, Taint))
-        return RegionShape::Nested;
+      // The MERGE hosting the NEXT region's tainted branch (sequential
+      // `if/else; if`) is an ACCEPT since bd hcrg — the explicit decline that
+      // stood here is gone, for the reason given at the top of this function.
+      // The block-lifetime hazard it existed for is resolved by the emission
+      // ordering in `lowerControlRegions`, not by refusing the shape.
       if (PHINode *Phi = soleMergePhi(M))
         if (Phi->getBasicBlockIndex(S0) >= 0 &&
             Phi->getBasicBlockIndex(S1) >= 0) {
@@ -210,6 +229,13 @@ RegionShape recoverRegion(BranchInst *BI, TaintSet &Taint, ControlRegion &R) {
           return RegionShape::IfElse;
         }
     }
+
+  // No flat shape matched. An immediate successor that is itself a
+  // tainted-condition branch is then the depth-2 NEST signal (see the note at
+  // the top of this function for why this test lives here and not there);
+  // `handleBranchRegion` hands it to `recoverRegionTree` to prove or decline.
+  if (hasTaintedCondBranch(S0, Taint) || hasTaintedCondBranch(S1, Taint))
+    return RegionShape::Nested;
 
   return RegionShape::OffPattern;
 }

@@ -5,17 +5,30 @@
 ; the first region would flatten + ERASE `merge1`, after which the second region
 ; would dereference freed memory (a SIGSEGV on valid input).
 ;
-; Detection forecloses it BEFORE any mutation: the first diamond's merge block ends
-; in a tainted-condition branch, so `recoverRegion`'s Nested check
-; (`hasTaintedCondBranch`) classifies it as a NESTED region — and the depth-2 nest
-; prover declines (a classical-call inner is not a homogeneous phase nest). The
-; result is a LOUD `nested control flow under quantum control` decline, never a
-; crash. (A DIAMOND gets this protection incidentally — its merge is an immediate
-; successor; the `SwapRouteEmit` cross-region pre-flight is the backstop if a future
-; shape ever slips past detection.)
+; The decline is now the `SwapRouteEmit` CROSS-REGION PRE-FLIGHT, and the move is
+; deliberate (bd hcrg). Detection used to foreclose this shape: the first
+; diamond's merge ends in a tainted-condition branch, so `recoverRegion`'s Nested
+; check classified it as NESTED and the depth-2 prover declined it. hcrg made the
+; merge-hosted branch a SEQUENTIAL signal rather than a nested one, so both
+; diamonds now recover cleanly and `classifyClassicalCallArm` accepts both as
+; `ClassicalCallArm` regions — and the block-lifetime hazard lands, as designed,
+; on the pre-flight that exists for exactly this.
+;
+; It declines there because `sequentialChainAlias` admits the reorder for ONE
+; shape only: both regions flat, childless, Depth-0 `BranchRegion`s. A
+; `ClassicalCallArm` is a different Kind with a different emitter — it HOISTS the
+; call out of the arm before flattening — and that emitter's interaction with a
+; preceding region's flatten has never been analysed. Over-declining is always
+; safe (Prime Directive); admitting it would be a separate increment with its own
+; clearance.
+;
+; The message therefore changed from `nested control flow` to `control flow`,
+; which is the pre-flight's string. What did NOT change is the only property this
+; file has ever asserted: a LOUD decline, never a crash, never a silent accept of
+; quantum-controlled flow.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}nested control flow under quantum control
+; CHECK: error{{.*}}control flow under quantum control
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare i32 @pure_f(i32) #0

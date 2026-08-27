@@ -779,8 +779,14 @@ the verify-clean-invisible blocker), homogeneous **value** (N-way method-B over 
 shared routed base `p != q`), all-`ConstantInt` **data-mux** (preload + XOR-delta
 controlled copy), and the **eq-folded diamond** (`tryEqFoldArm` D1–D7, additive,
 reuses `emitRegion`) — 4.5 DONE (16-reviewer Rule-13 clearance, 0 silent
-miscompiles; `WI7_SWITCH_CLEARANCE.md`). **Every other tainted-control shape loudly
-declines** (deeper or non-homogeneous nests; the switch off-pattern matrix: multi-phi
+miscompiles; `WI7_SWITCH_CLEARANCE.md`). **SEQUENTIAL flat regions** — two or more
+`br` diamonds in a row, each region's merge hosting the next region's tainted
+branch — lower since bd `hcrg` (2026-08-27) via the emission-ORDER fix in the
+block-lifetime bullet below; the
+follower must be a diamond (an `if/else` follower's routed base is the previous
+merge phi, which `isValueChangingOp` reads as a new basis value → over-declines,
+`control_swap_reject_seq_ifelse_second.ll`). **Every other tainted-control shape
+loudly declines** (deeper or non-homogeneous nests; the switch off-pattern matrix: multi-phi
 C1, grouped C4, non-empty-default C5, MUX-EXCH C8/G8, mixed arms, fp/vector/`i128`
 G4, nested G11, `§3c` clobber G7, tainted angle G3, jump-table fold, impure/unowned-
 scrutinee G10).
@@ -818,7 +824,21 @@ must respect:
   freed memory (SIGSEGV on valid input). Capture identities before the first
   erase, or decline while blocks are still valid. Do **not** blanket-decline
   every shared merge — the legitimate nested-AND `if(a){if(b)}` is a coordinated
-  pair that shares its merge and lowers correctly.
+  pair that shares its merge and lowers correctly. **Nor is the block-lifetime
+  hazard a reason to decline the SEQUENTIAL pair, and for four months it was
+  treated as one** (bd `hcrg`, fixed 2026-08-27): `if(q){…}; if(q'){…}` puts
+  region 2's branch inside region 1's merge after `-O1`, and that declined as
+  `nested control flow` — a STRUCTURAL guard wearing a semantic label. The hazard
+  is a teardown **order** bug, so it is now fixed by ORDER:
+  `lowerControlRegions` builds a precedence graph (A before B when A names a
+  block B's flatten erases), Kahn-sorts it, and declines loudly only on an alias
+  ordering cannot resolve or a cycle. The emitted gate stream is unaffected —
+  each emitter inserts positionally into its own pred block, so source order
+  survives a reversed emission order (`slice_control_seq_regions` /
+  `slice_control_seq_grover` are the byte-level goldens). The lesson generalizes:
+  **before declining a shape, ask whether the thing you are protecting is the
+  unitary or the emitter's bookkeeping** — only the first is a Prime-Directive
+  decline.
 
 When you cannot *prove* the shape, **decline loudly** (Prime Directive).
 
@@ -873,7 +893,7 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 # five gate moments (Rule-13 core commit · pre-push · harness change · template
 # regen · accept/decline predicate change).
 #
-# 258 ctest entries (2026-08-23: +1 for `e2e-census-slice-sync`, bd 3c6m.63; the
+# 264 ctest entries (2026-08-27: +2 for the bd hcrg sequential-region slices; the
 # figures below were taken at 252/253 and their RATIOS still hold). RUN IT PARALLEL
 # — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
@@ -910,9 +930,9 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1101 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-23). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1118 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-27). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 248 entries (241 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, and the 3 spec/predmux entries) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-23 (`ctest -N -R '^e2e-'`); re-measure rather than trust them.
+ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 254 entries (247 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, and the 3 spec/predmux entries) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-27 (`ctest -N -R '^e2e-'`); re-measure rather than trust them.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
 
 # One fixture (lit --filter matches the test display name)
