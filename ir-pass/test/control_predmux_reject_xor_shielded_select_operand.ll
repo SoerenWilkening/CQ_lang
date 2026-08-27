@@ -19,7 +19,7 @@
 ;
 ; CAUSE: `buildNegation`'s xor arm had to route the KEPT operand through
 ; `canonicalizePred` to rewrite the shield into `and`, and `canonicalizePred`
-; does not `track()` the node it replaces — so the original `select` was
+; did not `track()` the node it replaced — so the original `select` was
 ; STRANDED with zero uses and `lowerOps`/the 4.4 path lowered it anyway. That is
 ; the bd `kqqv` orphan class, made newly REACHABLE by this widening.
 ;
@@ -30,17 +30,27 @@
 ; by four independent adversarial reviewers, three of whom reproduced it against
 ; a separately-built HEAD plugin to establish causation rather than assert it.
 ;
-; THE FIX IS NARROWING, NOT REPAIR, and the choice is deliberate. Making
+; THE FIX WAS NARROWING, NOT REPAIR, and the choice was deliberate. Making
 ; `canonicalizePred` track is the durable fix for the orphan CLASS — and it is bd
-; `kqqv`, which `PredMuxFlatten.cpp` already records as measured-to-work but
-; owing its own red-green pair and its own Rule-13 round. Taking it here would
-; have been fixing a second, larger thing under cover of this one. Instead E6
-; carries a `Strict` sub-grammar under an xor node: no shielded select, no i1
-; phi, no i1 constant — exactly `collectCondTree`'s grammar, inherited all the
-; way down, so a shield nested three `and`s deep under an xor is refused too.
-; It costs nothing measurable: the four census cells this increment exists for
+; `kqqv`, which was left to its own red-green pair and its own Rule-13 round
+; rather than folded in here under cover of a smaller change. Instead E6 carries
+; a `Strict` sub-grammar under an xor node: no shielded select, no i1 phi, no i1
+; constant — exactly `collectCondTree`'s grammar, inherited all the way down, so
+; a shield nested three `and`s deep under an xor is refused too. It costs nothing
+; measurable: the four census cells this increment exists for
 ; (`src/s_nextafterl.c:55` and siblings) carry plain compare leaves. Rule 17's
 ; carve-out verbatim — the decline belongs to inputs OUTSIDE the target shape.
+;
+; *** bd kqqv HAS SINCE SHIPPED (`trackCondCone(V)` at the top of
+; `canonicalizePred`), AND THIS FIXTURE STILL DECLINES — DELIBERATELY. *** The
+; orphan the CAUSE paragraph describes can no longer happen, so this decline now
+; rests on grammar conservatism alone rather than on a live defect. That is a
+; reason to re-scope the refusal in its own increment (with its own probe family
+; and its own Rule-13 round, plus a fresh proof that ¬(a⊕b) = a ⊕ ¬b stays safe
+; when the kept operand must be REWRITTEN rather than passed through) — it is not
+; a reason to relax it as a follow-on. Over-declining a shape nothing measured
+; wants is still correct; widening an accept predicate on this surface is the one
+; move the Prime Directive polices hardest.
 ;
 ; RED-GREEN: replacing `%sh` with a plain compare makes this exact CFG ACCEPT
 ; (that is control_predmux_accept_xor_negation.ll), so the fence sits precisely

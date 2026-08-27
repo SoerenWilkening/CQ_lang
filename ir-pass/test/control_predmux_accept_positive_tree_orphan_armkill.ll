@@ -27,21 +27,25 @@
 ; `buildNegation` is the place that REPLACES a leaf (with a fresh inverse-predicate
 ; compare), which is what strands the original.
 ;
-; *** TWO HONEST LIMITS ON THE TABLE, because a committed "MEASURED" table that
-; overreaches is worse than no table. ***
-;   1. The two `select` rows were measured on scratch files that are NOT committed —
-;      `grep -c 'select i1'` on THIS file is 0, its body being `%sc = and i1 %a, %b`.
-;      So nothing in the tree pins them. A census of all 1062 fixtures found ZERO
-;      carrying a non-root shielded select, accept or reject, so that cell has never
-;      been covered by anything at all.
-;   2. Unscoped, row 3 is FALSE. For a NON-root shield
-;      (`%inner = select i1 %b, i1 %c, i1 false` feeding `%sc = and i1 %a, %inner`)
-;      the arm=TRUE route emits an ENTIRE DEAD 4.4 controlled-copy select merge: an
-;      `%out = cqrt_alloc_i1(false)` written by two `cqrt_copy_i1_controlled` and
-;      NEVER READ, a never-freed `%selop`, and a never-uncomputed `icmp_ne`. 9 rail
-;      mints / 5 left allocated, against 7 / 3 at arm=FALSE. Filed as bd kqqv with
-;      its reach (latent: 0 occurrences across 1284 corpus modules). The fix there is
-;      NOT taken in this commit — it owes its own red-green pair and Rule-13 round.
+; *** ONE HONEST LIMIT ON THE TABLE, because a committed "MEASURED" table that
+; overreaches is worse than no table: the two `select` rows were measured on scratch
+; files that are NOT committed — `grep -c 'select i1'` on THIS file is 0, its body
+; being `%sc = and i1 %a, %b`. So nothing in the tree pins them here. ***
+;
+; *** AND THE SECOND LIMIT WAS A REAL DEFECT, NOW FIXED — bd kqqv. *** Unscoped, row
+; 3 was FALSE. For a NON-root shield (`%inner = select i1 %b, i1 %c, i1 false`
+; feeding `%sc = and i1 %a, %inner`) the arm=TRUE route emitted an ENTIRE DEAD 4.4
+; controlled-copy select merge: an `%out = cqrt_alloc_i1(false)` written by two
+; `cqrt_copy_i1_controlled` and NEVER READ, a never-freed `%selop`, and a
+; never-uncomputed `icmp_ne`. 9 rail mints / 5 left allocated, against 7 / 3 at
+; arm=FALSE. `canonicalizePred` now opens with `trackCondCone(V)`, and the cell this
+; header could not cover is covered by three fixtures of its own:
+; control_predmux_accept_nonroot_shield_no_orphan.ll (which carries the DEPTH table
+; that supersedes rows 3-4 above), its `_armkill` twin, and
+; control_predmux_accept_shield_under_shield_no_orphan.ll.
+; When that fix landed, a census of all 1062 fixtures had found ZERO carrying a
+; non-root shielded select, accept or reject — the cell had never been covered by
+; anything, which is why re-measuring rather than re-reading was what found it.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

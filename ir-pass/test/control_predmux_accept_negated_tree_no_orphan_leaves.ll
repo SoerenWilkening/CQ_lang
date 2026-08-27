@@ -36,9 +36,17 @@
 ;
 ; ARM-KILL: `control_predmux_accept_positive_tree_orphan_armkill.ll` is this exact
 ; module with only the branch polarity flipped. It orphans NOTHING, before or after
-; the fix, because `canonicalizePred` REUSES the original leaves and only the tree
-; ROOT dies — and the root is already tracked as the branch condition. That pair is
-; what pins the cause to `buildNegation` specifically, rather than to "rebuilding".
+; the fix, because on THIS module's tree — a plain `and i1` over two compare leaves,
+; with no shielded select anywhere — `canonicalizePred` REUSES the original leaves
+; and only the tree ROOT dies, and the root is already tracked as the branch
+; condition. That pair is what pins the cause to `buildNegation` specifically,
+; rather than to "rebuilding".
+;
+; *** READ THAT SENTENCE ONLY AS SCOPED, which is the whole lesson of this family:
+; it is true of a shield-free tree and was FALSE as a general statement about
+; `canonicalizePred`, which orphaned a whole dead 4.4 merge on a shield at depth ≥ 1
+; until bd `kqqv` (`trackCondCone(V)` at the top of that function). See
+; control_predmux_accept_nonroot_shield_no_orphan.ll for the depth table. ***
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
