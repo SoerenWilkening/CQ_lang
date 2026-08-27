@@ -1,0 +1,1419 @@
+{
+ "chained_rule_disagreements": [
+  "lit:lowering_qram_guarded_store_railof",
+  "lit:lowering_uncompute_borrowed_operand_free_order"
+ ],
+ "chained_theta_alloc_ancestor_only": [
+  "e2e:e2e-slice-io-chained-theta",
+  "lit:lowering_io_tape_chained_theta",
+  "lit:lowering_uncompute_borrowed_operand_free_order"
+ ],
+ "chained_theta_correlated_only": [],
+ "chained_theta_no_record": [
+  "e2e:e2e-slice-io-chained-theta",
+  "lit:lowering_bitcast_chained_theta_before",
+  "lit:lowering_bitcast_measure_after_rerotate",
+  "lit:lowering_classical_mux_phi_onereg_theta_chain",
+  "lit:lowering_io_tape_chained_theta",
+  "lit:lowering_qram_guarded_store_railof",
+  "lit:lowering_stale_record_chained_theta_onancestry",
+  "lit:lowering_theta_chained",
+  "lit:lowering_uncompute_borrowed_operand_free_order"
+ ],
+ "chained_thetas": 22,
+ "chained_thetas_incl_adjoint_ry": 189,
+ "corpus": {
+  "e2e": 250,
+  "lit": 510,
+  "modules_lowered": 760
+ },
+ "exempt_discharged_compare_hits": 0,
+ "exempt_measured_hits": 0,
+ "inc1_newly_declined": [
+  "lit:lowering_classical_mux_phi_lift_diaghop_before_sibling",
+  "lit:lowering_classical_mux_phi_lift_op_before_sibling",
+  "lit:lowering_io_tape_interleaved_rotation",
+  "lit:lowering_io_tape_qram_borrowed_index",
+  "lit:lowering_stale_record_add_before_theta",
+  "lit:lowering_stale_record_alias_before_theta",
+  "lit:lowering_uncompute_sink_move_past_unwalked_gate"
+ ],
+ "inc3_additional": [
+  "e2e:e2e-slice-control-seq-grover",
+  "lit:lowering_io_tape_partial_freeze_order",
+  "lit:lowering_qram_fp64_measure_no_dirty_free"
+ ],
+ "inv_mints_total": 0,
+ "modules": [
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_bitcast_chained_theta_before",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 10,
+     "wire": "%h1"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 10,
+     "wire": "%h1"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_bitcast_measure_after_rerotate",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 10,
+     "wire": "%h1"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 10,
+     "wire": "%h1"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_classical_mux_phi_lift_diaghop_before_sibling",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "main",
+     "line": 17,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "main",
+     "line": 17,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_classical_mux_phi_lift_op_before_sibling",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "main",
+     "line": 16,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "main",
+     "line": 16,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_classical_mux_phi_onereg_theta_chain",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "main",
+     "line": 13,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "main",
+     "line": 13,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_io_tape_chained_theta",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 14,
+     "wire": "%h_op"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 14,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 16,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 18,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_io_tape_interleaved_rotation",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 14,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 14,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 16,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 19,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_io_tape_partial_freeze_order",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 15,
+     "wire": "%h_op1"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 15,
+     "wire": "%h_op1"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 17,
+     "wire": "%h_op1"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 21,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_io_tape_qram_borrowed_index",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%0=cqrt_qram_load_i32",
+      "%h_op2=cq_template_xor_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%0=cqrt_qram_load_i32",
+      "%h_op2=cq_template_xor_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 22,
+     "wire": "%h_op"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%0=cqrt_qram_load_i32",
+      "%h_op2=cq_template_xor_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%0=cqrt_qram_load_i32",
+      "%h_op2=cq_template_xor_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 22,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%0=cqrt_qram_load_i32",
+      "%h_op2=cq_template_xor_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%0=cqrt_qram_load_i32",
+      "%h_op2=cq_template_xor_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 24,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 31,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_qram_fp64_measure_no_dirty_free",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h",
+      "%h2",
+      "%h3"
+     ],
+     "ancestor_records": [
+      "%h_cast=cq_template_fptosi_f64_to_i32",
+      "%h_cast4=cq_template_fptosi_f64_to_i32"
+     ],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_cast=cq_template_fptosi_f64_to_i32",
+      "%h_cast4=cq_template_fptosi_f64_to_i32"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "shadow_fp_measure",
+     "line": 21,
+     "wire": "%0"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h",
+      "%h2",
+      "%h3"
+     ],
+     "ancestor_records": [
+      "%h_cast=cq_template_fptosi_f64_to_i32",
+      "%h_cast4=cq_template_fptosi_f64_to_i32"
+     ],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_cast=cq_template_fptosi_f64_to_i32",
+      "%h_cast4=cq_template_fptosi_f64_to_i32"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "shadow_fp_measure",
+     "line": 21,
+     "wire": "%0"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_qram_guarded_store_railof",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": false,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "guarded_railof",
+     "line": 19,
+     "wire": "%z"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [
+      "%z"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "guarded_railof",
+     "line": 17,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": false,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "guarded_railof",
+     "line": 19,
+     "wire": "%z"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_stale_record_add_before_theta",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 9,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 9,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_stale_record_alias_before_theta",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 10,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 10,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_stale_record_chained_theta_onancestry",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 8,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 8,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_theta_chained",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 10,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "example",
+     "line": 10,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_uncompute_borrowed_operand_free_order",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": false,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [
+      "%h"
+     ],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 24,
+     "wire": "%z"
+    },
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": false,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [
+      "%h"
+     ],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 25,
+     "wire": "%v"
+    },
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%v",
+      "%z"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 26,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": false,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [
+      "%h"
+     ],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 24,
+     "wire": "%z"
+    },
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": false,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [
+      "%h"
+     ],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 25,
+     "wire": "%v"
+    },
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%v",
+      "%z"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 26,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [
+      "%v",
+      "%z"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 27,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [
+      "%h"
+     ],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 28,
+     "wire": "%v"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [
+      "%h"
+     ],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 29,
+     "wire": "%z"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "borrowed",
+     "line": 34,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "lit:lowering_uncompute_sink_move_past_unwalked_gate",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%L=cqrt_qram_load_i32"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%L=cqrt_qram_load_i32"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "sink_move_past_unwalked_gate",
+     "line": 25,
+     "wire": "%idx"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%L=cqrt_qram_load_i32"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [
+      "%L=cqrt_qram_load_i32"
+     ],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "sink_move_past_unwalked_gate",
+     "line": 25,
+     "wire": "%idx"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "e2e:e2e-slice-control-seq-grover",
+   "multi_block_fns": 0,
+   "n_fns": 2,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 24,
+     "wire": "%h_op3"
+    },
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "main",
+     "line": 55,
+     "wire": "%h_op3"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "slice",
+     "line": 24,
+     "wire": "%h_op3"
+    },
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [
+      "%h_op=cq_template_add_i32_hl"
+     ],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "main",
+     "line": 55,
+     "wire": "%h_op3"
+    }
+   ]
+  },
+  {
+   "inv_mints": 0,
+   "module": "e2e:e2e-slice-io-chained-theta",
+   "multi_block_fns": 0,
+   "n_fns": 2,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "emit",
+     "line": 14,
+     "wire": "%h_op"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "emit",
+     "line": 14,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [
+      "%h"
+     ],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "emit",
+     "line": 16,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "ancestor_alloc_rails": [],
+     "ancestor_records": [],
+     "chained_alt": true,
+     "chained_primary": true,
+     "correlated_exempt_compare": [],
+     "correlated_exempt_measured": [],
+     "correlated_records": [],
+     "descendant_alloc_rails": [],
+     "descendant_records": [],
+     "exempt_discharged_compare": [],
+     "exempt_measured": [],
+     "fn": "emit",
+     "line": 18,
+     "wire": "%h"
+    }
+   ]
+  }
+ ],
+ "modules_with_chained_theta": 19,
+ "modules_with_chained_theta_incl_adjoint_ry": 123,
+ "multi_block_fns": 775,
+ "total_fns": 1303
+}

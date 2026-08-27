@@ -1,0 +1,5226 @@
+{
+ "ambiguity_live_after_spine_only_rails": 8,
+ "ambiguity_spine_aware_extra_modules": [
+  "e2e:e2e-slice-io-chained-theta",
+  "lit:lowering_io_tape_chained_theta",
+  "lit:lowering_io_tape_partial_freeze_order",
+  "lit:lowering_io_tape_qram_borrowed_index",
+  "lit:lowering_uncompute_borrowed_operand_free_order"
+ ],
+ "chained_rule_disagreements": [
+  "lit:lowering_qram_guarded_store_railof",
+  "lit:lowering_uncompute_borrowed_operand_free_order"
+ ],
+ "chained_theta_alloc_ancestor_only": [
+  "e2e:e2e-slice-io-chained-theta",
+  "lit:lowering_io_tape_chained_theta",
+  "lit:lowering_uncompute_borrowed_operand_free_order"
+ ],
+ "chained_theta_correlated_only": [],
+ "chained_theta_no_record": [
+  "e2e:e2e-slice-io-chained-theta",
+  "lit:lowering_bitcast_chained_theta_before",
+  "lit:lowering_bitcast_measure_after_rerotate",
+  "lit:lowering_classical_mux_phi_onereg_theta_chain",
+  "lit:lowering_io_tape_chained_theta",
+  "lit:lowering_qram_guarded_store_railof",
+  "lit:lowering_stale_record_chained_theta_onancestry",
+  "lit:lowering_theta_chained",
+  "lit:lowering_uncompute_borrowed_operand_free_order"
+ ],
+ "chained_thetas": 22,
+ "chained_thetas_incl_adjoint_ry": 189,
+ "corpus": {
+  "e2e": 250,
+  "lit": 510,
+  "modules_lowered": 760
+ },
+ "dbg_uses_skipped": 0,
+ "delta_vs_ruled": {
+  "dropped_out": [],
+  "inc1": [
+   "lit:lowering_uncompute_sink_move_past_unwalked_gate"
+  ],
+  "inc3": [
+   "e2e:e2e-slice-control-seq-grover",
+   "lit:lowering_qram_fp64_measure_no_dirty_free"
+  ],
+  "newly_in": [
+   {
+    "module": "lit:lowering_classical_mux_phi_lift_diaghop_before_sibling",
+    "reason": "+%h_op=cq_template_add_i32_hl now counts (record)"
+   },
+   {
+    "module": "lit:lowering_classical_mux_phi_lift_op_before_sibling",
+    "reason": "+%h_op=cq_template_add_i32_hl now counts (record)"
+   },
+   {
+    "module": "lit:lowering_io_tape_interleaved_rotation",
+    "reason": "+%h_op=cq_template_add_i32_hl now counts (record)"
+   },
+   {
+    "module": "lit:lowering_io_tape_partial_freeze_order",
+    "reason": "+%h_op=cq_template_add_i32_hl now counts (record)"
+   },
+   {
+    "module": "lit:lowering_io_tape_qram_borrowed_index",
+    "reason": "+%0=cqrt_qram_load_i32 now counts (record); +%h_op2=cq_template_xor_i32_hl now counts (record)"
+   },
+   {
+    "module": "lit:lowering_stale_record_add_before_theta",
+    "reason": "+%h_op=cq_template_add_i32_hl now counts (record)"
+   },
+   {
+    "module": "lit:lowering_stale_record_alias_before_theta",
+    "reason": "+%h_op=cq_template_add_i32_hl now counts (record)"
+   }
+  ]
+ },
+ "exempt_discharged_compare_hits": 0,
+ "exempt_live_after_hits": 0,
+ "exempt_measured_hits": 0,
+ "inc1_newly_declined": [
+  "lit:lowering_classical_mux_phi_lift_diaghop_before_sibling",
+  "lit:lowering_classical_mux_phi_lift_op_before_sibling",
+  "lit:lowering_io_tape_interleaved_rotation",
+  "lit:lowering_io_tape_qram_borrowed_index",
+  "lit:lowering_stale_record_add_before_theta",
+  "lit:lowering_stale_record_alias_before_theta",
+  "lit:lowering_uncompute_sink_move_past_unwalked_gate"
+ ],
+ "inc3_additional": [
+  "e2e:e2e-slice-control-seq-grover",
+  "lit:lowering_io_tape_partial_freeze_order",
+  "lit:lowering_qram_fp64_measure_no_dirty_free"
+ ],
+ "inv_mints_total": 0,
+ "modules": [
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_bitcast_chained_theta_before",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 10,
+     "wire": "%h1"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 10,
+     "wire": "%h1"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_bitcast_measure_after_rerotate",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 10,
+     "wire": "%h1"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 10,
+     "wire": "%h1"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_classical_mux_phi_lift_diaghop_before_sibling",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "18:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "18:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "main",
+     "line": 17,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "18:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "18:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "main",
+     "line": 17,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_classical_mux_phi_lift_op_before_sibling",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "17:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "17:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "main",
+     "line": 16,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "17:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "17:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "main",
+     "line": 16,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_classical_mux_phi_onereg_theta_chain",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "main",
+     "line": 13,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "main",
+     "line": 13,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_io_tape_chained_theta",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "17:call:cq_template_add_i32_hl_unc",
+          "18:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 14,
+     "wire": "%h_op"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "17:call:cq_template_add_i32_hl_unc",
+          "18:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 14,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "17:call:cq_template_add_i32_hl_unc",
+          "18:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 16,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 18,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_io_tape_interleaved_rotation",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "15:call:cqrt_tape_write_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "15:call:cqrt_tape_write_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 14,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "15:call:cqrt_tape_write_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "15:call:cqrt_tape_write_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 14,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 16,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 19,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_io_tape_partial_freeze_order",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "19:call:cq_template_add_i32_hl_unc",
+          "21:call:cqrt_ry_i32"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "18:call:cq_template_add_i32_hl_unc"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 15,
+     "wire": "%h_op1"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "19:call:cq_template_add_i32_hl_unc",
+          "21:call:cqrt_ry_i32"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "18:call:cq_template_add_i32_hl_unc"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 15,
+     "wire": "%h_op1"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "19:call:cq_template_add_i32_hl_unc",
+          "21:call:cqrt_ry_i32"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "18:call:cq_template_add_i32_hl_unc"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 17,
+     "wire": "%h_op1"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%0:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 21,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_io_tape_qram_borrowed_index",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "correlated_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "30:call:cq_template_and_i32_hl_unc",
+          "31:call:cqrt_ry_i32"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%0=cqrt_qram_load_i32",
+         "uses": [
+          "23:call:cqrt_tape_write_i32"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%h_op2=cq_template_xor_i32_hl",
+         "uses": [
+          "27:call:cqrt_qram_store_i32_unc"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op2=cq_template_xor_i32_hl",
+        "%qval=cqrt_alloc_i32"
+       ],
+       "correlated_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%0=cqrt_qram_load_i32",
+         "uses": [
+          "23:call:cqrt_tape_write_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 22,
+     "wire": "%h_op"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "correlated_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "30:call:cq_template_and_i32_hl_unc",
+          "31:call:cqrt_ry_i32"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%0=cqrt_qram_load_i32",
+         "uses": [
+          "23:call:cqrt_tape_write_i32"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%h_op2=cq_template_xor_i32_hl",
+         "uses": [
+          "27:call:cqrt_qram_store_i32_unc"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op2=cq_template_xor_i32_hl",
+        "%qval=cqrt_alloc_i32"
+       ],
+       "correlated_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%0=cqrt_qram_load_i32",
+         "uses": [
+          "23:call:cqrt_tape_write_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 22,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "correlated_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%1:tape",
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%0=cqrt_qram_load_i32"
+       ],
+       "correlated_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%0=cqrt_qram_load_i32"
+       ],
+       "descendant_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "30:call:cq_template_and_i32_hl_unc",
+          "31:call:cqrt_ry_i32"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%h_op2=cq_template_xor_i32_hl",
+         "uses": [
+          "27:call:cqrt_qram_store_i32_unc"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "other_kind_rails": [
+        "%1:tape",
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%0=cqrt_qram_load_i32",
+        "%h=cqrt_alloc_i32",
+        "%h_op2=cq_template_xor_i32_hl",
+        "%qval=cqrt_alloc_i32"
+       ],
+       "correlated_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "descendant_records": [
+        "%0=cqrt_qram_load_i32",
+        "%h_op2=cq_template_xor_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%1:tape",
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 24,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%1:tape",
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%qval=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%1:tape",
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%qval=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%1:tape",
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 31,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_qram_fp64_measure_no_dirty_free",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h",
+        "%h2",
+        "%h3"
+       ],
+       "ancestor_hits": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "ancestor_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_hits": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h",
+        "%h2",
+        "%h3"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_f64",
+        "%h2=cqrt_alloc_f64",
+        "%h3=cqrt_alloc_f64",
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "ancestor_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_f64",
+        "%h2=cqrt_alloc_f64",
+        "%h3=cqrt_alloc_f64",
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h",
+        "%h2",
+        "%h3"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_f64",
+        "%h2=cqrt_alloc_f64",
+        "%h3=cqrt_alloc_f64",
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "ancestor_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_f64",
+        "%h2=cqrt_alloc_f64",
+        "%h3=cqrt_alloc_f64",
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "shadow_fp_measure",
+     "line": 21,
+     "wire": "%0"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h",
+        "%h2",
+        "%h3"
+       ],
+       "ancestor_hits": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "ancestor_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_hits": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h",
+        "%h2",
+        "%h3"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_f64",
+        "%h2=cqrt_alloc_f64",
+        "%h3=cqrt_alloc_f64",
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "ancestor_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_f64",
+        "%h2=cqrt_alloc_f64",
+        "%h3=cqrt_alloc_f64",
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h",
+        "%h2",
+        "%h3"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_f64",
+        "%h2=cqrt_alloc_f64",
+        "%h3=cqrt_alloc_f64",
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "ancestor_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_f64",
+        "%h2=cqrt_alloc_f64",
+        "%h3=cqrt_alloc_f64",
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "correlated_records": [
+        "%h_cast=cq_template_fptosi_f64_to_i32",
+        "%h_cast4=cq_template_fptosi_f64_to_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%arr1:array"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "shadow_fp_measure",
+     "line": 21,
+     "wire": "%0"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_qram_guarded_store_railof",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": false,
+     "chained_primary": true,
+     "fn": "guarded_railof",
+     "line": 19,
+     "wire": "%z"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%z"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%z"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%z=cqrt_alloc_i32",
+         "uses": [
+          "19:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%z"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%z=cqrt_alloc_i32",
+         "uses": [
+          "19:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "guarded_railof",
+     "line": 17,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": false,
+     "chained_primary": true,
+     "fn": "guarded_railof",
+     "line": 19,
+     "wire": "%z"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_stale_record_add_before_theta",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "10:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "10:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 9,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "10:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "10:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 9,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_stale_record_alias_before_theta",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "11:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "11:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 10,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "11:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h_op=cq_template_add_i32_hl",
+         "uses": [
+          "11:call:cqrt_measure_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 10,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_stale_record_chained_theta_onancestry",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 8,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 8,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_theta_chained",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 10,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "example",
+     "line": 10,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_uncompute_borrowed_operand_free_order",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 4,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "26:call:cqrt_ry_i32",
+          "27:call:cqrt_ry_i32",
+          "32:call:cqrt_qram_store_i32_controlled_unc",
+          "34:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "26:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": false,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 24,
+     "wire": "%z"
+    },
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 4,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "26:call:cqrt_ry_i32",
+          "27:call:cqrt_ry_i32",
+          "32:call:cqrt_qram_store_i32_controlled_unc",
+          "34:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%z=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "26:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": false,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 25,
+     "wire": "%v"
+    },
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%v",
+        "%z"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%v",
+        "%z"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%v=cqrt_alloc_i32",
+         "uses": [
+          "28:call:cqrt_ry_i32",
+          "30:call:cqrt_qram_store_i32_unc"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%z=cqrt_alloc_i32",
+         "uses": [
+          "29:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%v=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%v",
+        "%z"
+       ],
+       "ancestor_hits": [
+        "%v=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%v=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 26,
+     "wire": "%h"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 4,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "26:call:cqrt_ry_i32",
+          "27:call:cqrt_ry_i32",
+          "32:call:cqrt_qram_store_i32_controlled_unc",
+          "34:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "26:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": false,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 24,
+     "wire": "%z"
+    },
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 4,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "26:call:cqrt_ry_i32",
+          "27:call:cqrt_ry_i32",
+          "32:call:cqrt_qram_store_i32_controlled_unc",
+          "34:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%z=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 1,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "26:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": false,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 25,
+     "wire": "%v"
+    },
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%v",
+        "%z"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%v",
+        "%z"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%v=cqrt_alloc_i32",
+         "uses": [
+          "28:call:cqrt_ry_i32",
+          "30:call:cqrt_qram_store_i32_unc"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%z=cqrt_alloc_i32",
+         "uses": [
+          "29:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%v=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%v",
+        "%z"
+       ],
+       "ancestor_hits": [
+        "%v=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%v=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 26,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%v",
+        "%z"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%v",
+        "%z"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%v=cqrt_alloc_i32",
+         "uses": [
+          "28:call:cqrt_ry_i32",
+          "30:call:cqrt_qram_store_i32_unc"
+         ]
+        },
+        {
+         "n_uses": 1,
+         "rail": "%z=cqrt_alloc_i32",
+         "uses": [
+          "29:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%v=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%v",
+        "%z"
+       ],
+       "ancestor_hits": [
+        "%v=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%v=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 27,
+     "wire": "%h"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "32:call:cqrt_qram_store_i32_controlled_unc",
+          "34:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%z=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 28,
+     "wire": "%v"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "32:call:cqrt_qram_store_i32_controlled_unc",
+          "34:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%v=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [
+        "%h"
+       ],
+       "descendant_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 29,
+     "wire": "%z"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "borrowed",
+     "line": 34,
+     "wire": "%h"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "lit:lowering_uncompute_sink_move_past_unwalked_gate",
+   "multi_block_fns": 1,
+   "n_fns": 1,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "correlated_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "correlated_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "correlated_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "sink_move_past_unwalked_gate",
+     "line": 25,
+     "wire": "%idx"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "correlated_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "correlated_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "correlated_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "descendant_records": [
+        "%L=cqrt_qram_load_i32"
+       ],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "sink_move_past_unwalked_gate",
+     "line": 25,
+     "wire": "%idx"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "e2e:e2e-slice-control-seq-grover",
+   "multi_block_fns": 0,
+   "n_fns": 2,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 24,
+     "wire": "%h_op3"
+    },
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "main",
+     "line": 55,
+     "wire": "%h_op3"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "slice",
+     "line": 24,
+     "wire": "%h_op3"
+    },
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "ancestor_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32",
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "correlated_records": [
+        "%h_op=cq_template_add_i32_hl"
+       ],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "main",
+     "line": 55,
+     "wire": "%h_op3"
+    }
+   ]
+  },
+  {
+   "dbg_uses_skipped": 0,
+   "inv_mints": 0,
+   "module": "e2e:e2e-slice-io-chained-theta",
+   "multi_block_fns": 0,
+   "n_fns": 2,
+   "thetas": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "17:call:cq_template_add_i32_hl_unc",
+          "18:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "emit",
+     "line": 14,
+     "wire": "%h_op"
+    }
+   ],
+   "thetas_incl_adjoint": [
+    {
+     "adjoint_paired": false,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "17:call:cq_template_add_i32_hl_unc",
+          "18:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "emit",
+     "line": 14,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%2:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [
+        {
+         "n_uses": 2,
+         "rail": "%h=cqrt_alloc_i32",
+         "uses": [
+          "17:call:cq_template_add_i32_hl_unc",
+          "18:call:cqrt_ry_i32"
+         ]
+        }
+       ],
+       "exempt_measured": [],
+       "live_after_spine_only": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "other_kind_rails": [
+        "%2:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [
+        "%h"
+       ],
+       "ancestor_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "ancestor_records": [],
+       "correlated_hits": [
+        "%h=cqrt_alloc_i32"
+       ],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%2:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "emit",
+     "line": 16,
+     "wire": "%h_op"
+    },
+    {
+     "adjoint_paired": true,
+     "by_predicate": {
+      "plan-v1": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%2:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%2:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      },
+      "ruled-spine-aware": {
+       "ancestor_alloc_rails": [],
+       "ancestor_hits": [],
+       "ancestor_records": [],
+       "correlated_hits": [],
+       "correlated_records": [],
+       "descendant_alloc_rails": [],
+       "descendant_hits": [],
+       "descendant_records": [],
+       "exempt_discharged_compare": [],
+       "exempt_live_after": [],
+       "exempt_measured": [],
+       "live_after_spine_only": [],
+       "other_kind_rails": [
+        "%2:tape"
+       ],
+       "would_exempt_discharged_compare": []
+      }
+     },
+     "chained_alt": true,
+     "chained_primary": true,
+     "fn": "emit",
+     "line": 18,
+     "wire": "%h"
+    }
+   ]
+  }
+ ],
+ "modules_with_chained_theta": 19,
+ "modules_with_chained_theta_incl_adjoint_ry": 123,
+ "multi_block_fns": 775,
+ "other_kind_rails_seen": 2,
+ "predicate": "plan-v1",
+ "ruling": "OWNER RULING 2026-08-27, bd test_C_libtooling-6uqc",
+ "total_fns": 1303,
+ "would_exempt_discharged_compare_hits": 0
+}
