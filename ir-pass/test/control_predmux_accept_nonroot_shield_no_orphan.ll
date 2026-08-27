@@ -34,14 +34,19 @@
 ; real and is still true — AT DEPTH 0 ONLY, where `run()`'s
 ; `track(BI->getCondition())` happens to cover the shield. The scope clause was
 ; missing, and the capitalized directive would have foreclosed a real leak.
-; Re-measured for this increment at 3319975, orphan controlled-copy merges by
-; shield DEPTH, gate arm on the TRUE successor:
+; Re-measured for this increment at 3319975, orphan controlled COPIES by shield
+; DEPTH, gate arm on the TRUE successor:
 ;     ROOT shield  (`%sc = select i1 %b, i1 %c, i1 false`)              0
 ;     under `and`  (`%sc = and i1 %a, %inner`)                          2
 ;     under `or`   (`%sc = or  i1 %a, %inner`, or-form shield)          2
 ;     under a shield (`%sc = select i1 %inner, i1 %d, i1 false`)        2
 ;     two `and`s deep                                                   2
 ; So it is DEPTH, not spelling, and the root row is the only clean one.
+; THE UNIT IS COPIES, stated because an earlier draft of this table called the
+; same column "merges" (bd `drln` S1): each leaking row emits ONE dead merge —
+; one `%out` — written by TWO `cqrt_copy_i1_controlled`, which is the unit the
+; arm-kill twin already used. One number under two units inside one commit is
+; exactly the drift this suite mirrors strings to prevent.
 ;
 ; BOTH SHIPPED GATES ARE BLIND TO THIS, which is why it needs a fixture at all:
 ; `opt` exits 0, the verifier is clean, and `free_pairing_check.py` on the
@@ -60,16 +65,27 @@
 ; *** BUT THE SHIELD REWRITE ITSELF IS EXERCISED BY REAL CODE, which is what makes
 ; that zero worth anything: an instrumented build enters `canonicalizePred` 3680
 ; times across 109 of those 239 modules, 16 of them ON A SHIELD — 4 in `coshl`,
-; 3 in `sinhl`, one each in `acoshl`, `tanhl`, `pow`, `nextafterl`, `nexttoward`.
+; 3 in `sinhl`, one each in `acoshl`, `tanhl` and `pow`, and THREE each in
+; `nextafterl` and `nexttoward` (1 `src/` + 2 `ld80/` spelling apiece, per the
+; modules' `source_filename`). 4+3+1+1+1+3+3 = 16. An earlier draft of this list
+; dropped the ld80/src split and summed to 12 against a stated 16 — bd `drln` S2;
+; the itemization is spelled out here so the arithmetic is checkable on its face.
 ; All 16 sit at DEPTH 0. *** So the guarded path is live on openlibm and the depth
 ; that leaks simply never occurs there — which is precisely why a root-level
 ; measurement looked complete. Nothing committed exhibits the defect and this
 ; fixture is the first thing in the tree to cover the cell: the actual finding is
 ; not that it leaks, but that nothing would have told us.
 ;
-; NO e2e SLICE IS OWED OR POSSIBLE FOR THIS CELL: every e2e slice starts from a
-; `.c`, and 28 measured C spellings produce no depth≥1 i1 shield. Hand-written IR
-; is the only way to reach it, which is the idiom every reject fixture here uses.
+; NO e2e SLICE IS OWED FOR THIS CELL — and read that as "none found", not as
+; "none exists". Every e2e slice starts from a `.c`, and 28 `clang -O1` C
+; spellings (the 19 above + this increment's 9) produced no depth≥1 i1 shield;
+; the Rule-13 round tried 16 more and also got none, which corroborates the
+; DIRECTION without pinning the COUNT — the individual spellings were scratch
+; work and no artifact survived, so treat the 28 as re-runnable evidence rather
+; than a citable measurement (bd `drln` S4). An earlier draft said "OR
+; POSSIBLE"; that is an absence claim over an unbounded space and is withdrawn.
+; Hand-written IR is the way this cell is reached here, which is the idiom every
+; reject fixture in this family uses.
 ;
 ; The arm-kill twin is control_predmux_accept_nonroot_shield_armkill.ll (same
 ; module, successors swapped), which proves these CHECK-NOTs are not satisfied

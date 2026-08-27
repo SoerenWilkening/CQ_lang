@@ -56,9 +56,29 @@
 ; (that is control_predmux_accept_xor_negation.ll), so the fence sits precisely
 ; on the shielded operand and not on the xor or on the surrounding region.
 ;
+; *** THE CHECK LINE NAMES THE DECLINE PHASE, AND IT DID NOT USED TO — bd `drln`
+; C3. *** It used to match only `error{{.*}}under quantum control` (written here
+; without its directive keyword, which FileCheck would otherwise pick up out of
+; this comment), the ONLY reject fixture of 34 in this family naming no phase,
+; which meant it PASSED against
+; unrelated diagnostics (demonstrated against
+; `control_predmux_reject_equal_incomings_phi.ll`'s stderr). Rule 12 wants the
+; diagnostic mirrored character-for-character, and that matters more here than
+; almost anywhere: this fixture is the SOLE guard of E6's `Strict` fence, so a
+; check that cannot tell one decline from another is the fence's only witness
+; going blind.
+;
+; THE THREE CHECK-NOTs BELOW ARE STRUCTURALLY UNFAILABLE AND ARE KEPT ONLY AS
+; DOCUMENTATION (bd `drln` C3, same finding). On a `DS_Error` decline `cq-opt`
+; writes ZERO bytes of module to stdout, so the only thing FileCheck ever scans
+; is the one-line diagnostic above — no `cqrt_*` symbol could appear whatever the
+; pass did. They state the orphan signature this fence exists to prevent; they do
+; not test for it. The real negative evidence for that signature lives in the
+; ACCEPT fixtures (`control_predmux_accept_*_no_orphan.ll`), which have a module
+; to scan.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}under quantum control
-; the orphan signature must not appear: no dead merge, no un-freed flag rail
+; CHECK: error{{.*}}cq controlled lowering: value-arm swap-route under quantum control
 ; CHECK-NOT: cqrt_copy_i1_controlled
 ; CHECK-NOT: cqrt_alloc_i1
 ; CHECK-NOT: cq_template_icmp

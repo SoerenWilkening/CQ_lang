@@ -3216,21 +3216,38 @@ private:
     // `buildNegation`'s bd `qesi` line, and it is owed for the same reason even
     // though this function REPLACES far less than that one does.
     //
-    // *** THIS SUPERSEDES A CAPITALIZED DIRECTIVE THAT SAID NOT TO DO IT. *** The
-    // `qesi` commit shipped with "canonicalizePred ... also rebuilds (on a shield)
-    // and orphans NOTHING, measured 0 at both polarities — do NOT 'fix'
-    // canonicalizePred to match." The measurement was real and is still true, but
-    // it was taken ONLY on shields that ARE the branch condition, where `run()`'s
-    // `track(BI->getCondition())` happens to cover the shield. It is a statement
-    // about DEPTH 0, it shipped without that clause, and unscoped it would have
-    // foreclosed a real Rule-6/8 leak. Re-measured at 3319975 — orphan 4.4
-    // controlled-copy merges, gate arm on the TRUE successor (the polarity that
-    // routes through here; `clang -O1` picks it half the time, Rule 9):
+    // *** THE "CAPITALIZED DIRECTIVE" THIS CHANGE ONCE CLAIMED TO SUPERSEDE WAS
+    // NEVER SHIPPED. An earlier draft of THIS comment said it was; the Rule-13
+    // round caught it (bd `drln` B2). *** Get the provenance right, because the
+    // wrong version defames the one commit in this family that behaved correctly.
+    // What `qesi` (2d51f23) shipped was the RETRACTION, already in capitals: "AND
+    // THAT IS NOT A CLEAN BILL OF HEALTH FOR `canonicalizePred` — AN EARLIER DRAFT
+    // OF THIS COMMENT SAID IT ORPHANS 'NOTHING, measured 0 at both polarities' AND
+    // TOLD YOU NOT TO FIX IT. BOTH WERE WRONG." The directive itself lived only in
+    // qesi's own unshipped draft — `git log --all -S 'canonicalizePred to match'
+    // -- ir-pass/src/PredMuxFlatten.cpp` returns nothing before this commit. qesi
+    // FILED bd `kqqv` with its reach and left the fix to its own round; this is
+    // that round. The lesson survives the correction intact, and it is the SCOPE
+    // CLAUSE, not a villain: a "measured 0" that does not say what it ranged over
+    // reads as a proof and acts as a prohibition.
+    //
+    // The underlying measurement was real and is still true — it was taken ONLY on
+    // shields that ARE the branch condition, where `run()`'s
+    // `track(BI->getCondition())` happens to cover the shield, i.e. a statement
+    // about DEPTH 0. Re-measured at 3319975 — orphan controlled COPIES, gate arm
+    // on the TRUE successor (the polarity that routes through here; `clang -O1`
+    // picks it half the time, Rule 9):
     //     ROOT shield   `%sc = select i1 %b, i1 %c, i1 false`            0
     //     under `and`   `%sc = and i1 %a, %inner`                        2
     //     under `or`    `%sc = or  i1 %a, %inner` (or-form shield)       2
     //     under a shield `%sc = select i1 %inner, i1 %d, i1 false`       2
     //     two `and`s deep                                               2
+    // THE UNIT IS COPIES, and it is stated because an earlier draft labelled this
+    // same column "merges" (bd `drln` S1 — one number under two units inside one
+    // commit). Every leaking row emits exactly ONE dead 4.4 merge — one `%out` —
+    // written by TWO `cqrt_copy_i1_controlled`; the sibling fixture
+    // `control_predmux_accept_nonroot_shield_armkill.ll` uses the same unit.
+    //
     // Depth, not spelling. What leaked, on the `and` row: the rewritten shield's
     // original `SelectInst` kept zero uses and was absent from `MaybeDead`, so the
     // 4.4 select path lowered it into a WHOLE DEAD controlled-copy merge — an
@@ -3280,13 +3297,31 @@ private:
     // routinely the ONLY function that sees a condition tree, and an invariant
     // resting on its neighbour being called is not an invariant. Reusing the
     // walk bd 3c6m.67 already built for the identical obligation (Rule 14) makes
-    // this function's contract self-contained: EVERY node of the cone it consumes
-    // is tracked, whatever the shape and whoever else runs.
+    // this function no longer DEPENDENT on its neighbour being called.
     //
-    // The walk stops at a `CmpInst` (its operands are DATA — the theta rail — not
-    // tree) and does not descend a `SelectInst`; a shield's children are covered
-    // by this function's own re-entry, which tracks them on ITS entry, and E6
-    // refuses a shield under an xor entirely.
+    // *** AND THAT IS THE WHOLE CLAIM — IT IS NOT "EVERY NODE OF THE CONE IS
+    // TRACKED, WHATEVER THE SHAPE". An earlier draft said exactly that and it is
+    // FALSE; the Rule-13 round found it with a probe (bd `drln` B1, two lenses
+    // independently). *** The walk stops at a `CmpInst` (its operands are DATA —
+    // the theta rail — not tree) and does not descend a `SelectInst`. For a shield
+    // this function REWRITES, the children are covered by its own re-entry, which
+    // tracks them on ITS entry. THE HOLE IS THE ONE SHAPE IT NEVER RE-ENTERS: a
+    // shield under an xor-TRUE NOT. `isSupportedCondTree`'s xor-true arm recurses
+    // NON-Strict (`return !Strict && isSupportedCondTree(op0, Depth+1, S)` — the
+    // four-argument call, defaulting `Strict` back to false), so `xor(shield,
+    // true)` IS admitted; this function has no xor arm, so `trackCondCone` tracks
+    // the xor and the shield and STOPS, leaving the shield's compare children
+    // untracked. Measured at HEAD WITH this fix: two use-free
+    // `cq_template_icmp_{sgt,slt}_i32_hl` on the theta rail, no `_unc`, no
+    // `cqrt_free` — two dangling ENTANGLED flags (Rules 6/8), `opt` exit 0,
+    // verify-clean, and `free_pairing_check.py` "0 violation(s)" rc=0.
+    //
+    // *** THAT LEAK IS PRE-EXISTING, NOT INTRODUCED HERE — the shape is
+    // BYTE-IDENTICAL on the 3319975 baseline. *** It is filed, not fixed under
+    // cover of this one. The fix is a DESIGN CALL, not a one-liner: descending
+    // `SelectInst` in `trackCondCone` would close more of the class but touches
+    // the fence bd `j5i7` guards, so read `j5i7` first. What this commit owed and
+    // pays is the CLAIM, narrowed to the shapes it holds for.
     //
     // *** BLAST RADIUS, AND QUOTE IT WITH ITS REACH RATHER THAN ITS DENOMINATOR
     // (the discipline this file already carries for bd 2qvr). *** A/B of the
@@ -3435,18 +3470,29 @@ private:
     //
     // *** READ "ONE LINE SUFFICES" WITH ITS CLAUSE: it means no recursive tracker is
     // owed INSIDE THIS FUNCTION. It is NOT a class-wide closure, and the orphan class
-    // is NOT closed module-wide. *** Of the three producers of use-free emitted gates
-    // this family found, two are now fixed here in the flatten — this line and bd
-    // kqqv's `trackCondCone` in `canonicalizePred` — and ONE IS STILL OPEN AND STILL
-    // SHIPPING: bd iwr7, 14 use-free `cq_template_zext_i32_to_i64` in TEN committed
-    // real-openlibm goldens, beside a `cqrt_qram_load` of the un-widened index;
-    // root-caused to `if (CI->hasOneUse()) DeadCast = CI;` in `lowerQramReads`, a
-    // multi-use clang `zext nneg` whose geps are all erased. The durable fix is
-    // eventually a SWEEP-LEVEL INVARIANT — "no emitted gate may have a use-free
-    // result" — which would subsume all three and would have caught both of these
-    // without anyone re-measuring a shape. Any such detector MUST exempt
-    // `cqrt_alloc_*`, because Rule 6 legitimately leaves a not-provably-|0> rail
-    // allocated and four committed fixtures declare their leak CORRECT.
+    // is NOT closed module-wide. *** Of the FOUR producers of use-free emitted gates
+    // this family has found, two are now fixed here in the flatten — this line and
+    // bd kqqv's `trackCondCone` in `canonicalizePred` — and TWO ARE STILL OPEN:
+    //
+    //   * bd iwr7, STILL SHIPPING: 14 use-free `cq_template_zext_i32_to_i64` in TEN
+    //     committed real-openlibm goldens, beside a `cqrt_qram_load` of the
+    //     un-widened index; root-caused to `if (CI->hasOneUse()) DeadCast = CI;` in
+    //     `lowerQramReads`, a multi-use clang `zext nneg` whose geps are all erased.
+    //   * `run()`'s own `track(BI->getCondition())` on the entry terminator — a
+    //     SINGLE track on the tree ROOT, verbatim the pattern the `trackCondCone`
+    //     comment two functions down calls insufficient. When NO converted phi
+    //     demands either edge predicate, neither `canonicalizePred` nor
+    //     `buildNegation` runs and that one track is all the tree ever gets, so its
+    //     inner nodes are untracked by exactly the argument used against per-site
+    //     tracking here. Found by the bd `kqqv` Rule-13 round (bd `drln` B3), which
+    //     is also why this ledger says four and an earlier draft said three.
+    //
+    // The durable fix is eventually a SWEEP-LEVEL INVARIANT — "no emitted gate may
+    // have a use-free result" — which would subsume all four and would have caught
+    // both of the fixed ones without anyone re-measuring a shape. Any such detector
+    // MUST exempt `cqrt_alloc_*`, because Rule 6 legitimately leaves a
+    // not-provably-|0> rail allocated and four committed fixtures declare their leak
+    // CORRECT.
     //
     // AND QUOTE THIS FIX'S 0-FLIP RESULT WITH ITS REACH, never its denominator — the
     // same discipline this file already carries for bd 2qvr. Three independent
@@ -3709,6 +3755,19 @@ private:
   // pass KEEPS is stranded just as surely as one it replaces, whenever the
   // literal that was going to consume it is itself dropped.
   //
+  // *** BUT ONE CALLER'S WITNESS STOPPED WITNESSING WHEN THE OTHER LANDED, AND
+  // THE FIXTURE THAT SHOULD CATCH THAT DOES NOT EXIST YET (bd `drln` C2). ***
+  // MEASURED at this commit: delete the `trackCondCone(BO->getOperand(0));` in
+  // the xor arm below and ALL ELEVEN xor fixtures stay green — including
+  // 3c6m.67's own `control_predmux_accept_xor_kept_cone_no_orphan.ll`, because
+  // bd `kqqv`'s entry call now covers that fixture's tree through the OTHER
+  // polarity. The line is still LOAD-BEARING in general: a module whose arm value
+  // is LAST in both merge phis demands only `literal(entry, 1)`, so
+  // `canonicalizePred` is never called and this arm is the only tracker. That
+  // witness has no fixture, so DO NOT read the eleven greens as evidence the line
+  // is removable — they are evidence the SUITE cannot currently tell. Restoring
+  // the pin is owed and is tracked on bd `drln`.
+  //
   // WHY IT EXISTS. `buildNegation`'s contract is "TRACK THE NODE WE ARE ABOUT TO
   // REPLACE, or it is STRANDED" (bd `qesi`), and every pre-existing arm honours
   // it for free by RE-ENTERING `buildNegation` on each operand, which tracks on
@@ -3718,10 +3777,13 @@ private:
   // `canonicalizePred` is the same story one function over: it re-enters on
   // `and`/`or` operands and on a shield's condition and live arm, but has no xor
   // arm, so entry-walking is what makes ITS contract shape-independent instead of
-  // resting on `buildNegation` also being called (measured: it usually is NOT —
-  // 86 of 166 conditional-branch terminators across the fixture corpus are asked
-  // for one polarity only, because `convertPhis`' select chain never asks for its
-  // fallback edge's predicate).
+  // resting on `buildNegation` also being called (measured: often it is NOT — of
+  // 166 conditional-branch terminators across the fixture corpus, 86 are asked
+  // for `Idx=0` ONLY, which is precisely the set where `canonicalizePred` runs
+  // and `buildNegation` never does. State it as that 86 and not as "86 asked for
+  // one polarity only": one-polarity-only is 101, the 86 plus the 15 `Idx=1`-only
+  // — a different set, and the 86 is the one the argument needs. bd `drln` S3
+  // caught the two figures for one measurement inside one diff.)
   //
   // MEASURED CONSEQUENCE OF NOT DOING IT (the round-2 finding, reproduced): when
   // BOTH literals die — the original xor, tracked on entry, and the rebuilt xor
