@@ -1,5 +1,6 @@
 ; lowering_mc_seq_region_customer.ll — THE CAMPAIGN'S CUSTOMER SHAPE, at lit
-; level (bd test_C_libtooling-6uqc M-C Increment 2a; bd test_C_libtooling-nepx).
+; level (bd test_C_libtooling-6uqc M-C Increments 2a+2b; bd
+; test_C_libtooling-nepx, which this file's 2b state CLOSES).
 ;
 ; This is `tests/e2e/slice_control_seq_grover.c` as the pass receives it: a theta,
 ; a `q += off`, a tainted-condition phase region, the `q -= off`, a chained S†
@@ -17,13 +18,21 @@
 ; flag was `_unc`-stripped AND `cqrt_free`d before it. So both `add` sites convert
 ; and the two ancestor rails they used to mint are never allocated.
 ;
-; WHAT IT DOES *NOT* PIN — read this before quoting a green run as a fix. The
-; middle site is a `sub`, which BATCH 2a DOES NOT ADMIT. It still mints a fresh
-; rail off the (now collapsed) `%h`, and that rail is still live and entangled
-; when the S† `cqrt_ry_i32(…, -0.5)` fires. bd nepx is therefore STILL OPEN after
-; this increment: this file goes from three ancestor rails to one, not to zero.
-; The `CHECK` for the surviving `cq_template_sub_i32_hl` is deliberate — it is the
-; batch boundary, and when batch 2b lands it must be replaced, not deleted.
+; WHAT BATCH 2b ADDED, AND IT IS THE WHOLE OF bd nepx. The middle site is the
+; `sub`, and 2a did not admit it: it still minted a fresh rail off the (collapsed)
+; `%h`, and that rail was live and entangled when the S† `cqrt_ry_i32(…, -0.5)`
+; fired — one ancestor instead of three, but a dephased reflection either way.
+; With `sub` admitted (`q - c` → `cqrt_addc_i32(q, -c)`, the immediate negated in
+; CLASSICAL IR) this function is a ONE-RAIL program end to end: exactly one data
+; register is ever allocated, and every gate after the state prep acts on it in
+; place. The `cq_template_sub_i32_hl` CHECK this file used to carry as its batch
+; boundary is REPLACED below by the negation + in-place gate it became — replaced
+; and not deleted, exactly as the 2a text asked.
+;
+; The negation `%cq_negimm = sub i32 0, %2` is CLASSICAL: it is created in Phase 2
+; of `lowerOps` (after the taint set is frozen), never joins `taint.Tainted`,
+; never becomes a gate, and emits NO trace line — the e2e golden sees only the
+; negated runtime value `-3` in the `addc` immediate slot.
 ;
 ; THE OTHER THING IT PINS is that `detectControlRegions` + `SwapRouteEmit` +
 ; `RegionFlatten` all run BEFORE `lowerOps`, which is why the fence can see this
@@ -45,24 +54,30 @@
 ; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[H]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
 ;
-; BATCH BOUNDARY — the `sub` is NOT admitted by batch 2a, so it still mints an
-; ancestor rail and the S† rotation still fires with `%[[H]]` live beside it.
-; This is bd nepx's defect, one rail shorter, NOT bd nepx fixed:
-; CHECK:      %[[S:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i32_hl(i32 %[[H]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[S]], double -5.000000e-01)
+; bd nepx's DEFECT SITE, now the fix. `q -= off` becomes a CLASSICAL negation
+; feeding the in-place gate on the SAME `%[[H]]` — no ancestor rail is minted, so
+; the S† rotation on the next line fires with nothing live beside it. The whole
+; of nepx is these three lines:
+; CHECK:      %[[N:[a-zA-Z0-9_.]+]] = sub i32 0, %{{[a-zA-Z0-9_.]+}}
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[H]], i32 %[[N]])
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
 ;
-; Region 2, then the LAST `q += off` — the site the withdrawn single-consumer
-; reading would have refused, converting only because its parent's readers are
-; prior and completed:
-; CHECK:      %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[S]], i32 0)
-; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[S]], i32 0)
+; Region 2 reads THAT SAME REGISTER (not a `%h_op` descendant of it), then the
+; LAST `q += off` — the site the withdrawn single-consumer reading would have
+; refused, converting only because its parent's readers are prior and completed:
+; CHECK:      %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 0)
+; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[H]], i32 0)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
-; CHECK:      call void @cqrt_addc_i32(i32 %[[S]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[S]])
+; CHECK:      call void @cqrt_addc_i32(i32 %[[H]], i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
 ;
-; Exactly TWO `cqrt_alloc_i32` survive per region pair (the wire and each region's
-; work rail) plus the sub's rail — never the two ancestor rails the out-of-place
-; adds used to mint. ONERAIL counts the whole module:
+; NOT ONE out-of-place data rail is minted anywhere in this function. The only
+; `cq_template_*` calls left are the two region flags and their `_unc` strips:
+; CHECK-NOT:  cq_template_sub_
+; CHECK-NOT:  cq_template_add_
+;
+; THREE `cqrt_alloc_i32` in the whole module and no more — the ONE wire, plus one
+; work rail per region. Never an ancestor. ONERAIL counts them:
 ; ONERAIL-COUNT-3: call i32 @cqrt_alloc_i32(
 ; ONERAIL-NOT:     call i32 @cqrt_alloc_i32(
 
@@ -89,7 +104,7 @@ define i32 @slice() {
 7:
   %8  = phi i32 [ %6, %5 ], [ %3, %0 ]
   %9  = load volatile i32, ptr @off, align 4
-  %10 = sub nsw i32 %8, %9                                       ; site 2: BATCH 2b
+  %10 = sub nsw i32 %8, %9                                       ; site 2: q -= off
   %11 = call i32 @cq_theta_si32(i32 %10, double -5.000000e-01)   ; S-dagger
   %12 = icmp eq i32 %11, 0
   br i1 %12, label %13, label %15

@@ -1217,14 +1217,29 @@ class StreamAnalysis:
             i.e. a plain classical instruction result (`sub i32 0, %k`, a
             counter `phi`) or a classical call result such as `cqrt_measure_W`.
 
-        MEASURED over the 237-slice corpus: there are 41 `addc`/`xorc` CALL
-        sites (11 with a literal immediate, 30 with an SSA one), and every one
-        of the 30 is non-call integer arithmetic — `sub i32 0, %6`,
-        `add i32 %cq.brk.ip, 1`, `add nuw nsw i32 %5, 1`. So this answers True
-        for all 41 and rule (A1) still discharges every site it used to. (41,
-        not 52: a `grep -c` over the corpus also counts the 11 `declare`
-        prototype lines. And no immediate is a `phi` DIRECTLY — the loop
-        counter reaches the slot through an `add` — so do not cite one.)
+        RE-MEASURED 2026-08-28 over the 250-slice corpus, after M-C batches
+        2a+2b (bd test_C_libtooling-6uqc) put `cqrt_addc_<W>` on straight-line
+        rails: there are now 213 `addc`/`xorc` CALL sites (177 with a literal
+        immediate, 36 with an SSA one), up from 41 (11 + 30) when this rule was
+        written against the 237-slice corpus. EVERY ONE of the 36 is a plain
+        classical instruction result — 22 `sub i32 0, %v` (the negation
+        `EmitInverse` emits for an `addc` adjoint, and since 2b the one M-C
+        emits FORWARD for `q - c`), 10 `add` (the `break` index rail's counter),
+        and 4 `load volatile i32, ptr @off` (2a, the seq-grover reassignment
+        immediate). So this still answers True for all 213 and rule (A1) still
+        discharges every site it used to.
+
+        The `load` class arrived with 2a and is worth naming because it is NOT
+        "integer arithmetic" as the original wording had it: it qualifies on the
+        rule's actual ground, which is that the value is neither a known rail,
+        nor a formal parameter, nor a rail-minting call result IN THIS FUNCTION.
+        A handle cannot reach a global and come back — a tainted `store` is a
+        loud decline at `declineTaintEscapes` long before lowering — so a load
+        result is not a rail.
+
+        (213, not 224: a `grep -c` over the corpus also counts the `declare`
+        prototype lines. And no immediate is a `phi` DIRECTLY — the loop counter
+        reaches the slot through an `add` — so do not cite one.)
         """
         if not v.startswith("%"):
             return True                              # a literal constant

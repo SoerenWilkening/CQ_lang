@@ -609,8 +609,32 @@ ACCEPTANCE = [
      "pinned ACCEPT boundary — %d is measured AFTER the theta ⇒ LIVE ⇒ exempt"),
     ("lit:lowering_stale_record_alias_before_theta", False,
      "pinned ACCEPT boundary (diagonal-alias sibling) — same reason"),
-    ("e2e:e2e-slice-control-seq-grover", True,
-     "bd nepx: h0/h1 are DEAD at the S-dagger Ry ⇒ must REMAIN an ancestor hit"),
+    # FLIPPED True -> False on 2026-08-28 by M-C batch 2b (bd
+    # test_C_libtooling-6uqc), DELIBERATELY, and it is this batch's headline. The
+    # pin was written to hold bd test_C_libtooling-nepx OPEN: `h0`/`h1` were dead
+    # ancestor records, live and entangled with the wire when the S-dagger Ry
+    # fired, so the slice HAD to keep reporting an ancestor hit until the fix
+    # shipped. Batch 2a removed the two `add`-minted ancestors; batch 2b removes
+    # the last one by lowering `q -= off` in place (`cqrt_addc_i32(h0, -3)`), so
+    # the slice is now a ONE-RAIL program and there is no ancestor left to hit.
+    # A REGRESSION TO `True` HERE MEANS nepx CAME BACK — do not flip it again to
+    # make a run green.
+    #
+    # HOW `False` IS ACTUALLY PRODUCED (2b Rule-13 round, F2 — say it so the pin
+    # is not over-read): with both += sites AND the -= site in place, the source
+    # Ry(+0.5) and the user's S-dagger Ry(-0.5) now sit on ONE rail with exactly
+    # negated angles, so `_pair_adjoint_ry` (blind spot A8) drops the S-dagger
+    # site BEFORE any ancestor question is asked — the primary view reports ZERO
+    # chained thetas here. The pin's substantive claim is nevertheless
+    # independently true: `thetas_incl_adjoint` shows ancestor_hits=[] and
+    # descendant_hits=[] for BOTH sites, and the SHIPPED guard is immune (it
+    # keys on emitter-recorded user rotations, not on angle pairing). The pin
+    # still catches the named regression — an out-of-place sub puts the
+    # S-dagger back on a template rail, un-pairs it, and the ancestor HIT
+    # returns.
+    ("e2e:e2e-slice-control-seq-grover", False,
+     "bd nepx FIXED by M-C 2a+2b: every reassignment lowers in place, so the "
+     "slice mints no ancestor rail at all ⇒ must be a MISS"),
     ("lit:lowering_uncompute_sink_move_past_unwalked_gate", True,
      "KNOWN ARTEFACT (spike §9.3, blind spot A5): already-lowered fixture whose "
      "rail its own comment declares UNTAINTED, so the real guard would not fire. "

@@ -51,6 +51,63 @@ void promote(Value *repl, Instruction *orig, TaintSet &taint,
     taint.HandleWidth[repl] = handleWidth;
 }
 
+// ── M-C Inc 2b (bd test_C_libtooling-6uqc): NEGATE A CLASSICAL IMMEDIATE ────
+//
+// `q - c` is emitted as the in-place `cqrt_addc_<W>(q, -c)`. There is NO
+// `cqrt_subc_` and there must not be one: the runtime contract is
+// `h := (h + imm) mod 2^W` (runtime/cq_runtime.h), and `x - c` and `x + (-c)`
+// are the SAME basis permutation at every width, so a new frozen symbol would
+// buy a value the compiler already computes at emission time (Rule 15 / the
+// Phase-11 freeze surface is untouched by this batch).
+//
+// THE NEGATION IS CLASSICAL CODE, and that is the whole safety story. It never
+// touches the rail, never enters `taint.Tainted` (it is created in Phase 2 of
+// `lowerOps`, after the taint set and the M-C fence have both been read), and
+// emits no trace line — the golden sees only the negated VALUE in the `addc`
+// immediate slot.
+//
+// TWO SPELLINGS, deliberately not one:
+//   * a `ConstantInt` folds HERE, with a WRAPPING `APInt` negation. This is not
+//     a micro-optimisation: the source op routinely carries `nsw`, and
+//     `-INT_MIN` is not representable in a signed iW, so a signed-overflow-
+//     asserting fold would abort the compiler on well-defined input
+//     (`lowering_mc_subc_intmin.ll`). `APInt::operator-()` is two's-complement
+//     (`flipAllBits(); ++`), so INT_MIN maps to INT_MIN — which is the
+//     arithmetically correct answer mod 2^W and the only one the reversible
+//     gate can mean. At i1 it collapses to the identity (`-1 == 1 mod 2`), which
+//     is why `free_pairing_check.py` carries an explicit `i1 true`/`i1 true`
+//     pairing arm.
+//   * anything else — the campaign customer's `volatile` load, ordinary
+//     classical arithmetic — gets an ORDINARY `sub iW 0, %v` instruction. That
+//     is a shape `free_pairing_check.py`'s rule (A1) `provably_not_a_rail` reads
+//     as classical on POSITIVE evidence (a plain classical instruction result
+//     that is neither a rail, a formal parameter, nor a rail-minting call — its
+//     docstring names `sub i32 0, %6` as an already-measured member of that
+//     class). NOTE THE LIMIT OF THAT CLAIM (2b Rule-13 round, F1): (A1) clears
+//     the IMMEDIATE SLOT only — it does not make the write history reduce.
+//     `is_negation` cannot pair two SSA-NAMED immediates (`%v` vs
+//     `sub iW 0, %v`), so a DEAD-and-freed rail whose addc immediates are SSA
+//     values reports UNPROVEN (loud, safe direction; lowering_mc_subc_ssa_imm's
+//     own stream is the measured example, and the 2a `add` analogue behaves
+//     identically). No shipped strict slice hits it — all 36 SSA-immediate addc
+//     sites live in slices that never free the rail or run --allow-unproven.
+//     G4 independently holds out the one shape (A1) could not vouch for, a
+//     formal PARAMETER immediate.
+//
+// A non-`ConstantInt` CONSTANT (a `ptrtoint` constexpr, say) rides the second
+// path: `IRBuilder`'s folder either folds it or materialises a real `sub`, both
+// of which are classical and neither of which is a rail.
+Value *negateClassicalImmediate(Value *Imm, IRBuilder<> &B,
+                                const Instruction *At) {
+  if (auto *CI = dyn_cast<ConstantInt>(Imm))
+    return ConstantInt::get(CI->getContext(), -CI->getValue());
+  Value *N = B.CreateNeg(Imm, "cq_negimm");
+  if (auto *NI = dyn_cast<Instruction>(N))
+    if (DebugLoc DL = At->getDebugLoc())
+      NI->setDebugLoc(DL);
+  return N;
+}
+
 }  // namespace
 
 bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
@@ -194,15 +251,22 @@ bool rewriteUnary(UnaryOperator *uo, WidthDispatch &wd, TaintSet &taint) {
 
 bool rewriteInPlaceValueRail(BinaryOperator *bo, WidthDispatch &wd,
                              TaintSet &taint) {
-  // `bo` is a `lowerLoops`-proven rail self-update (issue dtzb). Pick the
+  // `bo` is a `lowerLoops`-proven rail self-update (issue dtzb) or an M-C
+  // straight-line reassignment (`classifyInPlaceReassignment`). Pick the
   // in-place symbol by opcode; the logical width is the op's OWN result type
   // (the rail operand was RAUW'd to the i32 handle by rotation lowering, but
   // `bo`'s result type still carries the width — the cross-type-laundered
   // operand never changes `bo`'s type).
+  //
+  // `sub` (M-C Inc 2b) shares `add`'s symbol: it is `cqrt_addc_<W>` with the
+  // immediate NEGATED (see `negateClassicalImmediate`). It can only arrive here
+  // through the M-C route — `inPlaceValueRailOperand`, which is what
+  // `lowerLoops` proves its `InPlaceRailOps` with, admits add/xor ONLY, so the
+  // dtzb loop path cannot mint a `sub` and this batch does not widen it.
+  const Instruction::BinaryOps Op = bo->getOpcode();
   StringRef AbiWidth = abiWidthFromType(bo->getType());
-  FunctionCallee Callee = bo->getOpcode() == Instruction::Xor
-                              ? wd.xorcFn(AbiWidth)
-                              : wd.addcFn(AbiWidth);
+  FunctionCallee Callee =
+      Op == Instruction::Xor ? wd.xorcFn(AbiWidth) : wd.addcFn(AbiWidth);
   if (!Callee) {
     // Unsupported width — `inPlaceValueRailOperand` applies the SAME ≤64-integer
     // fence, so this is unreachable; never mint a phantom symbol or leave an
@@ -218,7 +282,22 @@ bool rewriteInPlaceValueRail(BinaryOperator *bo, WidthDispatch &wd,
   bool TL = taint.Tainted.count(L) != 0;
   Value *Handle = TL ? L : R;
   Value *Imm = TL ? R : L;
+  // `sub` IS NOT COMMUTATIVE, and getting this backwards is the one way this
+  // emission could be a silent miscompile: `c - q` is negate-the-RAIL then add
+  // — a rewrite of the whole register, which `cqrt_addc_<W>` cannot express —
+  // whereas the emission below computes `q + (-c)`. The recognizer
+  // (`inPlaceReassignRailOperand`) admits HANDLE-LHS ONLY, so a tainted RHS
+  // cannot reach here; the check is defense in depth, and it fails LOUD rather
+  // than emitting the wrong permutation (Prime Directive). Unreachable through
+  // the shipped surface — `lowering_mc_sub_fence_fallback.ll`'s
+  // `@classical_lhs` pins that `c - q` never even reaches the fence's accept.
+  if (Op == Instruction::Sub && !TL) {
+    diagnoseNoTemplate(bo);
+    return false;
+  }
   IRBuilder<> Builder(bo);
+  if (Op == Instruction::Sub)
+    Imm = negateClassicalImmediate(Imm, Builder, bo);
   CallInst *C = Builder.CreateCall(Callee, {Handle, Imm});
   if (DebugLoc DL = bo->getDebugLoc())
     C->setDebugLoc(DL);
@@ -235,6 +314,41 @@ bool rewriteInPlaceValueRail(BinaryOperator *bo, WidthDispatch &wd,
 namespace {
 
 // ── M-C fence helpers (bd test_C_libtooling-6uqc Inc 2a) ────────────────────
+//
+// G2's OPERAND PICKER, widened for `sub` (Inc 2b). For `add`/`xor` this IS the
+// dtzb predicate `inPlaceValueRailOperand`, asked and not re-spelt (Rule 14):
+// exactly one tainted operand (the parent rail `P`), one classical immediate,
+// an integer width the in-place ABI can serve.
+//
+// `sub` IS DELIBERATELY NOT ADDED TO THAT SHARED PREDICATE. `inPlaceValueRail
+// Operand` is `lowerLoops`' own shape test — it drives `peelInPlaceBase`,
+// `loopHasInPlaceRailStructure` and the `InPlaceRailOps` proof — so widening it
+// would silently widen the 7.3/7.4 LOOP recognizer's accepted rail vocabulary
+// in the same edit, which is a different Rule-13 surface with a different
+// customer and no fixture in this batch. The `sub` rule therefore lives here,
+// in the M-C fence, and the loop path is byte-for-byte untouched.
+//
+// AND IT IS DIRECTIONAL, which the add/xor rule never had to be. Those two are
+// commutative, so "exactly one tainted operand" already determines the emission.
+// `sub` is not: only HANDLE-LHS (`q - c`) is an in-place tweak of the immediate.
+// `c - q` is negate-the-RAIL then add — a rewrite of the register's whole value,
+// which `cqrt_addc_<W>` cannot express at any width — so it is refused in EVERY
+// batch, not deferred to a later one. It is also the NUMEROUS shape (census 0.2:
+// 84 `cq_template_sub_<W>_lh` calls corpus-wide against 7 `_hl`), which is
+// exactly why the direction is tested here rather than assumed downstream.
+llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
+                                        const TaintSet &taint) {
+  if (bo->getOpcode() != Instruction::Sub)
+    return inPlaceValueRailOperand(bo, taint);
+  Type *Ty = bo->getType();
+  if (!Ty->isIntegerTy() || Ty->getIntegerBitWidth() > 64)
+    return nullptr;  // the same <=64-integer bound the add/xor rule applies.
+  Value *L = bo->getOperand(0), *R = bo->getOperand(1);
+  // HANDLE-LHS ONLY: `q - c`. A tainted RHS (`c - q`, and `q - q'`) is refused.
+  if (!taint.Tainted.count(L) || taint.Tainted.count(R))
+    return nullptr;
+  return L;
+}
 //
 // G7 — is this ALREADY-EXECUTED user of the parent handle `P` SETTLED, i.e. can
 // nothing emitted AFTER `bo` still need `P` at its pre-`bo` value?
@@ -344,20 +458,27 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
 bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
                                  const TaintSet &taint, const DominatorTree &DT,
                                  const LoopInfo &LI) {
-  // G1 — BATCH 2a ADMITS `add` ONLY. The mechanism below is opcode-general (it
-  // asks `inPlaceValueRailOperand`, which knows add AND xor, and
-  // `rewriteInPlaceValueRail` already emits both); the ADMISSION is not. `sub`
-  // and `xor` are batches 2b/2c and land with their own goldens and their own
-  // adversarial round — `slice_control_seq_grover`'s `sub` site in particular
-  // is why that slice stays partially dephased after this increment.
-  if (bo->getOpcode() != Instruction::Add)
+  // G1 — BATCHES 2a+2b ADMIT `add` AND `sub`. The mechanism below is
+  // opcode-general (`inPlaceReassignRailOperand` knows add, sub AND xor, and
+  // `rewriteInPlaceValueRail` emits all three); the ADMISSION is not. `xor` is
+  // batch 2c and lands with its own goldens and its own adversarial round.
+  //
+  // 2b is the batch that CLOSES bd test_C_libtooling-nepx: the campaign's
+  // customer (`slice_control_seq_grover`) has exactly one `sub` site, sitting
+  // between the oracle region and the S† rotation, and it was the last
+  // out-of-place ancestor that dephased the reflection. After this widening the
+  // whole slice is a ONE-RAIL program.
+  const Instruction::BinaryOps Op = bo->getOpcode();
+  if (Op != Instruction::Add && Op != Instruction::Sub)
     return false;
 
-  // G2 — the dtzb SHAPE predicate, asked not re-spelt (Rule 14): exactly one
-  // tainted operand (the parent rail `P`), one classical immediate, an integer
-  // width the in-place ABI can serve. Its exclusion partition (information-
-  // losing opcodes, two-quantum operands, fp) is the one this fence wants.
-  Value *P = inPlaceValueRailOperand(bo, taint);
+  // G2 — the SHAPE predicate (Rule 14: the dtzb one for add/xor, plus the
+  // directional `sub` rule): exactly one tainted operand (the parent rail `P`),
+  // one classical immediate, an integer width the in-place ABI can serve, and
+  // for `sub` the handle on the LEFT. Its exclusion partition (information-
+  // losing opcodes, two-quantum operands, fp, `c - q`) is the one this fence
+  // wants.
+  Value *P = inPlaceReassignRailOperand(bo, taint);
   if (!P)
     return false;
 
@@ -419,7 +540,11 @@ bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
       return false;
   }
 
-  // G3 — the width must be in the FROZEN `cqrt_addc_<W>` grid. `wd.addcFn`
+  // G3 — the width must be in the FROZEN `cqrt_addc_<W>` grid. BOTH admitted
+  // opcodes emit that one symbol: `sub` is `addc` with the immediate negated
+  // (Inc 2b), so there is no second grid to ask about and no `cqrt_subc_` to
+  // mint. (Batch 2c's `xor` will need `wd.xorcFn` here — same five widths, a
+  // different symbol.) `wd.addcFn`
   // returns null off-grid; ASKING IT (rather than repeating {i1,i8,i16,i32,i64}
   // here) means the fence tracks the ABI instead of a comment about the ABI, and
   // it must never mint a phantom symbol (the n0ui lesson). G2's own <=64-integer

@@ -9,15 +9,15 @@ cqrt_cswap(h1, h0, h2)
 cqrt_free(h2)
 cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
 cqrt_free(h1)
-cq_template_sub_i32_hl(h0, 3) -> h3
-cqrt_ry_i32(h3, -0x1p-1)
-cq_template_icmp_eq_i32_hl(h3, 0) -> h4
-cqrt_alloc_i32(0) -> h5
-cqrt_cswap(h4, h3, h5)
-cqrt_rz_i32(h5, 0x1.921fb54442d18p+1)
-cqrt_cswap(h4, h3, h5)
-cqrt_free(h5)
-cq_template_icmp_eq_i32_hl_unc(h4, h3, 0)
+cqrt_addc_i32(h0, -3)
+cqrt_ry_i32(h0, -0x1p-1)
+cq_template_icmp_eq_i32_hl(h0, 0) -> h3
+cqrt_alloc_i32(0) -> h4
+cqrt_cswap(h3, h0, h4)
+cqrt_rz_i32(h4, 0x1.921fb54442d18p+1)
+cqrt_cswap(h3, h0, h4)
 cqrt_free(h4)
-cqrt_addc_i32(h3, 3)
-cqrt_measure_i32(h3) -> 0
+cq_template_icmp_eq_i32_hl_unc(h3, h0, 0)
+cqrt_free(h3)
+cqrt_addc_i32(h0, 3)
+cqrt_measure_i32(h0) -> 0

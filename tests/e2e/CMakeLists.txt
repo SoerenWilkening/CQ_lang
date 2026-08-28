@@ -404,7 +404,8 @@ add_test(NAME e2e-slice-control-select-loop
 # lit fixtures pin the IR, but a plan-order regression would still verify clean
 # and still pair every free. Two slices, deliberately: `seq_regions` is the
 # minimal adjacent pair on an untouched wire; `seq_grover` is the customer shape,
-# with a reversible sub AND an in-place Ry between the regions, i.e. the case
+# with an in-place cqrt_addc sub AND an in-place Ry between the regions (M-C
+# 2b lowered the reversible sub in place), i.e. the case
 # where a stale flag would surface as a wrong unitary.
 add_test(NAME e2e-slice-control-seq-regions
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"

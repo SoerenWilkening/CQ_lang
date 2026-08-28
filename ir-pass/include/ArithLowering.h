@@ -71,20 +71,43 @@ bool rewriteInPlaceValueRail(llvm::BinaryOperator *bo, WidthDispatch &wd,
                              TaintSet &taint);
 
 // ── M-C: STRAIGHT-LINE IN-PLACE REASSIGNMENT (bd test_C_libtooling-6uqc,
-//    Increment 2a — `add` only) ────────────────────────────────────────────────
+//    Increments 2a `add` + 2b `sub`; `xor` is 2c) ─────────────────────────────
 //
 // Should this tainted binary op be lowered by `rewriteInPlaceValueRail` (one
 // void `cqrt_addc_<W>(P, imm)` mutating the parent rail) instead of by
-// `rewriteBinary` (a fresh `cq_template_add_<W>_hl` rail that KEEPS `P` alive)?
+// `rewriteBinary` (a fresh `cq_template_{add,sub}_<W>_hl` rail that KEEPS `P`
+// alive)?
 //
 // WHY IT MATTERS — this is not an optimization. An out-of-place `q + c` leaves
 // `P` standing as a perfect basis record of the wire it fed. `slice_control_
-// seq_grover`'s committed golden is exactly that: `h0` and `h1` are live,
-// entangled records of `h4` when the S† `cqrt_ry_i32(h4, -0.5)` fires, so the
-// reflection the slice exists to demonstrate is DEPHASED (bd
+// seq_grover`'s golden BEFORE this mechanism was exactly that: `h0` and `h1`
+// were live, entangled records of `h4` when the S† `cqrt_ry_i32(h4, -0.5)`
+// fired, so the reflection the slice exists to demonstrate was DEPHASED (bd
 // test_C_libtooling-nepx; verify-clean, byte-consistent trace, stage-2b clean —
 // the silent-miscompile signature). Lowering the reassignment in place mints no
 // ancestor, so there is nothing to dephase.
+//
+// 2b (`sub`) IS THE INCREMENT THAT CLOSES nepx. 2a converted the customer's two
+// `add` sites and left its one `sub` out of place, so ONE ancestor rail still
+// stood at the S† rotation and the slice stayed dephased — the golden and the
+// slice's own comment block said so in as many words. With `sub` admitted the
+// whole slice collapses to a ONE-RAIL program: alloc, ry, addc(+off), region 1,
+// addc(-off), ry(-0.5), region 2, addc(+off), measure.
+//
+// `sub` EMITS THE SAME FROZEN SYMBOL — `cqrt_addc_<W>(P, -imm)`. `x - c` and
+// `x + (-c)` are the same permutation of the computational basis under the
+// runtime's `h := (h + imm) mod 2^W` contract, so there is no `cqrt_subc_` and
+// the Phase-11 freeze surface is untouched (Rule 15). The negation is ORDINARY
+// CLASSICAL IR emitted at lowering time: constant-folded (wrapping, so `nsw` +
+// INT_MIN cannot abort the compiler), or a plain `sub iW 0, %v` instruction for
+// an SSA immediate such as the customer's `volatile` load. See
+// `negateClassicalImmediate` in the .cpp.
+//
+// ONLY HANDLE-LHS `sub` IS ELIGIBLE, IN EVERY BATCH. `c - q` is negate-the-RAIL
+// then add — a rewrite of the register's whole value that `cqrt_addc_<W>` cannot
+// express — and it is also the numerous shape (census 0.2: 84
+// `cq_template_sub_<W>_lh` calls corpus-wide against 7 `_hl`). It stays
+// out-of-place permanently, pinned by `lowering_mc_sub_fence_fallback.ll`.
 //
 // THE FENCE IS POSITION-AWARE DEADNESS (owner ruling 2026-08-27, second round;
 // the earlier "single-consumer-EVER" reading is WITHDRAWN). The op converts iff
