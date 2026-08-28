@@ -458,18 +458,23 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
 bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
                                  const TaintSet &taint, const DominatorTree &DT,
                                  const LoopInfo &LI) {
-  // G1 — BATCHES 2a+2b ADMIT `add` AND `sub`. The mechanism below is
-  // opcode-general (`inPlaceReassignRailOperand` knows add, sub AND xor, and
-  // `rewriteInPlaceValueRail` emits all three); the ADMISSION is not. `xor` is
-  // batch 2c and lands with its own goldens and its own adversarial round.
+  // G1 — BATCHES 2a+2b+2c ADMIT `add`, `sub` AND `xor`. This is the FULL
+  // admission the mechanism was always written for: `inPlaceReassignRailOperand`
+  // has known all three since 2a and `rewriteInPlaceValueRail` has emitted all
+  // three since dtzb, so 2c is the removal of a batch gate, not a new lowering.
+  // The family is closed here — `mul`/`and`/`or`/shifts are information-LOSING
+  // and have no in-place reversible form at any width, and `sdiv`/`srem`/fp are
+  // excluded for the same reason, all by G2's shared shape predicate.
   //
-  // 2b is the batch that CLOSES bd test_C_libtooling-nepx: the campaign's
-  // customer (`slice_control_seq_grover`) has exactly one `sub` site, sitting
-  // between the oracle region and the S† rotation, and it was the last
-  // out-of-place ancestor that dephased the reflection. After this widening the
-  // whole slice is a ONE-RAIL program.
+  // 2b was the batch that CLOSED bd test_C_libtooling-nepx (the campaign's
+  // customer `slice_control_seq_grover` became a ONE-RAIL program). 2c has NO
+  // such single customer: its population is openlibm's float-word NORMALIZE
+  // idiom (`SET_HIGH_WORD(x, ix ^ 0x3ff00000)` and its f32 twin — 28 of the 31
+  // converted corpus sites), so its payoff is 29 fewer never-discharged
+  // ancestor rails spread across 14 goldens, not one golden turning coherent.
   const Instruction::BinaryOps Op = bo->getOpcode();
-  if (Op != Instruction::Add && Op != Instruction::Sub)
+  if (Op != Instruction::Add && Op != Instruction::Sub &&
+      Op != Instruction::Xor)
     return false;
 
   // G2 — the SHAPE predicate (Rule 14: the dtzb one for add/xor, plus the
@@ -540,26 +545,34 @@ bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
       return false;
   }
 
-  // G3 — the width must be in the FROZEN `cqrt_addc_<W>` grid. BOTH admitted
-  // opcodes emit that one symbol: `sub` is `addc` with the immediate negated
-  // (Inc 2b), so there is no second grid to ask about and no `cqrt_subc_` to
-  // mint. (Batch 2c's `xor` will need `wd.xorcFn` here — same five widths, a
-  // different symbol.) `wd.addcFn`
-  // returns null off-grid; ASKING IT (rather than repeating {i1,i8,i16,i32,i64}
-  // here) means the fence tracks the ABI instead of a comment about the ABI, and
-  // it must never mint a phantom symbol (the n0ui lesson). G2's own <=64-integer
-  // bound already implies this, so it is defense in depth.
+  // G3 — the width must be in the FROZEN in-place grid, and THE GRID ASKED MUST
+  // BE THE ONE THE EMITTER WILL USE. `add` and `sub` both emit `cqrt_addc_<W>`
+  // (`sub` is `addc` with the immediate negated, Inc 2b — there is no
+  // `cqrt_subc_`); `xor` emits the SEPARATE `cqrt_xorc_<W>` (Inc 2c). The two
+  // resolvers apply the same <=64-integer fence today, but they are distinct
+  // functions minting distinct symbols, so this mirrors `rewriteInPlaceValue
+  // Rail`'s own `Op == Xor ? xorcFn : addcFn` selection rather than asking one
+  // and emitting the other. ASKING the resolver (rather than repeating
+  // {i1,i8,i16,i32,i64} here) means the fence tracks the ABI instead of a
+  // comment about the ABI, and it must never mint a phantom symbol (the n0ui
+  // lesson). G2's own <=64-integer bound already implies this, so it is defense
+  // in depth — and `lowering_mc_xor_fence_fallback.ll`'s `@wide_i128` is the one
+  // probe in the family that reaches an off-grid width from a POSITIVE (`xor` is
+  // a shipped i128 template row; the `add` analogue dies on an earlier cast
+  // decline).
   //
-  // IT IS DELIBERATELY LAST, and that is not cosmetic. `addcFn` resolves through
+  // IT IS DELIBERATELY LAST, and that is not cosmetic. Both resolvers go through
   // `Module::getOrInsertFunction`, which CREATES `declare void
-  // @cqrt_addc_<W>(i32, iW)` as a SIDE EFFECT — so asking it before the fence
-  // has decided planted a dangling declaration in every module containing any
-  // tainted integer `add`, including the ones that then stayed out of place.
-  // (Measured: `lowering_add_qc_i32.ll` grew a `declare void @cqrt_addc_i32` it
-  // never calls.) Harmless at link, but it is a symbol appearing in a module
-  // that emits none — exactly the kind of phantom this project refuses to ship.
-  // Asked HERE, it is only ever asked for a site that is about to emit.
-  return wd.addcFn(abiWidthFromType(bo->getType())) ? true : false;
+  // @cqrt_{addc,xorc}_<W>(i32, iW)` as a SIDE EFFECT — so asking before the
+  // fence has decided planted a dangling declaration in every module containing
+  // any tainted integer `add`/`xor`, including the ones that then stayed out of
+  // place. (Measured: `lowering_add_qc_i32.ll` grew a `declare void
+  // @cqrt_addc_i32` it never calls.) Harmless at link, but it is a symbol
+  // appearing in a module that emits none — exactly the kind of phantom this
+  // project refuses to ship. Asked HERE, it is only ever asked for a site that
+  // is about to emit.
+  StringRef W = abiWidthFromType(bo->getType());
+  return (Op == Instruction::Xor ? wd.xorcFn(W) : wd.addcFn(W)) ? true : false;
 }
 
 }  // namespace cq

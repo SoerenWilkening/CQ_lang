@@ -71,12 +71,12 @@ bool rewriteInPlaceValueRail(llvm::BinaryOperator *bo, WidthDispatch &wd,
                              TaintSet &taint);
 
 // ── M-C: STRAIGHT-LINE IN-PLACE REASSIGNMENT (bd test_C_libtooling-6uqc,
-//    Increments 2a `add` + 2b `sub`; `xor` is 2c) ─────────────────────────────
+//    Increments 2a `add` + 2b `sub` + 2c `xor` — THE FAMILY IS COMPLETE) ──────
 //
 // Should this tainted binary op be lowered by `rewriteInPlaceValueRail` (one
-// void `cqrt_addc_<W>(P, imm)` mutating the parent rail) instead of by
-// `rewriteBinary` (a fresh `cq_template_{add,sub}_<W>_hl` rail that KEEPS `P`
-// alive)?
+// void `cqrt_{addc,xorc}_<W>(P, imm)` mutating the parent rail) instead of by
+// `rewriteBinary` (a fresh `cq_template_{add,sub,xor}_<W>_hl` rail that KEEPS
+// `P` alive)?
 //
 // WHY IT MATTERS — this is not an optimization. An out-of-place `q + c` leaves
 // `P` standing as a perfect basis record of the wire it fed. `slice_control_
@@ -108,6 +108,37 @@ bool rewriteInPlaceValueRail(llvm::BinaryOperator *bo, WidthDispatch &wd,
 // express — and it is also the numerous shape (census 0.2: 84
 // `cq_template_sub_<W>_lh` calls corpus-wide against 7 `_hl`). It stays
 // out-of-place permanently, pinned by `lowering_mc_sub_fence_fallback.ll`.
+//
+// 2c (`xor`) IS THE CHEAPEST OF THE THREE, AND IT IS THE ONLY ONE WITH NO
+// IMMEDIATE ARITHMETIC AT ALL. `cqrt_xorc_<W>` is its own inverse (`x^c^c == x`),
+// so `EmitInverse` re-emits the identical call — no `negateClassicalImmediate`,
+// no classical `sub iW 0, %v`, and NO DIRECTIONALITY (`xor` commutes, so `c ^ q`
+// converts exactly like `q ^ c`; `lowering_mc_xorc_commuted.ll`). It is a SECOND
+// frozen symbol, not `addc`'s — same five widths, resolved by `wd.xorcFn`, and
+// G3 asks the resolver the EMITTER will use rather than assuming the two grids
+// stay aligned.
+//
+// That self-inverse property also buys a real gate-level result the other two
+// batches could not have: `free_pairing_check.py` reduces a self-inverse pair on
+// `key()` equality, so an SSA-NAMED immediate PAIRS for `xor`
+// (`xorc(h,%v) … xorc(h,%v)`) where the 2a/2b `addc` analogue reports UNPROVEN —
+// `is_negation` cannot relate two SSA names (`%v` vs `sub iW 0, %v`). See
+// `lowering_mc_xorc_ssa_imm.ll`, whose whole point is that contrast.
+//
+// 2c HAS NO SINGLE CUSTOMER, and that is worth stating so the batch is not
+// mis-read as another nepx. `slice_control_seq_grover` contains no `xor` at all.
+// The 2c population is openlibm's FLOAT-WORD NORMALIZE idiom, and it is
+// remarkably uniform — MEASURED over the 14 slices' LOWERED IR (static counts; the goldens
+// show 31 lines because slice_bitcast_words converts in both slice() and main()
+// and only one executes): 31 converted
+// sites (+1 adjoint = 32 `cqrt_xorc_*` calls) carrying exactly FOUR distinct
+// immediates — `0x3ff00000` 14x (the f64 `SET_HIGH_WORD(x, ix ^ 0x3ff00000)` in
+// `__log`/`__log1p`'s `k`-extraction), `0x3f800000` 14x (its f32 twin), and
+// `1`/`9` 2x each from the two hand-written slices. So its payoff is ancestor
+// rails not minted, spread thin across the injected libm corpus, rather than one
+// golden turning coherent: census 0.3 measures 38360 -> 38330 template/qram rail
+// definitions and 12759 -> 12730 rails NEVER DISCHARGED, in the SAME 172 goldens
+// (29 fewer live entangled records; no golden gains one, no new orphan class).
 //
 // THE FENCE IS POSITION-AWARE DEADNESS (owner ruling 2026-08-27, second round;
 // the earlier "single-consumer-EVER" reading is WITHDRAWN). The op converts iff

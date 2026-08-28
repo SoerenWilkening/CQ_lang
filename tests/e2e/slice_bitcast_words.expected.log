@@ -1,6 +1,6 @@
 cqrt_alloc_f64(0x1p-1) -> h0
 cqrt_ry_f64(h0, 0x1p-1)
 cq_template_bitcast_f64_to_i64(h0) -> h1
-cq_template_xor_i64_hl(h1, 1) -> h2
-cq_template_bitcast_i64_to_f64(h2) -> h3
-cqrt_measure_f64(h3) -> 0x0p+0
+cqrt_xorc_i64(h1, 1)
+cq_template_bitcast_i64_to_f64(h1) -> h2
+cqrt_measure_f64(h2) -> 0x0p+0

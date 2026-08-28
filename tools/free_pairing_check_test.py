@@ -814,6 +814,50 @@ define void @slice(i32 %x) {
 }
 """
 
+# ---------------------------------------------------------------------------
+# Inc 2c (bd 6uqc): the SELF-INVERSE in-place gate, `cqrt_xorc_<W>`, on a rail
+# that is actually FREED. The checker has always paired `xorc` on `key()`
+# equality (`adjoint_of == "self"`), but until 2c that path was exercised only
+# by the dtzb LOOP fixtures, whose rails ride `--allow-unproven`. M-C puts the
+# gate on straight-line rails inside STRICT slices, so the rule now decides real
+# `verified`/`unproven` verdicts and is mutated here for the first time.
+#
+# XORC_SSA IS THE ONE THAT EARNS ITS PLACE. An SSA-NAMED immediate is the exact
+# shape the 2a/2b `addc` analogue CANNOT prove — `is_negation` has no way to
+# relate `%v` to `sub iW 0, %v`, so a freed `addc` rail with symbolic immediates
+# reports UNPROVEN (recorded in lowering_mc_subc_ssa_imm.ll). Self-inverse needs
+# no such predicate: both slots spell `%v`, so this VERIFIES. The mutant proves
+# that is a comparison and not a blanket pass — rename the adjoint's immediate
+# and the pairing must break.
+# ---------------------------------------------------------------------------
+
+XORC_SSA = """
+@msk = internal global i32 3
+define void @slice(i32 %x) {
+  %v = load volatile i32, ptr @msk, align 4
+  %w = load volatile i32, ptr @msk, align 4
+  %h = call i32 @cqrt_alloc_i32(i32 %x)
+  call void @cqrt_ry_i32(i32 %h, double 2.500000e-01)
+  call void @cqrt_xorc_i32(i32 %h, i32 %v)
+  call void @cqrt_xorc_i32(i32 %h, i32 %v)
+  call void @cqrt_ry_i32(i32 %h, double -2.500000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+XORC_I1 = """
+define void @slice(i1 %x) {
+  %h = call i32 @cqrt_alloc_i1(i1 %x)
+  call void @cqrt_ry_i1(i32 %h, double 2.500000e-01)
+  call void @cqrt_xorc_i1(i32 %h, i1 true)
+  call void @cqrt_xorc_i1(i32 %h, i1 true)
+  call void @cqrt_ry_i1(i32 %h, double -2.500000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
 DEEP_POSITIVE = [
     ("xzdx-deep-ladder-d500", DEEP_LADDER),
     ("xzdx-cswap-braid-d20", COST_BRAID),
@@ -823,6 +867,10 @@ POSITIVE = [
     # Inc 2a addc immediate spellings (bd 6uqc SHOULD-FIX 2) — clean forms VERIFY:
     ("addc-i1-self-inverse", ADDC_I1),
     ("addc-constexpr-negation", ADDC_CONSTEXPR),
+    # Inc 2c xorc (bd 6uqc) — the self-inverse gate on a FREED straight-line
+    # rail. The SSA-immediate arm is the one `addc` cannot prove (see above).
+    ("xorc-ssa-immediate-self-inverse", XORC_SSA),
+    ("xorc-i1-self-inverse", XORC_I1),
     ("phase-diamond", PHASE_DIAMOND),
     ("value-diamond", VALUE_DIAMOND),
     ("ifelse-derived-two-rail", IFELSE_DERIVED),
@@ -1048,6 +1096,20 @@ define void @cp(i32 %u0) {
 """
 
 RECORD_MUTANTS = [
+    # ---- Inc 2c xorc: the self-inverse pairing must be a COMPARISON ---------
+    # If `key()` equality were not actually checked, both of these would pass.
+    ("xorc-ssa-adjoint-names-a-different-value",
+     XORC_SSA.replace("call void @cqrt_xorc_i32(i32 %h, i32 %v)\n"
+                      "  call void @cqrt_xorc_i32(i32 %h, i32 %v)",
+                      "call void @cqrt_xorc_i32(i32 %h, i32 %v)\n"
+                      "  call void @cqrt_xorc_i32(i32 %h, i32 %w)"),
+     "A-not-reducible"),
+    ("xorc-i1-adjoint-flipped-to-false",
+     XORC_I1.replace("call void @cqrt_xorc_i1(i32 %h, i1 true)\n"
+                     "  call void @cqrt_xorc_i1(i32 %h, i1 true)",
+                     "call void @cqrt_xorc_i1(i32 %h, i1 true)\n"
+                     "  call void @cqrt_xorc_i1(i32 %h, i1 false)"),
+     "A-not-reducible"),
     # ---- Inc 2a addc immediate spellings: each perturbation must be caught --
     ("addc-i1-adjoint-flipped-to-false",
      ADDC_I1.replace("call void @cqrt_addc_i1(i32 %h, i1 true)\n  call void @cqrt_addc_i1(i32 %h, i1 true)",

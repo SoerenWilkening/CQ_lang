@@ -343,9 +343,10 @@ namespace {
 //       turn every clone-calling program into a decline
 //   * lowering_qram_array_record_chained_theta_accept.ll the RULED-DEFERRED
 //       QRAM-array record class
-//   * lowering_live_record_post_theta_user_rz_accept.ll  the PENDING-RULING
-//       rotation-as-data-use gap (F2) — read its header before touching
-//       `isTeardownUse`'s rotation arm
+//   * lowering_reject_live_record_post_theta_user_rz.ll  the RULED F2 boundary
+//       (2026-08-28): a bare post-gate user rotation is a liveness NON-use, so
+//       the record stays dead and declines — read its header before touching
+//       `isTeardownUse`'s rotation arm or the clause-3 loop
 //   * lowering_live_record_region_owner_probe.ll         an earlier stage still
 //       owns its own message; this guard re-owns none
 //   * lowering_live_record_clone_return_rail_accept.ll   the MEASURED RESIDUAL
@@ -485,22 +486,15 @@ bool isRecordedUserRotation(const CallInst *CI, const TaintSet &taint) {
 // inside a Phase-6 clone body, and a clone is theta-free by construction, so it
 // holds no `UserChainedRotations` member to guard.
 //
-// ONE ITEM ON THAT LIST IS A CHOICE THIS CODE MADE, NOT ONE THE RULING MADE, AND
-// IT IS **PENDING AN OWNER RULING** (bd test_C_libtooling-6uqc; the Rule-13
-// round's F2 finding). The last clause below answers "a USER `cqrt_ry`/`cqrt_rz`
-// naming a record ⇒ not teardown ⇒ a DATA USE", so a user `cq_phi` written on a
-// record AFTER the gate EXEMPTS that record. The ruling's own wording enumerates
-// the data uses as "a future measure/template-read/ret", and a user rotation is
-// on none of it — under that reading the same record is DEAD and the module
-// declines. This matters because the two spellings are PHYSICALLY IDENTICAL at
-// the gate: `Rz` is diagonal, it changes no basis label and disentangles nothing,
-// so writing it before or after the rotation leaves the same rails standing —
-// yet today `c = a+3; T; c = cq_phi(c,·)` ACCEPTS while
-// `c = a+3; c = cq_phi(c,·); T` DECLINES. Both fixtures are committed and
-// measured: lowering_live_record_post_theta_user_rz_accept.ll (the pin, with the
-// full argument) and the declining reordering it describes. Leave the behavior
-// alone until the ruling lands; then either drop the rotation arm from the
-// user-data side or delete this note.
+// THE ROTATION ARM BELOW IS ABOUT TEARDOWN ONLY, NOT ABOUT LIVENESS (owner ruling
+// 2026-08-28, bd test_C_libtooling-6uqc, closing the Rule-13 round's F2 finding).
+// "A user `cqrt_ry`/`cqrt_rz` naming a record ⇒ not teardown" is still true —
+// but the clause-3 loop no longer reads "not teardown" as "data use": a USER
+// rotation on a record after the gate is a liveness NON-use (it observes
+// nothing), and the record exempts only if its lineage reaches an observing
+// sink. So `c = a+3; T; c = cq_phi(c,·)` now DECLINES exactly like
+// `c = a+3; c = cq_phi(c,·); T` — same rails standing at the gate, same verdict.
+// Pinned by lowering_reject_live_record_post_theta_user_rz.ll.
 bool isTeardownUse(const CallInst *CI, const TaintSet &taint) {
   if (taint.SpineOps.count(CI))
     return true;
@@ -606,6 +600,16 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
         return true;
       // clause 3 — teardown traffic is not user data (spine-aware, ruled).
       if (isTeardownUse(CI, taint))
+        continue;
+      // clause 3, F2 (owner ruling 2026-08-28): a USER rotation on R after the
+      // gate is a NON-use for liveness — neither teardown nor data. A phase
+      // written onto a register nothing ever observes is unobservable, so it
+      // cannot make R "the program's own data"; R exempts only if its lineage
+      // reaches an OBSERVING sink (measure / ret / tape / a template read that
+      // flows to one). This gives the rotation-AFTER spelling the same verdict
+      // as the rotation-BEFORE spelling (h2) for the same physics at the gate.
+      // Pinned by lowering_reject_live_record_post_theta_user_rz.ll.
+      if (isRecordedUserRotation(CI, taint))
         continue;
     }
     // clause 3 — a USER DATA use provably AFTER the gate: the record is LIVE,

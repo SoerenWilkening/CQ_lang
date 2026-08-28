@@ -30,11 +30,24 @@
    angle. NO fresh-minting `_inv`, NO added measurement (Rules 5/6), NO
    `cqrt_cswap`.
 
-   Chain 2 (later in program) reverses first. Exactly SIX frees (h5,h4,h3 then
-   h2,h1,h0) — one per allocated rail, none double-freed. Three distinct `_unc`
-   symbols are exercised at the link layer: the BARE QQ `cq_template_mul_i32_unc`
-   (the WI-6-caught fix), plus `cq_template_xor_i32_hl_unc` and
-   `cq_template_shl_i32_hl_unc`.
+   Chain 2 (later in program) reverses first. Exactly FIVE frees (h4,h3 then
+   h2,h1,h0) — one per allocated rail, none double-freed.
+
+   IT WAS SIX BEFORE M-C INCREMENT 2c (bd test_C_libtooling-6uqc), and the
+   arithmetic of that change is the point rather than a caveat: `b = b ^ 9` used
+   to MINT a rail (`cq_template_xor_i32_hl`) and therefore needed its own free;
+   it now mutates the `shl` rail in place (`cqrt_xorc_i32`), so there is one
+   fewer alloc AND one fewer free. A free that disappears together with its
+   alloc is the mechanism working; a free that disappears alone would be the
+   Rule-6 defect this slice exists to catch.
+
+   TWO distinct `_unc` symbols are now exercised at the link layer — the BARE QQ
+   `cq_template_mul_i32_unc` (the WI-6-caught fix) and
+   `cq_template_shl_i32_hl_unc` — plus the in-place `cqrt_xorc_i32`, whose
+   adjoint is the IDENTICAL call (self-inverse), emitted before the `shl` `_unc`
+   that reads the rail it restored. `cq_template_xor_i32_hl_unc` left this slice
+   with 2c and is NOT uncovered: it still links in slice_control_value_diamond,
+   slice_loop_iter_local and spec_twoarm_caller (6 occurrences, measured).
 
    cq_theta/cq_phi resolve from CQ.h, force-included by run_slice.sh
    (-include CQ.h -I include). */
