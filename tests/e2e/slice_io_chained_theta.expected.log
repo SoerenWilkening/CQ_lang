@@ -1,9 +1,9 @@
 cqrt_tape_alloc() -> t0
 cqrt_alloc_i32(4) -> h1
 cqrt_ry_i32(h1, 0x1p-1)
-cq_template_add_i32_hl(h1, 1) -> h2
-cqrt_ry_i32(h2, 0x1p-2)
-cqrt_tape_write_i32(t0, h2) -> h3
-cqrt_ry_i32(h2, -0x1p-2)
-cq_template_add_i32_hl_unc(h2, h1, 1)
+cqrt_addc_i32(h1, 1)
+cqrt_ry_i32(h1, 0x1p-2)
+cqrt_tape_write_i32(t0, h1) -> h2
+cqrt_ry_i32(h1, -0x1p-2)
+cqrt_addc_i32(h1, -1)
 cqrt_ry_i32(h1, -0x1p-1)

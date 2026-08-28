@@ -52,6 +52,17 @@
 ; there. One axis per fixture deliberately: the driver declines at the FIRST offending
 ; function and stops, so a single module can witness only ONE decline.
 ;
+;
+; VEHICLE-OP NOTE (bd test_C_libtooling-6uqc, M-C Increment 2a — `add` only).
+; The `cq_template_*` terminal below is built with `mul`, not `add`, and that is
+; load-bearing since M-C: a dead-parent `q + c` now lowers to the VOID in-place
+; `cqrt_addc_<W>`, which mints NO rail — so with `add` there would be no data
+; producer for `Uncomputation` to select as a terminal, no DAG would be
+; recovered, and this file's decline would silently stop firing (measured: `opt`
+; exit 0, nothing emitted, nothing reversed — a Rule-6 SAFE LEAK, but the probe
+; would be dead). `mul` is information-losing and therefore outside the dtzb
+; in-place bijection family at every batch, so it keeps minting the rail this
+; probe needs. The un-invertible primitive under test is unchanged.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare i32 @cq_theta_si32(i32, double)
@@ -63,7 +74,7 @@ define void @offabi_store(i32 %x) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %x, double 5.000000e-01)
   %s = call i32 @cqrt_qram_store_i32(i32 %q, i32 3)   ; off-ABI arity: mints a rail
-  %t = add i32 %s, 1                                   ; DEAD cq_template terminal off %s
+  %t = mul i32 %s, 1                                   ; DEAD cq_template terminal off %s
   ret void
 }
 

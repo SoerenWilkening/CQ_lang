@@ -37,10 +37,17 @@ merge:
 
 ; the data-mux preload + XOR-delta copies, then the ONWARD add re-tainted and lowered
 ; as a reversible quantum producer over %out, then the measure:
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the ONWARD add lowers
+; IN PLACE on the merge out-rail (`cqrt_addc_i32`) rather than minting a fresh
+; rail off it. What this file pins is UNCHANGED and slightly sharper — the
+; onward arithmetic is still re-tainted and still lowered (never left as a stock
+; `add`), and the measurement now reads the very register the merge built, so no
+; ancestor copy of it survives the region.
+;
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 3)
 ; CHECK:     call void @cqrt_copy_i32_controlled(
-; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[OUT]], i32 100)
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OP]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[OUT]], i32 100)
+; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
 ; the onward add is NOT left as a stock `add` (the pre-dugh leak) and the region
 ; ACCEPTS (no decline of any kind):

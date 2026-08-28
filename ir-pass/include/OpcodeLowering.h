@@ -75,7 +75,23 @@ void declineLiftedStaleRecordOps(llvm::Module &M, TaintSet &taint);
 // updates `taint` as template-call SSA values replace ops. Operand
 // canonicalization reads `taint.BirthOrder` (seeded by RotationLowering).
 // Skips `taint.StaleDeclined` members (diagnosed by `declineStaleRecordOps`).
-void lowerOps(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+//
+// `inBennettClone` (bd test_C_libtooling-6uqc Inc 2a) — set by `specialize`,
+// which calls this on a Phase-6 SPECIALIZATION CLONE body under a disjoint
+// `cloneTaint`. It disables the M-C in-place-reassignment widening, and that is
+// a CORRECTNESS fence, not a scope preference:
+//   * a clone's forward stream is captured AFTERWARDS by scanning the body for
+//     `isForwardTemplate` / clone-call / select-op members. A `cqrt_addc_<W>` is
+//     none of those, so it would be SILENTLY OMITTED from `ForwardStream` and
+//     `emitBennettWrap` would never reverse it — a permanent, unpaired mutation
+//     of a rail, in a function whose whole contract is that it is reversed;
+//   * worse, the parent it mutates is typically a BORROWED clone ARGUMENT, and
+//     Bennett's `|x>|0> -> |x>|f(x)>` requires the inputs to come back untouched.
+//     Mutating one in place breaks the wrap's `_unc` twin for every caller.
+// The same-named parameter on `lowerQramReads` sets the precedent for spelling
+// this as an explicit flag rather than inferring "am I in a clone?" from the IR.
+void lowerOps(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
+              bool inBennettClone = false);
 
 }  // namespace cq
 

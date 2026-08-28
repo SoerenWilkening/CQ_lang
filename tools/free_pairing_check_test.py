@@ -781,12 +781,48 @@ ORDER_PAIRS = [
 # proof and the shape is already covered by the ladder sweep) plus one of its
 # own: layer 1c re-analyses it under instrumentation, and sweeping it too would
 # double that.
+# ---------------------------------------------------------------------------
+# Inc 2a (bd 6uqc) SHOULD-FIX 2: the two addc immediate spellings beyond plain
+# decimals — `i1 true` (self-inverse at width 1) and a symbolic constexpr
+# immediate whose adjoint is the explicit `sub (<ty> 0, ...)` negation. Each
+# clean module must VERIFY (positives below), and each perturbation must be
+# CAUGHT — a pairing rule nobody has tried to fool is a rule nobody may trust.
+# ---------------------------------------------------------------------------
+
+ADDC_I1 = """
+define void @slice(i1 %x) {
+  %h = call i32 @cqrt_alloc_i1(i1 %x)
+  call void @cqrt_ry_i1(i32 %h, double 2.500000e-01)
+  call void @cqrt_addc_i1(i32 %h, i1 true)
+  call void @cqrt_addc_i1(i32 %h, i1 true)
+  call void @cqrt_ry_i1(i32 %h, double -2.500000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+ADDC_CONSTEXPR = """
+@u = internal global i32 0
+define void @slice(i32 %x) {
+  %h = call i32 @cqrt_alloc_i32(i32 %x)
+  call void @cqrt_ry_i32(i32 %h, double 2.500000e-01)
+  call void @cqrt_addc_i32(i32 %h, i32 ptrtoint (ptr @u to i32))
+  call void @cqrt_addc_i32(i32 %h, i32 sub (i32 0, i32 ptrtoint (ptr @u to i32)))
+  call void @cqrt_ry_i32(i32 %h, double -2.500000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
 DEEP_POSITIVE = [
     ("xzdx-deep-ladder-d500", DEEP_LADDER),
     ("xzdx-cswap-braid-d20", COST_BRAID),
 ]
 
 POSITIVE = [
+    # Inc 2a addc immediate spellings (bd 6uqc SHOULD-FIX 2) — clean forms VERIFY:
+    ("addc-i1-self-inverse", ADDC_I1),
+    ("addc-constexpr-negation", ADDC_CONSTEXPR),
     ("phase-diamond", PHASE_DIAMOND),
     ("value-diamond", VALUE_DIAMOND),
     ("ifelse-derived-two-rail", IFELSE_DERIVED),
@@ -1012,6 +1048,21 @@ define void @cp(i32 %u0) {
 """
 
 RECORD_MUTANTS = [
+    # ---- Inc 2a addc immediate spellings: each perturbation must be caught --
+    ("addc-i1-adjoint-flipped-to-false",
+     ADDC_I1.replace("call void @cqrt_addc_i1(i32 %h, i1 true)\n  call void @cqrt_addc_i1(i32 %h, i1 true)",
+                     "call void @cqrt_addc_i1(i32 %h, i1 true)\n  call void @cqrt_addc_i1(i32 %h, i1 false)"),
+     "A-not-reducible"),
+    ("addc-constexpr-adjoint-wrong-global",
+     ADDC_CONSTEXPR.replace("@u = internal global i32 0",
+                            "@u = internal global i32 0\n@v = internal global i32 0")
+                   .replace("i32 sub (i32 0, i32 ptrtoint (ptr @u to i32))",
+                            "i32 sub (i32 0, i32 ptrtoint (ptr @v to i32))"),
+     "A-not-reducible"),
+    ("addc-constexpr-adjoint-missing-negation",
+     ADDC_CONSTEXPR.replace("i32 sub (i32 0, i32 ptrtoint (ptr @u to i32))",
+                            "i32 ptrtoint (ptr @u to i32)"),
+     "A-not-reducible"),
     ("tape-recorded-ancestor-via-closure", TAPE_RECORDED_ANCESTOR,
      "R1-recorded-rotated-rail"),
     ("tape-recorded-ry-rail", TAPE_RECORDED_RY, "R1-recorded-rotated-rail"),

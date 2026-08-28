@@ -48,6 +48,14 @@
 ; pass carves every `cqrt_*` callee out of `declineTaintEscapes`), and an ordering bug
 ; on accepted input is a defect whether or not an emitter reaches it today.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the first `+ 1` lowers IN
+; PLACE, so the rail the preserving `cqrt_copy_i32` reads IS the root. That does
+; not weaken the property under test — the copy is still a sink on a NON-terminal
+; rail (the terminal is the `+ 2` producer), so `computeFreePoint`, which only
+; scans the TERMINAL's users, still cannot see it and the anchor extension is
+; still what places the reversal after the read. The root's free stays suppressed
+; (record freeze).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -67,15 +75,14 @@ entry:
 ; Forward stream, then the copy-out of the UPSTREAM rail:
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
-; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 1)
-; CHECK:     %[[OP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[OP]], i32 2)
-; CHECK:     call void @cqrt_copy_i32(i32 %[[OP]], i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 1)
+; CHECK:     %[[OP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 2)
+; CHECK:     call void @cqrt_copy_i32(i32 %[[H]], i32 %{{[a-zA-Z0-9_.]+}})
 ;
 ; ONLY THEN the reversal — the ordering is the fixture (see the tape sibling):
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP1]], i32 %[[OP]], i32 2)
+; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP1]], i32 %[[H]], i32 2)
 ; CHECK:     call void @cqrt_free(i32 %[[OP1]])
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP]], i32 %[[H]], i32 1)
-; CHECK:     call void @cqrt_free(i32 %[[OP]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 -1)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
 ;
 ; …and there the reversal STOPS. The Ry root is fully reverse-played but NOT freed:

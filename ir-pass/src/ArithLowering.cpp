@@ -6,13 +6,19 @@
 
 #include "ArithLowering.h"
 
+#include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
+#include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
+#include "WireWalk.h"       // provablyBefore (the shared position-aware proof)
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/Analysis/LoopInfo.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 
 using namespace llvm;
@@ -224,6 +230,211 @@ bool rewriteInPlaceValueRail(BinaryOperator *bo, WidthDispatch &wd,
   // tainted. The driver erases `bo`.
   bo->replaceAllUsesWith(Handle);
   return true;
+}
+
+namespace {
+
+// ── M-C fence helpers (bd test_C_libtooling-6uqc Inc 2a) ────────────────────
+//
+// G7 — is this ALREADY-EXECUTED user of the parent handle `P` SETTLED, i.e. can
+// nothing emitted AFTER `bo` still need `P` at its pre-`bo` value?
+//
+// THE HAZARD, stated exactly, because "no use after the op" alone does NOT cover
+// it. The Phase-5 spine emits its adjoints at a POST-DOMINATING point, which is
+// after `bo` in program order even though the forward gates it adjoints are
+// before it. So a rail `X = f(P, …)` minted BEFORE `bo` and reversed by the
+// spine yields `..._unc(X, P, …)` AFTER `bo` — reading a `P` we have just
+// relabelled. `X` is then not zeroed and its `cqrt_free` is a hidden measurement
+// (Rules 6/8). That is the census's (T2) failure and it is invisible to
+// `opt -verify`, to the golden byte-diff, and to `free_pairing_check.py`'s
+// structural pairing. So each prior user must be shown harmless.
+//
+// (a) AN IN-PLACE GATE ON `P` ITSELF is harmless BY THE SPINE'S OWN ORDERING.
+//     `emitDagReversal` walks one DAG in REVERSE PROGRAM ORDER, and the
+//     `cqrt_addc` this fence is about is itself an in-place gate on `P`
+//     (ChainWalk learned that in this same increment), so the moment the DAG
+//     walks `P` it collects our gate too — later in program order than this
+//     prior gate, hence adjointed EARLIER. `P` is back at its prior-gate value
+//     before that gate's adjoint reads it. Clause (d) holds by construction, not
+//     by luck; there is exactly ONE regular terminal group per function, so the
+//     two gates cannot land in differently-ordered DAGs.
+//
+// (b) ADJOINT TRAFFIC ALREADY IN THE IR (`_unc`/`_inv`) is harmless: it has
+//     already fired. This is the Phase-4 flag strip, emitted inline by
+//     `SwapRouteEmit` long before `lowerOps` runs — and it is precisely what
+//     makes seq-grover's region compares "prior, COMPLETED readers" in the
+//     ruling's sense. An `_unc` whose OUT slot IS `P` is refused: that would say
+//     `P`'s own rail was discharged before we mutate it.
+//
+// (c) A VOID `cqrt_*` GATE THAT MINTS NO RAIL FROM `P` (`cqrt_cswap` route
+//     pairs, `cqrt_x` brackets, `cqrt_cnot`/`cqrt_toffoli` networks,
+//     `cqrt_copy_*`, `cqrt_tape_write_*`) is harmless: a void call is never a
+//     DAG *handle*, and `isInPlaceGateOn` does not match it, so it can never be
+//     a member of `D.Calls` — the spine never re-emits it. `cqrt_qram_store_*`
+//     is the ONE void exception and is refused here: it IS an in-place gate on
+//     its ARRAY, so the spine DOES adjoint it, and its `_unc` re-reads its
+//     idx/val operands — which is where `P` would be sitting. (When `P` is the
+//     array itself, arm (a) already claimed it.)
+//
+// (d) A RAIL-MINTING PRODUCER READING `P` (`cq_template_*`, `cqrt_qram_load_*`,
+//     a `__cq_q_*` clone call) is the hazard itself — UNLESS its rail is already
+//     FULLY DISCHARGED before `bo`: its `_unc` fired and its rail was freed,
+//     both provably before. A freed rail cannot be reversed again — its
+//     `cqrt_free` user makes `recoverDataDag`'s closure scan mark the whole DAG
+//     `NotClosed`, and `reverseTerminalGroup` then emits nothing at all — so no
+//     future adjoint of it exists to re-read `P`. This arm is what admits
+//     seq-grover's two region compares (SPIKE §9.8) without admitting the
+//     general "earlier consumer" the SC reading refused.
+//
+// (e) EVERYTHING ELSE — a plain-IR use (`ret`/`store`/`phi`), a STILL-UNLOWERED
+//     tainted opcode (it is not a `CallInst` yet, and the spine will adjoint
+//     whatever `lowerOps` turns it into), a measurement, an unknown callee —
+//     is refused. Out-of-place is the fallback, so refusing costs nothing but a
+//     kept ancestor rail, which is exactly today's behavior.
+bool priorUseIsSettled(const Instruction *UI, const Value *P,
+                       const BinaryOperator *bo, const DominatorTree &DT) {
+  const auto *CI = dyn_cast<CallInst>(UI);
+  if (!CI)
+    return false;  // (e) plain-IR use / still-unlowered tainted opcode.
+  const Function *Callee = CI->getCalledFunction();
+  if (!Callee)
+    return false;  // (e) indirect call — nothing to reason about.
+  StringRef N = Callee->getName();
+
+  if (isInPlaceGateOn(CI, P))
+    return true;  // (a)
+
+  if (N.ends_with("_unc") || N.ends_with("_inv"))  // (b)
+    return CI->arg_size() >= 1 && CI->getArgOperand(0) != P;
+
+  if (CI->getType()->isVoidTy() && N.starts_with("cqrt_") &&
+      !N.starts_with("cqrt_qram_store_"))
+    return true;  // (c)
+
+  // (d) — a producer whose own rail is provably zeroed AND released before `bo`.
+  // Both halves are required: the `_unc` witnesses that the rail was RETURNED TO
+  // |0>, the `cqrt_free` witnesses that the register was RELEASED (and is what
+  // makes the spine's closure scan refuse to touch it again). Demanding only one
+  // would rest the argument on the other being implied, which it is not.
+  if (CI->getType()->isVoidTy())
+    return false;  // a void non-`cqrt_` callee — unknown, refuse.
+  bool Zeroed = false, Released = false;
+  for (const User *DU : CI->users()) {
+    const auto *D = dyn_cast<CallInst>(DU);
+    if (!D || !D->getCalledFunction())
+      continue;
+    const Instruction *DI = D;
+    if (!provablyBefore(DI, bo, DT))
+      continue;
+    StringRef DN = D->getCalledFunction()->getName();
+    if (DN == "cqrt_free" && D->arg_size() == 1 && D->getArgOperand(0) == CI)
+      Released = true;
+    // The out-first `_unc` convention (DD-3): the rail being zeroed is arg 0.
+    // A QRAM store `_unc` takes its forward's args and zeroes nothing, so it is
+    // excluded exactly as `RotationLowering::isDischargeOf` excludes it.
+    else if (DN.ends_with("_unc") && !DN.starts_with("cqrt_qram_store_") &&
+             D->arg_size() >= 1 && D->getArgOperand(0) == CI)
+      Zeroed = true;
+  }
+  return Zeroed && Released;
+}
+
+}  // namespace
+
+bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
+                                 const TaintSet &taint, const DominatorTree &DT,
+                                 const LoopInfo &LI) {
+  // G1 — BATCH 2a ADMITS `add` ONLY. The mechanism below is opcode-general (it
+  // asks `inPlaceValueRailOperand`, which knows add AND xor, and
+  // `rewriteInPlaceValueRail` already emits both); the ADMISSION is not. `sub`
+  // and `xor` are batches 2b/2c and land with their own goldens and their own
+  // adversarial round — `slice_control_seq_grover`'s `sub` site in particular
+  // is why that slice stays partially dephased after this increment.
+  if (bo->getOpcode() != Instruction::Add)
+    return false;
+
+  // G2 — the dtzb SHAPE predicate, asked not re-spelt (Rule 14): exactly one
+  // tainted operand (the parent rail `P`), one classical immediate, an integer
+  // width the in-place ABI can serve. Its exclusion partition (information-
+  // losing opcodes, two-quantum operands, fp) is the one this fence wants.
+  Value *P = inPlaceValueRailOperand(bo, taint);
+  if (!P)
+    return false;
+
+  // G4 — THE IMMEDIATE MUST BE ONE STAGE 2b CAN PROVE CLASSICAL. `cqrt_addc_<W>`
+  // declares its second parameter classical, but at W=i32 both parameters are
+  // `int32_t`, so a rail handle in that slot is verify-clean AND prints as a bare
+  // decimal in the trace — both shipped gates blind on the same axis. Rule (A1)
+  // of `free_pairing_check.py` therefore CHECKS the slot, and its
+  // `provably_not_a_rail` answers on positive evidence only: a formal PARAMETER
+  // "arrives from outside; nothing here can vouch" and is refused UNPROVEN.
+  // Census 0.5 measured the rest of the surface and cleared it — a volatile load
+  // (`slice_control_seq_grover`'s own `off`) and ordinary classical arithmetic
+  // both pass. So the ONE shape we must keep out-of-place is a formal-argument
+  // immediate: converting it would turn a green slice into a stage-2b UNPROVEN.
+  Value *Imm = bo->getOperand(0) == P ? bo->getOperand(1) : bo->getOperand(0);
+  if (isa<Argument>(Imm))
+    return false;
+
+  // G5 — the LOOP-OWNED population is untouched, from both sides.
+  //   * `InPlaceRailOps` is `lowerLoops`' own proven set; the driver already
+  //     routes it to the same emitter. Claiming one here would be a second
+  //     recognizer adjudicating a shape that already has an owner.
+  //   * A `bo` inside ANY natural loop is out of scope for this batch. The
+  //     rolled-in-place (799w) and whole-loop reverse-play (y05j/dtzb) machinery
+  //     owns in-place value gates in loop bodies, with its own capture set and
+  //     its own reverse-play ordering; a second, independently-fenced minter in
+  //     the same blocks is exactly the interaction this increment is not scoped
+  //     to prove. Straight-line only. Over-declining costs a kept ancestor.
+  if (taint.InPlaceRailOps.count(bo))
+    return false;
+  if (LI.getLoopFor(bo->getParent()))
+    return false;
+
+  // G6/G7 — POSITION-AWARE DEADNESS + PRIOR-OBLIGATION DISCHARGE.
+  for (const User *U : P->users()) {
+    const auto *UI = dyn_cast<Instruction>(U);
+    if (!UI)
+      return false;  // a constant-expression use — no position, no proof.
+    if (UI == bo)
+      continue;  // the op itself: its result IS this same physical rail.
+    if (UI->getFunction() != bo->getFunction())
+      return false;
+    // An UNREACHABLE use never executes, so it is not a read of `P` in any
+    // emitted trace — and both halves of `provablyBefore` are VACUOUSLY true for
+    // it (LLVM's dominator tree treats an unreachable block as dominated by
+    // everything, and nothing is reachable from it), so it would otherwise be
+    // silently classified as "prior" and then have to pass G7. Skipping it is
+    // the same reading the M-A guard's F3 finding settled.
+    if (!DT.isReachableFromEntry(UI->getParent()))
+      continue;
+    // G6 — no data use AFTER the op. `provablyBefore` is the shared spelling
+    // (WireWalk.h): dominance for first-execution order, plus the reachability
+    // half so a back edge cannot replay the use against the mutated rail.
+    // Unproven ⇒ out-of-place (Prime Directive direction).
+    if (!provablyBefore(UI, bo, DT))
+      return false;
+    // G7 — the prior use must be settled (see `priorUseIsSettled`).
+    if (!priorUseIsSettled(UI, P, bo, DT))
+      return false;
+  }
+
+  // G3 — the width must be in the FROZEN `cqrt_addc_<W>` grid. `wd.addcFn`
+  // returns null off-grid; ASKING IT (rather than repeating {i1,i8,i16,i32,i64}
+  // here) means the fence tracks the ABI instead of a comment about the ABI, and
+  // it must never mint a phantom symbol (the n0ui lesson). G2's own <=64-integer
+  // bound already implies this, so it is defense in depth.
+  //
+  // IT IS DELIBERATELY LAST, and that is not cosmetic. `addcFn` resolves through
+  // `Module::getOrInsertFunction`, which CREATES `declare void
+  // @cqrt_addc_<W>(i32, iW)` as a SIDE EFFECT — so asking it before the fence
+  // has decided planted a dangling declaration in every module containing any
+  // tainted integer `add`, including the ones that then stayed out of place.
+  // (Measured: `lowering_add_qc_i32.ll` grew a `declare void @cqrt_addc_i32` it
+  // never calls.) Harmless at link, but it is a symbol appearing in a module
+  // that emits none — exactly the kind of phantom this project refuses to ship.
+  // Asked HERE, it is only ever asked for a site that is about to emit.
+  return wd.addcFn(abiWidthFromType(bo->getType())) ? true : false;
 }
 
 }  // namespace cq

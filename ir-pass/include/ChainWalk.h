@@ -52,6 +52,7 @@ bool isAbiQramStore(const llvm::CallInst *G);
 // than minting a fresh handle, so it belongs to `H`'s link of the DAG. Three
 // callee shapes, each with its own required arity and handle SLOT (see the .cpp):
 //   * `cqrt_ry/rz_<W>(H, θ)`                          — arg 0, arg_size 2
+//   * `cqrt_addc/xorc_<W>(H, imm)`                    — arg 0, arg_size 2
 //   * `cqrt_qram_store_<W>(H, idx, val)`              — arg 0, arg_size 3
 //   * `cqrt_qram_store_<W>_controlled(flag, H, idx, val)` — arg 1, arg_size 4
 // Every `_inv`/`_unc` twin fails (it is the adjoint, never a forward gate), as does
@@ -60,6 +61,12 @@ bool isAbiQramStore(const llvm::CallInst *G);
 // test_C_libtooling-uow0), so a new shape added here is automatically attributed
 // there. Callers pass a candidate handle; it does NOT test that `H` is a register,
 // so `railOf` filters constants before asking.
+//
+// The `cqrt_addc/xorc_<W>` row arrived with M-C (bd test_C_libtooling-6uqc Inc
+// 2a). Until then those gates were minted only inside a loop the spine leaks, so
+// their absence was inert; M-C puts them on straight-line rails the spine must
+// zero and free, which makes every consumer of this predicate depend on the row.
+// See the .cpp for the per-consumer list.
 bool isInPlaceGateOn(const llvm::CallInst *G, const llvm::Value *H);
 
 // A `cqrt_alloc_<W>` mint — a tainted register ROOT (the DAG bottoms out here).

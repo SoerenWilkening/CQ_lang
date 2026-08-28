@@ -39,6 +39,10 @@
 ; after, "0 cqrt_free site(s) … 0 unproven". So 2b witnesses the aliasing but NOT the
 ; unsound free that followed from it, and this fixture is the gate for the latter.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `+ 1` lowers IN PLACE,
+; so the aliased copy's two slots are the ROOT rail. The leak this file pins (no
+; `_unc`, no free, nothing measured) is unchanged.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 
@@ -56,8 +60,8 @@ entry:
 ; The forward stream lowers; the aliased copy is emitted verbatim.
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
-; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 1)
-; CHECK:     call void @cqrt_copy_i32(i32 %[[OP]], i32 %[[OP]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 1)
+; CHECK:     call void @cqrt_copy_i32(i32 %[[H]], i32 %[[H]])
 ;
 ; NOTHING is reversed and NOTHING is freed — both rails are left allocated. The
 ; `CHECK-NOT`s are the discrimination controls: pre-fix the pass emitted the `_unc`

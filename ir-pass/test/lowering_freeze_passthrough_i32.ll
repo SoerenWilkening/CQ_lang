@@ -12,6 +12,11 @@
 ; siblings `lowering_reject_freeze_escaped_return.ll` /
 ; `lowering_reject_freeze_measured_fanout.ll` pin the R-B laundering declines.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` lowers IN PLACE
+; to the frozen `cqrt_addc_<W>` (its parent handle has no data use after it), so
+; no ancestor rail is minted and the measurement reads the rail itself. Nothing
+; else this file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -28,7 +33,7 @@ entry:
 
 ; The add lowers to a template handle, the freeze is folded away, and the measure
 ; reads the folded handle directly:
-; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
+; CHECK:     call void @cqrt_addc_i32(i32 %[[OP:[a-zA-Z0-9_.]+]], i32 7)
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OP]])
 ; CHECK-NOT: freeze
 ; CHECK-NOT: cq taint escape

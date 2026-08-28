@@ -12,16 +12,24 @@
 ; Liveness is leaf-first: add_unc reads the still-live cast handle, cast_unc reads
 ; the still-live alloc root, then the rotation un-rotates the root and it is freed.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `+ 7` lowers IN PLACE
+; onto the CAST rail (`cqrt_addc_i64`), so the chain is root -> cast rail and the
+; add mints nothing. What this file pins is unchanged and one step sharper: the
+; reversal is still LEAF-FIRST, and each rail is still freed only after its own
+; producer's adjoint — `addc(-7)` (the in-place adjoint, on the cast rail) fires
+; BEFORE `zext_unc` restores that rail to |0>, which is exactly the reverse
+; program order clause (d) of the record invariant demands.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; Forward chain (theta -> alloc + ry, then the zext cast, then the i64 add):
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H:[a-zA-Z0-9_.]+]], double 2.500000e-01)
 ; CHECK:     %[[W:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i32_to_i64(i32 %[[H]])
-; CHECK:     %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i64_hl(i32 %[[W]], i64 7)
+; CHECK:     call void @cqrt_addc_i64(i32 %[[W]], i64 7)
 ; Reversed adjoint (LIFO): add_unc(out=%d, src=%w, i64 7) BEFORE zext_unc(out=%w,
 ; src=%h) BEFORE ry(-θ), then free the |0> root %h. All handles i32; no fresh mint.
-; CHECK:     call void @cq_template_add_i64_hl_unc(i32 %[[D]], i32 %[[W]], i64 7)
+; CHECK:     call void @cqrt_addc_i64(i32 %[[W]], i64 -7)
 ; CHECK:     call void @cq_template_zext_i32_to_i64_unc(i32 %[[W]], i32 %[[H]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
 ; CHECK:     call void @cqrt_free(i32 %[[H]])

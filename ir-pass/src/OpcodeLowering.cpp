@@ -39,6 +39,8 @@
 #include "WireWalk.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -202,15 +204,43 @@ void declineLiftedStaleRecordOps(Module &M, TaintSet &taint) {
   declineStaleRecordOps(M, taint);
 }
 
-void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
+void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
+              bool inBennettClone) {
   // ── Phase 1: one program-order collection over all four classes ──
   // Gated by taint membership. Casts also capture (from,to) widths here,
   // before any rewrite corrupts the operand type (PRD §2.3).
   std::vector<Instruction *> Work;
   DenseMap<CastInst *, CastWidths> CastW;
+  // bd test_C_libtooling-6uqc (M-C Inc 2a): the adds this walk decided to lower
+  // IN PLACE. Decided HERE, in Phase 1, and for a measured reason — this is the
+  // first point in the pipeline where the fence can see the truth.
+  //
+  // MEASURED, on the campaign's own customer (`slice_control_seq_grover`, IR
+  // dumped immediately before this call). At `clang -O1` the parent of two of
+  // its three candidate sites is a MERGE PHI of a tainted-condition diamond
+  // (`%8 = phi i32 [ %6, %5 ], [ %3, %0 ]`), whose "later uses" cannot be read
+  // off the CFG at all. By the time `lowerOps` runs, `detectControlRegions` +
+  // `SwapRouteEmit` + `RegionFlatten` have linearized the whole function and
+  // RAUW'd those phis away, so the same site reads as a flat
+  // `%6 = add nsw i32 %5, %4` on a handle whose entire user list — the region
+  // compare, its `_unc` strip, the two `cqrt_cswap`s, the `cqrt_free` — is
+  // visible, positioned, and ALREADY TORN DOWN. The plan of record said "the
+  // Phase-1 collection loop"; this is that loop, and it is also the earliest
+  // slot where the answer is not a guess.
+  //
+  // Deciding in Phase 1 rather than Phase 2 also keeps the fence on PRE-rewrite
+  // SSA: Phase 2's RAUWs replace values but preserve the use STRUCTURE (each
+  // template is inserted at its original's position), so a "no use after" proof
+  // taken here still holds when `rewriteInPlaceValueRail` reads the (by then
+  // possibly RAUW'd) operand.
+  SmallPtrSet<const Instruction *, 8> InPlaceReassign;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
+    // Built lazily, and ONLY when this function has an M-C candidate — the
+    // overwhelming majority of functions never pay for them.
+    std::optional<DominatorTree> MCDT;
+    std::optional<LoopInfo> MCLI;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
         if (!taint.Tainted.count(&I))
@@ -224,6 +254,20 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
         if (taint.StaleDeclined.count(&I))
           continue;
         if (isa<BinaryOperator>(&I) || isa<UnaryOperator>(&I)) {
+          // M-C (bd 6uqc Inc 2a): decide the in-place reassignment here, on
+          // pre-rewrite SSA. NEVER a decline — `classifyInPlaceReassignment`
+          // returning false just means this op keeps today's out-of-place
+          // lowering (Rule 17: the decline belongs to inputs outside the target
+          // shape, and `q + c` out of place is a shape we lower correctly).
+          if (auto *BO = dyn_cast<BinaryOperator>(&I);
+              BO && !inBennettClone && !taint.InPlaceRailOps.count(BO)) {
+            if (!MCDT) {
+              MCDT.emplace(F);
+              MCLI.emplace(*MCDT);
+            }
+            if (classifyInPlaceReassignment(BO, wd, taint, *MCDT, *MCLI))
+              InPlaceReassign.insert(BO);
+          }
           Work.push_back(&I);
         } else if (auto *Cmp = dyn_cast<CmpInst>(&I)) {
           // A branch/select-feeding compare is Phase 4's — never enqueue
@@ -296,7 +340,14 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint) {
       // Issue dtzb: a `lowerLoops`-marked loop-rail self-update lowers to the
       // IN-PLACE `cqrt_{addc,xorc}` (one rail handle), NOT the out-of-place data
       // template (which mints a fresh per-iteration rail — the X1 dirty rail).
-      Rewritten = taint.InPlaceRailOps.count(BO)
+      // Two INDEPENDENT routes to the same in-place emitter, deliberately kept
+      // as two sets: `InPlaceRailOps` is `lowerLoops`' proven loop-carried rail
+      // self-update (dtzb), `InPlaceReassign` is the M-C straight-line
+      // reassignment decided in Phase 1 above (bd 6uqc Inc 2a). They are
+      // disjoint by construction — the M-C fence refuses anything already in
+      // `InPlaceRailOps` and anything inside a natural loop — so neither
+      // recognizer can silently widen the other.
+      Rewritten = (taint.InPlaceRailOps.count(BO) || InPlaceReassign.count(BO))
                       ? rewriteInPlaceValueRail(BO, wd, taint)
                       : rewriteBinary(BO, wd, taint);
     } else if (auto *UO = dyn_cast<UnaryOperator>(I)) {

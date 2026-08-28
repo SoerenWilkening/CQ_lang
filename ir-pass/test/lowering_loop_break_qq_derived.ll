@@ -33,6 +33,16 @@
 ; xor — that rides the E8 `kMsgBreakUnemittable` decline (over-declining is safe),
 ; not this accept.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the PRE-LOOP derivation
+; `p = p0 + 5` lowers IN PLACE, so the derived comparand and its ancestor are ONE
+; rail — the shape is now structurally identical to the bare-mint comparand of
+; slice_loop_break_qq.c, and the documented safe leak goes from TWO entangled
+; rails to ONE. The break construct itself is UNTOUCHED: the in-loop rail
+; self-update is still `cqrt_xorc_i32` from `taint.InPlaceRailOps`, which M-C
+; refuses by construction (it declines anything already in that set AND anything
+; inside a natural loop). MEASURED on the e2e twin: after normalising for the one
+; removed rail, the 188-line golden is byte-identical.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=PLEAK < %t.cqd0.ll
@@ -40,18 +50,18 @@
 ; --- p0 minted, THEN the pre-loop deriving add p = p0 + 5 (out-of-place template) -
 ; CHECK: %[[P0:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)
 ; CHECK: call void @cqrt_ry_i32(i32 %[[P0]], double 5.000000e-01)
-; CHECK: %[[P:[a-z0-9_]+]] = call i32 @cq_template_add_i32_hl(i32 %[[P0]], i32 5)
+; CHECK: call void @cqrt_addc_i32(i32 %[[P0]], i32 5)
 ; CHECK: %[[RAIL:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %x)
 ; --- FORWARD body: in-place rail xor, then the bare Q==Q compare (rail vs p) + _unc
 ; CHECK: call void @cqrt_xorc_i32(i32 %[[RAIL]], i32 9)
-; CHECK: %[[FCMP:[a-z0-9_]+]] = call i32 @cq_template_icmp_eq_i32(i32 %[[RAIL]], i32 %[[P]])
+; CHECK: %[[FCMP:[a-z0-9_]+]] = call i32 @cq_template_icmp_eq_i32(i32 %[[RAIL]], i32 %[[P0]])
 ; CHECK: call void @cqrt_toffoli(i32 %[[FCMP]],
-; CHECK: call void @cq_template_icmp_eq_i32_unc(i32 %[[FCMP]], i32 %[[RAIL]], i32 %[[P]])
+; CHECK: call void @cq_template_icmp_eq_i32_unc(i32 %[[FCMP]], i32 %[[RAIL]], i32 %[[P0]])
 ; --- BACKWARD reverse-play clone: the SAME compare reading the SAME derived %p -----
 ; CHECK: cq.brk.rev:
-; CHECK: %[[BCMP:[a-z0-9_]+]] = call i32 @cq_template_icmp_eq_i32(i32 %[[RAIL]], i32 %[[P]])
+; CHECK: %[[BCMP:[a-z0-9_]+]] = call i32 @cq_template_icmp_eq_i32(i32 %[[RAIL]], i32 %[[P0]])
 ; CHECK: call void @cqrt_toffoli(i32 %[[BCMP]],
-; CHECK: call void @cq_template_icmp_eq_i32_unc(i32 %[[BCMP]], i32 %[[RAIL]], i32 %[[P]])
+; CHECK: call void @cq_template_icmp_eq_i32_unc(i32 %[[BCMP]], i32 %[[RAIL]], i32 %[[P0]])
 ; CHECK: call void @cqrt_xorc_i32(i32 %[[RAIL]], i32 9)
 ; CHECK: cq.brk.tail:
 ; CHECK: call void @cqrt_free(i32 %cq.brk.R)
@@ -62,12 +72,13 @@
 ; CHECK-NOT: cq controlled lowering: loop under quantum control
 ; CHECK-NOT: cq loop lowering: early break body is not a provable rolled single-rail loop
 ;
-; --- the deriving add is NEVER reversed; NEITHER p NOR p0 is ever freed (Rule 6) --
+; --- the deriving add is NEVER reversed, and the comparand rail is never freed
+; --- (Rule 6). Since M-C there is ONE such rail, not two: `p` and `p0` are the
+; --- same register, so the leak this pins shrank from two entangled rails to one.
 ; PLEAK: %[[P02:[a-z0-9]+]] = call i32 @cqrt_alloc_i32(i32 %pseed)
-; PLEAK: %[[Pd:[a-z0-9_]+]] = call i32 @cq_template_add_i32_hl(i32 %[[P02]], i32 5)
-; PLEAK-NOT: cq_template_add_i32_hl_unc
+; PLEAK: call void @cqrt_addc_i32(i32 %[[P02]], i32 5)
 ; PLEAK-NOT: cqrt_free(i32 %[[P02]])
-; PLEAK-NOT: cqrt_free(i32 %[[Pd]])
+; PLEAK-NOT: cqrt_addc_i32(i32 %[[P02]], i32 -5)
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"

@@ -10,6 +10,11 @@
 ; inlined `add` -> cq_template_add_i32_hl, measure -> cqrt_measure. The now-dead
 ; internal callee is erased.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` here lowers
+; IN PLACE to the frozen `cqrt_addc_<W>` — its parent handle has no data use
+; after it — so no fresh ancestor rail is minted. Nothing else about what this
+; file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 
@@ -34,8 +39,8 @@ define i32 @demo() {
 ; CHECK-LABEL: define i32 @demo()
 ; CHECK:       %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:       call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
-; CHECK:       %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 7)
-; CHECK:       call i32 @cqrt_measure_i32(i32 %[[OP]])
+; CHECK:       call void @cqrt_addc_i32(i32 %[[H]], i32 7)
+; CHECK:       call i32 @cqrt_measure_i32(i32 %[[H]])
 
 define internal void @mysplit(i32 %v, ptr %out) {
   %r = add nsw i32 %v, 7

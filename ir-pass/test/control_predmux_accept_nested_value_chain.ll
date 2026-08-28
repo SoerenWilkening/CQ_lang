@@ -37,24 +37,33 @@ merge:
   ret i32 %m
 }
 ; the speculated arm chain on derived handles:
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a). The two `+ c` steps of this
+; chain lower IN PLACE (`cqrt_addc_i32`) onto the `mul` rails, so `t1 == g` and
+; `t2 == h` are ONE register each and the chain uses four rails where it used
+; six. THE FENCE IS WHY, and this file is a good illustration of it: at decision
+; time `%t1`'s ONLY user is the `add` — every later reader (the second `mul`, the
+; controlled copy) is a user of the ADD'S RESULT, which is the same physical
+; rail. Uses of the RESULT never disqualify; only a use of the PARENT after the
+; op does.
+;
 ; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     %[[T1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[Q]], i32 7)
-; CHECK:     %[[G:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[T1]], i32 11)
-; CHECK:     %[[T2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[G]], i32 5)
-; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[T2]], i32 3)
+; CHECK:     call void @cqrt_addc_i32(i32 %[[T1]], i32 11)
+; CHECK:     %[[T2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[T1]], i32 5)
+; CHECK:     call void @cqrt_addc_i32(i32 %[[T2]], i32 3)
 ; inner select (q>5 ∧ q≥12) picks g over the raw source:
 ; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK:     call i32 @cq_template_icmp_sge_i32_hl(i32 %[[Q]], i32 12)
 ; CHECK:     call void @cqrt_toffoli(
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[G]], i32 %[[OUT]])
+; CHECK:     call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[T1]], i32 %[[OUT]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[Q]], i32 %[[OUT]])
 ; outer select (q>5 ∧ q<12) picks h over the inner out-rail:
 ; CHECK:     call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
 ; CHECK:     call i32 @cq_template_icmp_slt_i32_hl(i32 %[[Q]], i32 12)
 ; CHECK:     call void @cqrt_toffoli(
 ; CHECK:     %[[OUT8:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[H]], i32 %[[OUT8]])
+; CHECK:     call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[T2]], i32 %[[OUT8]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]], i32 %[[OUT8]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT8]])
 ; CHECK-NOT: br i1

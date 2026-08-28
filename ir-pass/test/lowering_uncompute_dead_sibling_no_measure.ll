@@ -13,14 +13,20 @@
 ; OPERATION (which frees a dirty rail = a hidden measurement, Rule 6/8). The
 ; `cqrt_free` then targets the |0> root `%q`.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the dead `q + 7` lowers IN
+; PLACE, so the adjoint is the negated-immediate `cqrt_addc_i32(h, -7)` rather
+; than a data `_unc`, and there is ONE rail to free instead of two. The accept
+; boundary this file holds against lowering_uncompute_dead_sibling_premeasure.ll
+; (no measurement on the lineage => reverse and free) is unchanged.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; Forward chain (theta → alloc + ry, then the dead reassignment):
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H:[a-zA-Z0-9_.]+]], double 2.500000e-01)
-; CHECK:     %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 7)
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 7)
 ; Reversed adjoint (void in-place `_unc`, reading the live root) + free of the root:
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[D]], i32 %[[H]], i32 7)
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 -7)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
 ; CHECK:     call void @cqrt_free(i32 %[[H]])
 ;

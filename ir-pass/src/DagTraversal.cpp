@@ -122,6 +122,43 @@ bool preservesBasisUnderRecord(const CallInst *G) {
   // one definition; this makes it three of three (Rule 14).
   if (isAbiQramStore(G))
     return true;
+  // Issue dtzb / bd test_C_libtooling-6uqc (M-C Inc 2a) — the IN-PLACE VALUE
+  // gates `cqrt_addc_<W>(R, imm)` / `cqrt_xorc_<W>(R, imm)`. DECIDED, not left
+  // to the fail-closed default, because M-C made them RECOVERABLE: before it,
+  // `isInPlaceGateOn` never returned them and an entry here would have been the
+  // "inert unverified claim" the `cqrt_x` note below warns about. They are
+  // recovered now, so the claim has to be made and argued.
+  //
+  // TRUE, and the ground is (b) — a BASIS PERMUTATION, not (a) triviality on
+  // |0>. `R := R + imm (mod 2^W)` and `R := R ^ imm` are bijections of the
+  // computational basis whose only other operand is a CLASSICAL immediate, so
+  // cond(W) is empty in the quantum sense and W maps |x> to a single basis
+  // label — never a superposition. Every record a kept carrier takes of R is
+  // therefore a copy of a definite label that is a function of R's own
+  // conditions, and `W† C W (|0>_R ⊗ |ψ>) = |0>_R ⊗ (D ^= g(cond))` goes through
+  // exactly as it does for a `cq_template_*` producer, which is the SAME
+  // category of object (a permutation of its inputs) — that is the row this
+  // belongs beside, NOT the diagonal `cqrt_rz_` row.
+  //
+  // SAY WHY THE "DECISIVE COROLLARY" ABOVE DOES NOT REACH THESE. Read literally
+  // ("cond(W) = ∅ ⇒ R is freeable only if W is trivial on |0>") it would exclude
+  // an addc, whose W|0> = |imm> ≠ |0>. But the corollary's argument is about
+  // MINTING SUPERPOSITION — `Ry|0>` is not a basis state at all, so a record of
+  // it is entanglement no adjoint can undo. An addc's |imm> IS a basis state, a
+  // classical constant, so the record it feeds carries no which-path information
+  // and the adjoint (`imm -> -imm`; `xorc` self-inverse — `EmitInverse` already
+  // ships both) returns R to |0>. The corollary is stated for the gate that
+  // motivated it; the invariant above is the general test, and these pass it.
+  //
+  // Clause (d) is delivered by reverse program order, the same way it is for a
+  // template producer: the M-C addc joins the very DAG that walks R (it is an
+  // in-place gate ON R), so its adjoint always fires before any earlier gate's
+  // `_unc` re-reads R. VOID is the load-bearing test, mirroring
+  // `isInPlaceGateOn`'s row (bd 1fim: arity is an incomplete proxy — a non-void
+  // same-named fake is not this gate and must fail closed to `NotClosed`).
+  if ((N.starts_with("cqrt_addc_") || N.starts_with("cqrt_xorc_")) &&
+      G->getType()->isVoidTy() && G->arg_size() == 2)
+    return true;
   return false;  // `cqrt_ry_<W>` lands here — and so does anything new.
 }
 

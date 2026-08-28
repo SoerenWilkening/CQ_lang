@@ -35,6 +35,11 @@
 ; already does for a loop-resident GATE. Rule 6's fallback for a rail we cannot place
 ; a free for is to leave it allocated; a leak is safe, a mis-placed free is not.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the pre-loop `q + c` lowers
+; IN PLACE (`cqrt_addc_<W>`), so the rail the tape sink reads is the root. The
+; placement property under test — the reversal point vs a sink inside a loop — is
+; unchanged; only which register carries the value is.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREELOOP < %t.cqd0.ll
@@ -65,9 +70,9 @@ exit:
 ; acyclic backstop on `D.Calls` does NOT fire; only the new sink backstop does:
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
-; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 1)
-; CHECK:     call i32 @cq_template_add_i32_hl(i32 %[[OP]], i32 2)
-; CHECK:     call i32 @cqrt_tape_write_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OP]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 1)
+; CHECK:     call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 2)
+; CHECK:     call i32 @cqrt_tape_write_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[H]])
 
 ; NOTHING is reversed and NOTHING is freed, anywhere in the module. Its OWN prefix
 ; with a SINGLE positive anchor, so both negatives run anchor -> EOF: a `CHECK-NOT`

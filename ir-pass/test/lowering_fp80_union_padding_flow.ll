@@ -6,6 +6,11 @@
 ; lowest diverged bit (carry), the `and 32767` then clears every diverged bit —
 ; and proves the observable (`cq_measure`) sees ZERO padding-taint. Promote.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` here lowers
+; IN PLACE to the frozen `cqrt_addc_<W>` — its parent handle has no data use
+; after it — so no fresh ancestor rail is minted. Nothing else about what this
+; file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll
 
@@ -31,7 +36,7 @@ entry:
 ; CHECK-NOT: alloca
 ; CHECK-NOT: store
 ; CHECK: call i32 @cq_template_bitcast_f80_to_i80
-; CHECK-DAG: call i32 @cq_template_add_i64_hl
+; CHECK-DAG: call void @cqrt_addc_i64
 ; CHECK-DAG: call i32 @cq_template_and_i64_hl
 ; CHECK: call i64 @cqrt_measure_i64
 ; CHECK-NOT: error

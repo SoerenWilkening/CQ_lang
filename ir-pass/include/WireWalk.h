@@ -87,6 +87,30 @@ llvm::CallInst *findNonDiagonalWireGate(llvm::ArrayRef<llvm::Value *> Seeds,
                                         const llvm::DominatorTree *DT =
                                             nullptr);
 
+// "IF `B` executes, `A` has already executed, and `A` never runs again after
+// it." THE ONE SPELLING of this project's position-aware proof obligation, and
+// it is now shared rather than re-derived (Rule 14). Three callers: this file's
+// own position-aware mode (above), `RotationLowering`'s M-A live-record clauses,
+// and `ArithLowering`'s M-C in-place-reassignment deadness fence. It had TWO
+// independent spellings before bd test_C_libtooling-6uqc Inc 2a, and this
+// project's history says two spellings of one relation eventually disagree (bd
+// uow0 `railOf`, bd 1fim `isAbiQramStore`) — so a third was consolidated into a
+// first instead of added.
+//
+// Dominance ALONE is not enough inside a loop: the back edge replays `A` after
+// `B`, so a template/gate emitted at `A` runs again against a wire `B` already
+// relabelled. The reachability half closes exactly that. Unproven ⇒ false ⇒ the
+// caller takes its conservative branch (Prime Directive).
+//
+// READ THE MODALITY — it proves a CONDITIONAL-on-`B` property, never a
+// post-dominance one. `provablyBefore(A, B)` says "if `B` runs, `A` already
+// did"; it does NOT say "`A` runs whenever the program reaches here". Callers
+// asking the second question (will a user READ this value later?) get a
+// deliberately permissive answer on a classical branch that may not execute —
+// see the clause-3 note in RotationLowering.cpp, which measured both edges.
+bool provablyBefore(const llvm::Instruction *A, const llvm::Instruction *B,
+                    const llvm::DominatorTree &DT);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_WIRE_WALK_H_

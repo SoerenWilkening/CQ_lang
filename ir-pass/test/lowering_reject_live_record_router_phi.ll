@@ -17,6 +17,19 @@
 ; recorded `cqrt_ry`'s arg-0 already IS the wire base and `%d` is found by an
 ; ordinary forward walk.
 ;
+;
+; VEHICLE-OP NOTE (bd test_C_libtooling-6uqc, M-C Increment 2a — `add` only).
+; The terminal record used to be built with `add`. M-C now lowers a
+; dead-parent `q + c` IN PLACE (`cqrt_addc_<W>`), which would COLLAPSE the two
+; rails this fixture needs into one: the interior record and the terminal record
+; would become the same register, the measurement would land on the interior
+; record itself, and clause 4 (measured-before-the-gate ⇒ collapsed ⇒ exempt)
+; would exempt it — the module would ACCEPT for a reason that has nothing to do
+; with what this file pins. The vehicle is therefore `mul`, which is
+; information-LOSING and so is deliberately outside the dtzb in-place bijection
+; family (`inPlaceValueRailOperand`) at every batch, not just this one. The
+; STRUCTURE under test — a dead interior record standing at the gate — is
+; unchanged; only the arithmetic that builds the terminal record moved.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
@@ -26,7 +39,7 @@ define i32 @example(i32 %u0, i1 %c) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %d = add i32 %q, 3                                           ; DEAD record at the gate
-  %e = add i32 %d, 1
+  %e = mul i32 %d, 3                                           ; NOT an M-C shape (see below)
   %m = call i32 @cq_measure_si32(i32 %e)
   br i1 %c, label %arm, label %merge                           ; CLASSICAL condition
 

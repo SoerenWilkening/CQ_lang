@@ -30,9 +30,16 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 ;
-; The address survives verbatim into BOTH the forward gate and its adjoint:
-; CHECK: %h_op = call i32 @cq_template_add_i32_hl(i32 %h, i32 ptrtoint (ptr @u to i32))
-; CHECK: call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %h, i32 ptrtoint (ptr @u to i32))
+; The address survives verbatim into BOTH the forward gate and its adjoint.
+; M-C NOTE (bd test_C_libtooling-6uqc Inc 2a): the add lowers IN PLACE, so the
+; pair is now `cqrt_addc_i32` and its NEGATED-immediate adjoint. That makes the
+; adjoint slot a `sub (i32 0, ptrtoint …)` ConstantExpr WRAPPING the address —
+; a shape the guard had not seen before — and it must still be skipped, for the
+; same reason: one uniqued relocation, forward and adjoint agree, the program is
+; well-defined. If `slotCarriesUndef` ever stops looking through that wrapper,
+; this file goes red with the `kMsgUndefPaired` decline.
+; CHECK: call void @cqrt_addc_i32(i32 %h, i32 ptrtoint (ptr @u to i32))
+; CHECK: call void @cqrt_addc_i32(i32 %h, i32 sub (i32 0, i32 ptrtoint (ptr @u to i32)))
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"

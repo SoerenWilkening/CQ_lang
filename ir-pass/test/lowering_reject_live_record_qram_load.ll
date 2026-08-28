@@ -15,6 +15,19 @@
 ; with `opt` exit 0 — that shape is the accept fixture
 ; lowering_live_record_measured_before_theta.ll.
 ;
+;
+; VEHICLE-OP NOTE (bd test_C_libtooling-6uqc, M-C Increment 2a — `add` only).
+; The terminal record used to be built with `add`. M-C now lowers a
+; dead-parent `q + c` IN PLACE (`cqrt_addc_<W>`), which would COLLAPSE the two
+; rails this fixture needs into one: the interior record and the terminal record
+; would become the same register, the measurement would land on the interior
+; record itself, and clause 4 (measured-before-the-gate ⇒ collapsed ⇒ exempt)
+; would exempt it — the module would ACCEPT for a reason that has nothing to do
+; with what this file pins. The vehicle is therefore `mul`, which is
+; information-LOSING and so is deliberately outside the dtzb in-place bijection
+; family (`inPlaceValueRailOperand`) at every batch, not just this one. The
+; STRUCTURE under test — a dead interior record standing at the gate — is
+; unchanged; only the arithmetic that builds the terminal record moved.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -27,7 +40,7 @@ entry:
   %ie  = zext nneg i32 %idx to i64
   %pi  = getelementptr inbounds [4 x i32], ptr @tbl, i64 0, i64 %ie
   %u   = load i32, ptr %pi, align 4                              ; -> cqrt_qram_load_i32, DEAD at the gate
-  %u2  = add i32 %u, 1                                           ; measured => exempt
+  %u2  = mul i32 %u, 3                                           ; measured => exempt
   %m   = call i32 @cq_measure_si32(i32 %u2)
   %q2  = call i32 @cq_theta_si32(i32 %idx, double 2.500000e-01)  ; chained, in-place Ry on the index wire
   %m2  = call i32 @cq_measure_si32(i32 %q2)

@@ -15,6 +15,11 @@
 ; sxuk shape). No store_unc / load_unc / free is emitted. NO measurement is inserted
 ; that the user did not write (Rule 5).
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` lowers IN PLACE
+; to the frozen `cqrt_addc_<W>` (its parent handle has no data use after it), so
+; no ancestor rail is minted and the measurement reads the rail itself. Nothing
+; else this file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
@@ -43,8 +48,8 @@ entry:
 ; CHECK:     %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 8)
 ; CHECK:     call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[ARR]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:     %[[S:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[V]], i32 1)
-; CHECK:     %[[M:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[S]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[V]], i32 1)
+; CHECK:     %[[M:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[V]])
 ; CHECK:     ret i32 %[[M]]
 ; CHECK-NOT: cqrt_qram_store_i32_unc
 ; CHECK-NOT: cqrt_qram_load_i32_unc

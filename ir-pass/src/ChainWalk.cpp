@@ -97,6 +97,42 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) &&
       G->arg_size() == 2 && G->getArgOperand(0) == H)
     return true;
+  // Issue dtzb / bd test_C_libtooling-6uqc (M-C): the IN-PLACE VALUE gates
+  // `cqrt_addc_<W>(H, imm)` / `cqrt_xorc_<W>(H, imm)` — VOID, arg_size 2, arg 0
+  // is the handle, arg 1 the CLASSICAL immediate (Rule 15: the handle is i32 at
+  // every width; the immediate carries the logical width). Like a rotation they
+  // MUTATE the one rail and mint nothing, so they belong to `H`'s DAG link.
+  //
+  // WHY THIS ENTRY EXISTS ONLY NOW, and why it is REQUIRED rather than tidy.
+  // Before M-C these gates were minted ONLY by the 7.3/7.4 loop path, where the
+  // rail is loop-carried and the whole-DAG spine leaks it anyway — so the
+  // omission was inert. M-C emits them on STRAIGHT-LINE rails the spine must
+  // reverse and free, and every consumer of this predicate then needs them:
+  //   * `isTerminalHandle` — an addc user is benign (it mints no handle), so the
+  //     rail stays its own chain's terminal. Without this the chain has NO
+  //     terminal at all and is never recovered.
+  //   * `DagTraversal` step 1 — the addc joins `D.Calls`, so `emitDagReversal`
+  //     emits its adjoint (`cqrt_addc_<W>(H, -imm)`; `EmitInverse` already knows
+  //     the recipe) and the rail actually returns to |0> before `cqrt_free`.
+  //   * `DagTraversal` step 3 closure — an addc user no longer reads as an
+  //     unowned consumer that marks the whole DAG `NotClosed`.
+  //   * `railOf` — DERIVED from this predicate (bd uow0), so the gate is
+  //     attributed to the register it writes rather than to itself.
+  //   * clause (d) (`Uncomputation.cpp`'s moved-anchor scan, and reverse program
+  //     order generally) — an in-place basis-relabelling gate this predicate
+  //     cannot see is precisely the "invisible write between forward and
+  //     adjoint" that clause (d) exists to forbid.
+  // VOID IS THE LOAD-BEARING TEST, NOT THE ARITY (the `isAbiQramStore` lesson,
+  // bd 1fim, restated here because the first draft of this row proxied it with
+  // arity alone and the Rule-13 round demonstrated the regression: a hand-written
+  // NON-void same-named fake at the frozen arity closed the DAG, got a same-args
+  // "adjoint" emitted for a rail-MINTING call, and a `cqrt_free` of a chain with
+  // an unaccounted mint — verify-clean, free-pairing-clean, wrong). A non-void
+  // fake must stay an unrecognized consumer (`NotClosed` => Rule-6 safe leak).
+  if ((N.starts_with("cqrt_addc_") || N.starts_with("cqrt_xorc_")) &&
+      G->getType()->isVoidTy() && G->arg_size() == 2 &&
+      G->getArgOperand(0) == H)
+    return true;
   // (The plain QRAM store is handled by the `isAbiQramStore` arm above, together
   // with its guarded twin — one definition for both frozen shapes.)
   return false;

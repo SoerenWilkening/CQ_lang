@@ -950,7 +950,15 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // instructions in `cloneTaint` (C25). Inner clone calls are not stock opcodes,
   // so they are untouched; already-lowered sibling clones are in disjoint
   // `cloneTaint`s, so they are untouched too.
-  lowerOps(M, wd, cloneTaint);
+  // `inBennettClone=true` (bd test_C_libtooling-6uqc Inc 2a): the M-C in-place
+  // reassignment must NOT fire inside a clone body. The wrap below captures the
+  // forward stream by SCANNING for `isForwardTemplate`/clone-call/select-op
+  // members, and a void `cqrt_addc_<W>` is none of them — it would be silently
+  // omitted from `ForwardStream`, never reversed, and would leave a BORROWED
+  // clone argument permanently shifted, breaking `|x>|0> -> |x>|f(x)>` for every
+  // caller AND the synthesized `_unc` twin. Out-of-place inside a clone is
+  // correct and is what ships today.
+  lowerOps(M, wd, cloneTaint, /*inBennettClone=*/true);
 
   // Capture the forward stream + scratch rails in program order: data templates
   // AND the `ReturnTainted` inner clone calls (each a reversible rail the wrap

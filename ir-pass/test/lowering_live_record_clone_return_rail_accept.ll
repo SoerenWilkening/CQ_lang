@@ -38,9 +38,27 @@
 ; IF THIS FIXTURE EVER STARTS TO DECLINE, that is the scope closing, not a
 ; regression: move it to a negative fixture and update bd 6uqc.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a) — AND THIS FILE IS ALSO THE
+; `inBennettClone` FENCE PIN. Two things moved and the second is the load-bearing
+; one:
+;   * in the CALLER, `u = r + 1` lowers IN PLACE onto the clone's return rail, so
+;     `u` and `r` are one register and the measurement reads it directly. The
+;     accept this file pins is unchanged — the `cqq.out` rail is still a live,
+;     undischarged basis record of the wire at the second `cqrt_ry`.
+;   * inside the CLONE BODY, `%a = add nsw i32 %x, 3` is STILL LOWERED
+;     OUT OF PLACE (`cq_template_add_i32_hl` + its `_unc` + `cqrt_free`). That is
+;     not an accident of the fence: `specialize` passes `inBennettClone=true`, and
+;     it must, because the wrap builds its ForwardStream by SCANNING for
+;     `isForwardTemplate` members — a void `cqrt_addc` is not one, so it would be
+;     omitted, never reversed, and would leave the BORROWED argument `%x`
+;     permanently shifted, breaking |x>|0> -> |x>|f(x)> for every caller and the
+;     synthesized `_unc` twin with it. If a `cqrt_addc` ever appears inside
+;     @__cq_q_inner_1 below, that fence has been lost.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=CLONE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -63,8 +81,8 @@ define internal fastcc i32 @inner(i32 %x) {
 ; CHECK:      %[[H:.*]] = call i32 @cqrt_alloc_i32(i32 1)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:      %[[R:.*]] = call fastcc i32 @__cq_q_inner_1(i32 %[[H]])
-; CHECK:      %[[U:.*]] = call i32 @cq_template_add_i32_hl(i32 %[[R]], i32 1)
-; CHECK:      call i32 @cqrt_measure_i32(i32 %[[U]])
+; CHECK:      call void @cqrt_addc_i32(i32 %[[R]], i32 1)
+; CHECK:      call i32 @cqrt_measure_i32(i32 %[[R]])
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double 0x3FE6666666666666)
 ; The clone body copies out and cleans up after ITSELF, but the copy it returns
 ; is never discharged by anyone:
@@ -84,3 +102,12 @@ define internal fastcc i32 @inner(i32 %x) {
 ; CALLER never discharges.
 ; NOFREE:     %[[ROUT:.*]] = call fastcc i32 @__cq_q_inner_1(
 ; NOFREE-NOT: call void @cqrt_free(i32 %[[ROUT]])
+
+; The `inBennettClone` fence, pinned inside the clone body itself (bd 6uqc Inc
+; 2a). A Bennett-wrapped body reverses ONLY what the wrap's ForwardStream scan
+; collected, and a void `cqrt_addc` is not collectable — so the M-C rewrite must
+; not fire here, and the `add` must keep its out-of-place, `_unc`-reversed form.
+; CLONE-LABEL: define internal fastcc i32 @__cq_q_inner_1(
+; CLONE:       call i32 @cq_template_add_i32_hl(i32 %{{.*}}, i32 3)
+; CLONE:       call void @cq_template_add_i32_hl_unc(
+; CLONE-NOT:   call void @cqrt_addc_

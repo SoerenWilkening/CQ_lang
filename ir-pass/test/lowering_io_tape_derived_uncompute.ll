@@ -34,6 +34,16 @@
 ; writing `preservesBasisUnderRecord` as {rz, qram_store} with producers closed
 ; (railOf returns the gate ITSELF for a producer, so %OP would freeze too).
 ;
+; VEHICLE-OP NOTE (bd test_C_libtooling-6uqc, M-C Increment 2a — `add` only).
+; The DERIVED rail below is built with `mul`, not `add`, and that is load-bearing
+; for what this file discriminates: since M-C a dead-parent `q + c` lowers to the
+; VOID in-place `cqrt_addc_<W>`, which mints NO rail — so with `add` there would
+; be exactly ONE rail here and the PER-RAIL freeze decision this fixture exists to
+; pin would have nothing to discriminate between. `mul` is information-losing and
+; therefore outside the dtzb in-place bijection family at every batch. The
+; in-place spelling of the same program is covered end to end by
+; tests/e2e/slice_io_chained_theta.c, whose golden carries it.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREE < %t.cqd0.ll
@@ -43,7 +53,7 @@ declare i32 @putchar(i32)
 define void @slice(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %s = add i32 %q, 1
+  %s = mul i32 %q, 3
   %r = call i32 @putchar(i32 %s)
   ret void
 }
@@ -52,9 +62,9 @@ entry:
 ; recorded-Ry ancestor reverses but is left allocated:
 ; CHECK:     %[[TAPE:[a-zA-Z0-9_.]+]] = call i32 @cqrt_tape_alloc()
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 1)
+; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 3)
 ; CHECK:     call i32 @cqrt_tape_write_i32(i32 %[[TAPE]], i32 %[[OP]])
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP]], i32 %[[H]], i32 1)
+; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[OP]], i32 %[[H]], i32 3)
 ; CHECK:     call void @cqrt_free(i32 %[[OP]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
 ; CHECK-NOT: call{{.*}}@putchar

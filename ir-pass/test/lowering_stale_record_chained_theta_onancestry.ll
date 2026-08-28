@@ -13,14 +13,19 @@
 ; the language. The template fires AFTER both ry calls, reading the wire
 ; exactly as `%q2`'s record prescribes.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` lowers IN PLACE
+; to the frozen `cqrt_addc_<W>` (its parent handle has no data use after it), so
+; no ancestor rail is minted and the measurement reads the rail itself. Nothing
+; else this file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; CHECK:      %[[H:.*]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double %g)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double %t2)
-; CHECK-NEXT: %[[D:.*]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 3)
-; CHECK:      call i32 @cqrt_measure_i32(i32 %[[D]])
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[H]], i32 3)
+; CHECK:      call i32 @cqrt_measure_i32(i32 %[[H]])
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

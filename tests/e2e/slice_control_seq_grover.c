@@ -52,6 +52,28 @@
    computes something that is not S. This slice therefore stops at the `q += off`
    half — the part of S that genuinely lowers — rather than reordering S to get
    past a guard. */
+/* GOLDEN STATE AFTER M-C INCREMENT 2a (bd test_C_libtooling-6uqc, 2026-08-28),
+   and read this before quoting a green run here as a fix for bd
+   test_C_libtooling-nepx, BECAUSE IT IS NOT ONE.
+
+   The two `q += off` sites now lower to the IN-PLACE `cqrt_addc_i32`, so the two
+   ancestor rails they used to mint are never allocated: the golden below went
+   from `add -> h1` / `add -> h7` to `cqrt_addc_i32(h0, 3)` / `cqrt_addc_i32(h3,
+   3)`, and every handle after the first renumbered. The regeneration IS the fix,
+   applied to the half of the defect batch 2a covers, and it was approved on the
+   analytic dephasing argument (owner ruling, bd nepx thread) rather than by a
+   simulation — Rule 2 puts no simulator in the gate.
+
+   WHAT IS STILL WRONG. The middle site is `q -= off`, a `sub`, and batch 2a
+   admits `add` ONLY. It still mints a fresh rail (`h3`) off the collapsed `h0`
+   and leaves `h0` live — so at `cqrt_ry_i32(h3, -0x1p-1)`, the S-dagger this
+   slice exists to demonstrate, there is STILL a live entangled basis record of
+   the wire and the reflection is STILL dephased. bd nepx stays OPEN. What
+   changed is the count: one ancestor rail instead of two.
+
+   Its sibling tests/e2e/slice_control_seq_regions.c is NOT affected and its
+   golden is NOT regenerated — it has no chained theta and no out-of-place
+   add/sub at all (bd nepx's own correction comment, 2026-08-27). */
 volatile int off = 3;
 
 int slice(void) {

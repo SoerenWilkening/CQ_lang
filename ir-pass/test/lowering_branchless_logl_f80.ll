@@ -28,6 +28,11 @@
 ; promotion (`alloca`, `cqrt_qram`, a residual `store`/`load` instruction all
 ; absent → the split is register-only), no keep-set intrinsic CALL leaks, and no
 ; per-fn logl body is emitted.
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` here lowers
+; IN PLACE to the frozen `cqrt_addc_<W>` — its parent handle has no data use
+; after it — so no fresh ancestor rail is minted. Nothing else about what this
+; file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s --implicit-check-not='call{{.*}}@llvm.' --implicit-check-not='cqrt_qram' --implicit-check-not='alloca' --implicit-check-not=' store ' --implicit-check-not='= load ' --implicit-check-not='cq_template_logl' < %t.cqd0.ll
 
@@ -77,7 +82,7 @@ entry:
 ; CHECK: %[[Z64:.*]] = call i32 @cq_template_zext_i16_to_i64(i32 %[[T16]])
 ; CHECK: %[[T32:.*]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[Z64]])
 ; CHECK: %[[EX:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[T32]], i32 32767)
-; CHECK: %[[E:.*]] = call i32 @cq_template_add_i32_hl(i32 %[[EX]], i32 -16382)
+; CHECK: call void @cqrt_addc_i32(i32 %[[E:.*]], i32 -16382)
 ; CHECK: %[[CLR:.*]] = call i32 @cq_template_and_i64_hl(i32 %[[Z64]], i64 -32768)
 ; CHECK: %[[SET:.*]] = call i32 @cq_template_or_i64_hl(i32 %[[CLR]], i64 16382)
 ; CHECK: %[[MAN:.*]] = call i32 @cq_template_and_i80_hl(i32 %[[BC]], i80 18446744073709551615)

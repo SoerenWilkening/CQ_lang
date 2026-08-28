@@ -356,10 +356,22 @@ void cqrt_copy_f80_controlled(int32_t ctrl, int32_t src, int32_t dst);
  * category as cqrt_rz / cqrt_x (NOT a fresh-rail data template, so NO
  * out arg, NO `_unc`/`_inv` twin: EmitInverse re-emits xorc as-is and
  * addc with a negated immediate, exactly the cqrt_x-involution /
- * cqrt_ry-negate adjoint patterns). Emitted ONLY for a recognized
- * loop-carried rail SELF-UPDATE `q = q op c` whose old `q` is dead
- * through the cycle (LoopLowering.cpp); a straight-line value op with a
- * live operand stays OUT-OF-PLACE. The handle is i32 for every width
+ * cqrt_ry-negate adjoint patterns). TWO EMITTERS, and neither one is
+ * new ABI (bd test_C_libtooling-6uqc, M-C Increment 2a, widened the
+ * second into existence):
+ *   (1) a recognized loop-carried rail SELF-UPDATE `q = q op c` whose
+ *       old `q` is dead through the cycle (LoopLowering.cpp, issue dtzb);
+ *   (2) a STRAIGHT-LINE reassignment `q = q + c` whose PARENT HANDLE HAS
+ *       NO DATA USE AFTER THE OP (ArithLowering.cpp,
+ *       `classifyInPlaceReassignment`). Out of place, that add mints a
+ *       fresh rail and leaves the parent standing as a live basis RECORD
+ *       of the wire, which dephases any later non-diagonal gate on it
+ *       (bd test_C_libtooling-nepx). Note the batch: `add` only so far;
+ *       `sub`/`xor` are later batches.
+ * A straight-line value op whose parent is still LIVE stays OUT-OF-PLACE,
+ * and so does one inside a Phase-6 Bennett clone body (the wrap's forward
+ * stream is built by scanning for rail-minting templates, and a void gate
+ * is not one). The handle is i32 for every width
  * (Rule 15); `imm` carries the logical width. INTEGER widths only.
  * Trace (handle as h<N>, immediate as a decimal literal):
  *     "cqrt_addc_<W>(h<h>, <imm>)" / "cqrt_xorc_<W>(h<h>, <imm>)".

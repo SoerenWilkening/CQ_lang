@@ -5,6 +5,10 @@
 ; producer with itself (== 2·(3v+1)), the faithful meaning of the source. Proves
 ; multi-load fan-out and multi-op cone cloning (flags preserved).
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `+ 1` lowers IN PLACE
+; onto the `mul` rail, so the Q+Q `add` below reads that ONE register in both
+; slots. The by-ref inline this file is about is untouched.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 
@@ -28,8 +32,8 @@ define i32 @demo() {
 ; CHECK:       %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:       call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:       %[[MUL:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 3)
-; CHECK:       %[[ADD:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[MUL]], i32 1)
-; CHECK:       %[[SUM:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[ADD]], i32 %[[ADD]])
+; CHECK:       call void @cqrt_addc_i32(i32 %[[MUL]], i32 1)
+; CHECK:       %[[SUM:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[MUL]], i32 %[[MUL]])
 ; CHECK:       call i32 @cqrt_measure_i32(i32 %[[SUM]])
 
 define internal void @mysplit(i32 %v, ptr %out) {

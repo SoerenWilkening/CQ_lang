@@ -65,19 +65,19 @@ bool isInverseEmittable(const CallInst *Forward) {
   if ((Name == "cqrt_toffoli" && Forward->arg_size() == 3) ||
       (Name == "cqrt_cnot" && Forward->arg_size() == 2))
     return true;
-  // Phase 7.4 / issue dtzb (reachable ONLY via the 7.4 break whole-loop
-  // reverse-play, y05j.2): the in-place value rail self-update
-  // `cqrt_xorc_<W>(h, imm)` / `cqrt_addc_<W>(h, imm)` (arg_size 2, arg0 = the i32
-  // handle, arg1 = the classical immediate). `xor` is self-inverse (re-emit as
-  // is, like `cqrt_x`); `add` inverts by NEGATING the immediate (the integer twin
-  // of the rotation-negate case). There is no `_controlled` / `_inv` twin — the
-  // dtzb forward strategy mints only the void 2-arg gate. The `arg_size() == 2` is a
-  // defensive arity check on the xorc/addc branch; the synthetic `cqrt_cnot`
-  // uninvertible probe (lowering_uncompute_uninvertible.ll) declines because its
-  // name fails the `cqrt_xorc_`/`cqrt_addc_` prefix test (it never reaches here),
-  // NOT because of the arity gate.
+  // Phase 7.4 / issue dtzb, and since the M-C widening (bd 6uqc Inc 2a) ALSO the
+  // top-level straight-line spine path: the in-place value rail self-update
+  // `cqrt_xorc_<W>(h, imm)` / `cqrt_addc_<W>(h, imm)` (VOID, arg_size 2, arg0 =
+  // the i32 handle, arg1 = the classical immediate). `xor` is self-inverse
+  // (re-emit as is, like `cqrt_x`); `add` inverts by NEGATING the immediate (the
+  // integer twin of the rotation-negate case). There is no `_controlled` / `_inv`
+  // twin — both emitters mint only the void 2-arg gate. VOID is the load-bearing
+  // fence (bd 1fim; the arity alone would admit a hand-written non-void
+  // same-named fake, i.e. a rail-minting call this recipe cannot invert). The
+  // synthetic `cqrt_cnot` uninvertible probe (lowering_uncompute_uninvertible.ll)
+  // declines because its name fails the prefix test (it never reaches here).
   if ((Name.starts_with("cqrt_xorc_") || Name.starts_with("cqrt_addc_")) &&
-      Forward->arg_size() == 2)
+      Forward->getType()->isVoidTy() && Forward->arg_size() == 2)
     return true;
   // Uncontrolled data template (incl. compares post-WI-0): its void `_unc` form.
   // The `_inv`/`_unc` twins and the `_controlled` forms are NOT re-invertible

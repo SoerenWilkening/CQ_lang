@@ -14,6 +14,11 @@
 ; lowering_ctlz_idiom_i64.ll are the two that would go red if the fence were ever
 ; tuned toward `ilogb`.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` here lowers
+; IN PLACE to the frozen `cqrt_addc_<W>` — its parent handle has no data use
+; after it — so no fresh ancestor rail is minted. Nothing else about what this
+; file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=CLEAN %s < %t.cqd0.ll
@@ -24,7 +29,7 @@
 ; CHECK: %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ctlz_i32(i32 %[[S1]])
 ; CHECK: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Z]], i32 31)
 ; CHECK: %[[C:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i32_lh(i32 -1, i32 %[[M]])
-; CHECK: call i32 @cq_template_add_i32_hl(i32 %[[C]], i32 7)
+; CHECK: call void @cqrt_addc_i32(i32 %[[C]], i32 7)
 ;
 ; CLEAN-NOT: = phi
 ; CLEAN-NOT: br i1

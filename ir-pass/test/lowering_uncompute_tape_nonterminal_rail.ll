@@ -38,6 +38,13 @@
 ; 261j discrimination case). The freeze decides WHETHER to free; this fixture pins
 ; WHERE.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the first `+ 1` lowers IN
+; PLACE, so the rail the tape write reads IS the root. The property under test is
+; unchanged: that rail is still NON-TERMINAL (the terminal is the `+ 2` producer),
+; so `computeFreePoint` — which scans only the TERMINAL's users — still cannot see
+; the sink, and the anchor extension is still what keeps the reversal after the
+; read. The root's own free stays suppressed by the record freeze.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -58,17 +65,16 @@ entry:
 ; one:
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
-; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 1)
-; CHECK:     %[[OP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[OP]], i32 2)
-; CHECK:     call i32 @cqrt_tape_write_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OP]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 1)
+; CHECK:     %[[OP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 2)
+; CHECK:     call i32 @cqrt_tape_write_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[H]])
 ;
 ; ONLY THEN the whole-DAG reversal. This ORDER is the whole fixture: FileCheck
 ; directives match in sequence, so if the reversal moved back above the tape write
 ; the write would be consumed first and these lines could not match after it —
 ; which is precisely the pre-fix output.
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP1]], i32 %[[OP]], i32 2)
+; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP1]], i32 %[[H]], i32 2)
 ; CHECK:     call void @cqrt_free(i32 %[[OP1]])
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[OP]], i32 %[[H]], i32 1)
-; CHECK:     call void @cqrt_free(i32 %[[OP]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 -1)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
 ; CHECK-NOT: cqrt_measure

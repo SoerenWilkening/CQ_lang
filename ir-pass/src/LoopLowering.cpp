@@ -117,6 +117,8 @@ void diagnose(Instruction *Where, StringRef Msg) {
       *Where->getFunction(), Msg, Where->getDebugLoc()));
 }
 
+}  // namespace
+
 // Issue dtzb — is `BO` a recognized IN-PLACE value rail self-update? An `add` or
 // `xor` (a reversible bijection of the rail GIVEN a classical immediate) with
 // EXACTLY ONE tainted operand (the rail) and a CLASSICAL other operand (the
@@ -130,6 +132,11 @@ void diagnose(Instruction *Where, StringRef Msg) {
 // classical immediate — both return null and stay the X1 cross-iteration decline
 // (the general two-quantum Cuccaro-adder case is a deferred follow-on). An `fadd`
 // is opcode `FAdd`, not `Add`, so fp never reaches here.
+//
+// Exported since bd test_C_libtooling-6uqc Inc 2a — `ArithLowering`'s M-C
+// straight-line in-place-reassignment fence asks the SAME question this
+// predicate already answers, and Rule 14 says ask it rather than re-spell it.
+// (Declared in LoopPlan.h.)
 Value *inPlaceValueRailOperand(BinaryOperator *BO, const TaintSet &taint) {
   Instruction::BinaryOps Op = BO->getOpcode();
   if (Op != Instruction::Add && Op != Instruction::Xor)
@@ -143,6 +150,8 @@ Value *inPlaceValueRailOperand(BinaryOperator *BO, const TaintSet &taint) {
     return nullptr;  // need EXACTLY one tainted (rail) + one classical (imm).
   return TL ? L : R;
 }
+
+namespace {
 
 // Peel in-place gates off the front of a value's wire, returning the underlying
 // base. Two gate kinds peel (both are in-place mutations of the one rail handle,

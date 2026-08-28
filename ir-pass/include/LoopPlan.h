@@ -39,6 +39,7 @@ namespace llvm {
 class Module;
 class Loop;
 class BasicBlock;
+class BinaryOperator;
 class CallInst;
 class Value;
 class PHINode;
@@ -122,6 +123,19 @@ struct LoopBreakRegion {
 // values) is left byte-identical. Wired in BOTH pipeline entry points
 // (twin-pipeline parity is mandatory, WI-1.12).
 void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+
+// Issue dtzb — is `BO` a recognized IN-PLACE value rail self-update (`q = q OP
+// c`, OP in {add, xor}, EXACTLY ONE tainted operand, integer width <= 64, the
+// widths the frozen `cqrt_{addc,xorc}_<W>` grid serves)? Returns the tainted
+// rail operand, or null. Defined in LoopLowering.cpp beside the loop claim it
+// was written for; exported since bd test_C_libtooling-6uqc Inc 2a so
+// `ArithLowering`'s M-C straight-line fence asks the SAME predicate rather than
+// re-spelling its exclusion partition (Rule 14 — `mul`/`and`/`or`/shifts are
+// information-losing, a two-quantum `acc + q` has no classical immediate, and
+// `fadd` is a different opcode; a second spelling of that list is a second thing
+// to keep in sync). See the .cpp for the full over-accept partition.
+llvm::Value *inPlaceValueRailOperand(llvm::BinaryOperator *BO,
+                                     const TaintSet &taint);
 
 // Shared 799w/dtzb rail-structure predicate for the Lever-B force-unroll
 // pre-pass (LoopUnrollPrepass.cpp, ticket lf8s — fence U4). True iff `L`

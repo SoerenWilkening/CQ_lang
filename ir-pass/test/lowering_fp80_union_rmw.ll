@@ -10,6 +10,11 @@
 ; the widened §4.1 per-bit padding-taint walk proves this SOUND (the Inc-1
 ; everyUserMasksPadding fence would have declined the `and -32768` keep-mask).
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` here lowers
+; IN PLACE to the frozen `cqrt_addc_<W>` — its parent handle has no data use
+; after it — so no fresh ancestor rail is minted. Nothing else about what this
+; file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll
 
@@ -45,7 +50,7 @@ entry:
 ; CHECK-DAG: call i32 @cq_template_lshr_i80_hl
 ; CHECK-DAG: call i32 @cq_template_trunc_i80_to_i16
 ; CHECK-DAG: call i32 @cq_template_zext_i16_to_i64
-; CHECK-DAG: call i32 @cq_template_add_i64_hl
+; CHECK-DAG: call void @cqrt_addc_i64
 ; CHECK-DAG: call i32 @cq_template_or_i64
 ; CHECK: call i32 @cq_template_and_i80_hl
 ; CHECK-DAG: call i32 @cq_template_zext_i64_to_i80

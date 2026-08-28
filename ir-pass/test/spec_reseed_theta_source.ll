@@ -13,6 +13,11 @@
 ; recognized`). The fix keeps the qubit cone tainted; the GENUINE-classical
 ; scrub (spec_result_classical.ll) must stay un-lowered, so both directions hold.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` lowers IN PLACE
+; to the frozen `cqrt_addc_<W>` (its parent handle has no data use after it), so
+; no ancestor rail is minted and the measurement reads the rail itself. Nothing
+; else this file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -40,8 +45,8 @@ entry:
 ; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_cls_01(i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
 ; CHECK:     %[[RE:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[RE]], double 2.500000e-01)
-; CHECK:     %[[W:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[RE]], i32 8)
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[W]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[RE]], i32 8)
+; CHECK:     call i32 @cqrt_measure_i32(i32 %[[RE]])
 ;
 ; The qubit cone was NOT over-scrubbed into a raw classical add, and no decline.
 ; CHECK-NOT: cq_measure_{{.*}}operand not recognized

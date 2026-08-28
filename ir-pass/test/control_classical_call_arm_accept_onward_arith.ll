@@ -44,12 +44,19 @@ merge:
 }
 attributes #0 = { nounwind willreturn memory(none) }
 
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the ONWARD add lowers
+; IN PLACE on the merge out-rail (`cqrt_addc_i32`) rather than minting a fresh
+; rail off it. What this file pins is UNCHANGED and slightly sharper — the
+; onward arithmetic is still re-tainted and still lowered (never left as a stock
+; `add`), and the measurement now reads the very register the merge built, so no
+; ancestor copy of it survives the region.
+;
 ; the controlled-XOR copy merge builds %out, then the ONWARD add re-tainted and
 ; lowered over %out, then the measure:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(
-; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[OUT]], i32 1)
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OP]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[OUT]], i32 1)
+; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
 ; the onward add is NOT left as a stock `add`, and the region ACCEPTS (no decline):
 ; CHECK-NOT: = add i32

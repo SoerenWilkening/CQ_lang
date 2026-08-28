@@ -135,9 +135,11 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
           // Both proven ⇒ every template instance precedes every Ry instance on
           // every trace — harmless. Unproven ⇒ return T (decline; over-decline
           // is safe, Prime Directive).
-          if (EmitPoint && DT && DT->dominates(EmitPoint, CI) &&
-              !isPotentiallyReachable(CI, EmitPoint, /*ExclusionSet=*/nullptr,
-                                      DT))
+          // Both halves are `provablyBefore(EmitPoint, T)` — the shared
+          // spelling this header exports (Rule 14); it was inlined here and
+          // re-derived in RotationLowering until bd 6uqc Inc 2a needed a third
+          // caller.
+          if (EmitPoint && DT && provablyBefore(EmitPoint, CI, *DT))
             continue;  // provably post-emission on every trace — harmless.
           return CI;
         }
@@ -147,6 +149,12 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
     }
   }
   return nullptr;
+}
+
+bool provablyBefore(const Instruction *A, const Instruction *B,
+                    const DominatorTree &DT) {
+  return DT.dominates(A, B) &&
+         !isPotentiallyReachable(B, A, /*ExclusionSet=*/nullptr, &DT);
 }
 
 }  // namespace cq

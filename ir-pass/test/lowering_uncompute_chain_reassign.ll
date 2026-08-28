@@ -19,19 +19,31 @@
 ; OPERATION, which would free a dirty rail = a hidden measurement, Rule 6/8). The
 ; `cqrt_free` targets the recovered ROOT (`h0`), now |0> after the un-rotation.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a) — AND THIS FILE IS NOW THE
+; CLAUSE-(d) ORDERING PIN. `q = q + 1` lowers IN PLACE, so the reassignment chain
+; is ONE rail (h0) plus the mul's fresh rail, not three. The `_unc` slot
+; convention is still pinned by `mul_unc(out=h2, src=h0, 2)`. What is NEW and
+; load-bearing: the in-place adjoint `cqrt_addc_i32(h0, -1)` must come AFTER
+; `mul_unc`, because `mul_unc` recomputes from h0 and needs h0 at the value it
+; held when the forward `mul` ran. That is reverse PROGRAM order doing clause (d)
+; for free — the whole reason `ChainWalk::isInPlaceGateOn` had to learn
+; `cqrt_addc_<W>` in the same increment. Swap those two lines and the module is a
+; verify-clean silent miscompile that stage 2b would still certify.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
 ; Forward chain (theta → alloc + ry, then the two reassignments):
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H0:[a-zA-Z0-9_.]+]], double 2.500000e-01)
-; CHECK:     %[[H1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H0]], i32 1)
-; CHECK:     %[[H2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H1]], i32 2)
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H0]], i32 1)
+; CHECK:     %[[H2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H0]], i32 2)
 ;
 ; Reversed whole-chain adjoint (LIFO) via the void in-place `_unc` forms:
 ; mul_unc(out=h2, src=h1) BEFORE add_unc(out=h1, src=h0) BEFORE ry(-θ), each
 ; reading its STILL-LIVE forward source; then free the |0> root h0. No fresh mint.
-; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[H2]], i32 %[[H1]], i32 2)
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[H1]], i32 %[[H0]], i32 1)
+; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[H2]], i32 %[[H0]], i32 2)
+; CHECK:     call void @cqrt_free(i32 %[[H2]])
+; CHECK:     call void @cqrt_addc_i32(i32 %[[H0]], i32 -1)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H0]], double -2.500000e-01)
 ; CHECK:     call void @cqrt_free(i32 %[[H0]])
 ;

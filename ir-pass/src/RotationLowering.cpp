@@ -13,6 +13,7 @@
 #include "OpcodeSupport.h"  // abiWidthFromType
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
+#include "WireWalk.h"  // provablyBefore (the shared position-aware proof)
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -511,12 +512,12 @@ bool isTeardownUse(const CallInst *CI, const TaintSet &taint) {
   return false;
 }
 
-// "IF `B` executes, `A` has already executed, and `A` never runs again after
-// it." Dominance alone is not enough inside a loop — the back edge replays `A`
-// after `B` — so the reachability half is required, exactly as in `WireWalk`'s
-// position-aware mode (Rule 14: the same proof obligation, spelled the same
-// way). Unproven ⇒ false ⇒ the exemption is NOT granted ⇒ the record counts ⇒
-// decline (Prime Directive).
+// `provablyBefore` — "IF `B` executes, `A` has already executed, and `A` never
+// runs again after it." NO LONGER DEFINED HERE: it is `WireWalk.h`'s exported
+// spelling (bd 6uqc Inc 2a folded this private copy into it when the M-C
+// deadness fence became a third caller — Rule 14; two spellings of one relation
+// are how `railOf`/`isAbiQramStore` came to disagree). The modality note below
+// is retained because it is about THIS file's clauses, not about the helper.
 //
 // READ THE MODALITY, because the two callers need DIFFERENT ones and this helper
 // supplies only the first:
@@ -538,11 +539,6 @@ bool isTeardownUse(const CallInst *CI, const TaintSet &taint) {
 //     decline; it is left permissive deliberately, on the ruled ground that a
 //     record any user can still read is the program's own data. Changing this is
 //     a scope decision (bd test_C_libtooling-6uqc), not a bug fix.
-bool provablyBefore(const Instruction *A, const Instruction *B,
-                    const DominatorTree &DT) {
-  return DT.dominates(A, B) &&
-         !isPotentiallyReachable(B, A, /*ExclusionSet=*/nullptr, &DT);
-}
 
 // A Phase-6 SPECIALIZED CLONE call returning a value (`__cq_q_<callee>_<mask>`).
 // Not a record producer — its result is a `cqrt_alloc`-minted `cqq.out` rail

@@ -25,10 +25,15 @@
 ; anchor for the width-recovery direction (which width the compare reads), even
 ; though it does not exercise the erase scrub itself.
 ;
+; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `q + c` here lowers
+; IN PLACE to the frozen `cqrt_addc_<W>` — its parent handle has no data use
+; after it — so no fresh ancestor rail is minted. Nothing else about what this
+; file pins has moved.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
-; CHECK:     call i32 @cq_template_add_i16_hl(i32 %{{[a-zA-Z0-9_.]+}}, i16 3)
+; CHECK:     call void @cqrt_addc_i16(i32 %{{[a-zA-Z0-9_.]+}}, i16 3)
 ; CHECK:     call i32 @cq_template_zext_i16_to_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     call i32 @cq_template_icmp_slt_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
 ;

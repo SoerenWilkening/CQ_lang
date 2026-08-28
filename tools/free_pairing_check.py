@@ -770,6 +770,17 @@ def norm_arg(a):
     toks = a.split()
     if not toks:
         return a
+    # A CONSTANT-EXPRESSION argument (`i32 ptrtoint (ptr @u to i32)`,
+    # `i32 sub (i32 0, ...)`) is NOT a scalar: first/last-token collapses it to
+    # `i32 i32)`, which broke the addc adjoint pairing for symbolic immediates
+    # (Inc 2a Rule-13 round, SHOULD-FIX 2). Pass-emitted runtime calls carry no
+    # parameter attributes, so for these the exact normalisation is the full
+    # text after the type.
+    CONSTEXPR_OPS = {"sub", "add", "mul", "xor", "and", "or", "ptrtoint",
+                     "inttoptr", "bitcast", "trunc", "zext", "sext",
+                     "getelementptr"}
+    if len(toks) > 2 and toks[1] in CONSTEXPR_OPS and "(" in a:
+        return toks[0] + " " + " ".join(toks[1:])
     return toks[0] + " " + toks[-1]
 
 
@@ -942,8 +953,31 @@ def _hex_neg(a, b):
 
 
 def is_negation(a, b):
-    """True iff argument strings `a` and `b` are `x` and `-x`."""
+    """True iff argument strings `a` and `b` are `x` and `-x`.
+
+    Three spellings beyond the plain decimal, each added when a REAL emitted
+    form failed to pair (Inc 2a Rule-13 round, SHOULD-FIX 2 — the checker is
+    the only gate that can witness "freed at |0>", so a pairing it cannot read
+    is lost coverage, not a cosmetic):
+      * `i1 true`/`i1 true` — the addc immediate at width 1: -1 == 1 (mod 2),
+        so the adjoint re-emits the SAME boolean (`false` likewise, -0 == 0).
+        float("true") used to raise and silently return False.
+      * `<ty> sub (<ty> 0, X)` vs `<ty> X` — the adjoint of a symbolic
+        (constant-expression) immediate is spelled as an explicit constexpr
+        negation; token-count comparison used to fail it.
+      * hex (`0x...`) — pre-existing, via `_hex_neg`.
+    """
+    if a == b and a.split()[0] == "i1" and a.split()[-1] in ("true", "false"):
+        return True
     ta, tb = a.split(), b.split()
+    if len(ta) >= 2 and len(tb) >= 2 and ta[0] == tb[0]:
+        ty = ta[0]
+        ea = a[len(ty):].strip()
+        eb = b[len(ty):].strip()
+        # The inner operand of the constexpr repeats its own type, so the
+        # adjoint of forward-arg `a` ("<ty> X") is spelled "<ty> sub (<ty> 0, <ty> X)".
+        if eb == "sub (%s 0, %s)" % (ty, a) or ea == "sub (%s 0, %s)" % (ty, b):
+            return True
     if len(ta) < 2 or len(tb) < 2 or ta[:-1] != tb[:-1]:
         return False
     va, vb = ta[-1], tb[-1]
