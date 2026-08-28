@@ -7,6 +7,18 @@ runtime, the tests or any existing file was changed.** This spike adds only
 `tools/record_census/`, this document, and the machine-readable JSON records
 beside it.
 
+> **REVISION 3 — 2026-08-28: READ §2S BEFORE QUOTING ANY 0.1 NUMBER; §2R IS NOW
+> HISTORY TOO.** M-A shipped (`50b1b7e` Inc 1, `b4e329b` Inc 3), so census 0.1's
+> job changed from SIZING a guard to MODELLING one. §2S re-encodes the predicate
+> as the shipped `declineLiveRecordRotations` (clause 3 = the observing-sink walk,
+> plus the clause-6 existence skip, plus a real CFG for every position test) and
+> closes blind spot **A8** by taking chained-theta SITES from the pre-lowering
+> `@cq_theta` view. Live results: **0 modules would be declined, 0 disagreements
+> with `cq-opt` over the 38 corpus modules that hold a site, 0 site-mapping
+> failures** — and the population number is now structurally pinned at 0, which is
+> an open question for the owner (§2S.7). Only `tools/record_census/` and this
+> document changed; the published §2 / §2R JSONs are untouched.
+
 > **READ §2R BEFORE QUOTING ANY 0.1 NUMBER.** The owner ruling of 2026-08-27
 > changed the M-A predicate (liveness-keyed, alloc rails included). §2.1–§2.4
 > measure the **plan-of-record draft** predicate and are kept only so the two
@@ -47,7 +59,8 @@ independent method.
 | § | Census | Answers | Script |
 |---|---|---|---|
 | 2 | 0.1 Guard population (**plan-v1, SUPERSEDED**) | Would M-A (Inc 1 / Inc 3) decline anything green? | `census_01_guard_population.py --predicate plan-v1` |
-| **2R** | **0.1 Guard population — RULED PREDICATE** | **the live answer** | `census_01_guard_population.py` |
+| 2R | 0.1 Guard population — RULED PREDICATE (**SUPERSEDED 2026-08-28, see §2S**) | the answer while M-A was still a plan | `census_01_guard_population.py --predicate ruled --site-source lowered` |
+| **2S** | **0.1 re-run — the SHIPPED predicate (b4e329b) + the A8 upgrade** | **the live answer: does the census model of the guard AGREE with the guard?** | `census_01_guard_population.py [--acceptance\|--validate-guard]` |
 | 3 | 0.2 M-C population | How many sites, how many goldens regenerate? | `census_02_mc_population.py` |
 | 4 | 0.3 Orphan rails | Inc-5 before-picture | `census_03_orphan_rails.py` |
 | 5 | 0.4 Message churn (**RE-RUN under the ruled predicate**) | Which negative fixtures lose their pinned message? | `census_04_message_churn.py` |
@@ -130,7 +143,7 @@ Full lists are in each script's header; the load-bearing ones:
 | A5 | **The lowered view cannot see TAINT** — handles are `i32`. A `cqrt_ry` on a deliberately untainted rail reads as a chained theta. Caught by the source-IR cross-check (§9.3). | OVER-counts |
 | A6 | Clause 3's raw-line scan (§2R) reads every `%token` on a non-call line as a use, block labels included. A label and an SSA value cannot share a name in one function, so on well-formed IR this is exact. | — (grammar assumption, stated) |
 | A7 | `@llvm.dbg.*` calls are skipped as non-uses. **Measured 0** in the lowered corpus (built without `-g`); the counter fires loudly if that changes. | — |
-| **A8** | **The §1.5 adjoint-Ry filter MIS-PAIRS a user chained theta whose angle negates an earlier theta on the same handle** — the Grover S† spelling. See below; latent today, **fatal on the Inc-4 corpus**. | **BOTH — drops a real site AND mints a phantom one** |
+| **A8** | **The §1.5 adjoint-Ry filter MIS-PAIRS a user chained theta whose angle negates an earlier theta on the same handle** — the Grover S† spelling. See below; latent when written, **and it fired exactly as predicted the moment M-C landed**. **CLOSED 2026-08-28 by §2S.2** (sites now come from the pre-lowering `@cq_theta` view; the old classifier survives as `--site-source lowered` so the delta stays measurable). | **BOTH — drops a real site AND mints a phantom one** |
 | U1 | The pre-lowering model has no liveness/discharge to observe. | OVER-counts (the right direction for 0.4) |
 | U1c | **Added 2026-08-27:** the pre-lowering model DOES model the ruled clause 3, and there it is the **stronger** view — pre-lowering there are no discharge ops at all, so "no use after T" needs no exception list. This is the cross-check that prices §2R.5. | — (see §2R.5) |
 | U3 | The pre-lowering model does not replay PredMux / unroll / ctlz rewriting. | unknown-sign; **measured cost: 1 fixture**, `lowering_bitcast_measure_after_rerotate` (§2R.5) |
@@ -172,6 +185,13 @@ shape, and on the Inc-4 Grover slice this campaign is building toward.
 > with a compiler adjoint, because the compiler adjoint does not exist yet) and
 > use the lowered view only for the rail graph. Not attempted here — this spike
 > does not edit a measurement it has already published numbers from.
+>
+> **DONE 2026-08-28 (§2S.2), and the prediction held exactly.** After M-C,
+> `slice_control_seq_grover` reported **0** sites under the old classifier and
+> reports **2** under the new one; `slice_control_grover_2iter` — the Inc-4
+> customer, which landed in the corpus while §2S was being measured — reported
+> **2 of its 4**. The published pre-A8 JSONs are untouched; the new numbers live
+> in their own artifacts.
 
 #### U4 — the merge-phi wire, witnessed
 
@@ -301,6 +321,13 @@ two methods. `slice_control_seq_regions` is **NOT** a hit — see §9.4.
 ---
 
 ## 2R. Census 0.1 RE-RUN — the **RULED** predicate (owner ruling 2026-08-27)
+
+> **SUPERSEDED 2026-08-28 BY §2S, RETAINED IN FULL.** M-A shipped (`50b1b7e`,
+> `b4e329b`), and its clause 3 is now the OBSERVING-SINK walk, not the
+> "mentioned later" reading encoded below; the site source moved off the
+> lowered-IR angle heuristic (blind spot A8). §2R is the record of a decision and
+> of the numbers that sized two increments — **do not quote it as the compiler's
+> predicate.**
 
 **The ruling.** bd `test_C_libtooling-6uqc`, comment *"OWNER RULING 2026-08-27"*:
 M-A's predicate is **LIVENESS-KEYED**. A chained theta `T` on wire `W` declines
@@ -609,6 +636,449 @@ record the guard will never see — blind spot U3, not a predicate question.
 * **§9.1 is settled** (see §9.1R): the ruling chose neither horn of the dilemma
   as posed, and instead added the clause that makes both fixtures accept *for a
   stated reason*.
+
+---
+
+## 2S. Census 0.1 re-run — the SHIPPED predicate (b4e329b) and the A8 upgrade
+
+> **§2R IS NOW HISTORY TOO.** M-A shipped: Increment 1 (`50b1b7e`, descendant
+> half) and Increment 3 (`b4e329b`, ancestor half + copy-destination class +
+> clause 3 as the observing-sink walk + the clause-6 existence skip). §2R
+> measured the predicate as *ruled in prose*; the compiler now has a predicate as
+> *written in C++*, and the two are not the same object. This section replaces
+> §2R's numbers with a census that models the shipped guard, and closes the two
+> defects bd `test_C_libtooling-rtg5` was filed for: the **retired clause-3
+> reading** and **blind spot A8**.
+>
+> **Read §2R.1–§2R.5 as the record of a decision, not as a description of the
+> compiler.** Its `ruled` predicate's clause 3 is the "MENTIONED later" reading
+> that the F1 owner ruling (2026-08-28) retired.
+
+**Corpus snapshot, and why it is stated first.** These numbers were taken on a
+**moving working tree**: a second agent was concurrently adding Phase-4 / Inc-4
+fixtures and slices and had uncommitted `ArmClassify.cpp` / `ControlDetect.cpp`
+edits present in the `cq-opt` binary. `git HEAD` was `b4e329b`, the binary's
+content-addressed tool key was `94687917b7ff…`, 29 files were dirty, and the
+corpus was **1195 lit fixtures → 803 lowered modules (552 lit, 251 e2e)**. Every
+JSON this section cites now carries a `provenance` block with exactly those
+fields, so a re-run on a clean tree produces a **detectable** difference rather
+than a silent one. Three consecutive runs during this session read 38 → 42 → 46
+sites purely because fixtures were landing between them; the **agreement** result
+below is unaffected by that drift, and §2S.4 says why.
+
+### 2S.1 The predicate as encoded — `shipped-b4e329b`
+
+`tools/record_census/shipped_guard_model.py` mirrors
+`ir-pass/src/RotationLowering.cpp`'s `declineLiveRecordRotations` clause by
+clause. It is a **separate file named after the commit it mirrors**, so "the
+census models the shipped guard" is checkable by reading two files side by side.
+
+| clause | guard | census model |
+|---|---|---|
+| 1 | `collectAncestorRecords` + `collectDescendantRecords` + descendants-of-every-ancestor, over one `RecordSet` | same three walks, same edges: producer operands (`Instruction` operands only), the `cqrt_alloc_*` classical-seed stop, the **copy-destination** edge in both directions, phi/select **routers**, the clone-call hop **and** the clone RESULT as a record, `cqrt_qram_alloc_*` stops the walk dead in both directions |
+| 2 | `isDischargeOf` ∧ `provablyBefore(use, T)` | `cqrt_free(R)`, or an out-first `_unc` whose OUT slot is `R`, excluding `cqrt_qram_store_*_unc` |
+| 3 | `reachesObservingSink` | the SINK / HOP / NON-USE grammar verbatim, F1 + F2 + round-2 N1/N2/N3 (below) |
+| 4 | `cqrt_measure_*` ∧ `provablyBefore` | same, any operand slot |
+| 5 | `RecordSet::push` skips the wire | same |
+| 6 | `provablyBefore(T, R)` ⇒ skip | same, with the loop modality (below) |
+
+**Clause 3's grammar, as encoded.**
+
+* **SINKS** — `cqrt_measure_*` (any slot) · `ret` · `cqrt_tape_write_*` in its
+  **written** slot **and** in the **CTRL** slot of the 3-argument guarded
+  spelling (round-2 **N2**).
+* **HOPS** — a non-void `cq_template_*` / `cqrt_qram_load_*` read → its result ·
+  a `__cq_q_*` clone call → its result · a void `cqrt_copy_<W>[_controlled]` with
+  the value in **SRC or CTRL** → its **DST** · `phi`/`select` → their result ·
+  `cqrt_qram_store_<W>[_controlled]` with the value in IDX/VAL/PRED → **through
+  the array** to every *subsequent* load on the same handle · a **CONTROL** slot
+  of `cqrt_cnot` / `cqrt_toffoli` → their **TARGET** ancilla (round-2 **N1**).
+* **NON-USES** — `cqrt_free` · every `_unc`/`_inv` · **all** rotations (the F2
+  ruling) · the route/bracket gates `cqrt_cswap` / `cqrt_x` · the TARGET slot of
+  `cqrt_cnot`/`cqrt_toffoli` · **anything the walk does not model**, which is the
+  decline direction.
+* **Clause 6** is the F2 existence skip, and it is the loop-aware reading: a
+  record minted textually after `T` still counts when a back edge makes `T`
+  reachable again.
+
+**Position is a real CFG question here, not textual order — and that is the one
+place this census is materially better than §2R's.** Clauses 2/3/4/6 are *all*
+position tests, so blind spot **A1** ("program order = textual order") was
+load-bearing for every one of them, over a corpus in which **824 of 1369
+functions have more than one block**. The model now computes, per function and
+lazily:
+
+* `dominates` — the classic iterative dataflow dominator computation over the
+  block list, with an **unreachable** block dominated by everything (LLVM's own
+  vacuous answer, which is what makes the guard's F3 finding reproducible);
+* `potentially_reachable` — memoized forward BFS, in which a block is in its own
+  reach set **iff it sits on a cycle** — the loop back edge that gives clause 6
+  its modality;
+* **F3** — a use in a block with no entry path observes nothing and is skipped
+  before the position test, exactly as `recordIsExemptAt` does.
+
+`provablyBefore(A, B)` is then `dominates(A, B) ∧ ¬potentially_reachable(B, A)`,
+which is `WireWalk.h`'s definition.
+
+**What the model still cannot see — four residuals, all counted, never
+absorbed.** Every one of them is in the **over-exempting** direction (the census
+reports FEWER declines than the guard would), which is stated because it is the
+direction that makes an "agreement" claim weaker, not stronger.
+
+| # | residual | measured on this corpus |
+|---|---|---|
+| **S1** | `taint.SpineOps` is emitter-recorded and has **no textual signature**. The guard reads it through `isTeardownUse`, which runs *before* the hop arms, so a SpineOps-recorded `cqrt_cnot` / `cqrt_toffoli` / `cqrt_copy_*_controlled` is a NON-USE there and a HOP here. The only emitter that files such gates in `SpineOps` today is `BreakReversePlay`, so the residual is confined to the 7.4 loop-break slices. | `spine_indistinguishable_hops = 4` |
+| **S2** | the clone hop is **per-argument** in the guard (`cloneArgReachesResult`: an argument the callee never READS gets no hop). Parameter use is a property of the callee body, which a text model does not resolve, so it hops unconditionally. | `clone_hops_unchecked = 1` |
+| **S3** | array **cell content** is never modelled (as in the guard — severance class 4 is ruled deferred). | — |
+| **S4** | a record is a value defined by a CALL; a rail arriving as a function **parameter** is `Opaque`, exactly as `classifyRail` makes an `Argument` opaque. | — |
+
+**The model has its own selftest, because a model only ever run where the answer
+is "MISS everywhere" is one nobody should trust** (the
+`free_pairing_check_test.py` precedent). `python3
+tools/record_census/shipped_guard_model.py --selftest` runs **17 inline
+lowered-IR probes — 17/17 pass** — covering a dead descendant (HIT), an observed
+one (MISS), the F2 rotation non-use, the F1 route non-use, a template hop to a
+measure, the N1 CONTROL→TARGET hop **and its discriminator** (the same module with
+the ancilla unread), the N2 tape-CTRL sink, clause 2, clause 4, the clause-6 skip,
+the clause-6 **loop** modality, the clause-1 alloc ancestor, the copy destination,
+the QRAM-array stop, clause 5, and the documented permissive branch-arm edge
+(`b1`). The probes are inline, not committed fixtures: they test *this file*, not
+the compiler.
+
+> **Two asymmetries the selftest MEASURED rather than assumed, and both were my
+> expectations being wrong rather than the model.** (i) Clause 3 hops through
+> `cqrt_cnot`/`cqrt_toffoli` (round-2 N1), but **clause 1 does not follow them** —
+> so a condition-tree ancilla is never itself a record. (ii) Likewise a
+> `cqrt_cswap`'s **work rail** is never a record, because clause 1 follows
+> producer / clone / copy-destination edges only. Both are directionally
+> **accepts**. Neither was measured to be reachable — every emitter that mints
+> such a rail (`SelectMergeEmit`, `ArmClassify`, `SwapRouteEmit`) strips and frees
+> it inside its own region, which discharges it under clause 2 long before any
+> later gate — so this is recorded as an **observation for the owner**, not a
+> claimed hole. See §2S.7.
+
+### 2S.2 The A8 upgrade — chained-theta SITES from the pre-lowering view
+
+**The defect** (§1.4, blind spot A8). A user's chained `cq_theta` and the spine's
+negated-angle adjoint are the SAME TEXT in lowered IR — `cqrt_ry_<W>(%h, angle)`
+— and `_pair_adjoint_ry` guessed between them with a per-handle angle stack. Once
+M-C put a reassignment in place, the S and S† rotations landed on **one rail with
+exactly negated angles**, and the guess became wrong in both directions: it
+**dropped the user's real site** and could **promote a spine adjoint to a phantom
+one**.
+
+**The fix.** Sites now come from the **pre-lowering `@cq_theta` view** (default
+`--site-source source`), where the adjoint does not exist yet:
+
+1. enumerate every `@cq_theta_*` call per function in textual order, with a
+   CHAINED flag computed the way the pass computes it (`Chained =
+   taint.Tainted.count(arg0)`, modelled by `source_ir.FnAnalysis`'s forward taint
+   whose sole source is `@cq_theta`, Rule 3);
+2. map them onto the lowered function's `cqrt_ry_*` calls **in program order by
+   greedy angle matching** — the k-th user theta takes the next unmatched
+   `cqrt_ry` whose angle operand equals its own (numerically where it can be:
+   a fixture may spell `double 0.5` where the printer emits `5.000000e-01`, and an
+   SSA-named angle keys on the name, which the lowering preserves verbatim);
+3. every `cqrt_ry` left unmatched is **compiler-emitted**;
+4. the SITES are the mapped rotations whose user theta was CHAINED — which is
+   exactly `taint.UserChainedRotations`, the guard's own site set, recovered
+   without the emitter's help.
+
+**Mismatches are loud, never silent.** A user theta whose angle is not found among
+the remaining `cqrt_ry`, or a function holding chained thetas with no lowered
+counterpart, flags the module `site_mapping_failed`; a flagged module **falls back
+to the lowered view** (the over-counting direction) and is printed and recorded.
+**Measured: 0 mapping failures over all 803 modules.**
+
+> **RE-RUN ON THE COMMITTED TREE `d937669` (Inc 4 shipped, 2026-08-28) — the numbers in
+> this section were measured while Inc 4 was landing under the census (see 2S.7's
+> hygiene note); the committed artifacts were regenerated afterwards with the same
+> command on a clean tree: **1196 lit fixtures → 804 lowered modules (553 lit, 251 e2e)**,
+> **48 sites (source view; 44 lowered) in 39 modules**, 91 records examined,
+> **0 would-decline, 0 mapping failures, 0 unexplained disagreements** (39 MISS/LOWERS
+> agreements). The +1 module is `lowering_live_record_region_owner_probe.ll`, which Inc 4
+> flipped from a `RUN: not` to a positive. `provenance.git_head` in the JSON is the
+> authority; if it disagrees with this paragraph, believe the JSON.**
+
+**The site-source delta (predicate `shipped-b4e329b`):**
+
+| | lowered view (pre-A8) | source view (new default) |
+|---|---|---|
+| chained-theta **sites** | 42 | **46** |
+| modules with ≥1 site | 38 | **38** |
+| modules the census would decline | 1 | **0** |
+| upper bound incl. compiler adjoint Ry | 236 sites in 158 modules | — |
+
+**6 modules gain sites; 3 lose them.** The two sets are the two halves of the
+defect, and they are *different modules*, which is why the site TOTAL moving by
+only +4 is a misleading summary:
+
+| module | Δ | why |
+|---|---|---|
+| **`e2e:e2e-slice-control-grover-2iter`** | **+2** (2 → 4) | A8: two of the four chained thetas angle-paired as compiler adjoints |
+| **`e2e:e2e-slice-control-seq-grover`** | **+2** (0 → 2) | A8: the S† in `slice` and in `main`, exactly the shape §1.4 predicted |
+| `lit:control_swap_accept_two_iterations` | +2 | A8 |
+| `lit:control_swap_accept_post_region_theta` | +1 | A8 |
+| `lit:lowering_mc_seq_region_customer` | +1 | A8 |
+| `lit:spec_reseed_theta_source` | +1 | **NOT A8** — see the caveat below |
+| `lit:lowering_qram_guarded_store_railof` | −1 | A5: hand-written `cqrt_ry` in an already-lowered fixture, matching no `@cq_theta` |
+| `lit:lowering_uncompute_borrowed_operand_free_order` | −3 | A5, the §2R.5 artefact |
+| `lit:lowering_uncompute_sink_move_past_unwalked_gate` | −1 | A5, the §9.3 artefact |
+
+> **THE INC-4 CUSTOMER WAS ALREADY IN THE CORPUS WHEN THIS RAN.**
+> `e2e-slice-control-grover-2iter` landed from the concurrent Inc-4 session during
+> this session's measurements. bd `rtg5` said the upgrade was owed *"before any
+> corpus containing the Inc-4 Grover slice is measured with it"*; the old
+> classifier would have reported **2 of its 4 sites**, silently. It now reports
+> all four, each a MISS with a per-rail witness: at each gate every record is
+> either discharged by the previous region's `_unc`+`free` (clause 2) or minted
+> after the gate (clause 6). That is the A8 prediction confirmed on the exact
+> program it was made about.
+
+> **CAVEAT — the source view inherits `source_ir`'s over-taint, and it is a
+> phantom site, not an A8 recovery.** `spec_reseed_theta_source` gains a site
+> because the pre-lowering model propagates taint through a classical-returning
+> call `@cls(%q, 7)` that the real pass **scrubs**, making the next `cq_theta` a
+> fresh SOURCE rather than a chained one (§10's known over-taint). The lowered
+> view was RIGHT there. Direction: **over-counts sites**, the safe side. It is
+> counted (`source_sites_structurally_alloc_minted = 1`) and printed by name on
+> every run, using the one structural signal that is reliable: a lowered SOURCE
+> theta is an `alloc`+`ry` **pair**, a chained one is a bare `ry`.
+
+### 2S.3 Totals — the shipped predicate vs §2R
+
+All four predicates are computed on every run from the same parse of the same
+lowered module, under **both** site views:
+
+| predicate | §2R (2026-08-27, 760 modules) | **source site view (new default)** | lowered site view |
+|---|---|---|---|
+| `plan-v1` | 10 | **9** | 10 |
+| `ruled` | 3 (2 real + 1 artefact) | **0** | 1 (artefact) |
+| `ruled-spine-aware` | 8 | **0** | 2 (both artefacts) |
+| **`shipped-b4e329b`** | — | **0** | 1 (artefact) |
+
+| | §2R | **2S** |
+|---|---|---|
+| lowered modules analysed | 760 | **803** (552 lit, 251 e2e) |
+| chained thetas | 22 in 19 modules | **46 in 38 modules** |
+| upper bound incl. adjoint Ry | 189 in 123 | **236 in 158** |
+| **modules the guard would newly decline** | 3 | **0** |
+| records examined by the clause-1 walk | — | **89** |
+| exempt, clause 2 (discharged before the gate) | — | **29** |
+| exempt, clause 3 (observed after the gate) | — | **26** |
+| exempt, clause 4 (measured before the gate) | 0 | **4** |
+| clause-6 skips (minted after the gate) | — | **30** |
+| `_inv` mints | 0 | **0** |
+| multi-block functions (A1) | 775 / 1303 | **824 / 1369** |
+| site mapping failures | — | **0** |
+
+**Read the headline `0` with the `89` beside it.** The clause-1 walk found 89
+records standing around 46 gates and every one of them was accounted for by a
+named clause with a printed witness. A `0` produced by a walk that found nothing
+would be a broken model; this one is produced by a walk that found plenty and
+then discharged it.
+
+**The shipped-vs-`ruled` delta on this corpus is ZERO, and that is not evidence
+that the F1 ruling changed nothing.** It is a consequence of *what the corpus
+is*: the corpus is the set of modules that LOWER, and Increment 3 already removed
+from it every module the retired "mentioned later" reading over-accepted — those
+14 fixtures are now committed **negatives**, outside the corpus by construction.
+The clause-3 change is real and its population is exactly the fixtures §2S.4 lists
+as unmodellable.
+
+### 2S.4 Validation against the real guard
+
+`--validate-guard` compares, for every corpus module with ≥1 chained-theta site,
+the census verdict (HIT = "the guard would decline") against that module's ACTUAL
+`cq-opt` verdict — the same `cq-opt` invocation that produced the lowered IR the
+census read.
+
+> **Read the asymmetry before the table.** The guard SHIPPED at b4e329b, and the
+> corpus is the set of modules that lower. **Every module in the corpus is
+> therefore one the guard did NOT decline, so every census HIT is a disagreement
+> by construction** and the target is zero. Symmetrically, the census can
+> **never** witness a true positive on this corpus: a declining module emits no
+> lowered IR at all.
+
+```
+site view: source (thetas)      predicate: shipped-b4e329b
+
+modules WITH >=1 chained-theta site, in the lowered corpus
+  census HIT  / cq-opt LOWERS  :  0     <- every one would be a disagreement
+  census MISS / cq-opt LOWERS  : 38     <- agreement
+NOT MODELLABLE (a declining module emits no lowered IR)
+  fixtures the guard declines  : 27
+  fixtures declining elsewhere : 616
+```
+
+**Disagreements: 0. Unexplained disagreements: 0.** For the e2e corpus
+specifically — where the actual verdict is "lowers" for all 251 slices — there is
+likewise **no census HIT**, so there is nothing to explain there either.
+
+The two disagreements that DO exist under `--site-source lowered` are both the
+**A5 artefact class** and are carried in the script's `KNOWN_DISAGREEMENTS` table,
+so a *new* one prints `UNEXPLAINED` and fails the check rather than joining a list
+nobody is obliged to extend:
+
+| module | census (lowered view) | `cq-opt` | explanation |
+|---|---|---|---|
+| `lit:lowering_uncompute_sink_move_past_unwalked_gate` | HIT | lowers | already-lowered fixture; its `cqrt_ry` is hand-written, in **no** emitter-recorded set, on a rail its own comment declares UNTAINTED. `TaintPropagation.h` says this class is invisible to the guard **by construction**. The **source** view reports 0 sites here and therefore agrees with the compiler. |
+| `lit:lowering_uncompute_borrowed_operand_free_order` | HIT | lowers | same class (§2R.5's own finding): three hand-written `cqrt_ry_i32`. |
+
+**The 27 fixtures the guard declines are the population the census structurally
+cannot model** — 26 `lowering_reject_live_record_*` plus
+`control_swap_reject_post_region_theta_derived_cond`. They are named in the JSON.
+Note this is a *census* limitation, not a coverage gap: each of those is a
+committed lit negative that pins the guard's message character-for-character.
+
+**A HIT-direction cross-check, since the corpus cannot supply one.** Take
+`lowering_reject_live_record_two_hop.ll` (the guard declines it,
+`opt` exit 1, message `kMsgLiveRecord`) and its minimal ACCEPT twin — the *same*
+module with `%d` additionally measured after the gate (exit 0). Run the model on
+the twin's REAL lowered output, then on that same lowered output **minus exactly
+the one `cqrt_measure_i32(%h_op)` line**:
+
+```
+two_hop_accept.low.ll   HITS []            exempt %h_op by clause 3 at 12:cqrt_measure_i32
+                                           exempt %h_op1 by clause 4 at 10:cqrt_measure_i32
+two_hop_hit.low.ll      HITS ['%h_op']     exempt %h_op1 by clause 4 at 10:cqrt_measure_i32
+```
+
+The single textual difference that flips the compiler between accept and decline
+flips the model between MISS and HIT, on the same rail the guard's diagnostic is
+about. Reproduce with:
+
+```bash
+OPT=build/ir-pass/cq-opt; T=ir-pass/test; mkdir -p /tmp/rtg5probe
+sed -n '/^declare/,$p' $T/lowering_reject_live_record_two_hop.ll \
+  | grep -v '^; CHECK' > /tmp/rtg5probe/two_hop_reject.ll
+sed 's|^  %m2 = call i32 @cq_measure_si32(i32 %q2)|  %md = call i32 @cq_measure_si32(i32 %d)\n&|' \
+  /tmp/rtg5probe/two_hop_reject.ll > /tmp/rtg5probe/two_hop_accept.ll
+$OPT -passes=cq-lowering -S /tmp/rtg5probe/two_hop_reject.ll -o /dev/null   # exit 1, kMsgLiveRecord
+$OPT -passes=cq-lowering -S /tmp/rtg5probe/two_hop_accept.ll \
+     -o /tmp/rtg5probe/two_hop_accept.low.ll                                # exit 0
+grep -v 'call i32 @cqrt_measure_i32(i32 %h_op)$' /tmp/rtg5probe/two_hop_accept.low.ll \
+  | sed 's/%m4 = //' > /tmp/rtg5probe/two_hop_hit.low.ll
+```
+
+### 2S.5 What census 0.1 can and cannot answer now — and the acceptance pins
+
+**The population number is structurally pinned at 0 and can never move again.**
+Census 0.1 was built to answer *"how many green modules would this guard
+decline?"*, which was a real question while the guard was a plan. The guard
+ships; the modules it declines are no longer green; the answer is 0 and will stay
+0 for as long as the model agrees with the compiler. **The census's live value has
+therefore moved from a POPULATION to an AGREEMENT check** — "does the model of the
+guard match the guard on every module the guard accepts, and can it still find the
+sites at all?" — plus the four pins below. bd `rtg5` offered exactly this
+alternative ("or retire the population number explicitly"); the population figure
+is retained because it is what makes the agreement check non-vacuous (§2S.3's
+`89`), not because it still measures anything about the campaign.
+
+`--acceptance` exits non-zero on failure and pins four claims:
+
+```
+PASS lit:lowering_stale_record_add_before_theta   sites(source)=1 sites(lowered)=1 shipped=MISS
+       exempt %h_op=cq_template_add_i32_hl by clause 3 at 10:cqrt_measure_i32
+PASS lit:lowering_stale_record_alias_before_theta sites(source)=1 sites(lowered)=1 shipped=MISS
+       exempt %h_op=cq_template_add_i32_hl by clause 3 at 11:cqrt_measure_i32
+PASS e2e:e2e-slice-control-seq-grover             sites(source)=2 sites(lowered)=0 shipped=MISS
+       exempt %h_cmp1 by clause 2 at 20:cq_template_icmp_eq_i32_hl_unc
+       clause-6 skip (minted after gate): %h_cmp
+PASS lit:lowering_uncompute_sink_move_past_unwalked_gate
+                                                  sites(source)=0 sites(lowered)=1 shipped=MISS
+       lowered-view HIT retained: the A5 artefact stays visible
+```
+
+**The seq-grover pin was VACUOUS before this revision and is not now** — that is
+the headline of the whole upgrade. Its previous comment said so in as many words:
+`_pair_adjoint_ry` dropped the S† site, so the census reported **zero** chained
+thetas there and "MISS" was a statement about a site it could not see. The pin now
+asserts **both** halves — the site is FOUND from the pre-lowering view (2 of them,
+`slice` and `main`) **and** it is a MISS — plus `sites(lowered) == 0`, which keeps
+the A8 defect itself measurable instead of becoming folklore.
+
+**The A5 artefact pin was RE-DISPOSITIONED, not dropped.** It used to assert
+"remains a census HIT". That was right about the old census and wrong about the
+compiler: the fixture's `cqrt_ry` is hand-written and in no emitter-recorded set,
+so the guard cannot fire on it **by construction**. The pin now asserts the
+agreement (0 sites in the source view) **and** keeps the artefact visible (still a
+HIT in the lowered view).
+
+**Blind spots, after this revision.**
+
+* **A8 — CLOSED** for the site question, at the cost of inheriting `source_ir`'s
+  over-taint (1 phantom site, counted and named, §2S.2).
+* **A1 — CLOSED for the shipped predicate**, which now uses dominators +
+  reachability rather than textual order. It **remains** for `plan-v1` / `ruled` /
+  `ruled-spine-aware`, which are kept only for the delta table.
+* **A5 — OPEN and now MEASURED FROM BOTH SIDES**: 3 modules / 5 sites are
+  lowered-view-only, and all three are already-lowered fixtures. Under the default
+  the census agrees with the compiler about them.
+* **A2 (no interprocedural edges) — PARTLY CLOSED**: the clause-1 walk crosses
+  clone calls and records their result rails, as the guard does; what remains is
+  S2 (the per-argument clone hop).
+* **A3/A7 — still empty** (`_inv` mints 0, `dbg` uses skipped 0).
+* **NEW: the census cannot witness a true positive at all** (§2S.4). This is
+  structural, not a parser limitation.
+* **NEW: S1** — `SpineOps` has no textual signature; 4 hops on this corpus.
+
+### 2S.6 Exact commands
+
+```bash
+# the live population + both deltas + the guard validation
+python3 tools/record_census/census_01_guard_population.py --validate-guard \
+    --json      docs/prd/record-family/census-0.1-guard-population-shipped-b4e329b.json \
+    --delta-json docs/prd/record-family/census-0.1-site-source-delta.json
+
+# the four pins, with their witnesses (exit non-zero on failure; also runs the
+# guard validation, because a pin is only meaningful while the model agrees)
+python3 tools/record_census/census_01_guard_population.py --acceptance
+
+# the A8 delta as its own measurement: the pre-upgrade classifier
+python3 tools/record_census/census_01_guard_population.py --site-source lowered
+
+# the superseded predicates, same run, same corpus
+python3 tools/record_census/census_01_guard_population.py --predicate ruled
+python3 tools/record_census/census_01_guard_population.py --predicate plan-v1
+python3 tools/record_census/census_01_guard_population.py --predicate ruled-spine-aware
+
+# the model's own 17 probes — the HIT direction included
+python3 tools/record_census/shipped_guard_model.py --selftest
+
+# the pre-lowering cross-check, unchanged (it deliberately asks the census for
+# its LOWERED site view, so the two models stay independent)
+python3 tools/record_census/source_ir.py --validate
+```
+
+Artifacts written by this section:
+`docs/prd/record-family/census-0.1-guard-population-shipped-b4e329b.json` and
+`docs/prd/record-family/census-0.1-site-source-delta.json`. **The published §2R
+JSONs are untouched** — this spike does not edit a measurement it has already
+published numbers from.
+
+### 2S.7 Open questions (owner)
+
+1. **Retire the 0.1 population number, or keep it?** It is structurally 0 from
+   here on (§2S.5). The honest alternatives are (a) keep it as the non-vacuity
+   denominator for the agreement check, which is what this revision does, or
+   (b) declare it retired and keep only `--acceptance` + `--validate-guard`.
+2. **The census can no longer witness a true positive.** If the campaign wants a
+   measurement in the HIT direction, the natural vehicle is census **0.4**'s
+   method — the pre-lowering model over the 27 DECLINING fixtures — which would
+   also answer "does the guard decline them for the reason we think". Not
+   attempted here.
+3. **Clause 1 does not follow `cqrt_cnot` / `cqrt_toffoli` / `cqrt_cswap`**, so a
+   condition-tree ancilla and a route work rail are never records (§2S.1, measured
+   by the selftest, not asserted). Directionally an accept. Believed unreachable
+   because every emitter that mints one strips and frees it in-region, but **that
+   is an argument, not a measurement**, and it is the shape Inc 4 is actively
+   changing.
+4. **`source_ir.py --validate`'s second verdict still compares against the retired
+   `ruled` predicate**, so its 12 current disagreements are read against a
+   predicate the compiler no longer has. Re-pointing it at `shipped-b4e329b` needs
+   `records_for` to grow the observing-sink clause, which is a second spelling of
+   `shipped_guard_model.py` — Rule 14 says decide deliberately rather than copy.
 
 ---
 
@@ -1425,7 +1895,10 @@ program**, and that no one asked for that combination.
 
 ```
 tools/record_census/census_common.py                    corpora + lowering cache + shared model
-tools/record_census/census_01_guard_population.py       census 0.1 (3 predicates + --acceptance)
+tools/record_census/census_01_guard_population.py       census 0.1 (4 predicates x 2 site sources
+                                                        + --acceptance + --validate-guard)
+tools/record_census/shipped_guard_model.py              ADDED 2026-08-28 (§2S): the b4e329b guard
+                                                        mirrored over lowered IR, + --selftest (17 probes)
 tools/record_census/census_02_mc_population.py          census 0.2
 tools/record_census/census_03_orphan_rails.py           census 0.3 (+ --crosscheck)
 tools/record_census/census_04_message_churn.py          census 0.4 (--predicate ruled|plan-v1)
@@ -1442,6 +1915,10 @@ docs/prd/record-family/census-0.2-mc-population.json
 docs/prd/record-family/census-0.3-orphan-rails.json
 docs/prd/record-family/census-0.4-message-churn.json                  RULED predicate (headline)
 docs/prd/record-family/census-0.4-message-churn-preruling.json        the pre-ruling artifact, retained verbatim
+docs/prd/record-family/census-0.1-guard-population-shipped-b4e329b.json
+                                                        ADDED 2026-08-28 (§2S): the SHIPPED predicate
+docs/prd/record-family/census-0.1-site-source-delta.json
+                                                        ADDED 2026-08-28 (§2S): the A8 + predicate deltas
 ```
 
 **Revision 2026-08-27 (owner ruling).** Only `census_01_guard_population.py`,
@@ -1547,3 +2024,11 @@ HEAD `d2828e3` from three lines of C (`lowering_reject_live_record_select_merge_
 `lowering_uncompute_borrowed_operand_free_order`, the §2R.5 spine-aware-only prediction that
 did not flip, is an already-lowered fixture whose `cqrt_ry` calls are hand-written (in no
 emitter-recorded set), so the guard cannot fire on it — the A5 artefact class, not a miss.
+
+**Superseded by §2S (2026-08-28).** Both notes above are about diffing census 0.1's INC1
+figure against the guard's population; that diff is no longer the thing to compute. Census
+0.1 now MODELS the shipped guard (`shipped_guard_model.py`, predicate `shipped-b4e329b`) and
+takes its SITES from the pre-lowering `@cq_theta` view (blind spot A8, closed), so its live
+output is an AGREEMENT check — **0 disagreements over 38 modules with a site; the population
+figure is structurally 0 and stays there.** Read §2S before quoting any 0.1 number, including
+the ones in this note.

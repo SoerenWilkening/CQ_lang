@@ -9,17 +9,85 @@ adds the ANCESTOR half. This file measures both halves separately so the two
 increments can be sized independently, and so "Inc 1 is shippable standalone" is
 a measurement rather than a hope.
 
-THREE PREDICATES, ALL ALWAYS COMPUTED
-=====================================
-`--predicate {ruled,ruled-spine-aware,plan-v1}` selects the HEADLINE population.
-All three are computed on every run from the same parse of the same lowered
-module, so the delta table this script prints is a difference between readings of
-ONE measurement, not between runs. `ruled` is the default and is the OWNER-RULED
-predicate encoded literally; `ruled-spine-aware` prices the ONE ambiguity found
-while encoding it (see AMBIGUITY below) and is NOT a decision.
+2026-08-28 REVISION — THE SHIPPED PREDICATE AND THE A8 UPGRADE (bd rtg5)
+========================================================================
+M-A SHIPPED (Inc 1 `50b1b7e`, Inc 3 `b4e329b`). This file was written to SIZE
+that guard before it existed; from b4e329b on, its job is to MODEL IT. Two
+divergences were open and both are now closed here:
 
-  `ruled`   (DEFAULT) — OWNER RULING 2026-08-27, comment "OWNER RULING
-            2026-08-27" on bd test_C_libtooling-6uqc. A rail R counts against a
+  1. CLAUSE 3 was the RETIRED "mentioned later" reading. The shipped guard
+     requires an OBSERVING SINK reached by lineage (owner rulings F1+F2,
+     2026-08-28). The new default predicate `shipped-b4e329b` mirrors
+     `declineLiveRecordRotations` clause by clause — record set, discharge,
+     observing-sink walk, measure, wire, and the clause-6 existence skip — in
+     `shipped_guard_model.py`. `ruled` / `ruled-spine-aware` / `plan-v1` remain
+     computable for the DELTA TABLE ONLY; none of them is the compiler's
+     predicate any more.
+  2. BLIND SPOT A8 (SPIKE §1.4): chained-theta SITES came from the LOWERED view,
+     where a user's chained `cq_theta` and the spine's negated-angle adjoint
+     `cqrt_ry` are textually identical, and `_pair_adjoint_ry` guessed between
+     them by angle. It guessed WRONG IN BOTH DIRECTIONS once M-C put both
+     rotations on ONE rail (it dropped `seq-grover`'s S-dagger and could promote a
+     spine adjoint to a phantom site). Sites now come from the PRE-LOWERING
+     `@cq_theta` view — `--site-source source`, the DEFAULT — which cannot
+     confuse the two because the adjoint does not exist yet at that stage. The
+     old classifier is kept behind `--site-source lowered` for the delta.
+
+SITE SOURCE (`--site-source {source,lowered}`; BOTH always computed)
+--------------------------------------------------------------------
+  `source` (DEFAULT) — enumerate every `@cq_theta_*` call in the PRE-LOWERING
+      module (the lit fixture as committed, or an e2e slice's stage-1 IR), in
+      textual order per function, with a CHAINED flag computed the way the pass
+      computes it (`RotationLowering.cpp`: `Chained = taint.Tainted.count(arg0)`;
+      here `source_ir.FnAnalysis`'s forward taint, whose source is `@cq_theta`
+      alone, Rule 3). Then MAP those onto the lowered function's `cqrt_ry_*`
+      calls in program order by GREEDY ANGLE MATCHING: the k-th user theta takes
+      the next unmatched `cqrt_ry` whose angle operand equals its own. Every
+      `cqrt_ry` left unmatched is COMPILER-EMITTED (a spine adjoint) and is not a
+      site. The SITES are the mapped rotations whose user theta was CHAINED —
+      which is exactly `taint.UserChainedRotations`, the shipped guard's own
+      site set, recovered without the emitter's help.
+      MISMATCHES ARE LOUD, NEVER SILENT: a user theta whose angle is not found
+      among the remaining `cqrt_ry`, a function that holds user thetas but does
+      not appear in the lowered module, or a lowered function with fewer
+      rotations than user thetas, all flag the module `site_mapping_failed`. A
+      flagged module FALLS BACK to the lowered view (the over-counting direction)
+      and is listed in the output and the JSON.
+  `lowered` — the pre-A8 rule, preserved verbatim: a `cqrt_ry` is a SOURCE theta
+      iff the immediately preceding call is the `cqrt_alloc` that minted its
+      handle, and `_pair_adjoint_ry`'s per-handle angle stack drops what it reads
+      as a compiler adjoint. Kept ONLY so the A8 delta is a measurement.
+
+  KNOWN RESIDUAL OF THE MAPPING (direction: UNDER-counts sites). A stage that
+  DUPLICATES a theta before `lowerRotations` — `unrollConstTripLoops`, the
+  PredMux fixpoint — yields more `cqrt_ry` than there are user thetas, all with
+  the same angle; greedy matching binds the first ones and reads the copies as
+  adjoints. No count mismatch is raised, because there is no missing angle. The
+  `--validate-guard` confusion table below is the check that would catch it:
+  a duplicated site the census drops shows up as a guard decline the census
+  cannot explain.
+
+FOUR PREDICATES, ALL ALWAYS COMPUTED
+=====================================
+`--predicate {shipped-b4e329b,ruled,ruled-spine-aware,plan-v1}` selects the
+HEADLINE population. All four are computed on every run from the same parse of
+the same lowered module, so the delta table this script prints is a difference
+between readings of ONE measurement, not between runs.
+
+  `shipped-b4e329b` (DEFAULT) — the guard AS SHIPPED at commit b4e329b. Modelled
+            in `shipped_guard_model.py`, which mirrors
+            `ir-pass/src/RotationLowering.cpp` clause by clause and carries its
+            own divergence counters (`SpineOps` invisibility, the per-argument
+            clone hop). Position is a REAL CFG question here — dominators plus
+            forward reachability, matching `WireWalk.h`'s `provablyBefore` —
+            not textual order, because clauses 2/3/4/6 are all position tests
+            and 822 of 1363 functions in this corpus have more than one block.
+
+  `ruled`   — OWNER RULING 2026-08-27, comment "OWNER RULING
+            2026-08-27" on bd test_C_libtooling-6uqc. **RETIRED as a model of
+            the compiler on 2026-08-28** — its clause 3 is the "mentioned later"
+            reading the F1 ruling replaced. Kept for the delta table. A rail R
+            counts against a
             chained theta T on wire W iff ALL of:
               (1) R is ENTANGLED with W — transitively, ANCESTORS and
                   DESCENDANTS. R may be `cq_template_*`-minted,
@@ -163,37 +231,64 @@ can see. The two differ by 5 modules and 8 rails on today's corpus, and the
 canonical case is `e2e-slice-io-chained-theta` — the very program spike §9.2
 argued should count.
 
+=========================== VALIDATION (`--validate-guard`) ================
+The census's verdict is only worth what it agrees with. `--validate-guard`
+compares, for every module in the corpus that holds at least one chained-theta
+site, the census verdict (HIT = "the guard would decline") against the module's
+ACTUAL verdict under `build/ir-pass/cq-opt` — exit code, and for a decline
+whether the message is the guard's `kMsgLiveRecord` or another stage's.
+
+READ THE ASYMMETRY BEFORE READING THE TABLE. The corpus is the set of modules
+that LOWER, and the guard SHIPPED at b4e329b, so every module in the corpus is
+one the guard did NOT decline. **Every census HIT is therefore a disagreement by
+construction**, and the target is zero unexplained ones. The fixtures the guard
+DOES decline are outside the corpus entirely (a declining module emits no lowered
+IR), so they are reported separately, as the population the census structurally
+cannot model.
+
 ================================== RE-RUN ==================================
+    # the live population under the SHIPPED predicate (default) + the deltas
     python3 tools/record_census/census_01_guard_population.py \
-        --json docs/prd/record-family/census-0.1-guard-population.json
+        --json docs/prd/record-family/census-0.1-guard-population-shipped-b4e329b.json
 
-    # the superseded pre-ruling population, same run, same corpus
+    # the A8 site-source delta and the predicate delta, as their own artifact
     python3 tools/record_census/census_01_guard_population.py \
-        --predicate plan-v1 \
-        --json docs/prd/record-family/census-0.1-guard-population-plan-v1.json
+        --delta-json docs/prd/record-family/census-0.1-site-source-delta.json
 
-    # the priced ambiguity (spine-only post-theta uses do not exist at the slot)
+    # the census verdict vs the real `cq-opt` verdict, per module
+    python3 tools/record_census/census_01_guard_population.py --validate-guard
+
+    # the superseded predicates, same run, same corpus (delta table only)
+    python3 tools/record_census/census_01_guard_population.py --predicate ruled
+    python3 tools/record_census/census_01_guard_population.py --predicate plan-v1
     python3 tools/record_census/census_01_guard_population.py \
-        --predicate ruled-spine-aware \
-        --json docs/prd/record-family/census-0.1-guard-population-spine-aware.json
+        --predicate ruled-spine-aware
 
-    # the two acceptance tests of the ruling, printed with their witnesses
+    # the pinned acceptance tests, printed with their witnesses (exit nonzero on
+    # failure)
     python3 tools/record_census/census_01_guard_population.py --acceptance
 
-Prints the totals, the delta vs plan-v1, and the per-module list; `--json` also
-writes the full machine-readable record (BOTH predicates, always). First run
-lowers the corpus (~100s wall at 8 threads); later runs hit the content-addressed
-cache under `build/.record_census/`.
+    # the pre-lowering cross-check (unchanged: it deliberately asks the census
+    # for its LOWERED site view, so the two models stay independent)
+    python3 tools/record_census/source_ir.py --validate
+
+Prints the totals, the deltas, and the per-module list; `--json` also writes the
+full machine-readable record (ALL predicates and BOTH site sources, always).
+First run lowers the corpus (~100s wall at 8 threads); later runs hit the
+content-addressed cache under `build/.record_census/`.
 """
 
 import argparse
 import json
 import os
 import re
+import struct
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import census_common as cc  # noqa: E402
+import shipped_guard_model as sgm  # noqa: E402
+import source_ir as src  # noqa: E402
 
 fpc = cc.fpc
 
@@ -202,7 +297,10 @@ ALLOC_RE = re.compile(rf"cqrt_alloc_{fpc._W}")
 MEASURE_RE = re.compile(rf"cqrt_measure_{fpc._W}")
 CMP_MINT_RE = re.compile(r"cq_template_(icmp|fcmp)_")
 
-PREDICATES = ("ruled", "ruled-spine-aware", "plan-v1")
+SHIPPED = "shipped-b4e329b"
+PREDICATES = (SHIPPED, "ruled", "ruled-spine-aware", "plan-v1")
+LEGACY_PREDICATES = ("ruled", "ruled-spine-aware", "plan-v1")
+SITE_SOURCES = ("source", "lowered")
 
 # Mint kinds that can be a RECORD under each predicate. `array` (a
 # `cqrt_qram_alloc` table) and `tape` (a 7.6 output tape, kept by design) are in
@@ -213,6 +311,116 @@ HIT_KINDS = {"ruled": ("record", "alloc"),
              "ruled-spine-aware": ("record", "alloc"),
              "plan-v1": ("record",)}
 DEAD_CLAUSE = ("ruled", "ruled-spine-aware")
+
+
+# ---------------------------------------------------------------------------
+# A8 UPGRADE — chained-theta SITES from the PRE-LOWERING `@cq_theta` view.
+#
+# The lowered view cannot tell a user's chained `cq_theta` from the spine's
+# negated-angle adjoint (both are `cqrt_ry_<W>(%h, angle)`), and the angle-stack
+# heuristic it used instead is wrong in BOTH directions once M-C keeps a
+# reassignment on one rail (SPIKE §1.4 blind spot A8). The pre-lowering view has
+# no adjoint to confuse: `lowerRotations` emits exactly one `cqrt_ry` per user
+# `@cq_theta`, in the same order, with the SAME angle Value — so an in-order
+# greedy match on the angle recovers the emitter's own bookkeeping.
+# ---------------------------------------------------------------------------
+
+def angle_key(arg):
+    """A comparable key for a normalised `<ty> <value>` angle operand.
+
+    NUMERIC where it can be, textual otherwise, because the two views print the
+    same LLVM constant differently: a hand-written fixture may spell `double 0.5`
+    while `cq-opt`'s printer emits `double 5.000000e-01`, and both must key the
+    same. An SSA-named angle (`double %g`) keys on the name, which is preserved
+    verbatim by the lowering (the pass copies the Value, it does not rebuild it).
+    """
+    toks = arg.split()
+    if len(toks) < 2:
+        return ("?", arg)
+    ty, v = toks[0], toks[-1]
+    lv = v.lower()
+    if lv.startswith("0x"):
+        # `0xK`/`0xL`/`0xM`/`0xH` are the extended-precision spellings; compare
+        # them textually. A bare `0x…` is an IEEE double bit pattern.
+        if len(lv) > 2 and lv[2] in "klmh":
+            return (ty, lv)
+        try:
+            return (ty, struct.unpack(">d", bytes.fromhex(lv[2:]))[0])
+        except Exception:
+            return (ty, lv)
+    try:
+        return (ty, float(v))
+    except ValueError:
+        return (ty, v)
+
+
+def _call_args(text):
+    """Normalised argument list of a call INSTRUCTION LINE, via fpc's parser."""
+    body = text if text.startswith(" ") else " " + text
+    m = fpc.CALL_RE.match(body)
+    if not m:
+        return None
+    open_at = body.index("(", m.end() - 1)
+    j = fpc.balanced(body, open_at)
+    return [fpc.norm_arg(a) for a in fpc.split_args(body[open_at + 1:j])]
+
+
+def user_thetas(pre_path):
+    """-> {fn_name: [(ordinal, chained, angle_key, line)]} over PRE-LOWERING IR.
+
+    CHAINED is the pass's own test (`RotationLowering.cpp`:
+    `Chained = taint.Tainted.count(arg0)`), modelled by `source_ir.FnAnalysis`'s
+    forward taint whose sole source is `@cq_theta` (Rule 3). A theta with a
+    classical arg-0 is a SOURCE theta and mints its wire, so it can carry no
+    record and is not a guard site — but it IS kept in the ordinal list, because
+    it consumes a `cqrt_ry` and the mapping is positional.
+    """
+    out = {}
+    for name, instrs in src.parse_functions(pre_path).items():
+        fa = src.FnAnalysis(name, instrs)
+        rows = []
+        for ins in instrs:
+            if not (ins.callee and src.THETA_RE.match(ins.callee)):
+                continue
+            args = _call_args(ins.text)
+            if not args or len(args) < 2:
+                rows.append((len(rows), False, None, ins.line))
+                continue
+            chained = bool(ins.operands) and ins.operands[0] in fa.tainted
+            rows.append((len(rows), chained, angle_key(args[1]), ins.line))
+        if rows:
+            out[name] = rows
+    return out
+
+
+def map_theta_sites(pre_rows, calls):
+    """Map user thetas onto a lowered function's `cqrt_ry` calls.
+
+    GREEDY, IN ORDER: the k-th user theta takes the next still-unmatched
+    `cqrt_ry` whose angle key equals its own. -> (mapped, failures) where
+    `mapped` is {ry call index: (ordinal, chained, source_line)}.
+    """
+    ry = [(i, c) for i, c in enumerate(calls)
+          if RY_RE.fullmatch(c.sym) and len(c.args) >= 2]
+    used, mapped, failures = set(), {}, []
+    for ordinal, chained, akey, line in pre_rows:
+        if akey is None:
+            failures.append(f"theta#{ordinal}@{line}: unparsable angle")
+            continue
+        hit = None
+        for pos, (idx, c) in enumerate(ry):
+            if pos in used:
+                continue
+            if angle_key(c.args[1]) == akey:
+                hit = pos
+                break
+        if hit is None:
+            failures.append(f"theta#{ordinal}@{line}: angle {akey!r} not found "
+                            f"among {len(ry) - len(used)} unmatched cqrt_ry")
+            continue
+        used.add(hit)
+        mapped[ry[hit][0]] = (ordinal, chained, line)
+    return mapped, failures
 
 
 class FnModel:
@@ -433,18 +641,40 @@ def _fmt(r, m):
     return f"{r}={m.mint[r][2].sym}" if r in m.mint else r
 
 
-def analyse_module(path, label, predicate=None):
-    """-> per-module record. BOTH predicates are always computed; `predicate` is
-    accepted (and ignored beyond validation) so callers can be explicit."""
+def analyse_module(path, label, predicate=None, pre_path=None,
+                   site_source="lowered"):
+    """-> per-module record. ALL predicates and BOTH site sources are always
+    computed; `predicate` is accepted (and ignored beyond validation) so callers
+    can be explicit, and `site_source` selects which view fills `thetas`.
+
+    `site_source` DEFAULTS TO `lowered` so that `source_ir.py --validate` keeps
+    asking this census for its own independent (lowered-IR) site verdict — that
+    cross-check is only worth running while the two models stay independent.
+    `main()` passes `source`, the post-A8 default.
+    """
     if predicate is not None and predicate not in PREDICATES:
         raise SystemExit(f"census: unknown predicate {predicate!r}")
+    if site_source not in SITE_SOURCES:
+        raise SystemExit(f"census: unknown site source {site_source!r}")
     _, fns = cc.parse_lowered(path)
-    out = {"module": label, "thetas": [], "multi_block_fns": 0,
-           "inv_mints": 0, "n_fns": len(fns), "dbg_uses_skipped": 0}
+    ir_by_fn = src.parse_functions(path)  # NON-call lines, for the shipped model
+    pre_by_fn = user_thetas(pre_path) if pre_path else None
+    out = {"module": label, "sites": [], "multi_block_fns": 0,
+           "inv_mints": 0, "n_fns": len(fns), "dbg_uses_skipped": 0,
+           "site_mapping_failed": [], "pre_lowering_view": pre_path is not None,
+           "spine_indistinguishable_hops": 0, "clone_hops_unchecked": 0,
+           "unreachable_uses_skipped": 0}
     for lf in fns:
         if lf.nblocks > 1:
             out["multi_block_fns"] += 1
         m = FnModel(lf)
+        sf = sgm.ShippedFn(lf, ir_by_fn.get(lf.name))
+        mapped = {}
+        if pre_by_fn is not None:
+            rows = pre_by_fn.get(lf.name, [])
+            mapped, failures = map_theta_sites(rows, m.calls)
+            for f in failures:
+                out["site_mapping_failed"].append(f"{lf.name}: {f}")
         out["inv_mints"] += m.inv_mints
         # ---- ADJOINT-Ry FILTER (measured defect, see the docstring) --------
         # `lowerRotations` emits ONE `cqrt_ry` per user `@cq_theta`; the
@@ -468,8 +698,18 @@ def analyse_module(path, label, predicate=None):
             alloc_minted = (m.mint.get(h, (None, None, None))[1] == "alloc")
             src_alt = alloc_minted and h not in ry_seen
             ry_seen.setdefault(h, i)
-            if src_primary:
-                continue  # source theta under the primary rule
+            # ---- SITE MEMBERSHIP, in the two views (A8 upgrade) -------------
+            # LOWERED: the pre-A8 rule, verbatim — not a source theta under the
+            # "immediately preceding alloc" test, and not angle-paired as a
+            # compiler adjoint.
+            in_low_all = not src_primary
+            in_low = in_low_all and not is_adjoint.get(i)
+            # SOURCE: this `cqrt_ry` was matched to a user `@cq_theta` whose
+            # arg-0 was tainted. That IS `taint.UserChainedRotations`.
+            mp = mapped.get(i)
+            in_src = bool(mp) and bool(mp[1])
+            if not (in_low_all or in_src):
+                continue
             anc = m.ancestors(h)
             desc = m.descendants(h)
             corr = m.correlated(h)
@@ -518,10 +758,42 @@ def analyse_module(path, label, predicate=None):
 
             rec = {"fn": lf.name, "line": c.line, "wire": h,
                    "adjoint_paired": bool(is_adjoint.get(i)),
-                   "chained_primary": True,
+                   "chained_primary": not src_primary,
                    "chained_alt": not src_alt,
+                   "in_lowered_view": in_low,
+                   "in_lowered_view_incl_adjoint": in_low_all,
+                   "in_source_view": in_src,
+                   "source_theta_ordinal": mp[0] if mp else None,
+                   "source_theta_line": mp[2] if mp else None,
                    "by_predicate": {}}
-            for pred in PREDICATES:
+            # ---- the SHIPPED predicate (the default) ------------------------
+            v = sf.verdict(i)
+            hits = v["hits"]
+            rec["by_predicate"][SHIPPED] = {
+                "ancestor_hits": [x["rail"] for x in hits
+                                  if x["origin"] in ("ancestor", "sibling")],
+                "descendant_hits": [x["rail"] for x in hits
+                                    if x["origin"] == "descendant"],
+                "hits": [x["rail"] for x in hits],
+                "hit_origins": {x["rail"]: x["origin"] for x in hits},
+                "records": v["records"],
+                "skipped_clause6": v["skipped_clause6"],
+                "exempt": v["exempt"],
+                # legacy key names, so the shared report code can read either
+                "ancestor_records": [], "descendant_records": [],
+                "ancestor_alloc_rails": [], "descendant_alloc_rails": [],
+                "other_kind_rails": [], "correlated_hits": [],
+                "correlated_records": [],
+                "exempt_measured": [e["rail"] for e in v["exempt"]
+                                    if e["clause"] == 4],
+                "exempt_discharged_compare": [],
+                "would_exempt_discharged_compare": [],
+                "exempt_live_after": [{"rail": e["rail"],
+                                       "uses": [e["witness"]], "n_uses": 1}
+                                      for e in v["exempt"] if e["clause"] == 3],
+                "live_after_spine_only": [],
+            }
+            for pred in LEGACY_PREDICATES:
                 a = bucket(anc, pred)
                 d = bucket(desc, pred)
                 cr = bucket(corr, pred)
@@ -549,12 +821,32 @@ def analyse_module(path, label, predicate=None):
                         set(a["live_after_spine_only"]
                             + d["live_after_spine_only"])),
                 }
-            out["thetas"].append(rec)
+            out["sites"].append(rec)
         out["dbg_uses_skipped"] += m.dbg_uses_skipped
-    # The PRIMARY view drops adjoint-paired Ry sites: they do not exist yet at
-    # the slot M-A occupies. `thetas_incl_adjoint` keeps them, as the upper bound.
-    out["thetas_incl_adjoint"] = out["thetas"]
-    out["thetas"] = [t for t in out["thetas"] if not t["adjoint_paired"]]
+        out["spine_indistinguishable_hops"] += sf.spine_indistinguishable_hops
+        out["clone_hops_unchecked"] += sf.clone_hops_unchecked
+        out["unreachable_uses_skipped"] += sf.unreachable_uses_skipped
+    if pre_by_fn is not None:
+        lowered_names = {lf.name for lf in fns}
+        for name, rows in pre_by_fn.items():
+            if name not in lowered_names and any(r[1] for r in rows):
+                out["site_mapping_failed"].append(
+                    f"{name}: holds {sum(1 for r in rows if r[1])} chained user "
+                    f"theta(s) but no lowered function of that name")
+    # The three views. `thetas_incl_adjoint` is the pre-A8 upper bound; the two
+    # named views are the A8 delta; `thetas` is the one the headline uses.
+    out["thetas_incl_adjoint"] = [t for t in out["sites"]
+                                  if t["in_lowered_view_incl_adjoint"]]
+    out["thetas_lowered"] = [t for t in out["sites"] if t["in_lowered_view"]]
+    out["thetas_source"] = [t for t in out["sites"] if t["in_source_view"]]
+    # A module whose mapping FAILED falls back to the lowered view — the
+    # OVER-counting direction — and stays on the loud list either way.
+    fallback = bool(out["site_mapping_failed"]) or pre_by_fn is None
+    out["site_source_fallback"] = fallback and site_source == "source"
+    if site_source == "source" and not fallback:
+        out["thetas"] = out["thetas_source"]
+    else:
+        out["thetas"] = out["thetas_lowered"]
     return out
 
 
@@ -562,13 +854,20 @@ def analyse_module(path, label, predicate=None):
 # Population assembly.
 # ---------------------------------------------------------------------------
 
-def populations(mods, pred):
-    """-> (inc1, inc3, neither) module lists under `pred`."""
-    hits = [m for m in mods if m["thetas"]]
+
+def populations(mods, pred, view="thetas"):
+    """-> (inc1, inc3, neither) module lists under `pred`, over site view `view`.
+
+    The Inc-1 / Inc-3 split is HISTORICAL — it sized two increments that have
+    both shipped. Under `shipped-b4e329b` the guard is ONE guard, so read the
+    split as provenance (which closure reached the rail) and the UNION as the
+    population.
+    """
+    hits = [m for m in mods if m[view]]
     inc1, inc3, neither = [], [], []
     for m in hits:
-        d = any(t["by_predicate"][pred]["descendant_hits"] for t in m["thetas"])
-        a = any(t["by_predicate"][pred]["ancestor_hits"] for t in m["thetas"])
+        d = any(t["by_predicate"][pred]["descendant_hits"] for t in m[view])
+        a = any(t["by_predicate"][pred]["ancestor_hits"] for t in m[view])
         if d:
             inc1.append(m)
         elif a:
@@ -578,16 +877,34 @@ def populations(mods, pred):
     return inc1, inc3, neither
 
 
-def _why(m, pred_from, pred_to):
+def module_hit(m, pred, view="thetas"):
+    """Would the guard decline this module, under `pred` over site view `view`?"""
+    return any(t["by_predicate"][pred]["ancestor_hits"]
+               or t["by_predicate"][pred]["descendant_hits"]
+               for t in m[view])
+
+
+def _why(m, pred_from, pred_to, view="thetas"):
     """One-line reason a module moved between the two predicates."""
     reasons = []
-    for t in m["thetas"]:
+    for t in m[view]:
         f = t["by_predicate"][pred_from]
         g = t["by_predicate"][pred_to]
         fh = set(f["ancestor_hits"]) | set(f["descendant_hits"])
         gh = set(g["ancestor_hits"]) | set(g["descendant_hits"])
         for r in sorted(fh - gh):
-            if pred_to in DEAD_CLAUSE:
+            if pred_to == SHIPPED:
+                e = next((x for x in g["exempt"] if x["rail"] == r), None)
+                if e:
+                    reasons.append(f"{r} exempt by clause {e['clause']} "
+                                   f"({e['witness']})")
+                elif r in g["skipped_clause6"]:
+                    reasons.append(f"{r} minted AFTER the gate (clause 6)")
+                elif r not in g["records"]:
+                    reasons.append(f"{r} not in the shipped record set")
+                else:
+                    reasons.append(f"{r} dropped")
+            elif pred_to in DEAD_CLAUSE:
                 e = next((x for x in g["exempt_live_after"]
                           if x["rail"] == r), None)
                 if e:
@@ -604,58 +921,242 @@ def _why(m, pred_from, pred_to):
     return "; ".join(dict.fromkeys(reasons)) or "(no rail-level change)"
 
 
+def _why_sites(m):
+    """One-line reason a module's SITE SET differs between the two views."""
+    bits = []
+    for t in m["sites"]:
+        if t["in_source_view"] and not t["in_lowered_view"]:
+            why = ("angle-paired as a compiler adjoint (A8)"
+                   if t["adjoint_paired"] else
+                   "read as a source theta by the alloc-adjacency rule")
+            bits.append(f"+line {t['line']} wire={t['wire']}: user "
+                        f"@cq_theta#{t['source_theta_ordinal']} at source line "
+                        f"{t['source_theta_line']}, {why} in the lowered view")
+        elif t["in_lowered_view"] and not t["in_source_view"]:
+            why = ("mapped to a SOURCE (unchained) user theta"
+                   if t["source_theta_ordinal"] is not None else
+                   "matched NO user @cq_theta — compiler-emitted or hand-written")
+            bits.append(f"-line {t['line']} wire={t['wire']}: {why}")
+    return "; ".join(bits) or "(no site-level change)"
+
+
+# ---------------------------------------------------------------------------
+# ACCEPTANCE — the pins. `--acceptance` exits non-zero if any fails.
+#
+# These are not a test suite; they are the four claims this census is not
+# allowed to lose. Each names the regression it catches.
+# ---------------------------------------------------------------------------
+
 ACCEPTANCE = [
-    ("lit:lowering_stale_record_add_before_theta", False,
-     "pinned ACCEPT boundary — %d is measured AFTER the theta ⇒ LIVE ⇒ exempt"),
-    ("lit:lowering_stale_record_alias_before_theta", False,
-     "pinned ACCEPT boundary (diagonal-alias sibling) — same reason"),
-    # FLIPPED True -> False on 2026-08-28 by M-C batch 2b (bd
-    # test_C_libtooling-6uqc), DELIBERATELY, and it is this batch's headline. The
-    # pin was written to hold bd test_C_libtooling-nepx OPEN: `h0`/`h1` were dead
-    # ancestor records, live and entangled with the wire when the S-dagger Ry
-    # fired, so the slice HAD to keep reporting an ancestor hit until the fix
-    # shipped. Batch 2a removed the two `add`-minted ancestors; batch 2b removes
-    # the last one by lowering `q -= off` in place (`cqrt_addc_i32(h0, -3)`), so
-    # the slice is now a ONE-RAIL program and there is no ancestor left to hit.
-    # A REGRESSION TO `True` HERE MEANS nepx CAME BACK — do not flip it again to
-    # make a run green.
+    ("lit:lowering_stale_record_add_before_theta",
+     {"sites_source": 1, "shipped_hit": False},
+     "pinned ACCEPT boundary (owner ruling 2026-08-27) — the record %h_op is "
+     "measured AFTER the gate, so clause 3's sink walk reaches a "
+     "`cqrt_measure_i32` and the rail is LIVE user data. A HIT here means the "
+     "observing-sink walk stopped seeing a direct measurement"),
+    ("lit:lowering_stale_record_alias_before_theta",
+     {"sites_source": 1, "shipped_hit": False},
+     "the diagonal-alias sibling of the same boundary, one hop removed"),
+    # THE A8 PIN, AND IT IS THE HEADLINE OF THIS REVISION.
     #
-    # HOW `False` IS ACTUALLY PRODUCED (2b Rule-13 round, F2 — say it so the pin
-    # is not over-read): with both += sites AND the -= site in place, the source
-    # Ry(+0.5) and the user's S-dagger Ry(-0.5) now sit on ONE rail with exactly
-    # negated angles, so `_pair_adjoint_ry` (blind spot A8) drops the S-dagger
-    # site BEFORE any ancestor question is asked — the primary view reports ZERO
-    # chained thetas here. The pin's substantive claim is nevertheless
-    # independently true: `thetas_incl_adjoint` shows ancestor_hits=[] and
-    # descendant_hits=[] for BOTH sites, and the SHIPPED guard is immune (it
-    # keys on emitter-recorded user rotations, not on angle pairing). The pin
-    # still catches the named regression — an out-of-place sub puts the
-    # S-dagger back on a template rail, un-pairs it, and the ancestor HIT
-    # returns.
-    ("e2e:e2e-slice-control-seq-grover", False,
-     "bd nepx FIXED by M-C 2a+2b: every reassignment lowers in place, so the "
-     "slice mints no ancestor rail at all ⇒ must be a MISS"),
-    ("lit:lowering_uncompute_sink_move_past_unwalked_gate", True,
-     "KNOWN ARTEFACT (spike §9.3, blind spot A5): already-lowered fixture whose "
-     "rail its own comment declares UNTAINTED, so the real guard would not fire. "
-     "Expected to REMAIN a census hit under both predicates — pinned here so it "
-     "cannot silently disappear and be mistaken for a real population change"),
+    # Before the upgrade this pin was VACUOUS and said so in its own comment:
+    # `_pair_adjoint_ry` dropped the S-dagger site (M-C 2b had put the source Ry
+    # and the user's S-dagger on ONE rail with exactly negated angles), so the
+    # census reported ZERO chained thetas here and "MISS" was a statement about
+    # a site it could not see. It now asserts BOTH halves:
+    #   * the SITE IS FOUND in the pre-lowering view (`sites_source` >= 1) — the
+    #     user's `a = cq_theta(a, -0.5)` at slice_control_seq_grover.c;
+    #   * and it is a MISS — every record on that wire is discharged before the
+    #     gate (the region's compare is `_unc`'d and freed first), which is why
+    #     the shipped guard accepts the slice and its golden is byte-identical.
+    # `lowered_sites: 0` records the DEFECT itself, so the A8 delta stays
+    # measurable rather than becoming folklore: the old classifier still cannot
+    # see this site, and that is the whole reason the default moved.
+    ("e2e:e2e-slice-control-seq-grover",
+     {"sites_source_min": 1, "shipped_hit": False, "lowered_sites": 0},
+     "bd nepx FIXED by M-C 2a+2b: the one-rail program. The S-dagger SITE must "
+     "be FOUND from the pre-lowering view (blind spot A8 dropped it) and must "
+     "be a MISS (nothing undischarged stands at the gate). A regression to HIT "
+     "means nepx came back; a regression to 0 source sites means A8 came back"),
+    # THE A5 ARTEFACT PIN, RE-DISPOSITIONED BY THE SAME UPGRADE.
+    #
+    # It used to assert "remains a census HIT". That was right for a census
+    # whose sites came from the lowered text and wrong about the compiler: this
+    # fixture is authored in ALREADY-LOWERED form, its `cqrt_ry` is hand-written,
+    # it is in NO emitter-recorded set, and `TaintPropagation.h` says so
+    # explicitly — the guard cannot fire on it BY CONSTRUCTION. The upgrade makes
+    # the census agree, so the pin now asserts the agreement AND keeps the
+    # artefact visible: zero sites in the source view, still a HIT in the
+    # lowered one.
+    ("lit:lowering_uncompute_sink_move_past_unwalked_gate",
+     {"sites_source": 0, "shipped_hit": False, "lowered_view_hit": True},
+     "KNOWN ARTEFACT (spike §9.3, blind spot A5): hand-written `cqrt_ry` in an "
+     "already-lowered fixture, on a rail its own comment declares UNTAINTED. "
+     "The pre-lowering view sees no `@cq_theta` at all, which is exactly what "
+     "the guard sees; the LOWERED view still calls it a hit, and that gap is "
+     "the artefact class — pinned so it stays visible instead of vanishing"),
 ]
+
+
+def check_acceptance(by_name):
+    """-> (rc, [lines]). Every pin prints its witness, pass or fail."""
+    rc, lines = 0, []
+    for mod, want, why in ACCEPTANCE:
+        m = by_name.get(mod)
+        if m is None:
+            lines.append(f"  MISSING {mod} — not in the lowered corpus")
+            rc = 1
+            continue
+        got = {
+            "sites_source": len(m["thetas_source"]),
+            "sites_lowered": len(m["thetas_lowered"]),
+            "shipped_hit": module_hit(m, SHIPPED, "thetas"),
+            "lowered_view_hit": module_hit(m, SHIPPED, "thetas_lowered"),
+        }
+        fails = []
+        if "sites_source" in want and got["sites_source"] != want["sites_source"]:
+            fails.append(f"sites_source={got['sites_source']} "
+                         f"want {want['sites_source']}")
+        if "sites_source_min" in want \
+                and got["sites_source"] < want["sites_source_min"]:
+            fails.append(f"sites_source={got['sites_source']} "
+                         f"want >={want['sites_source_min']}")
+        if "lowered_sites" in want \
+                and got["sites_lowered"] != want["lowered_sites"]:
+            fails.append(f"sites_lowered={got['sites_lowered']} "
+                         f"want {want['lowered_sites']}")
+        for k in ("shipped_hit", "lowered_view_hit"):
+            if k in want and got[k] != want[k]:
+                fails.append(f"{k}={got[k]} want {want[k]}")
+        rc |= (1 if fails else 0)
+        lines.append(f"  {'FAIL' if fails else 'PASS'} {mod}: "
+                     f"sites(source)={got['sites_source']} "
+                     f"sites(lowered)={got['sites_lowered']} "
+                     f"shipped={'HIT' if got['shipped_hit'] else 'MISS'}"
+                     + (f"   [{'; '.join(fails)}]" if fails else ""))
+        lines.append(f"       {why}")
+        for t in m["sites"]:
+            b = t["by_predicate"][SHIPPED]
+            views = ("source" if t["in_source_view"] else "") + \
+                    ("+lowered" if t["in_lowered_view"] else "")
+            lines.append(f"       line {t['line']} wire={t['wire']} "
+                         f"view=[{views or 'neither'}] "
+                         f"records={b['records']} hits={b['hits']}")
+            for e in b["exempt"]:
+                lines.append(f"         exempt {e['rail']} by clause "
+                             f"{e['clause']} at {e['witness']}")
+            for r in b["skipped_clause6"]:
+                lines.append(f"         clause-6 skip (minted after gate): {r}")
+    return rc, lines
+
+
+# ---------------------------------------------------------------------------
+# `--validate-guard` — the census verdict vs the REAL `cq-opt` verdict.
+#
+# EVERY EXPLANATION BELOW IS A MEASUREMENT, and a module that disagrees without
+# one prints UNEXPLAINED and fails the check. That is the whole point: an
+# "explained disagreement" list nobody is forced to extend is a list that grows
+# silently (the SPIKE §2R.5 lesson, in miniature).
+# ---------------------------------------------------------------------------
+
+KNOWN_DISAGREEMENTS = {
+    "lit:lowering_uncompute_sink_move_past_unwalked_gate":
+        "A5 artefact — already-lowered fixture, hand-written `cqrt_ry` in no "
+        "emitter-recorded set, rail declared UNTAINTED by its own comment. "
+        "Reachable only under `--site-source lowered`; the default view reports "
+        "0 sites here and therefore agrees with the compiler.",
+    "lit:lowering_uncompute_borrowed_operand_free_order":
+        "A5 artefact — same class (SPIKE §2R.5): three hand-written "
+        "`cqrt_ry_i32` in an already-lowered fixture. Reachable only under "
+        "`--site-source lowered`.",
+}
+
+
+def validate_guard(mods, verdicts, view="thetas", pred=SHIPPED):
+    """-> (rc, report dict, [lines]).
+
+    `verdicts` maps module label -> (rc, stderr) from the real `cq-opt` run that
+    produced (or refused to produce) the lowered IR this census read.
+    """
+    rows = {"hit/lowers": [], "miss/lowers": []}
+    for m in mods:
+        if not m[view]:
+            continue
+        label = m["module"]
+        rc0, _err = verdicts.get(label, (0, ""))
+        actual = "lowers" if rc0 == 0 else "declines"
+        key = ("hit" if module_hit(m, pred, view) else "miss") + "/" + actual
+        rows.setdefault(key, []).append(label)
+    # The population the census structurally CANNOT model: a declining module
+    # emits no lowered IR, so it is not in the corpus at all.
+    guard_declines = sorted(lbl for lbl, (rc0, err) in verdicts.items()
+                            if rc0 != 0 and sgm.MSG_LIVE_RECORD in err)
+    other_declines = sum(1 for lbl, (rc0, err) in verdicts.items()
+                         if rc0 != 0 and sgm.MSG_LIVE_RECORD not in err)
+    dis = sorted(rows.get("hit/lowers", []))
+    unexplained = [d for d in dis if d not in KNOWN_DISAGREEMENTS]
+    lines = [
+        "",
+        f"VALIDATION vs the real guard (`cq-opt`, message: "
+        f"\"{sgm.MSG_LIVE_RECORD}\")",
+        f"  site view: {view}    predicate: {pred}",
+        "",
+        "  modules WITH >=1 chained-theta site, in the lowered corpus:",
+        f"    census HIT  / cq-opt LOWERS  : {len(rows.get('hit/lowers', []))}"
+        f"   <- every one is a DISAGREEMENT (the guard shipped: a module that "
+        f"lowers is one it did not decline)",
+        f"    census MISS / cq-opt LOWERS  : {len(rows.get('miss/lowers', []))}"
+        f"   <- agreement",
+        "",
+        f"  NOT MODELLABLE (declining modules emit no lowered IR, so they are "
+        f"not in the corpus):",
+        f"    fixtures the guard declines  : {len(guard_declines)}",
+        f"    fixtures declining elsewhere : {other_declines}",
+    ]
+    for d in dis:
+        lines.append(f"    DISAGREE {d}")
+        lines.append("      " + KNOWN_DISAGREEMENTS.get(d, "UNEXPLAINED"))
+    for g in guard_declines:
+        lines.append(f"    guard-decline (unmodellable) {g}")
+    rc = 1 if unexplained else 0
+    if unexplained:
+        lines.append(f"  FAIL: {len(unexplained)} UNEXPLAINED disagreement(s)")
+    else:
+        lines.append("  OK: zero unexplained disagreements")
+    report = {
+        "site_view": view, "predicate": pred,
+        "census_hit_cqopt_lowers": dis,
+        "census_miss_cqopt_lowers": len(rows.get("miss/lowers", [])),
+        "unexplained_disagreements": unexplained,
+        "guard_declines_not_modellable": guard_declines,
+        "other_declines": other_declines,
+        "explanations": {d: KNOWN_DISAGREEMENTS.get(d, "UNEXPLAINED")
+                         for d in dis},
+    }
+    return rc, report, lines
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--json")
+    ap.add_argument("--delta-json",
+                    help="write the site-source + predicate delta artifact")
     ap.add_argument("--repo", default=cc.REPO)
     ap.add_argument("--jobs", type=int, default=8)
-    ap.add_argument("--predicate", choices=PREDICATES, default="ruled",
-                    help="headline population (both are always computed)")
+    ap.add_argument("--predicate", choices=PREDICATES, default=SHIPPED,
+                    help="headline population (all are always computed)")
+    ap.add_argument("--site-source", choices=SITE_SOURCES, default="source",
+                    help="where chained-theta SITES come from (both are always "
+                         "computed; `source` is the post-A8 default)")
     ap.add_argument("--acceptance", action="store_true",
-                    help="print the ruling's acceptance tests and exit nonzero "
+                    help="print the pinned acceptance tests and exit nonzero "
                          "if any fails")
+    ap.add_argument("--validate-guard", action="store_true",
+                    help="print the census-vs-cq-opt confusion table and exit "
+                         "nonzero on an UNEXPLAINED disagreement")
     args = ap.parse_args(argv)
     pred = args.predicate
-    other = "plan-v1" if pred != "plan-v1" else "ruled"
+    view = "thetas"
 
     import concurrent.futures as cfut
     work = []
@@ -668,176 +1169,298 @@ def main(argv=None):
     def go(item):
         label, path, sl = item
         if path is not None:
-            rc, out, _ = cc.lower_ll(path, args.repo)
+            rc0, out, err = cc.lower_ll(path, args.repo)
+            pre = path
         else:
-            rc, out, _ = cc.lower_slice(sl, args.repo)
-        if rc != 0 or out is None:
-            return None
-        return analyse_module(out, label)
+            rc0, out, err = cc.lower_slice(sl, args.repo)
+            pre, _ = cc.stage1_ll(sl, args.repo)
+        if rc0 != 0 or out is None:
+            return label, rc0, err, None
+        return label, rc0, err, analyse_module(out, label, pre_path=pre,
+                                               site_source=args.site_source)
 
     with cfut.ThreadPoolExecutor(max_workers=args.jobs) as ex:
-        mods = [m for m in ex.map(go, work) if m is not None]
+        raw = list(ex.map(go, work))
+    verdicts = {lbl: (rc0, err or "") for lbl, rc0, err, _ in raw}
+    mods = [m for _, _, _, m in raw if m is not None]
 
+    by_name = {m["module"]: m for m in mods}
     hits = [m for m in mods if m["thetas"]]
     hits_ub = [m for m in mods if m["thetas_incl_adjoint"]]
-    by_pred = {p: populations(mods, p) for p in PREDICATES}
+    by_pred = {p: populations(mods, p, view) for p in PREDICATES}
     inc1, inc3, neither = by_pred[pred]
-    o1, o3, _ = by_pred[other]
 
     def names(lst):
         return sorted(m["module"] for m in lst)
 
-    alloc_only = [m for m in neither
-                  if any(t["by_predicate"][pred]["ancestor_alloc_rails"]
-                         or t["by_predicate"][pred]["descendant_alloc_rails"]
-                         for t in m["thetas"])]
-    corr_only = [m for m in neither
-                 if any(t["by_predicate"][pred]["correlated_hits"]
-                        for t in m["thetas"])]
-
-    def agg(p, key):
-        return sum(len(t["by_predicate"][p][key]) for m in mods
-                   for t in m["thetas"])
+    def agg(p, key, v=view):
+        return sum(len(t["by_predicate"][p][key]) for m in mods for t in m[v])
 
     n_theta = sum(len(m["thetas"]) for m in mods)
+    n_theta_src = sum(len(m["thetas_source"]) for m in mods)
+    n_theta_low = sum(len(m["thetas_lowered"]) for m in mods)
+
+    # ---- the A8 SITE-SOURCE delta, under the SELECTED predicate -------------
+    declined_src = {m["module"] for m in mods
+                    if module_hit(m, pred, "thetas_source")}
+    declined_low = {m["module"] for m in mods
+                    if module_hit(m, pred, "thetas_lowered")}
+    site_gained = sorted(m["module"] for m in mods
+                         if len(m["thetas_source"]) > len(m["thetas_lowered"]))
+    site_lost = sorted(m["module"] for m in mods
+                       if len(m["thetas_source"]) < len(m["thetas_lowered"]))
+    mapping_failed = sorted(m["module"] for m in mods if m["site_mapping_failed"])
+
+    # ---- the PREDICATE delta, on the SELECTED site view --------------------
+    other = "ruled" if pred != "ruled" else "plan-v1"
     declined_pred = set(names(inc1)) | set(names(inc3))
+    o1, o3, _ = by_pred[other]
     declined_other = set(names(o1)) | set(names(o3))
     dropped = sorted(declined_other - declined_pred)
     added = sorted(declined_pred - declined_other)
-    by_name = {m["module"]: m for m in mods}
+
+    alloc_only = [m for m in neither
+                  if any(t["by_predicate"][pred]["ancestor_alloc_rails"]
+                         or t["by_predicate"][pred]["descendant_alloc_rails"]
+                         for t in m[view])]
+    corr_only = [m for m in neither
+                 if any(t["by_predicate"][pred]["correlated_hits"]
+                        for t in m[view])]
+
+    vrc, vreport, vlines = validate_guard(mods, verdicts, view, pred)
+
+    # ---- PROVENANCE. Which compiler, which tree, which corpus. -------------
+    # This census measures a MOVING target: the lit corpus is a glob and the
+    # binary is whatever `build/` last produced. An artifact that does not say
+    # WHICH is the "number measuring the wrong program" failure mode with extra
+    # steps, so the tool key (SHA-256 of the cq-opt + plugin bytes, the cache's
+    # own key) and the dirty-file list are written into every report.
+    import subprocess as _sp
+
+    def _git(*a):
+        try:
+            return _sp.run(["git"] + list(a), cwd=args.repo, text=True,
+                           capture_output=True).stdout.strip()
+        except Exception:
+            return "?"
+    prov = {"tool_key": cc.tool_key(args.repo),
+            "git_head": _git("rev-parse", "HEAD"),
+            "worktree_dirty": [ln for ln in _git("status", "--porcelain").split("\n")
+                               if ln.strip()],
+            "lit_fixtures": len([1 for lbl in verdicts if lbl.startswith("lit:")])}
+
+    # Clause-by-clause exemption tally (the shipped predicate only) — a headline
+    # of "0 would decline" is only readable next to WHY nothing counted.
+    by_clause = {2: 0, 3: 0, 4: 0}
+    n_records = 0
+    src_structurally_source = []
+    for m in mods:
+        for t in m[view]:
+            n_records += len(t["by_predicate"][SHIPPED]["records"])
+            for e in t["by_predicate"][SHIPPED]["exempt"]:
+                by_clause[e["clause"]] = by_clause.get(e["clause"], 0) + 1
+        for t in m["sites"]:
+            # A site the SOURCE view calls chained while the lowered stream
+            # shows an `alloc`+`ry` pair at it: `source_ir`'s taint is an UPPER
+            # BOUND (it propagates through a classical-returning call the real
+            # pass scrubs — SPIKE §10, `spec_reseed_theta_source`). Direction:
+            # over-counts SITES, which is the safe side, but it is a real
+            # divergence from `taint.UserChainedRotations` and is counted here
+            # rather than left to be rediscovered.
+            if t["in_source_view"] and not t["chained_primary"]:
+                src_structurally_source.append(f"{m['module']}:{t['line']}")
 
     report = {
+        "provenance": prov,
+        "shipped_records_examined": n_records,
+        "exempt_by_clause": {str(k): v for k, v in sorted(by_clause.items())},
+        "source_sites_structurally_alloc_minted": sorted(src_structurally_source),
         "predicate": pred,
-        "ruling": "OWNER RULING 2026-08-27, bd test_C_libtooling-6uqc",
+        "site_source": args.site_source,
+        "models": "shipped guard mirrored from ir-pass/src/RotationLowering.cpp "
+                  "at commit b4e329b (Inc 3); see shipped_guard_model.py",
+        "ruling": "OWNER RULINGS 2026-08-27 (x2), 2026-08-28 F2 + F1, bd "
+                  "test_C_libtooling-6uqc",
         "corpus": {"modules_lowered": len(mods),
                    "lit": sum(1 for m in mods if m["module"].startswith("lit:")),
-                   "e2e": sum(1 for m in mods if m["module"].startswith("e2e:"))},
+                   "e2e": sum(1 for m in mods if m["module"].startswith("e2e:")),
+                   "lit_fixtures_total": sum(1 for lbl in verdicts
+                                             if lbl.startswith("lit:"))},
         "chained_thetas": n_theta,
+        "chained_thetas_source_view": n_theta_src,
+        "chained_thetas_lowered_view": n_theta_low,
         "chained_thetas_incl_adjoint_ry": sum(len(m["thetas_incl_adjoint"])
                                               for m in mods),
         "modules_with_chained_theta": len(hits),
         "modules_with_chained_theta_incl_adjoint_ry": len(hits_ub),
-        "inc1_newly_declined": names(inc1),
-        "inc3_additional": names(inc3),
+        "would_decline": sorted(declined_pred),
+        "would_decline_by_closure": {"descendant": names(inc1),
+                                     "ancestor_or_sibling": names(inc3)},
         "chained_theta_no_record": names(neither),
         "chained_theta_alloc_ancestor_only": names(alloc_only),
         "chained_theta_correlated_only": names(corr_only),
+        "site_source_delta": {
+            "sites_source_view": n_theta_src,
+            "sites_lowered_view": n_theta_low,
+            "modules_gaining_sites": site_gained,
+            "modules_losing_sites": site_lost,
+            "would_decline_source_view": sorted(declined_src),
+            "would_decline_lowered_view": sorted(declined_low),
+            "decline_only_under_source": sorted(declined_src - declined_low),
+            "decline_only_under_lowered": sorted(declined_low - declined_src),
+            "site_mapping_failed": mapping_failed,
+            "per_module": [{"module": n, "why": _why_sites(by_name[n])}
+                           for n in sorted(set(site_gained) | set(site_lost))],
+        },
         "exempt_measured_hits": agg(pred, "exempt_measured"),
-        "exempt_discharged_compare_hits": agg(pred, "exempt_discharged_compare"),
-        "would_exempt_discharged_compare_hits":
-            agg(pred, "would_exempt_discharged_compare"),
         "exempt_live_after_hits": agg(pred, "exempt_live_after"),
-        "ambiguity_live_after_spine_only_rails":
-            agg("ruled", "live_after_spine_only"),
-        "ambiguity_spine_aware_extra_modules": sorted(
-            (set(names(by_pred["ruled-spine-aware"][0]))
-             | set(names(by_pred["ruled-spine-aware"][1])))
-            - (set(names(by_pred["ruled"][0]))
-               | set(names(by_pred["ruled"][1])))),
-        "other_kind_rails_seen": agg(pred, "other_kind_rails"),
+        "shipped_model_counters": {
+            "spine_indistinguishable_hops":
+                sum(m["spine_indistinguishable_hops"] for m in mods),
+            "clone_hops_unchecked":
+                sum(m["clone_hops_unchecked"] for m in mods),
+            "unreachable_uses_skipped":
+                sum(m["unreachable_uses_skipped"] for m in mods),
+            "clause6_skipped_rails": agg(pred, "skipped_clause6")
+            if pred == SHIPPED else None,
+        },
         "multi_block_fns": sum(m["multi_block_fns"] for m in mods),
         "total_fns": sum(m["n_fns"] for m in mods),
         "inv_mints_total": sum(m["inv_mints"] for m in mods),
         "dbg_uses_skipped": sum(m["dbg_uses_skipped"] for m in mods),
-        "chained_rule_disagreements": sorted(
-            m["module"] for m in mods
-            if any(t["chained_primary"] != t["chained_alt"]
-                   for t in m["thetas"])),
         f"delta_vs_{other}": {
-            "inc1": names(by_pred[other][0]),
-            "inc3": names(by_pred[other][1]),
-            "dropped_out": [{"module": n, "reason": _why(by_name[n], other, pred)}
+            "declining": sorted(declined_other),
+            "dropped_out": [{"module": n,
+                             "reason": _why(by_name[n], other, pred, view)}
                             for n in dropped],
-            "newly_in": [{"module": n, "reason": _why(by_name[n], other, pred)}
+            "newly_in": [{"module": n,
+                          "reason": _why(by_name[n], other, pred, view)}
                          for n in added],
         },
+        "validation": vreport,
         "modules": hits,
     }
 
-    print(f"predicate: {pred}   (both computed; delta below is vs {other})")
+    print(f"predicate: {pred}   site-source: {args.site_source}   "
+          f"(all predicates and both site sources computed; deltas below)")
     print(f"corpus: {report['corpus']['modules_lowered']} lowered modules "
-          f"({report['corpus']['lit']} lit, {report['corpus']['e2e']} e2e)")
-    print(f"chained thetas: {n_theta} in {len(hits)} modules "
-          f"(upper bound incl. compiler-emitted adjoint Ry: "
-          f"{report['chained_thetas_incl_adjoint_ry']} in {len(hits_ub)})")
-    print(f"Inc 1 (dead-DESCENDANT half) newly declines : {len(inc1)} modules")
-    print(f"Inc 3 (dead-ANCESTOR half) adds             : {len(inc3)} modules")
-    print(f"chained theta, no counting record           : {len(neither)} modules "
-          f"({len(alloc_only)} have a live ALLOC-minted neighbour; "
-          f"{len(corr_only)} have a live CORRELATED (sibling) record)")
-    print(f"exemption hits: measured={report['exempt_measured_hits']} "
-          f"discharged-compare={report['exempt_discharged_compare_hits']} "
-          f"(would-be={report['would_exempt_discharged_compare_hits']}) "
-          f"LIVE-after-theta={report['exempt_live_after_hits']}")
-    sa = report["ambiguity_spine_aware_extra_modules"]
-    print(f"AMBIGUITY (spine-only post-theta uses — an `_unc` READ or a "
-          f"compiler-emitted adjoint Ry, neither of which EXISTS at the M-A "
-          f"slot): {report['ambiguity_live_after_spine_only_rails']} rails, "
-          f"{len(sa)} extra modules under `ruled-spine-aware`")
-    for n in sa:
-        print(f"      spine-aware-only: {n}")
+          f"({report['corpus']['lit']} lit, {report['corpus']['e2e']} e2e) "
+          f"out of {report['corpus']['lit_fixtures_total']} lit fixtures")
+    print(f"provenance: HEAD {prov['git_head'][:9]}  tool_key "
+          f"{prov['tool_key'][:12]}  dirty files {len(prov['worktree_dirty'])}")
+    print(f"chained-theta SITES: {n_theta} in {len(hits)} modules "
+          f"[source view {n_theta_src} · lowered view {n_theta_low} · "
+          f"lowered incl. compiler adjoint Ry "
+          f"{report['chained_thetas_incl_adjoint_ry']} in {len(hits_ub)}]")
+    print(f"WOULD DECLINE under {pred}: {len(declined_pred)} modules "
+          f"({len(inc1)} via a descendant record, {len(inc3)} via an "
+          f"ancestor/sibling record)")
+    print(f"chained theta, no counting record           : {len(neither)} "
+          f"modules")
+    print(f"records examined by the SHIPPED clause-1 walk over these sites: "
+          f"{n_records}  (always the shipped walk, whatever --predicate says: a "
+          f"'0 would decline' headline is only readable beside the number of "
+          f"records that were examined and then discharged)")
+    print(f"exemptions by clause: 2 (discharged before the gate)="
+          f"{by_clause.get(2, 0)}  3 (observed after the gate)="
+          f"{by_clause.get(3, 0)}  4 (measured before the gate)="
+          f"{by_clause.get(4, 0)}  |  clause-6 skips (minted after the gate)="
+          f"{report['shipped_model_counters']['clause6_skipped_rails']}")
+    if src_structurally_source:
+        print(f"source-view sites the LOWERED stream shows as alloc-minted "
+              f"(source_ir over-taint, over-counts sites): "
+              f"{len(src_structurally_source)} — "
+              f"{', '.join(src_structurally_source)}")
+    print(f"shipped-model divergence counters: "
+          f"spine-indistinguishable hops="
+          f"{report['shipped_model_counters']['spine_indistinguishable_hops']} "
+          f"unchecked clone hops="
+          f"{report['shipped_model_counters']['clone_hops_unchecked']} "
+          f"unreachable uses skipped="
+          f"{report['shipped_model_counters']['unreachable_uses_skipped']}")
     print(f"approximation counters: multi_block_fns="
           f"{report['multi_block_fns']}/{report['total_fns']} "
           f"inv_mints={report['inv_mints_total']} "
-          f"dbg_uses_skipped={report['dbg_uses_skipped']} "
-          f"other_kind_rails={report['other_kind_rails_seen']} "
-          f"chained-rule disagreements="
-          f"{len(report['chained_rule_disagreements'])}")
+          f"dbg_uses_skipped={report['dbg_uses_skipped']}")
     print()
-    print(f"DELTA vs {other}: {len(declined_other)} -> {len(declined_pred)} "
-          f"declining modules  ({len(dropped)} dropped out, {len(added)} new)")
+    print(f"A8 SITE-SOURCE DELTA (source vs lowered), predicate {pred}:")
+    print(f"  sites   : {n_theta_low} (lowered) -> {n_theta_src} (source)")
+    print(f"  declines: {len(declined_low)} (lowered) -> {len(declined_src)} "
+          f"(source)")
+    print(f"  modules gaining sites : {len(site_gained)}")
+    for n in site_gained:
+        print(f"    + {n}\n        {_why_sites(by_name[n])}")
+    print(f"  modules losing sites  : {len(site_lost)}")
+    for n in site_lost:
+        print(f"    - {n}\n        {_why_sites(by_name[n])}")
+    if mapping_failed:
+        print(f"  !! SITE MAPPING FAILED in {len(mapping_failed)} module(s) — "
+              f"each FELL BACK to the lowered view (over-counting direction):")
+        for n in mapping_failed:
+            for f in by_name[n]["site_mapping_failed"][:4]:
+                print(f"      {n}: {f}")
+    else:
+        print("  site mapping failures : 0")
+    print()
+    print(f"PREDICATE DELTA vs {other}: {len(declined_other)} -> "
+          f"{len(declined_pred)} declining modules "
+          f"({len(dropped)} dropped out, {len(added)} new)")
     for n in dropped:
-        print(f"  - {n}\n        {_why(by_name[n], other, pred)}")
+        print(f"  - {n}\n        {_why(by_name[n], other, pred, view)}")
     for n in added:
-        print(f"  + {n}\n        {_why(by_name[n], other, pred)}")
+        print(f"  + {n}\n        {_why(by_name[n], other, pred, view)}")
     print()
-    for key, lst in (("INC1", inc1), ("INC3", inc3)):
-        for m in sorted(lst, key=lambda x: x["module"]):
-            for t in m["thetas"]:
-                b = t["by_predicate"][pred]
-                if not (b["descendant_hits"] or b["ancestor_hits"]):
-                    continue
-                print(f"  {key} {m['module']} fn={t['fn']} line={t['line']} "
-                      f"wire={t['wire']}")
-                if b["descendant_hits"]:
-                    print(f"        desc: {', '.join(b['descendant_hits'])}")
-                if b["ancestor_hits"]:
-                    print(f"        anc : {', '.join(b['ancestor_hits'])}")
-                if b["exempt_live_after"]:
-                    print(f"        exempt (LIVE after theta): "
-                          f"{', '.join(e['rail'] for e in b['exempt_live_after'])}")
+    for m in sorted((by_name[n] for n in sorted(declined_pred)),
+                    key=lambda x: x["module"]):
+        for t in m[view]:
+            b = t["by_predicate"][pred]
+            if not (b["descendant_hits"] or b["ancestor_hits"]):
+                continue
+            print(f"  HIT {m['module']} fn={t['fn']} line={t['line']} "
+                  f"wire={t['wire']}")
+            if b["descendant_hits"]:
+                print(f"        desc: {', '.join(b['descendant_hits'])}")
+            if b["ancestor_hits"]:
+                print(f"        anc : {', '.join(b['ancestor_hits'])}")
 
     rc = 0
+    if args.validate_guard:
+        for ln in vlines:
+            print(ln)
+        rc |= vrc
     if args.acceptance:
-        print("\nACCEPTANCE TESTS (ruling 2026-08-27):")
-        for mod, want_hit, why in ACCEPTANCE:
-            m = by_name.get(mod)
-            if m is None:
-                print(f"  MISSING {mod} — not in the lowered corpus")
-                rc = 1
-                continue
-            got = any(t["by_predicate"]["ruled"]["ancestor_hits"]
-                      or t["by_predicate"]["ruled"]["descendant_hits"]
-                      for t in m["thetas"])
-            ok = (got == want_hit)
-            rc |= (0 if ok else 1)
-            print(f"  {'PASS' if ok else 'FAIL'} {mod}: "
-                  f"ruled={'HIT' if got else 'exempt'} "
-                  f"(want {'HIT' if want_hit else 'exempt'})  — {why}")
-            for t in m["thetas"]:
-                b = t["by_predicate"]["ruled"]
-                p = t["by_predicate"]["plan-v1"]
-                print(f"       line {t['line']} wire={t['wire']}  "
-                      f"plan-v1 anc={p['ancestor_hits']} desc={p['descendant_hits']}"
-                      f" | ruled anc={b['ancestor_hits']} desc={b['descendant_hits']}")
-                for e in b["exempt_live_after"]:
-                    print(f"         exempt {e['rail']}: used at "
-                          f"{', '.join(e['uses'])}")
+        print(f"\nACCEPTANCE PINS (predicate {SHIPPED}, site-source "
+              f"{args.site_source}):")
+        arc, alines = check_acceptance(by_name)
+        for ln in alines:
+            print(ln)
+        rc |= arc
+        # The pins are only meaningful if the census still agrees with the
+        # compiler, so `--acceptance` runs the guard validation too.
+        for ln in vlines:
+            print(ln)
+        rc |= vrc
 
     if args.json:
         with open(args.json, "w") as f:
             json.dump(report, f, indent=1, sort_keys=True)
         print(f"\nwrote {args.json}")
+    if args.delta_json:
+        delta = {"predicate": pred,
+                 "site_source_delta": report["site_source_delta"],
+                 f"delta_vs_{other}": report[f"delta_vs_{other}"],
+                 "predicate_populations": {
+                     p: sorted({m["module"] for m in mods
+                                if module_hit(m, p, view)})
+                     for p in PREDICATES},
+                 "predicate_populations_lowered_site_view": {
+                     p: sorted({m["module"] for m in mods
+                                if module_hit(m, p, "thetas_lowered")})
+                     for p in PREDICATES},
+                 "validation": vreport}
+        with open(args.delta_json, "w") as f:
+            json.dump(delta, f, indent=1, sort_keys=True)
+        print(f"wrote {args.delta_json}")
     return rc
 
 
