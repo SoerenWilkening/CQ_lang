@@ -46,6 +46,7 @@
 #define CQ_IRPASS_EMIT_INVERSE_H_
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
@@ -73,8 +74,29 @@ bool isInverseEmittable(const llvm::CallInst *Forward);
 // caller can thread a relabeled register; the whole-DAG uncompute driver reads
 // the forward operands directly (the void `_unc` zeroes the rail in place and
 // mints nothing, so there is nothing to thread) and passes nullptr.
+//
+// `Rec` (M-A Inc 1, bd test_C_libtooling-6uqc): when non-null, EVERY adjoint call
+// this function mints is inserted into it. Pass `&taint.SpineOps` so the late
+// live-record guard can tell a re-emitted SELF-INVERSE gate (`cqrt_x`,
+// `cqrt_cswap`, `cqrt_toffoli`, `cqrt_cnot`, `cqrt_copy_*_controlled`,
+// `cqrt_xorc`/`cqrt_addc`) apart from a FORWARD one — they are the same call, so
+// nothing in the lowered text distinguishes them.
+//
+// PASSING nullptr IS AN OVER-ACCEPT HAZARD, NOT AN OVER-DECLINE ONE — an
+// unrecorded self-inverse gate is read as a USER DATA USE and EXEMPTS the record
+// it names. (An earlier draft of this comment said the opposite; corrected by the
+// Rule-13 round's F5 finding — see TaintSet::SpineOps for the full statement.)
+// The one caller that passes nullptr is `BennettWrap`, and its safety is
+// STRUCTURAL, not a fail-direction argument: its adjoints land inside a Phase-6
+// clone BODY, SSA users are function-local, so a gate there can never appear in
+// `R->users()` for a caller-side record — and a clone body itself holds no guard
+// site, since `scanBody` rejects every `cq_theta`/`cq_phi` in a lifted callee
+// (pinned by `spec_clone_theta_free.ll`). Any NEW site, or an existing one made
+// reachable outside a clone body, MUST thread `&taint.SpineOps`.
 bool emitInverseCall(llvm::IRBuilder<> &B, llvm::CallInst *Forward,
-                     WidthDispatch &wd, llvm::Value *CurHandle = nullptr);
+                     WidthDispatch &wd, llvm::Value *CurHandle = nullptr,
+                     llvm::SmallPtrSetImpl<const llvm::CallInst *> *Rec =
+                         nullptr);
 
 // Emit the adjoint of a whole forward chain: walk `ForwardChain` in REVERSE
 // (`Chain[N-1] … Chain[0]`), calling `emitInverseCall` per link. `ForwardChain`
@@ -83,10 +105,13 @@ bool emitInverseCall(llvm::IRBuilder<> &B, llvm::CallInst *Forward,
 // live (a leaf is zeroed before the source it reads). Returns `true` iff EVERY
 // link inverted; on any un-invertible link returns `false` (the caller owns the
 // loud decline — DD-1). Mints no handle: the caller `cqrt_free`s the terminal /
-// rail / recovered root it already holds.
+// rail / recovered root it already holds. `Rec` is forwarded to every per-link
+// `emitInverseCall` (see there).
 bool emitInverseChain(llvm::IRBuilder<> &B,
                       llvm::ArrayRef<llvm::CallInst *> ForwardChain,
-                      WidthDispatch &wd);
+                      WidthDispatch &wd,
+                      llvm::SmallPtrSetImpl<const llvm::CallInst *> *Rec =
+                          nullptr);
 
 }  // namespace cq
 

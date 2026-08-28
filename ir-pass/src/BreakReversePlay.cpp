@@ -467,8 +467,9 @@ CallInst *emitEqZero(IRBuilder<> &B, WidthDispatch &wd, Value *IdxHandle,
 // adjoint ever zeroed — a hidden projective collapse (Rule 6), not a lifetime op.
 // Returns the adjoint's verdict; the caller propagates it to the loud decline.
 [[nodiscard]] bool clearAndFree(IRBuilder<> &B, CallInst *Fwd, WidthDispatch &wd,
-                                DebugLoc DL) {
-  if (!emitInverseCall(B, Fwd, wd, /*CurHandle=*/nullptr))
+                                DebugLoc DL,
+                                SmallPtrSetImpl<const CallInst *> *Rec) {
+  if (!emitInverseCall(B, Fwd, wd, /*CurHandle=*/nullptr, Rec))
     return false;
   mintCall(B, wd.freeFn(), {Fwd}, DL);
   return true;
@@ -481,8 +482,9 @@ CallInst *emitEqZero(IRBuilder<> &B, WidthDispatch &wd, Value *IdxHandle,
 // sources no longer holding their forward values, and freeing them is unsound too.
 // Returns the chain's verdict.
 [[nodiscard]] bool clearChainAndFree(IRBuilder<> &B, ArrayRef<CallInst *> Chain,
-                                     WidthDispatch &wd, DebugLoc DL) {
-  if (!emitInverseChain(B, Chain, wd))
+                                     WidthDispatch &wd, DebugLoc DL,
+                                     SmallPtrSetImpl<const CallInst *> *Rec) {
+  if (!emitInverseChain(B, Chain, wd, Rec))
     return false;
   for (CallInst *C : Chain)
     mintCall(B, wd.freeFn(), {C}, DL);
@@ -564,7 +566,7 @@ struct BreakEmit {
   mintCall(B, E.addcIdx(), {E.Idx, NegK}, E.DL);     // idx -= K
   CallInst *G = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);  // g = (idx-K == 0) = (idx==K)
   mintCall(B, cnotFn(E.M), {G, Fire}, E.DL);         // fire ^= g
-  bool OK = clearAndFree(B, G, E.wd, E.DL);          // g -> 0, free
+  bool OK = clearAndFree(B, G, E.wd, E.DL, &E.taint.SpineOps);          // g -> 0, free
   mintCall(B, E.addcIdx(), {E.Idx, K}, E.DL);        // idx += K  (restore)
   return OK;
 }
@@ -590,7 +592,7 @@ struct BreakEmit {
   E.captureRailToR(B, Fire);
 
   // clear e BEFORE the idx-write (idx still old) — then free it.
-  bool OK = clearAndFree(B, Efl, E.wd, E.DL);
+  bool OK = clearAndFree(B, Efl, E.wd, E.DL, &E.taint.SpineOps);
 
   // IDX-WRITE: idx ^= fire ? (i+1) : 0  via a materialised `K` register.
   CallInst *Ip1 = mintCall(B, E.allocIdx(), {K}, E.DL, "cq.brk.k");
@@ -608,7 +610,7 @@ struct BreakEmit {
     mintCall(B, E.wd.freeFn(), {Fire}, E.DL);
 
   // clear the break-cond IN-ITERATION (rail intact ⇒ recompute-and-XOR), free it.
-  OK = clearChainAndFree(B, E.LB.BreakCond, E.wd, E.DL) && OK;
+  OK = clearChainAndFree(B, E.LB.BreakCond, E.wd, E.DL, &E.taint.SpineOps) && OK;
 
   // The eq-flags / fire / Ip1 are pass-invented scratch already freed; the
   // capture's controlled copies act on the excluded R/idx/rail.
@@ -625,14 +627,14 @@ struct BreakEmit {
   // consolidate
   CallInst *E0 = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);
   mintCall(B, E.copyCtrlR(), {E0, E.Rail, E.R}, E.DL);
-  bool OK = clearAndFree(B, E0, E.wd, E.DL);
+  bool OK = clearAndFree(B, E0, E.wd, E.DL, &E.taint.SpineOps);
   // copy out:  out ^= R
   mintCall(B, E.wd.copyFn(E.RW), {E.R, E.Out}, E.DL);
   // consolidation REVERSE (self-inverse — pairs with the above; the reverse-play
   // companion loop then un-captures the fired branches + walks the rail back).
   CallInst *E0b = emitEqZero(B, E.wd, E.Idx, E.IW, E.DL);
   mintCall(B, E.copyCtrlR(), {E0b, E.Rail, E.R}, E.DL);
-  OK = clearAndFree(B, E0b, E.wd, E.DL) && OK;  // both clears run — no short-circuit.
+  OK = clearAndFree(B, E0b, E.wd, E.DL, &E.taint.SpineOps) && OK;  // both clears run — no short-circuit.
   return OK;
 }
 
@@ -684,8 +686,8 @@ struct BreakEmit {
   // clear the recomputed break-cond + e, free everything. `Cond` is a CLONE of
   // `E.LB.BreakCond` — same callees, same arities — so the pre-scan of the original
   // covers it exactly (the clone is what makes that identity load-bearing).
-  OK = clearChainAndFree(B, Cond, E.wd, E.DL) && OK;
-  bool EflOK = clearAndFree(B, Efl, E.wd, E.DL);
+  OK = clearChainAndFree(B, Cond, E.wd, E.DL, &E.taint.SpineOps) && OK;
+  bool EflOK = clearAndFree(B, Efl, E.wd, E.DL, &E.taint.SpineOps);
   OK = EflOK && OK;
   // `fire` is |0> only once BOTH the recomputed-cond Toffoli above and the
   // `xorEqKIntoFire` set are accounted for; free it only on a clean sheet.
@@ -697,7 +699,8 @@ struct BreakEmit {
   // a failure still poisons `OK`: an un-walked rail makes the caller's R/idx frees
   // dirty, which is precisely the free this bead is about.
   for (CallInst *G : reverse(E.LB.RailGates))
-    OK = emitInverseCall(B, G, E.wd, /*CurHandle=*/nullptr) && OK;
+    OK = emitInverseCall(B, G, E.wd, /*CurHandle=*/nullptr,
+                        &E.taint.SpineOps) && OK;
   return OK;
 }
 

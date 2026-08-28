@@ -13,6 +13,7 @@
 
 #include "ChainWalk.h"  // isAbiQramStore — the shared frozen-ABI store shape (Rule 14)
 
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/DebugLoc.h"
@@ -136,8 +137,20 @@ bool isInverseEmittable(const CallInst *Forward) {
 }
 
 bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
-                     Value *CurHandle) {
+                     Value *CurHandle,
+                     SmallPtrSetImpl<const CallInst *> *Rec) {
   (void)wd;  // width is recovered from the forward call's own type; no lookup.
+
+  // M-A Inc 1 (bd test_C_libtooling-6uqc): record EVERY adjoint minted here into
+  // the caller's spine-op set, so the late live-record guard can tell a re-emitted
+  // SELF-INVERSE gate from a forward one (they are the same call — see
+  // EmitInverse.h). One helper, applied at every return-true site, so a new
+  // inversion recipe cannot forget to record (Rule 14).
+  auto minted = [Rec](CallInst *Inv) {
+    if (Rec)
+      Rec->insert(Inv);
+    return true;
+  };
 
   // Single ACCEPT gate (Rule 14): the branches below are guaranteed-reachable
   // refinements of this predicate. An un-invertible primitive returns the
@@ -159,7 +172,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *Inv = B.CreateCall(Callee, {Handle, NegAngle});
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
-    return true;
+    return minted(Inv);
   }
 
   // Phase 7.4 / issue dtzb in-place value rail self-update (reachable only via
@@ -177,7 +190,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *Inv = B.CreateCall(Callee, {Handle, Imm});
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
-    return true;
+    return minted(Inv);
   }
 
   // Self-adjoint involutions: `cqrt_x` / `cqrt_cswap` are their own inverse, so
@@ -212,7 +225,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *Inv = B.CreateCall(Callee, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
-    return true;
+    return minted(Inv);
   }
 
   // Uncontrolled data template `cq_template_<op>_<W>[_hl|_lh]` (incl. compares
@@ -243,7 +256,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *UncCall = B.CreateCall(Unc, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
       UncCall->setDebugLoc(DL);
-    return true;
+    return minted(UncCall);
   }
 
   // Phase 7.5 QRAM load `cqrt_qram_load_<W>(arr, idx)` → its void `_unc` twin
@@ -271,7 +284,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *UncCall = B.CreateCall(Unc, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
       UncCall->setDebugLoc(DL);
-    return true;
+    return minted(UncCall);
   }
 
   // Phase 7.5 QRAM store `cqrt_qram_store_<W>(arr, idx, val)` → its void `_unc`
@@ -296,7 +309,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *UncCall = B.CreateCall(Unc, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
       UncCall->setDebugLoc(DL);
-    return true;
+    return minted(UncCall);
   }
 
   // Phase 6.3 transitive: a specialization CLONE call `@__cq_q_<callee>_<mask>`
@@ -326,7 +339,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     CallInst *UncCall = B.CreateCall(Unc, Args);
     if (DebugLoc DL = Forward->getDebugLoc())
       UncCall->setDebugLoc(DL);
-    return true;
+    return minted(UncCall);
   }
 
   // Any other primitive (incl. controlled callees) has no correct in-place
@@ -336,7 +349,8 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
 }
 
 bool emitInverseChain(IRBuilder<> &B, ArrayRef<CallInst *> ForwardChain,
-                      WidthDispatch &wd) {
+                      WidthDispatch &wd,
+                      SmallPtrSetImpl<const CallInst *> *Rec) {
   // Walk the chain in reverse program order: the adjoint of (g0 ∘ g1 ∘ … ∘ gN)
   // is (gN⁻¹ ∘ … ∘ g1⁻¹ ∘ g0⁻¹). Each void `_unc` reads its forward operands in
   // place; SSA dominance guarantees those sources are still live (a leaf is
@@ -346,7 +360,8 @@ bool emitInverseChain(IRBuilder<> &B, ArrayRef<CallInst *> ForwardChain,
   // per-link results) so the caller owns the loud decline (DD-1).
   bool OK = true;
   for (int i = (int)ForwardChain.size() - 1; i >= 0; --i)
-    OK = emitInverseCall(B, ForwardChain[i], wd, /*CurHandle=*/nullptr) && OK;
+    OK = emitInverseCall(B, ForwardChain[i], wd, /*CurHandle=*/nullptr, Rec) &&
+         OK;
   return OK;
 }
 

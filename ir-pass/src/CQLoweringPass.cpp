@@ -438,6 +438,32 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // follow-up rather than papered over here.
   if (declineUnpairedUndefLiterals(M))
     return PreservedAnalyses::none();
+  // bd test_C_libtooling-6uqc (M-A Increment 1) — the LIVE-RECORD guard, at the
+  // SAME late slot and for the SAME reason as the literal-integrity guard above:
+  // this is the only position where "is rail R still undischarged when this
+  // chained `cqrt_ry` fires, and does any USER read it afterwards" are FACTS
+  // about the emitted stream rather than PREDICTIONS about what Phase 4's flag
+  // strip and Phase 5's free placement are going to do (owner ruling 2026-08-27,
+  // point 2 — the early `declineStaleRecordOps` slot was rejected on three
+  // measured failure modes, including that it would decline a currently-green
+  // `cq_theta; if(c) cq_phi; cq_theta` merge-phi-lift program).
+  //
+  // It keys on EMITTER-RECORDED gate sets (`taint.UserChainedRotations` /
+  // `UserSourceRotations` / `UserPhaseRotations` / `SpineOps`), never on a
+  // textual shape test: in lowered IR a user's chained theta and the spine's
+  // adjoint `cqrt_ry(h, -θ)` are the same call, and the Inc-0 census measured its
+  // angle-pairing guess wrong in BOTH directions (SPIKE §1.4 A8). A raw
+  // hand-written `cqrt_ry` in an already-lowered lit fixture is in NEITHER set
+  // and is therefore not a site — which is what makes the two census artefacts
+  // invisible here by construction.
+  //
+  // ORDER WITHIN THE SLOT: after `declineUnpairedUndefLiterals`, which returns
+  // early on its own decline. Every EARLIER-stage owner (`declineStaleRecordOps`,
+  // `ArmClassify`, `declineFrozenWire`, …) already exited `opt` at its own
+  // `DS_Error` long before here, so this guard re-owns no shipped message
+  // (census 0.4's 9 at-risk fixtures all decline at or before run-line 404).
+  if (declineLiveRecordRotations(M, taint))
+    return PreservedAnalyses::none();
   eraseDeadDecls(M, wd);
 
   return PreservedAnalyses::none();
@@ -653,6 +679,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // a unit-level caller silently keeps the pairing break. See run() for why this
   // position is the complete one, and for why the bool is consumed.
   if (declineUnpairedUndefLiterals(M))
+    return true;
+  // bd test_C_libtooling-6uqc (M-A Inc 1) — mirrored from `run()` (twin-pipeline
+  // parity, WI-1.12): miss it and a unit-level caller silently keeps the
+  // live-record accept. See run() for the late-slot + emitter-keyed rationale.
+  if (declineLiveRecordRotations(M, taint))
     return true;
   eraseDeadDecls(M, wd);
   return true;

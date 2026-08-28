@@ -377,7 +377,7 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   for (ValueArmStream &A : reverse(Arms)) {
     Value *ChainFinal = A.Fwd.back();
     emitRoute(B, csyms, Flag, Q, ChainFinal, A.Negated, DL);  // route-back†
-    if (!emitInverseChain(B, A.Fwd, wd)) {                    // R† (void `_unc`)
+    if (!emitInverseChain(B, A.Fwd, wd, &taint.SpineOps)) {   // R† (void `_unc`)
       // Every link is a forward uncontrolled template (we just minted them),
       // so this is unreachable — but an un-invertible link must decline
       // LOUDLY, never leave a half-reversed stream (Rule 1).

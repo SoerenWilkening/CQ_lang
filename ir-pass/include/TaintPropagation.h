@@ -264,6 +264,99 @@ struct TaintSet {
   // flag-mint compare is a reversible DAG ancestor, §6.0 compare `_unc`). Empty
   // for a module with no guarded store.
   llvm::DenseMap<llvm::StoreInst *, llvm::Value *> GuardedStores;
+
+  // ── M-A Increment 1 (bd test_C_libtooling-6uqc, owner ruling 2026-08-27) ──
+  //
+  // EMITTER-RECORDED GATE SETS for the LATE (post-`uncompute`) live-record guard
+  // `declineLiveRecordRotations` (RotationLowering.h). The guard runs after every
+  // emitting stage, so "which rail is still undischarged when this Ry fires" is a
+  // FACT it reads off the settled module — but two questions cannot be answered
+  // from the lowered text at all, and these sets answer them:
+  //
+  //   (1) WHICH `cqrt_ry_<W>` IS A USER ROTATION. A user's chained `cq_theta` and
+  //       the spine's compiler-emitted adjoint `cqrt_ry(h, -θ)` are TEXTUALLY
+  //       IDENTICAL in lowered IR. The Inc-0 census had to guess (pairing angles
+  //       per handle) and measured that guess wrong in BOTH directions — it drops
+  //       a user S† whose angle negates an earlier theta on the same handle, and
+  //       PROMOTES a spine adjoint to a phantom user site (SPIKE §1.4 blind spot
+  //       A8, §1.5). `RotationLowering` knows the answer exactly, because it is
+  //       the only stage that lowers `@cq_theta`/`@cq_phi`, so it records it.
+  //   (2) WHICH `cqrt_x`/`cqrt_cswap`/`cqrt_toffoli`/`cqrt_cnot`/
+  //       `cqrt_copy_*_controlled`/`cqrt_xorc`/`cqrt_addc` IS AN ADJOINT. These
+  //       are SELF-INVERSE (or immediate-negating), so `EmitInverse` reverses them
+  //       by re-emitting the SAME call — a spine adjoint and a forward Phase-4
+  //       route/merge gate are indistinguishable by name. `emitInverseCall`
+  //       records every adjoint it mints.
+  //
+  // A RAW `cqrt_ry`/`cqrt_cswap`/… hand-written in an already-lowered lit fixture
+  // is in NEITHER set, which is the intended reading: it is not a user `cq_theta`
+  // and it is not the pass's own teardown. That is what makes the two census
+  // artefacts (`lowering_uncompute_sink_move_past_unwalked_gate`,
+  // `lowering_uncompute_borrowed_operand_free_order` — SPIKE §9.3 / §2R.5)
+  // invisible to the guard BY CONSTRUCTION rather than by a special case.
+
+  // `cqrt_ry_<W>` emitted for a user `@cq_theta` whose arg-0 was CLASSICAL (a
+  // SOURCE theta: `cqrt_alloc_<W>` then Ry on the fresh handle). NOT a guard site
+  // — a source theta mints its wire, so that wire can carry no record yet.
+  llvm::SmallPtrSet<const llvm::CallInst *, 4> UserSourceRotations;
+
+  // `cqrt_ry_<W>` emitted for a user `@cq_theta` whose arg-0 was already a
+  // TAINTED handle (a CHAINED theta: Ry in place on the existing wire). THESE ARE
+  // THE GUARD'S SITES — an in-place non-diagonal gate on a wire that may still
+  // carry live basis records of its own value.
+  llvm::SmallPtrSet<const llvm::CallInst *, 4> UserChainedRotations;
+
+  // `cqrt_rz_<W>` emitted for a user `@cq_phi` (a DIAGONAL user gate). Recorded
+  // for the same reason as the two above: so a user Rz on a record is not
+  // mistaken for spine traffic. The Phase-4 arm Rz (`SwapRouteEmit` /
+  // `SwitchRouteEmit` / `NestedRouteEmit`) is deliberately NOT recorded — its
+  // arg-0 is always a freshly `cqrt_alloc`'d work RAIL, never a template- or
+  // qram-load-minted record, so it can never be a use of a record (see
+  // `declineLiveRecordRotations`'s record definition).
+  llvm::SmallPtrSet<const llvm::CallInst *, 8> UserPhaseRotations;
+
+  // Every adjoint `EmitInverse::emitInverseCall` minted (the whole-DAG spine's
+  // `_unc`s and negated-angle rotations, the Phase-4 value-arm reverse-play, the
+  // 7.4 break reverse-play). Consumed by `declineLiveRecordRotations` to answer
+  // "is this post-gate mention of the rail the compiler undoing ITSELF?" — the
+  // spine-aware deadness reading the owner ruled on 2026-08-27 (SPIKE §2R.5a).
+  //
+  // COMPLETENESS IS NOT ASSUMED, AND THE FAIL DIRECTION IS THE UNSAFE ONE — READ
+  // THIS BEFORE ADDING AN EMISSION SITE. An earlier draft of this comment claimed
+  // an unrecorded self-inverse gate "defaults to SPINE traffic, so a missed
+  // recording can only over-decline". THAT WAS FALSE (the Rule-13 round's F5
+  // finding). `isTeardownUse` (RotationLowering.cpp) recognizes teardown by
+  // `SpineOps` membership, the `cqrt_free` / `_unc` names, and the
+  // NOT-a-recorded-user-rotation test — a `cqrt_x` / `cqrt_cswap` /
+  // `cqrt_toffoli` / `cqrt_cnot` / `cqrt_copy_*_controlled` / `cqrt_xorc` /
+  // `cqrt_addc` call that is in NONE of those falls through to `return false`,
+  // i.e. it is read as a USER DATA USE and it EXEMPTS the record. Unrecorded
+  // therefore means PERMISSIVE, not conservative. That default is deliberate and
+  // correct for its purpose — a FORWARD Phase-4 route on a record is a real
+  // reachable shape the ruling says to ACCEPT, and it is indistinguishable by
+  // name from its own adjoint — but it means the recorder is load-bearing, not
+  // belt-and-braces. `RotationLowering.cpp` states this correctly; this header
+  // now agrees with it.
+  //
+  // WHY THE CURRENT RESIDUAL IS STILL SAFE, on a structural argument rather than
+  // on the fail direction. Exactly one `emitInverseCall` caller does not thread
+  // the recorder: `BennettWrap.cpp` (the Phase-6 clone's reverse-program-order
+  // adjoint). Two independent reasons, either sufficient: (a) its emissions land
+  // only INSIDE a specialized clone body, and SSA users are FUNCTION-LOCAL, so a
+  // gate there can never appear in `R->users()` for a caller-side record — the
+  // only cross-function user of a caller value is the clone CALL itself, which is
+  // classified on its own; (b) a callee containing any `cq_theta`/`cq_phi` is
+  // never lifted (`SpecializeReject.cpp`'s `scanBody`, pinned by
+  // `spec_clone_theta_free.ll`), so a clone body holds no `UserChainedRotations`
+  // member and therefore no guard SITE at all. Both verified against the source,
+  // not assumed.
+  //
+  // ⚠ ADDING A NEW EMISSION THAT CAN TOUCH A RECORD RAIL IS AN **OVER-ACCEPT**
+  // HAZARD, NOT AN OVER-DECLINE ONE. If you emit a self-inverse gate from a new
+  // site — or from an existing one on a path that can run outside a clone body —
+  // thread `&taint.SpineOps` through it. Forgetting to does not make the compiler
+  // noisier; it makes it silently accept a dephased program (Prime Directive).
+  llvm::SmallPtrSet<const llvm::CallInst *, 16> SpineOps;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure

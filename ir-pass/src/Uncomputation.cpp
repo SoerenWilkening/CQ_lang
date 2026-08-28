@@ -225,7 +225,8 @@ Instruction *dagInsertPoint(ArrayRef<Instruction *> Ats, PostDominatorTree &PDT)
 // `cq taint escape`, and the real specializer route hits the 7.6 continued-lineage
 // decline), but "unreachable" was the prior justification and it was recorded
 // WRONGLY, as "a downstream guard removes it". Intersecting makes it structural.
-void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
+void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
+                     TaintSet &taint) {
   DenseMap<Value *, CallInst *> FirstTouch;  // rail → earliest gate reading OR writing it
   SmallPtrSet<Value *, 8> Freeable;          // rails some recovered gate WRITES
   SmallVector<std::pair<CallInst *, Value *>, 16> TouchOrder;  // deterministic
@@ -256,7 +257,11 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
     CallInst *G = D.Calls[i];
     if (!Seen.insert(G).second)
       continue;  // a shared-prefix gate already adjointed (once-per-gate)
-    emitInverseCall(B, G, wd, /*CurHandle=*/nullptr);
+    // M-A Inc 1 (bd 6uqc): record the adjoint into `taint.SpineOps` so the late
+    // live-record guard reads "the compiler is undoing ITSELF here" as a FACT
+    // rather than inferring it from the callee name (a re-emitted self-inverse
+    // gate is textually identical to a forward one — see EmitInverse.h).
+    emitInverseCall(B, G, wd, /*CurHandle=*/nullptr, &taint.SpineOps);
     // bd 261j(a) — a FROZEN rail: RECORDED into a kept carrier (an output tape)
     // AND carrying a gate that is not a basis permutation of live conditions, so
     // its forward chain does NOT return it to |0⟩ (`DagTraversal` step 3b proves
@@ -305,6 +310,7 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd) {
       CallInst *Free = B.CreateCall(wd.freeFn(), {FR});
       if (DebugLoc DL = G->getDebugLoc())
         Free->setDebugLoc(DL);
+      taint.SpineOps.insert(Free);  // M-A Inc 1 — teardown traffic, not a data use
     }
   }
 }
@@ -502,7 +508,7 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
     return;  // safe leak — never a once-minted reversal on a per-iteration path.
 
   // 5. Reverse the whole DAG once at `At`.
-  emitDagReversal(D, At, wd);
+  emitDagReversal(D, At, wd, taint);
 }
 
 }  // namespace

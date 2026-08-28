@@ -1524,3 +1524,13 @@ misinterpret) says HIT and the literal lowered reading says exempt. Under
 > only 4 members are common. **In both cases the count was right and the
 > population claim attached to it was not**; both were caught by listing the
 > members, which is the only check that works.
+
+
+## Post-Inc-1 note (2026-08-28): census INC1 vs the shipped guard's population
+
+Census 0.1 counts the clone-RETURN rail (`%r = __cq_q_inner_1(...)`, the copy-destination
+class) as a descendant record; the shipped Inc-1 guard deliberately does NOT (ruled
+deferred to Inc 3, pinned by `lowering_live_record_clone_return_rail_accept.ll`). So the
+census's INC1 figure reads ONE HIGHER than the guard's real population until the
+copy-destination class lands — do not diff the two naively. Recorded by the Rule-13
+re-review (N4).

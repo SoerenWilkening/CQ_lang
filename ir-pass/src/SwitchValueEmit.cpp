@@ -255,7 +255,7 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
   for (CaseStream &CS : reverse(Cases)) {
     Value *ChainFinal = CS.Fwd.back();
     emitRoute(B, csyms, CS.Flag, P, ChainFinal, /*Negated=*/false, DL);  // route-back†
-    if (!emitInverseChain(B, CS.Fwd, wd))                               // R† (void `_unc`)
+    if (!emitInverseChain(B, CS.Fwd, wd, &taint.SpineOps))              // R† (void `_unc`)
       return bailLoud(R);  // un-invertible link — never a half-reversed stream.
     // Route-in† on the case's WORK RAIL (`CS.Rail`): the void `_unc` chain zeroed
     // the intermediate rails in place but never touched `CS.Rail` (the chain head,

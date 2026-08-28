@@ -5,11 +5,11 @@
 ;
 ; THE SHAPE. A QRAM load BORROWS the index rail %IDX, and an in-place `cqrt_ry`
 ; lands on %IDX AFTER the load; the loaded value is then TAPED:
-;     %IDX = x & 3 ; store(arr, %IDX^1, k) ; %U = load(arr, %IDX)
+;     %IDX = x & 3 ; store(arr, %IDX, k) ; %U = load(arr, %IDX)
 ;     ry(%IDX, 0.25) ; tape(%U)
 ; From ordinary C (clang -O1):
 ;     int arr[4]={0,0,0,0}; int i0 = cq_theta(seed,0.5) & 3;
-;     arr[(i0^1)&3] = k; int u = arr[i0]; (void)cq_theta(i0,0.25); printf("%d", u);
+;     arr[i0] = k; int u = arr[i0]; (void)cq_theta(i0,0.25); printf("%d", u);
 ;
 ; WHY IT IS THE NASTIEST INSTANCE. The victim %U is the RECORDED rail itself —
 ; Recorded, Correlated, and deliberately NOT frozen, because `preservesBasisUnderRecord`
@@ -25,9 +25,19 @@
 ;
 ; WHAT THIS PINS. Every adjoint is emitted, in reverse program order, so
 ; `ry(%IDX,-0.25)` lands BEFORE both `_unc`s and both read the index at its
-; producer-time value. %U and the xor rail then free soundly (stage 2b: 2 verified,
-; strict); %IDX and its Ry root freeze and are never freed; %ARR is never freed at
-; all (a QRAM array handle never is).
+; producer-time value. %U then frees soundly; %IDX and its Ry root freeze and are
+; never freed; %ARR is never freed at all (a QRAM array handle never is).
+;
+; THE STORE GOES THROUGH THE SAME INDEX, and that is a deliberate 2026-08-28 edit,
+; not a simplification. The original body stored at `%IDX^1`, which minted an
+; `cq_template_xor_i32_hl` rail — a DEAD descendant record of the index wire at
+; the moment `cqrt_ry(%IDX, 0.25)` fires — so the M-A Increment 1 live-record
+; guard declines it. That decline is a KNOWN, DELIBERATE OVER-DECLINE (the
+; dephasing provably cancels in that module) and it is pinned, with the full
+; argument, by the negative twin
+; lowering_reject_live_record_qram_borrowed_index_xor.ll. Dropping the xor leg
+; here keeps this fixture doing its own job — pinning the interleaved-rotation
+; adjoint ORDER — without also pinning an unrelated verdict.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -45,8 +55,7 @@ entry:
   call void @llvm.memset.p0.i64(ptr nonnull align 16 %arr, i8 0, i64 16, i1 false)
   %q   = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %idx = and i32 %q, 3
-  %j   = xor i32 %idx, 1
-  %je  = zext nneg i32 %j to i64
+  %je  = zext nneg i32 %idx to i64
   %pj  = getelementptr inbounds [4 x i32], ptr %arr, i64 0, i64 %je
   store i32 %k, ptr %pj, align 4
   %ie  = zext nneg i32 %idx to i64
@@ -62,8 +71,7 @@ entry:
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     %[[IDX:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[H]], i32 3)
-; CHECK:     %[[J:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32_hl(i32 %[[IDX]], i32 1)
-; CHECK:     call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %[[J]], i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:     call void @cqrt_qram_store_i32(i32 %[[ARR]], i32 %[[IDX]], i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     %[[U:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[ARR]], i32 %[[IDX]])
 ; The interleaved rotation on the BORROWED index, after the load:
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[IDX]], double 2.500000e-01)
@@ -72,9 +80,7 @@ entry:
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[IDX]], double -2.500000e-01)
 ; CHECK:     call void @cqrt_qram_load_i32_unc(i32 %[[U]], i32 %[[ARR]], i32 %[[IDX]])
 ; CHECK:     call void @cqrt_free(i32 %[[U]])
-; CHECK:     call void @cqrt_qram_store_i32_unc(i32 %[[ARR]], i32 %[[J]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:     call void @cq_template_xor_i32_hl_unc(i32 %[[J]], i32 %[[IDX]], i32 1)
-; CHECK:     call void @cqrt_free(i32 %[[J]])
+; CHECK:     call void @cqrt_qram_store_i32_unc(i32 %[[ARR]], i32 %[[IDX]], i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     call void @cq_template_and_i32_hl_unc(i32 %[[IDX]], i32 %[[H]], i32 3)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
 ; CHECK-NOT: cqrt_measure
