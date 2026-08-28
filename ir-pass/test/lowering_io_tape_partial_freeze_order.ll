@@ -11,13 +11,33 @@
 ; and still returns its own rail to |0>.
 ;
 ; THE MEASUREMENT: the full reverse-play is emitted — `ry(%OP1,-0.25)`,
-; `add_unc(%OP1,%OP,2)`, `add_unc(%OP,%H,1)`, `ry(%H,-0.5)` — and exactly ONE
-; `cqrt_free`, on %OP. %OP is genuinely |0> at that point: its `_unc` XORs %H+1 into
-; a register holding %H+1, and %H is still forward because its own adjoint comes
-; LATER in reverse program order. %OP is then PRODUCT with everything else, which is
-; why freeing it is legal even though %OP1 — derived FROM %OP — is left allocated
-; and entangled with the tape. Stage 2b agrees: `1 cqrt_free site: 1 verified`,
-; strict.
+; `mul_unc(%OP1,%OP,5)`, `mul_unc(%OP,%H,3)`, `ry(%H,-0.5)` — and among the three
+; CHAIN rails exactly ONE `cqrt_free`, on %OP. %OP is genuinely |0> at that point:
+; its `_unc` XORs 3H into a register holding 3H, and %H is still forward because its
+; own adjoint comes LATER in reverse program order. %OP is then PRODUCT with
+; everything else, which is why freeing it is legal even though %OP1 — derived FROM
+; %OP — is left allocated and entangled with the tape.
+;
+; ── THE `%A` AND `%B` LINES ARE NOT DECORATION (M-A Increment 3, bd
+; test_C_libtooling-6uqc). READ THIS BEFORE DELETING THEM. ─────────────────────
+; They are template READS of %H and %OP emitted AFTER the gate whose results are
+; taped, i.e. OBSERVING data uses of both ancestors after `T`. Without them this
+; module DECLINES with
+;     cq rotation lowering: non-diagonal gate over a live derived record
+; and CORRECTLY so: with the chained `Ry` on the chain TIP, %H (|a>) and %OP (|3a>)
+; are live, undischarged basis records of %OP1 (|15a>) at the instant the gate
+; fires, so %OP1's reduced state is diagonal and the rotation acts on a mixture.
+; Census 0.1 forecast this exact module (SPIKE §2R.5, spine-aware column) and the
+; owner ruled that reading in (§2R.5a, 2026-08-27) — the spine's post-`T` `_unc`
+; reads and adjoint `Ry` are the compiler undoing ITSELF, not the user reading data.
+; With %A and %B present, both ancestors are the program's OWN live data (clause 3)
+; and the accept is by principle, exactly as in
+; lowering_stale_record_add_before_theta.ll. THE THREE-RAIL VERDICTS AND THE
+; REVERSAL ORDER ARE BYTE-FOR-BYTE WHAT THEY WERE (measured): %H frozen, %OP freed
+; right after its own `_unc`, %OP1 frozen. %A and %B carry no rotation, so they
+; reverse and free too — which is the same freeze-keys-on-gates contrast
+; lowering_io_tape_derived_uncompute.ll pins. The negative form of this hazard is
+; lowering_reject_live_record_io_tape_chained_theta.ll (the canonical §2R.5 case).
 ;
 ; NOTE THE TWO ASYMMETRIES, both real and both easy to get backwards:
 ;  * Correlation propagates BACKWARD (the record reads a descendant's label, which
@@ -50,7 +70,7 @@
 ; RUN: %filecheck %s --check-prefix=NOFREEOP1 < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @printf(ptr, ...)
-@.str = private constant [3 x i8] c"%d\00"
+@.str = private constant [9 x i8] c"%d %d %d\00"
 
 define void @slice(i32 %u0) {
 entry:
@@ -58,7 +78,9 @@ entry:
   %r  = mul i32 %p, 3
   %f0 = mul i32 %r, 5
   %f  = call i32 @cq_theta_si32(i32 %f0, double 2.500000e-01)
-  %z  = call i32 (ptr, ...) @printf(ptr @.str, i32 %f)
+  %a  = mul i32 %p, 7                                          ; %H read AFTER the gate
+  %b  = mul i32 %r, 11                                         ; %OP read AFTER the gate
+  %z  = call i32 (ptr, ...) @printf(ptr @.str, i32 %f, i32 %a, i32 %b)
   ret void
 }
 
@@ -68,15 +90,22 @@ entry:
 ; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 3)
 ; CHECK:     %[[OP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[OP]], i32 5)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[OP1]], double 2.500000e-01)
+; CHECK:     %[[A:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 7)
+; CHECK:     %[[B:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[OP]], i32 11)
 ; CHECK:     call i32 @cqrt_tape_write_i32(i32 %[[TAPE]], i32 %[[OP1]])
-; The whole chain reverses, in reverse program order:
+; The two un-rotated liveness reads reverse and free first (reverse program order):
+; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[B]], i32 %[[OP]], i32 11)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[B]])
+; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[A]], i32 %[[H]], i32 7)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[A]])
+; Then the chain itself reverses, in reverse program order:
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[OP1]], double -2.500000e-01)
 ; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[OP1]], i32 %[[OP]], i32 5)
 ; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[OP]], i32 %[[H]], i32 3)
-; The sandwiched rail is the ONLY one freed, and its free lands right after its own
-; `_unc` — which read the still-forward frozen %H:
-; CHECK:     call void @cqrt_free(i32 %[[OP]])
-; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
+; The sandwiched rail is the only CHAIN rail freed, and its free lands right after
+; its own `_unc` — which read the still-forward frozen %H:
+; CHECK-NEXT: call void @cqrt_free(i32 %[[OP]])
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
 ; CHECK-NOT: cqrt_measure
 ; CHECK-NOT: cq taint escape
 

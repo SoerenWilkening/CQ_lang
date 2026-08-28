@@ -1534,3 +1534,16 @@ deferred to Inc 3, pinned by `lowering_live_record_clone_return_rail_accept.ll`)
 census's INC1 figure reads ONE HIGHER than the guard's real population until the
 copy-destination class lands — do not diff the two naively. Recorded by the Rule-13
 re-review (N4).
+
+**Inc-3 addendum (2026-08-28):** the copy-destination class LANDED in Increment 3
+(`collectAncestorRecords`' copy-destination edge; `lowering_live_record_clone_return_rail_accept.ll`
+was renamed to `..._measured_accept.ll` because M-C 2a had made its `u = r+1` an in-place
+`cqrt_addc` on the returned rail, so the user's own measurement now collapses that rail
+before the second Ry; the residual over-accept it used to pin is
+`lowering_reject_live_record_clone_return_rail.ll`, spelled with a `mul`). The INC1-vs-guard
+offset above is therefore closed. Two further corrections from the Inc-3 Rule-13 round: the
+`?:` select-merge OUT rail (severance class 2) was NEVER masked by bd `lom0` — it compiled at
+HEAD `d2828e3` from three lines of C (`lowering_reject_live_record_select_merge_out.ll`); and
+`lowering_uncompute_borrowed_operand_free_order`, the §2R.5 spine-aware-only prediction that
+did not flip, is an already-lowered fixture whose `cqrt_ry` calls are hand-written (in no
+emitter-recorded set), so the guard cannot fire on it — the A5 artefact class, not a miss.

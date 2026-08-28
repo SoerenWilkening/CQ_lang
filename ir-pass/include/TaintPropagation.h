@@ -321,22 +321,34 @@ struct TaintSet {
   // "is this post-gate mention of the rail the compiler undoing ITSELF?" — the
   // spine-aware deadness reading the owner ruled on 2026-08-27 (SPIKE §2R.5a).
   //
-  // COMPLETENESS IS NOT ASSUMED, AND THE FAIL DIRECTION IS THE UNSAFE ONE — READ
-  // THIS BEFORE ADDING AN EMISSION SITE. An earlier draft of this comment claimed
-  // an unrecorded self-inverse gate "defaults to SPINE traffic, so a missed
-  // recording can only over-decline". THAT WAS FALSE (the Rule-13 round's F5
-  // finding). `isTeardownUse` (RotationLowering.cpp) recognizes teardown by
-  // `SpineOps` membership, the `cqrt_free` / `_unc` names, and the
-  // NOT-a-recorded-user-rotation test — a `cqrt_x` / `cqrt_cswap` /
-  // `cqrt_toffoli` / `cqrt_cnot` / `cqrt_copy_*_controlled` / `cqrt_xorc` /
-  // `cqrt_addc` call that is in NONE of those falls through to `return false`,
-  // i.e. it is read as a USER DATA USE and it EXEMPTS the record. Unrecorded
-  // therefore means PERMISSIVE, not conservative. That default is deliberate and
-  // correct for its purpose — a FORWARD Phase-4 route on a record is a real
-  // reachable shape the ruling says to ACCEPT, and it is indistinguishable by
-  // name from its own adjoint — but it means the recorder is load-bearing, not
-  // belt-and-braces. `RotationLowering.cpp` states this correctly; this header
-  // now agrees with it.
+  // COMPLETENESS IS NOT ASSUMED. THE FAIL DIRECTION FOR **THIS** CONSUMER IS NOW
+  // THE SAFE ONE, AND THAT IS A RECENT CHANGE — READ BOTH PARAGRAPHS BEFORE
+  // ADDING AN EMISSION SITE.
+  //
+  // HISTORY, because this comment has been wrong in both directions. An early
+  // draft claimed an unrecorded self-inverse gate "defaults to SPINE traffic, so
+  // a missed recording can only over-decline"; that was FALSE (the Inc-1 Rule-13
+  // round's F5 finding) and was corrected to the opposite: a `cqrt_x` /
+  // `cqrt_cswap` / `cqrt_toffoli` / `cqrt_cnot` / `cqrt_copy_*_controlled` /
+  // `cqrt_xorc` / `cqrt_addc` in none of the teardown categories fell through to
+  // "USER DATA USE" and EXEMPTED the record, i.e. unrecorded meant PERMISSIVE.
+  //
+  // THE F1 RULING (owner 2026-08-28) RETIRED THAT DEFAULT. Clause 3 no longer
+  // asks "is this use teardown?" but "does this use's LINEAGE REACH AN OBSERVING
+  // SINK?" (`reachesObservingSink`, RotationLowering.cpp), whose default for an
+  // unmodelled call is NOT A SINK — and the route/bracket gates are named
+  // NON-uses outright, because a routed value returns to its own rail and
+  // observes nothing. So for the live-record guard a missed `SpineOps` recording
+  // can now only over-DECLINE. `isTeardownUse` survives as ONE of that walk's
+  // non-use categories (it is the only way to recognize a re-emitted
+  // self-inverse adjoint), so the recorder is still worth threading — it just no
+  // longer sits on the over-accept edge for this consumer.
+  //
+  // ⚠ NOTHING HERE LICENSES DROPPING A RECORDING. Measured 2026-08-28: the ONLY
+  // reader of this set in the tree is `isTeardownUse` (RotationLowering.cpp) —
+  // every other mention is an emitter WRITING to it — so the safe fail direction
+  // above is a property of that one consumer, not of the set. Add a second reader
+  // and it has to be re-derived for that reader, from scratch.
   //
   // WHY THE CURRENT RESIDUAL IS STILL SAFE, on a structural argument rather than
   // on the fail direction. Exactly one `emitInverseCall` caller does not thread
