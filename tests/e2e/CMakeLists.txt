@@ -423,6 +423,23 @@ add_test(NAME e2e-slice-control-seq-grover
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_seq_grover.expected.log")
 
+# bd test_C_libtooling-lom0 Increment 4 — TWO COMPLETE GROVER ITERATIONS: four
+# chained `cq_theta`s and four sequential tainted-condition phase regions, i.e.
+# the shape that declined at HEAD b4e329b with "condition predates a
+# non-diagonal gate" and nothing else. `seq_grover` above stops at the `+= off`
+# half of state preparation; this one has the Ry half too, twice, which is what
+# makes it a repeatable iteration rather than a prefix. STRICT stage 2b (no
+# `--allow-unproven`): the trace records that every region's flag is stripped and
+# freed before the next non-diagonal gate, and the free-pairing checker records
+# that the only rail left allocated is the measured register.
+add_test(NAME e2e-slice-control-grover-2iter
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_2iter.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_2iter.expected.log")
+
 # bd 3c6m.5: cross-domain int<->long-double casts. Two direction slices — the
 # LINK-proof that the 18 new int<->f80 cast symbols resolve + signature-match the
 # runtime. A non-integer f80 factor (1.5L) keeps clang -O1 from folding the cast

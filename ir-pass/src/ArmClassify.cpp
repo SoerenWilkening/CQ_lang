@@ -36,6 +36,7 @@
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
@@ -415,15 +416,16 @@ namespace {
 //
 // The walk core is shared with the straight-line stale-record guard
 // (`OpcodeLowering::declineStaleRecordOps`, test_C_libtooling-uzb) via
-// `WireWalk::findNonDiagonalWireGate` (Rule 14). This caller is the
-// POSITION-FREE mode: the flag is minted at the BRANCH, a point unrelated to
-// the compare's own schedule, so no positional accept is possible here — any
-// theta on the wire declines.
-bool wireGainsNonDiagonalGate(const SmallPtrSetImpl<Value *> &Prov) {
+// `WireWalk::findNonDiagonalWireGate` (Rule 14). BOTH of that walker's modes
+// are used from here since bd test_C_libtooling-lom0 Inc 4 — see
+// `condWireDisposition` below for which one decides what.
+CallInst *wireGainsNonDiagonalGate(const SmallPtrSetImpl<Value *> &Prov,
+                                   const Instruction *EmitPoint,
+                                   const DominatorTree *DT) {
   // CrossValueRouting=TRUE since bd tayx (2026-07-03): the router-blind walk
   // was EVADED by a chained theta whose arg-0 reaches the condition's
   // provenance wire only through a one-register value-routing phi positioned
-  // BEFORE the compare — outside nonDiagonalGateBeforeBranch's positional
+  // BEFORE the compare — outside condWireDisposition's positional
   // window and invisible to the router-blind forward walk, so the phase-arm
   // diamond was ACCEPTED and emitted its routed stream over a stale flag
   // (verify-clean wrong unitary; kjd1 post-fix round probe p11, pinned by
@@ -437,9 +439,22 @@ bool wireGainsNonDiagonalGate(const SmallPtrSetImpl<Value *> &Prov) {
   // safe — so the phi-mediated spelling declining too is consistency, not a
   // regression; no shipped accept fixture routes a theta through a phi).
   SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
-  return findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true) !=
-         nullptr;
+  return findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true, EmitPoint,
+                                 DT);
 }
+
+// Disposition of the condition's non-diagonal-gate exposure (bd
+// test_C_libtooling-lom0 Increment 4). Three outcomes, and the middle one is
+// the whole increment: a wire gate that the emitter PROVABLY precedes is no
+// longer an unconditional decline, it is a decline DEFERRED until the arm
+// class is known.
+enum class CondWireDisp {
+  None,        // no relevant non-diagonal gate — the pre-4.1 accept path.
+  DeclineNow,  // decline immediately, exactly as before Inc 4.
+  ProvenPostRegion,  // every wire gate is provably after the whole emitted
+                     // stream; ACCEPTABLE for a homogeneous PHASE arm only, so
+                     // the caller carries it until `SawValueArm` is decided.
+};
 
 // Does a TAINTED-OPERAND `cq_theta` (an IN-PLACE, NON-DIAGONAL Ry on an existing
 // handle) sit between the condition compare and the branch — positionally OR on
@@ -460,16 +475,95 @@ bool wireGainsNonDiagonalGate(const SmallPtrSetImpl<Value *> &Prov) {
 // no flag-freeing compilation of this shape is source-exact — the decline is
 // permanent. Design-of-record:
 // docs/design/rssa-swap-control/MINT_AT_COMPARE.md.
-bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
-                                 const SmallPtrSetImpl<Value *> &Prov) {
+//
+// ---- INCREMENT 4 (bd test_C_libtooling-lom0): the POSITION-AWARE half ----
+//
+// Everything above stays true of a gate the emitter does not PROVABLY precede.
+// What changed is the one case the position-free walk over-declined: a chained
+// Ry that runs strictly AFTER this region's whole emitted stream. That was the
+// single wall between CQ and a full Grover iteration (`… R0;
+// a = cq_theta(a, 0.5); a += off;` — state prep is Ry THEN +off, and no source
+// spelling of S itself got past the walk).
+//
+// THE EMISSION CONTRACT IS THE PREDICATE. `SwapRouteEmit::emitRegion` builds
+// with `IRBuilder<> B(BI)` where `BI == R.Pred->getTerminator()`: the flag
+// mint, the work-rail allocs, the route-in `cqrt_cswap`s, the verbatim arm
+// `cqrt_rz`s, the route-back, the rail frees, the `_unc` flag strip and the
+// flag free ALL land before `BI`, in `R.Pred`. So a theta `T` runs after the
+// entire stream — mint, use, strip and free — exactly when
+// `provablyBefore(BI, T, DT)`, i.e. `DT.dominates(BI, T)` (every path to `T`
+// already executed the stream) AND `!isPotentiallyReachable(T, BI)` (once `T`
+// fires the stream never re-runs, closing the loop-iteration-2 replay). A
+// theta BEFORE the compare, on a sibling alias, through a pre-compare router
+// phi, or on a CFG cycle with the region is NOT provably after and keeps its
+// decline. Dominance over `BI` implies dominance over every stream call (they
+// precede `BI` in `BI`'s own block), and `!reachable(T, BI)` implies
+// `!reachable(T, S)` for every such `S` (reaching `S` in `R.Pred` falls
+// through to `BI`) — so proving it at `BI` proves it for the whole stream.
+//
+// WHY THE FIRST-GATE ANSWER IS ENOUGH. `findNonDiagonalWireGate` in
+// position-aware mode SKIPS a provably-after theta and keeps walking, but it
+// does not walk THROUGH it (a theta result is never pushed onto the frontier,
+// in either mode). Everything the walk would reach past a skipped `T1` is a
+// forward USER of `T1`, hence CFG-reachable from `T1`; if any such `T2` could
+// reach `BI` then `T1` could too, contradicting `!reachable(T1, BI)`. And the
+// safety obligation here is exactly "no wire gate runs before the mint at
+// `BI`", i.e. the reachability half — the dominance half is strictly extra
+// conservatism. So "the walk returned nullptr" IS "every relevant gate is
+// provably post-stream".
+//
+// WHY THIS IS SOUND ONLY BECAUSE INCREMENT 3 SHIPPED. The accept's claim is
+// "once the strip has run, the region holds no live record of the wire". That
+// is TRUE for a DIRECT condition (the flag is the sole record and the `_unc`
+// strip discharges it) and FALSE for a DERIVED one: a `sqrt(a+3.0)<=5.0`
+// condition leaves sitofp/fadd/sqrt template rails allocated and entangled
+// past the strip, and a dead alloc parent of a derived routed base survives it
+// too. Increment 4 does NOT re-prove that here — it RELIES on the M-A
+// live-record guard (`RotationLowering::declineLiveRecordRotations`, the late
+// post-uncompute slot) to decline the post-region theta over those records,
+// which it does with its own message (`control_swap_reject_post_region_theta_
+// derived_cond.ll`, `lowering_reject_live_record_routed_base_anc.ll`). The
+// interlock is the mechanism, not an assumption — that is why bd 6uqc
+// sequenced Inc 3 strictly before Inc 4.
+//
+// NEVER ARGUE "DIFFERENT SSA VALUES ⇒ DIFFERENT RAILS" HERE. Since M-C (Inc 2)
+// a tainted `add`/`sub`/`xor` with a classical operand lowers IN PLACE, so the
+// customer's post-region theta acts on the very physical rail the condition
+// read (one rail end to end — see tests/e2e/slice_control_seq_grover.c's
+// corrected note). The proof above is over IR POSITIONS, which stay valid; a
+// rail-identity argument would not.
+//
+// THE ACCEPT SET IS NARROW, AND EVERY LEG IS CHECKED SOMEWHERE:
+//   P1 homogeneous PHASE arm — decided by the caller AFTER arm classification
+//      (value arms keep the position-free walk verbatim, here and at the
+//      routed-base walk; the 6.5 ClassicalCallArm path never reaches here).
+//   P2 `!ShareCondFlag` — checked below: on the ziov share path `emitRegion`
+//      SKIPS the strip+free, so the flag is a LIVE record past the region and
+//      a later Ry on the wire dephases it.
+//   P3 a FLAT `emitRegion` region — structural: `classifyArms` is reached only
+//      from `handleBranchRegion`'s Diamond/IfElse arm, after the abort-park,
+//      guarded-store and 6.5 classical-call pre-peels and after
+//      `RegionShape::Nested` was dispatched to `recoverRegionTree`; the
+//      resulting region is Kind=BranchRegion, Depth 0, childless, which
+//      `lowerControlRegions` dispatches to `emitRegion`. The 4.3 nest, the
+//      switch and the select paths keep their own position-free walks.
+//   P4/P5 the pre-existing preconditions — `Cond` in `R.Pred` and the
+//      positional compare→branch scan — are UNCHANGED and still decline
+//      immediately (the positional scan fires even for a theta on ANOTHER
+//      wire, which no wire walk can see).
+CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
+                                 const SmallPtrSetImpl<Value *> &Prov,
+                                 const DominatorTree *DT) {
   auto *Cond = dyn_cast_or_null<Instruction>(R.Condition);
   if (!Cond || !R.Pred)
-    return true;  // cannot reason about the gap — decline (Prime Directive).
+    return CondWireDisp::DeclineNow;  // cannot reason about the gap (Prime Directive).
   if (Cond->getParent() != R.Pred)
-    return true;  // unbounded gap across blocks — conservative decline.
-  if (wireGainsNonDiagonalGate(Prov))
-    return true;  // chained Ry on the condition's wire, schedule-independent.
+    return CondWireDisp::DeclineNow;  // unbounded gap across blocks.
   const Instruction *BI = R.Pred->getTerminator();
+  // The POSITIONAL scan (P5) is unconditional and runs first: a tainted-operand
+  // theta between the compare and the branch is a decline even on another wire,
+  // and no position-aware proof can reach it (it is not dominated by `BI`
+  // anyway, but the scan also covers wires the walk never sees).
   for (const Instruction *I = Cond->getNextNode(); I && I != BI;
        I = I->getNextNode()) {
     const auto *CI = dyn_cast<CallInst>(I);
@@ -478,9 +572,19 @@ bool nonDiagonalGateBeforeBranch(const ControlRegion &R, TaintSet &Taint,
     const Function *F = CI->getCalledFunction();
     if (F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
         Taint.Tainted.count(CI->getArgOperand(0)))
-      return true;  // chained Ry on a live handle after the compare.
+      return CondWireDisp::DeclineNow;  // chained Ry on a live handle after the compare.
   }
-  return false;
+  // Position-FREE first: no gate at all is the ordinary accept path, and it
+  // must not pay for a dominator query.
+  if (!wireGainsNonDiagonalGate(Prov, /*EmitPoint=*/nullptr, /*DT=*/nullptr))
+    return CondWireDisp::None;
+  if (R.ShareCondFlag)
+    return CondWireDisp::DeclineNow;  // P2 — the flag outlives the region.
+  if (!DT)
+    return CondWireDisp::DeclineNow;  // no tree, no proof (Prime Directive).
+  if (wireGainsNonDiagonalGate(Prov, BI, DT))
+    return CondWireDisp::DeclineNow;  // some gate is NOT provably post-stream.
+  return CondWireDisp::ProvenPostRegion;
 }
 
 }  // namespace
@@ -746,7 +850,8 @@ Value *straightThroughConstFoldHandle(const ControlRegion &Region, Value *Routed
 
 }  // namespace
 
-ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
+ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
+                            const DominatorTree *DT) {
   auto *MergePhi = dyn_cast_or_null<PHINode>(Region.Merge);
   if (!MergePhi) {
     diagnoseUnderControl(declAnchor(Region), "control flow");
@@ -828,12 +933,32 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   // The flag is minted at the BRANCH; a tainted-operand `cq_theta` (non-diagonal
   // Ry) between the compare and the branch makes that mint read a different
   // basis than the source compare — the wrong arm fires and the flag cannot be
-  // stripped. Decline (see nonDiagonalGateBeforeBranch).
-  if (nonDiagonalGateBeforeBranch(Region, Taint, Prov)) {
+  // stripped. Decline (see condWireDisposition, which owns the whole rationale
+  // INCLUDING the Inc-4 position-aware accept and its five preconditions).
+  const CondWireDisp WireDisp =
+      condWireDisposition(Region, Taint, Prov, DT);
+  if (WireDisp == CondWireDisp::DeclineNow) {
     diagnoseUnderControl(declAnchor(Region),
                          "condition predates a non-diagonal gate");
     return ArmDisposition::Declined;
   }
+  // P1 is not decidable yet — `SawPhaseArm`/`SawValueArm` are set by the arm
+  // loop below — so a ProvenPostRegion gate becomes a DEFERRED decline: every
+  // decline the rest of this function can fire is re-spelled as the wire-gate
+  // message, so a region that declines for ANY other reason keeps the exact
+  // message (and anchor) it had before Increment 4. Rule 12's negative fixtures
+  // mirror these strings character-for-character, so message churn is a defect
+  // in its own right — this wrapper is what makes the restructure churn-free,
+  // and it is also the P1 fence: a VALUE arm (or any non-phase disposition)
+  // still declines on the position-free reading, exactly as before.
+  const bool DeferredWireGate = WireDisp == CondWireDisp::ProvenPostRegion;
+  auto declineArm = [&](Instruction *Where, StringRef What) {
+    if (DeferredWireGate)
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition predates a non-diagonal gate");
+    else
+      diagnoseUnderControl(Where, What);
+  };
 
   // The diamond's straight-through (Pred-edge) incoming — the muxed variable's
   // prior value AND the handle a phase arm must route. Present only for a
@@ -867,7 +992,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   for (BasicBlock *ArmBB : Arms) {
     if (MergePhi->getBasicBlockIndex(ArmBB) < 0) {
       // Arm block does not feed the merge phi — off-pattern shape.
-      diagnoseUnderControl(declAnchor(Region), "control flow");
+      declineArm(declAnchor(Region), "control flow");
       return ArmDisposition::Declined;
     }
     Value *ArmIncoming = MergePhi->getIncomingValueForBlock(ArmBB);
@@ -878,7 +1003,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
     // and the emitter would replay it as a handle tag (see taintedAngleGate; the
     // §8 adversarial probe family for test_C_libtooling-9hh).
     if (CallInst *Bad = taintedAngleGate(ArmIncoming, ArmBB, Base, Taint)) {
-      diagnoseUnderControl(Bad, "rotation angle");
+      declineArm(Bad, "rotation angle");
       return ArmDisposition::Declined;
     }
 
@@ -924,15 +1049,15 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
       // classifies as phase here, so `value-chain + empty arm` also declines
       // mixed — safe over-decline; a WI-5+ increment may refine it.
       if (SawValueArm) {
-        diagnoseUnderControl(declAnchor(Region), "mixed phase/value arm");
+        declineArm(declAnchor(Region), "mixed phase/value arm");
         return ArmDisposition::Declined;
       }
       if (!Taint.Tainted.count(Base)) {
-        diagnoseUnderControl(declAnchor(Region), "control flow");
+        declineArm(declAnchor(Region), "control flow");
         return ArmDisposition::Declined;
       }
       if (!armBlockIsPureSpine(ArmBB, ArmIncoming)) {
-        diagnoseUnderControl(declAnchor(Region), "impure phase arm");
+        declineArm(declAnchor(Region), "impure phase arm");
         return ArmDisposition::Declined;
       }
       SawPhaseArm = true;
@@ -957,11 +1082,11 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
     // op as the first arm's base is a value arm, handled below).
     if (!Routed && !isValueChangingOp(Base)) {
       if (!Taint.Tainted.count(Base)) {
-        diagnoseUnderControl(declAnchor(Region), "control flow");
+        declineArm(declAnchor(Region), "control flow");
         return ArmDisposition::Declined;
       }
       if (!armBlockIsPureSpine(ArmBB, ArmIncoming)) {
-        diagnoseUnderControl(declAnchor(Region), "impure phase arm");
+        declineArm(declAnchor(Region), "impure phase arm");
         return ArmDisposition::Declined;
       }
       SawPhaseArm = true;
@@ -982,7 +1107,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
       // a changed basis. No copy-safe, strip-valid lowering exists (§6a
       // territory).
       if (Chain.MixedPhi) {
-        diagnoseUnderControl(Chain.MixedPhi, "mixed phase/value arm");
+        declineArm(Chain.MixedPhi, "mixed phase/value arm");
         return ArmDisposition::Declined;
       }
 
@@ -990,7 +1115,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // Heterogeneous if/else: a value arm beside an already-classified
         // phase arm (the converse guard sits on the phase path above).
         if (SawPhaseArm) {
-          diagnoseUnderControl(declAnchor(Region), "mixed phase/value arm");
+          declineArm(declAnchor(Region), "mixed phase/value arm");
           return ArmDisposition::Declined;
         }
         // An FP-typed merge under tainted control is categorically an ANGLE,
@@ -998,7 +1123,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // f64 silent-miscompile family; PRD §8.1). isFPOrFPVectorTy, not the
         // scalar-only isFloatingPointTy (which misses <2 x double>).
         if (MergePhi->getType()->isFPOrFPVectorTy()) {
-          diagnoseUnderControl(declAnchor(Region), "control flow");
+          declineArm(declAnchor(Region), "control flow");
           return ArmDisposition::Declined;
         }
         // POSITIVE half of criterion 3's "merge type is integer" (§8 review,
@@ -1017,7 +1142,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // Select/Switch data-mux gates).
         if (!MergePhi->getType()->isIntegerTy() ||
             !widthHasReversibleCopy(abiWidthFromType(MergePhi->getType()))) {
-          diagnoseUnderControl(declAnchor(Region), "control flow");
+          declineArm(declAnchor(Region), "control flow");
           return ArmDisposition::Declined;
         }
         // The chain must bottom OUTSIDE the arm (at the live routed register
@@ -1025,7 +1150,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // untainted op under the chain) is a broken lineage.
         if (auto *BaseInst = dyn_cast<Instruction>(Chain.Base);
             BaseInst && BaseInst->getParent() == ArmBB) {
-          diagnoseUnderControl(declAnchor(Region), "control flow");
+          declineArm(declAnchor(Region), "control flow");
           return ArmDisposition::Declined;
         }
         // Base-identity — THE DEFECT-2 FIX (PRD §8.3): a chain that bottoms
@@ -1048,7 +1173,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // null); this shape DOES reconverge, so it gets its own `What`.
         if (Routed) {
           if (Chain.Base != Routed) {
-            diagnoseUnderControl(declAnchor(Region), "non-routable value multiplexer");
+            declineArm(declAnchor(Region), "non-routable value multiplexer");
             return ArmDisposition::Declined;
           }
         } else {
@@ -1085,16 +1210,16 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         //     revisitably, not permanently (see diagonalAliasHit).
         if (Value *Hit = diagonalAliasHit(Routed, Prov)) {
           if (StraightThrough && Hit == Routed) {
-            diagnoseUnderControl(Chain.Ops.front(),
+            declineArm(Chain.Ops.front(),
                                  "arm rewrites a condition operand");
           } else {
-            diagnoseUnderControl(declAnchor(Region), "control flow");
+            declineArm(declAnchor(Region), "control flow");
           }
           return ArmDisposition::Declined;
         }
         // Criterion 3: the routed slot must be a tainted quantum register.
         if (!Taint.Tainted.count(Routed)) {
-          diagnoseUnderControl(declAnchor(Region), "control flow");
+          declineArm(declAnchor(Region), "control flow");
           return ArmDisposition::Declined;
         }
         // Routed-base WIRE staleness (WI-5 §8 adversarial review,
@@ -1130,7 +1255,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         // principle the SwitchArmProve twin records).
         if (CallInst *Gate = findNonDiagonalWireGate(
                 Routed, /*CrossValueRouting=*/true)) {
-          diagnoseUnderControl(Gate,
+          declineArm(Gate,
                                "routed base predates a non-diagonal gate");
           return ArmDisposition::Declined;
         }
@@ -1147,19 +1272,19 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
         if (auto *BaseCI = dyn_cast<CallInst>(Routed);
             BaseCI && isPhiCall(BaseCI) && BaseCI->arg_size() >= 2 &&
             Taint.Tainted.count(BaseCI->getArgOperand(1))) {
-          diagnoseUnderControl(BaseCI, "rotation angle");
+          declineArm(BaseCI, "rotation angle");
           return ArmDisposition::Declined;
         }
         // Rule 8 linearity + self-contained arm block (fan-out / stray op /
         // DAG sibling — see valueArmIsPureChain).
         if (!valueArmIsPureChain(ArmBB, Chain.Ops, MergePhi)) {
-          diagnoseUnderControl(declAnchor(Region), "impure value arm");
+          declineArm(declAnchor(Region), "impure value arm");
           return ArmDisposition::Declined;
         }
         // A Q+Q link (second tainted operand) is a recognized value shape the
         // routed replay does not yet handle — defer with the 4.2 string.
         if (Chain.HasQQ) {
-          diagnoseUnderControl(Chain.Ops.front(), "value-arm swap-route");
+          declineArm(Chain.Ops.front(), "value-arm swap-route");
           return ArmDisposition::Declined;
         }
         // ACCEPT-class value arm: record the class + the ordered chain for
@@ -1185,7 +1310,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
       // value op: an Rz stacked over a basis the arm itself changed
       // (`p=p+3; rz(p,a)`) — the mirror direction of the chain-hits-phi
       // mixed case above. Same physics, same string.
-      diagnoseUnderControl(BaseInst, "mixed phase/value arm");
+      declineArm(BaseInst, "mixed phase/value arm");
       return ArmDisposition::Declined;
     }
 
@@ -1201,7 +1326,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
       // decline either way; acceptance always requires an IN-ARM chain).
       const bool Clobber =
           StraightThrough && Prov.count(StraightThrough) != 0;
-      diagnoseUnderControl(cast<Instruction>(Base),
+      declineArm(cast<Instruction>(Base),
                            Clobber ? "arm rewrites a condition operand"
                                    : "value-arm swap-route");
       return ArmDisposition::Declined;
@@ -1210,7 +1335,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
     // A leaf base that is NOT the routed handle: a cross-handle multiplexer or a
     // fresh quantum source muxed against the routed slot — not a phase arm over
     // the routed handle. Decline (over-decline is safe; Prime Directive).
-    diagnoseUnderControl(declAnchor(Region), "control flow");
+    declineArm(declAnchor(Region), "control flow");
     return ArmDisposition::Declined;
   }
 
@@ -1221,6 +1346,21 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint) {
   // all-value over ONE shared routed base (the mixed declines above), and an
   // if/else second chain bottoming anywhere but the first arm's anchored base
   // declined `control flow` (base-identity).
+
+  // P1 — the Inc-4 position-aware accept is PHASE-ONLY. A value arm keeps the
+  // position-free reading verbatim (Rule 7: method-B copies a basis LABEL out
+  // and replays the chain on the routed rail, so a later in-place Ry on that
+  // wire is a real staleness hazard the phase path does not have — the phase
+  // answer stays in place on `q` and the flag is stripped by the uncontrolled
+  // `icmp_inv`). Every value-arm decline above is already wrapped, but the
+  // ACCEPT-class value arm falls through to here, so this is the fence that
+  // actually holds P1. `SawValueArm` also covers the mixed case by
+  // construction (a mixed region declined above).
+  if (DeferredWireGate && (SawValueArm || !SawPhaseArm)) {
+    diagnoseUnderControl(declAnchor(Region),
+                         "condition predates a non-diagonal gate");
+    return ArmDisposition::Declined;
+  }
   return ArmDisposition::Accept;
 }
 

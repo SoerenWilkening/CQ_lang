@@ -2,7 +2,8 @@
 ; the p16 probe family): the depth-2 homogeneous-phase NEST had NO
 ; stale-condition wire guard AT ALL. ControlDetect dispatches
 ; RegionShape::Nested to recoverRegionTree, BYPASSING classifyArms (and with
-; it nonDiagonalGateBeforeBranch), and RegionTreeDetect walked only the inner
+; it condWireDisposition, then named nonDiagonalGateBeforeBranch), and
+; RegionTreeDetect walked only the inner
 ; condition's provenance against the rail closure — neither condition's WIRE
 ; was ever checked for a non-diagonal gate. A chained cq_theta re-rotating the
 ; outer condition's wire before the outer compare — here DIRECTLY, no router

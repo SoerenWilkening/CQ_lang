@@ -3,7 +3,8 @@
 ; the diamond stale condition. A chained cq_theta whose arg-0 reaches the
 ; condition's wire only through a one-register value-routing phi, positioned
 ; BEFORE the compare, was invisible to ArmClassify's
-; `nonDiagonalGateBeforeBranch`: prong (a) walked the provenance wire with
+; `condWireDisposition` (then named `nonDiagonalGateBeforeBranch`): prong (a)
+; walked the provenance wire with
 ; CrossValueRouting=false (routers not crossed) and the positional scan's
 ; window starts at the compare. The phase-arm diamond was ACCEPTED and
 ; SwapRouteEmit emitted the routed stream (mint -> cswap -> arm Rz -> cswap ->

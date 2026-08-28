@@ -334,7 +334,10 @@ NestDisposition recoverRegionTree(
   // Per-level STALE-CONDITION wire guard (bd tayx Rule-13 clearance, the p16
   // probe family — a REAL verify-clean hole this path carried since 4.3): the
   // nested dispatch BYPASSES classifyArms, so neither condition ever reached
-  // nonDiagonalGateBeforeBranch, and the criteria above walk the inner
+  // condWireDisposition (`nonDiagonalGateBeforeBranch` before bd lom0 Inc 4 —
+  // which is also why the Inc-4 POSITION-AWARE phase accept does not reach this
+  // path: it lives entirely inside that function), and the criteria above walk
+  // the inner
   // provenance only against the RAIL closure — no wire is checked for a
   // non-diagonal gate. A chained cq_theta re-rotating a condition's wire
   // before its compare (DIRECT or hidden behind a one-register router phi)

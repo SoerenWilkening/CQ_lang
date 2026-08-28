@@ -30,6 +30,7 @@
 
 namespace llvm {
 class CallBase;
+class DominatorTree;
 }  // namespace llvm
 
 namespace cq {
@@ -58,7 +59,18 @@ enum class ArmDisposition { Accept, Declined };
 // value-chain links into `Region.Shadow`/`ShadowFalse` for a value-class arm
 // (pure SSA analysis — no IR is mutated; only the plan struct is populated).
 // Fires at most one diagnostic. See `ArmDisposition`.
-ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint);
+//
+// `DT` is the caller's per-function `DominatorTree`, built ONCE in
+// `detectControlRegions` and threaded through (bd test_C_libtooling-lom0 Inc 4).
+// It is used for exactly one question — is a non-diagonal gate on the
+// condition's wire PROVABLY after the whole emitted stream (`provablyBefore(
+// R.Pred->getTerminator(), T, *DT)`)? — and nothing here mutates IR, so the tree
+// stays valid for the whole detection sweep (Rule 9: detection is pure analysis
+// before any mutation; no block pointer is cached across an erasure because no
+// erasure happens during detection). A null `DT` is not an error: it simply
+// yields the pre-Inc-4 position-free decline (Prime Directive).
+ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
+                            const llvm::DominatorTree *DT);
 
 // Outcome of the 6.5 classical-call-arm recognizer (DD-7), tried by
 // `ControlDetect::handleBranchRegion` BEFORE `classifyArms`:

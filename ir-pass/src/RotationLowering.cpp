@@ -362,9 +362,11 @@ namespace {
 //       under quantum control", SwitchClassify)
 //   * lowering_reject_live_record_valuearm_merge_out_masked.ll ("value-arm
 //       swap-route under quantum control", ArmClassify/SwapRouteEmit)
-//   * lowering_reject_live_record_routed_base_anc_masked.ll    ("condition
-//       predates a non-diagonal gate under quantum control" — the only one that
-//       really is bd test_C_libtooling-lom0's)
+//   * lowering_reject_live_record_routed_base_anc.ll (RENAMED at Increment 4,
+//       was `..._anc_masked.ll`) — the only one that really was bd
+//       test_C_libtooling-lom0's "condition predates a non-diagonal gate", and
+//       the only one whose message MOVED when Inc 4 lifted that decline: it now
+//       lands here, on kMsgLiveRecord. Re-measured, not re-derived.
 // ACCEPT controls, each pinning a clause this change must NOT widen:
 //   * lowering_stale_record_add_before_theta.ll  }  clause 3 — the ruled LIVE
 //   * lowering_stale_record_alias_before_theta.ll}  record boundary (pre-existing)
@@ -510,7 +512,7 @@ StringRef emittedCalleeName(const CallInst *CI) {
 // REACHABILITY, RE-MEASURED FOR INCREMENT 3 — and the Increment-1 note here was
 // WRONG about it, in the over-accepting direction. That note said classes (2) and
 // (3) "ARE masked today" by bd test_C_libtooling-lom0's position-free
-// `nonDiagonalGateBeforeBranch` over-decline. Measured on the four natural C
+// `condWireDisposition` over-decline. Measured on the four natural C
 // spellings, that is FOUR different facts:
 //
 //   * a tainted `?:` — and a `switch` whose cases `clang -O1` folds into
@@ -529,12 +531,14 @@ StringRef emittedCalleeName(const CallInst *CI) {
 //     under quantum control" (lowering_reject_live_record_switch_mux_out_masked.ll).
 //   * a real `br` value-arm diamond declines with "value-arm swap-route under
 //     quantum control" (lowering_reject_live_record_valuearm_merge_out_masked.ll).
-//   * of the four pins only the ROUTED-BASE phase region wears lom0's own
-//     message (lowering_reject_live_record_routed_base_anc_masked.ll) — note
-//     `SelectClassify` emits the SAME string for a theta on the condition wire
-//     of a `?:`, which is a different shape from the OUT-rail one above.
-// **INCREMENT 4 MUST RE-MEASURE ALL FOUR when it lifts lom0's decline** — each
-// must land on `kMsgLiveRecord`, never on `opt` exit 0.
+//   * of the four pins only the ROUTED-BASE phase region wore lom0's own
+//     message — note `SelectClassify` emits the SAME string for a theta on the
+//     condition wire of a `?:`, which is a different shape from the OUT-rail one
+//     above.
+// RE-MEASURED AT INCREMENT 4 (the lift landed): that one moved to
+// `kMsgLiveRecord` and is now `lowering_reject_live_record_routed_base_anc.ll`;
+// the other three are byte-identical (they never declined at ArmClassify's wire
+// walk). None landed on `opt` exit 0.
 //
 // The `_unc` twins of all four writers are adjoints, not forward producers, and
 // are excluded above for that reason, not as part of any scope gap.

@@ -18,7 +18,8 @@ q = cq_theta(q, t2);       // chained, in-place, NON-diagonal Ry
 if (c) { q = cq_phi(q, a); }   // phase arm on the STALE predicate
 ```
 
-Declined today by `ArmClassify::nonDiagonalGateBeforeBranch`
+Declined today by `ArmClassify::condWireDisposition` (was `nonDiagonalGateBeforeBranch`
+until bd lom0 Inc 4, 2026-08-28)
 (`"condition predates a non-diagonal gate"`), fixture
 `control_swap_reject_stalecond_chained_theta.ll`. The emitter mints the flag
 at the **branch** (`SwapRouteEmit` step 1), so without the guard the mint
@@ -127,7 +128,7 @@ miscompiled** by the in-tree pass (2026-06-10): the emitted stream mints
 after `cqrt_ry(h, t2)` — byte-for-byte the P2 wrong unitary, verify-clean.
 Opaque `cq_*` calls do not reorder; pure instructions do — so the guard must
 key on the **wire**, not the schedule. Fixed in
-`ArmClassify::nonDiagonalGateBeforeBranch` by an SSA wire-walk: follow
+`ArmClassify::condWireDisposition` (then `nonDiagonalGateBeforeBranch`) by an SSA wire-walk: follow
 in-place gate user edges (`arg-0` of `cq_phi_*` — diagonal, keep walking the
 same wire; `arg-0` of `cq_theta_*` — non-diagonal wire gate → **decline**).
 
@@ -143,8 +144,10 @@ seeding the walk from the condition's full tainted backward **provenance**
 (`condProvenance`) instead of its direct operands. The walk does not cross
 the merge `phi`, so *phi-mediated* post-region thetas are unreachable; a
 **direct** post-region theta user of a provenance value *is* reachable and
-declines — over-decline, accepted as safe (the wire demonstrably gains a
-non-diagonal gate while the condition's record is live). The positional scan
+declined — over-decline, accepted as safe (the wire demonstrably gains a
+non-diagonal gate while the condition's record is live) — **until bd lom0
+Increment 4 (2026-08-28), see the §6 amendment below**: that decline is now
+POSITION-AWARE for a flat homogeneous-PHASE region with `!ShareCondFlag`. The positional scan
 is retained for its cross-wire conservatism. Fixtures:
 `control_swap_reject_stalecond_sunk_compare.ll` and
 `control_swap_reject_stalecond_derived_cond.ll` (decline, message
@@ -178,10 +181,59 @@ cannot make the flag strippable (P6 theorem; P3/P4/P5/P8/P9/P10 close every
 candidate, including every arm class and the only special angle). The exact
 compilation exists only with a leaked entangled flag — recorded above as a
 possible future *explicit opt-in*, never a silent accept. The
-`"condition predates a non-diagonal gate"` decline is the permanent answer,
+`"condition predates a non-diagonal gate"` decline is the permanent answer for a
+theta BETWEEN the compare and the branch (P6 is untouched by anything below),
 robust — after the §4 hardening (wire-walk + provenance seeding) — to both
-instruction scheduling and derived (arithmetic-mediated) conditions. The
+instruction scheduling and derived (arithmetic-mediated) conditions; a theta
+provably AFTER the region's own strip is a different question, answered in §6. The
 branch-free instance of the same stale-record family is closed pass-wide by
 the position-aware `declineStaleRecordOps` guard
 (`"operand predates a non-diagonal gate"`; test_C_libtooling-uzb, 2026-06-10;
 §4 residual-exposure note).
+
+## 6. Amendment 2026-08-28 — bd lom0 Increment 4: the POSITION-AWARE phase accept
+
+**What changed, and what did not.** The P6 theorem (§2) — source-exactness and a
+freeable flag are mutually exclusive when a chained `Ry` sits *between* the compare
+and the branch — is untouched; that shape still declines (`control_swap_reject_post_
+region_theta_and_between.ll`, and the positional scan P5 runs first and covers other
+wires too). What the §4 wire-walk over-declined was a theta that runs strictly
+**after** the region's whole emission stream — mint, `cqrt_cswap` route, `Rz`, route
+back, rail frees, `icmp_inv` strip, flag free — all of which `emitRegion` inserts
+before `R.Pred`'s terminator `BI`. That is the single wall between CQ and a full
+Grover iteration (`… R0; a = cq_theta(a, 0.5); a += off;`).
+
+**The accept.** `ArmClassify::condWireDisposition` now runs the position-free walk
+first; if it finds a gate, the region is accepted iff ALL of: P1 the region classifies
+as a homogeneous PHASE arm (value arms keep the position-free decline, both the
+condition walk and the routed-base walk); P2 `!ShareCondFlag` (the ziov share path
+skips the strip, so the flag outlives the region); P3 a flat `emitRegion` region
+(4.3 nests, select, switch and the 6.5 classical-call arm are untouched — structurally,
+`classifyArms` has one caller and nests are peeled before it); P4 `Cond` in `R.Pred`;
+P5 the positional scan is clean; and every theta on the wire satisfies
+`provablyBefore(BI, T)` = `DT.dominates(BI, T) && !isPotentiallyReachable(T, BI)`,
+via `WireWalk::findNonDiagonalWireGate`'s POSITION-AWARE mode with `EmitPoint = BI`
+(the same walker; the `DominatorTree` is built once per function in
+`detectControlRegions`, pre-mutation). This satisfies the general rule recorded in bd
+memory `stale-record-position-aware-guard` — position-aware is sound only when the
+inspected instruction IS the emission point — because `BI` is exactly where the
+stream is minted, whereas the compare (the point the 2026-06-10 investigation
+rejected) is not.
+
+**Why it is sound only together with the M-A live-record guard (bd 6uqc Inc 1–3).**
+"After the strip the region holds no live record" is true of the FLAG only. A
+derived condition's provenance chain, or the routed base's dead alloc parent,
+survives the strip; the late, module-wide guard declines the post-region theta over
+any such dead record (`control_swap_reject_post_region_theta_derived_cond.ll`,
+`lowering_reject_live_record_routed_base_anc.ll` — both now carry the guard's
+message, not this file's). And since M-C (Inc 2) the SSA "wire" and the physical
+rail no longer coincide (the S† theta acts on the very register the oracle's
+condition read); the proof above is over IR positions only and never argues
+"different SSA values ⇒ different rails".
+
+**Witnesses.** `control_swap_accept_post_region_theta{,_shared_rail,_shapes}.ll`,
+`control_swap_accept_two_iterations.ll`; e2e `slice_control_grover_2iter` (two full
+S·O·S†·R0 iterations, strict free-pairing, only the register allocated at each of
+its five `cqrt_ry`). Rule-13 cleared 2026-08-28 (24 probe angles, HEAD-vs-tree sweep
+= the new fixtures only).
+

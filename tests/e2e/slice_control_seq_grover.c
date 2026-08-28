@@ -34,24 +34,33 @@
    survives canonicalization and reaches the pass as a real add/sub on the
    quantum register.
 
-   NOT A FULL GROVER ITERATION, and the reason is narrower than it looks.
-   State prep is S = `Ry(0.5)` THEN `+ off`, so re-applying S means
-   `q = cq_theta(q, 0.5); q += off;` — in THAT order the theta's arg-0 is the
-   same wire the reflection's condition read, `wireGainsNonDiagonalGate` (which
-   is schedule-independent) sees it, and the region declines even though the flag
-   was stripped and freed long before. That is bd lom0, a separate increment
-   against ArmClassify.
+   NOT A FULL GROVER ITERATION — AND SINCE bd lom0 INCREMENT 4 THAT IS A CHOICE
+   THIS SLICE MAKES, NOT A WALL IT HITS. Read the next two paragraphs as history.
 
-   MEASURED (re-measured 2026-08-28 after M-C batch 2b; both verdicts and the
-   diagnostic string are UNCHANGED), and worth stating precisely because the
-   obvious summary is wrong:
+   WHAT WAS TRUE UNTIL 2026-08-28. State prep is S = `Ry(0.5)` THEN `+ off`, so
+   re-applying S means `q = cq_theta(q, 0.5); q += off;` — in THAT order the
+   theta's arg-0 is the same wire the reflection's condition read,
+   `wireGainsNonDiagonalGate` (then schedule-independent) saw it, and the region
+   declined even though the flag was stripped and freed long before. MEASURED
+   then (and re-measured after M-C batch 2b, unchanged at that point):
        q += off; q = cq_theta(q, 0.5);   ->  LOWERS
-       q = cq_theta(q, 0.5); q += off;   ->  DECLINES
+       q = cq_theta(q, 0.5); q += off;   ->  DECLINED
                                              "cq controlled lowering: condition
                                               predates a non-diagonal gate"
-   WHY THE FIRST ONE LOWERS — and an earlier draft of this comment got the
-   mechanism wrong, so read this instead of it. It used to say the first spelling
-   lowers "only because `cq_template_add_i32_hl` mints a FRESH handle, so the
+
+   WHAT CHANGED, 2026-08-28. Increment 4 made that walk POSITION-AWARE for a flat
+   PHASE region that does not share its flag with a data use: a gate the region's
+   entire emitted stream provably precedes (`DT.dominates(BI, T) &&
+   !isPotentiallyReachable(T, BI)`) is harmless. BOTH spellings above now lower,
+   and the full two-iteration program is the e2e customer
+   tests/e2e/slice_control_grover_2iter.c. THIS SLICE IS DELIBERATELY LEFT AT THE
+   ONE-REGION-PAIR SHAPE and its golden is byte-identical across Increment 4: its
+   job is bd hcrg's SEQUENTIAL-REGION emission-ORDER claim, and a minimal witness
+   for that claim is worth more than a second copy of the Grover customer.
+
+   WHY THE `+ off` SPELLING ALWAYS LOWERED — and an earlier draft of this
+   comment got the mechanism wrong, so read this instead of it. It used to say
+   that spelling lowers "only because `cq_template_add_i32_hl` mints a FRESH handle, so the
    theta sits on a different wire". That was a claim about the LOWERED RAIL, and
    M-C falsified it: since batch 2b `q -= off` lowers IN PLACE, the S† theta acts
    on the very register the oracle's condition read — and the slice still lowers,
@@ -67,13 +76,18 @@
    than assumed: region 1's flag is `_unc`-stripped AND freed two lines before the
    `cqrt_addc_i32(h0, -3)` and the S† `cqrt_ry_i32(h0, -0x1p-1)`, so no record of
    the condition is live when the non-diagonal gate fires. (Generalising that
-   observation into an accept predicate is bd lom0's job, not this slice's.)
+   observation into an accept predicate WAS bd lom0's job; Increment 4 did it,
+   and the predicate is stated over IR POSITIONS rather than over rail identity —
+   see ArmClassify::condWireDisposition.)
 
-   Stopping here is NOT a workaround: `+off ∘ Ry` and `Ry ∘ +off` are different
+   Stopping here was NOT a workaround: `+off ∘ Ry` and `Ry ∘ +off` are different
    unitaries (Ry does not commute with the `+3` permutation), so the first
-   spelling computes something that is not S. This slice therefore stops at the
-   `q += off` half — the part of S that genuinely lowers — rather than reordering
-   S to get past a guard. */
+   spelling computes something that is not S. This slice stopped at the
+   `q += off` half — the part of S that genuinely lowered — rather than reordering
+   S to get past a guard, and it still stops there because that is the minimal
+   sequential-region witness. The reordering trap itself has NOT gone away: it is
+   still true that the two spellings are different circuits, and the reason to
+   prefer one is the algorithm, never the guard. */
 /* GOLDEN STATE AFTER M-C INCREMENTS 2a + 2b (bd test_C_libtooling-6uqc,
    2026-08-28). THIS GOLDEN IS THE FIX FOR bd test_C_libtooling-nepx, and the
    regeneration IS the fix — not a consequence of it.

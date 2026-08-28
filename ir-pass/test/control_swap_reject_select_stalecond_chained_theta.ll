@@ -9,7 +9,8 @@
 ; (the strip still cleans the flag, so nothing LOOKS wrong). Empirically
 ; reproduced pre-fix (probe p11: ry(0.5); ry(0.7); fcmp mint; copies; exit 0).
 ;
-; The guard is the select mirror of ArmClassify's nonDiagonalGateBeforeBranch
+; The guard is the select mirror of ArmClassify's condWireDisposition (named
+; nonDiagonalGateBeforeBranch until bd lom0 Inc 4)
 ; (same string, same WireWalk position-free provenance walk + the positional
 ; compare->select tainted-theta scan; Rule 14). Both sibling classifiers
 ; (br-diamond, switch) already had it; 4.4 shipped without it and the hole

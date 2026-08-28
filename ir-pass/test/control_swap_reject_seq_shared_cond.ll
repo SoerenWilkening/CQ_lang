@@ -3,7 +3,8 @@
 ;
 ; `if(q>5){rz a}; if(q>5){rz b}` after CSE: a single `%c1` in `entry` feeding
 ; BOTH conditional branches. The second region's condition is therefore defined
-; OUTSIDE its own Pred block, and `nonDiagonalGateBeforeBranch` declines any
+; OUTSIDE its own Pred block, and `condWireDisposition` (named
+; `nonDiagonalGateBeforeBranch` before bd lom0 Inc 4) declines any
 ; condition it cannot bound a positional scan for:
 ;   `if (Cond->getParent() != R.Pred) return true;  // unbounded gap`
 ;

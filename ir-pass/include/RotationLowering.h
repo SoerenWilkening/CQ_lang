@@ -220,12 +220,15 @@ bool emitRz(llvm::CallInst *phi, llvm::Value *handle, llvm::Value *angle,
 //     (`lowering_reject_live_record_switch_mux_out_masked.ll`).
 //   * a real `br` value-arm diamond IS masked, by "value-arm swap-route under
 //     quantum control" (`lowering_reject_live_record_valuearm_merge_out_masked.ll`).
-// Of the four pins only the ROUTED-BASE phase region wears lom0's message
-// (`lowering_reject_live_record_routed_base_anc_masked.ll`; `SelectClassify`
-// emits the same string for a theta on a `?:`'s CONDITION wire — a different
-// shape from the OUT rail). **Increment 4 must
-// re-measure those four fixtures when it lifts lom0's decline**: each must land on
-// this guard's message, never on `opt` exit 0.
+// Of the four pins only the ROUTED-BASE phase region wore lom0's message
+// (`SelectClassify` emits the same string for a theta on a `?:`'s CONDITION
+// wire — a different shape from the OUT rail). RE-MEASURED AT INCREMENT 4, when
+// lom0's position-free decline was lifted for the flat phase shape: that one
+// fixture DID move to this guard's message and was renamed
+// `lowering_reject_live_record_routed_base_anc.ll` (its `mul`-minted `r` leaves
+// `q`'s alloc rail live, dead and entangled); the other three are byte-identical
+// across the lift, since none of them ever declined at `ArmClassify`'s wire
+// walk. None landed on `opt` exit 0.
 // The per-class detail and the measured spellings live at `isRecordProducer` in
 // RotationLowering.cpp.
 //

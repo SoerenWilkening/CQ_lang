@@ -33,11 +33,13 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/DiagnosticInfo.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
+#include <optional>
 #include <string>
 
 using namespace llvm;
@@ -357,7 +359,8 @@ StringRef offPatternDisposition(BranchInst *BI, TaintSet &Taint) {
 // Recognize and classify one tainted-condition `br`, firing the precise
 // decline or PUSHING an accepted region onto `Plan` for `SwapRouteEmit`.
 void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
-                        SmallPtrSetImpl<BranchInst *> &Claimed) {
+                        SmallPtrSetImpl<BranchInst *> &Claimed,
+                        const DominatorTree *DT) {
   ControlRegion R;
   // 7.2 Inc 3 — abort/exit park FIRST: a recognized noreturn-sink arm ends in
   // `unreachable`, so `recoverRegion` would label it `OffPattern` and decline
@@ -455,7 +458,7 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     case ClassicalCallDisp::NotApplicable:
       break;
     }
-    if (classifyArms(R, Taint) == ArmDisposition::Declined)
+    if (classifyArms(R, Taint, DT) == ArmDisposition::Declined)
       return;  // ArmClassify already fired the precise diagnostic (§3c / value).
     // ACCEPT: a pure phase region over ONE tainted handle — a one-content-arm
     // diamond (WI-2) or a two-arm if/else (WI-3). Push it so `lowerControlRegions`
@@ -486,12 +489,30 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
+    // ONE `DominatorTree` per function, threaded down to `classifyArms` (bd
+    // test_C_libtooling-lom0 Inc 4). Detection mutates nothing —
+    // `recoverRegion`, the classifiers and the wire walks are pure SSA analysis,
+    // and every emitter/flattener runs later in `lowerControlRegions` — so one
+    // tree is valid for this whole sweep and is never cached across an erasure
+    // (Rule 9).
+    //
+    // Built LAZILY, on the first tainted conditional branch, and that is a
+    // MEASURED choice, not a reflex: an unconditional `DominatorTree DT(F)`
+    // costs ~60ms per `opt` invocation on a 1536-line libm slice whose functions
+    // mostly have no tainted branch at all (0.376s -> 0.436s, 5-run mean), and
+    // the census corpus is full of such modules. `std::optional` keeps the
+    // one-tree-per-function property exactly — it just does not pay for it in
+    // functions that never ask.
+    std::optional<DominatorTree> DT;
     for (BasicBlock &BB : F) {
       Instruction *Term = BB.getTerminator();
       if (auto *BI = dyn_cast<BranchInst>(Term)) {
         if (BI->isConditional() && taint.Tainted.count(BI->getCondition()) &&
-            !Claimed.count(BI))
-          handleBranchRegion(BI, taint, plan, Claimed);
+            !Claimed.count(BI)) {
+          if (!DT)
+            DT.emplace(F);
+          handleBranchRegion(BI, taint, plan, Claimed, &*DT);
+        }
       } else if (auto *SI = dyn_cast<SwitchInst>(Term)) {
         // 4.5 — prove-or-decline a tainted-scrutinee `switch` instead of the
         // blanket decline (mirrors the 4.4 `classifySelectRegion` flip).

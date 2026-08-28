@@ -628,7 +628,7 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   // that gap makes the minted flag encode the POST-Ry predicate while the SSA
   // condition denotes the pre-Ry record: the copies route %out on the wrong
   // predicate, verify-clean (the strip still cleans the flag). Both sibling
-  // classifiers carry this guard (ArmClassify::nonDiagonalGateBeforeBranch,
+  // classifiers carry this guard (ArmClassify::condWireDisposition,
   // SwitchClassify); 4.4 shipped the select without it, and the hole became
   // fp-reachable through the kjd1 gate-4 un-staging. The select mirror, same
   // three prongs (Rule 14 — condProvenance + the shared WireWalk):
