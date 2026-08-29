@@ -1849,6 +1849,23 @@ add_test(NAME e2e-slice-uncompute-interior-chain
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_interior_chain.expected.log")
 
+# M-B Increment 5b (bd test_C_libtooling-6uqc): bd 6uqc's P4 -- the interior
+# chain FOLLOWED BY a chained cq_theta on the same wire. At d2828e3 this program
+# ACCEPTED with four live entangled records at the second Ry (a silent-
+# miscompile-class accept); at b4e329b it DECLINED loudly at the M-A live-record
+# guard; it now LOWERS, because 5b's clause-(d) RIGHT disjunct proves the chained
+# Ry runs only AFTER the discharge, so the whole LIFO reversal lands between the
+# zext and the Ry. The golden is the only shipped gate that can see that ORDER --
+# a reversal emitted after the Ry would read a post-Ry basis, which owner ruling
+# 2026-08-27 forbids outright. Strict stage 2b.
+add_test(NAME e2e-slice-uncompute-interior-chained-theta
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_interior_chained_theta.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_interior_chained_theta.expected.log")
+
 # Phase 5 (WI-7, test_C_libtooling-p2s2.7): the permanent `_unc` LINK-COMPLETENESS
 # guard for the shapes slice_uncompute_dead_dag does NOT exercise. WI-6 linked only
 # the bare-QQ + `_hl` `_unc` forms; the `_lh`, tainted-cast, and `fneg` `_unc`

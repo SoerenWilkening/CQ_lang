@@ -36,15 +36,45 @@
 ;
 ; MEASURED AT HEAD (pre-Inc-3): `opt` exit 0 — the over-accept this closes.
 ;
+;
+; ── M-B INCREMENT 5b PRESERVATION NOTE (bd test_C_libtooling-6uqc) ───────────
+; The `call void @cqrt_x(i32 %b)` below is NOT part of the shape this fixture
+; was written to pin, and it is not decoration either — READ THIS BEFORE
+; "simplifying" it away.
+;
+; Without it, M-B's interior partition now DISCHARGES the dead sibling `%b` — uncomputes it
+; with its out-first `_unc` and frees it — BEFORE the chained `cq_theta`, and the
+; guard then correctly ACCEPTS on clause 2 (a record whose own discharge is
+; provably before the gate is not standing at it). That accept is right, and it
+; is the whole point of Increment 5; what it costs is THIS fixture's premise. The
+; program stops containing a live-at-the-gate record, so it stops exercising the
+; walk this file exists to pin.
+;
+; `cqrt_x` is a permutation gate `ChainWalk::isInPlaceGateOn` deliberately does
+; not recognize, so it is neither an in-place gate the interior DAG would adjoint
+; nor a forward producer: the rail is refused and LEFT ALLOCATED (pinned
+; independently by lowering_uncompute_interior_leak_route_consumer.ll). It is
+; ALSO a NON-use for the guard's clause-3 observing-sink walk (a route moves a
+; value onto a work rail and back; nothing is observed — owner ruling
+; 2026-08-28, F1), so the record stays DEAD at the gate and the decline stays
+; correct physics: an undischarged basis record entangled with the wire when a
+; non-diagonal gate fires.
+;
+; So this file still measures exactly what it always measured — the ANCESTOR pass plus the descendants-of-every-ancestor pass, the only route that reaches a dead sibling standing under a LIVE ancestor — on a
+; program where the record really is still standing. The version WITHOUT the
+; `cqrt_x` is now an accept, and lowering_live_record_mb_discharged_accept.ll
+; is the twin that pins it.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
+declare void @cqrt_x(i32)
 
 define i32 @slice(i32 %u0) {
 entry:
   %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %a  = mul i32 %q, 2                                          ; THE WIRE
   %b  = mul i32 %q, 3                                          ; DEAD SIBLING
+  call void @cqrt_x(i32 %b)                                 ; see the M-B note above
   %c  = mul i32 %b, 7                                          ; measured => exempt
   %mc = call i32 @cq_measure_si32(i32 %c)
   %q2 = call i32 @cq_theta_si32(i32 %a, double 5.000000e-01)   ; T

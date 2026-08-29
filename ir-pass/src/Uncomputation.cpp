@@ -768,11 +768,38 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
   //    parent is deliberately not walked, so the property is proven instead.
   //
   //    A mutation `M` of `P` is harmless iff it is provably OUTSIDE the interval
-  //    [first recovered gate reading P, At]. Inc 5a proves only the LEFT side:
-  //    `provablyBefore(M, First)` — M ran before the interval opened and, by the
-  //    reachability half, can never run again inside it. (The RIGHT side — a
-  //    mutation that runs only AFTER the discharge, which is bd 6uqc's P4: the
-  //    chained `cq_theta` on the source wire — is Inc 5b.)
+  //    [first recovered gate reading P, At], and there are exactly two ways out:
+  //
+  //      LEFT   `provablyBefore(M, First)` — M ran before the interval opened,
+  //             and by the reachability half it can never run again inside it, so
+  //             P's value at `First` already includes M's effect and holds until
+  //             `At`. This is what admits the SOURCE Ry that mints the wire.
+  //
+  //      RIGHT  `provablyBefore(At, M)` — M runs only after `At`. Every path to
+  //             M goes through `At`, and `At` is not reachable from M, so M
+  //             cannot execute before the adjoints, which are inserted BEFORE
+  //             `At` and therefore strictly earlier still. This is Inc 5b, and
+  //             it is what makes bd 6uqc's P4 lower: the chained `cq_theta` on
+  //             the source wire is a mutation of a borrowed parent that happens
+  //             entirely after the discharge, so the `_unc`s read the PRE-Ry
+  //             basis — which is exactly the basis the forward gates read.
+  //
+  //    THE TWO DISJUNCTS ARE NOT SYMMETRIC IN WHAT THEY PROTECT, and the
+  //    difference is the owner's clause-(d) ruling of 2026-08-27: "a discharge
+  //    scheduled AFTER a non-diagonal wire gate is itself unsound (the `_unc`
+  //    would read a post-Ry basis) — the spine must never place one there." The
+  //    RIGHT disjunct does not schedule the discharge after the Ry; it proves the
+  //    Ry is after the discharge. A mutation strictly INSIDE the interval
+  //    satisfies neither and leaks
+  //    (lowering_uncompute_interior_leak_parent_ry_between.ll).
+  //
+  //    AND THAT ORDER IS WHAT THE M-A GUARD THEN READS. `recordIsExemptAt`'s
+  //    clause 2 exempts a record whose own discharge is `provablyBefore` the
+  //    gate; the `_unc`(out=R, …) and `cqrt_free(R)` emitted here are exactly the
+  //    shape `isDischargeOf` matches, and they now land before the chained Ry —
+  //    so P4 goes from a loud decline to an accept WITHOUT relaxing one clause of
+  //    the guard. The division of labour holds: M-B moved the physics, M-A only
+  //    re-read it.
   for (Value *P : Borrowed) {
     CallInst *First = nullptr;
     for (CallInst *G : D.Calls) {  // forward program order (recoverDataDag §2)
@@ -796,7 +823,9 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
       if (preservesBorrowedParent(M, P))
         continue;
       if (provablyBefore(M, First, DT))
-        continue;
+        continue;  // LEFT — M ran before the interval and never runs again.
+      if (provablyBefore(At, M, DT))
+        continue;  // RIGHT — M runs only after the discharge (Inc 5b).
       return;  // unprovable ⇒ the whole group leaks (Rule 6).
     }
   }
