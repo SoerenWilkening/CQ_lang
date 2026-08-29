@@ -456,10 +456,12 @@ add_test(NAME e2e-slice-uncompute-interior-region-derived-cond
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_interior_region_derived_cond.expected.log")
 
 # bd test_C_libtooling-160a — ONE COMPLETE GROVER ITERATION WHOSE ORACLE IS A
-# COMPUTATION, not a compare against a constant: `((q*37)>>3) == 5`, two template
-# rails deep before the flag is minted. The direct-oracle twin is
-# slice_control_grover_2iter above; this is the shape that says CQ can mark a
-# COMPUTED predicate. STRICT stage 2b.
+# COMPUTATION, not a compare against a constant: `((q*5)>>2) == 5`, two template
+# rails deep (`ashr` then a QQ `add`) before the flag is minted. The direct-oracle
+# twin is slice_control_grover_2iter above; this is the shape that says CQ can
+# mark a COMPUTED predicate — and the predicate is SATISFIABLE (it marks q == 4;
+# the `((q*37)>>3)==5` it shipped with for one day marks nothing without `nsw`
+# overflow — bd 160a Rule-13 finding F2). STRICT stage 2b.
 add_test(NAME e2e-slice-control-grover-derived-oracle
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

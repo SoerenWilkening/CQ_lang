@@ -35,7 +35,7 @@
 #include "TaintPropagation.h"    // TaintSet
 #include "WidthDispatch.h"       // allocFn / copyFn / rzRtFn / freeFn / abiWidthFor
 
-#include "llvm/ADT/STLExtras.h"   // llvm::reverse
+#include "llvm/ADT/STLExtras.h"   // llvm::reverse / llvm::is_contained
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
@@ -49,6 +49,7 @@
 #include "llvm/IR/Module.h"
 
 #include <algorithm>
+#include <cassert>
 
 using namespace llvm;
 
@@ -74,6 +75,39 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
   if (auto *CI = dyn_cast<CallInst>(I)) {
     auto &PC = taint.PhiCalls;
     PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    // M-B Increment 6's two EMITTER-RECORDED sets (bd test_C_libtooling-160a
+    // Rule-13 round, finding F3). This module is their sole writer, so it is
+    // also where a recorded key must be dropped if the call it names is ever
+    // erased — a dangling `CallInst *` reused by a later allocation would make
+    // `ChainWalk::isInteriorConsumer` / `routeGroupFullyInside` answer YES for
+    // an unrelated call, i.e. discharge a chain against a route that never
+    // restored anything.
+    //
+    // TWO BELTS, and this is the SECOND one; the first is that neither key can
+    // dangle today. No stage between `lowerControlRegions` and `uncompute`
+    // erases a recorded call: `flattenRegion` SPLICES the merge block into
+    // `Pred` (moves, never erases the stream), the hcrg sequential ordering
+    // erases only arm blocks and emptied merges, and `lowerRotations` /
+    // `lowerOps` / `lowerMeasures` / `specialize` erase `cq_*` intrinsic calls
+    // only — never a `cq_template_*_unc` or a `cqrt_cswap`. This emitter itself
+    // erases only the merge φ and the arm `cq_phi`/`BinaryOperator`s, none of
+    // which is ever recorded. And even a dangling key that WERE reused could not
+    // be acted on: an admitted strip must additionally pass
+    // `TemplateName::isUncHandleSlot` (slot 0, the written flag, is refused) and
+    // every operand of the spine's own `_unc`s is in `ReversedRails`, which
+    // candidate selection subtracts. The erases below make the argument
+    // unnecessary rather than merely correct — cheap, idempotent, fail-closed.
+    //
+    // A ROUTE GROUP IS DROPPED WHOLE, NOT MEMBER-WISE. The group's only claim is
+    // that executing ALL of it restores the base's label; a group missing a
+    // member states nothing (one half of a pair leaves the base holding |0> or
+    // the arm's copy depending on the flag), and a 3-of-4 remnant would still
+    // satisfy the consumer's every-member-inside test. Clearing it makes the
+    // group unmatchable, so the component leaks — the safe direction.
+    taint.DischargedFlagGates.erase(CI);
+    for (auto &Gates : taint.RestoringRoutes)
+      if (llvm::is_contained(Gates, CI))
+        Gates.clear();
   }
 }
 
@@ -641,6 +675,30 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   // 5. Route-back (join = adjoint of the split, same flag + brackets).
   for (size_t I = 0; I < Streams.size(); ++I)
     Route.push_back(emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL));
+
+  // ⚠ THE CONSUMER READS THE ROUTED BASE FROM ARG 1, POSITIONALLY (bd
+  //   test_C_libtooling-160a Rule-13 round, finding F6). `Uncomputation::
+  //   routeGroupFullyInside`'s HOMOGENEITY test — "every member of this group
+  //   routes the SAME base the scan is reasoning about" — is
+  //   `G->getArgOperand(1) == P`, and `cqrt_cswap(flag, a, b)` is PHYSICALLY
+  //   SYMMETRIC in `a`/`b`: nothing in the runtime ABI distinguishes the base
+  //   from the work rail. What makes the read safe is a CONVENTION with exactly
+  //   one owner — THIS FUNCTION. `emitRegion` is the ONLY writer of
+  //   `RestoringRoutes`, every member comes from `emitRoute`, and `emitRoute`
+  //   always builds `{Flag, Q, Rail}` with the routed base in arg 1 (asserted
+  //   below). A FUTURE EMITTER THAT RECORDS A GROUP WITH THE BASE IN ARG 2 MUST
+  //   UPDATE BOTH SITES; recording one here without doing so would silently
+  //   exempt a swap that moved some OTHER register into or out of `P`'s rail.
+  //   (The work rail can never be mistaken for the base: it is a fresh
+  //   `cqrt_alloc` minted at step 2 and never a template operand, so it is never
+  //   a borrowed parent. The FLAG could only become one on the ziov share path,
+  //   where the group's base `Q != Flag` makes homogeneity refuse anyway.)
+  assert(llvm::all_of(Route,
+                      [&](const CallInst *G) {
+                        return G->arg_size() >= 2 &&
+                               G->getArgOperand(1) == Q;
+                      }) &&
+         "RestoringRoutes convention: the routed base is cqrt_cswap arg 1");
   taint.RestoringRoutes.push_back(Route);
 
   // 6. Rail frees — each rail is |0> for free (Rz|0>=|0>); a clean reset, NOT a

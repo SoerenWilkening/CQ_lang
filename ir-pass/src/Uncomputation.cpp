@@ -127,29 +127,14 @@ bool isQramArrayHandle(const Value *V) {
 // definition is shared, not duplicated per-TU — the same hoist `LiteralIntegrity`
 // applied to `valueCarriesUndef` "so cone proof and guard cannot drift".
 
-// Can `BB` execute more than once — i.e. is it reachable from ITSELF? A plain
-// successor DFS, deliberately NOT `LoopInfo::getLoopFor` (§2.9's at-most-once
-// guard used that at first). `LoopInfo` recognizes only NATURAL loops — a single
-// back edge to a header that dominates the body — so an IRREDUCIBLE cycle (two
-// entries, no dominating header) returns null from it while still executing its
-// blocks repeatedly. Emitting the once-only whole-DAG reversal there applies every
-// adjoint K times and resets every rail K times (Rules 5/6). `clang -O1` rarely
-// builds an irreducible CFG, but the pass accepts hand-written IR, and "the
-// frontend probably won't" is not a proof. This test is a strict superset of the
-// natural-loop one and costs one DFS per reversed group.
-bool blockCanRepeat(BasicBlock *BB) {
-  SmallPtrSet<BasicBlock *, 16> Seen;
-  SmallVector<BasicBlock *, 16> Work(succ_begin(BB), succ_end(BB));
-  while (!Work.empty()) {
-    BasicBlock *B = Work.pop_back_val();
-    if (B == BB)
-      return true;
-    if (!Seen.insert(B).second)
-      continue;
-    Work.append(succ_begin(B), succ_end(B));
-  }
-  return false;
-}
+// `blockCanRepeat` — "is `BB` reachable from ITSELF" — is declared in FreePoint.h
+// and DEFINED in FreePoint.cpp. It lived here, in this anonymous namespace, until
+// bd test_C_libtooling-4p7j's Rule-13 RE-review (finding G1) found a FOURTH
+// consumer that had been left on the blind `LoopInfo` predicate:
+// `FreePoint::blockInLoop`, the guard behind the LOUD `kMsgLoopBackedge`. So the
+// natural-loop spelling of a backedge-crossing live range declined loudly while
+// the irreducible spelling silently leaked. One definition, two modules, no
+// re-spelt DFS (Rule 14 — the `railOf` / `isAbiQramStore` drift hazard).
 
 // `blockCanRepeat` with the natural-loop FAST PATH in front and one DFS per
 // distinct block, so the two drivers below can afford to ask it PER GATE rather
@@ -710,6 +695,13 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
   // would be both stale and DANGLING by the time `uncompute` asks (measured —
   // the first draft stored it and every group silently failed to match, which
   // reads exactly like a missing recording).
+  //
+  // ARG 1 IS A CONVENTION, NOT AN ABI FACT (bd 160a Rule-13 finding F6):
+  // `cqrt_cswap(flag, a, b)` is physically symmetric in `a`/`b`. The read is safe
+  // because the convention has exactly ONE owner — `SwapRouteEmit::emitRegion`,
+  // the sole writer of `RestoringRoutes`, which always builds `{Flag, Q, Rail}`
+  // and ASSERTS it at the record site. An emitter that records a group with the
+  // base in arg 2 must update both places.
   auto baseOf = [](const CallInst *G) -> const Value * {
     return G->arg_size() >= 2 ? G->getArgOperand(1) : nullptr;
   };

@@ -115,14 +115,52 @@ bool isBenignLiveRangePhi(const Instruction *I) {
   return isa<PHINode>(I) && I->use_empty();
 }
 
-// Is `BB` inside a natural loop — i.e. does the tainted handle's live range cross
-// a loop backedge (PRD §2.9)? Built from a local `DominatorTree`/`LoopInfo`,
+// Does the tainted handle's live range cross a BACKEDGE — i.e. can `BB` execute
+// more than once (PRD §2.9)? `LoopInfo` is built from a local `DominatorTree`,
 // matching the in-tree direct-construction convention (ControlledLowering.cpp:497
 // builds `DominatorTree DT(...)` in place; Phase 5 is the lone consumer, so the
 // analysis-manager proxy buys nothing).
-bool blockInLoop(BasicBlock *BB, LoopInfo &LI) { return LI.getLoopFor(BB); }
+//
+// IT IS `LoopInfo` **OR** `blockCanRepeat`, AND THE SECOND DISJUNCT IS THE WHOLE
+// POINT (bd test_C_libtooling-4p7j Rule-13 RE-review, finding G1). `LoopInfo`
+// sees NATURAL loops only, so an IRREDUCIBLE cycle (two entries, no dominating
+// header) returned null here while executing its blocks K times — and this is
+// the guard that turns "a tainted handle's live range crosses a backedge" into
+// the LOUD `kMsgLoopBackedge`. The two byte-equivalent spellings of one hazard
+// therefore DISAGREED: the natural-loop program declined loudly and the
+// irreducible one lowered with a silent leak (measured, `opt` rc=0). The
+// reversal backstops in `Uncomputation` were moved onto `blockCanRepeat` by that
+// round's finding F1; this was the third site and was left behind.
+//
+// TIGHTENING ONLY. `blockCanRepeat` is a strict superset of `getLoopFor != null`,
+// so no acyclic CFG changes disposition; the only programs that move are
+// irreducible ones, and they move from SILENT LEAK to LOUD DECLINE — the safe
+// direction, and the one the natural-loop spelling already had. The `LoopInfo`
+// call stays in front purely as the O(1) answer for the common case (and it is
+// what the 7.3 ITERATION-LOCAL exception below is written against: an
+// iteration-local block is in a natural loop either way).
+bool blockInLoop(BasicBlock *BB, LoopInfo &LI) {
+  return LI.getLoopFor(BB) || blockCanRepeat(BB);
+}
 
 }  // namespace
+
+// The ONE definition of "can this block run twice", declared in FreePoint.h and
+// shared with `Uncomputation`'s three reversal backstops (Rule 14 — see the
+// header for why it lives here and what a second spelling would have cost).
+bool blockCanRepeat(BasicBlock *BB) {
+  SmallPtrSet<BasicBlock *, 16> Seen;
+  SmallVector<BasicBlock *, 16> Work(succ_begin(BB), succ_end(BB));
+  while (!Work.empty()) {
+    BasicBlock *B = Work.pop_back_val();
+    if (B == BB)
+      return true;
+    if (!Seen.insert(B).second)
+      continue;
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
+}
 
 FreePoint computeFreePoint(Value *Terminal, Function &F, PostDominatorTree &PDT,
                            const TaintSet &taint) {

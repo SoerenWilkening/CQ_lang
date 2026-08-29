@@ -18,6 +18,7 @@
 #define CQ_IRPASS_FREE_POINT_H_
 
 #include "llvm/Analysis/PostDominators.h"
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Value.h"
@@ -25,6 +26,31 @@
 namespace cq {
 
 struct TaintSet;
+
+// Can `BB` execute more than once — i.e. is it reachable from ITSELF? A plain
+// successor DFS, deliberately NOT `LoopInfo::getLoopFor`. `LoopInfo` recognizes
+// only NATURAL loops (a single back edge to a header that dominates the body),
+// so an IRREDUCIBLE cycle (two entries, no dominating header) returns null from
+// it while still executing its blocks K times. Every at-most-once proof in the
+// uncompute layer — the reversal backstops AND this module's `kMsgLoopBackedge`
+// loudness guard — has to key on THIS, not on `LoopInfo`, or the same physical
+// hazard is loud in one CFG spelling and silent in another.
+//
+// HOISTED HERE from `Uncomputation.cpp`'s anonymous namespace by bd
+// test_C_libtooling-4p7j's Rule-13 RE-review (finding G1), unchanged. It was a
+// per-TU definition with three consumers inside `Uncomputation` while
+// `FreePoint::blockInLoop` — a FOURTH consumer, in the loudness path rather than
+// the reversal path — still asked `LoopInfo` alone: the natural-loop spelling of
+// a backedge-crossing live range declined loudly, the irreducible spelling
+// silently leaked. Re-spelling the DFS in `FreePoint` would have been the
+// `railOf` / `isAbiQramStore` drift hazard again (Rule 14), so there is ONE
+// definition and both modules ask it. `FreePoint.h` is its home because both
+// consumers already include this header and both are asking a PLACEMENT
+// question ("may this point run twice?").
+//
+// A strict SUPERSET of "in a natural loop", so tightening a guard onto it can
+// only turn silence into loudness, never lower into decline for an acyclic CFG.
+bool blockCanRepeat(llvm::BasicBlock *BB);
 
 // Classification of a terminal handle's disposition.
 //   * Insert   — free here (`At` is the insertion point, never null).

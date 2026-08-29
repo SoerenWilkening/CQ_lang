@@ -5,11 +5,11 @@
    SOURCE INTENT — the body of slice_control_grover_derived_oracle.c, twice,
    plus the final re-prep:
        S    q = cq_theta(q, 0.5);
-       O    if (((q * 37) >> 3) == 5) q = cq_phi(q, PI);    the DERIVED oracle
+       O    if (((q * 5) >> 2) == 5) q = cq_phi(q, PI);     the DERIVED oracle (marks q == 4)
        S-   q = cq_theta(q, -0.5);
        R0   if (q == 0) q = cq_phi(q, PI);
        S    q = cq_theta(q, 0.5);
-       O    if (((q * 37) >> 3) == 5) q = cq_phi(q, PI);
+       O    if (((q * 5) >> 2) == 5) q = cq_phi(q, PI);
        S-   q = cq_theta(q, -0.5);
        R0   if (q == 0) q = cq_phi(q, PI);
        S    q = cq_theta(q, 0.5);
@@ -31,9 +31,17 @@
    WHAT THE TRACE WITNESSES: FOUR regions and FIVE cqrt_ry_i32 gates, and before
    every one of those five gates every ancilla minted since the previous one has
    been uncomputed and freed. The two oracle regions each show
-   mul / and / mint / route / Rz / route / rail-free / STRIP / and-unc+free /
-   mul-unc+free / flag-free; the two R0 regions each show mint / route / Rz /
+   ashr / add / mint / route / Rz / route / rail-free / STRIP / add-unc+free /
+   ashr-unc+free / flag-free; the two R0 regions each show mint / route / Rz /
    route / rail-free / strip / flag-free.
+
+   THE PREDICATE IS SATISFIABLE, and that is deliberate (bd
+   test_C_libtooling-160a Rule-13 round, finding F2): `(q*5)>>2 == 5` holds
+   exactly for q == 4. The predicate both Grover slices shipped with,
+   `(q*37)>>3 == 5`, has no integer solution without `mul nsw` overflow — the
+   circuit was shape-identical, but an oracle that marks nothing is not an
+   oracle, and the header said it was one. See the sibling slice's header for
+   the full note.
 
    RAIL LIVENESS AT EVERY NON-DIAGONAL GATE (the reading the golden cannot do
    for itself): cqrt_alloc_i32 appears FIVE times — the register h0 plus one work
@@ -51,7 +59,7 @@ int slice(void) {
     int q = 0;
 
     q = cq_theta(q, 0.5);                       /* S  — iteration 1 */
-    if (((q * 37) >> 3) == 5) {                 /* O  */
+    if (((q * 5) >> 2) == 5) {                  /* O  — marks q == 4 */
         q = cq_phi(q, CQ_PI);
     }
     q = cq_theta(q, -0.5);                      /* S- */
@@ -60,7 +68,7 @@ int slice(void) {
     }
 
     q = cq_theta(q, 0.5);                       /* S  — iteration 2 */
-    if (((q * 37) >> 3) == 5) {                 /* O  */
+    if (((q * 5) >> 2) == 5) {                  /* O  — marks q == 4 */
         q = cq_phi(q, CQ_PI);
     }
     q = cq_theta(q, -0.5);                      /* S- */

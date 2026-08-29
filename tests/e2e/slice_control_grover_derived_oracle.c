@@ -3,7 +3,7 @@
 
    SOURCE INTENT — the textbook iteration, every step written out:
        S    q = cq_theta(q, 0.5);                     state preparation
-       O    if (((q * 37) >> 3) == 5) q = cq_phi(q, PI);   the DERIVED oracle
+       O    if (((q * 5) >> 2) == 5) q = cq_phi(q, PI);    the DERIVED oracle
        S-   q = cq_theta(q, -0.5);                    un-prepare
        R0   if (q == 0) q = cq_phi(q, PI);            reflect about |0>
        S    q = cq_theta(q, 0.5);                     re-prepare
@@ -12,20 +12,32 @@
    WHY THIS SLICE EXISTS BESIDE slice_control_grover_2iter.c. That one's oracle
    is `if (q == 5)` — a DIRECT compare on the register, whose only record is the
    flag the emitter already strips. This one's oracle is a COMPUTATION: `clang
-   -O1` canonicalizes `(q*37)>>3 == 5` into `(q*37) & -8 == 40`, so the condition
-   is reached through TWO template rails before the flag is even minted. Until
-   Increment 6 those rails were never uncomputed, so this program declined at the
-   S-dagger with "cq rotation lowering: non-diagonal gate over a live derived
-   record". An oracle that can only test the register against a constant is not
-   an oracle; this is the slice that says CQ can mark a computed predicate.
+   -O1` rewrites `(q*5)>>2` as `q + (q>>2)` (exact — 4q's low bits are zero), so
+   the condition is reached through TWO template rails, an `ashr` and a QQ `add`,
+   before the flag is even minted. Until Increment 6 those rails were never
+   uncomputed, so this program declined at the S-dagger with "cq rotation
+   lowering: non-diagonal gate over a live derived record". An oracle that can
+   only test the register against a constant is not an oracle; this is the slice
+   that says CQ can mark a computed predicate.
+
+   WHICH STATE IT MARKS, AND WHY THAT MATTERS (bd test_C_libtooling-160a Rule-13
+   round, finding F2). `(q*5)>>2 == 5` holds exactly when 20 <= 5q <= 23, i.e.
+   for q == 4 and no other integer — so the oracle really does phase-mark one
+   basis state a C program may legally reach. The predicate this slice shipped
+   with, `(q*37)>>3 == 5`, needs 40 <= 37q <= 47 and has NO integer solution
+   without `mul nsw` overflow (UB in the source): the emitted circuit was
+   shape-identical, so nothing about the lowering turned on it, but a header
+   that sells the slice as "CQ can mark a computed predicate" over a predicate
+   that marks nothing is the kind of claim this project does not make. A reader
+   who checks must find the claim true.
 
    R0 IS DELIBERATELY DIRECT. The reflection about |0> really is `q == 0`, and
    keeping it direct makes the trace show BOTH condition shapes in one program:
    the oracle's chain is uncomputed after its strip, the reflection's flag is
    simply stripped and freed.
 
-   WHAT THE TRACE WITNESSES. For the oracle region: mul, and, flag mint, route,
-   Rz, route back, work-rail free, flag STRIP, then and-unc + free, mul-unc +
+   WHAT THE TRACE WITNESSES. For the oracle region: ashr, add, flag mint, route,
+   Rz, route back, work-rail free, flag STRIP, then add-unc + free, ashr-unc +
    free, then the flag free — and only then the S-dagger cqrt_ry_i32. For the R0
    region: flag mint, route, Rz, route back, free, strip, free — then the final
    cqrt_ry_i32.
@@ -45,7 +57,7 @@ int slice(void) {
     int q = 0;
 
     q = cq_theta(q, 0.5);                       /* S  */
-    if (((q * 37) >> 3) == 5) {                 /* O  — the derived oracle */
+    if (((q * 5) >> 2) == 5) {                  /* O — the derived oracle; marks q == 4 */
         q = cq_phi(q, CQ_PI);
     }
     q = cq_theta(q, -0.5);                      /* S- */

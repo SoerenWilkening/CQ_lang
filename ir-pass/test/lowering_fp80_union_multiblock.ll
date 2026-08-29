@@ -11,8 +11,35 @@
 ; merge via cqrt_copy_f80_controlled — the same downstream that already carries
 ; scalbn.f64.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.ll
+; THE `COMP` PREFIX IS THE M-B INCREMENT-6a PIN (bd test_C_libtooling-160a
+; Rule-13 round, finding F1a). This module is the LARGEST single lit behaviour
+; change of the per-component interior anchor: it gains NINETEEN `_unc`/free
+; pairs in THREE groups (4 in `entry`, 4 more in `entry`, 11 in `ins`) that the
+; one-`At`-per-function placement could not emit — one function-wide insertion
+; point put a `cqrt_copy_f80_controlled` reader inside the interval, so clause
+; (d) refused and the whole function leaked. The `CHECK-DAG`s below are
+; symbol-PRESENCE assertions and PASS on the pre-6a plugin's output unchanged
+; (measured against a 439dae3 build: 2 `_unc` + 2 free there, 21 + 21 here), so
+; they pin none of it. `COMP` is adjacency: each component's forward chain, then
+; its LIFO adjoint chain with every free immediately after its own `_unc`, in
+; the exact order emitted — which is what makes "per COMPONENT, not per
+; function" observable to a test at all.
+;
+; WHY THE THREE GROUPS ARE INDEPENDENT (the argument the adjacency encodes).
+; Component 1 owns {bitcast,lshr,trunc,zext} off `%h` and borrows `%h`; its only
+; non-producer reader of `%h` is the `cqrt_copy_f80_controlled` below, which is
+; to the RIGHT of its discharge. Component 2 owns the same four shapes off the
+; `fmul` rail and borrows that rail, likewise read only to the right. The `ins`
+; component owns 11 rails off `%out`/`%out14`, whose controlled-copy writers are
+; all to its LEFT. No component's borrowed parent is another component's owned
+; rail (a shared operand would have been LINKED into one component), so emitting
+; them back to back cannot relabel anything a later one reads. The `and_i64`
+; exponent rails (`%h_op17`, the fmul rail `%h_op19`, `%out`, `%out14`) are
+; deliberately NOT discharged here — they are live past every group.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2>&1
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=COMP < %t.cqd0.ll
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"
@@ -74,3 +101,89 @@ ins:                                            ; shared field-insert + reload
 ; CHECK-NOT: error
 ; CHECK-NOT: alloca
 ; CHECK-NOT: store x86_fp80
+
+; ── the three interior components, pinned by ADJACENCY (the COMP prefix) ───
+; Component 1 (entry): the straddle-read chain off the source rail. Its adjoint
+; runs LIFO immediately after the last forward gate that reads it, and the
+; `bitcast_f80_to_i80_unc` reading %[[H]] lands BEFORE the `fmul` — i.e. before
+; anything else touches the borrowed parent:
+; COMP-LABEL: define x86_fp80 @mb(
+; COMP:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f80(
+; COMP-NEXT: call void @cqrt_ry_f80(i32 %[[H]], double 5.000000e-01)
+; COMP-NEXT: %[[A1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_bitcast_f80_to_i80(i32 %[[H]])
+; COMP-NEXT: %[[A2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_lshr_i80_hl(i32 %[[A1]], i80 64)
+; COMP-NEXT: %[[A3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i80_to_i16(i32 %[[A2]])
+; COMP-NEXT: %[[A4:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i16_to_i64(i32 %[[A3]])
+; COMP-NEXT: %[[EXP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[A4]], i64 32767)
+; COMP-NEXT: call void @cq_template_zext_i16_to_i64_unc(i32 %[[A4]], i32 %[[A3]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[A4]])
+; COMP-NEXT: call void @cq_template_trunc_i80_to_i16_unc(i32 %[[A3]], i32 %[[A2]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[A3]])
+; COMP-NEXT: call void @cq_template_lshr_i80_hl_unc(i32 %[[A2]], i32 %[[A1]], i80 64)
+; COMP-NEXT: call void @cqrt_free(i32 %[[A2]])
+; COMP-NEXT: call void @cq_template_bitcast_f80_to_i80_unc(i32 %[[A1]], i32 %[[H]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[A1]])
+
+; Component 2 (entry): the same four shapes off the rescaled `fmul` rail, its
+; own LIFO block, immediately after ITS last forward gate — not merged with
+; component 1's and not deferred to a shared function-wide point:
+; COMP-NEXT: %[[K1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i64_hl(i32 %[[EXP]], i64 2)
+; COMP-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fmul_f80_hl(i32 %[[H]], x86_fp80 0xK407F8000000000000000)
+; COMP-NEXT: %[[B1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_bitcast_f80_to_i80(i32 %[[F]])
+; COMP-NEXT: %[[B2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_lshr_i80_hl(i32 %[[B1]], i80 64)
+; COMP-NEXT: %[[B3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i80_to_i16(i32 %[[B2]])
+; COMP-NEXT: %[[B4:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i16_to_i64(i32 %[[B3]])
+; COMP-NEXT: %[[X2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[B4]], i64 32767)
+; COMP-NEXT: call void @cq_template_zext_i16_to_i64_unc(i32 %[[B4]], i32 %[[B3]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[B4]])
+; COMP-NEXT: call void @cq_template_trunc_i80_to_i16_unc(i32 %[[B3]], i32 %[[B2]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[B3]])
+; COMP-NEXT: call void @cq_template_lshr_i80_hl_unc(i32 %[[B2]], i32 %[[B1]], i80 64)
+; COMP-NEXT: call void @cqrt_free(i32 %[[B2]])
+; COMP-NEXT: call void @cq_template_bitcast_f80_to_i80_unc(i32 %[[B1]], i32 %[[F]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[B1]])
+; COMP-NEXT: call void @cqrt_addc_i64(i32 %[[X2]], i64 128)
+
+; The two flag strips are the PRE-EXISTING pairs (they were the only two on the
+; pre-6a plugin) and both borrowed parents are still live across them:
+; COMP:      call void @cq_template_icmp_eq_i64_hl_unc(i32 %[[CMPA:[a-zA-Z0-9_.]+]], i32 %[[EXP]], i64 0)
+; COMP-NEXT: call void @cqrt_free(i32 %[[CMPA]])
+
+; The `ins` component: 11 pairs, LIFO, every one of them BEFORE the measure —
+; the component's borrowed parents are `%out`/`%out14`, whose controlled-copy
+; writers are all to the left of this block:
+; COMP:      %[[I1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_bitcast_f80_to_i80(i32 %[[OUT:[a-zA-Z0-9_.]+]])
+; COMP-NEXT: %[[I2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_lshr_i80_hl(i32 %[[I1]], i80 64)
+; COMP-NEXT: %[[I3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i80_to_i16(i32 %[[I2]])
+; COMP-NEXT: %[[I4:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i16_to_i64(i32 %[[I3]])
+; COMP-NEXT: %[[I5:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[I4]], i64 -32768)
+; COMP-NEXT: %[[I6:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[OUT14:[a-zA-Z0-9_.]+]], i64 32767)
+; COMP-NEXT: %[[I7:[a-zA-Z0-9_.]+]] = call i32 @cq_template_or_i64(i32 %[[I5]], i32 %[[I6]])
+; COMP-NEXT: %[[I8:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i80_hl(i32 %[[I1]], i80 18446744073709551615)
+; COMP-NEXT: %[[I9:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i64_to_i80(i32 %[[I7]])
+; COMP-NEXT: %[[I10:[a-zA-Z0-9_.]+]] = call i32 @cq_template_shl_i80_hl(i32 %[[I9]], i80 64)
+; COMP-NEXT: %[[I11:[a-zA-Z0-9_.]+]] = call i32 @cq_template_or_i80(i32 %[[I8]], i32 %[[I10]])
+; COMP-NEXT: %[[RES:[a-zA-Z0-9_.]+]] = call i32 @cq_template_bitcast_i80_to_f80(i32 %[[I11]])
+; COMP-NEXT: call void @cq_template_or_i80_unc(i32 %[[I11]], i32 %[[I8]], i32 %[[I10]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[I11]])
+; COMP-NEXT: call void @cq_template_shl_i80_hl_unc(i32 %[[I10]], i32 %[[I9]], i80 64)
+; COMP-NEXT: call void @cqrt_free(i32 %[[I10]])
+; COMP-NEXT: call void @cq_template_zext_i64_to_i80_unc(i32 %[[I9]], i32 %[[I7]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[I9]])
+; COMP-NEXT: call void @cq_template_and_i80_hl_unc(i32 %[[I8]], i32 %[[I1]], i80 18446744073709551615)
+; COMP-NEXT: call void @cqrt_free(i32 %[[I8]])
+; COMP-NEXT: call void @cq_template_or_i64_unc(i32 %[[I7]], i32 %[[I5]], i32 %[[I6]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[I7]])
+; COMP-NEXT: call void @cq_template_and_i64_hl_unc(i32 %[[I6]], i32 %[[OUT14]], i64 32767)
+; COMP-NEXT: call void @cqrt_free(i32 %[[I6]])
+; COMP-NEXT: call void @cq_template_and_i64_hl_unc(i32 %[[I5]], i32 %[[I4]], i64 -32768)
+; COMP-NEXT: call void @cqrt_free(i32 %[[I5]])
+; COMP-NEXT: call void @cq_template_zext_i16_to_i64_unc(i32 %[[I4]], i32 %[[I3]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[I4]])
+; COMP-NEXT: call void @cq_template_trunc_i80_to_i16_unc(i32 %[[I3]], i32 %[[I2]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[I3]])
+; COMP-NEXT: call void @cq_template_lshr_i80_hl_unc(i32 %[[I2]], i32 %[[I1]], i80 64)
+; COMP-NEXT: call void @cqrt_free(i32 %[[I2]])
+; COMP-NEXT: call void @cq_template_bitcast_f80_to_i80_unc(i32 %[[I1]], i32 %[[OUT]])
+; COMP-NEXT: call void @cqrt_free(i32 %[[I1]])
+; COMP-NEXT: call x86_fp80 @cqrt_measure_f80(i32 %[[RES]])

@@ -26,6 +26,15 @@
 ; relabels it between the forward compare and the strip, and both read the same
 ; last-minted handle.
 ;
+; C REACHABILITY — same correction as the sibling gate fixture (bd
+; test_C_libtooling-4p7j Rule-13 RE-review, finding G2). No C spelling of a WRITE
+; (or of a MINT) inside an irreducible cycle is reachable today, because the
+; cycle-carried tainted value is a phi `declineClassicalMuxes` refuses upstream.
+; IRREDUCIBLE CFGs THEMSELVES ARE C-reachable at `-O1` — see
+; lowering_uncompute_interior_irreducible_reader_accept.ll, which is clang output
+; from plain `goto`s and exercises the READ-side accept — so neither fixture is a
+; hand-IR-only curiosity, and neither fence is dead weight.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEOP < %t.cqd0.ll

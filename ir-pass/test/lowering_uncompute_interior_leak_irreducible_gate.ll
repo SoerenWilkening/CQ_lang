@@ -47,10 +47,21 @@
 ; that it held at the forward compare. A fixture that showed NOTHING lowering
 ; would also pass if the whole partition were disabled.
 ;
-; C REACHABILITY: none today. `c_goto_cycle_addc.c` (a `goto` into a `for(;;)`
-; body) declines loudly upstream — the cycle-carried tainted value is a phi and
-; `declineClassicalMuxes` refuses it before any uncompute runs. The pass accepts
-; hand-written IR, and "the frontend probably won't" is not a proof.
+; C REACHABILITY — CORRECTED (bd test_C_libtooling-4p7j Rule-13 RE-review,
+; finding G2; this header previously said "none today", full stop, and that was
+; right about the WRITE and wrong about irreducible CFGs). No C spelling of a
+; WRITE inside an irreducible cycle is reachable today: an SSA write to a tainted
+; value in a cycle needs a loop-carried phi, and `declineClassicalMuxes` refuses
+; that upstream — `c_goto_cycle_addc.c` (a `goto` into a `for(;;)` body) and a
+; `switch`-in-loop spelling both decline with `cq taint escape: tainted value
+; muxed by a classical-condition phi`. But IRREDUCIBLE CFGs THEMSELVES ARE
+; C-REACHABLE at `-O1` and DO reach this partition: the two-entry `goto` diamond
+; of `lowering_uncompute_interior_irreducible_reader_accept.ll` is `clang -O1`
+; output, and its READ-side accept is this fence's write/read asymmetry earning
+; its keep on real C. So this fence is load-bearing at the SOURCE level today,
+; and the write half becomes C-reachable the moment `declineClassicalMuxes` or
+; the 7.3 loop path widens. Do not read it as dead weight. (Independently: the
+; pass accepts hand-written IR, and "the frontend probably won't" is not a proof.)
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
