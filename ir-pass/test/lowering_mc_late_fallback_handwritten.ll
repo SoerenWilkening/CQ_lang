@@ -37,7 +37,8 @@
 ; the family green, because they all go through the real lowering and so all
 ; have the record.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -58,3 +59,8 @@ define i32 @handwritten_template(i32 noundef %0, ptr noundef %1) {
 ; CHECK-NEXT: %[[T:.*]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 7)
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[T]])
 ; CHECK-NOT: cqrt_addc_i32
+; SILENT pins 'no diagnostic of any kind' on the pass's stderr: since owner
+; ruling 2026-08-29 (bd lyyf) the M-A guard WARNS and opt exits 0 either way, so
+; only stderr can witness silence (Inc-7 fix-round re-review R2/R3).
+; SILENT-NOT: warning
+; SILENT-NOT: error

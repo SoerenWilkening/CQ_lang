@@ -35,8 +35,17 @@
 ; correct disposition and byte-identically what the natural-loop spelling of the
 ; same program already got. There is no new message; there must not be one.
 ;
-; HAND-IR, AND THE REACHABILITY CLAIM IS MEASURED AND BOUNDED. No C spelling
-; that has been TRIED reaches this fence: the two goto-into-a-cycle spellings the
+; REACHABLE FROM PLAIN clang -O1 C (corrected by the Inc-7 fix-round re-review,
+; R1 -- the earlier 'hand-IR only' record was WRONG). The two goto-into-a-cycle
+; spellings the Rule-13 round wrote (a8c, a8d) failed to reach the fence only
+; because their second cycle-entry block was EMPTY, so SimplifyCFG folded the
+; irreducible cycle into a self-loop; one volatile side effect in that block
+; defeats the fold, and r1_irreducible_c.c then compiles at -O1 to a two-entry
+; cycle (print<loops> reports NO loops) on which the PRE-FIX plugin, linked and
+; run, measures q-6 where the source says q-3 -- opt rc=0, verify-clean,
+; free_pairing_check clean. No shipped golden ever carried it (0 goldens moved).
+; The paragraph below is the ORIGINAL bounded claim, kept as history: those two
+; spellings decline FIRST at the two goto-into-a-cycle spellings the
 ; Rule-13 round wrote (`a8c`, `a8d`) both decline FIRST at
 ; `declineClassicalMuxes` — "cq taint escape: tainted value muxed by a
 ; classical-condition phi" — because in each of them the cycle's own result is
@@ -69,7 +78,8 @@
 ; `%off` is a volatile load (not a formal parameter, which G4 holds out
 ; independently) and the trip counter is volatile so nothing folds the cycle away.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOINPLACE < %t.cqd0.ll
 ;
@@ -161,3 +171,8 @@ exit:
   %14 = call i32 @cq_measure_si32(i32 noundef %13)
   ret i32 %14
 }
+; SILENT pins 'no diagnostic of any kind' on the pass's stderr: since owner
+; ruling 2026-08-29 (bd lyyf) the M-A guard WARNS and opt exits 0 either way, so
+; only stderr can witness silence (Inc-7 fix-round re-review R2/R3).
+; SILENT-NOT: warning
+; SILENT-NOT: error

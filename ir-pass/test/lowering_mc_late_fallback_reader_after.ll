@@ -48,7 +48,8 @@
 ;     if (t == 3) a = cq_phi(a, 1.5);
 ;     return cq_measure(a);
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOCONV < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -105,3 +106,8 @@ define i32 @late_reader_after(i32 noundef %0, ptr noundef %1) {
 ; point of the fixture is that the refusal is total, not partial.
 ; NOCONV-NOT: cqrt_addc_i32
 ; NOCONV-NOT: cqrt_xorc_i32
+; SILENT pins 'no diagnostic of any kind' on the pass's stderr: since owner
+; ruling 2026-08-29 (bd lyyf) the M-A guard WARNS and opt exits 0 either way, so
+; only stderr can witness silence (Inc-7 fix-round re-review R2/R3).
+; SILENT-NOT: warning
+; SILENT-NOT: error
