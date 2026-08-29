@@ -484,6 +484,23 @@ add_test(NAME e2e-slice-control-grover-derived-oracle-2iter
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_derived_oracle_2iter.expected.log")
 
+# bd test_C_libtooling-x67f (M-C Increment 7a) — the DERIVED oracle AND the
+# `+= off` / `-= off` offset trick in ONE program, which is the union of
+# slice_control_seq_grover.c (offset, direct oracle) and
+# slice_control_grover_derived_oracle.c (derived oracle, no offset) and did not
+# compile until the LATE in-place reassignment round: `lowerOps` runs before
+# `uncompute`, so the oracle chain's planned discharge was invisible to the M-C
+# prior-use fence, the `-= off` minted a fresh rail, and the S-dagger theta
+# declined at the M-A guard. Three cqrt_ry_i32 gates, three cqrt_alloc_i32, and
+# only h0 allocated at each gate. STRICT stage 2b.
+add_test(NAME e2e-slice-control-grover-derived-oracle-offset
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_derived_oracle_offset.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_derived_oracle_offset.expected.log")
+
 # bd 3c6m.5: cross-domain int<->long-double casts. Two direction slices — the
 # LINK-proof that the 18 new int<->f80 cast symbols resolve + signature-match the
 # runtime. A non-integer f80 factor (1.5L) keeps clang -O1 from folding the cast

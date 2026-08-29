@@ -6,6 +6,7 @@
 
 #include "CQLoweringPass.h"
 
+#include "ArithLowering.h"
 #include "ByRefInline.h"
 #include "ControlPlan.h"
 #include "CtlzIdiomPrepass.h"
@@ -410,6 +411,27 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // BEFORE `uncompute` (it excludes the break construct from the whole-DAG spine).
   // No-op when no value-arm break was recognized (`taint.BreakRegions` empty).
   lowerBreakReversePlay(M, wd, taint);
+  // bd test_C_libtooling-x67f (M-C Increment 7a) — the LATE in-place
+  // reassignment round, at the LAST slot before `uncompute`. `lowerOps`' own
+  // Phase-1 M-C fence sees an IR in which the M-B interior spine has neither
+  // planned nor emitted anything, so a `q -= off` whose parent is read by a
+  // DERIVED-condition oracle chain looked like it had an undischarged prior
+  // reader and stayed out of place — minting a fresh rail and leaving the
+  // original register a dead ancestor record at the next `cq_theta`. This round
+  // re-asks the SAME fence on the now fully-lowered module with the M-B
+  // discharge PLAN in hand (`planInteriorDischarges`). Purely ADDITIVE: a site
+  // Phase 1 already converted never reaches it, and a site it does not accept
+  // keeps today's out-of-place lowering byte for byte.
+  //
+  // WHY HERE AND NOT EARLIER: this is the first point at which every emitter
+  // except `uncompute` has run, so the prior readers the fence adjudicates are
+  // lowered `cq_template_*` calls (not still-unlowered opcodes, which arm (e)
+  // refuses on sight) and the Phase-4 / 7.4 teardown traffic is already inline.
+  // WHY NOT LATER: `uncompute` must SEE the conversion, because the in-place
+  // gate is a mutation of a borrowed parent that its clause-(d) scan has to
+  // adjudicate — that scan is what makes a stale plan a LEAK instead of a
+  // misplaced adjoint.
+  lowerLateReassignments(M, wd, taint);
   // Phase 5 (PRD §2.8): per-op uncomputation runs LAST, after every other
   // mutation has settled `taint` into its final post-lowering state.
   uncompute(M, wd, taint);
@@ -672,6 +694,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Phase 7.4 Inc 2 (y05j.2) — twin-pipeline parity (WI-1.12): miss this and
   // unit-level callers diverge from `run()`. See run() for the staging rationale.
   lowerBreakReversePlay(M, wd, taint);
+  // bd test_C_libtooling-x67f (M-C Increment 7a) — mirrored from `run()`
+  // (twin-pipeline parity, WI-1.12): miss it and a unit-level caller diverges.
+  // See run() for the full rationale and for why this slot is the only one.
+  lowerLateReassignments(M, wd, taint);
   // Phase 5 (PRD §2.8): uncomputation runs LAST in this entry point too — miss
   // one and unit-level callers diverge from `run()`.
   uncompute(M, wd, taint);

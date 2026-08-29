@@ -38,6 +38,7 @@ namespace llvm {
 class BinaryOperator;
 class DominatorTree;
 class LoopInfo;
+class Module;
 class UnaryOperator;
 }  // namespace llvm
 
@@ -198,6 +199,55 @@ bool classifyInPlaceReassignment(llvm::BinaryOperator *bo, WidthDispatch &wd,
                                  const TaintSet &taint,
                                  const llvm::DominatorTree &DT,
                                  const llvm::LoopInfo &LI);
+
+// ── M-C LATE ROUND (bd test_C_libtooling-x67f, Increment 7a) ─────────────────
+//
+// THE DEFECT, exactly. `lowerOps` runs BEFORE `uncompute`, so the Phase-1 M-C
+// fence above can only ever see a prior reader's discharge when some EARLIER
+// emitter inlined it — in practice exactly the Phase-4 flag strip, which is what
+// arm (d) was written for (SPIKE §9.8). The M-B interior partition runs LAST, so
+// on a DERIVED-condition region
+//
+//     a = cq_theta(a, .5);  a += off;
+//     if (((a*5)>>2) == 5) a = cq_phi(a, PI);
+//     a -= off;             a = cq_theta(a, -.5);
+//
+// the oracle chain's `cq_template_ashr_…`/`cq_template_add_…` rails read `a` and
+// their `_unc`+`cqrt_free` DO land right after the region's strip — provably
+// before the `a -= off` — but they are not in the IR yet when Phase 1 asks. The
+// sub therefore stayed out of place, minted a fresh rail, and the ORIGINAL
+// register stood as a dead ancestor record at the S† `cq_theta`, where the M-A
+// guard declined the whole program with a message naming the wrong cause
+// (bd memory [mc-cannot-see-mb-discharge-2026-08-29]; the three fixtures that
+// pinned that decline are FLIPPED by this increment and renamed
+// `lowering_mc_late_{sub_after,add_sub_around,grover2_offset}.ll`, and the
+// e2e customer is tests/e2e/slice_control_grover_derived_oracle_offset.c).
+//
+// IT IS A PIPELINE-ORDER DEFECT, SO THE FIX IS AN ORDER, NOT A PREDICATE. This
+// round runs AFTER every emitting stage except `uncompute`, re-decides the M-C
+// sites `lowerOps` left out of place, and converts the ones the M-B interior
+// PLAN settles. It is purely ADDITIVE: a site Phase 1 already converted never
+// reaches here, and a site neither round accepts keeps today's out-of-place
+// lowering byte for byte.
+//
+// SINGLE FENCE, TWO ENTRY POINTS. The positional half (G3–G7, including
+// `priorUseIsSettled`) is one function both rounds call; only the shape half
+// differs, because by now the op is the lowered `cq_template_<stem>_<W>_hl`
+// call rather than a `BinaryOperator`.
+//
+// WHAT MAKES A WRONG PREDICTION SAFE. The plan is advisory. `uncompute` re-runs
+// the SAME planner on the post-conversion module and it is that run which emits;
+// if the conversion moved the plan, the in-place gate is a mutation of a
+// borrowed parent inside the component's clause-(d) interval, clause (d) refuses
+// it, and the component LEAKS. A stale prediction therefore costs a kept
+// allocated rail (Rule 6's fallback), never an adjoint reading a relabelled
+// register. See `Uncomputation.h`'s `InteriorDischargePlan` for why the
+// dead-terminal partition — which has no clause-(d) scan — is excluded from the
+// plan by a deliberate superset subtraction rather than by that argument.
+//
+// Returns true if any site was converted (the caller has no other use for it;
+// it exists so a future stage-ordering question is answerable).
+bool lowerLateReassignments(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
 }  // namespace cq
 

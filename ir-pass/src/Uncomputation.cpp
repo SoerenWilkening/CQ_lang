@@ -976,10 +976,23 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
 // exactly that shape). That division of labour is the design, not an accident:
 // two owners for one diagnostic is how a decline and an accept end up disagreeing
 // about the same program.
-void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
-                          DominatorTree &DT, PostDominatorTree &PDT, LoopInfo &LI,
+//
+// SPLIT INTO PLAN + EMIT (bd test_C_libtooling-x67f, Increment 7a). Everything
+// down to the `Plans` vector is PURE ANALYSIS and is now `collectInteriorPlans`;
+// `reverseInteriorGroup` is that call plus the emission loop, and
+// `planInteriorDischarges` is that call with the dead-terminal superset
+// subtracted. ONE spelling of the accept predicate, asked twice (Rule 14) — the
+// M-C late round must never re-derive "will this rail discharge, and where".
+struct ComponentPlan {
+  DataDag D;
+  Instruction *At;
+};
+
+void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
+                          PostDominatorTree &PDT, LoopInfo &LI,
                           const SmallPtrSetImpl<const CallInst *> &ReversedGates,
-                          const SmallPtrSetImpl<Value *> &ReversedRails) {
+                          const SmallPtrSetImpl<Value *> &ReversedRails,
+                          SmallVectorImpl<ComponentPlan> &Plans) {
   // 1. STRUCTURAL candidates (ChainWalk::isInteriorTerminalHandle), minus every
   //    rail another owner holds. The subtractions mirror terminal selection's,
   //    one for one, because an interior rail is selected by a DIFFERENT predicate
@@ -1194,11 +1207,6 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
   }
 
   // Plan EVERY component before ANY of them emits — see the note above.
-  struct ComponentPlan {
-    DataDag D;
-    Instruction *At;
-  };
-  SmallVector<ComponentPlan, 4> Plans;
   for (SmallVector<CallInst *, 8> &Comp : Components) {
     ComponentPlan P;
     P.At = nullptr;
@@ -1206,8 +1214,50 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
                               ReversedRails, P.D, P.At))
       Plans.push_back(std::move(P));
   }
+}
+
+void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
+                          DominatorTree &DT, PostDominatorTree &PDT, LoopInfo &LI,
+                          const SmallPtrSetImpl<const CallInst *> &ReversedGates,
+                          const SmallPtrSetImpl<Value *> &ReversedRails) {
+  SmallVector<ComponentPlan, 4> Plans;
+  collectInteriorPlans(F, taint, DT, PDT, LI, ReversedGates, ReversedRails,
+                       Plans);
   for (ComponentPlan &P : Plans)
     emitDagReversal(P.D, P.At, wd, taint);
+}
+
+// Terminal-handle selection, hoisted out of `uncompute`'s driver loop so the
+// plan-only entry point below asks the SAME question (Rule 14). Returns the
+// candidates in program order; `AnyTaintedProducer` reports the driver's cheap
+// early-out separately because it is weaker than "there is a terminal".
+void collectTerminalCandidates(Function &F, const TaintSet &taint,
+                               SmallVectorImpl<CallInst *> &Terminals,
+                               bool &AnyTaintedProducer) {
+  AnyTaintedProducer = false;
+  for (BasicBlock &BB : F)
+    for (Instruction &I : BB) {
+      auto *H = dyn_cast<CallInst>(&I);
+      if (!H || !taint.Tainted.count(H) || !isDataProducer(H))
+        continue;
+      AnyTaintedProducer = true;
+      if (taint.ControlOwnedRails.count(H))
+        continue;  // DD-4: Phase-4 owns this rail
+      if (taint.OutputRails.count(H))
+        continue;  // 7.6: kept I/O output rail — never a data terminal
+                   // (PRD-7.6 §2.5). Defensive: a tape-write out_handle is not
+                   // a data producer, so it never reaches here, but the
+                   // explicit image is load-bearing, like ControlOwnedRails.
+      if (taint.GraveyardRails.count(H))
+        continue;  // 7.2 Inc 3: a parked abort/exit graveyard rail (or the
+                   // abort flag) — kept frozen + entangled, NEVER reversed or
+                   // freed (Rule 6, plan §2-A). The cswap-into-graveyard already
+                   // makes `isTerminalHandle` false, but the explicit image is
+                   // load-bearing — the SAME discipline as OutputRails above.
+      if (!isTerminalHandle(H, taint))
+        continue;  // collapse the reassignment DAG to its terminals (§2.1)
+      Terminals.push_back(H);
+    }
 }
 
 }  // namespace
@@ -1226,29 +1276,7 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
     //    its reversal-or-leak is Phase 4's, not the data-uncompute driver's).
     SmallVector<CallInst *, 8> Terminals;
     bool AnyTaintedProducer = false;  // cheap gate: no tainted rail ⇒ no work
-    for (BasicBlock &BB : F)
-      for (Instruction &I : BB) {
-        auto *H = dyn_cast<CallInst>(&I);
-        if (!H || !taint.Tainted.count(H) || !isDataProducer(H))
-          continue;
-        AnyTaintedProducer = true;
-        if (taint.ControlOwnedRails.count(H))
-          continue;  // DD-4: Phase-4 owns this rail
-        if (taint.OutputRails.count(H))
-          continue;  // 7.6: kept I/O output rail — never a data terminal
-                     // (PRD-7.6 §2.5). Defensive: a tape-write out_handle is not
-                     // a data producer, so it never reaches here, but the
-                     // explicit image is load-bearing, like ControlOwnedRails.
-        if (taint.GraveyardRails.count(H))
-          continue;  // 7.2 Inc 3: a parked abort/exit graveyard rail (or the
-                     // abort flag) — kept frozen + entangled, NEVER reversed or
-                     // freed (Rule 6, plan §2-A). The cswap-into-graveyard already
-                     // makes `isTerminalHandle` false, but the explicit image is
-                     // load-bearing — the SAME discipline as OutputRails above.
-        if (!isTerminalHandle(H, taint))
-          continue;  // collapse the reassignment DAG to its terminals (§2.1)
-        Terminals.push_back(H);
-      }
+    collectTerminalCandidates(F, taint, Terminals, AnyTaintedProducer);
     // THE `Terminals.empty()` EARLY-OUT IS NOW KEYED ON `AnyTaintedProducer`
     // INSTEAD (bd 6uqc Inc 5a). The M-B interior partition below has its OWN
     // candidate predicate — an interior rail is by definition NOT a terminal —
@@ -1305,6 +1333,82 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
     reverseInteriorGroup(F, taint, wd, DT, PDT, LI, ReversedGates,
                          ReversedRails);
   }
+}
+
+InteriorDischargePlan planInteriorDischarges(Function &F, TaintSet &taint) {
+  InteriorDischargePlan Plan;
+  if (F.isDeclaration())
+    return Plan;
+
+  DominatorTree DT(F);
+  PostDominatorTree PDT(F);
+  LoopInfo LI(DT);
+
+  // THE DEAD-TERMINAL SUPERSET (see the header). At emit the terminal groups run
+  // FIRST and hand the interior partition a `ReversedGates`/`ReversedRails` pair
+  // listing what they ACTUALLY reversed; here nothing has run, so instead every
+  // gate the dead-terminal spine could POSSIBLY reach is withheld from the
+  // published plan: one `recoverDataDag` over EVERY terminal candidate, with no
+  // `FreePoint` filter and no regard for the bails (`MeasuredUpstream` /
+  // `Escaped` / `NotClosed` / in-loop / non-dominating) that might stop the
+  // group emitting.
+  //
+  // THAT IS A SUPERSET OF THE EMIT-TIME SET, and the direction is the whole
+  // point. `FreePoint` only ever REMOVES terminals and `recoverDataDag` is a
+  // backward closure, so a smaller terminal set yields a smaller gate set. The
+  // consumer therefore never trusts a gate the terminal spine might claim — and
+  // it must not, because that spine places its adjoints at a post-dominating
+  // FREE POINT with no clause-(d) scan behind it. An interior mis-prediction
+  // degrades to a leak; a terminal one would not.
+  //
+  // IT IS WITHHELD PER GATE, NOT SUBTRACTED FROM THE PLANNER. Feeding the
+  // superset in as `ReversedGates`/`ReversedRails` was the first draft and it is
+  // WRONG in the useless direction: `planInteriorComponent` refuses a whole
+  // component whose BORROWED parent is in `ReversedRails`, and `D.Roots` — every
+  // `cqrt_alloc` source wire — is in `D.Rails`, so a single measured terminal
+  // anywhere on the wire emptied the plan (measured on
+  // `lowering_mc_late_sub_after.ll`). A root is not a claim: the
+  // terminal spine never adjoints or frees one. What has to be excluded is a
+  // GATE whose adjoint that spine might emit, and that is exactly what is done
+  // below.
+  //
+  // Calling `recoverDataDag` here is also why this function must stay silent:
+  // the recovery RECORDS `MeasuredUpstream` rather than diagnosing it, and the
+  // one loud owner of that verdict is `reverseTerminalGroup`, which runs later
+  // on the real terminal set.
+  SmallVector<CallInst *, 8> Terminals;
+  bool AnyTaintedProducer = false;
+  collectTerminalCandidates(F, taint, Terminals, AnyTaintedProducer);
+  SmallPtrSet<const CallInst *, 16> TermGates;
+  if (!Terminals.empty()) {
+    SmallVector<Value *, 8> TermVals(Terminals.begin(), Terminals.end());
+    DataDag TD = recoverDataDag(TermVals, taint, DT);
+    for (CallInst *G : TD.Calls)
+      TermGates.insert(G);
+    // A template producer in `Rails` is by construction also in `Calls`, so this
+    // adds nothing today; it is the same load-bearing explicit image the driver
+    // keeps at terminal selection — if `Rails` ever names a gate `Calls` does
+    // not, the plan must still withhold it.
+    for (Value *R : TD.Rails)
+      if (auto *G = dyn_cast<CallInst>(R))
+        TermGates.insert(G);
+  }
+
+  // The planner is asked with EMPTY ownership sets, which is the emit-time state
+  // whenever the dead-terminal groups bail — the common case for exactly the
+  // programs this plan exists for (a measured terminal on the wire). Asking
+  // optimistically is safe because a plan that does not survive to emit costs a
+  // LEAK, never a misplaced adjoint (see the header); the one hazard that would
+  // NOT degrade that way is withheld per gate, above.
+  SmallPtrSet<const CallInst *, 16> NoGates;
+  SmallPtrSet<Value *, 16> NoRails;
+  SmallVector<ComponentPlan, 4> Plans;
+  collectInteriorPlans(F, taint, DT, PDT, LI, NoGates, NoRails, Plans);
+  for (ComponentPlan &P : Plans)
+    for (CallInst *G : P.D.Calls)
+      if (!TermGates.count(G))
+        Plan.GateAt[G] = P.At;
+  return Plan;
 }
 
 }  // namespace cq

@@ -10,9 +10,12 @@
 #include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
+#include "TemplateName.h"   // dataName — the ONE builder of the template symbol
+#include "Uncomputation.h"  // InteriorDischargePlan (the M-B discharge PLAN)
 #include "WidthDispatch.h"
 #include "WireWalk.h"       // provablyBefore (the shared position-aware proof)
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/IRBuilder.h"
@@ -20,6 +23,7 @@
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 
 using namespace llvm;
 
@@ -106,6 +110,56 @@ Value *negateClassicalImmediate(Value *Imm, IRBuilder<> &B,
     if (DebugLoc DL = At->getDebugLoc())
       NI->setDebugLoc(DL);
   return N;
+}
+
+// ONE EMISSION of the in-place gate (bd test_C_libtooling-x67f, Increment 7a).
+// `Site` is replaced (RAUW'd to the handle; the CALLER erases it), `HandleIsLhs`
+// records whether the handle was the op's LEFT operand — the `sub` direction
+// test, kept here so the two callers cannot answer it differently.
+//
+// The step ORDER is the shipped one and is load-bearing for the fixtures that
+// pin it: resolve the width callee FIRST (a `nullptr` there is the loud
+// `diagnoseNoTemplate` of `lowering_mc_{sub,xor}_fence_fallback.ll`), THEN the
+// `c - q` direction refusal, THEN negate, THEN emit.
+bool emitInPlaceReassign(Instruction *Site, Instruction::BinaryOps Op,
+                         Value *Handle, Value *Imm, bool HandleIsLhs,
+                         StringRef W, WidthDispatch &wd) {
+  FunctionCallee Callee =
+      Op == Instruction::Xor ? wd.xorcFn(W) : wd.addcFn(W);
+  if (!Callee) {
+    // Unsupported width — the shape predicate applies the SAME ≤64-integer
+    // fence, so this is unreachable; never mint a phantom symbol or leave an
+    // ill-typed op (Rule 1). Loud decline.
+    diagnoseNoTemplate(Site);
+    return false;
+  }
+  // `sub` IS NOT COMMUTATIVE, and getting this backwards is the one way this
+  // emission could be a silent miscompile: `c - q` is negate-the-RAIL then add
+  // — a rewrite of the whole register, which `cqrt_addc_<W>` cannot express —
+  // whereas the emission below computes `q + (-c)`. Both recognizers admit
+  // HANDLE-LHS ONLY, so a tainted RHS cannot reach here; the check is defense in
+  // depth, and it fails LOUD rather than emitting the wrong permutation (Prime
+  // Directive). Unreachable through the shipped surface —
+  // `lowering_mc_sub_fence_fallback.ll`'s `@classical_lhs` pins that `c - q`
+  // never even reaches the fence's accept.
+  if (Op == Instruction::Sub && !HandleIsLhs) {
+    diagnoseNoTemplate(Site);
+    return false;
+  }
+  IRBuilder<> Builder(Site);
+  if (Op == Instruction::Sub)
+    Imm = negateClassicalImmediate(Imm, Builder, Site);
+  CallInst *C = Builder.CreateCall(Callee, {Handle, Imm});
+  if (DebugLoc DL = Site->getDebugLoc())
+    C->setDebugLoc(DL);
+  // In-place: the result IS the rail handle (same register, mutated state). RAUW
+  // to the handle — a no-op when the Case-A phi collapse already left `Site`
+  // use-empty (the single-op value accumulator), and the correct rewire for a
+  // chained self-update (`q1 = q ^ 9; q2 = q1 ^ 3` — `q1`'s RAUW feeds `q2`). The
+  // void in-place gate is not itself a tainted producer; the handle stays
+  // tainted.
+  Site->replaceAllUsesWith(Handle);
+  return true;
 }
 
 }  // namespace
@@ -265,50 +319,14 @@ bool rewriteInPlaceValueRail(BinaryOperator *bo, WidthDispatch &wd,
   // dtzb loop path cannot mint a `sub` and this batch does not widen it.
   const Instruction::BinaryOps Op = bo->getOpcode();
   StringRef AbiWidth = abiWidthFromType(bo->getType());
-  FunctionCallee Callee =
-      Op == Instruction::Xor ? wd.xorcFn(AbiWidth) : wd.addcFn(AbiWidth);
-  if (!Callee) {
-    // Unsupported width — `inPlaceValueRailOperand` applies the SAME ≤64-integer
-    // fence, so this is unreachable; never mint a phantom symbol or leave an
-    // ill-typed op (Rule 1). Loud decline.
-    diagnoseNoTemplate(bo);
-    return false;
-  }
   // Exactly one operand is tainted (the rail handle, i32 by now — handles join
   // `Tainted` at the theta mint); the other is the classical immediate at the
   // rail's logical width. The recognizer proved this (one tainted operand), so
-  // the selection is unambiguous.
+  // the selection is unambiguous. The driver erases `bo`.
   Value *L = bo->getOperand(0), *R = bo->getOperand(1);
   bool TL = taint.Tainted.count(L) != 0;
-  Value *Handle = TL ? L : R;
-  Value *Imm = TL ? R : L;
-  // `sub` IS NOT COMMUTATIVE, and getting this backwards is the one way this
-  // emission could be a silent miscompile: `c - q` is negate-the-RAIL then add
-  // — a rewrite of the whole register, which `cqrt_addc_<W>` cannot express —
-  // whereas the emission below computes `q + (-c)`. The recognizer
-  // (`inPlaceReassignRailOperand`) admits HANDLE-LHS ONLY, so a tainted RHS
-  // cannot reach here; the check is defense in depth, and it fails LOUD rather
-  // than emitting the wrong permutation (Prime Directive). Unreachable through
-  // the shipped surface — `lowering_mc_sub_fence_fallback.ll`'s
-  // `@classical_lhs` pins that `c - q` never even reaches the fence's accept.
-  if (Op == Instruction::Sub && !TL) {
-    diagnoseNoTemplate(bo);
-    return false;
-  }
-  IRBuilder<> Builder(bo);
-  if (Op == Instruction::Sub)
-    Imm = negateClassicalImmediate(Imm, Builder, bo);
-  CallInst *C = Builder.CreateCall(Callee, {Handle, Imm});
-  if (DebugLoc DL = bo->getDebugLoc())
-    C->setDebugLoc(DL);
-  // In-place: the result IS the rail handle (same register, mutated state). RAUW
-  // to the handle — a no-op when the Case-A phi collapse already left `bo`
-  // use-empty (the single-op value accumulator), and the correct rewire for a
-  // chained self-update (`q1 = q ^ 9; q2 = q1 ^ 3` — `q1`'s RAUW feeds `q2`). The
-  // void in-place gate is not itself a tainted producer; the handle stays
-  // tainted. The driver erases `bo`.
-  bo->replaceAllUsesWith(Handle);
-  return true;
+  return emitInPlaceReassign(bo, Op, TL ? L : R, TL ? R : L, /*HandleIsLhs=*/TL,
+                             AbiWidth, wd);
 }
 
 namespace {
@@ -400,13 +418,57 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     seq-grover's two region compares (SPIKE §9.8) without admitting the
 //     general "earlier consumer" the SC reading refused.
 //
+// (d2 — bd test_C_libtooling-x67f, Increment 7a) A PRODUCER THE M-B INTERIOR
+//     PARTITION HAS PLANNED TO DISCHARGE at a point provably before `bo`. This
+//     is arm (d)'s own argument moved one stage earlier in the pipeline, and it
+//     exists because arm (d) as written could only ever see a discharge some
+//     EARLIER emitter had already inlined — in practice exactly the Phase-4 flag
+//     strip. The M-B spine runs LAST, so on a DERIVED-condition region
+//     (`if (f(a)==k) …; a -= off;`) the oracle chain's forward template looked
+//     like an undischarged prior reader, the sub minted a fresh rail, and the
+//     old register stood as a dead ancestor at the next `cq_theta` — a decline
+//     whose message named the wrong cause (bd memory
+//     [mc-cannot-see-mb-discharge-2026-08-29]).
+//
+//     WHAT IS TRUSTED, AND WHY IT IS NOT "PREDICT A LATER STAGE" IN THE SENSE
+//     THE 2026-08-27 RULING REJECTED. That ruling rejected an early M-A slot
+//     which would have had to predict Phase-4 and Phase-5 from an IR where
+//     neither had run. Here nothing is predicted from absence: the module is
+//     fully lowered (this arm is reachable only from the LATE round below,
+//     after `lowerOps`/`lowerMeasures`/`lowerBreakReversePlay`), and the plan is
+//     produced by RUNNING THE REAL PLANNER — `planInteriorDischarges` calls the
+//     same `collectInteriorPlans` that `uncompute` calls, over the same
+//     predicates, on the same IR.
+//
+//     AND THE PREDICTION IS RE-PROVED WHERE IT MATTERS. The planner runs AGAIN
+//     inside `uncompute`, on the post-conversion module, and it is that run
+//     which emits. If the conversion moved the plan, the in-place gate we
+//     emitted is a MUTATION of a borrowed parent sitting inside the component's
+//     clause-(d) interval, which clause (d) refuses — the component LEAKS and no
+//     adjoint is emitted at all. So a stale prediction costs a kept rail, never
+//     an `_unc` reading a relabelled register. The one partition that would NOT
+//     degrade that way is the dead-terminal spine (no clause-(d) scan), and the
+//     plan subtracts a superset of everything it could reach precisely so no
+//     gate of its can ever appear here (see `planInteriorDischarges`).
+//
+//     ZEROED IS ASKED, RELEASED IS NOT — deliberately, and the asymmetry is not
+//     a relaxation. Arm (d)'s `Released` half is about IR THAT ALREADY EXISTS: a
+//     `cqrt_free` in the module makes `recoverDataDag`'s closure scan mark the
+//     DAG `NotClosed`, which is what guarantees no SECOND adjoint of that rail
+//     will be minted. Here that guarantee comes from single ownership instead —
+//     the rail belongs to exactly one planned component, and the plan already
+//     excluded every rail the terminal spine could claim. What arm (d2) needs is
+//     only the placement fact: every adjoint of the component is inserted BEFORE
+//     `At`, and `At` is provably before `bo`.
+//
 // (e) EVERYTHING ELSE — a plain-IR use (`ret`/`store`/`phi`), a STILL-UNLOWERED
 //     tainted opcode (it is not a `CallInst` yet, and the spine will adjoint
 //     whatever `lowerOps` turns it into), a measurement, an unknown callee —
 //     is refused. Out-of-place is the fallback, so refusing costs nothing but a
 //     kept ancestor rail, which is exactly today's behavior.
 bool priorUseIsSettled(const Instruction *UI, const Value *P,
-                       const BinaryOperator *bo, const DominatorTree &DT) {
+                       const Instruction *bo, const DominatorTree &DT,
+                       const InteriorDischargePlan *Plan) {
   const auto *CI = dyn_cast<CallInst>(UI);
   if (!CI)
     return false;  // (e) plain-IR use / still-unlowered tainted opcode.
@@ -432,6 +494,22 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
   // would rest the argument on the other being implied, which it is not.
   if (CI->getType()->isVoidTy())
     return false;  // a void non-`cqrt_` callee — unknown, refuse.
+
+  // (d2) — the PLANNED discharge (see above). Asked before the already-emitted
+  // scan because the two are independent witnesses of the same property and the
+  // map lookup is the cheaper one; either alone settles the user.
+  if (Plan) {
+    auto It = Plan->GateAt.find(CI);
+    // `provablyBefore`, and NOTHING WEAKER — in particular `At == bo` is NOT
+    // admitted even though the adjoints would in fact land immediately before
+    // the site (`emitDagReversal` inserts BEFORE its point). That widening was
+    // measured, has no customer among the shapes this increment ships, and
+    // could not be pinned by a fixture that does not ALSO exercise a second
+    // fence — so it is left out rather than shipped unpinned (Rule 12).
+    if (It != Plan->GateAt.end() && provablyBefore(It->second, bo, DT))
+      return true;
+  }
+
   bool Zeroed = false, Released = false;
   for (const User *DU : CI->users()) {
     const auto *D = dyn_cast<CallInst>(DU);
@@ -451,6 +529,109 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
       Zeroed = true;
   }
   return Zeroed && Released;
+}
+
+// G3–G7, THE POSITION-AWARE HALF OF THE M-C FENCE, SPELT ONCE (bd
+// test_C_libtooling-x67f, Increment 7a). `Site` is the instruction the in-place
+// gate will replace, `P` its parent rail, `Imm` the classical immediate, `Op`
+// the arithmetic stem and `W` the logical ABI width.
+//
+// TWO ENTRY POINTS, ONE FENCE. `classifyInPlaceReassignment` reaches it from
+// `lowerOps` Phase 1 with a `BinaryOperator` and no plan;
+// `classifyLateInPlaceReassignment` reaches it from the LATE round with the
+// already-lowered `cq_template_<stem>_<W>_hl` call and the M-B discharge plan.
+// The two differ ONLY in how they recover `(Op, P, Imm, W)` — G1/G2, the shape
+// half — so everything positional lives here and cannot drift between them
+// (Rule 14; the `railOf`/`isAbiQramStore` lesson).
+bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm,
+                       Instruction::BinaryOps Op, StringRef W,
+                       WidthDispatch &wd, const TaintSet &taint,
+                       const DominatorTree &DT, const LoopInfo &LI,
+                       const InteriorDischargePlan *Plan) {
+  // G4 — THE IMMEDIATE MUST BE ONE STAGE 2b CAN PROVE CLASSICAL. `cqrt_addc_<W>`
+  // declares its second parameter classical, but at W=i32 both parameters are
+  // `int32_t`, so a rail handle in that slot is verify-clean AND prints as a bare
+  // decimal in the trace — both shipped gates blind on the same axis. Rule (A1)
+  // of `free_pairing_check.py` therefore CHECKS the slot, and its
+  // `provably_not_a_rail` answers on positive evidence only: a formal PARAMETER
+  // "arrives from outside; nothing here can vouch" and is refused UNPROVEN.
+  // Census 0.5 measured the rest of the surface and cleared it — a volatile load
+  // (`slice_control_seq_grover`'s own `off`) and ordinary classical arithmetic
+  // both pass. So the ONE shape we must keep out-of-place is a formal-argument
+  // immediate: converting it would turn a green slice into a stage-2b UNPROVEN.
+  if (isa<Argument>(Imm))
+    return false;
+
+  // G5 — the LOOP-OWNED population is untouched, from both sides.
+  //   * `InPlaceRailOps` is `lowerLoops`' own proven set; the driver already
+  //     routes it to the same emitter. Claiming one here would be a second
+  //     recognizer adjudicating a shape that already has an owner.
+  //   * A `Site` inside ANY natural loop is out of scope for this batch. The
+  //     rolled-in-place (799w) and whole-loop reverse-play (y05j/dtzb) machinery
+  //     owns in-place value gates in loop bodies, with its own capture set and
+  //     its own reverse-play ordering; a second, independently-fenced minter in
+  //     the same blocks is exactly the interaction this increment is not scoped
+  //     to prove. Straight-line only. Over-declining costs a kept ancestor.
+  if (taint.InPlaceRailOps.count(const_cast<Instruction *>(Site)))
+    return false;
+  if (LI.getLoopFor(const_cast<BasicBlock *>(Site->getParent())))
+    return false;
+
+  // G6/G7 — POSITION-AWARE DEADNESS + PRIOR-OBLIGATION DISCHARGE.
+  for (const User *U : P->users()) {
+    const auto *UI = dyn_cast<Instruction>(U);
+    if (!UI)
+      return false;  // a constant-expression use — no position, no proof.
+    if (UI == Site)
+      continue;  // the op itself: its result IS this same physical rail.
+    if (UI->getFunction() != Site->getFunction())
+      return false;
+    // An UNREACHABLE use never executes, so it is not a read of `P` in any
+    // emitted trace — and both halves of `provablyBefore` are VACUOUSLY true for
+    // it (LLVM's dominator tree treats an unreachable block as dominated by
+    // everything, and nothing is reachable from it), so it would otherwise be
+    // silently classified as "prior" and then have to pass G7. Skipping it is
+    // the same reading the M-A guard's F3 finding settled.
+    if (!DT.isReachableFromEntry(UI->getParent()))
+      continue;
+    // G6 — no data use AFTER the op. `provablyBefore` is the shared spelling
+    // (WireWalk.h): dominance for first-execution order, plus the reachability
+    // half so a back edge cannot replay the use against the mutated rail.
+    // Unproven ⇒ out-of-place (Prime Directive direction).
+    if (!provablyBefore(UI, Site, DT))
+      return false;
+    // G7 — the prior use must be settled (see `priorUseIsSettled`).
+    if (!priorUseIsSettled(UI, P, Site, DT, Plan))
+      return false;
+  }
+
+  // G3 — the width must be in the FROZEN in-place grid, and THE GRID ASKED MUST
+  // BE THE ONE THE EMITTER WILL USE. `add` and `sub` both emit `cqrt_addc_<W>`
+  // (`sub` is `addc` with the immediate negated, Inc 2b — there is no
+  // `cqrt_subc_`); `xor` emits the SEPARATE `cqrt_xorc_<W>` (Inc 2c). The two
+  // resolvers apply the same <=64-integer fence today, but they are distinct
+  // functions minting distinct symbols, so this mirrors `rewriteInPlaceValue
+  // Rail`'s own `Op == Xor ? xorcFn : addcFn` selection rather than asking one
+  // and emitting the other. ASKING the resolver (rather than repeating
+  // {i1,i8,i16,i32,i64} here) means the fence tracks the ABI instead of a
+  // comment about the ABI, and it must never mint a phantom symbol (the n0ui
+  // lesson). G2's own <=64-integer bound already implies this, so it is defense
+  // in depth — and `lowering_mc_xor_fence_fallback.ll`'s `@wide_i128` is the one
+  // probe in the family that reaches an off-grid width from a POSITIVE (`xor` is
+  // a shipped i128 template row; the `add` analogue dies on an earlier cast
+  // decline).
+  //
+  // IT IS DELIBERATELY LAST, and that is not cosmetic. Both resolvers go through
+  // `Module::getOrInsertFunction`, which CREATES `declare void
+  // @cqrt_{addc,xorc}_<W>(i32, iW)` as a SIDE EFFECT — so asking before the
+  // fence has decided planted a dangling declaration in every module containing
+  // any tainted integer `add`/`xor`, including the ones that then stayed out of
+  // place. (Measured: `lowering_add_qc_i32.ll` grew a `declare void
+  // @cqrt_addc_i32` it never calls.) Harmless at link, but it is a symbol
+  // appearing in a module that emits none — exactly the kind of phantom this
+  // project refuses to ship. Asked HERE, it is only ever asked for a site that
+  // is about to emit.
+  return (Op == Instruction::Xor ? wd.xorcFn(W) : wd.addcFn(W)) ? true : false;
 }
 
 }  // namespace
@@ -486,93 +667,184 @@ bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
   Value *P = inPlaceReassignRailOperand(bo, taint);
   if (!P)
     return false;
-
-  // G4 — THE IMMEDIATE MUST BE ONE STAGE 2b CAN PROVE CLASSICAL. `cqrt_addc_<W>`
-  // declares its second parameter classical, but at W=i32 both parameters are
-  // `int32_t`, so a rail handle in that slot is verify-clean AND prints as a bare
-  // decimal in the trace — both shipped gates blind on the same axis. Rule (A1)
-  // of `free_pairing_check.py` therefore CHECKS the slot, and its
-  // `provably_not_a_rail` answers on positive evidence only: a formal PARAMETER
-  // "arrives from outside; nothing here can vouch" and is refused UNPROVEN.
-  // Census 0.5 measured the rest of the surface and cleared it — a volatile load
-  // (`slice_control_seq_grover`'s own `off`) and ordinary classical arithmetic
-  // both pass. So the ONE shape we must keep out-of-place is a formal-argument
-  // immediate: converting it would turn a green slice into a stage-2b UNPROVEN.
   Value *Imm = bo->getOperand(0) == P ? bo->getOperand(1) : bo->getOperand(0);
-  if (isa<Argument>(Imm))
-    return false;
 
-  // G5 — the LOOP-OWNED population is untouched, from both sides.
-  //   * `InPlaceRailOps` is `lowerLoops`' own proven set; the driver already
-  //     routes it to the same emitter. Claiming one here would be a second
-  //     recognizer adjudicating a shape that already has an owner.
-  //   * A `bo` inside ANY natural loop is out of scope for this batch. The
-  //     rolled-in-place (799w) and whole-loop reverse-play (y05j/dtzb) machinery
-  //     owns in-place value gates in loop bodies, with its own capture set and
-  //     its own reverse-play ordering; a second, independently-fenced minter in
-  //     the same blocks is exactly the interaction this increment is not scoped
-  //     to prove. Straight-line only. Over-declining costs a kept ancestor.
-  if (taint.InPlaceRailOps.count(bo))
-    return false;
-  if (LI.getLoopFor(bo->getParent()))
-    return false;
+  // G3–G7 — the shared positional fence. NO PLAN AT THIS SLOT, and that is a
+  // statement about the pipeline rather than a caution: `lowerOps` runs before
+  // `uncompute`, so the M-B interior partition has neither planned nor emitted
+  // anything a fence here could read, and the chain ops this site's parent feeds
+  // are not even `CallInst`s yet (arm (e) refuses them on sight). The LATE round
+  // is where a plan exists; see `lowerLateReassignments`.
+  return inPlaceFenceHolds(bo, P, Imm, Op, abiWidthFromType(bo->getType()), wd,
+                           taint, DT, LI, /*Plan=*/nullptr);
+}
 
-  // G6/G7 — POSITION-AWARE DEADNESS + PRIOR-OBLIGATION DISCHARGE.
-  for (const User *U : P->users()) {
-    const auto *UI = dyn_cast<Instruction>(U);
-    if (!UI)
-      return false;  // a constant-expression use — no position, no proof.
-    if (UI == bo)
-      continue;  // the op itself: its result IS this same physical rail.
-    if (UI->getFunction() != bo->getFunction())
-      return false;
-    // An UNREACHABLE use never executes, so it is not a read of `P` in any
-    // emitted trace — and both halves of `provablyBefore` are VACUOUSLY true for
-    // it (LLVM's dominator tree treats an unreachable block as dominated by
-    // everything, and nothing is reachable from it), so it would otherwise be
-    // silently classified as "prior" and then have to pass G7. Skipping it is
-    // the same reading the M-A guard's F3 finding settled.
-    if (!DT.isReachableFromEntry(UI->getParent()))
+// ── M-C LATE ROUND (bd test_C_libtooling-x67f, Increment 7a) ─────────────────
+
+namespace {
+
+// G1+G2 for an ALREADY-LOWERED site: is `C` one of the out-of-place
+// `cq_template_{add,sub,xor}_<W>_hl(P, imm)` calls THIS PASS minted in
+// `rewriteBinary`? Fills `Op`/`P`/`Imm`/`W` on success.
+//
+// THE SYMBOL IS RE-BUILT, NEVER PARSED. `dataName` is the one builder that
+// minted it, so asking that builder the question back is the only spelling that
+// cannot drift from the grammar (Rule 14, the `isHandleSlot`-is-the-inverse-of-
+// `shapeSuffix` precedent). A hand-rolled `starts_with("cq_template_add_") &&
+// ends_with("_hl")` would also match `_hl_controlled` and `_hl_inv` — a
+// controlled gate and an adjoint twin, neither of which is a forward
+// reassignment — and would silently accept any future shape token.
+//
+// THE WIDTH COMES FROM `HandleWidth`, AND THAT IS TWO FENCES IN ONE.
+//   * A lowered handle is `i32` at EVERY logical width (Rule 15), so nothing in
+//     the call's TYPES distinguishes an i8 site from an i64 one. `rewriteBinary`
+//     recorded the logical width on the result via `promote`; this reads it back.
+//   * Only a site this pass lowered HAS such a record. A hand-written
+//     `cq_template_add_i32_hl` in an already-lowered lit fixture is therefore
+//     left alone — deliberately: the late round exists to RE-DECIDE a decision
+//     `lowerOps` made minutes earlier on IR whose shape it proved, not to adopt
+//     IR whose provenance it cannot see (Prime Directive direction).
+bool lateReassignShape(const CallInst *C, const TaintSet &taint,
+                       Instruction::BinaryOps &Op, Value *&P, Value *&Imm,
+                       StringRef &W) {
+  const Function *Callee = C->getCalledFunction();
+  if (!Callee || C->arg_size() != 2)
+    return false;
+  StringRef N = Callee->getName();
+  // Cheap pre-filter so the exact rebuild below is asked only of plausible
+  // symbols; the rebuild, not this, is the authoritative test.
+  if (!N.starts_with("cq_template_") || !N.ends_with("_hl"))
+    return false;
+  StringRef Wl = taint.HandleWidth.lookup(const_cast<CallInst *>(C));
+  if (Wl.empty())
+    return false;
+  static const struct {
+    const char *Stem;
+    Instruction::BinaryOps Op;
+  } Rows[] = {{"add", Instruction::Add},
+              {"sub", Instruction::Sub},
+              {"xor", Instruction::Xor}};
+  for (const auto &Row : Rows) {
+    if (N != StringRef(dataName(Row.Stem, Wl, Shape::HL)))
       continue;
-    // G6 — no data use AFTER the op. `provablyBefore` is the shared spelling
-    // (WireWalk.h): dominance for first-execution order, plus the reachability
-    // half so a back edge cannot replay the use against the mutated rail.
-    // Unproven ⇒ out-of-place (Prime Directive direction).
-    if (!provablyBefore(UI, bo, DT))
+    Value *A0 = C->getArgOperand(0), *A1 = C->getArgOperand(1);
+    // `_hl` means handle-left by construction, so this re-asserts rather than
+    // decides — but a mislabelled symbol must fall back to out-of-place, never
+    // put a rail in the classical immediate slot (G4's whole subject).
+    if (!taint.Tainted.count(A0) || taint.Tainted.count(A1))
       return false;
-    // G7 — the prior use must be settled (see `priorUseIsSettled`).
-    if (!priorUseIsSettled(UI, P, bo, DT))
-      return false;
+    Op = Row.Op;
+    P = A0;
+    Imm = A1;
+    W = Wl;
+    return true;
   }
+  return false;
+}
 
-  // G3 — the width must be in the FROZEN in-place grid, and THE GRID ASKED MUST
-  // BE THE ONE THE EMITTER WILL USE. `add` and `sub` both emit `cqrt_addc_<W>`
-  // (`sub` is `addc` with the immediate negated, Inc 2b — there is no
-  // `cqrt_subc_`); `xor` emits the SEPARATE `cqrt_xorc_<W>` (Inc 2c). The two
-  // resolvers apply the same <=64-integer fence today, but they are distinct
-  // functions minting distinct symbols, so this mirrors `rewriteInPlaceValue
-  // Rail`'s own `Op == Xor ? xorcFn : addcFn` selection rather than asking one
-  // and emitting the other. ASKING the resolver (rather than repeating
-  // {i1,i8,i16,i32,i64} here) means the fence tracks the ABI instead of a
-  // comment about the ABI, and it must never mint a phantom symbol (the n0ui
-  // lesson). G2's own <=64-integer bound already implies this, so it is defense
-  // in depth — and `lowering_mc_xor_fence_fallback.ll`'s `@wide_i128` is the one
-  // probe in the family that reaches an off-grid width from a POSITIVE (`xor` is
-  // a shipped i128 template row; the `add` analogue dies on an earlier cast
-  // decline).
-  //
-  // IT IS DELIBERATELY LAST, and that is not cosmetic. Both resolvers go through
-  // `Module::getOrInsertFunction`, which CREATES `declare void
-  // @cqrt_{addc,xorc}_<W>(i32, iW)` as a SIDE EFFECT — so asking before the
-  // fence has decided planted a dangling declaration in every module containing
-  // any tainted integer `add`/`xor`, including the ones that then stayed out of
-  // place. (Measured: `lowering_add_qc_i32.ll` grew a `declare void
-  // @cqrt_addc_i32` it never calls.) Harmless at link, but it is a symbol
-  // appearing in a module that emits none — exactly the kind of phantom this
-  // project refuses to ship. Asked HERE, it is only ever asked for a site that
-  // is about to emit.
-  StringRef W = abiWidthFromType(bo->getType());
-  return (Op == Instruction::Xor ? wd.xorcFn(W) : wd.addcFn(W)) ? true : false;
+}  // namespace
+
+bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
+  bool Changed = false;
+  // Every out-of-place template symbol a conversion orphaned. A converted site
+  // may have been the module's ONLY `cq_template_sub_i32_hl` call, and leaving
+  // its `declare` behind is precisely the phantom-symbol shape this project
+  // refuses to ship (the n0ui lesson, restated at G3's "asked LAST" note). The
+  // erase is deferred to AFTER the function walk: `Function::eraseFromParent`
+  // mutates `M`'s function list, which this loop is iterating.
+  SmallPtrSet<Function *, 4> Orphaned;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+
+    // 1. SHAPE-ONLY PRE-SCAN. Nothing here builds a dominator tree, recovers a
+    //    DAG or resolves a runtime symbol, so a function with no leftover M-C
+    //    site pays one name test per call and nothing else.
+    SmallVector<CallInst *, 4> Sites;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        auto *C = dyn_cast<CallInst>(&I);
+        if (!C)
+          continue;
+        Instruction::BinaryOps Op;
+        Value *P = nullptr, *Imm = nullptr;
+        StringRef W;
+        if (!lateReassignShape(C, taint, Op, P, Imm, W))
+          continue;
+        // A rail ANOTHER emitter owns is never re-lowered here. Phase-4 control
+        // rails, 7.6 output rails, 7.2 graveyard rails and untainted merge rails
+        // each have an owner that decides their teardown; converting one would
+        // erase a value that owner still names. The SAME explicit-image
+        // discipline the uncompute driver applies at terminal selection — and
+        // for the same reason (do not rest on the incidental exclusion).
+        if (taint.ControlOwnedRails.count(C) || taint.OutputRails.count(C) ||
+            taint.GraveyardRails.count(C) || taint.UntaintedMergeRails.count(C))
+          continue;
+        Sites.push_back(C);
+      }
+    if (Sites.empty())
+      continue;
+
+    // 2. THE PLAN, ONCE PER FUNCTION, ON THE PRE-CONVERSION IR.
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    InteriorDischargePlan Plan = planInteriorDischarges(F, taint);
+
+    // 3. DECIDE EVERYTHING, THEN CONVERT EVERYTHING — the same plan-all-then-
+    //    emit-all discipline the interior partition itself runs on, and here it
+    //    is also a LIFETIME requirement: a conversion ERASES its template call,
+    //    and that call may be the very `Instruction *` a plan entry points at
+    //    (or the node a later site's `provablyBefore` walks). Deciding first
+    //    means no decision ever reads a plan that a sibling conversion has
+    //    already invalidated.
+    //
+    //    THE BATCH CANNOT WIDEN ITSELF, and that is worth stating because two
+    //    M-C sites on one register are the campaign's own `+= off … -= off`
+    //    shape. Each decision is taken with every sibling still OUT of place, so
+    //    a site whose parent is read by an undischarged sibling rail is refused
+    //    (arm (d)/(d2)) exactly as it would be alone. Converting a sibling only
+    //    ever turns a template producer into an in-place gate, which arm (a)
+    //    settles — strictly more permissive, and never consulted after the fact.
+    SmallVector<CallInst *, 4> Accepted;
+    for (CallInst *C : Sites) {
+      Instruction::BinaryOps Op;
+      Value *P = nullptr, *Imm = nullptr;
+      StringRef W;
+      if (!lateReassignShape(C, taint, Op, P, Imm, W))
+        continue;  // unreachable — the pre-scan proved it; re-asked for `Op`/…
+      if (inPlaceFenceHolds(C, P, Imm, Op, W, wd, taint, DT, LI, &Plan))
+        Accepted.push_back(C);
+    }
+
+    for (CallInst *C : Accepted) {
+      Instruction::BinaryOps Op;
+      Value *P = nullptr, *Imm = nullptr;
+      StringRef W;
+      if (!lateReassignShape(C, taint, Op, P, Imm, W))
+        continue;
+      // `_hl` is handle-LEFT, so the `sub` direction test is satisfied by
+      // construction; it is passed explicitly rather than hard-coded `true` so
+      // the emitter keeps its own loud fallback (see `emitInPlaceReassign`).
+      if (!emitInPlaceReassign(C, Op, P, Imm, /*HandleIsLhs=*/true, W, wd))
+        continue;  // diagnosed + left standing; never erase an un-lowered site.
+      // The out-of-place rail is GONE: scrub every side table keyed on it before
+      // the erase, or a `Value *`-keyed lookup at the reused address answers for
+      // a register that no longer exists (the R-A stale-`HandleWidth` lesson in
+      // `promote` above, which is the same hazard from the other end).
+      taint.Tainted.erase(C);
+      taint.HandleWidth.erase(C);
+      taint.BirthOrder.erase(C);
+      Function *Sym = C->getCalledFunction();
+      C->eraseFromParent();
+      if (Sym)
+        Orphaned.insert(Sym);
+      Changed = true;
+    }
+  }
+  for (Function *Sym : Orphaned)
+    if (Sym->isDeclaration() && Sym->use_empty())
+      Sym->eraseFromParent();
+  return Changed;
 }
 
 }  // namespace cq
