@@ -21,11 +21,19 @@
 ;                 one, which declines — see the contrast below.
 ;
 ; THE CONTRAST THAT MATTERS. A derived BASE is a diagonal rotation and is fine; a
-; derived CONDITION (`sqrt(a+3.0) <= 5.0`) builds template rails that survive the
-; flag strip and declines at the live-record guard
-; (control_swap_reject_post_region_theta_derived_cond.ll). "Derived" is not one
-; category: the question is whether anything the region touched is still an
-; allocated, entangled RECORD of the wire when the Ry fires. Here nothing is —
+; derived CONDITION (`sqrt(a+3.0) <= 5.0`) builds template rails, and until M-B
+; Increment 6 they survived the flag strip and the program declined at the
+; live-record guard. It ACCEPTS now — the emitter records its strip, the interior
+; partition discharges the chain right after it, and the guard reads that as a
+; fact (control_swap_accept_post_region_theta_derived_cond.ll, renamed from
+; ..._reject_...). The contrast this file draws is UNCHANGED, because it was never
+; about the word "derived": the question is whether anything the region touched is
+; still an allocated, entangled RECORD of the wire when the Ry fires. Here nothing
+; is — and the derived-condition file now answers the same way for the same
+; reason, by the chain being discharged rather than by it never existing. The
+; shapes that still decline are the ones whose chain M-B cannot discharge (a
+; non-diagonal write on the wire inside the interval; a strip no emitter
+; recorded). Here nothing is —
 ; both functions lower to one data register plus per-arm work rails, and every
 ; rail and flag is freed before the `cqrt_ry_i32`.
 ;

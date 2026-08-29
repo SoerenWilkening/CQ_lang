@@ -40,12 +40,17 @@
 ;
 ; DECLINE TWINS THAT REMAIN, so the guard's derived-condition coverage is not
 ; emptied by this re-disposition:
-;   * control_swap_reject_post_region_theta_derived_cond.ll — the REGION spelling
-;     (bd 6uqc's P0). Its `sqrt` rail is read by the region's own flag-strip
-;     `_unc`, which is not an interior consumer, so it is still standing and the
-;     module still declines. Lifting it needs the Increment-6 region anchor.
 ;   * lowering_uncompute_interior_leak_parent_ry_between.ll — a chained Ry inside
-;     the discharge interval.
+;     the discharge interval. No anchor can move a discharge past a non-diagonal
+;     write on the wire it reads, so this one is permanent.
+;   * lowering_uncompute_interior_leak_region_wire_measured.ll — the same shape
+;     with a COLLAPSE instead of a rotation, in a region program.
+;   * lowering_uncompute_interior_leak_select_cond_chain.ll — a 4.4 select's
+;     condition chain: its strip is not one an emitter recorded, so it leaks.
+;   (The REGION spelling of THIS file, once
+;   control_swap_reject_post_region_theta_derived_cond.ll, is no longer among
+;   them: M-B Increment 6 gave its chain an anchor after the recorded flag strip
+;   and it is now control_swap_accept_post_region_theta_derived_cond.ll.)
 ;   * lowering_reject_live_record_two_hop.ll and its three siblings keep the
 ;     guard's walk mechanisms pinned on records M-B cannot reach.
 ;

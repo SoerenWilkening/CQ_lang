@@ -224,7 +224,8 @@ rejected) is not.
 "After the strip the region holds no live record" is true of the FLAG only. A
 derived condition's provenance chain, or the routed base's dead alloc parent,
 survives the strip; the late, module-wide guard declines the post-region theta over
-any such dead record (`control_swap_reject_post_region_theta_derived_cond.ll`,
+any such dead record (`control_swap_reject_post_region_theta_derived_cond.ll` —
+**superseded, see §7: that chain now discharges and the fixture is an ACCEPT**,
 `lowering_reject_live_record_routed_base_anc.ll` — both now carry the guard's
 message, not this file's). And since M-C (Inc 2) the SSA "wire" and the physical
 rail no longer coincide (the S† theta acts on the very register the oracle's
@@ -236,4 +237,54 @@ condition read); the proof above is over IR positions only and never argues
 S·O·S†·R0 iterations, strict free-pairing, only the register allocated at each of
 its five `cqrt_ry`). Rule-13 cleared 2026-08-28 (24 probe angles, HEAD-vs-tree sweep
 = the new fixtures only).
+
+## 7. Amendment 2026-08-29 — bd 160a (M-B Increment 6): the derived-condition
+## chain now DISCHARGES, so §6's interlock fires on a smaller set
+
+**One sentence of §6 is now out of date and is corrected here rather than edited
+in place, because the reasoning around it still stands.** §6 says the derived
+condition's provenance chain "survives the strip; the late, module-wide guard
+declines the post-region theta over any such dead record
+(`control_swap_reject_post_region_theta_derived_cond.ll`)". The *rule* is
+unchanged — the M-A guard still owns that decline, and not one of its clauses
+moved — but that fixture is now
+`control_swap_accept_post_region_theta_derived_cond.ll` and the program **lowers**.
+
+**What made the difference is physics, not a relaxed predicate.** M-B Increment 6
+adds clause (d2): `SwapRouteEmit`'s phase path RECORDS its flag strip
+(`TaintSet::DischargedFlagGates`) and its `cqrt_cswap` route as a matched
+label-restoring group (`TaintSet::RestoringRoutes`); the interior uncompute
+partition then admits a *recorded* strip as a READ of the rails in its shifted
+handle slots, anchors the chain's reversal immediately after it, and clause (d)
+admits the route pair as a unit (an `_unc` is a **label-only reader**, and the
+join is the adjoint of the split). So the chain is uncomputed and freed *before*
+the post-region theta, and the M-A guard's clause 2 (`isDischargeOf` +
+`provablyBefore`) reads the discharges as the facts they are.
+
+**§6's claim about the FLAG was always the narrow one, and it is still the right
+statement of the mechanism.** What Increment 6 changed is that the *other* records
+— the condition chain's rails — are no longer standing when the guard looks. The
+routed base's dead alloc parent still is: `lowering_reject_live_record_routed_base_
+anc.ll` keeps the guard's message, and the routed base is *never* an interior
+candidate (a `cqrt_cswap` user is refused —
+`lowering_uncompute_interior_region_routed_base.ll` pins both halves in one
+module).
+
+**What still declines**, so §6's interlock is not gone, only narrower: a chain
+whose borrowed wire is written non-diagonally *inside* the discharge interval
+(`lowering_uncompute_interior_leak_region_wire_measured.ll`, and the chained-theta
+case `…_leak_parent_ry_between.ll`), and every strip no emitter recorded — the
+4.4 select (`…_leak_select_cond_chain.ll`), the method-B value arm, the 4.3 nest,
+the 4.5 switch, the 6.5 classical-call arm and the 7.6 controlled tape write.
+Those chains keep leaking, and a post-region theta over them keeps declining at
+M-A.
+
+**Witnesses.** `lowering_uncompute_interior_region_chain.ll` (bd 6uqc's P0),
+`…_region_int_chain.ll`, `…_region_ifelse_chain.ll` (the four-member route group),
+`…_region_seq_chains.ll`, `control_swap_accept_post_region_theta_derived_cond.ll`;
+e2e `slice_uncompute_interior_region_derived_cond`,
+`slice_control_grover_derived_oracle` and
+`slice_control_grover_derived_oracle_2iter` — a Grover iteration whose oracle is a
+COMPUTATION rather than a compare against a constant, once and twice, strict
+free-pairing, only the register allocated at each `cqrt_ry`.
 

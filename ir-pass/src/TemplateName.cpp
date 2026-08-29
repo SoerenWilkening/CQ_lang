@@ -114,6 +114,22 @@ bool isHandleSlot(StringRef symbol, unsigned argIdx) {
   return true;
 }
 
+bool isUncHandleSlot(StringRef symbol, unsigned argIdx) {
+  // The out-first void twin ONLY. A `_controlled_unc` would prepend a flag on
+  // top of the rail (a two-slot shift nothing mints today) and a `_inv` twin is
+  // the non-void adjoint of a different era — both fail closed here, which is
+  // the leak direction for the one caller.
+  if (!symbol.starts_with("cq_template_") || !symbol.ends_with("_unc") ||
+      symbol.contains("_controlled"))
+    return false;
+  // Slot 0 is the rail the `_unc` WRITES, never a read of it. See the header:
+  // for a Phase-4 flag strip this is the control flag, and calling it a read
+  // would hand the interior partition a rail Phase 4 still owns.
+  if (argIdx == 0)
+    return false;
+  return isHandleSlot(symbol.drop_back(4), argIdx - 1);
+}
+
 std::string castName(StringRef op, StringRef fromW, StringRef toW,
                      bool controlled, bool inverse) {
   // cq_template_<op>_<from>_to_<to>[_controlled][_inv]. Unary at the IR

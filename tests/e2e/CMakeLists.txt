@@ -440,6 +440,48 @@ add_test(NAME e2e-slice-control-grover-2iter
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_2iter.expected.log")
 
+# bd test_C_libtooling-160a (M-B Increment 6) — bd 6uqc's P0 end to end, WITH the
+# S-dagger that used to make it decline. A DERIVED region condition
+# (`sqrt(a+3.0) <= 5.0`) mints three template rails the flag strip never touches;
+# until clause (d2) they were never uncomputed, and the following non-diagonal
+# gate declined with "non-diagonal gate over a live derived record". STRICT
+# stage 2b: the trace records the strip firing BEFORE the chain's LIFO discharge
+# (it still reads the live sqrt rail) and both before the second cqrt_ry_i32.
+add_test(NAME e2e-slice-uncompute-interior-region-derived-cond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_interior_region_derived_cond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_interior_region_derived_cond.expected.log")
+
+# bd test_C_libtooling-160a — ONE COMPLETE GROVER ITERATION WHOSE ORACLE IS A
+# COMPUTATION, not a compare against a constant: `((q*37)>>3) == 5`, two template
+# rails deep before the flag is minted. The direct-oracle twin is
+# slice_control_grover_2iter above; this is the shape that says CQ can mark a
+# COMPUTED predicate. STRICT stage 2b.
+add_test(NAME e2e-slice-control-grover-derived-oracle
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_derived_oracle.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_derived_oracle.expected.log")
+
+# bd test_C_libtooling-160a — the SAME iteration twice. Two derived-condition
+# chains with no producer edge between them, i.e. two interior COMPONENTS: this
+# is the slice that needs the per-component anchor (bd if1e) as well as clause
+# (d2), and that declined with either half alone. FIVE cqrt_ry_i32 gates, and
+# every ancilla minted since the previous one discharged before each. STRICT
+# stage 2b.
+add_test(NAME e2e-slice-control-grover-derived-oracle-2iter
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_derived_oracle_2iter.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_derived_oracle_2iter.expected.log")
+
 # bd 3c6m.5: cross-domain int<->long-double casts. Two direction slices — the
 # LINK-proof that the 18 new int<->f80 cast symbols resolve + signature-match the
 # runtime. A non-integer f80 factor (1.5L) keeps clang -O1 from folding the cast

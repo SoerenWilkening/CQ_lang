@@ -610,8 +610,25 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   }
 
   // 3. Route-in (split) — q -> each rail, X-bracketed for a ¬flag arm.
+  //
+  //    Every cswap on `Q` this region emits is collected into ONE
+  //    `TaintSet::RestoringRoute` group (M-B Increment 6, clause (d2)). The claim
+  //    the group makes is narrow and provable: executing the WHOLE group leaves
+  //    `Q`'s BASIS LABEL exactly as it found it, because step 5 replays the SAME
+  //    cswaps under the SAME flag (RSSA "the join is the adjoint of the split")
+  //    and, in the if/else shape, at most one arm's swap fires per branch so the
+  //    two pairs commute. The Rz between them is DIAGONAL and lands on a work
+  //    RAIL, never on `Q`.
+  //
+  //    IT IS THE GROUP, NOT THE GATE, THAT RESTORES. One half of a pair leaves
+  //    `Q` holding |0> (or the arm's copy) depending on the flag — which is why
+  //    the consumer proves every member is inside its interval before it reads
+  //    `Q` past the route. The method-B VALUE path records NOTHING: its
+  //    route-back swaps in the arm's ANSWER, so it is not the adjoint of its
+  //    split and `Q`'s label genuinely changes.
+  SmallVector<const CallInst *, 4> Route;
   for (size_t I = 0; I < Streams.size(); ++I)
-    emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL);
+    Route.push_back(emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL));
 
   // 4. Arm bodies, VERBATIM and UNCONTROLLED, each on its OWN rail.
   for (size_t I = 0; I < Streams.size(); ++I)
@@ -623,7 +640,8 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
 
   // 5. Route-back (join = adjoint of the split, same flag + brackets).
   for (size_t I = 0; I < Streams.size(); ++I)
-    emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL);
+    Route.push_back(emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL));
+  taint.RestoringRoutes.push_back(Route);
 
   // 6. Rail frees — each rail is |0> for free (Rz|0>=|0>); a clean reset, NOT a
   //    measurement (SCOPING §3b). No kept-carrier record reaches these rails or the
@@ -652,8 +670,29 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     // 7. Flag strip — q == q0 (Rz preserves the basis value), so icmp_inv(q)
     //    returns the flag to |0> with zero controlled gates. Reads `Cond`'s
     //    operands, so it MUST precede the erase of `Cond` (in flattenRegion).
-    lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                       /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag);
+    //
+    //    RECORDED as a DISCHARGED FLAG GATE (M-B Increment 6, clause (d2)). For
+    //    the compare operands in its shifted handle slots this call is a pure
+    //    READ — it recomputes the predicate and XORs it onto `Flag`, leaving
+    //    every operand at its forward basis — so a DERIVED condition's
+    //    provenance chain is dead the instant it returns. Recording it here lets
+    //    `ChainWalk::isInteriorConsumer` count it as a consumer, which moves the
+    //    interior partition's insertion point PAST this line and is the only
+    //    place that chain may legally be uncomputed (before it, the strip would
+    //    read freed rails; the whole `if (sqrt(a+3.0) <= 5.0)` shape leaked at
+    //    Increment 5 for exactly that reason — bd 6uqc's P0).
+    //
+    //    THE PHASE PATH ONLY, and that is the fence. This emitter's route
+    //    restores `Q`'s basis label as a group (step 3), so an adjoint placed
+    //    after the strip reads the same wire the forward chain read. Recording a
+    //    strip whose emitter does NOT have that property would place a discharge
+    //    after a route that moved the base — a `_unc` reading the wrong basis.
+    auto *Strip = dyn_cast_or_null<CallInst>(
+        lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                           /*before=*/BI, /*negate=*/false,
+                           /*railToStrip=*/Flag));
+    if (Strip)
+      taint.DischargedFlagGates.insert(Strip);
 
     // 8. Flag free.
     CallInst *FlagFree = B.CreateCall(wd.freeFn(), {Flag});
@@ -717,19 +756,24 @@ SmallVector<CallInst *, 4> collectArmPhis(Value *ArmIncoming,
 // the-split property (SCOPING §2). De-anonymized (named `cq`, declared in the
 // header) so `NestedRouteEmit` routes both nest levels through the SAME bracket
 // logic (a drift in the ¬flag polarity here would be a silent miscompile).
-void emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
-               Value *Q, Value *Rail, bool Negated, const DebugLoc &DL) {
+CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
+                    Value *Q, Value *Rail, bool Negated, const DebugLoc &DL) {
   FunctionCallee Cswap = csyms.cswapFn();
   FunctionCallee X = csyms.xFn();
   auto stamp = [&](CallInst *C) {
     if (DL)
       C->setDebugLoc(DL);
+    return C;
   };
   if (Negated)
     stamp(B.CreateCall(X, {Flag}));
-  stamp(B.CreateCall(Cswap, {Flag, Q, Rail}));
+  // The ONE gate on the routed base `Q`. The X brackets are on the FLAG, so a
+  // caller collecting a `RestoringRoute` group over `Q` wants exactly this call
+  // and not the brackets (M-B Increment 6).
+  CallInst *Swap = stamp(B.CreateCall(Cswap, {Flag, Q, Rail}));
   if (Negated)
     stamp(B.CreateCall(X, {Flag}));
+  return Swap;
 }
 
 void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,

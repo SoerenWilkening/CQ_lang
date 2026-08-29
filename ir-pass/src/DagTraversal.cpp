@@ -259,7 +259,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
         // driver proves separately with `provablyBefore` before it ever builds
         // an `InteriorPlan` — never here, where there is no insertion point to
         // reason about.
-        if (IP && IP->Owned.count(R) && isInteriorConsumer(CU, R))
+        if (IP && IP->Owned.count(R) && isInteriorConsumer(CU, R, taint))
           continue;
         D.NotClosed = true;  // controlled copy/cswap, free, or out-of-DAG gate
         continue;

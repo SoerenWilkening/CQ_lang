@@ -145,6 +145,70 @@ struct TaintSet {
   // no tainted control flow.
   llvm::SmallPtrSet<llvm::Value *, 8> ControlOwnedRails;
 
+  // ── M-B INCREMENT 6, clause (d2) — the EMITTER-RECORDED FLAG STRIP (bd
+  //    test_C_libtooling-160a) ────────────────────────────────────────────────
+  //
+  // The void OUT-FIRST flag strips a Phase-4 emitter mints for a region whose
+  // teardown it OWNS: `cq_template_<cmp>_<W>_hl_unc(flag, operands…)` (bd
+  // `8txa`). Slot 0 is the flag rail the strip ZEROES and the emitter frees on
+  // the very next line; slots 1.. are the FORWARD compare's operands, READ and
+  // left exactly as the forward mint found them.
+  //
+  // WHY THIS SET EXISTS. A region whose condition is DERIVED
+  // (`if (sqrt(a+3.0) <= 5.0)`) computes its compare operand through a chain of
+  // template rails, and the LAST of those rails has TWO users: the forward flag
+  // mint and this strip. `ChainWalk::isInteriorConsumer` refuses every `_unc`
+  // outright — correctly, since discharging a rail at the anchor its FORWARD
+  // consumers imply would free it before the strip re-reads it — so the rail
+  // leaked and the whole Grover-with-a-nontrivial-oracle shape declined at the
+  // M-A guard. Membership here is what lets that one `_unc` count as a READ,
+  // which moves the interior partition's `dagInsertPoint` to just after the
+  // strip and makes the chain discharge THERE (bd 6uqc's P0).
+  //
+  // MEMBERSHIP, NEVER A NAME TEST. `_unc` symbols are also what the Phase-5
+  // uncompute spine and the 7.4 reverse-play mint, and admitting those by name
+  // would let one partition discharge a rail another partition's adjoint still
+  // reads (Rule 8's shared-prefix hazard, from the other side). Only a strip a
+  // control emitter recorded AT ITS EMISSION SITE is in here, and only emitters
+  // whose route provably leaves the compare's operands at their forward basis
+  // record one (today: `SwapRouteEmit`'s flat PHASE-arm region — diamond,
+  // if/else and the eq-folded diamond that reuses it). Every other strip —
+  // value-arm, 4.3 nest, 4.4 select, 4.5 switch, the 6.5 classical-call arm, the
+  // 7.6 controlled tape write — deliberately stays OUT and its condition chain
+  // keeps leaking, each pinned by a leak fixture.
+  llvm::SmallPtrSet<const llvm::CallInst *, 4> DischargedFlagGates;
+
+  // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
+  // ONLY where executing the WHOLE group provably restores that register's BASIS
+  // LABEL (a phase-arm route-in/route-back pair per arm: the join is the literal
+  // adjoint of the split, and at most one arm's swap fires per branch).
+  //
+  // Consumed by the M-B interior partition's clause-(d) scan as a THIRD disjunct
+  // beside LEFT and RIGHT: a route group EVERY member of which lies strictly
+  // inside the interval [first recovered gate reading the base, discharge point]
+  // is a no-op on the base's label over that interval, so an adjoint placed
+  // after it reads the SAME basis the forward gate read. That is precisely what
+  // makes an Increment-6 discharge — which by construction sits AFTER the
+  // region's route-back, because the flag strip is one of its anchors — legal.
+  //
+  // THE GROUP IS ATOMIC AND THAT IS THE WHOLE FENCE. One HALF of a route pair
+  // inside the interval is NOT restoring (the base holds |0> or |x> depending on
+  // the flag), so the scan admits a group only when EVERY member is inside;
+  // mixed positions leak. A route whose join is NOT the adjoint of its split —
+  // the method-B VALUE arm, whose route-back carries the arm's ANSWER onto the
+  // base — is never recorded at all.
+  //
+  // ⚠ THE BASE IS READ FROM THE GATES, NEVER STORED. A `cqrt_cswap(flag, base,
+  // rail)` names its base in ARG 1, which is a USE and therefore follows every
+  // later RAUW; a `Value *Base` field captured at emission time does NOT.
+  // `lowerControlRegions` runs BEFORE `lowerRotations`, which RAUWs the
+  // `@cq_theta` result to the `cqrt_alloc_<W>` handle AND ERASES the theta call —
+  // so a stored base would be both stale and dangling by the time `uncompute`
+  // asks. (Measured: the first draft of this stored it, and every group silently
+  // failed to match, which read exactly like a missing recording.)
+  llvm::SmallVector<llvm::SmallVector<const llvm::CallInst *, 4>, 4>
+      RestoringRoutes;
+
   // Phase 7.6 (PRD-7.6 §2.5). Kept I/O output rails — the `out_handle` each
   // `cqrt_tape_write_<W>` returns (a Bennett output tape entry). They are a
   // SINK's product, never uncomputed and never freed: routing one through the

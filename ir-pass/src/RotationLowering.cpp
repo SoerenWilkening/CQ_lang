@@ -321,10 +321,12 @@ namespace {
 //   * lowering_live_record_derived_cond_theta_discharged.ll (bd 6uqc's own P4
 //     shape — RE-DISPOSITIONED to an ACCEPT by M-B Increment 5b: the four
 //     condition rails are now `_unc`'d and freed BEFORE the chained Ry, so
-//     clause 2 exempts them and nothing here changed. The decline twins are
-//     control_swap_reject_post_region_theta_derived_cond.ll (the REGION
-//     spelling, still standing behind its flag-strip `_unc`) and
-//     lowering_uncompute_interior_leak_parent_ry_between.ll.)
+//     clause 2 exempts them and nothing here changed. The REGION spelling,
+//     control_swap_accept_post_region_theta_derived_cond.ll, followed at M-B
+//     Increment 6 once the emitter-recorded flag strip gave its chain an anchor;
+//     the decline twin that remains is
+//     lowering_uncompute_interior_leak_parent_ry_between.ll — a chained Ry INSIDE
+//     the discharge interval, which no anchor can move.)
 //   * lowering_reject_live_record_two_hop.ll              (a dead INTERIOR record)
 //   * lowering_reject_live_record_qram_load.ll            (a `cqrt_qram_load_` record)
 //   * lowering_reject_live_record_spine_only_use.ll       (post-T mention is an

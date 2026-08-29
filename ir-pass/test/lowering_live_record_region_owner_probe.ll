@@ -22,8 +22,11 @@
 ; `icmp` on the register itself), so the compare flag is the region's sole record
 ; of the wire and the `_unc` strip + `cqrt_free` discharge it — clause 2 of the
 ; live-record guard — BEFORE the chained `cqrt_ry_i32` fires. There is no derived
-; provenance chain (contrast control_swap_reject_post_region_theta_derived_cond.ll,
-; which has one and therefore still declines, at the guard) and no dead ancestor
+; provenance chain (the derived-condition twin,
+; control_swap_accept_post_region_theta_derived_cond.ll, HAS one; it declined at
+; the guard until M-B Increment 6 taught the interior partition to discharge it
+; after the emitter-recorded strip, and now accepts for the same reason this file
+; does — nothing of the region is still standing at the Ry) and no dead ancestor
 ; rail (contrast lowering_reject_live_record_routed_base_anc.ll). Two allocations
 ; exist in the whole program and one of them is freed.
 ;

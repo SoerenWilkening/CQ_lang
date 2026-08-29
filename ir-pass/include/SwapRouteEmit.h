@@ -83,12 +83,16 @@ void lowerControlRegions(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 // is the live derived base, not an arm gate — the load-bearing bound, Rule 10).
 // `emitRoute` emits `cqrt_cswap(flag, q, rail)`, X-bracketed for a ¬flag
 // (`Negated`/FALSE-successor) arm; the route-in and route-back are the SAME call
-// (the RSSA join-is-the-inverse-of-the-split symmetry).
+// (the RSSA join-is-the-inverse-of-the-split symmetry). It RETURNS that cswap so
+// a caller whose route-back is the literal adjoint of its route-in can collect
+// the pair into a `TaintSet::RestoringRoute` group (M-B Increment 6 clause (d2)).
+// The X brackets are on the FLAG, never on the routed base, so they are not part
+// of the group.
 llvm::SmallVector<llvm::CallInst *, 4> collectArmPhis(
     llvm::Value *ArmIncoming, const llvm::BasicBlock *ArmBB);
-void emitRoute(llvm::IRBuilder<> &B, const ControlledSymbols &csyms,
-               llvm::Value *Flag, llvm::Value *Q, llvm::Value *Rail,
-               bool Negated, const llvm::DebugLoc &DL);
+llvm::CallInst *emitRoute(llvm::IRBuilder<> &B, const ControlledSymbols &csyms,
+                          llvm::Value *Flag, llvm::Value *Q, llvm::Value *Rail,
+                          bool Negated, const llvm::DebugLoc &DL);
 
 }  // namespace cq
 

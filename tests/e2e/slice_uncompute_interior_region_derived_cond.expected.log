@@ -1,0 +1,25 @@
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_sitofp_i32_to_f64(h0) -> h1
+cq_template_fadd_f64_hl(h1, 0x1.8p+1) -> h2
+cq_template_sqrt_f64(h2) -> h3
+cq_template_fcmp_ugt_f64_hl(h3, 0x1.4p+2) -> h4
+cqrt_alloc_i32(0) -> h5
+cqrt_x(h4)
+cqrt_cswap(h4, h0, h5)
+cqrt_x(h4)
+cqrt_rz_i32(h5, 0x1.921fb54442d18p+1)
+cqrt_x(h4)
+cqrt_cswap(h4, h0, h5)
+cqrt_x(h4)
+cqrt_free(h5)
+cq_template_fcmp_ugt_f64_hl_unc(h4, h3, 0x1.4p+2)
+cq_template_sqrt_f64_unc(h3, h2)
+cqrt_free(h3)
+cq_template_fadd_f64_hl_unc(h2, h1, 0x1.8p+1)
+cqrt_free(h2)
+cq_template_sitofp_i32_to_f64_unc(h1, h0)
+cqrt_free(h1)
+cqrt_free(h4)
+cqrt_ry_i32(h0, -0x1p-1)
+cqrt_measure_i32(h0) -> 0

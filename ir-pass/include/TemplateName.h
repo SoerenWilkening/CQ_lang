@@ -108,6 +108,24 @@ std::string compareName(llvm::StringRef op, llvm::StringRef pred,
 // which is the Prime Directive's direction.
 bool isHandleSlot(llvm::StringRef symbol, unsigned argIdx);
 
+// The SAME question for the void OUT-FIRST adjoint twin `f_unc(out, operands…)`
+// that `EmitInverse` mints: is argument slot `argIdx` of the `_unc` symbol a
+// QUANTUM HANDLE slot? (bd test_C_libtooling-160a, M-B Increment 6.)
+//
+// SLOT 0 IS THE WRITTEN RAIL and answers `false` — deliberately. The caller
+// (`ChainWalk::isInteriorConsumer`, gated on `TaintSet::DischargedFlagGates`)
+// asks "did this call merely READ my rail?", and slot 0 is the register the
+// `_unc` ZEROES. For a Phase-4 flag strip that slot is the control flag, a rail
+// Phase 4 owns and frees on the next line; admitting it as a read would let the
+// interior partition discharge a rail another owner is still tearing down.
+//
+// Every other slot SHIFTS BY ONE and is answered by `isHandleSlot` on the base
+// symbol — one table, read in one direction, exactly as the forward form is
+// (Rule 14). `_unc` is the only trailing token this accepts: a `_controlled_unc`
+// prepends a flag ON TOP of the out-first rail, which is a THIRD layout nobody
+// has needed, so it fails closed rather than guessing a double shift.
+bool isUncHandleSlot(llvm::StringRef symbol, unsigned argIdx);
+
 // Cast op: `cq_template_<op>_<from>_to_<to>[_controlled][_inv]`. `op` is the
 // cast opcode name ("sext"/"zext"/"trunc"/"fpext"/"fptrunc"/"sitofp"/
 // "uitofp"/"fptosi"/"fptoui"). Casts are unary at the IR level → no shape

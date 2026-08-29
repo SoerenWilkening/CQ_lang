@@ -25,6 +25,7 @@
 #include "WidthDispatch.h"      // freeFn
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"   // is_contained
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -638,6 +639,99 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P) {
   return false;
 }
 
+// CLAUSE (d2) — THE EMITTER-RECORDED RESTORING ROUTE (bd test_C_libtooling-160a,
+// M-B Increment 6). `M` is a `cqrt_cswap` user of the borrowed parent `P` that
+// neither straight-line disjunct could place. Is it a member of a recorded route
+// group on `P` EVERY member of which lies strictly inside the interval
+// `(First, At)`?
+//
+// WHAT AN `_unc` ACTUALLY NEEDS, and saying it precisely is the whole argument.
+// The adjoint of `X = f(P, …)` is `f_unc(X, P, …)`: it RECOMPUTES `f` from `P`'s
+// COMPUTATIONAL-BASIS LABEL and XORs the result onto `X`. It is a LABEL-ONLY
+// READER. It does not read, and cannot be disturbed by, any phase `P` has
+// picked up in the meantime — a diagonal factor commutes with a label-controlled
+// permutation and cancels against the record. So clause (d) — "every register an
+// adjoint reads holds the value it held when the forward gate ran" — is a
+// statement about the LABEL, and nothing weaker or stronger.
+//
+// WHY THE PHASE-ARM ROUTE RESTORES THE LABEL. `SwapRouteEmit`'s phase path emits,
+// per content arm, one `cqrt_cswap(flag, P, rail)` to route in and the SAME call
+// again to route back (RSSA: the join is the literal adjoint of the split). If
+// the flag is set `P` and the rail exchange and exchange back; if it is clear
+// neither call moves anything. In the if/else shape the second arm's pair is
+// bracketed by `cqrt_x(flag)` so it fires on the complement, and at most one of
+// the two pairs is ever active, so they commute. Either way `P` leaves the group
+// holding the label it entered with.
+//
+// WHAT SITS BETWEEN THE HALVES, LISTED FROM THE EMITTER'S ACTUAL STREAM RATHER
+// THAN FROM A SLOGAN. Three kinds of gate, and none of them changes `P`'s label:
+//   * `cqrt_rz_<W>(rail, θ)` — the arm body. DIAGONAL, and on the WORK RAIL, not
+//     on `P`.
+//   * `cqrt_x(flag)` brackets — NON-diagonal, but on the FLAG rail. They exist so
+//     the second cswap sees the same flag value the first one did, and the
+//     emitter always opens and closes them in the same step (`emitRoute`), so the
+//     flag is back to its own value before the next member of the group runs.
+//   * gates on entirely unrelated rails, which are irrelevant regardless of
+//     diagonality.
+// The route pair deliberately does NOT restore `P`'s PHASE — the arm's `Rz` is
+// the answer the region computed, carried on `P` through the exchange — and by
+// the label-only-reader argument above that is exactly what makes the discharge
+// legal rather than what would break it.
+//
+// THE GROUP IS TRUSTED AS A UNIT, AND IS NEVER RE-INFERRED HERE. Pairing,
+// bracket closure and "the join is the adjoint of the split" are the EMITTER's
+// invariants; scanning the IR for two cswaps and calling them a pair would be a
+// second, weaker spelling of a property that already has an owner (Rule 14), and
+// it would silently claim the value arm's route — whose route-back swaps in the
+// arm's ANSWER, so `P`'s label genuinely changes — which is why that emitter
+// records nothing.
+//
+// ATOMICITY IS THE FENCE. Half a pair inside the interval is NOT restoring: `P`
+// then holds |0> or |x> depending on the flag, and the `_unc` would recompute
+// `f(0)` on one branch — a verify-clean wrong answer. So EVERY member must be
+// inside; a mixed group falls through and the component leaks. A group entirely
+// LEFT, entirely RIGHT, or straddling the interval (route-in left, route-back
+// right — `P`'s label is then constant ACROSS the interval, for the opposite
+// reason) is already admitted per gate by the two straight-line disjuncts and
+// never reaches this function.
+//
+// EVERY OTHER USER OF `P` IS STILL PROVEN SEPARATELY. This function exempts the
+// ROUTE and nothing else, so an `cqrt_addc(P, 5)` or a `cqrt_ry(P, θ)` sitting
+// between the two halves still has to clear LEFT or RIGHT on its own — and
+// cannot — and the component leaks. "Nothing else writes `P` between the halves"
+// is therefore enforced by the caller's scan, not assumed here.
+bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
+                           Instruction *At, DominatorTree &DT,
+                           const TaintSet &taint) {
+  // The routed base is `cqrt_cswap(flag, base, rail)`'s ARG 1, read HERE and
+  // never stored at emission time — see the `RestoringRoutes` comment in
+  // TaintPropagation.h: arg 1 is a USE and follows `lowerRotations`' RAUW of the
+  // `@cq_theta` result to its `cqrt_alloc` handle, whereas a captured `Value *`
+  // would be both stale and DANGLING by the time `uncompute` asks (measured —
+  // the first draft stored it and every group silently failed to match, which
+  // reads exactly like a missing recording).
+  auto baseOf = [](const CallInst *G) -> const Value * {
+    return G->arg_size() >= 2 ? G->getArgOperand(1) : nullptr;
+  };
+  for (const auto &Gates : taint.RestoringRoutes) {
+    if (!llvm::is_contained(Gates, M))
+      continue;
+    for (const CallInst *G : Gates) {
+      // HOMOGENEITY: every member must route the SAME base this scan is
+      // reasoning about. A group whose members disagree is not a statement about
+      // `P` at all, and treating it as one would exempt a swap that moved some
+      // other register into or out of `P`'s rail.
+      if (baseOf(G) != P)
+        return false;
+      auto *GI = const_cast<CallInst *>(G);
+      if (!provablyBefore(First, GI, DT) || !provablyBefore(GI, At, DT))
+        return false;
+    }
+    return true;
+  }
+  return false;
+}
+
 // PLAN one interior COMPONENT: the positional half (§2), the borrowed-parent
 // frontier (§3), the DAG recovery and its re-proofs (§4) and clause (d) (§5).
 // PURE ANALYSIS — it emits nothing. `true` fills `D`/`At` with a plan the caller
@@ -867,7 +961,11 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
         continue;  // LEFT — M ran before the interval and never runs again.
       if (provablyBefore(At, M, DT))
         continue;  // RIGHT — M runs only after the discharge (Inc 5b).
-      return false;  // unprovable ⇒ the whole group leaks (Rule 6).
+      if (routeGroupFullyInside(M, P, First, At, DT, taint))
+        continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
+                   // identity on P's basis LABEL over the interval (Inc 6,
+                   // clause (d2)).
+      return false;  // unprovable ⇒ this component leaks (Rule 6).
     }
   }
 

@@ -299,13 +299,15 @@ bool isTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
 //   (I2) it is NOT already a dead terminal (`isTerminalHandle`) — the existing
 //        whole-DAG partition owns those, and one rail must have exactly ONE
 //        owner or its shared prefix is adjointed twice (Rule 8).
-//   (I3) EVERY user is a `CallInst` and `isInteriorConsumer`: either an in-place
+//   (I3) EVERY user is a `CallInst` and `isInteriorConsumer`: an in-place
 //        gate on the rail that `preservesBasisUnderRecord` (Rz / addc / xorc —
-//        NOT `cqrt_ry`), or a forward reassigning template producer that READS
-//        it. A measure, a tape write, a copy-out, a `ret`, a φ/select, a
-//        controlled gate, a route, a clone call, a `cqrt_free` or any adjoint
-//        twin all DISQUALIFY the rail (it is observed, escaped, recorded into a
-//        kept carrier, or owned by another emitter) — safe-leak, never a
+//        NOT `cqrt_ry`), a forward reassigning template producer that READS it,
+//        or — since M-B Increment 6 — an EMITTER-RECORDED Phase-4 flag strip
+//        (`TaintSet::DischargedFlagGates`) reading it in a shifted handle slot.
+//        A measure, a tape write, a copy-out, a `ret`, a φ/select, a
+//        controlled gate, a route, a clone call, a `cqrt_free` or any OTHER
+//        adjoint twin all DISQUALIFY the rail (it is observed, escaped, recorded
+//        into a kept carrier, or owned by another emitter) — safe-leak, never a
 //        decline (M-A owns loudness; the driver is LEAK-FIRST).
 //   (I4) it has at least one FORWARD consumer, else (I2) would have caught it.
 //
@@ -317,9 +319,15 @@ bool isInteriorTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
 // The per-USER half of `isInteriorTerminalHandle` (I3), exported because the DAG
 // closure scan needs the SAME answer: an interior rail's forward consumer is a
 // benign closure user (it does not make the DAG `NotClosed`) precisely when it is
-// one of the two shapes this predicate admits. Two spellings of that would be the
+// one of the shapes this predicate admits. Two spellings of that would be the
 // `railOf`/`isAbiQramStore` drift hazard again (Rule 14).
-bool isInteriorConsumer(const llvm::CallInst *C, const llvm::Value *R);
+//
+// `taint` is needed for exactly one clause — `DischargedFlagGates` membership
+// (M-B Increment 6). It is passed rather than name-matched because "is a `_unc`"
+// is TRUE of the uncompute spine's own adjoints, and admitting those would let
+// one partition free a rail another partition's adjoint still reads.
+bool isInteriorConsumer(const llvm::CallInst *C, const llvm::Value *R,
+                        const TaintSet &taint);
 
 }  // namespace cq
 

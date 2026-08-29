@@ -5,7 +5,7 @@
 #include "ChainWalk.h"
 
 #include "TaintPropagation.h"
-#include "TemplateName.h"   // isHandleSlot — the ONE shape-suffix slot table
+#include "TemplateName.h"   // isHandleSlot / isUncHandleSlot — the ONE slot table
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Function.h"
@@ -464,7 +464,8 @@ bool isTerminalHandle(Value *Handle, const TaintSet &taint) {
 
 // ── M-B INTERIOR MODE (bd test_C_libtooling-6uqc Inc 5a) — see the header ────
 
-bool isInteriorConsumer(const CallInst *C, const Value *R) {
+bool isInteriorConsumer(const CallInst *C, const Value *R,
+                        const TaintSet &taint) {
   // (a) an IN-PLACE gate on the rail itself. It mints nothing, so it belongs to
   //     R's own DAG link and is adjointed with it — but ONLY if it is a basis
   //     permutation. `cqrt_ry_<W>` is the one in-place gate that is not, and a
@@ -511,6 +512,51 @@ bool isInteriorConsumer(const CallInst *C, const Value *R) {
       if (C->getArgOperand(I) == R && !isHandleSlot(CN, I))
         return false;
     return true;
+  }
+  // (c) AN EMITTER-RECORDED PHASE-4 FLAG STRIP, reading the rail in a SHIFTED
+  //     HANDLE SLOT (bd test_C_libtooling-160a, M-B Increment 6 — clause (d2)).
+  //
+  //     The strip is the void out-first `cq_template_<cmp>_<W>_hl_unc(flag,
+  //     operands…)` a control emitter mints to return its condition flag to |0⟩
+  //     (bd `8txa`). For the CHAIN rails it names in slots 1.. it is a pure
+  //     READ: it recomputes the compare and XORs the result onto the flag,
+  //     leaving every operand exactly as the forward mint found it. That makes
+  //     it an interior consumer in the same sense as a forward producer — the
+  //     rail is dead once it has run — and admitting it is what moves the
+  //     partition's `dagInsertPoint` PAST the strip, which is the only place a
+  //     derived condition's chain may legally be discharged.
+  //
+  //     THREE FENCES, EACH LOAD-BEARING:
+  //
+  //     * MEMBERSHIP, NOT A NAME TEST. The uncompute spine's own `_unc`s and the
+  //       7.4 reverse-play wear the same suffix; admitting those would let this
+  //       partition discharge a rail another partition's adjoint still reads
+  //       (Rule 8's shared prefix, from the other side). Only a strip a control
+  //       emitter recorded AT ITS EMISSION SITE — long before `uncompute` runs —
+  //       is in `DischargedFlagGates`.
+  //     * SLOT 0 IS REFUSED (`isUncHandleSlot`). That slot is the FLAG the strip
+  //       zeroes and the emitter frees on the next line: a rail Phase 4 owns.
+  //       (The flag is already excluded by its `cqrt_free` user, which this
+  //       function refuses; this is the second, structural statement of it.)
+  //     * A LITERAL SLOT IS REFUSED, for the same reason as the forward case
+  //       (finding F5): at width i32 nothing but the symbol distinguishes the
+  //       slots.
+  //
+  //     WHAT THIS DOES **NOT** SAY is that the rail may be discharged HERE. The
+  //     positional half — that the strip has already run and never reads the
+  //     rail again — is the driver's `provablyBefore` proof, exactly as it is
+  //     for a forward producer.
+  if (taint.DischargedFlagGates.count(C)) {
+    StringRef CN = C->getCalledFunction() ? C->getCalledFunction()->getName()
+                                          : StringRef();
+    bool ReadsInHandleSlot = false;
+    for (unsigned I = 0, E = C->arg_size(); I != E; ++I)
+      if (C->getArgOperand(I) == R) {
+        if (!isUncHandleSlot(CN, I))
+          return false;
+        ReadsInHandleSlot = true;
+      }
+    return ReadsInHandleSlot;
   }
   // Everything else DISQUALIFIES the rail, and the list of what "everything
   // else" contains is the point: `cqrt_measure_*` (observed), a
@@ -562,9 +608,14 @@ bool isInteriorTerminalHandle(Value *Handle, const TaintSet &taint) {
       return false;  // `ret`, a φ/select router, a `store`, a classical `icmp` —
                      // none of them is a gate whose execution the driver can
                      // prove, and a `ret` is an escape outright.
-    if (!isInteriorConsumer(CI, Handle))
+    if (!isInteriorConsumer(CI, Handle, taint))
       return false;
-    if (!isInPlaceGateOn(CI, Handle))
+    // (I4) counts only a FORWARD producer. An in-place gate mints nothing, and
+    // a recorded flag strip is an adjoint READ — a rail whose ONLY user were the
+    // strip would mean the forward mint had already been erased, a shape no
+    // emitter produces; requiring a real forward consumer keeps that hypothetical
+    // out of the partition rather than trusting it.
+    if (!isInPlaceGateOn(CI, Handle) && !taint.DischargedFlagGates.count(CI))
       HasForwardConsumer = true;
   }
   return HasForwardConsumer;
