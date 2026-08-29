@@ -169,6 +169,33 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // closed round 1's own older half of the hole, where CLOSURE admitted a
 // `cq_measure`/`ret` of a rail value at ANY position.
 //
+// TWO PREMISES OF THAT FENCE WERE THEMSELVES WRONG (bd 8h7d.5 Rule-13 ROUND 2,
+// findings F-1 and F-2 — six findings over two rounds on one increment; assume a
+// third round finds more). The fence is stated as "no rail-relabelling gate runs
+// between the record's definition and the read", and the shipped code said two
+// narrower things:
+//
+//   F-1, THE GATE SET WAS THE CHAIN'S, NOT THE RAIL'S. `collectRailGates` read only
+//   the peeled root→PreV→phi→LatV members, so a `cq_theta` whose arg-0 IS a member
+//   but whose RESULT is off the chain — canonically a rotation applied to the
+//   loop's EXIT value — was not a gate. `mark = q; q = cq_theta(q, .125);
+//   cq_measure(mark)` emitted `cqrt_ry_i32(%h,.125); measure(%h)`, `opt` exit 0 and
+//   stage-2b clean. Ry is ALWAYS lowered in place, so unlike a value op there is no
+//   escape hatch. Each chain is now extended FORWARD through the users that keep
+//   mutating the same handle: a rotation unconditionally, a dtzb `add`/`xor` only
+//   when it is a member or already `taint.InPlaceRailOps` (an off-chain one lowers
+//   OUT of place into a FRESH rail — which is why `mark = q; q = q+9;
+//   cq_measure(mark)` is CORRECT and keeps lowering), and a phi naming the rail on
+//   SOME incoming. `clang -O1` C-reachable and CONFIRMED.
+//
+//   F-2, THE CUT'S PREMISE. `railGateBetween` suppresses every path that
+//   re-executes the record's definition, because re-executing it refreshes the
+//   record. That holds for every in-place gate and for an ordinary rail phi, and
+//   FAILS for a zero-hop identity carry `%rec = phi [%q0, entry], [%rec, latch]`,
+//   which step (1) accepts trivially and which re-executes yielding the SAME value
+//   while a sibling chain on the same mint moves the wire. A carry now refreshes
+//   only if it crosses a rail GATE (`recordRefreshedByDef`).
+//
 // The decline partition is otherwise unchanged and still LOUD: a latch incoming
 // that does not peel back to the phi is the X1 cross-iteration dirty rail
 // (`kMsgCrossIter`); a rail value with two forward in-place consumers is the

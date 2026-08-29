@@ -462,6 +462,56 @@ strongest evidence available without a simulator (Rule 2): three rolled slices,
 three unrolled twins, and three `cmp` entries in ctest
 (`e2e-grover-loop{,-derived,-offset}-twin-identical`).
 
+**ROUND 2 FOUND TWO HOLES IN THIS FENCE — in its two UNSTATED premises, not in the
+sentence above.** The sentence was always "no rail-relabelling gate runs between the
+record's definition and the read"; the code said two narrower things, and both
+narrowings were silent miscompiles.
+
+*F-1 — the gate set was the CHAIN's, not the RAIL's.* `collectRailGates` built
+`Gates` from the peeled `root→PreV→phi→LatV` members only, so a `cq_theta` whose
+arg-0 IS a member but whose RESULT is off the chain was not a gate:
+
+```c
+for (…) { if (q==5) q = cq_phi(q,PI); q = cq_theta(q,-.5); q = cq_theta(q,.5); }
+int mark = q;  q = cq_theta(q, 0.125);       /* OFF-CHAIN in-place Ry */
+return cq_measure(mark) + cq_measure(q);
+```
+
+emitted `cqrt_ry_i32(%h, 0.125); measure(%h); measure(%h)` — `opt` exit 0,
+verify-clean, STRICT stage-2b clean. Ry is ALWAYS lowered in place
+(`lowerRotations` RAUWs the result to the handle), so unlike an out-of-place value
+op there is no escape hatch. Each chain is now extended FORWARD through the users
+that keep mutating the SAME handle, with three edge kinds and each exclusion
+load-bearing: a **rotation** unconditionally (`cq_theta` is a gate, `cq_phi` is
+followed but is not — Rz is diagonal, and following it is what makes the Ry BEHIND
+an Rz visible, whose arg-0 is on no chain); a **dtzb `add`/`xor`** only when it is a
+member or already in `taint.InPlaceRailOps`, because an off-chain one is lowered OUT
+of place into a fresh rail (which is why `mark = q; q = q + 9; cq_measure(mark)` is
+CORRECT today and keeps lowering — `control_swap_inloop_postloop_railop.ll`); and a
+**phi** naming the rail on SOME incoming (`railGateBetween` is an ∃-path test, so
+"some" is the sound side). It is NOT transitive past the first gate and does not
+need to be: `Def` dominates `t1` and `t1` dominates `t2`, so every path `Def → t2`
+crosses `t1` (`lowering_reject_inloop_rail_record_theta_chain.ll` carries the proof).
+
+*F-2 — the cut's premise.* `railGateBetween` suppresses every path that re-executes
+the record's definition, on the premise that re-executing refreshes the record. True
+of every in-place gate and of an ordinary rail phi; FALSE for a zero-hop
+IDENTITY-CARRY phi `%rec = phi [%q0, entry], [%rec, latch]`, which step (1) accepts
+TRIVIALLY (`peelInPlaceBase(LatV) == &P` holds with zero steps) and which
+re-executes yielding the SAME value while a sibling chain on the same root mint
+moves the wire — so the cut removed exactly the path carrying the staleness. Stated
+generally, not as `In == P`: a carry refreshes only if it crosses a rail GATE, so an
+incoming that peels back to the phi through diagonal/renaming steps alone is the
+same frozen record wearing extra phases (`recordRefreshedByDef`). Frozen-ness is
+deliberately NOT propagated forward — a gate applied to a frozen record is itself a
+non-member read of that record at a stale position, so the fence declines at the
+record first. Fixtures: `lowering_reject_inloop_rail_record_{postloop_theta,
+onepath_theta,offchain_rz_theta,merge_theta,theta_chain}.ll` and
+`lowering_reject_inloop_rail_identity_carry.ll` (red);
+`control_swap_inloop_{postloop_railop,gatefree_body}.ll` (the two accept
+boundaries — the out-of-place post-loop add, and the gate-free body whose
+post-flatten rail phi IS an identity carry and must keep lowering).
+
 ### 2.9 The iteration-2 staleness guard is already correct — keep it (L4 boundary)
 `declineStaleRecordOps` (`OpcodeLowering.cpp:117-198`, position-aware proof
 `WireWalk.cpp:138-141`) already fires correctly on a real loop hazard: a pure

@@ -829,10 +829,33 @@ dominance (`Barrier == A` is now refused in the predicate), and a **wire-blind**
 `phiTracksWire` whose staleness test made the disposition depend on SOURCE ORDER and
 made two independent registers in one loop permanently unlowerable (now per-wire;
 `control_swap_inloop_two_registers.ll` + `slice_control_grover_loop_two_regs`).
+**THE SECOND ADVERSARIAL ROUND THEN FOUND TWO MORE HOLES IN THAT FENCE ITSELF, both
+in premises it never stated — read the count as 6 findings over 2 rounds on one
+increment, and budget a third.** (F-1, `clang -O1` C-reachable and CONFIRMED) the
+gate set was built from **chain members**, so a `cq_theta` whose arg-0 IS a member
+but whose RESULT is off the chain — canonically a rotation on the loop's EXIT value
+— was not a gate and the record collapsed stale (`mark = q; q = cq_theta(q,.125);
+cq_measure(mark)` emitted `ry(%h,.125); measure(%h)`). The gate set is now the
+RAIL's: each chain is extended FORWARD through the users that keep mutating the same
+handle — a rotation unconditionally (Ry/Rz are always lowered in place), a dtzb
+`add`/`xor` only when it is a member or already in `taint.InPlaceRailOps` (an
+off-chain one is lowered OUT of place into a FRESH rail, which is exactly why
+`mark = q; q = q + 9; cq_measure(mark)` is CORRECT today and must keep lowering), and
+a phi that names the rail on SOME incoming. Following the *diagonal* Rz hop is
+load-bearing even though Rz is never itself a gate: without it the Ry BEHIND an Rz
+has an arg-0 on no chain and is missed. (F-2) `railGateBetween`'s cut — which
+suppresses every path that re-executes the record's definition, on the premise that
+re-executing refreshes it — is FALSE for a zero-hop **identity-carry** phi
+(`%rec = phi [%q0, entry], [%rec, latch]`, which step (1) accepts trivially): it
+re-executes yielding the SAME value while a sibling chain on the same mint moves the
+wire, so the cut removed exactly the path carrying the staleness. A carry now
+refreshes only if it crosses a rail GATE.
 Read bd memories [`inloop-control-rolled-8h7d5`],
 [`inloop-rail-record-escape-closure-8h7d5`],
 [`peractivation-barrier-must-not-be-subject-p1`],
 [`per-wire-staleness-not-source-order-od1`],
+[`offchain-forward-ry-is-a-rail-gate`],
+[`identity-carry-phi-does-not-refresh`],
 [`d8jl-correction-flatten-repairs-headerphi`] and
 [`provably-before-per-activation`] before touching any of it. IN-LOOP VALUE
 (method-B) arms, depth-2 nests, `switch`, the 6.5 classical-call arm, irreducible

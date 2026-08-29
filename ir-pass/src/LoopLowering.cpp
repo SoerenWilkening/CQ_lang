@@ -285,17 +285,94 @@ bool isMeasureCall(const Instruction *I) {
 //     A rule keyed on "which member is it" could not tell that apart from the
 //     rotated shape, where the same read is the miscompile above.
 //
-// WHICH MEMBERS COUNT AS GATES. Exactly the ones that relabel the computational
-// basis: `cq_theta` (Ry) and the dtzb in-place `add`/`xor` (a permutation of the
-// register). `cq_phi` (Rz) is DIAGONAL and is deliberately NOT a gate here — the
-// shipped reading of the whole stale-record family (WireWalk.h, bd memory
-// rz-diag-flag-strip-invariant), and the reason control_swap_inloop_diamond.ll's
-// post-loop read of a pure-Rz rail keeps lowering. A PHINode member is a renaming,
-// not a gate. Gates from a DIFFERENT rail are not consulted: they mutate another
-// wire and say nothing about this record (bd `hcrg`'s lesson in reverse — fence
-// the unitary, not the bookkeeping).
+// WHICH INSTRUCTIONS COUNT AS GATES. Exactly the ones that relabel the
+// computational basis ON THIS RAIL: `cq_theta` (Ry) and the dtzb in-place
+// `add`/`xor` (a permutation of the register). `cq_phi` (Rz) is DIAGONAL and is
+// deliberately NOT a gate — the shipped reading of the whole stale-record family
+// (WireWalk.h, bd memory rz-diag-flag-strip-invariant), and the reason
+// control_swap_inloop_diamond.ll's post-loop read of a pure-Rz rail keeps lowering.
+// A PHINode is a renaming, not a gate. Gates from a DIFFERENT rail are not
+// consulted: they mutate another wire and say nothing about this record (bd
+// `hcrg`'s lesson in reverse — fence the unitary, not the bookkeeping).
+//
+// "ON THIS RAIL" AND NOT "ON THIS CHAIN" — that word is finding F-1 of the SECOND
+// Rule-13 round, and it was a CONFIRMED silent miscompile until 2026-08-30. The
+// gate set was built from the peeled chain's own members, and a rail is bigger
+// than its chain: see `collectRailGates` for the forward extension and for the
+// three edge kinds it follows.
 constexpr char kMsgRailRecordStale[] =
     "cq loop lowering: rail record read past an in-place gate on the same rail";
+
+// Does re-executing `Def` REFRESH the record — i.e. does the value `Def` produces
+// on its next activation name the state the register holds right then? The
+// `railGateBetween` walk below cuts every path that re-runs `Def` on exactly that
+// premise, so this is the premise's proof (bd 8h7d.5 Rule-13 ROUND 2, finding
+// F-2: shipped as an unconditional cut, and one rail shape falsifies it).
+//
+// A def refreshes iff re-executing it RE-READS THE WIRE. Every in-place gate does
+// by construction (it applies its gate to whatever the register currently holds,
+// so its result IS the post-gate state), and so does an ordinary rail phi, whose
+// carry brings back the value the gates just produced. The one shape that does
+// NOT is a phi that carries ITSELF around the loop with no gate on the carry:
+//
+//     %rec = phi i32 [ %q0, %entry ], [ %rec, %latch ]      ; a ZERO-HOP carry
+//
+// which step (1) accepts as a rail (`peelInPlaceBase(LatV) == &P` holds
+// TRIVIALLY). It re-executes every iteration and yields the SAME value every
+// time, so it is a FROZEN alias of the mint — while a sibling chain on the same
+// root mint moves the wire underneath it. The cut then suppressed exactly the
+// path that carried the staleness, and `%acc = mul %rec, 7` read iteration k's
+// register through iteration 0's name (probe `pd1_identity_carry.ll`).
+//
+// STATED GENERALLY, not as a special case for `In == P`. A carry refreshes only
+// if it crosses a rail GATE: an incoming that peels back to the phi itself
+// through diagonal / renaming steps only (`cq_phi`/Rz, a re-entrant rename) is
+// the same frozen record wearing extra phases, and a basis-relabelling `cq_theta`
+// or in-place `add`/`xor` on the carry is what makes it a genuine rotating rail
+// (the customer's own header phi: its latch incoming peels back through the body
+// `cq_theta`s, so it refreshes and the cut stands).
+//
+// FROZEN-NESS IS DELIBERATELY NOT PROPAGATED FORWARD, and that is a conclusion,
+// not an omission. A gate applied to a frozen record (`%z = cq_theta(%rec, a)`)
+// is ITSELF a non-member read of `%rec` at a position where a sibling gate has
+// already moved the wire — so the fence declines at `%rec` before any read of
+// `%z` is ever reached. The only way `%z` is NOT such a read is when it is a
+// chain MEMBER, i.e. when `%rec`'s own carry runs through it, and then `%rec`
+// refreshes and there was nothing frozen to propagate.
+//
+// CONSERVATIVE DIRECTION: answering "no" only ever REMOVES a cut, which only ever
+// adds declines, so `false` is the safe default and any shape this cannot classify
+// belongs on that side. Every non-phi member is classified, not defaulted: a rail
+// member is a phi, an in-place rotation, an in-place `add`/`xor`, or the root mint,
+// and each of the last three produces the register state as of its own execution.
+// The carry walk terminates for the reason `peelInPlaceBase` does — each step
+// ascends the arg-0 / rail-operand def chain, acyclic in SSA, and a phi ends it.
+bool recordRefreshedByDef(const Instruction *Def,
+                          const SmallPtrSetImpl<CallInst *> &GateCalls,
+                          const TaintSet &taint,
+                          const SmallPtrSetImpl<const Instruction *> &Gates) {
+  const auto *P = dyn_cast<PHINode>(Def);
+  if (!P)
+    return true;  // an in-place gate: its result is the post-gate register.
+  for (Value *In : P->incoming_values()) {
+    // Walk the carry back through in-place steps. Reaching `P` without crossing
+    // a GATE is a frozen self-carry; crossing a gate first (or landing on some
+    // other base) is a real refresh for this edge.
+    Value *V = In;
+    while (true) {
+      if (V == P)
+        return false;  // gate-free self-carry — the record never moves.
+      if (auto *I = dyn_cast<Instruction>(V))
+        if (Gates.count(I))
+          break;  // the carry relabels the basis — this edge refreshes.
+      Value *Next = peelInPlaceStep(V, GateCalls, taint);
+      if (!Next)
+        break;  // a different base — not a self-carry.
+      V = Next;
+    }
+  }
+  return true;
+}
 
 // Is there an execution path `Def` → (some `Gates` member) → `Read` that never
 // re-executes `Def`? EXACT two-state product walk over the CFG: the state is
@@ -305,13 +382,19 @@ constexpr char kMsgRailRecordStale[] =
 // a back edge re-entering it from the top is a genuinely different traversal —
 // and one that hits `Def` and CUTS, which is the record refresh.
 //
+// The cut is CONDITIONAL on `DefRefreshes` (`recordRefreshedByDef` above). Cutting
+// is exactly equivalent to RESTARTING the walk at `Def` with `sawGate` cleared,
+// which the seed scan already explores — which is why cutting is sound whenever
+// the premise holds, and unsound the moment it does not.
+//
 // Deliberately NOT `llvm::isPotentiallyReachable`: that helper's exclusion set is
 // per-BLOCK and it bails `true` past a scan limit, and both endpoints here
 // routinely live in the SAME block as the barrier (the flattened loop body is one
 // block). The same two reasons `WireWalk::reachesWithoutBarrier` and
 // `ControlDetect::regionEntryInLoop` hand-roll their walks.
 bool railGateBetween(const Instruction *Def, const Instruction *Read,
-                     const SmallPtrSetImpl<const Instruction *> &Gates) {
+                     const SmallPtrSetImpl<const Instruction *> &Gates,
+                     bool DefRefreshes) {
   SmallPtrSet<const BasicBlock *, 32> Seen[2];
   SmallVector<std::pair<const BasicBlock *, bool>, 32> Work;
   {  // seed: the tail of `Def`'s own block, from just after `Def`.
@@ -332,7 +415,7 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
       continue;
     bool Cut = false, S2 = Saw;
     for (const Instruction &I : *B) {
-      if (&I == Def) {
+      if (&I == Def && DefRefreshes) {
         Cut = true;  // the record is re-established — a different activation.
         break;
       }
@@ -359,18 +442,108 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 // zero-trip guard's exit phi (`phi [PreV, guard], [LatV, latchexit]`, both
 // incomings on the rail and both correct on their own edge) would be refused and
 // slice_control_grover_loop_dynamic would stop lowering.
+//
+// THE GATE SET IS THE RAIL'S, NOT THE CHAIN'S (bd 8h7d.5 Rule-13 ROUND 2, finding
+// F-1 — shipped reading the chain only, which was a CONFIRMED silent miscompile).
+// `Members` is the peeled root→PreV→phi→LatV chain, and a gate can sit on the
+// same PHYSICAL register without being on it. The canonical shape is a rotation
+// applied to the loop's EXIT value:
+//
+//     for (…) { if (q==5) q = cq_phi(q,PI); q = cq_theta(q,-.5); q = cq_theta(q,.5); }
+//     int mark = q;  q = cq_theta(q, 0.125);   /* arg-0 IS a member, RESULT is not */
+//     return cq_measure(mark) + cq_measure(q);
+//
+// which emitted `cqrt_ry_i32(%h, 0.125); measure(%h); measure(%h)` — `mark` names
+// the pre-Ry record and is measured AFTER it. `opt` exit 0, verify-clean, STRICT
+// stage-2b clean. Ry is ALWAYS lowered in place (`lowerRotations` RAUWs the result
+// to the handle), so unlike an out-of-place value op there is no escape hatch: the
+// wire moves and every earlier name goes stale.
+//
+// So the rail is extended FORWARD from the chain, through exactly the users that
+// keep mutating the SAME handle, and every basis-relabelling one of those is a
+// gate. Three edge kinds are followed, and each exclusion is load-bearing:
+//
+//   * an IN-PLACE ROTATION (`isInPlaceGateOnArg0`) — unconditionally, because
+//     `cq_theta`/`cq_phi` are always lowered in place. `cq_theta` is a GATE (Ry
+//     relabels the basis); `cq_phi` is followed but is NOT a gate (Rz is diagonal
+//     — the shipped reading of the whole stale-record family, bd memory
+//     `rz-diag-flag-strip-invariant`). Following the diagonal one matters: it is
+//     what catches `mark = q; q = cq_phi(q,a); q = cq_theta(q,b);`, where the Ry's
+//     arg-0 is the Rz result and therefore not a chain member (probe g1).
+//
+//   * an in-place VALUE self-update (dtzb `add`/`xor`) — ONLY when it is a chain
+//     member or already in `taint.InPlaceRailOps`. An off-chain one is lowered
+//     OUT of place by the M-C decision into a FRESH rail, so it neither moves this
+//     register nor carries it forward; counting it would refuse
+//     `mark = q; q = q + 9; measure(mark);`, which is CORRECT today precisely
+//     because the add lands on a new rail (probe t9). The walk STOPS there for the
+//     same reason — a `cq_theta` on that add's result rotates the fresh rail.
+//
+//   * a PHI with SOME incoming already on the rail — a merge that names this
+//     register on at least one edge, so a rotation applied to it moves this wire
+//     on that edge. `railGateBetween` is an ∃-path test, so "some" (not "all") is
+//     the sound side; a phi that also merges a foreign value only ever adds
+//     declines. Without it `mark = q; if (n) q = cq_phi(q,a); q = cq_theta(q,b);`
+//     is missed (probe g3).
+//
+// NOT TRANSITIVE PAST THE FIRST GATE, and it does not need to be. If `t2 =
+// cq_theta(t1, …)` with `t1 = cq_theta(m, …)` and `m` a member, then `Def` (m's
+// def) dominates `t1` and `t1` dominates `t2`, so EVERY path from `Def` to `t2`
+// crosses `t1`: a `Def`→`t2` path avoiding `t1` could be prefixed by a simple
+// entry→`Def` path (which cannot visit `t1`'s block — `Def` dominates it, so the
+// path would have to repeat `Def`'s block) to give an entry→`t2` path avoiding
+// `t1`, contradicting the dominance. `t1` alone therefore fires the fence at every
+// position `t2` would. The forward walk IS still a FIXPOINT, for a different
+// reason: the three edge kinds chain (an Rz hop, then a merge phi, then the Ry
+// that is the actual gate), and a phi only becomes claimable once one of its
+// incomings has joined — which can happen after the phi was first visited.
 void collectRailGates(ArrayRef<Value *> Members,
                       const SmallPtrSetImpl<CallInst *> &GateCalls,
                       const TaintSet &taint,
                       SmallPtrSetImpl<const Instruction *> &Gates) {
-  for (Value *V : Members) {
-    if (auto *CI = dyn_cast<CallInst>(V)) {
-      const Function *F = CI->getCalledFunction();
-      if (GateCalls.count(CI) && F && F->getName().starts_with("cq_theta_"))
+  // Everything proven to be on this rail — the chain, plus the forward extension.
+  SmallPtrSet<const Value *, 32> OnRail(Members.begin(), Members.end());
+  SmallVector<Value *, 32> Work(Members.begin(), Members.end());
+
+  auto noteGate = [&](Instruction *I) {
+    if (auto *CI = dyn_cast<CallInst>(I)) {
+      const Function *Fn = CI->getCalledFunction();
+      if (GateCalls.count(CI) && Fn && Fn->getName().starts_with("cq_theta_"))
         Gates.insert(CI);  // Ry — relabels the basis.
-    } else if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+    } else if (auto *BO = dyn_cast<BinaryOperator>(I)) {
       if (inPlaceValueRailOperand(BO, taint))
         Gates.insert(BO);  // dtzb `cqrt_{addc,xorc}` — a basis permutation.
+    }
+  };
+
+  for (Value *V : Members)
+    if (auto *I = dyn_cast<Instruction>(V))
+      noteGate(I);
+
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    for (User *U : V->users()) {
+      auto *I = dyn_cast<Instruction>(U);
+      if (!I || OnRail.count(I))
+        continue;
+      bool OnThisRail = false;
+      if (auto *P = dyn_cast<PHINode>(I)) {
+        if (!taint.Tainted.count(P))
+          continue;  // a classical merge cannot be this register.
+        for (Value *In : P->incoming_values())
+          if (OnRail.count(In))
+            OnThisRail = true;
+      } else if (auto *CI = dyn_cast<CallInst>(I)) {
+        OnThisRail = isInPlaceGateOnArg0(CI, V, GateCalls, taint);
+      } else if (auto *BO = dyn_cast<BinaryOperator>(I)) {
+        OnThisRail = inPlaceValueRailOperand(BO, taint) == V &&
+                     taint.InPlaceRailOps.count(BO);
+      }
+      if (!OnThisRail)
+        continue;
+      OnRail.insert(I);
+      Work.push_back(I);
+      noteGate(I);
     }
   }
 }
@@ -380,10 +553,15 @@ void collectRailGates(ArrayRef<Value *> Members,
 // themselves survive that erase, the members do not.
 Instruction *staleReadOfValue(Value *V,
                               const SmallPtrSetImpl<const Value *> &Members,
-                              const SmallPtrSetImpl<const Instruction *> &Gates) {
+                              const SmallPtrSetImpl<const Instruction *> &Gates,
+                              const SmallPtrSetImpl<CallInst *> &GateCalls,
+                              const TaintSet &taint) {
   auto *Def = dyn_cast<Instruction>(V);
   if (!Def)
     return nullptr;
+  // Asked ONCE per record: whether re-executing this def re-reads the wire is a
+  // property of the def, not of the consumer (bd 8h7d.5 Rule-13 round 2, F-2).
+  const bool Refreshes = recordRefreshedByDef(Def, GateCalls, taint, Gates);
   for (User *U : V->users()) {
     auto *UI = dyn_cast<Instruction>(U);
     if (!UI || Members.count(UI))
@@ -391,11 +569,12 @@ Instruction *staleReadOfValue(Value *V,
     if (auto *P = dyn_cast<PHINode>(UI)) {
       for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i)
         if (P->getIncomingValue(i) == V &&
-            railGateBetween(Def, P->getIncomingBlock(i)->getTerminator(), Gates))
+            railGateBetween(Def, P->getIncomingBlock(i)->getTerminator(), Gates,
+                            Refreshes))
           return P;
       continue;
     }
-    if (railGateBetween(Def, UI, Gates))
+    if (railGateBetween(Def, UI, Gates, Refreshes))
       return UI;
   }
   return nullptr;
@@ -408,9 +587,17 @@ Instruction *staleRailRecordRead(ArrayRef<Value *> Members,
   SmallPtrSet<const Instruction *, 8> Gates;
   collectRailGates(Members, GateCalls, taint, Gates);
   if (Gates.empty())
-    return nullptr;  // a pure-Rz rail: diagonal throughout, no record can stale.
+    return nullptr;
+  // NOTE, so the next reader does not mis-read that early-out as "the pure-Rz rail
+  // exits here". It does not. An accepted rail's chain contains its ROOT MINT, and
+  // taint has exactly one source (Rule 3), so the mint is a `cq_theta` and `Gates`
+  // holds at least it. A pure-Rz loop body therefore reaches the walk below and
+  // passes it on POSITION: the mint sits outside the loop and is never re-reachable,
+  // so no `Def → gate → read` path exists
+  // (control_swap_inloop_{diamond,gatefree_body}.ll). The early-out is a defensive
+  // guard for a chain that somehow carries no gate at all, not the diagonal case.
   for (Value *V : Members)
-    if (Instruction *Bad = staleReadOfValue(V, MemberSet, Gates))
+    if (Instruction *Bad = staleReadOfValue(V, MemberSet, Gates, GateCalls, taint))
       return Bad;
   return nullptr;
 }
@@ -2058,7 +2245,8 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
         continue;  // not one of this round's roots — nothing snapshotted.
       SmallPtrSet<const Value *, 16> Skip(LIt->second);
       Skip.insert(KV.first);
-      if (Instruction *Bad = staleReadOfValue(KV.first, Skip, GIt->second)) {
+      if (Instruction *Bad =
+              staleReadOfValue(KV.first, Skip, GIt->second, GateCalls, taint)) {
         diagnose(Bad, kMsgRailRecordStale);
         return RailRound2::Declined;
       }
