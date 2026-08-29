@@ -607,6 +607,20 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
     // it has its own affirmative proof.
     if (LI.getLoopFor(&BB))
       continue;
+    // REACHABILITY FIRST — the same trap the M-A guard's Rule-13 round hit (its
+    // F3 finding). `provablyBefore` is `DT.dominates(A, B) &&
+    // !isPotentiallyReachable(B, A)`, and BOTH halves are VACUOUSLY TRUE for an
+    // instruction in a block with no entry path: LLVM's dominator tree treats an
+    // unreachable block as dominated by everything, and nothing is reachable
+    // from it. So without this test a rail in a dead block would pass the whole
+    // positional proof for free, and — worse — its consumer's `getNextNode()`
+    // would join the anchor set and could place the entire reversal inside a
+    // block that never executes, silently dropping every adjoint and every free
+    // the group was supposed to emit. Skip such blocks; the group's owned rails
+    // are then all reachable, and the user scan below rejects any rail whose
+    // consumer is not.
+    if (!DT.isReachableFromEntry(&BB))
+      continue;
     for (Instruction &I : BB) {
       auto *H = dyn_cast<CallInst>(&I);
       if (!H)
@@ -638,7 +652,34 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
   //    A candidate that fails is DROPPED, which can only move `At` earlier, which
   //    can only break more candidates — hence the bounded fixpoint. Failure to
   //    converge leaks the whole group (never a wrong placement).
-  SmallPtrSet<Value *, 16> Owned(Cand.begin(), Cand.end());
+  // PRE-FILTER, PER RAIL: a rail whose consumer cannot anchor is dropped here
+  // rather than killing the group, so the discrimination stays per rail like
+  // every other refusal in this partition. Three ways a consumer cannot anchor:
+  //   * it is not an `Instruction` — (I3) already guarantees it is a `CallInst`,
+  //     but the check is kept so a future widening of that predicate degrades to
+  //     a leak instead of undefined behaviour in a release build;
+  //   * its block is UNREACHABLE — `provablyBefore` is vacuously true there
+  //     (the M-A guard's F3 trap, reached from the other side), and its
+  //     `getNextNode()` could drag the nearest common post-dominator into a block
+  //     that never executes, silently dropping the whole reversal;
+  //   * it sits in terminator position, so there is no next node to anchor on.
+  SmallPtrSet<Value *, 16> Owned;
+  for (CallInst *R : Cand) {
+    bool Anchorable = true;
+    for (User *U : R->users()) {
+      auto *UI = dyn_cast<Instruction>(U);
+      if (!UI || !DT.isReachableFromEntry(UI->getParent()) ||
+          !UI->getNextNode()) {
+        Anchorable = false;
+        break;
+      }
+    }
+    if (Anchorable)
+      Owned.insert(R);
+  }
+  if (Owned.empty())
+    return;
+
   Instruction *At = nullptr;
   bool Converged = false;
   for (unsigned Round = 0; Round < 8 && !Owned.empty(); ++Round) {
@@ -646,13 +687,8 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
     for (CallInst *R : Cand) {
       if (!Owned.count(R))
         continue;
-      for (User *U : R->users()) {
-        auto *UI = cast<Instruction>(U);  // vetted by (I3): every user is a call
-        Instruction *Nx = UI->getNextNode();
-        if (!Nx)
-          return;  // a consumer in terminator position — no anchor exists.
-        Anchors.push_back(Nx);
-      }
+      for (User *U : R->users())
+        Anchors.push_back(cast<Instruction>(U)->getNextNode());
     }
     if (Anchors.empty())
       return;
@@ -665,7 +701,9 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
         continue;
       for (User *U : R->users())
         if (!provablyBefore(cast<Instruction>(U), At, DT)) {
-          Owned.erase(R);
+          Owned.erase(R);  // reachable by construction — the anchor scan above
+                           // returns outright on an unreachable or non-instruction
+                           // user, so this `cast` cannot be the vacuous case.
           Dropped = true;
           break;
         }
@@ -820,6 +858,12 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
         return;  // a φ/select ROUTES the same physical rail (bd tayx), a `store`
                  // escapes it, and none of them is a gate whose position this
                  // scan can reason about — leak rather than guess.
+      if (!DT.isReachableFromEntry(M->getParent()))
+        continue;  // a mutation that can never execute cannot move P. Vacuous
+                   // truth is the SAFE direction here — unlike in the anchor
+                   // scan, where it would have hidden a missing proof — but it is
+                   // made explicit so the two uses of reachability are not read
+                   // as one rule.
       if (preservesBorrowedParent(M, P))
         continue;
       if (provablyBefore(M, First, DT))
