@@ -62,8 +62,16 @@
 ;
 ; So this file still measures exactly what it always measured — the ANCESTOR pass plus the descendants-of-every-ancestor pass, the only route that reaches a dead sibling standing under a LIVE ancestor — on a
 ; program where the record really is still standing. The version WITHOUT the
-; `cqrt_x` is now an accept, and lowering_live_record_mb_discharged_accept.ll
+; `cqrt_x` is now an accept, and lowering_live_record_mb_anc_dead_sibling_accept.ll
 ; is the twin that pins it.
+;
+; THAT TWIN IS NOT A PLACEHOLDER — the un-fenced stream was READ, LINE BY LINE,
+; in the Increment-5 Rule-13 round (REVIEW lens C) and is sound: `mul_unc(%b, %h, 3)` recomputes `3a` from the borrowed wire and
+; XORs it away, so `%b` is |0> on every branch before its `cqrt_free`, and the
+; measured sibling `%c` keeps its own record untouched.
+; The reviewer measured the un-fenced module DECLINING at c36934a and LOWERING
+; on this build, so the flip is a real behaviour change that is pinned in BOTH
+; directions — this file for the still-standing record, the twin for the lift.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

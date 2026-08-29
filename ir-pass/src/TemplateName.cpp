@@ -66,6 +66,54 @@ std::string compareName(StringRef op, StringRef pred, StringRef width,
       .str();
 }
 
+bool isHandleSlot(StringRef symbol, unsigned argIdx) {
+  // A NEW `Shape` ENUMERATOR MUST BE ADDED TO THE TABLE BELOW. The suffix half
+  // is inverted from `shapeSuffix` itself (so a renamed token cannot drift),
+  // but the SLOT LAYOUT is spelled here and in `WidthDispatch::dataTemplateFn`'s
+  // FunctionType construction, which are the only two places that know it. This
+  // assert is what stops a third shape being added to one and not the other.
+  static_assert(static_cast<int>(Shape::TernaryQLL) == 7,
+                "new Shape added — extend the handle-slot table below");
+  if (!symbol.starts_with("cq_template_"))
+    return false;  // the `cqrt_*` core ABI is not this grammar — fail closed.
+  if (argIdx > 2)
+    return false;  // no template arity exceeds 3 (the fma family).
+  // THE FORWARD UNCONTROLLED FORM ONLY. Every symbol on the trailing
+  // `[_controlled][_inv]` / `_unc` axis SHIFTS the slots relative to its base —
+  // the void `_unc` twin `EmitInverse` mints takes the rail OUT-FIRST
+  // (`f_unc(out, operands…)`), and a `_controlled` form prepends a flag — so
+  // stripping the token and reading the base mask would answer confidently and
+  // WRONGLY. Refuse instead: `false` for every slot, which is "not proven a
+  // handle slot", the leak direction for the one caller
+  // (`ChainWalk::isInteriorConsumer`, whose `isTemplateProducer` gate already
+  // excludes all three families, so this is defence in depth rather than a live
+  // path).
+  StringRef N = symbol;
+  if (N.ends_with("_unc") || N.ends_with("_inv") || N.contains("_controlled"))
+    return false;
+  // The handle-slot bitmask per shape, bit i = "slot i is a handle".
+  //   HL  (handle, literal)                  → 0b001
+  //   LH  (literal, handle)                  → 0b010
+  //   QQL (handle, handle, literal)          → 0b011
+  //   QLQ (handle, literal, handle)          → 0b101
+  //   QLL (handle, literal, literal)         → 0b001
+  // (the fma first slot is always a handle — see the `Shape` doc comment).
+  static const struct {
+    Shape S;
+    unsigned Mask;
+  } Table[] = {
+      {Shape::HL, 0b001},         {Shape::LH, 0b010},
+      {Shape::TernaryQQL, 0b011}, {Shape::TernaryQLQ, 0b101},
+      {Shape::TernaryQLL, 0b001},
+  };
+  for (const auto &Row : Table)
+    if (N.ends_with(shapeSuffix(Row.S)))
+      return (Row.Mask >> argIdx) & 1u;
+  // No shape token: `Shape::QQ`, `Shape::Unary`, `Shape::TernaryQQQ` and every
+  // cast symbol — all of whose operands are handles.
+  return true;
+}
+
 std::string castName(StringRef op, StringRef fromW, StringRef toW,
                      bool controlled, bool inverse) {
   // cq_template_<op>_<from>_to_<to>[_controlled][_inv]. Unary at the IR

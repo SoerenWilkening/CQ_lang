@@ -5,6 +5,7 @@
 #include "ChainWalk.h"
 
 #include "TaintPropagation.h"
+#include "TemplateName.h"   // isHandleSlot — the ONE shape-suffix slot table
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Function.h"
@@ -485,8 +486,32 @@ bool isInteriorConsumer(const CallInst *C, const Value *R) {
   //     moved on. It is only as a PRODUCER (i.e. as the rail itself) that Inc 5
   //     excludes the QRAM surface — that exclusion lives in
   //     `isInteriorTerminalHandle`, not here.
-  if (isTemplateProducer(C))
+  //
+  //     …AND THE RAIL MUST BE READ IN A HANDLE SLOT (bd test_C_libtooling-4p7j
+  //     Rule-13 round, finding F5). "Is a template producer" says the call has
+  //     no mutating slot; it does not say the rail reached a QUANTUM operand.
+  //     `cq_template_add_i32_hl(%h, %rail)` reads the rail in the CLASSICAL
+  //     literal slot, and at width i32 both slots are `i32` in the IR — only
+  //     the symbol's shape suffix distinguishes them, so the test is
+  //     `TemplateName::isHandleSlot`, the inverse of the one table that spells
+  //     that suffix (Rule 14 — a second slot table here is the `railOf` drift
+  //     hazard). No emitter in the pass can mint such a call (`ArithLowering`
+  //     chooses `_hl`/`_lh` precisely to put the handle in the handle slot and a
+  //     `Constant` in the other), so this refuses only hand-written IR — the
+  //     leak direction, pinned by
+  //     lowering_uncompute_interior_leak_literal_slot.ll.
+  if (isTemplateProducer(C)) {
+    StringRef CN = C->getCalledFunction()->getName();
+    // `cqrt_qram_load_<W>(arr, idx)` is the one admitted non-`cq_template_`
+    // producer and BOTH its operands are handles (an array token and an index
+    // rail) — the frozen 7.5 ABI, `runtime/cq_runtime.h`.
+    if (CN.starts_with("cqrt_qram_load_"))
+      return true;
+    for (unsigned I = 0, E = C->arg_size(); I != E; ++I)
+      if (C->getArgOperand(I) == R && !isHandleSlot(CN, I))
+        return false;
     return true;
+  }
   // Everything else DISQUALIFIES the rail, and the list of what "everything
   // else" contains is the point: `cqrt_measure_*` (observed), a
   // `cqrt_tape_write_*` / `cqrt_copy_*` (recorded into a kept carrier the

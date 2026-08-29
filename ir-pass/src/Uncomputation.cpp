@@ -150,6 +150,45 @@ bool blockCanRepeat(BasicBlock *BB) {
   return false;
 }
 
+// `blockCanRepeat` with the natural-loop FAST PATH in front and one DFS per
+// distinct block, so the two drivers below can afford to ask it PER GATE rather
+// than once per group.
+//
+// WHY IT IS ASKED PER GATE AT ALL (bd test_C_libtooling-4p7j Rule-13 round,
+// finding F1). Both drivers used `LoopInfo::getLoopFor` for their acyclic
+// backstops and only the FINAL-`At` test used `blockCanRepeat`. `LoopInfo` sees
+// NATURAL loops only, so an IRREDUCIBLE cycle (two entries, no dominating
+// header) returned null for its blocks while executing them K times — and an
+// in-place gate inside such a cycle was adjointed ONCE at the exit, leaving the
+// rail at `f(h) + (K-1)·δ` when `cqrt_free` reset it: a hidden measurement
+// (Rule 6), `opt` rc=0 and verify-clean, on BOTH partitions (the dead-terminal
+// spine's instance pre-dates M-B — `lowering_uncompute_leak_irreducible_dead_spine.ll`).
+//
+// `blockCanRepeat` is a strict SUPERSET of `LoopInfo::getLoopFor != null` (every
+// block of a natural loop is reachable from itself), so nothing that lowered
+// before stops lowering: the only behaviour that changes is the irreducible
+// case, which no `clang -O1` output in the tree contains (zero goldens moved).
+// The `LoopInfo` call is kept in front purely as the O(1) answer for the common
+// case.
+class RepeatOracle {
+public:
+  explicit RepeatOracle(LoopInfo &LI) : LI(LI) {}
+  bool operator()(BasicBlock *BB) {
+    if (LI.getLoopFor(BB))
+      return true;
+    auto It = Cache.find(BB);
+    if (It != Cache.end())
+      return It->second;
+    bool R = blockCanRepeat(BB);
+    Cache[BB] = R;
+    return R;
+  }
+
+private:
+  LoopInfo &LI;
+  DenseMap<BasicBlock *, bool> Cache;
+};
+
 // The single insertion point for the whole-DAG reversal: the nearest common
 // POST-dominator of every terminal's last-use anchor, after the latest anchor in
 // that block (else its first insertion point, after φ-nodes). Null if the anchors
@@ -398,9 +437,19 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
   // iteration). The explicit re-confirmation that every gate is in an
   // iteration-local block is the Rule-13 backstop (a DAG that walked outside the
   // loop is leaked, never reversed).
+  //
+  // THE PREDICATE IS `canRepeat`, NOT `LoopInfo` (bd 4p7j Rule-13 finding F1):
+  // an IRREDUCIBLE cycle is not a natural loop, `getLoopFor` returns null for
+  // its blocks, and a gate inside one was reversed ONCE for K executions —
+  // measured on `main`, `opt` rc=0 and verify-clean, freeing a rail holding
+  // `5h + 7(K-1)` (`lowering_uncompute_leak_irreducible_dead_spine.ll`). The
+  // new test is a strict superset of the old one, so the natural-loop
+  // behaviour — including the 7.3 exception below, whose blocks are in a
+  // natural loop either way — is unchanged.
+  RepeatOracle canRepeat(LI);
   bool InLoop = false;
   for (CallInst *G : D.Calls)
-    if (LI.getLoopFor(G->getParent())) {
+    if (canRepeat(G->getParent())) {
       InLoop = true;
       break;
     }
@@ -574,6 +623,18 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P) {
   // a `cqrt_copy_*` destination, every `_unc`/`_inv` adjoint, a `cqrt_free`, and
   // `cqrt_measure_*` (a collapse — sound to read past in principle, refused here
   // because "in principle" is what this project's history says not to trust).
+  //
+  // "REFUSED HERE" IS NOT "REFUSED" (bd 4p7j Rule-13 finding F6). This function
+  // only decides whether a user is PROVEN read-only, i.e. whether the caller may
+  // skip the positional test; a user it refuses still gets the two-disjunct
+  // interval scan. A `cqrt_measure_*` of the parent AFTER `At` is admitted by
+  // the RIGHT disjunct, and soundly: the adjoints are inserted before `At`, and
+  // `provablyBefore(At, M)` says every path to the collapse runs through `At`
+  // and never returns, so the whole reversal has already executed when the
+  // measurement happens. Nothing reads a register across a collapse. Pinned by
+  // lowering_uncompute_interior_qram_parent_measured_after.ll (a 7.5 QROM load
+  // rail as the borrowed parent), which is also the only fixture exercising
+  // RIGHT over a user that is neither a rotation nor a route.
   return false;
 }
 
@@ -597,6 +658,7 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
   //    rail another owner holds. The subtractions mirror terminal selection's,
   //    one for one, because an interior rail is selected by a DIFFERENT predicate
   //    and would otherwise slip past images that are load-bearing there.
+  RepeatOracle canRepeat(LI);
   SmallVector<CallInst *, 16> Cand;  // program order — FileCheck-stable
   for (BasicBlock &BB : F) {
     // (§2.9) The acyclic backstop, applied PER CANDIDATE rather than per group: a
@@ -605,7 +667,12 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
     // re-allocated rail K−1 times too many. Inc 5 leaves every loop rail
     // allocated; the 7.3 iteration-local group is the only in-loop reversal and
     // it has its own affirmative proof.
-    if (LI.getLoopFor(&BB))
+    //
+    // `canRepeat`, NOT `LoopInfo` (bd 4p7j Rule-13 finding F1): a rail minted
+    // inside an IRREDUCIBLE cycle is re-minted per trip exactly as a loop rail
+    // is, while `getLoopFor` returns null for it
+    // (`lowering_uncompute_interior_leak_irreducible_mint.ll`).
+    if (canRepeat(&BB))
       continue;
     // REACHABILITY FIRST — the same trap the M-A guard's Rule-13 round hit (its
     // F3 finding). `provablyBefore` is `DT.dominates(A, B) &&
@@ -625,6 +692,22 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
       auto *H = dyn_cast<CallInst>(&I);
       if (!H)
         continue;
+      // BELT-AND-BRACES, MEASURED AS SUCH (bd 4p7j Rule-13 finding F4g). Every
+      // rail in these four sets already fails `isInteriorTerminalHandle` on its
+      // own: each of them has a user `isInteriorConsumer` refuses — a
+      // `cqrt_cswap` route or a `_controlled` gate for a Phase-4 flag / work /
+      // merge rail, a `cqrt_tape_write_*` for an output rail, a `cqrt_free` or
+      // an `_unc` for a graveyard one. So the subtraction removes nothing today
+      // and no fixture discriminates it.
+      //
+      // It is kept because the ALTERNATIVE failure is silent: these sets are the
+      // shipped statement of "another owner holds this rail", the interior
+      // predicate is a DIFFERENT predicate from terminal selection (which
+      // subtracts them for real), and a future widening of `isInteriorConsumer`
+      // — admitting `cqrt_x`, say, or a controlled copy — would hand this
+      // partition a rail Phase 4 is still routing, with no diagnostic anywhere.
+      // Two lines of subtraction against that is the right trade; do not
+      // "simplify" them away on the grounds that they never fire.
       if (taint.ControlOwnedRails.count(H) || taint.OutputRails.count(H) ||
           taint.GraveyardRails.count(H) || taint.UntaintedMergeRails.count(H))
         continue;
@@ -663,6 +746,29 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
   //     `getNextNode()` could drag the nearest common post-dominator into a block
   //     that never executes, silently dropping the whole reversal;
   //   * it sits in terminator position, so there is no next node to anchor on.
+  //
+  // AND, PER RAIL, THE AT-MOST-ONCE PROPERTY OF EVERY IN-PLACE GATE ON IT (bd
+  // 4p7j Rule-13 finding F1). The §1 skip above covers the rail's own MINT
+  // block; an in-place `cqrt_addc`/`xorc`/`rz` on the rail is a WRITE that the
+  // group will adjoint exactly once, so it must run exactly once too. Measured
+  // hole: `mul -> %h_op` in `entry`, `cqrt_addc_i32(%h_op, 7)` inside an
+  // IRREDUCIBLE cycle, one `cqrt_addc_i32(%h_op, -7)` at the exit, then
+  // `cqrt_free(%h_op)` on a rail holding `5h + 7(K-1)` — `opt` rc=0,
+  // verify-clean, a hidden measurement (Rule 6);
+  // `lowering_uncompute_interior_leak_irreducible_gate.ll`.
+  //
+  // THE FENCE KEYS ON WRITES, NEVER ON READS, and that asymmetry is the whole
+  // reason it lives here rather than beside the anchor test. A forward consumer
+  // that merely READS the rail K times leaves it exactly as it found it, so the
+  // once-only discharge after the cycle is still correct — that is the shipped
+  // accept `lowering_uncompute_interior_loop_consumer_and_after.ll` (a producer
+  // in a dominating block, a consumer inside a 3-trip loop, another after it).
+  // Refusing repeated readers as well would leak that shape for no physics.
+  //
+  // A dropped candidate is not lost work: it becomes a BORROWED parent of any
+  // group that reads it, whose clause-(d) scan then proves the interval is
+  // mutation-free from the other side. Both irreducible fixtures keep their
+  // compare rail's discharge for exactly that reason.
   SmallPtrSet<Value *, 16> Owned;
   for (CallInst *R : Cand) {
     bool Anchorable = true;
@@ -670,6 +776,11 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
       auto *UI = dyn_cast<Instruction>(U);
       if (!UI || !DT.isReachableFromEntry(UI->getParent()) ||
           !UI->getNextNode()) {
+        Anchorable = false;
+        break;
+      }
+      auto *G = dyn_cast<CallInst>(UI);
+      if (G && isInPlaceGateOn(G, R) && canRepeat(G->getParent())) {
         Anchorable = false;
         break;
       }
@@ -775,7 +886,13 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
     // to do with why THIS rail is recorded.
     if (!preservesBasisUnderRecord(G))
       return;
-    if (LI.getLoopFor(G->getParent()))
+    // The GROUP-LEVEL at-most-once backstop over every recovered gate — the
+    // third statement of the property, after the candidate MINT block (§1) and
+    // the per-rail in-place-gate scan (§2). `canRepeat`, not `LoopInfo`: bd 4p7j
+    // Rule-13 finding F1 (irreducible cycles are not natural loops). Kept even
+    // though §1/§2 cover every gate the walk can reach today, so a future
+    // widening of `recoverDataDag` degrades to a leak instead of a dirty free.
+    if (canRepeat(G->getParent()))
       return;
     if (!DT.dominates(G, At))
       return;  // a gate on one arm of a diamond — Phase 4's job, not this one.
@@ -821,6 +938,21 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
   //             the source wire is a mutation of a borrowed parent that happens
   //             entirely after the discharge, so the `_unc`s read the PRE-Ry
   //             basis — which is exactly the basis the forward gates read.
+  //
+  //    READ THE LEFT DISJUNCT WITH THIS FACT IN HAND, or the next reader will
+  //    "fix" a correct accept into a leak (bd 4p7j Rule-13 finding F6):
+  //    `clang -O1` ROUTINELY SINKS a derived chain PAST a swap-route region.
+  //    Source order `x = sqrt(a+3.0); if (a > 2) { … }` arrives with the whole
+  //    `x` chain AFTER the region (measured: `a9b_after_region.c`), so `First`
+  //    is after the emitter's route-back and the region's `cqrt_cswap` pair is
+  //    to its LEFT — the discharge then reads the wire AFTER route-back and is
+  //    admitted by LEFT, not by RIGHT. That is sound because the route pair is
+  //    self-cancelling: the second `cswap` restores the basis label the first
+  //    exchanged, so a read after the pair sees the pre-region label. What is
+  //    NOT admitted is a route STRICTLY INSIDE the interval — that satisfies
+  //    neither disjunct and leaks
+  //    (lowering_uncompute_interior_leak_route_in_interval.ll). The interval,
+  //    not the source line, is what this scan reasons about.
   //
   //    THE TWO DISJUNCTS ARE NOT SYMMETRIC IN WHAT THEY PROTECT, and the
   //    difference is the owner's clause-(d) ruling of 2026-08-27: "a discharge

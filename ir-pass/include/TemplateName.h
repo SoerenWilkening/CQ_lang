@@ -86,6 +86,28 @@ std::string compareName(llvm::StringRef op, llvm::StringRef pred,
                         llvm::StringRef width, Shape shape,
                         bool controlled = false, bool inverse = false);
 
+// Is argument slot `argIdx` of the `cq_template_*` symbol `symbol` a QUANTUM
+// HANDLE slot, as opposed to a classical LITERAL one? (bd
+// test_C_libtooling-4p7j Rule-13 round, finding F5.)
+//
+// THE INVERSE OF `shapeSuffix`, and deliberately the same table read the other
+// way (Rule 14): `_hl` → slot 0, `_lh` → slot 1, `_qql` → {0,1}, `_qlq` → {0,2},
+// `_qll` → {0}; NO shape suffix (QQ / Unary / cast / TernaryQQQ) → every slot.
+// FORWARD, UNCONTROLLED SYMBOLS ONLY: a `_controlled` form prepends a flag and an
+// `_inv`/`_unc` twin takes the rail out-first, so both SHIFT the slots and both
+// answer `false` here rather than confidently and wrongly.
+//
+// WHY THE SYMBOL AND NOT THE TYPE: an `_hl` template at width i32 has the
+// FunctionType `(i32, i32) -> i32` — the classical operand is `llvmWidthType`,
+// which for i32 IS the handle type — so no operand type distinguishes the slots
+// and only the name does.
+//
+// FAILS CLOSED: `false` for anything that is not a `cq_template_*` symbol, for
+// an out-of-range index, and for any name whose shape token this cannot read.
+// A caller asking "may this value appear here?" therefore refuses on doubt,
+// which is the Prime Directive's direction.
+bool isHandleSlot(llvm::StringRef symbol, unsigned argIdx);
+
 // Cast op: `cq_template_<op>_<from>_to_<to>[_controlled][_inv]`. `op` is the
 // cast opcode name ("sext"/"zext"/"trunc"/"fpext"/"fptrunc"/"sitofp"/
 // "uitofp"/"fptosi"/"fptoui"). Casts are unary at the IR level → no shape
