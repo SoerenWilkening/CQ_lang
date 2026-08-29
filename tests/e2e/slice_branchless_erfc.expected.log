@@ -50,6 +50,8 @@ cq_template_fdiv_f64(h34, h40) -> h41
 cq_template_fsub_f64_lh(0x1.3d4fa8p-3, h41) -> h42
 cq_template_fmax_f64_hl(h1, 0x1.4p+0) -> h43
 cq_template_fmin_f64_hl(h43, 0x1.ep+4) -> h44
+cq_template_fmax_f64_hl_unc(h43, h1, 0x1.4p+0)
+cqrt_free(h43)
 cq_template_fmul_f64(h44, h44) -> h45
 cq_template_fdiv_f64_lh(0x1p+0, h45) -> h46
 cq_template_fma_f64_qll(h46, -0x1.3a0efc69ac25cp+3, -0x1.4526557e4d2f2p+6) -> h47
@@ -297,4 +299,6 @@ cq_template_fsub_f64_lh(0x1p+0, h237) -> h240
 cq_template_fsub_f64_lh(0x1p+1, h235) -> h241
 cq_template_fmul_f64(h237, h241) -> h242
 cq_template_fma_f64(h235, h240, h242) -> h243
+cq_template_fsub_f64_lh_unc(h240, 0x1p+0, h237)
+cqrt_free(h240)
 cqrt_measure_f64(h243) -> 0x0p+0

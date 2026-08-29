@@ -2,24 +2,24 @@ cqrt_alloc_f32(0x1p+1) -> h0
 cqrt_ry_f32(h0, 0x1p-2)
 cq_template_fcmp_ult_f32_hl(h0, 0x1p+0) -> h1
 cq_template_zext_i1_to_i32(h1) -> h2
+cq_template_fcmp_ult_f32_hl_unc(h1, h0, 0x1p+0)
+cqrt_free(h1)
 cq_template_fcmp_uge_f32_hl(h0, 0x1p+0) -> h3
 cq_template_zext_i1_to_i32(h3) -> h4
+cq_template_fcmp_uge_f32_hl_unc(h3, h0, 0x1p+0)
+cqrt_free(h3)
 cq_template_fcmp_ule_f32_hl(h0, 0x1p+0) -> h5
 cq_template_zext_i1_to_i32(h5) -> h6
+cq_template_fcmp_ule_f32_hl_unc(h5, h0, 0x1p+0)
+cqrt_free(h5)
 cq_template_fcmp_ugt_f32_hl(h0, 0x1p+0) -> h7
 cq_template_zext_i1_to_i32(h7) -> h8
+cq_template_fcmp_ugt_f32_hl_unc(h7, h0, 0x1p+0)
+cqrt_free(h7)
 cq_template_fcmp_uno_f32_hl(h0, 0x0p+0) -> h9
 cq_template_zext_i1_to_i32(h9) -> h10
 cq_template_fcmp_uno_f32_hl_unc(h9, h0, 0x0p+0)
 cqrt_free(h9)
-cq_template_fcmp_ugt_f32_hl_unc(h7, h0, 0x1p+0)
-cqrt_free(h7)
-cq_template_fcmp_ule_f32_hl_unc(h5, h0, 0x1p+0)
-cqrt_free(h5)
-cq_template_fcmp_uge_f32_hl_unc(h3, h0, 0x1p+0)
-cqrt_free(h3)
-cq_template_fcmp_ult_f32_hl_unc(h1, h0, 0x1p+0)
-cqrt_free(h1)
 cqrt_measure_i32(h2) -> 0
 cqrt_measure_i32(h4) -> 0
 cqrt_measure_i32(h6) -> 0

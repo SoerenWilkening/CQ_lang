@@ -2,12 +2,20 @@ cqrt_alloc_f32(0x1p-1) -> h0
 cqrt_ry_f32(h0, 0x1p-1)
 cq_template_bitcast_f32_to_i32(h0) -> h1
 cq_template_and_i32_hl(h1, -2147483648) -> h2
+cq_template_bitcast_f32_to_i32_unc(h1, h0)
+cqrt_free(h1)
 cq_template_fabs_f32(h0) -> h3
 cq_template_bitcast_f32_to_i32(h3) -> h4
+cq_template_fabs_f32_unc(h3, h0)
+cqrt_free(h3)
 cq_template_fadd_f32_hl(h0, 0x1.4484cp-100) -> h5
 cq_template_fadd_f32_hl(h0, 0x1.93e594p+99) -> h6
 cq_template_fsub_f32(h6, h6) -> h7
 cq_template_fsub_f32(h0, h7) -> h8
+cq_template_fsub_f32_unc(h7, h6, h6)
+cqrt_free(h7)
+cq_template_fadd_f32_hl_unc(h6, h0, 0x1.93e594p+99)
+cqrt_free(h6)
 cq_template_icmp_eq_i32_hl(h2, 0) -> h9
 cqrt_alloc_f32(0x0p+0) -> h10
 cqrt_alloc_f32(0x1p-1) -> h11
@@ -20,10 +28,16 @@ cq_template_icmp_eq_i32_hl_unc(h9, h2, 0)
 cqrt_free(h9)
 cq_template_fma_f32_qlq(h0, 0x1.715476p+0, h10) -> h13
 cq_template_fptosi_f32_to_i32(h13) -> h14
+cq_template_fma_f32_qlq_unc(h13, h0, 0x1.715476p+0, h10)
+cqrt_free(h13)
 cq_template_sitofp_i32_to_f32(h14) -> h15
 cq_template_fneg_f32(h15) -> h16
 cq_template_fma_f32_qlq(h16, 0x1.62e3p-1, h0) -> h17
 cq_template_fmul_f32_hl(h15, 0x1.2fefa2p-17) -> h18
+cq_template_fneg_f32_unc(h16, h15)
+cqrt_free(h16)
+cq_template_sitofp_i32_to_f32_unc(h15, h14)
+cqrt_free(h15)
 cq_template_fadd_f32_hl(h0, 0x1.62e3p-1) -> h19
 cq_template_fadd_f32_hl(h0, -0x1.62e3p-1) -> h20
 cq_template_icmp_ugt_i32_hl(h4, 1100331075) -> h21
@@ -639,6 +653,8 @@ cqrt_free(h150)
 cq_template_fsub_f32(h174, h123) -> h175
 cq_template_fsub_f32(h174, h175) -> h176
 cq_template_fsub_f32(h176, h123) -> h177
+cq_template_fsub_f32_unc(h176, h174, h175)
+cqrt_free(h176)
 cq_template_icmp_ugt_i32_hl(h4, 1100331075) -> h178
 cq_template_icmp_ugt_i32_hl(h4, 1118925335) -> h179
 cqrt_alloc_i1(0) -> h180
@@ -1070,6 +1086,12 @@ cq_template_sub_i32_lh(1065353216, h304) -> h305
 cq_template_bitcast_i32_to_f32(h305) -> h306
 cq_template_fsub_f32(h290, h272) -> h307
 cq_template_fsub_f32(h306, h307) -> h308
+cq_template_bitcast_i32_to_f32_unc(h306, h305)
+cqrt_free(h306)
+cq_template_sub_i32_lh_unc(h305, 1065353216, h304)
+cqrt_free(h305)
+cq_template_lshr_i32_lh_unc(h304, 16777216, h240)
+cqrt_free(h304)
 cq_template_icmp_ugt_i32_hl(h4, 1100331075) -> h309
 cq_template_icmp_ugt_i32_hl(h4, 1118925335) -> h310
 cqrt_alloc_i1(0) -> h311

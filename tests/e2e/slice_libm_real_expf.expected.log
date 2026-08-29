@@ -7,21 +7,33 @@ cq_template_bitcast_f32_to_i32(h3) -> h4
 cq_template_lshr_i32_hl(h4, 31) -> h5
 cq_template_fabs_f32(h3) -> h6
 cq_template_bitcast_f32_to_i32(h6) -> h7
+cq_template_fabs_f32_unc(h6, h3)
+cqrt_free(h6)
 cq_template_fadd_f32_hl(h3, 0x1.93e594p+99) -> h8
 cq_template_fadd_f32_hl(h3, 0x1p+0) -> h9
 cq_template_zext_i32_to_i64(h5) -> h10
 cqrt_qram_load_f32(a2, h5) -> h11
 cq_template_fma_f32_qlq(h3, 0x1.715476p+0, h11) -> h12
 cq_template_fptosi_f32_to_i32(h12) -> h13
+cq_template_fma_f32_qlq_unc(h12, h3, 0x1.715476p+0, h11)
+cqrt_free(h12)
 cq_template_sitofp_i32_to_f32(h13) -> h14
 cq_template_fneg_f32(h14) -> h15
 cq_template_fma_f32_qlq(h15, 0x1.62e4p-1, h3) -> h16
 cq_template_fmul_f32_hl(h14, 0x1.7f7d1cp-20) -> h17
+cq_template_fneg_f32_unc(h15, h14)
+cqrt_free(h15)
+cq_template_sitofp_i32_to_f32_unc(h14, h13)
+cqrt_free(h14)
 cqrt_qram_load_f32(a1, h5) -> h18
 cq_template_fsub_f32(h3, h18) -> h19
 cqrt_qram_load_f32(a0, h5) -> h20
 cq_template_xor_i32_hl(h5, 1) -> h21
 cq_template_sub_i32(h21, h5) -> h22
+cq_template_xor_i32_hl_unc(h21, h5, 1)
+cqrt_free(h21)
+cq_template_lshr_i32_hl_unc(h5, h4, 31)
+cqrt_free(h5)
 cq_template_icmp_ugt_i32_hl(h7, 1118925335) -> h23
 cq_template_icmp_ule_i32_hl(h7, 2139095040) -> h24
 cqrt_alloc_i1(0) -> h25

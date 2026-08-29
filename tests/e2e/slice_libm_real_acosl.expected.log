@@ -26,6 +26,40 @@ cq_template_fneg_f80(h0) -> h23
 cq_template_fma_f80_qql(h22, h23, -0xe.ce675d1fc8f8cbbp-69) -> h24
 cq_template_fsub_f80(h24, h0) -> h25
 cq_template_fadd_f80_hl(h25, 0xc.90fdaa22168c235p-3) -> h26
+cq_template_fsub_f80_unc(h25, h24, h0)
+cqrt_free(h25)
+cq_template_fma_f80_qql_unc(h24, h22, h23, -0xe.ce675d1fc8f8cbbp-69)
+cqrt_free(h24)
+cq_template_fneg_f80_unc(h23, h0)
+cqrt_free(h23)
+cq_template_fdiv_f80_unc(h22, h16, h21)
+cqrt_free(h22)
+cq_template_fma_f80_qql_unc(h21, h9, h20, 0x8p-3)
+cqrt_free(h21)
+cq_template_fma_f80_qql_unc(h20, h9, h19, -0xb.caa2159c01436ap-2)
+cqrt_free(h20)
+cq_template_fma_f80_qql_unc(h19, h9, h18, 0xd.17a73d1e1564c29p-2)
+cqrt_free(h19)
+cq_template_fma_f80_qql_unc(h18, h9, h17, -0xd.767e411c9cf4c2cp-3)
+cqrt_free(h18)
+cq_template_fma_f80_qll_unc(h17, h9, -0x8.0c3a2197c8ced57p-8, 0xc.809c0dfb9b0d0b7p-5)
+cqrt_free(h17)
+cq_template_fmul_f80_unc(h16, h9, h15)
+cqrt_free(h16)
+cq_template_fma_f80_qql_unc(h15, h9, h14, 0xa.aaaaaaaaaaaaaa8p-6)
+cqrt_free(h15)
+cq_template_fma_f80_qql_unc(h14, h9, h13, -0xd.5271b6699b48bfap-5)
+cqrt_free(h14)
+cq_template_fma_f80_qql_unc(h13, h9, h12, 0xb.cf67ca9e9f669cfp-5)
+cqrt_free(h13)
+cq_template_fma_f80_qql_unc(h12, h9, h11, -0x8.b7baa3d15f9830dp-6)
+cqrt_free(h12)
+cq_template_fma_f80_qql_unc(h11, h9, h10, 0x9.2154b093a3bff1cp-9)
+cqrt_free(h11)
+cq_template_fma_f80_qll_unc(h10, h9, -0xe.e69c5b0fdb76951p-21, -0xe.5dd76401964508cp-16)
+cqrt_free(h10)
+cq_template_fmul_f80_unc(h9, h0, h0)
+cqrt_free(h9)
 cq_template_fsub_f80_lh(0x8p-3, h0) -> h27
 cq_template_fmul_f80_hl(h27, 0x8p-4) -> h28
 cq_template_sqrt_f80(h28) -> h29
@@ -56,81 +90,6 @@ cq_template_fdiv_f80(h47, h52) -> h53
 cq_template_fma_f80(h29, h53, h40) -> h54
 cq_template_fadd_f80(h36, h54) -> h55
 cq_template_fmul_f80_hl(h55, 0x8p-2) -> h56
-cq_template_fadd_f80_hl(h0, 0x8p-3) -> h57
-cq_template_fmul_f80_hl(h57, 0x8p-4) -> h58
-cq_template_fma_f80_qll(h58, -0xe.e69c5b0fdb76951p-21, -0xe.5dd76401964508cp-16) -> h59
-cq_template_fma_f80_qql(h58, h59, 0x9.2154b093a3bff1cp-9) -> h60
-cq_template_fma_f80_qql(h58, h60, -0x8.b7baa3d15f9830dp-6) -> h61
-cq_template_fma_f80_qql(h58, h61, 0xb.cf67ca9e9f669cfp-5) -> h62
-cq_template_fma_f80_qql(h58, h62, -0xd.5271b6699b48bfap-5) -> h63
-cq_template_fma_f80_qql(h58, h63, 0xa.aaaaaaaaaaaaaa8p-6) -> h64
-cq_template_fmul_f80(h58, h64) -> h65
-cq_template_fma_f80_qll(h58, -0x8.0c3a2197c8ced57p-8, 0xc.809c0dfb9b0d0b7p-5) -> h66
-cq_template_fma_f80_qql(h58, h66, -0xd.767e411c9cf4c2cp-3) -> h67
-cq_template_fma_f80_qql(h58, h67, 0xd.17a73d1e1564c29p-2) -> h68
-cq_template_fma_f80_qql(h58, h68, -0xb.caa2159c01436ap-2) -> h69
-cq_template_fma_f80_qql(h58, h69, 0x8p-3) -> h70
-cq_template_sqrt_f80(h58) -> h71
-cq_template_fdiv_f80(h65, h70) -> h72
-cq_template_fma_f80_qql(h71, h72, 0xe.ce675d1fc8f8cbbp-69) -> h73
-cq_template_fadd_f80(h71, h73) -> h74
-cq_template_fma_f80_qll(h74, -0x8p-2, 0xc.90fdaa22168c235p-2) -> h75
-cq_template_trunc_i80_to_i64(h1) -> h76
-cq_template_lshr_i64_hl(h76, 32) -> h77
-cq_template_trunc_i64_to_i32(h77) -> h78
-cq_template_and_i32_hl(h78, 2147483647) -> h79
-cq_template_trunc_i64_to_i32(h76) -> h80
-cq_template_or_i32(h79, h80) -> h81
-cq_template_fsub_f80(h0, h0) -> h82
-cq_template_fdiv_f80(h82, h82) -> h83
-cq_template_fsub_f80_unc(h82, h0, h0)
-cqrt_free(h82)
-cq_template_trunc_i64_to_i32_unc(h80, h76)
-cqrt_free(h80)
-cq_template_and_i32_hl_unc(h79, h78, 2147483647)
-cqrt_free(h79)
-cq_template_trunc_i64_to_i32_unc(h78, h77)
-cqrt_free(h78)
-cq_template_lshr_i64_hl_unc(h77, h76, 32)
-cqrt_free(h77)
-cq_template_trunc_i80_to_i64_unc(h76, h1)
-cqrt_free(h76)
-cq_template_fadd_f80_unc(h74, h71, h73)
-cqrt_free(h74)
-cq_template_fma_f80_qql_unc(h73, h71, h72, 0xe.ce675d1fc8f8cbbp-69)
-cqrt_free(h73)
-cq_template_fdiv_f80_unc(h72, h65, h70)
-cqrt_free(h72)
-cq_template_sqrt_f80_unc(h71, h58)
-cqrt_free(h71)
-cq_template_fma_f80_qql_unc(h70, h58, h69, 0x8p-3)
-cqrt_free(h70)
-cq_template_fma_f80_qql_unc(h69, h58, h68, -0xb.caa2159c01436ap-2)
-cqrt_free(h69)
-cq_template_fma_f80_qql_unc(h68, h58, h67, 0xd.17a73d1e1564c29p-2)
-cqrt_free(h68)
-cq_template_fma_f80_qql_unc(h67, h58, h66, -0xd.767e411c9cf4c2cp-3)
-cqrt_free(h67)
-cq_template_fma_f80_qll_unc(h66, h58, -0x8.0c3a2197c8ced57p-8, 0xc.809c0dfb9b0d0b7p-5)
-cqrt_free(h66)
-cq_template_fmul_f80_unc(h65, h58, h64)
-cqrt_free(h65)
-cq_template_fma_f80_qql_unc(h64, h58, h63, 0xa.aaaaaaaaaaaaaa8p-6)
-cqrt_free(h64)
-cq_template_fma_f80_qql_unc(h63, h58, h62, -0xd.5271b6699b48bfap-5)
-cqrt_free(h63)
-cq_template_fma_f80_qql_unc(h62, h58, h61, 0xb.cf67ca9e9f669cfp-5)
-cqrt_free(h62)
-cq_template_fma_f80_qql_unc(h61, h58, h60, -0x8.b7baa3d15f9830dp-6)
-cqrt_free(h61)
-cq_template_fma_f80_qql_unc(h60, h58, h59, 0x9.2154b093a3bff1cp-9)
-cqrt_free(h60)
-cq_template_fma_f80_qll_unc(h59, h58, -0xe.e69c5b0fdb76951p-21, -0xe.5dd76401964508cp-16)
-cqrt_free(h59)
-cq_template_fmul_f80_hl_unc(h58, h57, 0x8p-4)
-cqrt_free(h58)
-cq_template_fadd_f80_hl_unc(h57, h0, 0x8p-3)
-cqrt_free(h57)
 cq_template_fadd_f80_unc(h55, h36, h54)
 cqrt_free(h55)
 cq_template_fma_f80_unc(h54, h29, h53, h40)
@@ -189,40 +148,77 @@ cq_template_fmul_f80_hl_unc(h28, h27, 0x8p-4)
 cqrt_free(h28)
 cq_template_fsub_f80_lh_unc(h27, 0x8p-3, h0)
 cqrt_free(h27)
-cq_template_fsub_f80_unc(h25, h24, h0)
-cqrt_free(h25)
-cq_template_fma_f80_qql_unc(h24, h22, h23, -0xe.ce675d1fc8f8cbbp-69)
-cqrt_free(h24)
-cq_template_fneg_f80_unc(h23, h0)
-cqrt_free(h23)
-cq_template_fdiv_f80_unc(h22, h16, h21)
-cqrt_free(h22)
-cq_template_fma_f80_qql_unc(h21, h9, h20, 0x8p-3)
-cqrt_free(h21)
-cq_template_fma_f80_qql_unc(h20, h9, h19, -0xb.caa2159c01436ap-2)
-cqrt_free(h20)
-cq_template_fma_f80_qql_unc(h19, h9, h18, 0xd.17a73d1e1564c29p-2)
-cqrt_free(h19)
-cq_template_fma_f80_qql_unc(h18, h9, h17, -0xd.767e411c9cf4c2cp-3)
-cqrt_free(h18)
-cq_template_fma_f80_qll_unc(h17, h9, -0x8.0c3a2197c8ced57p-8, 0xc.809c0dfb9b0d0b7p-5)
-cqrt_free(h17)
-cq_template_fmul_f80_unc(h16, h9, h15)
-cqrt_free(h16)
-cq_template_fma_f80_qql_unc(h15, h9, h14, 0xa.aaaaaaaaaaaaaa8p-6)
-cqrt_free(h15)
-cq_template_fma_f80_qql_unc(h14, h9, h13, -0xd.5271b6699b48bfap-5)
-cqrt_free(h14)
-cq_template_fma_f80_qql_unc(h13, h9, h12, 0xb.cf67ca9e9f669cfp-5)
-cqrt_free(h13)
-cq_template_fma_f80_qql_unc(h12, h9, h11, -0x8.b7baa3d15f9830dp-6)
-cqrt_free(h12)
-cq_template_fma_f80_qql_unc(h11, h9, h10, 0x9.2154b093a3bff1cp-9)
-cqrt_free(h11)
-cq_template_fma_f80_qll_unc(h10, h9, -0xe.e69c5b0fdb76951p-21, -0xe.5dd76401964508cp-16)
-cqrt_free(h10)
-cq_template_fmul_f80_unc(h9, h0, h0)
-cqrt_free(h9)
+cq_template_fadd_f80_hl(h0, 0x8p-3) -> h57
+cq_template_fmul_f80_hl(h57, 0x8p-4) -> h58
+cq_template_fma_f80_qll(h58, -0xe.e69c5b0fdb76951p-21, -0xe.5dd76401964508cp-16) -> h59
+cq_template_fma_f80_qql(h58, h59, 0x9.2154b093a3bff1cp-9) -> h60
+cq_template_fma_f80_qql(h58, h60, -0x8.b7baa3d15f9830dp-6) -> h61
+cq_template_fma_f80_qql(h58, h61, 0xb.cf67ca9e9f669cfp-5) -> h62
+cq_template_fma_f80_qql(h58, h62, -0xd.5271b6699b48bfap-5) -> h63
+cq_template_fma_f80_qql(h58, h63, 0xa.aaaaaaaaaaaaaa8p-6) -> h64
+cq_template_fmul_f80(h58, h64) -> h65
+cq_template_fma_f80_qll(h58, -0x8.0c3a2197c8ced57p-8, 0xc.809c0dfb9b0d0b7p-5) -> h66
+cq_template_fma_f80_qql(h58, h66, -0xd.767e411c9cf4c2cp-3) -> h67
+cq_template_fma_f80_qql(h58, h67, 0xd.17a73d1e1564c29p-2) -> h68
+cq_template_fma_f80_qql(h58, h68, -0xb.caa2159c01436ap-2) -> h69
+cq_template_fma_f80_qql(h58, h69, 0x8p-3) -> h70
+cq_template_sqrt_f80(h58) -> h71
+cq_template_fdiv_f80(h65, h70) -> h72
+cq_template_fma_f80_qql(h71, h72, 0xe.ce675d1fc8f8cbbp-69) -> h73
+cq_template_fadd_f80(h71, h73) -> h74
+cq_template_fma_f80_qll(h74, -0x8p-2, 0xc.90fdaa22168c235p-2) -> h75
+cq_template_fadd_f80_unc(h74, h71, h73)
+cqrt_free(h74)
+cq_template_fma_f80_qql_unc(h73, h71, h72, 0xe.ce675d1fc8f8cbbp-69)
+cqrt_free(h73)
+cq_template_fdiv_f80_unc(h72, h65, h70)
+cqrt_free(h72)
+cq_template_sqrt_f80_unc(h71, h58)
+cqrt_free(h71)
+cq_template_fma_f80_qql_unc(h70, h58, h69, 0x8p-3)
+cqrt_free(h70)
+cq_template_fma_f80_qql_unc(h69, h58, h68, -0xb.caa2159c01436ap-2)
+cqrt_free(h69)
+cq_template_fma_f80_qql_unc(h68, h58, h67, 0xd.17a73d1e1564c29p-2)
+cqrt_free(h68)
+cq_template_fma_f80_qql_unc(h67, h58, h66, -0xd.767e411c9cf4c2cp-3)
+cqrt_free(h67)
+cq_template_fma_f80_qll_unc(h66, h58, -0x8.0c3a2197c8ced57p-8, 0xc.809c0dfb9b0d0b7p-5)
+cqrt_free(h66)
+cq_template_fmul_f80_unc(h65, h58, h64)
+cqrt_free(h65)
+cq_template_fma_f80_qql_unc(h64, h58, h63, 0xa.aaaaaaaaaaaaaa8p-6)
+cqrt_free(h64)
+cq_template_fma_f80_qql_unc(h63, h58, h62, -0xd.5271b6699b48bfap-5)
+cqrt_free(h63)
+cq_template_fma_f80_qql_unc(h62, h58, h61, 0xb.cf67ca9e9f669cfp-5)
+cqrt_free(h62)
+cq_template_fma_f80_qql_unc(h61, h58, h60, -0x8.b7baa3d15f9830dp-6)
+cqrt_free(h61)
+cq_template_fma_f80_qql_unc(h60, h58, h59, 0x9.2154b093a3bff1cp-9)
+cqrt_free(h60)
+cq_template_fma_f80_qll_unc(h59, h58, -0xe.e69c5b0fdb76951p-21, -0xe.5dd76401964508cp-16)
+cqrt_free(h59)
+cq_template_fmul_f80_hl_unc(h58, h57, 0x8p-4)
+cqrt_free(h58)
+cq_template_fadd_f80_hl_unc(h57, h0, 0x8p-3)
+cqrt_free(h57)
+cq_template_trunc_i80_to_i64(h1) -> h76
+cq_template_lshr_i64_hl(h76, 32) -> h77
+cq_template_trunc_i64_to_i32(h77) -> h78
+cq_template_and_i32_hl(h78, 2147483647) -> h79
+cq_template_trunc_i64_to_i32(h76) -> h80
+cq_template_or_i32(h79, h80) -> h81
+cq_template_trunc_i64_to_i32_unc(h80, h76)
+cqrt_free(h80)
+cq_template_and_i32_hl_unc(h79, h78, 2147483647)
+cqrt_free(h79)
+cq_template_trunc_i64_to_i32_unc(h78, h77)
+cqrt_free(h78)
+cq_template_lshr_i64_hl_unc(h77, h76, 32)
+cqrt_free(h77)
+cq_template_trunc_i80_to_i64_unc(h76, h1)
+cqrt_free(h76)
 cq_template_shl_i32_hl_unc(h6, h5, 16)
 cqrt_free(h6)
 cq_template_trunc_i64_to_i32_unc(h5, h4)
@@ -235,6 +231,10 @@ cq_template_lshr_i80_hl_unc(h2, h1, 0x00000000000000000040)
 cqrt_free(h2)
 cq_template_bitcast_f80_to_i80_unc(h1, h0)
 cqrt_free(h1)
+cq_template_fsub_f80(h0, h0) -> h82
+cq_template_fdiv_f80(h82, h82) -> h83
+cq_template_fsub_f80_unc(h82, h0, h0)
+cqrt_free(h82)
 cq_template_icmp_sgt_i32_hl(h7, 0) -> h84
 cqrt_alloc_f80(0x0p+0) -> h85
 cqrt_alloc_f80(0x0p+0) -> h86

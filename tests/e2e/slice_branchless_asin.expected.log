@@ -73,4 +73,14 @@ cq_template_fdiv_f64(h39, h38) -> h40
 cq_template_fma_f64(h28, h40, h28) -> h41
 cq_template_fadd_f64(h16, h41) -> h42
 cq_template_copysign_f64(h42, h5) -> h43
+cq_template_fdiv_f64_unc(h5, h0, h4)
+cqrt_free(h5)
+cq_template_sqrt_f64_unc(h4, h3)
+cqrt_free(h4)
+cq_template_fmax_f64_hl_unc(h3, h2, 0x1.56e1fc2f8f359p-997)
+cqrt_free(h3)
+cq_template_fma_f64_qql_unc(h2, h0, h1, 0x1p+0)
+cqrt_free(h2)
+cq_template_fneg_f64_unc(h1, h0)
+cqrt_free(h1)
 cqrt_measure_f64(h43) -> 0x0p+0

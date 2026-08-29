@@ -4,6 +4,8 @@ cqrt_ry_f32(h1, 0x1p-1)
 cq_template_bitcast_f32_to_i32(h1) -> h2
 cq_template_fabs_f32(h1) -> h3
 cq_template_bitcast_f32_to_i32(h3) -> h4
+cq_template_fabs_f32_unc(h3, h1)
+cqrt_free(h3)
 cq_template_fadd_f32_hl(h1, 0x1p+0) -> h5
 cq_template_fadd_f32_hl(h1, 0x1.8p+19) -> h6
 cq_template_bitcast_f32_to_i32(h6) -> h7
@@ -68,8 +70,6 @@ cq_template_bitcast_f32_to_i32_unc(h7, h6)
 cqrt_free(h7)
 cq_template_fadd_f32_hl_unc(h6, h1, 0x1.8p+19)
 cqrt_free(h6)
-cq_template_fabs_f32_unc(h3, h1)
-cqrt_free(h3)
 cq_template_and_i32_hl(h4, 8388607) -> h27
 cq_template_fadd_f32(h1, h1) -> h28
 cq_template_icmp_sgt_i32_hl(h2, -1) -> h29

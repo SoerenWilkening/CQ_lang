@@ -3,9 +3,13 @@ cqrt_ry_f32(h0, 0x1p-1)
 cq_template_bitcast_f32_to_i32(h0) -> h1
 cq_template_fabs_f32(h0) -> h2
 cq_template_bitcast_f32_to_i32(h2) -> h3
+cq_template_fabs_f32_unc(h2, h0)
+cqrt_free(h2)
 cq_template_lshr_i32_hl(h3, 23) -> h4
 cq_template_shl_i32_hl(h3, 8) -> h5
 cq_template_and_i32_hl(h5, 2147483392) -> h6
+cq_template_shl_i32_hl_unc(h5, h3, 8)
+cqrt_free(h5)
 cq_template_icmp_ule_i32_hl(h3, 2139095040) -> h7
 cq_template_fcmp_une_f32_hl(h0, 0x1p-1) -> h8
 cqrt_alloc_i1(0) -> h9
@@ -76,6 +80,8 @@ cqrt_free(h7)
 cq_template_add_i32(h23, h1) -> h26
 cq_template_and_i32_hl(h26, 2139095040) -> h27
 cq_template_bitcast_i32_to_f32(h26) -> h28
+cq_template_add_i32_unc(h26, h23, h1)
+cqrt_free(h26)
 cq_template_fadd_f32(h0, h0) -> h29
 cq_template_fadd_f32_hl(h0, 0x1p-1) -> h30
 cq_template_icmp_ule_i32_hl(h3, 2139095040) -> h31

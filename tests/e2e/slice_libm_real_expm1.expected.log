@@ -9,6 +9,10 @@ cq_template_fadd_f64_hl(h0, 0x1.56e1fc2f8f359p-997) -> h6
 cq_template_fadd_f64_hl(h0, 0x1.7e43c8800759cp+996) -> h7
 cq_template_fsub_f64(h7, h7) -> h8
 cq_template_fsub_f64(h0, h8) -> h9
+cq_template_fsub_f64_unc(h8, h7, h7)
+cqrt_free(h8)
+cq_template_fadd_f64_hl_unc(h7, h0, 0x1.7e43c8800759cp+996)
+cqrt_free(h7)
 cq_template_icmp_eq_i32_hl(h4, 0) -> h10
 cqrt_alloc_f64(0x0p+0) -> h11
 cqrt_alloc_f64(0x1p-1) -> h12
@@ -21,10 +25,16 @@ cq_template_icmp_eq_i32_hl_unc(h10, h4, 0)
 cqrt_free(h10)
 cq_template_fma_f64_qlq(h0, 0x1.71547652b82fep+0, h11) -> h14
 cq_template_fptosi_f64_to_i32(h14) -> h15
+cq_template_fma_f64_qlq_unc(h14, h0, 0x1.71547652b82fep+0, h11)
+cqrt_free(h14)
 cq_template_sitofp_i32_to_f64(h15) -> h16
 cq_template_fneg_f64(h16) -> h17
 cq_template_fma_f64_qlq(h17, 0x1.62e42feep-1, h0) -> h18
 cq_template_fmul_f64_hl(h16, 0x1.a39ef35793c76p-33) -> h19
+cq_template_fneg_f64_unc(h17, h16)
+cqrt_free(h17)
+cq_template_sitofp_i32_to_f64_unc(h16, h15)
+cqrt_free(h16)
 cq_template_fadd_f64_hl(h0, 0x1.62e42feep-1) -> h20
 cq_template_fadd_f64_hl(h0, -0x1.62e42feep-1) -> h21
 cq_template_icmp_ugt_i32_hl(h5, 1078159481) -> h22
@@ -598,6 +608,8 @@ cqrt_free(h141)
 cq_template_fsub_f64(h163, h116) -> h164
 cq_template_fsub_f64(h163, h164) -> h165
 cq_template_fsub_f64(h165, h116) -> h166
+cq_template_fsub_f64_unc(h165, h163, h164)
+cqrt_free(h165)
 cq_template_icmp_ugt_i32_hl(h5, 1078159481) -> h167
 cq_template_icmp_ugt_i32_hl(h5, 1082535489) -> h168
 cqrt_alloc_i1(0) -> h169
@@ -1017,6 +1029,16 @@ cq_template_shl_i64_hl(h296, 32) -> h297
 cq_template_bitcast_i64_to_f64(h297) -> h298
 cq_template_fsub_f64(h278, h255) -> h299
 cq_template_fsub_f64(h298, h299) -> h300
+cq_template_bitcast_i64_to_f64_unc(h298, h297)
+cqrt_free(h298)
+cq_template_shl_i64_hl_unc(h297, h296, 32)
+cqrt_free(h297)
+cq_template_zext_i32_to_i64_unc(h296, h295)
+cqrt_free(h296)
+cq_template_sub_i32_lh_unc(h295, 1072693248, h294)
+cqrt_free(h295)
+cq_template_lshr_i32_lh_unc(h294, 2097152, h195)
+cqrt_free(h294)
 cq_template_icmp_ugt_i32_hl(h5, 1078159481) -> h301
 cq_template_icmp_ugt_i32_hl(h5, 1082535489) -> h302
 cqrt_alloc_i1(0) -> h303

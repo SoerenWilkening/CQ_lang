@@ -6,15 +6,35 @@ cq_template_trunc_i80_to_i16(h2) -> h3
 cq_template_zext_i16_to_i64(h3) -> h4
 cq_template_trunc_i64_to_i32(h4) -> h5
 cq_template_and_i32_hl(h5, 32767) -> h6
+cq_template_trunc_i64_to_i32_unc(h5, h4)
+cqrt_free(h5)
 cq_template_trunc_i80_to_i64(h1) -> h7
 cq_template_lshr_i64_hl(h7, 32) -> h8
 cq_template_and_i64_hl(h7, 4294967295) -> h9
 cq_template_or_i64(h8, h9) -> h10
+cq_template_and_i64_hl_unc(h9, h7, 4294967295)
+cqrt_free(h9)
+cq_template_lshr_i64_hl_unc(h8, h7, 32)
+cqrt_free(h8)
+cq_template_trunc_i80_to_i64_unc(h7, h1)
+cqrt_free(h7)
+cq_template_trunc_i80_to_i16_unc(h3, h2)
+cqrt_free(h3)
+cq_template_lshr_i80_hl_unc(h2, h1, 0x00000000000000000040)
+cqrt_free(h2)
+cq_template_bitcast_f80_to_i80_unc(h1, h0)
+cqrt_free(h1)
 cq_template_fmul_f80_hl(h0, 0x8p+511) -> h11
 cq_template_bitcast_f80_to_i80(h11) -> h12
 cq_template_lshr_i80_hl(h12, 0x00000000000000000040) -> h13
 cq_template_trunc_i80_to_i16(h13) -> h14
 cq_template_zext_i16_to_i64(h14) -> h15
+cq_template_trunc_i80_to_i16_unc(h14, h13)
+cqrt_free(h14)
+cq_template_lshr_i80_hl_unc(h13, h12, 0x00000000000000000040)
+cqrt_free(h13)
+cq_template_bitcast_f80_to_i80_unc(h12, h11)
+cqrt_free(h12)
 cq_template_icmp_ne_i32_hl(h6, 0) -> h16
 cq_template_icmp_ne_i32_hl(h6, 32767) -> h17
 cqrt_alloc_i1(0) -> h18
@@ -53,6 +73,20 @@ cq_template_zext_i64_to_i80(h25) -> h28
 cq_template_shl_i80_hl(h28, 0x00000000000000000040) -> h29
 cq_template_or_i80(h27, h29) -> h30
 cq_template_bitcast_i80_to_f80(h30) -> h31
+cq_template_or_i80_unc(h30, h27, h29)
+cqrt_free(h30)
+cq_template_shl_i80_hl_unc(h29, h28, 0x00000000000000000040)
+cqrt_free(h29)
+cq_template_zext_i64_to_i80_unc(h28, h25)
+cqrt_free(h28)
+cq_template_and_i80_hl_unc(h27, h26, 0x0000ffffffffffffffff)
+cqrt_free(h27)
+cq_template_bitcast_f80_to_i80_unc(h26, h19)
+cqrt_free(h26)
+cq_template_or_i64_hl_unc(h25, h24, 16382)
+cqrt_free(h25)
+cq_template_and_i64_hl_unc(h24, h23, -32768)
+cqrt_free(h24)
 cq_template_icmp_eq_i32_hl(h6, 0) -> h32
 cq_template_icmp_ne_i64_hl(h10, 0) -> h33
 cqrt_alloc_i1(0) -> h34

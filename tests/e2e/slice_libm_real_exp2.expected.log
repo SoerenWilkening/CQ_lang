@@ -24,10 +24,22 @@ cq_template_add_i32_hl(h11, 2121269248) -> h20
 cq_template_zext_i32_to_i64(h20) -> h21
 cq_template_shl_i64_hl(h21, 32) -> h22
 cq_template_bitcast_i64_to_f64(h22) -> h23
+cq_template_shl_i64_hl_unc(h22, h21, 32)
+cqrt_free(h22)
+cq_template_zext_i32_to_i64_unc(h21, h20)
+cqrt_free(h21)
+cq_template_add_i32_hl_unc(h20, h11, 2121269248)
+cqrt_free(h20)
 cq_template_add_i32_hl(h11, 1072693248) -> h24
 cq_template_zext_i32_to_i64(h24) -> h25
 cq_template_shl_i64_hl(h25, 32) -> h26
 cq_template_bitcast_i64_to_f64(h26) -> h27
+cq_template_shl_i64_hl_unc(h26, h25, 32)
+cqrt_free(h26)
+cq_template_zext_i32_to_i64_unc(h25, h24)
+cqrt_free(h25)
+cq_template_add_i32_hl_unc(h24, h11, 1072693248)
+cqrt_free(h24)
 cq_template_icmp_ule_i32_hl(h5, 1083179007) -> h28
 cq_template_icmp_uge_i32_hl(h5, 1016070144) -> h29
 cqrt_alloc_i1(0) -> h30
@@ -152,6 +164,14 @@ cq_template_fmul_f64_hl(h67, 0x1p+1023) -> h68
 cq_template_trunc_i64_to_i32(h2) -> h69
 cq_template_and_i32_hl(h4, 1048575) -> h70
 cq_template_or_i32(h69, h70) -> h71
+cq_template_and_i32_hl_unc(h70, h4, 1048575)
+cqrt_free(h70)
+cq_template_trunc_i64_to_i32_unc(h4, h3)
+cqrt_free(h4)
+cq_template_lshr_i64_hl_unc(h3, h2, 32)
+cqrt_free(h3)
+cq_template_trunc_i64_to_i32_unc(h69, h2)
+cqrt_free(h69)
 cq_template_fadd_f64(h1, h1) -> h72
 cq_template_icmp_sgt_i64_hl(h2, -1) -> h73
 cq_template_icmp_ne_i32_hl(h71, 0) -> h74

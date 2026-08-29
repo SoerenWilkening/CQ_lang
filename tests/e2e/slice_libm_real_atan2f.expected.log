@@ -5,19 +5,35 @@ cqrt_ry_f32(h2, 0x1p-1)
 cq_template_bitcast_f32_to_i32(h2) -> h3
 cq_template_fabs_f32(h2) -> h4
 cq_template_bitcast_f32_to_i32(h4) -> h5
+cq_template_fabs_f32_unc(h4, h2)
+cqrt_free(h4)
 cq_template_fmul_f32_hl(h2, 0x1p+1) -> h6
 cq_template_fabs_f32(h6) -> h7
+cq_template_fmul_f32_hl_unc(h6, h2, 0x1p+1)
+cqrt_free(h6)
 cq_template_bitcast_f32_to_i32(h7) -> h8
 cq_template_fdiv_f32_lh(-0x1p+0, h7) -> h9
 cq_template_fadd_f32_hl(h7, -0x1.8p+0) -> h10
 cq_template_fma_f32_qll(h7, 0x1.8p+0, 0x1p+0) -> h11
 cq_template_fdiv_f32(h10, h11) -> h12
+cq_template_fadd_f32_hl_unc(h10, h7, -0x1.8p+0)
+cqrt_free(h10)
+cq_template_fma_f32_qll_unc(h11, h7, 0x1.8p+0, 0x1p+0)
+cqrt_free(h11)
 cq_template_fadd_f32_hl(h7, -0x1p+0) -> h13
 cq_template_fadd_f32_hl(h7, 0x1p+0) -> h14
 cq_template_fdiv_f32(h13, h14) -> h15
+cq_template_fadd_f32_hl_unc(h13, h7, -0x1p+0)
+cqrt_free(h13)
+cq_template_fadd_f32_hl_unc(h14, h7, 0x1p+0)
+cqrt_free(h14)
 cq_template_fma_f32_qll(h7, 0x1p+1, -0x1p+0) -> h16
 cq_template_fadd_f32_hl(h7, 0x1p+1) -> h17
 cq_template_fdiv_f32(h16, h17) -> h18
+cq_template_fma_f32_qll_unc(h16, h7, 0x1p+1, -0x1p+0)
+cqrt_free(h16)
+cq_template_fadd_f32_hl_unc(h17, h7, 0x1p+1)
+cqrt_free(h17)
 cq_template_fadd_f32_hl(h7, 0x1.93e594p+99) -> h19
 cq_template_icmp_ule_i32_hl(h5, 2139095040) -> h20
 cq_template_icmp_ne_i32_hl(h5, 0) -> h21
@@ -489,9 +505,13 @@ cq_template_fma_f32_qll(h154, -0x1.b4248ep-4, -0x1.99953p-3) -> h158
 cq_template_fmul_f32(h154, h158) -> h159
 cq_template_and_i64_hl(h151, 3) -> h160
 cqrt_qram_load_f32(a1, h160) -> h161
+cq_template_and_i64_hl_unc(h160, h151, 3)
+cqrt_free(h160)
 cq_template_fadd_f32(h157, h159) -> h162
 cq_template_and_i64_hl(h151, 3) -> h163
 cqrt_qram_load_f32(a0, h163) -> h164
+cq_template_and_i64_hl_unc(h163, h151, 3)
+cqrt_free(h163)
 cq_template_fneg_f32(h164) -> h165
 cq_template_fma_f32(h83, h162, h165) -> h166
 cq_template_fsub_f32(h166, h83) -> h167
@@ -499,6 +519,32 @@ cq_template_fsub_f32(h161, h167) -> h168
 cq_template_fadd_f32(h157, h159) -> h169
 cq_template_fneg_f32(h83) -> h170
 cq_template_fma_f32(h169, h170, h83) -> h171
+cq_template_fadd_f32_unc(h169, h157, h159)
+cqrt_free(h169)
+cq_template_fsub_f32_unc(h167, h166, h83)
+cqrt_free(h167)
+cq_template_fma_f32_unc(h166, h83, h162, h165)
+cqrt_free(h166)
+cq_template_fneg_f32_unc(h165, h164)
+cqrt_free(h165)
+cq_template_fadd_f32_unc(h162, h157, h159)
+cqrt_free(h162)
+cq_template_fmul_f32_unc(h159, h154, h158)
+cqrt_free(h159)
+cq_template_fma_f32_qll_unc(h158, h154, -0x1.b4248ep-4, -0x1.99953p-3)
+cqrt_free(h158)
+cq_template_fmul_f32_unc(h157, h153, h156)
+cqrt_free(h157)
+cq_template_fma_f32_qql_unc(h156, h154, h155, 0x1.555552p-2)
+cqrt_free(h156)
+cq_template_fma_f32_qll_unc(h155, h154, 0x1.f9584ap-5, 0x1.23ea1ap-3)
+cqrt_free(h155)
+cq_template_fmul_f32_unc(h154, h153, h153)
+cqrt_free(h154)
+cq_template_fmul_f32_unc(h153, h83, h83)
+cqrt_free(h153)
+cq_template_fneg_f32_unc(h170, h83)
+cqrt_free(h170)
 cq_template_fadd_f32(h7, h7) -> h172
 cq_template_icmp_ule_i32_hl(h5, 2139095040) -> h173
 cq_template_icmp_ne_i32_hl(h5, 0) -> h174
