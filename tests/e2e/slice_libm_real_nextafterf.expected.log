@@ -27,6 +27,10 @@ cq_template_and_i32_hl(h11, 2139095040) -> h12
 cq_template_fmul_f32(h0, h0) -> h13
 cq_template_bitcast_i32_to_f32(h11) -> h14
 cq_template_bitcast_i32_to_f32(h11) -> h15
+cq_template_add_i32_unc(h11, h9, h1)
+cqrt_free(h11)
+cq_template_fabs_f32_unc(h2, h0)
+cqrt_free(h2)
 cq_template_fadd_f32(h0, h0) -> h16
 cq_template_fadd_f32_hl(h0, 0x1p-1) -> h17
 cq_template_icmp_ule_i32_hl(h3, 2139095040) -> h18

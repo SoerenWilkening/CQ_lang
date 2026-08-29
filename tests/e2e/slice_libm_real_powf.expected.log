@@ -13,6 +13,16 @@ cq_template_fpext_f32_to_f80(h0) -> h10
 cq_template_fadd_f80_hl(h10, 0x0p+0) -> h11
 cq_template_fadd_f80_hl(h11, 0x8p-4) -> h12
 cq_template_fptrunc_f80_to_f32(h12) -> h13
+cq_template_fadd_f80_hl_unc(h12, h11, 0x8p-4)
+cqrt_free(h12)
+cq_template_fadd_f80_hl_unc(h11, h10, 0x0p+0)
+cqrt_free(h11)
+cq_template_fpext_f32_to_f80_unc(h10, h0)
+cqrt_free(h10)
+cq_template_fsub_f32_unc(h7, h2, h2)
+cqrt_free(h7)
+cq_template_fsub_f32_unc(h5, h0, h0)
+cqrt_free(h5)
 cq_template_icmp_ne_i32_hl(h1, 1065353216) -> h14
 cq_template_icmp_ule_i32_hl(h3, 2139095040) -> h15
 cqrt_alloc_i1(0) -> h16

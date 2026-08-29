@@ -13,6 +13,12 @@ cq_template_fdiv_f64(h9, h9) -> h10
 cq_template_sqrt_f64(h0) -> h11
 cq_template_fadd_f64_hl(h0, 0x0p+0) -> h12
 cq_template_fadd_f64_hl(h12, 0x1p-1) -> h13
+cq_template_fadd_f64_hl_unc(h12, h0, 0x0p+0)
+cqrt_free(h12)
+cq_template_fsub_f64_unc(h9, h0, h0)
+cqrt_free(h9)
+cq_template_fsub_f64_unc(h7, h6, h6)
+cqrt_free(h7)
 cq_template_icmp_ne_i64_hl(h2, 1072693248) -> h14
 cq_template_icmp_ne_i32_hl(h4, 0) -> h15
 cqrt_alloc_i1(0) -> h16

@@ -3,6 +3,8 @@ cqrt_ry_f64(h0, 0x1p-1)
 cq_template_bitcast_f64_to_i64(h0) -> h1
 cq_template_and_i64_hl(h1, 9218868437227405312) -> h2
 cq_template_and_i64_hl(h1, 4503599627370495) -> h3
+cq_template_bitcast_f64_to_i64_unc(h1, h0)
+cqrt_free(h1)
 cq_template_fadd_f64_hl(h0, -0x1p-1) -> h4
 cq_template_fcmp_ogt_f64_hl(h0, 0x1p-1) -> h5
 cqrt_alloc_f64(0x0p+0) -> h6
