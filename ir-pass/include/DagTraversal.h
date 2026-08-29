@@ -111,13 +111,49 @@ struct DataDag {
   llvm::SmallPtrSet<llvm::Value *, 16> Rails;
 };
 
+// ── M-B INTERIOR PARTITION (bd test_C_libtooling-6uqc Inc 5a) ────────────────
+//
+// The plan the interior driver hands to the recovery. Empty (`nullptr`) for the
+// two existing partitions, whose behaviour is then BYTE-IDENTICAL to before.
+//
+//   * `Owned`    — the interior rails this recovery may adjoint and free. Each
+//                  passed `ChainWalk::isInteriorTerminalHandle` AND the driver's
+//                  positional proof (every consumer provably executed before the
+//                  discharge point, never re-read after).
+//   * `Borrowed` — the FRONTIER. A parent rail that is read-only for this DAG:
+//                  the `cqrt_alloc`-minted source wire, or any rail the interior
+//                  test declined to own. The backward walk STOPS at it — it is
+//                  never added to `Roots`, its in-place gates are never
+//                  collected, and it is therefore never adjointed and never
+//                  freed.
+//
+// WITHOUT THE FRONTIER THE SPINE WOULD DO ONE OF TWO WRONG THINGS, both
+// measured on bd 6uqc's P1/P4 before it existed: hop from the first template
+// rail to the `cqrt_alloc` source, collect its `cqrt_ry` as an in-place gate and
+// emit `cqrt_ry(%h, -θ); cqrt_free(%h)` on a register the program still uses
+// (P4's chained theta) — or, where the chain ends at a measured rail, recover
+// that rail and fire `kMsgLineageMeasured`. The frontier is what makes the
+// interior partition a subtraction from the live program rather than a claim
+// over it.
+struct InteriorPlan {
+  llvm::SmallPtrSet<llvm::Value *, 16> Owned;
+  llvm::SmallPtrSet<llvm::Value *, 8> Borrowed;
+};
+
 // Recover the whole forward DAG of the registers whose live terminal handles are
 // `Terminals` (a union — fan-out terminals sharing a prefix yield one DAG so the
 // shared gates are recovered once). `DT` supplies the cross-block program order.
 // The closure / measure / escape analysis (the fields above) runs over every
 // recovered rail.
+//
+// `IP`, when non-null, switches on the M-B interior mode: the backward walk stops
+// at `IP->Borrowed`, and a forward consumer of an `IP->Owned` rail that
+// `ChainWalk::isInteriorConsumer` admits is a BENIGN closure user rather than an
+// out-of-DAG one. Both are strict extensions — with `IP == nullptr` not one line
+// of the existing behaviour changes.
 DataDag recoverDataDag(llvm::ArrayRef<llvm::Value *> Terminals,
-                       const TaintSet &taint, llvm::DominatorTree &DT);
+                       const TaintSet &taint, llvm::DominatorTree &DT,
+                       const InteriorPlan *IP = nullptr);
 
 }  // namespace cq
 

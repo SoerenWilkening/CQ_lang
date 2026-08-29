@@ -26,147 +26,26 @@ bool isInvertEscape(const CallInst *CI) {
   return Callee && Callee->getName().starts_with("cq_invert_");
 }
 
-// A reassigning template producer (`cq_template_<op>_<W>…`) — its result is a
-// fresh rail the DAG must zero and free. (Rotations are in-place; allocs are
-// roots; controlled forms / `_inv`/`_unc` twins are not forward data producers.)
-bool isTemplateProducer(const CallInst *G) {
-  const Function *Callee = G->getCalledFunction();
-  if (!Callee)
-    return false;
-  StringRef N = Callee->getName();
-  // Phase 7.5: a QRAM load result is also a fresh rail the DAG must zero (via its
-  // `_unc`) and free — and, crucially, must be CLOSURE-CHECKED here so a load whose
-  // value fans out to a consumer OUTSIDE the recovered DAG marks the DAG NotClosed
-  // (a Rule-8 safe-leak), never a use-after-free of a freed cell-copy.
-  if (N.starts_with("cqrt_qram_load_") && !N.ends_with("_unc"))
-    return true;
-  return N.starts_with("cq_template_") && !N.contains("_controlled") &&
-         !N.ends_with("_inv") && !N.ends_with("_unc");
-}
-
-// bd 261j(a) — does gate `G` keep its rail a BASIS PERMUTATION OF LIVE CONDITIONS,
-// so that re-emitting the adjoint still returns the rail to |0⟩ even though the
-// rail was RECORDED into a carrier the reversal never touches?
-//
-// THE INVARIANT (owner ruling 2026-08-10). Let R be a rail, W its forward chain,
-// cond(W) the non-R SSA operands W reads, and C a record of R taken by a kept
-// carrier. Freeing R is Rule-6-legal iff (a) R starts at |0⟩; (b) on the reachable
-// subspace W(|0⟩_R ⊗ |c⟩_cond) = |g(c)⟩_R ⊗ |c⟩_cond — W is a basis permutation of
-// cond(W) up to a label-diagonal phase; (c) the emitted reversal is W†; and (d)
-// every register in cond(W) still holds its forward value when W† fires. Then
-// W† C W (|0⟩_R ⊗ |ψ⟩) = |0⟩_R ⊗ (D ^= g(cond)) for ARBITRARILY many kept records.
-//
-// (d) IS DELICATE — it is the clause that made the first implementation of this
-// ruling a silent miscompile, so read it precisely. "Still holds its forward
-// value" means the value the register held WHEN THE FORWARD GATE RAN, not its
-// value at the end of the forward stream. Those differ whenever a later
-// non-diagonal gate writes the same register. Reverse program order delivers (d)
-// for free — but ONLY because `emitDagReversal` adjoints EVERY recovered gate,
-// including the gates of frozen rails; the freeze suppresses `cqrt_free`, never
-// an adjoint. Any future change that skips an adjoint breaks (d) for every
-// surviving reader of that register (MEASURED: see the Uncomputation.cpp note).
-//
-// DECISIVE COROLLARY: cond(W) = ∅ ⇒ R is freeable only if W is trivial on |0⟩.
-// `cqrt_ry_<W>(H, θ)` has cond = ∅ (its only other operand is a CLASSICAL angle,
-// Rule 3) and is NOT trivial on |0⟩ — it is the gate that mints the superposition.
-// That, not any "redundancy" argument, is why the shipped slice_io free was a
-// hidden measurement: `Ry† (CNOT-onto-kept-tape) Ry |0⟩` is not |0⟩.
-//
-// FAILS CLOSED: anything not named here — including anything a future increment
-// adds to the recovered gate set — is treated as NOT basis-preserving, which
-// freezes the rail (a leak, the safe direction). `cqrt_x` is deliberately ABSENT:
-// `isInPlaceGateOn` never recovers it today, so an entry would be an inert
-// unverified claim; if it is ever recovered it must fail closed here.
-//
-// APPLIED PER GATE, NEVER TO THE COMPOSED CHAIN — deliberate, and it over-freezes.
-// A rail whose gate sequence happens to COMPOSE to a basis permutation (the
-// textbook case is `ry(θ)` then `ry(-θ)`, i.e. the identity) still freezes, because
-// each factor is judged alone. Recognizing cancellation would mean reasoning about
-// products of rotations, which is exactly the kind of "it must cancel" argument
-// this ticket's history says not to trust; the cost is a leaked rail on a shape no
-// emitter produces, and the alternative risks an under-freeze.
-bool preservesBasisUnderRecord(const CallInst *G) {
-  // A reassigning producer — `cq_template_*` (out = f(parents), the embedded
-  // permutation) and `cqrt_qram_load_<W>` (a cell copy conditioned on arr/idx).
-  // Both are permutations of their PARENTS, so (b) holds. (d) holds because
-  // `emitDagReversal` adjoints every recovered gate in reverse program order,
-  // which restores each parent to its producer-time value before this gate's
-  // `_unc` fires. Say it that way and not "the DAG keeps the parents live": LIVE
-  // is not enough, they must be at the RIGHT value, and an earlier draft of this
-  // freeze falsified exactly that by skipping frozen rails' adjoints.
-  // NOTE the spelling matters: `railOf` returns the gate ITSELF for a producer,
-  // so writing this whitelist as {rz, qram_store} with producers closed would
-  // freeze every template rail and collapse into the blunt DAG-global rule.
-  if (isTemplateProducer(G))
-    return true;
-  const Function *Callee = G->getCalledFunction();
-  StringRef N = Callee ? Callee->getName() : StringRef();
-  // Rz is DIAGONAL: trivial on |0⟩ (condition (b) with g = identity), and the
-  // label-diagonal phase it applies commutes with, and cancels against, a
-  // basis-label record.
-  if (N.starts_with("cqrt_rz_"))
-    return true;
-  // A QRAM store is a permutation of its array conditioned on idx/val (and, in
-  // the guarded form, a flag) — all borrowed parents, restored to their
-  // producer-time values by the same every-gate reverse-play as above (NOT merely
-  // "kept live"; a rotated index reaching `cqrt_qram_store_<W>_unc` pops the wrong
-  // cell, which is what the skip-the-adjoint draft actually did).
-  //
-  // ASK `isAbiQramStore` — this was the THIRD live spelling of that relation and the
-  // only one whose bare-prefix form answered in the UNSAFE direction (bd 1fim
-  // Rule-13 round): `true` here means basis-preserving, hence NOT frozen, hence
-  // FREED. An off-ABI store — wrong arity, or the frozen arity with a non-void
-  // return that mints a rail — is not a permutation of its parents at all, and
-  // claiming it is would clear a rail for freeing that the reversal never zeroed.
-  // The other two consumers (`isInPlaceGateOn`, `isInverseEmittable`) now share the
-  // one definition; this makes it three of three (Rule 14).
-  if (isAbiQramStore(G))
-    return true;
-  // Issue dtzb / bd test_C_libtooling-6uqc (M-C Inc 2a) — the IN-PLACE VALUE
-  // gates `cqrt_addc_<W>(R, imm)` / `cqrt_xorc_<W>(R, imm)`. DECIDED, not left
-  // to the fail-closed default, because M-C made them RECOVERABLE: before it,
-  // `isInPlaceGateOn` never returned them and an entry here would have been the
-  // "inert unverified claim" the `cqrt_x` note below warns about. They are
-  // recovered now, so the claim has to be made and argued.
-  //
-  // TRUE, and the ground is (b) — a BASIS PERMUTATION, not (a) triviality on
-  // |0>. `R := R + imm (mod 2^W)` and `R := R ^ imm` are bijections of the
-  // computational basis whose only other operand is a CLASSICAL immediate, so
-  // cond(W) is empty in the quantum sense and W maps |x> to a single basis
-  // label — never a superposition. Every record a kept carrier takes of R is
-  // therefore a copy of a definite label that is a function of R's own
-  // conditions, and `W† C W (|0>_R ⊗ |ψ>) = |0>_R ⊗ (D ^= g(cond))` goes through
-  // exactly as it does for a `cq_template_*` producer, which is the SAME
-  // category of object (a permutation of its inputs) — that is the row this
-  // belongs beside, NOT the diagonal `cqrt_rz_` row.
-  //
-  // SAY WHY THE "DECISIVE COROLLARY" ABOVE DOES NOT REACH THESE. Read literally
-  // ("cond(W) = ∅ ⇒ R is freeable only if W is trivial on |0>") it would exclude
-  // an addc, whose W|0> = |imm> ≠ |0>. But the corollary's argument is about
-  // MINTING SUPERPOSITION — `Ry|0>` is not a basis state at all, so a record of
-  // it is entanglement no adjoint can undo. An addc's |imm> IS a basis state, a
-  // classical constant, so the record it feeds carries no which-path information
-  // and the adjoint (`imm -> -imm`; `xorc` self-inverse — `EmitInverse` already
-  // ships both) returns R to |0>. The corollary is stated for the gate that
-  // motivated it; the invariant above is the general test, and these pass it.
-  //
-  // Clause (d) is delivered by reverse program order, the same way it is for a
-  // template producer: the M-C addc joins the very DAG that walks R (it is an
-  // in-place gate ON R), so its adjoint always fires before any earlier gate's
-  // `_unc` re-reads R. VOID is the load-bearing test, mirroring
-  // `isInPlaceGateOn`'s row (bd 1fim: arity is an incomplete proxy — a non-void
-  // same-named fake is not this gate and must fail closed to `NotClosed`).
-  if ((N.starts_with("cqrt_addc_") || N.starts_with("cqrt_xorc_")) &&
-      G->getType()->isVoidTy() && G->arg_size() == 2)
-    return true;
-  return false;  // `cqrt_ry_<W>` lands here — and so does anything new.
-}
+// `isTemplateProducer` and `preservesBasisUnderRecord` USED to live here, in
+// this anonymous namespace. They are now exported from `ChainWalk` (bd
+// test_C_libtooling-6uqc Inc 5a) because the M-B INTERIOR partition is a third
+// consumer of both, and this project's history says two spellings of one gate
+// relation eventually disagree (bd uow0 `railOf`, bd 1fim `isAbiQramStore`).
+// The bodies and their arguments moved VERBATIM; nothing about the freeze
+// changed. Rule 14 — ask ChainWalk, do not re-spell them.
 
 }  // namespace
 
 DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
-                       DominatorTree &DT) {
+                       DominatorTree &DT, const InteriorPlan *IP) {
   DataDag D;
+
+  // The M-B BORROWED-PARENT FRONTIER (bd 6uqc Inc 5a). A value in `IP->Borrowed`
+  // is read-only for this DAG: the walk must not enqueue it, so it never becomes
+  // a `Root`, its in-place gates are never collected into `Calls`, and nothing
+  // downstream can adjoint or free it. `IP == nullptr` ⇒ always false ⇒ the two
+  // existing partitions behave exactly as before.
+  auto isFrontier = [&](Value *V) { return IP && IP->Borrowed.count(V); };
 
   // 1. Backward worklist DAG recovery. Each handle contributes its in-place
   //    rotations as gates; a template-produced handle is itself a gate and hops
@@ -197,7 +76,8 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
           // classical angle (untainted), so this loop is a no-op for rotations.
           for (Value *Op : G->args())
             if (Op != H && taint.Tainted.count(Op)) {
-              Work.push_back(Op);
+              if (!isFrontier(Op))
+                Work.push_back(Op);
               AncEdges.emplace_back(H, Op);  // Op is a parent of H's rail
             }
         }
@@ -207,7 +87,8 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
         D.Calls.push_back(CI);
       for (Value *Op : CI->args())
         if (taint.Tainted.count(Op)) {
-          Work.push_back(Op);
+          if (!isFrontier(Op))
+            Work.push_back(Op);
           AncEdges.emplace_back(CI, Op);  // Op is a parent of the produced rail
         }
     } else {
@@ -363,6 +244,23 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
         }
         if (SeenGates.count(CU))
           continue;  // a covered DAG gate — the legit fan-out / QQ consumer
+        // M-B INTERIOR (bd 6uqc Inc 5a). An OWNED interior rail's forward
+        // consumer is BY DEFINITION outside the recovered set — that is what
+        // "interior" means, and it is why the whole condition-provenance chain
+        // of `sqrt(a+3.0) <= 5.0` has no dead terminal and was never recovered
+        // at all. Such a consumer is benign for CLOSURE when
+        // `ChainWalk::isInteriorConsumer` admits it (the SAME per-user test
+        // `isInteriorTerminalHandle` already ran — one definition, Rule 14).
+        //
+        // CLOSURE IS NOT THE WHOLE PROOF, and this is the one place that could
+        // be misread as if it were. What this `continue` says is only "the rail
+        // is not owned by some other emitter". That the consumer has ALREADY
+        // EXECUTED, and never reads the rail again, is a POSITIONAL fact the
+        // driver proves separately with `provablyBefore` before it ever builds
+        // an `InteriorPlan` — never here, where there is no insertion point to
+        // reason about.
+        if (IP && IP->Owned.count(R) && isInteriorConsumer(CU, R))
+          continue;
         D.NotClosed = true;  // controlled copy/cswap, free, or out-of-DAG gate
         continue;
       }
@@ -381,7 +279,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
   //     a carrier the reversal never touches (a kept output tape) stays CORRELATED
   //     with it, so re-emitting its adjoint returns it to |0⟩ only if its forward
   //     chain is a basis permutation of conditions that are still live —
-  //     `preservesBasisUnderRecord` above carries the algebra. A rail that fails
+  //     `ChainWalk::preservesBasisUnderRecord` carries the algebra. A rail that fails
   //     that is ENTANGLED at the free point, and `cqrt_free` is a hardware reset =
   //     a projective measurement (Rules 5/6/8). Freeze it: NO `cqrt_free`, LEFT
   //     ALLOCATED (a Rule-6 safe leak), decided here and executed in

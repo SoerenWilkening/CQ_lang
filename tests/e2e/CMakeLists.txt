@@ -1827,6 +1827,28 @@ add_test(NAME e2e-slice-uncompute-dead-dag
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_dead_dag.expected.log")
 
+# M-B Increment 5a (bd test_C_libtooling-6uqc): the INTERIOR-RAIL uncompute. bd
+# 6uqc's P1 end to end -- the first slice in which a rail that is NEITHER a dead
+# terminal NOR a measured value is discharged. At HEAD (c36934a) `sitofp`/`fadd`/
+# `sqrt`/`fcmp` all survived as allocated, entangled basis records of the wire
+# with `opt` rc=0, verify clean and stage 2b silent (bd 1739: the checker does not
+# track template-minted rails). This golden witnesses ORDER -- LIFO adjoints, each
+# rail freed right after the adjoint that zeroes it, the whole reversal placed
+# BEFORE the measurement -- and it witnesses the BORROWED-PARENT frontier by
+# ABSENCE: `h0`, the `cqrt_alloc`-minted source wire, gets no negated-angle `ry`
+# and no `cqrt_free`, because `Ry` is not a basis permutation and a record of it
+# survives (Rule 6). It also LINKS the fp `_unc` grid the interior partition now
+# reaches on a live chain (`sitofp_i32_to_f64_unc`, `fadd_f64_hl_unc`,
+# `sqrt_f64_unc`, `fcmp_ole_f64_hl_unc`), which no ir-pass fixture can do.
+# Strict stage 2b (no --allow-unproven).
+add_test(NAME e2e-slice-uncompute-interior-chain
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_interior_chain.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_uncompute_interior_chain.expected.log")
+
 # Phase 5 (WI-7, test_C_libtooling-p2s2.7): the permanent `_unc` LINK-COMPLETENESS
 # guard for the shapes slice_uncompute_dead_dag does NOT exercise. WI-6 linked only
 # the bare-QQ + `_hl` `_unc` forms; the `_lh`, tainted-cast, and `fneg` `_unc`

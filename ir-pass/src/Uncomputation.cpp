@@ -21,6 +21,7 @@
 #include "EmitInverse.h"        // emitInverseCall
 #include "FreePoint.h"          // computeFreePoint
 #include "TaintPropagation.h"   // TaintSet
+#include "WireWalk.h"          // provablyBefore (the ONE position-aware proof)
 #include "WidthDispatch.h"      // freeFn
 
 #include "llvm/ADT/DenseMap.h"
@@ -329,9 +330,28 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
 // that escaped the loop is leaked, never reversed once over a K-times rail). For
 // the regular group (`IterLocal=false`) the backstop stands exactly as before —
 // a loop-resident gate leaves the whole DAG allocated (a safe leak).
+//
+// `ReversedGates` / `ReversedRails` are OUT-params, written ONLY when this group
+// actually emits (bd 6uqc Inc 5a). The M-B interior partition runs after every
+// dead-terminal group and must never touch a rail one of them already adjointed
+// or freed: two owners for one rail double-uncompute the shared prefix (Rule 8 —
+// a use-after-free plus a double free, and `opt -verify` sees neither).
+//
+// The two partitions are ALSO disjoint by construction, and the argument is worth
+// recording because it is what makes the bookkeeping a backstop rather than the
+// whole fence: a successful dead-terminal group is CLOSED, so every rail in it has
+// all of its consumers inside it. An interior rail R (which by definition has a
+// consumer outside any set that owns it) can therefore not be in such a group, and
+// a BORROWED parent P of R cannot either — P's consumer is R's producer, which is
+// outside, so the group would have been `NotClosed` and emitted nothing. The
+// explicit sets are the load-bearing image of that argument, in the same spirit as
+// `ControlOwnedRails` / `OutputRails` / `GraveyardRails`: do not rest on the
+// coincidence.
 void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
                           TaintSet &taint, WidthDispatch &wd, DominatorTree &DT,
-                          PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal) {
+                          PostDominatorTree &PDT, LoopInfo &LI, bool IterLocal,
+                          SmallPtrSetImpl<const CallInst *> &ReversedGates,
+                          SmallPtrSetImpl<Value *> &ReversedRails) {
   if (Terminals.empty())
     return;
 
@@ -509,6 +529,279 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
 
   // 5. Reverse the whole DAG once at `At`.
   emitDagReversal(D, At, wd, taint);
+  for (CallInst *G : D.Calls) {
+    ReversedGates.insert(G);
+    if (Value *R = railOf(G))
+      ReversedRails.insert(R);
+  }
+  for (Value *R : D.Rails)
+    ReversedRails.insert(R);
+}
+
+// ── M-B INTERIOR PARTITION (bd test_C_libtooling-6uqc Inc 5a) ────────────────
+
+// Does `M` — a user of the BORROWED parent `P` — leave P's BASIS LABEL alone?
+//
+// FAILS CLOSED, and that is the whole design: exactly two shapes are PROVEN
+// read-only and everything else counts as a mutation, a `cqrt_measure_*`
+// included. Clause (d) of the record invariant (bd memory
+// [record-freeze-invariant-2026-08-10]) requires every register an adjoint reads
+// to hold the value it held WHEN THE FORWARD GATE RAN; the interior partition
+// cannot deliver that by reverse program order the way the whole-DAG spine does,
+// because a borrowed parent is by construction NOT walked and NOT adjointed. So
+// it must be proven un-mutated over the interval instead.
+bool preservesBorrowedParent(const CallInst *M, const Value *P) {
+  const Function *Callee = M->getCalledFunction();
+  StringRef N = Callee ? Callee->getName() : StringRef();
+  // (1) A DIAGONAL rotation. `cqrt_rz_<W>(P, θ)` writes a phase and never a basis
+  //     label, so the `_unc`'s recomputation of f(P) is unaffected and the phase
+  //     commutes past the XOR it applies. (This is the same reason the flag-strip
+  //     is `Rz`-transparent — bd memory [rz-diag-flag-strip-invariant].) The
+  //     `_controlled` twin is excluded: it is a Phase-4 gate on a rail Phase 4
+  //     owns, and its own arg-0 is a flag, not the rotated handle.
+  if (N.starts_with("cqrt_rz_") && !N.contains("_controlled") &&
+      M->arg_size() == 2 && M->getArgOperand(0) == P)
+    return true;
+  // (2) A FORWARD reassigning producer. `cq_template_*` / `cqrt_qram_load_<W>`
+  //     READ every operand and mint a FRESH result rail; there is no mutating
+  //     slot. This is the shape every recovered gate of the interior DAG has, so
+  //     the group's own forward gates are admitted here without a special case.
+  if (isTemplateProducer(M))
+    return true;
+  // Everything else is a mutation for this purpose: `cqrt_ry_` (the chained
+  // theta), `cqrt_addc/xorc_` and `cqrt_qram_store_` (in-place relabelling),
+  // `cqrt_x` / `cqrt_cswap` / `cqrt_cnot` / `cqrt_toffoli` (routes and targets),
+  // a `cqrt_copy_*` destination, every `_unc`/`_inv` adjoint, a `cqrt_free`, and
+  // `cqrt_measure_*` (a collapse — sound to read past in principle, refused here
+  // because "in principle" is what this project's history says not to trust).
+  return false;
+}
+
+// Reverse the M-B INTERIOR group of `F`: the rails that are dead after their last
+// forward use but are NOT dead terminals, so the whole-DAG spine never saw them.
+//
+// LEAK-FIRST, WITHOUT EXCEPTION. Every unprovable step below is a `return` — the
+// rail is LEFT ALLOCATED (Rule 6's fallback), never freed dirty and never a loud
+// decline. Loudness for a record still standing at a non-diagonal gate belongs to
+// the LATE M-A guard (`declineLiveRecordRotations`), which runs after this and
+// reads the discharges this function emits as FACTS (`isDischargeOf` matches the
+// out-first `_unc` and the `cqrt_free`, both of which `emitDagReversal` mints in
+// exactly that shape). That division of labour is the design, not an accident:
+// two owners for one diagnostic is how a decline and an accept end up disagreeing
+// about the same program.
+void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
+                          DominatorTree &DT, PostDominatorTree &PDT, LoopInfo &LI,
+                          const SmallPtrSetImpl<const CallInst *> &ReversedGates,
+                          const SmallPtrSetImpl<Value *> &ReversedRails) {
+  // 1. STRUCTURAL candidates (ChainWalk::isInteriorTerminalHandle), minus every
+  //    rail another owner holds. The subtractions mirror terminal selection's,
+  //    one for one, because an interior rail is selected by a DIFFERENT predicate
+  //    and would otherwise slip past images that are load-bearing there.
+  SmallVector<CallInst *, 16> Cand;  // program order — FileCheck-stable
+  for (BasicBlock &BB : F) {
+    // (§2.9) The acyclic backstop, applied PER CANDIDATE rather than per group: a
+    // rail minted inside a loop is re-minted every iteration, so one reversal at
+    // a function-scope point would adjoint a K-times gate once and reset a
+    // re-allocated rail K−1 times too many. Inc 5 leaves every loop rail
+    // allocated; the 7.3 iteration-local group is the only in-loop reversal and
+    // it has its own affirmative proof.
+    if (LI.getLoopFor(&BB))
+      continue;
+    for (Instruction &I : BB) {
+      auto *H = dyn_cast<CallInst>(&I);
+      if (!H)
+        continue;
+      if (taint.ControlOwnedRails.count(H) || taint.OutputRails.count(H) ||
+          taint.GraveyardRails.count(H) || taint.UntaintedMergeRails.count(H))
+        continue;
+      if (ReversedRails.count(H) || ReversedGates.count(H))
+        continue;  // single ownership — see reverseTerminalGroup's note.
+      if (!isInteriorTerminalHandle(H, taint))
+        continue;
+      Cand.push_back(H);
+    }
+  }
+  if (Cand.empty())
+    return;
+
+  // 2. THE POSITIONAL HALF. The discharge point is the nearest common
+  //    POST-dominator of the point right after every consumer of every owned
+  //    rail — the same `dagInsertPoint` discipline the dead-terminal groups use,
+  //    with the anchor set built from CONSUMERS instead of from `FreePoint`
+  //    (there is no free point to compute: an interior rail is not a terminal, so
+  //    `computeFreePoint` would classify it from an empty user scan).
+  //
+  //    Then every consumer must be PROVABLY BEFORE that point:
+  //    `DT.dominates(U, At)` — if control reaches `At` the consumer has run — AND
+  //    `!isPotentiallyReachable(At, U)` — it never runs again, which is what
+  //    stops a back edge from re-reading a rail this reversal already zeroed.
+  //    A candidate that fails is DROPPED, which can only move `At` earlier, which
+  //    can only break more candidates — hence the bounded fixpoint. Failure to
+  //    converge leaks the whole group (never a wrong placement).
+  SmallPtrSet<Value *, 16> Owned(Cand.begin(), Cand.end());
+  Instruction *At = nullptr;
+  bool Converged = false;
+  for (unsigned Round = 0; Round < 8 && !Owned.empty(); ++Round) {
+    SmallVector<Instruction *, 16> Anchors;
+    for (CallInst *R : Cand) {
+      if (!Owned.count(R))
+        continue;
+      for (User *U : R->users()) {
+        auto *UI = cast<Instruction>(U);  // vetted by (I3): every user is a call
+        Instruction *Nx = UI->getNextNode();
+        if (!Nx)
+          return;  // a consumer in terminator position — no anchor exists.
+        Anchors.push_back(Nx);
+      }
+    }
+    if (Anchors.empty())
+      return;
+    At = dagInsertPoint(Anchors, PDT);
+    if (!At)
+      return;  // the consumers do not reconverge — leak.
+    bool Dropped = false;
+    for (CallInst *R : Cand) {
+      if (!Owned.count(R))
+        continue;
+      for (User *U : R->users())
+        if (!provablyBefore(cast<Instruction>(U), At, DT)) {
+          Owned.erase(R);
+          Dropped = true;
+          break;
+        }
+    }
+    if (!Dropped) {
+      Converged = true;
+      break;
+    }
+  }
+  if (!Converged || Owned.empty() || !At)
+    return;
+
+  // 3. THE BORROWED-PARENT FRONTIER. Every tainted operand of an owned rail's
+  //    producer (and of its in-place gates) that is not itself owned. These are
+  //    READ-ONLY: never walked, never adjointed, never freed. The canonical
+  //    member is the `cqrt_alloc`-minted source wire, whose `cqrt_ry` MINTED the
+  //    superposition — no adjoint returns it to |0⟩ once a downstream record
+  //    exists, which is exactly the situation every interior rail is in.
+  SmallPtrSet<Value *, 8> Borrowed;
+  auto borrow = [&](const CallInst *G, Value *Self) {
+    for (Value *Op : G->args())
+      if (Op != Self && taint.Tainted.count(Op) && !Owned.count(Op))
+        Borrowed.insert(Op);
+  };
+  for (CallInst *R : Cand) {
+    if (!Owned.count(R))
+      continue;
+    borrow(R, R);
+    for (User *U : R->users())
+      if (auto *G = dyn_cast<CallInst>(U))
+        if (isInPlaceGateOn(G, R))
+          borrow(G, R);
+  }
+  for (Value *B : Borrowed)
+    if (ReversedRails.count(B))
+      return;  // an earlier group already reversed/freed it — leak.
+
+  // 4. Recover the interior DAG under that frontier and re-prove everything the
+  //    dead-terminal driver proves, silently.
+  InteriorPlan IP;
+  IP.Owned = Owned;
+  IP.Borrowed = Borrowed;
+  SmallVector<Value *, 16> Terms;
+  for (CallInst *R : Cand)
+    if (Owned.count(R))
+      Terms.push_back(R);
+  DataDag D = recoverDataDag(Terms, taint, DT, &IP);
+  if (D.MeasuredUpstream || D.Escaped || D.NotClosed || D.Calls.empty())
+    return;
+  if (!D.Roots.empty())
+    return;  // the frontier should have stopped every root — leak if it did not.
+  for (CallInst *G : D.Calls) {
+    if (ReversedGates.count(G))
+      return;  // single ownership backstop.
+    if (!isInverseEmittable(G))
+      return;
+    // THE 261j INVARIANT, APPLIED UNIVERSALLY RATHER THAN BY SEED — and this is
+    // the load-bearing soundness fence of the whole increment. An interior rail
+    // is one whose forward consumer stays LIVE and outside the reversal; that
+    // consumer's own rail is a record of this one, taken by a carrier the
+    // reversal never touches. That is precisely `recordsIntoKeptCarrier`'s
+    // situation, so the same algebra applies: freeing the rail is Rule-6-legal
+    // only if its whole forward chain is a BASIS PERMUTATION of live conditions
+    // (bd 261j(a), owner ruling 2026-08-10). `cq_template_*` producers, `Rz`,
+    // `addc`/`xorc` pass; `cqrt_ry_<W>` does not, which is exactly why an
+    // alloc-minted source wire is borrowed and never owned. Seeding the freeze
+    // instead would reach the same verdict on today's shapes and would rest on
+    // `recordsIntoKeptCarrier` naming a surface (`tape`/`copy`) that has nothing
+    // to do with why THIS rail is recorded.
+    if (!preservesBasisUnderRecord(G))
+      return;
+    if (LI.getLoopFor(G->getParent()))
+      return;
+    if (!DT.dominates(G, At))
+      return;  // a gate on one arm of a diamond — Phase 4's job, not this one.
+    // ...AND `At` MUST POST-DOMINATE THE GATE. Dominance alone says the gate ran
+    // before the discharge on every path that REACHES the discharge; it says
+    // nothing about the paths that do not. `dagInsertPoint` post-dominates the
+    // ANCHORS (the consumers), which is a weaker set than the GATES: a rail
+    // minted in `entry` whose only consumer sits inside a classical `if` arm
+    // yields an `At` inside that arm, and the reversal then runs on one path
+    // while the mint ran on both. Nothing is freed dirty there — the other path
+    // simply leaks — but "the rail is dead on EVERY path at the discharge" is
+    // the property the post-dominator discipline exists to deliver, and a
+    // one-armed reversal does not have it. Leak instead.
+    if (!PDT.dominates(At->getParent(), G->getParent()))
+      return;
+    if (!Owned.count(railOf(G)))
+      return;  // no gate may be adjointed whose rail this group does not own.
+  }
+  // (§2.9) AT-MOST-ONCE on the FINAL point, `blockCanRepeat` rather than
+  // `LoopInfo` (an irreducible cycle is not a natural loop but still repeats).
+  if (blockCanRepeat(At->getParent()))
+    return;
+
+  // 5. CLAUSE (d) — the straight-line no-mutation scan (d1). Every borrowed
+  //    parent must hold, at each emitted `_unc`, the value it held when the
+  //    forward gate that reads it ran. The whole-DAG spine gets that free from
+  //    reverse program order because it adjoints EVERY gate it walked; a borrowed
+  //    parent is deliberately not walked, so the property is proven instead.
+  //
+  //    A mutation `M` of `P` is harmless iff it is provably OUTSIDE the interval
+  //    [first recovered gate reading P, At]. Inc 5a proves only the LEFT side:
+  //    `provablyBefore(M, First)` — M ran before the interval opened and, by the
+  //    reachability half, can never run again inside it. (The RIGHT side — a
+  //    mutation that runs only AFTER the discharge, which is bd 6uqc's P4: the
+  //    chained `cq_theta` on the source wire — is Inc 5b.)
+  for (Value *P : Borrowed) {
+    CallInst *First = nullptr;
+    for (CallInst *G : D.Calls) {  // forward program order (recoverDataDag §2)
+      bool Reads = false;
+      for (Value *Op : G->args())
+        if (Op == P)
+          Reads = true;
+      if (Reads) {
+        First = G;
+        break;
+      }
+    }
+    if (!First)
+      continue;  // borrowed but never read by an adjoint — nothing to prove.
+    for (User *U : P->users()) {
+      auto *M = dyn_cast<CallInst>(U);
+      if (!M)
+        return;  // a φ/select ROUTES the same physical rail (bd tayx), a `store`
+                 // escapes it, and none of them is a gate whose position this
+                 // scan can reason about — leak rather than guess.
+      if (preservesBorrowedParent(M, P))
+        continue;
+      if (provablyBefore(M, First, DT))
+        continue;
+      return;  // unprovable ⇒ the whole group leaks (Rule 6).
+    }
+  }
+
+  emitDagReversal(D, At, wd, taint);
 }
 
 }  // namespace
@@ -526,11 +819,13 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
     //    work / merge out-rail the swap-route emitter owns and leaves allocated;
     //    its reversal-or-leak is Phase 4's, not the data-uncompute driver's).
     SmallVector<CallInst *, 8> Terminals;
+    bool AnyTaintedProducer = false;  // cheap gate: no tainted rail ⇒ no work
     for (BasicBlock &BB : F)
       for (Instruction &I : BB) {
         auto *H = dyn_cast<CallInst>(&I);
         if (!H || !taint.Tainted.count(H) || !isDataProducer(H))
           continue;
+        AnyTaintedProducer = true;
         if (taint.ControlOwnedRails.count(H))
           continue;  // DD-4: Phase-4 owns this rail
         if (taint.OutputRails.count(H))
@@ -548,7 +843,15 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
           continue;  // collapse the reassignment DAG to its terminals (§2.1)
         Terminals.push_back(H);
       }
-    if (Terminals.empty())
+    // THE `Terminals.empty()` EARLY-OUT IS NOW KEYED ON `AnyTaintedProducer`
+    // INSTEAD (bd 6uqc Inc 5a). The M-B interior partition below has its OWN
+    // candidate predicate — an interior rail is by definition NOT a terminal —
+    // so bailing on "no dead terminal" would have made the whole increment
+    // unreachable in exactly the functions it exists for (P1's chain ends at a
+    // measured `zext` rail; had that rail been returned instead, `Terminals`
+    // would be empty and every interior rail invisible). The replacement gate is
+    // strictly weaker and still costs a module with no tainted data nothing.
+    if (!AnyTaintedProducer)
       continue;
 
     DominatorTree DT(F);
@@ -578,10 +881,23 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
       }
     }
 
-    reverseTerminalGroup(F, Regular, taint, wd, DT, PDT, LI, /*IterLocal=*/false);
+    // Every rail/gate a dead-terminal group actually reversed, so the M-B
+    // interior partition below can prove single ownership (Rule 8).
+    SmallPtrSet<const CallInst *, 16> ReversedGates;
+    SmallPtrSet<Value *, 16> ReversedRails;
+
+    reverseTerminalGroup(F, Regular, taint, wd, DT, PDT, LI, /*IterLocal=*/false,
+                         ReversedGates, ReversedRails);
     for (Loop *L : IterLoops)
       reverseTerminalGroup(F, IterByLoop[L], taint, wd, DT, PDT, LI,
-                           /*IterLocal=*/true);
+                           /*IterLocal=*/true, ReversedGates, ReversedRails);
+
+    // M-B (bd 6uqc Inc 5): the INTERIOR rails — dead after their last forward
+    // use, but never a terminal, so nothing above ever saw them. Runs LAST so it
+    // sees the settled module (its clause-(d) scan reads the emitted traffic) and
+    // so the dead-terminal groups keep first claim on every rail they can reach.
+    reverseInteriorGroup(F, taint, wd, DT, PDT, LI, ReversedGates,
+                         ReversedRails);
   }
 }
 

@@ -72,6 +72,38 @@ bool isInPlaceGateOn(const llvm::CallInst *G, const llvm::Value *H);
 // A `cqrt_alloc_<W>` mint — a tainted register ROOT (the DAG bottoms out here).
 bool isAllocMint(const llvm::Value *V);
 
+// A REASSIGNING template producer (`cq_template_<op>_<W>…`) — its result is a
+// FRESH rail the DAG must zero and free. A Phase-7.5 `cqrt_qram_load_<W>` result
+// counts too (a cell copy-out is a fresh rail on the same footing). Rotations are
+// in-place, allocs are roots, and the controlled forms / `_inv`/`_unc` twins are
+// not forward data producers.
+//
+// HOISTED HERE from `DagTraversal`'s anonymous namespace by bd
+// test_C_libtooling-6uqc Inc 5a, unchanged, because the M-B interior partition
+// (`isInteriorTerminalHandle` below) is a THIRD consumer and this project's
+// history is unambiguous about what a second spelling of one gate relation
+// costs (bd uow0 `railOf`, bd 1fim `isAbiQramStore`). Rule 14.
+bool isTemplateProducer(const llvm::CallInst *G);
+
+// bd 261j(a) — does gate `G` keep its rail a BASIS PERMUTATION OF LIVE CONDITIONS,
+// so that re-emitting the adjoint still returns the rail to |0⟩ even though the
+// rail was RECORDED into a carrier the reversal never touches? See the .cpp for
+// the full invariant (owner ruling 2026-08-10) and the per-row arguments.
+//
+// TWO CONSUMERS, and they ask it for two different reasons:
+//   * `DagTraversal` step 3b — the record FREEZE, seeded per rail from
+//     `recordsIntoKeptCarrier`.
+//   * the M-B INTERIOR partition (Inc 5a) — which applies the same invariant
+//     UNIVERSALLY rather than by seed, because an interior rail is BY
+//     CONSTRUCTION recorded into a downstream carrier the reversal never
+//     touches: that is exactly what makes it interior rather than a dead
+//     terminal. So every gate of every owned interior rail must pass this, and
+//     the alloc-minted `cqrt_ry` source rail — which never can — stays a
+//     BORROWED parent, read-only and left allocated.
+//
+// FAILS CLOSED: anything not named in the .cpp is NOT basis-preserving.
+bool preservesBasisUnderRecord(const llvm::CallInst *G);
+
 // A `@cqrt_measure_<W>` sink (the lowered measure form Phase 5 sees). A measured
 // handle is a quantum→classical sink, not a forward data consumer.
 bool isMeasureSink(const llvm::CallInst *CI);
@@ -235,6 +267,59 @@ llvm::Value *railOf(llvm::CallInst *G);
 // disarm all three of the driver's loud declines (uninvertible / divergent-arm /
 // measured-lineage). That is strictly worse than the blunt rule. Do NOT mirror.
 bool isTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
+
+// ── M-B INTERIOR MODE (bd test_C_libtooling-6uqc Inc 5a) ─────────────────────
+//
+// `isTerminalHandle` above answers "is this register's last value never read
+// again?" — the DEAD-TERMINAL question. It is FALSE for every rail in the middle
+// of a live chain, which is why the whole condition-provenance chain of
+//     int f = sqrt(a + 3.0) <= 5.0;   /* a = cq_theta(...) */
+// has no terminal at all and is never seeded into `recoverDataDag`: four
+// entangled rails minted, never uncomputed, never freed, and both shipped gates
+// blind to it (the golden records a self-consistent stream; `free_pairing_check`
+// does not track template-minted rails). That is bd 6uqc's P1.
+//
+// The INTERIOR question is different and is a POSITION question: is this rail
+// dead AFTER its last forward use? This predicate answers the STRUCTURAL half
+// only — the half that can be decided from the def-use graph — and the driver
+// (`Uncomputation`'s interior partition) owns the positional half (every
+// consumer provably executed before the discharge point and never re-read
+// after; `provablyBefore`, dominance + `!isPotentiallyReachable`).
+//
+// A rail is a structural interior candidate iff ALL of:
+//   (I1) it is tainted and its producer is an UNCONTROLLED `cq_template_*` —
+//        a fresh rail minted by a basis permutation of its operands. A
+//        `cqrt_alloc_<W>` source rail is deliberately EXCLUDED: it carries the
+//        `cqrt_ry` that MINTED the superposition, so once anything downstream
+//        holds a record of it no adjoint returns it to |0⟩ (the `DagTraversal`
+//        "decisive corollary"). Such a rail is a BORROWED parent — read-only,
+//        never adjointed, never freed. `cqrt_qram_load_<W>` rails are excluded
+//        too, by SCOPE not by physics (Inc 5 leaves the 7.5 surface alone;
+//        pinned by lowering_uncompute_interior_leak_qram_load.ll).
+//   (I2) it is NOT already a dead terminal (`isTerminalHandle`) — the existing
+//        whole-DAG partition owns those, and one rail must have exactly ONE
+//        owner or its shared prefix is adjointed twice (Rule 8).
+//   (I3) EVERY user is a `CallInst` and `isInteriorConsumer`: either an in-place
+//        gate on the rail that `preservesBasisUnderRecord` (Rz / addc / xorc —
+//        NOT `cqrt_ry`), or a forward reassigning template producer that READS
+//        it. A measure, a tape write, a copy-out, a `ret`, a φ/select, a
+//        controlled gate, a route, a clone call, a `cqrt_free` or any adjoint
+//        twin all DISQUALIFY the rail (it is observed, escaped, recorded into a
+//        kept carrier, or owned by another emitter) — safe-leak, never a
+//        decline (M-A owns loudness; the driver is LEAK-FIRST).
+//   (I4) it has at least one FORWARD consumer, else (I2) would have caught it.
+//
+// The predicate is deliberately blind to position so that the two halves cannot
+// be confused: everything here is true of the SSA graph and survives any
+// scheduling, and everything the driver adds is a dominance/reachability proof.
+bool isInteriorTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
+
+// The per-USER half of `isInteriorTerminalHandle` (I3), exported because the DAG
+// closure scan needs the SAME answer: an interior rail's forward consumer is a
+// benign closure user (it does not make the DAG `NotClosed`) precisely when it is
+// one of the two shapes this predicate admits. Two spellings of that would be the
+// `railOf`/`isAbiQramStore` drift hazard again (Rule 14).
+bool isInteriorConsumer(const llvm::CallInst *C, const llvm::Value *R);
 
 }  // namespace cq
 
