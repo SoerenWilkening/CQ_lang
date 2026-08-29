@@ -141,21 +141,41 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //
 // SCOPE, and why it is NOT a second `tryCaseA`. This round makes ONE claim: the
 // loop-carried tainted header phi denotes ONE PERSISTENT QUBIT RAIL, so it
-// collapses to its root mint. It deliberately does NOT re-prove `tryCaseA`'s
-// COVERAGE/CLOSURE (every tainted body value is on the rail, every rail user is
-// a gate/measure/escape) — those exist to let round 1 CLAIM a loop, and the
-// post-flatten body legitimately contains values that are on no rail at all: the
-// region's own emitted stream (flag mint, `cqrt_cswap` route, `_unc` strip) and
-// a derived condition's iteration-local template rails. Their disposition
-// belongs to the owners that already have it — the Phase-5 uncompute spine and
-// `FreePoint`, whose back-edge live-range reject is untouched.
+// collapses to its root mint. It does not re-prove `tryCaseA`'s COVERAGE ("every
+// tainted body value is on the rail") — that is a CLAIM condition, about whether
+// round 1 may own a loop, and the post-flatten body legitimately contains values
+// on no rail at all: the region's own emitted stream (flag mint, `cqrt_cswap`
+// route, `_unc` strip) and a derived condition's iteration-local template rails.
+// Their disposition belongs to the owners that already have it — the Phase-5
+// uncompute spine and `FreePoint`, whose back-edge live-range reject is untouched.
 //
-// The decline partition is unchanged and still LOUD: a latch incoming that does
-// not peel back to the phi is the X1 cross-iteration dirty rail
+// IT DOES RE-PROVE THE OTHER HALF, AND THE FIRST VERSION OF THIS ROUND DID NOT.
+// `tryCaseA`'s CLOSURE was carrying TWO obligations under one name. The second
+// one is a UNITARY condition, not a claim condition: a rail record may only be
+// READ at a position where the register still holds it. The collapse RAUWs every
+// member onto one handle, so a consumer reads whatever the wire holds at ITS
+// position while the SSA name denotes a fixed prefix of the rail's gates —
+// and inside a loop those diverge the moment any gate separates them.
+//
+//     for (…) { if (q == 5) q = cq_phi(q, PI); acc = q * 7; q += 3; }
+//     return cq_measure(q) + cq_measure(acc);
+//
+// `clang -O1` sinks the `mul` past the loop, so the emitted template runs against
+// the POST-loop register and computes `(q0+3k)*7` where the source says
+// `(q0+3(k-1))*7`. `opt` exit 0, `opt -verify` clean, STRICT stage-2b clean; the
+// shape is perfect and only the state is wrong (bd 8h7d.5 Rule-13 round 1,
+// finding F1). Round 1 declines that program; round 2 collapsed it. The fence is
+// `staleRailRecordRead` (LoopLowering.cpp), asked by BOTH rounds — which also
+// closed round 1's own older half of the hole, where CLOSURE admitted a
+// `cq_measure`/`ret` of a rail value at ANY position.
+//
+// The decline partition is otherwise unchanged and still LOUD: a latch incoming
+// that does not peel back to the phi is the X1 cross-iteration dirty rail
 // (`kMsgCrossIter`); a rail value with two forward in-place consumers is the
-// Rule-8 fan-out (`kMsgRailFanout`). A phi this round cannot classify either way
-// is LEFT STANDING, and `declineClassicalMuxes` — which runs after it — declines
-// it loudly. Nothing is silently accepted.
+// Rule-8 fan-out (`kMsgRailFanout`); a rail record read past a gate on its own
+// rail is `kMsgRailRecordStale`. A phi this round cannot classify either way is
+// LEFT STANDING, and `declineClassicalMuxes` — which runs after it — declines it
+// loudly. Nothing is silently accepted.
 void collapseFlattenedLoopRails(llvm::Module &M, TaintSet &taint);
 
 // Issue dtzb — is `BO` a recognized IN-PLACE value rail self-update (`q = q OP

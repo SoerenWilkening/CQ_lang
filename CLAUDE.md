@@ -63,6 +63,11 @@ class of bug.
 > rounds; 2026-06-26). That 3-for-3 hit rate across successive rounds, including one round
 > *after* clearance, is the load-bearing fact when scoping any further loop work: assume the
 > next loop shape also hides over-accepts, and budget the adversarial rounds up front.
+> **It is now 4-for-4:** the first adversarial round on the 7.3 Inc-3 in-loop-control
+> commit (`ba35c1f`, bd `8h7d.5`) found a confirmed silent miscompile in it *plus* an
+> older one of the same class in round-1 Case A that had shipped since Increment 1
+> (bd `test_C_libtooling-5sva`) — see the in-loop paragraph below. Both were
+> verify-clean, golden-clean and stage-2b-clean.
 > **"DONE" here
 > means the scoped CORE increments shipped + Rule-13-cleared; everything outside the
 > shipped accept-shape declines loudly (Prime Directive), so the open follow-ons are
@@ -799,8 +804,35 @@ persistent rail phi and license the in-body per-iteration discharge; and
 `provablyBefore` gained a per-activation reading (`provablyBeforePerActivation` +
 the `phiTracksWire` fence, `WireWalk`) so a body Ry reached only around the back
 edge reads as the NEXT iteration's producer rather than this one's staler. The
-witness is BYTE-IDENTITY with the hand-unrolled twin (three `cmp` ctest gates).
+witness is BYTE-IDENTITY with the hand-unrolled twin (four `cmp` ctest gates).
+**THE FIRST ADVERSARIAL ROUND ON THAT COMMIT FOUND A CONFIRMED SILENT MISCOMPILE
+IN IT, WHICH IS THE FACT TO CARRY, NOT THE FEATURE.** Round 2 said it
+"deliberately does not re-prove `tryCaseA`'s COVERAGE/CLOSURE" — but CLOSURE was
+carrying **two** obligations under one name: a CLAIM condition (may round 1 own
+this loop?) and a **UNITARY** condition (is a rail record read at a position where
+the register still holds it?). Only the first is round-1-specific; dropping the
+bundle dropped both, and `for (…) { if (q==5) q=cq_phi(q,PI); acc = q*7; q += 3; }`
+emitted the `mul` in the EXIT block against the **post-loop** register (`clang -O1`
+sinks it) — a different unitary at `opt` exit 0, verify-clean and STRICT stage-2b
+clean. The fence is `LoopLowering::staleRailRecordRead`, asked by **both** rounds:
+a rail member may be read only where no rail-relabelling gate (`cq_theta`/Ry or a
+dtzb in-place `add`/`xor`; `cq_phi`/Rz is diagonal and exempt) executes between the
+record's definition and the read without that definition re-executing. Grouped per
+ROOT MINT — two chains from one mint are **one** register (`int a=q,b=q` is an
+alias, Rule 8) and must interfere, two mints must not. **The same round found the
+identical defect in ROUND 1, PRE-DATING the increment** (`CLOSURE` admitted a
+`cq_measure`/`ret` of a rail value at any position; verified on a `7ba8b2d` base
+build, bd `test_C_libtooling-5sva`), plus a **vacuous** `provablyBeforePerActivation`
+call whose barrier was the proof's own subject `A` — the barrier walk cut at the
+instruction it was trying to reach, so the call silently degenerated to plain
+dominance (`Barrier == A` is now refused in the predicate), and a **wire-blind**
+`phiTracksWire` whose staleness test made the disposition depend on SOURCE ORDER and
+made two independent registers in one loop permanently unlowerable (now per-wire;
+`control_swap_inloop_two_registers.ll` + `slice_control_grover_loop_two_regs`).
 Read bd memories [`inloop-control-rolled-8h7d5`],
+[`inloop-rail-record-escape-closure-8h7d5`],
+[`peractivation-barrier-must-not-be-subject-p1`],
+[`per-wire-staleness-not-source-order-od1`],
 [`d8jl-correction-flatten-repairs-headerphi`] and
 [`provably-before-per-activation`] before touching any of it. IN-LOOP VALUE
 (method-B) arms, depth-2 nests, `switch`, the 6.5 classical-call arm, irreducible
@@ -912,7 +944,7 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 # five gate moments (Rule-13 core commit · pre-push · harness change · template
 # regen · accept/decline predicate change).
 #
-# 282 ctest entries (2026-08-29: +18 for the bd 8h7d.5 in-loop-control group — 7 rolled/unrolled/dynamic slices + 3 `cmp` twin gates, and the rest are the earlier libm/e2e growth; 2026-08-27: +2 for the bd hcrg sequential-region slices; the
+# 285 ctest entries (2026-08-30: +3 for the bd 8h7d.5 Rule-13 round-1 two-register group — 2 slices + 1 `cmp` twin gate; 2026-08-29: +18 for the bd 8h7d.5 in-loop-control group — 7 rolled/unrolled/dynamic slices + 3 `cmp` twin gates, and the rest are the earlier libm/e2e growth; 2026-08-27: +2 for the bd hcrg sequential-region slices; the
 # figures below were taken at 252/253 and their RATIOS still hold). RUN IT PARALLEL
 # — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
@@ -949,9 +981,9 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1267 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-29). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1274 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-30). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 272 entries (262 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, the 3 spec/predmux entries and the 3 bd 8h7d.5 `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-29 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
+ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 275 entries (264 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, the 3 spec/predmux entries and the 4 bd 8h7d.5 `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-30 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
 
 # One fixture (lit --filter matches the test display name)

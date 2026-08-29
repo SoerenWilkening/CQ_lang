@@ -29,6 +29,7 @@
 #include "llvm/IR/IRBuilder.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -218,6 +219,200 @@ bool isMeasureCall(const Instruction *I) {
     return false;
   StringRef N = Callee->getName();
   return N.starts_with("cq_measure_") || N.starts_with("cqrt_measure_");
+}
+
+// ── bd test_C_libtooling-8h7d.5, Rule-13 round 1 (finding F1) — THE RAIL-RECORD
+//    LIVENESS FENCE. One predicate, asked by BOTH rounds (Rule 14). ──────────
+//
+// THE INVARIANT IN ONE SENTENCE: an SSA name on a collapsed rail is only a valid
+// operand at positions where the physical register still holds the state that
+// name denotes.
+//
+// This is the obligation the two loop rounds share and that round 2 shipped
+// without. Collapsing a rail phi RAUWs every member onto ONE handle, so the
+// emitted stream reads whatever the wire holds AT THE EMISSION POSITION, while
+// the SSA name denotes a fixed prefix of the rail's gate sequence. Inside a loop
+// those two disagree the moment ANY rail gate separates them, and the
+// disagreement is invisible to every shipped gate:
+//
+//     for (...) { if (q == 5) q = cq_phi(q, PI); acc = q * 7; q += 3; }
+//     return cq_measure(q) + cq_measure(acc);
+//
+// `clang -O1` sinks the `mul` past the loop (only `acc`'s last value is read), so
+// the emitted `cq_template_mul_i32_hl(%h, 7)` runs after every `cqrt_addc_i32`
+// and computes `(q0+3k)*7` where the source says `(q0+3(k-1))*7`. `opt` exits 0,
+// `opt -verify` is clean, STRICT stage-2b free-pairing is clean — the shape is
+// perfect and only the state is wrong. Round 1 declines the same program (its
+// CLOSURE refuses any out-of-rail consumer); round 2 stated that it "deliberately
+// does not re-prove COVERAGE/CLOSURE" and collapsed anyway.
+//
+// AND ROUND 1 HAD ITS OWN HALF OF THE HOLE, older than this increment: its
+// CLOSURE admits `isMeasureCall` / `ReturnInst` users of a rail value AT ANY
+// POSITION, so `for (…) { last = q; q += off; } return cq_measure(last);` emitted
+// `measure(h)` after the loop and measured `q0+3k` for a source that says
+// `q0+3(k-1)`. Same defect, same fence, both rounds.
+//
+// WHY IT IS POSITIONAL AND NOT "NOTHING ESCAPES THE LOOP". Two shapes rule the
+// cheap answers out. A blanket "no rail member is read outside `L`" refuses
+// `slice_control_grover_loop`'s own `cq_measure(q)` — the customer, and the whole
+// point of the increment. A blanket "no rail member has a value-op consumer"
+// refuses the region's OWN emitted `cq_template_icmp_eq_i32_hl(%h, 5)`, which is
+// a value-op consumer of the very same header phi in every shipped slice. What
+// separates the accepts from the miscompiles is neither locality nor consumer
+// class — it is whether a rail-relabelling gate runs between the record and the
+// read.
+//
+// THE TEST. For a rail member `v` with definition `D` and a non-member consumer
+// reading it at position `p`: FAIL iff some execution path runs `D`, then a rail
+// GATE, then `p`, WITHOUT re-executing `D` in between. Re-executing `D` refreshes
+// the record (this is the same per-activation reading `WireWalk`'s barrier walk
+// takes, spelled as an explicit two-state product walk because the barrier here
+// is the record's own definition and the question is about a gate strictly
+// between two points, not about a pair).
+//
+// It gets the asymmetries right for free, which is why it is stated this way:
+//   * a pre-loop read of the pre-header chain PASSES (no path from the mint to
+//     that read runs a body gate) while a POST-loop read of the same member
+//     fails;
+//   * the LATCH-carried value read after the loop PASSES (every path from it
+//     back to itself re-executes it), which is exactly the customer's
+//     `cq_measure(q)`;
+//   * a read at the TOP of the body passes; the same read moved below an in-place
+//     `addc` fails;
+//   * in an UNROTATED loop (`while (c) { gates }`) the header phi read in the exit
+//     block PASSES — and correctly, because the exit test runs before that
+//     iteration's gates, so the phi's value at the exit edge IS the final state.
+//     A rule keyed on "which member is it" could not tell that apart from the
+//     rotated shape, where the same read is the miscompile above.
+//
+// WHICH MEMBERS COUNT AS GATES. Exactly the ones that relabel the computational
+// basis: `cq_theta` (Ry) and the dtzb in-place `add`/`xor` (a permutation of the
+// register). `cq_phi` (Rz) is DIAGONAL and is deliberately NOT a gate here — the
+// shipped reading of the whole stale-record family (WireWalk.h, bd memory
+// rz-diag-flag-strip-invariant), and the reason control_swap_inloop_diamond.ll's
+// post-loop read of a pure-Rz rail keeps lowering. A PHINode member is a renaming,
+// not a gate. Gates from a DIFFERENT rail are not consulted: they mutate another
+// wire and say nothing about this record (bd `hcrg`'s lesson in reverse — fence
+// the unitary, not the bookkeeping).
+constexpr char kMsgRailRecordStale[] =
+    "cq loop lowering: rail record read past an in-place gate on the same rail";
+
+// Is there an execution path `Def` → (some `Gates` member) → `Read` that never
+// re-executes `Def`? EXACT two-state product walk over the CFG: the state is
+// (block entered at the top, "a gate has fired since `Def`"), which is monotone,
+// so each block is scanned at most twice and the walk terminates. `Def`'s own
+// block is entered MID-WAY (at `Def`) for the seed scan and is NOT pre-marked, so
+// a back edge re-entering it from the top is a genuinely different traversal —
+// and one that hits `Def` and CUTS, which is the record refresh.
+//
+// Deliberately NOT `llvm::isPotentiallyReachable`: that helper's exclusion set is
+// per-BLOCK and it bails `true` past a scan limit, and both endpoints here
+// routinely live in the SAME block as the barrier (the flattened loop body is one
+// block). The same two reasons `WireWalk::reachesWithoutBarrier` and
+// `ControlDetect::regionEntryInLoop` hand-roll their walks.
+bool railGateBetween(const Instruction *Def, const Instruction *Read,
+                     const SmallPtrSetImpl<const Instruction *> &Gates) {
+  SmallPtrSet<const BasicBlock *, 32> Seen[2];
+  SmallVector<std::pair<const BasicBlock *, bool>, 32> Work;
+  {  // seed: the tail of `Def`'s own block, from just after `Def`.
+    const BasicBlock *B = Def->getParent();
+    bool Saw = false;
+    for (auto I = std::next(Def->getIterator()), E = B->end(); I != E; ++I) {
+      if (&*I == Read && Saw)
+        return true;
+      if (Gates.count(&*I))
+        Saw = true;
+    }
+    for (const BasicBlock *S : successors(B))
+      Work.push_back({S, Saw});
+  }
+  while (!Work.empty()) {
+    auto [B, Saw] = Work.pop_back_val();
+    if (!Seen[Saw ? 1 : 0].insert(B).second)
+      continue;
+    bool Cut = false, S2 = Saw;
+    for (const Instruction &I : *B) {
+      if (&I == Def) {
+        Cut = true;  // the record is re-established — a different activation.
+        break;
+      }
+      if (&I == Read && S2)
+        return true;
+      if (Gates.count(&I))
+        S2 = true;
+    }
+    if (Cut)
+      continue;
+    for (const BasicBlock *S : successors(B))
+      Work.push_back({S, S2});
+  }
+  return false;
+}
+
+// Apply the fence to ONE rail. `Members` is that rail's value set (the chain
+// endpoints and everything between, in any order — the predicate needs identity,
+// never order) and `GateCalls` the collected `cq_theta`/`cq_phi` vocabulary.
+// Returns the offending CONSUMER (for the `!dbg`-located diagnostic) or null.
+//
+// A PHI consumer reads its incoming on the EDGE, not in its own block, so its
+// read position is the incoming block's TERMINATOR — without that, the `-O1`
+// zero-trip guard's exit phi (`phi [PreV, guard], [LatV, latchexit]`, both
+// incomings on the rail and both correct on their own edge) would be refused and
+// slice_control_grover_loop_dynamic would stop lowering.
+void collectRailGates(ArrayRef<Value *> Members,
+                      const SmallPtrSetImpl<CallInst *> &GateCalls,
+                      const TaintSet &taint,
+                      SmallPtrSetImpl<const Instruction *> &Gates) {
+  for (Value *V : Members) {
+    if (auto *CI = dyn_cast<CallInst>(V)) {
+      const Function *F = CI->getCalledFunction();
+      if (GateCalls.count(CI) && F && F->getName().starts_with("cq_theta_"))
+        Gates.insert(CI);  // Ry — relabels the basis.
+    } else if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+      if (inPlaceValueRailOperand(BO, taint))
+        Gates.insert(BO);  // dtzb `cqrt_{addc,xorc}` — a basis permutation.
+    }
+  }
+}
+
+// ONE rail value against a precomputed gate set. Split out so the step-(5) phi
+// fixpoint can ask it AFTER step (4) has erased the header phi — the gates
+// themselves survive that erase, the members do not.
+Instruction *staleReadOfValue(Value *V,
+                              const SmallPtrSetImpl<const Value *> &Members,
+                              const SmallPtrSetImpl<const Instruction *> &Gates) {
+  auto *Def = dyn_cast<Instruction>(V);
+  if (!Def)
+    return nullptr;
+  for (User *U : V->users()) {
+    auto *UI = dyn_cast<Instruction>(U);
+    if (!UI || Members.count(UI))
+      continue;  // the chain itself — its own gates are the rail, not a read.
+    if (auto *P = dyn_cast<PHINode>(UI)) {
+      for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i)
+        if (P->getIncomingValue(i) == V &&
+            railGateBetween(Def, P->getIncomingBlock(i)->getTerminator(), Gates))
+          return P;
+      continue;
+    }
+    if (railGateBetween(Def, UI, Gates))
+      return UI;
+  }
+  return nullptr;
+}
+
+Instruction *staleRailRecordRead(ArrayRef<Value *> Members,
+                                 const SmallPtrSetImpl<CallInst *> &GateCalls,
+                                 const TaintSet &taint) {
+  SmallPtrSet<const Value *, 16> MemberSet(Members.begin(), Members.end());
+  SmallPtrSet<const Instruction *, 8> Gates;
+  collectRailGates(Members, GateCalls, taint, Gates);
+  if (Gates.empty())
+    return nullptr;  // a pure-Rz rail: diagonal throughout, no record can stale.
+  for (Value *V : Members)
+    if (Instruction *Bad = staleReadOfValue(V, MemberSet, Gates))
+      return Bad;
+  return nullptr;
 }
 
 // The loop's exiting condition is a live tainted value (`while(q<k)`,
@@ -1394,6 +1589,42 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
     }
   }
 
+  // RECORD LIVENESS (bd 8h7d.5 Rule-13 round 1, finding F1). CLOSURE above
+  // admits a `cq_measure` / `ret` user of a rail value at ANY position, and that
+  // admission was itself a silent miscompile: `for (…) { last = q; q += off; }
+  // return cq_measure(last);` emitted `measure(h)` AFTER the loop and measured
+  // `q0+3k` where the source says `q0+3(k-1)`. The one out-of-loop rail read that
+  // is sound is the state the register actually holds at the exit; the fence
+  // decides that POSITIONALLY (see `staleRailRecordRead`) rather than by naming a
+  // member, because in an unrotated loop the header phi IS that state.
+  //
+  // Asked PER RAIL — a gate on a sibling rail mutates another wire and says
+  // nothing about this record — and LOUDLY: no other owner catches it (measured;
+  // the round-1 shape above compiled clean at ba35c1f), so falling through to
+  // `declineClassicalMuxes` is not available here.
+  {
+    // Grouped in PROGRAM ORDER, from the function rather than from `railRoot`.
+    // This loop DIAGNOSES, and `railRoot` is a `DenseMap` whose pointer-hashed
+    // iteration order would make WHICH offending consumer gets named (and which
+    // `!dbg` location the error carries) vary between runs on the same module.
+    // The DECISION was deterministic either way — any offender declines — but a
+    // wandering source location is exactly the kind of thing that reads as a
+    // flaky test later. `MapVector` keeps the root order stable too; round 2's
+    // chains are already built in a deterministic order.
+    MapVector<Value *, SmallVector<Value *, 8>> ByRoot;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        auto It = railRoot.find(&I);
+        if (It != railRoot.end())
+          ByRoot[It->second].push_back(&I);
+      }
+    for (auto &KV : ByRoot)
+      if (Instruction *Bad = staleRailRecordRead(KV.second, GateCalls, taint)) {
+        diagnose(Bad, kMsgRailRecordStale);
+        return true;  // recognized but unlowerable record escape — loud decline.
+      }
+  }
+
   // ACCEPT. Issue dtzb — mark each IN-PLACE VALUE rail self-update so `lowerOps`
   // emits the in-place `cqrt_{addc,xorc}_<W>(handle, imm)` (not the out-of-place
   // `cq_template_<op>_<W>_hl` that mints a fresh per-iteration rail). Rotation
@@ -1555,22 +1786,41 @@ namespace {
 // so the round-1 and round-2 readings of "a persistent in-place rail" cannot
 // drift.
 //
-// Returns true iff it MUTATED or DECLINED (the caller has nothing further to do
-// for this loop either way).
-bool collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
-                        const SmallPtrSetImpl<CallInst *> &GateCalls,
-                        DominatorTree &DT,
-                        SmallPtrSetImpl<Value *> &RootsOut) {
+// TRI-STATE, not a bool (bd 8h7d.5 Rule-13 round 1). The caller must be able to
+// tell a DECLINE from a COLLAPSE: `markIfRailLocal` grants the spine a permission
+// to discharge inside the body, and granting it on top of a loud decline is
+// bookkeeping on a module that will never be emitted. The pre-round-1 spelling
+// returned `true` for both and the caller marked either way.
+enum class RailRound2 { NotClaimed, Declined, Collapsed };
+
+RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
+                              const SmallPtrSetImpl<CallInst *> &GateCalls,
+                              DominatorTree &DT,
+                              SmallPtrSetImpl<Value *> &RootsOut) {
   BasicBlock *Header = L->getHeader();
   BasicBlock *Latch = L->getLoopLatch();
   if (!Latch)
-    return false;  // multi-latch — unproven shape, exactly as round 1 (Risk 2).
+    return RailRound2::NotClaimed;  // multi-latch — unproven, as round 1 (Risk 2).
 
   // (1) Recognise every collapsible rail phi. PURE ANALYSIS — no mutation until
   //     the whole header has been classified, so an inter-phi reference cannot
   //     read an already-erased phi (the round-1 `Collapse` precedent).
   DenseMap<PHINode *, Value *> Collapse;    // phi → root mint
   SmallVector<Value *, 8> RailMembers;      // every value on an accepted chain
+  // The SAME members, grouped PER PHYSICAL WIRE — i.e. keyed on the ROOT MINT,
+  // which is exactly one `cqrt_alloc` (rotation lowering RAUWs every member of a
+  // root's chain to that one handle). The fan-out guard below is per value and
+  // does not care; the F1 record-liveness fence does, in BOTH directions:
+  //   * two chains rooted at DIFFERENT mints are two registers, and one's gates
+  //     must never stale the other's record — that is what makes two independent
+  //     registers with their own tainted `if`s in one loop lowerable;
+  //   * two chains rooted at the SAME mint are ONE register wearing two SSA names
+  //     (`int a = q, b = q;` — an alias, never a copy; Rule 8), so each one's
+  //     gates DO stale the other's records and the two must be merged.
+  // Keying on the root is the only spelling that gets both, and it is the same
+  // grouping round 1 uses (`ByRoot` over `railRoot`) — Rule 14, ONE predicate
+  // asked twice, not two that agree today.
+  MapVector<Value *, SmallVector<Value *, 8>> ChainsByRoot;
   for (PHINode &P : Header->phis()) {
     if (!taint.Tainted.count(&P))
       continue;  // classical induction phi — not a rail.
@@ -1597,7 +1847,7 @@ bool collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
       Value *LatBase = peelInPlaceBase(LatV, GateCalls, taint);
       if (taint.Tainted.count(LatBase)) {
         diagnose(&P, kMsgCrossIter);
-        return true;
+        return RailRound2::Declined;
       }
       continue;  // unclassifiable either way — leave it for the mux guard.
     }
@@ -1621,27 +1871,31 @@ bool collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
     // TERMINATE: each step ascends the arg-0 / rail-operand def chain, which is
     // acyclic in SSA outside phis, and a phi ends the walk (`peelInPlaceStep`
     // returns null for it).
-    RailMembers.push_back(&P);
+    SmallVector<Value *, 8> Chain;
+    Chain.push_back(&P);
     for (Value *V = LatV; V != &P;) {
-      RailMembers.push_back(V);
+      Chain.push_back(V);
       Value *Next = peelInPlaceStep(V, GateCalls, taint);
       if (!Next)
         break;  // cannot happen (the peel above reached `&P`); defensive.
       V = Next;
     }
     for (Value *V = PreV; V != Root;) {
-      RailMembers.push_back(V);
+      Chain.push_back(V);
       Value *Next = peelInPlaceStep(V, GateCalls, taint);
       if (!Next)
         break;  // cannot happen (the peel above reached `Root`); defensive.
       V = Next;
     }
-    RailMembers.push_back(Root);
+    Chain.push_back(Root);
+    RailMembers.append(Chain.begin(), Chain.end());
+    auto &Merged = ChainsByRoot[Root];
+    Merged.append(Chain.begin(), Chain.end());
     Collapse[&P] = Root;
     RootsOut.insert(Root);
   }
   if (Collapse.empty())
-    return false;
+    return RailRound2::NotClaimed;
 
   // (2) FAN-OUT / linear-lineage guard (Rule 8 no-cloning) — the SAME guard
   //     round 1 applies, for the same reason: a rail value read by TWO in-place
@@ -1666,9 +1920,39 @@ bool collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
     }
     if (InPlaceUsers.size() > 1) {
       diagnose(InPlaceUsers.front(), kMsgRailFanout);
-      return true;  // recognised but unlowerable fan-out — loud decline.
+      return RailRound2::Declined;  // unlowerable fan-out — loud decline.
     }
   }
+
+  // (2b) RECORD LIVENESS (bd 8h7d.5 Rule-13 round 1, finding F1) — THE HALF THIS
+  //      ROUND SHIPPED WITHOUT. Round 1's COVERAGE/CLOSURE is deliberately not
+  //      re-proved here (see LoopPlan.h: the post-flatten body legitimately
+  //      contains the region's own emitted stream and a derived condition's
+  //      iteration-local rails, which CLOSURE would refuse). But CLOSURE was
+  //      carrying TWO obligations, not one, and only the first is inapplicable:
+  //        (i) "every tainted body value is on the rail" — a CLAIM condition,
+  //            about whether round 1 may own the loop. Not ours; dropped, rightly.
+  //       (ii) "a rail record is only read where the register still holds it" —
+  //            a UNITARY condition, and it is exactly as binding after the
+  //            flatten as before it. Dropping it made
+  //            `for (…) { if (q==5) q=cq_phi(q,PI); acc = q*7; q += 3; }` emit
+  //            the `mul` in the EXIT block against the post-loop register: a
+  //            different unitary, `opt` exit 0, verify-clean, stage-2b clean.
+  //      Asked PER ROOT MINT (`ChainsByRoot`) — one root is one `cqrt_alloc`, one
+  //      physical wire — and that grouping is load-bearing in BOTH directions: a
+  //      gate on a DIFFERENT root's rail relabels another register and must not
+  //      stale this record (else two independent registers in one loop are
+  //      permanently unlowerable, control_swap_inloop_two_registers.ll), while two
+  //      chains sharing ONE root are one register wearing two SSA names and MUST
+  //      interfere (lowering_reject_inloop_rail_alias_shared_mint.ll — which the
+  //      fan-out guard cannot catch, because it counts in-place users PER VALUE
+  //      and the shared mint's users there are the phis).
+  //      RUNS AFTER the fan-out guard so the Rule-8 message keeps its programs.
+  for (auto &KV : ChainsByRoot)
+    if (Instruction *Bad = staleRailRecordRead(KV.second, GateCalls, taint)) {
+      diagnose(Bad, kMsgRailRecordStale);
+      return RailRound2::Declined;
+    }
 
   // (3) Issue dtzb — MARK EVERY IN-PLACE VALUE RAIL SELF-UPDATE, exactly as
   //     round 1 does, and this line is NOT optional bookkeeping: it is what makes
@@ -1692,6 +1976,18 @@ bool collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   for (Value *V : RailMembers)
     if (auto *BO = dyn_cast<BinaryOperator>(V))
       taint.InPlaceRailOps.insert(BO);
+
+  // Snapshot each rail's GATES and SURVIVING members before step (4) erases the
+  // header phis — step (5) needs both and the phis will be gone. Gates are
+  // `cq_theta` calls and in-place `add`/`xor`, none of which the collapse erases.
+  DenseMap<Value *, SmallPtrSet<const Instruction *, 8>> GatesByRoot;
+  DenseMap<Value *, SmallPtrSet<const Value *, 16>> LiveByRoot;
+  for (auto &KV : ChainsByRoot) {
+    collectRailGates(KV.second, GateCalls, taint, GatesByRoot[KV.first]);
+    for (Value *V : KV.second)
+      if (!isa<PHINode>(V))
+        LiveByRoot[KV.first].insert(V);
+  }
 
   // (4) Collapse. RAUW each rail phi to its root mint (the still-pre-lowering
   //     `cq_theta` SSA value, SAME type — no ill-typed phi survives) and erase
@@ -1742,6 +2038,31 @@ bool collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
         if (Ok && Common)
           More.push_back({&P, Common});
       }
+    // The SAME record-liveness fence, on the phis this fixpoint is about to
+    // claim (bd 8h7d.5 Rule-13 round 1, finding F1 — completing its own edit).
+    // A step-(5) phi is a pure RENAMING of the rail, so its consumers are rail
+    // reads exactly like a chain member's, and they get the identical treatment:
+    // the phi's own value is a faithful name for the register only where no rail
+    // gate separates the two. Reached as a USER of the chain, each of these phis
+    // was already cleared by (2b); this clears its CONSUMERS.
+    //
+    // It costs the shipped set nothing and is the reason: the `-O1` zero-trip
+    // guard's exit phi (`phi [PreV, guard], [LatV, latchexit]`, the shape
+    // slice_control_grover_loop_dynamic hands the pass) sits after the loop with
+    // no rail gate below it, so `railGateBetween` is false and it collapses as
+    // before.
+    for (auto &KV : More) {
+      auto GIt = GatesByRoot.find(KV.second);
+      auto LIt = LiveByRoot.find(KV.second);
+      if (GIt == GatesByRoot.end() || LIt == LiveByRoot.end())
+        continue;  // not one of this round's roots — nothing snapshotted.
+      SmallPtrSet<const Value *, 16> Skip(LIt->second);
+      Skip.insert(KV.first);
+      if (Instruction *Bad = staleReadOfValue(KV.first, Skip, GIt->second)) {
+        diagnose(Bad, kMsgRailRecordStale);
+        return RailRound2::Declined;
+      }
+    }
     // `Common` DOMINATES every use of `P`: each incoming peels to it, so it
     // dominates every incoming definition, hence every predecessor of `P`'s
     // block, hence that block — so the RAUW is well-formed without a re-check.
@@ -1753,7 +2074,7 @@ bool collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
       Grew = true;
     }
   }
-  return true;
+  return RailRound2::Collapsed;
 }
 
 // ── bd test_C_libtooling-8h7d.5 — the Case-B twin for a loop WITH a rail ─────
@@ -1773,11 +2094,25 @@ bool collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 // increment's load-bearing witness.
 //
 // So: the same certificate, with the rail carved out and NOTHING else.
-//   * a value ON the rail (it peels to a collapsed root) may be read from
-//     anywhere and used anywhere — it is the register, owned by the user's
-//     `cq_measure`, and it is never a recovered DAG terminal (its def is
-//     OUTSIDE the loop, so `FreePoint`'s `TermIterLocal` is false for it and the
-//     ordinary Measured/Escaped path still decides it);
+//   * a value ON the rail (it peels to a collapsed root) is exempt from the
+//     escape check — it is the register, owned by the user's `cq_measure`, and it
+//     is never a recovered DAG terminal (its def is OUTSIDE the loop, so
+//     `FreePoint`'s `TermIterLocal` is false for it and the ordinary
+//     Measured/Escaped path still decides it);
+//
+//     READ THAT EXEMPTION WITH ITS PROOF, NOT AS A PREMISE. This header used to
+//     say a rail value "may be read from ANYWHERE and used ANYWHERE — it is the
+//     register", and that sentence was FALSE and load-bearing (bd 8h7d.5 Rule-13
+//     round 1, finding F1). A rail SSA name denotes one prefix of the rail's gate
+//     sequence; it is a faithful name for the register only at positions where
+//     the register still holds that prefix. `for (…) { if (q==5) q=cq_phi(q,PI);
+//     acc = q*7; q += 3; }` reads it one `addc` too late and computes a different
+//     unitary, `opt` exit 0 and stage-2b clean. The exemption is sound HERE only
+//     because `collapseRailPhisIn` step (2b) has already PROVEN, for every rail
+//     member and every consumer, that no rail-relabelling gate separates the
+//     record from its read (`staleRailRecordRead`) — and it declines loudly
+//     otherwise, before this function is ever called. It is a conclusion, not an
+//     axiom, and it must not outlive that call order;
 //   * every OTHER tainted value must be defined in `L` and used only in `L` —
 //     the unchanged iteration-local obligation;
 //   * a tainted OPERAND that is neither on the rail nor defined in `L` is the
@@ -1849,8 +2184,23 @@ void markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
   }
   if (!AnyLocal)
     return;  // a pure-rail loop (no temps) — nothing for the spine to place.
+  // ONLY `L`'s OWN blocks (bd 8h7d.5 Rule-13 round 1, finding P2). `L->blocks()`
+  // includes every strictly-deeper SUBLOOP block, and the subloop refusal above
+  // only inspects `taint.Tainted` membership — which the region emitters' own
+  // output (`cqrt_cswap`, `cqrt_x`, the `_unc` strips) is never in, because they
+  // are void calls minted after propagation. So a subloop carrying an EMITTED
+  // stream would be certified iteration-local while running its gates N times per
+  // outer iteration, and the spine would reverse them ONCE: the under-reversed
+  // dirty free (Rule 6). Unreachable today — every nested-loop probe declines
+  // earlier, at `ControlDetect::flatRegionRollableInLoop` gate (B) (one depth) or
+  // at the subloop refusal above — which is exactly why it is closed structurally
+  // rather than left to the guard that cannot see it. `markIfIterationLocal`
+  // (Increment 2) has the identical `L->blocks()` shape but is NOT changed here:
+  // its own refusal covers every tainted value, and it has no post-flatten
+  // emitted stream to miss.
   for (BasicBlock *BB : L->blocks())
-    taint.IterationLocalBlocks.insert(BB);
+    if (LI.getLoopFor(BB) == L)
+      taint.IterationLocalBlocks.insert(BB);
 }
 
 }  // namespace
@@ -1883,7 +2233,12 @@ void collapseFlattenedLoopRails(Module &M, TaintSet &taint) {
       if (!Touched)
         continue;  // a loop this increment did not open — leave it untouched.
       SmallPtrSet<Value *, 4> Roots;
-      if (collapseRailPhisIn(L, F, taint, GateCalls, DT, Roots))
+      // Mark ONLY after a real collapse. A DECLINE means `opt` will exit
+      // non-zero, and handing the spine an in-body discharge permission for a
+      // module that is never emitted is bookkeeping on a corpse (bd 8h7d.5
+      // Rule-13 round 1); a NotClaimed loop keeps its pre-existing owner.
+      if (collapseRailPhisIn(L, F, taint, GateCalls, DT, Roots) ==
+          RailRound2::Collapsed)
         markIfRailLocal(L, taint, LI, GateCalls, Roots);
     }
   }

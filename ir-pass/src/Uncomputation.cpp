@@ -716,15 +716,29 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
       if (baseOf(G) != P)
         return false;
       auto *GI = const_cast<CallInst *>(G);
-      // bd 8h7d.5 — PER ACTIVATION, barrier `First` (the interval's opening
-      // gate), for the same reason the LEFT/RIGHT disjuncts below take it: the
-      // interval is [the LAST `First` before `At`, `At`], so a route member that
-      // can only leave or re-enter it by re-executing `First` is inside THIS
-      // activation's interval exactly when it is inside the acyclic one. In a
-      // rolled loop the region's own `cqrt_cswap` pair sits between this
-      // iteration's chain and this iteration's discharge — the (d2) accept —
-      // and the back edge is what the barrier removes from the question.
-      if (!provablyBeforePerActivation(First, GI, First, DT) ||
+      // bd 8h7d.5 — PER ACTIVATION, and THE TWO LEGS TAKE DIFFERENT BARRIERS.
+      // Both ask "is `GI` inside THIS activation's interval [`First`, `At`]?",
+      // and each leg's barrier is the OTHER endpoint — the instruction whose
+      // execution ends the activation the leg is reasoning about (WireWalk.h:
+      // the barrier must be what RE-ESTABLISHES the premise, never the premise's
+      // own subject):
+      //   * leg 1, "`First` ran before `GI`": the residual worry is a `GI`
+      //     instance that reaches `First` again around the back edge. Every such
+      //     path leaves the body through the discharge point `At` first, so `At`
+      //     is the barrier that says "that `First` opens the NEXT interval".
+      //   * leg 2, "`GI` ran before `At`": symmetrically, every path from `At`
+      //     back to `GI` re-enters the body through `First`.
+      // Leg 1 PASSED `First` (== the subject `A`) until the Rule-13 round-1
+      // review of 2026-08-30 (finding P1). That is the vacuous configuration
+      // `provablyBeforePerActivation` now refuses outright: `reachesWithout
+      // Barrier` cut at the instruction it was trying to reach, so the call
+      // collapsed to `DT.dominates(First, GI)` and the "GI never runs again
+      // after First" half of the old acyclic `provablyBefore(First, GI)` was
+      // deleted with no diagnostic. Not exploitable at the time — every
+      // recorded route group lives in one straight-line flattened body, where
+      // leg 1's plain reachability half already succeeds — but it is a
+      // load-bearing proof and it was not proving anything.
+      if (!provablyBeforePerActivation(First, GI, At, DT) ||
           !provablyBeforePerActivation(GI, At, First, DT))
         return false;
     }

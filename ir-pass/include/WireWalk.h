@@ -133,6 +133,20 @@ bool provablyBefore(const llvm::Instruction *A, const llvm::Instruction *B,
 // premise (the rail's mint, the interval's opening gate, the record's
 // definition); passing anything else is unsound, so every caller states which
 // one it means and why.
+//
+// `Barrier == A` IS REFUSED OUTRIGHT (bd test_C_libtooling-8h7d.5 Rule-13 round
+// 1, finding P1). It is not merely unsound in principle — it was VACUOUS in
+// practice, and silently so: the walk tests barrier membership BEFORE the
+// endpoint, so with `To == A == Barrier` it cut at the instruction it was trying
+// to reach and could never succeed, collapsing the whole call to
+// `DT.dominates(A, B)` and DELETING the reachability half of `provablyBefore`
+// with no diagnostic and no test. Fixing the endpoint order would not rescue it
+// either: every path from `B` to `A` ends AT `A`, so "re-executes `A` on the way"
+// proves nothing about this activation. `A` is the premise's subject; the barrier
+// is what CLOSES the activation, which for an interval [`First`, `At`] is the
+// OTHER endpoint (`Uncomputation::routeGroupFullyInside` states both legs).
+// `Barrier == B` is a DIFFERENT, sound configuration and stays allowed — see the
+// LEFT disjunct at Uncomputation.cpp.
 bool provablyBeforePerActivation(const llvm::Instruction *A,
                                  const llvm::Instruction *B,
                                  const llvm::Instruction *Barrier,

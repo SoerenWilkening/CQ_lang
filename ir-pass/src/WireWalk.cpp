@@ -16,6 +16,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 
+#include <cassert>
 #include <iterator>
 
 using namespace llvm;
@@ -43,30 +44,115 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
 // EXACT — a heuristic here is a silent miscompile in one direction and an
 // uncompilable `for` loop in the other.
 
-// Any `cq_theta_*` call — SOURCE or CHAINED. Deliberately coarser than the
-// tainted-arg-0 test the rest of the pass uses: this predicate only ever
-// WITHHOLDS a new accept (it gates the barrier below), never grants one, so
-// over-matching costs a decline and nothing else — and it keeps this TU free of
-// a `TaintSet` dependency it has never had.
-bool isAnyThetaCall(const Instruction *I) {
-  return isCallToPrefix(I, "cq_theta_");
+// The WIRE of `Seed`: every SSA name that denotes the same physical register.
+// EXTRACTED from `findNonDiagonalWireGate`'s own per-seed closure rather than
+// re-spelt (Rule 14) — the backward ancestry (diagonal `cq_phi` and chained
+// `cq_theta` arg-0 hops to the wire origin) followed by the forward walk over
+// every in-place gate on arg-0, plus, when `CrossValueRouting`, the phi/select
+// routing edges that carry the same physical handle.
+//
+// IT ALSO CROSSES AN IN-PLACE VALUE SELF-UPDATE (`q += c` / `q ^= c`, issue
+// dtzb), which the gate-FINDING walk does not, and the asymmetry is deliberate
+// and directional. Here a bigger wire can only make `phiTracksWire` REFUSE a
+// barrier — the safe direction — whereas in the finding walk crossing that edge
+// would flag thetas on a rail the op MINTED (an out-of-place `add` produces a
+// fresh handle whose later rotations touch nothing of the parent's wire) and
+// over-decline straight-line programs the M-C fence already proves sound. Shape
+// test only, no `TaintSet`: over-inclusion is free in this direction.
+void collectWireValues(Value *Seed, bool CrossValueRouting,
+                       SmallPtrSetImpl<Value *> &Out) {
+  SmallVector<Value *, 16> Work;
+  for (Value *V = Seed;;) {
+    Work.push_back(V);
+    Out.insert(V);
+    auto *CI = dyn_cast<CallInst>(V);
+    if (!CI || CI->arg_size() < 1)
+      break;
+    Value *Arg0 = CI->getArgOperand(0);
+    if (isCallToPrefix(CI, "cq_phi_")) {
+      V = Arg0;
+      continue;
+    }
+    if (isCallToPrefix(CI, "cq_theta_") &&
+        (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_"))) {
+      V = Arg0;
+      continue;
+    }
+    break;  // wire origin (source theta / template result / argument).
+  }
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    for (User *U : V->users()) {
+      if (CrossValueRouting) {
+        if (auto *P = dyn_cast<PHINode>(U)) {
+          if (Out.insert(P).second)
+            Work.push_back(P);
+          continue;
+        }
+        if (auto *Sel = dyn_cast<SelectInst>(U)) {
+          if (V != Sel->getCondition() && Out.insert(Sel).second)
+            Work.push_back(Sel);
+          continue;
+        }
+      }
+      if (auto *BO = dyn_cast<BinaryOperator>(U)) {
+        if ((BO->getOpcode() == Instruction::Add ||
+             BO->getOpcode() == Instruction::Xor) &&
+            Out.insert(BO).second)
+          Work.push_back(BO);
+        continue;
+      }
+      auto *CI = dyn_cast<CallInst>(U);
+      if (!CI || CI->arg_size() < 1 || CI->getArgOperand(0) != V)
+        continue;  // not an in-place gate on this wire (angle/data uses, br).
+      if ((isCallToPrefix(CI, "cq_theta_") || isCallToPrefix(CI, "cq_phi_")) &&
+          Out.insert(CI).second)
+        Work.push_back(CI);
+    }
+  }
 }
 
 // Does some execution path from `V` (exclusive) to `Target` (a terminator that
-// `V` dominates) run a `cq_theta`? Paths that re-execute `V` are CUT — going
-// around a back edge re-binds `V`, so what happens on the far side belongs to
-// the next activation, not to this one.
+// `V` dominates) run a `cq_theta` ON `V`'S OWN WIRE? Paths that re-execute `V`
+// are CUT — going around a back edge re-binds `V`, so what happens on the far
+// side belongs to the next activation, not to this one.
+//
+// PER WIRE, not per program (bd test_C_libtooling-8h7d.5 Rule-13 round 1,
+// finding OD1). This asked `isAnyThetaCall` — ANY `cq_theta` anywhere on the
+// path — until 2026-08-30, and the justification given was that over-matching
+// "only ever WITHHOLDS a new accept". That is true of soundness and false of
+// usefulness: it made the barrier depend on SOURCE ORDER. Measured —
+//     q = cq_theta(q0,g); z = cq_theta(0,.125); for (…) { if (q>5) … }
+// declined, and the SAME program with the two mints swapped compiled, because
+// `%z` happened to sit between `%q` and the loop entry. It also made two
+// independent registers, each with its own tainted `if` in one loop, permanently
+// unlowerable — a whole shape class lost to a register the walk was not even
+// reasoning about. A theta rotates the wire its ARG-0 names; if that name is not
+// in this seed's wire closure it cannot stale this record.
 //
 // Exact block walk, each block scanned at most once. Blocks are entered only at
 // the TOP, so re-entering `V`'s own block always re-executes `V` before
 // anything after it (`V` dominates `Target`, hence precedes it in that block) —
 // which is why that case is a plain cut and not a re-scan.
-bool thetaOnPathTo(const Instruction *V, const Instruction *Target) {
+//
+// `Wire == nullptr` runs the OLD wire-blind test (any theta at all). That mode is
+// kept for one reason and used for exactly one purpose — see `thetaOnPathTo`
+// below, which uses it as a cheap NECESSARY condition so the expensive closure is
+// only ever built for a path that has a theta on it at all. It is never the
+// answer.
+bool thetaOnPathToImpl(const Instruction *V, const Instruction *Target,
+                       const SmallPtrSetImpl<Value *> *Wire) {
+  auto Stales = [&](const Instruction &I) {
+    const auto *CI = dyn_cast<CallInst>(&I);
+    if (!CI || !isCallToPrefix(CI, "cq_theta_") || CI->arg_size() < 1)
+      return false;
+    return !Wire || Wire->count(CI->getArgOperand(0)) != 0;
+  };
   const BasicBlock *VB = V->getParent();
   for (auto I = std::next(V->getIterator()), E = VB->end(); I != E; ++I) {
     if (&*I == Target)
       return false;  // reached the edge with the wire quiet.
-    if (isAnyThetaCall(&*I))
+    if (Stales(*I))
       return true;
   }
   SmallPtrSet<const BasicBlock *, 32> Seen;
@@ -83,7 +169,7 @@ bool thetaOnPathTo(const Instruction *V, const Instruction *Target) {
         Reached = true;
         break;
       }
-      if (isAnyThetaCall(&I))
+      if (Stales(I))
         return true;
     }
     if (Reached)
@@ -91,6 +177,27 @@ bool thetaOnPathTo(const Instruction *V, const Instruction *Target) {
     Work.append(succ_begin(B), succ_end(B));
   }
   return false;
+}
+
+bool thetaOnPathTo(const Instruction *V, const Instruction *Target) {
+  // The wire-blind answer is a NECESSARY condition for the per-wire one (a theta
+  // on `V`'s wire is a theta), so run the cheap block walk first and build the
+  // user-graph closure only when it says there is something to classify.
+  // `phiTracksWire` is called once per candidate gate per barrier-closure round,
+  // so the closure would otherwise be rebuilt many times per function. The result
+  // is identical either way.
+  //
+  // NOT a fix for a measured regression — say so, because the first draft of this
+  // comment claimed one. The apparent 0.36s -> 1.23s on the tree's biggest fixture
+  // was COLD-START noise on a freshly relinked plugin; re-measured warm, the
+  // per-wire build is 0.25s against 0.24-0.25s for the base plugin, i.e. inside
+  // the noise. This is a structural short-circuit, not a rescue.
+  if (!thetaOnPathToImpl(V, Target, /*Wire=*/nullptr))
+    return false;
+  SmallPtrSet<Value *, 16> Wire;
+  collectWireValues(const_cast<Instruction *>(V), /*CrossValueRouting=*/true,
+                    Wire);
+  return thetaOnPathToImpl(V, Target, &Wire);
 }
 
 // Does PHINode `P` faithfully DENOTE the wire at the moment it executes?
@@ -328,6 +435,33 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
             continue;
           }
         }
+        // AN IN-PLACE VALUE SELF-UPDATE (`q += c`, issue dtzb) IS NOT CROSSED
+        // HERE, and that is a MEASURED decision, not an oversight (bd 8h7d.5
+        // Rule-13 round 1 raised it as a contributing gap; the measurement
+        // answered it the other way). Crossing it would put every theta behind
+        // an `add` back on this seed's wire. That is WRONG whenever the add
+        // lowers OUT of place — the overwhelmingly common case here, because
+        // `declineStaleRecordOps` runs BEFORE `lowerLoops`, so `InPlaceRailOps`
+        // is empty and the M-C fence has not classified anything yet: an
+        // out-of-place `cq_template_add_<W>_hl` MINTS a fresh rail, and a later
+        // rotation of THAT handle touches nothing of the parent's wire.
+        //
+        // And when the add IS in place, the read is already fenced by an owner
+        // that can see it: straight-line by the M-C fence's G6 ("no data use
+        // AFTER the site" — so the stale reader cannot exist), and inside a loop
+        // by `LoopLowering::staleRailRecordRead`, which reasons over the RAIL
+        // CHAIN rather than over user edges and therefore sees a theta behind an
+        // add without needing to walk through it.
+        //
+        // MEASURED 2026-08-30 with the crossing spliced in: ZERO new declines
+        // across the 53-program Rule-13 probe corpus (the two programs it
+        // touched, x3_stale_c and x4_round1_stale, already decline — only the
+        // message changed), and ONE regression —
+        // control_swap_inloop_railop_inplace.ll, i.e. the shipped customer slice
+        // slice_control_grover_loop_offset, whose PRE-HEADER `q += cq_off` puts
+        // the loop's own S-dagger Ry behind an add and would be read as a
+        // condition staler. Pure cost. Do not re-add it without a probe that
+        // shows a program it catches and nothing else does.
         auto *CI = dyn_cast<CallInst>(U);
         if (!CI || CI->arg_size() < 1 || CI->getArgOperand(0) != V)
           continue;  // not an in-place gate on this wire (angle/data uses, br).
@@ -386,6 +520,28 @@ bool provablyBeforePerActivation(const Instruction *A, const Instruction *B,
   if (!isPotentiallyReachable(B, A, /*ExclusionSet=*/nullptr, &DT))
     return true;  // the plain proof — unchanged.
   if (!Barrier)
+    return false;
+  // `Barrier == A` IS A VACUOUS PROOF, and it silently DELETED half of one (bd
+  // test_C_libtooling-8h7d.5, Rule-13 round 1, finding P1). `reachesWithoutBarrier`
+  // tests `Barriers.count(&I)` BEFORE `&I == To`, so with `To == A == Barrier` the
+  // walk CUTS at the very instruction it is trying to reach and can never return
+  // true — the whole call degenerates to `DT.dominates(A, B)`, i.e. the
+  // reachability half of `provablyBefore` is thrown away with no diagnostic and
+  // no test.
+  //
+  // And fixing the endpoint order would not rescue it: every path from `B` back
+  // to `A` ends AT `A`, so "re-executes `A` on the way" is trivially satisfiable
+  // and the disjunct proves nothing about this activation. The header's contract
+  // is the rule — the barrier must be the instruction whose EXECUTION
+  // re-establishes the premise — and `A`, the premise's own subject, never is.
+  // Refuse it outright rather than return an answer that reads like a proof.
+  // (`Barrier == B` is a DIFFERENT and sound configuration and is deliberately
+  // NOT refused: `Uncomputation.cpp`'s LEFT disjunct asks
+  // `provablyBeforePerActivation(M, First, First)`, where the walk runs from
+  // `First` forward looking for `M` and cuts only on RE-entering `First` — the
+  // genuine "M belongs to a later activation" question.)
+  assert(Barrier != A && "per-activation barrier must not be the subject A");
+  if (Barrier == A)
     return false;
   SmallPtrSet<const Instruction *, 2> Barriers;
   Barriers.insert(Barrier);

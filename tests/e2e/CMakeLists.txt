@@ -3943,6 +3943,36 @@ add_test(NAME e2e-grover-loop-offset-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_offset.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_offset_unrolled.expected.log")
 
+# bd test_C_libtooling-8h7d.5, Rule-13 round 1 (finding OD1) — TWO INDEPENDENT
+# REGISTERS, each with its own tainted `if`, in ONE loop. This DID NOT COMPILE at
+# ba35c1f: `phiTracksWire`'s staleness test was wire-BLIND, so each register's
+# rotations refused the other's record-refresh barrier and neither header phi
+# could be claimed. The decline text ("condition predates a non-diagonal gate")
+# named a register the walk was not even reasoning about, and the disposition
+# turned on which mint clang emitted first. The test is per WIRE now, and this is
+# the end-to-end witness: two rails, two routed regions, four rotations per trip,
+# every ancilla freed in its own iteration, STRICT stage 2b.
+add_test(NAME e2e-slice-control-grover-loop-two-regs
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_two_regs.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_two_regs.expected.log")
+
+add_test(NAME e2e-slice-control-grover-loop-two-regs-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_two_regs_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_two_regs_unrolled.expected.log")
+
+add_test(NAME e2e-grover-loop-two-regs-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_two_regs.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_two_regs_unrolled.expected.log")
+
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
 # missing) `python3` on PATH. Applied to every test registered in this directory

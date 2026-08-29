@@ -360,11 +360,13 @@ goes 57 → 18003 lines.
    region's merge phi and the loop would X1-decline a clean shape. A **ROUND 2**
    (`collapseFlattenedLoopRails`) runs after `lowerControlRegions` and before
    `declineClassicalMuxes`, on the now-straight-line body, and collapses the
-   persistent-rail header phi to its root mint. Round 2 makes ONE claim and
-   deliberately does not re-prove `tryCaseA`'s COVERAGE/CLOSURE: the post-flatten
-   body legitimately holds values on no rail (the emitted region stream, a derived
-   condition's iteration-local template rails), and their disposition belongs to
-   the owners that already have it.
+   persistent-rail header phi to its root mint. Round 2 makes ONE claim and does
+   not re-prove `tryCaseA`'s COVERAGE: the post-flatten body legitimately holds
+   values on no rail (the emitted region stream, a derived condition's
+   iteration-local template rails), and their disposition belongs to the owners
+   that already have it. **It DOES re-prove the other half of CLOSURE, and the
+   first version of this increment did not — that omission was a silent
+   miscompile (Rule-13 round 1, finding F1, 2026-08-30; see §2.11).**
 3. **Position proofs.** `provablyBefore` = `dominates && !reachable-back` is
    falsified by ANY back edge, which is right when the object PERSISTS across
    iterations and useless when it does not. The per-activation reading
@@ -373,12 +375,23 @@ goes 57 → 18003 lines.
    proof already failed, so it is strictly additive. The barrier is always the
    instruction whose EXECUTION re-establishes the premise — the record's own
    definition, the rail's mint, the interval's opening gate — and every caller
-   states which. **`phiTracksWire` is the fence that keeps the record reading
-   honest:** a loop-header phi re-reads the wire only if its incomings are the
-   body's last wire writes; a phi carrying a superseded record gets no barrier
-   (`lowering_reject_stale_record_loop_nontracking_phi.ll`). §2.9 below is
-   UNCHANGED — a LOOP-INVARIANT seed re-read after an in-body Ry is still the
-   genuine iteration-2 stale record and still declines.
+   states which — **and never the proof's own subject `A`, which is VACUOUS: the
+   barrier walk cuts at the instruction it is trying to reach, so the call
+   degenerates to plain dominance and the reachability half is silently deleted
+   (Rule-13 round 1, finding P1). It is now refused in the predicate.** For an
+   interval `[First, At]` the two legs take DIFFERENT barriers: "First before GI"
+   takes `At`, "GI before At" takes `First`. **`phiTracksWire` is the fence that
+   keeps the record reading honest:** a loop-header phi re-reads the wire only if
+   its incomings are the body's last wire writes; a phi carrying a superseded
+   record gets no barrier (`lowering_reject_stale_record_loop_nontracking_phi.ll`).
+   Its staleness test is **PER WIRE** — a `cq_theta` on an unrelated register
+   cannot stale this record. It asked "any `cq_theta` at all" until Rule-13 round
+   1 (finding OD1), which made the disposition depend on SOURCE ORDER (moving an
+   unrelated mint above the loop's own flipped a decline into an accept) and made
+   two independent registers in one loop permanently unlowerable
+   (`control_swap_inloop_offwire_theta.ll`). §2.9 below is UNCHANGED — a
+   LOOP-INVARIANT seed re-read after an in-body Ry is still the genuine
+   iteration-2 stale record and still declines.
 
 **What stays declined** (each with a red fixture): a VALUE (method-B) arm inside
 a loop (`control_swap_reject_inloop_value_arm.ll` — its route-back is not the
@@ -388,6 +401,50 @@ an irreducible cycle (`…_irreducible.ll`, `…_second_cycle.ll`); a multi-latc
 (`…_multilatch.ll`); X1 and the Rule-8 fan-out, now reachable through round 2
 (`lowering_reject_inloop_control_{cross_iter,rail_fanout}.ll`); the 6.5
 classical-call arm in a loop.
+
+### §2.11 The rail-record liveness fence (Rule-13 round 1, finding F1)
+
+**An SSA name on a collapsed rail is a valid operand only at positions where the
+register still holds the state that name denotes.** The collapse RAUWs every chain
+member onto ONE handle, so an emitted gate reads whatever the wire holds AT ITS
+OWN POSITION while the name denotes a fixed PREFIX of the rail's gate sequence.
+Round 2 as first shipped collapsed without asking, and
+
+```c
+for (...) { if (q == 5) q = cq_phi(q, PI); acc = q * 7; q += 3; }
+return cq_measure(q) + cq_measure(acc);
+```
+
+emitted `cq_template_mul_i32_hl(%h, 7)` in the EXIT block (`clang -O1` sinks it —
+`acc` is loop-carried and only its last value is read), computing `(q0+3k)*7`
+where the source says `(q0+3(k-1))*7`. `opt` exit 0, `opt -verify` clean, STRICT
+stage-2b free-pairing clean, no warning: the shape is perfect and only the state
+is wrong. Reproduced over the whole `lowerOps` class (`mul`, `and`, `sext`,
+mid-body records, dynamic trip count) and — as ROUND 1, **pre-dating this
+increment**, verified on a `7ba8b2d` base build (bd `test_C_libtooling-5sva`) —
+through `cq_measure`: `for (…) { last = q; q += off; } return cq_measure(last);`.
+
+**The fence** (`LoopLowering::staleRailRecordRead`, asked by round 1's CLOSURE and
+by round 2 at steps 2b and 5): for a rail member `v` with definition `D` and a
+non-member consumer reading at `p`, DECLINE (`cq loop lowering: rail record read
+past an in-place gate on the same rail`) iff some path runs `D`, then a rail
+GATE, then `p`, WITHOUT re-executing `D`. GATES are the members that relabel the
+computational basis — `cq_theta` (Ry) and the dtzb in-place `add`/`xor` — never
+`cq_phi` (Rz, diagonal), and never a SIBLING rail's gates.
+
+**Why positional and not a locality or consumer-class rule.** "No rail member is
+read outside `L`" refuses the customer's own `cq_measure(q)`; "no rail member has
+a value-op consumer" refuses the region's OWN emitted
+`cq_template_icmp_eq_i32_hl(%h, 5)`; "only the latch-carried value may escape" is
+wrong in an UNROTATED loop, where the exit test precedes that iteration's gates so
+the header phi at the exit edge IS the final state. The positional test gets all
+three right without a special case. A PHI consumer's read position is its
+**incoming block's terminator** — without that the `-O1` zero-trip guard's exit
+phi is refused and `slice_control_grover_loop_dynamic` stops lowering. Fixtures:
+`lowering_reject_inloop_rail_record_{escape,midbody}.ll`,
+`lowering_reject_loop_rail_record_measure.ll` (red) and
+`control_swap_inloop_rail_record_live.ll` (the accept boundary — the same program
+with the read moved above the gate).
 
 **One silent miscompile was found and fixed inside this increment**, and it is the
 shape to re-probe first if round 2 is ever extended: the collapse RAUWs the header
