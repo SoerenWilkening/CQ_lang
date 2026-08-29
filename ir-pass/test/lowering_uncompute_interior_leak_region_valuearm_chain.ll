@@ -41,9 +41,10 @@
 ; too). Its discriminator is a MUTATION, MEASURED: replacing clause (c)'s
 ; `taint.DischargedFlagGates.count(C)` membership test with a NAME test
 ; (`getName().ends_with("_unc")`) reddens this fixture together with
-; lowering_uncompute_interior_leak_unrecorded_strip.ll and
-; lowering_uncompute_interior_leak_select_cond_chain.ll, while every recorded-
-; strip accept stays green. That is exactly the "membership, never a name test"
+; lowering_uncompute_interior_leak_unrecorded_strip.ll,
+; lowering_uncompute_interior_leak_select_cond_chain.ll AND the COMP prefix of
+; lowering_fp80_union_multiblock.ll (four fixtures, re-measured by the Inc-6
+; fix-round re-review), while every recorded-strip accept stays green. That is exactly the "membership, never a name test"
 ; fence the header of `TaintSet::DischargedFlagGates` claims.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
