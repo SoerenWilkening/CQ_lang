@@ -638,6 +638,242 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P) {
   return false;
 }
 
+// PLAN one interior COMPONENT: the positional half (§2), the borrowed-parent
+// frontier (§3), the DAG recovery and its re-proofs (§4) and clause (d) (§5).
+// PURE ANALYSIS — it emits nothing. `true` fills `D`/`At` with a plan the caller
+// may emit; `false` means this component LEAKS (Rule 6's fallback), and every
+// `return false` below is one such unprovable step.
+//
+// SPLIT OUT OF `reverseInteriorGroup` when the driver went per-component (bd
+// test_C_libtooling-if1e): a leak must abandon ONE component, not the function,
+// and expressing that as an early `return` from a helper is the only spelling
+// that stays correct inside the nested scans below (a `continue` in the
+// borrowed-parent loop would abandon the PARENT, not the group — a silent
+// over-accept).
+bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
+                           DominatorTree &DT, PostDominatorTree &PDT,
+                           RepeatOracle &canRepeat,
+                           const SmallPtrSetImpl<const CallInst *> &ReversedGates,
+                           const SmallPtrSetImpl<Value *> &ReversedRails,
+                           DataDag &D, Instruction *&At) {
+  SmallPtrSet<Value *, 16> Owned(Comp.begin(), Comp.end());
+  bool Converged = false;
+  for (unsigned Round = 0; Round < 8 && !Owned.empty(); ++Round) {
+    SmallVector<Instruction *, 16> Anchors;
+    for (CallInst *R : Comp) {
+      if (!Owned.count(R))
+        continue;
+      for (User *U : R->users())
+        Anchors.push_back(cast<Instruction>(U)->getNextNode());
+    }
+    if (Anchors.empty())
+      return false;
+    At = dagInsertPoint(Anchors, PDT);
+    if (!At)
+      return false;  // the consumers do not reconverge — leak.
+    bool Dropped = false;
+    for (CallInst *R : Comp) {
+      if (!Owned.count(R))
+        continue;
+      for (User *U : R->users())
+        if (!provablyBefore(cast<Instruction>(U), At, DT)) {
+          Owned.erase(R);  // reachable by construction — the anchor scan above
+                           // returns outright on an unreachable or non-instruction
+                           // user, so this `cast` cannot be the vacuous case.
+          Dropped = true;
+          break;
+        }
+    }
+    if (!Dropped) {
+      Converged = true;
+      break;
+    }
+  }
+  if (!Converged || Owned.empty() || !At)
+    return false;
+
+  // 3. THE BORROWED-PARENT FRONTIER. Every tainted operand of an owned rail's
+  //    producer (and of its in-place gates) that is not itself owned. These are
+  //    READ-ONLY: never walked, never adjointed, never freed. The canonical
+  //    member is the `cqrt_alloc`-minted source wire, whose `cqrt_ry` MINTED the
+  //    superposition — no adjoint returns it to |0⟩ once a downstream record
+  //    exists, which is exactly the situation every interior rail is in.
+  SmallPtrSet<Value *, 8> Borrowed;
+  auto borrow = [&](const CallInst *G, Value *Self) {
+    for (Value *Op : G->args())
+      if (Op != Self && taint.Tainted.count(Op) && !Owned.count(Op))
+        Borrowed.insert(Op);
+  };
+  for (CallInst *R : Comp) {
+    if (!Owned.count(R))
+      continue;
+    borrow(R, R);
+    for (User *U : R->users())
+      if (auto *G = dyn_cast<CallInst>(U))
+        if (isInPlaceGateOn(G, R))
+          borrow(G, R);
+  }
+  for (Value *B : Borrowed)
+    if (ReversedRails.count(B))
+      return false;  // an earlier group already reversed/freed it — leak.
+
+  // 4. Recover the interior DAG under that frontier and re-prove everything the
+  //    dead-terminal driver proves, silently.
+  InteriorPlan IP;
+  IP.Owned = Owned;
+  IP.Borrowed = Borrowed;
+  SmallVector<Value *, 16> Terms;
+  for (CallInst *R : Comp)
+    if (Owned.count(R))
+      Terms.push_back(R);
+  D = recoverDataDag(Terms, taint, DT, &IP);
+  if (D.MeasuredUpstream || D.Escaped || D.NotClosed || D.Calls.empty())
+    return false;
+  if (!D.Roots.empty())
+    return false;  // the frontier should have stopped every root — leak if it did not.
+  for (CallInst *G : D.Calls) {
+    if (ReversedGates.count(G))
+      return false;  // single ownership backstop.
+    if (!isInverseEmittable(G))
+      return false;
+    // THE 261j INVARIANT, APPLIED UNIVERSALLY RATHER THAN BY SEED — and this is
+    // the load-bearing soundness fence of the whole increment. An interior rail
+    // is one whose forward consumer stays LIVE and outside the reversal; that
+    // consumer's own rail is a record of this one, taken by a carrier the
+    // reversal never touches. That is precisely `recordsIntoKeptCarrier`'s
+    // situation, so the same algebra applies: freeing the rail is Rule-6-legal
+    // only if its whole forward chain is a BASIS PERMUTATION of live conditions
+    // (bd 261j(a), owner ruling 2026-08-10). `cq_template_*` producers, `Rz`,
+    // `addc`/`xorc` pass; `cqrt_ry_<W>` does not, which is exactly why an
+    // alloc-minted source wire is borrowed and never owned. Seeding the freeze
+    // instead would reach the same verdict on today's shapes and would rest on
+    // `recordsIntoKeptCarrier` naming a surface (`tape`/`copy`) that has nothing
+    // to do with why THIS rail is recorded.
+    if (!preservesBasisUnderRecord(G))
+      return false;
+    // The GROUP-LEVEL at-most-once backstop over every recovered gate — the
+    // third statement of the property, after the candidate MINT block (§1) and
+    // the per-rail in-place-gate scan (§2). `canRepeat`, not `LoopInfo`: bd 4p7j
+    // Rule-13 finding F1 (irreducible cycles are not natural loops). Kept even
+    // though §1/§2 cover every gate the walk can reach today, so a future
+    // widening of `recoverDataDag` degrades to a leak instead of a dirty free.
+    if (canRepeat(G->getParent()))
+      return false;
+    if (!DT.dominates(G, At))
+      return false;  // a gate on one arm of a diamond — Phase 4's job, not this one.
+    // ...AND `At` MUST POST-DOMINATE THE GATE. Dominance alone says the gate ran
+    // before the discharge on every path that REACHES the discharge; it says
+    // nothing about the paths that do not. `dagInsertPoint` post-dominates the
+    // ANCHORS (the consumers), which is a weaker set than the GATES: a rail
+    // minted in `entry` whose only consumer sits inside a classical `if` arm
+    // yields an `At` inside that arm, and the reversal then runs on one path
+    // while the mint ran on both. Nothing is freed dirty there — the other path
+    // simply leaks — but "the rail is dead on EVERY path at the discharge" is
+    // the property the post-dominator discipline exists to deliver, and a
+    // one-armed reversal does not have it. Leak instead.
+    if (!PDT.dominates(At->getParent(), G->getParent()))
+      return false;
+    if (!Owned.count(railOf(G)))
+      return false;  // no gate may be adjointed whose rail this group does not own.
+  }
+  // (§2.9) AT-MOST-ONCE on the FINAL point, `blockCanRepeat` rather than
+  // `LoopInfo` (an irreducible cycle is not a natural loop but still repeats).
+  if (blockCanRepeat(At->getParent()))
+    return false;
+
+  // 5. CLAUSE (d) — the straight-line no-mutation scan (d1). Every borrowed
+  //    parent must hold, at each emitted `_unc`, the value it held when the
+  //    forward gate that reads it ran. The whole-DAG spine gets that free from
+  //    reverse program order because it adjoints EVERY gate it walked; a borrowed
+  //    parent is deliberately not walked, so the property is proven instead.
+  //
+  //    A mutation `M` of `P` is harmless iff it is provably OUTSIDE the interval
+  //    [first recovered gate reading P, At], and there are exactly two ways out:
+  //
+  //      LEFT   `provablyBefore(M, First)` — M ran before the interval opened,
+  //             and by the reachability half it can never run again inside it, so
+  //             P's value at `First` already includes M's effect and holds until
+  //             `At`. This is what admits the SOURCE Ry that mints the wire.
+  //
+  //      RIGHT  `provablyBefore(At, M)` — M runs only after `At`. Every path to
+  //             M goes through `At`, and `At` is not reachable from M, so M
+  //             cannot execute before the adjoints, which are inserted BEFORE
+  //             `At` and therefore strictly earlier still. This is Inc 5b, and
+  //             it is what makes bd 6uqc's P4 lower: the chained `cq_theta` on
+  //             the source wire is a mutation of a borrowed parent that happens
+  //             entirely after the discharge, so the `_unc`s read the PRE-Ry
+  //             basis — which is exactly the basis the forward gates read.
+  //
+  //    READ THE LEFT DISJUNCT WITH THIS FACT IN HAND, or the next reader will
+  //    "fix" a correct accept into a leak (bd 4p7j Rule-13 finding F6):
+  //    `clang -O1` ROUTINELY SINKS a derived chain PAST a swap-route region.
+  //    Source order `x = sqrt(a+3.0); if (a > 2) { … }` arrives with the whole
+  //    `x` chain AFTER the region (measured: `a9b_after_region.c`), so `First`
+  //    is after the emitter's route-back and the region's `cqrt_cswap` pair is
+  //    to its LEFT — the discharge then reads the wire AFTER route-back and is
+  //    admitted by LEFT, not by RIGHT. That is sound because the route pair is
+  //    self-cancelling: the second `cswap` restores the basis label the first
+  //    exchanged, so a read after the pair sees the pre-region label. What is
+  //    NOT admitted is a route STRICTLY INSIDE the interval — that satisfies
+  //    neither disjunct and leaks
+  //    (lowering_uncompute_interior_leak_route_in_interval.ll). The interval,
+  //    not the source line, is what this scan reasons about.
+  //
+  //    THE TWO DISJUNCTS ARE NOT SYMMETRIC IN WHAT THEY PROTECT, and the
+  //    difference is the owner's clause-(d) ruling of 2026-08-27: "a discharge
+  //    scheduled AFTER a non-diagonal wire gate is itself unsound (the `_unc`
+  //    would read a post-Ry basis) — the spine must never place one there." The
+  //    RIGHT disjunct does not schedule the discharge after the Ry; it proves the
+  //    Ry is after the discharge. A mutation strictly INSIDE the interval
+  //    satisfies neither and leaks
+  //    (lowering_uncompute_interior_leak_parent_ry_between.ll).
+  //
+  //    AND THAT ORDER IS WHAT THE M-A GUARD THEN READS. `recordIsExemptAt`'s
+  //    clause 2 exempts a record whose own discharge is `provablyBefore` the
+  //    gate; the `_unc`(out=R, …) and `cqrt_free(R)` emitted here are exactly the
+  //    shape `isDischargeOf` matches, and they now land before the chained Ry —
+  //    so P4 goes from a loud decline to an accept WITHOUT relaxing one clause of
+  //    the guard. The division of labour holds: M-B moved the physics, M-A only
+  //    re-read it.
+  for (Value *P : Borrowed) {
+    CallInst *First = nullptr;
+    for (CallInst *G : D.Calls) {  // forward program order (recoverDataDag §2)
+      bool Reads = false;
+      for (Value *Op : G->args())
+        if (Op == P)
+          Reads = true;
+      if (Reads) {
+        First = G;
+        break;
+      }
+    }
+    if (!First)
+      continue;  // borrowed but never read by an adjoint — nothing to prove.
+    for (User *U : P->users()) {
+      auto *M = dyn_cast<CallInst>(U);
+      if (!M)
+        return false;  // a φ/select ROUTES the same physical rail (bd tayx), a `store`
+                 // escapes it, and none of them is a gate whose position this
+                 // scan can reason about — leak rather than guess.
+      if (!DT.isReachableFromEntry(M->getParent()))
+        continue;  // a mutation that can never execute cannot move P. Vacuous
+                   // truth is the SAFE direction here — unlike in the anchor
+                   // scan, where it would have hidden a missing proof — but it is
+                   // made explicit so the two uses of reachability are not read
+                   // as one rule.
+      if (preservesBorrowedParent(M, P))
+        continue;
+      if (provablyBefore(M, First, DT))
+        continue;  // LEFT — M ran before the interval and never runs again.
+      if (provablyBefore(At, M, DT))
+        continue;  // RIGHT — M runs only after the discharge (Inc 5b).
+      return false;  // unprovable ⇒ the whole group leaks (Rule 6).
+    }
+  }
+
+  return true;
+}
+
 // Reverse the M-B INTERIOR group of `F`: the rails that are dead after their last
 // forward use but are NOT dead terminals, so the whole-DAG spine never saw them.
 //
@@ -769,244 +1005,119 @@ void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,
   // group that reads it, whose clause-(d) scan then proves the interval is
   // mutation-free from the other side. Both irreducible fixtures keep their
   // compare rail's discharge for exactly that reason.
-  SmallPtrSet<Value *, 16> Owned;
+  SmallPtrSet<Value *, 16> Anchorable;
   for (CallInst *R : Cand) {
-    bool Anchorable = true;
+    bool Ok = true;
     for (User *U : R->users()) {
       auto *UI = dyn_cast<Instruction>(U);
       if (!UI || !DT.isReachableFromEntry(UI->getParent()) ||
           !UI->getNextNode()) {
-        Anchorable = false;
+        Ok = false;
         break;
       }
       auto *G = dyn_cast<CallInst>(UI);
       if (G && isInPlaceGateOn(G, R) && canRepeat(G->getParent())) {
-        Anchorable = false;
+        Ok = false;
         break;
       }
     }
-    if (Anchorable)
-      Owned.insert(R);
+    if (Ok)
+      Anchorable.insert(R);
   }
-  if (Owned.empty())
+  if (Anchorable.empty())
     return;
 
-  Instruction *At = nullptr;
-  bool Converged = false;
-  for (unsigned Round = 0; Round < 8 && !Owned.empty(); ++Round) {
-    SmallVector<Instruction *, 16> Anchors;
-    for (CallInst *R : Cand) {
-      if (!Owned.count(R))
+  // 1c. CONNECTED COMPONENTS (bd test_C_libtooling-if1e — the Rule-13 reviewer's
+  //     recommendation from Increment 5, landed here because Increment 6's own
+  //     customer needs it). Two owned rails are in the SAME component iff one is a
+  //     producer operand of the other, i.e. iff a single recovered DAG can hold
+  //     both. Everything below runs PER COMPONENT: its own `At`, its own borrowed
+  //     frontier, its own clause-(d) interval.
+  //
+  //     NOT A REFINEMENT — A REQUIREMENT, and here is the measured shape. One `At`
+  //     per function is the nearest common post-dominator of EVERY consumer of
+  //     EVERY interior rail, so two unrelated chains drag each other's discharge
+  //     to the LATER point, and the earlier chain then has the later chain's gates
+  //     inside its borrowed parent's interval. A TWO-ITERATION Grover with a
+  //     derived-condition oracle is exactly that: iteration 1's chain would anchor
+  //     after iteration 2's flag strip, with iteration 1's S-dagger `cqrt_ry` on
+  //     the shared wire strictly INSIDE the interval. Clause (d) refuses it — and
+  //     must (the owner's 2026-08-27 ruling: an `_unc` scheduled after a
+  //     non-diagonal wire gate reads a post-Ry basis) — so the WHOLE function
+  //     leaked and the program declined at the M-A guard. Per component, each
+  //     chain anchors at its own region's strip and both discharge.
+  //
+  //     NEVER FINER THAN A COMPONENT. Two rails joined by a producer edge share a
+  //     DAG and may share a borrowed parent whose interval is the UNION of theirs;
+  //     splitting them would let one be freed while the other's adjoint still
+  //     reads it (Rule 8's shared prefix).
+  //
+  //     PLAN ALL, THEN EMIT ALL — the order is load-bearing. Emitting component A
+  //     before PLANNING component B would put A's `_unc`s, which READ shared
+  //     borrowed parents, INSIDE B's interval, where B's clause-(d) scan (which
+  //     cannot tell an adjoint's reads from its writes) refuses them and leaks B
+  //     for no physics. Planning is pure analysis, and every emission writes and
+  //     frees only rails its own component owns, so all-then-all is sound.
+  SmallVector<SmallVector<CallInst *, 8>, 4> Components;
+  {
+    DenseMap<Value *, unsigned> CompOf;  // rail -> component id
+    auto merge = [&](unsigned A, unsigned B) {
+      if (A == B)
+        return;
+      for (auto &KV : CompOf)
+        if (KV.second == B)
+          KV.second = A;
+    };
+    auto idOf = [&](Value *V) {
+      auto It = CompOf.find(V);
+      if (It != CompOf.end())
+        return It->second;
+      unsigned Fresh = CompOf.size();
+      CompOf[V] = Fresh;
+      return Fresh;
+    };
+    for (CallInst *R : Cand) {  // program order — FileCheck-stable
+      if (!Anchorable.count(R))
         continue;
+      auto link = [&](const CallInst *G) {
+        for (Value *Op : G->args())
+          if (Op != R && Anchorable.count(Op))
+            merge(idOf(R), idOf(Op));
+      };
+      idOf(R);
+      link(R);  // the rail's own producer operands
       for (User *U : R->users())
-        Anchors.push_back(cast<Instruction>(U)->getNextNode());
+        if (auto *G = dyn_cast<CallInst>(U))
+          if (isInPlaceGateOn(G, R))
+            link(G);  // and every in-place gate's other tainted operands
     }
-    if (Anchors.empty())
-      return;
-    At = dagInsertPoint(Anchors, PDT);
-    if (!At)
-      return;  // the consumers do not reconverge — leak.
-    bool Dropped = false;
+    DenseMap<unsigned, unsigned> Slot;  // component id -> slot in `Components`
     for (CallInst *R : Cand) {
-      if (!Owned.count(R))
+      if (!Anchorable.count(R))
         continue;
-      for (User *U : R->users())
-        if (!provablyBefore(cast<Instruction>(U), At, DT)) {
-          Owned.erase(R);  // reachable by construction — the anchor scan above
-                           // returns outright on an unreachable or non-instruction
-                           // user, so this `cast` cannot be the vacuous case.
-          Dropped = true;
-          break;
-        }
-    }
-    if (!Dropped) {
-      Converged = true;
-      break;
+      unsigned Id = CompOf[R];
+      auto It = Slot.find(Id);
+      if (It == Slot.end())
+        It = Slot.insert({Id, Components.size()}).first, Components.emplace_back();
+      Components[It->second].push_back(R);
     }
   }
-  if (!Converged || Owned.empty() || !At)
-    return;
 
-  // 3. THE BORROWED-PARENT FRONTIER. Every tainted operand of an owned rail's
-  //    producer (and of its in-place gates) that is not itself owned. These are
-  //    READ-ONLY: never walked, never adjointed, never freed. The canonical
-  //    member is the `cqrt_alloc`-minted source wire, whose `cqrt_ry` MINTED the
-  //    superposition — no adjoint returns it to |0⟩ once a downstream record
-  //    exists, which is exactly the situation every interior rail is in.
-  SmallPtrSet<Value *, 8> Borrowed;
-  auto borrow = [&](const CallInst *G, Value *Self) {
-    for (Value *Op : G->args())
-      if (Op != Self && taint.Tainted.count(Op) && !Owned.count(Op))
-        Borrowed.insert(Op);
+  // Plan EVERY component before ANY of them emits — see the note above.
+  struct ComponentPlan {
+    DataDag D;
+    Instruction *At;
   };
-  for (CallInst *R : Cand) {
-    if (!Owned.count(R))
-      continue;
-    borrow(R, R);
-    for (User *U : R->users())
-      if (auto *G = dyn_cast<CallInst>(U))
-        if (isInPlaceGateOn(G, R))
-          borrow(G, R);
+  SmallVector<ComponentPlan, 4> Plans;
+  for (SmallVector<CallInst *, 8> &Comp : Components) {
+    ComponentPlan P;
+    P.At = nullptr;
+    if (planInteriorComponent(Comp, taint, DT, PDT, canRepeat, ReversedGates,
+                              ReversedRails, P.D, P.At))
+      Plans.push_back(std::move(P));
   }
-  for (Value *B : Borrowed)
-    if (ReversedRails.count(B))
-      return;  // an earlier group already reversed/freed it — leak.
-
-  // 4. Recover the interior DAG under that frontier and re-prove everything the
-  //    dead-terminal driver proves, silently.
-  InteriorPlan IP;
-  IP.Owned = Owned;
-  IP.Borrowed = Borrowed;
-  SmallVector<Value *, 16> Terms;
-  for (CallInst *R : Cand)
-    if (Owned.count(R))
-      Terms.push_back(R);
-  DataDag D = recoverDataDag(Terms, taint, DT, &IP);
-  if (D.MeasuredUpstream || D.Escaped || D.NotClosed || D.Calls.empty())
-    return;
-  if (!D.Roots.empty())
-    return;  // the frontier should have stopped every root — leak if it did not.
-  for (CallInst *G : D.Calls) {
-    if (ReversedGates.count(G))
-      return;  // single ownership backstop.
-    if (!isInverseEmittable(G))
-      return;
-    // THE 261j INVARIANT, APPLIED UNIVERSALLY RATHER THAN BY SEED — and this is
-    // the load-bearing soundness fence of the whole increment. An interior rail
-    // is one whose forward consumer stays LIVE and outside the reversal; that
-    // consumer's own rail is a record of this one, taken by a carrier the
-    // reversal never touches. That is precisely `recordsIntoKeptCarrier`'s
-    // situation, so the same algebra applies: freeing the rail is Rule-6-legal
-    // only if its whole forward chain is a BASIS PERMUTATION of live conditions
-    // (bd 261j(a), owner ruling 2026-08-10). `cq_template_*` producers, `Rz`,
-    // `addc`/`xorc` pass; `cqrt_ry_<W>` does not, which is exactly why an
-    // alloc-minted source wire is borrowed and never owned. Seeding the freeze
-    // instead would reach the same verdict on today's shapes and would rest on
-    // `recordsIntoKeptCarrier` naming a surface (`tape`/`copy`) that has nothing
-    // to do with why THIS rail is recorded.
-    if (!preservesBasisUnderRecord(G))
-      return;
-    // The GROUP-LEVEL at-most-once backstop over every recovered gate — the
-    // third statement of the property, after the candidate MINT block (§1) and
-    // the per-rail in-place-gate scan (§2). `canRepeat`, not `LoopInfo`: bd 4p7j
-    // Rule-13 finding F1 (irreducible cycles are not natural loops). Kept even
-    // though §1/§2 cover every gate the walk can reach today, so a future
-    // widening of `recoverDataDag` degrades to a leak instead of a dirty free.
-    if (canRepeat(G->getParent()))
-      return;
-    if (!DT.dominates(G, At))
-      return;  // a gate on one arm of a diamond — Phase 4's job, not this one.
-    // ...AND `At` MUST POST-DOMINATE THE GATE. Dominance alone says the gate ran
-    // before the discharge on every path that REACHES the discharge; it says
-    // nothing about the paths that do not. `dagInsertPoint` post-dominates the
-    // ANCHORS (the consumers), which is a weaker set than the GATES: a rail
-    // minted in `entry` whose only consumer sits inside a classical `if` arm
-    // yields an `At` inside that arm, and the reversal then runs on one path
-    // while the mint ran on both. Nothing is freed dirty there — the other path
-    // simply leaks — but "the rail is dead on EVERY path at the discharge" is
-    // the property the post-dominator discipline exists to deliver, and a
-    // one-armed reversal does not have it. Leak instead.
-    if (!PDT.dominates(At->getParent(), G->getParent()))
-      return;
-    if (!Owned.count(railOf(G)))
-      return;  // no gate may be adjointed whose rail this group does not own.
-  }
-  // (§2.9) AT-MOST-ONCE on the FINAL point, `blockCanRepeat` rather than
-  // `LoopInfo` (an irreducible cycle is not a natural loop but still repeats).
-  if (blockCanRepeat(At->getParent()))
-    return;
-
-  // 5. CLAUSE (d) — the straight-line no-mutation scan (d1). Every borrowed
-  //    parent must hold, at each emitted `_unc`, the value it held when the
-  //    forward gate that reads it ran. The whole-DAG spine gets that free from
-  //    reverse program order because it adjoints EVERY gate it walked; a borrowed
-  //    parent is deliberately not walked, so the property is proven instead.
-  //
-  //    A mutation `M` of `P` is harmless iff it is provably OUTSIDE the interval
-  //    [first recovered gate reading P, At], and there are exactly two ways out:
-  //
-  //      LEFT   `provablyBefore(M, First)` — M ran before the interval opened,
-  //             and by the reachability half it can never run again inside it, so
-  //             P's value at `First` already includes M's effect and holds until
-  //             `At`. This is what admits the SOURCE Ry that mints the wire.
-  //
-  //      RIGHT  `provablyBefore(At, M)` — M runs only after `At`. Every path to
-  //             M goes through `At`, and `At` is not reachable from M, so M
-  //             cannot execute before the adjoints, which are inserted BEFORE
-  //             `At` and therefore strictly earlier still. This is Inc 5b, and
-  //             it is what makes bd 6uqc's P4 lower: the chained `cq_theta` on
-  //             the source wire is a mutation of a borrowed parent that happens
-  //             entirely after the discharge, so the `_unc`s read the PRE-Ry
-  //             basis — which is exactly the basis the forward gates read.
-  //
-  //    READ THE LEFT DISJUNCT WITH THIS FACT IN HAND, or the next reader will
-  //    "fix" a correct accept into a leak (bd 4p7j Rule-13 finding F6):
-  //    `clang -O1` ROUTINELY SINKS a derived chain PAST a swap-route region.
-  //    Source order `x = sqrt(a+3.0); if (a > 2) { … }` arrives with the whole
-  //    `x` chain AFTER the region (measured: `a9b_after_region.c`), so `First`
-  //    is after the emitter's route-back and the region's `cqrt_cswap` pair is
-  //    to its LEFT — the discharge then reads the wire AFTER route-back and is
-  //    admitted by LEFT, not by RIGHT. That is sound because the route pair is
-  //    self-cancelling: the second `cswap` restores the basis label the first
-  //    exchanged, so a read after the pair sees the pre-region label. What is
-  //    NOT admitted is a route STRICTLY INSIDE the interval — that satisfies
-  //    neither disjunct and leaks
-  //    (lowering_uncompute_interior_leak_route_in_interval.ll). The interval,
-  //    not the source line, is what this scan reasons about.
-  //
-  //    THE TWO DISJUNCTS ARE NOT SYMMETRIC IN WHAT THEY PROTECT, and the
-  //    difference is the owner's clause-(d) ruling of 2026-08-27: "a discharge
-  //    scheduled AFTER a non-diagonal wire gate is itself unsound (the `_unc`
-  //    would read a post-Ry basis) — the spine must never place one there." The
-  //    RIGHT disjunct does not schedule the discharge after the Ry; it proves the
-  //    Ry is after the discharge. A mutation strictly INSIDE the interval
-  //    satisfies neither and leaks
-  //    (lowering_uncompute_interior_leak_parent_ry_between.ll).
-  //
-  //    AND THAT ORDER IS WHAT THE M-A GUARD THEN READS. `recordIsExemptAt`'s
-  //    clause 2 exempts a record whose own discharge is `provablyBefore` the
-  //    gate; the `_unc`(out=R, …) and `cqrt_free(R)` emitted here are exactly the
-  //    shape `isDischargeOf` matches, and they now land before the chained Ry —
-  //    so P4 goes from a loud decline to an accept WITHOUT relaxing one clause of
-  //    the guard. The division of labour holds: M-B moved the physics, M-A only
-  //    re-read it.
-  for (Value *P : Borrowed) {
-    CallInst *First = nullptr;
-    for (CallInst *G : D.Calls) {  // forward program order (recoverDataDag §2)
-      bool Reads = false;
-      for (Value *Op : G->args())
-        if (Op == P)
-          Reads = true;
-      if (Reads) {
-        First = G;
-        break;
-      }
-    }
-    if (!First)
-      continue;  // borrowed but never read by an adjoint — nothing to prove.
-    for (User *U : P->users()) {
-      auto *M = dyn_cast<CallInst>(U);
-      if (!M)
-        return;  // a φ/select ROUTES the same physical rail (bd tayx), a `store`
-                 // escapes it, and none of them is a gate whose position this
-                 // scan can reason about — leak rather than guess.
-      if (!DT.isReachableFromEntry(M->getParent()))
-        continue;  // a mutation that can never execute cannot move P. Vacuous
-                   // truth is the SAFE direction here — unlike in the anchor
-                   // scan, where it would have hidden a missing proof — but it is
-                   // made explicit so the two uses of reachability are not read
-                   // as one rule.
-      if (preservesBorrowedParent(M, P))
-        continue;
-      if (provablyBefore(M, First, DT))
-        continue;  // LEFT — M ran before the interval and never runs again.
-      if (provablyBefore(At, M, DT))
-        continue;  // RIGHT — M runs only after the discharge (Inc 5b).
-      return;  // unprovable ⇒ the whole group leaks (Rule 6).
-    }
-  }
-
-  emitDagReversal(D, At, wd, taint);
+  for (ComponentPlan &P : Plans)
+    emitDagReversal(P.D, P.At, wd, taint);
 }
 
 }  // namespace

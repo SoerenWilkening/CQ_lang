@@ -28,6 +28,18 @@
 ; dischargeable — lowering_uncompute_interior_qram_index.ll); this fixture is the
 ; parent-side twin.
 ;
+; RE-DISPOSITIONED BY THE PER-COMPONENT ANCHOR (bd test_C_libtooling-if1e, M-B
+; Increment 6) — the ACCEPT is unchanged, the PLACEMENT moved and the CHECK
+; order with it. The index rail `%i & 3` and the load-derived rail `%v * 3` have
+; NO producer edge between them (the QROM load that joins them is not an interior
+; gate — the 7.5 surface is out of scope), so they are two COMPONENTS. Each now
+; anchors at its OWN consumer: the index discharges immediately after the
+; `cqrt_qram_load` that read it, instead of waiting for the unrelated second
+; chain's last use. That is strictly earlier and strictly less entangled, and the
+; RIGHT-disjunct-over-a-measurement property this fixture exists for is untouched
+; (the `%v` measure is still after both discharges). Increment 5 emitted both in
+; one LIFO block because it had one `At` per function.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEV < %t.cqd0.ll
@@ -57,13 +69,14 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK-NEXT: %[[IDX:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[H]], i32 3)
 ; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %[[ARR]], i32 %[[IDX]])
-; CHECK-NEXT: %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[V]], i32 3)
-; CHECK-NEXT: %[[Y:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32(i32 %[[X]], i32 %[[X]])
-; the LIFO discharge of the two owned rails — BEFORE the measurement of %[[V]]:
-; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[X]], i32 %[[V]], i32 3)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[X]])
+; the INDEX component discharges at ITS OWN consumer, the load that read it:
 ; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[IDX]], i32 %[[H]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[IDX]])
+; CHECK-NEXT: %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[V]], i32 3)
+; CHECK-NEXT: %[[Y:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32(i32 %[[X]], i32 %[[X]])
+; …and the LOAD-RESULT component at its own, still BEFORE the measure of %[[V]]:
+; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[X]], i32 %[[V]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[X]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[Y]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[V]])
 
