@@ -111,6 +111,33 @@ llvm::CallInst *findNonDiagonalWireGate(llvm::ArrayRef<llvm::Value *> Seeds,
 bool provablyBefore(const llvm::Instruction *A, const llvm::Instruction *B,
                     const llvm::DominatorTree &DT);
 
+// The PER-ACTIVATION reading of `provablyBefore`, for code inside a loop whose
+// every iteration re-establishes the thing being reasoned about (bd
+// test_C_libtooling-8h7d.5, Phase 7.3 Increment 3).
+//
+// `provablyBefore` asks "`A` never runs again after `B`", which a back edge
+// always falsifies — correctly, when the object under discussion PERSISTS across
+// iterations, and uselessly when it does not. A per-iteration ancilla rail, and a
+// loop-header phi that re-reads the wire, are re-created every trip: a `B` that
+// reaches `A` only by re-executing `Barrier` first belongs to the NEXT
+// activation, and says nothing about this one.
+//
+// So: `DT.dominates(A, B)` as before, AND either the original reachability proof
+// OR "every path from `B` back to `A` re-executes `Barrier`". The second
+// disjunct is what makes a rolled loop lower the same circuit its hand-unrolled
+// twin does.
+//
+// STRICTLY ADDITIVE — the first disjunct is `provablyBefore` verbatim, so no
+// shape this returned false for now returns true unless the barrier walk proves
+// it. `Barrier` must be the instruction whose EXECUTION re-establishes the
+// premise (the rail's mint, the interval's opening gate, the record's
+// definition); passing anything else is unsound, so every caller states which
+// one it means and why.
+bool provablyBeforePerActivation(const llvm::Instruction *A,
+                                 const llvm::Instruction *B,
+                                 const llvm::Instruction *Barrier,
+                                 const llvm::DominatorTree &DT);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_WIRE_WALK_H_

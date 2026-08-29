@@ -124,6 +124,40 @@ struct LoopBreakRegion {
 // (twin-pipeline parity is mandatory, WI-1.12).
 void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
+// bd test_C_libtooling-8h7d.5 (Phase 7.3 Increment 3) — ROUND 2 of the bounded-
+// loop pass, run AFTER `lowerControlRegions` has emitted and FLATTENED the
+// tainted-control regions that `ControlDetect::flatRegionRollableInLoop`
+// admitted inside a loop body.
+//
+// WHY A SECOND ROUND EXISTS AT ALL. `lowerLoops` (round 1) deliberately leaves a
+// loop with in-body tainted control UNCLAIMED (`tryCaseA` gate L2) — it cannot
+// see past the diamond: the header phi's latch incoming peels only as far as the
+// region's MERGE phi, which `peelInPlaceBase` does not cross, so the persistent
+// rail reads as a cross-iteration dirty rail (X1) and the whole loop would
+// loud-decline a shape that is in fact clean. After the flatten the merge phis
+// are GONE (RAUW'd to the routed base) and the body is straight-line, so the
+// very same peel now resolves — which is why the analysis is re-asked here and
+// not made cleverer up front (Rule 9: analyse the IR in front of you).
+//
+// SCOPE, and why it is NOT a second `tryCaseA`. This round makes ONE claim: the
+// loop-carried tainted header phi denotes ONE PERSISTENT QUBIT RAIL, so it
+// collapses to its root mint. It deliberately does NOT re-prove `tryCaseA`'s
+// COVERAGE/CLOSURE (every tainted body value is on the rail, every rail user is
+// a gate/measure/escape) — those exist to let round 1 CLAIM a loop, and the
+// post-flatten body legitimately contains values that are on no rail at all: the
+// region's own emitted stream (flag mint, `cqrt_cswap` route, `_unc` strip) and
+// a derived condition's iteration-local template rails. Their disposition
+// belongs to the owners that already have it — the Phase-5 uncompute spine and
+// `FreePoint`, whose back-edge live-range reject is untouched.
+//
+// The decline partition is unchanged and still LOUD: a latch incoming that does
+// not peel back to the phi is the X1 cross-iteration dirty rail
+// (`kMsgCrossIter`); a rail value with two forward in-place consumers is the
+// Rule-8 fan-out (`kMsgRailFanout`). A phi this round cannot classify either way
+// is LEFT STANDING, and `declineClassicalMuxes` — which runs after it — declines
+// it loudly. Nothing is silently accepted.
+void collapseFlattenedLoopRails(llvm::Module &M, TaintSet &taint);
+
 // Issue dtzb — is `BO` a recognized IN-PLACE value rail self-update (`q = q OP
 // c`, OP in {add, xor}, EXACTLY ONE tainted operand, integer width <= 64, the
 // widths the frozen `cqrt_{addc,xorc}_<W>` grid serves)? Returns the tainted

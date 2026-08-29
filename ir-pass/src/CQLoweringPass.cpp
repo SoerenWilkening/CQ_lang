@@ -322,6 +322,23 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   ControlPlan plan = detectControlRegions(M, taint);
   lowerControlRegions(M, wd, taint, plan);
 
+  // Bounded loops, ROUND 2 (Phase 7.3 Increment 3, bd test_C_libtooling-8h7d.5).
+  // `lowerLoops` above deliberately leaves a loop with IN-BODY tainted control
+  // unclaimed (`tryCaseA` gate L2) — pre-flatten it cannot peel the persistent
+  // rail past the region's merge phi and would X1-decline a clean loop. The
+  // regions are flattened now, so the same analysis is re-asked on the
+  // straight-line body and collapses the loop-carried header phi to its root
+  // mint (the rolled-in-place form, PRD 7.3 §2.1 — IR size independent of the
+  // trip count). Placed HERE and not later for the SAME three reasons round 1
+  // states: BEFORE `declineClassicalMuxes` (else the surviving rail phi
+  // false-declines with `kMsgClassicalPhi`, whose "classical-condition" wording
+  // mislabels a quantum register), BEFORE `lowerRotations` (pre-RAUW SSA
+  // identity — the collapse target is the still-present `@cq_theta` mint), and
+  // AFTER the flatten it depends on. A no-op unless an in-loop region was
+  // actually emitted (`taint.InLoopFlattenedPreds`), so every pre-existing
+  // module is byte-identical.
+  collapseFlattenedLoopRails(M, taint);
+
   // Issue dugh (Phase 4×6): the SECOND propagation round for control-merge
   // out-rails. The two untainted-merge emitters (6.5 classical-call arm, 4.5
   // switch data-mux) built a fresh `%out` quantum handle and RAUW'd their

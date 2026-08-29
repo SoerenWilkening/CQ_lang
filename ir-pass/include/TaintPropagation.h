@@ -296,6 +296,18 @@ struct TaintSet {
   // body. Empty for a module with no recognized value-arm break.
   llvm::SmallVector<LoopBreakRegion, 2> BreakRegions;
 
+  // bd test_C_libtooling-8h7d.5 (Phase 7.3 Increment 3) — the SURVIVING `Pred`
+  // block of every tainted-control region that `ControlDetect` admitted INSIDE a
+  // loop (`ControlRegion::InLoop`) and `SwapRouteEmit` then emitted + flattened.
+  // `flattenRegion` never erases a `Pred`, so these pointers stay valid; they are
+  // the ROUND-2 trigger `collapseFlattenedLoopRails` keys on, so a module with no
+  // in-loop control pays nothing and is byte-identical. Recording the block (not
+  // the loop) is deliberate: the flatten rewrites the CFG, so any `Loop*` captured
+  // at emission time would be stale by round 2 — the block survives, and round 2
+  // rebuilds `LoopInfo` and asks which loop now contains it (Rule 9: never cache
+  // an analysis across a mutation).
+  llvm::SmallPtrSet<const llvm::BasicBlock *, 4> InLoopFlattenedPreds;
+
   // Issue dugh (Phase 4×6) — the untainted-capable control-merge OUT-rails. The
   // two accept paths that build a DATA-untainted-yet-quantum-by-control merge
   // register — the 6.5 classical-call arm (`emitClassicalCallArmRegion`) and the

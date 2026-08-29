@@ -1247,6 +1247,38 @@ bool reachesObservingSink(Instruction *U, Value *R, const TaintSet &taint,
   return false;
 }
 
+// bd test_C_libtooling-8h7d.5 (closing bd 58tc) — "`R` is NOT ALLOCATED when `T`
+// fires", the implicit premise of clause 1, read PER ACTIVATION.
+//
+// The acyclic form is `provablyBefore(T, R)`: the record is minted strictly
+// after the gate, so it cannot be standing at it. In a ROLLED LOOP that form is
+// vacuously false for EVERY body record — the back edge always re-reaches `T` —
+// and the guard's own comment records that as deliberate, because a record
+// minted in the body and NEVER DISCHARGED genuinely IS standing at the next
+// trip's gate. The distinction the acyclic form cannot draw is whether the
+// previous iteration's instance was discharged before the back edge.
+//
+// So draw it: `R` is absent at `T` if it is minted after `T` in this activation
+// AND every path from `R` back to `T` runs one of `R`'s own discharges. Then no
+// instance can be allocated at `T` — an instance alive at `t_T` was minted at
+// some `t_R < t_T`, and the trace segment `t_R … t_T` is a path from `R` to `T`,
+// which by the walk contains a discharge of it. ∎
+//
+// MEASURED CUSTOMER: the second oracle's flag in a rolled Grover loop
+// (`cq_template_icmp_eq_i32_hl(%h, 0)`), minted, stripped and freed AFTER the
+// S-dagger `cqrt_ry` in the same trip. It warned; its hand-unrolled twin, which
+// emits a BYTE-IDENTICAL trace, did not. An UNDISCHARGED body record finds no
+// barrier on the back-edge path and still warns — which is the whole point.
+bool recordAbsentAt(CallInst *R, CallInst *T, const DominatorTree &DT) {
+  if (provablyBefore(T, R, DT))
+    return true;  // the acyclic form — unchanged.
+  for (User *U : R->users())
+    if (auto *CI = dyn_cast<CallInst>(U))
+      if (isDischargeOf(CI, R) && provablyBeforePerActivation(T, R, CI, DT))
+        return true;
+  return false;
+}
+
 // Clauses 2-4 for ONE record. Returns true iff `R` is EXEMPT at `T`.
 bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
                       const DominatorTree &DT) {
@@ -1256,11 +1288,26 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
       continue;
     if (auto *CI = dyn_cast<CallInst>(UI)) {
       // clause 2 — R's own discharge, provably before the gate.
-      if (isDischargeOf(CI, R) && provablyBefore(CI, T, DT))
+      //
+      // PER ACTIVATION since bd test_C_libtooling-8h7d.5 (which closes bd
+      // test_C_libtooling-58tc, "no record inside a loop body can be exempted by
+      // an in-body observation"). The barrier is `R` ITSELF — the record's own
+      // mint. Inside a rolled loop the discharge and the gate BOTH run every
+      // trip, in that order, over a rail the mint re-creates every trip; the
+      // plain `!isPotentiallyReachable(T, D)` half sees only the back edge and
+      // reports the record live, which is a FALSE ALARM: the record reachable
+      // "after" `T` is the NEXT iteration's, minted after `T` ran. Measured on
+      // the customer program (`example/grover/grover_oracle_uncompute.c`): the
+      // rolled loop emits a trace BYTE-IDENTICAL to its hand-unrolled twin's,
+      // discharges included, and warned twice where the twin warned not at all.
+      // A LOOP-INVARIANT record (minted outside the loop) is untouched — its
+      // mint is not on the back-edge path, so the barrier walk finds a
+      // barrier-free path and the guard still reports it live, which is right.
+      if (isDischargeOf(CI, R) && provablyBeforePerActivation(CI, T, R, DT))
         return true;
       // clause 4 — measured before the gate (collapsed; nothing left to dephase).
       if (emittedCalleeName(CI).starts_with("cqrt_measure_") &&
-          provablyBefore(CI, T, DT))
+          provablyBeforePerActivation(CI, T, R, DT))
         return true;
     }
     // clause 3 — an OBSERVED use provably AFTER the gate: the record is LIVE,
@@ -1281,7 +1328,10 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
     // Pinned by lowering_reject_live_record_unreachable_use.ll.
     if (!DT.isReachableFromEntry(UI->getParent()))
       continue;
-    if (!provablyBefore(T, UI, DT))
+    // PER ACTIVATION, same barrier and same reason as clauses 2/4 above (bd
+    // 8h7d.5 / 58tc): inside a rolled loop the observing use runs after the gate
+    // on every trip, and only the back edge makes it look like it might not.
+    if (!provablyBeforePerActivation(T, UI, R, DT))
       continue;
     if (reachesObservingSink(UI, R, taint, DT))
       return true;
@@ -1351,7 +1401,7 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
           // rather than inside `recordIsExemptAt` keeps the two questions apart:
           // this is "does R exist at the gate?" (clause 1's implicit premise),
           // not "is R live?" (clause 3).
-          if (provablyBefore(T, R, *DT))
+          if (recordAbsentAt(R, T, *DT))
             continue;
           if (recordIsExemptAt(R, T, taint, *DT))
             continue;

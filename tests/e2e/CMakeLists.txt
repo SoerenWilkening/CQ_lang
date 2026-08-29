@@ -3821,6 +3821,128 @@ add_test(NAME e2e-census-slice-sync
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/slice_census_sync_check.py"
           --root "${CMAKE_SOURCE_DIR}")
 
+# ===========================================================================
+# bd test_C_libtooling-8h7d.5 (Phase 7.3 Increment 3) — TAINTED CONTROL FLOW
+# INSIDE A CLASSICALLY-BOUNDED LOOP, lowered ROLLED.
+#
+# Five entries: two ROLLED slices, their two HAND-UNROLLED TWINS, and a
+# dynamic-bound slice — plus, below them, the two `cmp`s that are the point of
+# the whole group.
+#
+# WHY THE TWINS ARE TESTS AND NOT A COMMENT. This project has no simulator
+# (Rule 2, owner decision 2026-06-10), so "the rolled loop computes the right
+# unitary" cannot be checked directly. What CAN be checked is that it emits the
+# SAME GATE STREAM — gate for gate, handle for handle — as a straight-line
+# program that already passed an adversarial Rule-13 round (bd lom0 Inc 4 for
+# the direct oracle, bd 160a Inc 6 for the derived one). Byte-identity is that
+# check, and a `cmp` in ctest is the only version of it that cannot rot. The
+# handles line up because the runtime's allocator is a monotonic counter with no
+# recycling, so the Nth `cqrt_alloc` in the trace gets the same number either way.
+#
+# The two source files of each pair deliberately do NOT share a header: their
+# whole value is that they reach the pass through DIFFERENT `clang -O1` output —
+# a rotated loop with two header phis and in-body diamonds on one side,
+# straight-line code with four diamonds on the other — and converge.
+#
+# All five run STRICT stage 2b (no `--allow-unproven`): every ancilla is minted,
+# stripped and freed inside its own iteration, so the free-pairing checker sees a
+# matched free for each and the only rail left allocated is the measured register.
+# ===========================================================================
+
+add_test(NAME e2e-slice-control-grover-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop.expected.log")
+
+add_test(NAME e2e-slice-control-grover-loop-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_unrolled.expected.log")
+
+# The CUSTOMER program (example/grover/grover_oracle_uncompute.c). The derived
+# oracle brings the uncompute spine into the twin claim: three template rails per
+# trip that must be reversed and freed IN-BODY, between the flag strip and the
+# flag free. Before this increment the rolled form leaked all three per trip and
+# its trace differed from the twin's by exactly the six missing discharge lines.
+add_test(NAME e2e-slice-control-grover-loop-derived
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_derived.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_derived.expected.log")
+
+add_test(NAME e2e-slice-control-grover-loop-derived-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_derived_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_derived_unrolled.expected.log")
+
+# The ROLLED property itself. The trip count is a `volatile` global, so no unroll
+# is possible even in principle and the emitted IR must hold exactly ONE copy of
+# the stream. MEASURED 2026-08-29: the lowered IR is 87 lines at `cq_n = 3` and
+# 87 lines at `cq_n = 1000` — byte-identical apart from the initializer — while
+# the trace goes 57 -> 18003 lines. `cq_n` stays 3 here so the golden is readable.
+add_test(NAME e2e-slice-control-grover-loop-dynamic
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_dynamic.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_dynamic.expected.log")
+
+# THE ONE THAT FOUND A BUG. A rolled loop whose REGISTER is mutated in place
+# (`q += off`) on BOTH sides of the back edge: the pre-header chain and the latch
+# chain. The first draft of `collapseFlattenedLoopRails` collapsed the rail phi
+# WITHOUT marking the `add` into `taint.InPlaceRailOps`, so `lowerOps` emitted it
+# out of place into a fresh rail nothing read and the whole loop computed on `q`
+# instead of `q + off`. `opt` exit 0, verify-clean, STRICT stage 2b CLEAN — the
+# only outward sign was one M-A warning. This slice and
+# ir-pass/test/control_swap_inloop_railop_inplace.ll are what make it loud.
+add_test(NAME e2e-slice-control-grover-loop-offset
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_offset.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_offset.expected.log")
+
+add_test(NAME e2e-slice-control-grover-loop-offset-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_offset_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_offset_unrolled.expected.log")
+
+# THE TWIN GATES. `cmp` over the two committed goldens — no clang, no opt, no
+# plugin, milliseconds. If either side is ever regenerated alone, this is what
+# turns red; without it a rolled loop could quietly drift into a different (and
+# still self-consistent) gate stream and every other gate in the suite would stay
+# green, which is the failure mode this project keeps rediscovering.
+add_test(NAME e2e-grover-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_unrolled.expected.log")
+
+add_test(NAME e2e-grover-loop-derived-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_derived.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_derived_unrolled.expected.log")
+
+add_test(NAME e2e-grover-loop-offset-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_offset.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_offset_unrolled.expected.log")
+
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
 # missing) `python3` on PATH. Applied to every test registered in this directory

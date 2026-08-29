@@ -320,6 +320,91 @@ item 8). A tainted-index `load`/`store` in `L` keeps declining via `kMsgQramLoop
 store reversal / LIFO tape pairing) but does not itself deliver. An early `return`/
 `break` inside `L` is Phase **7.4** (`y05j`), explicitly blocked on 7.3.
 
+#### 2.8-A AMENDMENT — Increment 3: NON-EXITING tainted control in the body ACCEPTS (owner ruling 2026-08-29, bd `test_C_libtooling-8h7d.5`)
+
+§2.8 above is superseded for ONE shape and unchanged for every other. The owner
+ruled on 2026-08-29 that **a purely classical loop (classical trip count,
+classical induction variable) around tainted control flow must not decline** —
+writing a Grover iteration as `for (i…) { oracle; reflection; }` is how anyone
+would actually write it, and the hand-unrolled twin already compiled.
+
+**Scope, exactly.** Every **NON-EXITING** tainted `if` inside a classically
+bounded loop body is accepted. Every tainted terminator that **LEAVES** the loop
+keeps its current disposition and is a later increment: the quantum-bounded exit
+(Q1, `loop under quantum control`), the 7.4 `break`, the controlled `return`.
+**No unrolling** — the loop stays ROLLED per §2.1: IR size independent of the trip
+count, only the trace grows. Measured: the lowered IR of
+`tests/e2e/slice_control_grover_loop_dynamic.c` is 87 lines at `cq_n = 3` and 87
+lines at `cq_n = 1000`, byte-identical apart from the initializer, while the trace
+goes 57 → 18003 lines.
+
+**Three walls, all bookkeeping — none was a unitary argument.**
+
+1. **The d8jl structural guard** (`ControlDetect::regionEntryInLoop`) declined
+   every flat region on a CFG cycle because `RegionFlatten` erases the merge,
+   which inside a loop can be the LATCH. That erase has REPAIRED itself since bd
+   `dugh` (2026-07-04, written after d8jl): `flattenRegion` runs
+   `Pred->replaceSuccessorsPhiUsesWith(Merge, Pred)` before the erase, which
+   repoints exactly the header-phi incoming the broken-module report was about.
+   The guard is now NARROWED by `flatRegionRollableInLoop`, which admits a region
+   only when **(A)** `LI.getLoopFor(Pred)` is a natural loop, **(B)** every region
+   block sits at that one depth, **(C)** the loop has a single latch, and **(D)**
+   the entry is on no cycle other than that loop's back edge. **(A) and (D) are
+   the irreducible fence and they are kept for a REASON THAT IS NOT THE FLATTEN:**
+   every guard that adjudicates the flattened body — the Case-A/X1 rail analysis,
+   `markIfRailLocal`, `FreePoint`'s back-edge live-range reject — is
+   `LoopInfo`-gated and CANNOT SEE an irreducible cycle.
+2. **Order.** `lowerLoops` (round 1) still runs BEFORE `detectControlRegions`, so
+   Q1's message ownership is untouched; its gate L2 still leaves a
+   control-in-body loop unclaimed, because pre-flatten the rail peel stops at the
+   region's merge phi and the loop would X1-decline a clean shape. A **ROUND 2**
+   (`collapseFlattenedLoopRails`) runs after `lowerControlRegions` and before
+   `declineClassicalMuxes`, on the now-straight-line body, and collapses the
+   persistent-rail header phi to its root mint. Round 2 makes ONE claim and
+   deliberately does not re-prove `tryCaseA`'s COVERAGE/CLOSURE: the post-flatten
+   body legitimately holds values on no rail (the emitted region stream, a derived
+   condition's iteration-local template rails), and their disposition belongs to
+   the owners that already have it.
+3. **Position proofs.** `provablyBefore` = `dominates && !reachable-back` is
+   falsified by ANY back edge, which is right when the object PERSISTS across
+   iterations and useless when it does not. The per-activation reading
+   (`provablyBeforePerActivation`, `WireWalk`) adds one disjunct: "every path from
+   `B` back to `A` re-executes `Barrier`". It is consulted only when the plain
+   proof already failed, so it is strictly additive. The barrier is always the
+   instruction whose EXECUTION re-establishes the premise — the record's own
+   definition, the rail's mint, the interval's opening gate — and every caller
+   states which. **`phiTracksWire` is the fence that keeps the record reading
+   honest:** a loop-header phi re-reads the wire only if its incomings are the
+   body's last wire writes; a phi carrying a superseded record gets no barrier
+   (`lowering_reject_stale_record_loop_nontracking_phi.ll`). §2.9 below is
+   UNCHANGED — a LOOP-INVARIANT seed re-read after an in-body Ry is still the
+   genuine iteration-2 stale record and still declines.
+
+**What stays declined** (each with a red fixture): a VALUE (method-B) arm inside
+a loop (`control_swap_reject_inloop_value_arm.ll` — its route-back is not the
+adjoint of its split, the copied-out `%out` is a different handle every trip, and
+nothing proves it `|0⟩` at the back edge); a depth-2 nest or a `switch` in a loop;
+an irreducible cycle (`…_irreducible.ll`, `…_second_cycle.ll`); a multi-latch loop
+(`…_multilatch.ll`); X1 and the Rule-8 fan-out, now reachable through round 2
+(`lowering_reject_inloop_control_{cross_iter,rail_fanout}.ll`); the 6.5
+classical-call arm in a loop.
+
+**One silent miscompile was found and fixed inside this increment**, and it is the
+shape to re-probe first if round 2 is ever extended: the collapse RAUWs the header
+phi to its root mint, and the peel to that root walks THROUGH an in-place value
+self-update (`q += off`, issue dtzb). Round 1 compensates by marking each such op
+into `taint.InPlaceRailOps`; the first draft of round 2 did not, so `lowerOps`
+emitted the add OUT of place into a rail nothing read and the loop computed on `q`
+where the source says `q + off`. `opt` exit 0, verify-clean, STRICT stage-2b
+free-pairing clean — the only outward sign was one M-A warning. Pinned by
+`control_swap_inloop_railop_inplace.ll` and
+`tests/e2e/slice_control_grover_loop_offset.c`.
+
+**The witness** is byte-identity with the hand-unrolled twin, which is the
+strongest evidence available without a simulator (Rule 2): three rolled slices,
+three unrolled twins, and three `cmp` entries in ctest
+(`e2e-grover-loop{,-derived,-offset}-twin-identical`).
+
 ### 2.9 The iteration-2 staleness guard is already correct — keep it (L4 boundary)
 `declineStaleRecordOps` (`OpcodeLowering.cpp:117-198`, position-aware proof
 `WireWalk.cpp:138-141`) already fires correctly on a real loop hazard: a pure
@@ -342,7 +427,9 @@ mirror-exact negative fixture:
 | Case B — iteration-local born-and-dies temp | classical exit; temp's whole DAG within `L`, CLOSED, not measured/escaped | **accept** — in-body per-iteration uncompute (no diagnostic) |
 | quantum/measurement-bounded (Q1) | an exiting condition is a live tainted `icmp`/`fcmp` | **permanent decline** — `cq controlled lowering: loop under quantum control` |
 | cross-iteration dirty rail (X1) | classical exit; a tainted value carried across iterations on a non-in-place rail | **decline → defer unroll** — `cq loop lowering: loop-carried tainted value crosses iterations` |
-| tainted control in body | tainted-condition `br`/`select`/`switch` ∈ `L` | **decline** — existing `…nested control flow…` / `…control flow…` (`ControlDetect`/`RegionTreeDetect`) |
+| NON-EXITING tainted PHASE `if` in body (Inc 3, bd `8h7d.5`) | flat diamond/if-else, all blocks at one depth of a reducible single-latch loop, no second cycle | **accept** — routed stream emitted in-body, rail phi collapsed by round 2 (no diagnostic) |
+| tainted VALUE (method-B) arm in body | as above but `ClassArm == Value` | **decline** — `cq controlled lowering: control flow inside a loop body under quantum control` |
+| tainted control in body, any other shape (nest / `switch` / irreducible / multi-latch) | tainted-condition `br`/`select`/`switch` ∈ `L` | **decline** — existing `…nested control flow…` / `…control flow inside a loop body…` (`ControlDetect`/`RegionTreeDetect`) |
 | QRAM in body | tainted `load`/`store`/`gep` ∈ `L` | **decline** — existing `kMsgQramLoop` (→ `iw81.13`) |
 | `break`/early-`return` in body | a body block exits `L` early under a tainted condition | **decline → defer 7.4** — existing control decline |
 | unrecognized in-loop live range (residual net) | any tainted handle live across the backedge not classified (a)/(b) | **decline** — existing `kMsgLoopBackedge` / `kMsgClassicalPhi` |

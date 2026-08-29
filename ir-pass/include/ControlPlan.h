@@ -345,6 +345,15 @@ struct ControlRegion {
   // strip+free path). The VALUE-arm twin is not yet implemented —
   // `emitValueRegion` declines a `ShareCondFlag` region (WI-later).
   bool ShareCondFlag = false;
+
+  // bd test_C_libtooling-8h7d.5 (7.3 Inc 3) — this region sits WHOLLY INSIDE a
+  // reducible `LoopInfo` loop and was admitted by
+  // `ControlDetect::flatRegionRollableInLoop`. Set at detection, read only by
+  // `handleBranchRegion`'s own in-loop scope fence (PHASE arms only) — the
+  // emitters are UNCHANGED: an in-loop region emits the exact same routed
+  // stream, positionally, into its own `Pred`, which is why the rolled loop's
+  // trace is byte-identical to its hand-unrolled twin's.
+  bool InLoop = false;
 };
 
 // The full detection result: the recovered regions plus the set of in-shadow

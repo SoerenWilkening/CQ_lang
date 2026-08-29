@@ -716,7 +716,16 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
       if (baseOf(G) != P)
         return false;
       auto *GI = const_cast<CallInst *>(G);
-      if (!provablyBefore(First, GI, DT) || !provablyBefore(GI, At, DT))
+      // bd 8h7d.5 — PER ACTIVATION, barrier `First` (the interval's opening
+      // gate), for the same reason the LEFT/RIGHT disjuncts below take it: the
+      // interval is [the LAST `First` before `At`, `At`], so a route member that
+      // can only leave or re-enter it by re-executing `First` is inside THIS
+      // activation's interval exactly when it is inside the acyclic one. In a
+      // rolled loop the region's own `cqrt_cswap` pair sits between this
+      // iteration's chain and this iteration's discharge — the (d2) accept —
+      // and the back edge is what the barrier removes from the question.
+      if (!provablyBeforePerActivation(First, GI, First, DT) ||
+          !provablyBeforePerActivation(GI, At, First, DT))
         return false;
     }
     return true;
@@ -762,7 +771,14 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
       if (!Owned.count(R))
         continue;
       for (User *U : R->users())
-        if (!provablyBefore(cast<Instruction>(U), At, DT)) {
+        // bd 8h7d.5 — PER ACTIVATION, with the rail's own MINT (`R`) as the
+        // barrier. `R` is a `cqrt_alloc`/template call: re-executing it hands
+        // back a FRESH handle, so a consumer that reaches `At` only around a
+        // back edge is reading the NEXT iteration's rail and says nothing about
+        // this one's discharge. Outside a loop the barrier walk is never
+        // consulted (the plain reachability half already succeeds), so this is
+        // byte-inert for every acyclic module.
+        if (!provablyBeforePerActivation(cast<Instruction>(U), At, R, DT)) {
           Owned.erase(R);  // reachable by construction — the anchor scan above
                            // returns outright on an unreachable or non-instruction
                            // user, so this `cast` cannot be the vacuous case.
@@ -843,7 +859,14 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
     // Rule-13 finding F1 (irreducible cycles are not natural loops). Kept even
     // though §1/§2 cover every gate the walk can reach today, so a future
     // widening of `recoverDataDag` degrades to a leak instead of a dirty free.
-    if (canRepeat(G->getParent()))
+    // bd 8h7d.5 carries the ITERATION-LOCAL exception here too, and it is the
+    // THIRD site to state it: a recovered gate inside a marked body runs once
+    // per trip and its adjoint is emitted in-body once per trip. An irreducible
+    // cycle is never marked (the marker is `LoopInfo`-gated), so `canRepeat`'s
+    // superset behaviour over `LoopInfo` is preserved for exactly the case bd
+    // 4p7j measured.
+    if (canRepeat(G->getParent()) &&
+        !taint.IterationLocalBlocks.count(G->getParent()))
       return false;
     if (!DT.dominates(G, At))
       return false;  // a gate on one arm of a diamond — Phase 4's job, not this one.
@@ -864,7 +887,12 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
   }
   // (§2.9) AT-MOST-ONCE on the FINAL point, `blockCanRepeat` rather than
   // `LoopInfo` (an irreducible cycle is not a natural loop but still repeats).
-  if (blockCanRepeat(At->getParent()))
+  // bd 8h7d.5: an ITERATION-LOCAL body is the affirmative exception — the
+  // discharge lands in-body and runs once per trip against a once-per-trip
+  // forward stream. An IRREDUCIBLE cycle can never be marked (the marker is
+  // `LoopInfo`-gated), so it still falls through to the leak.
+  if (blockCanRepeat(At->getParent()) &&
+      !taint.IterationLocalBlocks.count(At->getParent()))
     return false;
 
   // 5. CLAUSE (d) — the straight-line no-mutation scan (d1). Every borrowed
@@ -949,9 +977,18 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
                    // as one rule.
       if (preservesBorrowedParent(M, P))
         continue;
-      if (provablyBefore(M, First, DT))
-        continue;  // LEFT — M ran before the interval and never runs again.
-      if (provablyBefore(At, M, DT))
+      // bd 8h7d.5 — BOTH disjuncts are read PER ACTIVATION, with the
+      // interval's OPENING gate `First` as the barrier. The interval this scan
+      // reasons about is [the LAST `First` before `At`, `At`]; a mutation that
+      // can only get back to the interval by re-executing `First` re-opens a
+      // NEW interval and is therefore outside this one. That is exactly the
+      // rolled-loop shape: the body's `cqrt_ry` on the shared wire runs after
+      // this iteration's discharge and before the next iteration's chain, i.e.
+      // between two intervals, never inside one. Outside a loop neither walk is
+      // consulted (the plain half succeeds) and the scan is byte-inert.
+      if (provablyBeforePerActivation(M, First, First, DT))
+        continue;  // LEFT — M ran before the interval opened.
+      if (provablyBeforePerActivation(At, M, First, DT))
         continue;  // RIGHT — M runs only after the discharge (Inc 5b).
       if (routeGroupFullyInside(M, P, First, At, DT, taint))
         continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
@@ -1011,7 +1048,20 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
     // inside an IRREDUCIBLE cycle is re-minted per trip exactly as a loop rail
     // is, while `getLoopFor` returns null for it
     // (`lowering_uncompute_interior_leak_irreducible_mint.ll`).
-    if (canRepeat(&BB))
+    //
+    // THE ONE EXCEPTION, and it is the SAME one the dead-terminal driver has
+    // carried since Increment 2 (bd test_C_libtooling-8h7d.5 extends it here):
+    // a block affirmatively proved ITERATION-LOCAL. There the rail IS re-minted
+    // every trip and the reversal IS re-emitted every trip, one adjoint per
+    // forward gate — the exact pairing the backstop is protecting, achieved by
+    // placing the discharge in-body instead of at function scope. Everything
+    // that follows re-verifies it per activation rather than trusting the mark:
+    // the anchor scan, the convergence test, the final-`At` fence and clause (d)
+    // each take a barrier-cut reading (`provablyBeforePerActivation`) whose
+    // barrier is the very mint / interval-opening gate this exception assumes is
+    // re-executed. Not marking is always safe (the rail leaks); the mark only
+    // ever grants.
+    if (canRepeat(&BB) && !taint.IterationLocalBlocks.count(&BB))
       continue;
     // REACHABILITY FIRST — the same trap the M-A guard's Rule-13 round hit (its
     // F3 finding). `provablyBefore` is `DT.dominates(A, B) &&
@@ -1119,7 +1169,14 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
         break;
       }
       auto *G = dyn_cast<CallInst>(UI);
-      if (G && isInPlaceGateOn(G, R) && canRepeat(G->getParent())) {
+      if (G && isInPlaceGateOn(G, R) && canRepeat(G->getParent()) &&
+          !taint.IterationLocalBlocks.count(G->getParent())) {
+        // bd 8h7d.5 — an in-place WRITE inside an iteration-local body runs
+        // exactly once per trip and is adjointed exactly once per trip (the
+        // reversal is emitted in-body), so the at-most-once obligation is met
+        // per activation rather than per function. Outside such a body the
+        // fence is unchanged: a K-times write with one adjoint is bd 4p7j's
+        // measured hidden measurement.
         Ok = false;
         break;
       }

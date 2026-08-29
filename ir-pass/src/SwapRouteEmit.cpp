@@ -1148,8 +1148,16 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       }
     if (Child)
       lowerNestedRegion(R, *Child, wd, csyms, taint);
-    else
+    else {
+      // bd test_C_libtooling-8h7d.5 — record the SURVIVING `Pred` of an in-loop
+      // region BEFORE `emitRegion` runs (it ends in `flattenRegion`, which
+      // erases `Arm`/`MergeBB` but never a `Pred`). This is the sole trigger
+      // for the round-2 rail collapse (`collapseFlattenedLoopRails`); a module
+      // with no in-loop region records nothing and is byte-identical.
+      if (R.InLoop)
+        taint.InLoopFlattenedPreds.insert(R.Pred);
       emitRegion(R, wd, csyms, taint);
+    }
   }
 }
 

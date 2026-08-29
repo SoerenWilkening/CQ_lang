@@ -785,8 +785,27 @@ branch — lower since bd `hcrg` (2026-08-27) via the emission-ORDER fix in the
 block-lifetime bullet below; the
 follower must be a diamond (an `if/else` follower's routed base is the previous
 merge phi, which `isValueChangingOp` reads as a new basis value → over-declines,
-`control_swap_reject_seq_ifelse_second.ll`). **Every other tainted-control shape
-loudly declines** (deeper or non-homogeneous nests; the switch off-pattern matrix: multi-phi
+`control_swap_reject_seq_ifelse_second.ll`). A **NON-EXITING tainted PHASE region
+INSIDE a classically-bounded loop** lowers **ROLLED** since bd `8h7d.5` (owner
+ruling 2026-08-29) — Grover written as `for (i…) { oracle; reflection; }` compiles,
+with IR size independent of the trip count (measured: 87 lines of lowered IR at
+K=3 and at K=1000). Three pieces: the d8jl `regionEntryInLoop` decline is narrowed
+by `flatRegionRollableInLoop` (reducible `LoopInfo` loop, one depth, single latch,
+no second cycle through the entry — the IRREDUCIBLE half is kept because every
+downstream loop guard is `LoopInfo`-gated, **not** because the flatten breaks; bd
+`dugh` repaired that on 2026-07-04); a ROUND-2 `collapseFlattenedLoopRails` +
+`markIfRailLocal` (`LoopLowering`) runs after the flatten to collapse the
+persistent rail phi and license the in-body per-iteration discharge; and
+`provablyBefore` gained a per-activation reading (`provablyBeforePerActivation` +
+the `phiTracksWire` fence, `WireWalk`) so a body Ry reached only around the back
+edge reads as the NEXT iteration's producer rather than this one's staler. The
+witness is BYTE-IDENTITY with the hand-unrolled twin (three `cmp` ctest gates).
+Read bd memories [`inloop-control-rolled-8h7d5`],
+[`d8jl-correction-flatten-repairs-headerphi`] and
+[`provably-before-per-activation`] before touching any of it. IN-LOOP VALUE
+(method-B) arms, depth-2 nests, `switch`, the 6.5 classical-call arm, irreducible
+cycles and multi-latch loops all keep the loop decline. **Every other
+tainted-control shape loudly declines** (deeper or non-homogeneous nests; the switch off-pattern matrix: multi-phi
 C1, grouped C4, non-empty-default C5, MUX-EXCH C8/G8, mixed arms, fp/vector/`i128`
 G4, nested G11, `§3c` clobber G7, tainted angle G3, jump-table fold, impure/unowned-
 scrutinee G10).
@@ -893,7 +912,7 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 # five gate moments (Rule-13 core commit · pre-push · harness change · template
 # regen · accept/decline predicate change).
 #
-# 264 ctest entries (2026-08-27: +2 for the bd hcrg sequential-region slices; the
+# 282 ctest entries (2026-08-29: +18 for the bd 8h7d.5 in-loop-control group — 7 rolled/unrolled/dynamic slices + 3 `cmp` twin gates, and the rest are the earlier libm/e2e growth; 2026-08-27: +2 for the bd hcrg sequential-region slices; the
 # figures below were taken at 252/253 and their RATIOS still hold). RUN IT PARALLEL
 # — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
@@ -930,9 +949,9 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1119 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-27). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1267 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-29). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 254 entries (247 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, and the 3 spec/predmux entries) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-27 (`ctest -N -R '^e2e-'`); re-measure rather than trust them.
+ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 272 entries (262 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, the 3 spec/predmux entries and the 3 bd 8h7d.5 `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-29 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
 
 # One fixture (lit --filter matches the test display name)

@@ -163,26 +163,33 @@ namespace {
 // classical-operand `cq_theta` (the rail MINT), at any non-gate value (a phi /
 // template producer / argument), and at a two-quantum / non-bijection op (a dirty
 // rail → X1).
+// ONE STEP of that peel: the value `V`'s rail parent, or null when `V` IS the
+// base. Split out for bd test_C_libtooling-8h7d.5's round-2 collapse, which must
+// ENUMERATE the chain (to mark its in-place value ops and to count fan-out) and
+// must do so by walking the IDENTICAL edges `peelInPlaceBase` walks — a
+// hand-rolled second walk that took `arg 0` off any call would run PAST the base
+// and mark ops that are not on the rail at all, which `lowerOps` would then emit
+// as in-place mutations of a register they do not belong to (Rule 14: one
+// spelling, asked twice).
+Value *peelInPlaceStep(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls,
+                       const TaintSet &taint) {
+  if (auto *CI = dyn_cast<CallInst>(V)) {
+    if (!GateCalls.count(CI))
+      return nullptr;  // not a collected rotation call — V is the base.
+    Value *Handle = CI->getArgOperand(0);
+    if (!taint.Tainted.count(Handle))
+      return nullptr;  // classical-operand theta: the mint point IS the base.
+    return Handle;
+  }
+  if (auto *BO = dyn_cast<BinaryOperator>(V))
+    return inPlaceValueRailOperand(BO, taint);  // dtzb self-update, or null.
+  return nullptr;
+}
+
 Value *peelInPlaceBase(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls,
                        const TaintSet &taint) {
-  for (;;) {
-    if (auto *CI = dyn_cast<CallInst>(V)) {
-      if (!GateCalls.count(CI))
-        break;  // not a collected rotation call — V is the base.
-      Value *Handle = CI->getArgOperand(0);
-      if (!taint.Tainted.count(Handle))
-        break;  // classical-operand theta: the mint point IS the base.
-      V = Handle;
-      continue;
-    }
-    if (auto *BO = dyn_cast<BinaryOperator>(V)) {
-      if (Value *Base = inPlaceValueRailOperand(BO, taint)) {
-        V = Base;  // dtzb: peel the in-place value self-update to its rail.
-        continue;
-      }
-    }
-    break;
-  }
+  while (Value *Next = peelInPlaceStep(V, GateCalls, taint))
+    V = Next;
   return V;
 }
 
@@ -1536,6 +1543,350 @@ bool loopHasInPlaceRailStructure(
         return true;
   }
   return false;
+}
+
+namespace {
+
+// ── bd test_C_libtooling-8h7d.5 (7.3 Inc 3) — ROUND 2: the post-flatten rail ──
+//
+// Contract + rationale in LoopPlan.h. This is the analysis for ONE loop; it
+// reuses `peelInPlaceBase` / `isInPlaceGateOnArg0` / `inPlaceValueRailOperand`
+// and the two shipped diagnostics rather than re-spelling any of them (Rule 14),
+// so the round-1 and round-2 readings of "a persistent in-place rail" cannot
+// drift.
+//
+// Returns true iff it MUTATED or DECLINED (the caller has nothing further to do
+// for this loop either way).
+bool collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
+                        const SmallPtrSetImpl<CallInst *> &GateCalls,
+                        DominatorTree &DT,
+                        SmallPtrSetImpl<Value *> &RootsOut) {
+  BasicBlock *Header = L->getHeader();
+  BasicBlock *Latch = L->getLoopLatch();
+  if (!Latch)
+    return false;  // multi-latch — unproven shape, exactly as round 1 (Risk 2).
+
+  // (1) Recognise every collapsible rail phi. PURE ANALYSIS — no mutation until
+  //     the whole header has been classified, so an inter-phi reference cannot
+  //     read an already-erased phi (the round-1 `Collapse` precedent).
+  DenseMap<PHINode *, Value *> Collapse;    // phi → root mint
+  SmallVector<Value *, 8> RailMembers;      // every value on an accepted chain
+  for (PHINode &P : Header->phis()) {
+    if (!taint.Tainted.count(&P))
+      continue;  // classical induction phi — not a rail.
+    if (P.getNumIncomingValues() != 2)
+      continue;  // multi-entry header phi — leave it (declineClassicalMuxes).
+    Value *LatV = nullptr, *PreV = nullptr;
+    for (unsigned i = 0; i < 2; ++i) {
+      BasicBlock *IB = P.getIncomingBlock(i);
+      if (IB == Latch)
+        LatV = P.getIncomingValue(i);
+      else if (!L->contains(IB))
+        PreV = P.getIncomingValue(i);  // the external (entry/guard) edge.
+    }
+    if (!PreV || !LatV)
+      continue;  // not the clean latch + external-entry pair.
+
+    // (Risk 2, verbatim from round 1) The latch incoming must peel — through
+    // IN-PLACE gates ONLY — back to the phi itself: a CLOSED self-cycle, i.e.
+    // one persistent rail whose handle is the same qubit every iteration. A
+    // latch that peels to a fresh value-op rail is X1, the cross-iteration
+    // dirty rail, and it declines LOUDLY here rather than silently collapsing a
+    // loop-variant handle.
+    if (peelInPlaceBase(LatV, GateCalls, taint) != &P) {
+      Value *LatBase = peelInPlaceBase(LatV, GateCalls, taint);
+      if (taint.Tainted.count(LatBase)) {
+        diagnose(&P, kMsgCrossIter);
+        return true;
+      }
+      continue;  // unclassifiable either way — leave it for the mux guard.
+    }
+    // The external incoming must peel to a classical-operand `cq_theta` MINT
+    // that dominates the loop (the rail origin) — the value every rail member
+    // RAUWs onto at rotation lowering, and therefore the only sound collapse
+    // target.
+    Value *Root = peelInPlaceBase(PreV, GateCalls, taint);
+    auto *Mint = dyn_cast<CallInst>(Root);
+    if (!Mint || !GateCalls.count(Mint) ||
+        taint.Tainted.count(Mint->getArgOperand(0)))
+      continue;  // not a clean rail mint — leave it.
+    if (!DT.dominates(Mint, Header))
+      continue;
+
+    // Collect the chain members (root → … → PreV → phi → … → LatV) so the
+    // fan-out guard and the in-place marking below see every one of them.
+    // Walked with `peelInPlaceStep` — the SAME edges `peelInPlaceBase` walked to
+    // prove the two endpoints above, so the enumeration cannot run past the base
+    // and cannot disagree with the proof it is enumerating (Rule 14). Both walks
+    // TERMINATE: each step ascends the arg-0 / rail-operand def chain, which is
+    // acyclic in SSA outside phis, and a phi ends the walk (`peelInPlaceStep`
+    // returns null for it).
+    RailMembers.push_back(&P);
+    for (Value *V = LatV; V != &P;) {
+      RailMembers.push_back(V);
+      Value *Next = peelInPlaceStep(V, GateCalls, taint);
+      if (!Next)
+        break;  // cannot happen (the peel above reached `&P`); defensive.
+      V = Next;
+    }
+    for (Value *V = PreV; V != Root;) {
+      RailMembers.push_back(V);
+      Value *Next = peelInPlaceStep(V, GateCalls, taint);
+      if (!Next)
+        break;  // cannot happen (the peel above reached `Root`); defensive.
+      V = Next;
+    }
+    RailMembers.push_back(Root);
+    Collapse[&P] = Root;
+    RootsOut.insert(Root);
+  }
+  if (Collapse.empty())
+    return false;
+
+  // (2) FAN-OUT / linear-lineage guard (Rule 8 no-cloning) — the SAME guard
+  //     round 1 applies, for the same reason: a rail value read by TWO in-place
+  //     mutators would have both serialised onto the one handle, corrupting
+  //     both (`rz(h,1); rz(h,2)` = Rz(3), not the source's Rz(2)). The emitted
+  //     region stream is NOT counted here and must not be: `cqrt_cswap` /
+  //     `cq_template_*` are not in `GateCalls` (which holds only the collected
+  //     front-end `@cq_theta`/`@cq_phi` sites) and are not `BinaryOperator`s, so
+  //     `isInPlaceGateOnArg0` / `inPlaceValueRailOperand` reject them by
+  //     construction — a route puts the value on a work rail and brings it back,
+  //     it does not mutate the lineage.
+  for (Value *V : RailMembers) {
+    SmallVector<Instruction *, 2> InPlaceUsers;
+    for (User *U : V->users()) {
+      if (auto *CI = dyn_cast<CallInst>(U)) {
+        if (isInPlaceGateOnArg0(CI, V, GateCalls, taint))
+          InPlaceUsers.push_back(CI);
+      } else if (auto *BO = dyn_cast<BinaryOperator>(U)) {
+        if (inPlaceValueRailOperand(BO, taint) == V)
+          InPlaceUsers.push_back(BO);
+      }
+    }
+    if (InPlaceUsers.size() > 1) {
+      diagnose(InPlaceUsers.front(), kMsgRailFanout);
+      return true;  // recognised but unlowerable fan-out — loud decline.
+    }
+  }
+
+  // (3) Issue dtzb — MARK EVERY IN-PLACE VALUE RAIL SELF-UPDATE, exactly as
+  //     round 1 does, and this line is NOT optional bookkeeping: it is what makes
+  //     the collapse SOUND for a rail carrying `q += c`.
+  //
+  //     MEASURED SILENT MISCOMPILE WHEN IT IS MISSING (found 2026-08-29 while
+  //     re-measuring `example/grover/grover_loop_frontier.c` with only the
+  //     in-loop offsets removed — `opt` exit 0, verify-clean, strict
+  //     free-pairing CLEAN, and the only outward sign was one M-A WARNING).
+  //     `a = cq_theta(a,.5); a += cq_off;` before a loop puts the `add` on the
+  //     rail's PRE-header chain, so the header phi's external incoming peels
+  //     THROUGH it to the mint — and collapsing the phi to that mint RAUW's every
+  //     in-loop use to the PRE-OFFSET handle. `lowerOps` then emits the add
+  //     out-of-place into a fresh rail nothing reads, and the whole loop computes
+  //     on `a`, not on `a + off`. The wrong unitary, with the right shape.
+  //
+  //     Marking records the op only (no mutation). The op's result goes use-empty
+  //     after the collapse; `lowerOps` collects it by TAINT MEMBERSHIP, not use
+  //     count, and emits the side-effecting in-place `cqrt_{addc,xorc}_<W>`.
+  //     Rotation gates need no marking (`lowerRotations` already lowers in place).
+  for (Value *V : RailMembers)
+    if (auto *BO = dyn_cast<BinaryOperator>(V))
+      taint.InPlaceRailOps.insert(BO);
+
+  // (4) Collapse. RAUW each rail phi to its root mint (the still-pre-lowering
+  //     `cq_theta` SSA value, SAME type — no ill-typed phi survives) and erase
+  //     after ALL RAUWs so inter-phi references resolve cleanly. This is exactly
+  //     what rotation lowering would produce anyway (every in-place gate RAUWs
+  //     its result to its arg-0 handle, so the phi would degenerate to
+  //     `phi [%h, pre], [%h, latch]`); doing it HERE is what keeps the emitted
+  //     stream identical to the hand-unrolled twin's and the loop ROLLED.
+  for (auto &KV : Collapse)
+    KV.first->replaceAllUsesWith(KV.second);
+  for (auto &KV : Collapse) {
+    taint.Tainted.erase(KV.first);
+    taint.BirthOrder.erase(KV.first);
+    KV.first->eraseFromParent();
+  }
+
+  // (5) A tainted phi ELSEWHERE whose every incoming now peels to the SAME root
+  //     is a pure renaming of that rail (the rotated-loop exit/LCSSA merge, and
+  //     any inner router the flatten left behind). Collapse it too — round 1's
+  //     fixpoint (b) makes the identical claim. A phi mixing two roots, or one
+  //     with an incoming off every rail, is LEFT for `declineClassicalMuxes`.
+  for (bool Grew = true; Grew;) {
+    Grew = false;
+    SmallVector<std::pair<PHINode *, Value *>, 4> More;  // phi → its one root
+    for (BasicBlock &BB : F)
+      for (PHINode &P : BB.phis()) {
+        if (!taint.Tainted.count(&P))
+          continue;
+        Value *Common = nullptr;
+        bool Ok = true;
+        for (Value *V : P.incoming_values()) {
+          Value *Base = peelInPlaceBase(V, GateCalls, taint);
+          bool OnRail = false;
+          for (auto &KV : Collapse)
+            if (Base == KV.second)
+              OnRail = true;
+          if (!OnRail) {
+            Ok = false;
+            break;
+          }
+          if (!Common)
+            Common = Base;
+          else if (Common != Base) {
+            Ok = false;  // merges two distinct rails — not a clean renaming.
+            break;
+          }
+        }
+        if (Ok && Common)
+          More.push_back({&P, Common});
+      }
+    // `Common` DOMINATES every use of `P`: each incoming peels to it, so it
+    // dominates every incoming definition, hence every predecessor of `P`'s
+    // block, hence that block — so the RAUW is well-formed without a re-check.
+    for (auto &KV : More) {
+      KV.first->replaceAllUsesWith(KV.second);
+      taint.Tainted.erase(KV.first);
+      taint.BirthOrder.erase(KV.first);
+      KV.first->eraseFromParent();
+      Grew = true;
+    }
+  }
+  return true;
+}
+
+// ── bd test_C_libtooling-8h7d.5 — the Case-B twin for a loop WITH a rail ─────
+//
+// `markIfIterationLocal` (Increment 2, 799w.2) certifies a loop in which EVERY
+// tainted value is born and dies inside one iteration, and it refuses — by
+// design — a loop that reads a tainted value minted OUTSIDE it. That refusal is
+// exactly right for the shape it was written for and exactly wrong here: after
+// the round-2 collapse the loop reads ONE loop-invariant tainted value, the
+// PERSISTENT QUBIT RAIL, and its whole point is to persist. Without a marking
+// the spine takes its §2.9 acyclic backstop (`InLoop && !IterLocal → return`,
+// Uncomputation.cpp) and LEAKS the condition chain's rails once per iteration —
+// measured on the customer program: three `cq_template_*` rails allocated and
+// never uncomputed, never freed, where the hand-unrolled twin reverses and frees
+// all three. A leak is not a miscompile, but it is a DIFFERENT CIRCUIT from the
+// cleared unrolled one, and "the rolled trace equals the unrolled trace" is this
+// increment's load-bearing witness.
+//
+// So: the same certificate, with the rail carved out and NOTHING else.
+//   * a value ON the rail (it peels to a collapsed root) may be read from
+//     anywhere and used anywhere — it is the register, owned by the user's
+//     `cq_measure`, and it is never a recovered DAG terminal (its def is
+//     OUTSIDE the loop, so `FreePoint`'s `TermIterLocal` is false for it and the
+//     ordinary Measured/Escaped path still decides it);
+//   * every OTHER tainted value must be defined in `L` and used only in `L` —
+//     the unchanged iteration-local obligation;
+//   * a tainted OPERAND that is neither on the rail nor defined in `L` is the
+//     accumulating loop-invariant register the original guard was protecting
+//     against, and still refuses the marking.
+// The L2 (tainted control), L3 (tainted-index memory), subloop and
+// tainted-header-phi refusals are copied VERBATIM — a surviving tainted header
+// phi in particular means the collapse did NOT claim this rail, so nothing here
+// may assume one.
+//
+// Marking is a PERMISSION, not a proof, and both consumers re-verify it:
+// `Uncomputation` re-confirms every recovered gate sits in a marked block and
+// `FreePoint` re-confirms the insertion point is in-body. Not marking is always
+// safe (the leak); this predicate only ever grants.
+void markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
+                     const SmallPtrSetImpl<CallInst *> &GateCalls,
+                     const SmallPtrSetImpl<Value *> &Roots) {
+  if (Roots.empty())
+    return;
+  if (taintedExit(L, taint))
+    return;  // Q1 quantum-bounded — never markable.
+  BasicBlock *Header = L->getHeader();
+  auto onRail = [&](Value *V) {
+    return Roots.count(peelInPlaceBase(V, GateCalls, taint)) != 0;
+  };
+  bool AnyLocal = false;
+  for (BasicBlock *BB : L->blocks()) {
+    Instruction *T = BB->getTerminator();
+    if (auto *BI = dyn_cast<BranchInst>(T)) {
+      if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
+        return;  // (L2) tainted control still standing — not ours.
+    } else if (auto *SI = dyn_cast<SwitchInst>(T)) {
+      if (taint.Tainted.count(SI->getCondition()))
+        return;
+    }
+    if (LI.getLoopFor(BB) != L) {
+      // A strictly-deeper SUBLOOP with quantum content runs its gates N times
+      // per outer iteration while the spine would reverse them ONCE — the
+      // under-reversed dirty free. Verbatim from `markIfIterationLocal`.
+      for (Instruction &I : *BB)
+        if (taint.Tainted.count(&I))
+          return;
+      continue;
+    }
+    for (Instruction &I : *BB) {
+      if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I))
+        for (Value *Op : I.operands())
+          if (taint.Tainted.count(Op))
+            return;  // (L3) tainted-index memory — the kMsgQramLoop owner's.
+      const bool TI = taint.Tainted.count(&I) != 0;
+      if (TI && isa<PHINode>(I) && BB == Header)
+        return;  // an unclaimed loop-carried rail — the collapse did not run.
+      if (TI && !onRail(&I)) {
+        AnyLocal = true;
+        for (User *U : I.users())
+          if (auto *UI = dyn_cast<Instruction>(U))
+            if (!L->contains(UI->getParent()))
+              return;  // an iteration-local temp escaping the loop.
+      }
+      for (Value *Op : I.operands())
+        if (taint.Tainted.count(Op)) {
+          auto *OpI = dyn_cast<Instruction>(Op);
+          if (!OpI)
+            return;
+          if (!L->contains(OpI->getParent()) && !onRail(Op))
+            return;  // an accumulating loop-invariant tainted input.
+        }
+    }
+  }
+  if (!AnyLocal)
+    return;  // a pure-rail loop (no temps) — nothing for the spine to place.
+  for (BasicBlock *BB : L->blocks())
+    taint.IterationLocalBlocks.insert(BB);
+}
+
+}  // namespace
+
+void collapseFlattenedLoopRails(Module &M, TaintSet &taint) {
+  // Round-2 TRIGGER: only a module in which an in-loop tainted-control region
+  // was actually emitted + flattened. Everything else is byte-identical, which
+  // is what keeps the 250-odd shipped e2e goldens untouched by this increment.
+  if (taint.InLoopFlattenedPreds.empty())
+    return;
+
+  SmallPtrSet<CallInst *, 32> GateCalls;
+  GateCalls.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
+  GateCalls.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
+
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    // Rebuild DT/LI on the POST-FLATTEN CFG (Rule 11/9 — the round-1 trees are
+    // long invalid; the flatten spliced and erased blocks).
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    if (LI.empty())
+      continue;
+    for (Loop *L : LI.getLoopsInPreorder()) {
+      bool Touched = false;
+      for (BasicBlock *BB : L->blocks())
+        if (taint.InLoopFlattenedPreds.count(BB))
+          Touched = true;
+      if (!Touched)
+        continue;  // a loop this increment did not open — leave it untouched.
+      SmallPtrSet<Value *, 4> Roots;
+      if (collapseRailPhisIn(L, F, taint, GateCalls, DT, Roots))
+        markIfRailLocal(L, taint, LI, GateCalls, Roots);
+    }
+  }
 }
 
 void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {

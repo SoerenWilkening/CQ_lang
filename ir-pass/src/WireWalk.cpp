@@ -11,8 +11,12 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
+
+#include <iterator>
 
 using namespace llvm;
 
@@ -26,6 +30,218 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
     return false;
   const Function *F = CI->getCalledFunction();
   return F && F->getName().starts_with(Prefix);
+}
+
+// ── bd test_C_libtooling-8h7d.5 — the RECORD-REFRESH cut (7.3 Increment 3) ──
+//
+// THE WHOLE INCREMENT IN ONE SENTENCE: a record that is RE-ESTABLISHED on every
+// path from a wire gate back to the read cannot be staled by that gate. Inside a
+// classically-bounded loop that is the difference between "the body's Ry is next
+// iteration's PRODUCER" (fine) and "the body's Ry relabelled a register this
+// read still denotes" (the stale-record miscompile). Everything below is the
+// machinery for deciding which one you are looking at, and it is deliberately
+// EXACT — a heuristic here is a silent miscompile in one direction and an
+// uncompilable `for` loop in the other.
+
+// Any `cq_theta_*` call — SOURCE or CHAINED. Deliberately coarser than the
+// tainted-arg-0 test the rest of the pass uses: this predicate only ever
+// WITHHOLDS a new accept (it gates the barrier below), never grants one, so
+// over-matching costs a decline and nothing else — and it keeps this TU free of
+// a `TaintSet` dependency it has never had.
+bool isAnyThetaCall(const Instruction *I) {
+  return isCallToPrefix(I, "cq_theta_");
+}
+
+// Does some execution path from `V` (exclusive) to `Target` (a terminator that
+// `V` dominates) run a `cq_theta`? Paths that re-execute `V` are CUT — going
+// around a back edge re-binds `V`, so what happens on the far side belongs to
+// the next activation, not to this one.
+//
+// Exact block walk, each block scanned at most once. Blocks are entered only at
+// the TOP, so re-entering `V`'s own block always re-executes `V` before
+// anything after it (`V` dominates `Target`, hence precedes it in that block) —
+// which is why that case is a plain cut and not a re-scan.
+bool thetaOnPathTo(const Instruction *V, const Instruction *Target) {
+  const BasicBlock *VB = V->getParent();
+  for (auto I = std::next(V->getIterator()), E = VB->end(); I != E; ++I) {
+    if (&*I == Target)
+      return false;  // reached the edge with the wire quiet.
+    if (isAnyThetaCall(&*I))
+      return true;
+  }
+  SmallPtrSet<const BasicBlock *, 32> Seen;
+  SmallVector<const BasicBlock *, 32> Work(succ_begin(VB), succ_end(VB));
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (B == VB)
+      continue;  // re-executes `V` — a different activation. Cut.
+    if (!Seen.insert(B).second)
+      continue;
+    bool Reached = false;
+    for (const Instruction &I : *B) {
+      if (&I == Target) {
+        Reached = true;
+        break;
+      }
+      if (isAnyThetaCall(&I))
+        return true;
+    }
+    if (Reached)
+      continue;  // this path ended at the edge; do not walk past it.
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
+}
+
+// Does PHINode `P` faithfully DENOTE the wire at the moment it executes?
+//
+// THIS IS THE LOAD-BEARING DISTINCTION, and the naive version of it is a silent
+// miscompile. "A phi just re-reads the wire" is FALSE in general: a phi's value
+// is its taken INCOMING, not the register's current contents. Two shapes make
+// the point, and only the first may be admitted:
+//
+//   TRACKS   `%q = phi [%q0, %pre], [%qn, %latch]` where `%qn` is the last wire
+//            write of the body. On iteration 2 `%q` denotes exactly the state
+//            the previous iteration left, which IS the wire. (The `for` loop
+//            this increment exists for.)
+//   DOES NOT `%p = phi [%q, %pre], [%p, %latch]` with a body `cq_theta` whose
+//            result is discarded (or kept in another name). `%p` is provably
+//            `%q` — the PRE-LOOP record — while the wire has moved under it.
+//            Reachable from C (`for (…) { d = q + 1; cq_theta(q, t); }`), and
+//            granting it the barrier would ACCEPT the classic iteration-2 stale
+//            read. That is why this predicate exists at all.
+//
+// The test: for every incoming (`V`, `B`), no `cq_theta` runs between `V` and
+// the `B → P` edge. Then `P`'s value at every execution equals the wire, so
+// re-executing `P` re-establishes the record — the premise `gateIsHarmless`
+// leg 2 needs. A non-instruction incoming (a constant / argument) means the
+// value at that edge is not a wire record at all: refuse.
+bool phiTracksWire(const PHINode *P) {
+  for (unsigned I = 0, E = P->getNumIncomingValues(); I != E; ++I) {
+    const auto *V = dyn_cast<Instruction>(P->getIncomingValue(I));
+    if (!V)
+      return false;
+    const Instruction *Term = P->getIncomingBlock(I)->getTerminator();
+    if (V == Term)
+      continue;  // degenerate; nothing can run between.
+    if (thetaOnPathTo(V, Term))
+      return false;
+  }
+  return true;
+}
+
+// "Can `From` reach `To` on some execution path WITHOUT executing any of
+// `Barriers`?" An EXACT forward CFG walk (each block scanned at most once, so it
+// terminates), deliberately NOT `llvm::isPotentiallyReachable`: that helper's
+// exclusion set is per-BLOCK, and it bails `true` past a 32-block scan limit —
+// the same two reasons `regionEntryInLoop` (ControlDetect.cpp) hand-rolls its
+// walk. Here the barrier is an INSTRUCTION, and it routinely lives in the very
+// block the walk is trying to reach.
+//
+// `From`'s own block is entered MID-WAY (at `From`), so its tail is scanned
+// separately and the block is NOT pre-marked visited — a back edge that
+// re-enters it from the top is a genuinely different traversal.
+bool reachesWithoutBarrier(const Instruction *From, const Instruction *To,
+                           const SmallPtrSetImpl<const Instruction *> &Barriers) {
+  const BasicBlock *FB = From->getParent();
+  for (auto I = std::next(From->getIterator()), E = FB->end(); I != E; ++I) {
+    if (Barriers.count(&*I))
+      return false;  // cut — and this tail is the block's only continuation.
+    if (&*I == To)
+      return true;
+  }
+  SmallPtrSet<const BasicBlock *, 32> Seen;
+  SmallVector<const BasicBlock *, 32> Work(succ_begin(FB), succ_end(FB));
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (!Seen.insert(B).second)
+      continue;
+    bool Cut = false;
+    for (const Instruction &I : *B) {
+      if (Barriers.count(&I)) {
+        Cut = true;  // the record is re-established on this path.
+        break;
+      }
+      if (&I == To)
+        return true;  // reached the read with the record un-refreshed.
+    }
+    if (Cut)
+      continue;
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
+}
+
+// The position-aware harmlessness test for ONE candidate staling gate `T`
+// against the emission point `A`, given the RECORD the emission reads (`Seed`)
+// and the full defended seed set.
+//
+// Leg 1 is `provablyBefore` verbatim — unchanged, and it alone decides every
+// straight-line shape. Leg 2 is strictly ADDITIVE: it is consulted only when
+// leg 1 already failed, i.e. only when `T` can reach `A` at all, which (given
+// `A` dominates `T`) means a CFG cycle carries `T` back around. So NO shape
+// that was accepted before this increment can be declined by it, and no shape
+// it accepts was accepted before.
+//
+// WHY LEG 2 IS SOUND. Take any execution of `A` at trace time t_A; let t_S be
+// the LAST execution of a barrier before it (the seed's own definition, or a
+// phi that supersedes it — see below). Suppose some instance of `T` ran at
+// t_S < t_T < t_A: that is exactly what "stale" means. The trace segment from
+// t_T to t_A is a CFG path from `T` to `A`, so by `!reachesWithoutBarrier` it
+// executes a barrier at some t' with t_T < t' < t_A — and t' > t_T > t_S
+// contradicts t_S being the LAST one. So no `T` instance lies between the
+// record's establishment and its read. ∎ The premise the proof rests on is
+// "executing a barrier re-establishes the record", which is exactly what
+// `phiTracksWire` checks for the phi barriers and what a gate/producer
+// definition gives for free.
+//
+// THE SUPERSEDING PHI, and why the seed's own definition is not enough. The
+// condition-provenance seed set (`ArmClassify::condProvenance`) walks BACKWARD
+// through phis, so a loop-header phi's incomings — the PRE-LOOP mint and the
+// body's last gate — are themselves seeds. Neither is re-executed on the back
+// edge in the way the read needs; the PHI is. A phi `P` in the same seed set
+// that lists `Seed` among its incomings, that dominates `A`, and that TRACKS
+// THE WIRE therefore supersedes `Seed` on the path and joins the barrier set.
+// Membership in `Seeds` is what ties `P` to the record being defended (an
+// unrelated phi user of `Seed` proves nothing about `A`'s read), and the
+// closure is iterated so a chain of routing phis resolves.
+//
+// A seed that is ITSELF a non-tracking phi gets NO barrier at all — not even
+// its own definition — because the premise fails for it too.
+bool gateIsHarmless(const Instruction *EmitPoint, const CallInst *T,
+                    const Value *Seed, ArrayRef<Value *> Seeds,
+                    const DominatorTree &DT) {
+  if (!DT.dominates(EmitPoint, T))
+    return false;
+  if (!isPotentiallyReachable(T, EmitPoint, /*ExclusionSet=*/nullptr, &DT))
+    return true;  // leg 1 — the pre-existing straight-line proof, unchanged.
+  const auto *SeedDef = dyn_cast<Instruction>(Seed);
+  if (!SeedDef)
+    return false;  // no re-establishing definition — loop-invariant, decline.
+  if (const auto *SeedPhi = dyn_cast<PHINode>(SeedDef))
+    if (!phiTracksWire(SeedPhi))
+      return false;  // the seed does not denote the live wire — decline.
+
+  SmallPtrSet<const Instruction *, 4> Barriers;
+  Barriers.insert(SeedDef);
+  for (bool Grew = true; Grew;) {
+    Grew = false;
+    for (Value *S : Seeds) {
+      auto *P = dyn_cast<PHINode>(S);
+      if (!P || Barriers.count(P) || !DT.dominates(P, EmitPoint))
+        continue;
+      bool Supersedes = false;
+      for (Value *In : P->incoming_values())
+        if (auto *InI = dyn_cast<Instruction>(In))
+          if (Barriers.count(InI))
+            Supersedes = true;
+      if (!Supersedes || !phiTracksWire(P))
+        continue;
+      Barriers.insert(P);
+      Grew = true;
+    }
+  }
+  return !reachesWithoutBarrier(T, EmitPoint, Barriers);
 }
 
 }  // namespace
@@ -139,7 +355,12 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
           // spelling this header exports (Rule 14); it was inlined here and
           // re-derived in RotationLowering until bd 6uqc Inc 2a needed a third
           // caller.
-          if (EmitPoint && DT && provablyBefore(EmitPoint, CI, *DT))
+          // The RECORD this walk defends is `Seed` — the emission's own
+          // operand — so `Seed` is the barrier whose re-execution refreshes it
+          // (bd test_C_libtooling-8h7d.5). Per-seed, never per-closure: an
+          // ancestry member is a PRODUCER of the record, not the record.
+          if (EmitPoint && DT &&
+              gateIsHarmless(EmitPoint, CI, Seed, Seeds, *DT))
             continue;  // provably post-emission on every trace — harmless.
           return CI;
         }
@@ -155,6 +376,20 @@ bool provablyBefore(const Instruction *A, const Instruction *B,
                     const DominatorTree &DT) {
   return DT.dominates(A, B) &&
          !isPotentiallyReachable(B, A, /*ExclusionSet=*/nullptr, &DT);
+}
+
+bool provablyBeforePerActivation(const Instruction *A, const Instruction *B,
+                                 const Instruction *Barrier,
+                                 const DominatorTree &DT) {
+  if (!DT.dominates(A, B))
+    return false;
+  if (!isPotentiallyReachable(B, A, /*ExclusionSet=*/nullptr, &DT))
+    return true;  // the plain proof — unchanged.
+  if (!Barrier)
+    return false;
+  SmallPtrSet<const Instruction *, 2> Barriers;
+  Barriers.insert(Barrier);
+  return !reachesWithoutBarrier(B, A, Barriers);
 }
 
 }  // namespace cq

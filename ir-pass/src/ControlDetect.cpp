@@ -29,6 +29,7 @@
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
@@ -122,6 +123,103 @@ bool regionEntryInLoop(Instruction *Term) {
     Work.append(succ_begin(BB), succ_end(BB));
   }
   return false;
+}
+
+// ── bd test_C_libtooling-8h7d.5 (Phase 7.3 Increment 3) — the NARROWING ──────
+//
+// `regionEntryInLoop` above answers "is this region on a cycle". Until
+// 2026-08-29 that answer alone declined, which made the natural spelling of a
+// repeated quantum kernel — `for (i…) { if (q…) q = cq_phi(q, θ); … }` —
+// uncompilable while its HAND-UNROLLED twin compiled. Owner ruling 2026-08-29:
+// a purely CLASSICAL loop around a NON-EXITING tainted `if` must not decline;
+// the loop stays ROLLED (PRD 7.3 §2.1 — IR size independent of the trip count).
+//
+// This predicate is the admission half. It answers a strictly narrower question
+// than "is it on a cycle": is the cycle one that every DOWNSTREAM loop-aware
+// guard can also see, and does the region sit wholly inside it?
+//
+//   (A) `LI.getLoopFor(Pred)` is a NATURAL loop `L`. This is the irreducible
+//       fence, and the reason is NOT that `flattenRegion` cannot repair the
+//       CFG — since bd dugh (2026-07-04, AFTER d8jl was written) it splices the
+//       merge into the pred and then runs
+//       `Pred->replaceSuccessorsPhiUsesWith(Merge, Pred)`, which repoints
+//       exactly the loop-header phi incoming that d8jl's broken-module report
+//       was about. The reason is the LAYER BELOW: every guard that adjudicates
+//       the flattened body — `LoopLowering`'s Case-A/X1 rail analysis,
+//       `markIfIterationLocal`, and `FreePoint`'s back-edge live-range reject —
+//       is `LoopInfo`-gated, so an IRREDUCIBLE cycle is INVISIBLE to all three.
+//       Admitting one would flatten a region into a cycle whose second
+//       iteration nobody checks: a rail freed at iteration 1 and re-entered at
+//       iteration 2 is a dirty free (Rule 6) that no shipped guard can see.
+//       So `control_swap_reject_inloop_diamond_irreducible.ll` and
+//       `control_swap_reject_nested_loop_irreducible.ll` stay RED, by design.
+//   (B) Every region block sits at EXACTLY `L`'s depth (`LI.getLoopFor(BB) ==
+//       L`). A region straddling a subloop boundary is unproven; a region in a
+//       DEEPER subloop is that subloop's to adjudicate, not `L`'s.
+//   (C) `L` has a single latch. Multi-latch is the unproven shape `tryCaseA`
+//       already refuses; the round-2 rail collapse below reasons about one.
+//   (D) The region entry is NOT on any cycle OTHER than `L`'s back edge. This
+//       is (A) made exact: `LI.getLoopFor(Pred)` being non-null says the block
+//       is inside SOME natural loop, not that the cycle through the REGION is
+//       that loop's. A region on an irreducible sub-cycle NESTED inside a
+//       natural outer loop would pass (A)+(B) — so the walk below re-runs the
+//       `regionEntryInLoop` reachability with `L`'s back edges and `L`'s exits
+//       cut. Reaching `Pred` again means a second, `LoopInfo`-invisible cycle:
+//       decline.
+//
+// The tainted branch itself can never LEAVE the loop under (B): both its
+// successors (`Arm`, `MergeBB`) are `L` blocks. That is the owner's
+// "non-exiting" scope, structurally, not by a separate test. A tainted loop
+// EXIT (Q1) never reaches here at all — `lowerLoops` runs BEFORE detection and
+// `tryCaseA`'s L1 fires `loop under quantum control` first, and `LLVMContext::
+// diagnose` exits on the first `DS_Error`.
+//
+// Pure analysis; mutates nothing (Rule 9).
+bool flatRegionRollableInLoop(const ControlRegion &R, const LoopInfo &LI) {
+  if (!R.Pred || !R.Arm || !R.MergeBB)
+    return false;
+  const Loop *L = LI.getLoopFor(R.Pred);
+  if (!L)
+    return false;  // (A) no natural loop → an irreducible cycle. Decline.
+  auto atThisLevel = [&](const BasicBlock *BB) {
+    return BB && LI.getLoopFor(BB) == L;
+  };
+  if (!atThisLevel(R.Arm) || !atThisLevel(R.MergeBB))
+    return false;  // (B)
+  if (R.ArmFalse && !atThisLevel(R.ArmFalse))
+    return false;  // (B)
+  if (!L->getLoopLatch())
+    return false;  // (C)
+
+  // (D) — the exact "no OTHER cycle through the entry" walk. Same shape as
+  // `regionEntryInLoop` (each block visited once, no scan limit, reducibility-
+  // independent), with two edge classes cut: `L`'s back edges (latch → header,
+  // the cycle we ARE admitting) and every edge leaving `L` (a path that exits
+  // can only come back through `L`'s header, i.e. a fresh entry to the whole
+  // loop, which is not a cycle through the region within one activation).
+  const BasicBlock *Header = L->getHeader();
+  const BasicBlock *Entry = R.Pred;
+  SmallPtrSet<const BasicBlock *, 16> Seen;
+  SmallVector<const BasicBlock *, 16> Work;
+  auto push = [&](const BasicBlock *From) {
+    for (const BasicBlock *S : successors(From)) {
+      if (S == Header)
+        continue;  // `L`'s back edge — the admitted cycle.
+      if (!L->contains(S))
+        continue;  // leaves `L`.
+      Work.push_back(S);
+    }
+  };
+  push(Entry);
+  while (!Work.empty()) {
+    const BasicBlock *BB = Work.pop_back_val();
+    if (BB == Entry)
+      return false;  // a second cycle `LoopInfo` does not name — decline.
+    if (!Seen.insert(BB).second)
+      continue;
+    push(BB);
+  }
+  return true;
 }
 
 // The sole 2-incoming merge `φ` of block `M`. Null if `M` has not exactly one
@@ -360,7 +458,7 @@ StringRef offPatternDisposition(BranchInst *BI, TaintSet &Taint) {
 // decline or PUSHING an accepted region onto `Plan` for `SwapRouteEmit`.
 void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
                         SmallPtrSetImpl<BranchInst *> &Claimed,
-                        const DominatorTree *DT) {
+                        const DominatorTree *DT, const LoopInfo *LI) {
   ControlRegion R;
   // 7.2 Inc 3 — abort/exit park FIRST: a recognized noreturn-sink arm ends in
   // `unreachable`, so `recoverRegion` would label it `OffPattern` and decline
@@ -439,27 +537,64 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     // here — it recovered as `RegionShape::Nested` and was dispatched to
     // `recoverRegionTree` above, so its `nested control flow` message is
     // unchanged.
+    //
+    // NARROWED 2026-08-29 (bd test_C_libtooling-8h7d.5, owner ruling): a region
+    // that `flatRegionRollableInLoop` proves sits wholly inside a REDUCIBLE
+    // `LoopInfo` loop at one depth is ADMITTED and lowers ROLLED — read that
+    // predicate for the full (A)-(D) argument and for why the irreducible half
+    // of d8jl is kept verbatim. Everything else on a cycle keeps the decline.
     if (regionEntryInLoop(BI)) {
-      diagnoseUnderControl(BI, "control flow inside a loop body");
-      return;
+      if (!LI || !flatRegionRollableInLoop(R, *LI)) {
+        diagnoseUnderControl(BI, "control flow inside a loop body");
+        return;
+      }
+      R.InLoop = true;
     }
-    // 6.5 (DD-7) — try the classical-call-under-control shape FIRST. A pure
-    // classical call (all-classical-args) whose i32 result feeds the diamond
-    // merge is route-merged by `ClassicalCallArmEmit` (no clone). On Accept it
-    // set `R.Kind = ClassicalCallArm`; push it. On Declined it already fired the
-    // precise diagnostic. NotApplicable falls through to `classifyArms` (the
-    // phase/value/§3c classifier owns every other shape).
-    switch (classifyClassicalCallArm(R, Taint)) {
-    case ClassicalCallDisp::Accept:
-      Plan.Regions.push_back(R);
-      return;
-    case ClassicalCallDisp::Declined:
-      return;
-    case ClassicalCallDisp::NotApplicable:
-      break;
+    // IN-LOOP SCOPE FENCE, part 1 (bd test_C_libtooling-8h7d.5). The owner's
+    // increment is the NON-EXITING tainted `if` — the PHASE-arm routed stream,
+    // whose every ancilla (flag, work rails) is minted, stripped and freed
+    // INSIDE the iteration, leaving only the persistent register across the back
+    // edge. The 6.5 classical-call arm is a different emitter with a different
+    // teardown (it HOISTS a call into the pred and route-merges an `%out` rail),
+    // and no shipped analysis proves that `%out` is clean at the back edge — so
+    // an in-loop classical-call arm keeps the loop decline rather than silently
+    // acquiring an accept it was never cleared for (Prime Directive). Skipping
+    // the classifier entirely (rather than declining its Accept) also keeps its
+    // own precise diagnostics for the NON-loop case byte-identical.
+    if (!R.InLoop) {
+      // 6.5 (DD-7) — try the classical-call-under-control shape FIRST. A pure
+      // classical call (all-classical-args) whose i32 result feeds the diamond
+      // merge is route-merged by `ClassicalCallArmEmit` (no clone). On Accept it
+      // set `R.Kind = ClassicalCallArm`; push it. On Declined it already fired
+      // the precise diagnostic. NotApplicable falls through to `classifyArms`
+      // (the phase/value/§3c classifier owns every other shape).
+      switch (classifyClassicalCallArm(R, Taint)) {
+      case ClassicalCallDisp::Accept:
+        Plan.Regions.push_back(R);
+        return;
+      case ClassicalCallDisp::Declined:
+        return;
+      case ClassicalCallDisp::NotApplicable:
+        break;
+      }
     }
     if (classifyArms(R, Taint, DT) == ArmDisposition::Declined)
       return;  // ArmClassify already fired the precise diagnostic (§3c / value).
+    // IN-LOOP SCOPE FENCE, part 2 — a method-B VALUE arm inside a loop. Its
+    // copy-out mints a FRESH `%out` rail per iteration and RAUWs the merge to
+    // it, so the loop-carried register is a different handle every trip: the
+    // route-back is NOT the adjoint of its split (`emitRegion`'s own note),
+    // nothing proves `%out` is `|0>` at the back edge, and the per-iteration
+    // B-keep leftover is linear in the trip count. `lowerLoops`' X1 would catch
+    // the loop-carried spelling as a cross-iteration dirty rail, but NOT an
+    // iteration-local one — so decline HERE, with the loop message, rather than
+    // lean on a guard that does not cover the whole shape. Deferred, not
+    // impossible (the 7.x-widenings tracker owns it).
+    if (R.InLoop &&
+        (R.ClassArm == ArmClass::Value || R.ClassArmFalse == ArmClass::Value)) {
+      diagnoseUnderControl(BI, "control flow inside a loop body");
+      return;
+    }
     // ACCEPT: a pure phase region over ONE tainted handle — a one-content-arm
     // diamond (WI-2) or a two-arm if/else (WI-3). Push it so `lowerControlRegions`
     // (SwapRouteEmit) emits the routed stream. Polarity: a diamond's single arm
@@ -504,14 +639,23 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
     // one-tree-per-function property exactly — it just does not pay for it in
     // functions that never ask.
     std::optional<DominatorTree> DT;
+    // bd test_C_libtooling-8h7d.5 — the `LoopInfo` the in-loop narrowing needs,
+    // built from the SAME lazy `DominatorTree` and on the same first-tainted-
+    // branch trigger (so a function with no tainted branch still pays nothing).
+    // Detection mutates nothing, so one tree/one LI is valid for the whole sweep
+    // and is never cached across an erasure (Rule 9) — every flatten happens
+    // later, in `lowerControlRegions`.
+    std::optional<LoopInfo> LI;
     for (BasicBlock &BB : F) {
       Instruction *Term = BB.getTerminator();
       if (auto *BI = dyn_cast<BranchInst>(Term)) {
         if (BI->isConditional() && taint.Tainted.count(BI->getCondition()) &&
             !Claimed.count(BI)) {
-          if (!DT)
+          if (!DT) {
             DT.emplace(F);
-          handleBranchRegion(BI, taint, plan, Claimed, &*DT);
+            LI.emplace(*DT);
+          }
+          handleBranchRegion(BI, taint, plan, Claimed, &*DT, &*LI);
         }
       } else if (auto *SI = dyn_cast<SwitchInst>(Term)) {
         // 4.5 — prove-or-decline a tainted-scrutinee `switch` instead of the
