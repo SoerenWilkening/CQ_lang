@@ -49,7 +49,8 @@
 ;     if (a == 0) cq_phi(0, PI);
 ;     a = cq_theta(a, 0.5);
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOMINT < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -135,3 +136,16 @@ define i32 @mc_grover2_offset(ptr noundef %0) {
 ; emitted and then converted, so the absence covers both.
 ; NOMINT-NOT: cq_template_sub_i32_hl
 ; NOMINT-NOT: cq_template_add_i32_hl
+
+; THE M-A GUARD IS SILENT ON THIS PROGRAM, and since owner ruling 2026-08-29 (bd
+; test_C_libtooling-lyyf, M-A Increment 7b) that has to be CHECKED rather than
+; inferred. This file's physics claim is that the conversion leaves the guard
+; NOTHING TO NAME — which, while the guard was a `DS_Error`, the RUN line's own
+; exit code pinned. It now emits a `DS_Warning` and `opt` exits ZERO either way,
+; so a future regression in the M-A walk would print a warning on this very
+; program and the file would stay green: the CHECK-NEXT chain pins the emitted
+; STREAM, and the M-A analysis is keyed on emitter-recorded sets no stream line
+; shows. `SILENT` reads the pass's stderr and is the pin that replaces the exit
+; code (Increment 7 Rule-13 round, finding F3; same spelling as the 28 accept
+; fixtures 7b re-pinned).
+; SILENT-NOT: non-diagonal gate over a live derived record

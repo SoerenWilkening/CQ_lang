@@ -26,10 +26,23 @@
 ; lookup in `ArithLowering::priorUseIsSettled` with a blanket
 ;     return true;
 ; (i.e. "any prior rail-minting producer is settled") converts the sub here and
-; reddens this file, together with _fallback_reader_after.ll and
-; _fallback_terminal_dag.ll — the three cover the three independent steps of
-; that arm. Dropping only the POSITION test leaves this file green, which is
-; what shows it pins membership rather than placement.
+; reddens ELEVEN fixtures — this file, _fallback_reader_after.ll and
+; _fallback_terminal_dag.ll (which cover the three independent steps of that
+; arm), PLUS the eight ordinary Q+C arithmetic fixtures whose parent then has a
+; "settled" prior template reader and converts at the late round:
+; lowering_add_qc_{i1,i8,i16,i32,i64}.ll, lowering_xor_qc_i32.ll,
+; lowering_sub_negative.ll and lowering_intrinsic_smin_fanout_skip.ll. Dropping
+; only the POSITION test leaves this file green (it reddens
+; _fallback_reader_after.ll ALONE), which is what shows this one pins membership
+; rather than placement.
+;
+; THE COUNT WAS WRONG HERE UNTIL THE INCREMENT-7 RULE-13 ROUND (finding F2, and
+; the same class as Increment 6's F-A): this header said "this + the other two",
+; and the reviewer measured eleven — re-measured independently in the fix round
+; (`lit ir-pass/test` under M2: 1245 pass / 1 XFAIL / 11 fail, the list above).
+; The direction is harmless — the family discriminates from eight MORE sides
+; than claimed — but an off-by-eight measured claim is exactly the kind of
+; statement this project's defence rests on being literal (Rule 19).
 ;
 ; `%off` is a volatile load so nothing folds it away.
 ;

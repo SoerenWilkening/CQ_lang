@@ -7,6 +7,7 @@
 #include "ArithLowering.h"
 
 #include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
+#include "FreePoint.h"      // blockCanRepeat (the ONE "can this block run twice")
 #include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
@@ -572,9 +573,37 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
   //     its own reverse-play ordering; a second, independently-fenced minter in
   //     the same blocks is exactly the interaction this increment is not scoped
   //     to prove. Straight-line only. Over-declining costs a kept ancestor.
+  //
+  // AND "IN A LOOP" IS `LoopInfo` **OR** `blockCanRepeat` — the second disjunct
+  // is the whole point (Inc 7 Rule-13 round, finding F1; bd
+  // test_C_libtooling-x67f). `LoopInfo::getLoopFor` recognizes NATURAL loops
+  // only, so an IRREDUCIBLE cycle (two entries, no dominating header) returned
+  // null here while executing its blocks K times — and this fence is what makes
+  // an in-place gate an at-most-once WRITE. With the site inside such a cycle
+  // the register was mutated ONCE PER TRIP: for
+  //     entry: br i1 %c0, A, B     A: br B     B: %s = sub %q, %off; ... br %cb, A, exit
+  // the source recomputes `q - off` from the loop-invariant `q` on every trip and
+  // measures `q - off`, while the emitted stream is `addc(h,-off); addc(h,-off);
+  // measure(h)` = `q - 2*off`. A WRONG VALUE, `opt` rc=0, verify-clean, and
+  // free-pairing-clean (the rail is never freed) — the definition of a
+  // verify-clean silent miscompile. It PRE-DATES the late round (Inc 2's Phase-1
+  // fence had it; measured byte-identical on `2afd9a7`), which is exactly why the
+  // fix belongs HERE, in the ONE shared fence both rounds ask.
+  //
+  // `blockCanRepeat` (FreePoint.h, the reachable-from-itself successor DFS) is
+  // the SAME predicate bd test_C_libtooling-4p7j put behind the uncompute
+  // spine's three reversal backstops and `FreePoint`'s `kMsgLoopBackedge`
+  // loudness guard; this is its FIFTH consumer, and the lesson that memory
+  // records is precisely this one — when you fix a blind predicate, grep for
+  // every consumer. `LoopInfo` stays in FRONT as the O(1) answer for the common
+  // case. It is a strict SUPERSET of "in a natural loop", so no acyclic CFG
+  // changes disposition: only irreducible ones move, and they move from an
+  // in-place mutation to the out-of-place fallback (a fresh rail per trip),
+  // which is the same disposition the natural-loop spelling already had.
   if (taint.InPlaceRailOps.count(const_cast<Instruction *>(Site)))
     return false;
-  if (LI.getLoopFor(const_cast<BasicBlock *>(Site->getParent())))
+  if (LI.getLoopFor(const_cast<BasicBlock *>(Site->getParent())) ||
+      blockCanRepeat(const_cast<BasicBlock *>(Site->getParent())))
     return false;
 
   // G6/G7 — POSITION-AWARE DEADNESS + PRIOR-OBLIGATION DISCHARGE.
