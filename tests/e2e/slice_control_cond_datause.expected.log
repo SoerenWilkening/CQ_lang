@@ -9,4 +9,6 @@ cqrt_cswap(h1, h0, h2)
 cqrt_free(h2)
 cq_template_zext_i1_to_i32(h1) -> h3
 cq_template_add_i32(h0, h3) -> h4
+cq_template_zext_i1_to_i32_unc(h3, h1)
+cqrt_free(h3)
 cqrt_measure_i32(h4) -> 0

@@ -4,6 +4,8 @@ cqrt_alloc_f80(0xap-2) -> h1
 cqrt_ry_f80(h1, 0x1p-1)
 cq_template_fadd_f80(h0, h1) -> h2
 cq_template_sqrt_f80(h2) -> h3
+cq_template_fadd_f80_unc(h2, h0, h1)
+cqrt_free(h2)
 cqrt_measure_f80(h3) -> 0x0p+0
 cqrt_alloc_f80(0xcp-3) -> h4
 cqrt_ry_f80(h4, 0x1.999999999999ap-4)

@@ -6,4 +6,13 @@ cq_template_trunc_i64_to_i32(h2) -> h3
 cq_template_and_i32_hl(h3, 2047) -> h4
 cqrt_addc_i32(h4, -1023)
 cq_template_sitofp_i32_to_f64(h4) -> h5
+cqrt_addc_i32(h4, 1023)
+cq_template_and_i32_hl_unc(h4, h3, 2047)
+cqrt_free(h4)
+cq_template_trunc_i64_to_i32_unc(h3, h2)
+cqrt_free(h3)
+cq_template_lshr_i64_hl_unc(h2, h1, 52)
+cqrt_free(h2)
+cq_template_bitcast_f64_to_i64_unc(h1, h0)
+cqrt_free(h1)
 cqrt_measure_f64(h5) -> 0x0p+0

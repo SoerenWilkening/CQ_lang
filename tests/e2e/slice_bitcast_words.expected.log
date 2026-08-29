@@ -3,4 +3,7 @@ cqrt_ry_f64(h0, 0x1p-1)
 cq_template_bitcast_f64_to_i64(h0) -> h1
 cqrt_xorc_i64(h1, 1)
 cq_template_bitcast_i64_to_f64(h1) -> h2
+cqrt_xorc_i64(h1, 1)
+cq_template_bitcast_f64_to_i64_unc(h1, h0)
+cqrt_free(h1)
 cqrt_measure_f64(h2) -> 0x0p+0

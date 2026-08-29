@@ -4,6 +4,8 @@ cqrt_alloc_i64(1) -> h1
 cqrt_ry_i64(h1, 0x1p-1)
 cq_template_add_i64(h0, h1) -> h2
 cq_template_and_i64_hl(h2, 1099511627775) -> h3
+cq_template_add_i64_unc(h2, h0, h1)
+cqrt_free(h2)
 cqrt_measure_i64(h3) -> 0
 cqrt_alloc_i64(1099511627775) -> h4
 cqrt_ry_i64(h4, 0x1.999999999999ap-4)

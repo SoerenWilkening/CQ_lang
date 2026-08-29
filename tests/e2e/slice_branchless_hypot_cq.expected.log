@@ -7,4 +7,16 @@ cq_template_fdiv_f64(h3, h2) -> h4
 cq_template_fma_f64_qql(h4, h4, 0x1p+0) -> h5
 cq_template_sqrt_f64(h5) -> h6
 cq_template_fmul_f64(h2, h6) -> h7
+cq_template_sqrt_f64_unc(h6, h5)
+cqrt_free(h6)
+cq_template_fma_f64_qql_unc(h5, h4, h4, 0x1p+0)
+cqrt_free(h5)
+cq_template_fdiv_f64_unc(h4, h3, h2)
+cqrt_free(h4)
+cq_template_fmin_f64_hl_unc(h3, h1, 0x1p-1)
+cqrt_free(h3)
+cq_template_fmax_f64_hl_unc(h2, h1, 0x1p-1)
+cqrt_free(h2)
+cq_template_fabs_f64_unc(h1, h0)
+cqrt_free(h1)
 cqrt_measure_f64(h7) -> 0x0p+0
