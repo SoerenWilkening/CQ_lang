@@ -1291,15 +1291,19 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
 
 }  // namespace
 
-bool declineLiveRecordRotations(Module &M, const TaintSet &taint) {
+bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
   if (taint.UserChainedRotations.empty())
     return false;  // no site in the whole module — every other cost is skipped.
+  bool Warned = false;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
     std::optional<DominatorTree> DT;  // built lazily, only for a function with a site
-    // BB order, so the FIRST offending gate is the source-located one reported
-    // (the DS_Error diagnose exits `opt`).
+    // BB order, so the reports come out in program order. EVERY offending gate
+    // is reported, not just the first (owner ruling 2026-08-29, bd lyyf): under
+    // the old `DS_Error` the pass was over after one, and stopping was the only
+    // option; a WARNING that hid the second site would send the author round the
+    // compile loop once per record.
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
         auto *T = dyn_cast<CallInst>(&I);
@@ -1351,14 +1355,27 @@ bool declineLiveRecordRotations(Module &M, const TaintSet &taint) {
             continue;
           if (recordIsExemptAt(R, T, taint, *DT))
             continue;
-          F.getContext().diagnose(
-              DiagnosticInfoUnsupported(F, kMsgLiveRecord, T->getDebugLoc()));
-          return true;
+          // ONE report per GATE, not per record: the message names the gate (it
+          // carries `T`'s `!dbg`), so a second record on the same rotation would
+          // print a duplicate line with nothing new in it.
+          //
+          // DS_Warning, and the severity is the ENTIRE behavioural change of
+          // Increment 7b (owner ruling 2026-08-29, bd lyyf — see the header).
+          // The analysis above is byte-identical to the Increment-3 guard, the
+          // message string is unchanged, and `opt` now exits ZERO and hands back
+          // the lowered module. The record is LEFT ALLOCATED: nothing in this
+          // function ever freed anything, and the M-B spine's leak-first
+          // fallback is what left it standing, so Rule 6 is untouched — a rail
+          // that is not provably |0> is never freed, it is only reported.
+          F.getContext().diagnose(DiagnosticInfoUnsupported(
+              F, kMsgLiveRecord, T->getDebugLoc(), DS_Warning));
+          Warned = true;
+          break;
         }
       }
     }
   }
-  return false;
+  return Warned;
 }
 
 }  // namespace cq

@@ -3,7 +3,7 @@
 
 WHAT THIS IS
 ============
-A line-for-line mirror, over LOWERED IR text, of `declineLiveRecordRotations`
+A line-for-line mirror, over LOWERED IR text, of `warnLiveRecordRotations`
 (`ir-pass/src/RotationLowering.cpp` ~:590-1352, contract in
 `ir-pass/include/RotationLowering.h` :80-190) as it SHIPPED in commit b4e329b
 ("Inc 3 — M-A ANCESTOR half + copy-destination class + the observing-sink
@@ -97,7 +97,14 @@ OPAQUE, RECORD, ROUTER, QRAM = "opaque", "record", "router", "qram-array"
 
 # `RotationLowering.cpp`'s `kMsgLiveRecord`, character for character. The
 # validation harness matches `cq-opt` stderr against this, so a drift here shows
-# up as "the guard declined for another reason", never as a silent pass.
+# up as "the guard reported something else", never as a silent pass.
+#
+# STDERR IS NOW THE ONLY CHANNEL (M-A Increment 7b, owner ruling 2026-08-29 / bd
+# test_C_libtooling-lyyf): the guard emits a `DS_Warning` and `opt` exits ZERO
+# whether or not it fired, so a matcher that keyed on the exit code would report
+# every one of the guard's own fixtures as a disagreement. `census_01`'s
+# `validate_guard` was corrected for that; anything else comparing verdicts must
+# do the same.
 MSG_LIVE_RECORD = ("cq rotation lowering: non-diagonal gate over a live "
                    "derived record")
 
@@ -548,7 +555,7 @@ class ShippedFn:
     # -- the whole verdict for one site ------------------------------------
     def verdict(self, t_idx):
         """-> dict for the `cqrt_ry` at call index `t_idx`, mirroring the loop
-        body of `declineLiveRecordRotations`."""
+        body of `warnLiveRecordRotations`."""
         t = self.calls[t_idx]
         wire = t.vals[0] if t.vals else None
         out = {"wire": wire, "line": t.line, "hits": [], "records": [],

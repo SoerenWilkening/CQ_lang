@@ -1,9 +1,20 @@
 #!/usr/bin/env python3
 """census_01_guard_population.py — Inc-0 census 0.1: how many currently-GREEN
-modules would the M-A guard (`declineLiveRecordRotations`) newly decline?
+modules would the M-A guard (`warnLiveRecordRotations`) newly REPORT?
+
+⚠ THE GUARD WARNS, IT DOES NOT DECLINE (owner ruling 2026-08-29, bd
+test_C_libtooling-lyyf, shipped as M-A Increment 7b). Everything below was
+written while it was a `DS_Error`, and the ANALYSIS it models is unchanged — but
+read every "decline" in this file as "report": `opt` now prints `warning: …` and
+exits ZERO, the module lowers, and the record is left allocated. Two consequences
+for this census specifically, both real: the CORPUS now contains the modules the
+guard fires on (they emit lowered IR, where before they emitted none), and
+`--validate-guard` reads the VERDICT off stderr instead of the exit code — see
+the VALIDATION section, which also explains why that made its confusion table
+strictly stronger.
 
 Settles Risk 3 of the record-family plan of record (bd test_C_libtooling-6uqc).
-M-A is the permanent net that ships first: it declines a CHAINED `cq_theta`
+M-A is the permanent net that ships first: it reports a CHAINED `cq_theta`
 whose wire carries LIVE UNOWNED RECORDS. Inc 1 ships the DESCENDANT half; Inc 3
 adds the ANCESTOR half. This file measures both halves separately so the two
 increments can be sized independently, and so "Inc 1 is shippable standalone" is
@@ -18,7 +29,7 @@ divergences were open and both are now closed here:
   1. CLAUSE 3 was the RETIRED "mentioned later" reading. The shipped guard
      requires an OBSERVING SINK reached by lineage (owner rulings F1+F2,
      2026-08-28). The new default predicate `shipped-b4e329b` mirrors
-     `declineLiveRecordRotations` clause by clause — record set, discharge,
+     `warnLiveRecordRotations` clause by clause — record set, discharge,
      observing-sink walk, measure, wire, and the clause-6 existence skip — in
      `shipped_guard_model.py`. `ruled` / `ruled-spine-aware` / `plan-v1` remain
      computable for the DELTA TABLE ONLY; none of them is the compiler's
@@ -234,17 +245,32 @@ argued should count.
 =========================== VALIDATION (`--validate-guard`) ================
 The census's verdict is only worth what it agrees with. `--validate-guard`
 compares, for every module in the corpus that holds at least one chained-theta
-site, the census verdict (HIT = "the guard would decline") against the module's
-ACTUAL verdict under `build/ir-pass/cq-opt` — exit code, and for a decline
-whether the message is the guard's `kMsgLiveRecord` or another stage's.
+site, the census verdict (HIT = "the guard fires here") against the module's
+ACTUAL verdict under `build/ir-pass/cq-opt`.
 
-READ THE ASYMMETRY BEFORE READING THE TABLE. The corpus is the set of modules
-that LOWER, and the guard SHIPPED at b4e329b, so every module in the corpus is
-one the guard did NOT decline. **Every census HIT is therefore a disagreement by
-construction**, and the target is zero unexplained ones. The fixtures the guard
-DOES decline are outside the corpus entirely (a declining module emits no lowered
-IR), so they are reported separately, as the population the census structurally
-cannot model.
+⚠ THE ACTUAL VERDICT IS READ FROM STDERR SINCE M-A INCREMENT 7b (owner ruling
+2026-08-29, bd test_C_libtooling-lyyf). The guard now emits a `DS_Warning` and
+`opt` exits ZERO whether or not it fired, so the EXIT CODE no longer carries the
+answer — this comparison used to key on `rc != 0` and, read literally after the
+severity change, reported all 25 in-tree guard fixtures as UNEXPLAINED
+disagreements (measured). The verdict is now "did `kMsgLiveRecord` appear on
+stderr", which is the same fact the old exit code stood proxy for.
+
+THE CHANGE MADE THE TABLE STRICTLY STRONGER, and that is worth stating because
+the old shape had a documented blind half. Before 7b the corpus was the set of
+modules that LOWER, so a module the guard DECLINED emitted no lowered IR and was
+not in the corpus at all: **every census HIT was a disagreement by construction**
+and the guard's own fixtures were reported separately as "not modellable". Now
+every module lowers, so both confusion cells are observable:
+
+    HIT  / warns   agreement — the census predicted the report and got it
+    HIT  / silent  DISAGREEMENT — the census over-predicts (the old, and still
+                   the only explained, direction)
+    MISS / warns   DISAGREEMENT — the census UNDER-predicts. This cell was
+                   structurally unreachable before 7b and is the one worth
+                   watching: it means the shipped guard fires where the model
+                   says it should not.
+    MISS / silent  agreement
 
 ================================== RE-RUN ==================================
     # the live population under the SHIPPED predicate (default) + the deltas
@@ -1069,6 +1095,20 @@ KNOWN_DISAGREEMENTS = {
         "A5 artefact — same class (SPIKE §2R.5): three hand-written "
         "`cqrt_ry_i32` in an already-lowered fixture. Reachable only under "
         "`--site-source lowered`.",
+    "lit:lowering_reject_live_record_clone_unused_arg":
+        "S2, the model's DOCUMENTED clone-hop divergence, observed for the "
+        "first time (M-A Increment 7b, 2026-08-29). The guard's clone hop is "
+        "PER ARGUMENT (`cloneArgReachesResult` — an argument the callee never "
+        "READS gets no hop, the Inc-3 round-2 N3 finding); parameter use is a "
+        "property of the callee BODY, which shipped_guard_model.py deliberately "
+        "does not resolve interprocedurally, so it hops unconditionally and "
+        "EXEMPTS the record the guard counts. shipped_guard_model.py §S2 states "
+        "the divergence and its direction (\"exempts more than the guard\") and "
+        "counts every such hop in `clone_hops_unchecked`. THIS IS THE ONLY CELL "
+        "OF ITS KIND ON TODAY\'S CORPUS, and it is a MISS/warns — the cell that "
+        "was structurally unreachable while the guard declined, because a "
+        "declining module emitted no lowered IR and never entered the corpus. "
+        "Making it visible is what the severity change bought this table.",
 }
 
 
@@ -1078,46 +1118,52 @@ def validate_guard(mods, verdicts, view="thetas", pred=SHIPPED):
     `verdicts` maps module label -> (rc, stderr) from the real `cq-opt` run that
     produced (or refused to produce) the lowered IR this census read.
     """
-    rows = {"hit/lowers": [], "miss/lowers": []}
+    rows = {"hit/warns": [], "hit/silent": [],
+            "miss/warns": [], "miss/silent": []}
     for m in mods:
         if not m[view]:
             continue
         label = m["module"]
-        rc0, _err = verdicts.get(label, (0, ""))
-        actual = "lowers" if rc0 == 0 else "declines"
+        _rc0, err = verdicts.get(label, (0, ""))
+        # THE VERDICT IS THE STDERR MESSAGE, NOT THE EXIT CODE (M-A Increment 7b,
+        # owner ruling 2026-08-29 / bd lyyf): the guard warns and `opt` exits
+        # zero either way, so `rc != 0` now means "some OTHER stage declined"
+        # and says nothing about this one.
+        actual = "warns" if sgm.MSG_LIVE_RECORD in err else "silent"
         key = ("hit" if module_hit(m, pred, view) else "miss") + "/" + actual
         rows.setdefault(key, []).append(label)
-    # The population the census structurally CANNOT model: a declining module
-    # emits no lowered IR, so it is not in the corpus at all.
-    guard_declines = sorted(lbl for lbl, (rc0, err) in verdicts.items()
-                            if rc0 != 0 and sgm.MSG_LIVE_RECORD in err)
+    # Modules that never reached this guard because an EARLIER stage declined
+    # loudly. They are outside the corpus (no lowered IR), exactly as the
+    # guard's own fixtures used to be.
     other_declines = sum(1 for lbl, (rc0, err) in verdicts.items()
                          if rc0 != 0 and sgm.MSG_LIVE_RECORD not in err)
-    dis = sorted(rows.get("hit/lowers", []))
+    over = sorted(rows.get("hit/silent", []))
+    under = sorted(rows.get("miss/warns", []))
+    dis = over + under
     unexplained = [d for d in dis if d not in KNOWN_DISAGREEMENTS]
     lines = [
         "",
-        f"VALIDATION vs the real guard (`cq-opt`, message: "
+        f"VALIDATION vs the real guard (`cq-opt` STDERR, message: "
         f"\"{sgm.MSG_LIVE_RECORD}\")",
         f"  site view: {view}    predicate: {pred}",
         "",
         "  modules WITH >=1 chained-theta site, in the lowered corpus:",
-        f"    census HIT  / cq-opt LOWERS  : {len(rows.get('hit/lowers', []))}"
-        f"   <- every one is a DISAGREEMENT (the guard shipped: a module that "
-        f"lowers is one it did not decline)",
-        f"    census MISS / cq-opt LOWERS  : {len(rows.get('miss/lowers', []))}"
+        f"    census HIT  / cq-opt WARNS   : {len(rows.get('hit/warns', []))}"
+        f"   <- agreement",
+        f"    census HIT  / cq-opt SILENT  : {len(over)}"
+        f"   <- DISAGREEMENT (census OVER-predicts)",
+        f"    census MISS / cq-opt WARNS   : {len(under)}"
+        f"   <- DISAGREEMENT (census UNDER-predicts — the cell that was "
+        f"unreachable before Increment 7b)",
+        f"    census MISS / cq-opt SILENT  : {len(rows.get('miss/silent', []))}"
         f"   <- agreement",
         "",
-        f"  NOT MODELLABLE (declining modules emit no lowered IR, so they are "
-        f"not in the corpus):",
-        f"    fixtures the guard declines  : {len(guard_declines)}",
+        f"  NOT MODELLABLE (an EARLIER stage declined, so no lowered IR):",
         f"    fixtures declining elsewhere : {other_declines}",
     ]
     for d in dis:
         lines.append(f"    DISAGREE {d}")
         lines.append("      " + KNOWN_DISAGREEMENTS.get(d, "UNEXPLAINED"))
-    for g in guard_declines:
-        lines.append(f"    guard-decline (unmodellable) {g}")
     rc = 1 if unexplained else 0
     if unexplained:
         lines.append(f"  FAIL: {len(unexplained)} UNEXPLAINED disagreement(s)")
@@ -1125,10 +1171,11 @@ def validate_guard(mods, verdicts, view="thetas", pred=SHIPPED):
         lines.append("  OK: zero unexplained disagreements")
     report = {
         "site_view": view, "predicate": pred,
-        "census_hit_cqopt_lowers": dis,
-        "census_miss_cqopt_lowers": len(rows.get("miss/lowers", [])),
+        "census_hit_cqopt_warns": sorted(rows.get("hit/warns", [])),
+        "census_hit_cqopt_silent": over,
+        "census_miss_cqopt_warns": under,
+        "census_miss_cqopt_silent": len(rows.get("miss/silent", [])),
         "unexplained_disagreements": unexplained,
-        "guard_declines_not_modellable": guard_declines,
         "other_declines": other_declines,
         "explanations": {d: KNOWN_DISAGREEMENTS.get(d, "UNEXPLAINED")
                          for d in dis},

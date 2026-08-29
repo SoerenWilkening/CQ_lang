@@ -10,7 +10,7 @@
 ;     int y = a * 5;                     // ...and one that is observed
 ;     return cq_measure(w) + cq_measure(y);
 ;
-; WHAT WAS WRONG. `declineLiveRecordRotations` walked the wire's record closure
+; WHAT WAS WRONG. `warnLiveRecordRotations` walked the wire's record closure
 ; and then asked, per record, "is it discharged / measured / live?" — but never
 ; asked whether it EXISTS at the gate. `%h_op1` (`z`) is allocated by a
 ; `cq_template_mul` that is emitted AFTER the `cqrt_ry`, so at the instant the
@@ -46,7 +46,8 @@
 ; `mul` is the vehicle at every hop (information-losing ⇒ never M-C-converted in
 ; place), so each of the three products really is a separate rail.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -75,3 +76,11 @@ entry:
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[Y]])
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[W]])
 ; CHECK-NOT:  cq rotation lowering
+
+; THE M-A GUARD IS SILENT ON THIS PROGRAM, and since owner ruling 2026-08-29 (bd
+; test_C_libtooling-lyyf, M-A Increment 7b) that has to be CHECKED rather than
+; inferred. The guard now emits a `DS_Warning` and `opt` exits ZERO either way,
+; so a zero exit code is no longer a witness that it accepted — every fixture in
+; this family would have kept passing while silently pinning nothing. `SILENT`
+; reads the pass's stderr and is the pin that survived the severity change.
+; SILENT-NOT: non-diagonal gate over a live derived record

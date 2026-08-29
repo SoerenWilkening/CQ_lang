@@ -519,12 +519,31 @@ enum class CondWireDisp {
 // condition leaves sitofp/fadd/sqrt template rails allocated and entangled
 // past the strip, and a dead alloc parent of a derived routed base survives it
 // too. Increment 4 does NOT re-prove that here — it RELIES on the M-A
-// live-record guard (`RotationLowering::declineLiveRecordRotations`, the late
-// post-uncompute slot) to decline the post-region theta over those records,
-// which it does with its own message (`control_swap_reject_post_region_theta_
-// derived_cond.ll`, `lowering_reject_live_record_routed_base_anc.ll`). The
-// interlock is the mechanism, not an assumption — that is why bd 6uqc
-// sequenced Inc 3 strictly before Inc 4.
+// live-record guard (`RotationLowering::warnLiveRecordRotations`, the late
+// post-uncompute slot) to adjudicate the post-region theta over those records,
+// which it does with its own message
+// (`lowering_reject_live_record_routed_base_anc.ll`). The interlock is the
+// mechanism, not an assumption — that is why bd 6uqc sequenced Inc 3 strictly
+// before Inc 4.
+//
+// ⚠ THAT INTERLOCK IS NOW A REPORT, NOT A DECLINE, AND THE ACCEPT STILL STANDS
+// (owner ruling 2026-08-29, bd test_C_libtooling-lyyf, shipped as M-A Increment
+// 7b). The guard emits a `DS_Warning` and the program LOWERS, so a
+// derived-condition post-region theta with live records now compiles instead of
+// exiting non-zero. Read what Increment 4 was actually leaning on before
+// concluding this weakens it: every record in the list above is a DEPHASING
+// record — a rail whose presence makes the wire's reduced state diagonal — and
+// dephasing is precisely the class the ruling assigns to the USER's circuit
+// ("we can always apply any unitary operation we want"). Increment 4 never
+// borrowed M-A for a wrong-VALUE property (that is `declineStaleRecordOps` and
+// this file's own condition-wire fence, both still loud) nor for a dirty-free
+// one (`FreePoint`/`Uncomputation`, also still loud). What changed is who owns
+// the ANSWER, not whether the answer is right: the compiler now emits the
+// circuit the source describes and names the gate that carries the record.
+// The two fixtures the sentence above once named are both re-dispositioned —
+// `control_swap_reject_post_region_theta_derived_cond.ll` became an ACCEPT at
+// Increment 6 (M-B discharged its records; the guard did not move), and
+// `lowering_reject_live_record_routed_base_anc.ll` is now a WARNING fixture.
 //
 // NEVER ARGUE "DIFFERENT SSA VALUES ⇒ DIFFERENT RAILS" HERE. Since M-C (Inc 2)
 // a tainted `add`/`sub`/`xor` with a classical operand lowers IN PLACE, so the

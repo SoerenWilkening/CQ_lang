@@ -501,6 +501,24 @@ add_test(NAME e2e-slice-control-grover-derived-oracle-offset
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_derived_oracle_offset.expected.log")
 
+# bd test_C_libtooling-lyyf (M-A Increment 7b) — the M-A live-record guard as a
+# WARNING, end to end. The canonical NON-LIFTABLE residue (`q = theta; w = q*2;
+# c = q*3; w = theta(w)`), whose dead record is q's own SOURCE rail: no adjoint
+# can return it to |0> once c is a surviving record of it, so M-B leaves it
+# BORROWED forever. Until 7b this DECLINED and `opt` exited non-zero; the ruling
+# is that a leftover-record dephasing is the user's circuit, so it now warns and
+# lowers. This is the only layer that LINKS the module `opt` hands back after a
+# warning. The warning TEXT is pinned at the lit layer (the `WARN` prefix on all
+# 25 lowering_reject_live_record_*.ll) — the harness diffs the runtime trace, not
+# stage 2's stderr. STRICT stage 2b: 0 frees, everything left allocated.
+add_test(NAME e2e-slice-live-record-source-rail-warn
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_live_record_source_rail_warn.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_live_record_source_rail_warn.expected.log")
+
 # bd 3c6m.5: cross-domain int<->long-double casts. Two direction slices — the
 # LINK-proof that the 18 new int<->f80 cast symbols resolve + signature-match the
 # runtime. A non-integer f80 factor (1.5L) keeps clang -O1 from folding the cast

@@ -30,7 +30,8 @@
 ;     `cqrt_free`, none of which observe anything. That is the division of labour
 ;     between the two fixes, visible in one module.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
@@ -69,3 +70,11 @@ merge:
 ; CHECK:      call void @cqrt_free(i32 %[[F]])
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[C]])
 ; CHECK-NOT:  cq rotation lowering
+
+; THE M-A GUARD IS SILENT ON THIS PROGRAM, and since owner ruling 2026-08-29 (bd
+; test_C_libtooling-lyyf, M-A Increment 7b) that has to be CHECKED rather than
+; inferred. The guard now emits a `DS_Warning` and `opt` exits ZERO either way,
+; so a zero exit code is no longer a witness that it accepted — every fixture in
+; this family would have kept passing while silently pinning nothing. `SILENT`
+; reads the pass's stderr and is the pin that survived the severity change.
+; SILENT-NOT: non-diagonal gate over a live derived record

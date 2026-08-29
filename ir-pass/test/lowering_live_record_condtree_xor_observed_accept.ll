@@ -36,7 +36,8 @@
 ; test (documented at `reachesObservingSink`), and the FORWARD pair alone already
 ; establishes the observation.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=WHOLE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -83,3 +84,11 @@ entry:
 ; here because this fixture's whole point is that the CNOT pair alone IS the node,
 ; and a stray toffoli would compute `L AND Rv` while still verifying:
 ; WHOLE-NOT: cqrt_toffoli
+
+; THE M-A GUARD IS SILENT ON THIS PROGRAM, and since owner ruling 2026-08-29 (bd
+; test_C_libtooling-lyyf, M-A Increment 7b) that has to be CHECKED rather than
+; inferred. The guard now emits a `DS_Warning` and `opt` exits ZERO either way,
+; so a zero exit code is no longer a witness that it accepted — every fixture in
+; this family would have kept passing while silently pinning nothing. `SILENT`
+; reads the pass's stderr and is the pin that survived the severity change.
+; SILENT-NOT: non-diagonal gate over a live derived record

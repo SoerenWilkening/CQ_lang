@@ -10,7 +10,7 @@ beside it.
 > **REVISION 3 — 2026-08-28: READ §2S BEFORE QUOTING ANY 0.1 NUMBER; §2R IS NOW
 > HISTORY TOO.** M-A shipped (`50b1b7e` Inc 1, `b4e329b` Inc 3), so census 0.1's
 > job changed from SIZING a guard to MODELLING one. §2S re-encodes the predicate
-> as the shipped `declineLiveRecordRotations` (clause 3 = the observing-sink walk,
+> as the shipped `warnLiveRecordRotations` (clause 3 = the observing-sink walk,
 > plus the clause-6 existence skip, plus a real CFG for every position test) and
 > closes blind spot **A8** by taking chained-theta SITES from the pre-lowering
 > `@cq_theta` view. Live results: **0 modules would be declined, 0 disagreements
@@ -669,7 +669,7 @@ below is unaffected by that drift, and §2S.4 says why.
 ### 2S.1 The predicate as encoded — `shipped-b4e329b`
 
 `tools/record_census/shipped_guard_model.py` mirrors
-`ir-pass/src/RotationLowering.cpp`'s `declineLiveRecordRotations` clause by
+`ir-pass/src/RotationLowering.cpp`'s `warnLiveRecordRotations` clause by
 clause. It is a **separate file named after the commit it mirrors**, so "the
 census models the shipped guard" is checkable by reading two files side by side.
 

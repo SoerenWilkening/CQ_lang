@@ -288,3 +288,49 @@ e2e `slice_uncompute_interior_region_derived_cond`,
 COMPUTATION rather than a compare against a constant, once and twice, strict
 free-pairing, only the register allocated at each `cqrt_ry`.
 
+## 8. Amendment 2026-08-29 — bd x67f / bd lyyf (Increments 7a + 7b): the offset
+## trick composes with a derived oracle, and §6's interlock became a REPORT
+
+**7a — `q -= off` after a derived-condition region now lowers IN PLACE (bd
+x67f).** §6's "the S† theta acts on the very register the oracle's condition
+read" was true only when the M-C fence could see that the condition's prior
+readers were settled. For a DERIVED condition it could not: `lowerOps` runs
+before `uncompute`, so the chain templates M-B is about to discharge looked like
+undischarged prior readers (at Phase 1 they are not even `CallInst`s yet), the
+subtraction minted a fresh rail, and the S† theta then declined at M-A naming
+the wrong cause. A LATE reassignment round (`ArithLowering::lowerLateReassign
+ments`, the last stage before `uncompute`) re-asks the SAME fence on the fully
+lowered module with the M-B interior discharge PLAN in hand, so the offset
+spelling and the derived oracle now compose. The plan is advisory: `uncompute`
+re-plans on the post-conversion module, and a prediction that stops holding
+costs a LEAK (clause (d) refuses a component whose borrowed parent is mutated
+inside its interval), never a misplaced adjoint. Witness: e2e
+`slice_control_grover_derived_oracle_offset` — one full iteration with `+= off`
+/ `-= off` around a computed oracle, three `cqrt_ry_i32`, only the register
+allocated at each. The three fixtures that pinned the old decline are
+`lowering_mc_late_{sub_after,add_sub_around,grover2_offset}.ll`.
+
+**7b — the M-A interlock still fires on exactly the same set, but it REPORTS
+rather than declines (owner ruling 2026-08-29, bd lyyf).** Every "declines" in
+§6 and §7 above should be read as "warns and lowers": `warnLiveRecordRotations`
+emits a `DS_Warning`, `opt` exits ZERO, and the record is left allocated (never
+freed dirty — Rule 6 is untouched, and this guard never freed anything). The
+ruling is that dephasing by a leftover record is the USER's circuit — "we can
+always apply any unitary operation we want … it is the user's fault to have
+produced a badly functioning code" (Rule 17).
+
+**READ WHAT THAT DOES AND DOES NOT DO TO §6's ARGUMENT.** §6 leaned on M-A for
+ONE thing: the records that survive the strip (a derived chain, the routed base's
+dead alloc parent) make the post-region rotation dephased. That is a DEPHASING
+property, which is precisely the class the ruling assigns to the user. It never
+leaned on M-A for a wrong-VALUE property — the condition-wire / mint-at-compare
+fences in `ArmClassify` and `declineStaleRecordOps` own those and are still LOUD
+— nor for a dirty-free one (`FreePoint` / `Uncomputation`, also still loud). So
+§6's accept is unchanged in scope and unchanged in soundness; what moved is the
+severity of the thing on the other side of the interlock.
+
+**`lowering_reject_live_record_routed_base_anc.ll` keeps its name and its shape**
+and now pins the WARNING (a `WARN` prefix over the pass's stderr, plus a
+`NOFREEREC` prefix pinning that the record is never freed). The same is true of
+the other 24 fixtures in that family.
+

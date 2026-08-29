@@ -16,7 +16,8 @@ merging them would let the weaker one borrow the stronger one's credibility.
 
 WHERE THE REAL GUARD WOULD SIT
 ------------------------------
-The plan of record puts M-A (`declineLiveRecordRotations`) in the
+The plan of record puts M-A (`warnLiveRecordRotations`, a DS_Warning since
+Increment 7b — bd lyyf) in the
 `declineStaleRecordOps` slot. DERIVED from ir-pass/src/CQLoweringPass.cpp's
 `run()`, that slot sits AFTER `propagate`, the bitcast/volatile folds, the fp80
 union promotion, the PredMux fixpoint, const-trip unrolling, the ctlz idiom

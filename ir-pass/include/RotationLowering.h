@@ -77,23 +77,51 @@ bool emitRz(llvm::CallInst *phi, llvm::Value *handle, llvm::Value *angle,
             WidthDispatch &wd, bool controlled, llvm::Value *flag,
             llvm::SmallPtrSetImpl<const llvm::CallInst *> *rec = nullptr);
 
-// ── M-A — the LATE live-record guard (bd test_C_libtooling-6uqc) ─────────────
+// ── M-A — the LATE live-record WARNING (bd test_C_libtooling-6uqc / lyyf) ────
 //
 // A chained `cq_theta` is an IN-PLACE, NON-DIAGONAL `Ry` on a wire that may
 // still carry basis RECORDS of its own value — `cq_template_*` /
 // `cqrt_qram_load_*` rails computed from that wire and never uncomputed, never
 // freed. A record entangled with the wire when the `Ry` fires makes the wire's
 // reduced state diagonal, so the rotation cannot interfere amplitudes: the
-// emitted unitary diverges from the source's. `opt -verify` is clean, the golden
-// trace is self-consistent, and `free_pairing_check.py` reports zero violations
-// (bd 1739's template-rail blindness) — the exact silent-miscompile signature
-// this project exists to stop.
+// circuit computes different measurement statistics than a reader of the source
+// would expect. `opt -verify` is clean, the golden trace is self-consistent, and
+// `free_pairing_check.py` reports zero violations (bd 1739's template-rail
+// blindness), so nothing else in the pipeline can see it either.
+//
+// ⚠ IT IS A WARNING, NOT A DECLINE — OWNER RULING 2026-08-29 (bd lyyf,
+// implemented as Increment 7b). Verbatim: "w is entangled, but we can always
+// apply any unitary operation we want. Again, it is the user's fault to have
+// produced a badly functioning code", and "we do not want to decline any kind of
+// code that is in principle compilable" (Rule 17). The dephasing-by-leftover-
+// record class is the USER's circuit: every gate this guard names is a perfectly
+// realizable unitary, so the compiler emits it and SAYS SO. Lowering proceeds,
+// and the named record is LEFT ALLOCATED — Rule 6 is untouched, because nothing
+// here ever freed anything: this function is pure analysis and the record's
+// non-free is the M-B spine's own leak-first fallback.
+//
+// WHAT THE RULING DOES NOT COVER, and the line is not a matter of taste. It
+// reverses the DECLINE half of the 2026-08-27 M-A ruling and NOTHING ELSE. The
+// WRONG-VALUE guards — `declineStaleRecordOps`, `ArmClassify`'s condition-wire
+// and mint-at-compare fences, `declineTaintEscapes`, `declineClassicalMuxes` —
+// and the DIRTY-FREE guards — `FreePoint`'s and `Uncomputation`'s loud declines
+// — stay LOUD. Those are miscompile classes: a wrong basis label, or a
+// `cqrt_free` on a rail that is not `|0>` (a hidden measurement that collapses
+// the register). "The user asked for a badly-conditioned circuit" is a defence
+// for a dephased answer; it is not a defence for computing a different function
+// or for measuring a register the user never measured.
+//
+// WHY IT STILL SPEAKS AT ALL, since the ruling would also permit silence: the
+// user is told WHICH gate carries a live record, which is the one fact no
+// downstream artifact can recover (the trace shows angles, stage 2b shows rail
+// pairing, and neither can say "this Ry was dephased"). Orchestrator's call,
+// recorded on bd lyyf; the owner may drop the diagnostic later.
 //
 // SCOPE — INCREMENTS 1 + 3 (descendants, then ancestors + the copy-destination
 // class). A rail counts against a chained rotation `T` on wire `W` iff ALL of:
 //   1. it is ENTANGLED with `W` — transitively, **ANCESTORS AND DESCENDANTS**,
 //      `cqrt_alloc_*`-minted rails included (the ruled clause 1). Three closures,
-//      unioned, all built in `declineLiveRecordRotations`:
+//      unioned, all built in `warnLiveRecordRotations`:
 //        (a) ANCESTORS of `W` — backward from its DEFINITION through
 //            `cq_template_*` / `cqrt_qram_load_*` / `__cq_q_*` clone-call rail
 //            operands, through phi/select router incomings, and — the edge that
@@ -162,10 +190,13 @@ bool emitRz(llvm::CallInst *phi, llvm::Value *handle, llvm::Value *angle,
 //            and ruled on constructed probes exactly as F1 and F2 were. Pinned by
 //            `lowering_reject_live_record_clone_unused_arg.ll`; the used-parameter
 //            control is `lowering_live_record_sibling_clone_arg_measured_accept.ll`.
-//      A record that IS observed is LIVE ⇒ **ACCEPT**: it is the program's own
-//      data and its dephasing is source semantics (owner ruling 2026-08-27; this
-//      is what preserves `lowering_stale_record_add_before_theta.ll` and its
-//      alias sibling BY PRINCIPLE, not as a special case).
+//      A record that IS observed is LIVE ⇒ **NO WARNING**: it is the program's
+//      own data and its dephasing is source semantics (owner ruling 2026-08-27;
+//      this is what preserves `lowering_stale_record_add_before_theta.ll` and its
+//      alias sibling BY PRINCIPLE, not as a special case). Note the clause is
+//      still worth its full cost under the 2026-08-29 ruling: a warning on every
+//      chained rotation over live user data would be noise, and this is what
+//      keeps the report down to the genuinely dead residue.
 //      ⚠ THE RETIRED READING WAS "MENTIONED LATER" AND IT OVER-ACCEPTED. Until
 //      the F1 fix, ANY post-gate use that was not teardown exempted — so a dead
 //      sibling whose only post-gate fate was a compare feeding a phase region
@@ -236,12 +267,19 @@ bool emitRz(llvm::CallInst *phi, llvm::Value *handle, llvm::Value *angle,
 // `declineUnpairedUndefLiterals` precedent: only here are "still undischarged at
 // the gate" and "no user reads it after the gate" FACTS about the emitted stream
 // rather than PREDICTIONS about what Phase 4's strip and Phase 5's placement are
-// going to do. Earlier-stage declines still own their messages — `opt` exits at
-// the first `DS_Error`, long before this slot.
+// going to do. Earlier-stage DECLINES still own their messages — `opt` exits at
+// the first `DS_Error`, long before this slot — and that ordering is now the
+// reason this one is reached at all rather than a reason it is last.
 //
-// Returns true (and has diagnosed the FIRST offending rotation loudly, with its
-// `!dbg`) iff a live-record violation was found. Pure analysis — mutates nothing.
-bool declineLiveRecordRotations(llvm::Module &M, const TaintSet &taint);
+// Warns once per OFFENDING GATE (the first record that counts against it), with
+// that gate's `!dbg`, at `DS_Warning` — so `opt` prints `warning: …` and exits
+// ZERO. It no longer stops at the first: a decline had to (the pass was over),
+// while a warning that hid the second site would send the author round the loop
+// once per record. Returns true iff any gate was warned about; the caller does
+// NOT branch on it (there is nothing left to abandon), and it exists for
+// unit-level callers and for the fixture that asserts silence. Pure analysis —
+// mutates nothing.
+bool warnLiveRecordRotations(llvm::Module &M, const TaintSet &taint);
 
 }  // namespace cq
 

@@ -332,7 +332,7 @@ struct TaintSet {
   // ── M-A Increment 1 (bd test_C_libtooling-6uqc, owner ruling 2026-08-27) ──
   //
   // EMITTER-RECORDED GATE SETS for the LATE (post-`uncompute`) live-record guard
-  // `declineLiveRecordRotations` (RotationLowering.h). The guard runs after every
+  // `warnLiveRecordRotations` (RotationLowering.h). The guard runs after every
   // emitting stage, so "which rail is still undischarged when this Ry fires" is a
   // FACT it reads off the settled module — but two questions cannot be answered
   // from the lowered text at all, and these sets answer them:
@@ -376,12 +376,12 @@ struct TaintSet {
   // `SwitchRouteEmit` / `NestedRouteEmit`) is deliberately NOT recorded — its
   // arg-0 is always a freshly `cqrt_alloc`'d work RAIL, never a template- or
   // qram-load-minted record, so it can never be a use of a record (see
-  // `declineLiveRecordRotations`'s record definition).
+  // `warnLiveRecordRotations`'s record definition).
   llvm::SmallPtrSet<const llvm::CallInst *, 8> UserPhaseRotations;
 
   // Every adjoint `EmitInverse::emitInverseCall` minted (the whole-DAG spine's
   // `_unc`s and negated-angle rotations, the Phase-4 value-arm reverse-play, the
-  // 7.4 break reverse-play). Consumed by `declineLiveRecordRotations` to answer
+  // 7.4 break reverse-play). Consumed by `warnLiveRecordRotations` to answer
   // "is this post-gate mention of the rail the compiler undoing ITSELF?" — the
   // spine-aware deadness reading the owner ruled on 2026-08-27 (SPIKE §2R.5a).
   //

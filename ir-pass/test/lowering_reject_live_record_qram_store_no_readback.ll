@@ -1,4 +1,4 @@
-; lowering_reject_live_record_qram_store_no_readback.ll — DECLINE: a record
+; lowering_reject_live_record_qram_store_no_readback.ll — WARNING (was DECLINE): a record
 ; written into a QRAM cell that is NEVER READ BACK is not observed (M-A, bd
 ; test_C_libtooling-6uqc; the F1 ruling, 2026-08-28).
 ;
@@ -45,7 +45,23 @@
 ; `mul` is the vehicle at every hop (information-losing ⇒ never M-C-converted in
 ; place), so each sibling is a separate rail.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+;
+; ⚠ NOW A WARNING, NOT A DECLINE — owner ruling 2026-08-29 (bd
+; test_C_libtooling-lyyf, shipped as M-A Increment 7b): "we can always apply any
+; unitary operation we want … it is the user's fault to have produced a badly
+; functioning code" (Rule 17). The dephasing-by-leftover-record class is the
+; USER's circuit, so `opt` prints `warning: …`, exits ZERO, and hands back the
+; lowered module. THE ANALYSIS AND THE MESSAGE STRING ARE UNCHANGED — only the
+; severity moved, so everything this header says about WHY the record counts
+; still holds verbatim. The record is LEFT ALLOCATED and never freed (Rule 6 is
+; untouched: nothing frees a rail that is not provably |0>), which the
+; `NOFREEREC` prefix below pins alongside the gate that IS now emitted. The file KEEPS its
+; `reject_` name deliberately — see RotationLowering.h, which also states what
+; the ruling does NOT cover (every wrong-value and dirty-free guard stays loud).
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=WARN < %t.err
+; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEREC < %t.cqd0.ll
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -69,4 +85,19 @@ entry:
   ret i32 %r
 }
 
-; CHECK: error{{.*}}cq rotation lowering: non-diagonal gate over a live derived record
+; WARN: warning{{.*}}in function slice{{.*}}cq rotation lowering: non-diagonal gate over a live derived record
+; ONE report per offending GATE, never per record (the message carries the
+; gate's !dbg, so a second record on the same rotation would print a duplicate).
+; WARN-NOT: warning
+;
+; THE PROGRAM LOWERS. `opt` exits zero and the gate is in the stream:
+; LOWER-LABEL: define{{.*}}@slice(
+; LOWER: call void @cqrt_ry_i32(i32 %h_op, double 5.000000e-01)
+; and the record is LEFT ALLOCATED — never freed dirty (Rule 6), which is the
+; whole of what the ruling changes about the emitted circuit.
+; NOFREEREC-NOT: call void @cqrt_free(i32 %h_op3)
+; It is its OWN prefix, with no positive directive, so its window is the
+; WHOLE lowered module rather than the span after the gate — a free emitted
+; BEFORE the rotation would be caught too. That is also the spelling
+; tools/fixture_guard_liveness.py recognizes (`NOFREE*`), which counts it as
+; unanchored-and-therefore-not-dead rather than passing over it in silence.

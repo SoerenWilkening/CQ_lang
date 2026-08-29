@@ -12,7 +12,7 @@
 ;
 ; IT IS A LEAK, NOT A DECLINE, AND THAT IS THE DESIGN. M-B is leak-first: an
 ; unprovable rail is LEFT ALLOCATED and the LATE M-A guard
-; (`declineLiveRecordRotations`) owns loudness for a record still standing at a
+; (`warnLiveRecordRotations`) owns loudness for a record still standing at a
 ; non-diagonal gate. There is no chained `cq_theta` here, so nothing is dephased
 ; and nothing should be loud — `opt` exits 0 and no rail is freed.
 ;

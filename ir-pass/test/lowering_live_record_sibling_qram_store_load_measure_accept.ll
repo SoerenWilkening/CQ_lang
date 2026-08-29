@@ -36,7 +36,8 @@
 ; counts AGAINST the gate; this hop is about whether a user can still SEE a value,
 ; which is the opposite question and the opposite safety direction.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare i32 @cq_theta_si32(i32, double)
@@ -78,3 +79,11 @@ entry:
 ; CHECK:      call void @cqrt_copy_i32(i32 %[[V]], i32 %[[OUT]])
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[OUT]])
 ; CHECK-NOT:  cq rotation lowering
+
+; THE M-A GUARD IS SILENT ON THIS PROGRAM, and since owner ruling 2026-08-29 (bd
+; test_C_libtooling-lyyf, M-A Increment 7b) that has to be CHECKED rather than
+; inferred. The guard now emits a `DS_Warning` and `opt` exits ZERO either way,
+; so a zero exit code is no longer a witness that it accepted — every fixture in
+; this family would have kept passing while silently pinning nothing. `SILENT`
+; reads the pass's stderr and is the pin that survived the severity change.
+; SILENT-NOT: non-diagonal gate over a live derived record

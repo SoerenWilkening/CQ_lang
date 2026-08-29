@@ -970,7 +970,7 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
 // LEAK-FIRST, WITHOUT EXCEPTION. Every unprovable step below is a `return` — the
 // rail is LEFT ALLOCATED (Rule 6's fallback), never freed dirty and never a loud
 // decline. Loudness for a record still standing at a non-diagonal gate belongs to
-// the LATE M-A guard (`declineLiveRecordRotations`), which runs after this and
+// the LATE M-A guard (`warnLiveRecordRotations`), which runs after this and
 // reads the discharges this function emits as FACTS (`isDischargeOf` matches the
 // out-first `_unc` and the `cqrt_free`, both of which `emitDagReversal` mints in
 // exactly that shape). That division of labour is the design, not an accident:

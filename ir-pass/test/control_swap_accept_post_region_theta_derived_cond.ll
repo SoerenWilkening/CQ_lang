@@ -21,7 +21,7 @@
 ;     Inc 3/4       cq rotation lowering: non-diagonal gate over a live derived record
 ;
 ; WHAT CHANGED IS THE PHYSICS, NOT THE GUARD. Increment 6 does not relax one
-; clause of `declineLiveRecordRotations`. It makes the three chain rails
+; clause of `warnLiveRecordRotations`. It makes the three chain rails
 ; genuinely DISCHARGED before the second `cqrt_ry` — the emitter records its flag
 ; strip, the interior partition anchors the chain's reversal right after it, and
 ; the guard's clause 2 (`isDischargeOf` + `provablyBefore`) then reads that as the
@@ -31,7 +31,8 @@
 ; IF THIS FILE EVER DECLINES AGAIN, the M-B discharge stopped landing before the
 ; Ry — that is the regression to look for, not a guard change.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
@@ -77,3 +78,11 @@ merge:
 ; …and only then does the chained theta fire, with nothing but the register live:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 2.500000e-01)
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
+
+; THE M-A GUARD IS SILENT ON THIS PROGRAM, and since owner ruling 2026-08-29 (bd
+; test_C_libtooling-lyyf, M-A Increment 7b) that has to be CHECKED rather than
+; inferred. The guard now emits a `DS_Warning` and `opt` exits ZERO either way,
+; so a zero exit code is no longer a witness that it accepted — every fixture in
+; this family would have kept passing while silently pinning nothing. `SILENT`
+; reads the pass's stderr and is the pin that survived the severity change.
+; SILENT-NOT: non-diagonal gate over a live derived record
