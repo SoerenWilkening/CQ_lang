@@ -472,12 +472,32 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 //     arg-0 is the Rz result and therefore not a chain member (probe g1).
 //
 //   * an in-place VALUE self-update (dtzb `add`/`xor`) — ONLY when it is a chain
-//     member or already in `taint.InPlaceRailOps`. An off-chain one is lowered
-//     OUT of place by the M-C decision into a FRESH rail, so it neither moves this
-//     register nor carries it forward; counting it would refuse
-//     `mark = q; q = q + 9; measure(mark);`, which is CORRECT today precisely
-//     because the add lands on a new rail (probe t9). The walk STOPS there for the
-//     same reason — a `cq_theta` on that add's result rotates the fresh rail.
+//     member or already in `taint.InPlaceRailOps`. Counting an off-chain one
+//     would refuse `mark = q; q = q + 9; measure(mark);`, which is CORRECT today
+//     because that add lands on a FRESH rail and this register never moves (probe
+//     t9, pinned by control_swap_inloop_postloop_railop.ll). The walk STOPS there
+//     for the same reason — a `cq_theta` on that add's result rotates the fresh
+//     rail, not this one.
+//
+//     THAT EXCLUSION IS SOUND ONLY BECAUSE OF M-C's G6/G7 PAIR, AND IT IS A REAL
+//     DEPENDENCY ON ANOTHER FILE — stated here because the earlier wording ("an
+//     off-chain one is lowered OUT of place by the M-C decision") asserted
+//     something MEASURABLY FALSE as if it were unconditional (bd 8h7d.5 Rule-13
+//     ROUND 3, bookkeeping item 4). `lowerOps`' M-C in-place reassignment
+//     (`classifyInPlaceReassignment`, ArithLowering.cpp) DOES fire post-loop:
+//     `for (…) {…} int r = q + 9; return cq_measure(r);` emits
+//     `cqrt_addc_i32(%h, 9)` IN PLACE (probe r3h/b4). What keeps the exclusion
+//     safe is M-C's position-aware deadness loop — G6 ("no data use AFTER the op",
+//     asked POST-RAUW so every rail alias is already unified onto `%h`) and G7 —
+//     which refuses exactly when a later record read of the pre-add register
+//     exists, so the two dispositions are mutually exclusive: `mark = q;
+//     q = q + 9; q = cq_theta(q,.25); measure(mark)` falls back to the
+//     out-of-place `cq_template_add_i32_hl` (probe r3h/b5). Both are pinned by
+//     control_swap_inloop_postloop_railop_mc.ll — and pinned WEAKLY, which is part
+//     of the record: measured by mutation, G6 and G7 each refuse that use on their
+//     own, so the fixture only reddens if BOTH are relaxed. IF YOU RELAX EITHER,
+//     this exclusion becomes an over-accept and must be re-derived HERE first; no
+//     test will do it for you.
 //
 //   * a PHI with SOME incoming already on the rail — a merge that names this
 //     register on at least one edge, so a rotation applied to it moves this wire
@@ -497,13 +517,65 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 // reason: the three edge kinds chain (an Rz hop, then a merge phi, then the Ry
 // that is the actual gate), and a phi only becomes claimable once one of its
 // incomings has joined — which can happen after the phi was first visited.
+//
+// RULE 14 — WHY THIS IS NOT `tryCaseA`'S `railRoot` FIXPOINT, THOUGH IT LOOKS
+// LIKE IT. Round 1 grows a rail forward too (`an in-place gate on a rail value
+// joins the SAME rail`, the (a)/(b) fixpoint above `tryCaseA`'s CLOSURE), and the
+// question "should these be one spelling?" was asked and answered NO, in this
+// round, on the two places they deliberately differ:
+//
+//   * ROUND 1 follows an off-chain in-place `add`/`xor` UNCONDITIONALLY; this one
+//     requires `taint.InPlaceRailOps` (see the second edge kind). Round 1 may:
+//     its fixpoint runs BEFORE it marks, and every op it admits it then marks, so
+//     "in-place" is a claim it is about to MAKE. Here it is a fact that must
+//     already HOLD — a loop reaching round 2 was NOT claimed by round 1, so none
+//     of ITS ops carry a mark, and following an unmarked add would refuse the
+//     correct `mark = q; q = q + 9; measure(mark)`. (Marks from some OTHER loop's
+//     round-1 claim are per-op and simply true, which is why the test is a
+//     membership question and not a "has anything been marked yet" one.)
+//   * ROUND 1's phi edge needs ALL incomings to peel to one root; this one needs
+//     SOME incoming on the rail. Round 1 is building a CLAIM set — a phi merging
+//     a foreign value is not a rail it may collapse, so "all" is the sound side
+//     there. This is an ∃-PATH staleness witness — one incoming naming the
+//     register is one path on which a later gate moves it, so "some" is the sound
+//     side here. Each spelling is UNSOUND in the other's job, which is why the
+//     union is not available: widening round 1 to "some" would collapse phis it
+//     cannot prove, and narrowing this one to "all" silently drops the merge
+//     miscompile (lowering_reject_inloop_rail_record_merge_theta.ll).
+//
+// So two spellings are tolerated, and the pair is PINNED rather than trusted:
+// r3g/w1 and r3c/k1 are the SAME C program with and without an in-body tainted
+// `if`, i.e. round 1's rail and round 2's, and they ship as
+// lowering_reject_loop_rail_record_offchain_theta.ll (round 1, no control) and
+// lowering_reject_inloop_rail_record_offchain_theta.ll (round 2). Both must
+// decline with the identical message; if the two extensions ever diverge on the
+// reach that matters, one of those two fixtures goes red.
+//
+// `OnRailOut`, when given, receives EVERY value proven to be on this rail — the
+// chain members first, in the order they were handed in, then the forward
+// extension in discovery order. That out-parameter is finding F-3 of the THIRD
+// Rule-13 round, and it is F-1's exact twin one hop out: round 2 widened the GATE
+// set to the rail and left the RECORD set at the chain, so a rail value one hop
+// off the chain was never asked about (see `staleRailRecordRead`). The order is
+// reproducible run-to-run — `Members` arrives in a deterministic order and the
+// extension is driven by LLVM use lists, which are construction-ordered, not
+// pointer-hashed — which matters because the caller DIAGNOSES from it and a
+// wandering `!dbg` location reads as a flaky test later (the same reason
+// `tryCaseA` groups its chains in program order).
 void collectRailGates(ArrayRef<Value *> Members,
                       const SmallPtrSetImpl<CallInst *> &GateCalls,
                       const TaintSet &taint,
-                      SmallPtrSetImpl<const Instruction *> &Gates) {
+                      SmallPtrSetImpl<const Instruction *> &Gates,
+                      SmallVectorImpl<Value *> *OnRailOut = nullptr) {
   // Everything proven to be on this rail — the chain, plus the forward extension.
-  SmallPtrSet<const Value *, 32> OnRail(Members.begin(), Members.end());
-  SmallVector<Value *, 32> Work(Members.begin(), Members.end());
+  SmallPtrSet<const Value *, 32> OnRail;
+  SmallVector<Value *, 32> Work;
+  for (Value *V : Members)
+    if (OnRail.insert(V).second) {
+      Work.push_back(V);
+      if (OnRailOut)
+        OnRailOut->push_back(V);
+    }
 
   auto noteGate = [&](Instruction *I) {
     if (auto *CI = dyn_cast<CallInst>(I)) {
@@ -543,6 +615,8 @@ void collectRailGates(ArrayRef<Value *> Members,
         continue;
       OnRail.insert(I);
       Work.push_back(I);
+      if (OnRailOut)
+        OnRailOut->push_back(I);
       noteGate(I);
     }
   }
@@ -580,12 +654,41 @@ Instruction *staleReadOfValue(Value *V,
   return nullptr;
 }
 
+// THE RECORD SET IS THE RAIL'S, THE SKIP SET IS THE CHAIN'S — and they are two
+// different sets on purpose (bd 8h7d.5 Rule-13 ROUND 3, finding F-3; another
+// CONFIRMED silent miscompile, and F-1's exact twin one hop out).
+//
+// Round 2 widened `collectRailGates`'s GATE set from the chain to the whole rail
+// and left the RECORD loop — the values this fence asks "is any read of you
+// stale?" — enumerating chain `Members`. A rail value ONE HOP off the chain was
+// therefore never asked about, and this `clang -O1` C program miscompiled:
+//
+//     for (i<2) { if (q==5) q=cq_phi(q,PI); q=cq_theta(q,-.5); q=cq_theta(q,.5); }
+//     int a = cq_theta(q, 0.125);   /* arg-0 IS a member — the RESULT is not */
+//     int b = cq_theta(a, 0.25);    /* a rail gate AFTER the record `a` */
+//     return cq_measure(a) + cq_measure(b);
+//
+// emitting `ry(h0,.125); ry(h0,.25); measure(h0); measure(h0)` — `a` names the
+// pre-`b` register and is measured after `b`. `opt` exit 0, verify-clean, STRICT
+// stage-2b clean. So the loop below runs over `RailValues`, the rail's own closure.
+//
+// THE TWO SETS MUST NOT BE UNIFIED, and a fixture pins the difference. The SKIP
+// set answers "whose own in-place execution IS the wire moving?" — a chain member's
+// gate is the rail advancing, not a read of it. The RECORD set answers "which SSA
+// names denote a state of this rail?" — every value on it, chain or extension.
+// Widening the skip set to the rail too was measured and REGRESSES
+// lowering_reject_inloop_rail_frozen_gate_first.ll from a decline to an accept: a
+// `cq_theta` applied to a FROZEN identity-carry record joins the rail by the
+// extension's first edge kind, and skipping it as a "rail step" deletes exactly
+// the read that proves the record frozen (round 2's F-2 argument depends on that
+// read being visible — see `recordRefreshedByDef`).
 Instruction *staleRailRecordRead(ArrayRef<Value *> Members,
                                  const SmallPtrSetImpl<CallInst *> &GateCalls,
                                  const TaintSet &taint) {
   SmallPtrSet<const Value *, 16> MemberSet(Members.begin(), Members.end());
   SmallPtrSet<const Instruction *, 8> Gates;
-  collectRailGates(Members, GateCalls, taint, Gates);
+  SmallVector<Value *, 32> RailValues;
+  collectRailGates(Members, GateCalls, taint, Gates, &RailValues);
   if (Gates.empty())
     return nullptr;
   // NOTE, so the next reader does not mis-read that early-out as "the pure-Rz rail
@@ -596,7 +699,11 @@ Instruction *staleRailRecordRead(ArrayRef<Value *> Members,
   // so no `Def → gate → read` path exists
   // (control_swap_inloop_{diamond,gatefree_body}.ll). The early-out is a defensive
   // guard for a chain that somehow carries no gate at all, not the diagonal case.
-  for (Value *V : Members)
+  //
+  // `RailValues` leads with `Members` in the order the caller handed them in, so
+  // the offender named for an already-declining program is the one round 2 named:
+  // the extension is only ever reached when no chain member's read is stale.
+  for (Value *V : RailValues)
     if (Instruction *Bad = staleReadOfValue(V, MemberSet, Gates, GateCalls, taint))
       return Bad;
   return nullptr;
@@ -2297,10 +2404,16 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 //     acc = q*7; q += 3; }` reads it one `addc` too late and computes a different
 //     unitary, `opt` exit 0 and stage-2b clean. The exemption is sound HERE only
 //     because `collapseRailPhisIn` step (2b) has already PROVEN, for every rail
-//     member and every consumer, that no rail-relabelling gate separates the
+//     VALUE and every consumer, that no rail-relabelling gate separates the
 //     record from its read (`staleRailRecordRead`) — and it declines loudly
 //     otherwise, before this function is ever called. It is a conclusion, not an
-//     axiom, and it must not outlive that call order;
+//     axiom, and it must not outlive that call order. "Every rail VALUE" is the
+//     word this sentence needed and did not have until bd 8h7d.5 Rule-13 ROUND 3
+//     (finding F-3): it said "every rail MEMBER", and the fence really did only
+//     enumerate chain members, so a record one hop off the chain was exempted
+//     from a proof this exemption claims to rest on. Both halves are fixed —
+//     `staleRailRecordRead` now enumerates the rail's closure, so the premise
+//     stated here is the premise actually discharged;
 //   * every OTHER tainted value must be defined in `L` and used only in `L` —
 //     the unchanged iteration-local obligation;
 //   * a tainted OPERAND that is neither on the rail nor defined in `L` is the

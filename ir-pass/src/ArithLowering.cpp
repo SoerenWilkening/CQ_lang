@@ -627,6 +627,27 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
     // (WireWalk.h): dominance for first-execution order, plus the reachability
     // half so a back edge cannot replay the use against the mutated rail.
     // Unproven ⇒ out-of-place (Prime Directive direction).
+    //
+    // AN OUT-OF-FILE CONSUMER DEPENDS ON THIS G6/G7 PAIR (bd 8h7d.5 Rule-13
+    // ROUND 3, bookkeeping item 4). `LoopLowering::collectRailGates` extends a
+    // loop rail FORWARD to decide which gates can stale a rail record, and it
+    // deliberately does NOT follow an OFF-CHAIN in-place `add`/`xor` — on the
+    // ground that such an op either lands on a fresh rail or, when it does fire in
+    // place here, cannot be followed by a read of the pre-op register. That second
+    // half is THIS loop: a later data use of `P` is refused, so the two
+    // dispositions are mutually exclusive (measured — probes r3h/b4 fires in
+    // place, r3h/b5 falls back out of place; pinned by
+    // control_swap_inloop_postloop_railop_mc.ll).
+    //
+    // SAY "PAIR", NOT "G6", AND SAY WHY IT IS A WEAK TRIPWIRE. Measured by
+    // mutation on that fixture: disabling G6 ALONE leaves it green (G7 refuses the
+    // same use), disabling G7 alone leaves it green (G6 refuses it), and only
+    // disabling BOTH flips `@mc_then_theta` to an in-place `cqrt_addc_i32`. So the
+    // fixture cannot catch a single-clause relaxation, and the loop fence's
+    // exclusion rests on the pair rather than on either clause. If you relax
+    // EITHER of these to admit a site with a later read, re-derive
+    // `collectRailGates`' off-chain-BO rule BEFORE relaxing anything here — the
+    // test suite will not do it for you.
     if (!provablyBefore(UI, Site, DT))
       return false;
     // G7 — the prior use must be settled (see `priorUseIsSettled`).

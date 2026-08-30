@@ -171,9 +171,10 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //
 // TWO PREMISES OF THAT FENCE WERE THEMSELVES WRONG (bd 8h7d.5 Rule-13 ROUND 2,
 // findings F-1 and F-2 — six findings over two rounds on one increment; assume a
-// third round finds more). The fence is stated as "no rail-relabelling gate runs
-// between the record's definition and the read", and the shipped code said two
-// narrower things:
+// third round finds more. IT DID: see F-3 below, and note that BOTH of round 2's
+// findings and round 3's were in premises the fence never stated). The fence is
+// stated as "no rail-relabelling gate runs between the record's definition and the
+// read", and the shipped code said narrower things:
 //
 //   F-1, THE GATE SET WAS THE CHAIN'S, NOT THE RAIL'S. `collectRailGates` read only
 //   the peeled root→PreV→phi→LatV members, so a `cq_theta` whose arg-0 IS a member
@@ -183,10 +184,14 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //   stage-2b clean. Ry is ALWAYS lowered in place, so unlike a value op there is no
 //   escape hatch. Each chain is now extended FORWARD through the users that keep
 //   mutating the same handle: a rotation unconditionally, a dtzb `add`/`xor` only
-//   when it is a member or already `taint.InPlaceRailOps` (an off-chain one lowers
-//   OUT of place into a FRESH rail — which is why `mark = q; q = q+9;
-//   cq_measure(mark)` is CORRECT and keeps lowering), and a phi naming the rail on
-//   SOME incoming. `clang -O1` C-reachable and CONFIRMED.
+//   when it is a member or already `taint.InPlaceRailOps` (which is what keeps
+//   `mark = q; q = q+9; cq_measure(mark)` lowering — CORRECTLY, though NOT for the
+//   reason first written here: round 3 measured that M-C does fire IN PLACE on such
+//   an add when nothing reads the pre-add register, and it is M-C's own G6/G7 pair
+//   refusing whenever a later read exists that makes the two dispositions mutually
+//   exclusive; see `collectRailGates` and control_swap_inloop_postloop_railop_mc.ll),
+//   and a phi naming the rail on SOME incoming. `clang -O1` C-reachable and
+//   CONFIRMED.
 //
 //   F-2, THE CUT'S PREMISE. `railGateBetween` suppresses every path that
 //   re-executes the record's definition, because re-executing it refreshes the
@@ -195,6 +200,26 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //   which step (1) accepts trivially and which re-executes yielding the SAME value
 //   while a sibling chain on the same mint moves the wire. A carry now refreshes
 //   only if it crosses a rail GATE (`recordRefreshedByDef`).
+//
+//   F-3, THE RECORD SET WAS THE CHAIN'S TOO (bd 8h7d.5 Rule-13 ROUND 3 — F-1's
+//   EXACT TWIN one hop out, and ANOTHER `clang -O1`-reachable CONFIRMED silent
+//   miscompile). F-1 widened the GATE set from the chain to the rail and left the
+//   RECORD loop — the values the fence asks "is any read of you stale?" —
+//   enumerating chain members, so a rail value ONE HOP off the chain was never
+//   asked about:
+//
+//       for (…) { if (q==5) q=cq_phi(q,PI); q=cq_theta(q,-.5); q=cq_theta(q,.5); }
+//       int a = cq_theta(q, .125);   int b = cq_theta(a, .25);
+//       return cq_measure(a) + cq_measure(b);
+//
+//   emitted `ry(%h,.125); ry(%h,.25); measure(%h); measure(%h)` — `a` names the
+//   pre-`b` register and is measured after `b`. `opt` exit 0, verify-clean, STRICT
+//   stage-2b clean. The record loop now runs over `collectRailGates`' `OnRailOut`,
+//   the rail's own forward closure. THE SKIP SET STAYS THE CHAIN'S: widening both
+//   was measured and turns lowering_reject_inloop_rail_frozen_gate_first.ll from a
+//   decline into an accept, because a gate ON a frozen record is the very read that
+//   proves it frozen. Two sets, two questions — "whose execution IS the wire
+//   moving" (the chain) versus "which names denote a state of this rail" (the rail).
 //
 // The decline partition is otherwise unchanged and still LOUD: a latch incoming
 // that does not peel back to the phi is the X1 cross-iteration dirty rail

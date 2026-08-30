@@ -463,9 +463,11 @@ three unrolled twins, and three `cmp` entries in ctest
 (`e2e-grover-loop{,-derived,-offset}-twin-identical`).
 
 **ROUND 2 FOUND TWO HOLES IN THIS FENCE — in its two UNSTATED premises, not in the
-sentence above.** The sentence was always "no rail-relabelling gate runs between the
-record's definition and the read"; the code said two narrower things, and both
-narrowings were silent miscompiles.
+sentence above; ROUND 3 THEN FOUND A THIRD, IN THE SAME PLACE ROUND 2 HAD JUST
+EDITED.** The sentence was always "no rail-relabelling gate runs between the
+record's definition and the read"; the code said narrower things, and every one of
+those narrowings was a silent miscompile. Three adversarial rounds, three
+`clang -O1`-reachable confirmed miscompiles in one fence: budget a fourth.
 
 *F-1 — the gate set was the CHAIN's, not the RAIL's.* `collectRailGates` built
 `Gates` from the peeled `root→PreV→phi→LatV` members only, so a `cq_theta` whose
@@ -485,9 +487,13 @@ that keep mutating the SAME handle, with three edge kinds and each exclusion
 load-bearing: a **rotation** unconditionally (`cq_theta` is a gate, `cq_phi` is
 followed but is not — Rz is diagonal, and following it is what makes the Ry BEHIND
 an Rz visible, whose arg-0 is on no chain); a **dtzb `add`/`xor`** only when it is a
-member or already in `taint.InPlaceRailOps`, because an off-chain one is lowered OUT
-of place into a fresh rail (which is why `mark = q; q = q + 9; cq_measure(mark)` is
-CORRECT today and keeps lowering — `control_swap_inloop_postloop_railop.ll`); and a
+member or already in `taint.InPlaceRailOps` (which is why
+`mark = q; q = q + 9; cq_measure(mark)` is CORRECT today and keeps lowering —
+`control_swap_inloop_postloop_railop.ll`; **the reason first recorded for this
+exclusion, "an off-chain one is lowered OUT of place into a fresh rail", is FALSE as
+an unconditional claim** — round 3 measured M-C firing in place on exactly that add
+when nothing reads the pre-add register, and the exclusion is sound because M-C's
+G6/G7 pair refuses whenever a later read exists, §2.11a); and a
 **phi** naming the rail on SOME incoming (`railGateBetween` is an ∃-path test, so
 "some" is the sound side). It is NOT transitive past the first gate and does not
 need to be: `Def` dominates `t1` and `t1` dominates `t2`, so every path `Def → t2`
@@ -511,6 +517,74 @@ onepath_theta,offchain_rz_theta,merge_theta,theta_chain}.ll` and
 `control_swap_inloop_{postloop_railop,gatefree_body}.ll` (the two accept
 boundaries — the out-of-place post-loop add, and the gate-free body whose
 post-flatten rail phi IS an identity carry and must keep lowering).
+
+### §2.11a Round 3, finding F-3 — the RECORD set was the chain's too
+
+**F-1's exact twin, one hop out, and another confirmed silent miscompile.** Round 2
+widened `collectRailGates`' **gate** set from the chain to the rail; it left the
+**record** loop — the values `staleRailRecordRead` asks "is any read of you stale?" —
+enumerating chain `Members`. A rail value one hop off the chain was therefore never
+asked about:
+
+```c
+for (…) { if (q==5) q = cq_phi(q,PI); q = cq_theta(q,-.5); q = cq_theta(q,.5); }
+int a = cq_theta(q, 0.125);   /* arg-0 IS a member, RESULT is OFF the chain */
+int b = cq_theta(a, 0.25);    /* a rail gate AFTER the record `a` */
+return cq_measure(a) + cq_measure(b);
+```
+
+emitted `ry(%h,.125); ry(%h,.25); measure(%h); measure(%h)` — `a` names the pre-`b`
+register and is measured after `b`. `opt` exit 0, verify-clean, STRICT stage-2b
+clean. Five programs reproduced it (the shape above; the record reached through a
+DIAGONAL `cq_phi` hop; a `ret` escape instead of a measure; a three-hop chain with
+TWO stale records at once; and the dynamic-bound hand-IR form). The reads that do
+NOT reach here are already owned — a value-op read declines at
+`declineStaleRecordOps`, a condition read at `ArmClassify` — so the uncovered
+surface was exactly `cq_measure` and `ret`.
+
+**Fix:** `collectRailGates` gained an `OnRailOut` out-parameter and the record loop
+runs over that closure. **The SKIP set stays the chain's**, and this is not a
+detail: widening it too was measured and turns
+`lowering_reject_inloop_rail_frozen_gate_first.ll` from a decline into an accept,
+because a `cq_theta` applied to a FROZEN identity-carry record joins the rail and a
+rail-wide skip set deletes the very read that proves the record frozen (round 2's
+F-2 argument depends on that read being visible). Two sets, two questions:
+
+| set | question | scope |
+|---|---|---|
+| SKIP (`MemberSet`) | whose own in-place execution IS the wire moving? | the CHAIN |
+| RECORD (`RailValues`) | which SSA names denote a state of this rail? | the RAIL |
+
+**Rule 14 — two forward-extension spellings survive on purpose.** Round 1's
+`railRoot` fixpoint (`tryCaseA`) grows a rail forward too, and it already covered
+this program: the same C **without** the in-body tainted `if` declined at HEAD while
+the version **with** it miscompiled. They are not unified because each is unsound in
+the other's job — round 1 needs "ALL incomings" for a CLAIM set and follows an
+unmarked in-place `add` because it is about to mark it; round 2/3 needs "SOME
+incoming" for an ∃-path staleness witness and must not follow an unmarked add. The
+pair is pinned instead of trusted:
+`lowering_reject_loop_rail_record_offchain_theta.ll` (round 1) and
+`lowering_reject_inloop_rail_record_offchain_theta.ll` (round 2/3) are the same C
+program either side of the in-body `if`, and both must decline with the same message.
+
+**The M-C cross-file dependency, now recorded at both ends.** The off-chain
+`add`/`xor` exclusion above is sound only because M-C's position-aware deadness pair
+(G6 "no data use AFTER the op", G7 "the prior use must be settled",
+`ArithLowering.cpp`) refuses in-place exactly when a later read of the pre-op
+register exists. Measured: `int r = q + 9; return cq_measure(r)` lowers in place as
+`cqrt_addc_i32(%h, 9)`; adding `mark = q` and a later `cq_theta` sends it
+out-of-place. `control_swap_inloop_postloop_railop_mc.ll` pins both dispositions —
+**weakly, and it says so**: G6 and G7 each refuse that use on their own, so the
+fixture only reddens if BOTH are relaxed.
+
+**Fixtures.** Red: `lowering_reject_inloop_rail_record_{offchain_theta,offchain_rz,
+offchain_ret,three_hops,offchain_dyn}.ll` and
+`lowering_reject_inloop_rail_frozen_gate_first.ll`, plus the round-1 twin
+`lowering_reject_loop_rail_record_offchain_theta.ll`. Green:
+`control_swap_inloop_postloop_railop_mc.ll`. Both mutations verified with zero
+cross-talk over all 1290 fixtures: reverting the record loop to `Members` fails
+exactly the five F-3 reds; widening `MemberSet` to the rail fails exactly the
+frozen-gate-first fixture.
 
 ### 2.9 The iteration-2 staleness guard is already correct — keep it (L4 boundary)
 `declineStaleRecordOps` (`OpcodeLowering.cpp:117-198`, position-aware proof

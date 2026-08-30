@@ -850,12 +850,36 @@ re-executing refreshes it — is FALSE for a zero-hop **identity-carry** phi
 re-executes yielding the SAME value while a sibling chain on the same mint moves the
 wire, so the cut removed exactly the path carrying the staleness. A carry now
 refreshes only if it crosses a rail GATE.
+**AND THE THIRD ROUND FOUND F-1's EXACT TWIN ONE HOP OUT — 7 findings over 3 rounds
+on one increment, three of them (round 1's F1, round 2's F-1, round 3's F-3)
+confirmed `clang -O1`-reachable silent miscompiles in or around this ONE fence,
+beside round 1's separately confirmed pre-existing hole.**
+(F-3) F-1 widened the **gate** set from the chain to the rail and left the **record**
+set — the values the fence asks "is any read of you stale?" — enumerating chain
+members, so a rail value ONE HOP off the chain was never asked about:
+`int a = cq_theta(q,.125); int b = cq_theta(a,.25); measure(a) + measure(b)` after
+the loop emitted `ry(%h,.125); ry(%h,.25); measure(%h); measure(%h)`, with `a`
+naming the pre-`b` register. The record loop now runs over the rail's own forward
+closure (`collectRailGates`' `OnRailOut`) — **but the SKIP set stays the chain's**,
+and widening both was measured to turn a decline into an accept (a gate ON a frozen
+identity-carry record is the very read that proves it frozen). Two sets, two
+questions. Round 3 also RETIRED a false in-source ground: "an off-chain in-place
+`add` is lowered OUT of place by M-C into a FRESH rail" is not unconditional — M-C
+DOES fire in place there, and the exclusion is sound only because M-C's G6/G7 pair
+refuses whenever a later record read exists (recorded at both ends, and pinned
+weakly — the fixture only reddens if BOTH clauses are relaxed).
+**THE STANDING LESSON FROM THIS SEQUENCE, worth more than any one finding: when you
+widen a set, ask what OTHER set was computed over the same closure.** F-1 widened
+the gates and not the records; F-3 was that omission, found one round later by an
+adversarial reviewer and not by the 1281 fixtures that were green at the round-2
+HEAD.
 Read bd memories [`inloop-control-rolled-8h7d5`],
 [`inloop-rail-record-escape-closure-8h7d5`],
 [`peractivation-barrier-must-not-be-subject-p1`],
 [`per-wire-staleness-not-source-order-od1`],
 [`offchain-forward-ry-is-a-rail-gate`],
 [`identity-carry-phi-does-not-refresh`],
+[`rail-record-set-is-the-rail-not-the-chain`],
 [`d8jl-correction-flatten-repairs-headerphi`] and
 [`provably-before-per-activation`] before touching any of it. IN-LOOP VALUE
 (method-B) arms, depth-2 nests, `switch`, the 6.5 classical-call arm, irreducible
@@ -1004,7 +1028,7 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1274 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-30). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1290 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-30, `ls ir-pass/test/*.ll | wc -l`). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
 ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 275 entries (264 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, the 3 spec/predmux entries and the 4 bd 8h7d.5 `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-30 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
@@ -1057,7 +1081,8 @@ on any pipeline other than `cq-lowering` rather than silently no-op'ing. It is
 **one process per invocation** — not a compile server — so lit's isolation,
 per-fixture diagnostics and `not` exit-code inversion are unchanged.
 Equivalence is **gated, not assumed** (`tools/cq_opt_equivalence.py`): stdout,
-stderr **and** exit code, 0 mismatches over all 1069 fixtures. The routine ctest
+stderr **and** exit code, 0 mismatches over all 1290 fixtures (re-measured
+2026-08-30). The routine ctest
 entry samples (`--stride 8`, ~13s) because the full sweep costs ~658s of CPU —
 *more than the swap saves*; run the full one after any change to the pass's
 diagnostic or analysis surface:
