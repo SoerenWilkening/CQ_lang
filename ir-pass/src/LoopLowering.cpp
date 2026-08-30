@@ -25,6 +25,7 @@
 #include "ControlPlan.h"  // diagnoseUnderControl (Q1 reuses the control dialect)
 #include "OpcodeSupport.h"  // abiWidthFromType (rail width for the capture allocs)
 #include "WidthDispatch.h"
+#include "FreePoint.h"      // blockCanRepeat (the ONE "can this block run twice")
 
 #include "llvm/IR/IRBuilder.h"
 
@@ -154,6 +155,64 @@ Value *inPlaceValueRailOperand(BinaryOperator *BO, const TaintSet &taint) {
 
 namespace {
 
+// ONE SPELLING of "will this `BinaryOperator` be lowered as an IN-PLACE mutation
+// of rail value `V`'s handle?" (bd test_C_libtooling-8h7d.5, Rule-13 round 4,
+// finding OD-A). Two independent halves, and conflating them is the defect this
+// replaces: the SHAPE (`inPlaceValueRailOperand(BO) == V` — the dtzb `V OP c`
+// bijection) says the op COULD be lowered in place; the DISPOSITION says whether
+// it WILL be.
+//
+// In-place value lowering has exactly TWO owners, and this enumerates both:
+//   * `taint.InPlaceRailOps` — `lowerLoops`' own proven set (round 1's `railRoot`
+//     marking, round 2's step (3)). `Claimed` is the set the CALLER is about to
+//     add to it, so a caller that runs BEFORE its own marking (the fan-out guard
+//     does — step (2) precedes step (3)) passes its chain and gets the same
+//     answer it would after marking. Round 1 passes `railRoot`, where the
+//     question is a no-op: its fixpoint has already absorbed every in-place BO
+//     consumer of a rail value, by construction.
+//   * `ArithLowering`'s M-C in-place reassignment (`classifyInPlaceReassignment`
+//     → `inPlaceFenceHolds`), whose **G5** refuses OUTRIGHT any site inside a
+//     natural loop or a `blockCanRepeat` block — "the rolled-in-place (799w) and
+//     whole-loop reverse-play (y05j/dtzb) machinery owns in-place value gates in
+//     loop bodies … straight-line only". So an unmarked, unclaimed BO in a loop
+//     body is `OutOfPlace` BY CONSTRUCTION: `lowerOps` mints it a FRESH rail
+//     (`cq_template_<op>_<W>_hl`) and the loop-carried register never moves.
+//
+// `Unproven` is the straight-line remainder — M-C legitimately DOES fire there
+// (`for(…){…} int r = q + 9; return cq_measure(r);` emits `cqrt_addc_i32(%h,9)`,
+// probe r3h/b4) and nothing here can predict G6/G7's answer. Each caller states
+// how it reads that cell, and the two read it OPPOSITE ways on purpose:
+//
+//   * the FAN-OUT guard counts `Unproven` (Rule 8 linear lineage — an unproven
+//     second in-place mutator must decline loudly, Prime Directive);
+//   * `collectRailGates`' forward extension follows only `InPlace` (its own
+//     header explains why, and that exclusion is sound only because M-C's G6/G7
+//     pair refuses a site with a later record read — round 3, bookkeeping 4).
+//
+// WHAT THIS FIXES. `clang -O1` canonicalizes the two-sided range test
+// `if (q > 5 && q < 20)` to `%t = add %q, -6; icmp ult %t, 14`. `%t` has the dtzb
+// SHAPE, so the fan-out guard counted it beside the arm's real `cq_phi` and
+// declined `kMsgRailFanout` — while the hand-unrolled twin of the same source
+// compiled. `%t` is a DERIVED-CONDITION temp inside the loop body: G5 guarantees
+// it lowers out of place, so it was never a second mutator of the rail at all.
+enum class RailValueUse { NotThisRail, OutOfPlace, Unproven, InPlace };
+
+RailValueUse railValueConsumerDisposition(
+    llvm::BinaryOperator *BO, const Value *V, const TaintSet &taint,
+    const SmallPtrSetImpl<const Value *> &Claimed) {
+  if (inPlaceValueRailOperand(BO, taint) != V)
+    return RailValueUse::NotThisRail;
+  if (taint.InPlaceRailOps.count(BO) || Claimed.count(BO))
+    return RailValueUse::InPlace;
+  // G5's own disjunction, asked with the SAME `blockCanRepeat` spelling (which
+  // is a strict superset of `LoopInfo::getLoopFor != null`, so one call answers
+  // both halves — an irreducible cycle is not a natural loop but still repeats,
+  // bd 4p7j / x67f F1).
+  if (blockCanRepeat(BO->getParent()))
+    return RailValueUse::OutOfPlace;
+  return RailValueUse::Unproven;
+}
+
 // Peel in-place gates off the front of a value's wire, returning the underlying
 // base. Two gate kinds peel (both are in-place mutations of the one rail handle,
 // their result RAUWs to the operand at lowering): (1) rotation gates
@@ -172,8 +231,31 @@ namespace {
 // and mark ops that are not on the rail at all, which `lowerOps` would then emit
 // as in-place mutations of a register they do not belong to (Rule 14: one
 // spelling, asked twice).
+//
+// TWO READINGS OF THE `BinaryOperator` EDGE, AND `AsLowered` PICKS ONE (bd
+// 8h7d.5, Rule-13 round 4 — the third head of finding OD-A). By default the edge
+// is the dtzb SHAPE alone: that is the CLAIM-time reading, and it is right for
+// every caller that is deciding whether it MAY own a chain, because owning it is
+// what makes the op in-place (`tryCaseA`'s `railRoot` fixpoint says the same
+// thing about itself, in its own Rule-14 note). `AsLowered` asks the DISPOSITION
+// instead — `railValueConsumerDisposition(...) == InPlace` — which is the
+// FACT-time reading, for a caller that runs AFTER the marking and is asserting
+// "this SSA name IS the register".
+//
+// Conflating the two is a measured defect, not a hypothetical: `clang -O1`
+// canonicalizes `if (q > 5 && q < 20)` inside a loop body to
+// `%t = add %q, -6; icmp ult %t, 14`, and `%t` peels to the rail root by SHAPE.
+// `markIfRailLocal`'s `onRail` therefore classified a DERIVED-CONDITION TEMP as
+// "the register", with two consequences: `AnyLocal` stayed false so the body was
+// never certified ITERATION-LOCAL and the uncompute spine's §2.9 acyclic
+// backstop LEAKED the whole condition chain once per trip (the rolled trace then
+// differs from its hand-unrolled twin's — this increment's load-bearing
+// witness); and the temp inherited the rail's EXEMPTION from the escape check,
+// which `collectRailGates` — the other spelling of "on this rail" — would never
+// have granted it. Two spellings that disagree about one value is finding F-1's
+// and F-3's shape a third time; this parameter is how they are made to agree.
 Value *peelInPlaceStep(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls,
-                       const TaintSet &taint) {
+                       const TaintSet &taint, bool AsLowered = false) {
   if (auto *CI = dyn_cast<CallInst>(V)) {
     if (!GateCalls.count(CI))
       return nullptr;  // not a collected rotation call — V is the base.
@@ -182,14 +264,25 @@ Value *peelInPlaceStep(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls,
       return nullptr;  // classical-operand theta: the mint point IS the base.
     return Handle;
   }
-  if (auto *BO = dyn_cast<BinaryOperator>(V))
-    return inPlaceValueRailOperand(BO, taint);  // dtzb self-update, or null.
+  if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+    Value *Base = inPlaceValueRailOperand(BO, taint);  // dtzb self-update, or null.
+    if (!AsLowered || !Base)
+      return Base;
+    // FACT-time: only an op that will really be emitted as `cqrt_{addc,xorc}`
+    // keeps the register. `Claimed` is empty — this reading is for callers that
+    // run after every claim has been marked, so there is nothing pending.
+    SmallPtrSet<const Value *, 1> NoClaim;
+    return railValueConsumerDisposition(BO, Base, taint, NoClaim) ==
+                   RailValueUse::InPlace
+               ? Base
+               : nullptr;
+  }
   return nullptr;
 }
 
 Value *peelInPlaceBase(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls,
-                       const TaintSet &taint) {
-  while (Value *Next = peelInPlaceStep(V, GateCalls, taint))
+                       const TaintSet &taint, bool AsLowered = false) {
+  while (Value *Next = peelInPlaceStep(V, GateCalls, taint, AsLowered))
     V = Next;
   return V;
 }
@@ -472,12 +565,26 @@ bool railGateBetween(const Instruction *Def, const Instruction *Read,
 //     arg-0 is the Rz result and therefore not a chain member (probe g1).
 //
 //   * an in-place VALUE self-update (dtzb `add`/`xor`) — ONLY when it is a chain
-//     member or already in `taint.InPlaceRailOps`. Counting an off-chain one
-//     would refuse `mark = q; q = q + 9; measure(mark);`, which is CORRECT today
-//     because that add lands on a FRESH rail and this register never moves (probe
-//     t9, pinned by control_swap_inloop_postloop_railop.ll). The walk STOPS there
-//     for the same reason — a `cq_theta` on that add's result rotates the fresh
-//     rail, not this one.
+//     member or already in `taint.InPlaceRailOps` — the `InPlace` cell of
+//     `railValueConsumerDisposition`, which is the ONE spelling of this question
+//     (bd 8h7d.5 Rule-13 round 4, OD-A; the fan-out guards and `markIfRailLocal`
+//     ask the same predicate and read its `Unproven` cell the OTHER way, each for
+//     its own safe direction). Counting an off-chain one would refuse
+//     `mark = q; q = q + 9; measure(mark);`, which is CORRECT today because that
+//     add lands on a FRESH rail and this register never moves. The walk STOPS
+//     there for the same reason — a `cq_theta` on that add's result rotates the
+//     fresh rail, not this one.
+//
+//     PINNED BY TWO FIXTURES, NOT ONE (round-4 correction; this note said
+//     "pinned by control_swap_inloop_postloop_railop.ll" as if that were the
+//     whole pin). MEASURED 2026-08-30 by disabling BOTH G6 and G7 in
+//     `inPlaceFenceHolds` and running all 1293 fixtures: 49 go red, and
+//     control_swap_inloop_postloop_railop.ll (this exclusion's accept — the
+//     record read that must survive) and control_swap_inloop_postloop_railop_mc.ll
+//     (the in-place / out-of-place pair) are both among them. The round-3 note at
+//     the G6 site says the `_mc` fixture only reddens when BOTH clauses are
+//     relaxed, and that is confirmed and unchanged; what is corrected here is the
+//     COUNT of what stands behind the exclusion.
 //
 //     THAT EXCLUSION IS SOUND ONLY BECAUSE OF M-C's G6/G7 PAIR, AND IT IS A REAL
 //     DEPENDENCY ON ANOTHER FILE — stated here because the earlier wording ("an
@@ -608,8 +715,16 @@ void collectRailGates(ArrayRef<Value *> Members,
       } else if (auto *CI = dyn_cast<CallInst>(I)) {
         OnThisRail = isInPlaceGateOnArg0(CI, V, GateCalls, taint);
       } else if (auto *BO = dyn_cast<BinaryOperator>(I)) {
-        OnThisRail = inPlaceValueRailOperand(BO, taint) == V &&
-                     taint.InPlaceRailOps.count(BO);
+        // `InPlace` ONLY — the `Unproven` straight-line cell is deliberately NOT
+        // followed here (see the second edge kind above and OD-A's note on
+        // `railValueConsumerDisposition`: this caller and the fan-out guard read
+        // that cell OPPOSITE ways, and each direction is the safe one for its own
+        // question). `Claimed` is empty: this walk has no marking of its own to
+        // anticipate — the chain members it would name are already seeded into
+        // `OnRail` before the walk starts.
+        SmallPtrSet<const Value *, 1> NoClaim;
+        OnThisRail = railValueConsumerDisposition(BO, V, taint, NoClaim) ==
+                     RailValueUse::InPlace;
       }
       if (!OnThisRail)
         continue;
@@ -1830,6 +1945,19 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // count covers BOTH gate kinds — value self-updates (dtzb add/xor) AND rotations
   // (cq_phi/rz, the SHARED pre-dtzb gap) — so the same guard closes both. Loud
   // decline (claimed), never a silent serialized collapse (Prime Directive).
+  //
+  // COUNTED VIA `railValueConsumerDisposition` (bd 8h7d.5 Rule-13 round 4, OD-A)
+  // — the ONE spelling of "will this BO be lowered in place", shared with round 2
+  // and with `collectRailGates`. `Claimed` is `railRoot`, and HERE the question
+  // is a NO-OP by construction: the (a)/(b) fixpoint above has already absorbed
+  // every in-place BO consumer of a rail value into `railRoot`, so every op this
+  // guard could count is `InPlace`. It is threaded through anyway so the two
+  // rounds cannot drift apart on the predicate again (Rule 14) — and pinned by
+  // `control_swap_inloop_range_cond.ll`'s round-1 twin `@range_cond_no_control`,
+  // which must keep declining.
+  SmallPtrSet<const Value *, 32> Round1Claimed;
+  for (auto &KV : railRoot)
+    Round1Claimed.insert(KV.first);
   for (auto &KV : railRoot) {
     SmallVector<Instruction *, 2> InPlaceUsers;
     for (User *U : KV.first->users()) {
@@ -1837,8 +1965,9 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
         if (isInPlaceGateOnArg0(CI, KV.first, GateCalls, taint))
           InPlaceUsers.push_back(CI);
       } else if (auto *BO = dyn_cast<BinaryOperator>(U)) {
-        if (inPlaceValueRailOperand(BO, taint) == KV.first)
-          InPlaceUsers.push_back(BO);
+        if (railValueConsumerDisposition(BO, KV.first, taint, Round1Claimed) >
+            RailValueUse::OutOfPlace)
+          InPlaceUsers.push_back(BO);  // `Unproven` counts — see the enum's note.
       }
     }
     if (InPlaceUsers.size() > 1) {
@@ -2201,6 +2330,28 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   //     `isInPlaceGateOnArg0` / `inPlaceValueRailOperand` reject them by
   //     construction — a route puts the value on a work rail and brings it back,
   //     it does not mutate the lineage.
+  //
+  //     A `BinaryOperator` CONSUMER IS COUNTED ONLY IF IT WILL ACTUALLY BE
+  //     LOWERED IN PLACE (bd 8h7d.5 Rule-13 ROUND 4, finding OD-A) — the
+  //     `railValueConsumerDisposition` question, shared with round 1 and with
+  //     `collectRailGates` (Rule 14). Asking the dtzb SHAPE alone counted a
+  //     DERIVED-CONDITION temp: `clang -O1` canonicalizes the owner's own
+  //     `if (q > 5 && q < 20)` to `%t = add %q, -6; icmp ult %t, 14`, and `%t`
+  //     was tallied beside the arm's real `cq_phi` — a loud `kMsgRailFanout` on a
+  //     program whose hand-unrolled twin compiles. `%t` is inside the loop body
+  //     and is neither a chain member nor marked, so M-C's G5 refuses it OUTRIGHT
+  //     and `lowerOps` mints it a fresh rail; it never touches the loop-carried
+  //     register and was never a second mutator.
+  //
+  //     THE ORDERING IS WHY `Claimed` EXISTS. This guard runs BEFORE step (3)
+  //     marks, so `taint.InPlaceRailOps` is still empty for this loop; passing
+  //     `RailMembers` (exactly what step (3) will mark) makes the answer
+  //     order-independent. A member is `InPlace`; an off-chain in-loop BO is
+  //     `OutOfPlace`; an off-chain STRAIGHT-LINE BO stays `Unproven` and is still
+  //     counted, because M-C genuinely does fire post-loop (probe r3h/b4) and
+  //     no one here can predict G6/G7. Prime Directive: only the case with a
+  //     PROOF is dropped.
+  SmallPtrSet<const Value *, 32> Claimed(RailMembers.begin(), RailMembers.end());
   for (Value *V : RailMembers) {
     SmallVector<Instruction *, 2> InPlaceUsers;
     for (User *U : V->users()) {
@@ -2208,8 +2359,9 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
         if (isInPlaceGateOnArg0(CI, V, GateCalls, taint))
           InPlaceUsers.push_back(CI);
       } else if (auto *BO = dyn_cast<BinaryOperator>(U)) {
-        if (inPlaceValueRailOperand(BO, taint) == V)
-          InPlaceUsers.push_back(BO);
+        if (railValueConsumerDisposition(BO, V, taint, Claimed) >
+            RailValueUse::OutOfPlace)
+          InPlaceUsers.push_back(BO);  // `Unproven` counts — see the enum's note.
       }
     }
     if (InPlaceUsers.size() > 1) {
@@ -2436,8 +2588,17 @@ void markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
   if (taintedExit(L, taint))
     return;  // Q1 quantum-bounded — never markable.
   BasicBlock *Header = L->getHeader();
+  // `AsLowered` — the FACT-time peel (see `peelInPlaceStep`). Everything this
+  // lambda is asked is asked AFTER `collapseRailPhisIn` step (3) has marked every
+  // chain member `InPlaceRailOps`, and BOTH of its jobs need the fact rather than
+  // the shape: it decides which values are iteration-local TEMPS (whose escape
+  // must be checked) and which are THE REGISTER (exempt, because `cq_measure`
+  // owns it). A `%t = add %q, -6` derived-condition temp is a temp; peeling it by
+  // shape called it the register, silently exempting it AND leaving `AnyLocal`
+  // false so the body was never marked at all.
   auto onRail = [&](Value *V) {
-    return Roots.count(peelInPlaceBase(V, GateCalls, taint)) != 0;
+    return Roots.count(peelInPlaceBase(V, GateCalls, taint,
+                                       /*AsLowered=*/true)) != 0;
   };
   bool AnyLocal = false;
   for (BasicBlock *BB : L->blocks()) {

@@ -392,6 +392,32 @@ them — but the number can no longer be silently zero. On the corpus it is what
 makes bd 261j(a)'s own effect visible: `slice_io` reads "1 rail mint(s) of which
 1 left allocated, 0 cqrt_free site(s)".
 
+    *** THE CENSUS COUNTS `cqrt_alloc_*` MINTS ONLY. A `cq_template_*` RESULT
+    *** IS A RAIL AND IS NOT COUNTED. ***
+
+Read that as a stated LIMIT, not a rounding error, because it is how a real
+defect got past this file (bd test_C_libtooling-8h7d.5, Rule-13 round 4, finding
+F-4). A rolled loop whose body put a basis-relabelling gate BEFORE its tainted
+region stopped discharging the region's derived-condition chain: `cq_template_
+and_i32_hl(%h, 3)` was minted every trip, never `_unc`-reversed, never freed, and
+the trailing `cqrt_ry` then fired over a live ENTANGLED record of its own
+register. This checker reported "0 violation(s), 0 unproven" on it — correctly,
+by its own obligation (nothing was freed dirty; there was no free at all) and
+blindly, by its census (the leaked rail has no `cqrt_alloc`, so `minted` did not
+count it and `leaked` could not report it). At 50 trips the program leaked 151
+rails and the summary still read "0/0".
+
+Nothing here is unsound as a result — a leak is Rule 6's fallback and this file's
+obligation is about FREES. But the leak census exists precisely so that "it never
+had to prove anything" cannot masquerade as coverage, and for template-minted
+rails it currently cannot say so. Widening `classify()`'s mint census to
+`cq_template_*` results (with its own mutant in free_pairing_check_test.py, since
+a census nobody has tried to fool is a census nobody should trust) is filed as bd
+test_C_libtooling-8h7d.6. UNTIL THEN, the instrument that DOES see this class is
+the rolled-equals-unrolled byte-diff — tools/loop_twin_matrix.py, ctest entry
+`e2e-loop-twin-matrix` — and the two are complementary in the same way this file
+and the golden trace are.
+
 The (A2) CO-WRITTEN-SLOT rule (bd 0gwl) was validated the same way, 2026-08-07,
 and here the population is small enough to be EXHAUSTIVE rather than sampled —
 so unlike the Case-B figure above, this one has no cap to state. Instrumenting

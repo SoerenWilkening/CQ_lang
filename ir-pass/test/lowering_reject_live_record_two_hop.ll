@@ -20,11 +20,15 @@
 ; INCREMENTAL WHICH-PATH INFORMATION beyond what the measurement already
 ; extracted. (The WIRE is only partly collapsed — `shl i32 %q, 1` is 2-to-1, so
 ; one bit of `%q` survives — but that residual coherence lives in `%q`, not in
-; `%d`.) So this decline, like lowering_reject_live_record_dead_compare_flag.ll's,
-; is a KNOWN, DELIBERATE OVER-DECLINE whose named customer is M-B (interior-rail
-; uncompute, bd 6uqc option (b)). The guard's predicate is local and structural on
-; purpose; bijection-collapse is a whole-stream property it cannot see. Do not
-; cite this file as a caught miscompile — cite it as the transitivity pin.
+; `%d`.) So this decline is a KNOWN, DELIBERATE OVER-DECLINE whose named customer
+; is M-B (interior-rail uncompute, bd 6uqc option (b)). The guard's predicate is
+; local and structural on purpose; bijection-collapse is a whole-stream property it
+; cannot see. Do not cite this file as a caught miscompile — cite it as the
+; transitivity pin. Its former companion in this paragraph,
+; lowering_reject_live_record_dead_compare_flag.ll, has since had that customer
+; ARRIVE and ships as lowering_live_record_dead_compare_flag_discharged.ll (bd
+; 8h7d.5 Rule-13 round 4). This one has not: `%d` is a `mul` rail two hops up whose
+; own component the interior partition still leaves borrowed.
 ;
 ; CONTRAST — lowering_reject_live_record_derived_cond_theta.ll IS physically
 ; load-bearing: there a ONE-BIT compare is measured while FULL-PRECISION f64

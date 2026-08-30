@@ -3973,6 +3973,90 @@ add_test(NAME e2e-grover-loop-two-regs-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_two_regs.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_two_regs_unrolled.expected.log")
 
+# bd test_C_libtooling-8h7d.5, Rule-13 ROUND 4 — TWO CELLS THE SHIPPED SLICES DID
+# NOT COVER, and the reason the whole matrix is now a gate of its own
+# (e2e-loop-twin-matrix). Every loop slice above puts the tainted region FIRST in
+# the body; that is one cell, and both findings hide in the others.
+#
+#   * LEADING GATE (finding F-4): one `cq_theta` moved to the FRONT of the body
+#     and the uncompute spine stopped discharging the oracle's ancilla chain. The
+#     rolled trace was SHORTER than the twin's by the two discharge lines per
+#     trip, with `opt` exit 0, strict stage 2b clean and NOT ONE WARNING — the
+#     leaked rail is TEMPLATE-minted, which stage 2b does not count.
+#   * RANGE ORACLE (finding OD-A): `if (a > 5 && a < 20)` in the body DECLINED
+#     `kMsgRailFanout` while its hand-unrolled twin compiled — `clang -O1`'s
+#     `add %a, -6; icmp ult %t, 14` canonicalization made a derived-condition temp
+#     wear the in-place rail shape.
+add_test(NAME e2e-slice-control-grover-loop-leading-gate
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_leading_gate.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_leading_gate.expected.log")
+
+add_test(NAME e2e-slice-control-grover-loop-leading-gate-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_leading_gate_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_leading_gate_unrolled.expected.log")
+
+add_test(NAME e2e-grover-loop-leading-gate-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_leading_gate.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_leading_gate_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-grover-loop-range-oracle
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_range_oracle.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_range_oracle.expected.log")
+
+add_test(NAME e2e-slice-control-grover-loop-range-oracle-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_range_oracle_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_range_oracle_unrolled.expected.log")
+
+add_test(NAME e2e-grover-loop-range-oracle-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_range_oracle.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_grover_loop_range_oracle_unrolled.expected.log")
+
+# bd test_C_libtooling-8h7d.5, Rule-13 ROUND 4 — THE ROLLED-EQUALS-UNROLLED
+# MATRIX. Phase 7.3 Increment 3's whole claim is "the rolled loop emits the same
+# gate stream its hand-unrolled twin does", and until this entry existed it was
+# witnessed by the four hand-picked slice pairs above — every one of which puts
+# the tainted region FIRST in the body. That is ONE CELL, and it is the cell the
+# round-4 finding is invisible in: with a `cq_theta` moved to the FRONT of the
+# body the uncompute spine leaked the oracle's ancilla chain once per trip, with
+# `opt` exit 0, `opt -verify` clean, STRICT stage 2b clean (the leaked rails are
+# TEMPLATE-minted, which the checker does not count) and, in five of the eleven
+# affected cells, no diagnostic at all.
+#
+# 100 cells = prefix x region x suffix over one loop body, each compiled AND RUN
+# on both sides and byte-diffed. Verdicts are pinned in the committed table
+# tools/loop_twin_matrix.expected.txt, so a cell that CHANGES DISPOSITION is a red
+# rather than a silent drift (Rule 12) — regenerate deliberately, never by reflex.
+#
+# COST, MEASURED 2026-08-30 on a quiet box: 88s wall / 219s CPU at --jobs 6 (200
+# compile+link+run pairs). It is the second-longest entry after ir-pass-lit, so
+# it is registered EARLY enough for ctest's scheduler to overlap it with the slice
+# layer. It uses `cq-opt` and the bd dgn5 link wrapper for the same reasons the
+# slices do; without them it is ~2x slower and still correct.
+add_test(NAME e2e-loop-twin-matrix
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/loop_twin_matrix.py"
+    --clang "${_E2E_CLANG}" --opt "${_E2E_OPT}" --plugin "$<TARGET_FILE:CQPass>"
+    --include "${CMAKE_SOURCE_DIR}/include"
+    --runtime "$<TARGET_FILE:cq_runtime>" --templates "$<TARGET_FILE:cq_templates>"
+    --jobs 6)
+
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
 # missing) `python3` on PATH. Applied to every test registered in this directory

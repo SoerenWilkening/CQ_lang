@@ -548,4 +548,19 @@ bool provablyBeforePerActivation(const Instruction *A, const Instruction *B,
   return !reachesWithoutBarrier(B, A, Barriers);
 }
 
+bool everyPathReExecutes(const Instruction *From, const Instruction *To,
+                         const Instruction *Barrier) {
+  SmallPtrSet<const Instruction *, 2> Barriers;
+  Barriers.insert(Barrier);
+  return !reachesWithoutBarrier(From, To, Barriers);
+}
+
+bool intervalAlternates(const Instruction *Open, const Instruction *Close) {
+  // The SAME walk `provablyBeforePerActivation` uses, with both endpoints set to
+  // `Close` — asked here rather than re-spelt (Rule 14). `reachesWithoutBarrier`
+  // starts at `std::next(Close)`, so this is a genuine "can `Close` come round
+  // again" question and not a degenerate self-match.
+  return everyPathReExecutes(Close, Close, Open);
+}
+
 }  // namespace cq

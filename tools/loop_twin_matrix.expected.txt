@@ -1,0 +1,129 @@
+# loop_twin_matrix.expected.txt — the committed disposition table for
+# tools/loop_twin_matrix.py (bd test_C_libtooling-8h7d.5, Rule-13 round 4).
+#
+# ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` then its verdict. The gate
+# fails on ANY deviation, in either direction: a cell that starts declining, a
+# cell that starts accepting, and a cell whose decline message changes owner are
+# all reds. That is the point — a disposition drift in the loop lowering must
+# never be something a reader has to notice.
+#
+# VERDICTS
+#   ACCEPT-IDENTICAL        both sides lower, both silent, traces byte-identical.
+#   ACCEPT-IDENTICAL-WARN   as above but both sides warn, with the same message.
+#   DECLINE-BOTH            both sides decline with the SAME diagnostic.
+#   DECLINE-BOTH-DIFFERENT  both decline, different diagnostics.
+#   ROLLED-ONLY / UNROLLED-ONLY
+#                           a DISPOSITION MISMATCH: one side lowers, the other
+#                           declines with the recorded message. Every such cell
+#                           needs a written reason — today's two are `clang -O1`
+#                           canonicalization artifacts of the UNROLLED spelling
+#                           (`a = a ^ 9;` twice in a row folds into the region and
+#                           produces a mixed phase/value arm that does not exist
+#                           in the rolled form), not a compiler asymmetry.
+#
+# TRACE-DIVERGENCE and WARN-ASYMMETRY are NEVER recorded here. They are hard
+# failures whatever this file says — a trace that differs from its twin's is the
+# defect this gate exists to catch, and no table entry may bless it.
+#
+# REGENERATE DELIBERATELY: `--regenerate`, then state in the commit message which
+# cells moved and why (Rule 12). Regeneration will not overwrite a hard failure.
+m_add_der_add            ACCEPT-IDENTICAL
+m_add_der_none           ACCEPT-IDENTICAL
+m_add_der_ry             ACCEPT-IDENTICAL
+m_add_der_rz             ACCEPT-IDENTICAL
+m_add_eq0_add            ACCEPT-IDENTICAL
+m_add_eq0_none           ACCEPT-IDENTICAL
+m_add_eq0_ry             ACCEPT-IDENTICAL
+m_add_eq0_rz             ACCEPT-IDENTICAL
+m_add_eq_add             ACCEPT-IDENTICAL
+m_add_eq_none            ACCEPT-IDENTICAL
+m_add_eq_ry              ACCEPT-IDENTICAL
+m_add_eq_rz              ACCEPT-IDENTICAL
+m_add_gt_add             ACCEPT-IDENTICAL
+m_add_gt_none            ACCEPT-IDENTICAL
+m_add_gt_ry              ACCEPT-IDENTICAL
+m_add_gt_rz              ACCEPT-IDENTICAL
+m_add_ifelse_add         ACCEPT-IDENTICAL
+m_add_ifelse_none        ACCEPT-IDENTICAL
+m_add_ifelse_ry          ACCEPT-IDENTICAL
+m_add_ifelse_rz          ACCEPT-IDENTICAL
+m_none_der_add           ACCEPT-IDENTICAL
+m_none_der_none          ACCEPT-IDENTICAL
+m_none_der_ry            ACCEPT-IDENTICAL
+m_none_der_rz            ACCEPT-IDENTICAL
+m_none_eq0_add           ACCEPT-IDENTICAL
+m_none_eq0_none          ACCEPT-IDENTICAL
+m_none_eq0_ry            ACCEPT-IDENTICAL
+m_none_eq0_rz            ACCEPT-IDENTICAL
+m_none_eq_add            ACCEPT-IDENTICAL
+m_none_eq_none           ACCEPT-IDENTICAL
+m_none_eq_ry             ACCEPT-IDENTICAL
+m_none_eq_rz             ACCEPT-IDENTICAL
+m_none_gt_add            ACCEPT-IDENTICAL
+m_none_gt_none           ACCEPT-IDENTICAL
+m_none_gt_ry             ACCEPT-IDENTICAL
+m_none_gt_rz             ACCEPT-IDENTICAL
+m_none_ifelse_add        ACCEPT-IDENTICAL
+m_none_ifelse_none       ACCEPT-IDENTICAL
+m_none_ifelse_ry         ACCEPT-IDENTICAL
+m_none_ifelse_rz         ACCEPT-IDENTICAL
+m_ry_der_add             ACCEPT-IDENTICAL
+m_ry_der_none            ACCEPT-IDENTICAL
+m_ry_der_ry              ACCEPT-IDENTICAL
+m_ry_der_rz              ACCEPT-IDENTICAL
+m_ry_eq0_add             ACCEPT-IDENTICAL
+m_ry_eq0_none            ACCEPT-IDENTICAL
+m_ry_eq0_ry              ACCEPT-IDENTICAL
+m_ry_eq0_rz              ACCEPT-IDENTICAL
+m_ry_eq_add              ACCEPT-IDENTICAL
+m_ry_eq_none             ACCEPT-IDENTICAL
+m_ry_eq_ry               ACCEPT-IDENTICAL
+m_ry_eq_rz               ACCEPT-IDENTICAL
+m_ry_gt_add              ACCEPT-IDENTICAL
+m_ry_gt_none             ACCEPT-IDENTICAL
+m_ry_gt_ry               ACCEPT-IDENTICAL
+m_ry_gt_rz               ACCEPT-IDENTICAL
+m_ry_ifelse_add          ACCEPT-IDENTICAL
+m_ry_ifelse_none         ACCEPT-IDENTICAL
+m_ry_ifelse_ry           ACCEPT-IDENTICAL
+m_ry_ifelse_rz           ACCEPT-IDENTICAL
+m_rz_der_add             ACCEPT-IDENTICAL
+m_rz_der_none            ACCEPT-IDENTICAL
+m_rz_der_ry              ACCEPT-IDENTICAL
+m_rz_der_rz              ACCEPT-IDENTICAL
+m_rz_eq0_add             ACCEPT-IDENTICAL
+m_rz_eq0_none            ACCEPT-IDENTICAL
+m_rz_eq0_ry              ACCEPT-IDENTICAL
+m_rz_eq0_rz              ACCEPT-IDENTICAL
+m_rz_eq_add              ACCEPT-IDENTICAL
+m_rz_eq_none             ACCEPT-IDENTICAL
+m_rz_eq_ry               ACCEPT-IDENTICAL
+m_rz_eq_rz               ACCEPT-IDENTICAL
+m_rz_gt_add              ACCEPT-IDENTICAL
+m_rz_gt_none             ACCEPT-IDENTICAL
+m_rz_gt_ry               ACCEPT-IDENTICAL
+m_rz_gt_rz               ACCEPT-IDENTICAL
+m_rz_ifelse_add          ACCEPT-IDENTICAL
+m_rz_ifelse_none         ACCEPT-IDENTICAL
+m_rz_ifelse_ry           ACCEPT-IDENTICAL
+m_rz_ifelse_rz           ACCEPT-IDENTICAL
+m_xor_der_add            ACCEPT-IDENTICAL
+m_xor_der_none           ROLLED-ONLY	cq controlled lowering: mixed phase/value arm under quantum control
+m_xor_der_ry             ACCEPT-IDENTICAL
+m_xor_der_rz             ACCEPT-IDENTICAL
+m_xor_eq0_add            DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_eq0_none           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow under quantum control	cq controlled lowering: arm rewrites a condition operand under quantum control
+m_xor_eq0_ry             DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_eq0_rz             DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_eq_add             DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_eq_none            DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow under quantum control	cq controlled lowering: arm rewrites a condition operand under quantum control
+m_xor_eq_ry              DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_eq_rz              DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_gt_add             ACCEPT-IDENTICAL
+m_xor_gt_none            ROLLED-ONLY	cq controlled lowering: mixed phase/value arm under quantum control
+m_xor_gt_ry              ACCEPT-IDENTICAL
+m_xor_gt_rz              ACCEPT-IDENTICAL
+m_xor_ifelse_add         DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_ifelse_none        DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_ifelse_ry          DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_ifelse_rz          DECLINE-BOTH	cq controlled lowering: control flow under quantum control

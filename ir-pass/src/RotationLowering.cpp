@@ -339,9 +339,14 @@ namespace {
 //       a Phase-6 `__cq_q_*` clone call — the F1 severance)
 //   * lowering_reject_live_record_unreachable_use.ll      (the post-gate data use
 //       is in an unreachable block — the F3 vacuous exemption)
-//   * lowering_reject_live_record_dead_compare_flag.ll    (per-RECORD exemption:
-//       a live measured zext does not rescue its dead i1 sibling — a deliberate
-//       over-decline, the M-B customer; see the fixture's physics paragraph)
+//   * (RE-DISPOSED — bd 8h7d.5 Rule-13 round 4) the per-RECORD exemption used to
+//       be pinned here by lowering_reject_live_record_dead_compare_flag.ll, "a
+//       live measured zext does not rescue its dead i1 sibling". That decline
+//       named M-B as its customer and M-B has now arrived: the dead compare rail
+//       is discharged before the gate, so the guard has nothing to report and the
+//       file ships as lowering_live_record_dead_compare_flag_discharged.ll. NOT
+//       ONE CLAUSE HERE MOVED. The per-record lesson keeps its pins in
+//       lowering_reject_live_record_two_hop.ll and the anc_dead_sibling pair.
 //   * lowering_reject_live_record_qram_borrowed_index_xor.ll (a KNOWN, DELIBERATE
 //       over-decline: the dephasing at the gate provably cancels in that module)
 // Increment 3 — the ANCESTOR half and the copy-destination class:

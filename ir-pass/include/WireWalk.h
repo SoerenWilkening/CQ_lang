@@ -152,6 +152,55 @@ bool provablyBeforePerActivation(const llvm::Instruction *A,
                                  const llvm::Instruction *Barrier,
                                  const llvm::DominatorTree &DT);
 
+// "Does EVERY CFG path from `From` to `To` execute `Barrier` before it arrives?"
+// The RAW barrier walk `provablyBeforePerActivation` is built on, exported since
+// bd test_C_libtooling-8h7d.5 Rule-13 round 4 so a caller reasoning about a
+// per-activation WINDOW can ask for the barrier certificate ALONE, without the
+// dominance conjunct that helper bundles with it (`Uncomputation.cpp`'s window
+// lemma states why the window obligation does not need one, and shows the
+// dominance-bundled spellings are a strict subset).
+//
+// `false` is the useful answer for a proof — "no such path exists" — so read it
+// as a certificate, and read `true` as "unproven, take the conservative branch".
+//
+// TWO WAYS TO GET A VACUOUS `false`, both of which have already cost this project
+// a round: (1) `Barrier == To` — the walk tests barrier membership BEFORE the
+// endpoint, so it cuts at the very instruction it is trying to reach and can
+// never succeed (finding P1); (2) `From`'s own block is entered mid-way, so a
+// `Barrier` textually BEFORE `From` in that block does not cut the tail scan but
+// DOES cut a back-edge re-entry from the top — which is the intended semantics,
+// but only if the caller means "re-executes". Every caller must state which
+// instruction it is claiming re-establishes its premise, and must not pass one
+// that trivially coincides with an endpoint.
+bool everyPathReExecutes(const llvm::Instruction *From,
+                         const llvm::Instruction *To,
+                         const llvm::Instruction *Barrier);
+
+// THE PREMISE THE `Close`-BARRIERED LEGS REST ON (bd test_C_libtooling-8h7d.5,
+// Rule-13 round 4, finding F-4). "Do the two endpoints of the interval
+// [`Open`, `Close`] ALTERNATE?" — i.e. is every execution of `Close` separated
+// from the previous one by an execution of `Open`?
+//
+// `Open` DOMINATING `Close` (which every caller proves separately) gives only
+// "some `Open` precedes every `Close`". It does NOT rule out a CFG cycle through
+// `Close` that misses `Open` — `entry → Open → H → Close → H` satisfies both
+// dominance and post-dominance and repeats `Close` freely — so the missing half
+// is exactly this walk: `Close` cannot get back to `Close` without re-executing
+// `Open`. In an acyclic region `Close` cannot reach itself at all and this is
+// trivially true, so it is byte-inert outside a loop.
+//
+// WHY IT IS NOT NEEDED BY EVERY LEG, WHICH IS THE POINT OF STATING IT SEPARATELY.
+// Fix an execution of `Close` at `T_Close` and let `T_Open` be the LAST `Open`
+// before it; the window under discussion is `W = (T_Open, T_Close)`. A leg whose
+// BARRIER is `Open` refutes a hypothetical event in `W` by producing an `Open`
+// inside `W`, contradicting the maximality of `T_Open` — self-contained. A leg
+// whose barrier is `Close` produces a second `Close` inside `W` instead, and that
+// is a contradiction ONLY under alternation (two `Close`s force an `Open`
+// between them, again inside `W`). So barriers are NOT interchangeable, and only
+// the `Close`-barriered legs must be gated on this predicate.
+bool intervalAlternates(const llvm::Instruction *Open,
+                        const llvm::Instruction *Close);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_WIRE_WALK_H_

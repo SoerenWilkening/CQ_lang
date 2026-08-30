@@ -586,6 +586,102 @@ cross-talk over all 1290 fixtures: reverting the record loop to `Members` fails
 exactly the five F-3 reds; widening `MemberSet` to the rail fails exactly the
 frozen-gate-first fixture.
 
+### §2.11b Round 4 — the WINDOW LEMMA (F-4) and ONE spelling of "in place" (OD-A)
+
+**F-4 — the rolled loop leaked its oracle's ancilla chain whenever a
+basis-relabelling gate stood BEFORE the region.** Every loop slice shipped through
+round 3 puts the tainted region FIRST in the body. Move one `cq_theta` to the
+front:
+
+```c
+for (int i = 0; i < 2; ++i) {
+    a = cq_theta(a, 0.25);                     /* the LEADING gate */
+    if ((a & 3) == 1) { a = cq_phi(a, M_PI); } /* a derived condition */
+    a = cq_theta(a, -0.5);
+}
+```
+
+and `Uncomputation`'s borrowed-parent scan abandoned the whole component:
+`cq_template_and_i32_hl(%h, 3)` was minted every trip, never `_unc`-reversed,
+never freed, and the trailing `cqrt_ry` fired over a live **entangled** record of
+its own register (Rule 8). `opt` exit 0, `opt -verify` clean, STRICT stage 2b
+"0 violation(s)" — the leaked rail is TEMPLATE-minted, which
+`free_pairing_check.py`'s leak census does not count (bd
+`test_C_libtooling-8h7d.6`) — and, with a leading Ry rather than an Rz, **no
+diagnostic at all**. Measured over a 100-cell prefix × region × suffix matrix:
+**11 cells whose rolled trace differed from its hand-unrolled twin's, 5 of them
+silent**; and at 50 trips one probe minted 251 rails and freed 100 while the
+checker printed `0/0`.
+
+**Root cause: the legs were asking a dominance question the proof never needed.**
+Rounds 1–3 spelt "the mutation `M` is outside the discharge window" as
+`provablyBeforePerActivation`, which is `DT.dominates(A,B) AND (plain
+unreachability OR a barrier walk)`. That helper answers "did A run before B on
+this activation", and its dominance conjunct is load-bearing *there*. The window
+obligation is different and weaker:
+
+> Fix a discharge at `T_At`; let `T_First` be the LAST execution of the first
+> recovered gate before it. **(†) no execution of `M` lies strictly inside
+> `W = (T_First, T_At)`.**
+
+and it is discharged by a single barrier walk, `everyPathReExecutes(M, At,
+First)` — "every path `M`⇝`At` re-executes `First`": an `M ∈ W` would put a
+`First` in `W`, contradicting the maximality of `T_First`. **No dominance.** The
+two other sound certificates (`First`-barriered forward, and the `At`-barriered
+one the reviewer measured as the fix) both *imply* this one given `First`
+dominates `At` — proofs in the source at the scan — and neither is shipped as a
+separate leg, except that the `First`-barriered one is retained to cover the
+`First == At` degeneracy where the walk would be vacuous (the round-1 P1 trap
+again). Two shapes the dominance conjunct was refusing: the **rolled leading
+gate** above, and **`M == At`**, which is reachable (`At` is the `getNextNode()`
+of a consumer of an owned rail, and that can be a `cqrt_ry` on the parent) and for
+which `DT.dominates(I, I)` is FALSE by LLVM's definition.
+
+**OD-A — one spelling of "will this `BinaryOperator` be lowered IN PLACE?"** The
+owner's own `if (q > 5 && q < 20)` inside a loop declined `kMsgRailFanout` while
+its hand-unrolled twin compiled: `clang -O1` canonicalizes the range test to
+`%t = add %q, -6; icmp ult %t, 14`, so a derived-condition temp wears the dtzb
+in-place SHAPE. Three call sites read that shape as a fact, and the same
+canonicalization also took the whole `switch (q) { case 1: case 2: }` family
+(probe `c14_switch`). `railValueConsumerDisposition` now separates SHAPE from
+DISPOSITION and returns a tri-state — `InPlace` (a chain member, or already
+`taint.InPlaceRailOps`), `OutOfPlace` (inside a loop or a `blockCanRepeat` block
+and unclaimed, so M-C's **G5** refuses it outright), `Unproven` (straight-line and
+unclaimed, where M-C legitimately does fire). Each caller states how it reads
+`Unproven`, and the two directions are opposite **on purpose**: the fan-out guards
+COUNT it (Rule 8, Prime Directive — only the case with a proof is dropped), while
+`collectRailGates`' forward extension follows only `InPlace` (its own G6/G7
+argument, §2.11a). `markIfRailLocal`'s `onRail` was the third head: it peeled by
+shape too, so the range temp counted as "the register", `AnyLocal` stayed false,
+the body was never certified ITERATION-LOCAL and the spine's acyclic backstop
+leaked the chain — `peelInPlaceStep` grew an `AsLowered` parameter for the
+fact-time reading.
+
+**One decline changed OWNER, not verdict.** `for (…) { if (q>5) q=cq_phi(q,b);
+q=q+7; other=q_pre+9; }` used to decline `kMsgRailFanout` on the claim that "both
+lower to in-place `cqrt_addc`" — measurably false; the off-chain add is
+`OutOfPlace`. Its real hazard is that `other` reads the pre-`addc` register AFTER
+the `addc`, and it now declines `kMsgRailRecordStale`, which names it. Same class
+as round 3's r3f/m1 and r3p/t3 moves.
+
+**One fixture was RE-DISPOSED.** `lowering_reject_live_record_dead_compare_flag.ll`
+declined (later warned) on a dead compare rail standing at a chained Ry, and its
+own header named M-B interior-rail uncompute as the customer that would fix it.
+The `M == At` leg is that customer arriving: the rail is now `_unc`-reversed and
+freed *before* the gate, so the M-A guard has nothing to report and **not one
+clause of it moved**. It ships as
+`lowering_live_record_dead_compare_flag_discharged.ll`, the same re-disposition
+`lowering_live_record_derived_cond_theta_discharged.ll` had in M-B Increment 5b.
+
+**The witness is now a MATRIX, not four hand-picked slices** —
+`tools/loop_twin_matrix.py` + the committed disposition table
+`tools/loop_twin_matrix.expected.txt`, ctest entry `e2e-loop-twin-matrix`. 100
+cells, each compiled AND RUN on both sides and byte-diffed, failing loudly on a
+disposition mismatch, a trace divergence, or a warning the twin does not have. It
+is mutant-validated: restoring the round-3 spelling makes it report 11
+TRACE-DIVERGENCE cells with their first differing line and per-side
+`_unc`/`cqrt_free`/mint counts. **88s wall / 219s CPU at `--jobs 6`.**
+
 ### 2.9 The iteration-2 staleness guard is already correct — keep it (L4 boundary)
 `declineStaleRecordOps` (`OpcodeLowering.cpp:117-198`, position-aware proof
 `WireWalk.cpp:138-141`) already fires correctly on a real loop hazard: a pure

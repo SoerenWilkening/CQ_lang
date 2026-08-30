@@ -984,14 +984,20 @@ cmake -S . -B build -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm -DCMAKE_B
 
 # Build everything (the cq-lowering plugin + runtime archives + test exes)
 cmake --build build -j8
-cmake --build build --target CQPass        # just the pass → build/ir-pass/libCQPass.so
+# NEVER `--target CQPass` ALONE. `%cq-opt` (build/ir-pass/cq-opt) is a SEPARATE
+# TARGET built from the SAME sources, and every lit RUN line goes through it — so
+# a CQPass-only rebuild leaves lit on a STALE binary and reports FALSE GREEN.
+# MEASURED THIS INCREMENT (bd 8h7d.5): 100% pass on a knowingly broken pass, then
+# 49 reds the moment cq-opt was built. Two fix agents and one reviewer hit it.
+cmake --build build -j8                    # the safe default: builds both
+cmake --build build --target CQPass cq-opt # if you must name targets, name BOTH
 
 # Full suite. NOT the inner loop — see Rule 19: run the layer that can WITNESS
 # your change (one fixture 1.5s, one slice 1.7s), and keep the full run for the
 # five gate moments (Rule-13 core commit · pre-push · harness change · template
 # regen · accept/decline predicate change).
 #
-# 285 ctest entries (2026-08-30: +3 for the bd 8h7d.5 Rule-13 round-1 two-register group — 2 slices + 1 `cmp` twin gate; 2026-08-29: +18 for the bd 8h7d.5 in-loop-control group — 7 rolled/unrolled/dynamic slices + 3 `cmp` twin gates, and the rest are the earlier libm/e2e growth; 2026-08-27: +2 for the bd hcrg sequential-region slices; the
+# 292 ctest entries (2026-08-30: +7 for the bd 8h7d.5 Rule-13 round-4 group — 4 slices, 2 `cmp` twin gates and `e2e-loop-twin-matrix`, the 100-cell rolled-vs-unrolled matrix that is the ONLY instrument in the tree that can see a leaked TEMPLATE-minted rail; +3 for the Rule-13 round-1 two-register group — 2 slices + 1 `cmp` twin gate; 2026-08-29: +18 for the bd 8h7d.5 in-loop-control group — 7 rolled/unrolled/dynamic slices + 3 `cmp` twin gates, and the rest are the earlier libm/e2e growth; 2026-08-27: +2 for the bd hcrg sequential-region slices; the
 # figures below were taken at 252/253 and their RATIOS still hold). RUN IT PARALLEL
 # — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
@@ -1028,9 +1034,9 @@ cmake --build build --target CQPass        # just the pass → build/ir-pass/lib
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1290 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-30, `ls ir-pass/test/*.ll | wc -l`). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1293 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-30, `ls ir-pass/test/*.ll | wc -l`). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 275 entries (264 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, the 3 spec/predmux entries and the 4 bd 8h7d.5 `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-30 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
+ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 282 entries (268 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, `e2e-loop-twin-matrix`, the 3 spec/predmux entries and the 6 bd 8h7d.5 `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-30 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
 
 # One fixture (lit --filter matches the test display name)
@@ -1081,7 +1087,7 @@ on any pipeline other than `cq-lowering` rather than silently no-op'ing. It is
 **one process per invocation** — not a compile server — so lit's isolation,
 per-fixture diagnostics and `not` exit-code inversion are unchanged.
 Equivalence is **gated, not assumed** (`tools/cq_opt_equivalence.py`): stdout,
-stderr **and** exit code, 0 mismatches over all 1290 fixtures (re-measured
+stderr **and** exit code, 0 mismatches over all 1293 fixtures (re-measured
 2026-08-30). The routine ctest
 entry samples (`--stride 8`, ~13s) because the full sweep costs ~658s of CPU —
 *more than the swap saves*; run the full one after any change to the pass's
