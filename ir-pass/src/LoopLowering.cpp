@@ -715,13 +715,37 @@ void collectRailGates(ArrayRef<Value *> Members,
       } else if (auto *CI = dyn_cast<CallInst>(I)) {
         OnThisRail = isInPlaceGateOnArg0(CI, V, GateCalls, taint);
       } else if (auto *BO = dyn_cast<BinaryOperator>(I)) {
-        // `InPlace` ONLY — the `Unproven` straight-line cell is deliberately NOT
-        // followed here (see the second edge kind above and OD-A's note on
-        // `railValueConsumerDisposition`: this caller and the fan-out guard read
-        // that cell OPPOSITE ways, and each direction is the safe one for its own
-        // question). `Claimed` is empty: this walk has no marking of its own to
+        // `InPlace` ONLY. THE MECHANICS FIRST, BECAUSE THE OLD WORDING HERE READ
+        // AS A LIVE CHOICE AND IS NOT ONE (bd 8h7d.5, Rule-13 round-5 cleanup).
+        // `Claimed` is EMPTY at this site, and with an empty claim set
+        // `railValueConsumerDisposition(...) == InPlace` reduces IDENTICALLY —
+        // not conservatively, not approximately — to the predicate this line
+        // spelled by hand before OD-A:
+        //     `inPlaceValueRailOperand(BO, taint) == V &&
+        //      taint.InPlaceRailOps.count(BO)`
+        // (read the enum: a shape mismatch is `NotThisRail`, and the only other
+        // route to `InPlace` is `Claimed.count(BO)`, which is vacuous here). So
+        // this is a Rule-14 respelling with ZERO behaviour change, and "the
+        // `Unproven` cell is deliberately not followed" was describing a cell
+        // that the old spelling did not reach either. The empty `Claimed` is
+        // correct on its own terms: this walk has no marking of its own to
         // anticipate — the chain members it would name are already seeded into
         // `OnRail` before the walk starts.
+        //
+        // NOW THE POLICY, WHOSE HAZARD DIRECTION IS THE OPPOSITE OF THE FAN-OUT
+        // GUARD'S — which is the part worth knowing and the part the old comment
+        // flattened into "each direction is the safe one for its own question".
+        // There, a missed `Unproven` mutator is a missed DECLINE, so that guard
+        // counts the cell. HERE the gate set feeds `staleReadOfValue`'s
+        // staleness fence, so a MISSING gate is an OVER-ACCEPT — the
+        // unforgivable direction (Prime Directive). `InPlace`-only is therefore
+        // load-bearing, and it rests on a proof rather than on symmetry: M-C's
+        // G6/G7 pair refuses any in-place reassignment site that has a later
+        // record read (round 3, bookkeeping 4), so an `Unproven` BO can never be
+        // the gate this fence would have needed. If G6/G7 is ever relaxed, the
+        // obligation is to re-derive THIS argument here — not to reflexively
+        // widen the cell to `>= Unproven`, which would be a real behaviour change
+        // with no measured customer.
         SmallPtrSet<const Value *, 1> NoClaim;
         OnThisRail = railValueConsumerDisposition(BO, V, taint, NoClaim) ==
                      RailValueUse::InPlace;
@@ -2641,6 +2665,18 @@ void markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
             return;
           if (!L->contains(OpI->getParent()) && !onRail(Op))
             return;  // an accumulating loop-invariant tainted input.
+                     // A SECOND FILE DEPENDS ON THIS CLAUSE, AND IT IS LOAD-
+                     // BEARING FOR A UNITARY, NOT A LEAK (bd 8h7d.5 round-5
+                     // cleanup). `Uncomputation.cpp`'s §4/§2.9 pair asks each
+                     // endpoint separately whether it repeats, never whether the
+                     // two repeat EQUALLY: a recovered gate in the PREHEADER
+                     // (does not repeat) with `At` in a body marked here (repeats
+                     // K times) would emit K adjoints against ONE forward gate.
+                     // Refusing to mark a body that reads an outside-`L` tainted
+                     // non-rail value is the ONLY reason that pairing cannot be
+                     // built today. Widening it — even "just" to admit a hoisted
+                     // loop-invariant temp — makes it reachable, and no shipped
+                     // test would go red. Re-derive the multiplicity there first.
         }
     }
   }

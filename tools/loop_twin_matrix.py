@@ -52,6 +52,22 @@ order from the same source stream, so a correct rolled lowering produces a trace
 that is byte-identical to its unrolled twin's, handle numbering included. That is
 a strong property and it is the point: it leaves no room for "equivalent but
 different".
+
+THE ONE WAY THAT PROPERTY CAN BREAK WITHOUT A COMPILER BUG, recorded before it
+bites someone (round-5 reviewer caveat, bd 8h7d.5). The two sides are the same
+source text but not the same PROGRAM SHAPE, and `clang -O1` optimizes the flat
+spelling harder: a body whose gates carry CONSTANT immediates can fold ACROSS the
+repetition on the unrolled side only — `a = a * 3;` twice in a row becomes
+`a * 9`, so the unrolled trace legitimately has one fewer gate. That is a
+`TRACE-DIVERGENCE` caused by the GENERATOR, not by the loop lowering.
+
+NO SHIPPED AXIS HAS ONE — every prefix/suffix immediate here is either the
+`volatile int off` or a rotation angle (angles are classical operands and never
+fold into each other), which is why all 120 cells are meaningful today. A FUTURE
+AXIS MAY. When one appears, the honest response is to make the immediate opaque
+(`volatile`, as `off` already is) so the two sides are shapes of the same
+computation again. NEVER bless a divergence in the expected table: this gate has
+exactly one job, and a table entry that says "this pair may differ" retires it.
 """
 
 import argparse
@@ -80,7 +96,14 @@ ROOT = os.path.dirname(HERE)
 #   REGION — how the condition is built. `eq`/`eq0`/`gt` are direct compares on
 #     the rail; `der` is a DERIVED condition (`sqrt(a+3.)`), which is the one that
 #     brings the uncompute spine in with four template rails; `ifelse` is the
-#     two-armed phase region.
+#     two-armed phase region. `range` is the TWO-SIDED test `a > 5 && a < 20`,
+#     added by the round-5 cleanup (bd 8h7d.5): `clang -O1` canonicalizes it to
+#     `%t = add %q, -6; icmp ult %t, 14`, so the condition temp wears the dtzb
+#     IN-PLACE SHAPE on the rail — which is the OD-A oracle, the exact shape
+#     round 4 fixed, and it was NOT among the shipped 100 cells. Measured at the
+#     time it was added: 11 of its 20 cells were DIVERGENT at round 3 and all 20
+#     are IDENTICAL at HEAD, so the axis is a live witness for OD-A and not
+#     decoration.
 #   SUFFIX — what stands on the rail AFTER the region, which is where the
 #     discharge point lands.
 PREFIX = {
@@ -96,6 +119,7 @@ REGION = {
     "der": "        if (sqrt(a + 3.) <= 3.5) { a = cq_phi(a, M_PI); }\n",
     "ifelse": "        if (a == 5) { a = cq_phi(a, M_PI); } else { a = cq_phi(a, 0.5); }\n",
     "gt": "        if (a > 5) { a = cq_phi(a, M_PI); }\n",
+    "range": "        if (a > 5 && a < 20) { a = cq_phi(a, M_PI); }\n",
 }
 SUFFIX = {
     "none": "",
@@ -203,7 +227,7 @@ def build_side(cfg, work, name, csrc):
     # Stage 2b — STRICT. A cell that needs `--allow-unproven` is not a cell this
     # gate can speak for, and saying so loudly is the point.
     #
-    # Called IN PROCESS, not as a subprocess: 200 python interpreter starts cost
+    # Called IN PROCESS, not as a subprocess: 240 python interpreter starts cost
     # ~70s of wall clock and the check itself ~0.02s. Safe here because cells run
     # in a PROCESS pool — `free_pairing_check` raises the interpreter's recursion
     # limit as a side effect, which is not something to do from several threads of
@@ -412,11 +436,18 @@ EXPECTED_HEADER = """\
 #   ROLLED-ONLY / UNROLLED-ONLY
 #                           a DISPOSITION MISMATCH: one side lowers, the other
 #                           declines with the recorded message. Every such cell
-#                           needs a written reason — today's two are `clang -O1`
-#                           canonicalization artifacts of the UNROLLED spelling
-#                           (`a = a ^ 9;` twice in a row folds into the region and
-#                           produces a mixed phase/value arm that does not exist
-#                           in the rolled form), not a compiler asymmetry.
+#                           needs a written reason — today's THREE are all the
+#                           same `clang -O1` canonicalization artifact of the
+#                           UNROLLED spelling, and all three are `xor`/`none`
+#                           (prefix `a = a ^ 9;`, no suffix): flattening puts one
+#                           repetition's `xor` immediately before the next one's
+#                           region, clang folds it in, and the arm becomes a mixed
+#                           phase/value arm that does not exist in the rolled
+#                           form. Not a compiler asymmetry — the two sides stopped
+#                           being the same program shape. `m_xor_range_none` was
+#                           added with the `range` axis (bd 8h7d.5 round-5
+#                           cleanup) and is the third member of that one family,
+#                           not a new phenomenon.
 #
 # TRACE-DIVERGENCE and WARN-ASYMMETRY are NEVER recorded here. They are hard
 # failures whatever this file says — a trace that differs from its twin's is the

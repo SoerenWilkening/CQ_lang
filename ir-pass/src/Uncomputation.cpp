@@ -890,6 +890,27 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
     if (canRepeat(G->getParent()) &&
         !taint.IterationLocalBlocks.count(G->getParent()))
       return false;
+    // THE MULTIPLICITY THIS CHECK DOES *NOT* CATCH, AND WHY IT IS CURRENTLY
+    // UNREACHABLE — a STRUCTURAL COINCIDENCE, not an invariant anyone stated
+    // (bd 8h7d.5, Rule-13 round-5 cleanup; tracked as its own issue). The test
+    // above and §2.9's twin below each ask ONE endpoint whether IT repeats. They
+    // do not ask whether the two endpoints repeat the SAME NUMBER OF TIMES. A
+    // recovered gate `G` in the loop PREHEADER passes here (a preheader does not
+    // repeat) while `At` sits in an ITERATION-LOCAL body and passes §2.9 (a
+    // marked body is the affirmative exception) — and the adjoint would then be
+    // emitted in-body and run K times against ONE forward execution of `G`: an
+    // over-reversed rail, i.e. a wrong unitary, not merely a leak.
+    //
+    // Nothing here refuses that pairing. It cannot arise today for a reason that
+    // lives in ANOTHER FILE: `markIfRailLocal` (`LoopLowering.cpp`) refuses to
+    // mark any body that reads a tainted value DEFINED OUTSIDE `L` and not on the
+    // rail — "an accumulating loop-invariant tainted input" — so a preheader-
+    // defined `G` feeding an in-body component means the body is never marked,
+    // `At`'s block is not iteration-local, and §2.9 leaks instead. WIDEN THAT
+    // MARKING AND THIS BECOMES REACHABLE with no test to catch it. If you are
+    // here because you relaxed it, the obligation is a real multiplicity test
+    // (same enclosing marked body, or equal trip multiplicity), not a re-reading
+    // of these two.
     if (!DT.dominates(G, At))
       return false;  // a gate on one arm of a diamond — Phase 4's job, not this one.
     // ...AND `At` MUST POST-DOMINATE THE GATE. Dominance alone says the gate ran
@@ -1004,11 +1025,37 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
     }
     if (!First)
       continue;  // borrowed but never read by an adjoint — nothing to prove.
-    // Proven ONCE per (`First`, `At`) pair and read by the two `At`-barriered
-    // legs below — see `WireWalk.h`'s `intervalAlternates` for the window
-    // argument, and for why the `First`-barriered legs do not need it. The
-    // dominance half it assumes (`First` dominates `At`) is proven for every
-    // recovered gate in §4 above, `First` included.
+    // `First != At`, AND IT IS §4 THAT PROVES IT — stated here because the leg
+    // that used to be justified by the opposite claim was deleted in this commit
+    // (bd 8h7d.5, Rule-13 round-5 cleanup). `First` is drawn from `D.Calls`, and
+    // §4 above ran `if (!DT.dominates(G, At)) return false;` over EVERY
+    // `G ∈ D.Calls`; LLVM's `dominates(I, I)` is FALSE by definition ("an
+    // instruction doesn't dominate a use in itself"), so a `First` equal to `At`
+    // was already rejected before this scan began. Measured, not only argued:
+    // instrumenting `First == At` over all 1293 fixtures gives 0 hits. The
+    // Release-mode `return false` is the conservative branch (leak, Rule 6) for
+    // the impossible case, so a future §4 widening degrades to a leak rather
+    // than to a vacuous certificate.
+    assert(First != At && "§4 dominance already rejects First == At");
+    if (First == At)
+      return false;
+    // Proven ONCE per (`First`, `At`) pair and read by `routeGroupFullyInside`'s
+    // `At`-barriered leg 1 below — see `WireWalk.h`'s `intervalAlternates` for
+    // the window argument, and for why the `First`-barriered legs (that leg's
+    // sibling, and (W2) here) do not need it. The dominance half it assumes
+    // (`First` dominates `At`) is proven for every recovered gate in §4 above,
+    // `First` included.
+    //
+    // RULE-12 GAP, RECORDED RATHER THAN PAPERED OVER (bd 8h7d.5 round-5
+    // cleanup). Mutating this call to a constant `true` leaves all 1293 fixtures
+    // GREEN. That is not evidence the premise is dead — it is evidence the suite
+    // exercises it only in its CONSERVATIVE direction (every shape that reaches
+    // `routeGroupFullyInside`'s leg 1 today already alternates, so forcing the
+    // premise true changes no verdict), and there is no discriminating fixture: a
+    // recorded route group inside a CFG cycle through `At` that misses `First`.
+    // Do NOT read the green suite as licence to drop the premise; the F-4 round
+    // showed the loop shapes that break it exist. A fixture that goes RED under
+    // the constant-`true` mutant is owed.
     const bool Alternates = intervalAlternates(First, At);
     for (User *U : P->users()) {
       auto *M = dyn_cast<CallInst>(U);
@@ -1070,15 +1117,27 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
       // Measured as well as proved: disabling (W1) and disabling (W3) each leave
       // all 1293 fixtures green, and the 234-program probe sweep unmoved.
       //
-      // (W1) IS NEVERTHELESS SHIPPED, FOR ONE REASON AND IT IS NOT NOSTALGIA.
-      // `everyPathReExecutes` tests barrier membership BEFORE the endpoint, so
-      // with `Barrier == To` it cuts at the very instruction it is trying to
-      // reach and hands back a certificate that proves nothing — the P1 vacuity
-      // trap of round 1, wearing a new hat. (W2) is the leg where that can happen
-      // (`First == At`), so it is guarded, and (W1) — whose barrier is its own
-      // start, and whose proof never mentions `At` — is the only certificate
-      // available in that degeneracy. Its redundancy proof above is conditioned
-      // on `First != At`; there it is exactly the shape it covers.
+      // NEITHER (W1) NOR (W3) IS SHIPPED. (W2) is the sole certificate, and the
+      // deletion of (W1) is itself a round-5 finding rather than a tidy-up
+      // (bd 8h7d.5). (W1) shipped for one stated reason: `everyPathReExecutes`
+      // tests barrier membership BEFORE the endpoint, so with `Barrier == To` it
+      // cuts at the very instruction it is trying to reach and hands back a
+      // certificate that proves nothing (the P1 vacuity trap of round 1), and
+      // (W2) was said to be the leg where that happens — at `First == At`, where
+      // (W1)'s own barrier is its start and its proof never mentions `At`.
+      //
+      // THAT JUSTIFICATION WAS FALSE, because `First == At` CANNOT HAPPEN: §4
+      // proves it (see the assert above), and it was measured at 0 hits over all
+      // 1293 fixtures. So (W1) was guarding a degeneracy that never arrives,
+      // while the one configuration in which it could still fire on its own
+      // (`M == First`, also measured at 0 hits) makes its certificate VACUOUS in
+      // exactly the P1 way it was supposed to avoid — `everyPathReExecutes(First,
+      // First, First)` is `Barrier == From == To`. A disjunct that can only
+      // return a vacuous `true` is not a weaker proof, it is a hole waiting for a
+      // widening to reach it. Removing a DISJUNCT can only ADD refusals (the safe
+      // direction, Rule 6): confirmed by 1293/1293 lit green, the 234-program
+      // sweep byte-identical, and the 120-cell rolled≡unrolled twin matrix
+      // unchanged.
       //
       // WHAT THIS REPLACES. Rounds 1–3 asked both legs through
       // `provablyBeforePerActivation`, which is `DT.dominates(A,B) AND
@@ -1104,14 +1163,24 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
       //     every one of them; (W2)'s walk cannot reach `At` from `At` in an
       //     acyclic region and admits it
       //     (lowering_live_record_dead_compare_flag_discharged.ll).
-      // STRICTLY MORE PERMISSIVE, PROVABLY: `!isPotentiallyReachable(M, At)`
-      // makes (W2) vacuously true and `!isPotentiallyReachable(First, M)` does
-      // the same for (W1), so every disjunct the old spelling could satisfy is
-      // still satisfied here. Nothing that discharged before can leak now.
-      if (First != At && everyPathReExecutes(M, At, First))
-        continue;  // (W2) — M runs only after the discharge (Inc 5b).
-      if (everyPathReExecutes(First, M, First))
-        continue;  // (W1) — the `First == At` degeneracy's only certificate.
+      // STRICTLY MORE PERMISSIVE, PROVABLY — AND STILL SO WITH (W1) DELETED,
+      // which is why the deletion cannot leak a shape that used to discharge:
+      //   * old RIGHT was `DT.dominates(At,M) AND (!isPotentiallyReachable(M,At)
+      //     OR (W2))`. `!isPotentiallyReachable(M, At)` makes (W2)'s walk
+      //     vacuously succeed, so old RIGHT ⊆ (W2).
+      //   * old LEFT was `DT.dominates(M,First) AND (!isPotentiallyReachable
+      //     (First,M) OR (W1))` — its barrier-walk half IS (W1) verbatim
+      //     (`WireWalk.cpp`'s `provablyBeforePerActivation` says so). (W1) ⇒ (W2)
+      //     by the theorem above. And `!isPotentiallyReachable(First, M)` ⇒ (W2)
+      //     directly: §4 gives `First` dominates `At`, so every entry⇝`At` walk
+      //     carries a `First`; none can lie in an entry⇝`M` prefix (that would be
+      //     `First` reaching `M`), so every `M`⇝`At` suffix carries one. So old
+      //     LEFT ⊆ (W2) too.
+      // Nothing that discharged before can leak now.
+      if (everyPathReExecutes(M, At, First))
+        continue;  // (W2) — M runs only after the discharge (Inc 5b). The SOLE
+                   // window certificate; the `First != At` conjunct that used to
+                   // guard it is proven above, not tested here.
       if (routeGroupFullyInside(M, P, First, At, DT, taint, Alternates))
         continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
                    // identity on P's basis LABEL over the interval (Inc 6,

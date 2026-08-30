@@ -15,11 +15,18 @@
 #   ROLLED-ONLY / UNROLLED-ONLY
 #                           a DISPOSITION MISMATCH: one side lowers, the other
 #                           declines with the recorded message. Every such cell
-#                           needs a written reason — today's two are `clang -O1`
-#                           canonicalization artifacts of the UNROLLED spelling
-#                           (`a = a ^ 9;` twice in a row folds into the region and
-#                           produces a mixed phase/value arm that does not exist
-#                           in the rolled form), not a compiler asymmetry.
+#                           needs a written reason — today's THREE are all the
+#                           same `clang -O1` canonicalization artifact of the
+#                           UNROLLED spelling, and all three are `xor`/`none`
+#                           (prefix `a = a ^ 9;`, no suffix): flattening puts one
+#                           repetition's `xor` immediately before the next one's
+#                           region, clang folds it in, and the arm becomes a mixed
+#                           phase/value arm that does not exist in the rolled
+#                           form. Not a compiler asymmetry — the two sides stopped
+#                           being the same program shape. `m_xor_range_none` was
+#                           added with the `range` axis (bd 8h7d.5 round-5
+#                           cleanup) and is the third member of that one family,
+#                           not a new phenomenon.
 #
 # TRACE-DIVERGENCE and WARN-ASYMMETRY are NEVER recorded here. They are hard
 # failures whatever this file says — a trace that differs from its twin's is the
@@ -47,6 +54,10 @@ m_add_ifelse_add         ACCEPT-IDENTICAL
 m_add_ifelse_none        ACCEPT-IDENTICAL
 m_add_ifelse_ry          ACCEPT-IDENTICAL
 m_add_ifelse_rz          ACCEPT-IDENTICAL
+m_add_range_add          ACCEPT-IDENTICAL
+m_add_range_none         ACCEPT-IDENTICAL
+m_add_range_ry           ACCEPT-IDENTICAL
+m_add_range_rz           ACCEPT-IDENTICAL
 m_none_der_add           ACCEPT-IDENTICAL
 m_none_der_none          ACCEPT-IDENTICAL
 m_none_der_ry            ACCEPT-IDENTICAL
@@ -67,6 +78,10 @@ m_none_ifelse_add        ACCEPT-IDENTICAL
 m_none_ifelse_none       ACCEPT-IDENTICAL
 m_none_ifelse_ry         ACCEPT-IDENTICAL
 m_none_ifelse_rz         ACCEPT-IDENTICAL
+m_none_range_add         ACCEPT-IDENTICAL
+m_none_range_none        ACCEPT-IDENTICAL
+m_none_range_ry          ACCEPT-IDENTICAL
+m_none_range_rz          ACCEPT-IDENTICAL
 m_ry_der_add             ACCEPT-IDENTICAL
 m_ry_der_none            ACCEPT-IDENTICAL
 m_ry_der_ry              ACCEPT-IDENTICAL
@@ -87,6 +102,10 @@ m_ry_ifelse_add          ACCEPT-IDENTICAL
 m_ry_ifelse_none         ACCEPT-IDENTICAL
 m_ry_ifelse_ry           ACCEPT-IDENTICAL
 m_ry_ifelse_rz           ACCEPT-IDENTICAL
+m_ry_range_add           ACCEPT-IDENTICAL
+m_ry_range_none          ACCEPT-IDENTICAL
+m_ry_range_ry            ACCEPT-IDENTICAL
+m_ry_range_rz            ACCEPT-IDENTICAL
 m_rz_der_add             ACCEPT-IDENTICAL
 m_rz_der_none            ACCEPT-IDENTICAL
 m_rz_der_ry              ACCEPT-IDENTICAL
@@ -107,6 +126,10 @@ m_rz_ifelse_add          ACCEPT-IDENTICAL
 m_rz_ifelse_none         ACCEPT-IDENTICAL
 m_rz_ifelse_ry           ACCEPT-IDENTICAL
 m_rz_ifelse_rz           ACCEPT-IDENTICAL
+m_rz_range_add           ACCEPT-IDENTICAL
+m_rz_range_none          ACCEPT-IDENTICAL
+m_rz_range_ry            ACCEPT-IDENTICAL
+m_rz_range_rz            ACCEPT-IDENTICAL
 m_xor_der_add            ACCEPT-IDENTICAL
 m_xor_der_none           ROLLED-ONLY	cq controlled lowering: mixed phase/value arm under quantum control
 m_xor_der_ry             ACCEPT-IDENTICAL
@@ -127,3 +150,7 @@ m_xor_ifelse_add         DECLINE-BOTH	cq controlled lowering: control flow under
 m_xor_ifelse_none        DECLINE-BOTH	cq controlled lowering: control flow under quantum control
 m_xor_ifelse_ry          DECLINE-BOTH	cq controlled lowering: control flow under quantum control
 m_xor_ifelse_rz          DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_xor_range_add          ACCEPT-IDENTICAL
+m_xor_range_none         ROLLED-ONLY	cq controlled lowering: mixed phase/value arm under quantum control
+m_xor_range_ry           ACCEPT-IDENTICAL
+m_xor_range_rz           ACCEPT-IDENTICAL

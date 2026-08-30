@@ -4040,16 +4040,26 @@ add_test(NAME e2e-grover-loop-range-oracle-twin-identical
 # TEMPLATE-minted, which the checker does not count) and, in five of the eleven
 # affected cells, no diagnostic at all.
 #
-# 100 cells = prefix x region x suffix over one loop body, each compiled AND RUN
+# 120 cells = prefix x region x suffix over one loop body, each compiled AND RUN
 # on both sides and byte-diffed. Verdicts are pinned in the committed table
 # tools/loop_twin_matrix.expected.txt, so a cell that CHANGES DISPOSITION is a red
 # rather than a silent drift (Rule 12) — regenerate deliberately, never by reflex.
 #
-# COST, MEASURED 2026-08-30 on a quiet box: 88s wall / 219s CPU at --jobs 6 (200
-# compile+link+run pairs). It is the second-longest entry after ir-pass-lit, so
-# it is registered EARLY enough for ctest's scheduler to overlap it with the slice
-# layer. It uses `cq-opt` and the bd dgn5 link wrapper for the same reasons the
-# slices do; without them it is ~2x slower and still correct.
+# The sixth REGION — `range`, `if (a > 5 && a < 20)` — was added by the round-5
+# cleanup (bd 8h7d.5). It is the OD-A oracle: `clang -O1` folds the two-sided test
+# to `%t = add %q, -6; icmp ult %t, 14`, so the condition temp wears the dtzb
+# in-place SHAPE on the rail. That is the shape round 4 FIXED, and it was not
+# among the 100 shipped cells — 11 of its 20 cells were divergent at round 3 and
+# all 20 are clean at HEAD. Its verdicts: 19 ACCEPT-IDENTICAL + `m_xor_range_none`
+# ROLLED-ONLY, which is the THIRD member of the pre-existing `xor`/`none`
+# unrolled-spelling artifact family (see the table's own header), not new.
+#
+# COST, RE-MEASURED 2026-08-30 on a quiet box at 120 cells: 112s wall / 279s CPU
+# at --jobs 6 (240 compile+link+run pairs); it was 88s/219s at 100. It is the
+# second-longest entry after ir-pass-lit, so it is registered EARLY enough for
+# ctest's scheduler to overlap it with the slice layer. It uses `cq-opt` and the
+# bd dgn5 link wrapper for the same reasons the slices do; without them it is ~2x
+# slower and still correct.
 add_test(NAME e2e-loop-twin-matrix
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/loop_twin_matrix.py"
     --clang "${_E2E_CLANG}" --opt "${_E2E_OPT}" --plugin "$<TARGET_FILE:CQPass>"
