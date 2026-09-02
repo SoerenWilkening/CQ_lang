@@ -44,19 +44,17 @@ m2:
 }
 
 ; The data-mux builds %out (preload + XOR-delta copies + N eq-flag strips), then the
-; onward controlled phase arm routes %out under a flag minted from icmp(%out, 8):
+; onward phase arm rotates %out IN PLACE under a flag minted from icmp(%out, 8).
+; The 4.5 switch data-mux above it KEEPS its own mechanics — drbq Inc 2a changed
+; only the FLAT `emitRegion` path, and the onward diamond is one of those.
 ; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[OUT:[a-zA-Z0-9_.]+]], i32 8)
-; CHECK:     %[[RAIL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[OUT]], i32 %[[RAIL]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[RAIL]], double 2.500000e-01)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[OUT]], i32 %[[RAIL]])
-; CHECK:     call void @cqrt_free(i32 %[[RAIL]])
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[OUT]], i32 8)
-; CHECK:     call void @cqrt_free(i32 %[[F2]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[OUT]], double 2.500000e-01)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[OUT]], i32 8)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
-; No surviving merge phi / tainted branch, the onward Rz is UNCONTROLLED (routed), and
+; No surviving merge phi / tainted branch, no swap route on the onward region, and
 ; the region ACCEPTS:
 ; CHECK-NOT: phi i32
-; CHECK-NOT: cqrt_rz{{.*}}_controlled
+; CHECK-NOT: cqrt_cswap
 ; ACC-NOT: under quantum control

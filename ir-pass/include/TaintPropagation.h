@@ -256,6 +256,15 @@ struct TaintSet {
   // so a stored base would be both stale and dangling by the time `uncompute`
   // asks. (Measured: the first draft of this stored it, and every group silently
   // failed to match, which read exactly like a missing recording.)
+  //
+  // ⚠ NO WRITER AT HEAD SINCE bd test_C_libtooling-drbq Inc 2a — THIS SET IS
+  // PERMANENTLY EMPTY. `SwapRouteEmit::emitRegion`'s phase path was its only
+  // writer, and the §6a peephole replaced that path's route with one
+  // `cqrt_rz_<W>_controlled`. The exemption the set existed to grant moved to
+  // `Uncomputation::preservesBorrowedParent` clause (1b), where it is a POINTWISE
+  // property of a diagonal gate rather than a group property of two swaps; read
+  // the note above `routeGroupFullyInside` before re-enabling a writer or
+  // deleting either end.
   llvm::SmallVector<llvm::SmallVector<const llvm::CallInst *, 4>, 4>
       RestoringRoutes;
 

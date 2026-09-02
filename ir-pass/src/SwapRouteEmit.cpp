@@ -28,7 +28,7 @@
 #include "ControlledSymbols.h"   // cswapFn / xFn
 #include "EmitInverse.h"         // emitInverseChain (the value-arm reverse-play)
 #include "NestedRouteEmit.h"     // lowerNestedRegion (the depth-2 nest dispatch)
-#include "OpcodeSupport.h"       // abiWidthFromType (value-arm rail width)
+#include "OpcodeSupport.h"       // abiWidthFromType · abiWidthHasControlledRotation
 #include "RegionFlatten.h"       // flattenRegion
 #include "SelectMergeEmit.h"     // emitSelectRegion (the 4.4 select merge)
 #include "SwitchRouteEmit.h"     // emitSwitchPhaseRegion (the 4.5 switch phase)
@@ -104,6 +104,11 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
     // the arm's copy depending on the flag), and a 3-of-4 remnant would still
     // satisfy the consumer's every-member-inside test. Clearing it makes the
     // group unmatchable, so the component leaks — the safe direction.
+    // (Since drbq Inc 2a this module records only `DischargedFlagGates`: the
+    // phase path emits no route, so `RestoringRoutes` has no writer anywhere and
+    // the loop below is a no-op over an empty container. Kept for the same reason
+    // the set is — three other emitters still call `emitRoute` and any of them
+    // could start recording; see `Uncomputation::routeGroupFullyInside`.)
     taint.DischargedFlagGates.erase(CI);
     for (auto &Gates : taint.RestoringRoutes)
       if (llvm::is_contained(Gates, CI))
@@ -783,17 +788,20 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
                                   R.Arm);
 
   // Per-arm ordered phase gates. A gate-free arm (`if (q) {}`, or an empty else)
-  // contributes Q unchanged, so routing it would be a no-op cswap pair — skip it
-  // (no rail, no route). `AllPhis` collects every gate to scrub + erase after the
-  // rewire.
+  // contributes Q unchanged, so there is nothing to control — skip it (no gate,
+  // no bracket). The pre-2a route skipped exactly the same arms for exactly the
+  // same reason (routing a gate-free arm is a no-op cswap pair), so this is not
+  // a behaviour change: an arm that contributed nothing then contributes nothing
+  // now.
+  //
+  // There is no `AllPhis` list any more: the gates are HOISTED, not re-minted and
+  // erased, so nothing is collected for a post-rewire erase pass (step 4).
   SmallVector<ArmStream, 2> Streams;
-  SmallVector<CallInst *, 8> AllPhis;
   for (const ArmInfo &A : Arms) {
     SmallVector<CallInst *, 4> Phis =
         collectArmPhis(MergePhi->getIncomingValueForBlock(A.BB), A.BB);
     if (Phis.empty())
       continue;
-    AllPhis.append(Phis.begin(), Phis.end());
     Streams.push_back({A.Negated, Phis});
   }
 
@@ -813,12 +821,20 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   // arms rotate the same-width routed handle, by classifyArms). The routed handle
   // MAY be a value DERIVED before the region (its own suffix is unreliable), so
   // never read width off Q (§4 width-source).
+  //
+  // THE WIDTH FENCE IS NOW `abiWidthHasControlledRotation`, not `rzRtFn`/`allocFn`
+  // (bd test_C_libtooling-drbq Inc 2a): the stream this path emits is
+  // `cqrt_rz_<W>_controlled`, so the width that must exist is the CONTROLLED one.
+  // MEASURED to be a strictly equal set on this frontend, not a narrowing:
+  // `abiWidthFor` maps every `cq_phi_<sfx>` spelling `CQ.h` exposes into
+  // {i1,i8,i16,i32,i64,f16,f32,f64,f80} (`WidthDispatch.cpp`'s `kRows`), which is
+  // exactly `abiWidthHasControlledRotation`'s set — `i80`/`i128` are intermediate
+  // widths no `cq_phi` suffix names. So this is detect-before-mutate defence in
+  // depth against hand-written IR, and it is asked with the SAME predicate the
+  // minter (`ControlledSymbols::controlledRotationFn`) gates on (Rule 14).
   StringRef Abi =
       wd.abiWidthFor(intrinsicSuffix(Streams.front().Phis.front(), "cq_phi_"));
-  Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
-  FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
-  FunctionCallee Rz = Abi.empty() ? FunctionCallee() : wd.rzRtFn(Abi);
-  if (!RailTy || !Alloc || !Rz) {
+  if (Abi.empty() || !abiWidthHasControlledRotation(Abi)) {
     // Unsupported width past detection — decline LOUDLY (a silent leave-in-
     // place would hand the tainted `br` to the backend as classical control
     // while the later rotation lowering fires the arm gates unconditionally).
@@ -826,8 +842,43 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
 
+  // THE §5 CONST-FOLD RE-ANCHOR IS **VALIDATED HERE, BEFORE ANY MUTATION**, and
+  // only APPLIED in the emission loop below (bd drbq Inc 2a, round-1 review
+  // L1 F-5 = L2 N-1). It used to be one fused test-and-assign inside the
+  // emission loop, where the decline could fire AFTER the flag mint, after a
+  // lone `cqrt_x` opener, and after a previous arm's gates had been hoisted and
+  // recorded in `taint.ControlledRotations` — i.e. a loud reject on a HALF-
+  // EMITTED region, which Rule 1 ("lower nothing") forbids and which the sibling
+  // `emitInPlaceRotationRegion` states as its own invariant ("never emit half a
+  // region", all four of its bails precede its flag mint). No reaching program
+  // was found — `classifyArms` proves `Base == Routed` per arm so the assignment
+  // is a no-op for every non-folded shape, and the eq-fold path re-anchors
+  // `Region.RoutedBase` to the very handle the arm rotates — but "unreachable by
+  // argument" is exactly the class this project's history says does get reached,
+  // and the fix is one read-only loop. Every decline in `emitRegion` now precedes
+  // the first emitted instruction.
+  //
+  // WHAT IS VALIDATED (the fence itself is unchanged, only its position): a first
+  // spine gate whose arg 0 is neither `Q` nor a `Constant` is a shape
+  // classification did not prove, and it declines LOUDLY rather than being
+  // silently re-anchored — which would be a data-mux rewrite. The diagnostic
+  // string is character-identical to the one the fused form emitted, so the
+  // negative fixtures are unmoved.
+  for (const ArmStream &S : Streams) {
+    Value *A0 = S.Phis.front()->getArgOperand(0);
+    if (A0 != Q && !isa<Constant>(A0)) {
+      diagnoseUnderControl(Cond, "control flow");
+      return;
+    }
+  }
+
   const DebugLoc DL = BI->getDebugLoc();
   IRBuilder<> B(BI);  // every stream call lands before the conditional br.
+  auto stamp = [&](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+    return C;
+  };
 
   // 1. Flag mint — cq_template_icmp_<pred>_<W>_hl(q, lit). On the ziov share path
   //    (R.ShareCondFlag — the condition is ALSO read as data) the flag is minted
@@ -844,124 +895,134 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   // instead of minting a SECOND flag (the ziov bug). Recording — not RAUWing here
   // — defers the i1→i32 launder to lowerOps Phase 2, AFTER Phase 1 captures the
   // data casts' i1 source width (RAUWing now would corrupt `zext i1→i32` into a
-  // templateless `zext i32→i32`). The eager strip+free (steps 7-8) is SKIPPED
+  // templateless `zext i32→i32`). The eager strip+free (step 3) is SKIPPED
   // below: the data lineage owns the handle (escaped/measured, classifyArms-
   // proven) — stripping/freeing it is a read-after-collapse / hidden measurement.
   if (R.ShareCondFlag)
     taint.SharedCondFlags[Cond] = Flag;
 
-  // 2. One |0> work rail per content arm (allocated up front — the §5b order).
-  SmallVector<Value *, 2> Rails;
-  for (size_t I = 0; I < Streams.size(); ++I) {
-    CallInst *Rail =
-        B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "rail");
-    if (DL)
-      Rail->setDebugLoc(DL);
-    Rails.push_back(Rail);
-  }
-
-  // 3. Route-in (split) — q -> each rail, X-bracketed for a ¬flag arm.
+  // 2. THE ARM GATES, CONTROL-IN-PLACE (control-in-place-PRD §12.2, bd
+  //    test_C_libtooling-drbq Inc 2a — the §6a peephole, default-on for this FLAT
+  //    path). Per arm in successor order, HOIST the arm's `cq_phi` spine to just
+  //    before the branch and record each gate against the flag it must fire under;
+  //    `lowerRotations` then mints `cqrt_rz_<W>_controlled(f, handle, θ)` at the
+  //    hoisted position instead of the unconditional `cqrt_rz_<W>(handle, θ)`.
   //
-  //    Every cswap on `Q` this region emits is collected into ONE
-  //    `TaintSet::RestoringRoute` group (M-B Increment 6, clause (d2)). The claim
-  //    the group makes is narrow and provable: executing the WHOLE group leaves
-  //    `Q`'s BASIS LABEL exactly as it found it, because step 5 replays the SAME
-  //    cswaps under the SAME flag (RSSA "the join is the adjoint of the split")
-  //    and, in the if/else shape, at most one arm's swap fires per branch so the
-  //    two pairs commute. The Rz between them is DIAGONAL and lands on a work
-  //    RAIL, never on `Q`.
+  //    WHAT THIS REPLACES, exactly — the route QUINTUPLE, per arm:
+  //        cqrt_alloc_<W>(0) -> rail ; cqrt_cswap(f, q, rail)
+  //        ; cqrt_rz_<W>(rail, θ) ; cqrt_cswap(f, q, rail) ; cqrt_free(rail)
+  //    becomes ONE `cqrt_rz_<W>_controlled(f, q, θ)` per gate. The flag mint, the
+  //    `cqrt_x` bracket, the strip and the flag free are byte-identical and in the
+  //    same order; NOTHING else moves. That is the whole claim, and
+  //    `tools/golden_multiset_audit.py` is what checks it per golden.
   //
-  //    IT IS THE GROUP, NOT THE GATE, THAT RESTORES. One half of a pair leaves
-  //    `Q` holding |0> (or the arm's copy) depending on the flag — which is why
-  //    the consumer proves every member is inside its interval before it reads
-  //    `Q` past the route. The method-B VALUE path records NOTHING: its
-  //    route-back swaps in the arm's ANSWER, so it is not the adjoint of its
-  //    split and `Q`'s label genuinely changes.
-  SmallVector<const CallInst *, 4> Route;
-  for (size_t I = 0; I < Streams.size(); ++I)
-    Route.push_back(emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL));
-
-  // 4. Arm bodies, VERBATIM and UNCONTROLLED, each on its OWN rail.
-  for (size_t I = 0; I < Streams.size(); ++I)
-    for (CallInst *Phi : Streams[I].Phis) {
-      CallInst *RzCall = B.CreateCall(Rz, {Rails[I], Phi->getArgOperand(1)});
-      if (DebugLoc PDL = Phi->getDebugLoc())
-        RzCall->setDebugLoc(PDL);
+  //    THE TWO ARE THE SAME UNITARY, and it is an identity rather than an
+  //    approximation: with `w = |0⟩`, `cswap(f,q,w) · Rz_w(θ) · cswap(f,q,w)`
+  //    applies `Rz(θ)` to `q` exactly on the `f=1` branch and, on `f=0`, applies
+  //    `Rz(θ)` to a rail still holding `|0⟩` — which under the project's
+  //    `Rz = diag(1, e^{iθ})` convention is the identity with NO global-phase
+  //    residue. So `cRz(f, q, θ)` is equal, not merely equivalent up to phase.
+  //    (This is exactly why the Ry stem could never route — PRD §2 —, and it is
+  //    also why the peephole is a peephole here and the MECHANISM there.)
+  //
+  //    THE `cqrt_x` COUNT IS THE ONE THING THAT DOES CHANGE, AND IT MUST BE SAID
+  //    OUT LOUD because PRD §9.2's literal wording ("the `cqrt_x` brackets …
+  //    unchanged") does not survive contact with a NEGATED arm. The route
+  //    brackets EACH of its two `cqrt_cswap`s, so a ¬flag arm carries FOUR
+  //    `cqrt_x(f)`; this path brackets the arm's gate run ONCE, so it carries
+  //    TWO. The bracket is still the same self-inverse pair on the same flag in
+  //    the same place — there are simply two fewer of them because there are two
+  //    fewer gates to bracket. The audit models that arithmetic explicitly
+  //    (`-2 cqrt_x` per collapsed NEGATED arm) rather than waiving it.
+  //
+  //    HOIST-AND-DEFER, not emit-here (PRD §6, and the Inc-1 recipe verbatim):
+  //    keeping the `@cq_phi_` call alive until `lowerRotations` means every stage
+  //    between here and there — `collapseFlattenedLoopRails`, `lowerIOSinks`,
+  //    `lowerQramReads`, `lowerShadowMemory`, `declineClassicalMuxes`,
+  //    `declineLiftedStaleRecordOps`, `specialize` — keeps seeing the SAME
+  //    pre-lowering vocabulary it saw before this increment: a diagonal `cq_phi`
+  //    on the register, at arg 0. `LoopLowering::collectRailGates` in particular
+  //    follows a `cq_phi` as a RAIL HOP that is not a gate (Rz is diagonal), which
+  //    is the reading the 8h7d.5 rolled-loop fences were cleared under.
+  //
+  //    ORDER: `IRBuilder` inserts before `BI` in creation order and
+  //    `moveBefore(BI)` lands in the same slot, so `x; rz…; x` comes out in that
+  //    order. Do NOT re-mint the gate — moving it keeps its `!dbg`, its identity
+  //    in `taint.PhiCalls`, and its operand USE (so the later RAUW-to-handle
+  //    rewrites it like every other gate).
+  FunctionCallee X = csyms.xFn();
+  for (ArmStream &S : Streams) {
+    if (S.Negated)
+      stamp(B.CreateCall(X, {Flag}));
+    // THE §5 CONST-FOLD RE-ANCHOR, AND IT IS LOAD-BEARING HERE IN A WAY IT IS
+    // NOT ON THE ROUTE (bd drbq Inc 2a). The route reads ONLY arg 1 (the angle)
+    // off the arm gate and puts the rotation on its own work rail, so an arm
+    // whose `cq_phi` bottoms at a folded `ConstantInt k` (the 4.5 `tryEqFoldArm`
+    // shape: `clang -O1` proves `q == k` inside the arm and value-propagates it)
+    // routes correctly with no re-anchor at all. Hoist-and-defer reads arg 0:
+    // `lowerRotations`' phi loop would see an UNTAINTED operand, emit NOTHING,
+    // and RAUW the gate to the constant — the arm's Rz silently DROPPED, a
+    // verify-clean wrong unitary. `Region.RoutedBase` is the handle
+    // `tryEqFoldArm`/`straightThroughConstFoldHandle` PROVED the arm rotates, and
+    // `Q` is it; re-anchoring arg 0 to `Q` is the same move `SwitchRouteEmit`
+    // makes "by physics" for the switch spine.
+    //
+    // FENCED, because a silent re-anchor of anything else would be a data-mux
+    // rewrite: a first spine gate whose arg 0 is neither `Q` nor a `Constant` is
+    // a shape classification did not prove, and it declines LOUDLY rather than
+    // being rewritten. (For every non-folded region — diamond, if/else,
+    // sequential, in-loop — `classifyArms`' `Base == Routed` gate already makes
+    // this a no-op assignment.)
+    //
+    // THE DECLINE ITSELF LIVES IN THE PRE-EMISSION VALIDATION LOOP ABOVE (Rule 1
+    // — never bail mid-emission); what is left here is only the ASSIGNMENT, on a
+    // shape already proven. The assert-by-construction is that the loop above
+    // ran over the same `Streams` in the same order with the same `Q`.
+    CallInst *First = S.Phis.front();
+    if (First->getArgOperand(0) != Q)
+      First->setArgOperand(0, Q);  // pre-validated: it is a `Constant`.
+    for (CallInst *Phi : S.Phis) {
+      Phi->moveBefore(BI);
+      taint.ControlledRotations[Phi] = Flag;
     }
-
-  // 5. Route-back (join = adjoint of the split, same flag + brackets).
-  for (size_t I = 0; I < Streams.size(); ++I)
-    Route.push_back(emitRoute(B, csyms, Flag, Q, Rails[I], Streams[I].Negated, DL));
-
-  // ⚠ THE CONSUMER READS THE ROUTED BASE FROM ARG 1, POSITIONALLY (bd
-  //   test_C_libtooling-160a Rule-13 round, finding F6). `Uncomputation::
-  //   routeGroupFullyInside`'s HOMOGENEITY test — "every member of this group
-  //   routes the SAME base the scan is reasoning about" — is
-  //   `G->getArgOperand(1) == P`, and `cqrt_cswap(flag, a, b)` is PHYSICALLY
-  //   SYMMETRIC in `a`/`b`: nothing in the runtime ABI distinguishes the base
-  //   from the work rail. What makes the read safe is a CONVENTION with exactly
-  //   one owner — THIS FUNCTION. `emitRegion` is the ONLY writer of
-  //   `RestoringRoutes`, every member comes from `emitRoute`, and `emitRoute`
-  //   always builds `{Flag, Q, Rail}` with the routed base in arg 1 (asserted
-  //   below). A FUTURE EMITTER THAT RECORDS A GROUP WITH THE BASE IN ARG 2 MUST
-  //   UPDATE BOTH SITES; recording one here without doing so would silently
-  //   exempt a swap that moved some OTHER register into or out of `P`'s rail.
-  //   (The work rail can never be mistaken for the base: it is a fresh
-  //   `cqrt_alloc` minted at step 2 and never a template operand, so it is never
-  //   a borrowed parent. The FLAG could only become one on the ziov share path,
-  //   where the group's base `Q != Flag` makes homogeneity refuse anyway.)
-  assert(llvm::all_of(Route,
-                      [&](const CallInst *G) {
-                        return G->arg_size() >= 2 &&
-                               G->getArgOperand(1) == Q;
-                      }) &&
-         "RestoringRoutes convention: the routed base is cqrt_cswap arg 1");
-  taint.RestoringRoutes.push_back(Route);
-
-  // 6. Rail frees — each rail is |0> for free (Rz|0>=|0>); a clean reset, NOT a
-  //    measurement (SCOPING §3b). No kept-carrier record reaches these rails or the
-  //    flag freed at 8: both are minted here at |0>, adjointed here, and are never
-  //    an operand of a tape write or a copy destination — this module mints none
-  //    (bd urlv audit; the same reasoning as the value-arm note above).
-  for (Value *Rail : Rails) {
-    CallInst *RailFree = B.CreateCall(wd.freeFn(), {Rail});
-    if (DL)
-      RailFree->setDebugLoc(DL);
+    if (S.Negated)
+      stamp(B.CreateCall(X, {Flag}));
   }
 
-  // 7-8. Flag strip + free — the eager ancilla cleanup. SKIPPED on the ziov
-  //       share path (R.ShareCondFlag): the condition is also live as DATA, so
-  //       the flag's last use is downstream (the escaped/measured data lineage
-  //       owns it), NOT the route-back. Stripping here would return the flag to
-  //       |0> before the data read (read-after-collapse); freeing it would be a
-  //       hidden measurement. The data lineage is the flag's reclaimer
-  //       (FreePoint → Escaped/Measured, no free). The only other case — a
-  //       dead-within-function lineage — is declined upstream by classifyArms and
-  //       stays declined: ziov.2 proposed a deferred strip there but it was closed
-  //       won't-fix (a flag-ONLY strip leaves the data-copy rails entangled with
-  //       q, a silent miscompile; see classifyArms' Unowned note). So on this
-  //       share path the flag is NEVER stripped or freed here.
+  // 3. Flag strip + free — the eager ancilla cleanup, byte-identical to the
+  //    route's steps 7-8. SKIPPED on the ziov share path (R.ShareCondFlag): the
+  //    condition is also live as DATA, so the flag's last use is downstream (the
+  //    escaped/measured data lineage owns it). Stripping here would return the
+  //    flag to |0> before the data read (read-after-collapse); freeing it would be
+  //    a hidden measurement. The data lineage is the flag's reclaimer (FreePoint →
+  //    Escaped/Measured, no free). The only other case — a dead-within-function
+  //    lineage — is declined upstream by classifyArms and stays declined.
   if (!R.ShareCondFlag) {
-    // 7. Flag strip — q == q0 (Rz preserves the basis value), so icmp_inv(q)
-    //    returns the flag to |0> with zero controlled gates. Reads `Cond`'s
-    //    operands, so it MUST precede the erase of `Cond` (in flattenRegion).
+    // Flag strip — `q == q0` (Rz is DIAGONAL, so it preserves the basis value of
+    // whatever register it fires on, controlled or not), so `icmp_inv(q)` returns
+    // the flag to |0> with zero extra gates. Reads `Cond`'s operands, so it MUST
+    // precede the erase of `Cond` (in flattenRegion).
     //
-    //    RECORDED as a DISCHARGED FLAG GATE (M-B Increment 6, clause (d2)). For
-    //    the compare operands in its shifted handle slots this call is a pure
-    //    READ — it recomputes the predicate and XORs it onto `Flag`, leaving
-    //    every operand at its forward basis — so a DERIVED condition's
-    //    provenance chain is dead the instant it returns. Recording it here lets
-    //    `ChainWalk::isInteriorConsumer` count it as a consumer, which moves the
-    //    interior partition's insertion point PAST this line and is the only
-    //    place that chain may legally be uncomputed (before it, the strip would
-    //    read freed rails; the whole `if (sqrt(a+3.0) <= 5.0)` shape leaked at
-    //    Increment 5 for exactly that reason — bd 6uqc's P0).
+    // RECORDED as a DISCHARGED FLAG GATE (M-B Increment 6, clause (d2)). For the
+    // compare operands in its shifted handle slots this call is a pure READ — it
+    // recomputes the predicate and XORs it onto `Flag`, leaving every operand at
+    // its forward basis — so a DERIVED condition's provenance chain is dead the
+    // instant it returns. Recording it here lets `ChainWalk::isInteriorConsumer`
+    // count it as a consumer, which moves the interior partition's
+    // `dagInsertPoint` PAST this line and is the only place that chain may legally
+    // be discharged (bd 6uqc's P0).
     //
-    //    THE PHASE PATH ONLY, and that is the fence. This emitter's route
-    //    restores `Q`'s basis label as a group (step 3), so an adjoint placed
-    //    after the strip reads the same wire the forward chain read. Recording a
-    //    strip whose emitter does NOT have that property would place a discharge
-    //    after a route that moved the base — a `_unc` reading the wrong basis.
+    // THE LICENCE MOVED WITH THE MECHANISM, AND IT GOT STRONGER, NOT WEAKER. The
+    // route's ground was "step 3/5 restore `Q`'s basis label AS A GROUP, so an
+    // adjoint placed after the strip reads the wire the forward chain read". This
+    // path emits no route at all: its only gate on `Q` is a CONTROLLED Rz, which
+    // is `diag(1, e^{iθ})` on the `f=1` branch and `I` on the `f=0` branch —
+    // DIAGONAL either way, so `Q`'s basis label is not merely restored, it is
+    // never moved. The property the recording needs therefore holds pointwise
+    // rather than as a group property of two swaps. (The Ry stem is the
+    // counterexample that makes this a real distinction: `emitInPlaceRotationRegion`
+    // records its strip too, but on the strictly different R4 ground that the
+    // relabelled register is a proven-disjoint wire from every condition wire.)
     auto *Strip = dyn_cast_or_null<CallInst>(
         lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
                            /*before=*/BI, /*negate=*/false,
@@ -969,23 +1030,24 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     if (Strip)
       taint.DischargedFlagGates.insert(Strip);
 
-    // 8. Flag free.
-    CallInst *FlagFree = B.CreateCall(wd.freeFn(), {Flag});
-    if (DL)
-      FlagFree->setDebugLoc(DL);
+    // Flag free.
+    stamp(B.CreateCall(wd.freeFn(), {Flag}));
   }
 
-  // 9. Rewire + erase + scrub, then flatten the CFG. The merge phi's value is now
-  //    just `q` (a phase arm preserves q's basis identity), so a measure on the
-  //    phi becomes a measure on q. Erase the arm cq_phi in REVERSE lineage order
-  //    so each is use-empty when erased; scrub every erased instruction (§6.1).
+  // 4. Rewire + erase + scrub, then flatten the CFG. The merge phi's value is now
+  //    just `q` (a phase arm preserves q's basis identity — and a CONTROLLED
+  //    diagonal gate preserves it on both branches), so a measure on the phi
+  //    becomes a measure on q.
+  //
+  //    THE ARM `cq_phi` CALLS ARE **NOT** ERASED HERE — they were MOVED to the
+  //    pred at step 2 and are live instructions `lowerRotations` owns (the
+  //    hoist-and-defer contract). That is the one structural difference from the
+  //    route path, which re-minted each gate on a work rail and erased the
+  //    original. Nothing scrubs them from `taint.PhiCalls` either: membership is
+  //    exactly what makes `lowerRotations` lower them.
   MergePhi->replaceAllUsesWith(Q);
   scrubTaint(MergePhi, taint);
   MergePhi->eraseFromParent();
-  for (CallInst *Phi : reverse(AllPhis)) {
-    scrubTaint(Phi, taint);
-    Phi->eraseFromParent();
-  }
   flattenRegion(R, taint);
 }
 

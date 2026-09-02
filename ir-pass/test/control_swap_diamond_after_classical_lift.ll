@@ -11,8 +11,8 @@
 ; analytically + by an ad-hoc adversarial probe (Rule-13 re-clearance LENS C,
 ; 2026-06-11): in the pass, `lowerControlRegions` (SwapRouteEmit) runs BEFORE the
 ; `declineClassicalMuxes` one-register lift. So region 2 is emitted FIRST while
-; the classical merge phi `%p` is still live and IS the swap-route's routed base
-; — the cswap/icmp_inv calls are minted against `%p`. The lift then RAUWs `%p` to
+; the classical merge phi `%p` is still live and IS the region's gated base
+; — the controlled-Rz/icmp_inv calls are minted against `%p`. The lift then RAUWs `%p` to
 ; its wire base `%q` and erases the phi; rotation lowering finally RAUWs `%q` to
 ; the `i32` handle `%h`. A THREE-stage RAUW chain (phi → wire base → handle) the
 ; emitted region stream must survive intact — the precise hazard this fixture
@@ -22,19 +22,22 @@
 ;   * Region 1 is CLASSICAL — per shot exactly one path runs; the lift moves NO
 ;     gate, only the SSA renaming phi disappears, so `cqrt_rz(h,0.25)` fires iff
 ;     `classical_c` (it stays INSIDE arm1). [[phi-select-onereg-lift-asymmetry]]
-;   * Region 2 is a PHASE arm: route q into a |0> rail, run the Rz gates VERBATIM/
-;     UNCONTROLLED, route back (phi = adjoint of the split, same %flag), free the
-;     |0> rail, then strip the boolean with the UNCONTROLLED icmp_inv(q) — q's
-;     basis value is unchanged by Rz (diagonal), so the strip is exact. ZERO
-;     controlled gates, ZERO copies (method-B on a phase arm dephases — Rule 7).
+;   * Region 2 is a PHASE arm: under the §6a control-in-place peephole each arm Rz
+;     is emitted as one `cqrt_rz_i32_controlled(flag, q, ·)` on the register itself
+;     — no |0> work rail, no CSWAP route — and the boolean is then stripped with the
+;     UNCONTROLLED icmp_inv(q); q's basis value is unchanged by Rz (diagonal), so
+;     the strip is exact. ZERO copies (method-B on a phase arm dephases — Rule 7).
 ;   * The two regions only SHARE the wire %h; region 1's conditional Rz(0.25) has
 ;     completed before region 2 reads %h, and the flag strip reads %h's (unchanged)
 ;     basis label — no cross-region interference.
 ;
 ; The lift erases region 1's merge phi AND RegionFlatten erases region 2's merge
-; phi: NO `phi i32` survives, no `@cq_theta`/`@cq_phi` remains, the cswap route
-; (region 2) AND the lifted Rz (region 1) are BOTH present, and the module is
-; verify-clean. Both mechanisms are covered standalone by the e2e goldens
+; phi: NO `phi i32` survives, no `@cq_theta`/`@cq_phi` remains, the controlled arm
+; gates (region 2) AND the lifted Rz (region 1) are BOTH present, and the module is
+; verify-clean. The two are distinguishable by SYMBOL — the lifted region-1 gate is
+; the UNCONTROLLED `cqrt_rz_i32` still inside `arm1`, the region-2 gates are
+; `cqrt_rz_i32_controlled` in `merge1` — which is exactly the ordering/RAUW property
+; the fixture exists to pin. Both mechanisms are covered standalone by the e2e goldens
 ; (classical-if-gate, control-phase-diamond) + lit twins
 ; (lowering_classical_mux_phi_onereg.ll, control_swap_diamond.ll); this is the
 ; composition guard. See [[lift-stale-reseep-must-be-full-not-scoped-2qyz]] for
@@ -42,8 +45,12 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; Independent EXACT free-count scan (§8.2): two cqrt_free (rail + flag), no third.
+; Independent EXACT free-count scan (§8.2): one cqrt_free (the flag), no second.
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; The route's ABSENCE, anchored at the function header so the window is the whole
+; function (a trailing CHECK-NOT scans only past the LAST positive of its prefix,
+; and every route line would land BEFORE that — it could never fire).
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
@@ -81,31 +88,34 @@ merge2:
 ; CHECK:      arm1:
 ; CHECK-NEXT:   call void @cqrt_rz_i32(i32 %[[H]], double 2.500000e-01)
 ; Region 2 (tainted phase diamond, flattened into merge1): mint the flag from the
-; tainted icmp, then route q into a |0> work rail.
+; tainted icmp — note it is minted on %[[H]], i.e. the three-stage RAUW chain
+; (phi -> wire base -> handle) landed.
 ; CHECK:      merge1:
 ; CHECK-NEXT:   %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H]], i32 5)
-; CHECK:        %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:        call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[T]])
-; arm body: VERBATIM, UNCONTROLLED Rz gates on the routed rail.
-; CHECK:        call void @cqrt_rz_i32(i32 %[[T]], double %a)
-; CHECK:        call void @cqrt_rz_i32(i32 %[[T]], double %b)
-; route the active result back (adjoint of the split, same %flag), free |0> rail.
-; CHECK:        call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[T]])
-; CHECK:        call void @cqrt_free(i32 %[[T]])
+; arm body: one controlled Rz per arm gate, IN PLACE on the same handle.
+; CHECK-NEXT:   call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double %a)
+; CHECK-NEXT:   call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double %b)
 ; strip the boolean: q==q0, so icmp_inv(q) returns the flag to |0>; reclaim it.
-; CHECK:        call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[H]], i32 5)
-; CHECK:        call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT:   call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[H]], i32 5)
+; CHECK-NEXT:   call void @cqrt_free(i32 %[[F]])
 ; q (not a phi) is measured — both merge phis RAUW'd away.
 ; CHECK:        call i32 @cqrt_measure_i32(i32 %[[H]])
 ; Both merge phis erased (lift + RegionFlatten); all intrinsics gone.
 ; CHECK-NOT:  phi i32
 ; CHECK-NOT:  cq_theta_si32
 ; CHECK-NOT:  cq_phi_si32
-; Dephasing guard: a phase arm uses ZERO controlled gates / copies.
-; CHECK-NOT:  _controlled
+; Dephasing guard: a phase arm uses ZERO method-B copies.
 ; CHECK-NOT:  cqrt_copy
 
-; Exact free count — two (work rail + flag), no third anywhere (no spurious free
-; from the uncompute pass, which would be a hidden measurement collapsing q).
-; CNT-COUNT-2: call void @cqrt_free(
+; Exact free count — one (the flag), no second anywhere (no spurious free from the
+; uncompute pass, which would be a hidden measurement collapsing q).
+; CNT-COUNT-1: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(
+
+; No swap route survives in region 2: no |0> work rail, no CSWAP, no copy, no data
+; mux — window is `define` -> EOF, so a re-introduced route WOULD trip these.
+; NOROUTE:     define i32 @main
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)
+; NOROUTE-NOT: cqrt_copy
+; NOROUTE-NOT: phi i32

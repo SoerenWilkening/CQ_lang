@@ -458,6 +458,22 @@ after a statevector-checked design dialogue; see
   emitted symbol resolves + signature-matches). Modules: `ControlDetect`,
   `ArmClassify`, `SwapRouteEmit`, `RegionFlatten` (replacing `ControlStub`).
 
+
+  > ⚠ **SUPERSEDED FOR THE *FLAT* PATH BY §6a CONTROL-IN-PLACE** (bd
+  > `test_C_libtooling-drbq` Inc 2a, 2026-09-02). Every FLAT phase region — diamond,
+  > if/else, hcrg sequential, the 8h7d.5 rolled in-loop region, `ShareCondFlag`,
+  > multi-Rz spines, Rz on the condition register, the 4.5 eq-folded diamond — now
+  > lowers to ONE `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate: **no work rail, no
+  > `cqrt_cswap`, no rail free**, and therefore **not** "zero controlled gates". The
+  > flag mint, the `cqrt_x` bracket, the `icmp_inv` strip and the flag free are
+  > byte-identical and in the same order (a NEGATED arm carries **two** `cqrt_x`, not
+  > the route's four). The **4.3 depth-2 nest and the 4.5 switch keep the route**, so
+  > the recipe below is still literally what they emit. The two forms are the SAME
+  > unitary — with `w = |0⟩`, `cswap(f,q,w)·Rz_w(θ)·cswap(f,q,w)` **equals**
+  > `cRz(f,q,θ)` with no global-phase residue — which is why the route remains the
+  > correctness ORACLE for the peephole. See
+  > `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC2A_NOTES.md` and
+  > `control-in-place-PRD.md` §12.2.
 - **4.2 — Classical-permutation / value arms (method-B) [DONE 2026-06-11,
   branch `swap-route-control`, WI-1..WI-7 — `docs/prd/phase-04-swap-route-control/PRD.md`
   Part II + `IMPLEMENTATION-4.2.md`].**
@@ -635,7 +651,22 @@ after a statevector-checked design dialogue; see
   §3a reverse-play obligation. **(Now scheduled: Phase 7.2 `return`, 7.4 `break`.)**
 - **Control-in-place peephole** (§6a): for genuinely-in-place single-target
   unitaries (`R_z`/`R_y`/Pauli), control in place (no work rail) — a footprint
-  optimization, not a correctness requirement.
+  optimization, not a correctness requirement. **DONE for the FLAT `emitRegion`
+  path** (bd `test_C_libtooling-drbq`, 2026-09-02): Inc 1 shipped the `R_y` arm,
+  where in-place is the MECHANISM and not an optimization at all (`Ry(θ)|0⟩ ≠ |0⟩`,
+  so the route hands the inactive rail back dirty — PRD §2); Inc 2a made the `R_z`
+  peephole default-on for every flat phase spine (diamond, if/else, hcrg
+  sequential, the 8h7d.5 rolled loop, `ShareCondFlag`, multi-Rz spines, Rz on the
+  condition register), replacing the route quintuple with one
+  `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate. The 4.3 depth-2 nest and the 4.5
+  switch KEEP the route. The two forms are the same unitary, and the 26 moved
+  goldens' diff is exactly the collapse and nothing else
+  (`tools/golden_multiset_audit.py`). The two stems get DIFFERENT uncompute
+  treatment and that split is load-bearing, not cosmetic: `cqrt_ry_<W>_controlled`
+  is a DAG link, never adjointed, frozen; `cqrt_rz_<W>_controlled` is transparent
+  — not a link, never adjointed, not frozen — because a diagonal gate moves no
+  basis label (PRD §12.1). Notes:
+  `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC2A_NOTES.md`.
 
 **Soundness obligation (§3b).** `cqrt_free` (compiler-emitted only) is emitted on
 a rail **only after** its reverse-play returns it to `|0⟩`, via the `FreePoint`

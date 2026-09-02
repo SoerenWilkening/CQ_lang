@@ -29,10 +29,11 @@
 ; surface is untouched (Rule 15).
 ;
 ; THE RESULT IS A ONE-RAIL PROGRAM, which is the physics claim: at the ONLY
-; `cqrt_ry_i32` after the region, the sole allocated rail is `%h` — the work
-; rail, the flag and both chain rails have been freed on the lines above. That
-; is what the CHECK-NEXT chain below pins, and it is why the M-A guard now has
-; nothing to name.
+; `cqrt_ry_i32` after the region, the sole allocated rail is `%h` — the flag and
+; both chain rails have been freed on the lines above, and since the §6a
+; control-in-place peephole there is no work rail to free at all. That is what the
+; CHECK-NEXT chain below pins, and it is why the M-A guard now has nothing to
+; name.
 ;
 ; RED STATE: this file is RED on every plugin built before Increment 7a — there
 ; it exits non-zero at the guard, so both the `%cq-opt` RUN line and every CHECK
@@ -50,9 +51,16 @@
 ;     a -= off;
 ;     a = cq_theta(a, -0.5);  return cq_measure(a);
 ;
+; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
+; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
+; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
+; mint, the strip, the flag free and every downstream gate are unchanged.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -81,11 +89,7 @@ define i32 @mc_sub_after(i32 noundef %0, ptr noundef %1) {
 ; CHECK-NEXT: %[[SH:.*]] = call i32 @cq_template_ashr_i32_hl(i32 %[[H]], i32 2)
 ; CHECK-NEXT: %[[AD:.*]] = call i32 @cq_template_add_i32(i32 %[[H]], i32 %[[SH]])
 ; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[AD]], i32 5)
-; CHECK-NEXT: %[[W:.*]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[W]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[W]],
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[W]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[W]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double
 ; the recorded flag strip, then the M-B interior discharge of the whole chain —
 ; every line of it BEFORE the in-place sub below, which is exactly the fact the
 ; late round's arm (d2) reads out of the plan.
@@ -116,3 +120,7 @@ define i32 @mc_sub_after(i32 noundef %0, ptr noundef %1) {
 ; code (Increment 7 Rule-13 round, finding F3; same spelling as the 28 accept
 ; fixtures 7b re-pinned).
 ; SILENT-NOT: non-diagonal gate over a live derived record
+; The swap route must not come back for this flat phase shape. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap

@@ -41,9 +41,16 @@
 ; spelling of (W1)/(W2) and this fixture goes red on the missing
 ; `cq_template_and_i32_hl_unc` / `cqrt_free`.
 ;
+; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
+; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
+; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
+; mint, the strip, the flag free and every downstream gate are unchanged.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -84,14 +91,11 @@ define i32 @slice() {
 ; hoists the exit block above the body, so this line precedes the body checks.
 ; CHECK: %m = call i32 @cqrt_measure_i32(i32 %h)
 ;
-; The body: the LEADING Ry, then the derived chain, then the routed phase arm.
+; The body: the LEADING Ry, then the derived chain, then the in-place phase arm.
 ; CHECK: call void @cqrt_ry_i32(i32 %h, double 2.500000e-01)
 ; CHECK-NEXT: %h_op = call i32 @cq_template_and_i32_hl(i32 %h, i32 3)
 ; CHECK-NEXT: %h_cmp = call i32 @cq_template_icmp_eq_i32_hl(i32 %h_op, i32 1)
-; CHECK: call void @cqrt_cswap(i32 %h_cmp, i32 %h, i32 %rail)
-; CHECK: call void @cqrt_rz_i32(i32 %rail, double 0x400921FB54442D18)
-; CHECK: call void @cqrt_cswap(i32 %h_cmp, i32 %h, i32 %rail)
-; CHECK: call void @cqrt_free(i32 %rail)
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %h_cmp, i32 %h, double 0x400921FB54442D18)
 ;
 ; THE FINDING, IN THREE LINES. Both records are reversed LIFO and freed, IN THE
 ; BODY, and — the part that was missing — the `and` record's `_unc` and `cqrt_free`
@@ -108,3 +112,7 @@ define i32 @slice() {
 ; so this prefix is a regression pin, never the finding's witness.
 ; SILENT-NOT: warning
 ; SILENT-NOT: error
+; The swap route must not come back for this flat phase shape. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap

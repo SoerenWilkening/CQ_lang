@@ -114,20 +114,30 @@ bool isInPlaceGateOn(const llvm::CallInst *G, const llvm::Value *H);
 // ── Three facts the round-2 Rule-13 review (bd drbq) asked this header to state
 //    explicitly, because each was true of the code and written down nowhere ──
 //
-// (1) IT CONTRADICTS `preservesBasisUnderRecord` ON THE Rz STEM, AND THIS ONE
-//     WINS TODAY. For `cqrt_rz_<W>_controlled` that predicate returns TRUE
-//     (basis-preserving ⇒ not frozen ⇒ FREEABLE) while this one returns TRUE
-//     (⇒ FROZEN, never freed). Two predicates, one gate, two answers. The
-//     contradiction is inert at HEAD only because `emitRz`'s single caller
-//     passes `controlled=false`, so no `cqrt_rz_<W>_controlled` is emittable —
-//     but this predicate is asked FIRST (`DagTraversal` step 1 and step 3 both
-//     cut before the closure scan `preservesBasisUnderRecord` feeds), so the
-//     freeze wins wherever both are reachable. INC 2 MUST DECIDE the policy
-//     (notes §10.3: is a DIAGONAL controlled rotation frozen at all? it costs a
-//     leaked rail per region) — and if it resolves that by narrowing this
-//     predicate to `ry` only, `preservesBasisUnderRecord`'s `true` becomes LIVE
-//     and the rz-controlled rail becomes freeable through the 261j(a) path with
-//     no second opinion. Change both ends or neither.
+// (1) THE STEMS ARE SPLIT: THIS IS AN `ry`-ONLY FREEZE (bd drbq Inc 2a). The
+//     round-2 review recorded a CONTRADICTION here — this predicate froze any
+//     `cqrt_{ry,rz}_<W>_controlled` rail while `preservesBasisUnderRecord` called
+//     the `rz` spelling basis-preserving, i.e. NOT frozen, i.e. freeable; one
+//     gate, two answers, with this one winning because it is asked first
+//     (`DagTraversal` step 1 and step 3 both cut before the closure scan that
+//     feeds the other). Inc 2 owned the decision (notes §10.3) and DECIDED IT THE
+//     OTHER WAY: a DIAGONAL controlled rotation is NOT frozen.
+//
+//     WHY, in one line: the oracle for what a controlled Rz must look like to the
+//     spine is the swap ROUTE it replaces, and under the route the register's
+//     only users are `cqrt_cswap`s — unrecognized consumers, never a freeze. Inc
+//     2a therefore narrows `isInPlaceGateOn` to the `ry` stem, which makes the
+//     controlled Rz an unrecognized consumer too: `isTerminalHandle` false,
+//     `isInteriorConsumer` false, `DagTraversal` closure `NotClosed`, and this
+//     predicate false. Four verdicts, all identical to the route's, which is what
+//     makes the Inc-2a golden multiset diff EXACTLY the collapsed route quintuple
+//     and nothing else. See PRD §12.1 and bd `drbq-freeze-vs-261j-reconciled`.
+//
+//     The `ry` stem is UNCHANGED and still frozen, for the reason at the top of
+//     this header: an Ry relabels its target on the `f=1` branch, so a skipped
+//     adjoint moves a basis, and the adjoint cannot be emitted because it needs a
+//     flag the region already freed. Never merge the two stems again without
+//     re-reading both this note and `preservesBasisUnderRecord`'s.
 //
 // (2) IT IS A POST-`lowerRotations` SPELLING OF THE QUESTION, and there is a
 //     DIFFERENT pre-lowering spelling. The fact "this register is under a

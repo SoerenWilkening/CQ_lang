@@ -56,8 +56,9 @@ merge:
   ret i32 %m
 }
 
-; The region lowers normally — flag mint, route, Rz, route back, rail free,
-; strip, flag free — and the write on the base is emitted verbatim:
+; The region lowers normally — flag mint, the controlled arm Rz IN PLACE (drbq
+; Inc 2a; the route quintuple this used to show is gone), strip, flag free — and
+; the write on the base is emitted verbatim:
 ; CHECK-LABEL: define i32 @addc_before_region(
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
@@ -65,11 +66,7 @@ merge:
 ; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[H]], i32 5)
 ; CHECK-NEXT: %[[K:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[D]], i32 -8)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[K]], i32 40)
-; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R]], double 0x400921FB54442D18)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[R]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[K]], i32 40)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])

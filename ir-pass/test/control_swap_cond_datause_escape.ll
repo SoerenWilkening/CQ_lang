@@ -20,6 +20,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; Independent EXACT mint scan: exactly ONE sgt flag, and never its `_inv` strip.
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -40,16 +41,32 @@ merge:
   ret i32 %r
 }
 
-; ONE flag mint, shared by the data use (zext) and the route (cswap) — the data
-; use is emitted at the compare position, BEFORE the routed stream:
+; ONE flag mint, shared by the data use (zext) and the arm's controlled gate —
+; the data use is emitted at the compare position, BEFORE the arm stream (drbq
+; Inc 2a: the arm is one `cqrt_rz_i32_controlled` on q, not a cswap route):
 ; CHECK:         %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
 ; CHECK:         call i32 @cq_template_zext_i1_to_i32(i32 %[[F]])
-; CHECK:         call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:         call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %a)
 ; The flag is NEITHER stripped NOR freed (its data lineage escapes):
 ; bd `8txa` retarget: the flag STRIP is spelled `_unc` now, so asserting
 ; the absence of `_inv` here would be VACUOUS — nothing emits `_inv`.
 ; CHECK-NOT:     cq_template_icmp_sgt_i32_hl_unc
-; CHECK-NOT:     _controlled
+; …and no rail is allocated or freed at all on this path (there is no work rail
+; to free, and the shared flag is the data lineage's to reclaim — Rule 6):
+; CHECK-NOT:     call void @cqrt_free(
+; CHECK-NOT:     cqrt_cswap
 
 ; CNT-COUNT-1: call i32 @cq_template_icmp_sgt_i32_hl(
 ; CNT-NOT:     call i32 @cq_template_icmp_sgt_i32_hl(
+
+; THE ROUTE'S ABSENCE, ON ITS OWN PREFIX ANCHORED AT THE FUNCTION HEADER (bd
+; drbq Inc 2a round-1 review, L3 F2). The trailing `CHECK-NOT: cqrt_cswap`
+; above scans only PAST the last positive of the `CHECK` prefix, so a route
+; re-inserted AT the arm gate lands before its window and the assertion cannot
+; fire (bd memory filecheck-check-not-window-trap). Anchoring at `define` makes
+; the window the whole function. MUTATION-VERIFIED: re-inserting
+; `cqrt_alloc_<W>(0) + cqrt_cswap` before the first controlled gate turns this
+; prefix RED.
+; NOROUTE:     define{{.*}}@example
+; NOROUTE-NOT: call void @cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

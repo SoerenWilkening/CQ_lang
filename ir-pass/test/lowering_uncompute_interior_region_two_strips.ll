@@ -73,11 +73,10 @@ define i32 @two_recorded_strips(i32 noundef %0) {
 ; Region 1: mint, route, Rz, route back, rail free, STRIP 1 — and NOTHING of the
 ; chain is discharged yet, because strip 2 still reads %[[K]]:
 ; CHECK-NEXT: %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[K]], i32 5)
-; CHECK-NEXT: %[[R1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F1]], i32 %[[H]], i32 %[[R1]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R1]], double 0x400921FB54442D18)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F1]], i32 %[[H]], i32 %[[R1]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[R1]])
+; the region, CONTROL-IN-PLACE since drbq Inc 2a: one `cqrt_rz_<W>_controlled` on
+; the user's own register in place of the route quintuple — no work rail, no
+; CSWAP, nothing to free but the flag.
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[K]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
 
@@ -85,11 +84,7 @@ define i32 @two_recorded_strips(i32 noundef %0) {
 ; LIFO, each rail freed right after its own adjoint; the second flag's free
 ; trails the chain because the flag's own last use is its strip:
 ; CHECK-NEXT: %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[K]], i32 6)
-; CHECK-NEXT: %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F2]], i32 %[[H]], i32 %[[R2]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R2]], double 2.500000e-01)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F2]], i32 %[[H]], i32 %[[R2]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[R2]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[H]], double 2.500000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[K]], i32 6)
 ; CHECK-NEXT: call void @cq_template_add_i32_unc(i32 %[[K]], i32 %[[H]], i32 %[[SH]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[K]])

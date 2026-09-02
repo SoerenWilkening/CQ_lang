@@ -27,13 +27,16 @@
 ; sound, because every path to the collapse runs through the discharge. Position
 ; is the whole difference.
 ;
-; DISCRIMINATION: the region lowers in full — flag mint, route, arm Rz, route
-; back, rail free, strip, flag free are all emitted — so the CHECK-NOTs are not
-; passing on a decline.
+; DISCRIMINATION: the region lowers in full — flag mint, the arm gate as ONE
+; `cqrt_rz_i32_controlled` on the register (control-in-place since bd drbq Inc 2a,
+; 2026-09-02 — no work rail, no `cqrt_cswap`; the `NOROUTE` prefix below pins that),
+; strip, flag free are all emitted — so the CHECK-NOTs are not passing on a decline.
+; (This paragraph described the pre-2a ROUTE until the Inc-2a round-1 review, L3 F3.)
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -66,7 +69,9 @@ merge:
 ; CHECK-NEXT: %[[D:.*]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 37)
 ; CHECK-NEXT: %[[K:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[D]], i32 -8)
 ; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[K]], i32 40)
-; CHECK:      call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %{{.*}})
+; the arm gate, CONTROL-IN-PLACE since drbq Inc 2a (the `cqrt_cswap` route this
+; line used to match is gone; the gate now names %[[H]] directly, at arg 1):
+; CHECK:      call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[K]], i32 40)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
@@ -76,3 +81,15 @@ merge:
 ; NOFREE-NOT: @cq_template_and_i32_hl_unc(i32 %[[K2]],
 ; NOFREE-NOT: @cq_template_mul_i32_hl_unc(
 ; NOFREE-NOT: call void @cqrt_free(i32 %[[K2]])
+
+; THE ROUTE'S ABSENCE, ON ITS OWN PREFIX ANCHORED AT THE FUNCTION HEADER (bd
+; drbq Inc 2a round-1 review, L3 F2). The trailing `CHECK-NOT: cqrt_cswap`
+; above scans only PAST the last positive of the `CHECK` prefix, so a route
+; re-inserted AT the arm gate lands before its window and the assertion cannot
+; fire (bd memory filecheck-check-not-window-trap). Anchoring at `define` makes
+; the window the whole function. MUTATION-VERIFIED: re-inserting
+; `cqrt_alloc_<W>(0) + cqrt_cswap` before the first controlled gate turns this
+; prefix RED.
+; NOROUTE:     define{{.*}}@wire_measured_in_interval
+; NOROUTE-NOT: call void @cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

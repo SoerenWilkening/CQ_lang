@@ -353,11 +353,44 @@ adversarial Rule-13 review (opus lenses; one Fable clearance per increment).
 ### 9.2 The Inc-2 golden audit
 For every regenerated `.expected.log`, the multiset difference old→new must be
 EXACTLY, per in-place-lowered arm: `−cqrt_alloc_<W>(0) −cqrt_cswap ×2
-−cqrt_free(rail) −cqrt_rz_<W>(rail,θ) +cqrt_rz_<W>_controlled(f,h,θ)`, with the
-`cqrt_x` brackets, flag mint, strip and free unchanged, and NO other line moving.
-Handle NUMBERS may shift (one fewer alloc per arm); the audit compares with
-handles normalised. A golden whose diff is anything else is a finding, not a
-regeneration (bd `golden-multiset-diff-audit-2026-08-29`).
+−cqrt_free(rail) −cqrt_rz_<W>(rail,θ) ×g +cqrt_rz_<W>_controlled(f,h,θ) ×g`, the
+flag mint, strip and free unchanged, and NO other line moving. Handle NUMBERS may
+shift (one fewer alloc per arm); the audit compares with handles normalised. A
+golden whose diff is anything else is a finding, not a regeneration (bd
+`golden-multiset-diff-audit-2026-08-29`).
+
+> ⚠ **AND THE `cqrt_x` BRACKETS ARE *NOT* UNCHANGED ON A NEGATED ARM.** An earlier
+> wording of this section said "with the `cqrt_x` brackets … unchanged"; that is
+> true of a NON-negated arm and **false** of a negated one, and the difference is
+> structural rather than a compiler choice. The route brackets **each** of its two
+> `cqrt_cswap`s, so a ¬flag arm carries **FOUR** `cqrt_x(f)`; control-in-place
+> brackets the arm's gate **run** once, so it carries **TWO**. The expected delta
+> for a negated arm therefore additionally carries **`−cqrt_x(f) ×2`**.
+>
+> MEASURED LINE COUNTS, so nobody re-derives this from prose:
+>
+> | shape | old | new | net |
+> |---|---|---|---|
+> | `slice_control_phase_diamond` — 1 non-negated arm, 2 gates | 12 | 8 | **−4** |
+> | `slice_control_phase_ifne` — 1 NEGATED arm, 1 gate | 15 | 9 | **−6** |
+> | rolled loop, 2 activations, non-negated (`eq`) | — | — | **−8** = 2 × 4 |
+> | rolled loop, 2 activations, NEGATED (`der` — `clang -O1` canonicalizes `sqrt(a+3.) <= 3.5` to `fcmp ugt` with the gate on the FALSE successor) | — | — | **−12** = 2 × (4 + 2) |
+>
+> So **−4 per non-negated arm and −6 per negated arm**, independent of the gate
+> count (each extra gate removes one `cqrt_rz(rail,θ)` and adds one
+> `cqrt_rz_<W>_controlled`, net zero). The last two rows are the round-1 review's
+> own rolled-loop measurements (L1 §3.8), and the −12 is the one number this
+> section's literal wording did not predict.
+>
+> `tools/golden_multiset_audit.py` **models this rather than waiving it** —
+> confirmed, not assumed: `_route_leg` matches the `[x(f)] cswap [x(f)]` bracket
+> on both legs and demands the same polarity on the route-back, and the
+> replacement emits exactly ONE pair per negated arm. Its printed (A) delta for
+> `slice_control_phase_ifne` reads `− … cqrt_x(h) x2`, i.e. four removed and two
+> re-emitted. The audit reduced **8 negated arms** across the 26 regenerated
+> goldens with zero findings, and its `--selftest` pins the arithmetic with three
+> dedicated mutants (`f1` one bracket dropped, `f2` both dropped, `f3` an extra
+> one added) — all three DETECTED.
 
 ### 9.3 Rule-13 lenses (per increment)
 1. Flag-strip validity: every accepted shape has `C`'s basis unchanged — probe
@@ -580,3 +613,252 @@ Closed in this pass:
   pending). The twin matrix's blind spot is structural and must be quoted with
   it: its oracle is the `cq_phi` twin, which is EXEMPT from R4 and R6, so an
   R4-violating shape would emit a byte-identical prefix and still be wrong.
+
+### 11.7 Round 1 on **Increment 2a** (2026-09-02) — three lenses, ZERO defects, six stale justifications + two blind instruments
+Three independent adversarial reviewers ran against the uncommitted Inc-2a tree
+over `f92d95e`, each with a **pre-2a `cq-opt` built from `f92d95e` in a scratch
+worktree as the oracle** and every probe run on BOTH binaries: **L1** the stem
+split and its co-movers · **L2** the rolled loop · **L3** did the witnesses
+witness, and are the docs true.
+
+**No silent miscompile, no crash, no over-decline, and no cross-binary
+disposition movement of any kind.** The instruments behind that, all independently
+written rather than re-run from the increment's own scripts:
+
+- a **1358-fixture collapsed-stream sweep** — 672 collapse-exact, 675
+  decline-both, **0 disposition flips and 0 stderr differences**;
+- an **independent re-derivation of all 26 golden diffs** by different machinery
+  (aligned mint sequences and use-set rail identification, arms found in the NEW
+  stream — the opposite direction from the shipped audit): **26/26
+  `COLLAPSE-ONLY`, 66 rails / 66 arms / 70 rz gates**, agreeing golden by golden;
+- **243 rolled/unrolled twin cells** (123 run on both binaries), an **80-cell
+  PREFIX × NEW-REGION × SUFFIX product**, and a **36-of-36 `COLLAPSE-ONLY`
+  per-cell collapse identity on a ROLLED LOOP** — an axis the shipped inverted
+  oracle explicitly excludes;
+- **73/73 in-scope fixtures red under the pre-2a oracle** (the notes claimed this
+  for the 9 new ones; it is true of all 64 edited ones too), a **7 × 73
+  lowered-output mutation matrix**, a **20-mutant validation of the golden audit
+  with 0 survivors**, and a **whole-corpus scan for a controlled rotation naming
+  a freed flag: 151 gates over 100 fixtures, 0 real hits**;
+- `ir-pass-lit` **1357 + 1 XFAIL**, `ctest -j6 -R '^e2e-'` **285/285**, and
+  `loop_twin_matrix` **120/120 against a table written BEFORE the increment
+  existed**.
+
+What the round produced instead of defects is the same shape round 2 produced:
+**justifications the increment itself falsified, and instruments that cannot see
+what they are quoted for.** All of it is closed in this pass.
+
+**Justifications corrected in source (five):**
+
+- **`ChainWalk.cpp` row (iv) told the next editor to delete the clause the
+  increment could not work without** (L1 F-0, the round's most dangerous finding
+  even though nothing miscompiles). It said `preservesBorrowedParent` "already
+  excluded the `_controlled` spelling and **must KEEP excluding it**"; the same
+  commit's clause (1b) admits the diagonal controlled Rz as READ-ONLY and §4(a)
+  measured it as REQUIRED by nine modules. Two comments, one gate, two answers —
+  and unlike the round-2 predicate version, **nothing in the build can see it**.
+  Row (iv) now states clause (1b) and why the licence moved from the GROUP
+  (`routeGroupFullyInside`) to the GATE.
+- **`ChainWalk.cpp` row (iii) stated the opposite of what the code does** (L1
+  F-2): an in-place gate is a *benign* user that leaves `isTerminalHandle` free to
+  return true, so the narrowing DOES move the verdict (possibly-true →
+  always-false). The verdict is still right, for the other reason the file gives —
+  the ROUTE is the oracle and a `cqrt_cswap` was unrecognized there too — and the
+  direction is toward leaking, i.e. Rule-6 safe.
+- **`ArithLowering.cpp`'s ⚠ block named the wrong operative arm** (L1 F-1, the
+  third co-mover, in a file the notes' §5 table does not list). Post-2a a
+  controlled **Rz** moves from `priorUseIsSettled` arm (a) to arm **(c)** with an
+  identical verdict, and the comment both asserted (a) and *forbade citing* (c)'s
+  ground — while grounding (a)'s safety on the freeze this increment removed for
+  that stem. It is now a per-stem table: `ry` → (a), frozen; `rz` → (c), whose own
+  "never a `D.Calls` member" ground is RESTORED for it.
+- **`RotationLowering.cpp`'s `UserPhaseRotations` addition is INERT and said it
+  was necessary** (L1 F-3). Traced end to end: the set has one reader chain, and
+  two lines below its consumer sits the F2 clause `if (N.starts_with("cqrt_ry_")
+  || N.starts_with("cqrt_rz_")) continue;` — recorded and unrecorded reach the
+  same `continue`. Measured: 0 stderr differences over 1358 fixtures. The
+  recording is KEPT (right classification, conservative direction, load-bearing
+  the moment that clause narrows) and the comment now says so — the 8h7d.5 round-5
+  "a comment that overstated a no-op", one increment later.
+- **`LoopLowering.cpp`'s round-2 fan-out block still claimed "by construction"**
+  (L2 N-3). Post-2a a routed region is still structural, but a control-in-place
+  region is rejected by a **predicate** (`isHoistedRegionArmGate`). Split in two,
+  so the sentence a reader hits first is true.
+- Plus `ControlPlan.h`'s live `ArmClass::Phase` doc (still "the 4.1 route"), five
+  fixture headers (one saying "**zero controlled Rz**" nine lines above its own
+  assertion of `cqrt_rz_i32_controlled`; another claiming "four rail frees" where
+  its own count block asserts zero), `Uncomputation.cpp`'s `1356`-fixture corpus
+  (it is **1358**), and a dated superseded banner on `PRD.md` §20.3,
+  `IMPLEMENTATION.md` §4 and **ROADMAP's own 4.1 entry** — a reader landing there
+  previously got the route in the present tense with no pointer to §6a.
+
+**Two structural fixes in code:**
+
+- **`emitRegion`'s §5 const-fold re-anchor declined MID-EMISSION** (L1 F-5 =
+  L2 N-1) — after the flag mint, possibly after a lone `cqrt_x`, and after a
+  previous arm's gates were hoisted and recorded, leaving the CFG un-flattened.
+  Rule 1 says *lower nothing*, and the sibling `emitInPlaceRotationRegion` states
+  that invariant ("never emit half a region") and honours it. Inert today — no
+  output is written on a `DS_Error` decline and no reaching program could be
+  built — but the fence is on the **HOT PATH** for the flagship rolled Grover
+  (L2 measured `clang -O1` const-folding **both** arm gates of
+  `slice_control_grover_loop_dynamic` to `cq_phi_si32(i32 5/0, …)`, so the
+  re-anchor fires once per region per rolled loop). The validation is now a
+  read-only pre-pass over the arms placed immediately after the width fence;
+  every decline in `emitRegion` precedes the first emitted instruction.
+- **`isHoistedRegionArmGate` was stem-AGNOSTIC while its soundness argument is
+  DIAGONAL-specific** (L2 N-2). `taint.ControlledRotations` has two writers (the
+  Inc-1 Ry arm and the Inc-2a Rz arm) and the predicate did not distinguish them,
+  so the Ry stem inherited an exemption nobody derived for it. Narrowed to the
+  `cq_phi` stem — free today (in-loop Ry declines before it can reach the
+  predicate, measured on five shapes with an out-of-loop control that accepts) —
+  and the obligation Inc 3 owes if it widens is now written at the site: this
+  predicate exempts the gate from the fan-out count while `collectRailGates`'
+  `noteGate` would still COUNT a `cq_theta_` for staleness, which is the 8h7d.5
+  F-1/F-3 "two independently-written predicates over one closure" shape verbatim.
+
+**Two instruments made honest, and one blind spot closed:**
+
+- **`tools/golden_multiset_audit.py` modelled the collapse's SHAPE but not its
+  SCOPE** (L3 F1, measured not argued: feeding it a reduced 4.3-nest stream as the
+  new golden came back `COLLAPSE-ONLY`). It now carries a **scope check** — the
+  reducer refuses a region whose routed base is itself a work rail (the nest's
+  inner level), and a golden whose OLD trace bears a nest signature must be
+  byte-identical or it is reported `OUT-OF-SCOPE`. Check **(A)** (the literal §9.2
+  multiset delta) was computed, never enforced and not even printed without
+  `--verbose`; it is now handle-INVARIANT, enforced, printed unconditionally, and
+  joined by a `cqrt_cswap` accounting check. Untracked goldens are no longer
+  skipped. And it grew a **`--selftest`**: 19 mutants (L3's, verbatim) + 4
+  controls + the out-of-scope probe, over embedded goldens, **0 survivors**. Its
+  one remaining gap is recorded IN the tool: a 4.5 switch's phase trace is
+  **trace-indistinguishable** from a sequence of flat regions (measured,
+  `slice_control_switch_phase` vs `slice_control_seq_regions`), so the switch half
+  of the scope split is witnessed by the lit fixtures and the whole-corpus census,
+  not here.
+- **`tools/loop_twin_matrix.py` had no RECORD axis** (L1 §3.8) — no `int mark = a;`
+  in any of its 156 cells, while 8h7d.5's F-1 and F-3, two of the three CONFIRMED
+  silent miscompiles that machinery produced, were **entirely** about rail
+  records. A fourth axis is added (`premark` / `postmark` / `bodyread`, crossed
+  with a declared 12-cell sub-grid): **156 cells**, the table regenerated
+  deliberately with **additions only — no existing cell's disposition moved**. 18
+  of the 36 new cells are ACCEPT-IDENTICAL (a rolled trace byte-identical to its
+  twin's *with a live record present*); the other 18 are the 8h7d.5 rail-record
+  fence firing correctly on the rolled side.
+- **Six fixtures could not witness a re-inserted route** (L3 F2): three
+  `control_swap_cond_datause_*` carry `CHECK-NOT: cqrt_cswap` as the LAST
+  directive of their prefix, so its window starts after the arm gate the route
+  would precede, and three others lost a positive `CHECK: cqrt_cswap` in this edit
+  and gained no negative. All six now carry the bounded `NOROUTE` prefix anchored
+  at `define`, and each is **mutation-verified**: re-inserting
+  `cqrt_alloc_<W>(0) + cqrt_cswap` before the first controlled gate turns
+  `NOROUTE` red in 6/6 while **every pre-existing prefix stays green**, which is
+  the measurement that shows the gap was real.
+
+**One observation filed, not fixed.** The record axis surfaced a pre-existing
+STRAIGHT-LINE behaviour: `int mark = a; a = cq_theta(a, 0.25); return
+cq_measure(mark);` accepts with **rc 0 and no warning** and emits
+`ry(%h,.5); ry(%h,.25); measure(%h); measure(%h)` — the record is measured at its
+POST-Ry value. The LOOP half of that class is fenced
+(`LoopLowering::staleRailRecordRead`, 8h7d.5 rounds 1–3); the straight-line half
+is not. **Measured byte-identically on the pre-2a and post-2a binaries**, so
+nothing in this increment moves it in either direction. Whether it should decline
+is an owner question — under Rule 8 `int mark = a` is an ALIAS of one register, so
+measuring the current register may be the only thing physically available, in
+which case the right answer is a loud decline rather than a different unitary.
+
+## 12. Increment 2 design (settled 2026-09-02, after the Inc 0+1 clearance)
+
+Owner confirmations 2026-09-02: the Rz peephole is **default-on** (Q2 stands), and
+`drbq.6` (angle-select by-difference) is **folded into Inc 2**. Inc 2 ships as two
+commits: **2a** the Rz peephole, **2b** the angle-select lowering.
+
+### 12.1 The two rotation stems get DIFFERENT uncompute treatment — measured, not chosen
+The route path today leaves the register's chain untouched by the arm Rz (the Rz sits
+on the work rail, freed inside the region), so after a phase region the whole-DAG spine
+reverses and frees the register's dead chain exactly as if no region existed (probe
+`h2`: `mul_unc ×2, free ×2` after the region). The in-place Rz must reproduce that
+byte-for-byte after collapsing the route quintuple — the §9.2 audit — which forces:
+
+| stem | DAG link (`isInPlaceGateOn`) | adjoint | freeze | WireWalk |
+|---|---|---|---|---|
+| `cqrt_ry_<W>_controlled` | link (as shipped) | never (flag dead) → whole DAG `NotClosed` | frozen (as shipped) | relabelling gate |
+| `cqrt_rz_<W>_controlled` | **NOT a link** | **none** | **not frozen** | transparent (diagonal) |
+
+Soundness of the Rz row: a controlled Rz is diagonal, so a skipped adjoint moves no
+basis (the 261j clause-(d) trap cannot arise); the register's chain reversed after the
+region returns the rail to `|0⟩` and the phase `e^{iθ·[f]·g(x)}` lands on the live
+registers as a function of their basis — identical to the route's work-rail Rz. This
+is the phase-kickback semantics; bd `wt3l` asks the owner whether the straight-line
+uncontrolled user Rz should follow it too (today it is cancelled or leaked — NOT
+changed by this epic). Both `railCarriesControlledRotation` and `isInPlaceGateOn` must
+therefore be split by stem, and `preservesBasisUnderRecord`'s "freeable" verdict for
+the Rz stem becomes the operative one (the §11 contradiction resolves in its favour).
+
+### 12.2 Inc 2a — the Rz peephole, default-on — **IMPLEMENTED 2026-09-02**
+> **Status: DONE.** Shipped as described below, with the stem split of §12.1.
+> Implementation notes, the measured before/after streams and the two set
+> REMOVALS are in
+> `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC2A_NOTES.md`.
+> Witnesses, all four run: (i) `tools/golden_multiset_audit.py` — 26 goldens,
+> ALL `COLLAPSE-ONLY`, 65 regions / 66 arms / 70 rz gates, zero findings;
+> (ii) the six 8h7d.5 `cmp` twin gates + `e2e-loop-twin-matrix` (156 cells,
+> 105 ACCEPT-IDENTICAL / 12 DECLINE / 3 other, matching the committed expected
+> table); (iii) `tools/inplace_twin_matrix.py --route-oracle <pre-2a cq-opt>`;
+> (iv) `tools/control_flag_order_check.py` — 0 violations over 371 flags.
+> Plus: `ir-pass-lit` 1358 fixtures green (1 XFAIL), full `ctest -j6` 295/295,
+> `cq-opt-equivalence-full` 0 mismatches, `free_pairing_check_test.py` 0
+> failures, and a whole-corpus disposition sweep against the pre-2a binary —
+> **0 accept/decline flips and 0 diagnostic differences over all 1358 fixtures**.
+> IR size stays independent of the trip count on
+> `slice_control_grover_loop_dynamic.c` (77 lines at K=3 and at K=1000; it was
+> 87/87 pre-2a).
+>
+> **THE `cqrt_x` COUNT.** §9.2's expected multiset delta is stated per arm as the
+> quintuple alone; on a **NEGATED** arm it additionally carries `−cqrt_x(f) ×2`
+> (the route brackets each of its two `cqrt_cswap`s = four; control-in-place
+> brackets the gate run once = two). Net **−4 lines per non-negated arm, −6 per
+> negated arm** — measured on `slice_control_phase_diamond` (12→8),
+> `slice_control_phase_ifne` (15→9) and, per activation of a rolled loop, −8 for
+> `eq` and −12 for the negated `der`. See §9.2's box; the audit models it and
+> `--selftest`'s `f1`/`f2`/`f3` mutants pin it.
+>
+> **One thing shipped that this section did not name**, because the increment
+> could not work without it: `emitRegion` needed the **§5 const-fold re-anchor**
+> on the FIRST spine gate. The route read only arg 1 (the angle); hoist-and-defer
+> reads arg 0, and an eq-folded arm's `cq_phi` bottoms at a `ConstantInt`, so
+> without the re-anchor `lowerRotations` would emit nothing and RAUW the gate to
+> the constant — the arm's Rz silently dropped. It is fenced (a first gate whose
+> arg 0 is neither the routed base nor a `Constant` declines loudly).
+
+Scope: every `cq_phi` phase spine the FLAT `emitRegion` path accepts today — diamond,
+if/else, sequential regions (hcrg), the 8h7d.5 rolled loop, `ShareCondFlag` (strip
+skipped, as today), multi-Rz spines (`rz; rz` in one arm — diagonal, no basis hazard),
+Rz on the condition register (§3c permits it; R4 is Ry-only). Nested (4.3) and switch
+(4.5) keep the route. Mechanism: the same hoist-and-defer through
+`TaintSet::ControlledRotations`; `lowerRotations`' phi loop mints
+`cqrt_rz_<W>_controlled(f, h, θ)` for a recorded `cq_phi` (the `emitRz(controlled=true)`
+hook, dormant since 7cde677). Witnesses, all mandatory: (i) the §9.2 multiset audit as
+a script (`tools/golden_multiset_audit.py`: old golden from `git show HEAD:…`, handles
+normalised, the diff must be exactly k × {−alloc(0), −cswap, −cswap, −free(rail),
+−rz(rail,θ), +rz_controlled(f,h,θ)} with θ matched, and NOTHING else); (ii) the six
+8h7d.5 `cmp` twin gates + `e2e-loop-twin-matrix` byte-identical rolled≡unrolled;
+(iii) `tools/inplace_twin_matrix.py` with its oracle INVERTED: a pre-2a `cq-opt` built
+from `f92d95e` in a scratch worktree supplies the route stream; the 2a Rz stream must
+equal collapse(route) on PREFIX AND SUFFIX (no freeze for Rz), the Ry stream on the
+prefix as before; (iv) `tools/control_flag_order_check.py` 0 violations.
+
+### 12.3 Inc 2b — angle-select by-difference (`drbq.6`), both stems
+Shape: `%a = select i1 %c, double A, double B` whose ONLY users are arg-1 (angle)
+slots of `cq_theta`/`cq_phi` calls with TAINTED arg-0; `%c` a lowerable tainted
+compare (the same mint the regions use); `A`, `B` classical. Lowering per consumer
+`R(h, %a)`: `f = icmp(%c)` at the compare; `R(h, B)` uncontrolled; `R_controlled(f, h,
+A−B)` (`fsub` on the classical operands, constant-folded when both are constants);
+`icmp_unc`; `free(f)`. Exact by angle additivity on one axis (`Ry(a)=Ry(b)·Ry(a−b)`,
+same for Rz). For the Ry stem every Inc-1 fence applies verbatim (R4 disjoint wires —
+`cq_theta(q, q==5 ? A : B)` declines; R6 stale record; the classical-angle rule on BOTH
+select arms; the freeze); for the Rz stem the 12.1 transparency. No CFG, no hoist, no
+flatten. Declines: any other user of `%a`, a nested/second select in the angle, a
+non-lowerable or Q+Q compare, a tainted `A`/`B`, the select's condition also used as
+control of a region (`ShareCondFlag`-like: decline in 2b). This is what makes the C
+`if/else` with two rotations on one register compile (clang merges it into exactly this
+shape); the hand-IR if/else fixture stays as the two-block form's pin.

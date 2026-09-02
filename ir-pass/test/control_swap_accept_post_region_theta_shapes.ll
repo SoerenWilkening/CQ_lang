@@ -44,6 +44,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -87,21 +88,16 @@ merge:
   ret i32 %m
 }
 
-; ---- @ifelse: two rails, one flag, ¬flag arm X-bracketed ----
+; ---- @ifelse: one flag, both arms controlled IN PLACE, ¬flag arm X-bracketed
+; (drbq Inc 2a — the two work rails went with the route) ----
 ; CHECK-LABEL: define i32 @ifelse
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H]], i32 5)
-; CHECK:     %[[R0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     %[[R1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R0]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R1]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R0]], double %a)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R1]], double %b)
-; CHECK:     call void @cqrt_free(i32 %[[R0]])
-; CHECK:     call void @cqrt_free(i32 %[[R1]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double %a)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double %b)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[H]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 2.500000e-01)
@@ -114,11 +110,7 @@ merge:
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H2]], double 5.000000e-01)
 ; CHECK:     call void @cqrt_rz_i32(i32 %[[H2]], double 1.250000e-01)
 ; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H2]], i32 5)
-; CHECK:     %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[H2]], i32 %[[R2]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R2]], double %a)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[H2]], i32 %[[R2]])
-; CHECK:     call void @cqrt_free(i32 %[[R2]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[H2]], double %a)
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[H2]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H2]], double 2.500000e-01)
@@ -126,8 +118,13 @@ merge:
 ; CHECK-NOT: phi
 ; CHECK-NOT: br i1
 ;
-; Five allocations across the module — 1 register + 2 rails for @ifelse, 1
-; register + 1 rail for @derived_base — and five frees: the two registers are
-; measured, so the only rails left allocated are those.
-; CNT-COUNT-5: call i32 @cqrt_alloc_i32(
+; TWO allocations across the module — one register per function. Since drbq Inc
+; 2a a phase region mints no work rail (it was five before: +2 rails for @ifelse,
+; +1 for @derived_base), and the two registers are measured, so nothing is left
+; allocated that was not.
+; CNT-COUNT-2: call i32 @cqrt_alloc_i32(
 ; CNT-NOT:     call i32 @cqrt_alloc_i32(
+
+; No swap route survives in either function — window is the first `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap

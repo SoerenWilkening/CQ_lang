@@ -2,24 +2,16 @@ cqrt_alloc_i32(0) -> h0
 cqrt_ry_i32(h0, 0x1p-1)
 cqrt_addc_i32(h0, 3)
 cq_template_icmp_eq_i32_hl(h0, 5) -> h1
-cqrt_alloc_i32(0) -> h2
-cqrt_cswap(h1, h0, h2)
-cqrt_rz_i32(h2, 0x1.921fb54442d18p+1)
-cqrt_cswap(h1, h0, h2)
-cqrt_free(h2)
+cqrt_rz_i32_controlled(h1, h0, 0x1.921fb54442d18p+1)
 cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
 cqrt_free(h1)
 cqrt_ry_i32(h0, -0x1p-1)
 cqrt_addc_i32(h0, 3)
 cqrt_ry_i32(h0, 0x1p-1)
-cq_template_icmp_eq_i32_hl(h0, 5) -> h3
-cqrt_alloc_i32(0) -> h4
-cqrt_cswap(h3, h0, h4)
-cqrt_rz_i32(h4, 0x1.921fb54442d18p+1)
-cqrt_cswap(h3, h0, h4)
-cqrt_free(h4)
-cq_template_icmp_eq_i32_hl_unc(h3, h0, 5)
-cqrt_free(h3)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h2
+cqrt_rz_i32_controlled(h2, h0, 0x1.921fb54442d18p+1)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
+cqrt_free(h2)
 cqrt_ry_i32(h0, -0x1p-1)
 cqrt_addc_i32(h0, 3)
 cqrt_ry_i32(h0, 0x1p-1)

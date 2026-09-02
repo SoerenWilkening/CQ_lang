@@ -20,6 +20,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -40,27 +41,29 @@ merge:
 
 ; Flag from the EQUALITY compare on the qubit (NOT the folded constant).
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 0)
-; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; Route-in on ¬flag (arm fires when q != 0 = the FALSE edge): cqrt_x brackets.
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[T]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; Arm body: the Rz VERBATIM/UNCONTROLLED on the routed rail.
-; CHECK:     call void @cqrt_rz_i32(i32 %[[T]], double %a)
-; Route-back (adjoint of the split, same flag + brackets), then free the |0> rail.
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[T]])
-; CHECK:     call void @cqrt_free(i32 %[[T]])
+; The arm fires when q != 0 (the FALSE edge), so its gate run is X-bracketed.
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; Arm body: ONE controlled Rz, IN PLACE on q (drbq Inc 2a). The §5 straight-
+; through const-fold re-anchor is what puts %[[Q]] at arg 0 — `clang -O1` folded
+; the arm's `cq_phi` base to the constant 0, and hoist-and-defer READS arg 0, so
+; without the re-anchor the rotation would be dropped outright.
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %a)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; Strip the boolean with icmp_eq_inv(q) and reclaim the flag.
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; q (NOT the phi, NOT the folded 0) is measured — RAUW merge-phi -> q.
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
-; Zero controlled gates / copies / data mux; no surviving phi or folded phase.
+; Zero copies / data mux; no surviving phi or folded phase.
 ; CHECK-NOT: cq_phi
-; CHECK-NOT: _controlled
 ; CHECK-NOT: cqrt_copy
 ; CHECK-NOT: phi i32
 
-; Exact free count — two (work rail + flag), no third anywhere.
-; CNT-COUNT-2: call void @cqrt_free(
+; Exact free count — one (the flag; no work rail since drbq Inc 2a), no second.
+; CNT-COUNT-1: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(
+
+; No swap route survives — window `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

@@ -11,11 +11,7 @@ cqrt_x(h1)
 cq_template_icmp_sgt_i32_hl_unc(h1, h0, 5)
 cqrt_free(h1)
 cq_template_icmp_sgt_i32_hl(h2, 50) -> h5
-cqrt_alloc_i32(0) -> h6
-cqrt_cswap(h5, h2, h6)
-cqrt_rz_i32(h6, 0x1p-2)
-cqrt_cswap(h5, h2, h6)
-cqrt_free(h6)
+cqrt_rz_i32_controlled(h5, h2, 0x1p-2)
 cq_template_icmp_sgt_i32_hl_unc(h5, h2, 50)
 cqrt_free(h5)
 cqrt_measure_i32(h2) -> 0

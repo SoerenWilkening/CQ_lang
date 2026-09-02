@@ -46,7 +46,14 @@ WHAT IS CHECKED, per cell:
      free must be present, identical, and in the same order.
  (3) SUFFIX CLASS. After the last flag free the two MAY differ, by the freeze
      and only by the freeze (Rule 6: the rotated Ry rail and anything the DAG
-     closure marks NotClosed is left allocated; the Rz twin may reverse+free).
+     closure marks NotClosed is left allocated; the Rz twin may reverse+free) —
+     and, since bd drbq Inc 2a, by ONE further expected shape: a `route2`
+     consumer's second phase region is a ROUTE in the pre-2a oracle and a
+     CONTROLLED Rz on the build under test, which `reduce_route` deliberately
+     does not reduce (its angle is outside `ARM_HEX`, which is what keeps the I1
+     count honest). That case is labelled `SUFFIX-2A-COLLAPSE(expected)` and is
+     reached only when the suffixes are byte-identical after the OLD one is fully
+     reduced — see the note at the classification site.
      Each cell's suffix diff is recorded and classified; a suffix diff that is
      not `Rz-has-extra-lines-only` is a finding.
  (4) INVARIANTS on the accepted Ry side:
@@ -78,6 +85,34 @@ HOW TO RUN IT (from the repository ROOT; `--root .` is the default)
     python3 tools/inplace_twin_matrix.py --triples        # ~3.5 min, 198 cells
     python3 tools/inplace_twin_matrix.py --only c_mul_eq  # one plane
     python3 tools/inplace_twin_matrix.py --list           # cell names, no runs
+
+⚠ SINCE bd drbq INCREMENT 2a THE `--route-oracle` FLAG IS MANDATORY FOR A MEANINGFUL
+RUN, and here is why. This script's oracle was always "the `cq_phi` twin, which
+ROUTES". Inc 2a (the §6a Rz control-in-place peephole) lowers the `cq_phi` twin
+control-in-place too, so WITHOUT the flag the script compares one in-place stream
+against another and the central claim — "the in-place stream IS the routed stream
+with the route collapsed" — is no longer being tested at all. It would still print
+PREFIX-IDENTICAL, and that green would mean nothing.
+
+    # build the pre-2a oracle ONCE, in a scratch worktree, and keep the path:
+    git worktree add /tmp/wt-f92d95e f92d95e
+    cmake -S /tmp/wt-f92d95e -B /tmp/wt-build \
+          -DLLVM_DIR=$(brew --prefix llvm@19)/lib/cmake/llvm -DCMAKE_BUILD_TYPE=Release
+    cmake --build /tmp/wt-build --target cq-opt -j8
+    python3 tools/inplace_twin_matrix.py --jobs 8 --route-oracle /tmp/wt-build/ir-pass/cq-opt
+
+With the flag the ORACLE INVERTS and the run makes TWO claims per cell instead of
+one. The routed stream comes from the PRE-2a binary; this build's Ry side is
+compared to it on the PREFIX as before (the Ry freeze legitimately truncates the
+suffix), and this build's Rz side is compared to it on the WHOLE TRACE — prefix AND
+suffix — because the Rz stem is TRANSPARENT to uncomputation (PRD §12.1: not a DAG
+link, never adjointed, not frozen), so every post-region `_unc`, `cqrt_free` and
+adjoint must be byte-for-byte what the route produced. That second claim is the one
+the Ry side structurally cannot make, and it is reported in its own tally
+(`RZ-COLLAPSE-ONLY` / `RZ-MISMATCH` / `RZ-DISPOSITION-MOVED`). The reduction it uses
+is `golden_multiset_audit.reduce_routes`, shared with the Inc-2a golden audit rather
+than re-spelt (Rule 14). Cost: one extra `cq-opt` + link + run per cell, so roughly
+1.5x the figures above.
 
 Other flags: `--jobs N` (process pool; stage 2b runs in-process), `--keep DIR`
 (retain every cell's `.c` / `.ll` / `.s2.ll` for reproduction), `--llvm DIR`
@@ -411,6 +446,14 @@ def gen(c, arm):
 
 # ─────────────────────────── TRACE MACHINERY ─────────────────────────────────
 
+# THE Rz-SIDE REDUCER IS SHARED, NOT RE-SPELT (Rule 14). `--route-oracle` needs a
+# reducer that collapses EVERY routed phase region — batched multi-arm allocs and
+# all — into its `cqrt_rz_<W>_controlled` form, which is exactly what the Inc-2a
+# golden audit already implements. Two spellings of one rewrite is how this
+# project's predicates come to disagree (bd uow0 / 1fim), so import it.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import golden_multiset_audit as gma  # noqa: E402
+
 CALL = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\((.*?)\)(?: -> (.*))?$")
 HANDLE = re.compile(r"\bh(\d+)\b")
 
@@ -552,8 +595,9 @@ def _first(text, tok):
     return ""
 
 
-def build(cfg, work, nm, src):
+def build(cfg, work, nm, src, cqopt=None):
     s = Side()
+    cqopt = cqopt or cfg.cqopt
     cp = os.path.join(work, nm + ".c")
     open(cp, "w").write(src)
     s1 = os.path.join(work, nm + ".s1.ll")
@@ -564,7 +608,7 @@ def build(cfg, work, nm, src):
         s.error = "stage1: " + r.stderr.strip()[:400]
         return s
     s2 = os.path.join(work, nm + ".s2.ll")
-    r = subprocess.run([cfg.cqopt, "-passes=cq-lowering", "-S", s1, "-o", s2],
+    r = subprocess.run([cqopt, "-passes=cq-lowering", "-S", s1, "-o", s2],
                        capture_output=True, text=True)
     s.exit = r.returncode
     s.diag = _first(r.stderr, "cq ")
@@ -626,46 +670,67 @@ def run_cell(cfg, c):
     try:
         ry = build(cfg, work, nm + "_ry", gen(c, "cq_theta"))
         rz = build(cfg, work, nm + "_rz", gen(c, "cq_phi"))
+        # THE ORACLE INVERSION (bd drbq Inc 2a, PRD §12.2(iii)). Before 2a the Rz
+        # spelling ROUTED, so the same binary supplied both the subject and the
+        # oracle. 2a lowers the Rz twin control-in-place too, so the routed oracle
+        # now has to come from a PRE-2a binary — one built from `f92d95e` in a
+        # scratch worktree. With `--route-oracle` set, `rzo` is that binary's Rz
+        # trace and it is the ONLY route in the picture.
+        rzo = (build(cfg, work, nm + "_rzo", gen(c, "cq_phi"), cfg.route_oracle)
+               if cfg.route_oracle else None)
     finally:
         if not cfg.keep:
             shutil.rmtree(work, ignore_errors=True)
-    return nm, c, classify(nm, ry, rz)
+    return nm, c, classify(nm, ry, rz, rzo)
 
 
 ARM_HEX = set(float(a).hex() for a in ARM_ANGLES)
 
 
-def classify(nm, ry, rz):
-    """-> dict(verdict, notes[], prefix_diff, suffix, inv[])"""
-    R = dict(verdict="", notes=[], inv=[], suffix="", pdiff="",
+def classify(nm, ry, rz, rzo=None):
+    """-> dict(verdict, notes[], prefix_diff, suffix, inv[], rzv)
+
+    `rzo` is the PRE-2a (routing) binary's Rz side, present only under
+    `--route-oracle`. It supplies BOTH oracles: the Ry comparison below uses it
+    instead of `rz` (which no longer routes), and `rzv` records the additional
+    Rz-vs-collapsed-route verdict — full-trace, PREFIX AND SUFFIX, because the Rz
+    stem is transparent to uncomputation (PRD §12.1) and therefore owes byte
+    identity everywhere, not only up to the flag free.
+    """
+    R = dict(verdict="", notes=[], inv=[], suffix="", pdiff="", rzv="",
              ry_diag=ry.diag, rz_diag=rz.diag, ry_warn=ry.warn,
              ry_pair=ry.pair, rz_pair=rz.pair)
-    if ry.error or rz.error:
+    if rzo is not None:
+        R["rzv"] = classify_rz(rz, rzo, R)
+    # The ROUTED oracle is `rzo` when one was supplied; `rz` otherwise (the
+    # pre-2a behaviour, kept so the script still runs against an old build).
+    oracle = rzo if rzo is not None else rz
+    if ry.error or oracle.error:
         R["verdict"] = "HARNESS-ERROR"
-        R["notes"].append((ry.error or "") + " | " + (rz.error or ""))
+        R["notes"].append((ry.error or "") + " | " + (oracle.error or ""))
         return R
-    if ry.exit != 0 and rz.exit != 0:
-        R["verdict"] = ("DECLINE-BOTH" if ry.diag == rz.diag
+    if ry.exit != 0 and oracle.exit != 0:
+        R["verdict"] = ("DECLINE-BOTH" if ry.diag == oracle.diag
                         else "DECLINE-BOTH-DIFF")
         return R
     if ry.exit != 0:
         R["verdict"] = "RZ-ONLY(over-decline)"
         return R
-    if rz.exit != 0:
+    if oracle.exit != 0:
         R["verdict"] = "RY-ONLY(suspicious)"
         # still check the Ry-side invariants
         R["inv"] += invariants(ry)
         return R
 
     # both accept
-    red, ncoll = reduce_route(rz.trace, ARM_HEX)
+    red, ncoll = reduce_route(oracle.trace, ARM_HEX)
     ryn, rzn = normalise(ry.trace), normalise(red)
     ncry = len(re.findall(r"cqrt_ry_\w+_controlled\(", "\n".join(ry.trace)))
     if ncry == 0:
         R["verdict"] = "ACCEPT-NO-CRY"
         R["notes"].append("no cqrt_ry_*_controlled on the Ry side "
                           "(%d route(s) collapsed on the Rz side)" % ncoll)
-        if ry.trace == rz.trace:
+        if ry.trace == oracle.trace:
             R["notes"].append("traces identical")
         R["inv"] += invariants(ry)
         return R
@@ -706,16 +771,79 @@ def classify(nm, ry, rz):
         elif len(common) == len(srz) and len(sry) > len(srz):
             R["suffix"] = "SUFFIX-RY-LONGER(+%d)" % (len(sry) - len(srz))
         else:
-            k = len(common)
-            R["suffix"] = ("SUFFIX-DIVERGENT@%d ry=%r rz=%r"
-                           % (k + 1,
-                              sry[k] if k < len(sry) else "<end>",
-                              srz[k] if k < len(srz) else "<end>"))
+            # ⚠ ONE DIVERGENCE SHAPE IS AN INSTRUMENT ARTIFACT SINCE bd drbq Inc 2a,
+            # AND IT MUST NOT BE REPORTED AS A FINDING. `reduce_route` above
+            # deliberately reduces ONLY routes whose arm angle is in `ARM_HEX`, so
+            # that a route belonging to the REGION UNDER TEST can be told apart
+            # from one belonging to a `route2` consumer — a second, genuine phase
+            # region that was a route in BOTH spellings. That discrimination is
+            # what makes the I1 invariant (`controlled-Ry count == collapsed
+            # routes`) mean anything, so it stays.
+            #
+            # But Inc 2a collapses EVERY flat phase region, `route2` included, on
+            # the build under test — while the pre-2a oracle still routes it and
+            # `reduce_route` deliberately leaves it alone. The suffixes then
+            # diverge for a reason that is the increment working, not failing. So:
+            # re-reduce the OLD suffix with the FULL reduction (the one the Inc-2a
+            # golden audit uses, which reduces every routed region regardless of
+            # angle) and, if the two then agree, say so in its own label.
+            #
+            # This is a NARROWING of the report, never of the check: the label is
+            # only reachable when the two suffixes become byte-identical after the
+            # old one is reduced, i.e. when the ONLY difference was a collapsed
+            # route. Anything else still reports `SUFFIX-DIVERGENT`.
+            if normalise(gma.reduce_routes(srz)[0]) == normalise(sry):
+                R["suffix"] = "SUFFIX-2A-COLLAPSE(expected)"
+            else:
+                k = len(common)
+                R["suffix"] = ("SUFFIX-DIVERGENT@%d ry=%r rz=%r"
+                               % (k + 1,
+                                  sry[k] if k < len(sry) else "<end>",
+                                  srz[k] if k < len(srz) else "<end>"))
     R["inv"] += invariants(ry)
-    if ry.nwarn != rz.nwarn:
+    if ry.nwarn != oracle.nwarn:
         R["notes"].append("warnings ry=%d rz=%d: %s"
-                          % (ry.nwarn, rz.nwarn, ry.warn or rz.warn))
+                          % (ry.nwarn, oracle.nwarn, ry.warn or oracle.warn))
     return R
+
+
+def classify_rz(rz, rzo, R):
+    """The Rz-STEM verdict under `--route-oracle` (bd drbq Inc 2a, PRD §12.2(iii)).
+
+    `rzo` is the PRE-2a binary's trace, in which the same source still ROUTES;
+    `rz` is this build's, in which the flat phase region lowers control-in-place.
+    The claim under test is stronger than the Ry side's: for the Rz stem the whole
+    trace must match, PREFIX AND SUFFIX, because the controlled Rz is DIAGONAL and
+    therefore transparent to uncomputation — it is NOT a DAG link, is never
+    adjointed, and does NOT freeze its register (PRD §12.1), so every post-region
+    `_unc`, `cqrt_free` and adjoint must be exactly what the route produced. A
+    SUFFIX difference here is a FINDING, not a scope fact — which is precisely the
+    axis the Ry side cannot police, because the Ry freeze legitimately truncates
+    its own suffix.
+
+    The reduction is `golden_multiset_audit.reduce_routes` — the same rewrite the
+    golden audit applies, shared rather than re-spelt (Rule 14).
+    """
+    if rz.error or rzo.error:
+        return "RZ-HARNESS-ERROR"
+    if rz.exit != rzo.exit:
+        R["notes"].append("rz disposition moved: pre-2a exit %s, now %s (%s)"
+                          % (rzo.exit, rz.exit, rz.diag or rzo.diag))
+        return "RZ-DISPOSITION-MOVED"
+    if rz.exit != 0:
+        return "RZ-DECLINE-BOTH" if rz.diag == rzo.diag else "RZ-DECLINE-DIFF"
+    red, nreg, _narm, _ng = gma.reduce_routes(rzo.trace)
+    a, b = normalise(red), normalise(rz.trace)
+    if a == b:
+        return "RZ-COLLAPSE-ONLY(%d)" % nreg
+    i = next((k for k in range(max(len(a), len(b)))
+              if k >= len(a) or k >= len(b) or a[k] != b[k]), 0)
+    R["notes"].append("RZ mismatch at line %d:\n         collapsed-route: %s"
+                      "\n         in-place       : %s"
+                      % (i + 1,
+                         a[i] if i < len(a) else "<end>",
+                         b[i] if i < len(b) else "<end>"))
+    return "RZ-MISMATCH"
 
 
 def invariants(ry):
@@ -820,7 +948,18 @@ def main():
                     help="run the hand-picked 3-way slice instead of all-pairs")
     ap.add_argument("--quick", action="store_true",
                     help="a <1min smoke subset (NOT a green matrix)")
+    ap.add_argument("--route-oracle", default="",
+                    help="path to a PRE-2a `cq-opt` (built from f92d95e) whose Rz "
+                         "spelling still ROUTES. With it the oracle INVERTS: the "
+                         "routed stream comes from that binary, this build's Ry "
+                         "side is compared to it on the PREFIX as before, and this "
+                         "build's Rz side is additionally compared to it on the "
+                         "WHOLE trace (prefix AND suffix — the Rz stem is "
+                         "transparent to uncomputation, PRD §12.1)")
     cfg = ap.parse_args()
+    if cfg.route_oracle and not os.access(cfg.route_oracle, os.X_OK):
+        sys.stderr.write("route-oracle not executable: %s\n" % cfg.route_oracle)
+        return 2
     cfg.clang = os.path.join(cfg.llvm, "clang")
     cfg.cqopt = os.path.join(cfg.root, "build/ir-pass/cq-opt")
     cfg.include = os.path.join(cfg.root, "include")
@@ -852,6 +991,7 @@ def main():
 
     lines = []
     tally = {}
+    rztally = {}
     for nm, c, R in sorted(res):
         tally[R["verdict"]] = tally.get(R["verdict"], 0) + 1
         flag = "!!" if (R["verdict"] in ("PREFIX-MISMATCH", "HARNESS-ERROR",
@@ -859,8 +999,15 @@ def main():
                         or R["inv"]
                         or R["suffix"].startswith("SUFFIX-DIVERGENT")
                         or R["suffix"].startswith("SUFFIX-RY")) else "  "
-        lines.append("%s %-58s %-24s %-28s %s"
-                     % (flag, nm, R["verdict"], R["suffix"],
+        if R["rzv"]:
+            rztally[R["rzv"].split("(")[0]] = \
+                rztally.get(R["rzv"].split("(")[0], 0) + 1
+            if R["rzv"].split("(")[0] in ("RZ-MISMATCH", "RZ-HARNESS-ERROR",
+                                          "RZ-DISPOSITION-MOVED",
+                                          "RZ-DECLINE-DIFF"):
+                flag = "!!"
+        lines.append("%s %-58s %-24s %-28s %-24s %s"
+                     % (flag, nm, R["verdict"], R["suffix"], R["rzv"],
                         R["ry_diag"] or R["rz_diag"]))
         for n in R["notes"]:
             lines.append("      note: " + n)
@@ -875,6 +1022,10 @@ def main():
     print("\n=== TALLY (%s, %d cells) ===" % (mode, len(res)))
     for k in sorted(tally):
         print("  %-26s %d" % (k, tally[k]))
+    if rztally:
+        print("\n=== Rz STEM vs the INVERTED (pre-2a) ROUTE ORACLE, whole trace ===")
+        for k in sorted(rztally):
+            print("  %-26s %d" % (k, rztally[k]))
     if cfg.out:
         open(cfg.out, "w").write(out + "\n")
     return 0

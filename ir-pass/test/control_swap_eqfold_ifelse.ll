@@ -20,6 +20,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -43,23 +44,14 @@ merge:
 
 ; CHECK-LABEL: define i32 @ifelse_eq
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 7)
-; CHECK:     %[[TT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     %[[EE:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; split: route q (NOT the folded const 7) -> then rail iff flag, q -> else rail iff ¬flag
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[TT]])
+; both arms CONTROL-IN-PLACE on q, NOT on the folded const 7 (drbq Inc 2a — and
+; here the §5 re-anchor is what puts %[[Q]] at arg 0 of the folded arm's gate; the
+; route only ever read the angle, so it could not have dropped it, and this path
+; can): THEN on %[[F]], ELSE X-bracketed so it fires on ¬flag.
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %a)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[EE]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %b)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; arm bodies: VERBATIM, UNCONTROLLED (re-anchor by physics — angle only)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[TT]], double %a)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[EE]], double %b)
-; join = adjoint of the split
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[TT]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[EE]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_free(i32 %[[TT]])
-; CHECK:     call void @cqrt_free(i32 %[[EE]])
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 7)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
@@ -83,27 +75,23 @@ merge:
 
 ; CHECK-LABEL: define i32 @ifelse_ne
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ne_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 7)
-; CHECK:     %[[KK:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     %[[FF:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; kept arm (S0) unbracketed, folded arm (S1) ¬flag — both route q, not the const
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[KK]])
+; kept arm (S0) unbracketed, folded arm (S1) ¬flag — both gates name q at arg 1,
+; not the const
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %a)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[FF]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %b)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[KK]], double %a)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[FF]], double %b)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[KK]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[FF]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_free(i32 %[[KK]])
-; CHECK:     call void @cqrt_free(i32 %[[FF]])
 ; CHECK:     call void @cq_template_icmp_ne_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 7)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
 
 ; global re-anchor / dephasing guards across both functions
 ; CHECK-NOT: cq_phi
-; CHECK-NOT: _controlled
 ; CHECK-NOT: cqrt_copy
 ; CHECK-NOT: phi i32
+
+; No swap route survives in EITHER function: no |0> work rail, no CSWAP anywhere
+; in the module (anchored at the first define so the window is both functions).
+; NOROUTE:     define i32 @ifelse_eq
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

@@ -11,9 +11,16 @@
 ;
 ; VERBATIM `clang -O1` OUTPUT (Rule 9 — note the polarity: `<= 3.5` is emitted as
 ; `fcmp ugt` with the gate arm as the FALSE successor, so the emitter brackets the
-; route with `cqrt_x`).
+; arm's gate run with `cqrt_x`).
 ;
-; THIS FIXTURE IS ABOUT THE DISCHARGE, not the route. The condition builds a
+; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
+; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
+; `cqrt_rz_i32_controlled(flag, register, theta)`, and the swap route (work-rail
+; alloc, both `cqrt_cswap`s, the rail free) is gone. On this NEGATED arm that also
+; halves the `cqrt_x` count — the route bracketed EACH of its two cswaps (four
+; `cqrt_x`), control-in-place brackets the arm's gate run ONCE (two).
+;
+; THIS FIXTURE IS ABOUT THE DISCHARGE, not the arm gate. The condition builds a
 ; three-rail chain (`sitofp` → `fadd` → `sqrt`) that is ENTANGLED with the
 ; register; if it is still allocated when the S-dagger `cqrt_ry` fires, the
 ; rotation is dephased. The hand-unrolled twin reverses and frees all three
@@ -33,6 +40,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef)
 declare double @llvm.sqrt.f64(double)
@@ -80,13 +88,11 @@ define i32 @slice(i32 noundef %0, double noundef %1) {
 ; CHECK:     %[[C2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fadd_f64_hl(i32 %[[C1]], double 3.000000e+00)
 ; CHECK:     %[[C3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sqrt_f64(i32 %[[C2]])
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fcmp_ugt_f64_hl(i32 %[[C3]], double 3.500000e+00)
-; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; the gate arm is the FALSE successor -> the route is `cqrt_x`-bracketed:
+; the gate arm is the FALSE successor -> the arm's gate run is `cqrt_x`-bracketed,
+; ONCE, and the phase lands in place on the register itself:
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double %1)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R]], double %1)
-; CHECK:     call void @cqrt_free(i32 %[[R]])
 ;
 ; THE LOAD-BEARING PART — strip, then the WHOLE chain reversed LIFO and freed,
 ; then the flag free, and only THEN the S-dagger Ry. All in-body, once per trip:
@@ -106,3 +112,8 @@ define i32 @slice(i32 noundef %0, double noundef %1) {
 ; no leak, no dephasing report, no loop decline:
 ; CHECK-NOT: control flow inside a loop body
 ; CHECK-NOT: non-diagonal gate over a live derived record
+;
+; The swap route must not come back for this flat phase shape. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap

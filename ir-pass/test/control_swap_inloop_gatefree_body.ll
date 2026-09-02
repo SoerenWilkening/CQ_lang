@@ -22,8 +22,16 @@
 ; The RED twin is lowering_reject_inloop_rail_identity_carry.ll — the same carry
 ; with a SIBLING chain on the same mint that rotates the wire.
 ;
+; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
+; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
+; alloc, both `cqrt_cswap`s, the rail free) is gone. The F-2 argument above is
+; untouched — it is about the RAIL's basis-relabelling gates, and neither the route
+; nor the controlled Rz is one (both are diagonal-or-permutation on the register).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
@@ -51,17 +59,13 @@ exit:
   ret i32 %m
 }
 
-; ONE rail minted outside the loop; the rolled body is the routed phase arm and
+; ONE rail minted outside the loop; the rolled body is the in-place phase arm and
 ; nothing else; the exit measure names the same handle:
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     loop:
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
-; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R]], double 0x400921FB54442D18)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK:     call void @cqrt_free(i32 %[[R]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[H]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     exit:
@@ -70,3 +74,8 @@ exit:
 ; No rail phi survives, and no decline:
 ; CHECK-NOT: phi i32 [ %[[H]]
 ; CHECK-NOT: rail record read past an in-place gate
+;
+; The swap route must not come back for this flat phase shape. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap

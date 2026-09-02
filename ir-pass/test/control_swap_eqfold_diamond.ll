@@ -20,6 +20,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; Independent EXACT free-count scan: two cqrt_free (work rail + flag), no third.
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -39,32 +40,39 @@ merge:
   ret i32 %m
 }
 
-; br: mint the flag from the EQUALITY compare, then route q into a |0> work rail
+; br: mint the flag from the EQUALITY compare
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 7)
-; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[T]])
-; arm body: VERBATIM, UNCONTROLLED Rz gates on the routed rail (re-anchor by
-; physics — only the angle is read, the folded arg-0 const is discarded)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[T]], double %a)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[T]], double %b)
-; phi: route the active result back into q (adjoint of the split, same %flag)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[T]])
-; rail is |0> (Rz|0>=|0>): clean free — NOT a measurement
-; CHECK:     call void @cqrt_free(i32 %[[T]])
+; arm body: one controlled Rz per gate, IN PLACE on q (§6a peephole, drbq Inc 2a).
+;
+; ⚠ AND THIS FIXTURE IS THE §5 RE-ANCHOR'S PIN, WHICH THE COLLAPSE PROMOTED FROM
+; DECORATION TO LOAD-BEARING. `clang -O1` proved `q == 7` inside the arm and
+; value-propagated it, so both `cq_phi` calls bottom at a folded `ConstantInt 7`
+; at arg 0. The ROUTE read only arg 1 (the angle) and put the rotation on its own
+; work rail, so it never noticed. Hoist-and-defer reads ARG 0: without
+; `emitRegion`'s re-anchor of the first spine gate to the region's proven routed
+; base, `lowerRotations` would see an UNTAINTED operand, emit NOTHING, and RAUW
+; the gate to the constant — the arm's Rz silently DROPPED. That the two lines
+; below name `%[[Q]]` and not a constant IS that fence firing.
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %a)
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %b)
 ; strip the boolean: q==q0, so icmp_eq_inv(q) returns the flag to |0>; reclaim it
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 7)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; q (not the phi) is measured — RAUW merge-phi -> q
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
-; no-spurious-free: EXACTLY two frees total — no third after the flag free
+; no-spurious-free: the flag free is the LAST free — no second after it
 ; CHECK-NOT: call void @cqrt_free
 ; re-anchor: NO surviving const-folded cq_phi (it would RAUW to the const at
-; RotationLowering -> a wrong data-mux); zero controlled gates / copies / data mux
+; RotationLowering -> a dropped rotation); zero copies / data mux
 ; CHECK-NOT: cq_phi
-; CHECK-NOT: _controlled
 ; CHECK-NOT: cqrt_copy
 ; CHECK-NOT: phi i32
 
-; Exact free count — two (work rail + flag), no third anywhere.
-; CNT-COUNT-2: call void @cqrt_free(
+; Exact free count — one (the flag; there is no work rail any more), no second.
+; CNT-COUNT-1: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(
+
+; No swap route survives: no |0> work rail, no CSWAP — window is `define` -> EOF.
+; NOROUTE:     define i32 @example
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

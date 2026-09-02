@@ -39,7 +39,7 @@ WHAT IT CANNOT WITNESS — read this before quoting a green run
   * A FUNCTION WITH NO CONTROL FLAG CONTRIBUTES NOTHING. "0 violations" over a
     corpus is only as strong as the `flags checked` count printed beside it —
     always quote both.
-  * EIGHT BY-DESIGN EXEMPT FIXTURE FILES are hard-coded below (see `EXEMPT`).
+  * NINE BY-DESIGN EXEMPT FIXTURE FILES are hard-coded below (see `EXEMPT`).
     They are correct-by-design shapes, not suppressed failures, and each is
     named — but the skip is per FILE, so anything else in those files is skipped
     with them.
@@ -91,8 +91,16 @@ import sys
 #   * `control_swap_cond_datause_*` (ziov `ShareCondFlag`) — the eager strip+free
 #     is deliberately SKIPPED because the compare's i1 is also read as DATA, so
 #     the flag has a second owner.
+#   * `control_inplace_rz_share_cond_flag` (bd drbq Inc 2a) — the SAME
+#     `ShareCondFlag` shape as the line above, spelled for the §6a Rz peephole
+#     instead of the swap route. It is listed SEPARATELY rather than folded into
+#     that prefix because the exemption is keyed on the fixture NAME and this file
+#     is not in that name family; adding the name is the honest move, silently
+#     widening the prefix to `control_` would not be. One function, one flag: the
+#     per-file skip costs exactly that flag.
 EXEMPT = ("control_swap_abort_park",
-          "control_swap_cond_datause_")
+          "control_swap_cond_datause_",
+          "control_inplace_rz_share_cond_flag")
 
 CALL_RE = re.compile(
     r'^\s*(?:%([\w.]+) = )?(?:tail |musttail |notail )?call [^@]*@([\w.]+)\(([^)]*)\)',

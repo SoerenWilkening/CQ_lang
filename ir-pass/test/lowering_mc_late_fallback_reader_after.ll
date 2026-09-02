@@ -48,10 +48,17 @@
 ;     if (t == 3) a = cq_phi(a, 1.5);
 ;     return cq_measure(a);
 ;
+; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
+; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
+; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
+; mint, the strip, the flag free and every downstream gate are unchanged.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOCONV < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -91,9 +98,10 @@ define i32 @late_reader_after(i32 noundef %0, ptr noundef %1) {
 ; CHECK-NEXT: call void @cqrt_free(
 ; THE SITE, out of place: a fresh rail carries `a - off` and the register stays.
 ; CHECK-NEXT: %[[SUB:.*]] = call i32 @cq_template_sub_i32_hl(i32 %[[H]], i32 %3)
-; region 2 routes THAT rail, and reads the chain rail again for its own flag.
+; region 2 controls its arm gate ON THAT RAIL, and reads the chain rail again for
+; its own flag.
 ; CHECK-NEXT: %[[F2:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[AD]], i32 3)
-; CHECK:      call void @cqrt_cswap(i32 %[[F2]], i32 %[[SUB]], i32 %{{.*}})
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[SUB]], double 1.500000e+00)
 ; only now does the chain discharge — after the site, which is exactly why the
 ; site could not be converted.
 ; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[AD]], i32 3)
@@ -111,3 +119,7 @@ define i32 @late_reader_after(i32 noundef %0, ptr noundef %1) {
 ; only stderr can witness silence (Inc-7 fix-round re-review R2/R3).
 ; SILENT-NOT: warning
 ; SILENT-NOT: error
+; The swap route must not come back for these flat phase shapes. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap

@@ -31,6 +31,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT  < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT2 < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -65,38 +66,24 @@ merge2:
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
 ; CHECK:     call void @cqrt_rz_i32(i32 %[[Q]], double 9.000000e-01)
 ;
-; region 1 — the if/else: one flag, TWO rails (one per arm), the false arm
-; X-bracketed, both angles verbatim, both rails freed, flag stripped + freed.
+; region 1 — the if/else: one flag, both arms CONTROL-IN-PLACE on %[[Q]] (drbq
+; Inc 2a: no work rails), the false arm's gate run X-bracketed, both angles
+; verbatim, flag stripped + freed. `CHECK-NEXT` throughout, so the bracket cannot
+; drift off the gate it makes conditional — under the route the analogous risk was
+; a deleted route-BACK, which the pinned pair below used to catch.
 ; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
-; CHECK:     %[[R1T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     %[[R1F:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1T]])
-; CHECK:     call void @cqrt_x(i32 %[[F1]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1F]])
-; CHECK:     call void @cqrt_x(i32 %[[F1]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R1T]], double %a)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R1F]], double %b)
-; the route-BACK — the merge is the adjoint of the split, same flag, same
-; bracket. Pinned explicitly: without these lines the fixture would still pass
-; with both cswap-backs deleted, which is a rail left holding the answer.
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1T]])
-; CHECK:     call void @cqrt_x(i32 %[[F1]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1F]])
-; CHECK:     call void @cqrt_x(i32 %[[F1]])
-; CHECK:     call void @cqrt_free(i32 %[[R1T]])
-; CHECK:     call void @cqrt_free(i32 %[[R1F]])
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[Q]], double %a)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[Q]], double %b)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ;
 ; region 2 — the diamond, STRICTLY AFTER region 1's flag was stripped and freed.
 ; Its flag is minted from the SAME live wire %[[Q]] (region 1 left the basis
 ; untouched: every gate it applied was a diagonal Rz).
 ; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 3)
-; CHECK:     %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[Q]], i32 %[[R2]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R2]], double %c2a)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[Q]], i32 %[[R2]])
-; CHECK:     call void @cqrt_free(i32 %[[R2]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[Q]], double %c2a)
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[Q]], i32 3)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
@@ -119,3 +106,8 @@ merge2:
 ; CNT-NOT:      = call i32 @cq_template_icmp_sgt_i32_hl(
 ; CNT2-COUNT-2: call void @cq_template_icmp_sgt_i32_hl_unc(
 ; CNT2-NOT:     call void @cq_template_icmp_sgt_i32_hl_unc(
+
+; No swap route survives on either region — window `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

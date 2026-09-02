@@ -30,8 +30,15 @@
 ; `cq_template_add_i32_hl` ABSENT is the whole assertion. Delete the
 ; `InPlaceRailOps` marking from `collapseRailPhisIn` and this goes red.
 ;
+; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
+; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
+; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
+; mint, the strip, the flag free and every downstream gate are unchanged.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 @cq_off = global i32 3, align 4
 
@@ -75,7 +82,7 @@ define i32 @slice() {
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[H]])
 ; the rolled body, on the SAME handle throughout:
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %{{.*}})
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[H]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
@@ -86,3 +93,7 @@ define i32 @slice() {
 ; THE ASSERTION: no out-of-place add anywhere. An orphan `cq_template_add_i32_hl`
 ; rail here IS the miscompile — the loop would run on the pre-offset register.
 ; CHECK-NOT: cq_template_add_i32_hl
+; The swap route must not come back for this flat phase shape. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap

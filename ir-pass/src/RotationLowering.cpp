@@ -166,7 +166,10 @@ bool emitRz(CallInst *Phi, Value *Handle, Value *Angle, WidthDispatch &wd,
     return true;
   }
   // Controlled gate body: `cqrt_rz_<W>_controlled(flag, handle, angle)`, the
-  // i32 control flag prepended as arg 0 (PRD §1.2).
+  // i32 control flag prepended as arg 0 (PRD §1.2). LIVE SINCE bd
+  // test_C_libtooling-drbq Inc 2a — this arm was dormant from `7cde677` (the
+  // wholesale removal of the old controlled-op control path) until the §6a
+  // peephole turned it back on for the FLAT `emitRegion` path.
   ControlledSymbols csyms(*Phi->getModule(), wd);
   FunctionCallee Rz =
       Abi.empty() ? FunctionCallee() : csyms.controlledRotationFn(Abi);
@@ -177,6 +180,34 @@ bool emitRz(CallInst *Phi, Value *Handle, Value *Angle, WidthDispatch &wd,
   CallInst *RzCall = Builder.CreateCall(Rz, {Flag, Handle, Angle});
   if (DebugLoc DL = Phi->getDebugLoc())
     RzCall->setDebugLoc(DL);
+  // M-A Inc 1: a USER `cq_phi` gate — RECORDED ON THIS ARM TOO (Inc 2a). Two
+  // spellings of one gate, one classification: the uncontrolled arm above has
+  // always recorded, and `isTeardownUse`'s `cqrt_rz_` prefix test already matches
+  // the `_controlled` spelling, so an unrecorded gate would be classified there
+  // as the SPINE undoing itself rather than as the USER's rotation.
+  //
+  // ⚠ IT IS BEHAVIOURALLY **INERT** AT HEAD, AND SAYING SO IS THE POINT (round-1
+  // review of Inc 2a, L1 F-3; the 8h7d.5 round-5 lesson "a comment that
+  // overstated a no-op"). An earlier spelling of this note claimed an unrecorded
+  // controlled Rz "would exempt a live record it must not exempt" — that is NOT
+  // reachable. The set has exactly one reader chain:
+  // `isRecordedUserRotation` → `isTeardownUse` → `reachesObservingSink`'s
+  // NON-USES block (`:1254`) — and TWO LINES BELOW IT is the F2-ruling clause
+  // `if (N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) continue;`
+  // (`:1258`). Recorded ⇒ `isTeardownUse` false ⇒ falls to `:1258` ⇒ `continue`.
+  // Unrecorded ⇒ `isTeardownUse` true ⇒ `continue` at `:1254`. Same `continue`,
+  // same walk, same verdict. `warnLiveRecordRotations` keys on
+  // `UserChainedRotations` and re-checks `cqrt_ry_` structurally, so it never
+  // sees this gate either. MEASURED: full stderr is identical between the pre-2a
+  // and post-2a binaries over all 1358 fixtures — no warning appeared, moved or
+  // vanished.
+  //
+  // KEEP IT ANYWAY: it is the correct CLASSIFICATION (this gate really is the
+  // user's rotation, not the spine's adjoint), it is the conservative direction
+  // (a recorded gate exempts nothing), and it becomes load-bearing the moment the
+  // `:1258` F2 clause is narrowed. See TaintSet::UserPhaseRotations.
+  if (Rec)
+    Rec->insert(RzCall);
   return true;
 }
 
@@ -334,13 +365,39 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
     // is safe). The phi is left standing (test_C_libtooling-659).
     if (declineTaintedAngle(Phi, taint))
       continue;
+    // CONTROL-IN-PLACE PHASE ARM (control-in-place-PRD §12.2, bd
+    // test_C_libtooling-drbq Inc 2a — the §6a Rz peephole, default-on for the
+    // FLAT `emitRegion` path). `SwapRouteEmit`'s phase path HOISTED this
+    // `cq_phi` out of a tainted arm into the pred and recorded the control flag
+    // it must fire under; mint `cqrt_rz_<W>_controlled(f, handle, θ)` at the
+    // hoisted position instead of the unconditional gate. Everything else (the
+    // handle, the RAUW-to-operand, the `UserPhaseRotations` recording) is
+    // unchanged — the two arms of `emitRz` differ only in the symbol and the
+    // prepended flag.
+    Value *Ctrl = nullptr;
+    if (auto It = taint.ControlledRotations.find(Phi);
+        It != taint.ControlledRotations.end())
+      Ctrl = It->second;
     if (taint.Tainted.count(Op)) {
-      // Tainted operand → emit uncontrolled rz on the handle. A failed emit
-      // (unsupported width) leaves the phi standing for the verifier — do not
-      // erase it.
-      if (!emitRz(Phi, Op, Angle, wd, /*controlled=*/false, /*flag=*/nullptr,
+      // Tainted operand → emit the rz on the handle, CONTROLLED iff the emitter
+      // recorded a flag for it. A failed emit (unsupported width) leaves the phi
+      // standing for the verifier — do not erase it.
+      if (!emitRz(Phi, Op, Angle, wd, /*controlled=*/Ctrl != nullptr, Ctrl,
                   &taint.UserPhaseRotations))
         continue;
+    } else if (Ctrl) {
+      // A recorded CONTROLLED gate whose arg 0 is CLASSICAL. On the accept path
+      // this cannot happen: `emitRegion`'s step-2 re-anchor rewrites a folded
+      // `ConstantInt` base to the region's proven routed handle (which is
+      // tainted) and declines loudly on any other non-`Q` base, so a recorded
+      // `cq_phi` always has a tainted arg 0 here. Reaching this line means the
+      // plan and the IR disagree — and the fall-through below (RAUW to the
+      // classical operand, erase) would DROP the arm's rotation silently, which
+      // is precisely the verify-clean wrong unitary the re-anchor exists to
+      // prevent. Bail LOUDLY instead (Rule 1); the mirror of
+      // `controlled theta operand` on the theta loop above.
+      diagnoseUnsupported(Phi, "controlled phi operand");
+      continue;
     }
     // Classical operand → no rz (Rz on a basis state is unobservable,
     // PRD §4.1). RAUW the phi result to its operand either way (the

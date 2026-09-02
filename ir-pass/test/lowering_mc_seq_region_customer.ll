@@ -10,7 +10,8 @@
 ;
 ; WHAT IT PINS, AND IT IS THE WHOLE REASON THE FENCE IS POSITION-AWARE. Site 3
 ; (`%18 = add i32 %17, %16`) has a parent whose user list is NOT empty: the
-; region-2 compare read it, two `cqrt_cswap`s routed it, and its `_unc` strip read
+; region-2 compare read it, the arm's controlled `Rz` read it (two `cqrt_cswap`s
+; routed it before the §6a control-in-place peephole), and its `_unc` strip read
 ; it again. Under the WITHDRAWN "single-consumer-ever" reading every one of those
 ; disqualified the site, and the customer stayed dephased (SPIKE §9.8). Under the
 ; RULED position-aware, spine-discharge-aware fence they do not, because every one
@@ -40,18 +41,27 @@
 ; set is not readable off the CFG; post-flatten it is a plain SSA value with a
 ; positioned, fully torn-down user list.
 ;
+; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
+; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
+; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
+; mint, the strip, the flag free and every downstream gate are unchanged.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ONERAIL < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ;
 ; State prep: ONE rail, and `q += off` mutates it in place — no `h0`/`h1` pair.
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:      call void @cqrt_addc_i32(i32 %[[H]], i32 %{{[a-zA-Z0-9_.]+}})
 ;
-; Region 1 (the oracle) reads and fully tears down that same rail:
+; Region 1 (the oracle) reads and fully tears down that same rail; its phase arm
+; fires IN PLACE on `%[[H]]`, controlled by the flag:
 ; CHECK:      %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
-; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[H]], i32 5)
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[H]], double 0x400921FB54442D18)
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[H]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
 ;
 ; bd nepx's DEFECT SITE, now the fix. `q -= off` becomes a CLASSICAL negation
@@ -66,7 +76,8 @@
 ; LAST `q += off` — the site the withdrawn single-consumer reading would have
 ; refused, converting only because its parent's readers are prior and completed:
 ; CHECK:      %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 0)
-; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[H]], i32 0)
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[H]], double 0x400921FB54442D18)
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[H]], i32 0)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
 ; CHECK:      call void @cqrt_addc_i32(i32 %[[H]], i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
@@ -76,10 +87,16 @@
 ; CHECK-NOT:  cq_template_sub_
 ; CHECK-NOT:  cq_template_add_
 ;
-; THREE `cqrt_alloc_i32` in the whole module and no more — the ONE wire, plus one
-; work rail per region. Never an ancestor. ONERAIL counts them:
-; ONERAIL-COUNT-3: call i32 @cqrt_alloc_i32(
+; RE-MEASURED after the §6a collapse: ONE `cqrt_alloc_i32` in the whole module and
+; no more — the ONE wire. Never an ancestor, and (since Increment 2a) never a work
+; rail either: the two per-region work rails the route used to mint are gone, so
+; this was 3. ONERAIL counts them:
+; ONERAIL-COUNT-1: call i32 @cqrt_alloc_i32(
 ; ONERAIL-NOT:     call i32 @cqrt_alloc_i32(
+; The swap route must not come back for these flat phase shapes. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"

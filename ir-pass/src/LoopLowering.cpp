@@ -300,6 +300,76 @@ bool isInPlaceGateOnArg0(const CallInst *CI, const Value *H,
          taint.Tainted.count(const_cast<Value *>(H));
 }
 
+// Is `CI` a control region's OWN arm gate, HOISTED into the pred by
+// `SwapRouteEmit` and awaiting its controlled mint in `lowerRotations`? (bd
+// test_C_libtooling-drbq Inc 2a — the §6a Rz peephole.)
+//
+// WHY THIS EXISTS, and it is a REPAIR of a structural premise, not a new licence.
+// The round-2 fan-out guard's own comment states the premise it runs on: "the
+// emitted region stream is NOT counted here and must not be — `cqrt_cswap` /
+// `cq_template_*` are not in `GateCalls` … so `isInPlaceGateOnArg0` /
+// `inPlaceValueRailOperand` reject them BY CONSTRUCTION". That was true while
+// every accepted phase region put its arm gate on a fresh WORK RAIL and erased
+// the `@cq_phi`. Inc 2a lowers the same regions CONTROL-IN-PLACE: the `@cq_phi`
+// is MOVED to the pred and kept alive (hoist-and-defer), so it is still in
+// `GateCalls`, still has the register at arg 0, and the guard started counting
+// the region's own gate as a SECOND lineage mutator. MEASURED: 11 accepting
+// in-loop fixtures (the whole rolled-Grover family, incl. every `cmp` twin gate)
+// flipped to a loud `kMsgRailFanout` whose hand-unrolled twin still compiled —
+// the same false-positive SHAPE as the round-4 OD-A finding, one construct over.
+//
+// WHY EXCLUDING IT IS SOUND, stated as physics and not as convenience. The guard
+// refuses Rule-8 fan-out: two in-place mutators reading ONE rail value would both
+// serialise onto the collapsed handle (`rz(h,1); rz(h,2)` = Rz(3) where the source
+// wanted two registers). A hoisted arm gate is not a second lineage: the region's
+// merge φ was RAUW'd to the routed base, so the gate's own RESULT IS DEAD and
+// every post-region reader reads the register — the gate is one link in the ONE
+// sequence the source wrote, applied to the ONE rail, in program order. It is the
+// literal replacement for the route's `cswap; rz(rail); cswap` triple, which this
+// guard never counted either, and it is DIAGONAL, so it moves no basis label and
+// cannot make any record stale (which is why `collectRailGates` follows a
+// `cq_phi` as a rail HOP and not as a gate).
+//
+// SCOPE, deliberately narrow: membership in `taint.ControlledRotations` is
+// written ONLY by the two `SwapRouteEmit` in-place emitters, at emission, for a
+// gate they have already fully adjudicated. It is NOT a general "ignore this
+// rotation" switch — an ordinary in-body `cq_phi`/`cq_theta` is unaffected and
+// still counts. Round 1 (`lowerLoops`) can never see a member: it runs BEFORE
+// `lowerControlRegions`, so the map is empty and the arm gate is still inside the
+// un-flattened arm block; the round-1 call site passes this anyway so the two
+// rounds cannot drift apart on the predicate (Rule 14, the OD-A discipline).
+//
+// ⚠ THE `cq_phi` (Rz) STEM ONLY, AND THE STEM TEST IS THE POINT (bd drbq Inc 2a,
+// round-1 review L2 N-2). `taint.ControlledRotations` has **TWO** writers —
+// `emitInPlaceRotationRegion` records the Inc-1 **Ry** arm (`SwapRouteEmit.cpp`,
+// the `cq_theta` spine) and `emitRegion` records the Inc-2a **Rz** arm — while
+// the argument above is DIAGONAL and therefore true of the Rz stem alone. An Ry
+// relabels its target on the `f=1` branch: it is a real rail GATE, it CAN make a
+// record stale, and the "`collectRailGates` follows it as a HOP" half of the
+// argument is simply false of it (`collectRailGates` counts a `cq_theta_` as a
+// GATE, at the name test in `noteGate`). Restricting to the stem the proof covers
+// costs nothing today — in-loop Ry arms decline before they can reach here (loud
+// `control flow inside a loop body` / `condition predates a non-diagonal gate`,
+// measured on five shapes: cross-register, second in-place mutator, in-place
+// `add`, the `if/else` form, and the out-of-loop control that ACCEPTS) — and it
+// stops Inc 3 from INHERITING a licence it was never granted.
+//
+// THE OBLIGATION INC 3 OWES IF IT WIDENS THIS TO THE Ry STEM, written down now
+// because it is the 8h7d.5 F-1/F-3 shape verbatim — TWO INDEPENDENTLY-WRITTEN
+// PREDICATES OVER ONE CLOSURE: this one would exempt the hoisted gate from the
+// fan-out count, while `collectRailGates`' `noteGate` (a plain
+// `starts_with("cq_theta_")` name test that never consults
+// `ControlledRotations`) would still COUNT it as a rail gate for staleness. They
+// must be moved together, or the widening must state in writing why the two
+// answers may legitimately differ for the same call. Whoever widens it re-derives
+// the licence; nobody inherits it.
+bool isHoistedRegionArmGate(const CallInst *CI, const TaintSet &taint) {
+  if (!taint.ControlledRotations.count(CI))
+    return false;
+  const Function *F = CI->getCalledFunction();
+  return F && F->getName().starts_with("cq_phi_");
+}
+
 bool isMeasureCall(const Instruction *I) {
   const auto *CI = dyn_cast<CallInst>(I);
   if (!CI)
@@ -1986,7 +2056,8 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
     SmallVector<Instruction *, 2> InPlaceUsers;
     for (User *U : KV.first->users()) {
       if (auto *CI = dyn_cast<CallInst>(U)) {
-        if (isInPlaceGateOnArg0(CI, KV.first, GateCalls, taint))
+        if (isInPlaceGateOnArg0(CI, KV.first, GateCalls, taint) &&
+            !isHoistedRegionArmGate(CI, taint))
           InPlaceUsers.push_back(CI);
       } else if (auto *BO = dyn_cast<BinaryOperator>(U)) {
         if (railValueConsumerDisposition(BO, KV.first, taint, Round1Claimed) >
@@ -2348,12 +2419,24 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   //     round 1 applies, for the same reason: a rail value read by TWO in-place
   //     mutators would have both serialised onto the one handle, corrupting
   //     both (`rz(h,1); rz(h,2)` = Rz(3), not the source's Rz(2)). The emitted
-  //     region stream is NOT counted here and must not be: `cqrt_cswap` /
-  //     `cq_template_*` are not in `GateCalls` (which holds only the collected
-  //     front-end `@cq_theta`/`@cq_phi` sites) and are not `BinaryOperator`s, so
-  //     `isInPlaceGateOnArg0` / `inPlaceValueRailOperand` reject them by
-  //     construction — a route puts the value on a work rail and brings it back,
-  //     it does not mutate the lineage.
+  //     region stream is NOT counted here and must not be — but SINCE bd drbq
+  //     Inc 2a THAT IS PART STRUCTURE AND PART **PREDICATE**, and the split is
+  //     what a reader must carry away (round-1 review of Inc 2a, L2 N-3; this
+  //     paragraph asserted "by construction" for the whole of it and that premise
+  //     is retired).
+  //       * A ROUTED region — the 4.3 nest, the 4.5 switch, the method-B value
+  //         arm — is still rejected BY CONSTRUCTION: `cqrt_cswap` /
+  //         `cq_template_*` are not in `GateCalls` (which holds only the
+  //         collected front-end `@cq_theta`/`@cq_phi` sites) and are not
+  //         `BinaryOperator`s, so `isInPlaceGateOnArg0` /
+  //         `inPlaceValueRailOperand` cannot match them. A route puts the value
+  //         on a work rail and brings it back; it does not mutate the lineage.
+  //       * A CONTROL-IN-PLACE region is rejected BY PREDICATE: hoist-and-defer
+  //         keeps the arm `@cq_phi` alive in the pred with the register at arg 0,
+  //         so it IS in `GateCalls` and IS an `isInPlaceGateOnArg0` match. It is
+  //         excluded explicitly by `isHoistedRegionArmGate` at the loop below —
+  //         read that predicate's header for the argument and for the `cq_phi`
+  //         stem restriction it carries.
   //
   //     A `BinaryOperator` CONSUMER IS COUNTED ONLY IF IT WILL ACTUALLY BE
   //     LOWERED IN PLACE (bd 8h7d.5 Rule-13 ROUND 4, finding OD-A) — the
@@ -2380,7 +2463,12 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
     SmallVector<Instruction *, 2> InPlaceUsers;
     for (User *U : V->users()) {
       if (auto *CI = dyn_cast<CallInst>(U)) {
-        if (isInPlaceGateOnArg0(CI, V, GateCalls, taint))
+        // The region's OWN hoisted arm gate is not a second mutator — see
+        // `isHoistedRegionArmGate` for the full argument (bd drbq Inc 2a). This
+        // is the Inc-2a spelling of the premise the block comment above states:
+        // "the emitted region stream is NOT counted here and must not be".
+        if (isInPlaceGateOnArg0(CI, V, GateCalls, taint) &&
+            !isHoistedRegionArmGate(CI, taint))
           InPlaceUsers.push_back(CI);
       } else if (auto *BO = dyn_cast<BinaryOperator>(U)) {
         if (railValueConsumerDisposition(BO, V, taint, Claimed) >

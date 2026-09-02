@@ -25,6 +25,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -59,10 +60,14 @@ merge:
 ; CHECK-NEXT: %[[K:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[D]], i32 -8)
 ; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[K]], i32 40)
 ; the FOUR route members, all on the same base and all in one recorded group:
-; CHECK:      call void @cqrt_cswap(i32 %[[F]], i32 %[[H]],
-; CHECK:      call void @cqrt_cswap(i32 %[[F]], i32 %[[H]],
-; CHECK:      call void @cqrt_cswap(i32 %[[F]], i32 %[[H]],
-; CHECK:      call void @cqrt_cswap(i32 %[[F]], i32 %[[H]],
+; The two arms, CONTROL-IN-PLACE since drbq Inc 2a: the THEN gate on %[[F]], the
+; ELSE gate run X-bracketed so it fires on ¬flag. Four `cqrt_cswap`s and two work
+; rails became three `cqrt_rz_i32_controlled` calls on %[[H]] itself.
+; CHECK:      call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 0x400921FB54442D18)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 2.500000e-01)
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 7.500000e-01)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[K]], i32 40)
 ; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[K]], i32 %[[D]], i32 -8)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[K]])
@@ -70,3 +75,15 @@ merge:
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[D]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[H]])
+
+; THE ROUTE'S ABSENCE, ON ITS OWN PREFIX ANCHORED AT THE FUNCTION HEADER (bd
+; drbq Inc 2a round-1 review, L3 F2). The trailing `CHECK-NOT: cqrt_cswap`
+; above scans only PAST the last positive of the `CHECK` prefix, so a route
+; re-inserted AT the arm gate lands before its window and the assertion cannot
+; fire (bd memory filecheck-check-not-window-trap). Anchoring at `define` makes
+; the window the whole function. MUTATION-VERIFIED: re-inserting
+; `cqrt_alloc_<W>(0) + cqrt_cswap` before the first controlled gate turns this
+; prefix RED.
+; NOROUTE:     define{{.*}}@ifelse_chain
+; NOROUTE-NOT: call void @cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

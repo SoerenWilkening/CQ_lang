@@ -34,12 +34,19 @@
 ; `provablyBefore(BI, T)` holds twice and both regions accept as PHASE arms.
 ;
 ; WHAT THE STREAM BELOW WITNESSES, in order, and it is the whole correctness
-; claim of the increment: for EVERY region the flag is minted, routed, Rz'd,
-; routed back, the work rail freed, the flag `_unc`-STRIPPED and FREED — and only
-; THEN does the next `cqrt_ry_i32` fire. Four strips, four flag frees, four rail
+; claim of the increment: for EVERY region the flag is minted, the arm gate fires
+; CONTROLLED AND IN PLACE on the register, and the flag is `_unc`-STRIPPED and
+; FREED — and only THEN does the next `cqrt_ry_i32` fire. Four strips, four flag
 ; frees, and no `cqrt_ry_i32` between a mint and its strip. A regression that let
 ; a re-prep Ry slide before a strip would still verify clean and still pair every
 ; free; only this ordering catches it.
+;
+; ⚠ THERE ARE **ZERO** RAIL FREES, and this paragraph used to claim four. Since bd
+; drbq Inc 2a (2026-09-02) the FLAT phase path emits no work rail at all — the CNT
+; block below asserts exactly that (one cqrt_alloc_i32 on the CNT prefix, four
+; cqrt_free on CNT3 = the four FLAG frees), and line ~181 of this same file already said
+; "No swap route survives on any of the four regions". Corrected in the Inc-2a
+; round-1 review (L3 F3); the file used to contradict itself.
 ;
 ; ONE REGISTER (M-C, bd 6uqc Inc 2): every `+= off` / `-= off` is an in-place
 ; `cqrt_addc_i32`, so exactly FIVE `cqrt_alloc_i32` appear — the wire plus one
@@ -53,6 +60,7 @@
 ; RUN: %filecheck %s --check-prefix=CNT  < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT2 < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT3 < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 @off = global i32 3, align 4
 
 declare i32 @cq_theta_si32(i32, double)
@@ -122,11 +130,7 @@ define i32 @slice() {
 ;
 ; ---- iteration 1, oracle ----
 ; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
-; CHECK:     %[[R1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[H]], i32 %[[R1]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R1]], double 0x400921FB54442D18)
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[H]], i32 %[[R1]])
-; CHECK:     call void @cqrt_free(i32 %[[R1]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[H]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ;
@@ -136,11 +140,7 @@ define i32 @slice() {
 ;
 ; ---- iteration 1, reflection about |0> ----
 ; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 0)
-; CHECK:     %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[H]], i32 %[[R2]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R2]], double 0x400921FB54442D18)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[H]], i32 %[[R2]])
-; CHECK:     call void @cqrt_free(i32 %[[R2]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[H]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
 ;
@@ -150,11 +150,7 @@ define i32 @slice() {
 ;
 ; ---- iteration 2, oracle ----
 ; CHECK:     %[[F3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
-; CHECK:     %[[R3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F3]], i32 %[[H]], i32 %[[R3]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R3]], double 0x400921FB54442D18)
-; CHECK:     call void @cqrt_cswap(i32 %[[F3]], i32 %[[H]], i32 %[[R3]])
-; CHECK:     call void @cqrt_free(i32 %[[R3]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F3]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F3]], i32 %[[H]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F3]])
 ;
@@ -164,11 +160,7 @@ define i32 @slice() {
 ;
 ; ---- iteration 2, reflection about |0> ----
 ; CHECK:     %[[F4:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 0)
-; CHECK:     %[[R4:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F4]], i32 %[[H]], i32 %[[R4]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R4]], double 0x400921FB54442D18)
-; CHECK:     call void @cqrt_cswap(i32 %[[F4]], i32 %[[H]], i32 %[[R4]])
-; CHECK:     call void @cqrt_free(i32 %[[R4]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F4]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F4]], i32 %[[H]], i32 0)
 ; CHECK:     call void @cqrt_free(i32 %[[F4]])
 ;
@@ -181,13 +173,18 @@ define i32 @slice() {
 ; CHECK-NOT: phi
 ; CHECK-NOT: br i1
 ;
-; FIVE allocations: the wire + one work rail per region. Nothing else is ever
-; entangled with the wire.
-; CNT-COUNT-5:  call i32 @cqrt_alloc_i32(
+; ONE allocation: the wire. Since drbq Inc 2a a phase region mints no work rail
+; (it was five before — the wire plus one rail per region), so nothing else is
+; ever entangled with the wire.
+; CNT-COUNT-1:  call i32 @cqrt_alloc_i32(
 ; CNT-NOT:      call i32 @cqrt_alloc_i32(
-; Four flag strips, and eight frees (four rails + four flags) — every ancilla
-; discharged before the next non-diagonal gate.
+; Four flag strips, and four frees (the four flags; it was eight — four rails as
+; well) — every ancilla discharged before the next non-diagonal gate.
 ; CNT2-COUNT-4: call void @cq_template_icmp_eq_i32_hl_unc(
 ; CNT2-NOT:     call void @cq_template_icmp_eq_i32_hl_unc(
-; CNT3-COUNT-8: call void @cqrt_free(
+; CNT3-COUNT-4: call void @cqrt_free(
 ; CNT3-NOT:     call void @cqrt_free(
+
+; No swap route survives on any of the four regions — window `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap

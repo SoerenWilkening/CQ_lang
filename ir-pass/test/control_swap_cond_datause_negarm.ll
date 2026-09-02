@@ -31,16 +31,19 @@ merge:
   ret i32 %r
 }
 
-; ONE flag, shared by the data use (zext) and the ¬flag-bracketed route:
+; ONE flag, shared by the data use (zext) and the ¬flag-bracketed arm gate (drbq
+; Inc 2a — the bracket now wraps the GATE, where it wrapped each route cswap):
 ; CHECK:         %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
 ; CHECK:         call i32 @cq_template_zext_i1_to_i32(i32 %[[F]])
 ; CHECK:         call void @cqrt_x(i32 %[[F]])
-; CHECK:         call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %{{[a-zA-Z0-9_.]+}})
-; CHECK:         call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT:    call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %a)
+; CHECK-NEXT:    call void @cqrt_x(i32 %[[F]])
 ; bd `8txa` retarget: the flag STRIP is spelled `_unc` now, so asserting
 ; the absence of `_inv` here would be VACUOUS — nothing emits `_inv`.
 ; CHECK-NOT:     cq_template_icmp_sgt_i32_hl_unc
-; CHECK-NOT:     _controlled
+; …and no rail is allocated or freed at all on this path:
+; CHECK-NOT:     call void @cqrt_free(
+; CHECK-NOT:     cqrt_cswap
 
 ; CNT-COUNT-1: call i32 @cq_template_icmp_sgt_i32_hl(
 ; CNT-NOT:     call i32 @cq_template_icmp_sgt_i32_hl(

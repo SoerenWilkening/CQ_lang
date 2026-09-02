@@ -4,8 +4,22 @@
 ; recorded as a restoring route.
 ;
 ; Clause (d2) admits a route only as a MEMBER OF A RECORDED GROUP
-; (`TaintSet::RestoringRoutes`), populated by `SwapRouteEmit`'s PHASE path at the
-; moment it emits both halves. Pairing, bracket closure, and "the join is the
+; (`TaintSet::RestoringRoutes`).
+;
+; ⚠ THAT SET HAS HAD **NO WRITER** SINCE bd drbq Inc 2a (2026-09-02). Its only
+; writer WAS `SwapRouteEmit`'s flat PHASE path, which no longer emits a route at
+; all — the arm gate is one `cqrt_rz_<W>_controlled` in place. So this fixture's
+; discrimination ("hand-written cswaps are in no group") is now true BY
+; CONSTRUCTION rather than by test design: with the set permanently empty,
+; `routeGroupFullyInside` has exactly one reachable return value and no fixture
+; can pin its `true` branch. The VERDICT below is unchanged and still correct, and
+; the clause-(d2) machinery is deliberately KEPT and annotated (`Uncomputation.cpp`
+; `routeGroupFullyInside`) because the route is still emitted by three other
+; emitters — the 4.3 nest, the 4.5 switch and the method-B value arm — any of
+; which could legitimately start recording. Recorded in the Inc-2a round-1 review
+; (L3 F3/N1).
+;
+; Pairing, bracket closure, and "the join is the
 ; adjoint of the split" are the EMITTER's invariants; re-deriving them here by
 ; scanning the IR for two cswaps would be a second, weaker spelling of a property
 ; that already has an owner (Rule 14) — and it would silently claim the method-B

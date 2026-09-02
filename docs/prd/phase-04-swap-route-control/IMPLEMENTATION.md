@@ -224,6 +224,22 @@ InShadow without also owning emit+erase (the dangling-phi trap).
 
 ## 4. Emission — `lowerControlRegions` (SwapRouteEmit)
 
+> ⚠ **SUPERSEDED FOR THE *FLAT* PATH BY §6a CONTROL-IN-PLACE** (bd
+> `test_C_libtooling-drbq` Inc 2a, 2026-09-02). Every FLAT phase region — diamond,
+> if/else, hcrg sequential, the 8h7d.5 rolled in-loop region, `ShareCondFlag`,
+> multi-Rz spines, Rz on the condition register, the 4.5 eq-folded diamond — now
+> lowers to ONE `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate: **no work rail, no
+> `cqrt_cswap`, no rail free**, and therefore **not** "zero controlled gates". The
+> flag mint, the `cqrt_x` bracket, the `icmp_inv` strip and the flag free are
+> byte-identical and in the same order (a NEGATED arm carries **two** `cqrt_x`, not
+> the route's four). The **4.3 depth-2 nest and the 4.5 switch keep the route**, so
+> the recipe below is still literally what they emit. The two forms are the SAME
+> unitary — with `w = |0⟩`, `cswap(f,q,w)·Rz_w(θ)·cswap(f,q,w)` **equals**
+> `cRz(f,q,θ)` with no global-phase residue — which is why the route remains the
+> correctness ORACLE for the peephole. See
+> `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC2A_NOTES.md` and
+> `control-in-place-PRD.md` §12.2.
+
 New signature (mirrors the module-per-concern convention; takes the shared `wd`
 and live `taint`):
 

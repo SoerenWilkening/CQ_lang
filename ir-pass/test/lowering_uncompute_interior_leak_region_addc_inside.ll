@@ -56,11 +56,10 @@ merge:
 ; CHECK-NEXT: %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 37)
 ; CHECK-NEXT: %[[K:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[D]], i32 -8)
 ; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[K]], i32 40)
-; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R]], double 0x400921FB54442D18)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[R]])
+; the region, CONTROL-IN-PLACE since drbq Inc 2a: one `cqrt_rz_<W>_controlled` on
+; the user's own register in place of the route quintuple — no work rail, no
+; CSWAP, nothing to free but the flag.
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[K]], i32 40)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; The write that is inside the interval and is NOT a route member:

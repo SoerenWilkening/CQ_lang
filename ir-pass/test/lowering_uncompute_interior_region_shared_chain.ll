@@ -76,11 +76,10 @@ define i32 @shared_chain_two_regions(i32 noundef %0) {
 ; Region 1 — its route group is what clause (d2) must exempt, since the shared
 ; `mul` rail's discharge lands past it:
 ; CHECK-NEXT: %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[A1]], i32 20)
-; CHECK-NEXT: %[[R1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F1]], i32 %[[H]], i32 %[[R1]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R1]], double 0x400921FB54442D18)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F1]], i32 %[[H]], i32 %[[R1]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[R1]])
+; the region, CONTROL-IN-PLACE since drbq Inc 2a: one `cqrt_rz_<W>_controlled` on
+; the user's own register in place of the route quintuple — no work rail, no
+; CSWAP, nothing to free but the flag.
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[A1]], i32 20)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
 
@@ -88,11 +87,7 @@ define i32 @shared_chain_two_regions(i32 noundef %0) {
 ; still allocated across region 2's diagonal Rz:
 ; CHECK-NEXT: %[[A2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[D]], i32 -8)
 ; CHECK-NEXT: %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[A2]], i32 16)
-; CHECK-NEXT: %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F2]], i32 %[[H]], i32 %[[R2]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R2]], double 2.500000e-01)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F2]], i32 %[[H]], i32 %[[R2]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[R2]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[H]], double 2.500000e-01)
 
 ; Then the whole component unwinds LIFO after strip 2 — and the shared `mul_unc`
 ; reads %[[H]] ACROSS both recorded route groups:

@@ -42,9 +42,20 @@ class WidthDispatch;
 struct TaintSet;
 
 // 4.2 (PRD Part II §8.3) — per-arm content class. A region is lowerable only
-// when HOMOGENEOUS: all-phase (the 4.1 route + verbatim-Rz replay + icmp_inv
-// flag-strip) or all-value (method-B: route + chain replay + copy-out +
-// reverse-play) over ONE shared routed base. Any mixture — phase and value
+// when HOMOGENEOUS: all-phase or all-value (method-B: route + chain replay +
+// copy-out + reverse-play) over ONE shared routed base.
+//
+// ⚠ HOW A `Phase` ARM IS EMITTED DEPENDS ON THE EMITTER, AND IT IS NO LONGER
+// "the 4.1 route" EVERYWHERE (bd drbq Inc 2a, 2026-09-02; round-1 review L3 F4).
+//   * FLAT regions (`SwapRouteEmit::emitRegion` — diamond, if/else, hcrg
+//     sequential, the 8h7d.5 rolled in-loop region, `ShareCondFlag`, the 4.5
+//     eq-folded diamond) lower CONTROL-IN-PLACE: flag mint, ONE
+//     `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate, icmp_inv flag-strip, flag
+//     free. No work rail, no `cqrt_cswap`.
+//   * The 4.3 depth-2 nest (`NestedRouteEmit`) and the 4.5 switch
+//     (`SwitchRouteEmit`) KEEP the 4.1 route + verbatim-Rz replay + icmp_inv
+//     strip. `SwitchClass::Phase`'s doc below is therefore still literally true —
+//     do not "fix" it to match this one. Any mixture — phase and value
 // links in one chain, or a phase arm beside a value arm in an if/else —
 // declines `mixed phase/value arm`: a chain carrying both a phase and a
 // changed basis has no copy-safe, strip-valid lowering (the CNOT copy

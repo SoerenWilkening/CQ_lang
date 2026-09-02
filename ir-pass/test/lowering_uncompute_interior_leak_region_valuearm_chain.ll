@@ -14,11 +14,21 @@
 ;     return cq_measure(q) + cq_measure(p);
 ;
 ; WHY IT MUST LEAK, and it is NOT a scope decision. `SwapRouteEmit::emitRegion`
-; records its flag strip in `TaintSet::DischargedFlagGates` and its cswap pair in
-; `TaintSet::RestoringRoutes` because a PHASE arm's route-back is the literal
-; adjoint of its split: the routed base comes out of the region holding the same
-; BASIS LABEL it went in with, so an `_unc` placed after the strip reads the wire
-; the forward chain read. `emitValueRegion` records NEITHER, and the reason is
+; records its flag strip in `TaintSet::DischargedFlagGates` because a PHASE arm
+; leaves the base holding the same BASIS LABEL it went in with, so an `_unc` placed
+; after the strip reads the wire the forward chain read.
+;
+; ⚠ IT NO LONGER RECORDS A CSWAP PAIR IN `TaintSet::RestoringRoutes` — since bd drbq
+; Inc 2a (2026-09-02) the flat phase path emits NO route at all (one
+; `cqrt_rz_<W>_controlled` in place), so that set has no writer and clause (d2) is
+; inert. The licence MOVED TO THE GATE and got stronger there
+; (`preservesBorrowedParent` clause (1b): a controlled Rz is `diag(1,e^{iθ})` on
+; `f=1` and `I` on `f=0`, so the base's label is never moved, not
+; moved-and-restored). Nothing about THIS fixture's verdict changes — the value
+; arm's route is what leaks, and it was never recorded either. Corrected in the
+; Inc-2a round-1 review (L3 F3).
+;
+; `emitValueRegion` records NEITHER, and the reason is
 ; visible three lines apart in the stream below: its second `cqrt_cswap` swaps
 ; the ARM'S ANSWER (`%h_op5`) onto the base, and the third swaps the rail back —
 ; the group is not label-restoring, so clause (d2) has nothing true to say about

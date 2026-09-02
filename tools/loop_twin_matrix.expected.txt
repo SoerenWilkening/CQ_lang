@@ -1,7 +1,9 @@
 # loop_twin_matrix.expected.txt — the committed disposition table for
 # tools/loop_twin_matrix.py (bd test_C_libtooling-8h7d.5, Rule-13 round 4).
 #
-# ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` then its verdict. The gate
+# ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` — plus a fourth `_<record>`
+# segment on the 36 RECORD-axis cells (bd drbq Inc 2a round-1 review) — then its
+# verdict. The gate
 # fails on ANY deviation, in either direction: a cell that starts declining, a
 # cell that starts accepting, and a cell whose decline message changes owner are
 # all reds. That is the point — a disposition drift in the loop lowering must
@@ -28,6 +30,35 @@
 #                           cleanup) and is the third member of that one family,
 #                           not a new phenomenon.
 #
+# THE 18 `UNROLLED-ONLY` RECORD CELLS — every one with SUFFIX `ry` — AND WHY THEY
+# ARE THE FENCE WORKING, WRITTEN OUT BECAUSE THE TABLE DEMANDS A REASON PER
+# MISMATCH (bd drbq Inc 2a round-1 review, the record axis).
+#   ROLLED side: the record (`mark`, or `acc`'s source) is defined in the body and
+#     read either after the loop or on a later activation, and the SUFFIX
+#     `a = cq_theta(a, -0.5)` is a NON-DIAGONAL in-place gate on the same rail
+#     between the definition and the read. That is the 8h7d.5 F-1/F-2 staleness
+#     exactly, and `LoopLowering::staleRailRecordRead` declines it
+#     (`cq loop lowering: rail record read past an in-place gate on the same
+#     rail`; the three `bodyread` cells reach `declineStaleRecordOps` first and
+#     decline as `cq opcode lowering: operand predates a non-diagonal gate`).
+#     Correct, and the whole reason that fence exists.
+#   UNROLLED side: it ACCEPTS, and it emits `cqrt_measure_i32(%h)` for the
+#     record — i.e. it measures the register at its POST-Ry value. ⚠ THAT IS A
+#     PRE-EXISTING PROPERTY OF THE STRAIGHT-LINE PATH, NOT OF THE LOOP LOWERING
+#     AND NOT OF THIS INCREMENT. Measured on BOTH the pre-2a (`f92d95e`) and the
+#     post-2a binary, byte-identically, on the matrix cells and on the minimal
+#     probe `int mark = a; a = cq_theta(a, 0.25); return cq_measure(mark);`
+#     (rc 0, no warning, both binaries). The loop half of this class is fenced
+#     (8h7d.5 round 1 / round 2 F-1); the straight-line half is not, and whether
+#     it should be is an OPEN question for the owner — under Rule 8 `int mark = a`
+#     is an ALIAS of one register, so measuring the current register may be the
+#     only thing physically available, in which case the right answer is a loud
+#     decline rather than a different unitary. Filed as an observation, NOT fixed
+#     here: nothing in this increment moves it, in either direction.
+#   So these cells are recorded as `UNROLLED-ONLY`, and a change in EITHER
+#   direction is a red — the rolled side starting to accept, or the unrolled side
+#   starting to decline, both need a written decision.
+#
 # TRACE-DIVERGENCE and WARN-ASYMMETRY are NEVER recorded here. They are hard
 # failures whatever this file says — a trace that differs from its twin's is the
 # defect this gate exists to catch, and no table entry may bless it.
@@ -36,7 +67,13 @@
 # cells moved and why (Rule 12). Regeneration will not overwrite a hard failure.
 m_add_der_add            ACCEPT-IDENTICAL
 m_add_der_none           ACCEPT-IDENTICAL
+m_add_der_none_bodyread  ACCEPT-IDENTICAL
+m_add_der_none_postmark  ACCEPT-IDENTICAL
+m_add_der_none_premark   ACCEPT-IDENTICAL
 m_add_der_ry             ACCEPT-IDENTICAL
+m_add_der_ry_bodyread    UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_add_der_ry_postmark    UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_add_der_ry_premark     UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_add_der_rz             ACCEPT-IDENTICAL
 m_add_eq0_add            ACCEPT-IDENTICAL
 m_add_eq0_none           ACCEPT-IDENTICAL
@@ -44,7 +81,13 @@ m_add_eq0_ry             ACCEPT-IDENTICAL
 m_add_eq0_rz             ACCEPT-IDENTICAL
 m_add_eq_add             ACCEPT-IDENTICAL
 m_add_eq_none            ACCEPT-IDENTICAL
+m_add_eq_none_bodyread   ACCEPT-IDENTICAL
+m_add_eq_none_postmark   ACCEPT-IDENTICAL
+m_add_eq_none_premark    ACCEPT-IDENTICAL
 m_add_eq_ry              ACCEPT-IDENTICAL
+m_add_eq_ry_bodyread     UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_add_eq_ry_postmark     UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_add_eq_ry_premark      UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_add_eq_rz              ACCEPT-IDENTICAL
 m_add_gt_add             ACCEPT-IDENTICAL
 m_add_gt_none            ACCEPT-IDENTICAL
@@ -60,7 +103,13 @@ m_add_range_ry           ACCEPT-IDENTICAL
 m_add_range_rz           ACCEPT-IDENTICAL
 m_none_der_add           ACCEPT-IDENTICAL
 m_none_der_none          ACCEPT-IDENTICAL
+m_none_der_none_bodyread ACCEPT-IDENTICAL
+m_none_der_none_postmark ACCEPT-IDENTICAL
+m_none_der_none_premark  ACCEPT-IDENTICAL
 m_none_der_ry            ACCEPT-IDENTICAL
+m_none_der_ry_bodyread   UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_der_ry_postmark   UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_der_ry_premark    UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_none_der_rz            ACCEPT-IDENTICAL
 m_none_eq0_add           ACCEPT-IDENTICAL
 m_none_eq0_none          ACCEPT-IDENTICAL
@@ -68,7 +117,13 @@ m_none_eq0_ry            ACCEPT-IDENTICAL
 m_none_eq0_rz            ACCEPT-IDENTICAL
 m_none_eq_add            ACCEPT-IDENTICAL
 m_none_eq_none           ACCEPT-IDENTICAL
+m_none_eq_none_bodyread  ACCEPT-IDENTICAL
+m_none_eq_none_postmark  ACCEPT-IDENTICAL
+m_none_eq_none_premark   ACCEPT-IDENTICAL
 m_none_eq_ry             ACCEPT-IDENTICAL
+m_none_eq_ry_bodyread    UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_eq_ry_postmark    UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_eq_ry_premark     UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_none_eq_rz             ACCEPT-IDENTICAL
 m_none_gt_add            ACCEPT-IDENTICAL
 m_none_gt_none           ACCEPT-IDENTICAL
@@ -84,7 +139,13 @@ m_none_range_ry          ACCEPT-IDENTICAL
 m_none_range_rz          ACCEPT-IDENTICAL
 m_ry_der_add             ACCEPT-IDENTICAL
 m_ry_der_none            ACCEPT-IDENTICAL
+m_ry_der_none_bodyread   ACCEPT-IDENTICAL
+m_ry_der_none_postmark   ACCEPT-IDENTICAL
+m_ry_der_none_premark    ACCEPT-IDENTICAL
 m_ry_der_ry              ACCEPT-IDENTICAL
+m_ry_der_ry_bodyread     UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_ry_der_ry_postmark     UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_ry_der_ry_premark      UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_ry_der_rz              ACCEPT-IDENTICAL
 m_ry_eq0_add             ACCEPT-IDENTICAL
 m_ry_eq0_none            ACCEPT-IDENTICAL
@@ -92,7 +153,13 @@ m_ry_eq0_ry              ACCEPT-IDENTICAL
 m_ry_eq0_rz              ACCEPT-IDENTICAL
 m_ry_eq_add              ACCEPT-IDENTICAL
 m_ry_eq_none             ACCEPT-IDENTICAL
+m_ry_eq_none_bodyread    ACCEPT-IDENTICAL
+m_ry_eq_none_postmark    ACCEPT-IDENTICAL
+m_ry_eq_none_premark     ACCEPT-IDENTICAL
 m_ry_eq_ry               ACCEPT-IDENTICAL
+m_ry_eq_ry_bodyread      UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_ry_eq_ry_postmark      UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_ry_eq_ry_premark       UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_ry_eq_rz               ACCEPT-IDENTICAL
 m_ry_gt_add              ACCEPT-IDENTICAL
 m_ry_gt_none             ACCEPT-IDENTICAL

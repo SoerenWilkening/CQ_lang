@@ -10,11 +10,17 @@
 ; _downstream_if.ll (which has a CLASSICAL `i1 %cc` condition, lowered UNCONTROLLED via
 ; the 5j5 one-register lift). Here the condition is tainted, so
 ; `repropagateControlMerges` RE-DETECTS the diamond (`detectAndLowerOnwardControl`) and
-; `SwapRouteEmit` emits the coherent routed phase stream ON `%out`: mint the flag from
-; `icmp(%out, 7)`, route `%out` into a |0> rail via `cqrt_cswap`, apply the VERBATIM
-; uncontrolled `cqrt_rz` on the rail, route back, free the rail, `icmp_inv`-strip +
-; free the flag (%out == %out0 under Rz, so the strip is valid — zero controlled Rz).
-; The measure reads `%out`.
+; `SwapRouteEmit` emits the coherent CONTROL-IN-PLACE phase stream ON `%out`: mint the
+; flag from `icmp(%out, 7)`, apply ONE `cqrt_rz_i32_controlled(flag, %out, θ)` — no work
+; rail, no `cqrt_cswap` either way — then `icmp_inv`-strip + free the flag (%out == %out0
+; because a controlled Rz is diagonal on BOTH branches of the flag, so the strip is
+; valid). The measure reads `%out`.
+;
+; ⚠ THIS PARAGRAPH USED TO DESCRIBE THE ROUTE ("route into a |0> rail via `cqrt_cswap`
+; … zero controlled Rz") and said so NINE LINES ABOVE this file's own
+; own assertion of `call void @cqrt_rz_i32_controlled`. The FLAT phase path has lowered in
+; place since bd drbq Inc 2a (2026-09-02); the 4.3 nest and the 4.5 switch keep the
+; route. Corrected in the Inc-2a round-1 review (L3 F3).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -56,24 +62,21 @@ m2:
 }
 attributes #0 = { nounwind willreturn memory(none) }
 
-; The ccarm builds %out (2 controlled copies), then the onward controlled phase arm
-; routes %out through a |0> rail under a flag minted from icmp(%out, 7) — the flag
-; operand and the routed register are BOTH %out (the merge, not the original %q handle):
+; The ccarm builds %out (2 controlled copies), then the onward phase arm rotates
+; %out IN PLACE under a flag minted from icmp(%out, 7) — the flag operand and the
+; rotated register are BOTH %out (the merge, not the original %q handle). Since
+; drbq Inc 2a that arm is one `cqrt_rz_i32_controlled` where it was the five-line
+; swap route; the 6.5 classical-call arm above it is untouched.
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(
 ; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[OUT]], i32 7)
-; CHECK:     %[[RAIL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[OUT]], i32 %[[RAIL]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[RAIL]], double 2.500000e-01)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[OUT]], i32 %[[RAIL]])
-; CHECK:     call void @cqrt_free(i32 %[[RAIL]])
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[OUT]], i32 7)
-; CHECK:     call void @cqrt_free(i32 %[[F2]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[OUT]], double 2.500000e-01)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[OUT]], i32 7)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
-; No surviving merge phi over the handle, no tainted branch, and the onward Rz is
-; UNCONTROLLED (routed, zero controlled gates — the phase-arm mechanic), and the
-; region ACCEPTS:
+; No surviving merge phi over the handle, no tainted branch, no swap route left
+; on the onward region, and the region ACCEPTS:
 ; CHECK-NOT: phi i32
-; CHECK-NOT: cqrt_rz{{.*}}_controlled
+; CHECK-NOT: cqrt_cswap
 ; ACC-NOT: under quantum control

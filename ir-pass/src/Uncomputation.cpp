@@ -591,11 +591,44 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P) {
   // (1) A DIAGONAL rotation. `cqrt_rz_<W>(P, θ)` writes a phase and never a basis
   //     label, so the `_unc`'s recomputation of f(P) is unaffected and the phase
   //     commutes past the XOR it applies. (This is the same reason the flag-strip
-  //     is `Rz`-transparent — bd memory [rz-diag-flag-strip-invariant].) The
-  //     `_controlled` twin is excluded: it is a Phase-4 gate on a rail Phase 4
-  //     owns, and its own arg-0 is a flag, not the rotated handle.
-  if (N.starts_with("cqrt_rz_") && !N.contains("_controlled") &&
+  //     is `Rz`-transparent — bd memory [rz-diag-flag-strip-invariant].)
+  if (N.starts_with("cqrt_rz_") && !N.ends_with("_controlled") &&
       M->arg_size() == 2 && M->getArgOperand(0) == P)
+    return true;
+  // (1b) THE CONTROLLED DIAGONAL ROTATION `cqrt_rz_<W>_controlled(f, P, θ)` — bd
+  //     test_C_libtooling-drbq Inc 2a, and this row IS REQUIRED BY THAT
+  //     INCREMENT, not an opportunistic widening. MEASURED: without it, nine
+  //     modules lost their whole M-B interior discharge the moment the §6a
+  //     peephole replaced the swap route (`lowering_mc_late_sub_after.ll` &c —
+  //     the condition chain's `_unc` + `cqrt_free` pair vanished and an in-place
+  //     M-C `sub` reverted to an out-of-place template), each announcing itself
+  //     only as a NEW M-A warning on an otherwise rc-0 module.
+  //
+  //     WHY THE ROUTE DID NOT NEED IT, which is the whole point: the pre-2a
+  //     stream's mutation of `P` was a `cqrt_cswap` PAIR, refused by this
+  //     predicate and exempted one level up by `routeGroupFullyInside`
+  //     (`TaintSet::RestoringRoutes`, M-B Increment 6 clause (d2)) — "the GROUP
+  //     restores P's basis label, so an adjoint after it reads the wire the
+  //     forward chain read". Control-in-place emits no group, so the exemption
+  //     has to be made where the gate is, and here it is STRONGER than the
+  //     group's: a controlled Rz is `diag(1, e^{iθ})` on the `f=1` branch and `I`
+  //     on the `f=0` branch — DIAGONAL EITHER WAY — so P's basis label is not
+  //     restored-after-being-moved, it is NEVER MOVED. Clause (d) holds
+  //     pointwise, for one gate, with no group membership to prove.
+  //
+  //     THE HANDLE IS AT ARG 1 AND THE FENCE IS THE bd 1fim ONE. Arg 0 is the
+  //     control FLAG, so reading arg 0 would answer this question about the wrong
+  //     register (the widened-one-set-not-the-other hole); VOID + arity-3 keeps a
+  //     non-void or off-arity same-named fake out, exactly as `isInPlaceGateOn`
+  //     and `preservesBasisUnderRecord` do for their `_controlled` arms.
+  //     `ends_with`, never `contains`, keeps the `_controlled_inv` reserve out.
+  //
+  //     The `ry` twin is NOT admitted and must never be: a controlled Ry relabels
+  //     P on the `f=1` branch, which is precisely the mutation clause (d) exists
+  //     to refuse.
+  if (N.starts_with("cqrt_rz_") && N.ends_with("_controlled") &&
+      M->getType()->isVoidTy() && M->arg_size() == 3 &&
+      M->getArgOperand(1) == P)
     return true;
   // (2) A FORWARD reassigning producer. `cq_template_*` / `cqrt_qram_load_<W>`
   //     READ every operand and mint a FRESH result rail; there is no mutating
@@ -604,7 +637,9 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P) {
   if (isTemplateProducer(M))
     return true;
   // Everything else is a mutation for this purpose: `cqrt_ry_` (the chained
-  // theta), `cqrt_addc/xorc_` and `cqrt_qram_store_` (in-place relabelling),
+  // theta) and `cqrt_ry_<W>_controlled` (the drbq Inc-1 control-in-place arm —
+  // NON-diagonal, it really does relabel P on the `f=1` branch),
+  // `cqrt_addc/xorc_` and `cqrt_qram_store_` (in-place relabelling),
   // `cqrt_x` / `cqrt_cswap` / `cqrt_cnot` / `cqrt_toffoli` (routes and targets),
   // a `cqrt_copy_*` destination, every `_unc`/`_inv` adjoint, a `cqrt_free`, and
   // `cqrt_measure_*` (a collapse — sound to read past in principle, refused here
@@ -685,6 +720,36 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P) {
 // between the two halves still has to clear LEFT or RIGHT on its own — and
 // cannot — and the component leaks. "Nothing else writes `P` between the halves"
 // is therefore enforced by the caller's scan, not assumed here.
+// ⚠ THIS FUNCTION HAS NO LIVE CUSTOMER AT HEAD, AND THE REASON IS THE POINT (bd
+// test_C_libtooling-drbq Inc 2a). `TaintSet::RestoringRoutes` had exactly ONE
+// writer — `SwapRouteEmit::emitRegion`'s phase path — and Inc 2a replaced that
+// path's `cqrt_cswap` route with a single `cqrt_rz_<W>_controlled`, so the set is
+// now permanently EMPTY and the loop below never iterates. Nothing else records a
+// group: the 4.3 nest, the 4.5 switch and the method-B value arm all call
+// `emitRoute` WITHOUT recording (the last deliberately — its route-back carries
+// the arm's ANSWER, so it is not a restoring group at all).
+//
+// THE EXEMPTION DID NOT DISAPPEAR, IT MOVED TO THE GATE, and it got STRONGER
+// there. Clause (d)'s customers on the phase path — the interior-partition
+// discharges in `lowering_uncompute_interior_region_*.ll` — are now served by
+// `preservesBorrowedParent` clause (1b): a controlled Rz is `diag(1, e^{iθ})` on
+// the `f=1` branch and `I` on `f=0`, DIAGONAL EITHER WAY, so `P`'s basis label is
+// not restored-after-being-moved, it is NEVER MOVED. That holds POINTWISE, with
+// no group membership and no atomicity fence to prove. MEASURED: every one of
+// those fixtures keeps its discharge at the same position, and the whole 1358-
+// fixture corpus is diagnostic-identical to the pre-2a binary. (1358, not 1356 —
+// re-measured `ls ir-pass/test/*.ll | wc -l` at the Inc-2a round-1 review, L3 F7.
+// The number is a MEASURED claim inside a Rule-13 justification; re-measure it
+// rather than carrying it forward.)
+//
+// IT IS KEPT, NOT DELETED, and this comment is the price of keeping it. Deleting
+// it would remove the only written statement of WHY a route pair may be read
+// across (the F4a / Increment-6 argument), and the route is still emitted by
+// three other emitters — any of which could legitimately start recording. If you
+// re-enable a writer, re-read the atomicity and homogeneity fences below FIRST;
+// they are unchanged and still correct. If you delete it, delete
+// `RestoringRoutes`, its scrub in `SwapRouteEmit::scrubTaint`, and
+// `lowering_uncompute_interior_leak_route_in_interval.ll`'s premise together.
 bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
                            Instruction *At, DominatorTree &DT,
                            const TaintSet &taint, bool Alternates) {

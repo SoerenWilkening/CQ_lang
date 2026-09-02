@@ -11,6 +11,8 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=CNT2 < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -32,27 +34,31 @@ merge:
   ret i32 %m
 }
 
-; single rail, ¬flag-bracketed both ways (gates live on the FALSE arm)
+; one controlled gate, ¬flag-bracketed (the gates live on the FALSE arm). Since
+; drbq Inc 2a the bracket wraps the GATE RUN, so there is ONE pair, not the two
+; the route needed (one around each cswap).
 ; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
 ; CHECK:     call void @cqrt_rz_i32(i32 %[[Q]], double 9.000000e-01)
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
-; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[T]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %b)
 ; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[T]], double %b)
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[Q]], i32 %[[T]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_free(i32 %[[T]])
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
 ; CHECK-NOT: call void @cqrt_free
-; CHECK-NOT: _controlled
 ; CHECK-NOT: cqrt_copy
 ; CHECK-NOT: phi i32
 
-; CNT-COUNT-2: call void @cqrt_free(
+; Exact free count — one (the flag; no work rail since drbq Inc 2a), no second.
+; CNT-COUNT-1: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(
+; Exactly TWO cqrt_x — the single bracket pair around the arm's gate run (four
+; before drbq Inc 2a: one pair per routed cswap).
+; CNT2-COUNT-2: call void @cqrt_x(
+; CNT2-NOT:     call void @cqrt_x(
+; No swap route survives: no |0> work rail, no CSWAP — window is `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

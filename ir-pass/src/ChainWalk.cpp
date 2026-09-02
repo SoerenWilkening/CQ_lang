@@ -148,9 +148,76 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   // not a local one, and it must also be classified explicitly in
   // `railCarriesControlledRotation` (whose stem restriction is a WHITELIST: a
   // new shape falls outside it silently).
-  if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) &&
-      N.ends_with("_controlled") && G->getType()->isVoidTy() &&
-      G->arg_size() == 3 && G->getArgOperand(1) == H)
+  //
+  // ⚠ THE `ry` STEM ONLY — THE STEMS WERE SPLIT BY bd drbq **Inc 2a**, AND THE
+  // SPLIT IS THE POINT OF THAT INCREMENT, NOT AN OPTIMIZATION. Inc 1 admitted
+  // BOTH `cqrt_ry_<W>_controlled` and `cqrt_rz_<W>_controlled` here, at a time
+  // when `emitRz`'s controlled arm had no caller so the `rz` half was inert. Inc
+  // 2a gave it one (every FLAT phase region now emits `cqrt_rz_<W>_controlled`
+  // in place of the five-line route), and admitting it HERE would have been a
+  // silent miscompile of exactly the finding-A shape, one stem over:
+  //
+  //   * as a DAG LINK the gate joins `D.Calls`, so `emitDagReversal` emits its
+  //     adjoint — `cqrt_rz_<W>_controlled(f, h, -θ)` naming a flag the region
+  //     already `cqrt_free`d (a use-after-free), and then frees a register the
+  //     spine believes it zeroed;
+  //   * and because `preservesBasisUnderRecord` calls the `rz` spelling
+  //     basis-preserving, the M-B INTERIOR partition would have claimed a
+  //     template rail carrying one (`r = p*5; if (q==5) r = cq_phi(r,θ); s = r*3;`)
+  //     and discharged it, which the route NEVER did.
+  //
+  // The route is the oracle for what this gate must look like to the spine, and
+  // under the route the register's only users are `cqrt_cswap`s — which this
+  // predicate refuses, making them UNRECOGNIZED consumers. Refusing the
+  // controlled `rz` reproduces that exactly: `isTerminalHandle` is false,
+  // `isInteriorConsumer` is false, `DagTraversal`'s closure scan sets
+  // `NotClosed`, and `railCarriesControlledRotation` (derived from this
+  // predicate) answers "not frozen" — the four verdicts the route produced. It
+  // is a DIAGONAL gate, so nothing is lost by treating it as opaque: it moves no
+  // basis, and the register's own chain is reversed and freed exactly as it was
+  // after a routed region (PRD §12.1; bd `drbq-freeze-vs-261j-reconciled`).
+  //
+  // WHAT ELSE WAS COMPUTED OVER THIS CLOSURE, asked because this is a set
+  // NARROWING and the 8h7d.5 F-1/F-3 lesson cuts both ways: (i)
+  // `railCarriesControlledRotation` — derived, moves WITH this, deliberately;
+  // (ii) `preservesBasisUnderRecord`'s `cqrt_rz_` row — its `_controlled` arm is
+  // now UNREACHABLE (membership in `D.Calls` goes through this predicate) and is
+  // kept as the fail-safe answer with that fact recorded at its site;
+  //
+  // (iii) the six `isTerminalHandle` dependants named below — the VERDICT IS THE
+  // ROUTE'S, and the verdict MOVES to get there. Do not read this row as "both
+  // readings agree": an in-place gate is a BENIGN user (`continue` — `H` may
+  // still be the terminal), an unrecognized consumer FORCES `false`, so the
+  // narrowing takes the `rz` spelling from possibly-terminal to never-terminal.
+  // That is the RIGHT move because the oracle is the ROUTE, where the register's
+  // users were `cqrt_cswap`s — unrecognized — so `H` was never a terminal there
+  // either; and it is the SAFE direction (a non-terminal is not freed: a leak,
+  // Rule 6, never a dirty free). MEASURED: no `cqrt_free` appears or disappears
+  // anywhere in the corpus beyond the collapsed quintuple. (The `.h` note (1) on
+  // `railCarriesControlledRotation` states this correctly; an earlier spelling of
+  // this row claimed both readings gave `false` and was wrong — round-1 review
+  // L1 F-2.)
+  //
+  // (iv) `Uncomputation::preservesBorrowedParent` — IT DID **NOT** STAY AS IT
+  // WAS. It gained **clause (1b)** in THIS increment and now treats
+  // `cqrt_rz_<W>_controlled(f, P, θ)` as READ-ONLY on `P` at arg 1. That was
+  // REQUIRED, not opportunistic: MEASURED, without it nine modules lost their
+  // whole M-B interior discharge (`lowering_mc_late_sub_after.ll` &c). The reason
+  // is that the route's exemption was a GROUP property — the `cqrt_cswap` pair
+  // was individually a mutation and was exempted one level up by
+  // `routeGroupFullyInside` (clause (d2), `TaintSet::RestoringRoutes`) — and
+  // control-in-place emits no group, so the licence moved to the GATE, where
+  // diagonality makes it STRONGER (`P`'s basis label is not restored after being
+  // moved; it is never moved). The `ry` twin is still refused there and must
+  // stay refused — it relabels `P` on `f=1`. See `Uncomputation.cpp` clause (1b)
+  // and the Inc-2a notes §4(a). (An earlier spelling of this row said the
+  // exclusion "must KEEP excluding" the `_controlled` spelling — following it
+  // would delete clause (1b) and reintroduce that measured nine-module
+  // regression, whose only outward sign is a new M-A warning on an rc-0 module;
+  // round-1 review L1 F-0.)
+  if (N.starts_with("cqrt_ry_") && N.ends_with("_controlled") &&
+      G->getType()->isVoidTy() && G->arg_size() == 3 &&
+      G->getArgOperand(1) == H)
     return true;
   if (N.contains("_controlled"))
     return false;
@@ -217,15 +284,25 @@ bool railCarriesControlledRotation(const Value *H) {
     const Function *Callee = G->getCalledFunction();
     if (!Callee)
       continue;
-    // ROTATION stems only. `isInPlaceGateOn` also admits the iw81.7 guarded
-    // QRAM store `cqrt_qram_store_<W>_controlled(flag, H, idx, val)` at arg 1,
-    // and that one is NOT frozen: its `..._controlled_unc` adjoint is emitted by
-    // the spine while its flag is still live (the GuardedStoreArm path does not
-    // strip the flag inside the region — see `ControlRegion::GuardedStoreArm`),
-    // so freezing it would leak every Shadow rail 7.5 reverses today.
+    // THE `ry` STEM ONLY. Two exclusions, for two different reasons:
+    //
+    //  * `cqrt_qram_store_<W>_controlled(flag, H, idx, val)` — the iw81.7 guarded
+    //    store, which `isInPlaceGateOn` also admits at arg 1 — is NOT frozen: its
+    //    `..._controlled_unc` adjoint is emitted by the spine while its flag is
+    //    still live (the GuardedStoreArm path does not strip the flag inside the
+    //    region — see `ControlRegion::GuardedStoreArm`), so freezing it would leak
+    //    every Shadow rail 7.5 reverses today.
+    //  * `cqrt_rz_<W>_controlled` is NOT frozen either (bd drbq Inc 2a, PRD
+    //    §12.1): a controlled Rz is diagonal on BOTH branches, so it relabels
+    //    nothing and the register's chain is reversed and freed exactly as it was
+    //    after a swap-routed phase region. The stem is UNREACHABLE here anyway —
+    //    `isInPlaceGateOn` no longer admits it, and this predicate is derived from
+    //    that one — but the whitelist is written to say `ry` rather than to rely
+    //    on the derivation, because a whitelist that names the wrong set and is
+    //    saved by ANOTHER predicate is exactly the justification-gone-stale shape
+    //    this file keeps finding (bd 8h7d.5 F-1). Change both or neither.
     StringRef N = Callee->getName();
-    if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) &&
-        N.ends_with("_controlled"))
+    if (N.starts_with("cqrt_ry_") && N.ends_with("_controlled"))
       return true;  // arg 1 IS `H` — `isInPlaceGateOn` just proved it.
   }
   return false;
@@ -355,20 +432,30 @@ bool preservesBasisUnderRecord(const CallInst *G) {
   // resting on a DERIVATION from another predicate's fence is exactly what bd
   // 1fim showed goes stale. Two predicates, one gate, one answer.
   //
-  // ⚠ AND ON THAT ONE SYMBOL THIS PREDICATE CONTRADICTS
-  // `railCarriesControlledRotation`, WHICH WINS (bd drbq round-2 review, lens
-  // A §4). That predicate freezes ANY `cqrt_{ry,rz}_<W>_controlled` rail; this
-  // one calls the `rz` spelling basis-preserving, i.e. NOT frozen, i.e.
-  // FREEABLE. Both are reachable in principle from the same DAG, and the freeze
-  // is asked FIRST (`DagTraversal` step 1 and its step-3 rail scan both `cut`
-  // before the closure scan that feeds this function), so today the rail is
-  // frozen and this `true` is never consulted for it. The contradiction is inert
-  // only because `emitRz`'s single caller still passes `controlled=false`, so no
-  // `cqrt_rz_<W>_controlled` is emittable at HEAD. INC 2 OWNS THE DECISION
-  // (notes §10.3): if it narrows the freeze to the `ry` stem — a defensible
-  // choice, a diagonal controlled rotation relabels nothing and the freeze costs
-  // a leaked rail per region — then THIS `true` goes live and becomes the only
-  // opinion on whether that rail may be freed. Change both ends or neither.
+  // ⚠ THE CONTRADICTION WITH `railCarriesControlledRotation` IS RESOLVED, AND IT
+  // RESOLVED IN THIS PREDICATE'S FAVOUR — BUT THE `_controlled` ARM IS NOW
+  // UNREACHABLE (bd drbq Inc 2a; the round-2 review, lens A §4, is what recorded
+  // the contradiction, and notes §10.3 is what handed the decision to Inc 2).
+  //
+  // The history, because both halves matter to anyone changing this: Inc 1 had
+  // `railCarriesControlledRotation` FREEZE any `cqrt_{ry,rz}_<W>_controlled` rail
+  // while this predicate called the `rz` spelling basis-preserving, i.e. NOT
+  // frozen, i.e. FREEABLE. One gate, two answers; the freeze won because it is
+  // asked first. Inc 2a SPLIT THE STEMS — `isInPlaceGateOn` now admits only the
+  // `ry` spelling — so the freeze no longer claims a controlled Rz, and its
+  // verdict and this one agree: NOT frozen.
+  //
+  // The reachability, stated exactly rather than left as "so this goes live":
+  // this function is only ever asked about a member of `D.Calls` / an
+  // `isInteriorConsumer` candidate, and membership in BOTH goes through
+  // `isInPlaceGateOn`, which now REFUSES `cqrt_rz_<W>_controlled`. So the
+  // `_controlled` arm below CANNOT FIRE at HEAD. It is kept — rather than
+  // deleted — because `true` is the physically correct answer for a diagonal gate
+  // and because deleting it would make the fail-closed default (`false` =
+  // frozen) the answer for a shape that is not frozen, which is the wrong claim
+  // to leave behind for whoever re-admits the stem. If anyone does re-admit it to
+  // `isInPlaceGateOn`, this arm goes live and becomes the only opinion on whether
+  // that rail may be freed — re-read the Inc-2a note there FIRST.
   if (N.starts_with("cqrt_rz_")) {
     if (N.ends_with("_controlled"))
       return G->getType()->isVoidTy() && G->arg_size() == 3;

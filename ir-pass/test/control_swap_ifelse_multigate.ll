@@ -16,6 +16,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; Independent EXACT free-count scan (§8.2): three cqrt_free and no fourth anywhere.
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -38,27 +39,31 @@ merge:
   ret i32 %m
 }
 
-; flag mint + the two distinct |0> rails
+; flag mint
 ; CHECK:         %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
-; CHECK:         %[[TT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:         %[[EE:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; then arm: BOTH Rz gates land on the then rail; else arm: its one Rz on the else rail
-; CHECK:         call void @cqrt_rz_i32(i32 %[[TT]], double %a)
-; CHECK:         call void @cqrt_rz_i32(i32 %[[TT]], double %c)
-; CHECK:         call void @cqrt_rz_i32(i32 %[[EE]], double %b)
-; both rails free, then strip + flag free; q (not the phi) is measured
-; CHECK:         call void @cqrt_free(i32 %[[TT]])
-; CHECK:         call void @cqrt_free(i32 %[[EE]])
+; then arm: BOTH Rz gates controlled on %[[F]], IN PLACE on q, IN ARM-GATE ORDER;
+; else arm: its one Rz inside the single ¬flag bracket (drbq Inc 2a — the two
+; distinct |0> work rails are gone; the arms stay mutually exclusive by POLARITY)
+; CHECK:         call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %a)
+; CHECK-NEXT:    call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %c)
+; CHECK-NEXT:    call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT:    call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %b)
+; CHECK-NEXT:    call void @cqrt_x(i32 %[[F]])
+; then strip + flag free; q (not the phi) is measured
 ; CHECK:         call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK:         call void @cqrt_free(i32 %[[F]])
 ; CHECK:         call i32 @cqrt_measure_i32(i32 %[[Q]])
-; no-spurious-free: EXACTLY three frees total — no fourth after the flag free
+; no-spurious-free: the flag free is the LAST free — no second after it
 ; CHECK-NOT:     call void @cqrt_free
-; dephasing guard: zero controlled gates, zero copies, no surviving data mux
-; CHECK-NOT:     _controlled
+; dephasing guard: zero copies, no surviving data mux
 ; CHECK-NOT:     cqrt_copy
 ; CHECK-NOT:     phi i32
 
-; Exact free count — three (then rail + else rail + flag), no fourth anywhere.
-; CNT-COUNT-3: call void @cqrt_free(
+; Exact free count — one (the flag; the two work rails went with the route at
+; drbq Inc 2a), no second anywhere.
+; CNT-COUNT-1: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(
+; No swap route survives: no |0> work rail, no CSWAP — window is `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

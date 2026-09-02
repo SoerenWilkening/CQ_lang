@@ -58,6 +58,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 @cq_off = global i32 3, align 4
 
 declare i32 @cq_theta_si32(i32, double)
@@ -103,11 +104,7 @@ define i32 @main() {
 ;
 ; region 1 — the oracle, on %[[H]].
 ; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
-; CHECK:     %[[R1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[H]], i32 %[[R1]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R1]], double 0x400921FB54442D18)
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[H]], i32 %[[R1]])
-; CHECK:     call void @cqrt_free(i32 %[[R1]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[H]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ;
@@ -118,11 +115,7 @@ define i32 @main() {
 ; region 2 — the reflection about |0>. THIS is the region the Inc-4 accept is
 ; about; its condition's wire gains the re-prep Ry below.
 ; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 0)
-; CHECK:     %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[H]], i32 %[[R2]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R2]], double 0x400921FB54442D18)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[H]], i32 %[[R2]])
-; CHECK:     call void @cqrt_free(i32 %[[R2]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[H]], double 0x400921FB54442D18)
 ;
 ; THE ORDERING THIS FIXTURE EXISTS FOR: strip THEN free THEN the re-prep Ry.
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[H]], i32 0)
@@ -135,8 +128,13 @@ define i32 @main() {
 ; CHECK-NOT: phi
 ; CHECK-NOT: br i1
 ;
-; Exactly three allocations — the wire and one work rail per region — so the
-; whole program is one data register and two ancillas, and nothing else is left
-; entangled with the wire when the re-prep Ry fires.
-; CNT-COUNT-3: call i32 @cqrt_alloc_i32(
+; Exactly ONE allocation — the wire. Since drbq Inc 2a a phase region mints no
+; work rail at all (the two per-region ancillas went with the route), so the whole
+; program is one data register, and nothing is left entangled with the wire when
+; the re-prep Ry fires.
+; CNT-COUNT-1: call i32 @cqrt_alloc_i32(
 ; CNT-NOT:     call i32 @cqrt_alloc_i32(
+
+; No swap route survives on either region — window is `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap

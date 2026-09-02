@@ -4092,10 +4092,25 @@ add_test(NAME e2e-grover-loop-range-oracle-twin-identical
 # TEMPLATE-minted, which the checker does not count) and, in five of the eleven
 # affected cells, no diagnostic at all.
 #
-# 120 cells = prefix x region x suffix over one loop body, each compiled AND RUN
-# on both sides and byte-diffed. Verdicts are pinned in the committed table
-# tools/loop_twin_matrix.expected.txt, so a cell that CHANGES DISPOSITION is a red
-# rather than a silent drift (Rule 12) — regenerate deliberately, never by reflex.
+# 156 cells, each compiled AND RUN on both sides and byte-diffed: the 120-cell
+# prefix x region x suffix product over one loop body, PLUS 36 RECORD-axis cells
+# (bd drbq Inc 2a round-1 review, L1 §3.8). Verdicts are pinned in the committed
+# table tools/loop_twin_matrix.expected.txt, so a cell that CHANGES DISPOSITION is
+# a red rather than a silent drift (Rule 12) — regenerate deliberately, never by
+# reflex.
+#
+# THE RECORD AXIS is the fourth, and it closed a hole in the instrument itself:
+# until it was added there was no `int mark = a;` in ANY of the 120 cells, while
+# 8h7d.5's F-1 and F-3 — two of the three CONFIRMED silent miscompiles that
+# machinery produced — were ENTIRELY about rail records. Three shapes (`premark`,
+# `postmark`, `bodyread`) crossed with a declared 12-cell sub-grid rather than
+# with the whole product, because a full 5x6x4x4 = 480 would quadruple the entry's
+# cost for cells with little discriminating power. 18 of the 36 are
+# ACCEPT-IDENTICAL (rolled trace byte-identical to its twin's WITH a live record
+# present, which is new coverage); the other 18 are UNROLLED-ONLY, the 8h7d.5
+# rail-record fence firing on the rolled side — see the expected table's header
+# for the written reason, including the pre-existing straight-line behaviour it
+# exposes on the unrolled side.
 #
 # The sixth REGION — `range`, `if (a > 5 && a < 20)` — was added by the round-5
 # cleanup (bd 8h7d.5). It is the OD-A oracle: `clang -O1` folds the two-sided test
@@ -4107,7 +4122,10 @@ add_test(NAME e2e-grover-loop-range-oracle-twin-identical
 # unrolled-spelling artifact family (see the table's own header), not new.
 #
 # COST, RE-MEASURED 2026-08-30 on a quiet box at 120 cells: 112s wall / 279s CPU
-# at --jobs 6 (240 compile+link+run pairs); it was 88s/219s at 100. It is the
+# at --jobs 6 (240 compile+link+run pairs); it was 88s/219s at 100. At 156 cells
+# (312 pairs) it measured 133s wall / 385s CPU at --jobs 4 on a box carrying
+# another agent session — NOT comparable to the quiet-box figures above, and
+# quoted only so the +30% cell count has a number beside it. It is the
 # second-longest entry after ir-pass-lit, so it is registered EARLY enough for
 # ctest's scheduler to overlap it with the slice layer. It uses `cq-opt` and the
 # bd dgn5 link wrapper for the same reasons the slices do; without them it is ~2x

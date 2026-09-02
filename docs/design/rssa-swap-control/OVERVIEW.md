@@ -11,6 +11,20 @@ uncontrolled, free the `|0⟩` rail, strip the `icmp` flag); the one rejection i
 arm that value-clobbers a variable the condition reads. The ROADMAP "Phase 4 — RSSA
 swap-routed control flow" block tracks phasing.
 
+> ⚠ **"ZERO CONTROLLED GATES" DESCRIBES THE ROUTE, AND THE FLAT PATH NO LONGER
+> EMITS ONE** (bd `test_C_libtooling-drbq` Inc 2a, 2026-09-02). This file and
+> `SCOPING.md` are the swap-route *design record* and are deliberately left as
+> written; read every "zero controlled gates" in them as a statement about the
+> ROUTE. As shipped, the §6a control-in-place peephole lowers every FLAT phase
+> region (diamond, if/else, sequential, the rolled in-loop region, `ShareCondFlag`,
+> multi-Rz spines, Rz on the condition register) to ONE
+> `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate — no work rail, no `cqrt_cswap`.
+> The 4.3 depth-2 nest and the 4.5 switch still emit the route exactly as described
+> here. The two are the SAME unitary (`cswap·Rz_w·cswap` with `w=|0⟩` **equals**
+> `cRz`, no global-phase residue), which is why the route stays the correctness
+> oracle for the peephole. See `docs/prd/phase-04-swap-route-control/
+> CONTROL_IN_PLACE_INC2A_NOTES.md`.
+
 ## The idea (one line)
 
 Lower tainted (quantum-dependent) control flow by **reinterpreting** `br`/`phi`

@@ -61,6 +61,14 @@ repetition on the unrolled side only — `a = a * 3;` twice in a row becomes
 `a * 9`, so the unrolled trace legitimately has one fewer gate. That is a
 `TRACE-DIVERGENCE` caused by the GENERATOR, not by the loop lowering.
 
+THE FOURTH AXIS — RECORD (bd drbq Inc 2a round-1 review, L1 §3.8). Until then
+this matrix had NO `int mark = a;` in any of its 120 cells, and the 8h7d.5 F-1 and
+F-3 findings — two of the three CONFIRMED silent miscompiles that machinery
+produced — were entirely about rail RECORDS. See the `RECORD` table below for the
+three shapes and for why the axis is crossed with a declared sub-grid rather than
+with the whole product. The 120 record-free cells keep their names and verdicts
+exactly (`m_<prefix>_<region>_<suffix>`); the 36 new ones carry a fourth segment.
+
 NO SHIPPED AXIS HAS ONE — every prefix/suffix immediate here is either the
 `volatile int off` or a rotation angle (angles are classical operands and never
 fold into each other), which is why all 120 cells are meaningful today. A FUTURE
@@ -128,6 +136,61 @@ SUFFIX = {
     "add": "        a = a + off;\n",
 }
 
+# ── THE RECORD AXIS ─────────────────────────────────────────────────────────
+# bd test_C_libtooling-drbq Inc 2a, round-1 review (L1 §3.8). THE SHIPPED 120
+# CELLS HAVE NO `int mark = a;` ANYWHERE, and the 8h7d.5 F-1 and F-3 findings —
+# two of the three CONFIRMED silent miscompiles that machinery produced — were
+# ENTIRELY about rail RECORDS: a value read at a position where the register no
+# longer holds it. The PREFIX/REGION/SUFFIX product cannot express one, so the
+# instrument that exists to see the loop lowering's worst class was blind to the
+# shape those defects lived in.
+#
+# Each record is (a declaration hoisted OUT of the loop, a line before the
+# region, a line after it, and what the return statement additionally measures).
+# THE DECLARATION IS OUTSIDE THE LOOP DELIBERATELY: an in-body `int mark = a;`
+# makes the hand-unrolled twin redeclare `mark` in ONE scope and `clang` rejects
+# it — a harness artifact that cost the round-1 reviewer 8 of 32 cells, and it is
+# designed out here rather than explained away.
+#
+#   premark   — the F-1 shape. The record is taken from the register BEFORE the
+#               region and read AFTER THE LOOP. Note this is ALSO the
+#               "record of the condition register" case: every REGION spelling in
+#               this grid builds its condition from `a`, so `mark` is by
+#               construction a record of the register the condition reads.
+#   postmark  — the F-3 shape, one hop the other way: the record is taken AFTER
+#               the region, so it names the post-gate register and any later
+#               in-place gate (the SUFFIX) makes it stale.
+#   bodyread  — the round-1 F1 program itself (`acc = mark * 7;`): the record is
+#               read INSIDE the body, i.e. the read and the relabelling gate are
+#               separated by the back edge rather than by straight-line position.
+RECORD = {
+    "none": {"decl": "", "pre": "", "post": "", "tail": ""},
+    "premark": {"decl": "    int mark = 0;\n",
+                "pre": "        mark = a;\n", "post": "",
+                "tail": " + cq_measure(mark)"},
+    "postmark": {"decl": "    int mark = 0;\n",
+                 "pre": "", "post": "        mark = a;\n",
+                 "tail": " + cq_measure(mark)"},
+    "bodyread": {"decl": "    int mark = 0;\n    int acc = 0;\n",
+                 "pre": "        mark = a;\n",
+                 "post": "        acc = mark * 7;\n",
+                 "tail": " + cq_measure(acc)"},
+}
+
+# The record axis is crossed with a DECLARED SUB-GRID, not with the whole 120.
+# Reason, stated so nobody reads it as an oversight: a full 5x6x4x4 product is
+# 480 cells and would quadruple a gate the whole suite already pays for, while
+# the discriminating power of the extra cells is low — the round-1 reviewer's own
+# 32-cell record run reached a TRACE COMPARISON in 6 cells and the rest were
+# declines. The sub-grid keeps one cell of each PREFIX family that can relabel
+# the rail (`none` control, `ry` non-diagonal, `add` dtzb in-place), both REGION
+# kinds that matter for the uncompute spine (`eq` direct, `der` derived — the one
+# that brings four template rails in), and the SUFFIX that moves the discharge
+# point past the record (`none`, `ry`). 3 x 2 x 2 x 3 = 36 new cells.
+RECORD_GRID_PREFIX = ("none", "ry", "add")
+RECORD_GRID_REGION = ("eq", "der")
+RECORD_GRID_SUFFIX = ("none", "ry")
+
 HDR = "#include <math.h>\nvolatile int off = 3;\n"
 
 # TWO TRIPS, and two is not arbitrary: it is the smallest count at which the back
@@ -136,15 +199,19 @@ HDR = "#include <math.h>\nvolatile int off = 3;\n"
 TRIPS = 2
 
 
-def sources(prefix, region, suffix):
+def sources(prefix, region, suffix, record="none"):
     """(rolled, unrolled) C for one cell."""
-    body = PREFIX[prefix] + REGION[region] + SUFFIX[suffix]
+    R = RECORD[record]
+    body = PREFIX[prefix] + R["pre"] + REGION[region] + R["post"] + SUFFIX[suffix]
+    head = ("int slice(void){\n    int a = 0;\n" + R["decl"]
+            + "    a = cq_theta(a, 0.5);\n")
+    tail = "    return cq_measure(a)%s;\n}\n" % R["tail"]
     rolled = (
         HDR
-        + "int slice(void){\n    int a = 0;\n    a = cq_theta(a, 0.5);\n"
+        + head
         + "    for (int i = 0; i < %d; ++i) {\n" % TRIPS
         + body
-        + "    }\n    return cq_measure(a);\n}\n"
+        + "    }\n" + tail
         + "int main(void){(void)slice();return 0;}\n"
     )
     # The unrolled twin is the SAME TEXT, dedented one level and repeated — never
@@ -156,9 +223,9 @@ def sources(prefix, region, suffix):
     )
     unrolled = (
         HDR
-        + "int slice(void){\n    int a = 0;\n    a = cq_theta(a, 0.5);\n"
+        + head
         + flat * TRIPS
-        + "    return cq_measure(a);\n}\n"
+        + tail
         + "int main(void){(void)slice();return 0;}\n"
     )
     return rolled, unrolled
@@ -268,10 +335,32 @@ def counts(trace):
     return (trace.count("_unc("), trace.count("cqrt_free("), trace.count("-> h"))
 
 
+def cell_name(cell):
+    """`m_<prefix>_<region>_<suffix>` for the record-free cells — UNCHANGED, so
+    the 120 committed names and their verdicts survive the axis addition — and
+    `m_<prefix>_<region>_<suffix>_<record>` for the new ones."""
+    prefix, region, suffix, record = cell
+    if record == "none":
+        return "m_%s_%s_%s" % (prefix, region, suffix)
+    return "m_%s_%s_%s_%s" % cell
+
+
+def cells_of_matrix():
+    """The full cell list: the 120-cell PREFIX x REGION x SUFFIX product with no
+    record, plus the record sub-grid (see `RECORD_GRID_*`)."""
+    base = [(p, r, s, "none") for p, r, s
+            in itertools.product(PREFIX, REGION, SUFFIX)]
+    rec = [(p, r, s, k) for p, r, s, k
+           in itertools.product(RECORD_GRID_PREFIX, RECORD_GRID_REGION,
+                                RECORD_GRID_SUFFIX,
+                                [k for k in RECORD if k != "none"])]
+    return base + rec
+
+
 def run_cell(cfg, cell):
-    prefix, region, suffix = cell
-    name = "m_%s_%s_%s" % cell
-    rolled_src, unrolled_src = sources(prefix, region, suffix)
+    prefix, region, suffix, record = cell
+    name = cell_name(cell)
+    rolled_src, unrolled_src = sources(prefix, region, suffix, record)
     work = tempfile.mkdtemp(prefix="cqtwin_")
     try:
         rolled = build_side(cfg, work, name, rolled_src)
@@ -355,7 +444,7 @@ def main():
                          "ONLY — say which cells moved and why (Rule 12).")
     cfg = ap.parse_args()
 
-    cells = list(itertools.product(PREFIX, REGION, SUFFIX))
+    cells = cells_of_matrix()
     results = {}
     # A PROCESS pool, not a thread pool — stage 2b runs in-process (see
     # `_pair_check`) and mutates the interpreter's recursion limit.
@@ -422,7 +511,9 @@ EXPECTED_HEADER = """\
 # loop_twin_matrix.expected.txt — the committed disposition table for
 # tools/loop_twin_matrix.py (bd test_C_libtooling-8h7d.5, Rule-13 round 4).
 #
-# ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` then its verdict. The gate
+# ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` — plus a fourth `_<record>`
+# segment on the 36 RECORD-axis cells (bd drbq Inc 2a round-1 review) — then its
+# verdict. The gate
 # fails on ANY deviation, in either direction: a cell that starts declining, a
 # cell that starts accepting, and a cell whose decline message changes owner are
 # all reds. That is the point — a disposition drift in the loop lowering must
@@ -448,6 +539,35 @@ EXPECTED_HEADER = """\
 #                           added with the `range` axis (bd 8h7d.5 round-5
 #                           cleanup) and is the third member of that one family,
 #                           not a new phenomenon.
+#
+# THE 18 `UNROLLED-ONLY` RECORD CELLS — every one with SUFFIX `ry` — AND WHY THEY
+# ARE THE FENCE WORKING, WRITTEN OUT BECAUSE THE TABLE DEMANDS A REASON PER
+# MISMATCH (bd drbq Inc 2a round-1 review, the record axis).
+#   ROLLED side: the record (`mark`, or `acc`'s source) is defined in the body and
+#     read either after the loop or on a later activation, and the SUFFIX
+#     `a = cq_theta(a, -0.5)` is a NON-DIAGONAL in-place gate on the same rail
+#     between the definition and the read. That is the 8h7d.5 F-1/F-2 staleness
+#     exactly, and `LoopLowering::staleRailRecordRead` declines it
+#     (`cq loop lowering: rail record read past an in-place gate on the same
+#     rail`; the three `bodyread` cells reach `declineStaleRecordOps` first and
+#     decline as `cq opcode lowering: operand predates a non-diagonal gate`).
+#     Correct, and the whole reason that fence exists.
+#   UNROLLED side: it ACCEPTS, and it emits `cqrt_measure_i32(%h)` for the
+#     record — i.e. it measures the register at its POST-Ry value. ⚠ THAT IS A
+#     PRE-EXISTING PROPERTY OF THE STRAIGHT-LINE PATH, NOT OF THE LOOP LOWERING
+#     AND NOT OF THIS INCREMENT. Measured on BOTH the pre-2a (`f92d95e`) and the
+#     post-2a binary, byte-identically, on the matrix cells and on the minimal
+#     probe `int mark = a; a = cq_theta(a, 0.25); return cq_measure(mark);`
+#     (rc 0, no warning, both binaries). The loop half of this class is fenced
+#     (8h7d.5 round 1 / round 2 F-1); the straight-line half is not, and whether
+#     it should be is an OPEN question for the owner — under Rule 8 `int mark = a`
+#     is an ALIAS of one register, so measuring the current register may be the
+#     only thing physically available, in which case the right answer is a loud
+#     decline rather than a different unitary. Filed as an observation, NOT fixed
+#     here: nothing in this increment moves it, in either direction.
+#   So these cells are recorded as `UNROLLED-ONLY`, and a change in EITHER
+#   direction is a red — the rolled side starting to accept, or the unrolled side
+#   starting to decline, both need a written decision.
 #
 # TRACE-DIVERGENCE and WARN-ASYMMETRY are NEVER recorded here. They are hard
 # failures whatever this file says — a trace that differs from its twin's is the

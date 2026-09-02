@@ -27,8 +27,12 @@
 ; the guard until M-B Increment 6 taught the interior partition to discharge it
 ; after the emitter-recorded strip, and now accepts for the same reason this file
 ; does — nothing of the region is still standing at the Ry) and no dead ancestor
-; rail (contrast lowering_reject_live_record_routed_base_anc.ll). Two allocations
-; exist in the whole program and one of them is freed.
+; rail (contrast lowering_reject_live_record_routed_base_anc.ll). Since the §6a
+; control-in-place peephole (bd test_C_libtooling-drbq Increment 2a) there is
+; exactly ONE `cqrt_alloc_i32` in the whole program — the register — and it is
+; never freed, because the user's `cq_measure` owns it (Rule 6). The region's only
+; ancilla is the TEMPLATE-minted compare flag, stripped and freed in place; the
+; work rail and its two `cqrt_cswap`s are gone.
 ;
 ; KEEPING THE FILE UNDER ITS OLD NAME IS DELIBERATE. Its value was never the
 ; exit code; it was the record of WHICH STAGE speaks for this program, and that
@@ -40,6 +44,7 @@
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -64,11 +69,7 @@ merge:
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
-; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R]], double 3.140000e+00)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK:     call void @cqrt_free(i32 %[[R]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 3.140000e+00)
 ; The strip and the flag free BOTH precede the chained Ry — the discharge this
 ; accept rests on, in the emitted order rather than in prose.
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[H]], i32 5)
@@ -78,7 +79,9 @@ merge:
 ; CHECK-NOT: phi
 ; CHECK-NOT: br i1
 ;
-; CNT-COUNT-2: call i32 @cqrt_alloc_i32(
+; RE-MEASURED after the §6a collapse: the work rail is gone, so the module holds
+; exactly ONE `cqrt_alloc_i32` (was 2).
+; CNT-COUNT-1: call i32 @cqrt_alloc_i32(
 ; CNT-NOT:     call i32 @cqrt_alloc_i32(
 
 ; THE M-A GUARD IS SILENT ON THIS PROGRAM, and since owner ruling 2026-08-29 (bd
@@ -88,3 +91,7 @@ merge:
 ; this family would have kept passing while silently pinning nothing. `SILENT`
 ; reads the pass's stderr and is the pin that survived the severity change.
 ; SILENT-NOT: non-diagonal gate over a live derived record
+; The swap route must not come back for this flat phase shape. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap

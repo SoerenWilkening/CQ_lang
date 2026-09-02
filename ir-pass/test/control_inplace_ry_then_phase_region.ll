@@ -24,6 +24,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
@@ -58,14 +59,20 @@ merge2:
 ; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F1]], i32 %[[R]], double 9.000000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
-; region 2 — the unchanged 4.1 swap route, over the register region 1 relabelled
+; region 2 — ALSO control-in-place since drbq Inc 2a (it was the 4.1 swap route
+; when this fixture was written), over the register region 1 relabelled. THE TWO
+; STEMS SIT SIDE BY SIDE HERE, WHICH IS NOW THIS FILE'S REAL SUBJECT: the Ry above
+; is a DAG link, frozen, never adjointed (its adjoint would need a flag the region
+; already freed); the Rz below is NOT a link, not frozen, transparent — a diagonal
+; gate relabels nothing on either branch. Same emitter, same flag mint/strip/free
+; spine, two different uncompute treatments (PRD §12.1).
 ; CHECK-NEXT: %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 7)
-; CHECK-NEXT: %[[RAIL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F2]], i32 %[[R]], i32 %[[RAIL]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[RAIL]], double 4.000000e-01)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F2]], i32 %[[R]], i32 %[[RAIL]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[RAIL]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[R]], double 4.000000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[Q]], i32 7)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[R]])
 ; CHECK-NOT:  phi i32
+; No swap route survives on either region — window `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

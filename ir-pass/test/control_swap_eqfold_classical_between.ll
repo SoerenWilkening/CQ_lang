@@ -70,32 +70,24 @@ merge2:
   ret i32 %r
 }
 
-; Both regions route the ONE register %h, in source order, each with its own
-; work rail, flag mint, strip and two frees. The classical call survives between
-; them.
+; Both regions act on the ONE register %h, in source order, each with its own flag
+; mint, controlled arm Rz IN PLACE (drbq Inc 2a — no work rail, no route), strip
+; and flag free. The classical call survives between them.
 ; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 3)
 ; CHECK:      %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 5)
-; CHECK-NEXT: %[[R1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R1]], double 2.000000e-01)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[R1]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[Q]], double 2.000000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
 ; CHECK:      call void @g()
-; the SECOND region routes the SAME %h — this is the assertion that the stale
+; the SECOND region names the SAME %h — this is the assertion that the stale
 ; pointer was replaced by the RAUW target and not by a constant or a corpse
 ; CHECK:      %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 6)
-; CHECK-NEXT: %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F2]], i32 %[[Q]], i32 %[[R2]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R2]], double 3.000000e-01)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F2]], i32 %[[Q]], i32 %[[R2]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[R2]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[Q]], double 3.000000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F2]], i32 %[[Q]], i32 6)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[Q]])
 
-; Three allocs (the register + two work rails), four frees (two rails + two
-; flags), and NO leftover phi.
-; CNT-COUNT-3: call i32 @cqrt_alloc_i32(
+; ONE alloc (the register — the two work rails went with the route at drbq Inc
+; 2a), two frees (the two flags), and NO leftover phi.
+; CNT-COUNT-1: call i32 @cqrt_alloc_i32(
 ; CNT-NOT:     call i32 @cqrt_alloc_i32(

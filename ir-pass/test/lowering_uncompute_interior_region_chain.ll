@@ -25,21 +25,27 @@
 ; the strip runs FIRST (it still reads the live `sqrt` rail), then the three
 ; adjoints, then the flag free.
 ;
-; WHY THE `sitofp` ADJOINT MAY READ THE WIRE AFTER THE ROUTE. `cq_template_
-; sitofp_i32_to_f64_unc(%[[C]], %[[H]])` recomputes `sitofp` from `%[[H]]`'s
-; COMPUTATIONAL-BASIS LABEL — an `_unc` is a label-only reader — and the region's
-; two `cqrt_cswap(flag, %[[H]], rail)` calls are the SAME call twice under the
-; SAME flag, so as a GROUP they are the identity on that label (the join is the
-; adjoint of the split). The arm's `Rz` is diagonal and lands on the work RAIL.
-; The pair deliberately does NOT restore the wire's PHASE — that phase IS the
-; answer the region computed — and by the label-only-reader argument that is
-; exactly what makes this legal. Clause (d2) admits the pair as a UNIT, recorded
-; at the emitter (`TaintSet::RestoringRoutes`), never re-inferred by scanning for
-; two cswaps.
+; WHY THE `sitofp` ADJOINT MAY READ THE WIRE ACROSS THE REGION — RESTATED FOR
+; CONTROL-IN-PLACE (drbq Inc 2a; the paragraph this replaces argued the same
+; verdict from the swap route, which this path no longer emits).
+; `cq_template_sitofp_i32_to_f64_unc(%[[C]], %[[H]])` recomputes `sitofp` from
+; %[[H]]'s COMPUTATIONAL-BASIS LABEL — an `_unc` is a label-only reader — and the
+; region's ONLY gate on %[[H]] is now `cqrt_rz_i32_controlled(flag, %[[H]], 3.0)`,
+; which is `diag(1, e^{i3})` on the flag-set branch and `I` on the other:
+; DIAGONAL either way, so the label is not restored-after-being-moved, it is NEVER
+; MOVED. `Uncomputation::preservesBorrowedParent` clause (1b) states exactly that,
+; pointwise, for this one gate. It deliberately does NOT restore the wire's PHASE
+; — that phase IS the answer the region computed — and by the label-only-reader
+; argument that is exactly what makes this legal. (The pre-2a route needed the
+; weaker GROUP argument of clause (d2): two `cqrt_cswap`s are the identity on the
+; label only when BOTH run. There is no group here to prove.)
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEH < %t.cqd0.ll
+; The route's ABSENCE, anchored at the function header so the window is the whole
+; function (a trailing CHECK-NOT scans only past the LAST positive of its prefix).
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -71,16 +77,12 @@ merge:
 ; CHECK-NEXT: %[[A:.*]] = call i32 @cq_template_fadd_f64_hl(i32 %[[C]], double 3.000000e+00)
 ; CHECK-NEXT: %[[S:.*]] = call i32 @cq_template_sqrt_f64(i32 %[[A]])
 ; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_fcmp_ugt_f64_hl(i32 %[[S]], double 5.000000e+00)
-; the region: work rail, X-bracketed cswap route, arm Rz, route back, rail free
-; CHECK-NEXT: %[[R:.*]] = call i32 @cqrt_alloc_i32(i32 0)
+; the region, CONTROL-IN-PLACE since drbq Inc 2a: the arm is the FALSE successor
+; (`fcmp ugt` -> the gate arm is ¬flag), so its gate run is X-bracketed, and the
+; Rz lands on the user's own register — no work rail, no route, nothing to free.
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
+; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 3.000000e+00)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R]], double 3.000000e+00)
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[R]])
 ; the flag strip STILL READS the sqrt rail, and runs BEFORE the discharge:
 ; CHECK-NEXT: call void @cq_template_fcmp_ugt_f64_hl_unc(i32 %[[F]], i32 %[[S]], double 5.000000e+00)
 ; …and the whole condition chain is uncomputed here, LIFO, and freed:
@@ -97,3 +99,8 @@ merge:
 ; minted, so no adjoint returns it to |0> and it is correctly left allocated:
 ; NOFREEH:     %[[H2:.*]] = call i32 @cqrt_alloc_i32(
 ; NOFREEH-NOT: call void @cqrt_free(i32 %[[H2]])
+
+; No swap route survives on this path: no |0> work rail, no CSWAP.
+; NOROUTE:     define i32 @slice(
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

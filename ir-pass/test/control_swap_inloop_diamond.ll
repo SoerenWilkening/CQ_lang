@@ -25,12 +25,20 @@
 ; trace grows. The loop-carried header phi is collapsed to its root mint by the
 ; round-2 rail analysis (`collapseFlattenedLoopRails`), which runs AFTER the
 ; flatten because that is the first point at which the merge phi is gone and the
-; rail peels. The register `%h` is one physical qubit for the whole loop; every
-; ancilla (the flag, the work rail) is minted, used, stripped and freed INSIDE the
-; iteration, so nothing dirty crosses the back edge.
+; rail peels. The register `%h` is one physical qubit for the whole loop; the only
+; ancilla left (the flag) is minted, used, stripped and freed INSIDE the iteration,
+; so nothing dirty crosses the back edge.
+;
+; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
+; CONTROL-IN-PLACE (§6a): the arm's `Rz` fires as ONE
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route — work-rail
+; alloc, both `cqrt_cswap`s, the rail free — is gone entirely. Everything else
+; below (flag mint, strip, flag free, the rolled CFG, the exit measure) is
+; byte-identical to the routed form.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
@@ -69,11 +77,7 @@ exit:
 ; CHECK:     %{{.*}} = phi i32 [ 0, %entry ], [ %{{.*}}, %loop ]
 ; CHECK-NOT: phi i32 [ %[[H]]
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H]], i32 5)
-; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R]], double %b)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK:     call void @cqrt_free(i32 %[[R]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double %b)
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[H]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; The loop is still a loop — ROLLED, not unrolled (one back edge, one stream):
@@ -84,3 +88,8 @@ exit:
 ; The old misleading messages must be gone, and nothing may dangle:
 ; CHECK-NOT: classical-condition phi
 ; CHECK-NOT: control flow inside a loop body
+;
+; The swap route must not come back for this flat phase shape. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap

@@ -26,13 +26,20 @@
 ;   * `%h_cmp` — the region's eq flag, minted AFTER the gate. It is skipped by the
 ;     F2 existence test (`provablyBefore(T, R)`): a rail that is not allocated when
 ;     the `Ry` fires cannot dephase it. Note it would NOT be exempt on clause 3 —
-;     its only users are the two `cqrt_cswap` routes, the `_unc` strip and
+;     its only users are the arm's controlled `Rz`, the `_unc` strip and
 ;     `cqrt_free`, none of which observe anything. That is the division of labour
 ;     between the two fixes, visible in one module.
+;
+; SINCE bd test_C_libtooling-drbq Increment 2a the flat phase arm lowers
+; CONTROL-IN-PLACE (§6a): the arm's `Rz` is ONE
+; `cqrt_rz_i32_controlled(flag, register, theta)` and the swap route (work-rail
+; alloc, both `cqrt_cswap`s, the rail free) is gone. Nothing else moves — the flag
+; mint, the strip, the flag free and every downstream gate are unchanged.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -58,14 +65,14 @@ merge:
   ret i32 %r
 }
 
-; The gate fires on the wire, the region lowers as a routed phase arm, and the
+; The gate fires on the wire, the region lowers as an IN-PLACE phase arm, and the
 ; sibling rail is MEASURED — the observation that exempts it:
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:      %[[W:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 2)
 ; CHECK:      %[[C:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 3)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[W]], double 5.000000e-01)
 ; CHECK:      %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[C]], i32 5)
-; CHECK:      call void @cqrt_cswap(i32 %[[F]], i32 %[[C]], i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK:      call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[C]], double 3.000000e+00)
 ; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[C]], i32 5)
 ; CHECK:      call void @cqrt_free(i32 %[[F]])
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[C]])
@@ -78,3 +85,7 @@ merge:
 ; this family would have kept passing while silently pinning nothing. `SILENT`
 ; reads the pass's stderr and is the pin that survived the severity change.
 ; SILENT-NOT: non-diagonal gate over a live derived record
+; The swap route must not come back for this flat phase shape. NOROUTE carries NO
+; positive anchor, so its window is the whole module — not a dead trailing span
+; (bd memory [filecheck-check-not-window-trap]):
+; NOROUTE-NOT: call void @cqrt_cswap

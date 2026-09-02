@@ -21,6 +21,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT  < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT2 < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -58,31 +59,19 @@ m3:
 ;
 ; region 1 (q>5) — first in the stream.
 ; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
-; CHECK:     %[[R1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R1]], double %a)
-; CHECK:     call void @cqrt_cswap(i32 %[[F1]], i32 %[[Q]], i32 %[[R1]])
-; CHECK:     call void @cqrt_free(i32 %[[R1]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F1]], i32 %[[Q]], double %a)
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F1]])
 ;
 ; region 2 (q>3) — second, on the same wire, after region 1's flag is gone.
 ; CHECK:     %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 3)
-; CHECK:     %[[R2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[Q]], i32 %[[R2]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R2]], double %b)
-; CHECK:     call void @cqrt_cswap(i32 %[[F2]], i32 %[[Q]], i32 %[[R2]])
-; CHECK:     call void @cqrt_free(i32 %[[R2]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[Q]], double %b)
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[Q]], i32 3)
 ; CHECK:     call void @cqrt_free(i32 %[[F2]])
 ;
 ; region 3 (q>1) — third.
 ; CHECK:     %[[F3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 1)
-; CHECK:     %[[R3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F3]], i32 %[[Q]], i32 %[[R3]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R3]], double %c)
-; CHECK:     call void @cqrt_cswap(i32 %[[F3]], i32 %[[Q]], i32 %[[R3]])
-; CHECK:     call void @cqrt_free(i32 %[[R3]])
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F3]], i32 %[[Q]], double %c)
 ; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F3]], i32 %[[Q]], i32 1)
 ; CHECK:     call void @cqrt_free(i32 %[[F3]])
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
@@ -91,8 +80,15 @@ m3:
 ; CHECK-NOT: br i1
 ;
 ; Exactly three flag mints and three strips — one per region. A duplicate mint
-; (or a region emitted twice by a broken topological order) shows up here.
+; (or a region emitted twice by a broken topological order) shows up here. Since
+; drbq Inc 2a each region's arm is ONE `cqrt_rz_i32_controlled` on %[[Q]] in place
+; of its route quintuple; the mint/strip/free spine is unchanged.
 ; CNT-COUNT-3:  = call i32 @cq_template_icmp_sgt_i32_hl(
 ; CNT-NOT:      = call i32 @cq_template_icmp_sgt_i32_hl(
 ; CNT2-COUNT-3: call void @cq_template_icmp_sgt_i32_hl_unc(
 ; CNT2-NOT:     call void @cq_template_icmp_sgt_i32_hl_unc(
+
+; No swap route survives on any of the three regions — window `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

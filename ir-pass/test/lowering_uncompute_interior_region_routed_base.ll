@@ -31,6 +31,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREED < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -60,8 +61,10 @@ merge:
 ; CHECK-NEXT: %[[K:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[H]], i32 4096)
 ; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[K]], i32 0)
 ; the ROUTED base is %[[D]], not the wire:
-; CHECK:      call void @cqrt_cswap(i32 %[[F]], i32 %[[D]], i32 %{{.*}})
-; CHECK:      call void @cqrt_cswap(i32 %[[F]], i32 %[[D]], i32 %{{.*}})
+; The region, CONTROL-IN-PLACE since drbq Inc 2a: the routed base %[[D]] is now
+; the controlled Rz's own target (arg 1), where the route had it as the cswap's
+; arg 1. The base identity this file is about is unchanged.
+; CHECK:      call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[D]], double 0x400921FB54442D18)
 ; CHECK:      call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[K]], i32 0)
 ; the CONDITION chain rail discharges; the routed base does not:
 ; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[K]], i32 %[[H]], i32 4096)
@@ -74,3 +77,15 @@ merge:
 ; NOFREED:     %[[D2:.*]] = call i32 @cq_template_mul_i32_hl(i32 %{{.*}}, i32 37)
 ; NOFREED-NOT: @cq_template_mul_i32_hl_unc(
 ; NOFREED-NOT: call void @cqrt_free(i32 %[[D2]])
+
+; THE ROUTE'S ABSENCE, ON ITS OWN PREFIX ANCHORED AT THE FUNCTION HEADER (bd
+; drbq Inc 2a round-1 review, L3 F2). The trailing `CHECK-NOT: cqrt_cswap`
+; above scans only PAST the last positive of the `CHECK` prefix, so a route
+; re-inserted AT the arm gate lands before its window and the assertion cannot
+; fire (bd memory filecheck-check-not-window-trap). Anchoring at `define` makes
+; the window the whole function. MUTATION-VERIFIED: re-inserting
+; `cqrt_alloc_<W>(0) + cqrt_cswap` before the first controlled gate turns this
+; prefix RED.
+; NOROUTE:     define{{.*}}@routed_base
+; NOROUTE-NOT: call void @cqrt_cswap
+; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)

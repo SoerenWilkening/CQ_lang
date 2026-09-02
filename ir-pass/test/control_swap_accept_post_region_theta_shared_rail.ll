@@ -29,6 +29,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 @off = global i32 3, align 4
 
 declare i32 @cq_theta_si32(i32, double)
@@ -59,12 +60,10 @@ merge:
 ; The reassignment is IN PLACE: same handle in, no new handle out.
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
-; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; The routed operand IS %[[H]] — the same rail the addc wrote.
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R]], double 0x400921FB54442D18)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[H]], i32 %[[R]])
-; CHECK:     call void @cqrt_free(i32 %[[R]])
+; The controlled gate's target IS %[[H]] — the same rail the addc wrote (drbq Inc
+; 2a: the arm gate names the register at arg 1, where the route named it at the
+; cswap's arg 1; the base identity this file is about is unchanged).
+; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[H]], double 0x400921FB54442D18)
 ; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[H]], i32 5)
 ; CHECK:     call void @cqrt_free(i32 %[[F]])
 ; ...and the post-region Ry lands on that SAME rail, after the strip and free.
@@ -73,8 +72,12 @@ merge:
 ; CHECK-NOT: phi
 ; CHECK-NOT: br i1
 ;
-; Two allocations only: the wire and the one work rail. No ancestor rail is
-; minted for the `+= off`, which is exactly why the wire and the Ry target
-; coincide.
-; CNT-COUNT-2: call i32 @cqrt_alloc_i32(
+; ONE allocation only: the wire (it was two before drbq Inc 2a — the work rail
+; went with the route). No ancestor rail is minted for the `+= off`, which is
+; exactly why the wire and the Ry target coincide.
+; CNT-COUNT-1: call i32 @cqrt_alloc_i32(
 ; CNT-NOT:     call i32 @cqrt_alloc_i32(
+
+; No swap route survives — window is `define` -> EOF.
+; NOROUTE:     define
+; NOROUTE-NOT: cqrt_cswap

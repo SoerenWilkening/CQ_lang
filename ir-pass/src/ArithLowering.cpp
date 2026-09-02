@@ -405,19 +405,38 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     DAG *handle*, and `isInPlaceGateOn` does not match it, so it can never be
 //     a member of `D.Calls` — the spine never re-emits it.
 //
-//     ⚠ THAT SECOND CLAUSE IS NO LONGER TRUE OF EVERY VOID `cqrt_*` (bd drbq
-//     round-2 review, lens A §3). `cqrt_{ry,rz}_<W>_controlled(f, P, θ)` is
-//     void, is a `cqrt_*`, is not a `cqrt_qram_store_`, and `isInPlaceGateOn`
-//     DOES match it at arg 1 (Inc 0 added that row) — so it IS a member of
-//     `D.Calls`. THE OPERATIVE ARM FOR IT IS (a), NOT THIS ONE: arm (a)'s
-//     `isInPlaceGateOn(CI, P)` test runs first and claims the gate, so control
-//     never reaches here and the behaviour is unchanged. But note that arm (a)'s
-//     own argument ("the DAG collects our gate too, later in program order,
-//     hence adjointed EARLIER") is not what makes it safe in this case: a rail
-//     carrying a controlled rotation is FROZEN
-//     (`ChainWalk::railCarriesControlledRotation`), the DAG is `NotClosed`, and
-//     the spine emits NOTHING AT ALL. Do not cite this bullet's "can never be a
-//     member of `D.Calls`" for a controlled rotation; it is false.
+//     ⚠ THAT SECOND CLAUSE IS NOT TRUE OF EVERY VOID `cqrt_*`, AND WHICH ARM
+//     OWNS A CONTROLLED ROTATION IS **PER STEM** (bd drbq round-2 review lens A
+//     §3, restated for the Inc-2a stem split; round-1 review of Inc 2a, L1 F-1).
+//     `cqrt_{ry,rz}_<W>_controlled(f, P, θ)` is void, is a `cqrt_*`, and is not a
+//     `cqrt_qram_store_`. Read the table, not the prose:
+//
+//       * `cqrt_ry_<W>_controlled` → **arm (a)**. `isInPlaceGateOn` still matches
+//         it at arg 1 (the Inc-0 row, narrowed to this stem by Inc 2a), so it IS
+//         a member of `D.Calls` and arm (a) claims it before control reaches
+//         here. Its safety is NOT arm (a)'s usual argument ("the DAG collects our
+//         gate too, later in program order, hence adjointed EARLIER"): a rail
+//         carrying a controlled **Ry** is FROZEN
+//         (`ChainWalk::railCarriesControlledRotation`, still `ry`-only), the DAG
+//         is `NotClosed`, and the spine emits NOTHING AT ALL. For THIS stem, "can
+//         never be a member of `D.Calls`" is false — do not cite it.
+//
+//       * `cqrt_rz_<W>_controlled` → **arm (c), THIS ONE**, since Inc 2a. The
+//         stem split narrowed `isInPlaceGateOn` to `ry`, so the controlled Rz is
+//         an UNRECOGNIZED consumer: not a link, never in `D.Calls`, never
+//         re-emitted by the spine — i.e. this bullet's own ground is RESTORED for
+//         it, and it is what carries the verdict. The freeze the `ry` bullet
+//         leans on was REMOVED for this stem by the same increment
+//         (`railCarriesControlledRotation` is `ry`-only), so do not reach for it
+//         here.
+//
+//     The VERDICT is `true` on both paths and was `true` under the pre-2a route
+//     as well (a `cqrt_cswap` reached arm (c)), so nothing moved behaviourally —
+//     measured, `lowering_mc_late_*` and the M-C probes fire in place before and
+//     after. What moved is WHICH ARGUMENT IS LOAD-BEARING. If anyone ever
+//     re-admits the `rz` stem to `isInPlaceGateOn` (the `ChainWalk.h` note
+//     contemplates it), ownership silently changes back to arm (a) and the
+//     freeze must come back with it — re-read both bullets before doing that.
 //     `cqrt_qram_store_*`
 //     is the ONE void exception and is refused here: it IS an in-place gate on
 //     its ARRAY, so the spine DOES adjoint it, and its `_unc` re-reads its
