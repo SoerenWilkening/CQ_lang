@@ -62,6 +62,43 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
     Value *H = Work.pop_back_val();
     if (!VisitedHandles.insert(H).second)
       continue;
+    // bd drbq round-2 review (lens A §1) — THE CONTROL-IN-PLACE FREEZE, ASKED OF
+    // EVERY WALKED HANDLE, not only of the step-3 `Rails` set below.
+    //
+    // The step-3 copy (the `Rails` scan further down this function) is asked
+    // over `D.Rails` = roots ∪ template producers, while the thing it must
+    // suppress — `emitDagReversal`'s
+    // `emitInverseCall` — iterates `D.Calls`, and those two sets are NOT equal
+    // (the header note at `Uncomputation.cpp`'s `emitDagReversal` names the
+    // difference explicitly and closes the `cqrt_free` half of it with an
+    // `D.Rails` intersection, bd uow0). A `@__cq_q_<callee>_<mask>`
+    // specialization-clone RESULT is in the difference: `isTemplateProducer`
+    // stops at `cq_template_*`/`cqrt_qram_load_*`, so a clone result is never a
+    // rail — yet a `cqrt_ry_<W>_controlled` on it IS in `D.Calls` (it enters at
+    // the `isInPlaceGateOn` line just below), and Inc 0 made that gate
+    // `isInverseEmittable`. So the ADJOINT half of the uow0 gap acquired a
+    // customer this increment, and asking the freeze only at step 3 would never
+    // see it: the spine would emit `cqrt_ry_<W>_controlled(f, h, -θ)` naming a
+    // flag the region already `cqrt_free`d (finding-A's use-after-free, verbatim).
+    //
+    // It does not fire at HEAD — measured on three C reproducers (a `noinline`
+    // callee whose clone result is the rotated base): all three accept and the
+    // caller's spine reverses nothing, and so do the uncontrolled and
+    // no-rotation twins, so the suppression today lives in whatever already
+    // stops a clone-call chain being reversed, NOT here. That is precisely why
+    // this is asked structurally rather than left to the coincidence: "the other
+    // subsystem happens to stop it" was the prior justification for the free
+    // half too, and it was recorded WRONGLY (see the `emitDagReversal` header).
+    //
+    // NO `continue` — deliberately, and it is not tidiness. `NotClosed` already
+    // aborts both reversal drivers (`reverseTerminalGroup` and the M-B interior
+    // partition bail on it before emitting anything), so truncating the walk
+    // buys nothing; and `planInteriorDischarges` calls `recoverDataDag` for its
+    // `TermGates` WITHHOLD set with NO regard for the bails, where a smaller
+    // `D.Calls` is the UNSAFE direction (it would let the interior planner claim
+    // a gate the terminal spine might reach). Set the flag, keep the superset.
+    if (railCarriesControlledRotation(H))
+      D.NotClosed = true;
     for (User *U : H->users())
       if (auto *G = dyn_cast<CallInst>(U))
         if (isInPlaceGateOn(G, H) && SeenGates.insert(G).second) {
@@ -72,8 +109,28 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
           // them so their producers (the index rotation; a tainted store value's
           // chain) are recovered and reverse AFTER this gate's `_unc` (SSA
           // dominance: the gate `_unc` reads them, so it is emitted before their
-          // own adjoints/frees). A rotation's only non-handle operand is a
-          // classical angle (untainted), so this loop is a no-op for rotations.
+          // own adjoints/frees).
+          //
+          // ⚠ THIS LOOP IS A NO-OP FOR ROTATIONS, BUT NOT FOR THE REASON IT USED
+          // TO GIVE (bd drbq round-2 review, lens A §2). The old text said "a
+          // rotation's only non-handle operand is a classical angle (untainted)",
+          // which was true until Inc 0 added `cqrt_{ry,rz}_<W>_controlled(flag,
+          // H, θ)` to `isInPlaceGateOn`: arg 0 of THAT spelling is an i32 CONTROL
+          // FLAG handle, not an angle. The loop is still a no-op only because the
+          // flag is deliberately NOT in `taint.Tainted` — the in-place
+          // rotation-arm emitter mints it through `lowerCompareToFlag` and records
+          // it in `ControlledRotations`/`DischargedFlagGates`, never in `Tainted`
+          // (all 30 `Tainted.insert` sites enumerated, round-2 lens A).
+          //
+          // THE TRAP FOR INC 2/3, stated because the contrast is already in the
+          // tree: `GuardedStoreArmEmit.cpp`'s guarded-store arm DOES
+          // `taint.Tainted.insert(FlagI)` (~:297), precisely so its flag stays
+          // live for a `_controlled_unc`. The moment a controlled ROTATION wants
+          // the same, its flag becomes a DAG parent of the rotated rail here, the
+          // flag's own `cq_template_icmp_*_hl` mint joins `D.Calls`, and the spine
+          // emits a SECOND strip plus a free of an already-freed flag. If that
+          // day comes, skip the control slot structurally (arg 0 when
+          // `isInPlaceGateOn` matched at arg 1) rather than relying on this.
           for (Value *Op : G->args())
             if (Op != H && taint.Tainted.count(Op)) {
               if (!isFrontier(Op))
@@ -153,6 +210,23 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
     // (the SAME discipline as ControlOwnedRails / OutputRails above — do NOT rest
     // on the closure scan's incidental controlled-cswap-user exclusion).
     if (taint.GraveyardRails.count(R)) {
+      D.NotClosed = true;
+      continue;
+    }
+    // bd drbq Inc 1: a register a `cqrt_{ry,rz}_<W>_controlled` fired on, reached
+    // as a DAG ANCESTOR (`s = r + 1` off the rotated register). Its adjoint needs
+    // the control flag, which the in-place rotation-arm emitter stripped and
+    // freed inside the region — so reversing it HERE would name a freed rail and
+    // then free a still-dirty, condition-entangled register (Rules 6/8). This is
+    // the site the measured defect actually went through: subtracting only at
+    // terminal selection is not enough, because the rotated register is reached
+    // through the M-C in-place `addc` on it.
+    //
+    // Asked STRUCTURALLY of the emitted gate, never of a recorded `Value *`
+    // snapshot — see `railCarriesControlledRotation`, whose header records the
+    // silent miscompile the snapshot form shipped with (a derived base's rail is
+    // erased by `lowerOps` between the record and this query).
+    if (railCarriesControlledRotation(R)) {
       D.NotClosed = true;
       continue;
     }

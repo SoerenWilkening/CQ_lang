@@ -286,6 +286,21 @@ bool abiWidthHasControlledFpCopy(StringRef w) {
   return w == "f16" || w == "f32" || w == "f64" || w == "f80";
 }
 
+bool abiWidthHasControlledRotation(StringRef w) {
+  // The NINE widths at which `cqrt_{ry,rz}_<W>_controlled` (and the older
+  // `cqrt_rz_<W>_controlled_inv` reserve) are DECLARED AND DEFINED in
+  // runtime/cq_runtime.{h,c} — control-in-place-PRD §5, bd
+  // test_C_libtooling-drbq Inc 0. NOT the same set as `abiWidthFromType`'s
+  // range: `i80`, `i128` and `f128` are recognized INTERMEDIATE widths with no
+  // controlled-rotation body, so minting one would be a phantom extern that
+  // link-fails (the jvun class). Pure predicate (no WidthDispatch) so the
+  // control classifiers can gate on it BEFORE any mutation, and
+  // `ControlledSymbols::controlledRotationFn` gates the MINT on the same one —
+  // one fence, two askers (Rule 14).
+  return w == "i1" || w == "i8" || w == "i16" || w == "i32" || w == "i64" ||
+         w == "f16" || w == "f32" || w == "f64" || w == "f80";
+}
+
 bool abiWidthHasReversibleFpCopy(StringRef w) {
   // {f16,f32,f64,f80} have an UNCONTROLLED `cqrt_copy_f<W>` (bd 38t2). SAME set as
   // `abiWidthHasControlledFpCopy` above, but this names the UNcontrolled copy the

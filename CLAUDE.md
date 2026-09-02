@@ -89,8 +89,10 @@ class of bug.
 > Shadow model); manual inversion (`cq_invert`) moved to **Phase 8**; runtime
 > templates / integration / freeze are **9 / 10 / 11**. The freeze is gated only
 > on the 7.5 QRAM memory ABI, the 7.1 wide-integer widths, the 7.6 I/O
-> output-tape ABI (`cqrt_tape_alloc` / `cqrt_tape_write_<W>` (+ `_controlled`)), and the kjd1 fp select
-> copy family (`cqrt_copy_f{16,32,64,80}_controlled`) — the control/loop work (7.2–7.4)
+> output-tape ABI (`cqrt_tape_alloc` / `cqrt_tape_write_<W>` (+ `_controlled`)), the kjd1 fp select
+> copy family (`cqrt_copy_f{16,32,64,80}_controlled`), and the drbq control-in-place
+> rotation family (`cqrt_ry_<W>_controlled` ×9, a Phase-4 extension —
+> `control-in-place-PRD.md` §5) — the control/loop work (7.2–7.4)
 > adds no frozen symbols. See `ROADMAP.md` for the authoritative plan.
 
 ---
@@ -883,8 +885,37 @@ Read bd memories [`inloop-control-rolled-8h7d5`],
 [`d8jl-correction-flatten-repairs-headerphi`] and
 [`provably-before-per-activation`] before touching any of it. IN-LOOP VALUE
 (method-B) arms, depth-2 nests, `switch`, the 6.5 classical-call arm, irreducible
-cycles and multi-latch loops all keep the loop decline. **Every other
-tainted-control shape loudly declines** (deeper or non-homogeneous nests; the switch off-pattern matrix: multi-phi
+cycles and multi-latch loops all keep the loop decline. **A tainted-arm `Ry`
+(`cq_theta`) on a register whose PHYSICAL wire is disjoint from every condition
+wire lowers CONTROL-IN-PLACE since bd `drbq` Inc 1** (2026-09-02, PRD §4 shape
+(a) only — a flat DIAMOND; the if/else arm is supported symmetrically but is
+reachable only from HAND-WRITTEN IR, because `clang -O1` merges the two arms into
+ONE call with a `select` on the ANGLE, which declines `rotation angle`): the
+arm's theta is hoisted to the pred and
+`RotationLowering` mints the new frozen-designate `cqrt_ry_<W>_controlled(flag,
+h, θ)` — the swap route CANNOT carry an Ry (`Ry|0⟩ ≠ |0⟩` leaves the inactive
+work rail dirty and entangled, Rules 6/8), so this is the MECHANISM, not a
+peephole. The rotated register is then FROZEN — never reverse-played, never freed
+by the whole-DAG spine, because a controlled gate's adjoint needs its control and
+the flag is stripped and freed inside the region (measured: it emitted a
+use-after-free of the flag and then a dirty free). **THE FREEZE IS ASKED
+STRUCTURALLY OF THE EMITTED GATE** (`ChainWalk::railCarriesControlledRotation`,
+which derives the rail from the gate's own arg-1 use), and that spelling is the
+round-1 Rule-13 fix: Inc 1 shipped it as a `Value *` set keyed on the theta's
+arg-0 at `lowerRotations` time, which for a DERIVED base (`r = p*5`, `p+5`,
+`p^5`, `zext p`, `sqrt(p)`) is an instruction the very next stage (`lowerOps`)
+RAUWs and ERASES — so the set dangled, the freeze silently did not apply, and the
+use-after-free + dirty free returned verbatim — from plain C for the `mul` base, and
+in hand IR for the other 4 of 5 out-of-place base opcodes. Ry on the
+CONDITION's own wire, state prep, in-loop, nested, switch, `ShareCondFlag`,
+multi-gate arms and any post-region read of the pre-Ry record all keep declining
+— the last one over the base's whole RAIL closure, φ/select/freeze crossed
+FORWARD (a classical join φ over one register laundered a `cq_measure`/`ret`/tape
+write/clone arg/`cq_invert` past the fence: the round-1 review's second confirmed
+silent miscompile). Read
+`docs/prd/phase-04-swap-route-control/{control-in-place-PRD,CONTROL_IN_PLACE_INC1_NOTES}.md`
+§11 / findings K-M before touching any of it.
+**Every other tainted-control shape loudly declines** (deeper or non-homogeneous nests; the switch off-pattern matrix: multi-phi
 C1, grouped C4, non-empty-default C5, MUX-EXCH C8/G8, mixed arms, fp/vector/`i128`
 G4, nested G11, `§3c` clobber G7, tainted angle G3, jump-table fold, impure/unowned-
 scrutinee G10).
@@ -997,7 +1028,7 @@ cmake --build build --target CQPass cq-opt # if you must name targets, name BOTH
 # five gate moments (Rule-13 core commit · pre-push · harness change · template
 # regen · accept/decline predicate change).
 #
-# 292 ctest entries (2026-08-30: +7 for the bd 8h7d.5 Rule-13 round-4 group — 4 slices, 2 `cmp` twin gates and `e2e-loop-twin-matrix`, the 100-cell rolled-vs-unrolled matrix that is the ONLY instrument in the tree that can see a leaked TEMPLATE-minted rail; +3 for the Rule-13 round-1 two-register group — 2 slices + 1 `cmp` twin gate; 2026-08-29: +18 for the bd 8h7d.5 in-loop-control group — 7 rolled/unrolled/dynamic slices + 3 `cmp` twin gates, and the rest are the earlier libm/e2e growth; 2026-08-27: +2 for the bd hcrg sequential-region slices; the
+# 295 ctest entries (2026-09-02: +3 for the bd drbq Inc-1 control-in-place group — the round-2 Rule-13 review added 2 lit FIXTURES and 2 `tools/` instruments but NO ctest entry, deliberately: `tools/inplace_twin_matrix.py` and `tools/control_flag_order_check.py` are instruments pending an owner cost decision, not gates — 2 Inc-1 slices + the round-1 Rule-13 review's derived-base freeze slice; 2026-08-30: +7 for the bd 8h7d.5 Rule-13 round-4 group — 4 slices, 2 `cmp` twin gates and `e2e-loop-twin-matrix`, the 100-cell rolled-vs-unrolled matrix that is the ONLY instrument in the tree that can see a leaked TEMPLATE-minted rail; +3 for the Rule-13 round-1 two-register group — 2 slices + 1 `cmp` twin gate; 2026-08-29: +18 for the bd 8h7d.5 in-loop-control group — 7 rolled/unrolled/dynamic slices + 3 `cmp` twin gates, and the rest are the earlier libm/e2e growth; 2026-08-27: +2 for the bd hcrg sequential-region slices; the
 # figures below were taken at 252/253 and their RATIOS still hold). RUN IT PARALLEL
 # — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
@@ -1034,9 +1065,9 @@ cmake --build build --target CQPass cq-opt # if you must name targets, name BOTH
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1293 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-08-30, `ls ir-pass/test/*.ll | wc -l`). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1349 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-09-02 AFTER the bd drbq round-2 Rule-13 review, `ls ir-pass/test/*.ll | wc -l`. The "1 XFAIL" is CORRECT and re-measured — `grep -l XFAIL ir-pass/test/*.ll` returns 9, but 8 of those only MENTION the directive in prose; `lit ir-pass/test` reports `Expectedly Failed: 1`. Trust lit, not the grep). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 282 entries (268 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, `e2e-loop-twin-matrix`, the 3 spec/predmux entries and the 6 bd 8h7d.5 `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-08-30 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
+ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 285 entries (271 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, `e2e-loop-twin-matrix`, the 3 spec/predmux entries and the 6 bd 8h7d.5 `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-09-02 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
 
 # One fixture (lit --filter matches the test display name)
@@ -1087,8 +1118,8 @@ on any pipeline other than `cq-lowering` rather than silently no-op'ing. It is
 **one process per invocation** — not a compile server — so lit's isolation,
 per-fixture diagnostics and `not` exit-code inversion are unchanged.
 Equivalence is **gated, not assumed** (`tools/cq_opt_equivalence.py`): stdout,
-stderr **and** exit code, 0 mismatches over all 1293 fixtures (re-measured
-2026-08-30). The routine ctest
+stderr **and** exit code, 0 mismatches over all 1349 fixtures (re-measured
+2026-09-02). The routine ctest
 entry samples (`--stride 8`, ~13s) because the full sweep costs ~658s of CPU —
 *more than the swap saves*; run the full one after any change to the pass's
 diagnostic or analysis surface:

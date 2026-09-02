@@ -96,7 +96,7 @@ bool tryEqFoldArm(ControlRegion &Region, const BasicBlock *ArmBB,
   // for a diamond it already equals H). `Region.RoutedBase` carries it to
   // `emitRegion` so the eq-fold IF/ELSE routes H, not the folded constant base.
   Routed = H;
-  Region.RoutedBase = H;
+  Region.setRoutedBase(H);
   return true;
 }
 

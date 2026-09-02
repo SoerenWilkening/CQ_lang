@@ -399,9 +399,65 @@ void cqrt_rz_f80_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
 }
 
 /* ---------------------------------------------------------------------
+ * Controlled Ry rotation bodies (control-in-place-PRD §5, bd
+ * test_C_libtooling-drbq Inc 0) — the controlled form of the lowered
+ * cq_theta gate body, one per width (9, mirroring the controlled rz
+ * block above; only the `ry` stem differs). The control flag is
+ * argument 0 and prints as a leading h<N>. Minted ONLY by the in-place
+ * rotation-arm emitter (see the header comment for why a tainted-control
+ * Ry arm has no swap-route form at all).
+ * --------------------------------------------------------------------- */
+
+void cqrt_ry_i1_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i1_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i8_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i8_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i16_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i16_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i32_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i32_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_i64_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_i64_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_f32_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_f32_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_f64_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_f64_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_f16_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_f16_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+void cqrt_ry_f80_controlled(int32_t ctrl, int32_t handle, double angle) {
+    printf("cqrt_ry_f80_controlled(h%d, h%d, %a)\n", ctrl, handle, angle);
+    fflush(stdout);
+}
+
+/* ---------------------------------------------------------------------
  * Controlled Ry inverse (npu.6) — uncompute a non-selected source's
  * single-Ry prep in the gated-switch MUX-EXCH lowering. Mirrors the
- * controlled rz inverse block above; only the `ry` stem differs.
+ * controlled rz inverse block above; only the `ry` stem differs. A
+ * SEPARATE reserve from the plain controlled-Ry family just above.
  * --------------------------------------------------------------------- */
 void cqrt_ry_i1_controlled_inv(int32_t ctrl, int32_t handle, double angle) {
     printf("cqrt_ry_i1_controlled_inv(h%d, h%d, %a)\n", ctrl, handle, angle);

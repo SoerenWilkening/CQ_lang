@@ -1289,7 +1289,8 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
       // Two lines of subtraction against that is the right trade; do not
       // "simplify" them away on the grounds that they never fire.
       if (taint.ControlOwnedRails.count(H) || taint.OutputRails.count(H) ||
-          taint.GraveyardRails.count(H) || taint.UntaintedMergeRails.count(H))
+          taint.GraveyardRails.count(H) || taint.UntaintedMergeRails.count(H) ||
+          railCarriesControlledRotation(H))
         continue;
       if (ReversedRails.count(H) || ReversedGates.count(H))
         continue;  // single ownership — see reverseTerminalGroup's note.
@@ -1496,6 +1497,16 @@ void collectTerminalCandidates(Function &F, const TaintSet &taint,
                    // (PRD-7.6 §2.5). Defensive: a tape-write out_handle is not
                    // a data producer, so it never reaches here, but the
                    // explicit image is load-bearing, like ControlOwnedRails.
+      if (railCarriesControlledRotation(H))
+        continue;  // bd drbq Inc 1: a register a `cqrt_{ry,rz}_<W>_controlled`
+                   // fired on. FROZEN — its adjoint needs a control flag the
+                   // region already stripped and freed, so no point at or after
+                   // this terminal can reverse it (Rule 6: leave it allocated).
+                   // Asked STRUCTURALLY of the emitted gate (see
+                   // `railCarriesControlledRotation`): the Inc-1 `Value *` set
+                   // was keyed on a pre-`lowerOps` SSA value that `lowerOps`
+                   // erases for every DERIVED base — a confirmed silent
+                   // miscompile, round-1 review L3 §1 / L5 §1.
       if (taint.GraveyardRails.count(H))
         continue;  // 7.2 Inc 3: a parked abort/exit graveyard rail (or the
                    // abort flag) — kept frozen + entangled, NEVER reversed or

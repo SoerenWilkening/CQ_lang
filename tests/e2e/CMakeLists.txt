@@ -423,6 +423,58 @@ add_test(NAME e2e-slice-control-seq-grover
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_seq_grover.expected.log")
 
+# bd test_C_libtooling-drbq Inc 1 — the CONTROL-IN-PLACE ROTATION arm. The LINK
+# layer for the new frozen-designate `cqrt_ry_<W>_controlled` family: these are the
+# only tests that prove the symbol the in-place rotation-arm emitter mints resolves
+# and signature-matches against libcq_runtime (Rule 2).
+#
+# A tainted-control Ry has NO swap-route form (`Ry|0> != |0>` leaves the inactive
+# work rail dirty and entangled with the flag, Rules 6/8), so this is the MECHANISM
+# and not a peephole. The whole stream per arm is `icmp_hl -> ry_controlled ->
+# icmp_hl_unc -> free`: no alloc, no cswap, no work rail, no reverse-play, and
+# EXACTLY ONE free (the flag) against the phase diamond's two.
+#
+# STRICT stage 2b (no --allow-unproven): the flag is minted, stripped and freed in
+# one straight-line stream and the checker proves that pairing outright. The two
+# rotated registers are measured, so Rule 6 leaves them allocated as always.
+#
+# TWO slices, and the pair is the property: `_negated` is the Rule-9 polarity —
+# `!=` canonicalizes to `icmp eq` with SWAPPED successors, so the gate fires on the
+# NEGATED flag inside a self-inverse `cqrt_x` bracket. Its golden is what witnesses
+# the bracket is a PAIR; a stray single X would leave the flag inverted when the
+# strip recomputes `q == 5`, and the free would then reset a rail holding |1>.
+add_test(NAME e2e-slice-control-inplace-ry
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-negated
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_negated.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_negated.expected.log")
+
+# THE DERIVED-BASE FREEZE, at the LINK layer (round-1 Rule-13 review of drbq Inc
+# 1, lenses L3 §1 / L5 §1). The rotated base is an out-of-place `mul` rail and
+# there is a post-region user, so the whole-DAG spine has something to reverse —
+# and before the fix it reversed the FROZEN register after `cqrt_free(flag)`, a
+# use-after-free followed by a dirty free (stage 2b reported F2 + T3). No slice
+# in the tree had a derived base under a rotation arm, which is why the defect
+# shipped through a green suite. STRICT stage 2b, deliberately: the checker is
+# the gate that sees rail identities the trace cannot.
+add_test(NAME e2e-slice-control-inplace-ry-derived-base
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_derived_base.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_derived_base.expected.log")
+
 # bd test_C_libtooling-lom0 Increment 4 — TWO COMPLETE GROVER ITERATIONS: four
 # chained `cq_theta`s and four sequential tainted-condition phase regions, i.e.
 # the shape that declined at HEAD b4e329b with "condition predates a

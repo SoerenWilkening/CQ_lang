@@ -595,6 +595,34 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
       diagnoseUnderControl(BI, "control flow inside a loop body");
       return;
     }
+    // IN-LOOP SCOPE FENCE, part 3 — a CONTROL-IN-PLACE ROTATION arm inside a
+    // loop (control-in-place-PRD §4 R7; the epic's Inc 3 owns it). The 8h7d.5
+    // rolled path was cleared for the PHASE arm, whose every ancilla is minted,
+    // stripped and freed inside the iteration and whose gates are DIAGONAL on
+    // the persistent register. A controlled Ry RELABELS that register once per
+    // trip, which is exactly what `LoopLowering`'s rail-record machinery
+    // (`collectRailGates` / `railGateBetween` / `staleRailRecordRead`) reasons
+    // about — and it recognizes an in-place Ry by its `@cq_theta_` spelling with
+    // the wire at ARG 0, not the hoisted-and-deferred controlled one at arg 1.
+    // Inc 3 must re-ask all three with a controlled Ry as the relabelling gate
+    // and add the shape as a `tools/loop_twin_matrix.py` axis FIRST; until then
+    // this keeps the pre-existing loop decline rather than silently acquiring an
+    // accept it was never cleared for (Prime Directive; the loop history is
+    // 4-for-4 on hidden over-accepts).
+    //
+    // NOW A BACKSTOP, not the first owner (bd test_C_libtooling-drbq Inc 1,
+    // finding J). `classifyArms` declines an in-loop rotation arm itself, with
+    // this same string, immediately before its R6 clause — because R6's position
+    // predicates are FLAT (no per-activation reading) and would otherwise read a
+    // loop-carried header φ, reached as a wire member around the back edge, as a
+    // stale record. This check is kept deliberately: it is the fence a reader
+    // looking for "why does a loop decline" finds, and it stays correct if a
+    // later increment ever reaches `ArmClass::InPlaceRotation` by another route.
+    if (R.InLoop && (R.ClassArm == ArmClass::InPlaceRotation ||
+                     R.ClassArmFalse == ArmClass::InPlaceRotation)) {
+      diagnoseUnderControl(BI, "control flow inside a loop body");
+      return;
+    }
     // ACCEPT: a pure phase region over ONE tainted handle — a one-content-arm
     // diamond (WI-2) or a two-arm if/else (WI-3). Push it so `lowerControlRegions`
     // (SwapRouteEmit) emits the routed stream. Polarity: a diamond's single arm

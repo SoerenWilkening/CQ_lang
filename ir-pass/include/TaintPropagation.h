@@ -98,6 +98,56 @@ struct TaintSet {
   llvm::DenseMap<llvm::Value * /*compare*/, llvm::Value * /*flag*/>
       SharedCondFlags;
 
+  // Control-in-place rotation arms (control-in-place-PRD §6, bd
+  // test_C_libtooling-drbq Inc 1). Maps a `@cq_theta_<sfx>` call that
+  // `SwapRouteEmit`'s in-place rotation-arm emitter HOISTED out of a tainted
+  // arm into the pred, to the i32 control flag it must fire under.
+  // `lowerRotations` then mints `cqrt_ry_<W>_controlled(flag, handle, θ)` at the
+  // hoisted position instead of the unconditional `cqrt_ry_<W>(handle, θ)`.
+  //
+  // HOIST-AND-DEFER, and the reason it is not "emit the controlled gate in the
+  // emitter" (PRD §6): every PRE-lowering wire walker (`WireWalk`,
+  // `LoopLowering::collectRailGates`, `ArmClassify`'s cond-wire scans,
+  // `declineStaleRecordOps`) recognizes an in-place Ry by its `@cq_theta_`
+  // spelling with the wire at arg 0. Leaving the theta call alive until
+  // `lowerRotations` means those walkers keep seeing a theta on `R` where one
+  // will fire — over-approximating a CONTROLLED gate as UNCONDITIONAL, which is
+  // the safe direction for every staleness fence.
+  //
+  // ⚠ IT LIVES ON `TaintSet`, NOT ON `ControlPlan`, AND THAT IS DELIBERATE
+  // (deviation from the PRD's suggested home, recorded because a reviewer will
+  // check). There is not ONE `ControlPlan` per compilation: the yn71 onward-
+  // control fixpoint (`TaintPropagation::detectAndLowerOnwardControl`) builds a
+  // LOCAL `plan2`, emits its regions, and DISCARDS it, while `lowerRotations`
+  // is later handed the FIRST plan. A `ControlPlan`-hosted map would therefore
+  // silently lose an onward region's entries and lower its hoisted theta
+  // UNCONDITIONALLY — an unconditional Ry where a controlled one was meant, i.e.
+  // a verify-clean wrong unitary. `TaintSet` is the one object every emitter and
+  // `lowerRotations` share. Empty for a module with no in-place rotation arm.
+  llvm::DenseMap<const llvm::CallInst * /*theta*/, llvm::Value * /*flag*/>
+      ControlledRotations;
+
+  // ⚠ THERE IS NO `ControlledRotationRails` MEMBER, AND ITS ABSENCE IS THE FIX
+  // (bd test_C_libtooling-drbq Inc 1, round-1 review L3 §1 / L5 §1). The
+  // "register a controlled rotation fired on is FROZEN" fact used to live here
+  // as a `SmallPtrSet<Value *>` populated by `lowerRotations` with the theta's
+  // arg-0. That is a PRE-`lowerOps` SSA value: for a DERIVED base (`r = p*5`,
+  // `p+5`, `p^5`, `p&5`, `zext p`, `@llvm.sqrt(p)`) it is the raw LLVM
+  // instruction, which `lowerOps` — the very NEXT pipeline stage — RAUWs to a
+  // `cq_template_*` result and ERASES. The set then held a dangling pointer, the
+  // live rail was in no owner set, and the whole-DAG spine emitted a
+  // `cqrt_ry_<W>_controlled(f, h, -θ)` naming an already-`cqrt_free`d flag
+  // followed by a `cqrt_free` of a still-dirty, condition-entangled register:
+  // `opt` exit 0, verify-clean, a hidden measurement (Rules 6/8). MEASURED on 5
+  // of 5 out-of-place base opcodes and through two independent `promote()`
+  // paths.
+  //
+  // The freeze is now asked STRUCTURALLY of the emitted gate —
+  // `ChainWalk::railCarriesControlledRotation(H)` — which derives the rail from
+  // the gate's arg-1 USE at query time and therefore cannot go stale, cannot
+  // dangle, and cannot be address-reused. Read that function's header before
+  // re-introducing any `Value *`-keyed owner set for this fact.
+
   // Straight-line stale-record guard (test_C_libtooling-uzb). Tainted PURE
   // producers (add/sub/mul/casts/data-position icmp) whose template, emitted
   // at the instruction's SCHEDULED position, would read a wire basis a

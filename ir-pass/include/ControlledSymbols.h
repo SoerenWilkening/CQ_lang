@@ -40,11 +40,30 @@ public:
   // pass owns all three for the duration of a run).
   ControlledSymbols(llvm::Module &M, WidthDispatch &wd) : M(M), Wd(wd) {}
 
-  // Controlled Rz gate body (PRD §2.8): `void cqrt_rz_<W>_controlled[_inv]`
+  // Which rotation stem `controlledRotationFn` spells. `Rz` (the default,
+  // PRD §2.8) is the diagonal phase rotation — the lowered `cq_phi`. `Ry`
+  // (control-in-place-PRD §5, bd test_C_libtooling-drbq Inc 0) is the
+  // NON-diagonal superposition rotation — the lowered `cq_theta` — and is
+  // the reason the whole family exists: a tainted-control Ry arm has NO
+  // swap-route form (`Ry(θ)|0⟩ ≠ |0⟩` leaves the inactive work rail dirty
+  // and entangled, Rules 6/8), so control-in-place is its mechanism.
+  enum class RotStem { Ry, Rz };
+
+  // Controlled rotation gate body: `void cqrt_<stem>_<W>_controlled[_inv]`
   // `(i32 ctrl, i32 handle, double angle)`. The width selects only the
   // symbol name; ctrl and handle are i32 and the angle double for every ABI
   // width. Null FunctionCallee for an unsupported width.
+  //
+  // `inverse` spells the `_controlled_inv` RESERVE family, and it is
+  // meaningful for `Rz` ONLY. For `Ry` the `_controlled_inv` spelling names a
+  // DIFFERENT, older symbol (the npu.6 MUX-EXCH prep-uncompute, 7 widths, no
+  // f16/f80) that this resolver does not own, and the control-in-place
+  // forward gate's adjoint is not that symbol at all: like every other
+  // rotation in this compiler it inverts as the SAME symbol with a NEGATED
+  // angle (`EmitInverse`). So `(Ry, inverse=true)` is refused with a null
+  // callee rather than minting a name whose meaning is not the caller's.
   llvm::FunctionCallee controlledRotationFn(llvm::StringRef abiWidth,
+                                            RotStem stem = RotStem::Rz,
                                             bool inverse = false) const;
 
   // Pauli-X gate primitive (the De Morgan `||` bracket, PRD §2.5):

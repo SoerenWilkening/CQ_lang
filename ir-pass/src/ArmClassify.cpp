@@ -33,6 +33,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -175,6 +176,18 @@ bool isValueChangingOp(const Value *Base) {
 // and must never be collected as a condition operand (the f64/angle miscompile
 // family). Only tainted values are recorded; classical scaffolding (constants,
 // the classical seed of a theta) is traversed-through but never collected.
+//
+// ⚠ THIS CONE IS ALSO R4's COMPLETENESS CARRIER, which its original callers did
+// not need it to be (round-1 Rule-13 review of bd test_C_libtooling-drbq, lens
+// L1 §2). `classifyArms`' R4 clause seeds `CondRails` with
+// `railWireClosure(Region.Condition, BackwardOnly, …)` — which stops dead,
+// because a `CmpInst` is not a `BinaryOperator` and that walk has no `CmpInst`
+// arm — and then closes over EVERY member of this set. So "the rotated wire is
+// not a condition wire" is proved from THIS function's reach, not from the
+// compare's. NARROWING IT (stopping at a template producer, collecting only
+// direct operands, dropping a hop) IS A RULE-13 CHANGE TO R4, and R4 is the
+// fence whose failure is a flag stripped against a relabelled register — a
+// `cqrt_free` of an entangled ancilla (Rules 6/8).
 void condProvenance(Value *Cond, TaintSet &Taint,
                     SmallPtrSetImpl<Value *> &Out) {
   SmallVector<Value *, 16> Work;
@@ -231,6 +244,333 @@ Value *diagonalAliasHit(Value *Routed, const SmallPtrSetImpl<Value *> &Prov) {
     V = CI->getArgOperand(0);
   }
 }
+
+// The RAIL CLOSURE of `V` — every SSA value that MIGHT name `V`'s physical rail
+// (control-in-place-PRD §4 R4 **and** R6, bd test_C_libtooling-drbq Inc 1).
+//
+// ONE WALK, TWO QUESTIONS (and finding J is what forced that). R4 asks "is the
+// rotated wire one of the condition's?", which only needs the walk BACKWARD to
+// the roots: two names of one wire share a root, so two backward closures that
+// intersect is the test. R6 asks "does anything READ a record of this wire after
+// the region?", and enumerating readers needs the wire's MEMBERS — which live
+// FORWARD of the base as often as behind it. Inc 1 shipped R6 over the DIRECT
+// users of the base alone and a one-hop diagonal alias evaded it in BOTH
+// directions (`control_inplace_ry_reject_stale_diag_alias_{forward,backward}.ll`,
+// both measured wrong-VALUE silent miscompiles). That is the bd 8h7d.5 F-1/F-3
+// lesson one epic later: the fence was written over the CHAIN — one SSA name —
+// when the object it protects is the RAIL. So both questions now read ONE member
+// set built by ONE walk, and `WireDir` is the only thing that differs.
+//
+// Physical-rail identity is not SSA identity: rotation lowering RAUWs a whole
+// chain of SSA names onto ONE `cqrt_alloc_<W>` handle. Two values share a rail
+// exactly when one is reachable from the other along IN-PLACE hops, so two
+// closures that intersect is the (conservative) test, and two that do not is a
+// proof of disjointness.
+//
+// BACKWARD hops (taken under BOTH `WireDir`s) — each is a spelling that keeps
+// the SAME handle:
+//
+//   * `cq_phi(x, θ)` — Rz is diagonal and ALWAYS lowers in place on `x`'s
+//     handle. This is `diagonalAliasHit`'s hop, generalized.
+//   * `cq_theta(x, θ)` with `x` TAINTED — a CHAINED Ry lowers in place on `x`'s
+//     handle too (`RotationLowering`'s `Chained` branch mints no alloc). A
+//     SOURCE theta (classical arg-0) mints a fresh rail, so the walk stops
+//     there — that is what makes `int q = cq_theta(0,·); int r = cq_theta(0,·)`
+//     two disjoint wires and the whole increment possible.
+//   * a `PHINode` / `SelectInst` over tainted operands — a ROUTER forwards the
+//     same physical handle (the bd tayx rule that `WireWalk` crosses).
+//   * a `freeze` — the same handle laundered.
+//   * `add`/`sub`/`xor` with exactly one tainted operand — and this one is the
+//     reason the closure is CONSERVATIVE rather than exact. Such an op lowers
+//     IN PLACE (`cqrt_addc_<W>`/`cqrt_xorc_<W>` on the parent's own rail) when
+//     the M-C fence admits it and OUT of place (a fresh template rail)
+//     otherwise — but that fence lives in `lowerOps`, which runs LONG AFTER
+//     detection, so nothing here can know which. Both roots are therefore
+//     admitted. It also subsumes `taint.InPlaceRailOps` (the `lowerLoops`-proven
+//     set the PRD names): every member is an `add`/`xor` this hop already
+//     crosses.
+//
+//     ⚠ THAT "NOTHING HERE CAN KNOW WHICH" IS TRUE FOR `add`/`xor` AND FALSE FOR
+//     `sub` (bd drbq round-2 review, lens B §1). There is NO `cqrt_subc_<W>` at
+//     any width — zero hits in `runtime/cq_runtime.h` and in
+//     `tools/opcode_table.yaml` — so the in-place ABI is `addc`/`xorc` only, and
+//     `inPlaceReassignRailOperand` (`ArithLowering.cpp`) additionally admits only
+//     the HANDLE-LHS spelling `q - c`. For the LH spelling `k - q` the answer IS
+//     knowable at detection and is always "out of place, a FRESH rail" — so
+//     crossing `k - q` is UNCONDITIONALLY conservative here, not conditionally
+//     so. Measured cost: `int r = 5 - p; if (q==5) r = cq_theta(r,.9); …
+//     cq_measure(p);` declines R6, while its `cq_phi` twin accepts and emits
+//     `cq_template_sub_i32_lh(5, h1)` on a fresh rail where `p` was never
+//     touched. Over-declining is safe (Prime Directive), so this is recorded and
+//     not fixed — but PRD §11.5 obligation 2 makes NARROWING this hop a Rule-13
+//     change, and whoever performs it must not reason from the M-C-fence premise
+//     for the `sub` half: it does not apply.
+//
+// Everything else STOPS: a `cq_template_*` producer (mul, cast, compare, the
+// out-of-place arith) mints a FRESH rail, so it is its own root. That is not a
+// shortcut — a value entangled with the condition but living on its own rail is
+// genuinely a different wire, and rotating it leaves the condition's BASIS
+// untouched, which is all the `icmp_inv` flag strip needs (PRD §3).
+//
+// FORWARD hops (`WireDir::BothWays` only) are the exact MIRROR of the backward
+// list — a user whose RESULT keeps the member's own handle: `cq_phi(M,·)`, a
+// CHAINED `cq_theta(M,·)`, an `add`/`sub`/`xor` whose sole tainted operand is
+// `M`, and (since the round-1 Rule-13 review, lens L2 §1) a `PHINode` /
+// `SelectInst` / `freeze` DATA user. Three deliberate exclusions remain, each of
+// which is the STRICT direction because a non-member user faces R6's position
+// proof instead of being walked through:
+//
+//   * the REGION'S OWN MERGE φ — and ONLY that one φ, passed in by the caller.
+//     It is a user of the base by construction and the emitter RAUWs it to the
+//     base, so crossing it would make every legitimate post-region consumer a
+//     member's user and collapse the whole accept class
+//     (`control_inplace_ry_alias_after_region.ll` is the fixture that would
+//     die). Inc 1 shipped this exclusion as a BAN ON THE WHOLE CLASS, justified
+//     by that one φ, and the gap was a CONFIRMED silent miscompile: an ordinary
+//     CLASSICAL join φ (`int m; if (c) m = cq_phi(r,.1); else m = r;`) was a
+//     plain user that passed `provablyBefore` honestly, so its OWN users were
+//     never enumerated — and `liftOneRegisterMergePhi` later RAUW'd it to the
+//     base, handing `cq_measure`, `ret`, a tape write, a Phase-6 clone argument
+//     and a `cq_invert` bracket the POST-Ry register. See `forwardRailHop`.
+//   * the region's OWN ARM BLOCKS are skipped wholesale (`ArmA`/`ArmB`): those
+//     users are region-INTERNAL and the arm classifier adjudicates them — this
+//     arm's gate, the sibling arm's gate, or a stray op `inPlaceRotationArmTheta`
+//     already refused. Crossing into them would reach the arm theta and, through
+//     its sole use, the merge φ — the same collapse.
+//   * a `cq_measure` / opaque call / `cq_template_*` producer is not a hop at
+//     all: it either reads the wire (R6's business) or mints a fresh rail.
+//
+// KNOWN OVER-DECLINE, stated so it is not rediscovered as a bug: the add/xor hop
+// refuses `if (q==5) r = cq_theta(r,·)` when `r = q + 1`, even though M-C would
+// in fact lower that out of place. Over-declining is always safe (Prime
+// Directive) and the shape is outside the Inc-1 accept class either way.
+namespace {
+
+enum class WireDir {
+  BackwardOnly,  // R4's condition side: roots are all an intersection needs.
+  BothWays,      // R4's base side + R6's member set: every name of the wire.
+};
+
+// Does `U`'s RESULT name the same physical rail as its operand `M`? The forward
+// mirror of the backward hop list above; see it for each hop's justification.
+bool forwardRailHop(Instruction *U, Value *M, TaintSet &Taint) {
+  if (auto *CI = dyn_cast<CallInst>(U)) {
+    if (CI->arg_size() < 1 || CI->getArgOperand(0) != M)
+      return false;  // arg-1 is the ANGLE (Rule 3) — never a wire edge.
+    if (isPhiCall(CI))
+      return true;  // Rz: always in place.
+    if (isThetaCall(CI))
+      return Taint.Tainted.count(M) != 0;  // chained Ry: in place.
+    return false;    // measure / cq_invert / anything opaque: not a hop.
+  }
+  // A `PHINode` / `SelectInst` / `freeze` DATA user — crossed FORWARD since the
+  // round-1 Rule-13 review (lens L2 §1, a CONFIRMED silent miscompile). Inc 1
+  // crossed these BACKWARD only, on the stated ground that "the region's OWN
+  // MERGE φ is a user of the base" — which names ONE φ, not the class, and the
+  // caller now excludes exactly that one φ instead. The measured cost of the
+  // omission: `int m; if (c) m = cq_phi(r,.1); else m = r;` — a purely CLASSICAL
+  // diamond — made the join φ a plain *user* of a member. It passes
+  // `provablyBefore` honestly (it does dominate the region's branch), its own
+  // users were therefore never enumerated, and `liftOneRegisterMergePhi` later
+  // RAUW'd it to the base: `cq_measure(m)`, `ret m`, a 7.6 tape write, a Phase-6
+  // clone argument and a `cq_invert` bracket all read the POST-Ry register where
+  // the source names the record BEFORE it. Six accepting reproducers, five
+  // consumer kinds, `opt` exit 0, verify-clean, stage-2b clean.
+  //
+  // A crossed φ's RESULT becomes a member, so ITS users owe the position proof —
+  // which is the whole point. A φ over two DIFFERENT rails is a classical mux,
+  // not rail identity; admitting it here is still the SAFE direction (a member
+  // only ever adds obligations), and `declineClassicalMuxes` owns that shape.
+  if (isa<PHINode>(U) || isa<FreezeInst>(U))
+    return Taint.Tainted.count(M) != 0;
+  if (auto *SI = dyn_cast<SelectInst>(U))
+    // DATA operands only. `M` as the select's CONDITION (operand 0) does not put
+    // the result on `M`'s rail — that is the 4.4 tainted-condition select, whose
+    // result is a fresh merged register.
+    return Taint.Tainted.count(M) != 0 &&
+           (SI->getTrueValue() == M || SI->getFalseValue() == M);
+  if (auto *BO = dyn_cast<BinaryOperator>(U)) {
+    const Instruction::BinaryOps Op = BO->getOpcode();
+    if (Op != Instruction::Add && Op != Instruction::Sub &&
+        Op != Instruction::Xor)
+      return false;  // mul/shift/… have no in-place ABI: a fresh rail.
+    Value *L = BO->getOperand(0), *R = BO->getOperand(1);
+    const bool TL = Taint.Tainted.count(L) != 0;
+    const bool TR = Taint.Tainted.count(R) != 0;
+    // MAY be an M-C / dtzb in-place tweak for `add`/`xor`; for `sub` see the
+    // block comment above — `k - M` has NO in-place ABI at any width
+    // (`cqrt_subc` does not exist), so that half is unconditionally
+    // conservative rather than M-C-dependent.
+    return TL != TR && (TL ? L : R) == M;
+  }
+  return false;
+}
+
+// `Order` (optional) receives the members in worklist-discovery order, so R6's
+// scan — and therefore the instruction its diagnostic anchors on — is
+// deterministic; `SmallPtrSet` iteration is address-ordered and is not.
+// `MergePhi` (optional) is the REGION'S OWN merge φ and the ONE forward
+// exclusion: it is a user of the base by construction, and the emitter RAUWs it
+// to the base, so crossing it would make every legitimate POST-region consumer a
+// member's user and collapse the entire accept class. Every OTHER φ / select /
+// freeze is crossed (round-1 review L2 §1) — see `forwardRailHop`.
+void railWireClosure(Value *V, TaintSet &Taint, WireDir Dir,
+                     const BasicBlock *ArmA, const BasicBlock *ArmB,
+                     SmallPtrSetImpl<Value *> &Out,
+                     SmallVectorImpl<Value *> *Order = nullptr,
+                     const Instruction *MergePhi = nullptr) {
+  SmallVector<Value *, 16> Work;
+  Work.push_back(V);
+  while (!Work.empty()) {
+    Value *W = Work.pop_back_val();
+    if (!W || !Out.insert(W).second)
+      continue;
+    if (Order)
+      Order->push_back(W);
+    // FORWARD, asked of every TAINTED member (including the roots the backward
+    // hops bottom at — that is how a sibling alias off the ROOT is found, which
+    // is the `..._stale_diag_alias_backward.ll` shape).
+    //
+    // The taint gate is not decoration. Every hop above pushes only tainted
+    // values EXCEPT the backward `cq_phi` one, which pushes arg-0
+    // unconditionally — so a degenerate `cq_phi(0, θ)` (deleted at lowering,
+    // Rule 3) can put a CONSTANT in the set, and forward-walking a constant
+    // would sweep in every unrelated `cq_phi(0, ·)` in the module as a "member
+    // of this wire". Untainted is never a wire. (No probe got a MISCOMPILE
+    // through that gap — those degenerate phis are untainted, so their own
+    // consumers decline earlier; the guard is here because forward-walking a
+    // constant is meaningless and unbounded, not because one did.)
+    if (Dir == WireDir::BothWays && Taint.Tainted.count(W)) {
+      for (User *U : W->users()) {
+        auto *UI = dyn_cast<Instruction>(U);
+        if (!UI || UI->getParent() == ArmA || UI->getParent() == ArmB)
+          continue;  // non-instruction, or region-internal (see the note above).
+        if (UI == MergePhi)
+          continue;  // the region's own merge φ — the ONE forward exclusion.
+        if (forwardRailHop(UI, W, Taint))
+          Work.push_back(UI);
+      }
+    }
+    auto *I = dyn_cast<Instruction>(W);
+    if (!I)
+      continue;  // Argument / Constant — its own root.
+    if (auto *CI = dyn_cast<CallInst>(I)) {
+      if (isPhiCall(CI) && CI->arg_size() >= 1) {
+        Work.push_back(CI->getArgOperand(0));  // Rz: always in place.
+        continue;
+      }
+      if (isThetaCall(CI) && CI->arg_size() >= 1 &&
+          Taint.Tainted.count(CI->getArgOperand(0))) {
+        Work.push_back(CI->getArgOperand(0));  // chained Ry: in place.
+        continue;
+      }
+      continue;  // a source theta / template producer / anything else: fresh.
+    }
+    if (isa<PHINode>(I) || isa<SelectInst>(I) || isa<FreezeInst>(I)) {
+      for (Value *Op : I->operands())
+        if (Taint.Tainted.count(Op))
+          Work.push_back(Op);  // router / launder: the same handle.
+      continue;
+    }
+    if (auto *BO = dyn_cast<BinaryOperator>(I)) {
+      const Instruction::BinaryOps Op = BO->getOpcode();
+      if (Op != Instruction::Add && Op != Instruction::Sub &&
+          Op != Instruction::Xor)
+        continue;  // mul/shift/… have no in-place ABI: a fresh rail.
+      Value *L = BO->getOperand(0), *R = BO->getOperand(1);
+      const bool TL = Taint.Tainted.count(L) != 0;
+      const bool TR = Taint.Tainted.count(R) != 0;
+      if (TL != TR)
+        // MAY be an M-C / dtzb in-place tweak for `add`/`xor`; the `sub` half is
+        // unconditionally conservative (no `cqrt_subc` at any width) — see the
+        // block comment above `railWireClosure`.
+        Work.push_back(TL ? L : R);
+      continue;
+    }
+  }
+}
+
+// R6's position obligation for an ALIAS HOP — a user that is ITSELF a member of
+// the wire (bd test_C_libtooling-drbq Inc 1, finding J).
+//
+// TWO SETS, TWO QUESTIONS — the bd 8h7d.5 round-3 discipline, applied here on
+// purpose. Widening the MEMBER set (whose users get enumerated) must not widen
+// the SKIP set (which users are exempt from a position proof), and it does not:
+// a member's own position is still proved, just against the obligation that
+// actually applies to it.
+//
+//   * a genuine READ (measure / ret / store / call / φ / select / pure op) keeps
+//     the SHIPPED `provablyBefore(U, BI)` test verbatim;
+//   * an ALIAS HOP is a GATE on the wire, not a record read, and the only thing
+//     that can go wrong with it is FIRING AFTER the hoisted controlled Ry. The
+//     obligation is therefore "`BI` cannot reach `U`" — the second conjunct of
+//     `provablyBefore` on its own. Its FIRST conjunct (`U` dominates `BI`) is a
+//     different question ("did `U` definitely execute"), which R6 does not ask,
+//     and requiring it is WRONG-STRONG here: `control_inplace_ry_sequential.ll`'s
+//     region 2 has region 1's ARM THETA as a member's user — it precedes region 2
+//     on every path where it runs, and dominates nothing.
+//
+// A hop that CAN follow the gate is a stale record either way and declines (the
+// dead `z = cq_theta(r_pre, ·)` written after the region), and every hop's own
+// readers are enumerated regardless, because it is a member.
+//
+// SAY THE COST OUT LOUD: this is a WIDENING, and exactly one shape gains an
+// accept it did not have — an alias hop that is a DIRECT user of the base and
+// sits on a classically-branched path the region cannot reach back into
+// (`control_inplace_ry_alias_pre_region_branch.ll`, committed for that reason).
+// The emitted order is checked there and is the source's: the hop lowers in its
+// own conditional block, the controlled Ry is hoisted into the region's pred.
+// Everything else is a NARROWING — the member set grew, so strictly more users
+// are asked the question at all.
+bool cannotFollowGate(const Instruction *U, const Instruction *BI,
+                      const DominatorTree &DT) {
+  return !isPotentiallyReachable(BI, U, /*ExclusionSet=*/nullptr, &DT);
+}
+
+// The angle operand of a rotation call, tainted? ONE spelling, shared with
+// `taintedAngleGate`'s own lambda below (Rule 14) — the arg-1 angle is classical
+// by Rule 3, and a quantum-derived one has no fixed unitary.
+bool rotationAngleIsTainted(const CallInst *CI, const TaintSet &Taint) {
+  return CI->arg_size() >= 2 && Taint.Tainted.count(CI->getArgOperand(1));
+}
+
+// ---- control-in-place ROTATION arm (control-in-place-PRD §4, bd
+//      test_C_libtooling-drbq Inc 1) ------------------------------------------
+//
+// R1's shape half: is `ArmIncoming` a single in-place `cq_theta` gate that IS
+// the whole arm? Returns the theta on a match, null otherwise (NotApplicable —
+// the caller falls through to every pre-existing decline path unchanged).
+//
+//   * a `@cq_theta_<sfx>` CALL, defined IN `ArmBB` (an out-of-arm theta is the
+//     routed base's own lineage, never an arm gate — the same arm-block bound
+//     `walkPhaseSpine`/`walkValueChain` are built on, and for the same
+//     double-collection reason);
+//   * arg-0 TAINTED — a CHAINED Ry on a live register. A CLASSICAL arg-0 is
+//     controlled STATE PREP (PRD S5): it needs an alloc hoisted with it and a
+//     seed-identity fence on the merge phi's pred incoming, which is Inc 4;
+//   * SOLE USER is the merge phi (no fan-out — Rule 8 linearity: the emitter
+//     RAUWs the phi to the base, and a second consumer of the theta result
+//     would be left reading a value that no longer exists);
+//   * NOTHING ELSE in the arm block. `RegionFlatten` ERASES the arm block, so a
+//     stray op is silently DROPPED from the IR and its taint work-list pointer
+//     dangles — `armBlockIsPureSpine`'s two reasons, verbatim, which is why the
+//     shape is tested the same way rather than by a second spelling.
+CallInst *inPlaceRotationArmTheta(Value *ArmIncoming, const BasicBlock *ArmBB,
+                                  const PHINode *MergePhi, TaintSet &Taint) {
+  auto *T = dyn_cast<CallInst>(ArmIncoming);
+  if (!T || !isThetaCall(T) || T->getParent() != ArmBB || T->arg_size() < 2)
+    return nullptr;
+  if (!Taint.Tainted.count(T->getArgOperand(0)))
+    return nullptr;  // classical seed — controlled state prep, Inc 4.
+  if (!T->hasOneUse() || T->user_back() != MergePhi)
+    return nullptr;  // fan-out, or it does not feed the merge.
+  for (const Instruction &I : *ArmBB)
+    if (!I.isTerminator() && &I != T)
+      return nullptr;  // a stray op the flatten would drop.
+  return T;
+}
+
+}  // namespace
 
 // ---- 4.2 value-arm classification (PRD Part II §8.3; IMPLEMENTATION-4.2 §3).
 // (The 4.1 if/else `readsProvenance` fallback that lived here is RETIRED —
@@ -365,7 +705,7 @@ Instruction *declAnchor(const ControlRegion &R) {
 CallInst *taintedAngleGate(Value *ArmIncoming, const BasicBlock *ArmBB,
                            Value *Base, TaintSet &Taint) {
   auto AngleTainted = [&Taint](CallInst *CI) {
-    return CI->arg_size() >= 2 && Taint.Tainted.count(CI->getArgOperand(1));
+    return rotationAngleIsTainted(CI, Taint);  // ONE spelling (Rule 14).
   };
   for (Value *V = ArmIncoming; isPhiCall(V);) {
     auto *CI = cast<CallInst>(V);
@@ -1007,6 +1347,21 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // dephases the phase answer, Rule 7) → `mixed phase/value arm`.
   bool SawPhaseArm = false;
   bool SawValueArm = false;
+  // drbq Inc 1 — a control-in-place ROTATION arm was classified. Homogeneity is
+  // enforced against the other two flags in the clause itself; this one exists
+  // so the accept can be recorded and so the final P1 fence below reads it
+  // (`!SawPhaseArm` covers it: the Inc-4 position-aware stale-condition accept
+  // was cleared for PHASE arms only, and a rotation arm is not one).
+  //
+  // ⚠ IT MUST BE READ AT EVERY OTHER ACCEPT SITE, NOT JUST WRITTEN AT THIS ONE.
+  // The rotation clause's own homogeneity test only fires when the rotation arm
+  // is processed SECOND; a rotation arm FIRST followed by a phase/value/eq-fold
+  // arm is the same mixture and has to decline on the same string. (Measured
+  // during the Inc-1 build: with only the one-directional test, `if(c)
+  // r=cq_theta(r,·) else r=cq_phi(r,·)` declined — but on R6's
+  // stale-record string, by luck, because the sibling arm's `cq_phi` is a
+  // post-region user of the base. Luck is not a fence.)
+  bool SawRotationArm = false;
 
   for (BasicBlock *ArmBB : Arms) {
     if (MergePhi->getBasicBlockIndex(ArmBB) < 0) {
@@ -1051,7 +1406,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
     // fall through to the existing decline (Prime Directive).
     if (Value *H = straightThroughConstFoldHandle(Region, Routed, Base, Taint)) {
       Routed = H;
-      Region.RoutedBase = H;
+      Region.setRoutedBase(H);
     }
 
     // Pure phase chain bottoming at the routed handle: accept this arm. The
@@ -1067,7 +1422,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // defect; PRD §0/§10). An EMPTY arm (incoming == Routed, no gates)
       // classifies as phase here, so `value-chain + empty arm` also declines
       // mixed — safe over-decline; a WI-5+ increment may refine it.
-      if (SawValueArm) {
+      if (SawValueArm || SawRotationArm) {
         declineArm(declAnchor(Region), "mixed phase/value arm");
         return ArmDisposition::Declined;
       }
@@ -1093,7 +1448,250 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
     // cross-handle mux still falls through to decline) and BEFORE the leaf-base
     // path; a miss returns false and leaves `Routed`/`Region` untouched.
     if (tryEqFoldArm(Region, ArmBB, ArmIncoming, Base, Routed, Taint)) {
+      // drbq Inc 1 — homogeneity, the THIRD direction (see `SawRotationArm`).
+      if (SawRotationArm) {
+        declineArm(declAnchor(Region), "mixed phase/value arm");
+        return ArmDisposition::Declined;
+      }
       SawPhaseArm = true;
+      continue;
+    }
+
+    // ---- CONTROL-IN-PLACE ROTATION ARM (control-in-place-PRD §4 R1-R7, bd
+    //      test_C_libtooling-drbq Inc 1) ------------------------------------
+    //
+    // A single tainted-operand `cq_theta` (Ry) is the whole arm. It is NEITHER a
+    // phase arm NOR a value arm (Rule 7): the swap route cannot carry it at all,
+    // because `Ry(θ)|0⟩ ≠ |0⟩` leaves the INACTIVE work rail dirty and entangled
+    // with the flag (Rules 6/8, PRD §2), and method-B's copy-out would copy a
+    // basis LABEL and dephase the superposition that IS the answer. So it lowers
+    // CONTROL-IN-PLACE: the theta is hoisted to the pred and becomes
+    // `cqrt_ry_<W>_controlled(flag, R, θ)` on the user's own register, with the
+    // flag minted at the compare and stripped by the same `icmp_..._unc`.
+    //
+    // STRICTLY ADDITIVE, and the position is what makes it so. Every arm shape
+    // this clause claims declines TODAY — a diamond theta arm falls through to
+    // the closing `control flow`, an if/else theta arm to `impure phase arm`
+    // (its `armBlockIsPureSpine` walks a spine of `cq_phi`s and finds a theta
+    // instead) — so no accepted region can move. It sits AFTER `tryEqFoldArm`
+    // (whose D2 needs a `ConstantInt` base and cannot fire on a theta) and
+    // BEFORE the if/else leaf-anchor below, which would otherwise treat the
+    // theta itself as the routed leaf.
+    if (CallInst *T =
+            inPlaceRotationArmTheta(ArmIncoming, ArmBB, MergePhi, Taint)) {
+      // Homogeneity (R3): a rotation arm beside a phase or value arm has no
+      // single lowering method — the same region-level defect the phase/value
+      // mixture has, and the same string.
+      if (SawPhaseArm || SawValueArm) {
+        declineArm(declAnchor(Region), "mixed phase/value arm");
+        return ArmDisposition::Declined;
+      }
+      // R2 — the angle is CLASSICAL (Rule 3). `taintedAngleGate` above walks a
+      // `cq_phi` SPINE and never inspects a theta at the arm incoming, so this
+      // is the check for this class; same predicate, same string as the phase
+      // path's.
+      if (rotationAngleIsTainted(T, Taint)) {
+        declineArm(T, "rotation angle");
+        return ArmDisposition::Declined;
+      }
+      // R7 — the ziov SHARED condition flag. On that path `emitRegion` SKIPS
+      // the strip+free because a downstream data lineage owns the flag; the
+      // flag is then a LIVE record of the pre-Ry condition past the region,
+      // while this class relabels a register in place. Nothing proves those
+      // compose, and Inc 1 was not cleared for it (the PRD defers it to Inc 2,
+      // where the Rz path already handles sharing). Decline.
+      if (Region.ShareCondFlag) {
+        declineArm(declAnchor(Region), "rotation arm shares the condition flag");
+        return ArmDisposition::Declined;
+      }
+      // R7 — an ANGLE φ region (the cwk classical-fp angle mux) carries a second
+      // lowering the in-place emitter does not run. Defence in depth: no path
+      // that populates `AnglePhi` reaches this classifier today.
+      if (!Region.AnglePhi.empty() || !Region.AngleConsumers.empty()) {
+        declineArm(declAnchor(Region), "control flow");
+        return ArmDisposition::Declined;
+      }
+      Value *RotBase = T->getArgOperand(0);
+      // R3 — ONE base. A diamond's straight-through incoming IS the base; an
+      // if/else anchors it on the first arm and the second must match. A
+      // mismatch is a cross-handle multiplexer, not a rotation arm.
+      if (Routed && RotBase != Routed) {
+        declineArm(declAnchor(Region), "control flow");
+        return ArmDisposition::Declined;
+      }
+      // STRUCTURALLY UNREACHABLE, kept as defence in depth (round-1 review, lens
+      // L6 §4 — recorded in place so nobody tries to write a fixture nobody can
+      // write). `inPlaceRotationArmTheta` already required
+      // `Taint.Tainted.count(T->getArgOperand(0))` as R1's "chained, not state
+      // prep" half, and `RotBase` IS that operand. The same style as finding C's
+      // note on the R1 fan-out clause: the alternative to a redundant check is a
+      // silent fall-through to a controlled rotation on an untainted value.
+      if (!Taint.Tainted.count(RotBase)) {
+        declineArm(declAnchor(Region), "control flow");
+        return ArmDisposition::Declined;
+      }
+      // The ABI width must have a `cqrt_ry_<W>_controlled`. Checked HERE, in
+      // DETECTION, because `lowerRotations` runs after the emitter has already
+      // hoisted the theta and `RegionFlatten` has erased the diamond — a
+      // decline there would be a decline after mutation (Rule 9).
+      if (!abiWidthHasControlledRotation(abiWidthFromType(T->getType()))) {
+        declineArm(T, "controlled rotation width");
+        return ArmDisposition::Declined;
+      }
+      // R4 — DISJOINT PHYSICAL WIRES, the flag-strip's whole premise (PRD §3).
+      // The strip `icmp_..._unc` recomputes the predicate on the condition's
+      // registers and XORs it back onto the flag; that returns the flag to |0⟩
+      // ONLY IF those registers still hold the basis the forward mint read. Rz
+      // is diagonal so a phase arm may rotate a condition register freely (why
+      // S8 accepts); an in-place Ry RELABELS it, and then neither the arm
+      // selection nor the strip is a function of the source's condition.
+      //
+      // "Same wire" is a RAIL question, not an SSA one — see `railWireClosure`
+      // for each admitted hop and for the deliberate over-approximation.
+      //
+      // ONE WALK, derived twice (finding J). `BaseWire` is the base's FULL
+      // member set and is the SAME object R6 enumerates below, so R4 and R6
+      // cannot drift on what "this wire" means. The CONDITION side stays
+      // BACKWARD-ONLY on purpose and it costs nothing: two names of one wire
+      // share a root, so a base member that is on the condition's wire is
+      // already in the condition's backward closure. The forward half exists for
+      // R6's user enumeration, which the condition side does not do.
+      //
+      // ⚠ THE `Prov` LOOP BELOW IS THE WHOLE CONDITION SIDE, AND THE
+      // `Region.Condition` SEED CONTRIBUTES EXACTLY ONE ELEMENT (round-1 review
+      // L1 §2, recorded because it is invisible and load-bearing). A `CmpInst`
+      // is NOT a `BinaryOperator` in LLVM — it derives from `Instruction`
+      // directly — so `railWireClosure`'s dispatch inserts the compare and falls
+      // off the end without ever looking at its operands. R4's entire condition
+      // reach is therefore `⋃_{P ∈ Prov} backwardClosure(P)`, and R4 is only as
+      // complete as `condProvenance`'s backward operand cone.
+      // NARROWING `condProvenance` IS A RULE-13 CHANGE TO R4: a "tidy-up" that
+      // seeded only the compare's direct operands, or that stopped the cone at a
+      // template producer the way this closure does, would make R4 VACUOUS with
+      // every fixture still green (all four measured R4 declines reach through
+      // `Prov`, none through the `Region.Condition` seed).
+      const BasicBlock *ArmA = Region.Arm;
+      const BasicBlock *ArmB = Region.ArmFalse;
+      SmallPtrSet<Value *, 16> CondRails;
+      railWireClosure(Region.Condition, Taint, WireDir::BackwardOnly, nullptr,
+                      nullptr, CondRails);
+      for (Value *P : Prov)
+        railWireClosure(P, Taint, WireDir::BackwardOnly, nullptr, nullptr,
+                        CondRails);
+      SmallPtrSet<Value *, 16> BaseWire;
+      SmallVector<Value *, 16> BaseWireOrder;
+      railWireClosure(RotBase, Taint, WireDir::BothWays, ArmA, ArmB, BaseWire,
+                      &BaseWireOrder, MergePhi);
+      for (Value *B : BaseWireOrder)
+        if (CondRails.count(B)) {
+          declineArm(declAnchor(Region), "rotation arm on a condition wire");
+          return ArmDisposition::Declined;
+        }
+      // R6 — NO POST-REGION READ OF THE PRE-Ry RECORD. After the region the
+      // register carries `Ry(θ)` on the `f=1` branch, so every consumer must
+      // read the POST-region name (the merge φ, which the emitter RAUWs to the
+      // base). An SSA name for the base that is READ after the region is a
+      // stale record: the emitted gate would name the relabelled rail while the
+      // source means the value before it — the wrong-VALUE class of bd 0njv,
+      // still open. This fence is deliberately STRICTER than
+      // `declineStaleRecordOps` (which covers pure ops only) so that hole is
+      // not reachable through this accept: a `cq_measure`, a `ret`, a `store`,
+      // an opaque call, a φ, ANY user that is not provably before the region
+      // declines.
+      //
+      // R7's LOOP half, asked HERE — immediately before R6 and nowhere earlier,
+      // so every other clause's message ordering is byte-identical — because R6
+      // is the ONE clause whose proof is not valid inside a loop. Both position
+      // predicates below are flat: neither `provablyBefore` nor
+      // `cannotFollowGate` has a per-activation reading, so a loop-carried
+      // register's own header φ, reached as a wire member around the BACK EDGE,
+      // reads as a stale record when it is simply the NEXT activation's value
+      // (the bd 8h7d.5 `provablyBeforePerActivation` distinction, which this
+      // epic's Inc 3 owns together with the loop accept). The class declines in
+      // a loop regardless — `handleBranchRegion`'s in-loop scope fence part 3 is
+      // kept as the backstop — so ask the loop question first rather than answer
+      // R6's with the wrong barrier and emit a message that mislabels the region.
+      // MEASURED: without this, `control_inplace_ry_reject_in_loop.ll` declines
+      // on the stale-record string, correctly but for the wrong stated reason.
+      if (Region.InLoop) {
+        declineArm(declAnchor(Region), "control flow inside a loop body");
+        return ArmDisposition::Declined;
+      }
+      // OVER THE RAIL, NOT THE CHAIN (finding J). The scan ranges over EVERY
+      // member of `BaseWire`, not over `RotBase` alone: `int mark = cq_phi(r,·)`
+      // before the region puts a second SSA name on the one physical rail, and
+      // the shipped direct-user scan saw `mark` (a user, not a read) while
+      // `cq_measure(mark)` sat one hop out and lowered to a measurement of the
+      // POST-Ry register. Measured, both directions, both verify- and
+      // stage-2b-clean: `..._reject_stale_diag_alias_{forward,backward}.ll`.
+      const Instruction *BI = Region.Pred ? Region.Pred->getTerminator()
+                                          : nullptr;
+      if (!BI || !DT) {
+        declineArm(declAnchor(Region), "control flow");
+        return ArmDisposition::Declined;  // no anchor / no tree, no proof.
+      }
+      for (Value *M : BaseWireOrder)
+      for (User *U : M->users()) {
+        if (U == T || U == MergePhi)
+          continue;  // this gate itself, and the merge the emitter dissolves.
+        auto *UI = dyn_cast<Instruction>(U);
+        // A user INSIDE one of this region's own arm blocks is region-internal
+        // and is adjudicated by the ARM CLASSIFIER, not by this fence: the
+        // sibling arm's own gate in an if/else (hoisted with this one when it is
+        // a rotation arm, declined `mixed phase/value arm` when it is not), or a
+        // stray op in THIS arm (already refused by `inPlaceRotationArmTheta`).
+        // Excluding them is what keeps the DIAGNOSTIC honest — without it a
+        // mixed `if(c) r=cq_theta(r,·) else r=cq_phi(r,·)` declines here, on the
+        // stale-record string, for a region whose actual defect is the mixture.
+        // (`railWireClosure` skips the same two blocks, so a member never comes
+        // from inside the region either.)
+        if (UI && (UI->getParent() == ArmA ||
+                   (ArmB && UI->getParent() == ArmB)))
+          continue;
+        if (!UI) {
+          declineArm(declAnchor(Region),
+                     "stale rail record read past a controlled Ry");
+          return ArmDisposition::Declined;  // a constant expression: no position.
+        }
+        if (!DT->isReachableFromEntry(UI->getParent()))
+          continue;  // never executes, so never reads (the M-A F3 reading).
+        // TWO SETS, TWO QUESTIONS — see `cannotFollowGate`. A member is an alias
+        // HOP and owes only "cannot fire after the gate"; every other user owes
+        // the shipped `provablyBefore`, unchanged.
+        //
+        // ⚠ THE ROUND-1 φ-CROSSING WIDENING MOVED THIS SKIP SET TOO, AND THAT IS
+        // THE ANSWER, NOT AN OVERSIGHT (the bd 8h7d.5 F-1/F-3 discipline: when
+        // you widen a set, ask what OTHER set is computed over the same
+        // closure). `BaseWire` feeds THREE consumers — R4's intersection above,
+        // R6's member enumeration, and this skip set — and all three grew. For
+        // this one the relaxation is from `provablyBefore` to `cannotFollowGate`
+        // (dropping the DOMINANCE conjunct) on a newly-admitted φ / select /
+        // freeze, and it is sound because none of those is a RECORD READ: a
+        // `PHINode` and a `freeze` emit no gate at all, and a `select` that
+        // survives to lowering is a CNOT-class copy OFF the wire — for all
+        // three the only thing that can go wrong is EXECUTING AFTER the hoisted
+        // controlled Ry, which is exactly what `cannotFollowGate` refuses.
+        // Dominance answers "did `U` definitely execute", which R6 never asks.
+        const bool Ok = BaseWire.count(UI) ? cannotFollowGate(UI, BI, *DT)
+                                           : provablyBefore(UI, BI, *DT);
+        if (!Ok) {
+          declineArm(UI, "stale rail record read past a controlled Ry");
+          return ArmDisposition::Declined;
+        }
+      }
+      // ACCEPT: record the class + the single hoisted gate for the emitter, and
+      // pin the routed base by SSA identity (an if/else merge has no Pred edge
+      // for the emitter to re-derive it from).
+      if (ArmBB == Region.Arm) {
+        Region.ClassArm = ArmClass::InPlaceRotation;
+        Region.Shadow.assign(1, T);
+      } else {
+        Region.ClassArmFalse = ArmClass::InPlaceRotation;
+        Region.ShadowFalse.assign(1, T);
+      }
+      Region.setRoutedBase(RotBase);
+      Routed = RotBase;
+      SawRotationArm = true;
       continue;
     }
 
@@ -1106,6 +1704,13 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       }
       if (!armBlockIsPureSpine(ArmBB, ArmIncoming)) {
         declineArm(declAnchor(Region), "impure phase arm");
+        return ArmDisposition::Declined;
+      }
+      // drbq Inc 1 — unreachable while a rotation arm anchors `Routed` (this
+      // branch needs `!Routed`), kept for the same reason the other three
+      // homogeneity checks are: one flag, every accept site (see below).
+      if (SawRotationArm) {
+        declineArm(declAnchor(Region), "mixed phase/value arm");
         return ArmDisposition::Declined;
       }
       SawPhaseArm = true;
@@ -1133,7 +1738,7 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       if (!Chain.Ops.empty()) {
         // Heterogeneous if/else: a value arm beside an already-classified
         // phase arm (the converse guard sits on the phase path above).
-        if (SawPhaseArm) {
+        if (SawPhaseArm || SawRotationArm) {
           declineArm(declAnchor(Region), "mixed phase/value arm");
           return ArmDisposition::Declined;
         }

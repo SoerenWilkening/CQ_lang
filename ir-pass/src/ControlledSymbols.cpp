@@ -18,18 +18,37 @@ using namespace llvm;
 namespace cq {
 
 FunctionCallee ControlledSymbols::controlledRotationFn(StringRef abiWidth,
+                                                       RotStem Stem,
                                                        bool inverse) const {
-  // `void cqrt_rz_<W>_controlled[_inv](i32 ctrl, i32 handle, double angle)`.
+  // `void cqrt_<stem>_<W>_controlled[_inv](i32 ctrl, i32 handle, double angle)`.
   // The width only selects the symbol name; the llvmWidthType guard rejects
   // unknown widths (null callee so the caller diagnoses rather than minting
   // a garbage symbol).
   LLVMContext &Ctx = M.getContext();
-  if (!Wd.llvmWidthType(abiWidth))
+  // The NINE declared widths, not `llvmWidthType`'s wider recognized set: there
+  // is no `cqrt_rz_i128_controlled` / `cqrt_ry_f128_controlled` body, so minting
+  // one would be a phantom extern that link-fails (the jvun class). ONE fence,
+  // shared with the detection-time gate in `ArmClassify` (Rule 14) so accept and
+  // emit cannot drift. This TIGHTENS the pre-drbq behaviour on a path no caller
+  // reached (`emitRz`'s controlled arm is unreached today).
+  if (!abiWidthHasControlledRotation(abiWidth))
+    return FunctionCallee();
+  // Ry has NO `_inv` mint from this resolver, deliberately. Two independent
+  // reasons, and both matter: (i) the plain controlled Ry's adjoint is the SAME
+  // symbol with a negated angle (the rotation convention `EmitInverse`
+  // implements), so an `_inv` name would never be the right answer; (ii) the
+  // `cqrt_ry_<W>_controlled_inv` spelling ALREADY NAMES a different, older
+  // runtime family — the npu.6 gated-switch MUX-EXCH prep-uncompute, and only
+  // 7 widths (no f16/f80), so minting it here at f16/f80 would be a phantom
+  // extern that link-fails. Null callee ⇒ the caller declines (never a
+  // silently-wrong symbol).
+  if (Stem == RotStem::Ry && inverse)
     return FunctionCallee();
   Type *I32 = Type::getInt32Ty(Ctx);
+  StringRef Base = Stem == RotStem::Ry ? "cqrt_ry_" : "cqrt_rz_";
   StringRef Suffix = inverse ? "_controlled_inv" : "_controlled";
   return M.getOrInsertFunction(
-      ("cqrt_rz_" + abiWidth + Suffix).str(),
+      (Base + abiWidth + Suffix).str(),
       FunctionType::get(Type::getVoidTy(Ctx),
                         {I32, I32, Type::getDoubleTy(Ctx)}, false));
 }

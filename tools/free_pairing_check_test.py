@@ -858,6 +858,75 @@ define void @slice(i1 %x) {
 }
 """
 
+# ---------------------------------------------------------------------------
+# bd test_C_libtooling-drbq Inc 0 — the CONTROL-IN-PLACE rotation twins
+# `cqrt_{ry,rz}_<W>_controlled(ctrl, handle, angle)`.
+#
+# These two families left the checker's "unmodelled reserve" list when the epic
+# turned §6a control-in-place from an optional peephole into the MECHANISM for a
+# tainted-control Ry arm (the swap route cannot carry an Ry at all:
+# `Ry(θ)|0⟩ ≠ |0⟩` hands back a dirty rail entangled with the flag). A newly
+# modelled symbol is a new claim about what "written" means, so it needs its own
+# mutants before any verdict mentioning it is worth anything.
+#
+# THE PROPERTY UNDER TEST is the Ry/Rz asymmetry, at the new SLOTS: the control
+# is arg 0 and the register arg 1, so a model that kept the uncontrolled
+# `writes=(0,)` would score the FLAG as the dirtied rail and the register as
+# untouched — silently inverting the whole question. CTL_RY_PAIR is the shape
+# `EmitInverse` actually emits (same symbol, negated angle, control threaded
+# verbatim); the mutants perturb each of its three slots in turn.
+CTL_RY_PAIR = """
+define void @slice(i32 %x) {
+  %f = call i32 @cqrt_alloc_i1(i32 1)
+  %h = call i32 @cqrt_alloc_i32(i32 %x)
+  call void @cqrt_ry_i32_controlled(i32 %f, i32 %h, double 5.000000e-01)
+  call void @cqrt_ry_i32_controlled(i32 %f, i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+# The DISCRIMINATION control, and the reason `diagonal=True` on the Rz twin is
+# physics and not convenience: an UNPAIRED controlled Rz still leaves the rail
+# |0>-clean, because `diag(1, e^{i.theta})` relabels nothing on either branch of
+# the flag. The identical file with the `ry` stem is a mutant two lines down.
+# Without this control, a model that dropped `diagonal` from the Rz twin — i.e.
+# that treated the two stems alike — would still pass every other layer here.
+CTL_RZ_UNPAIRED = """
+define void @slice(i32 %x) {
+  %f = call i32 @cqrt_alloc_i1(i32 1)
+  %h = call i32 @cqrt_alloc_i32(i32 %x)
+  call void @cqrt_rz_i32_controlled(i32 %f, i32 %h, double 5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+# The REAL emitted stream of `tests/e2e/slice_control_inplace_ry.c` (bd drbq Inc
+# 1), verbatim from `cq-opt`, so the slot mutants below run against what the pass
+# actually produces rather than against a hand-idealized shape. Its two mutants
+# are the round-1 Rule-13 review's own (lens L5, "checker mutation testing"):
+# neither the shipped mutant list nor the shipped positives distinguished a
+# ctrl/handle SLOT SWAP, which is precisely the mistake `RotationLowering` would
+# make by emitting `{Handle, Ctrl, Angle}` and `EmitInverse` by threading
+# `CurHandle` into arg 0.
+CTL_RY_SLICE = """
+define i32 @slice() {
+  %h = call i32 @cqrt_alloc_i32(i32 3)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h1 = call i32 @cqrt_alloc_i32(i32 7)
+  call void @cqrt_ry_i32(i32 %h1, double 2.500000e-01)
+  %h_cmp = call i32 @cq_template_icmp_eq_i32_hl(i32 %h, i32 5)
+  call void @cqrt_ry_i32_controlled(i32 %h_cmp, i32 %h1, double 9.000000e-01)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %h_cmp, i32 %h, i32 5)
+  call void @cqrt_free(i32 %h_cmp)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  %m2 = call i32 @cqrt_measure_i32(i32 %h1)
+  %r = add i32 %m2, %m
+  ret i32 %r
+}
+"""
+
 DEEP_POSITIVE = [
     ("xzdx-deep-ladder-d500", DEEP_LADDER),
     ("xzdx-cswap-braid-d20", COST_BRAID),
@@ -888,6 +957,12 @@ POSITIVE = [
     ("xzdx-ladder-d7-inner-freed-first", ORDER_LADDER_INNER_FIRST),
     ("xzdx-ticket-repro-a", XZDX_TICKET_A),
     ("xzdx-ticket-repro-b", XZDX_TICKET_B),
+    # bd drbq Inc 0 — the control-in-place rotation twins.
+    ("ctl-ry-negated-angle-pair", CTL_RY_PAIR),
+    ("ctl-rz-unpaired-is-diagonal", CTL_RZ_UNPAIRED),
+    # The shipped e2e slice's own lowered IR — the control for the two slot
+    # mutants below (round-1 Rule-13 review, lens L5).
+    ("ctl-ry-slice-emitted-stream", CTL_RY_SLICE),
 ]
 
 
@@ -1095,6 +1170,43 @@ define void @cp(i32 %u0) {
 }
 """
 
+# bd drbq Inc 0 — the R1 recorded-rail rule reaches the CONTROLLED Ry too. R1
+# keys on `w.sym.startswith("cqrt_ry_")` over the target rail's WRITE history,
+# so it only sees this gate at all because the model puts the write in slot 1;
+# a slot-0 model would have recorded the flag as the rotated rail and left the
+# register's history empty, and this fixture would have certified clean. The
+# negated-angle pair reduces to identity, exactly as in CTL_RY_PAIR — which is
+# the point: R1 fires REGARDLESS of the proof rules, because the tape record is
+# never restored and the rail is entangled with it (Rules 5/6/8).
+CTL_RY_RECORDED = """
+define void @rec(i32 %x) {
+  %f = call i32 @cqrt_alloc_i1(i32 1)
+  %h = call i32 @cqrt_alloc_i32(i32 %x)
+  call void @cqrt_ry_i32_controlled(i32 %f, i32 %h, double 5.000000e-01)
+  %t = call i32 @cqrt_tape_alloc()
+  %w = call i32 @cqrt_tape_write_i32(i32 %t, i32 %h)
+  call void @cqrt_ry_i32_controlled(i32 %f, i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+# NEGATIVE control for the above: the same record on a rail written only by the
+# DIAGONAL controlled Rz. R1 must stay silent (an `rz` never enters a write
+# history at all — `if not e.diagonal` — so this also witnesses the Rz twin's
+# `diagonal=True` one layer below where CTL_RZ_UNPAIRED witnesses it).
+CTL_RZ_RECORDED = """
+define void @rec(i32 %x) {
+  %f = call i32 @cqrt_alloc_i1(i32 1)
+  %h = call i32 @cqrt_alloc_i32(i32 %x)
+  call void @cqrt_rz_i32_controlled(i32 %f, i32 %h, double 5.000000e-01)
+  %t = call i32 @cqrt_tape_alloc()
+  %w = call i32 @cqrt_tape_write_i32(i32 %t, i32 %h)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
 RECORD_MUTANTS = [
     # ---- Inc 2c xorc: the self-inverse pairing must be a COMPARISON ---------
     # If `key()` equality were not actually checked, both of these would pass.
@@ -1135,9 +1247,11 @@ RECORD_MUTANTS = [
     ("copy-recorded-ry-rail", COPY_RECORDED_RY, "R1-recorded-rotated-rail"),
     ("copy-recorded-ancestor-via-closure", COPY_RECORDED_ANCESTOR,
      "R1-recorded-rotated-rail"),
+    ("ctl-ry-recorded-rail", CTL_RY_RECORDED, "R1-recorded-rotated-rail"),
 ]
 
 RECORD_POSITIVES = [
+    ("ctl-rz-recorded-diagonal", CTL_RZ_RECORDED),
     ("tape-recorded-rz-diagonal", TAPE_RECORDED_RZ),
     ("tape-recorded-derived-permutation", TAPE_RECORDED_DERIV),
     ("rotated-rail-no-record", ROTATED_NO_TAPE),
@@ -1190,6 +1304,61 @@ MUTANTS = [
      "A-not-reducible"),
     ("adjoint-rotation-deleted",
      drop(UNCOMPUTE_CHAIN, "@cqrt_ry_i32", 1),
+     "A-not-reducible"),
+
+    # ---- bd drbq Inc 0: the control-in-place rotation twins ---------------
+    # One mutant per SLOT of `cqrt_ry_<W>_controlled(ctrl, handle, angle)`,
+    # because the whole modelling decision is which slot means what.
+    #  * angle slot (2): the adjoint tag is `negate-arg2`, not the uncontrolled
+    #    `negate-arg1` — a copy-paste of the uncontrolled Effect would compare
+    #    the HANDLE for negation and the ANGLE for equality, and would then
+    #    certify a same-sign pair as a reversal. That is this mutant.
+    #  * control slot (0): the adjoint must run under the SAME flag. A pair
+    #    split across two flags composes to nothing on either branch alone.
+    #  * the gate itself: deleting the adjoint outright must decline — the base
+    #    check that the register is modelled as WRITTEN at all (a slot-0 model
+    #    would score the flag as the dirty rail and pass this).
+    ("ctl-ry-adjoint-angle-sign-not-flipped",
+     sub(CTL_RY_PAIR, "@cqrt_ry_i32_controlled", "double -5.000000e-01",
+         "double 5.000000e-01", 1),
+     "A-not-reducible"),
+    ("ctl-ry-adjoint-under-a-different-flag",
+     insert_after(CTL_RY_PAIR, "%f = call",
+                  "  %f2 = call i32 @cqrt_alloc_i1(i32 1)")
+     .replace("i32 %f, i32 %h, double -5.000000e-01",
+              "i32 %f2, i32 %h, double -5.000000e-01"),
+     "A-not-reducible"),
+    ("ctl-ry-adjoint-deleted",
+     drop(CTL_RY_PAIR, "double -5.000000e-01", 0),
+     "A-not-reducible"),
+    # The Rz twin's DISCRIMINATION mutant: the same unpaired-rotation-then-free
+    # shape that VERIFIES for `rz` (CTL_RZ_UNPAIRED, a POSITIVE) must DECLINE
+    # for `ry`. Committed as a pair with that positive — neither half states the
+    # property on its own.
+    ("ctl-ry-unpaired-is-not-diagonal",
+     CTL_RZ_UNPAIRED.replace("@cqrt_rz_i32_controlled",
+                             "@cqrt_ry_i32_controlled"),
+     "A-not-reducible"),
+    # ---- round-1 Rule-13 review (lens L5): the two SLOT-SWAP mutants the
+    # shipped list did not have. The whole modelling decision for this family is
+    # "arg 1 is the rail, arg 0 is the control", and nothing here tested it on
+    # the pass's REAL output.
+    #  * FORWARD swap — what `RotationLowering` would emit if it built the call
+    #    as `{Handle, Ctrl, Angle}`. The gate then writes the FLAG rail, which
+    #    the strip `_unc` cannot zero, so the flag's `cqrt_free` is a hidden
+    #    measurement. A slot-0 write model would leave the register's history
+    #    EMPTY and score this clean.
+    ("ctl-ry-slice-ctrl-and-handle-slots-swapped",
+     CTL_RY_SLICE.replace("i32 %h_cmp, i32 %h1, double 9.000000e-01",
+                          "i32 %h1, i32 %h_cmp, double 9.000000e-01"),
+     "T3-rail-written-before-reversal"),
+    #  * ADJOINT-ONLY swap — the exact `EmitInverse` bug its own comment warns
+    #    about (a `CurHandle` relabel applied to arg 0 instead of arg 1). The
+    #    forward gate is correct, so only the reversal is wrong: the rail is
+    #    rotated and never un-rotated, and the free is dirty.
+    ("ctl-ry-adjoint-slots-swapped",
+     CTL_RY_PAIR.replace("i32 %f, i32 %h, double -5.000000e-01",
+                         "i32 %h, i32 %f, double -5.000000e-01"),
      "A-not-reducible"),
     ("orphan-reversal-no-free-claims-it",
      drop(PHASE_DIAMOND, "@cqrt_free(i32 %h_cmp)", 0),

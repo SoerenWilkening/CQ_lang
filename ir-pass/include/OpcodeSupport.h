@@ -119,6 +119,16 @@ bool widthHasReversibleCopy(llvm::StringRef w);
 // rail; the `starts_with("cqrt_copy_")` prefix admits a 2-arg fp copy).
 bool abiWidthHasControlledFpCopy(llvm::StringRef w);
 
+// True iff `w` is an ABI width at which the CONTROLLED rotation gate bodies
+// `cqrt_{ry,rz}_<W>_controlled` exist — i.e. {i1,i8,i16,i32,i64,f16,f32,f64,f80}
+// (control-in-place-PRD §5, bd test_C_libtooling-drbq). `i80`/`i128`/`f128` are
+// recognized intermediate widths with NO such body, so a controlled rotation
+// over one must decline rather than mint a phantom extern. Asked by BOTH the
+// detection-time fence (`ArmClassify`'s in-place rotation arm — before any
+// mutation, Rule 9) and the minter (`ControlledSymbols::controlledRotationFn`),
+// so accept and emit cannot drift.
+bool abiWidthHasControlledRotation(llvm::StringRef w);
+
 // True iff `w` is an fp ABI width that has an UNCONTROLLED reversible data-copy
 // `cqrt_copy_f<W>` — i.e. {f16,f32,f64,f80} (runtime `cq_runtime.h:285-288`, bd
 // 38t2). SAME width set as `abiWidthHasControlledFpCopy`, but this names the

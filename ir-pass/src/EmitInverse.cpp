@@ -1,7 +1,8 @@
 // EmitInverse.cpp — see header. The per-call adjoint dispatch (PRD §2.3).
 //
 // Two cases need no symbol lookup: the rotation-negate case (re-emit the forward
-// `cqrt_ry/rz_<W>` with a negated angle) and the self-adjoint involutions
+// `cqrt_ry/rz_<W>`, or since bd drbq its `_controlled` twin, with a negated
+// angle — the control threads through unchanged) and the self-adjoint involutions
 // (`cqrt_x` / `cqrt_cswap`, emitted as-is). The uncontrolled DATA TEMPLATE case
 // emits the VOID `_unc` form (`cq_template_…_unc(out, src…)`) — the inverse STEP
 // (zero the rail in place by recomputing `f` from the live sources), NOT the
@@ -45,6 +46,29 @@ bool isInverseEmittable(const CallInst *Forward) {
   // re-emit. The 3-arg controlled forms fail the arity/`_controlled` test.
   if ((Name.starts_with("cqrt_ry_") || Name.starts_with("cqrt_rz_")) &&
       !Name.contains("_controlled") && Forward->arg_size() == 2)
+    return true;
+  // CONTROLLED rotation `cqrt_{ry,rz}_<W>_controlled(f, h, θ)` (control-in-place
+  // PRD §5, bd test_C_libtooling-drbq Inc 0): the SAME negated-angle recipe, with
+  // the control threaded unchanged through arg 0 and the handle at arg 1. Sound
+  // for both stems and for both branches of the flag: on `f=0` forward and
+  // adjoint are each the identity, on `f=1` they are `R(θ)` and `R(-θ)`, so the
+  // composition is the identity unconditionally — no assumption about the flag's
+  // value is needed, which is why the control is a plain read-only thread rather
+  // than something that must be re-derived.
+  //
+  // THREE FENCES, all load-bearing:
+  //  * `ends_with("_controlled")`, NOT `contains` — the `_controlled_inv`
+  //    spelling is a DIFFERENT, older family (the npu.6 MUX-EXCH prep-uncompute
+  //    for Ry; the Phase-4 region-inversion reserve for Rz) whose adjoint is NOT
+  //    "itself with -θ", and admitting it here would silently invert one symbol
+  //    with another symbol's semantics.
+  //  * VOID, and
+  //  * arity EXACTLY 3 — the bd 1fim fence, verbatim: a hand-written non-void or
+  //    off-arity same-named fake is a call this recipe cannot invert (it mints a
+  //    rail the recipe never zeroes), and a bare prefix match would claim it.
+  if ((Name.starts_with("cqrt_ry_") || Name.starts_with("cqrt_rz_")) &&
+      Name.ends_with("_controlled") && Forward->getType()->isVoidTy() &&
+      Forward->arg_size() == 3)
     return true;
   // Self-adjoint involutions: emitted as-is.
   if (Name == "cqrt_x" || Name == "cqrt_cswap")
@@ -170,6 +194,24 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     Value *Handle = CurHandle ? CurHandle : Forward->getArgOperand(0);
     Value *NegAngle = B.CreateFNeg(Forward->getArgOperand(1));
     CallInst *Inv = B.CreateCall(Callee, {Handle, NegAngle});
+    if (DebugLoc DL = Forward->getDebugLoc())
+      Inv->setDebugLoc(DL);
+    return minted(Inv);
+  }
+
+  // CONTROLLED rotation: `cqrt_{ry,rz}_<W>_controlled(f, h, θ)` → the SAME
+  // symbol with a negated angle. Slot discipline (control-in-place PRD §5):
+  // arg 0 is the CONTROL and is threaded VERBATIM — a `CurHandle` relabel is a
+  // statement about the register this gate acts on, which here is arg 1, so
+  // feeding it into arg 0 would put a data rail in the flag slot (the
+  // verify-clean wrong-unitary the `cqrt_cswap` guard below warns about, one
+  // slot over). arg 2 is the classical angle.
+  if ((Name.starts_with("cqrt_ry_") || Name.starts_with("cqrt_rz_")) &&
+      Name.ends_with("_controlled") && Forward->arg_size() == 3) {
+    Value *Ctrl = Forward->getArgOperand(0);
+    Value *Handle = CurHandle ? CurHandle : Forward->getArgOperand(1);
+    Value *NegAngle = B.CreateFNeg(Forward->getArgOperand(2));
+    CallInst *Inv = B.CreateCall(Callee, {Ctrl, Handle, NegAngle});
     if (DebugLoc DL = Forward->getDebugLoc())
       Inv->setDebugLoc(DL);
     return minted(Inv);
@@ -342,9 +384,11 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
     return minted(UncCall);
   }
 
-  // Any other primitive (incl. controlled callees) has no correct in-place
-  // uncompute → the un-invertible signal. The driver declines LOUDLY rather than
-  // emitting a half-reversed chain (PRD §2.12, Rule 1).
+  // Any other primitive (incl. every remaining controlled callee — the
+  // controlled DATA templates, and the `_controlled_inv` rotation reserve) has
+  // no correct in-place uncompute → the un-invertible signal. The driver
+  // declines LOUDLY rather than emitting a half-reversed chain (PRD §2.12,
+  // Rule 1).
   return false;
 }
 

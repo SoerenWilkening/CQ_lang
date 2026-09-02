@@ -69,6 +69,91 @@ bool isAbiQramStore(const llvm::CallInst *G);
 // See the .cpp for the per-consumer list.
 bool isInPlaceGateOn(const llvm::CallInst *G, const llvm::Value *H);
 
+// Does the rail `H` carry a `cqrt_{ry,rz}_<W>_controlled` gate — i.e. is it
+// FROZEN for the whole-DAG uncompute spine (bd test_C_libtooling-drbq Inc 1,
+// round-1 review finding L3 §1 / L5 §1)?
+//
+// A controlled gate's adjoint NEEDS ITS CONTROL, and the in-place rotation-arm
+// emitter mints the flag, fires the gate, STRIPS the flag and FREES it all
+// inside the region's own stream. The spine runs LAST and places a rail's
+// reversal after that rail's final user, which for any register with a
+// post-region consumer is AFTER the flag free — so the emitted adjoint would
+// name a `cqrt_free`d rail (fires on |0>, i.e. never), leave the register dirty,
+// and then `cqrt_free` a register still entangled with the condition: a hidden
+// measurement (Rules 6/8), `opt` exit 0, verify-clean. Such a rail is therefore
+// LEFT ALLOCATED — Rule 6's documented fallback, in the qubits-not-scarce
+// regime.
+//
+// ⚠ THE QUESTION IS ASKED STRUCTURALLY, OF THE EMITTED IR, AND THAT IS THE WHOLE
+// POINT. Inc 1 shipped this as a `SmallPtrSet<Value *>` (`ControlledRotationRails`)
+// populated in `lowerRotations` with the theta's arg-0 — a PRE-`lowerOps` SSA
+// value. For a DERIVED base (`r = p*5`, `p+5`, `p^5`, `p&5`, `zext p`,
+// `@llvm.sqrt(p)`) that is the raw LLVM instruction, which `lowerOps` (the very
+// next pipeline stage) RAUWs to a `cq_template_*` result and ERASES — through
+// five separate `promote()` copies, none of which scrubbed the set. The set then
+// held a DANGLING pointer, the live rail was in no owner set, and all three
+// query sites THEN EXISTING answered "not frozen" (there are FOUR today — see
+// (2) below): the use-after-free + dirty free above
+// returned verbatim, from plain C, on an accept shape the increment's own probe
+// `a1` had measured. MEASURED on 5 of 5 out-of-place base opcodes and on two
+// independent `promote()` paths (i32 arith and f64 intrinsic).
+//
+// Deriving the rail from the GATE at query time is stale-proof by construction:
+// the gate is a `CallInst` the pass mints and never erases, and its arg-1 USE
+// follows every later RAUW, so `G->getArgOperand(1)` IS the live rail whenever
+// this is asked. It also cannot be address-reused (there is no `Value *` set to
+// reuse an address in — the `RegionFlatten::scrubTaint` hazard), and it covers
+// BOTH stems: Inc 2 turns on `emitRz`'s controlled arm and inherits the freeze
+// rather than the defect.
+//
+// It is deliberately WIDER than the set it replaces — ANY in-place controlled
+// rotation on `H` freezes it, including one in hand-written input IR. Freezing
+// is the Rule-6-safe direction (a leaked rail, never a dirty free), so a wider
+// predicate here can only over-leak.
+//
+// ── Three facts the round-2 Rule-13 review (bd drbq) asked this header to state
+//    explicitly, because each was true of the code and written down nowhere ──
+//
+// (1) IT CONTRADICTS `preservesBasisUnderRecord` ON THE Rz STEM, AND THIS ONE
+//     WINS TODAY. For `cqrt_rz_<W>_controlled` that predicate returns TRUE
+//     (basis-preserving ⇒ not frozen ⇒ FREEABLE) while this one returns TRUE
+//     (⇒ FROZEN, never freed). Two predicates, one gate, two answers. The
+//     contradiction is inert at HEAD only because `emitRz`'s single caller
+//     passes `controlled=false`, so no `cqrt_rz_<W>_controlled` is emittable —
+//     but this predicate is asked FIRST (`DagTraversal` step 1 and step 3 both
+//     cut before the closure scan `preservesBasisUnderRecord` feeds), so the
+//     freeze wins wherever both are reachable. INC 2 MUST DECIDE the policy
+//     (notes §10.3: is a DIAGONAL controlled rotation frozen at all? it costs a
+//     leaked rail per region) — and if it resolves that by narrowing this
+//     predicate to `ry` only, `preservesBasisUnderRecord`'s `true` becomes LIVE
+//     and the rz-controlled rail becomes freeable through the 261j(a) path with
+//     no second opinion. Change both ends or neither.
+//
+// (2) IT IS A POST-`lowerRotations` SPELLING OF THE QUESTION, and there is a
+//     DIFFERENT pre-lowering spelling. The fact "this register is under a
+//     controlled rotation" exists twice: `TaintSet::ControlledRotations` (theta
+//     → flag, populated at EMISSION in `SwapRouteEmit`, readable from
+//     `lowerControlRegions` onward) and this structural query (readable only
+//     after `lowerRotations` has minted the gate). All FOUR of this predicate's
+//     query sites — `DagTraversal`'s step-1 walk and its step-3 closure scan,
+//     `Uncomputation`'s interior partition and its terminal selection — are
+//     inside `uncompute`, so the ordering obligation holds. But `IOSinkLowering`,
+//     `lowerQramReads` and `lowerShadowMemory` all run BEFORE `lowerRotations`
+//     and would get `false` here even if they asked: no gate exists yet. A new
+//     stage must pick the spelling for its slot.
+//
+// (3) THE FREEZE SUPPRESSES THE SPINE'S DIAGNOSTICS, NOT ONLY ITS FREES.
+//     `collectTerminalCandidates` skips a frozen rail BEFORE the terminal is
+//     classified, so every loud decline that terminal would have raised is
+//     skipped with it. Measured on a matched pair differing only in whether a
+//     `cq_theta` on a QRAM-stored value sits in a tainted-condition arm: the
+//     unconditional twin declines `cq uncompute: dead chain would free a
+//     measured register`; the controlled twin exits 0 and leaves the whole
+//     Shadow chain unreversed. The accepted stream is SOUND (Rule 6's
+//     left-allocated fallback) — but a MISSING diagnostic downstream of this
+//     predicate is not a clean bill of health.
+bool railCarriesControlledRotation(const llvm::Value *H);
+
 // A `cqrt_alloc_<W>` mint — a tainted register ROOT (the DAG bottoms out here).
 bool isAllocMint(const llvm::Value *V);
 

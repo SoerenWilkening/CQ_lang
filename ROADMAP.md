@@ -813,7 +813,16 @@ via the §7.6 reversible output tape.)
 > symbols, but `8h7d` is **no longer wholly freeze-orthogonal**: the fp-DATA
 > select un-staging under it (kjd1, DONE 2026-07-02) added the
 > `cqrt_copy_f{16,32,64,80}_controlled` family, designated frozen at the
-> Phase-11 gate (`fp-data-select-PRD.md` §7).
+> Phase-11 gate (`fp-data-select-PRD.md` §7). A SECOND frozen-designate family
+> joined on 2026-09-02: **`cqrt_ry_<W>_controlled`** (9 widths, mirroring the
+> Phase-4 `cqrt_rz_<W>_controlled`), added by the control-in-place epic
+> `test_C_libtooling-drbq`
+> (`docs/prd/phase-04-swap-route-control/control-in-place-PRD.md` §5). It is NOT
+> a footprint optimization: the swap route CANNOT carry an `Ry` at all
+> (`Ry(θ)|0⟩ ≠ |0⟩` leaves the inactive work rail dirty and entangled with the
+> flag, Rules 6/8), so control-in-place is the MECHANISM for a tainted-control
+> rotation arm. Adjoint = the SAME symbol with a negated angle (the existing
+> rotation convention); the older `_controlled_inv` reserve is untouched.
 
 **Posture.** This phase widens the **accepted-C subset** the IR pass lowers; it is
 almost entirely pass-logic, **not** new user surface. `CQ.h` does not change — loops
@@ -824,7 +833,9 @@ increments, **only 7.1's wide-integer widths + curated `llvm.*` intrinsic table,
 *frozen* runtime ABI**; the rest (control flow) reuses the existing `cqrt_*` /
 `cq_template_*` surface. (The post-core `8h7d` widening kjd1 — fp-DATA select,
 2026-07-02 — later added one more frozen-designate family:
-`cqrt_copy_f{16,32,64,80}_controlled`, `fp-data-select-PRD.md` §7.) (The
+`cqrt_copy_f{16,32,64,80}_controlled`, `fp-data-select-PRD.md` §7; and the
+control-in-place epic `drbq` — 2026-09-02 — added a second,
+`cqrt_ry_<W>_controlled` ×9, `control-in-place-PRD.md` §5.) (The
 math-demo epic `3c6m` grows the **generated** `cq_template_*` surface — 3c6m.4
 added the long-double f80 fp-width rows + fpext/fptrunc grid, and 3c6m.5
 (2026-07-03) added the cross-domain int↔f80 casts (`cq_template_{sitofp,uitofp,
@@ -1206,7 +1217,9 @@ specifically on the QRAM Shadow memory ABI (Phase 7.5), the wide-integer width
 decision (Phase 7.1), the curated `llvm.*` idiom-intrinsic table (Phase 7.1), the
 I/O output-tape ABI (`cqrt_tape_alloc` / `cqrt_tape_write_<W>` (+ `_controlled`), Phase 7.6), and the
 fp-DATA select controlled-copy family (`cqrt_copy_f{16,32,64,80}_controlled`,
-the `8h7d` widening kjd1 — `fp-data-select-PRD.md` §7) — the pre-freeze items
+the `8h7d` widening kjd1 — `fp-data-select-PRD.md` §7), and the control-in-place
+rotation family (`cqrt_ry_<W>_controlled` ×9, epic `drbq` —
+`control-in-place-PRD.md` §5) — the pre-freeze items
 that add new frozen symbols (the 7.2/7.4 control work reuses existing `cqrt_*` /
 `cq_template_*`).
 

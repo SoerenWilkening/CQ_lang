@@ -30,6 +30,18 @@
  * and mint NO handles — the counter stays at h32 — so each reuses an
  * existing handle of the matching width. The 4 gate placeholders
  * (cqrt_x/h/cnot/toffoli) are deliberately NOT exercised here.
+ *
+ * CONTROLLED rotation exercise (appended last, bd test_C_libtooling-drbq
+ * Inc 0): one cqrt_ry_<W>_controlled + cqrt_rz_<W>_controlled pair per
+ * width, 9 widths. BOTH stems are added in one block because the `rz`
+ * half had been declared + defined since Phase 4 and exercised by
+ * NOTHING — its trace format was unpinned in the file whose job is to
+ * pin trace formats. Inc 0 mints the `ry` half and starts emitting it
+ * (the control-in-place rotation-arm emitter); Inc 2 starts emitting
+ * the `rz` half on the same path, so the pair acquires its golden
+ * together rather than one inheriting the other's gap. Void, mint no
+ * handles, appended after every existing call so all prior handle IDs
+ * are unchanged.
  */
 #include "cq_runtime.h"
 #include "cq_templates.h"
@@ -189,6 +201,43 @@ int main(void) {
     int32_t h_f80   = cqrt_alloc_f80(1.5L);            /* h37 */
     int32_t h_f80_b = cqrt_alloc_f80(0.5L);            /* h38 */
     cqrt_copy_f80_controlled(h_c, h_f80, h_f80_b);
+
+    /* --- control-in-place rotation smoke (control-in-place-PRD §5, bd
+     * test_C_libtooling-drbq Inc 0): the CONTROLLED rotation gate bodies,
+     * `cqrt_{ry,rz}_<W>_controlled(ctrl, handle, angle)`, 9 widths each.
+     *
+     * BOTH stems land in one block on purpose. The `rz` family has been
+     * declared + defined since Phase 4 but was NEVER exercised here — its
+     * trace format was pinned by nothing, in a file whose whole job is to pin
+     * trace formats before a consumer depends on them. Inc 0 adds the `ry`
+     * twin and turns on its first consumer (the in-place rotation-arm
+     * emitter), and Inc 2 of the same epic turns the `rz` twin into an
+     * emitted symbol on the same path — so the two stems acquire a golden
+     * together rather than one inheriting the other's gap.
+     *
+     * Void, mint NO handles (the counter stays at h38), so every existing
+     * handle ID above is unchanged; each call reuses the first/second alloc of
+     * its width and reuses h_c (h2) as the control flag, exactly as the
+     * controlled-copy blocks above do. Angle 0.785398 prints byte-exact as the
+     * hex float 0x1.921fafc8b007ap-1 (bd `ni15`). */
+    cqrt_ry_i1_controlled (h_c, h_i1,  0.785398);
+    cqrt_rz_i1_controlled (h_c, h_i1,  0.785398);
+    cqrt_ry_i8_controlled (h_c, h_i8,  0.785398);
+    cqrt_rz_i8_controlled (h_c, h_i8,  0.785398);
+    cqrt_ry_i16_controlled(h_c, h_i16, 0.785398);
+    cqrt_rz_i16_controlled(h_c, h_i16, 0.785398);
+    cqrt_ry_i32_controlled(h_c, h_a,   0.785398);
+    cqrt_rz_i32_controlled(h_c, h_a,   0.785398);
+    cqrt_ry_i64_controlled(h_c, h_i64, 0.785398);
+    cqrt_rz_i64_controlled(h_c, h_i64, 0.785398);
+    cqrt_ry_f32_controlled(h_c, h_f32, 0.785398);
+    cqrt_rz_f32_controlled(h_c, h_f32, 0.785398);
+    cqrt_ry_f64_controlled(h_c, h_f64, 0.785398);
+    cqrt_rz_f64_controlled(h_c, h_f64, 0.785398);
+    cqrt_ry_f16_controlled(h_c, h_f16, 0.785398);
+    cqrt_rz_f16_controlled(h_c, h_f16, 0.785398);
+    cqrt_ry_f80_controlled(h_c, h_f80, 0.785398);
+    cqrt_rz_f80_controlled(h_c, h_f80, 0.785398);
 
     return 0;
 }

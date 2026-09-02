@@ -240,7 +240,53 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
       taint.HandleWidth[H] = abiWidthFromType(Op->getType());
     }
 
-    CallInst *RyCall = Builder.CreateCall(Ry, {Handle, Angle});
+    // CONTROL-IN-PLACE ROTATION ARM (control-in-place-PRD §6, bd
+    // test_C_libtooling-drbq Inc 1). `SwapRouteEmit`'s in-place emitter HOISTED
+    // this theta out of a tainted arm into the pred and recorded the control
+    // flag it must fire under. Mint `cqrt_ry_<W>_controlled(f, handle, θ)` at
+    // the hoisted position instead of the unconditional gate; everything else
+    // (the handle, the RAUW, the `UserChainedRotations` recording) is unchanged.
+    Value *Ctrl = nullptr;
+    if (auto It = taint.ControlledRotations.find(Theta);
+        It != taint.ControlledRotations.end())
+      Ctrl = It->second;
+    CallInst *RyCall = nullptr;
+    if (Ctrl) {
+      // A CLASSICAL arg-0 under control is controlled STATE PREP (PRD S5, Inc
+      // 4): the alloc would have to hoist with the theta and the merge φ's
+      // pred incoming would need a seed-identity fence. `classifyArms` refuses
+      // it, so reaching here means the plan and the IR disagree — bail LOUDLY
+      // rather than emit a controlled rotation on a freshly-allocated rail
+      // whose |0⟩-vs-prepped disposition nothing proved (Rule 1).
+      if (!Chained) {
+        diagnoseUnsupported(Theta, "controlled theta operand");
+        continue;
+      }
+      ControlledSymbols csyms(M, wd);
+      FunctionCallee CRy = csyms.controlledRotationFn(
+          Abi, ControlledSymbols::RotStem::Ry);
+      if (!CRy) {
+        // Detection gated on `abiWidthHasControlledRotation`, so this is
+        // unreachable on a plan-consistent module; keep it loud (never a silent
+        // fall-through to the UNCONTROLLED gate, which would fire the arm's Ry
+        // on both branches — a wrong unitary).
+        diagnoseUnsupported(Theta, "controlled theta suffix/width");
+        continue;
+      }
+      RyCall = Builder.CreateCall(CRy, {Ctrl, Handle, Angle});
+      // The register is now FROZEN — never reverse-played, never freed by the
+      // whole-DAG spine (a controlled gate's adjoint needs its CONTROL, and the
+      // flag is stripped + freed inside the region's own stream). NOTHING IS
+      // RECORDED HERE, DELIBERATELY: the freeze is a property of the gate we
+      // just minted, and the spine asks it structurally via
+      // `ChainWalk::railCarriesControlledRotation(rail)`. Recording `Handle`
+      // instead was the Inc-1 shipping defect — for a DERIVED base it is a
+      // pre-`lowerOps` SSA value the very next stage erases, so the set went
+      // stale and the freeze silently did not apply (round-1 review L3 §1 /
+      // L5 §1; see `TaintSet`'s note where the member used to be).
+    } else {
+      RyCall = Builder.CreateCall(Ry, {Handle, Angle});
+    }
     if (DebugLoc DL = Theta->getDebugLoc())
       RyCall->setDebugLoc(DL);
     // M-A Inc 1 (bd test_C_libtooling-6uqc). Record the gate we just minted, and
@@ -269,6 +315,15 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
     // taint.PhiCalls), so an in-shadow phi never reaches this loop. The guard is
     // retained for forward control work that keeps gate bodies in place (the
     // §6a control-in-place peephole).
+    //
+    // ⚠ SAY IT FLATLY RATHER THAN AS "empty FOR the 4.1 emitter", which reads as
+    // if some other emitter fills it (bd drbq round-2 review, lens C §2):
+    // `InShadow` HAS NO `insert` ANYWHERE IN `ir-pass/` — measured, `grep -rn
+    // "InShadow" ir-pass/` finds the declaration, its comments, and this read.
+    // NOTHING populates it today, from any path. That is also what makes this
+    // read safe across the round-1/round-2 plan split: this loop runs AFTER
+    // round-2 emission, so a populated round-1 set would be holding
+    // possibly-freed `Instruction *`s here (see the note on `ControlPlan`).
     if (plan && plan->InShadow.count(Phi))
       continue;
     Value *Op = Phi->getArgOperand(0);
@@ -1365,8 +1420,20 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
         if (!T || !taint.UserChainedRotations.count(T))
           continue;
         // Structural re-check — see the file-scope note on pointer validity.
-        if (T->arg_size() != 2 ||
-            !emittedCalleeName(T).starts_with("cqrt_ry_"))
+        // TWO SPELLINGS OF ONE GATE (bd test_C_libtooling-drbq Inc 1 walker
+        // audit): the uncontrolled `cqrt_ry_<W>(h, θ)` puts the rotated wire at
+        // ARG 0, and the control-in-place `cqrt_ry_<W>_controlled(f, h, θ)` puts
+        // it at ARG 1 (arg 0 is the flag). Both are in-place non-diagonal gates
+        // on a USER register and both are recorded in `UserChainedRotations`, so
+        // both must be asked — reading the wire off arg 0 for the controlled
+        // spelling would run this whole guard against the FLAG, which is the
+        // widened-one-set-not-the-other hole the 8h7d.5 rounds kept finding.
+        const StringRef GateName = emittedCalleeName(T);
+        const bool ControlledRy =
+            GateName.starts_with("cqrt_ry_") &&
+            GateName.ends_with("_controlled") && T->arg_size() == 3;
+        if (!ControlledRy &&
+            (T->arg_size() != 2 || !GateName.starts_with("cqrt_ry_")))
           continue;
         // Clause 1, in three passes over ONE shared record set (Inc 3):
         //   1. ANCESTORS of the wire, backward through producer / alloc /
@@ -1377,7 +1444,7 @@ bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
         //      standing under a LIVE (exempt) ancestor
         //      (lowering_reject_live_record_anc_dead_sibling.ll).
         // Clauses 2-5 are unchanged and are evaluated per record below.
-        Value *W = T->getArgOperand(0);
+        Value *W = T->getArgOperand(ControlledRy ? 1 : 0);
         SmallVector<CallInst *, 8> Records;
         RecordSet RS(W, Records);
         SmallVector<Value *, 8> Seeds;

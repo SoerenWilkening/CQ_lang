@@ -484,6 +484,177 @@ struct ArmStream {
   SmallVector<CallInst *, 4> Phis;
 };
 
+// The arm list + per-arm polarity, shared by every `emitRegion` recipe.
+struct ArmInfo {
+  BasicBlock *BB;
+  bool Negated;
+};
+
+// Lower one accepted CONTROL-IN-PLACE ROTATION region (control-in-place-PRD §4
+// + §6, bd test_C_libtooling-drbq Inc 1): a diamond or if/else whose every
+// content arm is ONE tainted-operand `cq_theta` (Ry) on a register whose
+// physical wire is disjoint from every condition wire.
+//
+// THE STREAM, and how little of it there is:
+//     cq_template_icmp_<pred>_<W>_hl(c, lit)      ; flag mint, unchanged
+//     [cqrt_x(f)]  <hoisted cq_theta>  [cqrt_x(f)] ; per arm, successor order
+//     cq_template_icmp_<pred>_<W>_hl_unc(f, c, lit) ; flag strip, unchanged
+//     cqrt_free(f)
+// No `cqrt_alloc`, no `cqrt_cswap`, no reverse-play, no work rail at ALL — and
+// that is forced, not chosen (PRD §2). The route's premise is that the arm gate
+// is a no-op on the inactive `|0⟩` rail: true for `Rz = diag(1, e^{iθ})`, FALSE
+// for `Ry(θ)|0⟩ = cos|0⟩ + sin|1⟩`, which hands the inactive rail back DIRTY and
+// ENTANGLED with the flag. Cleaning that needs a controlled `Ry†` — method-A,
+// dropped 2026-06-09 precisely because "if you would emit a controlled gate to
+// clean a rail, you could have controlled the op in place from the start".
+//
+// HOIST-AND-DEFER: the `cq_theta` is MOVED (never re-minted) to just before the
+// branch and recorded in `taint.ControlledRotations`; `lowerRotations` then
+// mints `cqrt_ry_<W>_controlled(f, handle, θ)` there instead of the
+// unconditional `cqrt_ry_<W>(handle, θ)`. Deferring keeps every PRE-lowering
+// wire walker seeing a `@cq_theta_` on the base where one will fire — an
+// over-approximation of a controlled gate as unconditional, which is the safe
+// direction for every staleness fence (see `TaintSet::ControlledRotations`).
+//
+// WHY THE FLAG STRIP IS VALID, which is the whole accept: `icmp_..._unc`
+// recomputes the predicate on the CONDITION's registers and XORs it back onto
+// `f`. The only register this stream relabels is the arm's base, and R4 proved
+// its physical rail is disjoint from every condition rail — so the condition's
+// basis at the strip is the basis the mint read, and `f` returns to |0⟩
+// unconditionally (Rule 6, then `cqrt_free`).
+void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
+                               CmpInst *Cond, PHINode *MergePhi,
+                               ArrayRef<ArmInfo> Arms, WidthDispatch &wd,
+                               ControlledSymbols &csyms, TaintSet &taint) {
+  // Re-validate the plan shape by SSA identity before mutating anything. A
+  // silently skipped accepted region would leave the tainted `br` to the backend
+  // as classical control over quantum state (Rule 1), so every bail is LOUD.
+  // `R.RoutedBase` is a `WeakTrackingVH` (see `ControlPlan.h`): an earlier
+  // emitter's `MergePhi->replaceAllUsesWith(...)` has already been APPLIED to it
+  // if this region's base was that φ, so the comparison against the theta's
+  // (equally RAUW-updated) operand below is a comparison of two live values. A
+  // raw pointer here compared a FREED address against a live one and declined
+  // the increment's own headline shape whenever a classical branch sat between
+  // two quantum regions (round-1 review L4 §2 — the verdict depended on textual
+  // block order). Null means the handle was ERASED without a replacement: no
+  // routed base, no proof, decline loudly.
+  Value *Base = R.RoutedBase;
+  if (!Base) {
+    diagnoseUnderControl(Cond, "control flow");
+    return;
+  }
+  // Pair each arm with its recorded gate. `Shadow` belongs to `R.Arm` and
+  // `ShadowFalse` to `R.ArmFalse` by FIELD identity, never by edge truth (for an
+  // orientation-B diamond `R.Arm` IS the false successor and the polarity rides
+  // `ArmNegated`) — the same convention the phase and value paths use.
+  SmallVector<std::pair<CallInst *, bool>, 2> Gates;
+  for (const ArmInfo &A : Arms) {
+    ArrayRef<Instruction *> Shadow =
+        A.BB == R.Arm ? ArrayRef<Instruction *>(R.Shadow)
+                      : ArrayRef<Instruction *>(R.ShadowFalse);
+    const ArmClass Cls = A.BB == R.Arm ? R.ClassArm : R.ClassArmFalse;
+    // UNREACHABLE TODAY, AND IT DECLINES RATHER THAN SKIPS (bd drbq round-2
+    // review, lens C §3; round-1 lens L4 §3 found the same dead branch on the
+    // phase path). It USED to `continue` with the comment "a gate-free sibling
+    // arm contributes the base unchanged" — an assertion of support that does
+    // not exist. `Arms` holds one entry for a diamond (whose sole arm is
+    // `InPlaceRotation`, or this emitter was not dispatched) and two for an
+    // if/else, and an if/else whose sibling arm is anything else — gate-free
+    // included, which classifies as PHASE (`Base == Routed`, `armBlockIsPureSpine`
+    // trivially true) — declines `mixed phase/value arm` at classification in
+    // BOTH processing orders (`ArmClassify`: the phase clause refuses when
+    // `SawValueArm || SawRotationArm`, the rotation clause when `SawPhaseArm ||
+    // SawValueArm`). So no accepted region reaches this line.
+    //
+    // Skipping was the WRONG backstop for the day something does reach it: the
+    // skipped arm's gates would then be dropped SILENTLY by `flattenRegion`'s
+    // arm-block erase — a verify-clean wrong unitary, the exact class this file
+    // exists to prevent. A loud decline costs nothing (it is unreachable) and
+    // fails in the Prime-Directive direction.
+    if (Cls != ArmClass::InPlaceRotation) {
+      diagnoseUnderControl(Cond, "control flow");
+      return;
+    }
+    auto *T = Shadow.size() == 1 ? dyn_cast<CallInst>(Shadow.front()) : nullptr;
+    if (!T || T->getParent() != A.BB || T->arg_size() < 2 ||
+        T->getArgOperand(0) != Base) {
+      diagnoseUnderControl(Cond, "control flow");
+      return;  // the plan does not describe the IR — never emit half a region.
+    }
+    Gates.push_back({T, A.Negated});
+  }
+  if (Gates.empty()) {
+    diagnoseUnderControl(Cond, "control flow");
+    return;  // classification said InPlaceRotation; nothing to hoist is a bug.
+  }
+
+  const DebugLoc DL = BI->getDebugLoc();
+  IRBuilder<> B(BI);  // every emitted call lands before the conditional br.
+  auto stamp = [&](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+    return C;
+  };
+
+  // 1. Flag mint at the BRANCH — byte-identical to the phase path's step 1. The
+  //    ziov SHARED-flag position (mint at the compare) cannot arise here:
+  //    `classifyArms` declines a `ShareCondFlag` region for this class.
+  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
+                                   /*inverse=*/false, /*before=*/BI);
+  if (!Flag)
+    return;  // lowerCompareToFlag already diagnosed (unsupported / Q+Q).
+
+  // 2. Per arm in successor order: HOIST the gate, bracketed in the self-inverse
+  //    `cqrt_x(f)` pair for a ¬flag (FALSE-successor / else) arm — the SAME
+  //    bracket `emitRoute` puts around a negated route, so the two spellings of
+  //    "fires on ¬f" cannot drift.
+  //
+  //    ORDER: `IRBuilder` inserts before `BI` in creation order and
+  //    `moveBefore(BI)` lands in the same slot, so `x; T; x` comes out in that
+  //    order. Do NOT re-mint `T` — moving it keeps its `!dbg`, its identity in
+  //    `taint.ThetaCalls`, and its operand USE (so the later RAUW-to-handle
+  //    rewrites it like every other gate).
+  FunctionCallee X = csyms.xFn();
+  for (auto &G : Gates) {
+    if (G.second)
+      stamp(B.CreateCall(X, {Flag}));
+    G.first->moveBefore(BI);
+    taint.ControlledRotations[G.first] = Flag;
+    if (G.second)
+      stamp(B.CreateCall(X, {Flag}));
+  }
+
+  // 3. Flag strip + free — byte-identical to the phase path's steps 7-8. Reads
+  //    `Cond`'s operands, so it MUST precede the erase of `Cond` (in
+  //    `flattenRegion`).
+  //
+  //    RECORDED as a DISCHARGED FLAG GATE, and the licence is R4, named: the
+  //    phase path records its strip because its route restores `Q`'s basis label
+  //    as a group, so an interior `_unc` placed after the strip reads the wire
+  //    its forward chain read. This path has no route AND deliberately DOES
+  //    relabel its base — but only its base, and R4 proved that rail is disjoint
+  //    from every rail the condition's derived chain lives on. So the same
+  //    property holds for the same reason, by a different argument. If R4 is
+  //    ever widened, THIS recording is one of the things that must be re-proved.
+  auto *Strip = dyn_cast_or_null<CallInst>(
+      lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                         /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag));
+  if (Strip)
+    taint.DischargedFlagGates.insert(Strip);
+  stamp(B.CreateCall(wd.freeFn(), {Flag}));
+
+  // 4. Rewire + erase + scrub, then flatten. The merge φ now denotes the base
+  //    register itself — BOTH incomings name the ONE physical rail, exactly as
+  //    for a phase arm; what differs is that this rail has been RELABELLED on
+  //    the `f=1` branch, which is why R6 refuses any pre-region SSA record of it
+  //    that is read after the region. The hoisted thetas are NOT erased here:
+  //    they are live instructions in the pred that `lowerRotations` owns.
+  MergePhi->replaceAllUsesWith(Base);
+  scrubTaint(MergePhi, taint);
+  MergePhi->eraseFromParent();
+  flattenRegion(R, taint);
+}
+
 // Lower one accepted phase-arm region — a one-content-arm DIAMOND (§5a) or a
 // two-arm IF/ELSE (§5b) — to the coherent swap-route stream, emitted into the
 // pred block before the conditional `br`. Both shapes share ONE emission
@@ -520,10 +691,6 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   // flag (unbracketed), `R.ArmFalse` (S1) on ¬flag (X-bracketed) — the flag
   // equals the live branch condition, so this holds under any predicate
   // canonicalization (clang may flip the predicate but the flag tracks it).
-  struct ArmInfo {
-    BasicBlock *BB;
-    bool Negated;
-  };
   SmallVector<ArmInfo, 2> Arms;
   if (R.ArmFalse) {
     Arms.push_back({R.Arm, /*Negated=*/false});
@@ -545,6 +712,18 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
 
+  // CONTROL-IN-PLACE ROTATION path (control-in-place-PRD §6, bd
+  // test_C_libtooling-drbq Inc 1). Dispatched HERE for the same reason the value
+  // path is: a rotation arm has no `cq_phi` gates, so falling through to the
+  // phase-stream collection would find an empty stream and hit the
+  // identity-region RAUW — a verify-clean silently WRONG answer (the arm's Ry
+  // would be dropped and the merge rewired to the untouched base).
+  if (R.ClassArm == ArmClass::InPlaceRotation ||
+      R.ClassArmFalse == ArmClass::InPlaceRotation) {
+    emitInPlaceRotationRegion(R, BI, Cond, MergePhi, Arms, wd, csyms, taint);
+    return;
+  }
+
   // The routed handle Q: a diamond's straight-through (Pred-edge) incoming, or —
   // for an if/else, which has no Pred edge — the shared phase-spine base the arms
   // rotate. Never read width/identity off Q's SSA type (§4 width-source); Q is
@@ -559,7 +738,45 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   // the merge happens to feed a measure; an escaping merge would miscompile
   // silently). `R.RoutedBase` is null for every non-eq-fold region, so the
   // default path below is byte-identical there.
-  Value *Q = R.RoutedBase ? R.RoutedBase
+  //
+  // ⚠ `RoutedBase` IS A `WeakTrackingVH` and it may be null for TWO different
+  // reasons (round-1 Rule-13 review L4 §1, a CONFIRMED SIGSEGV). Never recorded
+  // ⇒ derive, as before. RECORDED AND SINCE ERASED ⇒ the handle this region was
+  // proven to route no longer exists, and falling through to the derivation
+  // would route the folded constant — exactly the miscompile this field
+  // prevents. That case declines LOUDLY. (Before the handle, a raw `Value *`
+  // here was simply DEREFERENCED after the earlier region's
+  // `MergePhi->eraseFromParent()`, which is the crash.)
+  //
+  // ⚠ AN UNFIXTURABLE BACKSTOP — KEEP IT, and here is why it cannot have a
+  // Rule-12 fixture and why the NULL test is nonetheless the RIGHT test (bd drbq
+  // round-2 review, lens C §4, which set out to refute it and failed). Every way
+  // a `WeakTrackingVH` can go null was enumerated:
+  //   * every merge-φ collapse RAUWs BEFORE erasing (this file's four sites,
+  //     `RegionFlatten`, `SelectMergeEmit`, `ClassicalCallArmEmit`,
+  //     `SwitchRouteEmit`, `SwitchValueEmit`, `SwitchDataMuxEmit`), so the handle
+  //     MOVES and never nulls;
+  //   * the erase-WITHOUT-RAUW sites are the condition compare — all
+  //     `use_empty`-guarded, and a routed base is never a compare anyway (the
+  //     eq-fold records the compare's OPERAND) — and the arm/`Mid` BLOCK erases.
+  //     A value defined in an arm block dominates nothing outside it (its only
+  //     successor is a 2-predecessor merge) so it cannot be another region's
+  //     routed base, and a nested pair's in-`Mid` derivation is declined outright
+  //     by `RegionTreeDetect`'s `RailClosure` gate.
+  // The one thing that looked like a hole and is not: a block erase does NOT
+  // leave the handle pointing at `poison`. `BasicBlock::eraseFromParent()`
+  // destroys each contained `Instruction` through `Value::~Value()`, which calls
+  // `ValueHandleBase::ValueIsDeleted` and NULLS a `WeakTracking` handle — so a
+  // corpse cannot slip past a null test. (`Utils`' `DeleteDeadBlock` is the
+  // RAUW-to-poison path, and it is not what runs here.)
+  // Precedent for a kept, unfixturable backstop: `lowerControlRegions`' Kahn
+  // cycle decline.
+  if (R.RoutedBaseRecorded && !R.RoutedBase) {
+    diagnoseUnderControl(Cond, "control flow");
+    return;
+  }
+  Value *Recorded = R.RoutedBase;
+  Value *Q = Recorded ? Recorded
              : MergePhi->getBasicBlockIndex(R.Pred) >= 0
                  ? MergePhi->getIncomingValueForBlock(R.Pred)
                  : phaseSpineBase(MergePhi->getIncomingValueForBlock(R.Arm),

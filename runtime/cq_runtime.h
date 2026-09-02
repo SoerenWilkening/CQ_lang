@@ -180,6 +180,63 @@ void cqrt_rz_f16_controlled_inv(int32_t ctrl, int32_t handle, double angle);  /*
 void cqrt_rz_f80_controlled_inv (int32_t ctrl, int32_t handle, double angle);  /* bd 3c6m.4 */
 
 /* -----------------------------------------------------------------
+ * Controlled Ry rotation (control-in-place-PRD §5, bd
+ * test_C_libtooling-drbq Inc 0) — the controlled form of the lowered
+ * `cq_theta` gate body, the SAME `(i32 ctrl, i32 handle, double angle)`
+ * shape / trace format as the controlled Rz above, 9 widths to mirror
+ * it. FROZEN-DESIGNATE (like the kjd1 `cqrt_copy_f<W>_controlled`
+ * family).
+ *
+ * WHY IT EXISTS, and why it is NOT interchangeable with the route: the
+ * swap-route phase-arm lowering (`cswap; gate; cswap`) is sound only
+ * because the arm gate is a no-op on the INACTIVE `|0>` work rail —
+ * true for `Rz = diag(1, e^{i.theta})`, FALSE for
+ * `Ry(theta)|0> = cos|0> + sin|1>`, which hands back a DIRTY rail
+ * entangled with the flag (Rule 6/8). So a tainted-control Ry arm has
+ * no route form at all: control-in-place is the mechanism, not an
+ * optimization (PRD §2).
+ *
+ * MINTED ONLY BY the in-place rotation-arm path — `ArmClassify`
+ * classifies the arm, `SwapRouteEmit`'s `emitInPlaceRotationRegion`
+ * hoists the theta and records it in `TaintSet::ControlledRotations`,
+ * and `RotationLowering` mints this symbol instead of the plain
+ * `cqrt_ry_<W>` for exactly those thetas (PRD §6, the hoist-and-defer
+ * recipe). Nothing else emits it; every other tainted-control shape
+ * still declines loudly.
+ *
+ * NOT `ControlPlan` — this comment said `ControlPlan::ControlledBy`
+ * until the round-1 Rule-13 review (lens L6 §2) found that the named
+ * object does not exist and was deliberately NOT built: there is not
+ * ONE `ControlPlan` per compilation. The yn71 onward-control fixpoint
+ * (`TaintPropagation::detectAndLowerOnwardControl`) builds a LOCAL
+ * plan, emits its regions and DISCARDS it, while `lowerRotations` is
+ * handed the FIRST plan — so a plan-hosted map would silently lose an
+ * onward region's entries and lower its hoisted theta UNCONDITIONALLY
+ * (an unconditional Ry where a controlled one was meant). `TaintSet`
+ * is the one object every emitter and `lowerRotations` share. This is
+ * the frozen-designate ABI header, so a pointer to a rejected design
+ * is the worst place in the tree for one.
+ *
+ * ADJOINT: the SAME symbol with a NEGATED angle (the existing rotation
+ * convention — `EmitInverse`), with the control threaded unchanged
+ * through arg 0 and a relabelled handle landing in arg 1. There is no
+ * `_inv` mint for the plain controlled form; the separate
+ * `_controlled_inv` family below is a DIFFERENT, older reserve and is
+ * not the adjoint resolver's business.
+ * Trace (no return-value suffix):
+ *     "cqrt_ry_<W>_controlled(h<ctrl>, h<handle>, <angle>)".
+ * ----------------------------------------------------------------- */
+void cqrt_ry_i1_controlled (int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_i8_controlled (int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_i16_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_i32_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_i64_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_f32_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_f64_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_f16_controlled(int32_t ctrl, int32_t handle, double angle);
+void cqrt_ry_f80_controlled(int32_t ctrl, int32_t handle, double angle);
+
+/* -----------------------------------------------------------------
  * Controlled Ry inverse (npu.6) — the controlled inverse of the
  * Ry-prep rotation (`cqrt_ry_<W>`, the lowered cq_theta). Same
  * `(i32 ctrl, i32 handle, double angle)` shape as the controlled Rz
@@ -188,9 +245,12 @@ void cqrt_rz_f80_controlled_inv (int32_t ctrl, int32_t handle, double angle);  /
  * branches where `cqrt_cswap` did NOT move it: `Ry†(angle)` controlled
  * on ¬f_q (the source was prepared but not selected, so it stays
  * entangled with the scrutinee unless its prep is reversed — Bennett /
- * QROM disentangle). There is NO plain `cqrt_ry_<W>_controlled` twin:
- * the prep itself is unconditional, only its inverse is controlled. 7
- * widths. Trace mirrors the controlled rz:
+ * QROM disentangle). A SEPARATE RESERVE from the plain
+ * `cqrt_ry_<W>_controlled` family above (which arrived later, with bd
+ * test_C_libtooling-drbq): this one is the MUX-EXCH uncompute symbol,
+ * the other is the control-in-place forward gate, and the forward
+ * gate's adjoint is its own negated-angle re-emit — it never resolves
+ * to this `_inv` spelling. 7 widths. Trace mirrors the controlled rz:
  *     "cqrt_ry_<W>_controlled_inv(h<ctrl>, h<handle>, <angle>)".
  * ----------------------------------------------------------------- */
 void cqrt_ry_i1_controlled_inv (int32_t ctrl, int32_t handle, double angle);

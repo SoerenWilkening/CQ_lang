@@ -403,7 +403,22 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     pairs, `cqrt_x` brackets, `cqrt_cnot`/`cqrt_toffoli` networks,
 //     `cqrt_copy_*`, `cqrt_tape_write_*`) is harmless: a void call is never a
 //     DAG *handle*, and `isInPlaceGateOn` does not match it, so it can never be
-//     a member of `D.Calls` — the spine never re-emits it. `cqrt_qram_store_*`
+//     a member of `D.Calls` — the spine never re-emits it.
+//
+//     ⚠ THAT SECOND CLAUSE IS NO LONGER TRUE OF EVERY VOID `cqrt_*` (bd drbq
+//     round-2 review, lens A §3). `cqrt_{ry,rz}_<W>_controlled(f, P, θ)` is
+//     void, is a `cqrt_*`, is not a `cqrt_qram_store_`, and `isInPlaceGateOn`
+//     DOES match it at arg 1 (Inc 0 added that row) — so it IS a member of
+//     `D.Calls`. THE OPERATIVE ARM FOR IT IS (a), NOT THIS ONE: arm (a)'s
+//     `isInPlaceGateOn(CI, P)` test runs first and claims the gate, so control
+//     never reaches here and the behaviour is unchanged. But note that arm (a)'s
+//     own argument ("the DAG collects our gate too, later in program order,
+//     hence adjointed EARLIER") is not what makes it safe in this case: a rail
+//     carrying a controlled rotation is FROZEN
+//     (`ChainWalk::railCarriesControlledRotation`), the DAG is `NotClosed`, and
+//     the spine emits NOTHING AT ALL. Do not cite this bullet's "can never be a
+//     member of `D.Calls`" for a controlled rotation; it is false.
+//     `cqrt_qram_store_*`
 //     is the ONE void exception and is refused here: it IS an in-place gate on
 //     its ARRAY, so the spine DOES adjoint it, and its `_unc` re-reads its
 //     idx/val operands — which is where `P` would be sitting. (When `P` is the

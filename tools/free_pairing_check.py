@@ -193,6 +193,13 @@ TWO MODELLING DECISIONS THAT ARE PHYSICS, NOT CONVENIENCE
   `WireWalk` guard uses. It is what lets the canonical swap-routed phase arm
   (`cswap; rz; rz; cswap; free`) verify. `cqrt_ry_<W>` is NOT diagonal and
   stays a full write — dropping an `ry` adjoint before a free IS caught.
+  THE SPLIT CARRIES OVER TO THE CONTROLLED TWINS UNCHANGED (bd
+  test_C_libtooling-drbq): `cqrt_rz_<W>_controlled` is diagonal on BOTH branches
+  of its flag (`f=0` is the identity, `f=1` is `diag(1, e^{i.theta})`), so it is
+  transparent for the same reason; `cqrt_ry_<W>_controlled` is not, and the
+  branch it does nothing on buys it nothing — the state is a superposition over
+  both, so the target rail is dirty and entangled with the flag. Only the write
+  SLOT moves (arg 1, the control taking arg 0).
 * COMMUTATION IS LIMITED TO COMPLEMENTARY FLAG BRANCHES. Two controlled writes
   to the same rail are treated as commuting only when they share a control
   register whose `cqrt_x` parity differs between them AND that register is
@@ -258,13 +265,20 @@ WHAT IT DOES **NOT** WITNESS  (read this before quoting the tool)
     `case-b-cswap-603-near-miss-2026-07-31` for why it cannot reach the routing
     `cqrt_cswap` today, and for the ArmClassify gate that is load-bearing here.
   * SYMBOLS `classify()` DOES NOT MODEL. Write-sets exist only for the symbols
-    it knows, so the Case-B rule's coverage is exactly that set. MEASURED
-    2026-07-31: of the 173 `cqrt_*` functions declared in `runtime/cq_runtime.h`
-    it models 145; the 28 it does not are the entire `_controlled` /
-    `_controlled_inv` reserve family (`cqrt_x_controlled`, `cqrt_cnot_controlled`,
-    `cqrt_h_controlled`, `cqrt_rz_<W>_controlled[_inv]`,
-    `cqrt_ry_<W>_controlled_inv`), retained per CLAUDE.md only as a reserve for
-    the optional §6a control-in-place peephole and emitted by nothing today.
+    it knows, so the Case-B rule's coverage is exactly that set. RE-MEASURED
+    2026-09-02 (was 145 of 173 on 2026-07-31): of the 182 `cqrt_*` functions
+    declared in `runtime/cq_runtime.h` it models 163; the 19 it does not are the
+    `_controlled_inv` reserve plus the three un-widthed controlled placeholders
+    (`cqrt_x_controlled`, `cqrt_cnot_controlled`, `cqrt_h_controlled`,
+    `cqrt_rz_<W>_controlled_inv`, `cqrt_ry_<W>_controlled_inv`), emitted by
+    nothing today. The `cqrt_rz_<W>_controlled` family and the NEW
+    `cqrt_ry_<W>_controlled` family LEFT this list on 2026-09-02 (bd
+    test_C_libtooling-drbq Inc 0): §6a control-in-place is no longer an optional
+    peephole but the MECHANISM for a tainted-control Ry arm, since the swap
+    route cannot carry an `Ry` at all. Both stems are modelled in `classify()`
+    above — the Ry twin as a NON-diagonal write of arg 1, the Rz twin as its
+    diagonal counterpart — which is the standing obligation below, discharged
+    for those 18 symbols before the emitter that mints them shipped.
     This is NOT a silent gap: any of them being CALLED in lowered IR raises
     `Unclassified` and fails the whole run, so the failure mode is a loud stop,
     never an unchecked call. (A bare `declare` does not — only a call is
@@ -666,6 +680,22 @@ def classify(sym):
                       diagonal=True)
     if re.fullmatch(rf"cqrt_ry_{_W}", sym):
         return Effect("gate", writes=(0,), adjoint_of="negate-arg1")
+    # Control-in-place rotations (control-in-place-PRD §5, bd
+    # test_C_libtooling-drbq): `cqrt_{ry,rz}_<W>_controlled(ctrl, handle, angle)`.
+    # The control flag is arg 0 (READ), the register is arg 1 (WRITTEN), the
+    # angle is arg 2 — so the adjoint tag has to name slot 2, not slot 1.
+    # The Rz twin is DIAGONAL for the same reason the uncontrolled one is
+    # (`diag(1, e^{i.theta})` on either branch of the flag relabels nothing); the
+    # Ry twin is NOT, and that asymmetry is the whole point of modelling them —
+    # a controlled Ry dirties its target rail exactly as an unconditional one
+    # does, so freeing that rail without an adjoint must decline, and the R1
+    # recorded-rail rule (which keys on `cqrt_ry_` as a prefix) reaches it too.
+    if re.fullmatch(rf"cqrt_rz_{_W}_controlled", sym):
+        return Effect("gate", reads=(0,), writes=(1,), adjoint_of="negate-arg2",
+                      controls=(0,), diagonal=True)
+    if re.fullmatch(rf"cqrt_ry_{_W}_controlled", sym):
+        return Effect("gate", reads=(0,), writes=(1,), adjoint_of="negate-arg2",
+                      controls=(0,))
     if sym == "cqrt_x":
         return Effect("gate", writes=(0,), adjoint_of="self")
     if sym == "cqrt_h":
@@ -1651,8 +1681,9 @@ class StreamAnalysis:
 
         WHY `c1` ALONE IS CONSULTED, AND NOT THE PAIR. `adjoint_matches` forces
         both calls to carry the same control REGISTERS at the same `cqrt_x`
-        PARITY (`self` compares whole keys; `negate-arg<N>` never negates a
-        control slot, since no symbol with that adjoint has controls; `twin:`
+        PARITY (`self` compares whole keys; `negate-arg<N>` never has `n` in
+        `controls`, and every NON-`n` slot — control slots included — must
+        compare EQUAL, so a differing control is rejected either way; `twin:`
         compares whole value lists). It does NOT make `commutes(…, c1)` and
         `commutes(…, c2)` agree, and an earlier draft of this docstring wrongly
         said it did: `commutes` also demands the flag see nothing but `cqrt_x`
@@ -1673,8 +1704,10 @@ class StreamAnalysis:
         Together: the pair acts on one branch throughout and `w` on the other.
         That rests on the shared control register being one of `c1`'s READS,
         which holds for every symbol `classify()` models — controls ⊆ reads for
-        cnot, toffoli, cswap, copy_controlled, qram_store_controlled and the
-        `_controlled` template/`_unc` arms alike. A future symbol with a control
+        cnot, toffoli, cswap, copy_controlled, qram_store_controlled, the
+        rotation twins `cqrt_{ry,rz}_<W>_controlled` (`reads=(0,)`,
+        `controls=(0,)`) and the `_controlled` template/`_unc` arms alike. A
+        future symbol with a control
         outside its read-set would break this argument, so put it in `reads`.
 
         NO STEP BUDGET, for the reason `unchanged_over` gives at length: this

@@ -25,6 +25,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/IR/ValueHandle.h"  // WeakTrackingVH — see `RoutedBase`
 
 namespace llvm {
 class BasicBlock;
@@ -49,7 +50,18 @@ struct TaintSet;
 // changed basis has no copy-safe, strip-valid lowering (the CNOT copy
 // dephases the Rz answer, Rule 7; §6a control-in-place territory). `Phase` is
 // the default so the 4.1 phase-arm paths need not write it.
-enum class ArmClass { Phase, Value };
+//
+// `InPlaceRotation` (control-in-place-PRD §4, bd test_C_libtooling-drbq Inc 1)
+// is the THIRD class, and it is neither of the other two — Rule 7 again: a
+// tainted-control Ry arm is not a phase arm (the answer is a superposition, not
+// a phase, so the route's "the work rail is |0⟩ for free" premise is FALSE and
+// the inactive rail comes back dirty and entangled, PRD §2) and not a value arm
+// (method-B's copy-out copies a basis LABEL and dephases it). It has NO route
+// and NO work rail at all: the arm's `cq_theta` is HOISTED to the pred and
+// lowered as `cqrt_ry_<W>_controlled(flag, R, θ)` in place on the user's own
+// register, with the flag minted and stripped exactly as a phase arm's is.
+// The arm's single `cq_theta` is recorded in `Shadow`/`ShadowFalse`.
+enum class ArmClass { Phase, Value, InPlaceRotation };
 
 // 4.5 (PRD Part V §20.5) — the per-CONTENT-class discriminator for an accepted
 // `SwitchRegion`, parallel to `ArmClass`/`ClassArm` (a *content* class, NOT a
@@ -216,7 +228,48 @@ struct ControlRegion {
   // "reuse emitRegion verbatim" misses it). Recording the classifier-proven
   // routed handle here re-anchors the emitter by SSA identity. Unused by the
   // value/data-mux emitters (they derive their own routed base).
-  llvm::Value *RoutedBase = nullptr;
+  //
+  // ⚠ A `WeakTrackingVH`, NOT A RAW `Value *`, AND THAT IS THE FIX FOR A
+  // CONFIRMED CRASH (round-1 Rule-13 review of bd test_C_libtooling-drbq Inc 1,
+  // lens L4 §1-2). This field is RECORDED AT DETECTION and READ AT EMISSION, and
+  // between those two moments `lowerControlRegions` may emit ANOTHER region
+  // which does `MergePhi->replaceAllUsesWith(base); MergePhi->eraseFromParent()`.
+  // A raw pointer is not a USE, so the RAUW does not update it and the erase
+  // leaves it DANGLING. Measured, from plain C at `-O1`:
+  //
+  //   * `if (q==5) q=cq_phi(q,.2); if (cc) g(); if (q==6) q=cq_phi(q,.3);` —
+  //     two eq-fold PHASE regions with a CLASSICAL branch between them, so the
+  //     bd hcrg pre-flight (which reasons about BASIC BLOCKS) sees no alias and
+  //     orders nothing. Region 2's `RoutedBase` IS region 1's merge φ, and the
+  //     phase emitter dereferences it (`emitRoute` → `CreateCall` reads
+  //     `Q->getType()`) — SIGSEGV under libgmalloc.
+  //   * the same CFG with in-place Ry arms declines `control flow`, because
+  //     `emitInPlaceRotationRegion` COMPARES the stale pointer against the
+  //     RAUW-updated theta operand and they disagree. Same defect, one
+  //     dereference short of the crash. The verdict depended on textual BLOCK
+  //     ORDER, which detection (pure SSA + DominatorTree analysis) cannot see.
+  //
+  // A `WeakTrackingVH` follows RAUW and nulls on erase, so after region 1
+  // collapses its merge φ this field names region 1's BASE — which is the
+  // correct routed handle for BOTH readers. The pre-flight protects BLOCK
+  // identities across emitters; nothing protected VALUE identities, and this
+  // handle is that protection.
+  llvm::WeakTrackingVH RoutedBase;
+
+  // Was a routed base ever RECORDED? Distinguishes "this region never had one"
+  // (every non-eq-fold, non-rotation region — the emitter derives `Q` as before)
+  // from "it had one and the handle has since been ERASED with no replacement",
+  // which the `WeakTrackingVH` reports as null and which must be a LOUD DECLINE
+  // rather than a fall-through to the φ derivation: for an eq-fold if/else that
+  // derivation bottoms at the folded constant `k` and routes a CONSTANT — the
+  // exact verify-clean miscompile the field exists to prevent. Written ONLY
+  // through `setRoutedBase` so the two cannot drift.
+  bool RoutedBaseRecorded = false;
+
+  void setRoutedBase(llvm::Value *V) {
+    RoutedBase = V;
+    RoutedBaseRecorded = V != nullptr;
+  }
 
   // 4.5 (PRD Part V §20.5) — the per-content class of an accepted `SwitchRegion`
   // (`SwitchClassify` writes it on accept). Meaningful only when
@@ -359,6 +412,21 @@ struct ControlRegion {
 // The full detection result: the recovered regions plus the set of in-shadow
 // `cq_phi` calls (so `lowerRotations` skips them — the orchestrator lowers
 // them controlled). `InShadow` is keyed on the gate-body `Instruction*`.
+//
+// ⚠ `InShadow` HAS NO `insert` ANYWHERE IN `ir-pass/` — stated as a FACT, not a
+// hedge (bd drbq round-2 review, lens C §2). Measured: `grep -rn "InShadow"
+// ir-pass/` returns this declaration, its comments, and ONE read
+// (`RotationLowering.cpp`'s `plan->InShadow.count(Phi)`). No emitter populates
+// it, so it is permanently empty and that read is a no-op.
+//
+// WHY THAT MATTERS RATHER THAN BEING TRIVIA: it is the ONLY field of the ROUND-1
+// plan that `lowerRotations` reads, and `lowerRotations` runs AFTER the round-2
+// (`plan2`) emission. So the round-1 plan is inert from the moment emission
+// finishes, which is what makes the plan-lifetime obligation hold. If a future
+// control path ever DOES populate this set — one that keeps gate bodies in place
+// rather than erasing them — the set must also be re-scoped per round: a stale
+// round-1 `Instruction *` whose address is reused by a round-2-minted `cq_phi`
+// would silently suppress that phi's `cqrt_rz`.
 struct ControlPlan {
   llvm::SmallVector<ControlRegion, 4> Regions;
   llvm::SmallPtrSet<const llvm::Instruction *, 8> InShadow;

@@ -91,6 +91,67 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   if (isAbiQramStore(G))
     return N.ends_with("_controlled") ? G->getArgOperand(1) == H
                                       : G->getArgOperand(0) == H;
+  // CONTROL-IN-PLACE ROTATION `cqrt_{ry,rz}_<W>_controlled(f, H, θ)` — bd
+  // test_C_libtooling-drbq. VOID, arity EXACTLY 3, the ROTATED HANDLE at arg 1
+  // (arg 0 is the control flag, arg 2 the classical angle). Recognized BEFORE
+  // the generic `_controlled` bail below for the same reason the guarded QRAM
+  // store above is: a controlled gate is normally not an in-place gate, but
+  // THIS one is — it relabels `H` in place on the `f=1` branch and mints
+  // nothing.
+  //
+  // WHO ACTUALLY NEEDS THIS ROW — corrected by the round-1 Rule-13 review (lens
+  // L5 §5) after the first draft named a consumer that cannot reach it, and
+  // then re-MEASURED by deleting the row and re-running the family:
+  //
+  //   * `railCarriesControlledRotation` (this file) — THE SHARP END. The whole
+  //     freeze is derived from this row: it asks `isInPlaceGateOn` and then
+  //     restricts to the `_controlled` rotation spelling, so the two predicates
+  //     cannot disagree about which slot is the rail (the bd uow0
+  //     mis-attribution, one family over — `railOf` is derived here too, and
+  //     without this row would attribute the gate to the FLAG at arg 0).
+  //   * `Uncomputation`'s moved-anchor scan and `ChainWalk::isInteriorConsumer`
+  //     — both key on this predicate to decide whether an in-place
+  //     basis-relabelling gate sits between a forward gate and its adjoint.
+  //   * `RotationLowering::warnLiveRecordRotations` — the ONE consumer with a
+  //     DISTINGUISHING fixture (`control_inplace_ry_warn_live_record.ll`; the
+  //     measurement below is what proves it is the only one).
+  //
+  // MEASURED, so the claim is not an argument: deleting this row and re-running
+  // the `control_inplace` family (53 fixtures when this was measured at the end
+  // of round 1; 55 today) reddens EXACTLY ONE —
+  // `..._warn_live_record.ll`. The freeze fixtures stay green because a gate
+  // this predicate cannot see becomes an UNRECOGNIZED consumer, which marks the
+  // DAG `NotClosed` and leaks the whole thing: a SECOND route to the same
+  // Rule-6-safe outcome. Say that rather than "the DagTraversal one is the sharp
+  // end", which the first draft said and which is false — with the freeze
+  // working, `DagTraversal`'s freeze cut fires BEFORE its users loop, so the
+  // `D.Calls` path the sentence described is unreachable.
+  //
+  // The VOID + EXACT-ARITY-3 pair is the bd 1fim fence, verbatim: a non-void or
+  // off-arity same-named fake mints a value this recipe cannot account for and
+  // must stay an unrecognized consumer (`NotClosed` ⇒ Rule-6 safe leak).
+  // `ends_with("_controlled")`, never `contains`, keeps the `_controlled_inv`
+  // reserve (a different family, different adjoint) out.
+  //
+  // ⚠ WHO ELSE DEPENDS ON THIS ROW STAYING NARROW — six emitters, none of which
+  // consumes this predicate directly (bd drbq round-2 review, lens A §7). Each
+  // relies IN WRITING on `isTerminalHandle` being FALSE for a rail *because it
+  // has a `_controlled` consumer*, so that the whole-DAG spine never claims a
+  // rail the emitter owns: `SelectMergeEmit.cpp:224`, `SwitchValueEmit.cpp:196`,
+  // `SwitchDataMuxEmit.cpp:31`/`:140`, `SwapRouteEmit.cpp:342`,
+  // `ClassicalCallArmEmit.cpp:205`, `LoopLowering.cpp:1442`. They survive THIS
+  // widening only because their consumers are `cqrt_copy_<W>_controlled` /
+  // `cqrt_cswap`, which the generic `if (N.contains("_controlled")) return
+  // false;` bail below still catches. NOTHING PINS THAT. The next `_controlled`
+  // stem admitted here flips all six from "not a terminal" to "a terminal" with
+  // no diagnostic anywhere — so a new row is a Rule-13 change to six emitters,
+  // not a local one, and it must also be classified explicitly in
+  // `railCarriesControlledRotation` (whose stem restriction is a WHITELIST: a
+  // new shape falls outside it silently).
+  if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) &&
+      N.ends_with("_controlled") && G->getType()->isVoidTy() &&
+      G->arg_size() == 3 && G->getArgOperand(1) == H)
+    return true;
   if (N.contains("_controlled"))
     return false;
   // Uncontrolled rotation `cqrt_ry/rz_<W>(H, θ)` — arg_size 2, arg 0 is the
@@ -136,6 +197,37 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
     return true;
   // (The plain QRAM store is handled by the `isAbiQramStore` arm above, together
   // with its guarded twin — one definition for both frozen shapes.)
+  return false;
+}
+
+// See the header for the full argument (bd test_C_libtooling-drbq Inc 1,
+// round-1 review L3 §1 / L5 §1). ONE spelling of "is this rail frozen by a
+// controlled rotation", derived from `isInPlaceGateOn` so the two cannot drift:
+// that predicate ALREADY answers arg-1 for exactly this symbol shape (VOID,
+// arity 3, `cqrt_{ry,rz}_<W>_controlled`), so all this adds is the `_controlled`
+// restriction — an uncontrolled `cqrt_ry_<W>(H, θ)` is reversible by the spine
+// and must stay so.
+bool railCarriesControlledRotation(const Value *H) {
+  if (!H)
+    return false;
+  for (const User *U : H->users()) {
+    const auto *G = dyn_cast<CallInst>(U);
+    if (!G || !isInPlaceGateOn(G, H))
+      continue;
+    const Function *Callee = G->getCalledFunction();
+    if (!Callee)
+      continue;
+    // ROTATION stems only. `isInPlaceGateOn` also admits the iw81.7 guarded
+    // QRAM store `cqrt_qram_store_<W>_controlled(flag, H, idx, val)` at arg 1,
+    // and that one is NOT frozen: its `..._controlled_unc` adjoint is emitted by
+    // the spine while its flag is still live (the GuardedStoreArm path does not
+    // strip the flag inside the region — see `ControlRegion::GuardedStoreArm`),
+    // so freezing it would leak every Shadow rail 7.5 reverses today.
+    StringRef N = Callee->getName();
+    if ((N.starts_with("cqrt_ry_") || N.starts_with("cqrt_rz_")) &&
+        N.ends_with("_controlled"))
+      return true;  // arg 1 IS `H` — `isInPlaceGateOn` just proved it.
+  }
   return false;
 }
 
@@ -241,8 +333,47 @@ bool preservesBasisUnderRecord(const CallInst *G) {
   // Rz is DIAGONAL: trivial on |0⟩ (condition (b) with g = identity), and the
   // label-diagonal phase it applies commutes with, and cancels against, a
   // basis-label record.
-  if (N.starts_with("cqrt_rz_"))
+  //
+  // THE PREFIX DELIBERATELY COVERS `cqrt_rz_<W>_controlled` TOO (bd
+  // test_C_libtooling-drbq audit). It was already matched incidentally before
+  // that symbol had an emitter; it is now matched ON PURPOSE, and it is correct:
+  // a controlled Rz is `f=0 → I`, `f=1 → diag(1, e^{iθ})`, diagonal on BOTH
+  // branches, so it relabels nothing whatever the flag holds. Its NON-diagonal
+  // twin `cqrt_ry_<W>_controlled` is NOT matched here and must never be — a
+  // controlled Ry relabels its target on the `f=1` branch, so a rail carrying
+  // one stays FROZEN (not freed) under the bd 261j(a) record rule, which is the
+  // Rule-6 conservative direction.
+  //
+  // THE VOID + ARITY FENCE ON THE `_controlled` SPELLING IS THE bd 1fim ONE, and
+  // it is here for SYMMETRY WITH `isInPlaceGateOn`, which carries it (round-1
+  // Rule-13 review, lens L5 §6). `true` on this path is the UNSAFE direction —
+  // basis-preserving ⇒ not frozen ⇒ FREED — and a bare prefix is a proxy for the
+  // property, not the property (the lesson the guarded-store row below spells
+  // out). Today an off-arity or non-void `@cqrt_rz_<W>_controlled` fake cannot
+  // reach this function (membership in `D.Calls` goes through `isInPlaceGateOn`,
+  // which fences both axes), so this is a derivation, not a live hole — and
+  // resting on a DERIVATION from another predicate's fence is exactly what bd
+  // 1fim showed goes stale. Two predicates, one gate, one answer.
+  //
+  // ⚠ AND ON THAT ONE SYMBOL THIS PREDICATE CONTRADICTS
+  // `railCarriesControlledRotation`, WHICH WINS (bd drbq round-2 review, lens
+  // A §4). That predicate freezes ANY `cqrt_{ry,rz}_<W>_controlled` rail; this
+  // one calls the `rz` spelling basis-preserving, i.e. NOT frozen, i.e.
+  // FREEABLE. Both are reachable in principle from the same DAG, and the freeze
+  // is asked FIRST (`DagTraversal` step 1 and its step-3 rail scan both `cut`
+  // before the closure scan that feeds this function), so today the rail is
+  // frozen and this `true` is never consulted for it. The contradiction is inert
+  // only because `emitRz`'s single caller still passes `controlled=false`, so no
+  // `cqrt_rz_<W>_controlled` is emittable at HEAD. INC 2 OWNS THE DECISION
+  // (notes §10.3): if it narrows the freeze to the `ry` stem — a defensible
+  // choice, a diagonal controlled rotation relabels nothing and the freeze costs
+  // a leaked rail per region — then THIS `true` goes live and becomes the only
+  // opinion on whether that rail may be freed. Change both ends or neither.
+  if (N.starts_with("cqrt_rz_")) {
+    if (N.ends_with("_controlled"))
+      return G->getType()->isVoidTy() && G->arg_size() == 3;
     return true;
+  }
   // A QRAM store is a permutation of its array conditioned on idx/val (and, in
   // the guarded form, a flag) — all borrowed parents, restored to their
   // producer-time values by the same every-gate reverse-play as above (NOT merely
