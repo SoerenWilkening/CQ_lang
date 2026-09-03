@@ -6,7 +6,7 @@
 // `classifyArms`'s phase spine then bottoms at the `ConstantInt k` instead of the
 // routed handle `q`, and the region declines `control flow` (the gap WI-5 fills).
 //
-// `tryEqFoldArm` is the STRICTLY-ADDITIVE D1–D7 clause that re-recognizes such a
+// `tryEqFoldArm` is the STRICTLY-ADDITIVE D1–D8 clause that re-recognizes such a
 // folded arm as a pure PHASE arm over the icmp's tainted operand, RE-ANCHORING
 // the routed handle by SSA identity. It is a PURE PREDICATE (Rule 9, no IR
 // mutation, no diagnostics): it returns `true` only on a proven eq-fold phase
@@ -31,7 +31,7 @@ namespace cq {
 struct ControlRegion;
 struct TaintSet;
 
-// The D1–D7 equality-folded-diamond accept clause. `Base` is what
+// The D1–D8 equality-folded-diamond accept clause. `Base` is what
 // `walkPhaseSpine(ArmIncoming, ArmBB)` bottomed at; `Routed` is the region's
 // running routed-handle anchor (null on an if/else's first arm, set on a diamond
 // or a subsequent arm) and is RE-ANCHORED by reference on accept. Returns true
@@ -39,7 +39,9 @@ struct TaintSet;
 // equality compare `q == k` / `q != k` whose tainted non-constant operand is the
 // routed handle (D1 equality predicate, D2 const-folded base, D3 the icmp's
 // non-const operand is the routed handle, D4 literal == folded const, D5 routed
-// operand tainted, D6 pure spine, D7 every angle classical). On accept it sets
+// operand tainted, D6 pure spine, D7 every angle classical, D8 POLARITY — the
+// arm sits on the successor where the equality HOLDS, `eq`-true / `ne`-false, so
+// the fold `H → k` is a theorem there and not its negation). On accept it sets
 // `Routed` and `Region.RoutedBase` to that tainted operand; on any miss it
 // returns false WITHOUT mutating `Routed`/`Region` (the caller falls through to
 // the existing decline paths).

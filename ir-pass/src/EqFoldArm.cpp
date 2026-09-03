@@ -14,8 +14,10 @@
 #include "ControlPlan.h"
 #include "TaintPropagation.h"
 
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/IR/Value.h"
 
 using namespace llvm;
@@ -89,6 +91,53 @@ bool tryEqFoldArm(ControlRegion &Region, const BasicBlock *ArmBB,
   //      has no fixed unitary (the emitter would replay a runtime handle tag —
   //      the f64/angle miscompile family, Rule 3). Reuses `taintedAngleGate`.
   if (taintedAngleGate(ArmIncoming, ArmBB, Base, Taint) != nullptr)
+    return false;
+
+  // D8 — POLARITY: `ArmBB` must be the successor on which the equality HOLDS.
+  //      D1–D7 prove the arm's spine bottomed at the SAME literal the compare
+  //      names; they never ask WHICH edge the arm sits on. The fold `H → k` is
+  //      sound only where `H == k` is a THEOREM — the TRUE successor of an
+  //      `icmp eq`, the FALSE successor of an `icmp ne`. On the opposite edge
+  //      `k` is precisely the value `H` does NOT hold, so `cq_phi(k, θ)` is a
+  //      value CLOBBER (the merge takes the rotated CONSTANT, discarding `H`),
+  //      not a phase on `H`; re-anchoring it names the wrong basis and the
+  //      emitter puts `cqrt_rz_<W>_controlled(f, H, θ)` on exactly the branch
+  //      where the source does not rotate `H` at all — a verify-clean wrong
+  //      unitary (bd test_C_libtooling-ogw2). This mirrors, one edge over, the
+  //      `StraightProvesEq` discipline `straightThroughConstFoldHandle`
+  //      (ArmClassify.cpp) already applies to the Pred edge.
+  //
+  //      ⚠ `control_swap_eqfold_polarity.ll` — `icmp ne` with the folded arm on
+  //      the FALSE successor — is the VALID negated shape (`ne`-false IS the
+  //      `H == k` region) and MUST STAY ACCEPTING; so is `@ifelse_ne` in
+  //      control_swap_eqfold_ifelse.ll. Polarity is a proof obligation, not a
+  //      preference for `ArmNegated == false`.
+  //
+  //      From `clang -O1` C the wrong edge is unreachable (clang folds the
+  //      straight-through incoming too, and the region then declines
+  //      elsewhere), so this is a HAND-IR over-accept — but a decline is what
+  //      the shape is owed either way (Prime Directive). Every miss returns
+  //      false, so the existing `control flow` decline fires unchanged.
+  auto *Br = dyn_cast_or_null<BranchInst>(
+      Region.Pred ? Region.Pred->getTerminator() : nullptr);
+  if (!Br || !Br->isConditional() || Br->getCondition() != Cond)
+    return false;  // no branch on this compare in the region's pred.
+  bool ArmIsTrueEdge;
+  if (Br->getSuccessor(0) == ArmBB && Br->getSuccessor(1) != ArmBB)
+    ArmIsTrueEdge = true;
+  else if (Br->getSuccessor(1) == ArmBB && Br->getSuccessor(0) != ArmBB)
+    ArmIsTrueEdge = false;
+  else
+    return false;  // ArmBB is both successors (or neither) — nothing is proven.
+  bool ArmProvesEq;
+  if (Cond->getPredicate() == CmpInst::ICMP_EQ)
+    ArmProvesEq = ArmIsTrueEdge;
+  else if (Cond->getPredicate() == CmpInst::ICMP_NE)
+    ArmProvesEq = !ArmIsTrueEdge;
+  else
+    return false;  // an fcmp equality (D2/D3 make it unreachable) proves nothing
+                   // about a ConstantInt fold — decline rather than assume.
+  if (!ArmProvesEq)
     return false;
 
   // ACCEPT — a const-folded phase arm over the tainted handle H. Re-anchor the
