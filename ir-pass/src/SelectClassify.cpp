@@ -15,12 +15,15 @@
 #include "ControlPlan.h"     // diagnoseUnderControl, ControlPlan, ControlRegion
 #include "OpcodeSupport.h"   // abiWidthFromType
 #include "TaintPropagation.h"  // TaintSet
+#include "WidthDispatch.h"   // WidthDispatch (threaded to classifyAngleSelect)
 #include "WireWalk.h"        // findNonDiagonalWireGate (gate 2c stale condition)
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
@@ -551,7 +554,9 @@ bool collectCondTree(Value *Root, CondTree &Tree) {
   return !Tree.Leaves.empty();
 }
 
-void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
+void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
+                          WidthDispatch &wd, DominatorTree *DT,
+                          LoopInfo *LI, ControlPlan &plan) {
   // GATE 1 — entry: only tainted-condition selects are ours. A classical-cond
   // select is `declineClassicalMuxes`'s domain (L96) and stays declined
   // untouched; the caller already guards this, re-checked here defensively.
@@ -711,8 +716,48 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint, ControlPlan &plan) {
   // GATE 3 — the §3.2 BLOCKER: NOT an angle. FIRST among the type gates (the
   // FP-use fence precedes the width gate, exactly as ArmClassify.cpp:820 precedes
   // :834). There is NO downstream backstop, so the angle MUST be caught here.
-  if (selReachesRotationArg1(Sel))
+  //
+  // ⚠ "AN ANGLE SELECT MUST KEEP DECLINING" IS NO LONGER TRUE OF THE WHOLE CLASS
+  // (bd test_C_libtooling-drbq Inc 2b, control-in-place-PRD §12.3). ONE angle
+  // shape now LOWERS — a `double` select over two CLASSICAL angles whose SOLE
+  // user is the arg-1 slot of a chained `cq_theta`/`cq_phi`, under a bare
+  // single-user tainted compare, all three in one block. It is emitted BY
+  // DIFFERENCE (`R(h,B); f = icmp; R_controlled(f,h,A−B); icmp_unc; free`), which
+  // is exact IN REAL ARITHMETIC by angle additivity on one axis (in IEEE double
+  // the realized true-arm angle is `B + fl(A-B)`, `|delta| <= 1/2 ulp(A-B)`, so
+  // BOTH ARMS MUST BE `ConstantFP` and their evaluated residual must sit under a
+  // placeholder 2^-40 rad; a RUN-TIME arm DECLINES right here, because the
+  // synthesized `fsub` carries an error UNBOUNDED in absolute radians and can be
+  // `inf`/`NaN` from two FINITE arms — round-1 Rule-13 review lens L7-F1,
+  // both-halves wording from the round-2 one lens R1 item 1, constant-arms-only
+  // narrowing from the CLEARANCE review, finding F-11 / owner option (2)) and is
+  // byte-identical to the
+  // manual by-difference twin the Inc-1/2a in-place diamond already lowers. That is
+  // exactly the IR `clang -O1` makes of `if (q==5) r=cq_theta(r,A); else
+  // r=cq_theta(r,B);` — SimplifyCFG merges the arms into ONE call with a select
+  // on the ANGLE — so this is the shape that makes the C `if/else` with two
+  // rotations on one register compile.
+  //
+  // WHAT DID NOT CHANGE, and it is the load-bearing half: `classifyAngleSelect`
+  // returns `NotApplicable` for everything outside that one shape, and the
+  // decline below then fires BYTE-IDENTICALLY to what it fired before. A tainted
+  // A/B, a carrier (fpext/fptrunc/bitcast/freeze/phi/nested select), a second
+  // consumer, a fanned-out data+angle select, a Q+Q or compound condition, a
+  // classical arg-0 (state prep), a cross-block consumer — all still land here.
+  // The `Declined` state exists because THREE refusals inside the accept class
+  // have their own precise strings (`control flow inside a loop body`,
+  // `rotation arm on a condition wire`, `stale rail record read past a
+  // controlled Ry`) that `rotation angle` would MISLABEL.
+  if (selReachesRotationArg1(Sel)) {
+    switch (classifyAngleSelect(Sel, Tree, taint, wd, DT, LI, plan)) {
+    case AngleSelectDisp::Accepted:
+    case AngleSelectDisp::Declined:
+      return;  // pushed for AngleSelectEmit, or already diagnosed precisely.
+    case AngleSelectDisp::NotApplicable:
+      break;
+    }
     return diagnoseUnderControl(Sel, "rotation angle");
+  }
 
   // GATE 4 — ABI-width scalar result with a controlled copy (§16.9), AFTER the
   // FP-use fence. Accepts scalar integer {i1..i64} (`widthHasReversibleCopy`)

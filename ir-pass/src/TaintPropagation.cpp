@@ -1225,7 +1225,7 @@ void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
                                  const FnSet &ThetaFns, const FnSet &PhiFns,
                                  const FnSet &MeasureFns) {
   while (true) {
-    ControlPlan plan2 = detectControlRegions(M, taint);
+    ControlPlan plan2 = detectControlRegions(M, wd, taint);
     if (plan2.Regions.empty())
       break;  // fixpoint: no new onward control region emitted.
     lowerControlRegions(M, wd, taint, plan2);

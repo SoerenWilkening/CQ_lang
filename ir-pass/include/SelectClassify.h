@@ -39,12 +39,15 @@
 namespace llvm {
 class BinaryOperator;
 class CmpInst;
+class DominatorTree;
+class LoopInfo;
 class SelectInst;
 class Value;
 }  // namespace llvm
 
 namespace cq {
 
+class WidthDispatch;
 struct TaintSet;
 struct ControlPlan;
 
@@ -83,8 +86,17 @@ bool collectCondTree(llvm::Value *Root, CondTree &Tree);
 // reach `emitRegion`'s null-block dereference (there is no `SelectRegion`
 // dispatch until WI-3), so lowering nothing is the Prime-Directive-safe
 // placeholder. WI-3 flips the ACCEPT branch to the push above.
+//
+// `wd` / `DT` / `LI` are threaded for GATE 3's `classifyAngleSelect` hook (bd
+// drbq Inc 2b): the width fence asks the MINT's own expression
+// (`wd.abiWidthFor(suffixFromName(...))`), the loop fence asks `LI`, and R6's
+// position proofs ask `DT`. `DT`/`LI` may be null (the caller builds them
+// LAZILY, on the first tainted branch OR select in the function) — a null pair
+// makes the angle hook return `NotApplicable`, i.e. the pre-2b decline. All six
+// pre-existing gates are unchanged and use none of the three.
 void classifySelectRegion(llvm::SelectInst *Sel, TaintSet &taint,
-                          ControlPlan &plan);
+                          WidthDispatch &wd, llvm::DominatorTree *DT,
+                          llvm::LoopInfo *LI, ControlPlan &plan);
 
 }  // namespace cq
 

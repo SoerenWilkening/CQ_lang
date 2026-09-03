@@ -475,6 +475,121 @@ add_test(NAME e2e-slice-control-inplace-ry-derived-base
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_derived_base.expected.log")
 
+# ── bd test_C_libtooling-drbq Increment 2b — ANGLE-SELECT BY DIFFERENCE ──────
+#
+# The plain C `if/else` with a rotation on ONE register in each arm. `clang -O1`
+# never hands that to the pass as a diamond: SimplifyCFG merges the two arms into
+# ONE call whose ANGLE is a tainted-condition `select`, so the branch CFG is gone
+# before the pass runs (Rule 9). Lowered by angle additivity on one axis — an
+# unconditional `R(h, B)`, the ordinary flag mint, ONE
+# `cqrt_{ry,rz}_<W>_controlled(f, h, A-B)`, the ordinary strip, one free. Exact in
+# REAL arithmetic; in IEEE double the realized true-arm angle is `B + fl(A-B)`,
+# `|delta| <= 1/2 ulp(A-B)` — 2^-54 rad on these goldens' 0.9/0.3 pair. BOTH ARMS
+# MUST BE CONSTANTS, fenced at a placeholder 2^-40 rad; a RUN-TIME arm DECLINES
+# `rotation angle under quantum control`, because the synthesized `fsub` carries
+# an error UNBOUNDED in absolute radians AND can be `inf`/`NaN` from two FINITE
+# arms (measured `inf` in the controlled gate from +/-8.99e307). ALL SEVEN SLICES
+# BELOW HAVE CONSTANT ARMS and were unaffected by that narrowing (their goldens
+# are byte-unchanged). NOTE THAT THE TWIN GATES BELOW COULD NOT HAVE WITNESSED
+# EITHER RESIDUAL: the manual twin is ITSELF by-difference, so both sides would
+# carry the identical rounding and the identical infinity (round-1 Rule-13 review
+# lens L7-F1/F5; the both-halves wording is the round-2 one's, lens R1 item 1;
+# the constant-arms-only narrowing is the CLEARANCE review's, finding F-11 /
+# owner option (2)).
+#
+# THREE SUBJECT/TWIN PAIRS AND THREE `compare_files` GATES, and the gates are the
+# increment's CENTRAL WITNESS rather than a convenience. Each `_twin` slice writes
+# the SAME circuit by hand in by-difference form (`r = R(r,B); if (c) r = R(r,A-B);`)
+# — an ordinary in-place DIAMOND that the PRE-2b binary already lowered, verified
+# byte-identical across both binaries. So the twin is an ORACLE, not a second copy
+# of the thing under test: if the select form ever drifts into a different (and
+# still self-consistent) gate stream, this is what turns red. The folded constant
+# is part of it — `clang`'s compile-time `0.9 - 0.3` and the emitter's APFloat
+# subtract agree bit for bit, so a last-ULP difference would show as a different
+# `%a` hex float. All STRICT stage 2b (no `--allow-unproven`).
+add_test(NAME e2e-slice-control-angle-select-ry
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry.expected.log")
+
+add_test(NAME e2e-slice-control-angle-select-ry-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_twin.expected.log")
+
+add_test(NAME e2e-slice-control-angle-select-ry-ne
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne.expected.log")
+
+add_test(NAME e2e-slice-control-angle-select-ry-ne-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_twin.expected.log")
+
+add_test(NAME e2e-slice-control-angle-select-rz
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz.expected.log")
+
+add_test(NAME e2e-slice-control-angle-select-rz-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz_twin.expected.log")
+
+# THE DERIVED-BASE FREEZE, in the angle-select form (the Inc-1 finding-L shape
+# with the diamond replaced by a select). The rotated base is an out-of-place
+# `mul` rail with a post-gate user, so the whole-DAG spine has something to
+# reverse — and must not: a register a `cqrt_ry_<W>_controlled` fired on is
+# FROZEN (its adjoint would name the flag this stream already freed, and the free
+# would reset a condition-entangled rail). 2b adds NO code for that — the freeze
+# is asked structurally of the emitted gate — so this slice PROBES the claim
+# rather than arguing it. Exactly one `cqrt_free` (the flag). STRICT stage 2b.
+# Two M-A `live derived record` WARNINGS are expected (a `DS_Warning`, opt exits
+# 0) and the manual by-difference twin emits the identical stream and warnings.
+add_test(NAME e2e-slice-control-angle-select-ry-derived-base
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_derived_base.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_derived_base.expected.log")
+
+# THE THREE TWIN GATES. `cmp` over committed goldens — no clang, no opt, no
+# plugin, milliseconds. Same construction as the 8h7d.5 rolled-loop twin gates.
+add_test(NAME e2e-angle-select-ry-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_twin.expected.log")
+
+add_test(NAME e2e-angle-select-ry-ne-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_twin.expected.log")
+
+add_test(NAME e2e-angle-select-rz-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz_twin.expected.log")
+
 # bd test_C_libtooling-lom0 Increment 4 — TWO COMPLETE GROVER ITERATIONS: four
 # chained `cq_theta`s and four sequential tainted-condition phase regions, i.e.
 # the shape that declined at HEAD b4e329b with "condition predates a

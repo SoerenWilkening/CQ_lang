@@ -36,13 +36,15 @@ using namespace llvm;
 
 namespace cq {
 
-namespace {
-
 // Strip a known prefix (`cq_theta_` / `cq_phi_`) from the call's callee
 // name → suffix (`si32`). Returns "" on mismatch (callee absent or name
 // doesn't start with the prefix).
+//
+// DE-ANONYMIZED (bd drbq Inc 2b) so `classifyAngleSelect` can ask the MINT's own
+// width expression rather than a second spelling of it — see the header. PURE
+// REFACTOR: only the linkage changed (anonymous → named `cq`).
 StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
-  Function *Callee = CI->getCalledFunction();
+  const Function *Callee = CI->getCalledFunction();
   if (!Callee)
     return {};
   StringRef N = Callee->getName();
@@ -50,6 +52,8 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
     return {};
   return N.substr(Prefix.size());
 }
+
+namespace {
 
 // "Unsupported rotation" diagnostic — mirrors MeasureLowering's surface so
 // the pass speaks one diagnostic dialect. Failure is loud, not silent: the

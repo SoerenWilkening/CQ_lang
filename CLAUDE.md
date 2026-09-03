@@ -192,6 +192,37 @@ depth-2 nest and the 4.5 switch — where the rail is `|0⟩` for free (`Rz|0⟩
 and freed clean. The two forms are the SAME unitary, not an approximation:
 `cswap(f,q,w)·Rz_w(θ)·cswap(f,q,w)` with `w = |0⟩` equals `cRz(f,q,θ)` exactly
 under the project's `Rz = diag(1,e^{iθ})` convention (no global-phase residue).
+**Inc 2b (2026-09-03) adds a SECOND way that same controlled gate is reached** —
+`if(c) r=R(r,A); else r=R(r,B);`, which `clang -O1` folds to ONE call with an
+angle `select`, lowers BY DIFFERENCE to `R(h,B)` unconditional + one
+`R_controlled(f,h,A−B)`. Same gate, same flag mint and strip, no route and no
+`cqrt_x`; exact in REAL arithmetic by angle additivity on one axis, for both
+stems — but **NOT in IEEE double**, and that distinction is a round-1 Rule-13
+finding, not a footnote: the emitted true-arm angle is `B + fl(A−B)`, so
+`|δ| ≤ ½ ulp(A−B) ≈ |A−B|·2^-53`. That is 2^-54 rad on the flagship `0.9/0.3`
+golden and **0.858 rad on `π/1e16`**, which the pre-2b binary declined loudly.
+CONSTANT arms are therefore fenced at a **placeholder** `2^-40` rad
+(`kAngleSelectMaxRoundingRad`, on the owner's desk — see the notes §9 item).
+**RUN-TIME arms DECLINE — the accept class is CONSTANT arms only**, and the two
+review rounds that said otherwise are corrected rather than deleted (round-2
+Rule-13 review graded the run-time half CONFIRMED-MISCOMPILE and the disposition
+then was "stay accepted, document the residual"; the independent Rule-13
+**CLEARANCE** review ranked it a **BLOCKER** — finding F-11 / B1 — and the owner
+decision is option (2), narrow to constants; notes §11). The two halves are now
+the REASON for the refusal: (i) the rounding `|δ| ≤ ½ ulp(A−B)` bounds the
+*difference* and is **unbounded in absolute radians** — measured **0.858 rad from
+plain C** with `π`/`1e16` as run-time angles, i.e. `Ry(π)` realized as `Ry(4.0)`;
+and (ii) a **non-finite `fl(A−B)` from two FINITE arms**, measured
+`cqrt_ry_i32_controlled(f, h, inf)` from `±8.99e307`. Neither is fenceable at
+compile time, and the mitigation the earlier disposition rested on is false: "it
+is the same arithmetic the manual twin performs" is true of the *arithmetic* and
+false of any *program CQ compiles* — that twin, with run-time arms, declines
+`control flow` on **both** binaries (`clang -O1` sinks the `fsub` into the arm
+block), so the class was reachable **only through 2b**. All six plain-C
+reproducers now emit stderr **byte-identical to the pre-2b oracle**. Widening back
+is owner option (1), ONE line at `angleSelectArmsAdmissible` clause (2c); option
+(3), the two-controlled form, performs no subtraction at all and is exact for
+run-time arms too (PRD §12.3, notes §9/§11).
 What is still dropped is **method-A** controlled-adjoint *rail cleanup*
 (2026-06-09) — a different thing from controlling the arm gate in place, and the
 reason it was dropped ("if you would emit a controlled gate to clean a rail, you
@@ -911,7 +942,9 @@ cycles and multi-latch loops all keep the loop decline. **A tainted-arm `Ry`
 wire lowers CONTROL-IN-PLACE since bd `drbq` Inc 1** (2026-09-02, PRD §4 shape
 (a) only — a flat DIAMOND; the if/else arm is supported symmetrically but is
 reachable only from HAND-WRITTEN IR, because `clang -O1` merges the two arms into
-ONE call with a `select` on the ANGLE, which declines `rotation angle`): the
+ONE call with a `select` on the ANGLE — **which is the shape bd `drbq` Inc 2b now
+LOWERS, so "declines `rotation angle`" is no longer true of it; see the 2b
+paragraph below**): the
 arm's theta is hoisted to the pred and
 `RotationLowering` mints the new frozen-designate `cqrt_ry_<W>_controlled(flag,
 h, θ)` — the swap route CANNOT carry an Ry (`Ry|0⟩ ≠ |0⟩` leaves the inactive
@@ -936,6 +969,89 @@ write/clone arg/`cq_invert` past the fence: the round-1 review's second confirme
 silent miscompile). Read
 `docs/prd/phase-04-swap-route-control/{control-in-place-PRD,CONTROL_IN_PLACE_INC1_NOTES}.md`
 §11 / findings K-M before touching any of it.
+**The plain C `if/else` with a rotation on ONE register in each arm compiles for
+BOTH stems since bd `drbq` Inc 2b** (2026-09-03, PRD §12.3): `clang -O1` never
+hands that source to the pass as a diamond — SimplifyCFG merges the two arms into
+ONE call whose ANGLE is a tainted-condition `select` — so `SelectClassify`'s
+gate 3 hands it to `classifyAngleSelect` (`ArmClassify`, S1–S10) and
+`AngleSelectEmit` lowers it BY DIFFERENCE: an unconditional `R(h, B)`, the
+ordinary flag mint, ONE `cqrt_{ry,rz}_<W>_controlled(f, h, A−B)`, the ordinary
+`_unc` strip, one `cqrt_free`. Exact in REAL arithmetic by angle additivity on one
+axis (`Rz`'s two diagonals multiply entrywise, so no global-phase residue); in
+IEEE double the emitted true-arm angle is `B + fl(A−B)` with
+`|δ| ≤ ½ ulp(A−B)`, so **BOTH ARMS MUST BE CONSTANTS** (`ConstantFP`), fenced at
+the placeholder 2^-40 rad. A **RUN-TIME arm declines** `rotation angle`: the
+compiler would synthesize an `fsub` the source never wrote, whose error is
+unbounded in absolute radians (`Ry(π)` realized as `Ry(4.0)`, measured from plain
+C) and which can be `inf`/`NaN` from two FINITE arms (`inf` in the controlled gate
+from `±8.99e307`) — neither fenceable at compile time, both retired by the
+two-controlled form on the owner's desk. That narrowing is the Rule-13
+**clearance** review's blocker F-11 and owner option (2); the widening back is one
+line. NO new frozen symbol,
+no CFG surgery, no hoist, no `cqrt_x` — a select always means "A when the flag is
+1", so there is no polarity case at all. Ry keeps EVERY Inc-1 fence verbatim (R4
+disjoint wires, R6 stale record, the structural freeze); Rz is exempt from both
+on the §12.1 diagonal argument. The witness is BYTE IDENTITY with the manual
+by-difference twin (`r = R(r,B); if (c) r = R(r,A−B);`), an in-place diamond the
+PRE-2b binary already lowered — three e2e `compare_files` twin gates plus a
+158-cell all-pairs twin matrix (`tools/angle_select_twin_matrix.py`, 102
+BOTH-ACCEPT-IDENTICAL + 16 EXPECTED-DECLINE-RUNTIME-ARMS, 0 MISMATCH — the 16
+`args` cells are the red-green witness that a run-time arm declines, and their
+twin accepts only because that harness passes the difference in as a PARAMETER
+and performs no subtraction). **Scoped to ONE consumer per select**;
+N consumers, two selects on one compare, a compare shared with a region or a data
+use, a Q+Q or compound condition, a `float`-armed select, a RUN-TIME arm, a
+classical arg-0 (state prep), a cross-block consumer, an in-place `Ry` in the
+compare→consumer window and every in-loop form decline loudly. **The round-1 Rule-13 review added
+two fence families and they are not cosmetic** — S7's loop question was spelled
+`LoopInfo`-only and was therefore NARROWER than every sibling's, which accepted
+an angle select on an IRREDUCIBLE cycle (invisible to `LoopInfo`) and one whose
+rotated register's RAIL lives in a loop while the three anchors sit in its exit
+block (`lowerLoops`'s `staleRailRecordRead` runs 13 pipeline steps too early to
+see 2b's twin, so the manual twin declines and the select form did not). S7 now
+ORs `LoopInfo`, `ControlShape.h`'s `blockOnCycle` walk over `Cond`/`Sel`/`T`'s
+blocks, and either question over EVERY MEMBER of the base's rail closure — which
+is now computed for BOTH stems (the Rz stem computed none) once and reused by S8
+and S9 unchanged. And nothing in S1–S10 inspected the arm VALUES: an
+`undef`/`poison` arm folded the difference to a concrete NaN and destroyed the
+DEFINED arm, a non-finite constant arm or an overflowing difference of two FINITE
+ones manufactured an `inf`/`NaN` the source never named, and the IEEE rounding
+above went unfenced. **The ROUND-2 review then reviewed those fixes and found
+three more things about them** (notes §10): the arm-value fence split the world
+with `dyn_cast<ConstantFP>`, so a `double` `ConstantExpr` — a LINK-TIME constant
+whose value this compiler cannot read — fell into the `else` labelled "runtime
+arm" and bypassed every value clause (now refused; hand-IR-only); the S7 comment
+claimed it "asks all three questions, ORed, over-declining by construction" when
+the rotated register's rail FORWARD of the consumer and the CONDITION register's
+rail are asked by NO prong (both accept, both byte-identical to the manual twin on
+the pre-2b oracle, so the disposition is Inc-1's structural freeze, not 2b's —
+accept fixture `control_angle_select_forward_rail_cycle_frozen.ll`); and prong
+(iii)'s coverage of the loop-rail family is CONTINGENT on `lowerLoops`' Case-A
+rail collapse having re-anchored the in-loop gate, so a change there silently
+narrows S7. It also found that the 2^-40 threshold was pinned by NOTHING (the
+suite stayed green for any value in `(2^-54, 0.858]` and for a `>=` re-spelling)
+— now pinned by a δ = exactly-2^-40 accept and a δ = 2^-39 decline.
+**AND THE CLEARANCE REVIEW THEN BLOCKED ON THE HALF BOTH ROUNDS HAD LEFT OPEN**
+(finding F-11): the whole value fence was `ConstantFP`-GATED, so every one of its
+clauses was silently skipped for a RUN-TIME arm — a shape inside the shipped
+accept class, reachable from plain C, wrong on `π`/`1e16`, and declined loudly by
+the pre-2b binary. The decisive new fact was that the manual by-difference twin
+of that shape **declines on both binaries**, so the residual was reachable only
+through 2b rather than inherited. Shipped: option (2), constant arms only. Cost:
+two fixtures rewritten, 0 goldens, 16 twin-matrix cells reclassified.
+TWO fixtures FLIPPED to accept and were rewritten
+(`control_swap_defer_select_angle.ll`,
+`control_swap_reject_switch_datamux_angle.ll` — the second's "a Rule-3 f64/angle
+wrong unitary if lowered" header was true of the lowering that existed then and
+is false of this one: 2b never realizes the angle as a number; its arms were then
+changed from run-time parameters to the constants 0.9/0.3 by the clearance
+narrowing, with the run-time spelling kept as its own decline fixture). ⚠ One protection
+is NOT in S1–S10: the flag is minted AT THE CONSUMER, so an in-place
+`cqrt_addc`/`cqrt_xorc` on the CONDITION's rail in that window would mint a wrong
+predicate — it is correct on every measured reproducer only because `lowerOps`
+runs later and M-C refuses an in-place conversion when a later read exists (our
+own mint and strip). Read `CONTROL_IN_PLACE_INC2B_NOTES.md` findings G/H and §8
+before widening anything.
 **Every other tainted-control shape loudly declines** (deeper or non-homogeneous nests; the switch off-pattern matrix: multi-phi
 C1, grouped C4, non-empty-default C5, MUX-EXCH C8/G8, mixed arms, fp/vector/`i128`
 G4, nested G11, `§3c` clobber G7, tainted angle G3, jump-table fold, impure/unowned-
@@ -1051,7 +1167,7 @@ cmake --build build --target CQPass cq-opt # if you must name targets, name BOTH
 # five gate moments (Rule-13 core commit · pre-push · harness change · template
 # regen · accept/decline predicate change).
 #
-# 295 ctest entries (2026-09-02, UNCHANGED by the bd drbq Inc-2a Rz peephole, which adds 9 lit fixtures and NO ctest entry — it regenerates 26 existing e2e goldens rather than adding slices; +3 for the bd drbq Inc-1 control-in-place group — the round-2 Rule-13 review added 2 lit FIXTURES and 2 `tools/` instruments but NO ctest entry, deliberately: `tools/inplace_twin_matrix.py` and `tools/control_flag_order_check.py` are instruments pending an owner cost decision, not gates — 2 Inc-1 slices + the round-1 Rule-13 review's derived-base freeze slice; 2026-08-30: +7 for the bd 8h7d.5 Rule-13 round-4 group — 4 slices, 2 `cmp` twin gates and `e2e-loop-twin-matrix`, the rolled-vs-unrolled matrix that is the ONLY instrument in the tree that can see a leaked TEMPLATE-minted rail (100 cells when added, 120 after the round-5 `range` axis, **156** since the bd drbq Inc-2a round-1 review added the RECORD axis — no `int mark = a;` existed in any cell until then, which is the shape 8h7d.5's F-1 and F-3 lived in; re-measure with `grep -c '^m_' tools/loop_twin_matrix.expected.txt` rather than trusting this); +3 for the Rule-13 round-1 two-register group — 2 slices + 1 `cmp` twin gate; 2026-08-29: +18 for the bd 8h7d.5 in-loop-control group — 7 rolled/unrolled/dynamic slices + 3 `cmp` twin gates, and the rest are the earlier libm/e2e growth; 2026-08-27: +2 for the bd hcrg sequential-region slices; the
+# 305 ctest entries (2026-09-03: +10 for the bd drbq Inc-2b angle-select group — 7 e2e slices (3 subject/twin pairs + the derived-base freeze) and 3 `cmp` twin gates; its lit fixtures (46 at hand-back, 62 after the round-1 Rule-13 review, 66 after the round-2 one, **68 after the CLEARANCE one** — which also DELETED one accept fixture and added a fourth decline outside the family name, corpus 1430) and its instrument `tools/angle_select_twin_matrix.py` add NO ctest entry, the instrument deliberately so, pending the same owner cost decision as the other two; was 295 at 2026-09-02, UNCHANGED by the bd drbq Inc-2a Rz peephole, which adds 9 lit fixtures and NO ctest entry — it regenerates 26 existing e2e goldens rather than adding slices; +3 for the bd drbq Inc-1 control-in-place group — the round-2 Rule-13 review added 2 lit FIXTURES and 2 `tools/` instruments but NO ctest entry, deliberately: `tools/inplace_twin_matrix.py` and `tools/control_flag_order_check.py` are instruments pending an owner cost decision, not gates — 2 Inc-1 slices + the round-1 Rule-13 review's derived-base freeze slice; 2026-08-30: +7 for the bd 8h7d.5 Rule-13 round-4 group — 4 slices, 2 `cmp` twin gates and `e2e-loop-twin-matrix`, the rolled-vs-unrolled matrix that is the ONLY instrument in the tree that can see a leaked TEMPLATE-minted rail (100 cells when added, 120 after the round-5 `range` axis, **156** since the bd drbq Inc-2a round-1 review added the RECORD axis — no `int mark = a;` existed in any cell until then, which is the shape 8h7d.5's F-1 and F-3 lived in; re-measure with `grep -c '^m_' tools/loop_twin_matrix.expected.txt` rather than trusting this); +3 for the Rule-13 round-1 two-register group — 2 slices + 1 `cmp` twin gate; 2026-08-29: +18 for the bd 8h7d.5 in-loop-control group — 7 rolled/unrolled/dynamic slices + 3 `cmp` twin gates, and the rest are the earlier libm/e2e growth; 2026-08-27: +2 for the bd hcrg sequential-region slices; the
 # figures below were taken at 252/253 and their RATIOS still hold). RUN IT PARALLEL
 # — `-j` is the default, not an
 # optimization. MEASURED 162s at -j6, 252/252 pass (2026-08-13), down from 825s
@@ -1088,9 +1204,9 @@ cmake --build build --target CQPass cq-opt # if you must name targets, name BOTH
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure
 
 # One layer at a time
-ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1358 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-09-02 AFTER the bd drbq Inc-2a Rz-peephole fixture batch — +9 `control_inplace_rz_*.ll`, and NO new ctest entry, since Inc 2a adds no e2e slice: it REGENERATED 26 existing goldens instead, `ls ir-pass/test/*.ll | wc -l`. The "1 XFAIL" is CORRECT and re-measured — `grep -l XFAIL ir-pass/test/*.ll` returns 9, but 8 of those only MENTION the directive in prose; `lit ir-pass/test` reports `Expectedly Failed: 1`. Trust lit, not the grep). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
+ctest --test-dir build -R ir-pass-lit  --output-on-failure   # ONE ctest entry wrapping 1430 *.ll fixtures (1 XFAIL: lowering_invert_add_i32.ll, Phase-7 tracker; count measured 2026-09-03 AFTER the bd drbq Inc-2b angle-select batch AND BOTH its Rule-13 review rounds — Inc 2b added +46 `control_angle_select_*.ll` (15 accept / 31 decline) plus 2 REWRITTEN files that flipped to accept; the round-1 review added +16 (**2 accept / 14 decline**, MEASURED — the earlier "3 accept / 13 decline" here and in the notes was wrong, round-2 lens R2 N3) for the S7 cycle+rail prongs, the S1 arm-value/rounding fence, the emitter's step-0 S4 re-ask and the gate-2c window half; the round-2 review added +4 (2 accept / 2 decline) for the link-time-constant arm clause, the rounding threshold's two boundary cells and the forward-rail-cycle accept; the Rule-13 CLEARANCE review then narrowed the accept to CONSTANT arms (blocker F-11, owner option (2)) — **+4 declines, −1 accept DELETED** (`control_angle_select_ry_arg_angles.ll` replaced by `..._reject_runtime_arms.ll`), one of the four (`control_swap_reject_switch_datamux_angle_runtime.ll`) sitting outside the family name, so the corpus went 1427 → **1430** and the family 66 → 68. Family total on disk: 68 files, **18 accept / 50 decline** (`grep -L 'RUN: not' ir-pass/test/control_angle_select_*.ll | wc -l`). Base cb04d17 was 1361, NOT 1358 — the earlier note credited +49 for +46, an arithmetic slip caught by lens L6-N9. `ls ir-pass/test/*.ll | wc -l`. The "1 XFAIL" is CORRECT and re-measured — `grep -l XFAIL ir-pass/test/*.ll` returns 9, but 8 of those only MENTION the directive in prose; `lit ir-pass/test` reports `Expectedly Failed: 1`. Trust lit, not the grep). NO -j here: it is a single entry that already forks 12 lit workers itself. Still the suite's long pole. It is SPAWN-bound, not work-bound: bare `opt --version` costs 0.345s of libLLVM.dylib startup while the pass itself is ~0.02s, so fixture COUNT is nearly free and opt INVOCATIONS are not — spawns went 2088 -> 1087 and wall 143s -> ~61s without dropping one assertion. When adding a fixture, reuse one `%cq-opt ... > %t.cqd0.ll` and point every extra --check-prefix at that file; do NOT re-run the pass per prefix, and do NOT add a standalone `-passes=verify` RUN line (see below).
 ctest --test-dir build -R frontend-lit --output-on-failure   # 1 entry — CQ.h surface survives clang -O1 (no plugin)
-ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 285 entries (271 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, `e2e-loop-twin-matrix`, the 3 spec/predmux entries and the 6 bd 8h7d.5 `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-09-02 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
+ctest --test-dir build -j6 -R '^e2e-'  --output-on-failure   # 295 entries (278 slices, + free-pairing selftest, fixture-guard-liveness, keepset vendor check, census-slice-sync, `e2e-loop-twin-matrix`, the 3 spec/predmux entries, the 6 bd 8h7d.5 `cmp` twin gates and the 3 bd drbq Inc-2b angle-select `cmp` twin gates) — the only layer that LINKS. -j6 cuts this from ~11.5min to ~3.6min. Counts measured 2026-09-03 (`ctest -N -R '^e2e-'` / `-R '^e2e-slice-'`); re-measure rather than trust them.
 ctest --test-dir build -R runtime      --output-on-failure   # 7 entries, ~9s total — trace golden-diff, header compile, generated-template drift, and the link/core-ABI smokes with their selftests
 
 # One fixture (lit --filter matches the test display name)
@@ -1141,8 +1257,8 @@ on any pipeline other than `cq-lowering` rather than silently no-op'ing. It is
 **one process per invocation** — not a compile server — so lit's isolation,
 per-fixture diagnostics and `not` exit-code inversion are unchanged.
 Equivalence is **gated, not assumed** (`tools/cq_opt_equivalence.py`): stdout,
-stderr **and** exit code, 0 mismatches over all 1358 fixtures (re-measured
-2026-09-02). The routine ctest
+stderr **and** exit code, 0 mismatches over all 1430 fixtures (re-measured
+2026-09-03 after the Inc-2b round-1 review). The routine ctest
 entry samples (`--stride 8`, ~13s) because the full sweep costs ~658s of CPU —
 *more than the swap saves*; run the full one after any change to the pass's
 diagnostic or analysis surface:
@@ -1337,6 +1453,7 @@ bd close <id>         # Complete work
 | `ir-pass/src/OpcodeSupport.cpp` · `TemplateName.cpp` · `WidthDispatch.cpp` | Supported-set/commutativity/predicate policy · symbol-string grammar · suffix→width + lazy `FunctionCallee` minting |
 | `ir-pass/src/MeasureLowering.cpp` | `@cq_measure_<sfx> → cqrt_measure_<W>` |
 | `ir-pass/src/ControlDetect.cpp` · `ArmClassify.cpp` · `SwapRouteEmit.cpp` · `RegionFlatten.cpp` · `ClassicalCallArmEmit.cpp` · `include/ControlPlan.h` | Swap-route control: region detection (declines what it can't prove) · arm/condition classification + tainted-angle/stale-condition guards + the 6.5 `classifyClassicalCallArm` · routed phase-arm emission · CFG flattening · the 6.5 hoist+controlled-copy merge (`emitClassicalCallArmRegion`) · populated region plan |
+| `ir-pass/src/AngleSelectEmit.cpp` · `include/AngleSelectEmit.h` | **drbq Inc 2b** — the ANGLE-SELECT BY-DIFFERENCE emitter, both stems. Dispatched on `Kind == AngleSelectRegion` (pushed by `ArmClassify::classifyAngleSelect` through `SelectClassify`'s gate 3). Positional steps around the consuming rotation and no CFG surgery at all: **validate the plan by SSA identity, then re-ask S4 and S1's arm-value fence in lockstep (step 0b, the round-1 Rule-13 repair — without it a preceding SwitchDataMux region's RAUW made the compare Q+Q and the emitter bailed MID-STREAM)**, the classical difference `A−B`, an unconditional twin `R(h,B)`, the ordinary flag mint, the rewire + `taint.ControlledRotations` record, the ordinary strip + free, then erase the select (and the compare when it goes dead — a dead tainted compare would otherwise become a leaked flag rail in `lowerOps`). Every remaining `return` below the first emission is UNREACHABLE and commented as such, not as a bail |
 | `ir-pass/src/OpcodeLowering.cpp` (`declineStaleRecordOps`) · `WireWalk.{h,cpp}` | Pass-wide stale-record guard (tainted pure op scheduled past a non-diagonal wire gate → loud decline) · shared forward in-place-gate wire walk (position-free and position-aware modes) |
 | `ir-pass/src/Uncomputation.cpp` · `ChainWalk.cpp` · `DagTraversal.cpp` · `FreePoint.cpp` · `EmitInverse.cpp` | Whole-DAG LIFO uncompute spine (runs last): terminal selection · whole-DAG recovery · post-dom free point · reverse-program-order void `_unc` adjoint + `cqrt_free`; compares decline loudly (no `_unc` grid) |
 | `ir-pass/src/LiteralIntegrity.cpp` · `include/LiteralIntegrity.h` | **The two literal-integrity guards (bd xy9n + 7udx).** ONE invariant: an emitted gate's LITERAL operands must denote the source's value, identically at every site the lowering copies them to. Guard 1 `declineUnpairedUndefLiterals` (module-wide, per-FUNCTION count, runs LAST) — a literal `undef`/`poison` in TWO emitted gate slots is read as two values at the `-O0` stage 3, so an adjoint stops inverting its forward (Rules 6, 8); guard 2 `declineAddressTakenBlocks` / `removeUnreachableBlocksChecked` at all **7** block-erase sites — `~BasicBlock()` RAUWs a `BlockAddress` to `inttoptr (i32 1 to ptr)` module-wide on a **well-defined** source. Also the shared `valueCarriesUndef`, lifted here from `PredMuxFlatten` so cone proof and guard cannot drift (Rule 14). **Neither defect is visible to `opt -verify` OR to `free_pairing_check.py`** — the structure is perfect and only the run-time values differ |

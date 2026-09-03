@@ -42,6 +42,7 @@ endif()
 # Enzyme, and the sanitizers all follow this pattern.
 add_library(CQPass MODULE
   src/AbortParkEmit.cpp
+  src/AngleSelectEmit.cpp
   src/ArithLowering.cpp
   src/ArmClassify.cpp
   src/ArmHomogeneity.cpp

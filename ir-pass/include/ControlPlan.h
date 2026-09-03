@@ -137,11 +137,44 @@ struct ControlRegion {
   llvm::Value *Flag = nullptr;
 
   // SelectRegion — a tainted-condition DATA select (the WP4/4.2 mux, integer
-  // handle width). BranchRegion — a `br`-diamond (WP3/WP5/WP8). AngleSelectRegion
-  // (WP10, Family B2) — a tainted-condition select over the classical rotation
-  // ANGLE (`select i1 c, double a, double b`) feeding only rotation-angle
-  // operands; lowered as controlled-rotation-by-difference (`Merge` is the
-  // select, `Shadow` the consuming `cq_phi`/`cq_theta` calls).
+  // handle width). BranchRegion — a `br`-diamond (WP3/WP5/WP8).
+  //
+  // AngleSelectRegion (control-in-place-PRD §12.3, bd test_C_libtooling-drbq
+  // Inc 2b) — a tainted-condition select over the classical rotation ANGLE
+  // (`select i1 %c, double A, double B`) whose SOLE user is the arg-1 slot of a
+  // chained `cq_theta`/`cq_phi` `T`. `Merge` is the select, `Condition` the bare
+  // single-user compare, and `Shadow` holds exactly ONE element: the consuming
+  // rotation. Every block field stays NULL (there is no CFG diamond — `clang -O1`
+  // SimplifyCFG already merged the two arms into this one call), which makes the
+  // region inert to `lowerControlRegions`' cross-region pre-flight exactly like a
+  // `SelectRegion`.
+  //
+  // Lowered by `AngleSelectEmit` BY DIFFERENCE, which is exact IN REAL
+  // ARITHMETIC by angle additivity on one axis (`R(A) = R(B)·R(A−B)` for both Ry
+  // and, under `Rz = diag(1,e^{iθ})`, Rz — the diagonals multiply entrywise, so
+  // there is no global-phase residue). In IEEE double the emitted true-arm angle
+  // is `B + fl(A−B)`, `|δ| ≤ ½ ulp(A−B)`, so **BOTH ARMS MUST BE `ConstantFP`**
+  // and their evaluated residual must sit under the placeholder
+  // `kAngleSelectMaxRoundingRad` = 2^-40 rad. A RUN-TIME arm DECLINES (`rotation
+  // angle under quantum control`): the compiler would synthesize an `fsub` the
+  // source never wrote, whose error is unbounded in absolute radians (measured
+  // 0.858 rad from plain C — `Ry(pi)` realized as `Ry(4.0)`) and whose result can
+  // be `inf`/`NaN` from two FINITE arms (measured: `inf` in the controlled gate
+  // from ±8.99e307), neither fenceable at compile time. That narrowing is the
+  // Rule-13 CLEARANCE review's (finding F-11, owner option (2)); the rounding
+  // fence itself is the round-1 review's (lens L7-F1) and the both-halves wording
+  // the round-2 one's (lens R1 item 1). The stream is an
+  // UNCONDITIONAL `R(h, B)`, the ordinary flag mint,
+  // the drbq in-place `R_controlled(f, h, A−B)`, the ordinary strip, one
+  // `cqrt_free`. No CFG surgery, no hoist, no flatten, no `cqrt_x` bracket (a
+  // select always means "A when the flag is 1", so there is no polarity case),
+  // no work rail and no route.
+  //
+  // ⚠ THE ENUMERATOR PRE-DATES THAT DESIGN. It was declared for the retired WP10
+  // "Family B2" vocabulary and was read by NO src file until Inc 2b; the text
+  // above describes what it means NOW. Its old sibling fields `AnglePhi` /
+  // `AngleConsumers` below belong to that retired design and are still populated
+  // by nothing.
   // SwitchRegion (WP18, PRD §8.5) — a gated multi-arm `switch` whose arms apply
   // distinct SIDE-EFFECTING gate sequences (not a value/angle select). `Pred`
   // is the switch block, `Condition` the tainted scrutinee, `MergeBB` the common
@@ -306,16 +339,41 @@ struct ControlRegion {
   llvm::BasicBlock *ArmFalse = nullptr;
   llvm::SmallVector<llvm::Instruction *, 4> ShadowFalse;
 
-  // cwk fix (b) (test_C_libtooling-byx) — a wholly-classical scalar-FP merge `φ`
-  // (a rotation ANGLE) dispatched under quantum control via the `br`-diamond /
-  // gated-switch form: the CFG analog of `AngleSelectRegion`. Detection records
-  // the angle `φ`(s) here and their consuming `cq_phi`/`cq_theta` rotations in
-  // `AngleConsumers` (which also join `plan.InShadow` so `lowerRotations` skips
-  // them — the orchestrator lowers them as base + controlled-difference via
-  // `reduceAngleDiamondPhi`). A diamond may also carry an ordinary gate-handle
-  // `φ` alongside (the realistic mixed `if(q){gate; ang=a;}` shape); that one is
-  // dissolved by `dissolveBranchPhi` as usual, which SKIPS any `φ` listed here.
-  // Empty for every region without an angle `φ`.
+  // ⚠ NOTHING POPULATES EITHER OF THESE, ANYWHERE — stated as a MEASURED FACT,
+  // not a hedge (bd drbq Inc 2b; the same audit `InShadow` got in round 2).
+  // `grep -rn "AnglePhi\|AngleConsumers" ir-pass/` finds this declaration, its
+  // comments, and exactly ONE read — `ArmClassify.cpp:1538` (the `if
+  // (!Region.AnglePhi.empty() || !Region.AngleConsumers.empty())` itself; the
+  // round-1 correction cited `:1534`, which is a closing brace four lines up —
+  // round-2 Rule-13 review, lens R2 N8), the in-place rotation-arm R7
+  // defence-in-depth clause. (The first draft said TWO and named
+  // `EqFoldArm` as the second; `EqFoldArm` never reads `AnglePhi` at all —
+  // corrected by the Inc-2b round-1 Rule-13 review, lens L6-N4.) There is no
+  // `push_back` on either field in the tree, so both are permanently empty and
+  // that one read is a no-op.
+  //
+  // The retired design they belong to: cwk fix (b) (test_C_libtooling-byx) — a
+  // wholly-classical scalar-FP merge `φ` (a rotation ANGLE) dispatched under
+  // quantum control via the `br`-diamond / gated-switch form, i.e. the CFG analog
+  // of what `AngleSelectRegion` now is. Detection was to record the angle `φ`(s)
+  // here and their consuming rotations in `AngleConsumers`, which would also join
+  // `plan.InShadow` so `lowerRotations` skipped them.
+  //
+  // THE FUNCTION THAT COMMENT NAMED AS THE LOWERING — `reduceAngleDiamondPhi` —
+  // WAS REAL SHIPPED CODE (added in `f4c8684`/`b9b6a7a`) AND WAS EXCISED IN
+  // `7cde677` with the rest of the controlled-op generation. The first draft of
+  // this note said it "never did exist in this generation" and offered a `grep`
+  // returning "zero hits", which is wrong twice: `.beads`' JSONL export carries
+  // hits, and the name was a LIVE pointer the excision left dangling — an
+  // ordinary stale reference, not design vocabulary mistaken for one (corrected
+  // by the Inc-2b round-1 Rule-13 review, lens L6-N5). The name is removed rather
+  // than left to send the next reader looking for a file. What DOES implement the
+  // by-difference idea, for the `select` form rather than the `φ` form, is
+  // `AngleSelectEmit` (Inc 2b).
+  //
+  // `dissolveBranchPhi` is likewise GONE (excised in the same `7cde677`); the
+  // draft named it in the PRESENT tense as something that "really does skip any
+  // `φ` listed here". Nothing skips them, because nothing lists them.
   llvm::SmallVector<llvm::PHINode *, 2> AnglePhi;
   llvm::SmallVector<llvm::Instruction *, 4> AngleConsumers;
 
@@ -464,7 +522,8 @@ void diagnoseUnderControl(llvm::Instruction *Where, llvm::StringRef What);
 // runs, so there is no in-place gate body to skip (IMPLEMENTATION §3). A
 // classical-condition branch is ignored (detection keys strictly on condition
 // taint). No IR is mutated here.
-ControlPlan detectControlRegions(llvm::Module &M, TaintSet &taint);
+ControlPlan detectControlRegions(llvm::Module &M, WidthDispatch &wd,
+                                 TaintSet &taint);
 
 }  // namespace cq
 

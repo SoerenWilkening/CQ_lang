@@ -1,0 +1,67 @@
+; control_angle_select_reject_undef_constexpr_arm.ll — DECLINE (S1, the ARM-VALUE
+; fence): the TRUE arm is a `ConstantExpr` that CARRIES `undef` without BEING one.
+;
+; *** THIS FILE'S BODY WAS WRONG AT ROUND 1 AND WAS REPLACED, NOT DELETED ***
+; (bd drbq Inc 2b, ROUND-2 Rule-13 review, lens R1 item 4). It shipped as
+;
+;     %ang = select i1 %c, double bitcast (i64 undef to double), double 3.0e-01
+;
+; with a header claiming it was "the only fixture that can tell `valueCarriesUndef`
+; and a bare `isa<UndefValue>` apart". MEASURED FALSE: the LLVM-19 *parser* folds
+; `bitcast (i64 undef to double)` to a plain `double undef` before the pass ever
+; runs (`llvm-as | llvm-dis` round-trip), so `isa<UndefValue>` is TRUE of what the
+; classifier actually sees and the cheap implementation stayed green. The same
+; fold takes `extractelement (<2 x double> <double undef, ...>, i32 0)` and
+; `bitcast (<1 x i64> undef to double)`.
+;
+; THE SHAPE BELOW SURVIVES LLVM-19 FOLDING. The arm is the reinterpreted ADDRESS
+; of `@gu`, and `@gu`'s INITIALIZER carries `undef`:
+;
+;     @gu = global { i32, [4 x i8] } { i32 3, [4 x i8] undef }
+;     %ang = select i1 %c, double bitcast (i64 ptrtoint (ptr @gu to i64) to double), ...
+;
+; `valueCarriesUndef` (`LiteralIntegrity.h`) is the NON-global-skipping predicate,
+; so it descends through the `bitcast`, the `ptrtoint` and into the global's
+; initializer and reports true; a bare `isa<UndefValue>` on the arm reports false.
+;
+; *** WHAT THIS FIXTURE PINS, STATED HONESTLY, BECAUSE THE ROUND-2 REVIEW ALSO
+; *** MOVED THE CLAUSE STRUCTURE UNDER IT. Round 2 added clause (1b) — an arm that
+; is a `Constant` but NOT a `ConstantFP` is refused outright
+; (`control_angle_select_reject_constexpr_arm.ll`). For a `double`-typed arm the
+; only `Constant` subclasses are `ConstantFP`, `UndefValue`/`PoisonValue` and
+; `ConstantExpr`, so clause (1b) SUBSUMES clause (1) behaviourally: deleting
+; `valueCarriesUndef` would leave this file GREEN, and no fixture can red-green
+; clause (1) on its own any more. What this file DOES pin is the CLAUSE ORDER —
+; `valueCarriesUndef` is asked FIRST, so an arm that is both a `ConstantExpr` and
+; carries `undef` is refused as an UNDEF arm (the specific fact, with the
+; miscompile derivation in `control_angle_select_reject_undef_arm.ll`) rather than
+; as an unevaluable constant — and it is the shape that goes RED the moment clause
+; (1b) is narrowed to admit link-time constants, which is the obvious future
+; widening and the one that needs `valueCarriesUndef` back. See the block comment
+; above `angleSelectArmsAdmissible` in `ir-pass/src/ArmClassify.cpp`.
+;
+; Reproducers: the original at round 1 from lens L7
+; (`review2b/L7/ll/y3_undef_via_constexpr.ll`), the replacement from the round-2
+; lens R1 (`review2b_r2/R1/probes/ce2/ce_undefglobal.ll`).
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error{{.*}}rotation angle under quantum control
+
+@gu = global { i32, [4 x i8] } { i32 3, [4 x i8] undef }
+
+declare i32 @cq_theta_si32(i32, double)
+declare i32 @cq_phi_si32(i32, double)
+declare i32 @cq_measure_si32(i32)
+
+define i32 @example(i32 %u0, i32 %u1) {
+entry:
+  %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
+  %r = call i32 @cq_theta_si32(i32 %u1, double 2.500000e-01)
+  %c = icmp eq i32 %q, 5
+  %ang = select i1 %c, double bitcast (i64 ptrtoint (ptr @gu to i64) to double), double 3.000000e-01
+  %t = call i32 @cq_theta_si32(i32 %r, double %ang)
+  %mq = call i32 @cq_measure_si32(i32 %q)
+  %mr = call i32 @cq_measure_si32(i32 %t)
+  %s = add i32 %mq, %mr
+  ret i32 %s
+}

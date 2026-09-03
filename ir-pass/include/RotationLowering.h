@@ -29,6 +29,7 @@
 #define CQ_IRPASS_ROTATION_LOWERING_H_
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Module.h"
 
 namespace llvm {
@@ -41,6 +42,22 @@ namespace cq {
 class WidthDispatch;
 struct TaintSet;
 struct ControlPlan;
+
+// Strip a known prefix (`cq_theta_` / `cq_phi_`) from a rotation call's callee
+// name → the intrinsic suffix (`si32`). Returns "" on mismatch (indirect callee,
+// or a name that does not start with `Prefix`).
+//
+// EXPORTED since bd drbq Inc 2b, and the reason is a recorded hazard rather than
+// convenience (Inc-1 notes §3d, the "latent" row): detection and mint derive the
+// ABI width from two different EXPRESSIONS — `ArmClassify`'s R4 asks
+// `abiWidthHasControlledRotation(abiWidthFromType(T->getType()))` while
+// `lowerRotations` mints from `wd.abiWidthFor(suffixFromName(T, "cq_theta_"))`.
+// The PREDICATE is shared; its ARGUMENT was not, so a divergence would decline
+// AFTER mutation. `classifyAngleSelect` therefore asks the MINT's expression
+// verbatim, which is only possible with this declaration. Inc 1's own spelling is
+// deliberately left alone (changing it is a Rule-13 change to R4's accept set);
+// they agree for every `CQ.h` suffix measured.
+llvm::StringRef suffixFromName(const llvm::CallInst *CI, llvm::StringRef Prefix);
 
 // Lowers every `@cq_theta_<sfx>` / `@cq_phi_<sfx>` collected by
 // `propagate` (in `taint.ThetaCalls` / `taint.PhiCalls`), in BB order, and

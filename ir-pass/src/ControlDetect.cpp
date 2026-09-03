@@ -27,6 +27,7 @@
 #include "SelectClassify.h"
 #include "SwitchClassify.h"
 #include "TaintPropagation.h"
+#include "WidthDispatch.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -110,8 +111,14 @@ bool hasTaintedCondBranch(BasicBlock *BB, TaintSet &Taint) {
 // depth-2 `RegionShape::Nested` arm BEFORE `recoverRegionTree` (message
 // `nested control flow`, matching that path's own backedge-guard string — no
 // fixture churn).
-bool regionEntryInLoop(Instruction *Term) {
-  BasicBlock *Entry = Term->getParent();
+// THE WALK ITSELF, de-anonymized so a NON-region caller can ask the same question
+// (bd drbq Inc 2b round-1 Rule-13 review, lens L3-1). `classifyAngleSelect`'s S7
+// shipped spelled ONLY as `LoopInfo::getLoopFor`, which is a NATURAL-loop
+// question, so an IRREDUCIBLE cycle through the select's block made it VACUOUS
+// while the manual by-difference DIAMOND over the same cycle declined here. The
+// repair is Rule 14: ONE walk, two callers — not a second reachability in
+// `ArmClassify.cpp`.
+bool blockOnCycle(BasicBlock *Entry) {
   SmallPtrSet<BasicBlock *, 16> Seen;
   SmallVector<BasicBlock *, 16> Work(succ_begin(Entry), succ_end(Entry));
   while (!Work.empty()) {
@@ -123,6 +130,10 @@ bool regionEntryInLoop(Instruction *Term) {
     Work.append(succ_begin(BB), succ_end(BB));
   }
   return false;
+}
+
+bool regionEntryInLoop(Instruction *Term) {
+  return blockOnCycle(Term->getParent());
 }
 
 // ── bd test_C_libtooling-8h7d.5 (Phase 7.3 Increment 3) — the NARROWING ──────
@@ -641,7 +652,8 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
 // decline everything else with its precise string. A classical-condition
 // construct is left byte-untouched (detection keys strictly on condition taint).
 // No IR is mutated here — emission is `SwapRouteEmit::lowerControlRegions`.
-ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
+ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
+                                 TaintSet &taint) {
   ControlPlan plan;
   // Inner branches of an ACCEPTED nest, claimed by `recoverRegionTree` so the
   // loop does NOT re-visit them (blocker FA0): the inner tainted `br` recovers
@@ -724,10 +736,26 @@ ControlPlan detectControlRegions(Module &M, TaintSet &taint) {
       // out rail per iteration; the per-iteration measure is user-written).
       // Pinned by control_swap_select_inloop{,_hoisted_cond}.ll and the
       // slice_control_select_loop e2e golden.
+      //
+      // bd drbq Inc 2b: the lazy `DominatorTree`/`LoopInfo` above is now built on
+      // the first tainted BRANCH **or SELECT**, because gate 3's angle-select
+      // hook needs both (`LI` for the flat-only fence, `DT` for R6's position
+      // proofs). A function with a tainted select and no tainted branch used to
+      // pay nothing and would have handed the hook a null pair — which is a
+      // silent OVER-DECLINE (`NotApplicable` ⇒ the pre-2b `rotation angle`), not
+      // a miscompile, but it would have made the accept depend on whether some
+      // OTHER construct in the same function happened to build the tree. The
+      // measured cost of the lazy trigger is unchanged for every function that
+      // has neither (`std::optional` — nothing is built).
       for (Instruction &I : BB)
         if (auto *Sel = dyn_cast<SelectInst>(&I))
-          if (taint.Tainted.count(Sel->getCondition()))
-            classifySelectRegion(Sel, taint, plan);
+          if (taint.Tainted.count(Sel->getCondition())) {
+            if (!DT) {
+              DT.emplace(F);
+              LI.emplace(*DT);
+            }
+            classifySelectRegion(Sel, taint, wd, &*DT, &*LI, plan);
+          }
     }
   }
   return plan;

@@ -847,18 +847,201 @@ from `f92d95e` in a scratch worktree supplies the route stream; the 2a Rz stream
 equal collapse(route) on PREFIX AND SUFFIX (no freeze for Rz), the Ry stream on the
 prefix as before; (iv) `tools/control_flag_order_check.py` 0 violations.
 
-### 12.3 Inc 2b — angle-select by-difference (`drbq.6`), both stems
-Shape: `%a = select i1 %c, double A, double B` whose ONLY users are arg-1 (angle)
-slots of `cq_theta`/`cq_phi` calls with TAINTED arg-0; `%c` a lowerable tainted
-compare (the same mint the regions use); `A`, `B` classical. Lowering per consumer
-`R(h, %a)`: `f = icmp(%c)` at the compare; `R(h, B)` uncontrolled; `R_controlled(f, h,
-A−B)` (`fsub` on the classical operands, constant-folded when both are constants);
-`icmp_unc`; `free(f)`. Exact by angle additivity on one axis (`Ry(a)=Ry(b)·Ry(a−b)`,
-same for Rz). For the Ry stem every Inc-1 fence applies verbatim (R4 disjoint wires —
+### 12.3 Inc 2b — angle-select by-difference (`drbq.6`), both stems — **IMPLEMENTED 2026-09-03**
+
+> **Status: DONE.** Shipped as described below. Implementation notes, the walker/
+> set audit, the mutation table, the goldens argued line by line and the
+> "what worries me" list are in
+> `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC2B_NOTES.md`.
+>
+> **Scoped to ONE consumer per select.** The C target shape has one; N consumers
+> is a recorded follow-on because S6's positional scan is deliberately wire-blind,
+> which would make an N-consumer accept ORDER-dependent.
+>
+> **ROUND-1 RULE-13 REVIEW (7 lenses, 2026-09-03) — FOUR ACCEPTED FINDINGS, all
+> fixed here; read them before quoting anything above as settled.**
+>
+> 1. **S7 asked a NARROWER loop question than every sibling — TWO over-accepts.**
+>    It was spelled `LoopInfo::getLoopFor` of `Cond`/`Sel`/`T`'s blocks only.
+>    (a) an IRREDUCIBLE cycle has no `LoopInfo` loop, so S7 was VACUOUS on it and
+>    the angle select ACCEPTED where the manual by-difference DIAMOND declines
+>    `control flow inside a loop body` (the d8jl `regionEntryInLoop` walk is a
+>    reducibility-independent CFG reachability) and the plain uncontrolled
+>    rotation declines `crosses a loop backedge`; (b) the ROTATED REGISTER's rail
+>    can live in a loop while all three anchors sit in the loop's EXIT block —
+>    `lowerLoops` (`CQLoweringPass.cpp:310`) runs BEFORE detection (:322) and
+>    emission (:323), so its `staleRailRecordRead` fence, which refuses the
+>    diamond spelling of exactly this shape, structurally cannot see 2b's twin
+>    `T0` (inserted 13 steps later). S7 now ORs three questions: `LoopInfo`,
+>    `ControlShape.h`'s exported `blockOnCycle` walk over the three anchor blocks,
+>    and either question over EVERY MEMBER of the base's rail closure. That
+>    closure is now computed ONCE, for BOTH stems (the Rz stem computed none),
+>    and REUSED by S8's intersection, S9's member set and S9's skip set unchanged.
+> 2. **Nothing in S1–S10 inspected the arm VALUES.** An `undef`/`poison` arm
+>    folded the difference to a concrete NaN and DESTROYED the well-defined arm
+>    (`LiteralIntegrity`'s guard 1 is correct to stay silent: it counts one undef
+>    slot, the other being the folded NaN); a non-finite constant arm, or an
+>    overflowing difference of two FINITE ones, manufactured an `inf`/`NaN` the
+>    source never named. Fenced in S1 via `angleSelectArmsAdmissible`, re-asked in
+>    the emitter's step 0.
+> 3. **THE ALGEBRA IS EXACT AND THE ARITHMETIC IS NOT.** The emitted true-arm
+>    angle is `B + fl(A−B)`, so `|δ| ≤ ½ ulp(A−B) ≈ |A−B|·2^-53`: 2^-54 rad on the
+>    flagship `0.9/0.3` golden, **0.858 rad on `π/1e16`**, **1.0 rad on
+>    `1.0/1e300`** — the last two DECLINED LOUDLY on the pre-2b binary. CONSTANT
+>    arms now compute δ exactly at compile time (TwoSum in APFloat at
+>    `rmNearestTiesToEven`) and decline above `kAngleSelectMaxRoundingRad`, a
+>    NAMED PLACEHOLDER of 2^-40 rad. **The ruling that would remove it is on the
+>    owner's desk** — see the OWNER-DESK item in
+>    `CONTROL_IN_PLACE_INC2B_NOTES.md` §9, now a THREE-WAY choice.
+>    **RUN-TIME arms cannot be fenced at compile time and therefore DECLINE**
+>    (Rule-13 CLEARANCE review, finding F-11 / ranked blocker B1; the round-2
+>    review had graded the class CONFIRMED-MISCOMPILE and the disposition then was
+>    "stay accepted, document the residual" — notes §10 — which the clearance
+>    review ranked BLOCKING and the owner resolved as option (2), notes §11). The
+>    two residual halves are now the REASON for the refusal: (i) the rounding
+>    `|δ| ≤ ½ ulp(A−B)` bounds the DIFFERENCE and is unbounded in absolute
+>    radians, measured **0.858 rad from plain C** with `π`/`1e16` as run-time
+>    angles (`Ry(π)` realized as `Ry(4.0)`), and (ii) a **NON-FINITE `fl(A−B)`
+>    from two FINITE arms**, measured `cqrt_ry_i32_controlled(f, h, inf)` from
+>    `±8.99e307`, which no half-ulp bound describes. Note that (ii) is the SAME
+>    class this finding's item 2 fences for constant arms — before the narrowing,
+>    which of the two you got depended only on how the user SPELLED the angle. The
+>    twin witness could never have seen either, since the manual twin performs the
+>    identical `fsub`; what decided it instead is that **the manual twin of a
+>    run-time-arm by-difference program does not compile at all** — `clang -O1`
+>    sinks the `fsub` into the arm block and `inPlaceRotationArmTheta` refuses it,
+>    on BOTH binaries — so the residual was reachable only through 2b rather than
+>    inherited from an already-accepted shape (clearance observation 1).
+> 4. **The emitter's step 0 re-validated SSA IDENTITY but not S4's SEMANTIC
+>    half**, so a preceding `SwitchDataMux` region's RAUW could turn the compare
+>    Q+Q and the emitter bailed MID-STREAM (after the `fsub` and the twin), with a
+>    mislabelled `no template for opcode 'icmp i1'`, loud only because `DS_Error`
+>    exits. Step 0b now re-asks S4 in lockstep before the first `CreateFSub`, and
+>    `AngleSelectEmit.h`'s "every bail precedes the first emitted instruction" is
+>    true rather than aspirational.
+>
+> Also recorded by that round, NOT fixed: two SOURCE-ORDER-dependent OVER-DECLINES
+> (an angle select followed by an Rz diamond on the same register, and an angle
+> select followed by a value arm / data select on the same register — the reverse
+> order accepts in both cases), which are Rule-13 changes to `taintedAngleGate`
+> and to gate 5's coherence fence. See notes §9.
+>
+> **Witnesses, all run:** (i) THREE e2e subject/twin pairs with `compare_files`
+> gates (`e2e-angle-select-{ry,ry-ne,rz}-twin-identical`), byte-identical, and
+> the twin goldens additionally verified byte-identical when produced by the
+> PRE-2b binary; (ii) `tools/angle_select_twin_matrix.py` — 158 all-pairs cells /
+> 632 full pipelines: **116 BOTH-ACCEPT-IDENTICAL, 0 MISMATCH, 0 ORACLE-MOVED,
+> 0 RED-GREEN-MISS, 0 stage-2b failures** (after the clearance narrowing: 102
+> BOTH-ACCEPT-IDENTICAL + the 16 `angle=args` cells reclassified
+> EXPECTED-DECLINE-RUNTIME-ARMS, the other 142 line-for-line identical); (iii) a whole-corpus disposition sweep
+> against the pre-2b oracle — 1407 fixtures, 35 moved, every one accounted for
+> (17 intended accepts, 15 message sharpenings, 3 pre-existing `ogw2` eq-fold
+> cells); (iv) a 17-row mutation matrix, which produced THREE fixtures for
+> clauses that had none. Plus `ir-pass-lit` 1406 + 1 XFAIL,
+> `ctest -j6 -R '^e2e-'` 295/295, `cq-opt-equivalence-full` 1407/0,
+> `golden_multiset_audit --all` 280 goldens with **no existing golden moved**,
+> `control_flag_order_check` 0 violations over 391 flags, and
+> `e2e-loop-twin-matrix` unchanged.
+>
+> **FOLLOW-ONS, recorded rather than built:** N consumers on one select;
+> a SECOND select on one compare (the `if(c){g1;g2}else{g3;g4}` fold); a compare
+> shared with a `br` region or with a data use (one flag, two owners — the
+> `ShareCondFlag` analogue); a Q+Q condition (the 4.4 data select admits one via
+> `qqSelectLeafWidth`); a `float`-armed select behind an `fpext`; the in-loop form
+> (Increment 3 = `drbq.4`, which must re-ask S9's flat position predicates with a
+> per-activation barrier); and controlled state prep (Increment 4).
+>
+> **TWO EXISTING FIXTURES FLIPPED TO ACCEPT** and were rewritten in full:
+> `control_swap_defer_select_angle.ll` (the shape this section describes, which
+> that fixture had pinned as a DEFER since 4.4 WI-1) and
+> `control_swap_reject_switch_datamux_angle.ll`. The second is worth reading: its
+> header claimed the shape was "a Rule-3 f64/angle wrong unitary if lowered",
+> which was true of the lowering that existed then and is false of this one —
+> 2b never realizes the angle as a number, it emits the controlled rotation the
+> source describes with every emitted angle classical. That cell is also the live
+> exercise of §6's `TaintSet`-not-`ControlPlan` decision: it is detected and
+> emitted inside the yn71 onward-control fixpoint, whose `plan2` is discarded
+> before `lowerRotations` runs.
+>
+> **One thing this section did not name, and it is a dependency rather than a
+> design choice** (notes finding H): the flag is minted AT THE CONSUMER, so an
+> in-place `cqrt_addc`/`cqrt_xorc` on the CONDITION's rail between the source's
+> compare and the consumer would mint a wrong predicate — and S6's positional
+> scan looks for `cq_theta` only, while the Rz stem is exempt from S8. It is
+> correct on every reproducer measured, **because `lowerOps` runs after this
+> emitter and M-C refuses an in-place conversion when a later read exists — our
+> own mint and strip being exactly that.** If M-C's later-read test ever narrows,
+> S6 must be widened to the rail for BOTH stems, and that is a Rule-13 change.
+
+Shape: `%a = select i1 %c, double A, double B` whose **ONE** user is the arg-1
+(angle) slot of a `cq_theta`/`cq_phi` call with TAINTED arg-0; `%c` a lowerable
+tainted compare (the same mint the regions use) with exactly one tainted operand
+and exactly one user; `A`, `B` classical. Lowering, for that ONE consumer
+`R(h, %a)`: `R(h, B)` uncontrolled; `f = icmp(%c)` minted **AT THE CONSUMER**
+(not at the compare — the design draft said "at the compare" and the shipped
+emitter mints at `T`, which is what makes the compare→consumer window the flag's
+staleness window and why S6 scans to `T`); `R_controlled(f, h, A−B)` (`fsub` on
+the classical operands, constant-folded when both are constants); `icmp_unc`;
+`free(f)`.
+
+**Exact in REAL arithmetic** by angle additivity on one axis
+(`Ry(a)=Ry(b)·Ry(a−b)`, same for Rz — under `Rz = diag(1,e^{iθ})` the two
+diagonals multiply entrywise, so no global-phase residue). **In IEEE double the
+emitted true-arm angle is `B + fl(A−B)`, `|δ| ≤ ½ ulp(A−B)`**, so `A`, `B` must be
+classical **CONSTANTS** (`ConstantFP`), fenced at the placeholder
+`kAngleSelectMaxRoundingRad = 2^-40 rad`. **RUN-TIME classical arms DECLINE** —
+owner option (1) widens back, in one line. They cannot be fenced at compile time
+and carry BOTH residual classes: that rounding bound, unbounded in absolute
+radians, AND a non-finite `fl(A−B)` from two FINITE arms (round-1 review finding 3
+above for the constant half; round-2 review lens R1 item 1 for the both-halves
+statement; the CLEARANCE review's finding F-11 for the narrowing).
+
+> ### OWNER-DESK ITEM — THE THREE-WAY CHOICE, VERBATIM (also in notes §9)
+>
+> "(1) accept-with-residual: round-to-nearest angle arithmetic is IN the
+> model, the runtime residual (both halves) is documented, the 2^-40 constant
+> placeholder goes; (2) decline runtime arms (constant arms only) until (3)
+> — **SHIPPED**; (3) the two-controlled form x(f)·R_c(f,h,B)·x(f)·R_c(f,h,A) — no
+> fsub, no rounding, no inf/NaN manufacture, no undef fold, existing symbols only,
+> one extra controlled gate + an X pair, twin = two Inc-1 diamonds, exact for
+> runtime arms too — a PRD §12.3 design change."
+>
+> **Option (2) is what shipped**, on the Rule-13 clearance review's blocker F-11
+> (notes §11). It was separable and cheap exactly as predicted: constant arms were
+> already fenced, so refusing only the runtime ones cost **two fixtures rewritten,
+> ZERO e2e goldens, and 16 twin-matrix `args` cells reclassified** — measured, not
+> estimated. Options (1) and (3) stay on the desk. **Option (1) is ONE line** —
+> `angleSelectArmsAdmissible` clause (2c) returns `true` again — plus the three
+> run-time decline fixtures flipping and the matrix class flipping; it requires an
+> explicit ruling that round-to-nearest angle arithmetic AND non-finite angle
+> arithmetic are BOTH in the semantic model, the second half being the one option
+> (1)'s own stated reasoning does not reach. Option (3) removes both halves
+> outright and is exact for run-time arms too.
+
+For the Ry stem every Inc-1 fence applies verbatim (R4 disjoint wires —
 `cq_theta(q, q==5 ? A : B)` declines; R6 stale record; the classical-angle rule on BOTH
 select arms; the freeze); for the Rz stem the 12.1 transparency. No CFG, no hoist, no
-flatten. Declines: any other user of `%a`, a nested/second select in the angle, a
+flatten.
+
+Declines: any other user of `%a`, a nested/second select in the angle, a
 non-lowerable or Q+Q compare, a tainted `A`/`B`, the select's condition also used as
-control of a region (`ShareCondFlag`-like: decline in 2b). This is what makes the C
+control of a region (`ShareCondFlag`-like: decline in 2b), **an `undef`/`poison`
+arm or a `ConstantExpr` carrying one, ANY `Constant` arm that is not a
+`ConstantFP` (a link-time constant this compiler cannot evaluate — round-2 review
+lens R1 item 5), a non-finite constant arm, a non-finite
+difference of two finite arms, a constant-arm pair whose rounding residual exceeds
+the placeholder bound, and any form in a loop OR ON A CFG CYCLE — including one
+that only the rotated register's RAIL sits in** (the last two families are the
+round-1 review's).
+**What S7's cycle question does NOT reach, stated because the round-1 comment
+claimed otherwise:** the rotated register's rail FORWARD of the consumer (the
+closure carries `Exclude = T`) and the CONDITION register's rail at all. Both
+accept; both are byte-identical to the manual by-difference twin on the pre-2b
+oracle, so the disposition belongs to Inc-1's structural freeze rather than to
+this increment (round-2 review, lens R1 item 2; accept fixture
+`control_angle_select_forward_rail_cycle_frozen.ll`). And prong (iii)'s coverage
+of the loop-rail family is CONTINGENT on `lowerLoops`' Case-A rail collapse having
+already re-anchored the in-loop gate onto the base — a change there silently
+narrows S7 (lens R1 item 3). This is what makes the C
 `if/else` with two rotations on one register compile (clang merges it into exactly this
 shape); the hand-IR if/else fixture stays as the two-block form's pin.

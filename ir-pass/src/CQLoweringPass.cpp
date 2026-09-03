@@ -319,7 +319,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // and flattens the CFG. It runs BEFORE `lowerRotations` so it can reference the
   // still-present `@cq_theta` result; the later RAUW-to-handle updates every
   // emitted call (Rule 9). A classical-condition branch stays byte-untouched.
-  ControlPlan plan = detectControlRegions(M, taint);
+  ControlPlan plan = detectControlRegions(M, wd, taint);
   lowerControlRegions(M, wd, taint, plan);
 
   // Bounded loops, ROUND 2 (Phase 7.3 Increment 3, bd test_C_libtooling-8h7d.5).
@@ -685,7 +685,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // run in this entry point too, between detection and `lowerRotations`, or
   // unit-level callers silently diverge from `run()` (the twin-pipeline trap,
   // IMPLEMENTATION §6.5).
-  ControlPlan plan = detectControlRegions(M, taint);
+  ControlPlan plan = detectControlRegions(M, wd, taint);
   lowerControlRegions(M, wd, taint, plan);
   // Issue dugh (Phase 4×6): the SECOND propagation round mirrored in this entry
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the

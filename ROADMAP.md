@@ -667,6 +667,40 @@ after a statevector-checked design dialogue; see
   — not a link, never adjointed, not frozen — because a diagonal gate moves no
   basis label (PRD §12.1). Notes:
   `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC2A_NOTES.md`.
+  **Inc 2b (2026-09-03) makes the plain C `if/else` with a rotation on ONE
+  register in each arm compile, for BOTH stems** — `clang -O1` never hands that
+  shape to the pass as a diamond at all (SimplifyCFG merges the two arms into ONE
+  call whose ANGLE is a tainted-condition `select`), so it is lowered BY
+  DIFFERENCE: an unconditional `R(h, B)`, the ordinary flag mint, ONE
+  `cqrt_{ry,rz}_<W>_controlled(f, h, A−B)`, the ordinary strip, one free. Exact in
+  REAL arithmetic by angle additivity on one axis; in IEEE double the emitted
+  true-arm angle is `B + fl(A−B)`, `|δ| ≤ ½ ulp(A−B)`, so **BOTH ARMS MUST BE
+  CONSTANTS** (`ConstantFP`) and their evaluated residual is fenced at a
+  placeholder 2^-40 rad. A **RUN-TIME arm DECLINES**: the compiler would
+  synthesize an `fsub` the source never wrote, carrying (i) a rounding error
+  UNBOUNDED in absolute radians (measured 0.858 rad from plain C on `π`/`1e16` —
+  `Ry(π)` realized as `Ry(4.0)`) AND (ii) a **non-finite `fl(A−B)` from two FINITE
+  arms** (measured `cqrt_ry_i32_controlled(f, h, inf)` from `±8.99e307`). Neither
+  half is fenceable at compile time, the pre-2b binary declined every reproducer
+  loudly, and the manual by-difference twin of that shape declines on BOTH
+  binaries — so the class was reachable only through 2b. That is the Rule-13
+  **clearance** review's blocker F-11 and the owner's option (2); options (1)
+  (accept run-time arms, one line) and (3) (the two-controlled form, which
+  performs no subtraction at all) remain a THREE-WAY item on the owner's desk
+  (round-1 Rule-13 review found the constant half, round 2 the run-time one, the
+  clearance review ruled it — notes §9/§10/§11).
+  NO new frozen symbol, no CFG surgery, no `cqrt_x`. Scoped to one consumer per
+  select; in-loop OR ON ANY CFG CYCLE (including one the rotated register's RAIL
+  sits in), N consumers, a shared compare, a Q+Q condition, a `float`-armed
+  select, an undef/poison arm, any `Constant` arm that is not a `ConstantFP` (a
+  link-time constant this compiler cannot evaluate — round-2 Rule-13 review), any
+  RUN-TIME arm (clearance review), a non-finite arm, and controlled state prep all
+  decline loudly. **What the cycle
+  question does NOT reach** (round-2 review): the rotated register's rail FORWARD
+  of the consumer, and the CONDITION register's rail — both accept and both are
+  byte-identical to the manual twin on the pre-2b oracle, so the disposition
+  belongs to Inc-1's structural freeze rather than to 2b. Notes:
+  `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC2B_NOTES.md`.
 
 **Soundness obligation (§3b).** `cqrt_free` (compiler-emitted only) is emitted on
 a rail **only after** its reverse-play returns it to `|0⟩`, via the `FreePoint`

@@ -21,6 +21,7 @@
 
 #include "AbortParkEmit.h"       // emitAbortParkRegion (the 7.2 Inc 3 park cascade)
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
+#include "AngleSelectEmit.h"     // emitAngleSelectRegion (drbq Inc 2b)
 #include "CompareLowering.h"     // lowerCompareToFlag
 #include "ClassicalCallArmEmit.h" // emitClassicalCallArmRegion (the 6.5 merge)
 #include "GuardedStoreArmEmit.h"  // emitGuardedStoreArmRegion (iw81.7)
@@ -1352,6 +1353,36 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       // `if (!Doomed) continue;` guard). Dispatch + continue BEFORE the Depth /
       // child-lookup branch, which keys on null CFG anchors.
       emitSelectRegion(R, wd, csyms, taint);
+      continue;
+    }
+    if (R.Kind == ControlRegion::AngleSelectRegion) {
+      // drbq Inc 2b (control-in-place-PRD §12.3) — a tainted-condition select
+      // over the classical rotation ANGLE, feeding ONE chained
+      // `cq_theta`/`cq_phi`. Lowered BY DIFFERENCE (unconditional `R(h,B)`, flag
+      // mint, `R_controlled(f,h,A−B)`, strip, free): no CFG diamond, no rail, no
+      // route, no flatten, no child nest — its block fields are all null, so the
+      // pre-flight above treated it as inert (the `if (!Doomed) continue;`
+      // guard), exactly as for a `SelectRegion`. Dispatch + continue BEFORE the
+      // Depth / child-lookup branch, which keys on null CFG anchors.
+      //
+      // ⚠ BEING INERT TO THE PRE-FLIGHT IS SAFE FOR A REASON THAT LIVES
+      // ELSEWHERE, so state it here rather than leaving the next reader to
+      // rediscover it (bd drbq Inc 2b, notes finding I). A select in another
+      // region's `Pred` is never erased and one in its `MergeBB` is SPLICED into
+      // the pred and survives — but one in an `Arm` would be FREED, and plan
+      // order puts that region first, so this emitter's "re-validate by SSA
+      // identity" would be reading freed memory rather than validating. It
+      // cannot happen at HEAD because EVERY region kind that erases an arm
+      // constrains that arm to a shape a `select` cannot satisfy
+      // (`armBlockIsPureSpine`, `valueArmIsPureChain`,
+      // `inPlaceRotationArmTheta`, `classifyClassicalCallArm`'s
+      // `Arm->size() != 2`, the guarded-store gep+store shape, `AbortPark`'s
+      // sink+`unreachable`) — measured on a hand-IR diamond carrying a pure
+      // classical call AND a tainted angle select in one arm: declines
+      // `control flow`, clean under `libgmalloc`. A future region kind that
+      // erases a block whose contents it does not fix must extend the pre-flight
+      // to this Kind or re-prove that purity.
+      emitAngleSelectRegion(R, wd, taint);
       continue;
     }
     if (R.Kind == ControlRegion::SwitchRegion) {

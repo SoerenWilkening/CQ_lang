@@ -27,12 +27,18 @@ namespace llvm {
 class BasicBlock;
 class CallInst;
 class CmpInst;
+class DominatorTree;
 class Instruction;
+class LoopInfo;
+class SelectInst;
 class Value;
 }  // namespace llvm
 
 namespace cq {
 
+class WidthDispatch;
+struct CondTree;
+struct ControlPlan;
 struct TaintSet;
 
 // Walk the PHASE spine WITHIN one arm block: while `V` is a `cq_phi` (Rz) call
@@ -143,6 +149,63 @@ CondDataDisp condDataUseDisposition(llvm::Instruction *Cond,
 // `classifyArms` (flat control condition), and `recoverRegionTree` (nested
 // outer+inner conditions).
 bool comparePredLowerable(const llvm::CmpInst *Cmp);
+
+// ---- ANGLE-SELECT BY DIFFERENCE (control-in-place-PRD §12.3, bd
+//      test_C_libtooling-drbq Inc 2b) -----------------------------------------
+//
+// The disposition of one tainted-condition `select` that reaches a rotation's
+// arg-1 ANGLE slot. THREE states, because two of them belong to different
+// owners:
+//   * `Accepted`      — a `ControlRegion{Kind = AngleSelectRegion, Merge = Sel,
+//                       Condition = the compare, Shadow = {the consumer}}` was
+//                       pushed for `AngleSelectEmit`; the caller returns.
+//   * `Declined`      — THIS classifier already fired its own precise loud
+//                       diagnostic (the loop / condition-wire / stale-record
+//                       strings, which `rotation angle` would MISLABEL); the
+//                       caller returns without adding a second one.
+//   * `NotApplicable` — nothing was emitted and nothing was pushed: the shape is
+//                       outside the 2b accept class, and the caller falls
+//                       through to its pre-existing `rotation angle` decline,
+//                       byte-identical to what it fired before this increment.
+//
+// Hosted in `ArmClassify.cpp` rather than `SelectClassify.cpp` because its R4/R6
+// halves ARE `classifyArms`' — `railWireClosure` / `forwardRailHop` /
+// `cannotFollowGate` are TU-local there and must stay ONE spelling (Rule 14).
+// Pure analysis: no IR is mutated (Rule 9).
+enum class AngleSelectDisp { Accepted, Declined, NotApplicable };
+
+// Are the two ANGLE ARMS of a 2b select realizable by the by-difference stream?
+// FOUR refusals in one predicate, all added by the Inc-2b round-1 Rule-13 review
+// (lenses L5-1 / L7-F1 / L7-F2 / L7-F6), which found that S1–S10 asked about the
+// arms' TYPE and TAINT and never about their VALUES:
+//   * either arm carries `undef`/`poison` (asked through the SHARED
+//     `valueCarriesUndef`, so a `ConstantExpr` carrying one is caught);
+//   * either arm is a non-finite `ConstantFP`;
+//   * both arms are `ConstantFP` and their DIFFERENCE is non-finite (two finite
+//     arms CAN overflow: `DBL_MAX − (−DBL_MAX)`);
+//   * both are `ConstantFP` and the by-difference ROUNDING residual
+//     `delta = A − (B + fl(A−B))`, computed EXACTLY by TwoSum in APFloat,
+//     exceeds the placeholder bound `kAngleSelectMaxRoundingRad = 2^-40 rad`.
+// A RUN-TIME arm (a parameter, a load, a call result, an `fpext`, a run-time
+// `fsub`) is REFUSED — clause (2c), the Rule-13 CLEARANCE narrowing (finding
+// F-11, owner option (2): the accept class is CONSTANT arms only). There is no
+// compile-time difference to evaluate, so the two clauses above cannot run at
+// all, and the `fsub` the emitter would synthesize carries an error UNBOUNDED in
+// absolute radians (measured 0.858 rad from plain C) and can be `inf`/`NaN` from
+// two FINITE arms. Widening back is owner option (1), one line at (2c).
+//
+// TWO CALLERS, ONE SPELLING (Rule 14): `classifyAngleSelect`'s S1 (returning
+// `NotApplicable`, so the caller's pre-existing `rotation angle` decline fires
+// unchanged — no new string) and `emitAngleSelectRegion`'s step-0 re-ask (a
+// plan/IR-mismatch `control flow` decline, so no path can reach emission with a
+// bad arm). Pure analysis; the derivation is at the definition in
+// `ArmClassify.cpp`.
+bool angleSelectArmsAdmissible(const llvm::Value *A, const llvm::Value *B);
+
+AngleSelectDisp classifyAngleSelect(llvm::SelectInst *Sel, const CondTree &Tree,
+                                    TaintSet &Taint, WidthDispatch &wd,
+                                    llvm::DominatorTree *DT, llvm::LoopInfo *LI,
+                                    ControlPlan &plan);
 
 }  // namespace cq
 

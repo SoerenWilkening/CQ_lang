@@ -18,6 +18,7 @@
 namespace llvm {
 class BasicBlock;
 class BranchInst;
+class Instruction;
 class PHINode;
 }  // namespace llvm
 
@@ -35,6 +36,25 @@ llvm::BasicBlock *uncondSucc(llvm::BasicBlock *BB);
 // Does `BB` end in a tainted-condition conditional branch? (the nested-control
 // signal — an arm that is itself a quantum-controlled region.)
 bool hasTaintedCondBranch(llvm::BasicBlock *BB, TaintSet &Taint);
+
+// Is `Entry` on a CFG CYCLE? A pure successor reachability from `Entry`'s
+// successors back to `Entry` — reducibility-INDEPENDENT (an irreducible cycle has
+// no `LoopInfo` loop and would be invisible to `getLoopFor`) and
+// unbounded-but-finite (each block visited once, unlike
+// `llvm::isPotentiallyReachable`, which answers `true` once its 32-block scan
+// limit is hit and would over-decline a legitimate diamond in a large function).
+//
+// This is the walk `regionEntryInLoop` is built from, exported for
+// `ArmClassify::classifyAngleSelect`'s S7 (bd drbq Inc 2b round-1 Rule-13 review,
+// lens L3-1: S7 asked a NARROWER `LoopInfo`-only question than every sibling and
+// accepted an angle select on an irreducible cycle that the manual by-difference
+// diamond declines). ONE walk, two callers — Rule 14.
+bool blockOnCycle(llvm::BasicBlock *Entry);
+
+// `blockOnCycle` of the block `Term` terminates: "is this region's entry on a
+// cycle". The d8jl guard; see the block comment at its definition
+// (`ControlDetect.cpp`) for the three dispatch arms it is wired into.
+bool regionEntryInLoop(llvm::Instruction *Term);
 
 // The sole 2-incoming merge `φ` of block `M`. Null if `M` has not exactly one
 // PHINode, or that phi is not 2-incoming (a mixed gate+angle merge, or a
