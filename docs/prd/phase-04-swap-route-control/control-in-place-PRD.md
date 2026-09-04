@@ -1045,3 +1045,833 @@ already re-anchored the in-loop gate onto the base — a change there silently
 narrows S7 (lens R1 item 3). This is what makes the C
 `if/else` with two rotations on one register compile (clang merges it into exactly this
 shape); the hand-IR if/else fixture stays as the two-block form's pin.
+
+---
+
+## 13. Increment 3 design — the Ry arm in the 8h7d.5 rolled loop (settled 2026-09-04)
+
+> **Status: DESIGNED, NOT IMPLEMENTED.** Written at HEAD `1bdaa60` against a
+> `cq-opt` byte-identical to the pre-Inc-3 oracle (`md5 5ae372bf94d7dffd…`, 43
+> stderr comparisons and 10 lowered-IR comparisons, **0 differences** — the two
+> binaries are the same file, so every "measured on both binaries" claim below is
+> literal rather than a coincidence re-checked per program). Implementing epic bd
+> `test_C_libtooling-drbq`, child `drbq.4`. Owner scoping Q8: *"in a classical loop
+> (so classical bounds), cRy should NOT decline. nesting is a different story."*
+> **A Rule-13 core change** touching `ArmClassify`, `SwapRouteEmit` and
+> `LoopLowering` — three of the six modules Rule 13 names. Budget **≥3 adversarial
+> rounds**: the loop machinery is 4-for-4 on hidden over-accepts and this epic is
+> 3-defects-in-round-1.
+>
+> **THE HEADLINE, AND IT IS NOT WHAT THE INCREMENT WAS SCOPED AS.** Lifting R7's
+> loop clause is **necessary and not sufficient**. Measured on the nine in-loop
+> Ry-arm C programs, the *printed* diagnostic is
+> `condition predates a non-diagonal gate` for every one of them — and that string
+> is a **re-spelling**, not the reason (`ArmClassify.cpp:1342-1348`'s `declineArm`
+> lambda rewrites every later decline whenever the condition wire carries a
+> provably-post-region non-diagonal gate, which the customer's own
+> `q = cq_theta(q, θ)` reflection always is). Change that one token to `cq_phi` and
+> the real reason appears: `control flow inside a loop body`, `ArmClassify.cpp:1645`,
+> R7, in **all nine**. But the hand-unrolled TWIN of the same programs **also
+> declines**, with **no loop present at all**, at a *second and independent* fence —
+> `ArmClassify.cpp:2011-2013`, the Increment-4 P1 clause
+> `if (DeferredWireGate && (SawValueArm || !SawPhaseArm))`, which is
+> **phase-arm-only** and has no `SawRotationArm` disjunct. So the flagship customer
+> (Grover: Rz oracle + controlled Ry on an ancilla + **Ry** reflection) is *two*
+> fences away, the 8h7d.5 rolled-vs-unrolled byte-identity witness does not exist
+> for it until P1 moves, and an Inc 3 that lifts only R7 ships the Rz-reflection and
+> dtzb-offset loops while still declining the program it was scoped for — which is
+> Rule 17's "a decline is not the development escape hatch". **Both fences move in
+> this increment.** §13.4b owns P1.
+
+### 13.1 The accept shape, and the physics
+
+**The shape.** A `BranchRegion` that satisfies §4's R1–R6 verbatim, whose `Pred`
+sits inside a loop `L` that `ControlDetect::flatRegionRollableInLoop` proves
+rollable ((A) natural `LoopInfo` loop, (B) every region block at exactly `L`'s
+depth, (C) single latch, (D) the entry on no cycle other than `L`'s back edge),
+whose rotated base's **rail crosses `L`'s back edge** (§13.2 row L-b), and whose
+condition-wire disposition is `None` or `ProvenPostRegion` (§13.4b). The region's
+arm is ONE tainted-arg-0 `cq_theta` on a register whose physical wire is disjoint
+from every condition wire (R4), with no post-region read of a pre-Ry record of that
+wire **per activation** (R6, §13.3). Diamond and if/else; one region per condition,
+any number of regions per loop body (sequential regions in a loop already lower for
+the Rz stem — `control_swap_inloop_seq.ll`). Depth-2 nests, switches, angle
+selects, value arms, `ShareCondFlag`, classical-call arms, irreducible cycles,
+multi-latch loops, state prep and Ry on the condition wire all keep their declines
+(§13.2). The loop stays **ROLLED**: one copy of the body, IR size independent of
+the trip count.
+
+**FROM C, THE CONDITION REGISTER MUST BE LOOP-VARIANT.** This is not a fence, it
+is a consequence of `clang -O1`, and it is a THIRD wall the matrix found (§13.2 row
+W): with no gate on `q` in the body, `q` is loop-invariant, so LICM hoists the literal
+compare `q == 5` into the preheader (and CSEs the two compares in the hand-unrolled
+twin). `condWireDisposition`'s P4 precondition then fires — `Cond->getParent() !=
+R.Pred`, `ArmClassify.cpp:947-948` — and BOTH sides decline `condition predates a
+non-diagonal gate` before any rotation clause is reached. So the C accept class is
+exactly: **a gate on the condition register inside the body** (`q = cq_phi(q, θ)`, a
+dtzb `q += off`, an `Rz` region on `q`, or — after §13.4b — `q = cq_theta(q, θ)`), OR
+a compare that reads something the optimizer cannot hoist (a `volatile`, which is what
+the matrix's `oeq`/`one`/`oder` opaque family uses). **The Grover customer always
+satisfies this** — its reflection is exactly such a gate — but the simplest C spelling
+of the shape does not, and it will STILL decline after this increment (§13.10 Q1).
+
+**The physics, per activation.** Nothing about the unitary is new — this is
+Increment 1's stream executed K times. Each trip: mint `f = [pred(C)]` on a fresh
+`|0⟩` rail from the condition registers' *current* basis; fire
+`cqrt_ry_<W>_controlled(f, R, θ)` (bracketed in a self-inverse `cqrt_x(f)` pair on
+a ¬flag arm); strip `f` with the uncontrolled `cq_template_icmp_…_hl_unc(f, C, k)`,
+which recomputes the predicate on `C` and XORs it back — valid because R4 proves
+`R`'s wire ∉ `C`'s wires, so `C`'s computational basis at the strip is the basis the
+mint read; `cqrt_free(f)` on a provably-`|0⟩` rail (Rule 6). The register `R` is
+relabelled on the `f=1` branch of *this* activation, and the rail is loop-carried
+**through** the region: the state entering trip k+1 is the state trip k left. The
+flag is the region's only ancilla and it is born and dies inside the iteration, so
+**nothing dirty crosses the back edge** — the same property the 8h7d.5 phase path
+was cleared on, with `cqrt_rz_<W>_controlled` replaced by `cqrt_ry_<W>_controlled`
+and one extra obligation: an Ry is **not** diagonal, so the rail-record machinery
+must see it as a gate (§13.3, §13.4). `R` is FROZEN by Inc 1's structural freeze —
+never reverse-played, never freed — per activation as well as flat (§13.5).
+
+**The per-activation reference stream, measured**, from `FLAT1x1diag`
+(one activation; the FLAT twin with an `Rz` reflection, since the `Ry`-reflection
+twin does not lower at HEAD — that is the P1 finding):
+
+```
+cq_template_icmp_eq_i32_hl(%h, 5) -> %h_cmp
+cqrt_ry_i32_controlled(%h_cmp, %h1, 9.0e-01)
+cq_template_icmp_eq_i32_hl_unc(%h_cmp, %h, 5)
+cqrt_free(%h_cmp)
+```
+
+Four calls per region per activation, no `cqrt_alloc` in the body, no `cqrt_cswap`,
+no work rail. That block, repeated once per trip in the hand-unrolled twin, is what
+the rolled body must emit **once**, byte for byte — the increment's load-bearing
+witness (§13.9 lens 7).
+
+### 13.2 The decline partition
+
+Every row is a **loud** `DiagnosticInfoUnsupported` with a negative fixture
+mirroring the string character-for-character (Rule 12). **No new diagnostic string
+is added by this increment** — every decline below reuses one already in the
+dialect, which is deliberate: a new string is new fixture surface and this
+increment has enough.
+
+| # | shape | clause that owns it | exact diagnostic (post-`under quantum control` suffix where shown) | fixture |
+|---|---|---|---|---|
+| L-a | irreducible cycle carrying the region | `flatRegionRollableInLoop` (A) | `cq controlled lowering: control flow inside a loop body under quantum control` | `control_inplace_ry_reject_inloop_irreducible.ll` |
+| L-b | **rotated base's rail does not cross `L`'s back edge** (an iteration-local rotated register) | NEW R7-loop clause (b), §13.2b | same | `control_inplace_ry_reject_inloop_iterlocal_base.ll` |
+| L-c | region blocks at two loop depths / nested loop | `flatRegionRollableInLoop` (B) | same | `control_inplace_ry_reject_inloop_nested_loop.ll` |
+| L-d | multi-latch loop | (C) | same | `control_inplace_ry_reject_inloop_multilatch.ll` |
+| L-e | a second, `LoopInfo`-invisible cycle through the entry | (D) | same | `control_inplace_ry_reject_inloop_second_cycle.ll` |
+| L-f | depth-2 nest inside a loop | `ControlDetect` `RegionShape::Nested` + `regionEntryInLoop` | `cq controlled lowering: nested control flow under quantum control` | `control_inplace_ry_reject_inloop_nested.ll` |
+| L-g | tainted `switch` in a loop | `SwitchClassify` / existing | existing string | `control_swap_reject_inloop_switch.ll` (exists, unchanged) |
+| L-h | tainted-condition **angle select** in a loop or on any cycle | `classifyAngleSelect` S7 (§13.6 — **stays declined**) | `cq controlled lowering: control flow inside a loop body under quantum control` | `control_angle_select_reject_loop_*.ll` (exist, unchanged) |
+| L-i | `if/else` with a rotation in EACH arm, in a loop | `clang -O1` folds it to an angle select ⇒ L-h | as L-h | `control_inplace_ry_reject_inloop_ifelse_c.ll` (C-shape note) |
+| L-j | method-B **value** arm in a loop | `ControlDetect` in-loop scope fence part 2 | `control flow inside a loop body` | `control_swap_reject_inloop_value_arm.ll` (exists) |
+| L-k | 6.5 classical-call arm in a loop | in-loop scope fence part 1 (classifier skipped) | existing | existing |
+| L-l | quantum/measurement-bounded loop exit | `tryCaseA` L1 (runs BEFORE detection) | `cq loop lowering: loop under quantum control` | existing |
+| L-m | X1 cross-iteration dirty rail | `collapseRailPhisIn` step (1) / `tryCaseA` | `cq loop lowering: loop-carried tainted value crosses iterations` | existing |
+| R4 | Ry on the CONDITION register's own wire, in a loop | R4 (a wire-SET question — position-free, unaffected by the loop, §13.3d) | `cq controlled lowering: rotation arm on a condition wire under quantum control` | `control_inplace_ry_reject_inloop_cond_register.ll` |
+| R6-1 | a pre-Ry record read after the loop (`int mark = r;` … `cq_measure(mark)`) | R6 per activation, §13.3 | `cq controlled lowering: stale rail record read past a controlled Ry under quantum control` | `control_inplace_ry_reject_inloop_premark.ll` |
+| R6-2 | the **j4** shape: a dead `cq_phi(r_pre, ·)` written after the region in the body | R6 per activation (ALIAS-HOP half) | same | `control_inplace_ry_reject_inloop_j4.ll` |
+| R6-3 | the **ALIAS** shape: a self-carry `%P = phi [%r0, pre], [%P, latch]` rotated in place while the merge escapes (two copies of one wire — Rule 8) | R6 per activation, via the PHI-EDGE read-position rule; **and** independently by the refresh fence (`phiTracksWire(%P)` false) | same | `control_inplace_ry_reject_inloop_alias.ll` (hand IR) |
+| R1 | two thetas, or theta+phi, in one arm | `inPlaceRotationArmTheta` / homogeneity | `mixed phase/value arm` / `control flow` | `control_inplace_ry_reject_inloop_two_gates.ll` |
+| R1' | controlled **state prep** (classical arg-0) in a loop | R1 (Inc 4 owns it) | `control flow` | `control_inplace_ry_reject_inloop_stateprep.ll` |
+| R2 | tainted angle in a loop | R2 | `rotation angle` | `control_inplace_ry_reject_inloop_tainted_angle.ll` |
+| R7' | `ShareCondFlag` region in a loop | R7's ziov clause | `rotation arm shares the condition flag` | `control_inplace_ry_reject_inloop_sharecond.ll` |
+| P1 | condition wire gains a non-diagonal gate that is **not** provably post-region (before the compare, on a sibling alias, through a pre-compare router) | `condWireDisposition` → `DeclineNow` | `cq controlled lowering: condition predates a non-diagonal gate under quantum control` | `control_inplace_ry_reject_inloop_stalecond.ll` |
+| X | in-body pure-op read of the register that `clang -O1` **sinks to the exit block** (`acc = r * 7`) | **`declineStaleRecordOps`, a DIFFERENT STAGE** (`CQLoweringPass.cpp:282`, before detection) | `cq opcode lowering: operand predates a non-diagonal gate` | recorded, not owned here |
+| **W** | **condition register LOOP-INVARIANT** ⇒ `clang -O1` LICM-hoists the compare to the preheader (rolled) and CSEs the two compares (flat), so the compare no longer lives in the region's `Pred` | **`condWireDisposition`'s P4 precondition**, `ArmClassify.cpp:947-948` (`Cond->getParent() != R.Pred` — "unbounded gap across blocks"), reached from `classifyArms`' call at `ArmClassify.cpp:1325-1326` | `cq controlled lowering: condition predates a non-diagonal gate under quantum control` | `control_inplace_ry_reject_inloop_invariant_cond_hoisted.ll` (+ a C-shape note) |
+| **DB** | a DERIVED OUT-OF-PLACE base minted before the loop (`int r = p * 5;` then the Ry arm on `r` in the body) — the finding-L family | `collapseRailPhisIn` step (1) requires the root to peel to a **classical-arg-0 `cq_theta` mint**; a `mul` is not a `CallInst`, so it `continue`s and `r`'s header φ is never collapsed. The surviving tainted header φ then reaches `declineClassicalMuxes` (`:399`), where `liftOneRegisterMergePhi` fails at its clause (3): `resolveWireBase(%mul)` = `%mul` while `resolveWireBase(T)` peels to the header φ, two distinct bases | `cq taint escape: tainted value muxed by a classical-condition phi` — **loud, but downstream of emission and the flatten, and it mislabels a quantum register as a classical mux** | `control_inplace_ry_reject_inloop_derived_base.ll`; see §13.2c |
+| Y | a rail record read past an in-place gate, post-flatten | `LoopLowering` round 2 `staleRailRecordRead` | `cq loop lowering: rail record read past an in-place gate on the same rail` | `lowering_reject_inloop_rail_*.ll` (exist) |
+| Z | Rule-8 fan-out on the loop-carried rail | `collapseRailPhisIn` step (2) | `cq loop lowering: loop-carried rail has multiple in-place consumers` | existing |
+
+**Row X is the one a reader will get wrong, so it is stated with its measurement.**
+`BODYREAD` (`for (…) { if (q==5) r = cq_theta(r,.9); acc = r*7; } measure(acc)`)
+declines **before control detection ever runs**, because `clang -O1` sinks the
+`mul` into the loop exit block and `declineStaleRecordOps` (pipeline step at
+`CQLoweringPass.cpp:282`) refuses it on `r`'s wire. Lifting R7 does **not** make it
+compile, and it prints `<unknown>:0:0` even in a `-g` build because clang drops the
+sunk instruction's `!dbg`. Do not write a fixture that claims this row for R6.
+
+**Row W is the third wall, it was found by the MATRIX and not by this analysis, and
+the matrix agent's own attribution of it is one clause off — corrected here from the
+IR.** The remedy family in the matrix (`oeq`/`one`/`oder`, whose compare reads the
+`volatile int off`) is right about the *cause* — the compare is hoisted/CSE'd out of
+the region's `Pred` — but the clause that fires is **not** the wire-blind gate-2c
+WINDOW scan (`ArmClassify.cpp:954-962`, the compare→branch chained-`cq_theta` loop).
+It is the **P4 precondition two lines above it** (`:947-948`). Measured, on
+`m_none_req_none_none_none`'s own `-O1` IR: rolled, `%3 = icmp eq i32 %1, 5` sits in
+the ENTRY block while the region's `Pred` is the loop header `%8`; flat, the two
+compares are CSE'd to one `%3` in the entry block while region 2's `Pred` is region 1's
+merge `%6`. In both cases `Cond->getParent() != R.Pred` and the function returns
+`DeclineNow` **before** the window scan runs — so **the arm's own Ry on `r` plays no
+part in this decline at all**. That distinction is load-bearing for the remedy (§13.10
+Q1): making the window scan wire-aware would not move one of these 16 cells.
+
+**Disposition for Inc 3: row W STAYS DECLINED, recorded as an OVER-DECLINE.** The
+argument that it is one: the only thing between the hoisted compare and the branch is
+the arm's own `cq_theta` on `r`, and **R4 has proved `r`'s physical rail disjoint from
+every condition rail** — so the flag minted at `BI` reads exactly the basis the source
+compare read, and the `icmp_…_unc` strip returns it to `|0⟩`. The unitary is fine; what
+is missing is a clause that can *say so*. Both P4 and P5 are position-only and
+wire-blind by design, and widening either is a sibling-spelling change shared with the
+phase path, the 4.4 select's gate 2c and 2b's S6 — a Rule-13 change to four callers,
+which is why it is **not** in this increment. The fixture pins it as a DECLINE with the
+exact string, so the day it moves, it moves deliberately.
+
+**§13.2c — row DB, and it is a MANDATORY IMPLEMENTER PROBE, not a settled row.** The
+disposition above was derived by READING (`collapseRailPhisIn` step (1)'s
+`dyn_cast<CallInst>(Root)` test; `resolveWireBase`'s two bases; `declineClassicalMuxes`'
+own comment, which names "derived fresh-rail incomings" and "loop-reachable merges" as
+declined). **It could not be measured, because R7 declines first at HEAD** — so it is
+the FIRST thing to run with R7 lifted, before anything else in the increment is
+trusted. Two things follow if the probe confirms it. (i) The decline is **loud and
+therefore safe**, but it is a decline AFTER the region was emitted and `flattenRegion`
+erased the diamond — the "accepted then declined downstream" shape this file has
+already had to fix once (§11.2), and its message mislabels a quantum register as a
+classical mux, which is exactly `ControlDetect`'s d8jl complaint about leaning on that
+guard. (ii) The detection-time fix is a **clause (b′)** on R7-loop: the header φ found
+by clause (b) must additionally have its EXTERNAL incoming peel — through in-place
+steps — to a **classical-arg-0 `cq_theta` mint**, i.e. `collapseRailPhisIn` step (1)'s
+own claim condition asked at detection. Spell it by CALLING `peelInPlaceBase` and the
+same `dyn_cast<CallInst>` + untainted-arg-0 test, never by re-writing them (Rule 14 —
+this is a second reader of one predicate, which is how two spellings start to
+disagree). If the probe shows the module accepts and emits instead, that is a
+CONFIRMED over-accept and the increment stops.
+
+**Row L-i is a C-level fact, not an IR-level clause.** `clang -O1`'s SimplifyCFG
+merges `if (c) r=R(r,A); else r=R(r,B);` into ONE call with a `select` on the
+ANGLE (drbq Inc 2b), so the in-loop if/else *from C* is an angle select and is
+owned by S7. The hand-IR two-block if/else form is a genuine `BranchRegion` and
+**is in the accept class** (`control_inplace_ry_inloop_ifelse.ll`, hand IR, the
+same asymmetry Inc 1 records for the flat case).
+
+#### 13.2b The one new accept-shape clause: R7-loop (b)
+
+R7's loop half becomes: `Region.InLoop` is admitted **iff** some member of
+`BaseWire` (the rotated base's `railWireClosure`, already computed for R4/R6) is a
+`PHINode` in `L`'s header. Rationale, and it is a scoping clause rather than a
+safety one: Inc 3 is *the Ry arm on the loop's persistent register*. An
+**iteration-local** rotated register (minted inside the body) is a different
+capability, and it is not merely unscoped — it is measurably **not twin-identical**:
+its escape makes `markIfRailLocal` refuse the marking, so the rolled form leaks the
+condition chain once per trip while the hand-unrolled twin discharges it. That is a
+*different circuit*, which is exactly what the twin matrix exists to catch. Declining
+it is correct scoping (the shape was never the target), not a Rule-17 punt.
+
+### 13.3 R6 PER ACTIVATION
+
+**Why the shipped clause cannot stay.** R6's two position predicates are flat:
+`provablyBefore(U, BI)` for a genuine read and `cannotFollowGate(U, BI)` =
+`!isPotentiallyReachable(BI, U)` for an alias hop. Both contain the reachability
+conjunct, which **every back edge falsifies** (bd
+[`provably-before-per-activation`]). Inside a loop the closure additionally reaches
+values it never reaches flat: `railWireClosure` crosses phis **backward**, and the
+loop-carried header φ `P`'s latch incoming is (S2) the region's own merge φ `m` or
+(S1) a post-region gate whose arg-0 is `m` — so `m`, and through it the arm theta
+`T`, become **members**, defeating the forward `Exclude = MergePhi`. Every one of
+their in-loop users then fails both flat predicates. This is measured, not argued:
+`control_inplace_ry_reject_in_loop.ll`'s own header records that before R7's loop
+clause was moved ahead of R6, that module declined on the *stale-record* string.
+
+**The predicate.** For an `InLoop` region, and **only** for one (flat regions keep
+both shipped predicates verbatim, so no acyclic shape moves), each enumerated user
+`U` of each member `M` owes:
+
+> Let `D = def(M)` (an `Instruction`; a non-instruction member has no `D` and the
+> obligation FAILS). Let `p(U)` be `U`'s **read position**: `U` itself, or — when
+> `U` is a `PHINode` — the **terminator of the incoming block on the edge that
+> names `M`**. Let `BI = Region.Pred->getTerminator()`.
+>
+> **OK iff `D` REFRESHES and `!reachesWithoutBarrier(BI, p(U), {D})`** — i.e. every
+> CFG path from the region's branch to the read re-executes the record's own
+> definition first.
+
+Three parts, each with its reason:
+
+* **The barrier is `D`, the record's own definition — never `BI`, and never `U`.**
+  The premise being re-established is *"`M` denotes the register"*, and `D` is the
+  instruction whose execution establishes it (the stale-record family's barrier;
+  `WireWalk::gateIsHarmless` and `LoopLowering::railGateBetween` both take it). The
+  bd `drbq.4` note proposing `BI` is **wrong and is corrected here**: with
+  `Barrier == B == BI` the walk asks "can you get from `BI` back to `U` without
+  passing `BI`", which is FALSE for every `U` positioned *before* `BI` in the body —
+  i.e. for the ordinary pre-region read the clause must accept. `Barrier == A` is
+  refused outright by `provablyBeforePerActivation` (the P1 vacuity lesson, bd
+  [`peractivation-barrier-must-not-be-subject-p1`]); `Barrier == D` cannot alias
+  `p(U)` here (a value is not its own user except a self-carry φ, whose read
+  position is the latch terminator ≠ `D`) and the implementation asserts it.
+* **The gate position is `BI`, not `T`.** At detection `T` still sits in the arm
+  block, so a path through the *merge* that skips the arm never "sees" it — while
+  the **hoisted** controlled gate executes unconditionally at `BI` on every
+  activation. Asking at `BI` is both the conservative reading and the post-emission
+  truth.
+* **The refresh fence.** The certificate's premise is *"re-executing `D`
+  re-establishes `M`"*. True by construction for an in-place gate or a producer
+  (it re-reads the wire). **FALSE for a φ that does not track the wire** — bd
+  [`identity-carry-phi-does-not-refresh`] — so a `PHINode` `D` must satisfy
+  `WireWalk::phiTracksWire(D)` or the disjunct is refused. Reuse that predicate
+  (Rule 14); do **not** re-spell `LoopLowering::recordRefreshedByDef`, which asks
+  the same question over a *post-flatten* gate set this stage does not have.
+
+**The API.** `WireWalk::everyPathReExecutes(From, To, Barrier)` is already exported
+for exactly this — a per-activation **window** certificate *without* the dominance
+conjunct `provablyBeforePerActivation` bundles. Use it. **The dominance conjunct is
+deliberately dropped in-loop, and that is the ONE widening this clause makes**:
+`provablyBefore ⇒ certificate` and `cannotFollowGate ⇒ certificate`, so the
+certificate is strictly weaker than both, which is why the flat path must keep its
+own spelling. Dominance answers *"did `U` definitely execute"*, a question R6 has
+never asked (see `cannotFollowGate`'s own header); keeping it in-loop would refuse
+the customer's own post-loop `cq_measure(r)`, whose read position sits in the exit
+block and dominates nothing.
+
+**Two sets, two questions — unchanged.** The MEMBER set (whose users are
+enumerated) stays `BaseWireOrder`; the SKIP set (users exempt from a position
+proof — the alias hops) stays `BaseWire`. In-loop both obligations collapse to the
+same certificate, which is a **relaxation for reads** and no change for hops. Say
+that out loud rather than deleting the distinction: the sets still differ, only the
+predicate they feed is now common.
+
+**Worked check** (all shapes measured at HEAD; the `-O1` topology cited is from
+`ir/<P>.s1.ll`):
+
+| shape | member / user | verdict | why |
+|---|---|---|---|
+| **S1** `for(){ if(q==5) r=Ry(r,.9); r=Ry(r,.25); q=Ry(q,.1); }` | `m` (merge φ, a member via `P`'s latch incoming `r_next = cq_theta(m,.25)`) / user `r_next` (a HOP) | **ACCEPT** | every `BI → r_next` path enters the merge block and re-executes `m` first |
+| S1 | `m` / user = the post-loop `cq_measure` | **ACCEPT** | `BI → merge(m) → exit → measure` re-executes `m`; the flat `dominates` conjunct would have refused it |
+| **S2** (no post-region gate; `P`'s latch incoming IS `m`) | `r0` (the mint) / user `P` on the ENTRY edge | **ACCEPT** | the **phi-edge rule**: `p(P) =` entry's terminator, unreachable from `BI` ⇒ the certificate is vacuously satisfied. Without the edge rule this row alone kills S2 |
+| **S11** `for(){ r=Ry(r,.25); if(q==5) r=Ry(r,.9); … }` (routed base is the leading gate `G`, **defined in the header above the compare**, not the header φ — measured) | `P` / user `G` | **ACCEPT** | every `BI → G` path re-enters the header and executes `P` (top of block) before `G` |
+| **ALIAS** `%P = phi [%r0,pre],[%P,latch]` rotated in place, `m` read elsewhere | `P` / user `P` itself on the LATCH edge | **DECLINE** | `p = latch terminator`; `BI → arm → merge → latch` never re-enters the header, so `D = P` is not re-executed. **Independently**: `phiTracksWire(P)` is false (a `cq_theta` on `P` runs between the incoming and the edge), so the disjunct is refused before the walk |
+| **j4** `pre = r; if(q==5) r=Ry(r,.9); d = cq_phi(pre,.2);` | `P` / user `d` (a HOP, `forwardRailHop` admits `cq_phi`) | **DECLINE** | `BI → merge → d` does not re-execute `P`. Correct: `Rz` after the `Ry` is a different unitary from `Rz` before it |
+| **PREMARK** `mark = r;` before the loop, `cq_measure(mark)` after | `r0` / the measure | **DECLINE** | `D` = the mint, in the entry block, never re-executed; `BI → merge → exit → measure` carries no barrier |
+| **BODYREAD** sunk `acc = r*7` | — | **DECLINE, elsewhere** | `declineStaleRecordOps`, before detection (§13.2 row X) |
+
+### 13.4 The post-flatten mechanism: **M-β**, and the emitter's RAUW target
+
+**The problem, stated as the two shapes that break.** `emitInPlaceRotationRegion`
+step 4 does `MergePhi->replaceAllUsesWith(Base)` and then `flattenRegion` erases the
+CFG. Inside a loop that RAUW **destroys the fact that the loop's carry went through
+the region**, and two of the three flagship shapes then die on `LoopLowering`'s
+round-2 machinery — not on a physics fence, on bookkeeping:
+
+* **S2** (no post-region gate) becomes the **zero-hop identity carry**
+  `%P = phi [%r0, entry], [%P, latch]` with the hoisted `T = cq_theta(%P, .9)` in the
+  body. `recordRefreshedByDef(%P)` answers **FROZEN** (the F-2 rule: a self-carry
+  that crosses no gate does not refresh), so `railGateBetween` takes no cut, walks
+  `%P → T (a gate) → latch → header → T` and reports a stale read of `%P` at `T`:
+  a LOUD `rail record read past an in-place gate on the same rail` **on the
+  increment's own target shape** — Rule 17.
+* **S1** (post-region gate `r_next = cq_theta(m,.25)`, and `m` RAUW'd to `%P`)
+  gives `%P` **two** in-place `cq_theta` users, `T` and `r_next`, and
+  `collapseRailPhisIn` step (2) fires `loop-carried rail has multiple in-place
+  consumers`.
+
+Note S11 breaks on **neither** (its chain runs `%P → G → T`, so the carry crosses a
+real gate and `%P` has one in-place user). Two of three, which is why this needed
+deciding rather than measuring one program.
+
+**M-α (rejected).** Keep `RAUW(m → Base)`; widen `isHoistedRegionArmGate` to the Ry
+stem *for the fan-out count only*; keep `collectRailGates::noteGate` counting the
+hoisted `cq_theta` as a GATE for staleness; and teach `recordRefreshedByDef` that a
+self-carry φ refreshes when a hoisted controlled `cq_theta` in
+`taint.ControlledRotations` has arg-0 == `P` inside the loop.
+
+**M-β (SHIPPED).** For the **Ry stem only**, the emitter's RAUW target becomes the
+hoisted gate itself: `MergePhi->replaceAllUsesWith(T)` for a diamond, and for an
+if/else the two hoisted gates are **chained in emission order** — `T_f`'s arg-0 is
+set to `T_t`'s result and the merge φ is RAUW'd to the LAST one. `T` dominates the
+merge (it is hoisted into `Pred`, which dominates `MergeBB`), so the RAUW is
+well-formed. `lowerRotations` then does `Theta->replaceAllUsesWith(Handle)` on every
+hoisted theta exactly as it does today, so **the final lowered IR is identical** —
+every SSA name on one rail ends on one `cqrt_alloc` handle either way.
+
+**Why M-β wins, in one sentence:** it makes the SSA say what is physically true —
+the hoisted controlled Ry *moved the register*, so the value after it is a different
+state from the value before it — and every `LoopLowering` predicate then reads the
+truth with **no exemption, no licence, and no cross-file dependency**. Under M-β the
+chain is `%P → T → (r_next) → %P`, so `T` is a chain **MEMBER**: it is in the SKIP
+set (its own execution *is* the wire moving), it is in `Gates` (it *is* a
+relabelling gate — correct), and `%P`'s carry crosses it, so
+`recordRefreshedByDef(%P)` is TRUE with the F-2 rule **unchanged**. `%P`'s single
+in-place user is `T`; `T`'s is `r_next`. Hand-simulated on S1, S2 and S11: all three
+accept with no predicate edited. M-α, by contrast, needs **two** independently-written
+licences over one closure — precisely the 8h7d.5 F-1/F-3 shape the site comment on
+`isHoistedRegionArmGate` warns Inc 3 about — and its refresh licence would rest on
+`ArmClassify`'s R6 refusing the alias shape, i.e. **a fence in another file**, the
+bd [`mint-at-consumer-window-protection-lives-elsewhere`] pattern. That is M-α's
+fatal flaw: not unsoundness we can demonstrate, but that its soundness is not local
+to the file that enforces it.
+
+**What OTHER set is computed over the same closure** (the mandatory question). The
+change is *which value the merge φ is RAUW'd to*, so the audit is every consumer that
+reads that value between emission (`CQLoweringPass.cpp:323`) and `lowerRotations`
+(`:422`) — a bounded window, because after `lowerRotations` the two mechanisms produce
+identical IR.
+
+| reader, in pipeline order | what it decides | M-β verdict |
+|---|---|---|
+| a LATER region's `ControlRegion::RoutedBase` (`WeakTrackingVH`, follows RAUW) | the routed handle at emission | follows to `T` instead of `Base`; the later region's own theta operand followed the SAME RAUW, so the identity comparison in `emitInPlaceRotationRegion` still matches. **Pinned by `control_inplace_ry_inloop_seq.ll` + the existing `control_inplace_ry_sequential.ll`** |
+| the bd `hcrg` precedence graph | emission ORDER | reasons about **BasicBlocks**; a RAUW target is a VALUE. Unchanged — and that is the L4 §1 lesson in reverse (blocks were protected, values were not), so it is listed rather than assumed |
+| `collapseFlattenedLoopRails` / `collapseRailPhisIn` (`:340`) | the rail chain, gates, fan-out, records | **THE POINT OF THE CHANGE.** `T` becomes a chain member; nothing is edited |
+| `markIfRailLocal`'s `onRail` | register vs iteration-local temp | `peelInPlaceBase(T, AsLowered=true)` peels `T` to the collapsed root under **both** mechanisms, so `T` classifies as ON THE RAIL either way — but under M-β that is a *fact* (its result is the register) rather than a coincidence about a dead value |
+| `lowerIOSinks` / `lowerQramReads` / `lowerShadowMemory` | tainted sinks | operate on the same values; `T`'s result is tainted under both. **Audit, do not assume** |
+| `declineClassicalMuxes` (`:399`) | live select/φ over tainted data | the region's φ is erased by the emitter either way; the loop's rail φ is erased by `collapseFlattenedLoopRails`, which runs at `:340`, BEFORE this. **Audit the un-claimed-loop path** |
+| `liftOneRegisterMergePhi` / `repropagateControlMerges` (`:402`) | classical join φs RAUW'd to the base | `T` is not a φ; the finding-K class is unchanged. **Audit** |
+| `declineLiftedStaleRecordOps` | post-lift stale records | **Audit** |
+| Phase-6 `specialize` (`:413`) | clone-on-taint arguments | a post-region consumer that is a clone argument now names `T`. Keys on taint, not identity. **Audit** |
+| `lowerRotations` (`:422`) | the mint + `replaceAllUsesWith(Handle)` | collapses both mechanisms to identical IR — the byte-identity claim |
+
+**The implementer's witness for M-β is a whole-corpus lowered-IR diff against the
+pre-Inc-3 oracle** (`scratchpad/wt/pre3`): every one of the 1430 `ir-pass/test`
+fixtures and every e2e slice must produce **byte-identical lowered IR**, except the
+in-loop shapes this increment newly accepts. Anything else in that diff is a finding,
+not a regeneration. `tools/inplace_twin_matrix.py` against the same oracle is the
+second.
+
+**The §12.1 stem table gains a row** (and the split is the same physics, not a new
+one):
+
+| stem | DAG link | adjoint | freeze | WireWalk | **emitter RAUW target (NEW)** |
+|---|---|---|---|---|---|
+| `cqrt_ry_<W>_controlled` | link | never → whole DAG `NotClosed` | frozen | relabelling gate | **the hoisted gate `T`** — it moved the register, so the post-gate name must be a different SSA value |
+| `cqrt_rz_<W>_controlled` | NOT a link | none | not frozen | transparent (diagonal) | the base `Q` (as shipped) — diagonal, so the two names denote the same computational-basis state and either target is correct |
+
+**The Rz stem stays on M-α in this increment**, and `isHoistedRegionArmGate` keeps
+its `cq_phi_` restriction with its written obligation **discharged rather than
+inherited**: the reason it is unnecessary for Ry is not that the licence was
+granted, but that M-β removes the need for one. Moving Rz to M-β would retire
+`isHoistedRegionArmGate` outright and leave ONE emission convention — file it
+(**follow-on `drbq.11`**) rather than doing it here: the Rz stem shipped 2026-09-03
+with a clearance, it touches 26 goldens' worth of already-cleared surface, and the
+audit above would have to be re-run for a stem whose current mechanism is
+*provably* sound (a diagonal gate genuinely is not a rail gate). Two conventions in
+one file is a real cost and it is paid deliberately; the site comment must say which
+stem uses which and why.
+
+#### 13.4b P1 — the second fence, and it is NOT optional
+
+`ArmClassify.cpp:2011` (the string it prints is at `:2013`):
+`if (DeferredWireGate && (SawValueArm || !SawPhaseArm))` declines. `DeferredWireGate` is set when `condWireDisposition` returns
+`ProvenPostRegion` — the Increment-4 accept: a non-diagonal gate exists on the
+condition's wire but **every one of them is provably after the region's entire
+emitted stream**. A control-in-place rotation arm sets `SawRotationArm` and never
+`SawPhaseArm`, so `!SawPhaseArm` is true and the region declines.
+
+**Measured, at HEAD, both binaries:**
+
+| program | result |
+|---|---|
+| FLAT `if (q==5) r=Ry(r,.9); q=Ry(q,.3);` | **DECLINE** `condition predates a non-diagonal gate` at `ArmClassify.cpp:2011` — no loop involved |
+| FLAT, same with `q=Rz(q,.3)` | **ACCEPTS** |
+| LOOP, `Rz` reflection on `q` | `control flow inside a loop body` (R7 only) |
+| LOOP, dtzb `q += off` | `control flow inside a loop body` (R7 only — a dtzb add is not a `cq_theta`, so the wire walk does not see it) |
+| LOOP, **`Ry` reflection on `q`** (canonical Grover) | `condition predates a non-diagonal gate` — **R7's decline wearing P1's string**, and after R7 lifts it declines *again* at P1 |
+
+**The change:** `if (DeferredWireGate && (SawValueArm || !(SawPhaseArm || SawRotationArm)))`.
+**The argument, and it is P1's own argument with the arm class substituted.** P1 refuses
+a VALUE arm because method-B copies a basis LABEL out and replays the chain on the
+routed rail, so a later in-place Ry on that wire is a genuine staleness hazard. An
+in-place rotation arm copies nothing, replays nothing and allocates no work rail: its
+entire emitted stream is `mint(f from C) ; [x(f)] cRy(f, R, θ) [x(f)] ; strip(f from C) ; free(f)`,
+all inserted before `BI`. `ProvenPostRegion` means the wire gate `G` satisfies
+`provablyBefore(BI, G)`, and `condWireDisposition`'s own lemma carries that to every
+call in the stream (dominance over `BI` implies dominance over each stream call, which
+precedes `BI` in `BI`'s block; `!reachable(G, BI)` implies `!reachable(G, S)` for each).
+So at the moment `G` fires, the flag is already stripped and freed and `R`'s
+relabelling is complete; and R4 has proved `R`'s wire ∉ `C`'s wires, so `G` is not on
+the register this arm touched. The residual is **identical to the phase arm's**: a
+DERIVED condition leaves template rails entangled with `C`, live past the strip, which
+a later Ry on `C` dephases — a property of the CONDITION's chain, not of the arm class,
+and owned since bd `lyyf` by M-A's `warnLiveRecordRotations` as a `DS_Warning`.
+
+**Blast radius, stated because it is the one place Inc 3 moves a FLAT program.**
+This widening also lowers the flat `if (q==5) r=Ry(r,.9); q=Ry(q,.3);` — which is
+half of the recorded over-decline bd `drbq.7`. The whole-corpus disposition sweep
+against the pre-Inc-3 oracle will therefore show accept-flips on **acyclic**
+fixtures, and every one must be individually accounted for (§13.9 lens 6). It gets
+its own red-green pair — `control_inplace_ry_post_region_theta_cond.ll` (accept,
+flat) and `control_inplace_ry_reject_post_region_theta_stalecond.ll` (the gate that
+is NOT provably post-region, still declining) — so the two halves of
+`condWireDisposition` cannot drift. Owner FYI in §13.10.
+
+### 13.5 The freeze inside a loop — ACCEPT the per-activation leak
+
+**What happens, traced through the code.** After `lowerRotations` mints
+`cqrt_ry_<W>_controlled(f, %h, θ)`, `ChainWalk::railCarriesControlledRotation(%h)`
+answers true **structurally**, from the emitted gate's own arg-1 use (never from a
+recorded `Value *` — finding L). `DagTraversal` then sets `D.NotClosed` at BOTH the
+step-1 walked-handle site and the step-3 ancestor site, which aborts
+`reverseTerminalGroup` and the M-B interior partition before either emits anything.
+So the register is **never reverse-played and never freed** — left allocated, Rule
+6's sanctioned fallback, exactly as in the flat `_dead_base_*` fixtures. `FreePoint`
+is never reached for it, so its back-edge reject (`kMsgLoopBackedge`) cannot fire on
+the frozen rail. In every customer shape `r` is `cq_measure`d after the loop and the
+spine would not have freed it anyway.
+
+**Iteration-local temps derived from the frozen rail** (`acc = r * 7` read inside
+the body, a 7.6 tape write, …) have a DAG whose step-1 walk reaches the frozen
+handle ⇒ `NotClosed` ⇒ that temp's rail is also left allocated. In a rolled loop
+that is **K rails at run time**, one per activation. Three facts make this an
+accept rather than a fence:
+
+1. It is **Rule-6 safe by construction**: left allocated, never freed dirty. The
+   only thing a `cqrt_free` could have done here is collapse a rail entangled with
+   `r` and hence with the condition.
+2. It is **identical in the hand-unrolled twin**, which leaks the same K rails for
+   the same reason — so `tools/loop_twin_matrix.py` reads `ACCEPT-IDENTICAL`
+   (or `-WARN`), which is the increment's witness, not a hole in it.
+3. It is **invisible to strict stage 2b** and that is documented, not discovered:
+   `free_pairing_check.py` counts `cqrt_alloc` mints and these rails are
+   TEMPLATE-minted (its own header says so; bd 8h7d.5 round-4 F-4 is the same
+   fact). Quoting a green stage 2b as evidence here would be false.
+
+**Owner FYI, not a question (§13.10):** the leak's *magnitude* is new even though
+its *class* is not. Flat, the freeze leaks O(1) rails; rolled, it leaks O(K). In the
+qubits-not-scarce regime this is accepted. The alternative — a new fence declining
+derived temps of a frozen rail inside a loop — would cost the whole
+`control_swap_inloop_diamond_iterlocal` family for the Ry stem while the Rz stem
+keeps it (Rz is not frozen), i.e. a stem asymmetry paid for with a decline of a
+correct circuit. Not recommended.
+
+**`markIfRailLocal` dispositions**, asked explicitly because it grants the spine a
+permission:
+
+* `onRail(T's result)`: `peelInPlaceBase(T, AsLowered=true)` peels through `T`'s
+  arg-0 to the collapsed root ⇒ **on the rail** ⇒ exempt from the escape check.
+  Under M-β that is correct on its own terms (the value IS the register). Under M-α
+  it would be a dead value classified as the register — true but for the wrong
+  reason, another small argument for M-β.
+* The **condition** chain's iteration-local temps (a derived condition's four
+  template rails) are on `q`'s rail, which carries **no** controlled rotation (R4
+  guarantees it), so they are NOT frozen and still discharge in-body exactly as they
+  do on the shipped phase path. The derived-condition slice keeps its three
+  discharges.
+* `markIfRailLocal`'s marking is a permission that `Uncomputation` and `FreePoint`
+  both re-verify, and not-marking is always safe. Nothing here weakens it.
+
+### 13.6 Angle select in a loop (S7 / S9) — **stays declined**
+
+**Recommendation: do not widen S7 in this increment.** The reason is structural and
+measured, not caution: `taint.InLoopFlattenedPreds` has exactly **one writer**,
+`SwapRouteEmit.cpp:1468`, and it is the **sole trigger** of
+`collapseFlattenedLoopRails`. `AngleSelectEmit` performs no CFG surgery at all (§12.3
+— "no CFG, no hoist, no flatten"), so it can never set it. And round 1 (`tryCaseA`)
+does not claim a loop containing a tainted select either: its COVERAGE clause refuses
+any tainted body value not on a rail, and the tainted compare and the tainted-condition
+select are both exactly that. **So an in-loop angle select would have NO rail-record
+fence at all — neither round — which is precisely the "a shipped loud decline becomes
+silence" shape S7's own round-1 fix was written for** (bd
+[`sibling-predicate-spelling-is-the-hole`]). Lifting it needs either a round-2 trigger
+for the angle-select emitter or a proof that the loop's rail is adjudicated elsewhere;
+both are a separate increment.
+
+If it ever moves, S9 owes the identical per-activation treatment §13.3 specifies, with
+the consuming rotation `T` in the barrier role `BI` plays here, plus the phi-edge read
+position — and S7's prong (iii) is already recorded as CONTINGENT on Case-A's collapse
+having re-anchored the in-loop gate, a contingency this increment's M-β RAUW change
+touches. **File as `drbq.12`.** This is a recommendation, and widening it is the
+owner's call.
+
+### 13.7 Walker audit — `LoopLowering.cpp`, pre/post `lowerRotations`
+
+The audit's headline: **`LoopLowering.cpp` contains NO name test on `cqrt_ry_`,
+`cqrt_rz_` or `_controlled`, at any site.** Both loop rounds run strictly before
+`lowerRotations` (`:310` and `:340` vs `:422`), so the vocabulary they see is always
+the front-end `@cq_theta_` / `@cq_phi_` spelling with the wire at **arg 0** — which
+is exactly what hoist-and-defer preserves, and exactly why `noteGate` counts the
+hoisted Ry without being taught anything.
+
+| site | test | stage | sees a HOISTED controlled gate in a loop? |
+|---|---|---|---|
+| `isHoistedRegionArmGate` :366-372 | `taint.ControlledRotations` ∧ `cq_phi_` | pre | **Rz: yes** (round 2 only — round 1 runs before emission, so the map is empty; the round-1 call site passes it anyway so the rounds cannot drift). **Ry: NO, deliberately** — M-β removes the need |
+| `isMeasureCall` :373-386 | `cq_measure_` / `cqrt_measure_` | pre | n/a |
+| `collectRailGates::noteGate` :758-765 | `cq_theta_` ∧ `GateCalls` | pre | **YES, round 2 — the hoisted Ry IS a gate, which is correct and is the whole point.** Round 1 never sees one |
+| `breakLineageCarriesPhase` :953-973 | `cq_phi_` | pre | 7.4 `break` path; in-loop control declines there, so unreachable for this class |
+| `isInPlaceGateOnArg0` :294-305 | `GateCalls` membership ∧ arg-0 (no name test) | pre | **YES, round 2, both stems** |
+| `peelInPlaceStep` / `peelInPlaceBase` :257-289 | via `GateCalls` | pre | **YES, round 2 — and under M-β the hoisted theta is a PEEL STEP, which is the mechanism** |
+| `inPlaceValueRailOperand` :142-155, `railValueConsumerDisposition` :200-216 | opcode + taint | pre | n/a (never a rotation) |
+
+**The one obligation this discharges in writing** (`isHoistedRegionArmGate`'s site
+comment demands it): the predicate would exempt the hoisted gate from the fan-out
+count while `noteGate` counts it for staleness — two answers for one call. Inc 3
+does **not** widen it, so the two answers never diverge: under M-β the Ry gate is a
+chain member, so the fan-out count sees ONE in-place user per rail value *without*
+an exemption, and `noteGate` counts it as a gate *correctly*. The site comment must
+be updated to say the obligation was discharged by mechanism, not by licence.
+
+### 13.8 Fixtures, slices and gates
+
+**lit accepts** (family `control_inplace_ry_inloop_*.ll`, 10):
+`diamond` (S2, the identity-carry shape M-β repairs) · `negated` (¬flag polarity,
+Rule 9) · `post_region_gate` (S1, the fan-out shape) · `leading_gate` (S11 — the
+routed base is a derived value **in the header above the compare**, measured;
+re-ask the finding-L structural freeze here) · `two_registers` · `seq` (two regions
+in one body) · `rz_reflection` · `offset` (dtzb `q += off` on the condition rail) ·
+`derived_cond` (**use a satisfiable predicate** — `q*3 == 6`, never `q*3 == 5`,
+which `clang -O1` proves unsatisfiable under `nsw` and deletes outright: a vacuous
+accept, measured) · `ifelse` (hand IR, the two-block form; the C spelling is an
+angle select — §13.2 row L-i). **Every C-sourced accept fixture must keep the
+condition register LOOP-VARIANT** (§13.1) or `clang -O1` hoists its compare and the
+fixture lands on row W instead of on the clause it claims to pin. Hand-IR fixtures may
+write the compare inside the loop block directly, which is why
+`control_inplace_ry_reject_in_loop.ll` flips to accept even though `q` is invariant in
+it (measured: its `Cond->getParent() == R.Pred`, so P4 passes and R7 is the only wall).
+
+**lit declines** (family `control_inplace_ry_reject_inloop_*.ll`, 16): one per
+§13.2 row L-a, L-b, L-c, L-d, L-e, L-f, R4, R6-1, R6-2, R6-3, R1, R1', R2, R7',
+plus P1's `stalecond`, **row W's `invariant_cond_hoisted`** (with a C-shape note: its C
+program is the customer's simplest spelling, so pinning its decline is what makes the
+day P4 widens a deliberate move) and **row DB's `derived_base`** (a mandatory probe —
+§13.2c — whose fixture text must be written from the MEASURED message, not the read
+one). Each mirrors its string character-for-character.
+
+**Two existing fixtures move.** `control_inplace_ry_reject_in_loop.ll` **FLIPS TO
+ACCEPT** and is rewritten in full (its whole header is an Inc-3 to-do list; hand-
+simulated: `q` loop-invariant with the compare written inside the loop block, `r`
+loop-carried, R6 per-activation clears every member). Its decline sibling is
+**re-homed** onto a shape that still declines — the R6-3 ALIAS fixture, which is the
+same CFG with the carry made an identity and the merge escaping. `control_inplace_rz_in_loop_rolled.ll`
+must stay **byte-identical** (the Rz stem does not move).
+
+**e2e**, in the 8h7d.5 style — every rolled slice gets a hand-unrolled `_unrolled`
+twin and a `cmp` ctest gate:
+
+| slice | twin | gate |
+|---|---|---|
+| `slice_control_inplace_ry_loop` | `_unrolled` | `e2e-inplace-ry-loop-twin-identical` |
+| `slice_control_inplace_ry_loop_leading_gate` | `_unrolled` | `e2e-inplace-ry-loop-leading-gate-twin-identical` |
+| `slice_control_inplace_ry_loop_two_regs` | `_unrolled` | `e2e-inplace-ry-loop-two-regs-twin-identical` |
+| `slice_control_inplace_ry_loop_grover` (Rz oracle + cRy on `r` + **Ry** reflection on `q` — the customer, and the one that needs §13.4b) | `_unrolled` | `e2e-inplace-ry-loop-grover-twin-identical` |
+| `slice_control_inplace_ry_loop_derived` (derived condition, satisfiable) | `_unrolled` | `e2e-inplace-ry-loop-derived-twin-identical` |
+
+Count: **10 slices + 5 `cmp` gates = 15 new ctest entries** (305 → 320), plus the
+K-independence gate below. All run **STRICT** stage 2b — no `--allow-unproven`.
+
+**The K-independence gate.** `slice_control_inplace_ry_loop_grover.c` compiled with
+`-DK=3` and `-DK=1000` must produce **the same lowered-IR line count** (the 8h7d.5
+measurement was 87 lines pre-2a and 77 post-2a on `slice_control_grover_loop_dynamic`;
+re-measure, do not quote). A count that grows with `K` means the loop was unrolled and
+the increment's central claim is false.
+
+**`tools/loop_twin_matrix.py` — the axis, MEASURED FINAL (re-measured from the files
+on 2026-09-04, not inherited).** At HEAD `1bdaa60` the matrix had **156 cells and no Ry
+axis**. The committed working tree now carries the **`FIFTH AXIS — CONTROLLED Ry ARM`**:
+**117 new cells, 273 total** (`grep -c '^m_' tools/loop_twin_matrix.expected.txt`), in
+**eight declared sub-grids** whose sizes the script asserts
+(`assert (len(base), len(rec), len(ry)) == (120, 36, 117)`):
+
+| grid | what | cells |
+|---|---|---|
+| A1 | the two LITERAL core regions × the full `a`-gate product | 18 |
+| A2 | every other literal region at an `a`-gate STAR (one gate at a time) | 25 |
+| A3 | the three **OPAQUE** regions (`oeq`/`one`/`oder`, whose compare reads `volatile int off`) at the same star | 15 |
+| B1 | the second-register `RGATE` axis: opaque core × 4 gates × 2 `a`-shapes | 24 |
+| B2 | every remaining region at the one second-register gate that refreshes | 6 |
+| C | the RECORD axis on the ROTATED register (opaque, so it is live) | 24 |
+| D | the RECORD axis on the CONDITION register while the arm rotates `r` | 3 |
+| E | the two decline controls (`rcond`, `rifelse`) | 2 |
+
+`RGATE` = `{none, rypre, rypost, rzpost, addpost}` — what stands on the ROTATED
+register inside the body, on each side of the region. The **opaque family is the
+matrix's own answer to row W**: `if (a == off)` defeats both LICM and CSE without
+changing the tainted lineage, so its rolled side declines on the LOOP and its flat side
+**ACCEPTS** — which is what makes 24 + 24 + 6 of the cells above a live witness rather
+than 48 restatements of row W. **Gate time moved 120 s → 151 s.**
+
+**The 117 cells' committed verdicts, and the flip partition Inc 3 must produce.** These
+counts are `awk`-derived from the file, not quoted:
+
+| # | verdict today | family | Inc 3 must make it |
+|---|---|---|---|
+| **59** | `UNROLLED-ONLY` (rolled: `control flow inside a loop body`) | the payload | **`ACCEPT-IDENTICAL` after 3a alone** |
+| **9** | `DECLINE-BOTH-DIFFERENT` rolled `…loop body` / flat `condition predates` — **every one has PREFIX `ry`** (`m_ry_{oeq,one,oder,req,req0,rne,rder,rrange,ryrz}_none_none_none`) | 3b, **if** their flat owner is P1 | **`ACCEPT-IDENTICAL` only after 3b — and after 3a ALONE they go `ROLLED-ONLY`, i.e. RED.** See the box below |
+| **15** | `DECLINE-BOTH` `condition predates`, with a `cq_theta` on `a` | 3b (P1) | **12 → `ACCEPT-IDENTICAL` after 3b**; the 3 with PREFIX `ry` (`ry/req/ry`, `ry/rder/ry`, `ry/rzry/none`) most likely **stay** — a prefix gate is not provably post-region, so `condWireDisposition` returns `DeclineNow` (`:1329`) and P1 never runs. **MEASURE per cell** |
+| **16** | `DECLINE-BOTH` `condition predates`, literal region with NO gate on `a` (`m_none_{req,rder,req0,rne,rrange}_none_none_*`) | **row W** | **STAY DECLINED** (over-decline, §13.2) |
+| **8** | `DECLINE-BOTH-DIFFERENT` rolled `…loop body` / flat `stale rail record read past a controlled Ry` — the `oeq`/`oder` × **`rpremark`** cells | R6 | **`DECLINE-BOTH` with the IDENTICAL R6 string** — *not* `ACCEPT-IDENTICAL`. The rolled side's per-activation R6 must decline these for the same reason the flat side already does (§13.3's PREMARK row); a verdict change, recorded deliberately |
+| **8** | `DECLINE-BOTH` `cq opcode lowering: operand predates a non-diagonal gate` — `oeq`/`oder` × **`rbodyread`** | `declineStaleRecordOps`, a different stage | **STAY** |
+| **1** | `m_none_rcond_none_none_none` `DECLINE-BOTH` `cq controlled lowering: control flow under quantum control` | R4 control | **STAY** — and note it prints the **GENERIC** string, not R4's own `rotation arm on a condition wire`, so this cell does not pin R4; `control_inplace_ry_reject_inloop_cond_register.ll` must |
+| **1** | `m_none_rifelse_none_none_none` `DECLINE-BOTH-DIFFERENT` rolled `…loop body` / flat `rotation angle` | angle select (§13.6) | **STAY** |
+
+> **THE 9 `ry`-PREFIX CELLS ARE THE ARGUMENT FOR SHIPPING 3a AND 3b TOGETHER.** Today
+> both sides decline. After 3a alone the ROLLED side accepts (its `condWireDisposition`
+> is `None` — that is *why* its message is the unmasked loop string) while the FLAT side
+> still declines, so the cell becomes **`ROLLED-ONLY`: a DISPOSITION MISMATCH, which the
+> table's own header calls a RED needing a written reason, and the only three that exist
+> today are a `clang -O1` canonicalization artifact.** Nine new ones with no artifact
+> reason is the gate telling you the increment is half-landed.
+
+Accounting: 59 + 9 + 15 + 16 + 8 + 8 + 1 + 1 = 117. ✓
+
+**The axis was written and committed BEFORE any lowering exists, which is the whole
+point** (the fixture `control_inplace_ry_reject_in_loop.ll`'s own header and bd
+`drbq.4`'s notes both demand it): a table regenerated after the implementation can only
+prove that the implementation agrees with itself, whereas this one's **diff IS the
+witness**. **Its blind spot must be quoted with it:** the oracle is the unrolled twin,
+which for an Ry cell IS the Inc-1 flat lowering — so a defect Inc 1 and Inc 3 SHARE (a
+wrong controlled-rotation polarity, a missed R4 aliasing, a freeze that should have
+fired on both sides) is byte-identical on both and this gate reports `ACCEPT-IDENTICAL`.
+The flat side's own witnesses are the Inc-1 lit family and
+`tests/e2e/slice_control_inplace_ry.c`; nothing here replaces them.
+
+### 13.9 Review lenses — ≥3 rounds, 8 lenses
+
+Each lens must **compile** its named twin on **both** binaries (HEAD and the
+pre-Inc-3 oracle at `scratchpad/wt/pre3`) and report only what it ran (Rule 19).
+
+1. **Per-activation R6.** Is the barrier the record's own def at every call site, is
+   `Barrier == A` refused, and is the phi-edge read position applied on *every*
+   consumer path? Try to reach a post-region read of a pre-Ry record through: a
+   `cq_measure`, a `ret`, a `store`, a specializable call argument, a 7.6 tape write,
+   a `cq_invert` bracket, a classical join φ (the finding-K launder), a `select`, and
+   a `freeze` — from **inside** the body, from the **exit** block, and from **after**
+   the loop. Twin to compile: the same program hand-unrolled with an `Rz` reflection
+   (so P1 does not mask the result).
+   **And the SIBLING-SPELLING obligation, which is this lens's real job** (bd
+   [`sibling-predicate-spelling-is-the-hole`]): §13.3 leaves R6 with **TWO
+   spellings** — the flat `provablyBefore`/`cannotFollowGate` pair and the in-loop
+   certificate — and *"a new clause that asks the SAME question as its siblings with
+   a DIFFERENT predicate"* is where the last two over-accepts in this epic lived.
+   The reviewer must therefore **temporarily use the certificate for FLAT regions
+   too**, run the whole 1430-fixture corpus plus every e2e slice, and list every
+   ACYCLIC fixture whose disposition flips. Expect flips: the certificate is
+   strictly weaker (it drops the dominance conjunct), so a flat alias hop on an
+   unexecuted classical path may newly accept. **If NOTHING flips, the round-1 fix
+   should collapse to ONE spelling** — two predicates that agree on the whole corpus
+   are one predicate wearing two names, and keeping both is how they later disagree.
+   If something flips, each flip must be individually argued and the split kept.
+2. **Rail / record closure in the loop.** The F-1/F-3 question, asked of *this*
+   increment: when M-β makes `T` a chain member, **what other set was computed over
+   the same closure**? Specifically — `collectRailGates`' `OnRailOut` record set, the
+   `MemberSet` skip set, `railRoot`'s round-1 fixpoint, and `BaseWire`'s three
+   consumers in `classifyArms`. Build the 8h7d.5 rail-record fixture family with the
+   Rz arm replaced by an Ry arm and check every one keeps its verdict.
+3. **Freeze + spine + back edge.** Prove `NotClosed` really fires per activation and
+   that nothing frees the register or a derived temp; probe a Phase-6 Bennett wrap
+   around the loop, a 7.4 `break` in the same function, and a `cq_invert` bracket.
+   Confirm `EmitInverse`'s controlled-rotation adjoint stays unreachable — by
+   construction, not by argument (Inc 2a worry 2).
+4. **Polarity, order, plan lifetime.** `!=` canonicalization inside a loop; two
+   regions in one body in both orders; a classical branch between two in-loop
+   regions (the L4 `RoutedBase` shape, now with M-β's new RAUW target); the hcrg
+   Kahn sort with in-loop preds; and the emission-order chain rule for an if/else
+   (`T_f`'s arg-0 := `T_t`'s result) under both polarities.
+5. **Walker / set audit.** §13.7's table, re-derived independently. Mutation-test:
+   delete `noteGate`'s `cq_theta_` arm and confirm the target fixtures go red;
+   restore `isHoistedRegionArmGate`'s stem-agnostic form and confirm nothing
+   silently changes for Ry (it must not, under M-β).
+6. **Fixture and doc truth.** Does every `CHECK` line assert what its header claims?
+   Mutation-verify each new decline by relaxing its clause. Re-measure every number
+   this section states (fixture counts, ctest counts, matrix cells). Check the
+   `-O1` shape of every e2e slice actually contains a diamond (the DER lesson: a
+   vacuous accept looks exactly like a capability).
+7. **The twin matrices + K-independence.** `loop_twin_matrix.py` (the committed table
+   diff IS the witness), `inplace_twin_matrix.py --route-oracle <pre-3>`, the five new
+   `cmp` gates, `control_flag_order_check.py`, `golden_multiset_audit.py --all` (no
+   existing golden may move), and the whole-corpus lowered-IR diff against the
+   pre-Inc-3 oracle demanded by §13.4.
+
+8. **P1 ALONE, on acyclic programs** — formally a lens, not an optional eighth,
+   because it is the one part of this increment that moves programs with no loop in
+   them and every other lens above is about loops. Run the whole-corpus disposition
+   sweep against the pre-Inc-3 oracle with **only** §13.4b applied, and account for
+   **every** acyclic flip individually: which are the intended drbq.7 family, which
+   are compositions nobody predicted. Probe the boundary in both directions — a
+   condition-wire gate that is provably post-region (must now ACCEPT with a rotation
+   arm) versus one that is not (must still decline at `condWireDisposition`'s
+   `DeclineNow`, `ArmClassify.cpp:1329`), and the same pair with a VALUE arm (must
+   still decline, `SawValueArm`). Then re-run it with §13.3 also applied and confirm
+   the two sweeps' flip sets are disjoint.
+
+### 13.10 Questions for the owner
+
+**One** — row W, below. Everything else is settled analytically or by measurement.
+
+**Q1 — should the compare→branch staleness family become WIRE-AWARE?** §13.2 row W:
+the simplest C spelling of the customer's own shape,
+`for (…) { if (q == 5) r = cq_theta(r, .9); }` with `q` untouched in the body,
+declines at HEAD and **will still decline after this increment**, for a reason that is
+neither R7 nor P1. `clang -O1` hoists the loop-invariant compare into the preheader,
+and `condWireDisposition`'s P4 precondition (`Cond->getParent() != R.Pred`,
+`ArmClassify.cpp:947-948`) refuses any compare that does not live in the region's own
+`Pred`. It is an OVER-DECLINE: the only thing in the widened window is the arm's own
+`cq_theta` on `r`, and R4 has already proved that rail disjoint from every condition
+rail, so the flag the mint reads is the flag the source describes and the strip returns
+it to `|0⟩`. **16 matrix cells are this family.**
+
+Both halves of the family are wire-blind on purpose — P4 refuses a cross-block gap it
+cannot bound, P5 (`:954-962`, the kjd1 gate-2c window scan) refuses a `cq_theta`
+between the compare and the branch *even on another wire*. The natural repair is to
+make them wire-aware using the closure R4 already computes
+(`railWireClosure(…, BackwardOnly)`), which would let a hoisted-but-dominating compare
+through when nothing on the CONDITION's wire stands between its position and `BI`.
+**Recommendation: NOT in this increment, as a separate follow-on `drbq.13`.** Three
+reasons: it is a **sibling-spelling change shared by four callers** (this path, the 4.4
+select's gate 2c, 2b's S6, and the `RegionTreeDetect` nest), and bd
+[`sibling-predicate-spelling-is-the-hole`] is precisely about one of those four being
+spelled differently from the rest; it moves ACYCLIC programs, so it lands on top of
+§13.4b's flat movement in one review; and it is *orthogonal* to Ry — the identical
+over-decline exists for the shipped Rz stem today, which means it is a pre-existing
+capability gap, not something Inc 3 introduces. **Note the correction that changes the
+shape of the fix:** the matrix agent attributed row W to the P5 window scan; measured
+on the IR it is P4, so a wire-aware P5 alone would move **zero** of the 16 cells. Say
+if you want it folded in anyway.
+
+Two FYIs:
+
+1. **Inc 3 moves a FLAT fence.** §13.4b's P1 widening is required for the flagship
+   customer and, as a side effect, lowers the flat shape recorded as over-decline bd
+   `drbq.7`. Say the word if you would rather it shipped as its own increment (Inc
+   3a = the loop, Inc 3b = P1); the cost of splitting is that Inc 3 alone delivers
+   the `Rz`-reflection and dtzb-offset loops and still declines Grover-with-a-cRy.
+2. **The freeze leaks O(K) rails, not O(1).** §13.5. Rule-6 safe, identical to the
+   hand-unrolled twin, and the alternative fence would cost a correct circuit. No
+   action requested.
+
+### 13.11 What worries me
+
+1. **The customer shape was two fences away and the PRD that scoped it named one.**
+   Nothing in the epic's notes, the bd issue, or `control_inplace_ry_reject_in_loop.ll`'s
+   own header mentions P1 — and P1 is not a loop fence at all. That was found by
+   compiling the *hand-unrolled twin* and discovering it does not lower either. **The
+   generalizable lesson: when an increment's witness is "it equals its twin", compile
+   the twin FIRST.** If more than one wall is still standing, budget for it now.
+2. **`declineArm`'s re-spelling makes the target shape's decline lie about itself.**
+   All nine in-loop Ry programs print `condition predates a non-diagonal gate`, which
+   names the condition wire — a different fence entirely. Anyone triaging a customer
+   report chases the wrong guard, and a fixture written from the observed string pins
+   the wrong clause. It is deliberate (message-churn avoidance) and it is now the
+   *default* experience for this shape.
+3. **M-β changes Increment 1's FLAT emission**, and its safety rests on "the lowered
+   IR is byte-identical after `lowerRotations`". That is true of the RAUW, and the
+   window between emission and `lowerRotations` is nine stages long. §13.4's audit
+   table lists them; four rows say "audit, do not assume" because I read their
+   headers and not their bodies.
+4. **R6's per-activation certificate deliberately does NOT ask about gates other than
+   the region's own**, and the shape it therefore misses (a post-region gate between
+   the record and a sunk read) is caught only by `LoopLowering` round 2 — which runs
+   **only** when `InLoopFlattenedPreds` is non-empty *and* `collapseRailPhisIn` claims
+   the loop. A loop where the collapse returns `NotClaimed` has R6's narrower question
+   and nothing else. I could not construct such a program that also passes R7-loop (b),
+   but I did not prove one does not exist.
+5. **The matrix axis was written by a concurrent agent while I was reading it**, and
+   the table moved under me (265 rows at one moment, 156 the next). Every count in
+   §13.8 tagged to it must be re-measured before it is quoted, and the axis must be
+   committed and green *before* the lowering lands or its witness value is gone.
+6. **`markIfRailLocal`'s escape clause is load-bearing for a UNITARY, not a leak**
+   (its own round-5 note), and this increment adds a frozen rail to the values it
+   classifies. I argued `onRail` is unchanged; I did not re-derive the multiplicity
+   argument in `Uncomputation`'s §4/§2.9 pair with a frozen rail present.
+7. **THE SIMPLEST C SPELLING OF THE CUSTOMER'S SHAPE STILL DECLINES AFTER THIS
+   INCREMENT.** `for (…) { if (q == 5) r = cq_theta(r, .9); }` — no gate on `q` — is
+   what a user writes first, and row W refuses it for a reason that is neither of the
+   two fences this PRD is about. It was found by the MATRIX, not by me: I measured
+   nine in-loop programs and every one of them happened to carry a gate on `q`, so
+   every one of them cleared P4 and I never saw the wall. **That is the same failure
+   mode as worry 1, one level down** — a probe set chosen from the customer program
+   is a probe set that shares the customer program's accidental properties. The
+   opaque `volatile`-compare family exists in the matrix precisely because someone
+   went looking for the property my probes all shared.
+8. **Three of the five e2e twins are for shapes whose C spelling I measured, and two
+   are not.** `_two_regs` and `_derived` were reasoned about from the Rz analogues.
+   The DER lesson says that is exactly where a vacuous accept hides.
