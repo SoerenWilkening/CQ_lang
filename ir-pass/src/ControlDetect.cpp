@@ -589,7 +589,7 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
         break;
       }
     }
-    if (classifyArms(R, Taint, DT) == ArmDisposition::Declined)
+    if (classifyArms(R, Taint, DT, LI) == ArmDisposition::Declined)
       return;  // ArmClassify already fired the precise diagnostic (§3c / value).
     // IN-LOOP SCOPE FENCE, part 2 — a method-B VALUE arm inside a loop. Its
     // copy-out mints a FRESH `%out` rail per iteration and RAUWs the merge to
@@ -606,34 +606,31 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
       diagnoseUnderControl(BI, "control flow inside a loop body");
       return;
     }
-    // IN-LOOP SCOPE FENCE, part 3 — a CONTROL-IN-PLACE ROTATION arm inside a
-    // loop (control-in-place-PRD §4 R7; the epic's Inc 3 owns it). The 8h7d.5
-    // rolled path was cleared for the PHASE arm, whose every ancilla is minted,
-    // stripped and freed inside the iteration and whose gates are DIAGONAL on
-    // the persistent register. A controlled Ry RELABELS that register once per
-    // trip, which is exactly what `LoopLowering`'s rail-record machinery
-    // (`collectRailGates` / `railGateBetween` / `staleRailRecordRead`) reasons
-    // about — and it recognizes an in-place Ry by its `@cq_theta_` spelling with
-    // the wire at ARG 0, not the hoisted-and-deferred controlled one at arg 1.
-    // Inc 3 must re-ask all three with a controlled Ry as the relabelling gate
-    // and add the shape as a `tools/loop_twin_matrix.py` axis FIRST; until then
-    // this keeps the pre-existing loop decline rather than silently acquiring an
-    // accept it was never cleared for (Prime Directive; the loop history is
-    // 4-for-4 on hidden over-accepts).
+    // IN-LOOP SCOPE FENCE, part 3 — RETIRED 2026-09-04 (bd
+    // test_C_libtooling-drbq Increment 3), and retired rather than re-asked, for
+    // a reason worth stating: it was a BLANKET decline of the very shape this
+    // increment ships. A control-in-place ROTATION arm inside a rollable loop is
+    // now an ACCEPT (PRD §13), so a backstop that still fired here would refuse
+    // it after `classifyArms` had already proved it — Rule 17's "a decline is not
+    // the development escape hatch", one level down.
     //
-    // NOW A BACKSTOP, not the first owner (bd test_C_libtooling-drbq Inc 1,
-    // finding J). `classifyArms` declines an in-loop rotation arm itself, with
-    // this same string, immediately before its R6 clause — because R6's position
-    // predicates are FLAT (no per-activation reading) and would otherwise read a
-    // loop-carried header φ, reached as a wire member around the back edge, as a
-    // stale record. This check is kept deliberately: it is the fence a reader
-    // looking for "why does a loop decline" finds, and it stays correct if a
-    // later increment ever reaches `ArmClass::InPlaceRotation` by another route.
-    if (R.InLoop && (R.ClassArm == ArmClass::InPlaceRotation ||
-                     R.ClassArmFalse == ArmClass::InPlaceRotation)) {
-      diagnoseUnderControl(BI, "control flow inside a loop body");
-      return;
-    }
+    // WHAT REPLACED IT, so nobody re-adds a guard for a question that IS asked.
+    // The loop half of R7 now lives entirely in `classifyArms`, where it can see
+    // the rotated base's wire closure: clause (b) requires a `BaseWire` member
+    // that is a PHINode in `L`'s header (the rail crosses the back edge — an
+    // iteration-local rotated register is out of scope and is measurably NOT
+    // twin-identical), and clause (b') requires that φ to be one the round-2
+    // collapse will claim, asked by CALLING `LoopPlan.h`'s `railPhiRootMint` —
+    // the collapse's own step-(1) body. Both fire the SAME string this did. R6 is
+    // then asked PER ACTIVATION (`recordLivePerActivation`), which is the fence
+    // that makes the loop-carried header φ readable at all.
+    //
+    // The CFG half is unmoved and is still asked BEFORE this point:
+    // `flatRegionRollableInLoop` (A)-(D) is what sets `R.InLoop` in the first
+    // place, so an irreducible cycle, a two-depth region, a multi-latch loop or a
+    // second cycle through the entry never reaches the classifier at all. Parts 1
+    // (6.5 classical-call arm) and 2 (method-B value arm) are UNCHANGED — neither
+    // was cleared for a loop and neither moves in this increment.
     // ACCEPT: a pure phase region over ONE tainted handle — a one-content-arm
     // diamond (WI-2) or a two-arm if/else (WI-3). Push it so `lowerControlRegions`
     // (SwapRouteEmit) emits the routed stream. Polarity: a diamond's single arm

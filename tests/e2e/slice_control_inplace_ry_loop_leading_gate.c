@@ -1,0 +1,55 @@
+/* slice_control_inplace_ry_loop_leading_gate.c — shape S11 (PRD §13.3) — the in-loop Ry arm whose ROUTED
+   BASE is a DERIVED value defined in the loop header ABOVE the compare, not the
+   header phi itself.
+
+   SOURCE INTENT — one activation per trip:
+       r = cq_theta(r, 0.25);              the LEADING gate: the routed base
+       if (q == 5) r = cq_theta(r, 0.9);   the controlled Ry, on that base
+       q = cq_phi(q, 0.1);                 keeps the condition register variant
+
+   WHY IT IS ITS OWN SLICE. R7-loop clause (b) asks "is some member of the rotated
+   base's wire closure a PHINode in `L`'s header?", and here the base is a
+   `cq_theta`, so the header phi is reached only through the BACKWARD closure. If
+   that reach were ever lost this slice declines `control flow inside a loop body`
+   while the other two flagship shapes stay green — which is the only way to
+   notice.
+
+   THE POINT OF THIS SLICE IS THE TWIN. Its golden must be BYTE-IDENTICAL to
+   slice_control_inplace_ry_loop_leading_gate_unrolled.expected.log, which is the SAME body written out
+   with no loop at all — the flat shape Increment 1 shipped and an adversarial
+   round already cleared. Byte-identity is the strongest witness available to a
+   project with no simulator (Rule 2): it says the ROLLED form emits the same
+   unitary, gate for gate and handle for handle. The `cmp` is wired into ctest
+   (e2e-inplace-ry-loop-leading-gate-twin-identical), so the two cannot drift apart silently.
+
+   ⚠ THE MATRIX'S OWN BLIND SPOT APPLIES HERE TOO AND IS WORTH QUOTING WITH IT:
+   the oracle IS the Increment-1 flat lowering, so a defect the flat and rolled
+   paths SHARE (a wrong controlled-rotation polarity, a missed R4 aliasing, a
+   freeze that should have fired on both sides) is byte-identical on both and this
+   gate reports success. The flat side's own witnesses are the Inc-1 lit family and
+   tests/e2e/slice_control_inplace_ry.c; nothing here replaces them.
+
+   STRICT stage 2b (no `--allow-unproven`): the flag is the region's only ancilla
+   and it is minted, stripped and freed inside its own iteration, so nothing dirty
+   crosses the back edge. The rotated register is FROZEN by Increment 1's
+   structural freeze — never reverse-played, never freed — and is left allocated,
+   which is Rule 6's sanctioned fallback and is identical in the twin. */
+
+int slice(void) {
+    int q = 0;
+    int r = 7;
+
+    q = cq_theta(q, 0.5);
+    r = cq_theta(r, 0.25);
+
+    for (int i = 0; i < 2; ++i) {
+        r = cq_theta(r, 0.25);
+        if (q == 5) {
+            r = cq_theta(r, 0.9);
+        }
+        q = cq_phi(q, 0.1);
+    }
+
+    return cq_measure(q) + cq_measure(r);
+}
+int main(void) { (void) slice(); return 0; }

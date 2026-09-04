@@ -620,12 +620,50 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    order. Do NOT re-mint `T` — moving it keeps its `!dbg`, its identity in
   //    `taint.ThetaCalls`, and its operand USE (so the later RAUW-to-handle
   //    rewrites it like every other gate).
+  //
+  //    M-β — THE CHAIN, AND THE SECOND EMISSION CONVENTION IN THIS FILE (bd
+  //    test_C_libtooling-drbq Inc 3, PRD §13.4). For an if/else the two hoisted
+  //    gates are CHAINED in emission order: `T_f`'s arg-0 is set to `T_t`'s
+  //    RESULT, so the two rotations form ONE in-place sequence on ONE rail
+  //    instead of two independent readers of `Base`. `setArgOperand` (never a
+  //    re-mint) is what keeps the USE rewritten, so `lowerRotations`' later
+  //    `Theta->replaceAllUsesWith(Handle)` finds and fixes it exactly as it
+  //    fixes every other gate operand — the final lowered IR is unchanged.
+  //
+  //    WHY IT IS NOT COSMETIC: `LoopLowering`'s round-2 fan-out guard counts
+  //    IN-PLACE users PER RAIL VALUE (Rule 8), and two hoisted thetas both
+  //    reading `Base` are two of them. Chaining makes the SSA say what is
+  //    physically true — the first rotation MOVED the register, so the value
+  //    after it is a different state from the value before it — and the guard
+  //    then reads the truth with no exemption.
+  //
+  //    STRUCTURALLY UNREACHABLE, KEPT AS A LOUD DECLINE (bd drbq Inc 3, round-1
+  //    lens L4, F-L4-2). `Gates` pairs each `ArmInfo` with `R.Shadow` when
+  //    `A.BB == R.Arm` and with `R.ShadowFalse` otherwise, so `R.Arm ==
+  //    R.ArmFalse` would put the SAME call in both slots and `setArgOperand(0,
+  //    Prev)` with `Prev == G.first` would mint a SELF-REFERENCING call
+  //    `%g = call @cq_theta(i32 %g, …)` — invalid SSA, which `opt`'s in-process
+  //    verifier would ABORT on rather than decline. Measured unreachable:
+  //    `br i1 %c, label %arm, label %arm` declines on both binaries at
+  //    `tainted value muxed by a classical-condition phi`, because a 1-incoming
+  //    merge φ never becomes a region. This is the same posture the
+  //    `Cls != InPlaceRotation` case above was deliberately given (round-2 lens
+  //    C §3): an unreachable path in this emitter gets a Prime-Directive decline,
+  //    not a `continue` and not a verifier abort. Zero cost.
   FunctionCallee X = csyms.xFn();
+  CallInst *Prev = nullptr;
   for (auto &G : Gates) {
+    if (Prev == G.first) {
+      diagnoseUnderControl(Cond, "control flow");
+      return;
+    }
     if (G.second)
       stamp(B.CreateCall(X, {Flag}));
     G.first->moveBefore(BI);
+    if (Prev)
+      G.first->setArgOperand(0, Prev);
     taint.ControlledRotations[G.first] = Flag;
+    Prev = G.first;
     if (G.second)
       stamp(B.CreateCall(X, {Flag}));
   }
@@ -655,7 +693,63 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    the `f=1` branch, which is why R6 refuses any pre-region SSA record of it
   //    that is read after the region. The hoisted thetas are NOT erased here:
   //    they are live instructions in the pred that `lowerRotations` owns.
-  MergePhi->replaceAllUsesWith(Base);
+  //
+  //    ⚠ TWO RAUW CONVENTIONS LIVE IN THIS FILE, ONE PER STEM, AND WHICH IS
+  //    WHICH IS LOAD-BEARING (bd drbq Inc 3, PRD §13.4 + the §12.1 stem table).
+  //
+  //      Ry — THIS emitter — RAUWs the merge φ to the LAST HOISTED GATE (M-β).
+  //      Rz — `emitRegion`'s §6a peephole — RAUWs it to the BASE `Q` (M-α), as
+  //           shipped by Inc 2a and UNCHANGED here.
+  //
+  //    The reason is the physics, not taste. `cqrt_rz_<W>_controlled` is
+  //    DIAGONAL: the two names denote the same computational-basis state, so
+  //    either target is correct and the base is the cheaper one. An Ry MOVES the
+  //    register on the `f=1` branch, so the post-gate value is genuinely a
+  //    different state and naming it `Base` is a false statement in SSA. Flat,
+  //    that falsehood is harmless (the value is dead after `lowerRotations`
+  //    collapses everything onto one handle); INSIDE A LOOP it is not, and both
+  //    ways it fails are `LoopLowering` bookkeeping rather than a unitary:
+  //      * with no post-region gate, `RAUW(m → Base)` makes the loop's carry a
+  //        ZERO-HOP IDENTITY CARRY `%P = phi [%r0, entry], [%P, latch]`, which
+  //        `recordRefreshedByDef` correctly calls FROZEN (bd
+  //        [[identity-carry-phi-does-not-refresh]]) — so `railGateBetween` takes
+  //        no cut and the increment's own target shape declines LOUDLY;
+  //      * with one, `%P` acquires TWO in-place `cq_theta` users and the round-2
+  //        fan-out guard fires `loop-carried rail has multiple in-place
+  //        consumers`.
+  //    Under M-β the chain is `%P → T → (post-region gate) → %P`: `T` is a chain
+  //    MEMBER, so it is in the SKIP set (its own execution IS the wire moving),
+  //    it is in `Gates` (it IS a relabelling gate — correct), `%P`'s carry
+  //    crosses it so the record refreshes, and every rail value has ONE in-place
+  //    user. No predicate is edited and no licence is granted anywhere.
+  //
+  //    ⚠ "`T` IS A CHAIN MEMBER" HOLDS ONLY WHEN `T`'s RESULT IS CARRIED, and
+  //    the narrowing is recorded rather than the sentence trimmed (bd drbq Inc 3,
+  //    round-1 lens L2, L2-F2). The chain is built by peeling in-place steps from
+  //    the carried latch value, so a region whose merge value is NOT carried
+  //    around the back edge — e.g. the region rotates a FROZEN identity-carry φ —
+  //    joins the closure by the FORWARD extension instead: `T` is then in `Gates`
+  //    and in `OnRailOut` (a RECORD) but NOT in `MemberSet` (the SKIP set). No
+  //    defect follows today, and the reason is measured, not assumed: that shape
+  //    declines at `ArmClassify`'s R6 before `collapseRailPhisIn` ever runs
+  //    (lens L2 `s01_frozen_base_region`). A future widener must not read the
+  //    sentence above as an invariant — it is a property of the CARRIED case.
+  //
+  //    THE ALTERNATIVE WAS REJECTED FOR A NAMED REASON: M-α + widening
+  //    `LoopLowering::isHoistedRegionArmGate` to the Ry stem needs TWO
+  //    independently-written licences over ONE closure (an exemption from the
+  //    fan-out count that `collectRailGates::noteGate` would still contradict for
+  //    staleness), which is the bd 8h7d.5 F-1/F-3 shape verbatim — and its
+  //    refresh licence would rest on `ArmClassify`'s R6 refusing the alias shape,
+  //    i.e. a fence in ANOTHER FILE (bd
+  //    [[mint-at-consumer-window-protection-lives-elsewhere]]).
+  //
+  //    `T` DOMINATES THE MERGE: it was hoisted into `Pred`, which dominates
+  //    `MergeBB`, so the RAUW is well-formed. `lowerRotations` then RAUWs every
+  //    hoisted theta's result to its arg-0 handle exactly as today, so the FINAL
+  //    LOWERED IR IS IDENTICAL under either convention — which is what makes the
+  //    whole-corpus lowered-IR diff against the pre-Inc-3 oracle a real witness.
+  MergePhi->replaceAllUsesWith(Gates.back().first);
   scrubTaint(MergePhi, taint);
   MergePhi->eraseFromParent();
   flattenRegion(R, taint);
@@ -1305,13 +1399,24 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // A cycle (mutual aliasing that no order can satisfy) leaves regions
   // unscheduled — decline loudly rather than pick one and dereference the other.
   // UNREACHABLE TODAY, DELIBERATELY KEPT, AND IT CANNOT BE GIVEN A FIXTURE (bd
-  // hcrg Rule-13 clearance): a precedence cycle needs `A.Pred == B.MergeBB`
-  // transitively back to `A`, which IS a CFG cycle through the region entries —
-  // and `regionEntryInLoop` declines every flat region on a cycle at DETECTION,
-  // before the plan is built (`control_swap_reject_seq_in_loop.ll`). So no input
-  // can exercise this branch while that guard stands. Do not delete it as dead
-  // code: it is the backstop for the day the loop guard is narrowed, and a bare
-  // fall-through here would emit a partial region set over freed blocks.
+  // hcrg Rule-13 clearance) — but NOT for the reason this comment used to give,
+  // and the correction matters because the old one invited deleting the branch
+  // (bd drbq Inc 3, round-1 lens L4, F-L4-1). It said a precedence cycle needs a
+  // CFG cycle through the region entries, "and `regionEntryInLoop` declines
+  // every flat region on a cycle at DETECTION
+  // (`control_swap_reject_seq_in_loop.ll`)". BOTH HALVES ARE FALSE AT HEAD: that
+  // fixture was renamed to `control_swap_inloop_seq.ll` AND FLIPPED TO ACCEPT by
+  // 8h7d.5, and flat regions on a cycle DO reach the plan — two sequential phase
+  // regions in a loop lower today (exit 0, both binaries), and since Inc 3 so
+  // does the Ry-arm twin. So the population this backstop reasons about is
+  // NON-EMPTY and growing.
+  //
+  // What is still true is the narrower claim: a precedence CYCLE needs a
+  // region's `MergeBB` to be a loop header, i.e. a merge φ with three or more
+  // predecessors, and region recovery refuses that (`soleMergePhi` requires
+  // exactly 2 incomings). Lens L4 could not construct one. Do not delete this as
+  // dead code: it is the backstop for the day merge recovery is widened, and a
+  // bare fall-through here would emit a partial region set over freed blocks.
   SmallVector<size_t, 8> Order;
   Order.reserve(N);
   SmallVector<bool, 8> Done(N, false);

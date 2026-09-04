@@ -899,9 +899,16 @@ constexpr char kMsgClassicalPhi[] =
 // call sites through their arg-0 handle while that handle is tainted (a
 // tainted-operand rotation is in-place — its result RAUWs to its operand).
 // Stops at a classical-operand theta (the register's mint point — the call
-// itself is the base), at any non-gate value (phi/select/template/argument),
-// and never steps through another mux (nested diamonds resolve to distinct
-// phi bases and decline — conservative, documented).
+// itself is the base), at an ALREADY-ADJUDICATED controlled rotation (see the
+// `ControlledRotations` stop below), at any non-gate value
+// (phi/select/template/argument), and never steps through another mux (nested
+// diamonds resolve to distinct phi bases and decline — conservative,
+// documented).
+//
+// SOLE CALLER: `liftOneRegisterMergePhi` (grep `resolveWireBase` — one call
+// site, and `WireChain::Gates` has exactly one reader, the (6)/(7) loop there).
+// `LoopLowering::peelInPlaceBase` is the SIBLING spelling of the same walk and
+// is deliberately NOT changed by the stop below — see the note at the stop.
 struct WireChain {
   Value *Base = nullptr;
   // Gate calls peeled, incoming-value-first. Empty when the incoming IS the
@@ -915,6 +922,42 @@ WireChain resolveWireBase(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls
   while (auto *CI = dyn_cast<CallInst>(V)) {
     if (!GateCalls.count(CI))
       break;  // not a collected rotation call site — V is the base.
+    // An ALREADY-ADJUDICATED CONTROLLED rotation is a STOP, not a peel step:
+    // its result IS the base (bd test_C_libtooling-drbq Increment 3, round-1
+    // Rule-13 review finding F-L5-1; fixture
+    // control_inplace_ry_lifted_phi_after_region.ll).
+    //
+    // Three independent reasons, and the FIRST is the one that makes this an
+    // ACCEPT predicate rather than a convenience:
+    //  (i) A recorded rotation is UNCONDITIONAL IN THE CFG. `SwapRouteEmit`
+    //      HOISTS the arm gate into the region's pred and `AngleSelectEmit`
+    //      leaves the consuming rotation where it stood; the conditionality is
+    //      QUANTUM, carried by the `taint.ControlledRotations` flag operand,
+    //      never by a branch. So it executes on every path into any join below
+    //      it — which is exactly the obligation clauses (6)/(7a) discharge for
+    //      an edge-local gate, discharged here by domination instead. Peeling
+    //      it as if it were an edge gate then FAILS (6) (it is never in the
+    //      join's incoming block) and FAILS (7a) (it reaches every other edge),
+    //      so a shape whose per-path records are provably consistent declined.
+    // (ii) Its OPERAND names a record the register no longer holds — that is
+    //      the whole Inc-1 freeze / R6 staleness class. Peeling past it would
+    //      make the lift RAUW every consumer onto a STALE name, which
+    //      `declineLiftedStaleRecordOps` then has to catch. Stopping hands the
+    //      consumers the post-region name, which is what they physically read.
+    // (iii) It is a gate ANOTHER OWNER already proved (`ControlDetect` +
+    //      `ArmClassify` R1–R7 / `classifyAngleSelect` S1–S10, then the region
+    //      emitter). Re-opening its record question here is the sibling-spelling
+    //      hazard bd [[sibling-predicate-spelling-is-the-hole]] warns about.
+    //
+    // ⚠ THE SIBLING WALK IS DELIBERATELY DIFFERENT AND MUST STAY SO.
+    // `LoopLowering::peelInPlaceBase` peels THROUGH a hoisted controlled Ry on
+    // purpose — under M-β that is precisely how `collapseRailPhisIn` sees the
+    // gate as a rail chain member (notes §3). The two walks ask different
+    // questions: `peelInPlaceBase` asks "which physical RAIL is this?", and the
+    // answer is unchanged by a gate; `resolveWireBase` asks "which RECORD does
+    // this name denote?", and a gate changes that. Do not "unify" them.
+    if (taint.ControlledRotations.count(CI))
+      break;
     Value *Handle = CI->getArgOperand(0);
     if (!taint.Tainted.count(Handle))
       break;  // classical-operand theta: the mint point IS the base.

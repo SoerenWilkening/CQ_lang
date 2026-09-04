@@ -287,6 +287,65 @@ Value *peelInPlaceBase(Value *V, const SmallPtrSetImpl<CallInst *> &GateCalls,
   return V;
 }
 
+}  // namespace
+
+// bd test_C_libtooling-drbq Increment 3 — `collapseRailPhisIn` step (1)'s
+// EXTERNAL-INCOMING claim condition, NAMED so a second caller can ask it.
+//
+// ONE BODY, TWO CALLERS (Rule 14, and this is the `blockOnCycle` precedent from
+// bd drbq Inc 2b's round-1 review): step (1) below asks it of the POST-FLATTEN
+// header phi it is about to collapse, and `ArmClassify`'s R7-loop clause (b')
+// asks the IDENTICAL question at DETECTION time, before the region is emitted
+// and the diamond erased. The reason clause (b') exists at all is row DB of the
+// PRD §13.2 partition: a DERIVED out-of-place base (`int r = p * 5;` before the
+// loop) makes this test FAIL, step (1) `continue`s, the tainted header phi
+// survives the collapse, and the module then declines DOWNSTREAM of emission —
+// at `declineClassicalMuxes`, with a message that calls a quantum register a
+// classical mux. Asking it at detection turns that into a clean, accurate,
+// pre-mutation loud decline.
+//
+// WHAT IS **NOT** SHARED, stated because it is the one seam: each caller finds
+// the phi's EXTERNAL incoming itself. Step (1) spells it `IB == Latch` /
+// `else if (!L->contains(IB))` because it needs `LatV` too; this spells it
+// `!L->contains(IB)` alone. Under a SINGLE LATCH — which both callers have
+// already proved (`collapseRailPhisIn` returns `NotClaimed` without one;
+// `ControlDetect::flatRegionRollableInLoop` gate (C) requires one before
+// `Region.InLoop` is ever set) — every in-`L` predecessor of the header IS the
+// latch, so the two spellings name the same incoming. The LOAD-BEARING half —
+// what counts as a peel, and what counts as a clean rail mint — is this one body.
+//
+// Returns the root mint (a classical-arg-0 `cq_theta` dominating `L`'s header)
+// or null. Pure analysis; mutates nothing (Rule 9).
+llvm::CallInst *railPhiRootMint(const llvm::PHINode &P, const llvm::Loop *L,
+                                const SmallPtrSetImpl<CallInst *> &GateCalls,
+                                const TaintSet &taint,
+                                const llvm::DominatorTree &DT) {
+  auto *NCP = const_cast<PHINode *>(&P);
+  if (!taint.Tainted.count(NCP))
+    return nullptr;  // classical induction phi — not a rail.
+  if (P.getNumIncomingValues() != 2)
+    return nullptr;  // multi-entry header phi — leave it (declineClassicalMuxes).
+  Value *PreV = nullptr;
+  for (unsigned i = 0, e = P.getNumIncomingValues(); i != e; ++i)
+    if (!L->contains(P.getIncomingBlock(i))) {
+      if (PreV)
+        return nullptr;  // two external edges — not the clean latch+entry pair.
+      PreV = P.getIncomingValue(i);
+    }
+  if (!PreV)
+    return nullptr;
+  Value *Root = peelInPlaceBase(PreV, GateCalls, taint);
+  auto *Mint = dyn_cast<CallInst>(Root);
+  if (!Mint || !GateCalls.count(Mint) ||
+      taint.Tainted.count(Mint->getArgOperand(0)))
+    return nullptr;  // not a clean rail mint (a derived out-of-place base).
+  if (!DT.dominates(Mint, L->getHeader()))
+    return nullptr;
+  return Mint;
+}
+
+namespace {
+
 // Is `CI` an IN-PLACE rotation gate on its arg-0 handle `H` (a collected
 // `cq_theta`/`cq_phi` whose arg-0 is `H` and tainted)? Such a gate mints no new
 // rail; its result RAUWs to `H` at rotation lowering — so its result belongs to
@@ -354,15 +413,43 @@ bool isInPlaceGateOnArg0(const CallInst *CI, const Value *H,
 // `add`, the `if/else` form, and the out-of-loop control that ACCEPTS) — and it
 // stops Inc 3 from INHERITING a licence it was never granted.
 //
-// THE OBLIGATION INC 3 OWES IF IT WIDENS THIS TO THE Ry STEM, written down now
-// because it is the 8h7d.5 F-1/F-3 shape verbatim — TWO INDEPENDENTLY-WRITTEN
-// PREDICATES OVER ONE CLOSURE: this one would exempt the hoisted gate from the
-// fan-out count, while `collectRailGates`' `noteGate` (a plain
-// `starts_with("cq_theta_")` name test that never consults
-// `ControlledRotations`) would still COUNT it as a rail gate for staleness. They
-// must be moved together, or the widening must state in writing why the two
-// answers may legitimately differ for the same call. Whoever widens it re-derives
-// the licence; nobody inherits it.
+// ⚠ INCREMENT 3 SHIPPED THE Ry ARM IN A ROLLED LOOP AND DELIBERATELY DID **NOT**
+// WIDEN THIS PREDICATE — THE OBLIGATION WAS DISCHARGED BY MECHANISM, NOT BY
+// LICENCE (bd test_C_libtooling-drbq Inc 3, PRD §13.4/§13.7). What that obligation
+// said is preserved verbatim because it is still the rule for anyone who tries
+// again: widening this to `cq_theta_` would be the 8h7d.5 F-1/F-3 shape verbatim —
+// TWO INDEPENDENTLY-WRITTEN PREDICATES OVER ONE CLOSURE, this one exempting the
+// hoisted gate from the fan-out count while `collectRailGates`' `noteGate` (a
+// plain `starts_with("cq_theta_")` name test that never consults
+// `ControlledRotations`) would still COUNT it as a rail gate for staleness. Two
+// answers for one call.
+//
+// WHY NEITHER ANSWER HAD TO MOVE. `SwapRouteEmit::emitInPlaceRotationRegion` now
+// RAUWs the region's merge φ to the HOISTED GATE rather than to the base (M-β —
+// read that site for the two shapes that break under the other convention). So
+// under M-β the hoisted `cq_theta` is a CHAIN MEMBER: `%P → T → … → %P`. The
+// fan-out count then sees exactly ONE in-place user per rail value **without any
+// exemption**, and `noteGate` counts `T` as a relabelling gate **correctly** — an
+// Ry genuinely does move the basis, which is the whole reason the Rz argument
+// below does not transfer. Two predicates, one closure, one answer, no licence.
+//
+// ⚠ NARROWING, and it is the premise rather than the conclusion (bd drbq Inc 3,
+// round-1 lens L2, L2-F2): "`T` is a chain MEMBER" is true only when `T`'s RESULT
+// IS CARRIED around the back edge. When it is not — the region rotates a frozen
+// identity-carry φ — `T` joins the closure by the FORWARD extension, so it is in
+// `Gates` and in the record set but NOT in `MemberSet`. Nothing breaks today
+// because `ArmClassify`'s R6 declines that shape before this file runs (measured,
+// lens L2 `s01_frozen_base_region`), but the sentence above is not an invariant
+// and must not be quoted as one when R6 moves.
+//
+// THE `cq_phi_` RESTRICTION THEREFORE STAYS, and it is now load-bearing in the
+// other direction: it is what keeps the Rz stem's M-α convention working while the
+// Ry stem uses M-β. Retiring `isHoistedRegionArmGate` outright by moving Rz to
+// M-β too — leaving ONE emission convention in `SwapRouteEmit` — is filed as
+// follow-on `test_C_libtooling-drbq.10`; it touches 26 already-cleared goldens and a stem whose
+// current mechanism is *provably* sound (a diagonal gate genuinely is not a rail
+// gate), so it is not folded in here. Whoever widens this re-derives the licence;
+// nobody inherits it.
 bool isHoistedRegionArmGate(const CallInst *CI, const TaintSet &taint) {
   if (!taint.ControlledRotations.count(CI))
     return false;
@@ -2372,14 +2459,13 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
     // The external incoming must peel to a classical-operand `cq_theta` MINT
     // that dominates the loop (the rail origin) — the value every rail member
     // RAUWs onto at rotation lowering, and therefore the only sound collapse
-    // target.
-    Value *Root = peelInPlaceBase(PreV, GateCalls, taint);
-    auto *Mint = dyn_cast<CallInst>(Root);
-    if (!Mint || !GateCalls.count(Mint) ||
-        taint.Tainted.count(Mint->getArgOperand(0)))
+    // target. LIFTED to `railPhiRootMint` (above) since bd drbq Inc 3, because
+    // `ArmClassify`'s R7-loop clause (b') must ask the identical question at
+    // DETECTION time — read that function's header for why, and for the one
+    // seam (finding the external incoming) the two callers do not share.
+    Value *Root = railPhiRootMint(P, L, GateCalls, taint, DT);
+    if (!Root)
       continue;  // not a clean rail mint — leave it.
-    if (!DT.dominates(Mint, Header))
-      continue;
 
     // Collect the chain members (root → … → PreV → phi → … → LatV) so the
     // fan-out guard and the in-place marking below see every one of them.

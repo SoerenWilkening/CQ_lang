@@ -28,6 +28,7 @@
 #include "ControlShape.h"     // blockOnCycle (2b angle-select S7 cycle prong)
 #include "EqFoldArm.h"
 #include "LiteralIntegrity.h"  // valueCarriesUndef (2b angle-select S1 arm fence)
+#include "LoopPlan.h"          // railPhiRootMint (Inc 3 R7-loop clause (b'))
 #include "OpcodeSupport.h"
 #include "PredMuxFlatten.h"
 #include "RotationLowering.h"  // suffixFromName (2b angle-select S5)
@@ -52,6 +53,7 @@
 #include "llvm/IR/Instructions.h"
 
 #include <algorithm>
+#include <cassert>
 
 using namespace llvm;
 
@@ -553,6 +555,137 @@ void railWireClosure(Value *V, TaintSet &Taint, WireDir Dir,
 bool cannotFollowGate(const Instruction *U, const Instruction *BI,
                       const DominatorTree &DT) {
   return !isPotentiallyReachable(BI, U, /*ExclusionSet=*/nullptr, &DT);
+}
+
+// R6's PER-ACTIVATION reading, for an IN-LOOP region ONLY (bd
+// test_C_libtooling-drbq Increment 3, PRD §13.3).
+//
+// WHY THE TWO FLAT PREDICATES CANNOT SIMPLY BE REUSED. Both `provablyBefore` and
+// `cannotFollowGate` contain the reachability conjunct `!isPotentiallyReachable(
+// BI, U)`, which EVERY BACK EDGE falsifies (bd
+// [[provably-before-per-activation]]). Inside a loop the base's wire closure also
+// reaches values it never reaches flat — `railWireClosure` crosses phis BACKWARD,
+// and the loop-carried header φ's latch incoming is either the region's own merge
+// φ or a post-region gate whose arg-0 is that φ, so the merge (and through it the
+// arm theta) becomes a MEMBER and the forward `Exclude` cannot help. Every one of
+// their in-loop users then fails both flat predicates. Measured: with R7's loop
+// clause lifted and nothing else, all three flagship shapes (S1/S2/S11) declined
+// `stale rail record read past a controlled Ry`.
+//
+// THE CERTIFICATE. Let `D = def(M)` and let `p(U)` be `U`'s READ POSITION: `U`
+// itself, or — when `U` is a `PHINode` — the TERMINATOR of the incoming block on
+// each edge that names `M` (a phi reads its incoming ON THE EDGE, the same rule
+// `LoopLowering::staleReadOfValue` applies, and without it shape S2 alone dies:
+// the header φ's entry edge would be judged from inside the loop). Then
+//
+//     OK  iff  `D` REFRESHES  and  every CFG path `BI → p(U)` re-executes `D`.
+//
+// THE BARRIER IS `D`, THE RECORD'S OWN DEFINITION — never `BI`, never `U`. The
+// premise being re-established is "`M` denotes the register", and `D` is the
+// instruction whose execution establishes it (the same barrier
+// `WireWalk::gateIsHarmless` and `LoopLowering::railGateBetween` take). `Barrier
+// == To` is the P1 VACUITY (bd [[peractivation-barrier-must-not-be-subject-p1]]):
+// `reachesWithoutBarrier` tests barrier membership BEFORE the endpoint, so it
+// would cut at the very instruction it is trying to reach and could never
+// succeed — the certificate would be granted to everything, silently. Refused
+// outright below rather than in a comment at the call site.
+//
+// ⚠ AND THE REFUSAL IS THE `if`, NOT THE `assert` BESIDE IT (round-1 lens L1
+// Q1a). This project configures `CMAKE_BUILD_TYPE=Release`, so `NDEBUG` is on
+// and BOTH `assert`s in the body below are compiled out. They are documentation
+// of the invariant; the two `PU == D` / `U == D` early-`false` tests are what
+// actually holds it. Do not "simplify" either one away on the grounds that the
+// assert already covers it.
+//
+// THE GATE POSITION IS `BI`, NOT `T`. At detection `T` still sits in the arm
+// block, so a path through the MERGE that skips the arm never "sees" it — while
+// the HOISTED controlled gate executes unconditionally at `BI` on every
+// activation. Asking at `BI` is both the conservative reading and the
+// post-emission truth.
+//
+// THE REFRESH FENCE. The certificate's premise is "re-executing `D`
+// re-establishes `M`". True by construction for an in-place gate or a producer
+// (each re-reads the wire). FALSE for a φ that does not track the wire — bd
+// [[identity-carry-phi-does-not-refresh]], where `%p = phi [%q, pre], [%p, latch]`
+// provably equals the PRE-loop record while the wire moves under it. So a
+// `PHINode` `D` must satisfy `WireWalk::phiTracksWire`, which is EXPORTED for
+// this caller rather than re-spelt (Rule 14); `LoopLowering::recordRefreshedByDef`
+// asks the same question over a POST-FLATTEN gate set this stage does not have,
+// so it is not the reusable one.
+//
+// ⚠ THE FENCE'S POLARITY IS INVERTED HERE, AND ITS VOCABULARY IS NARROWER THAN
+// THIS STAGE'S (bd drbq Inc 3, round-1 lens L5 Q3). `phiTracksWire`'s other
+// caller uses it as a BARRIER, where `false` refuses and over-refusing is free;
+// HERE it is a PRECONDITION, so `true` GRANTS and an over-permissive answer
+// would be an OVER-ACCEPT. And it is spelled over `thetaOnPathTo`, which counts
+// a `cq_theta` and does NOT count the dtzb in-place `add`/`xor` that
+// `LoopLowering::collectRailGates` treats as a rail-relabelling gate.
+//
+// MEASURED 2026-09-04, 5 probes, and NOT exploitable — the discrimination is in
+// `control_inplace_ry_reject_inloop_frozen_dtzb_carry.ll`. The fence is never
+// the decider for this class: a FROZEN carry is its own user, so the PHI-EDGE
+// READ POSITION rule below refuses the mirrored pair (M = P, U = P) on the latch
+// edge before the refresh conjunct is consulted; and any NON-frozen φ on the
+// same wire has an incoming whose `collectWireValues` closure REACHES the
+// region's own arm `cq_theta`, so the fence answers `false` on its own terms.
+// RETIREMENT TRIGGER, THREE WAYS: relax the phi-edge read-position rule, admit a
+// non-φ `D` that can be frozen, or relax `LoopLowering::collapseRailPhisIn` step
+// (1)'s LOOP-CARRIED guard (`kMsgCrossIter`, "cq loop lowering: loop-carried
+// tainted value crosses iterations") — any of the three makes `phiTracksWire` the
+// ONLY wall, so widen its vocabulary (or fence this caller) in the same change.
+// The third is the ROUND-2 addition: a reviewer built the shape the two measured
+// legs do not cover (a NON-frozen carry seeded from the region's MERGE value,
+// the dtzb `add` after the region on the sibling chain, the carry read IN THE
+// BODY so R6's path conjunct is satisfiable) and it declines — but on the
+// loop-carried guard, not on either leg. Written identically at `WireWalk.h`'s
+// declaration and in that fixture; all three move together.
+//
+// (It is also why the fence is KEPT although deleting it reds nothing — §6a /
+// lens L1 Q1b. Defence in depth, measured redundant in every reachable shape,
+// with the pre-existing `cq_*`-call-consumer hole bd test_C_libtooling-67s8 as
+// what would be left uncovered if it went.)
+//
+// THE ONE WIDENING, STATED PLAINLY: the DOMINANCE conjunct that
+// `provablyBeforePerActivation` bundles is deliberately DROPPED here, so
+// `provablyBefore ⇒ certificate` and `cannotFollowGate ⇒ certificate` — the
+// certificate is strictly WEAKER than both, which is exactly why the FLAT path
+// must keep its own spelling verbatim and no acyclic shape may move. Dominance
+// answers "did `U` definitely execute", a question R6 has never asked (see
+// `cannotFollowGate`'s own header); keeping it in-loop would refuse the
+// customer's own post-loop `cq_measure(r)`, whose read position sits in the exit
+// block and dominates nothing.
+//
+// ⚠ TWO SETS, TWO QUESTIONS — UNCHANGED, and say so rather than deleting the
+// distinction (bd [[rail-record-set-is-the-rail-not-the-chain]]). The MEMBER set
+// whose users are enumerated stays `BaseWireOrder`; the SKIP set of alias hops
+// stays `BaseWire`. In-loop BOTH obligations collapse to this one certificate —
+// a RELAXATION for genuine reads and no change for hops — but the sets still
+// differ; only the predicate they feed is now common.
+bool recordLivePerActivation(Value *M, const Instruction *U,
+                             const Instruction *BI) {
+  auto *D = dyn_cast<Instruction>(M);
+  if (!D)
+    return false;  // a non-instruction member has no definition to re-execute.
+  if (auto *DP = dyn_cast<PHINode>(D))
+    if (!phiTracksWire(DP))
+      return false;  // frozen carry — re-executing it does not re-read the wire.
+  if (const auto *P = dyn_cast<PHINode>(U)) {
+    bool NamesM = false;
+    for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i) {
+      if (P->getIncomingValue(i) != M)
+        continue;
+      NamesM = true;
+      const Instruction *PU = P->getIncomingBlock(i)->getTerminator();
+      assert(PU != D && "per-activation barrier must not be the read position");
+      if (PU == D || !everyPathReExecutes(BI, PU, D))
+        return false;
+    }
+    return NamesM;
+  }
+  assert(U != D && "per-activation barrier must not be the read position");
+  if (U == D)
+    return false;
+  return everyPathReExecutes(BI, U, D);
 }
 
 // The angle operand of a rotation call, tainted? ONE spelling, shared with
@@ -1238,7 +1371,7 @@ Value *straightThroughConstFoldHandle(const ControlRegion &Region, Value *Routed
 }  // namespace
 
 ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
-                            const DominatorTree *DT) {
+                            const DominatorTree *DT, const LoopInfo *LI) {
   auto *MergePhi = dyn_cast_or_null<PHINode>(Region.Merge);
   if (!MergePhi) {
     diagnoseUnderControl(declAnchor(Region), "control flow");
@@ -1627,23 +1760,107 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // an opaque call, a φ, ANY user that is not provably before the region
       // declines.
       //
-      // R7's LOOP half, asked HERE — immediately before R6 and nowhere earlier,
-      // so every other clause's message ordering is byte-identical — because R6
-      // is the ONE clause whose proof is not valid inside a loop. Both position
-      // predicates below are flat: neither `provablyBefore` nor
-      // `cannotFollowGate` has a per-activation reading, so a loop-carried
-      // register's own header φ, reached as a wire member around the BACK EDGE,
-      // reads as a stale record when it is simply the NEXT activation's value
-      // (the bd 8h7d.5 `provablyBeforePerActivation` distinction, which this
-      // epic's Inc 3 owns together with the loop accept). The class declines in
-      // a loop regardless — `handleBranchRegion`'s in-loop scope fence part 3 is
-      // kept as the backstop — so ask the loop question first rather than answer
-      // R6's with the wrong barrier and emit a message that mislabels the region.
-      // MEASURED: without this, `control_inplace_ry_reject_in_loop.ll` declines
-      // on the stale-record string, correctly but for the wrong stated reason.
+      // ---- R7's LOOP half (bd test_C_libtooling-drbq Inc 3, PRD §13.2b) ----
+      //
+      // Asked HERE — immediately before R6 and nowhere earlier, so every other
+      // clause's message ordering is byte-identical — because R6 is the ONE
+      // clause whose proof changes inside a loop.
+      //
+      // UNTIL 2026-09-04 THIS WAS AN UNCONDITIONAL DECLINE. It is now the
+      // ADMISSION half of the increment the owner scoped ("in a classical loop
+      // (so classical bounds), cRy should NOT decline"). `ControlDetect` has
+      // ALREADY proved the CFG half before `Region.InLoop` was ever set:
+      // `flatRegionRollableInLoop` (A) a natural `LoopInfo` loop, (B) every
+      // region block at exactly that depth, (C) a single latch, (D) no second
+      // cycle through the entry. What is left for this clause is the two
+      // questions that are about the ROTATED REGISTER rather than the CFG:
+      //
+      //   (b)  some member of `BaseWire` is a PHINode in `L`'s HEADER — i.e. the
+      //        rotated base's rail CROSSES the back edge. This is a SCOPING
+      //        clause, not a safety one: Inc 3 is the Ry arm on the loop's
+      //        PERSISTENT register. An ITERATION-LOCAL rotated register (minted
+      //        inside the body) is a different capability, and it is measurably
+      //        not twin-identical — its escape makes `markIfRailLocal` refuse
+      //        the marking, so the rolled form leaks the condition chain once per
+      //        trip while the hand-unrolled twin discharges it. A DIFFERENT
+      //        CIRCUIT, which is exactly what the twin matrix exists to catch.
+      //
+      //   (b') that header φ must be one `collapseFlattenedLoopRails` will
+      //        actually CLAIM — its external incoming peels, through in-place
+      //        steps, to a classical-arg-0 `cq_theta` mint dominating the header.
+      //        ⚠ READ THAT AS THE SHARED HALF ONLY: step (1) additionally
+      //        requires the CLOSED SELF-CYCLE on the LATCH incoming, which this
+      //        clause does not ask, so a φ admitted here can still be refused at
+      //        round 2 — loudly, with `kMsgCrossIter` (measured, lens L5 Q4).
+      //        "Impossible by construction" is FALSE for that half; see
+      //        `LoopPlan.h`.
+      //        Asked by CALLING `LoopPlan.h`'s `railPhiRootMint`, which IS the
+      //        round-2 collapse's step-(1) body (Rule 14 — never a second
+      //        spelling of one claim condition). PRD §13.2 row DB is why: with a
+      //        DERIVED OUT-OF-PLACE base (`int r = p * 5;` before the loop) the
+      //        peel bottoms at a `mul`, step (1) `continue`s, the tainted header
+      //        φ survives, and the module declines DOWNSTREAM of emission and of
+      //        `flattenRegion` — at `declineClassicalMuxes`, whose
+      //        `classical-condition phi` string mislabels a QUANTUM register.
+      //        MEASURED, with R7 lifted and nothing else (2026-09-04, both
+      //        binaries): that shape declines `stale rail record read past a
+      //        controlled Ry` on the FLAT R6 predicates, and — with R6 also made
+      //        per-activation — reaches the mux guard exactly as read. Declining
+      //        HERE is a pre-mutation loud decline with an accurate string.
+      //
+      // A loop shape failing either declines with the string it has always had.
+      // `LI` null (no tree, no proof) is the same decline — Prime Directive.
       if (Region.InLoop) {
-        declineArm(declAnchor(Region), "control flow inside a loop body");
-        return ArmDisposition::Declined;
+        const Loop *L = LI ? LI->getLoopFor(Region.Pred) : nullptr;
+        BasicBlock *LHdr = L ? L->getHeader() : nullptr;
+        // ONE GateCalls RECIPE, built the way `lowerLoops` and
+        // `collapseFlattenedLoopRails` build theirs (θ ∪ φ), because
+        // `railPhiRootMint`'s peel is defined over exactly that set.
+        //
+        // ⚠ THE RECIPE IS SHARED; THE SET IS NOT (bd drbq Inc 3, round-1 lens
+        // L5 Q4). `AngleSelectEmit` inserts the unconditional twin rotation it
+        // mints into `ThetaCalls`/`PhiCalls`, and it runs after this stage and
+        // before `collapseFlattenedLoopRails` — so ROUND 2 SEES A STRICT
+        // SUPERSET of what is built here. That direction is SAFE, and the
+        // argument is the monotonicity of the peel: `peelInPlaceBase` advances
+        // only while a call is IN `GateCalls`, so a SMALLER vocabulary stops
+        // EARLIER, and an early stop lands on a value that fails
+        // `railPhiRootMint`'s `GateCalls.count(Mint)` test ⇒ null ⇒ this clause
+        // DECLINES. Conservative by construction, not by luck.
+        // RETIREMENT TRIGGER: it inverts silently if detection's vocabulary ever
+        // becomes a superset of round 2's, or if the peel's stop condition stops
+        // being monotone in `GateCalls`. Full statement at `LoopPlan.h`'s
+        // declaration, including why "a divergence between the two callers is
+        // impossible by construction" is FALSE for the unshared LATCH half.
+        SmallPtrSet<CallInst *, 32> GateCalls;
+        GateCalls.insert(Taint.ThetaCalls.begin(), Taint.ThetaCalls.end());
+        GateCalls.insert(Taint.PhiCalls.begin(), Taint.PhiCalls.end());
+        bool Rollable = false;
+        if (LHdr && DT)
+          for (Value *B : BaseWireOrder) {
+            auto *P = dyn_cast<PHINode>(B);
+            // (b). ⚠ THE `!= LHdr` HALF IS DEFENCE IN DEPTH, NOT A LIVE WALL, and
+            // it is recorded rather than deleted (measured 2026-09-04: relaxing it
+            // to "any `BaseWire` φ" turns ZERO of 1459 fixtures red). It is
+            // REDUNDANT under (b'): `railPhiRootMint` can only succeed for a φ with
+            // exactly ONE incoming block outside `L`, and in a reducible
+            // single-latch loop — gates (A)/(C) of `flatRegionRollableInLoop`, both
+            // already proved before `Region.InLoop` was set — the header is the only
+            // block with a predecessor outside `L`. What IS live in (b) is "there is
+            // a rail φ AT ALL", pinned by
+            // `control_inplace_ry_reject_inloop_iterlocal_base.ll` (an
+            // ITERATION-LOCAL rotated register has none). Kept in the same style as
+            // the two `STRUCTURALLY UNREACHABLE, kept as defence in depth` notes
+            // above: the alternative to a redundant check is a silent fall-through.
+            if (!P || P->getParent() != LHdr)
+              continue;
+            if (railPhiRootMint(*P, L, GateCalls, Taint, *DT))
+              Rollable = true;                              // (b')
+          }
+        if (!Rollable) {
+          declineArm(declAnchor(Region), "control flow inside a loop body");
+          return ArmDisposition::Declined;
+        }
       }
       // OVER THE RAIL, NOT THE CHAIN (finding J). The scan ranges over EVERY
       // member of `BaseWire`, not over `RotBase` alone: `int mark = cq_phi(r,·)`
@@ -1700,8 +1917,35 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // three the only thing that can go wrong is EXECUTING AFTER the hoisted
         // controlled Ry, which is exactly what `cannotFollowGate` refuses.
         // Dominance answers "did `U` definitely execute", which R6 never asks.
-        const bool Ok = BaseWire.count(UI) ? cannotFollowGate(UI, BI, *DT)
-                                           : provablyBefore(UI, BI, *DT);
+        //
+        // IN-LOOP the two flat predicates are replaced — for this class ONLY —
+        // by the PER-ACTIVATION certificate (`recordLivePerActivation`, bd drbq
+        // Inc 3 / PRD §13.3). The two SETS above are untouched; what changes is
+        // the predicate they feed, and only when `Region.InLoop`. A flat region
+        // keeps `provablyBefore` / `cannotFollowGate` BYTE-FOR-BYTE, which is
+        // what makes the whole-corpus acyclic sweep a real witness rather than a
+        // regeneration.
+        //
+        // ⚠ THE TWO SPELLINGS ARE NOT EQUIVALENT, AND THE PAIR THAT PROVES IT IS
+        // COMMITTED (bd drbq Inc 3, round-1 lens L1 Q2):
+        // `control_inplace_ry_reject_flat_cond_pre_measure.ll` DECLINES and
+        // `control_inplace_ry_inloop_cond_pre_measure.ll` ACCEPTS the SAME
+        // relation between a record read and a region — once acyclic, once in
+        // the rolled loop. THE CERTIFICATE IS THE GENERAL PREDICATE:
+        // `provablyBefore ⇒ certificate` and `cannotFollowGate ⇒ certificate`,
+        // because it drops the DOMINANCE conjunct, which answers "did `U`
+        // definitely execute" — a question R6 has never needed. The flat pair is
+        // a deliberately STRONGER LEGACY spelling, kept verbatim so that no
+        // acyclic disposition moved in this increment. Replacing it with the
+        // certificate is therefore a real WIDENING of the acyclic accept class
+        // and owes its own adversarial round (Rule 13); the two fixtures are what
+        // make that a deliberate day rather than a silent flip. bd
+        // [[sibling-predicate-spelling-is-the-hole]].
+        const bool Ok =
+            Region.InLoop
+                ? recordLivePerActivation(M, UI, BI)
+                : (BaseWire.count(UI) ? cannotFollowGate(UI, BI, *DT)
+                                      : provablyBefore(UI, BI, *DT));
         if (!Ok) {
           declineArm(UI, "stale rail record read past a controlled Ry");
           return ArmDisposition::Declined;
@@ -1999,7 +2243,8 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // if/else second chain bottoming anywhere but the first arm's anchored base
   // declined `control flow` (base-identity).
 
-  // P1 — the Inc-4 position-aware accept is PHASE-ONLY. A value arm keeps the
+  // P1 — the Inc-4 position-aware accept is for the arm classes whose emitted
+  // stream is PROVABLY COMPLETE at the branch. A value arm keeps the
   // position-free reading verbatim (Rule 7: method-B copies a basis LABEL out
   // and replays the chain on the routed rail, so a later in-place Ry on that
   // wire is a real staleness hazard the phase path does not have — the phase
@@ -2008,7 +2253,60 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // ACCEPT-class value arm falls through to here, so this is the fence that
   // actually holds P1. `SawValueArm` also covers the mixed case by
   // construction (a mixed region declined above).
-  if (DeferredWireGate && (SawValueArm || !SawPhaseArm)) {
+  //
+  // ⚠ `SawRotationArm` WAS ADDED HERE BY bd test_C_libtooling-drbq INCREMENT 3
+  // (PRD §13.4b), AND IT MOVES ACYCLIC PROGRAMS — say so plainly, because every
+  // other part of that increment is about loops. Before it, a control-in-place
+  // ROTATION arm set `SawRotationArm` and never `SawPhaseArm`, so `!SawPhaseArm`
+  // was true and `if (q == 5) r = cq_theta(r, .9); q = cq_theta(q, .3);` declined
+  // `condition predates a non-diagonal gate` with NO loop anywhere in it — while
+  // the identical program with `q = cq_phi(q, .3)` ACCEPTED. The fence was keyed
+  // on the arm's SPELLING, not on its physics (recorded over-decline bd drbq.7).
+  //
+  // THE ARGUMENT IS P1's OWN, WITH THE ARM CLASS SUBSTITUTED, and it is why the
+  // rotation arm belongs on the phase arm's side of this disjunction rather than
+  // the value arm's. An in-place rotation arm copies nothing, replays nothing and
+  // allocates no work rail: its ENTIRE emitted stream is
+  //     mint(f from C) ; [x(f)] cRy(f, R, θ) [x(f)] ; strip(f from C) ; free(f)
+  // all inserted before `BI`. `ProvenPostRegion` means every wire gate `G`
+  // satisfies `provablyBefore(BI, G)`, and `condWireDisposition`'s own lemma
+  // carries that to each call in the stream — dominance over `BI` implies
+  // dominance over calls that PRECEDE `BI` in `BI`'s own block, and
+  // `!reachable(G, BI)` implies `!reachable(G, S)` for each. So when `G` fires the
+  // flag is already stripped and freed and `R`'s relabelling is complete; and R4
+  // has proved `R`'s wire ∉ `C`'s wires, so `G` is not on the register this arm
+  // touched.
+  //
+  // THE RESIDUAL IS IDENTICAL TO THE PHASE ARM'S, not new: a DERIVED condition
+  // leaves template rails entangled with `C` and live past the strip, which a
+  // later Ry on `C` dephases. That is a property of the CONDITION's chain, not of
+  // the arm class — CONFIRMED by independent measurement (round-1 lens L8): the
+  // derived-`and` and derived-`sqrt` programs' traces are byte-identical to their
+  // `cq_phi`-arm twins apart from `rz`↔`ry` on one line, with the whole chain
+  // `_unc`'d and freed BEFORE the deferred gate. Pinned by
+  // `control_inplace_ry_post_region_theta_derived_cond.ll` and `..._negated.ll`.
+  //
+  // ⚠ WHAT THIS COMMENT USED TO ADD IS STRUCK: "and it has been owned since bd
+  // lyyf by M-A's `warnLiveRecordRotations` as a `DS_Warning`" (lens L8, F-L8-1).
+  // M-A does NOT fire for an ESCAPING condition record — `int d = q & 6;`
+  // measured after the region leaves the `and` rail live and entangled when the
+  // post-region Ry fires, and stderr is EMPTY. The gap is arm-class-independent
+  // and PRE-EXISTING (the `cq_phi` twin is equally silent on the ORACLE), so it
+  // is not this clause's to fix; it is simply not the thing that makes this
+  // clause safe. The ORDER argument above is, and it is measured.
+  //
+  // WITHOUT THIS THE FLAGSHIP CUSTOMER DOES NOT COMPILE. Canonical Grover in a
+  // rolled loop is an Rz oracle, a controlled Ry on an ancilla and an **Ry**
+  // reflection on `q`; the loop half of Increment 3 clears R7 and this clause is
+  // the SECOND, non-loop fence standing in front of it. Shipping only the first
+  // would have delivered the Rz-reflection and dtzb-offset loops while still
+  // declining the program the increment was scoped for — Rule 17.
+  //
+  // Pinned by the red-green pair `control_inplace_ry_post_region_theta_cond.ll`
+  // (accept, flat) and `control_inplace_ry_reject_post_region_theta_stalecond.ll`
+  // (the gate that is NOT provably post-region, still `DeclineNow` upstream), so
+  // the two halves of `condWireDisposition` cannot drift.
+  if (DeferredWireGate && (SawValueArm || !(SawPhaseArm || SawRotationArm))) {
     diagnoseUnderControl(declAnchor(Region),
                          "condition predates a non-diagonal gate");
     return ArmDisposition::Declined;
@@ -3167,6 +3465,17 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // The barrier is sound at `T` because the emitter inserts its whole stream
   // IMMEDIATELY BEFORE `T` (the unconditional twin, then the mint), so nothing
   // lands between a user proven before `T` and the first relabelling gate.
+  //
+  // ⚠ AND IT IS THE FLAT SPELLING ON PURPOSE, EVEN THOUGH A WEAKER ONE EXISTS
+  // (bd drbq Inc 3, round-1 lens L1 Q2). `ArmClassify`'s in-loop R6 site now has
+  // a PER-ACTIVATION certificate that is analytically implied by both predicates
+  // used here, so it accepts strictly more — see the committed pair
+  // `control_inplace_ry_reject_flat_cond_pre_measure.ll` (declines) /
+  // `control_inplace_ry_inloop_cond_pre_measure.ll` (accepts). This site keeps
+  // `provablyBefore` / `cannotFollowGate` because an angle select is ACYCLIC by
+  // S7 and because adopting the certificate here would WIDEN the 2b accept class,
+  // which owes its own adversarial round (Rule 13). Do not "unify" the two
+  // spellings as a cleanup: the asymmetry is the decision.
   for (Value *M : BaseWireOrder)
     for (User *U : M->users()) {
       if (U == T || U == Sel)

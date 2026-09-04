@@ -701,6 +701,36 @@ after a statevector-checked design dialogue; see
   byte-identical to the manual twin on the pre-2b oracle, so the disposition
   belongs to Inc-1's structural freeze rather than to 2b. Notes:
   `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC2B_NOTES.md`.
+  **Inc 3 (2026-09-04) puts the `R_y` arm INSIDE the 8h7d.5 rolled loop**, so
+  Grover written as `for (i…) { oracle; controlled-Ry on an ancilla; reflection; }`
+  compiles ROLLED (IR size independent of the trip count — measured 74 lowered-IR
+  lines at K=3 and at K=1000). Three pieces: R7's loop half became clauses (b)/(b′)
+  (the rotated base's rail must cross the back edge through a header φ the round-2
+  collapse will CLAIM, asked by calling `collapseRailPhisIn` step (1)'s own body);
+  R6's position predicates became a PER-ACTIVATION certificate for in-loop regions
+  only (the flat path keeps its two spellings byte-for-byte); and the emitter's
+  RAUW target for the Ry stem became the HOISTED GATE rather than the base (M-β),
+  which makes the gate a chain member so every `LoopLowering` predicate reads the
+  truth with no exemption. **The same increment moved a FLAT fence** — `ArmClassify`'s
+  final P1 clause was phase-arm-only and declined `if (q==5) r=Ry(r,.9); q=Ry(q,.3);`
+  with no loop in it; it now admits `SawRotationArm`, without which the flagship
+  customer does not compile rolled OR flat. Witness: byte-identity with the
+  hand-unrolled twin on six e2e pairs, 0 of 1430 pre-existing lit fixtures and 0 of
+  267 pre-existing e2e slices moved, 0 goldens moved. **`e2e-loop-twin-matrix` was RED
+  on 15 of its 273 cells at hand-back** — two PRE-EXISTING rolled-vs-flat divergence
+  classes that this axis is the first to expose, both reproduced on the pre-Inc-3
+  oracle with an `Rz` arm, both outside Inc 3's scope to fix. **Its round-1 Rule-13
+  review made the gate GREEN without blessing the divergence**, by moving those 15
+  cells out of the expected table and into a PINNED-SIGNATURE quarantine
+  (`tools/loop_twin_matrix.quarantine.txt`) that fails if a signature CHANGES and
+  equally if a cell STOPS diverging — bd `test_C_libtooling-1m5p` (class A,
+  `Uncomputation`/`FreePoint`, ROLLED deficient) and `test_C_libtooling-a3z7`
+  (class B, `ArithLowering` M-C, FLAT deficient), both awaiting an owner
+  disposition. The same review added 14 fixtures and one e2e pair (the O(K)
+  freeze-leak reproducer, which turns PRD §13.5's "K rails at run time" from
+  analytic into measured), corrected five doc-false statements, and found **no
+  confirmed miscompile and no confirmed over-accept**. Notes:
+  `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC3_NOTES.md`.
 
 **Soundness obligation (§3b).** `cqrt_free` (compiler-emitted only) is emitted on
 a rail **only after** its reverse-play returns it to `|0⟩`, via the `FreePoint`

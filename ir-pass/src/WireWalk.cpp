@@ -223,19 +223,13 @@ bool thetaOnPathTo(const Instruction *V, const Instruction *Target) {
 // re-executing `P` re-establishes the record — the premise `gateIsHarmless`
 // leg 2 needs. A non-instruction incoming (a constant / argument) means the
 // value at that edge is not a wire record at all: refuse.
-bool phiTracksWire(const PHINode *P) {
-  for (unsigned I = 0, E = P->getNumIncomingValues(); I != E; ++I) {
-    const auto *V = dyn_cast<Instruction>(P->getIncomingValue(I));
-    if (!V)
-      return false;
-    const Instruction *Term = P->getIncomingBlock(I)->getTerminator();
-    if (V == Term)
-      continue;  // degenerate; nothing can run between.
-    if (thetaOnPathTo(V, Term))
-      return false;
-  }
-  return true;
-}
+// DEFINED BELOW, OUTSIDE THE ANONYMOUS NAMESPACE (bd test_C_libtooling-drbq
+// Inc 3): `ArmClassify`'s R6 per-activation refresh fence asks the identical
+// question of a rail record's own definition, so the predicate is EXPORTED
+// rather than re-spelled (Rule 14 — bd [[identity-carry-phi-does-not-refresh]]
+// is precisely a case where two spellings of "does re-executing this def
+// re-read the wire" would have disagreed). The declaration in WireWalk.h is what
+// the two call sites above resolve to.
 
 // "Can `From` reach `To` on some execution path WITHOUT executing any of
 // `Barriers`?" An EXACT forward CFG walk (each block scanned at most once, so it
@@ -352,6 +346,20 @@ bool gateIsHarmless(const Instruction *EmitPoint, const CallInst *T,
 }
 
 }  // namespace
+
+bool phiTracksWire(const PHINode *P) {
+  for (unsigned I = 0, E = P->getNumIncomingValues(); I != E; ++I) {
+    const auto *V = dyn_cast<Instruction>(P->getIncomingValue(I));
+    if (!V)
+      return false;
+    const Instruction *Term = P->getIncomingBlock(I)->getTerminator();
+    if (V == Term)
+      continue;  // degenerate; nothing can run between.
+    if (thetaOnPathTo(V, Term))
+      return false;
+  }
+  return true;
+}
 
 CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
                                   bool CrossValueRouting,

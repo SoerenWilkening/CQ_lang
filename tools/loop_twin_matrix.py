@@ -41,6 +41,23 @@ never a silent drift (Rule 12) — regenerate the table deliberately with
 `--regenerate`, never by reflex, and say in the commit message which cells moved
 and why.
 
+AND THE QUARANTINE, `tools/loop_twin_matrix.quarantine.txt` (bd
+test_C_libtooling-drbq Inc 3, round-1 lens L7). A QUARANTINE IS NOT A BLESSING.
+A divergence may still never be recorded as an expected VERDICT — that would
+retire this gate — so a cell holding a FILED, root-caused, bd-tracked defect is
+moved OUT of the expected table and pinned in the quarantine to the EXACT
+unified-diff signature of its divergence. It then passes ONLY while it diverges
+in exactly that way, and it FAILS in both directions: if the signature moves, if
+the cell stops diverging ("quarantine stale — remove it"), if the cell appears in
+both files, or if any NON-quarantined cell diverges. The alternative that was
+rejected is worth naming: leaving the gate permanently red, which is Rule 19's
+own argument in reverse — a gate expected to be red is a gate people stop
+reading, and the F-4 class above was found BECAUSE the gate was green and one
+cell went red. Two BOUNDARY CONTROLS (`QUARANTINE_CONTROLS`) run beside the cells
+on every invocation — `--regenerate` and `--refresh-quarantine` included, and
+each of those REFUSES TO WRITE while a control has moved — and make the
+quarantine's class story a measurement rather than a paragraph.
+
 THE STAGES ARE THE SLICES' STAGES, deliberately replicated rather than shared:
 `clang -O1 -emit-llvm` -> `opt -passes=cq-lowering` -> STRICT
 `free_pairing_check.py` (no `--allow-unproven`) -> link (templates BEFORE
@@ -158,6 +175,8 @@ exactly one job, and a table entry that says "this pair may differ" retires it.
 
 import argparse
 import concurrent.futures
+import difflib
+import hashlib
 import itertools
 import os
 import shutil
@@ -438,6 +457,13 @@ def sources(prefix, region, suffix, record="none", rgate="none"):
     region_text = RY_REGION[region] if second else REGION[region]
     body = (PREFIX[prefix] + G["pre"] + R["pre"] + region_text + R["post"]
             + G["post"] + SUFFIX[suffix])
+    return _wrap(body, second, R)
+
+
+def _wrap(body, second, R):
+    """The rolled/unrolled pair around ONE body. Shared by `sources` and by the
+    quarantine's boundary controls so that a control can never drift into being
+    a differently-shaped program than the cells it bounds."""
     head = ("int slice(void){\n    int a = 0;\n"
             + ("    int r = 0;\n" if second else "") + R["decl"]
             + "    a = cq_theta(a, 0.5);\n"
@@ -467,6 +493,76 @@ def sources(prefix, region, suffix, record="none", rgate="none"):
         + "int main(void){(void)slice();return 0;}\n"
     )
     return rolled, unrolled
+
+
+# ── THE QUARANTINE'S BOUNDARY CONTROLS (lens L7, drbq Inc 3 round 1) ─────────
+# The quarantine file's root-cause story for both classes is one sentence: the
+# divergence needs BOTH the region present AND the arm rotating a register the
+# condition does not read. That sentence is a claim about the compiler, so it is
+# a GATE here rather than a paragraph — L7 measured both controls by hand and
+# they are the two edges of the class. Neither is expressible as a matrix cell:
+# `REGION` has no `none` entry, and no `RY_REGION` spelling puts the arm back on
+# the condition register at an OPAQUE threshold (`der` is the literal-3.5 one, so
+# it hoists differently). They are run on every invocation, alongside the cells
+# — `run_boundary_controls` is called ABOVE every mode's early return, so
+# `--regenerate` and `--refresh-quarantine` consult them too and REFUSE TO WRITE
+# while one has moved (round-2 review F-R2-2; as first written they did not) —
+# and a divergence in either is a hard failure: if a control starts diverging,
+# the quarantine's two classes are no longer what the file says they are, and the
+# pinned signatures below it stop meaning anything.
+QUARANTINE_CONTROLS = {
+    # No region at all. Isolates "the region is necessary": the class-B `add`
+    # suffix on its own does NOT split the two spellings.
+    "q_noregion": "        a = a + off;\n",
+    # The same OPAQUE derived condition the class-A cells use, with the arm back
+    # ON the condition register. Isolates "the disjoint-register arm is
+    # necessary": with `a` loop-VARIANT, LICM cannot hoist the `sitofp; fadd;
+    # sqrt` chain and the two spellings agree.
+    "q_armoncond": "        if (sqrt(a + 3.) <= (double)off)"
+                   " { a = cq_phi(a, M_PI); }\n",
+}
+
+
+def control_sources(name):
+    """(rolled, unrolled) C for one boundary control. No second register, no
+    record — deliberately the plainest shape the wrapper can make."""
+    return _wrap(QUARANTINE_CONTROLS[name], False, RECORD["none"])
+
+
+def run_boundary_controls(cfg):
+    """Build and compare both QUARANTINE_CONTROLS; return a list of failure
+    reports (empty == both `ACCEPT-IDENTICAL`, i.e. the class story still holds).
+
+    CALLED ON EVERY INVOCATION, including `--regenerate` and
+    `--refresh-quarantine`. That is the whole point and it is a round-2 review
+    fix (F-R2-2): the controls used to sit AFTER both of those early returns, so
+    the one operation that RE-PINS a defect (`--refresh-quarantine`) was the one
+    operation that never consulted the measurements its class story rests on,
+    and `--regenerate` reported success with a control diverging.
+    """
+    fails = []
+    for cname in sorted(QUARANTINE_CONTROLS):
+        r_src, u_src = control_sources(cname)
+        work = tempfile.mkdtemp(prefix="cqtwinctl_")
+        try:
+            cr = build_side(cfg, work, cname, r_src)
+            cu = build_side(cfg, work, cname + "_u", u_src)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        v, report = verdict(cname, cr, cu)
+        # `ACCEPT-IDENTICAL-WARN` counts as identical: both sides warned with the
+        # SAME message, which is not a divergence. A one-sided warning is already
+        # `WARN-ASYMMETRY` and fails here like any other non-identity.
+        if not v.startswith("ACCEPT-IDENTICAL"):
+            fails.append(
+                "%s: BOUNDARY CONTROL is no longer ACCEPT-IDENTICAL (got %s).\n"
+                "    The quarantine's root cause says the divergence needs BOTH "
+                "the region\n    AND an arm off the condition register. This "
+                "control isolates one of\n    those two halves, and it just "
+                "moved — the quarantine's class story is\n    no longer the "
+                "measured one.%s"
+                % (cname, v.split("\t")[0], "\n" + report if report else ""))
+    return fails
 
 
 def _pair_check(path):
@@ -571,6 +667,117 @@ def build_side(cfg, work, name, csrc):
 
 def counts(trace):
     return (trace.count("_unc("), trace.count("cqrt_free("), trace.count("-> h"))
+
+
+# ── THE QUARANTINE ──────────────────────────────────────────────────────────
+# A QUARANTINE IS NOT A BLESSING. `loop_twin_matrix.expected.txt` says, and keeps
+# saying, that `TRACE-DIVERGENCE` may never be recorded as an expected verdict —
+# a table entry that says "this pair may differ" retires the one gate in the tree
+# that can see the F-4 class. The quarantine does NOT relax that. It records a
+# FILED DEFECT together with the EXACT way it currently manifests, and it fails
+# in BOTH directions:
+#
+#   * the cell stops diverging          -> FAIL ("quarantine stale — remove it")
+#   * the cell diverges DIFFERENTLY     -> FAIL (the signature moved: either the
+#                                         defect changed or something new landed
+#                                         on top of it, and both need a human)
+#   * the cell is in BOTH files         -> FAIL (a verdict and a quarantine are
+#                                         two different claims about one cell)
+#   * a NON-quarantined cell diverges   -> FAIL, exactly as before
+#
+# So the only thing that passes is "these cells, diverging in exactly these ways".
+# The signature is a digest of the full unified diff of the two traces — not a
+# line count, not a first-difference, not a verdict — so a divergence that grows,
+# shrinks, moves or changes opcode is a red. The first differing line PAIR is
+# stored beside it unhashed, because a digest alone is unreadable and the next
+# person needs to see what the defect looks like without running anything.
+#
+# Every entry names its CLASS, its bd issue, and the OWNING SUBSYSTEM **with a
+# direction** — which side is the deficient one. The direction is the part people
+# get wrong: for class B the ROLLED side is the better circuit and "fix the roll
+# to match the flat" would make the emitted circuit worse (lens L7).
+QUARANTINE_KEYS = ("class", "bd", "owner", "digest", "rolled", "unrolled")
+
+
+def divergence_signature(rolled_trace, unrolled_trace):
+    """(digest, first_rolled_line, first_unrolled_line) for a diverging pair.
+
+    The digest covers the WHOLE unified diff including its `@@` hunk headers, so
+    a divergence that merely moves position is a different signature. `<end>` is
+    the sentinel for "this side had no such line", which is how a pure
+    truncation reads.
+    """
+    d = list(difflib.unified_diff(rolled_trace.splitlines(),
+                                  unrolled_trace.splitlines(),
+                                  fromfile="rolled", tofile="unrolled",
+                                  lineterm="", n=3))
+    digest = hashlib.sha256("\n".join(d).encode()).hexdigest()[:16]
+    rl, ul = rolled_trace.splitlines(), unrolled_trace.splitlines()
+    i = next((k for k in range(max(len(rl), len(ul)))
+              if k >= len(rl) or k >= len(ul) or rl[k] != ul[k]), 0)
+    return (digest,
+            rl[i] if i < len(rl) else "<end>",
+            ul[i] if i < len(ul) else "<end>")
+
+
+def load_quarantine(path):
+    """name -> {class, bd, owner, digest, rolled, unrolled}.
+
+    Block format, blank-line separated, `#` comments. Deliberately NOT a one-line
+    record: the whole point is that a reader can see the defect without running
+    the gate, and a 16-hex digest crammed onto the end of a row is not that.
+    """
+    if not path or not os.path.exists(path):
+        return {}
+    out, cur, name = {}, {}, None
+    with open(path) as f:
+        for lineno, raw in enumerate(f, 1):
+            # A comment is a WHOLE line starting with `#`, never a trailing `#`:
+            # a pinned trace line is stored verbatim and must not be truncated by
+            # one. A comment also does not END a block — only a blank line does.
+            if raw.lstrip().startswith("#"):
+                continue
+            line = raw.rstrip("\n")
+            if not line.strip():
+                if name:
+                    out[name] = cur
+                cur, name = {}, None
+                continue
+            key, _, val = line.strip().partition(" ")
+            val = val.strip()
+            if key == "cell":
+                if name:
+                    out[name] = cur
+                cur, name = {}, val
+            elif key in QUARANTINE_KEYS:
+                if name is None:
+                    raise SystemExit("%s:%d: `%s` before any `cell`"
+                                     % (path, lineno, key))
+                cur[key] = val
+            else:
+                raise SystemExit("%s:%d: unknown key %r" % (path, lineno, key))
+    if name:
+        out[name] = cur
+    for n, rec in out.items():
+        missing = [k for k in QUARANTINE_KEYS if k not in rec]
+        if missing:
+            raise SystemExit("%s: cell %s is missing %s — a quarantine entry "
+                             "without a class, an owner and a signature is a "
+                             "blessing, which this file may not contain"
+                             % (path, n, ", ".join(missing)))
+    return out
+
+
+def write_quarantine(path, quar, order):
+    with open(path, "w") as f:
+        f.write(QUARANTINE_HEADER)
+        f.write("\n")
+        for n in order:
+            rec = quar[n]
+            f.write("cell     %s\n" % n)
+            for k in ("class", "bd", "owner", "digest", "rolled", "unrolled"):
+                f.write("%-8s %s\n" % (k, rec[k]))
+            f.write("\n")
 
 
 def cell_name(cell):
@@ -736,10 +943,23 @@ def main():
     ap.add_argument("--ld", default=os.environ.get("CQ_LD", ""),
                     help="the bd dgn5 link wrapper (CMake exports it as CQ_LD); "
                          "empty falls back to the clang driver")
+    ap.add_argument("--quarantine",
+                    default=os.path.join(HERE, "loop_twin_matrix.quarantine.txt"),
+                    help="the PINNED-SIGNATURE quarantine of filed divergences. "
+                         "A quarantine is NOT a blessing — read that file's "
+                         "header before touching it.")
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--regenerate", action="store_true",
                     help="rewrite the expected table from this run. DELIBERATE "
                          "ONLY — say which cells moved and why (Rule 12).")
+    ap.add_argument("--refresh-quarantine", action="store_true",
+                    help="rewrite the DIGEST and first-differing-line pair of "
+                         "the cells ALREADY listed in the quarantine, from this "
+                         "run. It can neither add nor remove a cell — adding one "
+                         "is a human decision with a bd issue attached. Exactly "
+                         "as deliberate as --regenerate: it re-pins a defect "
+                         "whose manifestation CHANGED, so say in the commit "
+                         "message what moved and why (Rule 12).")
     cfg = ap.parse_args()
 
     cells = cells_of_matrix()
@@ -751,24 +971,116 @@ def main():
                                              [(cfg, c) for c in cells]):
             results[name] = (rolled, unrolled)
 
-    got, hard = {}, []
+    quar = load_quarantine(cfg.quarantine)
+
+    got, hard, sig = {}, {}, {}
     for name in sorted(results):
         v, report = verdict(name, *results[name])
         got[name] = v
+        if v == "TRACE-DIVERGENCE":
+            sig[name] = divergence_signature(results[name][0].trace,
+                                             results[name][1].trace)
         if report:
-            hard.append(report)
+            hard[name] = report
+
+    # ── the quarantine, applied. Both directions, and neither is optional. ──
+    qfails, quarantined_ok = [], set()
+    for name in sorted(quar):
+        rec = quar[name]
+        if name not in got:
+            qfails.append(
+                "%s: QUARANTINED but not a cell in this run — the axis was "
+                "renamed or the cell deleted. A quarantine may not outlive its "
+                "cell: re-point it or remove it (bd %s)." % (name, rec["bd"]))
+            continue
+        if got[name] != "TRACE-DIVERGENCE":
+            qfails.append(
+                "%s: QUARANTINE STALE — REMOVE IT.\n"
+                "    the cell no longer diverges; its verdict is now %s.\n"
+                "    A quarantine pins a LIVE defect (bd %s, class %s). If that\n"
+                "    defect is fixed, delete this entry and let --regenerate\n"
+                "    record the cell's real verdict in the expected table."
+                % (name, got[name].split("\t")[0], rec["bd"], rec["class"]))
+            continue
+        digest, rline, uline = sig[name]
+        if digest != rec["digest"]:
+            qfails.append(
+                "%s: QUARANTINED SIGNATURE CHANGED — this is a red, not a "
+                "refresh.\n"
+                "    pinned : %s\n    got    : %s\n"
+                "    first differing line now:\n      rolled   : %s\n"
+                "      unrolled : %s\n"
+                "    The filed defect (bd %s, class %s, %s) manifests "
+                "DIFFERENTLY than\n"
+                "    when it was pinned. Either it moved or something new landed "
+                "on top\n    of it; both need a human. --refresh-quarantine "
+                "re-pins it, and is as\n    deliberate as --regenerate."
+                % (name, rec["digest"], digest, rline, uline,
+                   rec["bd"], rec["class"], rec["owner"]))
+            continue
+        quarantined_ok.add(name)
+
+    # ── the quarantine's two BOUNDARY CONTROLS. See `QUARANTINE_CONTROLS`. ──
+    # Run HERE, above every mode's early return, so that they are consulted on
+    # EVERY invocation — plain, `--regenerate` and `--refresh-quarantine` alike
+    # (round-2 review F-R2-2; they used to be unreachable in the latter two,
+    # which is exactly backwards).
+    ctlfails = run_boundary_controls(cfg)
+
+    if cfg.refresh_quarantine:
+        if not quar:
+            print("no quarantine file at %s — nothing to refresh" % cfg.quarantine)
+            return 1
+        if ctlfails:
+            # Re-pinning a signature measured against a moved control would pin
+            # the wrong defect: the class story the quarantine documents is no
+            # longer the measured one, so the signature has nothing to mean.
+            print("REFUSED: a BOUNDARY CONTROL has moved, so nothing is re-pinned "
+                  "and %s is UNCHANGED." % cfg.quarantine)
+            for r in ctlfails:
+                print(r)
+            return 1
+        missing = [n for n in quar if n not in got
+                   or got[n] != "TRACE-DIVERGENCE"]
+        if missing:
+            print("REFUSED: these quarantined cells do not diverge in this run, "
+                  "so there is no signature to pin:\n  " + "\n  ".join(missing))
+            print("Remove them from the quarantine instead — a quarantine that "
+                  "cannot be measured is a blessing.")
+            return 1
+        for n in quar:
+            quar[n]["digest"], quar[n]["rolled"], quar[n]["unrolled"] = sig[n]
+        write_quarantine(cfg.quarantine, quar, sorted(quar))
+        print("re-pinned %d quarantined signature(s) in %s"
+              % (len(quar), cfg.quarantine))
+        return 0
 
     if cfg.regenerate:
+        # THE REFUSAL COMES FIRST, AND IT IS A REFUSAL TO WRITE. Round-2 review
+        # F-R2-1: this used to write the table and only THEN print "REGENERATION
+        # REFUSED", which put the exact verdict `EXPECTED_HEADER` forbids
+        # (`TRACE-DIVERGENCE`) on disk under a message claiming nothing had been
+        # written. A hard failure now leaves `cfg.expected` byte-unchanged.
+        blocking = [r for n, r in sorted(hard.items())
+                    if n not in quarantined_ok] + qfails + ctlfails
+        if blocking:
+            print("REGENERATION REFUSED TO HIDE %d HARD FAILURE(S) — %s is "
+                  "UNCHANGED:" % (len(blocking), cfg.expected))
+            for r in blocking:
+                print(r)
+            return 1
+        # QUARANTINED CELLS ARE NOT WRITTEN TO THE EXPECTED TABLE. The two files
+        # make two different claims and a cell may be in exactly one of them —
+        # otherwise the next `--regenerate` writes `TRACE-DIVERGENCE` into a file
+        # whose own header forbids it to appear there.
         with open(cfg.expected, "w") as f:
             f.write(EXPECTED_HEADER)
             for name in sorted(got):
+                if name in quar:
+                    continue
                 f.write("%-24s %s\n" % (name, got[name]))
-        print("regenerated %s (%d cells)" % (cfg.expected, len(got)))
-        if hard:
-            print("\nREGENERATION REFUSED TO HIDE %d HARD FAILURE(S):" % len(hard))
-            for r in hard:
-                print(r)
-            return 1
+        print("regenerated %s (%d cells; %d quarantined and omitted)"
+              % (cfg.expected, len(got) - len(quar), len(quar)))
         return 0
 
     want = {}
@@ -780,8 +1092,19 @@ def main():
             name, _, v = line.partition(" ")
             want[name] = v.strip()
 
-    fails = list(hard)
+    # A cell in BOTH files is two contradictory claims about one cell — the exact
+    # state the 15 hand-restored rows were in before the quarantine existed.
+    for name in sorted(set(quar) & set(want)):
+        qfails.append(
+            "%s: IN BOTH FILES — the expected table records a verdict (%s) AND "
+            "the quarantine pins a signature. A cell belongs to exactly one of "
+            "them; remove the expected-table row." % (name, want[name]))
+
+    fails = [r for n, r in sorted(hard.items()) if n not in quarantined_ok]
+    fails += qfails
     for name in sorted(set(got) | set(want)):
+        if name in quar:
+            continue                     # owned by the quarantine, not the table
         if name not in want:
             fails.append("%s: NEW CELL, not in the expected table" % name)
         elif name not in got:
@@ -791,17 +1114,26 @@ def main():
             fails.append("%s: verdict changed\n    expected: %s\n    got     : %s"
                          % (name, want[name], got[name]))
 
+    # The two BOUNDARY CONTROLS were measured above, before any mode's early
+    # return; here they simply join the report.
+    fails += ctlfails
+
     accepts = sum(1 for v in got.values() if v.startswith("ACCEPT-IDENTICAL"))
     declines = sum(1 for v in got.values() if v.startswith("DECLINE"))
-    print("loop_twin_matrix: %d cells — %d ACCEPT-IDENTICAL, %d DECLINE, %d other"
-          % (len(got), accepts, declines, len(got) - accepts - declines))
+    print("loop_twin_matrix: %d cells — %d ACCEPT-IDENTICAL, %d DECLINE, %d other; "
+          "%d quarantined (pinned signatures), 2 boundary controls"
+          % (len(got), accepts, declines, len(got) - accepts - declines,
+             len(quar)))
     if fails:
         print("\nFAILED (%d):" % len(fails))
         for r in fails:
             print(r)
             print()
         return 1
-    print("all cells match tools/loop_twin_matrix.expected.txt")
+    print("all cells match tools/loop_twin_matrix.expected.txt; all %d "
+          "quarantined cells diverge with their pinned signature "
+          "(tools/loop_twin_matrix.quarantine.txt); both boundary controls "
+          "identical" % len(quar))
     return 0
 
 
@@ -920,7 +1252,9 @@ EXPECTED_HEADER = """\
 #
 #   READ THE DIFF, NOT THE ROWS. When Inc 3 lands, a row that flips
 #   UNROLLED-ONLY -> ACCEPT-IDENTICAL is the increment working. A row that flips
-#   to TRACE-DIVERGENCE cannot appear here at all (it is a hard failure), and a
+#   to TRACE-DIVERGENCE cannot appear here at all — it is a hard failure, and its
+#   only other home is the PINNED-SIGNATURE quarantine (see below), which is a
+#   filed defect and not a blessing — and a
 #   row that flips to DECLINE-BOTH means the FLAT lowering regressed, which is an
 #   Inc-1 regression wearing an Inc-3 row. A `DECLINE-BOTH-DIFFERENT` row whose
 #   ROLLED half is the loop message should converge to `DECLINE-BOTH` on the
@@ -940,12 +1274,166 @@ EXPECTED_HEADER = """\
 #   R4 message change moves this row), and `m_none_rifelse_none_none_none` is the
 #   drbq Inc 2b angle-select shape, scoped OUT of Inc 3.
 #
+# ── bd test_C_libtooling-drbq INCREMENT 3 — 15 CELLS ARE NOT IN THIS FILE AT
+#    ALL, AND THAT IS DELIBERATE (2026-09-04) ──────────────────────────
+#
+# The Inc-3 regeneration moved 76 of the 117 Ry-axis rows and ZERO of the 156
+# pre-Inc-3 rows. FIFTEEN more cells produce `TRACE-DIVERGENCE`, which the
+# paragraph below says may never be recorded here — and it must not be, because
+# recording it would make this table claim that a rolled circuit differing from
+# its twin is an expected outcome. They were first RESTORED to their pre-Inc-3
+# `UNROLLED-ONLY` verdicts by hand, which left this file asserting a disposition
+# that was no longer true and failed each cell TWICE; they now live in
+# `tools/loop_twin_matrix.quarantine.txt` instead, each pinned to the EXACT
+# unified-diff signature of its divergence.
+#
+# READ THAT FILE'S HEADER BEFORE TOUCHING IT. A QUARANTINE IS NOT A BLESSING: a
+# quarantined cell passes ONLY if it still diverges in exactly the pinned way,
+# and fails if the signature moves, if it stops diverging ("quarantine stale —
+# remove it"), or if it appears in both files. Two classes, both root-caused and
+# both reproduced BY SIGNATURE on the pre-Inc-3 oracle binary with an `Rz` arm,
+# 15 of 15: CLASS A (6 cells, bd test_C_libtooling-1m5p) the hoisted
+# loop-invariant derived chain, ROLLED deficient; CLASS B (9 cells, bd
+# test_C_libtooling-a3z7) the M-C in-place vs out-of-place trailing `a += off`,
+# FLAT deficient — and for class B the ROLLED circuit is the better one. Neither
+# is in Increment 3's scope to fix: both are Rule-13 changes to subsystems it did
+# not touch, and both would move shipped Rz goldens. Inc 3 does not create either
+# class; it adds CUSTOMERS to them.
+#
+# A CELL BELONGS TO EXACTLY ONE OF THE TWO FILES, and the gate says so out loud.
+# `--regenerate` omits every quarantined cell from this table for that reason;
+# when a quarantine entry is retired, delete its block and regenerate so the cell
+# gets a real verdict here again.
+#
 # TRACE-DIVERGENCE and WARN-ASYMMETRY are NEVER recorded here. They are hard
 # failures whatever this file says — a trace that differs from its twin's is the
 # defect this gate exists to catch, and no table entry may bless it.
 #
 # REGENERATE DELIBERATELY: `--regenerate`, then state in the commit message which
 # cells moved and why (Rule 12). Regeneration will not overwrite a hard failure.
+"""
+
+
+QUARANTINE_HEADER = """\
+# loop_twin_matrix.quarantine.txt — PINNED-SIGNATURE QUARANTINE.
+#
+# A QUARANTINE IS NOT A BLESSING. `loop_twin_matrix.expected.txt` says, and goes
+# on saying, that `TRACE-DIVERGENCE` may NEVER be recorded there as an expected
+# verdict — a table entry that says "this pair may differ" retires the one gate
+# in the tree that can see the F-4 class. This file does not relax that by one
+# inch. It records a FILED DEFECT together with the EXACT way it manifests today,
+# and it FAILS IN BOTH DIRECTIONS:
+#
+#   * the cell stops diverging        -> FAIL, "quarantine stale — remove it"
+#   * the cell diverges DIFFERENTLY   -> FAIL, the pinned signature moved
+#   * the cell is in BOTH files       -> FAIL, two contradictory claims
+#   * any NON-quarantined divergence  -> FAIL, exactly as before
+#
+# So the only thing that passes is "these cells, diverging in exactly these
+# ways". Nothing here licenses a rolled circuit to differ from its twin; it
+# licenses THIS defect, in THIS shape, until its bd issue is closed.
+#
+# WHY THE FILE EXISTS (bd test_C_libtooling-drbq Inc 3, round-1 lens L7). The
+# Inc-3 Ry-arm axis is the first place in this matrix where the ARM ROTATES A
+# REGISTER THE CONDITION DOES NOT READ. That one property makes `a`
+# loop-invariant in a body with no a-register gate, and `clang -O1` then treats
+# the rolled and flat spellings differently in two ways that have nothing to do
+# with the arm class. Both classes were reproduced BY SIGNATURE on the pre-Inc-3
+# oracle binary with an `Rz` arm — 15 of 15, character for character — so Inc 3
+# does not create them. It adds CUSTOMERS to them: all 15 shapes declined before
+# Inc 3 and compile now. "Pre-existing" is true of the defect and false of its
+# population, and both halves belong in the bd issues.
+#
+# The alternatives were all worse, and the reasons are worth keeping:
+#   * blessing the verdict in expected.txt — retires the gate (its own charter).
+#   * deleting the 15 cells — removes the only cells that can see this class on
+#     the day they first saw it; the `165/174` move, making a number green by
+#     changing what it measures.
+#   * fixing `Uncomputation` / `ArithLowering` inside Inc 3 — two Rule-13
+#     subsystems the increment did not touch, both moving shipped Rz goldens.
+#   * leaving the gate permanently red — Rule 19 verbatim: a gate expected to be
+#     red is a gate people stop reading, and the 16th divergence lands in a run
+#     everybody already knows is red. The 8h7d.5 F-4 class was found BECAUSE the
+#     gate was green and one cell went red.
+#
+# THE SIGNATURE is a SHA-256 digest (16 hex) of the FULL unified diff of the two
+# traces, hunk headers included — not a line count, not a verdict. A divergence
+# that grows, shrinks, moves position or changes opcode is a different signature
+# and a RED. The `rolled`/`unrolled` lines beside it are the FIRST DIFFERING LINE
+# PAIR, stored unhashed so a reader can see the defect without running anything;
+# `<end>` means that side had no such line.
+#
+# `owner` names the subsystem AND THE DIRECTION — which side is deficient. The
+# direction is the part people get wrong: for class B the ROLLED side is the
+# BETTER circuit (one fewer rail, no residual entanglement), so "make the roll
+# match the flat" would make the emitted circuit worse.
+#
+# THE TWO BOUNDARY CONTROLS ARE IN THE SCRIPT, NOT HERE (`QUARANTINE_CONTROLS`),
+# and they run on EVERY invocation — plain, `--regenerate` and
+# `--refresh-quarantine` alike, each of the latter two REFUSING TO WRITE while a
+# control has moved: with NO REGION AT ALL the two spellings
+# agree, and with the arm back ON the condition register at the same opaque
+# derived threshold they agree. Those two measurements are what makes the class
+# story above a claim about the compiler rather than a paragraph. If either
+# control starts diverging, the entries below stop meaning what they say.
+#
+# THIS HEADER IS SCRIPT-OWNED. `--refresh-quarantine` rewrites the whole file
+# from `QUARANTINE_HEADER` in `tools/loop_twin_matrix.py` and re-sorts the
+# blocks, so ANY text hand-added up here is silently lost on the next refresh
+# (round-2 review F-R2-3). A new class paragraph therefore goes in that
+# constant, never in this file; the two are byte-identical by construction and
+# `--refresh-quarantine` is what keeps them so.
+#
+# TO ADD A CELL: file a bd issue naming the owning subsystem and the direction,
+# add the block by hand, then `--refresh-quarantine` to write its digest. The
+# tool can neither add nor remove a cell — that is a human decision (a `cell`
+# the run does not know is a hard failure, and a quarantined cell that has
+# stopped diverging is "quarantine stale"; the selftest pins both).
+# TO RE-PIN A CHANGED SIGNATURE: `--refresh-quarantine`, and say in the commit
+# message what moved and why (Rule 12). It is exactly as deliberate as
+# `--regenerate`.
+# TO RETIRE ONE: when the bd issue closes, DELETE the block and `--regenerate`
+# the expected table so the cell gets a real verdict again.
+#
+# FORMAT: blank-line-separated blocks, `#` comments, keys
+#   cell / class / bd / owner / digest / rolled / unrolled — all six required.
+#   `owner` is one line and deliberately short; the full root cause of each class
+#   is written ONCE, here, rather than repeated 15 times.
+#
+# ── CLASS A — 6 cells, bd test_C_libtooling-1m5p. `oder` (the OPAQUE derived
+#    condition) with no a-register gate. ROLLED IS THE DEFICIENT SIDE.
+#    With the arm on `r`, `a` is loop-invariant, so `clang -O1` LICM-hoists the
+#    whole `sitofp; fadd; sqrt` chain into the preheader on the ROLLED side and
+#    CSEs the two repetitions' chains on the FLAT side. The rolled form then
+#    discharges the two INTERIOR rails immediately after the `sqrt` and LEAVES
+#    THE TOP RAIL (`h4 = sqrt((double)a + 3.0)`) ALLOCATED. `h4` is a
+#    deterministic injective function of `a`'s basis label, so the rolled circuit
+#    ends in a perfect WHICH-PATH RECORD entangled with the condition register —
+#    `a` is dephased for anything downstream (Rule 8's last sentence). The flat
+#    form discharges all three LIFO at the end.
+#    Rule-6 FORMALLY SAFE (left allocated, never freed dirty) and invisible to
+#    STRICT stage 2b, whose census counts `cqrt_alloc` mints and these rails are
+#    TEMPLATE-minted. Note the discharge ORDER is LIFO-INVERTED — `h3`, the
+#    `sqrt`'s operand, is uncomputed and freed while `h4`, derived from it, is
+#    still live — which is exactly what makes `h4` permanently undischargeable.
+#    OWNER: `Uncomputation` / `FreePoint` interior placement for a chain the loop
+#    does not own.
+#
+# ── CLASS B — 9 cells, bd test_C_libtooling-a3z7. Any cell with `add` in the
+#    a-register SUFFIX field. FLAT IS THE DEFICIENT SIDE.
+#    Rolled emits `cqrt_addc_i32(h0, 3)` and measures `h0`; flat emits
+#    `cq_template_add_i32_hl(h0, 3) -> h10` and measures `h10`. Same value, same
+#    `_unc` and `cqrt_free` counts, one extra rail on the FLAT side — and `h0` is
+#    then left allocated and entangled with `h10` (`h10 = h0+3` is a bijection,
+#    so again a which-path record). The rolled form's add is a chain member that
+#    `collapseRailPhisIn` step (3) MARKS in place; the flat form's is
+#    straight-line and `ArithLowering`'s M-C G6/G7 decide.
+#    ⚠ THE ROLLED CIRCUIT IS THE BETTER ONE HERE: one fewer rail, no residual
+#    entanglement. The matrix's oracle is the flat twin, so for this class the
+#    gate is comparing the good circuit against the worse one and calling the
+#    good one the deviation. DO NOT "fix" the roll to match the flat.
+#    OWNER: `ArithLowering` M-C G6/G7 versus `LoopLowering::collapseRailPhisIn`
+#    step (3).
 """
 
 

@@ -832,7 +832,15 @@ def classify_rz(rz, rzo, R):
         return "RZ-DISPOSITION-MOVED"
     if rz.exit != 0:
         return "RZ-DECLINE-BOTH" if rz.diag == rzo.diag else "RZ-DECLINE-DIFF"
-    red, nreg, _narm, _ng = gma.reduce_routes(rzo.trace)
+    # bd drbq Inc 3, 2026-09-04 — PRE-EXISTING ARITY BUG, fixed here so the
+    # instrument can run at all. `golden_multiset_audit.reduce_routes` returns
+    # FIVE values (it gained `n_negated_arms` at 24bb42d, the same commit that
+    # last touched this file) and this line unpacked FOUR, so EVERY `--route-oracle`
+    # run died with `ValueError: too many values to unpack (expected 4)` before
+    # classifying one cell. Verified pre-existing: `git diff 1bdaa60 -- tools/`
+    # is empty for both files. The sibling call at :795 already uses `[0]` and was
+    # never affected, which is why nothing else noticed.
+    red, nreg, _narm, _ng, _nneg = gma.reduce_routes(rzo.trace)
     a, b = normalise(red), normalise(rz.trace)
     if a == b:
         return "RZ-COLLAPSE-ONLY(%d)" % nreg

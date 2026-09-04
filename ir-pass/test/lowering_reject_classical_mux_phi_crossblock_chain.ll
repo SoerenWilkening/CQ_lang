@@ -16,6 +16,19 @@
 ; condition. Over-declining is always safe; documented in
 ; liftOneRegisterMergePhi.)
 ;
+; ⚠ ONE NARROW EXCEPTION EXISTS SINCE bd test_C_libtooling-drbq Increment 3 and
+; it does NOT reach this file. `resolveWireBase` now STOPS at a call recorded in
+; `taint.ControlledRotations` — a gate `ControlDetect`/`classifyAngleSelect` and
+; a region emitter already adjudicated — treating its result as the base. Those
+; gates dominate every incoming edge, so they discharge condition (6)'s
+; obligation by DOMINATION instead of by edge-locality. `%q3` here is an
+; ORDINARY uncontrolled `cq_phi` in nobody's `ControlledRotations`, so this
+; decline and the conservative-cost variant above both stand unchanged. Making
+; the strip dominance-based in general would cover them too and is a real
+; widening of this accept class — its own probe family, its own Rule-13 round.
+; Accept siblings: control_inplace_ry_lifted_phi_after_region.ll,
+; control_angle_select_ry_lifted_phi_after_select.ll.
+;
 ; Guard: TaintPropagation::declineClassicalMuxes. It OWNS the exact `Msg`
 ; string; this CHECK mirrors it character-for-character (Rule 12).
 ;

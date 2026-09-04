@@ -31,6 +31,7 @@
 namespace llvm {
 class CallBase;
 class DominatorTree;
+class LoopInfo;
 }  // namespace llvm
 
 namespace cq {
@@ -69,8 +70,18 @@ enum class ArmDisposition { Accept, Declined };
 // before any mutation; no block pointer is cached across an erasure because no
 // erasure happens during detection). A null `DT` is not an error: it simply
 // yields the pre-Inc-4 position-free decline (Prime Directive).
+//
+// `LI` is the caller's per-function `LoopInfo`, built from the same lazy tree
+// (bd test_C_libtooling-drbq Increment 3). It is used for exactly one question —
+// R7's LOOP half: is the rotated base's rail carried across `L`'s back edge by a
+// header φ the round-2 collapse will actually claim (clauses (b)/(b'), PRD
+// §13.2b)? A null `LI` is not an error: it yields the pre-Inc-3 unconditional
+// in-loop decline (Prime Directive). Every OTHER loop question this class owes
+// was already answered by `ControlDetect::flatRegionRollableInLoop` before
+// `Region.InLoop` was set.
 ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
-                            const llvm::DominatorTree *DT);
+                            const llvm::DominatorTree *DT,
+                            const llvm::LoopInfo *LI);
 
 // Outcome of the 6.5 classical-call-arm recognizer (DD-7), tried by
 // `ControlDetect::handleBranchRegion` BEFORE `classifyArms`:

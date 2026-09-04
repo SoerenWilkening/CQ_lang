@@ -43,6 +43,7 @@ class BinaryOperator;
 class CallInst;
 class Value;
 class PHINode;
+class DominatorTree;
 }  // namespace llvm
 
 namespace cq {
@@ -259,6 +260,56 @@ llvm::Value *inPlaceValueRailOperand(llvm::BinaryOperator *BO,
 bool loopHasInPlaceRailStructure(
     llvm::Loop *L, const TaintSet &taint,
     const llvm::SmallPtrSetImpl<llvm::CallInst *> &GateCalls);
+
+// bd test_C_libtooling-drbq Increment 3 — the ROUND-2 RAIL COLLAPSE'S OWN CLAIM
+// CONDITION on a header phi's EXTERNAL incoming, asked at DETECTION time.
+//
+// Returns the root mint (a classical-arg-0 `cq_theta` in `GateCalls` that
+// dominates `L`'s header) that `collapseRailPhisIn` step (1) would collapse `P`
+// to, or null when `P` is not a claimable rail phi. Defined in LoopLowering.cpp
+// so it IS step (1)'s body rather than a second reader of it (Rule 14): the two
+// callers are step (1) itself and `ArmClassify`'s R7-loop clause (b'), which
+// must refuse — BEFORE the region is emitted and the diamond flattened —
+// the shapes the collapse will not claim. See the definition's header for the
+// row-DB motivation and for the single seam (each caller finds the external
+// incoming itself, provably the same value under the single-latch gate both have
+// already passed).
+//
+// ⚠ TWO CORRECTIONS THE ROUND-1 REVIEW MADE TO THAT SENTENCE, AND BOTH ARE
+// PREMISES A WIDENER WOULD OTHERWISE INHERIT AS FACTS (bd drbq Inc 3, lens L5 Q4).
+//
+// (1) "A DIVERGENCE BETWEEN THE TWO CALLERS' ANSWERS IS IMPOSSIBLE BY
+// CONSTRUCTION" IS FALSE AS WRITTEN. This shared body covers the
+// EXTERNAL-INCOMING half only. `collapseRailPhisIn` step (1) additionally
+// requires, before it calls in here, a `LatV`/`PreV` pair keyed on `IB == Latch`
+// AND the CLOSED SELF-CYCLE `peelInPlaceBase(LatV, …) == &P`, whose failure is a
+// `continue` or the LOUD `kMsgCrossIter` decline. So clause (b')'s contract —
+// "that φ must be one the collapse will actually CLAIM" — is STRONGER than what
+// this body proves. The honest claim is the weaker one: THE SHARED HALF CANNOT
+// DIVERGE; THE UNSHARED LATCH HALF CAN, and when it does the failure is a loud,
+// accurately-labelled, pre-existing loop message after emission rather than a
+// mislabelled mux message (measured: lens L5 `q1_loop_joinphi.c` passes detection
+// and declines at round 2 with `loop-carried tainted value crosses iterations`).
+//
+// (2) THE `GateCalls` VOCABULARIES ARE THE SAME RECIPE (θ ∪ φ from `taint`) BUT
+// NOT THE SAME SET AT THE TWO CALL TIMES. `AngleSelectEmit` INSERTS the
+// unconditional twin rotation it mints into `ThetaCalls`/`PhiCalls`, and it runs
+// inside `lowerControlRegions` — AFTER `classifyArms`, BEFORE
+// `collapseFlattenedLoopRails`. So round 2's vocabulary is a strict SUPERSET of
+// detection's. THE DIRECTION IS SAFE, and here is the argument the code does not
+// otherwise carry: `peelInPlaceBase` peels only while a call is IN `GateCalls`,
+// so a SMALLER vocabulary stops the peel EARLIER, and an early stop lands on a
+// value that then fails this function's `GateCalls.count(Mint)` test ⇒ null ⇒
+// clause (b') DECLINES. Detection is conservative w.r.t. round 2 BY
+// CONSTRUCTION, not by coincidence.
+// RETIREMENT TRIGGER for (2): that argument inverts silently the moment
+// detection's vocabulary becomes a superset of round 2's, or the peel's stop
+// condition stops being monotone in `GateCalls`. Anyone doing either owes a
+// re-derivation here.
+llvm::CallInst *railPhiRootMint(
+    const llvm::PHINode &P, const llvm::Loop *L,
+    const llvm::SmallPtrSetImpl<llvm::CallInst *> &GateCalls,
+    const TaintSet &taint, const llvm::DominatorTree &DT);
 
 // Phase 7.4 Increment 2 (epic y05j) — the POST-LOWERING reverse-play stage.
 // Wired AFTER `lowerOps`/`lowerRotations` in BOTH pipeline entry points (PRD-7.4

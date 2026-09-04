@@ -1050,7 +1050,100 @@ shape); the hand-IR if/else fixture stays as the two-block form's pin.
 
 ## 13. Increment 3 design — the Ry arm in the 8h7d.5 rolled loop (settled 2026-09-04)
 
-> **Status: DESIGNED, NOT IMPLEMENTED.** Written at HEAD `1bdaa60` against a
+> **Status: IMPLEMENTED 2026-09-04** (bd `test_C_libtooling-drbq`, child
+> `drbq.4`), BOTH halves — §13.3+§13.2b (the loop) and §13.4b (P1). Shipped
+> counts, all measured at the implementing commit and **not** inherited from the
+> design: **+29 lit fixtures** (1430 → **1459**; the family is 11 accepts / 19
+> declines over 30 files, of which one — `control_inplace_ry_reject_in_loop.ll` —
+> was an EXISTING decline rewritten in full as
+> `control_inplace_ry_inloop_diamond.ll`, its decline re-homed onto
+> `..._reject_inloop_alias.ll`); **+15 ctest entries** (305 → **320**:
+> 10 e2e slices — 5 rolled + 5 hand-unrolled twins — and 5 `cmp` twin gates; the
+> round-1 review added a SIXTH pair and gate, the O(K)-freeze-leak reproducer, for
+> **+18 / 323** in total);
+> **0 existing goldens moved** (`golden_multiset_audit.py --all`: 290 goldens, 10
+> NEW-FILE, 280 UNCHANGED, 0 routes collapsed). Whole-corpus HEAD-vs-oracle sweep:
+> **14 of 1458 lit fixtures differ and every one is a file this increment added**
+> (re-measured after the round-1 review: **24 of 1473**, still every one this
+> increment's own — **18** accept-flips and 6 stderr-only R6 message changes;
+> the round-2 review re-swept independently and corrected 23/17, which had been
+> taken before the round's last fixture was written — notes §12; the CLEARANCE
+> review re-swept all **1474** after the round-2 mini-fix's own fixture: **25 = 19 +
+> 6**, still every one this increment's own, with ZERO lowered-IR differences on any
+> file both binaries accept). With the ONE
+> fixture round 2 added the corpus is **1474**);
+> **8 of 274 e2e slices differ, 7 of them added here and the 8th a harness
+> artifact** (`slice_multi_lib.c` is a deliberately CQ.h-free helper TU whose
+> `#error` tripwire fires under the sweep's force-include, identically on both
+> binaries). K-independence, measured on the Grover slice: **74 lines of lowered
+> IR at `-DCQ_K=3` and 74 at `-DCQ_K=1000`**, differing only in the trip constant,
+> while the trace goes 36 → 10006 lines.
+>
+> **THE INCREMENT DOES NOT SHIP A GREEN SUITE, and that is the headline finding
+> rather than a footnote.** Full `ctest -j6`: **319/320**, 476.7 s on a loaded box.
+> The one red is `e2e-loop-twin-matrix`, on **15 of its 273 cells**, in two
+> divergence classes — a hoisted loop-invariant derived chain whose top rail the
+> ROLLED form leaves allocated and the flat form discharges, and the M-C
+> in-place-vs-out-of-place decision on a trailing `a += off`. **Both reproduce
+> character-for-character on the pre-Inc-3 oracle with an `Rz` arm**, and a
+> no-region control AGREES on both sides — so both are PRE-EXISTING and
+> arm-class-independent, exposed only because this axis is the first whose ARM
+> ROTATES A REGISTER THE CONDITION DOES NOT READ. Neither is in §13's scope to fix
+> (one is `Uncomputation`'s interior placement, the other `ArithLowering`'s M-C
+> decision versus the round-2 marking; both would move shipped Rz goldens). The 15
+> rows were **restored to their pre-Inc-3 verdicts rather than regenerated**, so
+> the table never records a `TRACE-DIVERGENCE` as an expected outcome and the gate
+> stays red on exactly the finding. Owner disposition required — notes §10.1.
+>
+> > **CORRECTED 2026-09-04, ROUND-1 REVIEW (lens L7): THE SUITE IS GREEN AND THE
+> > FINDING IS UNDIMINISHED.** Leaving the gate permanently red was the one option
+> > the lens pushed back on hardest, on Rule 19's own argument: a gate expected to
+> > be red is a gate people stop reading, and the 8h7d.5 F-4 class was found
+> > BECAUSE the gate was green and one cell went red. The three cheap ways out are
+> > all forbidden by the instrument's charter (bless the verdict = retire the gate;
+> > delete the cells = the `165/174` move, making a number green by changing what
+> > it measures; fix `Uncomputation`/`ArithLowering` under increment pressure = two
+> > Rule-13 subsystems this increment did not touch). What shipped instead is a
+> > **PINNED-SIGNATURE QUARANTINE**, `tools/loop_twin_matrix.quarantine.txt`: the
+> > 15 cells leave `expected.txt` (258 rows) and are pinned to the SHA-256 digest
+> > of the exact unified diff of their two traces, with class, bd id, and owning
+> > subsystem **plus direction**. It fails in BOTH directions — signature changed,
+> > or cell stopped diverging ("quarantine stale — remove it"), or cell present in
+> > both files — and any non-quarantined divergence still fails as before. Two
+> > BOUNDARY CONTROLS run beside the cells on every invocation (no region ⇒
+> > identical; arm ON the condition register ⇒ identical), so the class story is a
+> > measurement rather than a paragraph. **⚠ 'On every invocation' became true
+> > only in the ROUND-2 review (notes §12, F-R2-2): as first written the controls
+> > sat below the `--regenerate` and `--refresh-quarantine` early returns, so both
+> > write modes exited 0 with a control diverging — and `--regenerate` wrote the
+> > forbidden `TRACE-DIVERGENCE` row to disk before printing that it had refused
+> > (F-R2-1). Both are fixed, and the quarantine selftest went 7 → 12 cases,
+> > three of them asserting on FILE BYTES.** Full `ctest -j6` is now **324/324**
+> > (notes §7, measured on a loaded box after the round-1 review). bd
+> > `test_C_libtooling-1m5p` (class A, 6 cells, `Uncomputation`/`FreePoint`, ROLLED
+> > deficient) and `test_C_libtooling-a3z7` (class B, 9 cells, `ArithLowering` M-C
+> > vs `collapseRailPhisIn` step (3), **FLAT** deficient — the rolled circuit is the
+> > BETTER one, so "make the roll match the flat" would make it worse). L7 rebuilt
+> > all 15 controls itself and confirmed 15/15 identical signatures on the oracle.
+> > ⚠ And it recorded the scoping honestly, which belongs here too: **Inc 3 does
+> > not create these classes, it adds CUSTOMERS to them** — all 15 shapes declined
+> > before this increment and compile now.
+>
+> **Corrections this section owes are
+> marked `CORRECTED 2026-09-04` in place — read them; four §13 claims were
+> falsified by measurement and the dispositions they argued for all survived. The
+> ROUND-1 REVIEW added more, marked the same way: §13.4b's M-A ownership sentence
+> (struck — it does not fire for an escaping condition record), §13.8's
+> "3 `ry`-prefix cells most likely stay" (2 flipped to ACCEPT-IDENTICAL, sound;
+> 1 is the §10.2 mismatch), and the notes' §7a "no flat movement" (15 `*_printf_*`
+> cells DID move; disposition = keep, measured on the oracle). The full finding
+> table is notes §11.**
+> Companion notes:
+> [`CONTROL_IN_PLACE_INC3_NOTES.md`](CONTROL_IN_PLACE_INC3_NOTES.md).
+>
+> **Original design header (written at HEAD `1bdaa60`), kept verbatim below.**
+>
+> **Status at design time: DESIGNED, NOT IMPLEMENTED.** Written at HEAD `1bdaa60` against a
 > `cq-opt` byte-identical to the pre-Inc-3 oracle (`md5 5ae372bf94d7dffd…`, 43
 > stderr comparisons and 10 lowered-IR comparisons, **0 differences** — the two
 > binaries are the same file, so every "measured on both binaries" claim below is
@@ -1160,7 +1253,7 @@ increment has enough.
 |---|---|---|---|---|
 | L-a | irreducible cycle carrying the region | `flatRegionRollableInLoop` (A) | `cq controlled lowering: control flow inside a loop body under quantum control` | `control_inplace_ry_reject_inloop_irreducible.ll` |
 | L-b | **rotated base's rail does not cross `L`'s back edge** (an iteration-local rotated register) | NEW R7-loop clause (b), §13.2b | same | `control_inplace_ry_reject_inloop_iterlocal_base.ll` |
-| L-c | region blocks at two loop depths / nested loop | `flatRegionRollableInLoop` (B) | same | `control_inplace_ry_reject_inloop_nested_loop.ll` |
+| L-c | region blocks at two loop depths / nested loop | **CORRECTED 2026-09-04:** the shipped fixture is the region WHOLLY INSIDE an inner loop with the rail crossing BOTH back edges, and `flatRegionRollableInLoop` (A)-(D) all **PASS** for the inner loop. What refuses it is R7-loop clause (b'): the inner header's rail phi has its external incoming coming from the OUTER header phi, and `peelInPlaceBase` STOPS at a phi, so `railPhiRootMint` returns null. Same string, different owner. (A genuine (B) failure for a flat DIAMOND could not be constructed: Arm/Merge can only be at a deeper depth if one of them is an inner-loop header, which breaks `armBlockIsPureSpine` or `soleMergePhi`; the Pred-in-inner/Merge-in-outer spelling makes the tainted `br` a loop EXIT, which `tryCaseA` L1 claims first as row L-l) | `control_inplace_ry_reject_inloop_nested_loop.ll` |
 | L-d | multi-latch loop | (C) | same | `control_inplace_ry_reject_inloop_multilatch.ll` |
 | L-e | a second, `LoopInfo`-invisible cycle through the entry | (D) | same | `control_inplace_ry_reject_inloop_second_cycle.ll` |
 | L-f | depth-2 nest inside a loop | `ControlDetect` `RegionShape::Nested` + `regionEntryInLoop` | `cq controlled lowering: nested control flow under quantum control` | `control_inplace_ry_reject_inloop_nested.ll` |
@@ -1171,7 +1264,7 @@ increment has enough.
 | L-k | 6.5 classical-call arm in a loop | in-loop scope fence part 1 (classifier skipped) | existing | existing |
 | L-l | quantum/measurement-bounded loop exit | `tryCaseA` L1 (runs BEFORE detection) | `cq loop lowering: loop under quantum control` | existing |
 | L-m | X1 cross-iteration dirty rail | `collapseRailPhisIn` step (1) / `tryCaseA` | `cq loop lowering: loop-carried tainted value crosses iterations` | existing |
-| R4 | Ry on the CONDITION register's own wire, in a loop | R4 (a wire-SET question — position-free, unaffected by the loop, §13.3d) | `cq controlled lowering: rotation arm on a condition wire under quantum control` | `control_inplace_ry_reject_inloop_cond_register.ll` |
+| R4 | Ry on the CONDITION register's own wire, in a loop | R4 (a wire-SET question — position-free, unaffected by the loop, §13.3d) | **CORRECTED 2026-09-04:** `cq controlled lowering: condition predates a non-diagonal gate under quantum control` — *not* R4's own string. `declineArm` re-spells every later decline whenever `condWireDisposition` returned `ProvenPostRegion`, which the arm's own `cq_theta` on the condition wire always is. MEASURED IDENTICAL on the FLAT sibling `control_inplace_ry_reject_cond_register.ll`, so this is pre-existing and not an Inc-3 regression — it is §13.11 worry 2, met in the field | `control_inplace_ry_reject_inloop_cond_register.ll` |
 | R6-1 | a pre-Ry record read after the loop (`int mark = r;` … `cq_measure(mark)`) | R6 per activation, §13.3 | `cq controlled lowering: stale rail record read past a controlled Ry under quantum control` | `control_inplace_ry_reject_inloop_premark.ll` |
 | R6-2 | the **j4** shape: a dead `cq_phi(r_pre, ·)` written after the region in the body | R6 per activation (ALIAS-HOP half) | same | `control_inplace_ry_reject_inloop_j4.ll` |
 | R6-3 | the **ALIAS** shape: a self-carry `%P = phi [%r0, pre], [%P, latch]` rotated in place while the merge escapes (two copies of one wire — Rule 8) | R6 per activation, via the PHI-EDGE read-position rule; **and** independently by the refresh fence (`phiTracksWire(%P)` false) | same | `control_inplace_ry_reject_inloop_alias.ll` (hand IR) |
@@ -1219,6 +1312,21 @@ wire-blind by design, and widening either is a sibling-spelling change shared wi
 phase path, the 4.4 select's gate 2c and 2b's S6 — a Rule-13 change to four callers,
 which is why it is **not** in this increment. The fixture pins it as a DECLINE with the
 exact string, so the day it moves, it moves deliberately.
+
+> **CORRECTED 2026-09-04 — §13.2c's PREDICTED PROBE MESSAGE WAS WRONG; ITS
+> DISPOSITION WAS RIGHT.** The probe was run FIRST, exactly as demanded, on a
+> throwaway build with R7's loop clause lifted and NOTHING else changed. The
+> module did **not** accept — so there was **no over-accept and the increment
+> proceeded** — but it did not reach `declineClassicalMuxes` either. It declined
+> `cq controlled lowering: stale rail record read past a controlled Ry under
+> quantum control`, on R6's **FLAT** position predicates, which fire long before
+> emission. The predicted `tainted value muxed by a classical-condition phi` is
+> what it would print with R6 *also* made per-activation and clause (b') absent —
+> i.e. it is a statement about the FINAL increment minus (b'), not about the
+> R7-only probe. The remedy is unchanged and shipped as designed: clause (b'),
+> spelled by CALLING `LoopPlan.h`'s `railPhiRootMint` (the collapse's own step-(1)
+> body). Fixture text is written from the MEASURED final message,
+> `control flow inside a loop body`.
 
 **§13.2c — row DB, and it is a MANDATORY IMPLEMENTER PROBE, not a settled row.** The
 disposition above was derived by READING (`collapseRailPhisIn` step (1)'s
@@ -1442,7 +1550,7 @@ its `cq_phi_` restriction with its written obligation **discharged rather than
 inherited**: the reason it is unnecessary for Ry is not that the licence was
 granted, but that M-β removes the need for one. Moving Rz to M-β would retire
 `isHoistedRegionArmGate` outright and leave ONE emission convention — file it
-(**follow-on `drbq.11`**) rather than doing it here: the Rz stem shipped 2026-09-03
+(**follow-on `drbq.10`**) rather than doing it here: the Rz stem shipped 2026-09-03
 with a clearance, it touches 26 goldens' worth of already-cleared surface, and the
 audit above would have to be re-run for a stem whose current mechanism is
 *provably* sound (a diagonal gate genuinely is not a rail gate). Two conventions in
@@ -1482,14 +1590,53 @@ So at the moment `G` fires, the flag is already stripped and freed and `R`'s
 relabelling is complete; and R4 has proved `R`'s wire ∉ `C`'s wires, so `G` is not on
 the register this arm touched. The residual is **identical to the phase arm's**: a
 DERIVED condition leaves template rails entangled with `C`, live past the strip, which
-a later Ry on `C` dephases — a property of the CONDITION's chain, not of the arm class,
-and owned since bd `lyyf` by M-A's `warnLiveRecordRotations` as a `DS_Warning`.
+a later Ry on `C` dephases — a property of the CONDITION's chain, not of the arm class.
+
+> **CORRECTED 2026-09-04 (round-1 lens L8, F-L8-1). The identity claim is
+> CONFIRMED; the ownership claim was an OVERCLAIM.** L8 independently compiled,
+> linked and ran the derived-`and` and derived-`sqrt` programs on both binaries:
+> the traces are byte-identical to the `cq_phi`-arm twins apart from
+> `cqrt_rz_i32_controlled` ↔ `cqrt_ry_i32_controlled` on one line, and the whole
+> condition chain is `_unc`'d and freed BEFORE the deferred gate fires. So "the
+> residual is identical to the phase arm's" is TRUE as an ORDERING claim, and it
+> is now pinned by two new accept fixtures
+> (`control_inplace_ry_post_region_theta_derived_cond.ll`, `..._negated.ll`).
+>
+> What this paragraph used to add — "and owned since bd `lyyf` by M-A's
+> `warnLiveRecordRotations` as a `DS_Warning`" — is **struck**. M-A does not fire
+> for an **escaping** condition record: with `int d = q & 6;` measured after the
+> region, the `and` rail is never uncomputed, is live and entangled when the
+> post-region Ry fires, and HEAD's stderr is EMPTY. The gap is
+> arm-class-independent and PRE-EXISTING (the `cq_phi` twin behaves identically on
+> the ORACLE, equally silently), so it is not Inc 3's to fix — but it must not be
+> cited as what makes this widening safe. The ORDER argument above is what makes
+> it safe, and that is measured.
 
 **Blast radius, stated because it is the one place Inc 3 moves a FLAT program.**
 This widening also lowers the flat `if (q==5) r=Ry(r,.9); q=Ry(q,.3);` — which is
-half of the recorded over-decline bd `drbq.7`. The whole-corpus disposition sweep
-against the pre-Inc-3 oracle will therefore show accept-flips on **acyclic**
-fixtures, and every one must be individually accounted for (§13.9 lens 6). It gets
+half of the recorded over-decline bd `drbq.7`.
+
+> **AND THE OTHER HALF IS UNTOUCHED, MEASURED (lens L8 Q1(d)).** A rotated register
+> that gates a SECOND region still declines on BOTH binaries: `if (q==5)
+> r=Ry(r,.9); q=Ry(q,.3); if (r==2) s=Ry(s,.7);` refuses region 2, because `r`
+> gained region 1's arm theta before region 2's branch and `condWireDisposition`
+> returns `DeclineNow`. It is an over-decline (the merge φ denotes the post-cRy
+> value, so the mint would read the right basis) that this increment neither
+> introduces nor fixes. Read "half of drbq.7" literally.
+
+> **CORRECTED 2026-09-04 — MEASURED, THE BLAST RADIUS IS SMALLER THAN PREDICTED
+> AND THAT IS A FACT ABOUT THE CORPUS, NOT A REASON TO RELAX.** The whole-corpus
+> HEAD-vs-oracle sweep over all 1458 lit fixtures shows **exactly ONE acyclic
+> flip**, and it is `control_inplace_ry_post_region_theta_cond.ll` — the red-green
+> fixture this widening ships with. **ZERO pre-existing acyclic fixtures moved.**
+> On the e2e side two acyclic programs flip and both are new here: the
+> `_unrolled` twins of the Grover and derived slices, which are hand-flat programs
+> that the pre-Inc-3 binary declines at P1. So no composition nobody predicted was
+> found — but the corpus simply contained no rotation-arm region with a
+> provably-post-region condition-wire gate before this increment added one, which
+> means the sweep's silence is weak evidence and the fixture pair is the real one.
+
+It gets
 its own red-green pair — `control_inplace_ry_post_region_theta_cond.ll` (accept,
 flat) and `control_inplace_ry_reject_post_region_theta_stalecond.ll` (the gate that
 is NOT provably post-region, still declining) — so the two halves of
@@ -1525,6 +1672,26 @@ accept rather than a fence:
    `free_pairing_check.py` counts `cqrt_alloc` mints and these rails are
    TEMPLATE-minted (its own header says so; bd 8h7d.5 round-4 F-4 is the same
    fact). Quoting a green stage 2b as evidence here would be false.
+
+> **MEASURED 2026-09-04, round-1 review (lens L3 Q1) — all three facts confirmed
+> on a real program, with a committed reproducer.** At hand-back this was
+> analytic: no shipped slice read the rotated register inside the body, and the
+> two obvious spellings are refused (a read AFTER the region is
+> `cq opcode lowering: operand predates a non-diagonal gate`; a read in a SECOND
+> loop is a classical-condition mux). The spelling that works is to read it
+> **BEFORE** the region in the same body — the read then precedes that
+> activation's own relabelling gate, and the loop-carried `r` phi crosses a real
+> rail gate every trip so the back edge does not stale it. Committed as
+> `tests/e2e/slice_control_inplace_ry_loop_leak.c` + `..._unrolled.c` + the
+> `e2e-inplace-ry-loop-leak-twin-identical` gate. **2 template rails per
+> activation** (`cq_template_mul_i32_hl` and `cqrt_tape_write_i32`), never freed:
+> 4 at K=2, 6 at K=3. Fact 1 holds (all left ALLOCATED, none freed dirty); fact 2
+> holds (the twin traces are BYTE-IDENTICAL, so the cost is the FREEZE's, not the
+> ROLL's); fact 3 holds (strict 2b reports `2 rail mints, 2 left allocated, 1
+> verified, 0 violations` — it cannot see the four template rails at all). One
+> thing the section did NOT predict and the pair now records: **M-A's warning is
+> emitted PER STATIC GATE, so it is 1 on the rolled side and 2 on the K=2 flat
+> twin** for the same program with identical traces.
 
 **Owner FYI, not a question (§13.10):** the leak's *magnitude* is new even though
 its *class* is not. Flat, the freeze leaks O(1) rails; rolled, it leaks O(K). In the
@@ -1570,7 +1737,7 @@ If it ever moves, S9 owes the identical per-activation treatment §13.3 specifie
 the consuming rotation `T` in the barrier role `BI` plays here, plus the phi-edge read
 position — and S7's prong (iii) is already recorded as CONTINGENT on Case-A's collapse
 having re-anchored the in-loop gate, a contingency this increment's M-β RAUW change
-touches. **File as `drbq.12`.** This is a recommendation, and widening it is the
+touches. **File as `drbq.11`.** This is a recommendation, and widening it is the
 owner's call.
 
 ### 13.7 Walker audit — `LoopLowering.cpp`, pre/post `lowerRotations`
@@ -1610,7 +1777,15 @@ re-ask the finding-L structural freeze here) · `two_registers` · `seq` (two re
 in one body) · `rz_reflection` · `offset` (dtzb `q += off` on the condition rail) ·
 `derived_cond` (**use a satisfiable predicate** — `q*3 == 6`, never `q*3 == 5`,
 which `clang -O1` proves unsatisfiable under `nsw` and deletes outright: a vacuous
-accept, measured) · `ifelse` (hand IR, the two-block form; the C spelling is an
+accept, measured. **CORRECTED 2026-09-04: SATISFIABLE IS NECESSARY AND NOT
+SUFFICIENT, and only the C SLICE is affected.** `q*3 == 6` is satisfiable and
+still vacuous from C — `clang -O1` canonicalizes it to `icmp eq i32 %q, 2` and the
+`mul` is GONE, so the slice would have tested a DIRECT condition while claiming a
+derived one. The shipped C slice uses `(q & 6) == 4`, which survives `-O1` as a
+real `and` + `icmp` pair and whose golden genuinely carries
+`cq_template_and_i32_hl` with its in-body `_unc` + `cqrt_free`. The hand-IR lit
+fixture keeps the `mul` and is unaffected — hand IR is not re-canonicalized —
+and its lowered output was checked to contain `cq_template_mul_i32_hl`) · `ifelse` (hand IR, the two-block form; the C spelling is an
 angle select — §13.2 row L-i). **Every C-sourced accept fixture must keep the
 condition register LOOP-VARIANT** (§13.1) or `clang -O1` hoists its compare and the
 fixture lands on row W instead of on the clause it claims to pin. Hand-IR fixtures may
@@ -1618,7 +1793,10 @@ write the compare inside the loop block directly, which is why
 `control_inplace_ry_reject_in_loop.ll` flips to accept even though `q` is invariant in
 it (measured: its `Cond->getParent() == R.Pred`, so P4 passes and R7 is the only wall).
 
-**lit declines** (family `control_inplace_ry_reject_inloop_*.ll`, 16): one per
+**lit declines** (family `control_inplace_ry_reject_inloop_*.ll`, 16 — **SHIPPED
+17**, because P1's `stalecond` sits inside the family name and was counted
+separately in the prose below; plus the §13.4b flat pair, which is 1 accept + 1
+decline OUTSIDE the family name): one per
 §13.2 row L-a, L-b, L-c, L-d, L-e, L-f, R4, R6-1, R6-2, R6-3, R1, R1', R2, R7',
 plus P1's `stalecond`, **row W's `invariant_cond_hoisted`** (with a C-shape note: its C
 program is the customer's simplest spelling, so pinning its decline is what makes the
@@ -1702,6 +1880,25 @@ counts are `awk`-derived from the file, not quoted:
 > reason is the gate telling you the increment is half-landed.
 
 Accounting: 59 + 9 + 15 + 16 + 8 + 8 + 1 + 1 = 117. ✓
+
+> **CORRECTED 2026-09-04 (round-1 lens L7, finding L7-4) — the "3 with PREFIX `ry`
+> most likely **stay**" row is WRONG, and the table said "MEASURE per cell" for
+> exactly this reason.** Measured on the committed table: **two of the three
+> FLIPPED to `ACCEPT-IDENTICAL`** — `m_ry_req_ry_none_none` and
+> `m_ry_rder_ry_none_none` — i.e. the FLAT side newly accepts, which the predicted
+> row did not anticipate. L7 dumped both flat streams and they are **SOUND**: the
+> prefix `cqrt_ry_i32(h0, .25)` on the condition wire is followed by the flag MINT
+> against that same post-Ry `h0`, the controlled rotation on the DISJOINT rail, and
+> the STRIP against the same `h0` — mint and strip read one basis, and the suffix
+> Ry lands after the free. The third, `m_ry_rzry_none_none_none`, did NOT stay
+> either: it is the NEW `UNROLLED-ONLY` disposition mismatch §10.2 accounts for (a
+> safe rolled over-decline — the next repetition's `a = Ry(a,.25)` is provably
+> post-region FLAT but is reached around the BACK EDGE rolled, and
+> `condWireDisposition` uses the flat `provablyBefore`). So the honest score for
+> this row is **12 → `ACCEPT-IDENTICAL` as predicted, 2 more `ACCEPT-IDENTICAL`
+> unpredicted-but-sound, 1 `UNROLLED-ONLY` accounted for in §10.2, 0 that "stayed"**
+> — and §10.3 item 4's "exactly one acyclic flip" is a statement about the LIT
+> corpus, not about these C programs.
 
 **The axis was written and committed BEFORE any lowering exists, which is the whole
 point** (the fixture `control_inplace_ry_reject_in_loop.ll`'s own header and bd
@@ -1805,7 +2002,7 @@ between the compare and the branch *even on another wire*. The natural repair is
 make them wire-aware using the closure R4 already computes
 (`railWireClosure(…, BackwardOnly)`), which would let a hoisted-but-dominating compare
 through when nothing on the CONDITION's wire stands between its position and `BI`.
-**Recommendation: NOT in this increment, as a separate follow-on `drbq.13`.** Three
+**Recommendation: NOT in this increment, as a separate follow-on `drbq.12`.** Three
 reasons: it is a **sibling-spelling change shared by four callers** (this path, the 4.4
 select's gate 2c, 2b's S6, and the `RegionTreeDetect` nest), and bd
 [`sibling-predicate-spelling-is-the-hole`] is precisely about one of those four being

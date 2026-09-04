@@ -3958,6 +3958,21 @@ add_test(NAME e2e-free-pairing-selftest
 # fail; a guard that survives is reported DEAD. Auto-discovers prefixes, so new
 # fixtures are covered without editing it. Needs the built plugin (it lowers each
 # fixture), so it lives here rather than in ir-pass-lit.
+# bd test_C_libtooling-drbq Inc 3, round-1 review (lens L7) — THE QUARANTINE'S OWN
+# MUTANT VALIDATION, and the same argument as the two entries above one level up.
+# `tools/loop_twin_matrix.py`'s pinned-signature quarantine is the ONLY mechanism
+# in the tree that lets a KNOWN rolled-vs-flat trace divergence pass a gate whose
+# entire purpose is to fail on trace divergence. If its semantics silently
+# degenerate to "skip these 15 cells", the gate reports green while witnessing
+# nothing about them — and the green looks identical either way. This entry
+# asserts the four claims the quarantine makes (signature changed -> FAIL; cell
+# stopped diverging -> FAIL; un-quarantined divergence -> FAIL; cell in both files
+# -> FAIL) plus an unknown-cell entry and a moved boundary control, against a
+# passing control. It stubs the cell results, so it runs no clang, no opt and no
+# plugin and costs well under a second.
+add_test(NAME e2e-loop-twin-quarantine-selftest
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/loop_twin_matrix_quarantine_test.py")
+
 add_test(NAME e2e-fixture-guard-liveness
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/fixture_guard_liveness.py")
 
@@ -4251,6 +4266,193 @@ add_test(NAME e2e-loop-twin-matrix
     --include "${CMAKE_SOURCE_DIR}/include"
     --runtime "$<TARGET_FILE:cq_runtime>" --templates "$<TARGET_FILE:cq_templates>"
     --jobs 6)
+
+# ── bd test_C_libtooling-drbq Increment 3 — THE CONTROL-IN-PLACE Ry ARM IN A
+#    ROLLED LOOP (control-in-place-PRD §13). Ten slices, five hand-unrolled
+#    twins, five `cmp` gates. ───────────────────────────────────────────────
+#
+# WHY EVERY ONE OF THESE HAS A TWIN. There is no simulator (Rule 2), so the
+# strongest available statement about a ROLLED loop is that it emits the SAME
+# gate stream as the same body written out flat — a stream that shipped in
+# Increment 1 and was cleared by an adversarial round. All five pairs are
+# byte-identical today; the `cmp` entries below are milliseconds and are what
+# turns red if either side is ever regenerated alone.
+#
+# ⚠ THE ORACLE'S BLIND SPOT, QUOTED WHERE IT LIVES: the unrolled side IS the
+# Increment-1 flat lowering, so a defect the two paths SHARE (a wrong controlled
+# rotation polarity, a missed R4 aliasing, a freeze that should have fired on
+# both) is byte-identical on both and these gates report success. The flat side's
+# own witnesses are the Inc-1 lit family and tests/e2e/slice_control_inplace_ry.c.
+#
+# ⚠ AND THE GROVER PAIR IS NOT LIKE THE 8h7d.5 PAIRS: its UNROLLED twin is ALSO
+# new capability. It has no loop in it and it DECLINES on the pre-Increment-3
+# binary, at `ArmClassify`'s P1 fence (`SawRotationArm` was not in the
+# disjunction). Part 3b compiles the twin; part 3a makes the rolled form agree
+# with it. So for that one pair the oracle is not a pre-cleared stream, and the
+# lit red-green pair control_inplace_ry_post_region_theta_cond.ll /
+# control_inplace_ry_reject_post_region_theta_stalecond.ll is what stands behind
+# the flat side instead.
+#
+# All ten run STRICT stage 2b (no `--allow-unproven`): each region's flag is
+# minted, stripped and freed inside its own iteration, so nothing dirty crosses
+# the back edge. The rotated registers are left ALLOCATED — Increment 1's
+# structural freeze keeps the whole-DAG spine off a rail carrying a controlled
+# rotation, which is Rule 6's sanctioned fallback and is identical in the twin.
+#
+# K-INDEPENDENCE IS A MEASUREMENT, NOT A GATE HERE, following the 8h7d.5
+# precedent exactly (that increment measured `slice_control_grover_loop_dynamic`
+# and registered no ctest entry for it). MEASURED 2026-09-04 on
+# slice_control_inplace_ry_loop_grover.c: **74 lines of lowered IR at -DCQ_K=3 and
+# 74 at -DCQ_K=1000**, the two modules differing only in the trip constant, while
+# the trace goes 36 -> 10006 lines. A line count that grew with K would mean the
+# loop was unrolled and the increment's central claim is false.
+add_test(NAME e2e-slice-control-inplace-ry-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-leading-gate
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leading_gate.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leading_gate.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-leading-gate-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leading_gate_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leading_gate_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-two-regs
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_two_regs.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_two_regs.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-two-regs-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_two_regs_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_two_regs_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-derived
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_derived.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_derived.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-derived-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_derived_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_derived_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-grover
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_grover.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_grover.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-grover-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_grover_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_grover_unrolled.expected.log")
+
+# ── bd drbq Inc 3, round-1 lens L3 Q1 — THE O(K) FREEZE LEAK, MEASURED RATHER
+#    THAN ARGUED. PRD §13.5's "K rails at run time" had no witness in this tree
+#    until this pair: no other slice reads the ROTATED register inside the body,
+#    because the obvious spellings are refused (a read AFTER the region is
+#    `operand predates a non-diagonal gate`; a read in a SECOND loop is a
+#    classical-condition mux). Reading it BEFORE the region works, and the golden
+#    then shows 2 TEMPLATE-minted rails per activation — `mul` + `tape_write` —
+#    that nothing ever frees: 4 at K=2 here, 6 at K=3 (L3 measured both).
+#
+#    RULE-6 CORRECT (all left allocated, none freed dirty) and INVISIBLE TO
+#    STRICT STAGE 2B, which counts `cqrt_alloc` mints only — which is precisely
+#    why it needs a golden. The twin gate below is the load-bearing half: the
+#    flat form strands the same rails for the same reason, so the cost belongs to
+#    the FREEZE, not to the ROLL.
+#
+#    ⚠ BOTH SIDES EMIT M-A's `non-diagonal gate over a live derived record`
+#    warning, and the counts are NOT symmetric: 1 rolled vs 2 flat, because the
+#    warning is PER STATIC GATE while the hazard occurs K times at run time. That
+#    asymmetry is expected here and is written up in the notes; do not "fix" it
+#    by regenerating one side.
+add_test(NAME e2e-slice-control-inplace-ry-loop-leak
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-leak-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak_unrolled.expected.log")
+
+# THE TWIN GATES — `cmp` over the two committed goldens, no clang, no opt, no
+# plugin, milliseconds each.
+add_test(NAME e2e-inplace-ry-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_unrolled.expected.log")
+
+add_test(NAME e2e-inplace-ry-loop-leading-gate-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leading_gate.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leading_gate_unrolled.expected.log")
+
+add_test(NAME e2e-inplace-ry-loop-two-regs-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_two_regs.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_two_regs_unrolled.expected.log")
+
+add_test(NAME e2e-inplace-ry-loop-derived-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_derived.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_derived_unrolled.expected.log")
+
+add_test(NAME e2e-inplace-ry-loop-grover-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_grover.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_grover_unrolled.expected.log")
+
+add_test(NAME e2e-inplace-ry-loop-leak-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak_unrolled.expected.log")
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or

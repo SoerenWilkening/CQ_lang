@@ -52,6 +52,7 @@ namespace llvm {
 class CallInst;
 class DominatorTree;
 class Instruction;
+class PHINode;
 class Value;
 }  // namespace llvm
 
@@ -110,6 +111,65 @@ llvm::CallInst *findNonDiagonalWireGate(llvm::ArrayRef<llvm::Value *> Seeds,
 // see the clause-3 note in RotationLowering.cpp, which measured both edges.
 bool provablyBefore(const llvm::Instruction *A, const llvm::Instruction *B,
                     const llvm::DominatorTree &DT);
+
+// "Does PHINode `P` faithfully DENOTE the wire at the moment it executes?" —
+// i.e. does RE-EXECUTING it RE-READ the register, so that its value is a live
+// record rather than a frozen one? The full argument (and the two shapes that
+// separate them) is at the definition in WireWalk.cpp.
+//
+// EXPORTED for bd test_C_libtooling-drbq Increment 3. `ArmClassify`'s R6
+// per-activation clause needs exactly this question about the DEFINITION of a
+// rail record before it may grant that re-executing the def refreshes the
+// record, and `LoopLowering::recordRefreshedByDef` asks the same thing over a
+// POST-FLATTEN gate set that detection does not have. Two spellings of one
+// relation eventually disagree in this codebase (bd
+// [[identity-carry-phi-does-not-refresh]] is that disagreement, found as a
+// silent miscompile), so the detection-time caller reuses this one rather than
+// writing a third (Rule 14).
+//
+// ⚠ "`false` IS THE CONSERVATIVE ANSWER" IS A PROPERTY OF THE CALLERS, NOT OF
+// THIS PREDICATE, AND THE POLARITY IS INVERTED BETWEEN THE TWO THAT EXIST (bd
+// drbq Inc 3, round-1 lens L5 Q3). In `gateIsHarmless` it is a BARRIER: `false`
+// refuses, so refusing only ever adds declines. In
+// `ArmClassify::recordLivePerActivation` it is a PRECONDITION: `false` declines,
+// so `true` GRANTS — and there an over-permissive answer would be an
+// OVER-ACCEPT. Any third caller must state which direction it uses before
+// relying on the sentence above.
+//
+// THE VOCABULARY THAT MAKES THAT MATTER: this predicate is spelled over
+// `thetaOnPathTo`, which counts a `cq_theta` as a staler and does NOT count the
+// dtzb in-place `add`/`xor` that `LoopLowering::collectRailGates` DOES count as
+// a rail-relabelling gate. So in the GRANTING direction a φ whose wire moved
+// only by a dtzb `add` between its incoming and its edge would be granted a
+// refresh it did not earn.
+//
+// MEASURED 2026-09-04 (5 probes, HEAD): NOT EXPLOITABLE, and the fixture
+// `ir-pass/test/control_inplace_ry_reject_inloop_frozen_dtzb_carry.ll` carries
+// the whole discrimination. A frozen carry is its own user, so R6's PHI-EDGE
+// READ POSITION rule refuses the mirrored pair before this predicate is
+// consulted; and any NON-frozen φ on the same wire has an incoming whose
+// `collectWireValues` closure reaches the region's own arm `cq_theta`, so this
+// predicate answers `false` anyway.
+// RETIREMENT TRIGGER, THREE WAYS: that argument dies if the phi-edge
+// read-position rule is relaxed, if `recordLivePerActivation` admits a non-φ `D`
+// that can be frozen, or if `LoopLowering::collapseRailPhisIn` step (1)'s
+// LOOP-CARRIED guard (`kMsgCrossIter`, "cq loop lowering: loop-carried tainted
+// value crosses iterations") is relaxed. Any of the three makes this predicate
+// the only wall, and the dtzb gap becomes live — WIDEN THE VOCABULARY (or fence
+// the caller) IN THE SAME CHANGE.
+//
+// THE THIRD ONE IS THE ROUND-2 ADDITION, and it is here because a round-2
+// reviewer built the construction the two legs above do NOT cover: a NON-frozen
+// carry seeded from the region's MERGE value (M-β's hoisted `T`), the dtzb `add`
+// placed AFTER the region on the sibling chain, and the carry READ IN THE BODY
+// so that R6's path conjunct is satisfiable — i.e. exactly the shape leg (1)
+// relies on failing. It DECLINES (no defect), but on the loop-carried guard, and
+// neither of the two legs is what refused it. An argument that names only the
+// fences it happens to have met is the failure mode this comment block exists to
+// avoid. The same trigger is written at the call site
+// (`ArmClassify::recordLivePerActivation`) and in that fixture; all three move
+// together.
+bool phiTracksWire(const llvm::PHINode *P);
 
 // The PER-ACTIVATION reading of `provablyBefore`, for code inside a loop whose
 // every iteration re-establishes the thing being reasoned about (bd
