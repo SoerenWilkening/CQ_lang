@@ -86,6 +86,12 @@ HOW TO RUN IT (from the repository ROOT; `--root .` is the default)
     python3 tools/inplace_twin_matrix.py --only c_mul_eq  # one plane
     python3 tools/inplace_twin_matrix.py --list           # cell names, no runs
 
+    # the bd drbq Increment-4 STATE-PREP pool (`sp_*`), a SEPARATE pool with a
+    # SEPARATE oracle — see "THE STATE-PREP AXIS" below:
+    python3 tools/inplace_twin_matrix.py --stateprep \
+            --prep-oracle /path/to/pre-Inc-4/cq-opt --jobs 8
+    python3 tools/inplace_twin_matrix.py --stateprep --only sp_s5 --list
+
 ⚠ SINCE bd drbq INCREMENT 2a THE `--route-oracle` FLAG IS MANDATORY FOR A MEANINGFUL
 RUN, and here is why. This script's oracle was always "the `cq_phi` twin, which
 ROUTES". Inc 2a (the §6a Rz control-in-place peephole) lowers the `cq_phi` twin
@@ -138,6 +144,88 @@ rather than something a reader has to notice — today this script prints and
 tallies, it does not compare against a baseline; and (2) a decision on the
 `invert` cells, which need the two-line `__cq_invert_begin/_end` stub this
 harness synthesizes in order to LINK AT ALL (see the blind-spot list below).
+
+─────────────────────────────────────────────────────────────────────────────────
+THE STATE-PREP AXIS (`--stateprep`, bd test_C_libtooling-drbq Increment 4 /
+drbq.5) — A SEPARATE POOL WITH A SEPARATE ORACLE
+
+Increment 4 admits a `cq_theta` whose arg-0 is CLASSICAL: controlled STATE PREP
+(`int r = 0; if (q == 5) r = cq_theta(0, 0.9);`). Its arm MINTS A FRESH RAIL
+instead of relabelling a live one, so the "collapse the five-line route" claim
+this file was built for does not apply and neither does its `cq_phi` oracle. The
+`sp_*` pool therefore states a DIFFERENT claim, against a DIFFERENT reference:
+
+    SUBJECT : T r = SEED;                 if (cond) { r = cq_theta(SEED, 0.9); }
+    TWIN    : T r = cq_theta(SEED, 0.0);  if (cond) { r = cq_theta(r,    0.9); }
+
+The twin is the Increment-1 CHAINED shape on a rail seeded by an explicit
+`Ry(0)`, and a PRE-Increment-4 binary already lowers it — MEASURED, on `b506b3b`,
+for `SEED` 0 and 5, for `==` and `!=`, and at `double`. `--prep-oracle` names
+that binary and the twin is built with it; the subject is built with the build
+under test. Two different commits, two different programs: an Increment-4 change
+cannot flatter its own witness through either.
+
+THE CLAIM, and it is exactly two lines long: the subject's trace equals the
+twin's after
+  (i)  DELETING `cqrt_ry_<W>(h, 0x0p+0)` — Ry(0) is the identity matrix; and
+  (ii) MOVING `cqrt_alloc_<W>(SEED) -> h` to immediately before the first
+       `cqrt_ry_<W>_controlled(f, h, .)` naming `h` — a fresh rail is a wire no
+       earlier gate names, so its allocation commutes past all of them,
+with handles renumbered by first appearance as everywhere else in this file.
+Both rewrites are PHYSICAL IDENTITIES of the trace algebra, not steps of the
+lowering — which is the bd [`by-difference-twin-blind-to-arithmetic`] discipline
+applied before the fact rather than after it. The twin really does allocate a
+rail and really does rotate it by zero; those two gates are the entire claimed
+difference, and `reduce_prep` is the claim written out.
+
+VERDICTS (`classify_prep`): DECLINE-BOTH · DECLINE-BOTH-DIFF ·
+SUBJECT-DECLINES-TWIN-ACCEPTS (the expected PRE-Increment-4 reading of every
+in-scope cell) · IDENTICAL (the Increment-4 success verdict) · MISMATCH (a
+finding) · SUBJECT-ACCEPTS-TWIN-DECLINES (SUSPICIOUS — the new path took a shape
+the long-cleared chained path refuses) · HARNESS-ERROR.
+
+WHAT THE `s5` SEED CELL IS FOR, because a reader will otherwise take it for a
+duplicate of `s0`. `clang -O1` propagates equalities: on the successor where
+`cq0 == 5` is a theorem, every use of `cq0` there becomes the literal `5`. So
+
+    T r = 5; if (cq0 == 5) { r = cq_theta(5,   0.9); }   <- the sp_s5 subject
+    T r = 5; if (cq0 == 5) { r = cq_theta(cq0, 0.9); }   <- an in-place Ry on the
+                                                           CONDITION register,
+                                                           which PRD §4 R4 forbids
+
+compile to the SAME MODULE — measured for this increment, whole-module `diff`,
+only `source_filename` differs. `s5` is the AMBIGUITY cell: whatever Increment 4
+does to it, it does to a program it must decline. `s0` is the control (the arm
+edge proves `cq0 == 5`, and `0 != 5`, so no fold could have produced that seed).
+⚠ And note what `s5` is NOT: here the seed and the compare literal belong to
+DIFFERENT REGISTERS — `r` is rotated, `cq0` is compared, and that separation IS
+R4 — so a fence spelled "the seed equals the compare literal" over-declines this
+cell on a coincidence of numerals. The ambiguity is real regardless, because the
+fold reads identically either way; a fence has to be stated over what the ARM
+EDGE PROVES ABOUT THE CONDITION HANDLE, and then `s5` is a priced over-decline
+rather than an accident.
+
+WHAT THIS AXIS CANNOT WITNESS, on top of everything in the next section:
+  * ITS ORACLE IS A DIFFERENT PROGRAM, NOT A DIFFERENT LOWERING. The twin is a
+    chained rotation; the subject is a state prep. So the axis proves "the prep
+    stream is the chained stream minus a seed rotation" and CANNOT prove that
+    accepting the prep shape was legitimate — the seed-identity fence on the
+    merge phi's pred incoming, and the `s5` ambiguity above, are exactly the
+    obligations the twin is exempt from. They belong to the lit family.
+  * `ifelse2` IS EXCLUDED from the pool: its else arm rotates a SECOND register
+    chained-style, so the cell would be a mixture of the two shapes rather than a
+    cell of either. `ifelse` is KEPT and is informative — `clang -O1` merges its
+    two arms into ONE call with a `select` on the ANGLE (bd drbq Inc 2b), for
+    BOTH sides, so the cell measures the angle-select path's own state-prep
+    disposition (`classifyAngleSelect` S3).
+  * THE SECOND REGION in a `clsbetween` cfg or a `region2` consumer is a CHAINED
+    rotation on the prepped register, not a second prep. Deliberate: two preps in
+    a row is a data mux (the second region's pred-edge incoming is the first
+    region's merge phi, never a constant), which declines for a reason unrelated
+    to the crossing those cells exist to measure.
+  * NO COMMITTED EXPECTED TABLE — same status as the rest of this file (bd
+    drbq.9). It prints and tallies; it does not compare against a baseline, and
+    it is NOT a ctest entry.
 
 ─────────────────────────────────────────────────────────────────────────────────
 WHAT IT CANNOT WITNESS — read this before quoting a green run
@@ -211,6 +299,111 @@ WIDTHS = ["i32", "i8", "i64", "f64"]
 
 AXES = [("base", BASES), ("cond", CONDS), ("cfg", CFGS),
         ("cons", CONS), ("width", WIDTHS)]
+
+# ── THE STATE-PREP AXIS (bd test_C_libtooling-drbq Increment 4, drbq.5) ───────
+# A SEPARATE POOL, not a sixth axis on the product above, because its two SIDES
+# are different programs from the five-axis cells' two sides. Everything in this
+# block is inert unless `--stateprep` is passed; `cells()`, `quick_cells()` and
+# `triple_cells()` are byte-unchanged (proven by diffing `--list` before and
+# after, not asserted).
+#
+# WHAT ONE CELL IS. Increment 4 admits a `cq_theta` whose arg-0 is CLASSICAL —
+# controlled STATE PREP — so its arm mints a FRESH rail instead of relabelling a
+# live one:
+#     SUBJECT : T r = SEED;                 if (cond) { r = cq_theta(SEED, 0.9); }
+#     TWIN    : T r = cq_theta(SEED, 0.0);  if (cond) { r = cq_theta(r,    0.9); }
+# The twin is the Increment-1 CHAINED shape on a rail seeded by an explicit
+# `Ry(0)`, and it is what the ORACLE — a PRE-Increment-4 binary — already lowers.
+# The claim under test is that Increment 4's stream IS that stream with exactly
+# two lines moved or removed, and nothing else.
+#
+# THE REDUCTION, and why it is not the transformation under test. `reduce_prep`
+# below applies two rewrites to the TWIN's trace:
+#   (i)  DELETE `cqrt_ry_<W>(h, 0x0p+0)` — a ZERO-ANGLE Ry is the identity
+#        matrix, so deleting it changes no state at all;
+#   (ii) MOVE `cqrt_alloc_<W>(SEED) -> h` to immediately before the first
+#        `cqrt_ry_<W>_controlled(f, h, ·)` naming `h` — a fresh-rail allocation
+#        acts on a wire no earlier gate names, so it COMMUTES with all of them.
+# Both are PHYSICAL IDENTITIES of the trace algebra, not steps of the lowering.
+# That distinction is the bd [`by-difference-twin-blind-to-arithmetic`] lesson
+# applied in advance: an identity witness must not share the transformation it
+# witnesses. This one does not — the twin ALLOCATES A RAIL AND ROTATES IT BY
+# ZERO, two real gates that Increment 4 will never emit, and the reduction is
+# precisely the statement that those two gates are the whole difference.
+#
+# ⚠ THE ORACLE IS A DIFFERENT COMMIT FROM `--route-oracle`'s. That flag wants the
+# PRE-2a binary (`f92d95e`), in which the `cq_phi` twin still ROUTES; this axis
+# wants the PRE-Increment-4 binary (`b506b3b`), in which the CHAINED twin already
+# lowers. They are not the same build, so the axis takes its own `--prep-oracle`
+# rather than overloading one flag with two meanings. `--prep-oracle` falls back
+# to `--route-oracle` when only that is given, and to the build under test with a
+# loud warning when neither is — a run in that state proves nothing about
+# Increment 4 and says so.
+#
+# THE SEED AXIS IS WHERE THE INTERESTING CELL IS, and it is worth reading before
+# quoting an `s5` verdict. `clang -O1` propagates an equality: on the successor
+# where `cq0 == 5` is a theorem, EVERY use of `cq0` there is replaced by the
+# literal `5`. So the SUBJECT source
+#       T r = 5;  if (cq0 == 5) { r = cq_theta(5, 0.9); }
+# is TEXTUALLY INDISTINGUISHABLE, whole-module, from
+#       T r = 5;  if (cq0 == 5) { r = cq_theta(cq0, 0.9); }
+# — an in-place Ry on the CONDITION register, which PRD §4 R4 forbids outright
+# (after it, `icmp_..._unc` recomputes the flag against a relabelled register).
+# MEASURED on the ORACLE, in the probe family for this increment: those two C
+# programs produce `.ll` files differing only in `source_filename`. So an `s5`
+# cell is the AMBIGUITY cell: whatever Increment 4 does to it, it does to a
+# program it must decline. `s0` is the unambiguous control — the arm edge proves
+# `cq0 == 5`, and `0 != 5`, so no fold could have produced that seed.
+#
+# NOTE WHAT `s5` IS *NOT*. The seed and the compare literal here belong to
+# DIFFERENT REGISTERS (`r` is rotated, `cq0` is compared — that separation IS
+# R4), so a fence keyed on "the seed equals the compare literal" over-declines
+# this cell for a coincidence of numerals. The ambiguity is real anyway, for the
+# reason above: the fold reads the same either way. A fence has to be stated over
+# what the ARM EDGE PROVES about the CONDITION HANDLE, and then `s5` is a
+# deliberate, priced over-decline rather than an accident.
+PREP_SEEDS = {
+    #        i32   i8    i64   f64
+    "s0": {"i32": "0", "i8": "0", "i64": "0", "f64": "0.0"},
+    "s5": {"i32": "5", "i8": "5", "i64": "5", "f64": "5.0"},
+}
+PREP_SEEDNAMES = list(PREP_SEEDS)
+
+# All-pairs again, over the FOUR axes that still mean something for a prep cell.
+# `base` is gone by construction (a state prep has no derived base — its arg-0 is
+# a literal), and `ifelse2` is excluded because its else arm rotates a SECOND
+# register `r2` chained-style, which would make the cell a mixture of the two
+# shapes rather than a cell of either.
+PREP_CFGS = [g for g in CFGS if g != "ifelse2"]
+PREP_DEFAULT = dict(prep="s0", cond="eq", cfg="diamond", cons="meas", width="i32")
+PREP_AXES = [("prep", PREP_SEEDNAMES), ("cond", CONDS), ("cfg", PREP_CFGS),
+             ("cons", CONS), ("width", WIDTHS)]
+
+
+def prep_cells():
+    """All-pairs over PREP_AXES: the union of every 2-D plane through
+    `PREP_DEFAULT`. Same design as `cells()` and for the same reason — both
+    round-1 Increment-1 defects were TWO-AXIS crossings."""
+    out, seen = [], set()
+
+    def add(c):
+        k = tuple(sorted(c.items()))
+        if k not in seen:
+            seen.add(k)
+            out.append(dict(c))
+
+    add(PREP_DEFAULT)
+    for (na, va), (nb, vb) in itertools.combinations(PREP_AXES, 2):
+        for a, b in itertools.product(va, vb):
+            c = dict(PREP_DEFAULT)
+            c[na], c[nb] = a, b
+            if prep_legal(c):
+                add(c)
+    return out
+
+
+def prep_legal(c):
+    return True
 
 # Angles the twin substitution rewrites (`cq_theta` <-> `cq_phi`). Every OTHER
 # angle in a generated program is outside this set so the reducer can never
@@ -286,6 +479,12 @@ def legal(c):
 
 
 def name(c):
+    # TWO grammars, told apart by the `prep` key, which no five-axis cell has —
+    # so a state-prep cell can never collide with a committed `c_...` name and
+    # `--only c_` / `--only sp_` each select exactly one pool.
+    if "prep" in c:
+        return "sp_%s_%s_%s_%s_%s" % (c["prep"], c["cond"], c["cfg"], c["cons"],
+                                      c["width"])
     return "c_%s_%s_%s_%s_%s" % (c["base"], c["cond"], c["cfg"], c["cons"],
                                  c["width"])
 
@@ -295,6 +494,12 @@ def name(c):
 # side. NOTHING ELSE in the program changes between the two sides.
 
 def gen(c, arm):
+    """One side of one cell.
+
+    `arm` is the ARM-GATE spelling for a five-axis cell (`cq_theta` = the Ry side
+    under test, `cq_phi` = the routed Rz oracle) and the SIDE NAME for a
+    state-prep cell (`prep` = the Increment-4 subject, `twin` = the Increment-1
+    chained reference). See `PREP_SEEDS` for what the two prep sides are."""
     T, LIT, CT, _ = WIDTH[c["width"]]
     fp = c["width"] == "f64"
     one = "1.0" if fp else "1"
@@ -323,8 +528,36 @@ def gen(c, arm):
         M.append("(int)cq_measure(cq0)")
 
     # ── base register `r` ────────────────────────────────────────────────────
-    b = c["base"]
-    if b == "src":
+    #
+    # `A0` is the arg-0 of the REGION-UNDER-TEST's arm gate. For every five-axis
+    # cell it is the register `r` — a CHAINED rotation — so the generated text is
+    # byte-identical to what it was before the state-prep pool existed. For a
+    # state-prep SUBJECT it is the classical SEED literal, and that ONE token is
+    # the entire difference between the two shapes.
+    #
+    # It is substituted at the 0.9 and 0.4 sites only. The SECOND region a
+    # `clsbetween` cfg or a `region2` consumer builds stays a CHAINED rotation on
+    # the prepped register, deliberately: two preps in a row is a data mux (the
+    # second region's pred-edge incoming is the first region's merge phi, not a
+    # constant) and would decline for a reason that has nothing to do with the
+    # crossing those cells exist to measure.
+    A0 = "r"
+    prep = c.get("prep")
+    if prep:
+        sd = "(%s)%s" % (T, PREP_SEEDS[prep][c["width"]])
+        if arm == "prep":
+            L.append("    %s r = %s;" % (T, sd))
+            A0 = sd
+        else:
+            # THE TWIN. `cq_theta(SEED, 0.0)` is a REAL allocation plus a REAL
+            # zero-angle rotation — two gates Increment 4 never emits — and
+            # `reduce_prep` removes exactly those two and nothing else.
+            L.append("    %s r = cq_theta(%s, 0.0);" % (T, sd))
+        arm = "cq_theta"
+    b = c.get("base")
+    if prep:
+        pass
+    elif b == "src":
         L.append("    %s r = (%s)%s; r = cq_theta(r, 0.25);" % (T, T, seven))
     elif b in ("mul", "add", "xor"):
         op = {"mul": "*", "add": "+", "xor": "^"}[b]
@@ -355,15 +588,15 @@ def gen(c, arm):
     # ── THE REGION ───────────────────────────────────────────────────────────
     cexpr = "!(%s)" % cond if c["cfg"] == "negated" else cond
     if c["cfg"] == "ifelse":
-        L.append("    if (%s) { r = ARM(r, 0.9); } else { r = ARM(r, 0.4); }"
-                 % cexpr)
+        L.append("    if (%s) { r = ARM(%s, 0.9); } else { r = ARM(%s, 0.4); }"
+                 % (cexpr, A0, A0))
     elif c["cfg"] == "ifelse2":
         L.append("    %s r2 = (%s)%s; r2 = cq_theta(r2, 0.11);" % (T, T, nine))
-        L.append("    if (%s) { r = ARM(r, 0.9); } else { r2 = ARM(r2, 0.4); }"
-                 % cexpr)
+        L.append("    if (%s) { r = ARM(%s, 0.9); } else { r2 = ARM(r2, 0.4); }"
+                 % (cexpr, A0))
         extra.append("    (void)cq_measure(r2);")
     else:
-        L.append("    if (%s) { r = ARM(r, 0.9); }" % cexpr)
+        L.append("    if (%s) { r = ARM(%s, 0.9); }" % (cexpr, A0))
 
     if c["cfg"] == "clsbetween":
         L.append("    if (cc) { gsink = 2; }")
@@ -536,6 +769,148 @@ def reduce_route(lines, arm_hex):
     return out, n
 
 
+ZERO_ANGLE = ("0x0p+0", "-0x0p+0")
+
+
+def reduce_prep(lines, seed_is):
+    """Collapse the Increment-1 CHAINED TWIN's trace to the Increment-4 stream.
+
+    Two rewrites, both PHYSICAL IDENTITIES of the trace algebra (see the
+    `PREP_SEEDS` block for why that distinction is the whole point):
+
+      (i)  DELETE  `cqrt_ry_<W>(h, 0x0p+0)`  — Ry(0) is the identity matrix, so
+           removing it changes no state. The handle `h` is remembered.
+      (ii) MOVE    `cqrt_alloc_<W>(SEED) -> h` to immediately before the FIRST
+           `cqrt_ry_<W>_controlled(f, h, .)` that names `h` — a fresh-rail
+           allocation acts on a wire no earlier gate mentions, so it commutes
+           past all of them.
+
+    ⚠ THE POSITION IN (ii) IS A CHOICE, AND IT IS THE ONE THE PRD'S EMISSION
+    RECIPE MAKES. PRD §6 mints the flag AT the branch and then hoists the arm
+    theta to BEFORE the branch, so `lowerRotations` mints the alloc at the
+    hoisted theta — after the flag mint and, for a NEGATED arm, INSIDE the
+    `cqrt_x` bracket. An implementation that hoists the alloc further up (also
+    correct physics — the alloc commutes) produces a byte-different trace and
+    this reducer will call it a MISMATCH. That is deliberate: the position has to
+    be decided once and pinned, not discovered per golden.
+
+    `seed_is` is the cell's `seed_matcher` — a NUMERIC predicate on the alloc's
+    literal argument (see that function for why textual matching is a trap).
+    Returns (reduced_lines, n_seeds_reduced).
+    """
+    out, seeded, n = [], [], 0
+    for l in lines:
+        q = parse(l)
+        if (q and re.fullmatch(r"cqrt_ry_\w+", q[0]) and len(q[1]) == 2
+                and q[1][1] in ZERO_ANGLE):
+            seeded.append(q[1][0])
+            continue
+        out.append(l)
+    for h in seeded:
+        ai = None
+        for i, l in enumerate(out):
+            q = parse(l)
+            if (q and q[0].startswith("cqrt_alloc_") and q[2] == h
+                    and len(q[1]) == 1 and seed_is(q[1][0])):
+                ai = i
+                break
+        if ai is None:
+            continue                       # not a seeded prep rail — leave it
+        alloc = out.pop(ai)
+        ci = None
+        for i, l in enumerate(out):
+            q = parse(l)
+            if (q and re.fullmatch(r"cqrt_ry_\w+_controlled", q[0])
+                    and len(q[1]) == 3 and q[1][1] == h):
+                ci = i
+                break
+        out.insert(len(out) if ci is None else ci, alloc)
+        n += 1
+    return out, n
+
+
+def seed_matcher(c):
+    """A predicate: does this `cqrt_alloc_<W>(<lit>)` argument spell the SEED?
+
+    NUMERIC, never textual, and that is a measured decision rather than a
+    stylistic one. Integer widths trace a decimal, fp widths trace C's `%a` — and
+    C's `%a` and Python's `float.hex()` DISAGREE on exactly the seed this axis
+    uses most: the runtime prints `cqrt_alloc_f64(0x0p+0)` while
+    `(0.0).hex()` is `'0x0.0p+0'`. A textual set would silently fail to find the
+    alloc, the reducer would return `n=0`, and every f64 cell would report
+    MISMATCH for a harness reason. Comparing the VALUES cannot drift that way.
+    """
+    want = float(PREP_SEEDS[c["prep"]][c["width"]])
+
+    def match(lit):
+        try:
+            return float.fromhex(lit) == want if lit.lower().startswith(
+                ("0x", "-0x", "+0x")) else float(lit) == want
+        except ValueError:
+            return False
+
+    return match
+
+
+def classify_prep(nm, subj, twin, seed_is):
+    """-> dict(verdict, notes[], inv[], pdiff)
+
+    VERDICT VOCABULARY, and each name says which side moved:
+      DECLINE-BOTH                  both refuse (the pre-Increment-4 state).
+      DECLINE-BOTH-DIFF             both refuse with different diagnostics.
+      SUBJECT-DECLINES-TWIN-ACCEPTS the EXPECTED pre-Increment-4 verdict for
+                                    every in-scope cell: the chained reference
+                                    lowers, the state-prep spelling does not.
+      IDENTICAL                     both lower and the subject's trace equals the
+                                    REDUCED twin's, byte for byte, handles
+                                    renumbered by first appearance. This is the
+                                    Increment-4 success verdict.
+      MISMATCH                      both lower and the traces differ. A FINDING.
+      SUBJECT-ACCEPTS-TWIN-DECLINES SUSPICIOUS: the new path took a shape the
+                                    long-cleared chained path refuses.
+      HARNESS-ERROR                 a stage failed; never a verdict about the
+                                    compiler.
+    """
+    R = dict(verdict="", notes=[], inv=[], pdiff="", nred=0,
+             subj_diag=subj.diag, twin_diag=twin.diag,
+             subj_pair=subj.pair, subj_warn=subj.warn)
+    if subj.error or twin.error:
+        R["verdict"] = "HARNESS-ERROR"
+        R["notes"].append((subj.error or "") + " | " + (twin.error or ""))
+        return R
+    if subj.exit != 0 and twin.exit != 0:
+        R["verdict"] = ("DECLINE-BOTH" if subj.diag == twin.diag
+                        else "DECLINE-BOTH-DIFF")
+        return R
+    if subj.exit != 0:
+        R["verdict"] = "SUBJECT-DECLINES-TWIN-ACCEPTS"
+        return R
+    if twin.exit != 0:
+        R["verdict"] = "SUBJECT-ACCEPTS-TWIN-DECLINES"
+        R["inv"] += invariants(subj)
+        return R
+
+    red, nred = reduce_prep(twin.trace, seed_is)
+    R["nred"] = nred
+    if nred == 0:
+        R["notes"].append("reducer found no seeded prep rail to collapse — the "
+                          "twin's trace was compared UNREDUCED, so a MISMATCH "
+                          "here is a harness fact, not a compiler one")
+    a, b = normalise(subj.trace), normalise(red)
+    if a == b:
+        R["verdict"] = "IDENTICAL"
+    else:
+        R["verdict"] = "MISMATCH"
+        i = next((k for k in range(max(len(a), len(b)))
+                  if k >= len(a) or k >= len(b) or a[k] != b[k]), 0)
+        R["pdiff"] = ("line %d:\n   subject       : %s\n   reduced twin  : %s"
+                      % (i + 1,
+                         a[i] if i < len(a) else "<end>",
+                         b[i] if i < len(b) else "<end>"))
+    R["inv"] += invariants(subj)
+    return R
+
+
 def normalise(lines):
     """Renumber handles by FIRST APPEARANCE. Mandatory: the Rz side mints one
     extra alloc per route, so every later number shifts by a constant that is
@@ -667,6 +1042,19 @@ def run_cell(cfg, c):
     work = cfg.keep and os.path.join(cfg.keep, nm) or tempfile.mkdtemp(prefix="cqip_")
     if cfg.keep:
         os.makedirs(work, exist_ok=True)
+    if "prep" in c:
+        # THE STATE-PREP AXIS (bd drbq Inc 4). Two sides, and the ORACLE side is
+        # the one that moves: the SUBJECT is built with the build under test and
+        # the TWIN with the PRE-Increment-4 binary, so an Increment-4 change to
+        # the chained path cannot flatter its own witness.
+        try:
+            subj = build(cfg, work, nm + "_prep", gen(c, "prep"))
+            twin = build(cfg, work, nm + "_twin", gen(c, "twin"),
+                         cfg.prep_oracle or None)
+        finally:
+            if not cfg.keep:
+                shutil.rmtree(work, ignore_errors=True)
+        return nm, c, classify_prep(nm, subj, twin, seed_matcher(c))
     try:
         ry = build(cfg, work, nm + "_ry", gen(c, "cq_theta"))
         rz = build(cfg, work, nm + "_rz", gen(c, "cq_phi"))
@@ -956,6 +1344,18 @@ def main():
                     help="run the hand-picked 3-way slice instead of all-pairs")
     ap.add_argument("--quick", action="store_true",
                     help="a <1min smoke subset (NOT a green matrix)")
+    ap.add_argument("--stateprep", action="store_true",
+                    help="run the bd drbq Increment-4 CONTROLLED STATE-PREP pool "
+                         "(`sp_*` cells) INSTEAD of the five-axis pool. Its "
+                         "oracle is --prep-oracle (a PRE-Increment-4 `cq-opt`), "
+                         "not --route-oracle. Combine with --only to run a slice.")
+    ap.add_argument("--prep-oracle", default="",
+                    help="path to a PRE-Increment-4 `cq-opt` (built from "
+                         "`b506b3b`), used to build the CHAINED TWIN of every "
+                         "`--stateprep` cell. Falls back to --route-oracle when "
+                         "only that is given; falls back to the build under test "
+                         "with a loud warning when neither is, in which case the "
+                         "run proves nothing about Increment 4.")
     ap.add_argument("--route-oracle", default="",
                     help="path to a PRE-2a `cq-opt` (built from f92d95e) whose Rz "
                          "spelling still ROUTES. With it the oracle INVERTS: the "
@@ -968,6 +1368,18 @@ def main():
     if cfg.route_oracle and not os.access(cfg.route_oracle, os.X_OK):
         sys.stderr.write("route-oracle not executable: %s\n" % cfg.route_oracle)
         return 2
+    if not cfg.prep_oracle:
+        cfg.prep_oracle = cfg.route_oracle
+    if cfg.prep_oracle and not os.access(cfg.prep_oracle, os.X_OK):
+        sys.stderr.write("prep-oracle not executable: %s\n" % cfg.prep_oracle)
+        return 2
+    if cfg.stateprep and not cfg.prep_oracle:
+        sys.stderr.write(
+            "\n⚠ --stateprep WITHOUT --prep-oracle: the CHAINED TWIN is being "
+            "built with\n  the same binary as the subject, so this run cannot "
+            "distinguish an Increment-4\n  change to the state-prep path from an "
+            "Increment-4 change to the chained path.\n  Build the PRE-Increment-4 "
+            "oracle and pass it. See the PREP_SEEDS block.\n\n")
     cfg.clang = os.path.join(cfg.llvm, "clang")
     cfg.cqopt = os.path.join(cfg.root, "build/ir-pass/cq-opt")
     cfg.include = os.path.join(cfg.root, "include")
@@ -977,7 +1389,8 @@ def main():
     cfg.ld = os.environ.get("CQ_LD",
                             os.path.join(cfg.root, "build/tests/e2e/cq_link.sh"))
 
-    pool = (quick_cells() if cfg.quick
+    pool = (prep_cells() if cfg.stateprep
+            else quick_cells() if cfg.quick
             else triple_cells() if cfg.triples
             else cells())
     cs = [c for c in pool if not cfg.only or cfg.only in name(c)]
@@ -1003,11 +1416,12 @@ def main():
     for nm, c, R in sorted(res):
         tally[R["verdict"]] = tally.get(R["verdict"], 0) + 1
         flag = "!!" if (R["verdict"] in ("PREFIX-MISMATCH", "HARNESS-ERROR",
-                                         "RY-ONLY(suspicious)")
+                                         "RY-ONLY(suspicious)", "MISMATCH",
+                                         "SUBJECT-ACCEPTS-TWIN-DECLINES")
                         or R["inv"]
-                        or R["suffix"].startswith("SUFFIX-DIVERGENT")
-                        or R["suffix"].startswith("SUFFIX-RY")) else "  "
-        if R["rzv"]:
+                        or R.get("suffix", "").startswith("SUFFIX-DIVERGENT")
+                        or R.get("suffix", "").startswith("SUFFIX-RY")) else "  "
+        if R.get("rzv"):
             rztally[R["rzv"].split("(")[0]] = \
                 rztally.get(R["rzv"].split("(")[0], 0) + 1
             if R["rzv"].split("(")[0] in ("RZ-MISMATCH", "RZ-HARNESS-ERROR",
@@ -1015,18 +1429,25 @@ def main():
                                           "RZ-DECLINE-DIFF"):
                 flag = "!!"
         lines.append("%s %-58s %-24s %-28s %-24s %s"
-                     % (flag, nm, R["verdict"], R["suffix"], R["rzv"],
-                        R["ry_diag"] or R["rz_diag"]))
+                     % (flag, nm, R["verdict"], R.get("suffix", ""),
+                        # the reduction count is meaningful only when both
+                        # sides lowered and the traces were actually compared.
+                        R.get("rzv", "") or (
+                            ("reduced %d" % R["nred"])
+                            if R["verdict"] in ("IDENTICAL", "MISMATCH") else ""),
+                        R.get("ry_diag") or R.get("rz_diag")
+                        or R.get("subj_diag") or R.get("twin_diag") or ""))
         for n in R["notes"]:
             lines.append("      note: " + n)
         for iv in R["inv"]:
             lines.append("      INV : " + iv)
-        if R["pdiff"]:
+        if R.get("pdiff"):
             for l in R["pdiff"].splitlines():
                 lines.append("      " + l)
     out = "\n".join(lines)
     print(out)
-    mode = "QUICK" if cfg.quick else "TRIPLES" if cfg.triples else "ALL-PAIRS"
+    mode = ("STATE-PREP" if cfg.stateprep else "QUICK" if cfg.quick
+            else "TRIPLES" if cfg.triples else "ALL-PAIRS")
     print("\n=== TALLY (%s, %d cells) ===" % (mode, len(res)))
     for k in sorted(tally):
         print("  %-26s %d" % (k, tally[k]))

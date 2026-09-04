@@ -317,7 +317,14 @@ adversarial Rule-13 review (opus lenses; one Fable clearance per increment).
   **add the Ry-arm shape as a `tools/loop_twin_matrix.py` axis FIRST**; rolled
   and hand-unrolled twins byte-identical; budget ≥3 adversarial rounds (the
   loop history is 4-for-4 on hidden over-accepts).
-- **Inc 4 — controlled state-prep (S5).** `T` with a CLASSICAL arg-0 in the
+- **Inc 4 — controlled state-prep (S5). DESIGNED — see §14**, which CORRECTS
+  this bullet on two counts: there are **TWO** new fences, not one (the
+  equality-fold ambiguity F2 is required and is not anticipated here — measured,
+  `if (q==k) r = cq_theta(q, θ)` and `int r = q; if (q!=k) r = cq_theta(k, θ)`
+  compile to modules BYTE-IDENTICAL to a genuine state prep), and the if/else
+  bullet describes a shape plain C does not produce (`clang -O1` makes it an
+  angle `select`, refused at `classifyAngleSelect` S3 — a SECOND customer site).
+  `T` with a CLASSICAL arg-0 in the
   arm: hoist to `BI` (the alloc is classical and hoists with it), controlled Ry
   on the fresh rail, merge phi RAUW → the new handle. ONE new fence: the merge
   phi's pred-edge incoming is a `Constant` BIT-IDENTICAL to `T`'s seed (an
@@ -2072,3 +2079,1030 @@ Two FYIs:
 8. **Three of the five e2e twins are for shapes whose C spelling I measured, and two
    are not.** `_two_regs` and `_derived` were reasoned about from the Rz analogues.
    The DER lesson says that is exactly where a vacuous accept hides.
+
+## 14. Increment 4 design — controlled STATE PREP (S5) (settled 2026-09-04)
+
+> **Status: DESIGNED, NOT IMPLEMENTED.** Written at HEAD `b506b3b` against a
+> pre-Inc-4 oracle built in a scratch worktree from the same commit. **The two
+> binaries are the same file** — `md5 -q` of `build/ir-pass/cq-opt` and of
+> `scratchpad/wt/pre4/build/ir-pass/cq-opt` are both
+> `8931bc461dc1db08e90288880f7d67be` (and `libCQPass.so`
+> `82217c6381c0bf0cf56f92b02b043c96`), re-measured independently by two agents;
+> 108 probe programs were nonetheless run through BOTH with **0 disagreements**.
+> Every "measured" claim below is a program that was compiled at `-O1`, run
+> through `cq-opt`, and — where it accepts — linked and executed. Implementing
+> epic bd `test_C_libtooling-drbq`, child `drbq.5`. **A Rule-13 core change**
+> touching `ArmClassify`, `SwapRouteEmit` and `RotationLowering`.
+>
+> Companion measurements: `inc4-records/PROBE_RESULTS.md` (committed beside this PRD; originally `scratchpad/probe/RESULTS.md`) (70 probes, the
+> pre-implementation record) and `inc4-records/PRD_PROBES.md` (38 more, the
+> fold / derived-temp / uniqued-constant / `fcmp` questions).
+>
+> **THE HEADLINE, AND IT IS NOT WHAT §7's INC-4 BULLET SCOPED.** §7 promised
+> "ONE new fence: the merge phi's pred-edge incoming is a `Constant`
+> BIT-IDENTICAL to `T`'s seed". That fence is necessary and **it is not
+> sufficient**. `clang -O1` performs equality value-propagation on BOTH edges of
+> an `icmp eq`/`ne` diamond, and the result is that **two programs CQ must
+> decline compile to a module BYTE-IDENTICAL to a genuine state prep**:
+>
+> ```c
+> int r = 0; if (q == 0) r = cq_theta(q, .9);   /* an in-place Ry on the CONDITION register — R4 forbids it */
+> int r = 0; if (q == 0) r = cq_theta(0, .9);   /* genuine state prep — Inc 4 wants to accept it */
+> ```
+>
+> `diff` of the two `-O1` modules differs only in `source_filename`
+> (probe `p08a` vs `p08a_ctl_prep0`; independently re-measured as
+> `prd/ir/q01` ≡ `q04` and `q02` ≡ `q05` on the *straight-through* side). An Inc 4
+> that reads the shape as state prep turns **two loud declines into silence** —
+> the class the Inc-2b clearance blocked on. So this increment ships **TWO** new
+> fences: **F1** (seed identity, §7's) and **F2** (the equality-fold ambiguity,
+> new). §7's bullet is corrected in place with a pointer here.
+>
+> **AND THE SHIPPED COMPILER ALREADY READS THAT SAME IR SHAPE THE OTHER WAY, FOR
+> THE OTHER STEM.** `if (q == 0) q = cq_phi(q, .9)` reaches the pass as
+> `cq_phi_si32(i32 0, 0.9)` and **ACCEPTS today**, emitting
+> `cqrt_rz_i32_controlled(h1, h0, .9)` on **q's own rail** — `tryEqFoldArm`
+> (`EqFoldArm.cpp` D1–D8) exists precisely to *undo* the fold and re-anchor onto
+> the handle (probe `p08l`, measured accepting on both binaries). After Inc 4 the
+> two stems read one IR construct two ways, and §14.2d states why that is sound
+> rather than a contradiction.
+
+### 14.1 The accept shape, and the physics
+
+**The shape.** A flat `BranchRegion` — a **DIAMOND**, and only a diamond (§14.2a
+explains why the shape restriction falls out of F1 rather than being added) —
+whose single content arm is exactly one `@cq_theta_<sfx>` call `T` whose **arg-0
+is a CLASSICAL `Constant`**, whose result is the merge φ's arm incoming, and
+whose merge φ's **pred-edge incoming is a `Constant` bit-identical to that seed**.
+From C:
+
+```c
+int r = SEED;  if (COND(q))  r = cq_theta(SEED, θ);   /* θ classical */
+```
+
+**The lowering.** Identical in every step to Increment 1 except that the arm gate
+mints its own rail:
+
+1. flag mint at `BI` — `cq_template_icmp_<pred>_<W>_hl(c, k)`, unchanged;
+2. `cqrt_x(f)` if the arm is the FALSE successor (Rule 9), unchanged;
+3. **hoist `T` to before `BI`** (move, never re-mint), record
+   `taint.ControlledRotations[T] = f`, unchanged;
+4. `lowerRotations` takes the `!Chained` arm — `cqrt_alloc_<W>(SEED)` at the
+   theta's **hoisted** position — and then mints
+   `cqrt_ry_<W>_controlled(f, h_new, θ)` instead of the unconditional gate;
+5. `cqrt_x(f)` closing bracket, flag strip `…_hl_unc(f, c, k)`, `cqrt_free(f)`,
+   unchanged;
+6. merge φ RAUW → `T` (**M-β**), scrub, erase, `flattenRegion`, unchanged.
+
+**Emitted trace order, and it is a design decision not an accident:**
+`icmp_hl → [cqrt_x] → cqrt_alloc(SEED) → cqrt_ry_<W>_controlled → [cqrt_x] →
+icmp_hl_unc → cqrt_free(f)`. The alloc lands **after** the flag mint and
+**inside** a negated arm's `cqrt_x` bracket, because `lowerRotations` sets its
+insert point at the (hoisted) theta (`RotationLowering.cpp:255`) and the emitter
+put the theta there. Hoisting the alloc to the top of the pred instead is also
+correct physics — a fresh-rail alloc commutes with every gate that does not name
+its handle — but it **moves the golden**, so it is fixed here: **the alloc stays
+at `lowerRotations`' natural position** and the goldens and the §14.8 reduction
+are written to that.
+
+**The physics.** Let `C` be the condition's register set and `R` the fresh rail.
+
+* On the `f=0` component the rail is never touched, so it holds `|SEED⟩` — which
+  is exactly the value the source's `r` has on the straight-through edge, **by
+  F1**. That equivalence is the whole reason F1 exists; without it the merge is a
+  data mux between a prepared rail and an unrelated constant.
+* On the `f=1` component the rail holds `Ry(θ)|SEED⟩` — the source's arm value.
+* The strip `…_hl_unc(f, C, k)` recomputes the predicate on `C` and XORs it back.
+  **Valid because `R` is a rail the compiler minted inside this region: it is
+  disjoint from every wire in `C` by construction, not by proof.** This is the
+  one place Inc 4 is *easier* than Inc 1 rather than harder — R4's whole
+  obligation is discharged structurally (§14.5).
+* `cqrt_free(f)` on a provably-`|0⟩` flag (Rule 6), unchanged.
+* `R` is **FROZEN** by Inc 1's structural freeze
+  (`ChainWalk::railCarriesControlledRotation`, which asks the emitted gate's own
+  arg-1 use). Measured in the twin: `h1` is never freed and stage 2b reports it
+  `left allocated`. For state prep the frozen rail is one **the compiler itself
+  allocated**, so the leak is O(1) per region and is the Rule-6-sanctioned
+  fallback; a `cqrt_free` of it would be a dirty free of a
+  condition-entangled rail.
+
+No copy, no reverse-play, no work rail, no route. The swap route cannot carry
+this either — `Ry(θ)|0⟩ ≠ |0⟩`, so an inactive routed work rail would be left
+dirty and entangled (Rules 6/8, §2) — so control-in-place is again the MECHANISM,
+not a peephole.
+
+### 14.2 The two new fences
+
+#### 14.2a F1 — SEED IDENTITY (the merge is faithful)
+
+> **F1.** The region's merge φ must have a **Pred-edge incoming**, and that
+> incoming must be a `ConstantInt` or `ConstantFP` **bit-identical** (same LLVM
+> type AND same bit pattern) to `T`'s arg-0. Anything else declines
+> `state prep seed does not match the merge incoming`.
+
+Five things about the spelling, each of which a naive implementation gets wrong:
+
+1. **It must be an EXPLICIT clause with its own string and its own fixtures.**
+   Today the shape is refused twice over by *pointer identity on uniqued
+   constants* — R3's `if (Routed && RotBase != Routed)`
+   (`ArmClassify.cpp:1678-1681`) and the emitter's
+   `T->getArgOperand(0) != Base` (`SwapRouteEmit.cpp:588-592`). LLVM uniques
+   `ConstantInt`/`ConstantFP` by type+bits, so those two tests *already* enforce
+   seed identity — **by accident of representation, with no comment saying so and
+   no fixture pinning it**. That is the "passes for a reason nobody wrote down"
+   shape this file keeps finding. F1 is written out, given its own message, and
+   pinned; R3 and the emitter check keep their own strings for the shapes they
+   are about (a cross-handle mux).
+2. **`ConstantInt`/`ConstantFP` ONLY.** `undef`, `poison`, a `ConstantExpr`, a
+   `GlobalVariable` address, a `ConstantAggregate` and a `BlockAddress` all
+   decline. Two reasons, not one: a `ConstantExpr` is a **link-time** constant
+   whose value this compiler cannot read (the Inc-2b round-2 finding, one family
+   over), and `undef`/`poison` in two emitted gate slots is the bd `xy9n`
+   literal-integrity defect (`LiteralIntegrity.cpp`) — a literal `undef` is read
+   as **two different values** at the `-O0` stage 3, so "the rail starts at
+   |SEED⟩" is not even a well-formed claim.
+3. **Bit identity, spelled as bit identity.** `-0.0` vs `0.0` must decline, and
+   it is **reachable from plain C in both directions** — probe `p07b`
+   (`double r = -0.0;` with `cq_theta(0.0, θ)`) and `p07c` (the mirror), both
+   measured surviving `-O1` with the two constants distinct in the IR. A pointer
+   comparison happens to be correct here (LLVM uniques `ConstantFP` on the
+   `APFloat` bits), but a hand-written `APFloat` comparison must use
+   `bitwiseIsEqual`, **never `compare`/`==`**, which calls `-0.0 == 0.0`.
+4. **A non-constant incoming is a DATA MUX and declines** — the same string.
+   Measured: `int r = q; if (q > 5) r = cq_theta(0,.9);` keeps `%1` as the pred
+   incoming (`prd/ir/q17`), and `int r = cc ? 0 : 3;` keeps a classical
+   `select i32` (`p21b`). Both are muxes of two different registers.
+5. **F1 REQUIRES A PRED EDGE, WHICH IS WHY THE ACCEPT IS DIAMOND-ONLY.** An
+   if/else merge φ has no Pred incoming at all, so F1 cannot be satisfied and the
+   if/else shape declines *without a separate clause*. It gets one anyway —
+   §14.2e — because the owner ruled on it and because a fence that fires by
+   absence is a fence nobody can find.
+
+**The runtime-seed spelling is structurally the same shape and is DECLINED, as an
+owner question** (§14.11 Q2). Probe `p16`: `int r = seed; if (q == 5) r =
+cq_theta(seed, .9);` has the merge's pred incoming and the theta's arg-0 as **the
+same SSA value** (`%0`, a classical function argument), and `cqrt_alloc_<W>`
+takes a runtime value — so the fence spelled *"the pred incoming is the SAME
+VALUE as `T`'s arg-0, and that value is classical"* would subsume it for free.
+It ships **declined** because the owner's scope says `Constant`, and because the
+`Constant` spelling is what makes `-0.0` a decline (value identity on a uniqued
+constant already IS bit identity; SSA identity on a runtime value proves nothing
+about `-0.0`, but there `-0.0` is not a compile-time fact either).
+
+#### 14.2b F2 — THE EQUALITY-FOLD AMBIGUITY, and it is POLARITY-FREE
+
+> **F2.** If the region's condition is an **equality** `icmp` (`eq`/`ne`) between
+> a **tainted** operand and a `ConstantInt` `k` (position-free — `clang -O1`
+> canonicalizes the constant to either side), and `k` is **bit-identical** (type
+> AND value) to `T`'s seed, the region declines
+> `state prep seed is proven equal to the condition register`.
+> **There is no polarity clause.**
+
+**Why there is no polarity clause, stated as a proof rather than a convenience,
+because a polarity clause is exactly where bd `ogw2` put a wrong unitary.** On an
+`icmp eq`/`ne` diamond the two successors are the arm and the straight-through,
+and **exactly one of them is the edge on which the equality is a theorem**
+(`eq` → successor 0; `ne` → successor 1). So there are exactly two physical
+readings of a folded seed, and F2's single test covers both:
+
+* **A1 — the ARM is the proving edge.** `clang -O1` replaces every use of the
+  condition handle inside the arm by `k`, so `cq_theta(q, θ)` — an in-place Ry on
+  the CONDITION REGISTER, which **R4 forbids** — arrives as `cq_theta(k, θ)`.
+  Seed = `k`. Measured: `p08a`, `p08c`, `p08d`, `p08e`, `p08f`, `p08g`, `p08k`.
+* **A2 — the STRAIGHT-THROUGH is the proving edge.** The same substitution
+  applies to the merge φ's pred incoming, so `int r = q;` — an **alias of the
+  quantum register**, which cannot be muxed against a fresh rail (Rule 8,
+  no-cloning) — arrives as `int r = k`. Pred incoming = `k`, and **F1 forces
+  seed = pred incoming**, so seed = `k`. Measured: `p23b ≡ p23d`, `p23a ≡ p23c`,
+  and independently `prd/ir/q01 ≡ q04`, `q02 ≡ q05`.
+
+Given F1, both readings collapse to the single condition **seed == k**, which has
+no edge in it and therefore nothing to get backwards. That is the whole argument
+for the spelling. (`tryEqFoldArm`'s D8 and `straightThroughConstFoldHandle`'s
+`StraightProvesEq` each carry an explicit polarity test because each *re-anchors*
+onto a specific edge; F2 only *refuses*, and refusing on both edges is free.)
+
+**F2 is a decline-on-ambiguity, and that is the only order-insensitive fence
+available.** Probe `p08s` is the proof: `if (q + 1 == 6) r = cq_theta(q, .9);`
+has its compare canonicalized to `icmp eq %1, 5` **but leaves the arm's
+`cq_theta(%1, .9)` UNFOLDED**, so the same source arrives folded (`p08h`) or
+unfolded (`p08s`) depending on incidental pass order. An accept predicate that
+reads "this *looks* like state prep" is therefore order-sensitive by
+construction; a decline predicate that reads "this *could have been* the
+condition register" is not. `p08s` goes in the decline table as the **unfolded
+twin** of `p08h` for exactly that reason.
+
+**F2 reads `ConstantInt` and that is COMPLETE for the floating-point family —
+MEASURED, and the reason is an LLVM invariant rather than luck.** An `fcmp oeq`
+edge does **not** fold: `double q = …; double r = 0.0; if (q == 0.0) r =
+cq_theta(q, .9);` keeps `cq_theta_f64(double %1, 0.9)` in the arm
+(`prd/ir/q32`), and so does the `5.0` spelling (`q34`); `diff` against the
+genuine fp prep (`q33`) shows exactly that one line differing. LLVM's
+`propagateEquality` will not substitute across `oeq` because `oeq` is not a
+bitwise-equality proof — `+0.0 == -0.0` — which is the same fact F1 relies on in
+the other direction. So the fp shapes reach the pass **unfolded** and decline on
+**R4** (masked, today, as `condition predates a non-diagonal gate`; unmask with
+`cq_phi`). Two consequences: F2 needs no `fcmp` arm, and the fp accept (`p07a`)
+is unambiguous by construction rather than by fence. **Retirement trigger:** if
+LLVM ever gains an `oeq`-edge substitution for non-zero, non-NaN constants, F2
+owes an `fcmp`+`bitwiseIsEqual` arm and `q32`/`q34` become its red-green pair.
+
+**What F2 does NOT need to do today, with its retirement trigger.** A compound
+`&&`/`||` condition **also** folds — measured, `p08q`: `if (q == 5 && p == 3) r =
+cq_theta(p, .9)` arrives as `cq_theta(i32 3, .9)`, i.e. a compound condition pins
+a SECOND register too — but a compound condition reaches **no** control accept
+path: `classifyArms` declines `!isa<CmpInst>(Region.Condition)` outright
+(`ArmClassify.cpp:1383-1387`; measured on both binaries with a PHASE arm,
+`prd/ir/q12` declines while its simple-condition sibling `q13` accepts and runs).
+So F2 reads one compare and needs no `and`/`or` leaf walk.
+> **RETIREMENT TRIGGER, written now rather than discovered later (the bd 8h7d.5
+> F-1/F-3 discipline): the day compound conditions are admitted to any control
+> accept path, F2 must be asked of EVERY LEAF of the flag network, and of every
+> register any leaf pins — not just of the register the arm rotates.** `p08q` is
+> the committed reproducer for that day.
+
+#### 14.2c What F2 costs, and the residual it deliberately does NOT fence
+
+**The cost is a genuine over-decline, and it is the shipped disposition.**
+`int r = 5; if (q == 5) r = cq_theta(5, .9);` (probe `p06a`) is an unambiguous,
+well-formed state prep at the source level, and it declines — because its `-O1`
+IR is **byte-identical** to `int r = 5; if (q == 5) r = cq_theta(q, .9);`
+(`p08e`) and to `int r = 5; if (q > 4 && q < 6) r = cq_theta(q, .9);` (`p08c`),
+both of which must decline. The same applies to `p23b`
+(`int r = 5; if (q != 5) r = cq_theta(5, .9);`) on the A2 side. **Three genuine
+programs over-decline; the fence is Prime-Directive-correct and the user's
+workaround is one character** (any seed other than the compare literal).
+Owner question §14.11 Q1.
+
+**The DERIVED-TEMP fold is a documented ACCEPT, not a fence, and the argument is
+narrower than it first looks.** `if (q == 5) r = cq_theta(q - 5, θ)` folds to
+`cq_theta(0, θ)` (`p08b`, IR identical to the flagship `p01`), seed `0` ≠ `k` `5`,
+so F1 and F2 both pass and Inc 4 **accepts** it. Three measured facts make that
+faithful:
+
+1. **The folded value is `f(k)` for the function `f` the source wrote, and `f`
+   is not the identity** (if it were, `f(k) == k` and F2 would have refused).
+   `t = f(q)` in CQ's own semantics is an **out-of-place** derived rail — a
+   different physical wire from `q` — so preparing a fresh rail is the right
+   SHAPE; only its content off the `f=1` component could differ.
+2. **Nothing reads it off that component.** The merge's other incoming is the
+   pred constant, and `t` has no other reader — **enforced by the fold itself**:
+   measured (`prd/ir/q22`, `q23`), when the derived temp has a second reader
+   `clang -O1` does **not** fold it at all; the `sub` survives, the arm's arg-0
+   stays `%2`, and the region declines on R1/R4. `-O1` at this level folds a value
+   everywhere-and-DCEs-the-definition, or nowhere.
+3. **The fold is not restricted to the arm and not to the compare's operands** —
+   `int t = q + 3;` defined *before* the region folds to `3` under `q == 0`
+   (`prd/ir/q19`) and the `add` is deleted — so the residual is a property of
+   value propagation generally, not of arm-local rewriting. `prd/ir/q24` sharpens
+   it: a loop-carried `t` folds to `1`, so **the folded seed need not equal `k`
+   and need not be `0`**; with a matching `int r = 1;` that shape passes both
+   fences and is accepted on the same argument.
+
+Two clean sub-families ride the same accept and are worth fixtures because they
+show F2 is not over-broad: an **unconditional** identity fold —
+`cq_theta(q * 0, θ)`, `cq_theta(q - q, θ)`, `cq_theta(q ^ q, θ)` under any
+condition (`prd/ir/q28`, `q29`, `q30`) — folds to `0` with no edge reasoning at
+all, and is *exactly* faithful (`q*0` is `|0⟩` for every `q`, unentangled).
+
+> **Say the honest version, because the comfortable one is false:** F2 is **not**
+> a semantic characterization of "the source meant a fresh rail". Every folded
+> arm was, at the source level, a mux between a derived rail and a constant —
+> which CQ declines when it can see it. F2 is a fence on the one sub-family where
+> the folded constant is **indistinguishable from the condition register
+> itself**; the derived-temp accepts are the sub-family where the folded value is
+> provably a **different physical wire** from `q`. That distinction is real (it is
+> the difference between violating R4 and not) but it is a distinction about
+> WIRES, not about what the source "meant", and it is on the owner's desk as
+> §14.11 Q3.
+
+#### 14.2d The two stems now read ONE IR construct TWO ways — and why that is sound
+
+After Inc 4, `cq_theta_si32(i32 0, θ)` inside an `if (q == 0)` arm **declines**
+(F2), while `cq_phi_si32(i32 0, θ)` in the same position **accepts and
+re-anchors onto `q`'s own rail** (`tryEqFoldArm`, measured today as `p08l`). One
+construct, two readings. That is sound, and the reason is the stem's physics, not
+a preference:
+
+* **Rz.** `tryEqFoldArm` D1–D8 *proves* the equality on the arm edge and
+  re-anchors the gate onto the handle `H`. The resulting circuit is
+  `cqrt_rz_<W>_controlled(f, H, θ)` — a **diagonal** gate on the condition's own
+  register, which §3 permits explicitly (it is why S8 accepts): the strip
+  recomputes the predicate over a basis the arm did not move.
+* **Ry.** The same re-anchor would put `cqrt_ry_<W>_controlled(f, H, θ)` on the
+  condition register, which **R4 forbids** — an Ry relabels the basis, so the
+  strip is computed over a register the arm moved and the flag does not return to
+  `|0⟩`. There is no correct re-anchor for this stem, so the only two options are
+  *accept as a fresh rail* (wrong whenever the source meant `q`) or *decline*.
+  F2 declines.
+
+**Pin it with a stem PAIR** so the asymmetry cannot be "tidied up" by someone who
+notices the two spellings disagree: `control_inplace_rz_eqfold_reanchor.ll`
+(accept, the `p08l` shape, re-anchored — this may already exist under a
+`control_swap_eqfold_*` name; reuse it and cross-reference rather than adding a
+second) and `control_inplace_ry_reject_stateprep_eqfold_coincidence.ll` (decline,
+the same IR with the stem changed).
+
+#### 14.2e The if/else clause, and the second customer site
+
+**Owner ruling: if/else with two preps DECLINES ("two rails").** It gets its own
+clause and its own string — `if/else state prep allocates two rails` — rather
+than riding F1's absence, for two reasons. First, F1 fires by *absence* of a Pred
+edge, which is unfindable. Second, and this is the measured one: **R3 would let it
+through.** With two arms whose seeds are the same constant, `Routed` is anchored
+by the first arm to that `Constant` and the second arm's `RotBase` is the
+pointer-identical `Constant`, so `RotBase != Routed` is FALSE and R3 passes. M-β
+would then chain the two hoisted gates (`T_f`'s arg-0 := `T_t`'s result) and emit
+ONE rail carrying `cRy(f, A)` and `x; cRy(f, B); x`.
+
+> **THAT LOWERING IS PHYSICALLY CORRECT FOR THE SOURCE, AND THE OWNER RULED
+> DECLINE ANYWAY.** One rail, prepared once at `|SEED⟩`, rotated by `A` on the
+> `f=1` component and by `B` on the `f=0` component, is exactly
+> `if (c) r = Ry(SEED, A); else r = Ry(SEED, B);` — the source allocates two rails
+> only in a reading where SSA names are wires, and they are not. The observation
+> goes on the owner's desk (§14.11 Q4) rather than into the increment.
+
+**From plain C, though, the if/else does not reach `classifyArms` at all — and
+this is the scope correction §7's bullet needs.** `clang -O1` (SimplifyCFG) merges
+`if (c) r = cq_theta(0, A); else r = cq_theta(0, B);` into **ONE** theta with a
+tainted-condition **angle `select`** (probe `p14a`), which lands in
+`classifyAngleSelect`, is refused at **S3** (`ArmClassify.cpp:3154-3158`,
+`!Taint.Tainted.count(RotBase)` → `NotApplicable`) and declines
+**`rotation angle`** — measured. So:
+
+> **Inc 4 has TWO customer sites**, and this increment ships only the first:
+> `ArmClassify.cpp:725` (`inPlaceRotationArmTheta`'s classical-seed return) and
+> `ArmClassify.cpp:3154` (`classifyAngleSelect` S3). **S3 stays declined**, as a
+> recorded follow-on (`drbq.13`), with its shape sketched so the ruling is
+> deliberate: the by-difference lowering on a fresh rail would be
+> `cqrt_alloc_<W>(SEED); cqrt_ry_<W>(h, B); cqrt_ry_<W>_controlled(f, h, A−B)`,
+> and it inherits **every** arithmetic concern §12.3 records — the difference is
+> exact only in real arithmetic, `|δ| ≤ ½ ulp(A−B)` is unbounded in absolute
+> radians, `fl(A−B)` can be non-finite from two finite arms, and the
+> constant-arms-only narrowing (clearance finding F-11) applies verbatim. It also
+> inherits the §12.3 fences S1–S10 wholesale, which is a second increment's worth
+> of surface. Do not fold it in here.
+
+The two remaining if/else spellings both decline today and keep their strings:
+two preps with **different seeds** survives as a real if/else and declines
+`impure phase arm` (`p14b`); a prep beside a **chained** arm declines
+`impure phase arm` (`p05`). Both are pinned as declines.
+
+### 14.3 The decline partition
+
+Every row is a **loud** `DiagnosticInfoUnsupported` with a negative fixture
+mirroring the string character-for-character (Rule 12). Message grammar is
+`cq controlled lowering: <What> under quantum control` unless another prefix is
+shown. **Three new `What` strings**, and nothing else is added:
+
+| new string | owner | why it needs its own words |
+|---|---|---|
+| `state prep seed does not match the merge incoming` | F1 | the merge is a data mux; `control flow` would hide the one thing the author must change |
+| `state prep seed is proven equal to the condition register` | F2 | names the physics (R4's register), not the syntax |
+| `if/else state prep allocates two rails` | §14.2e | the owner's ruling, spelled |
+
+> ⚠ **`declineArm` re-spells all three** whenever `condWireDisposition` returned
+> `ProvenPostRegion` (`ArmClassify.cpp:1476-1483`) — every state-prep probe that
+> printed `condition predates a non-diagonal gate` printed it for that reason and
+> not for the reason named. **No probe's printed string named
+> its real clause** (probe agent's measurement, 3 of 70 masked; my `q25` is a
+> fourth). Every fixture below must be written from a MEASURED message on a
+> program whose condition wire carries no post-region non-diagonal gate, or must
+> be unmasked by changing the wire gate's `cq_theta` to `cq_phi`.
+
+**DECLINE table.** `C` = reachable from plain C (probe id given); `H` = hand IR
+only. Fixture family `control_inplace_ry_reject_stateprep_*.ll` unless noted.
+
+| # | shape | src | clause | exact string (`cq controlled lowering: … under quantum control`) | fixture |
+|---|---|---|---|---|---|
+| F1-1 | seed ≠ pred incoming (`r=7`, `cq_theta(0,θ)`) | C `p04b` | **F1** | `state prep seed does not match the merge incoming` | `..._seed_mismatch.ll` |
+| F1-2 | `-0.0` incoming vs `0.0` seed | C `p07b` | F1 | same | `..._negzero_incoming.ll` |
+| F1-3 | `-0.0` seed vs `0.0` incoming | C `p07c` | F1 | same | `..._negzero_seed.ll` |
+| F1-4 | `undef` pred incoming | **H** | F1 | same | `..._undef_incoming.ll` |
+| F1-5 | `poison` pred incoming | **H** | F1 | same | `..._poison_incoming.ll` |
+| F1-6 | `ConstantExpr` seed (link-time constant) | **H** | F1 | same | `..._constexpr_seed.ll` |
+| F1-7 | global-address seed | **H** | F1 | same | `..._global_seed.ll` |
+| F1-8 | RUNTIME seed (`int r=seed; cq_theta(seed,θ)`) | C `p16` | F1 (`Constant` clause) | same | `..._runtime_seed.ll` — **§14.11 Q2** |
+| F1-9 | non-constant incoming (`int r=q; if(q>5)`) | C `q17` | F1 | same | `..._nonconst_incoming.ll` |
+| F1-10 | classical `select` incoming (`cc?0:3`) | C `p21b` | F1 | same | `..._select_incoming.ll` |
+| F1-11 | prep then prep on the same `r` (region 2's incoming is region 1's φ) | C `p12c` | F1 | same | `..._prep_then_prep.ll` |
+| **F2-1** | **seed == compare literal, `eq`, arm side** (`r=5; if(q==5) r=θ(5,θ)`) — and this fixture's IR is **BYTE-IDENTICAL** to the R4 program `r=5; if(q==5) r=θ(q,θ)`, which is the point | C `p06a` ≡ `p08e` | **F2 (A1)** | `state prep seed is proven equal to the condition register` | `..._eqfold_coincidence.ll` |
+| F2-2 | same on the `ne`/straight-through side (`r=5; if(q!=5) r=θ(5,θ)`) ≡ `int r=q;` | C `p23b` ≡ `p23d` ≡ `q02` | **F2 (A2)** | same | `..._eqfold_coincidence_ne.ll` |
+| F2-3 | singleton range `q>4 && q<6` → `icmp eq %q,5` | C `p08c` | F2 | same | `..._eqfold_range.ll` |
+| F2-4 | unsigned `u < 1u` → `icmp eq %q,0` | C `p08g`/`q06` | F2 | same | `..._eqfold_ult.ll` |
+| F2-5 | `q <= INT_MIN` / `q >= INT_MAX` → `icmp eq` at the extremum | C `q08`/`q09` | F2 | same | `..._eqfold_extremum.ll` |
+| F2-6 | cast launder `(int)(signed char)q` under `q==0` | C `q27` | F2 | same | `..._eqfold_cast.ll` |
+| F2-7 | `ne`-else fold (`if(q!=5){} else r=θ(q,θ)`) | C `p08k` | F2 (A1 on the `ne`-false edge) | same | `..._eqfold_ne_else.ll` |
+| **F2-8** | **the UNFOLDED twin** `if (q+1==6) r=θ(q,θ)` — compare canonicalized, arm NOT folded | C `p08s` | **R4** (`rotation arm on a condition wire`, unmasked) | `rotation arm on a condition wire` | `..._unfolded_twin.ll` — the order-sensitivity witness (§14.2b) |
+| IE-1 | if/else, two preps, IDENTICAL seed | **H** | §14.2e | `if/else state prep allocates two rails` | `..._ifelse_two_preps.ll` |
+| IE-2 | if/else, two preps, from C | C `p14a` | `classifyAngleSelect` **S3** | `rotation angle` | `control_angle_select_reject_stateprep.ll` |
+| IE-3 | if/else, two preps, DIFFERENT seeds | C `p14b` | homogeneity | `impure phase arm` | `..._ifelse_diff_seeds.ll` |
+| IE-4 | prep beside a CHAINED arm | C `p05` | homogeneity | `impure phase arm` | `..._ifelse_mixed_chained.ll` |
+| IE-5 | prep beside a PHASE (`cq_phi`) arm | **H** | R3 homogeneity | `mixed phase/value arm` | `..._ifelse_mixed_phase.ll` |
+| L-1 | in-loop, `r` LOOP-CARRIED (`int r=0;` outside the loop) | C `p18a` | **F1** — the merge's pred incoming is the loop-carried φ, not a `Constant` | `state prep seed does not match the merge incoming` | `..._inloop_carried.ll` |
+| L-2 | in-loop, ITERATION-LOCAL (`int r=0;` inside the body) | C `p18c` | **R7-loop (b)** | `control flow inside a loop body` | `..._inloop_iterlocal.ll` |
+| L-3 | the hand-unrolled K=2 twin of L-1 (region 2's incoming is region 1's φ) | C `p18b` | F1 | `state prep seed does not match the merge incoming` (unmask from P1's re-spelling) | `..._unrolled_k2.ll` |
+| R1-1 | stray op beside the theta in the arm | C `p08u` | R1 | `control flow` | `..._stray_op.ll` |
+| R1-2 | fan-out of `T` (a second consumer) | **H** | R1 | `control flow` | `..._fanout.ll` |
+| R1-3 | two thetas in one arm | **H** | R1 | `control flow` | `..._two_gates.ll` |
+| R1-4 | theta + `cq_phi` in one arm | **H** | R1 | `control flow` | `..._theta_phi_arm.ll` |
+| R2 | tainted angle | **H** | R2 | `rotation angle` | `..._tainted_angle.ll` |
+| R7-1 | `ShareCondFlag` region | **H** | R7 ziov | `rotation arm shares the condition flag` | `..._sharecond.ll` |
+| R7-2 | depth-2 nest | **H** (`p19a` flattens to a compound cond from C) | `RegionTreeDetect` | `nested control flow` | `..._nested.ll` |
+| R7-3 | tainted `switch` | **H** (`p19b` becomes an angle mux from C) | `SwitchClassify` | existing | `..._switch.ll` |
+| W-1 | unsupported controlled-rotation width (i128) | **H** | detection width gate | `controlled rotation width` | `..._width.ll` |
+| P1-1 | condition wire gains a NOT-provably-post-region non-diagonal gate | **H** | `condWireDisposition` → `DeclineNow` | `condition predates a non-diagonal gate` | `..._stalecond.ll` |
+| FP-1 | `fcmp oeq` condition, arm rotates the fp condition register (`if (q == 0.0) r = cq_theta(q, θ)`) — **measured NOT to fold**, so it is R4's, not F2's | C `q32`/`q34` | R4 | `rotation arm on a condition wire` (unmask from P1's re-spelling) | `..._fcmp_oeq_unfolded.ll` |
+| C-1 | compound `&&`/`\|\|` condition | C `p15d`/`p15e` | `!isa<CmpInst>(Region.Condition)` | `control flow` | `..._compound_cond.ll` |
+| RZ-1 | `cq_phi(CONST, θ)` in the arm (the Rz "state prep" that does not exist) | C `p10` | Rule 3 / phase path | `control flow` | `..._rz_prep.ll` |
+
+**ACCEPT list** (family `control_inplace_ry_stateprep_*.ll`), every one measured
+as declining at HEAD, so every one is a red-green flip:
+
+| # | shape | src | why it is in the list |
+|---|---|---|---|
+| A-1 | the flagship diamond, seed 0, `k=5` | `p01` | the target shape |
+| A-2 | `!=` polarity (`cqrt_x` bracket, arm is the FALSE successor) | `p02` | Rule 9 |
+| A-3 | non-zero seed, `k ≠ seed` | `p06b` | the seed is not privileged |
+| A-4 | if/else collapsed to a diamond by `-O1` (`else r = 0;`) | `p03` | the C spelling users write |
+| A-5..A-8 | i8 / i16 / i64 / i1 | `p17a`–`p17d` | width axis |
+| A-9 | **f64** seed `0.0` | `p07a` | the merge φ is `double` and is a REGISTER, not an angle — `isFPOrFPVectorTy` decline sits on the VALUE-arm path only (`ArmClassify.cpp:2021`), and `prd/ir/t04` proves the analogous chained f64 region accepts and runs today |
+| A-10 | derived condition `(q&6)==2` | `p15a` | measured NOT to fold (`p08r`) |
+| A-11 | ordered condition `q > 5` | `p15b` | no equality ⇒ F2 vacuous |
+| A-12 | Q+Q condition `q == p` | `p15c` | F2 needs a `ConstantInt` operand; a Q+Q compare has none |
+| A-13..A-19 | consumers: `cq_measure` / `ret` / dtzb `r+1` / `printf` (7.6 tape) / chained theta after / no consumer / classical join φ then lift | `p13a`–`p13g` | the consumer axis is orthogonal; `p13f`'s helper must NOT measure (it declines `cq specialization: callee measures under quantum lift`, an unrelated fence) |
+| A-20 | two independent regions, two preps on two registers | `p12a` | |
+| A-21 | sequential: prep then CHAINED on the same `r` | `p12b` | region 2's base is region 1's merge, which M-β RAUWs to `T`; `RoutedBase` is a `WeakTrackingVH` and follows |
+| A-22 | prep then an UNCONDITIONAL theta on `r` | `p12d` | |
+| A-23 | P1: post-region `cq_theta` on the CONDITION register | `p22` | §14.5's P1 paragraph — §13.4b's argument holds verbatim |
+| A-24 | the DERIVED-TEMP fold residual (`cq_theta(q-5,θ)` under `q==5`) | `p08b` | §14.2c, documented accept |
+| A-25 | the UNCONDITIONAL identity fold (`q*0`, `q-q`, `q^q`) | `q28`–`q30` | exactly faithful; shows F2 is not over-broad |
+| A-26 | **the seed literal has OTHER USERS in the same function** | `q31` | the §14.5 vacuity pin — this fixture reddens if R4/R6 are pointed at the Constant |
+
+Counts: **26 accepts / 37 declines = 63 fixtures**, of which 13 declines and 0
+accepts are hand-IR-only. (`control_angle_select_reject_stateprep.ll` sits
+outside the family name, as the Inc-2b clearance's fourth decline did.)
+
+### 14.4 The mechanism: what actually changes in the three files
+
+**`ArmClassify.cpp` — `inPlaceRotationArmTheta` (`:719-733`) and the rotation
+clause (`:1641-1975`).** The classical-seed `return nullptr` at `:725` becomes an
+accept path carrying a `StatePrep` flag; R1's other three halves (defined in
+`ArmBB`, sole user is the merge φ, nothing else in the block) are **unchanged and
+still required**. Then, in the clause:
+
+* the check at `:1690-1693` — `if (!Taint.Tainted.count(RotBase)) declineArm(…,
+  "control flow")`, today commented **"STRUCTURALLY UNREACHABLE, kept as defence
+  in depth"** — **BECOMES REACHABLE AND IS THE FIRST THING THAT FIRES.** It must
+  be re-scoped, not deleted: for a state prep it becomes F1's `isa<Constant>`
+  test, and for a chained arm it keeps its current meaning and its current
+  comment. Deleting it silently is how a decline turns into a fall-through to a
+  controlled rotation on an untainted value.
+* R3 (`RotBase != Routed`, `:1678-1681`) keeps its string and its meaning, and
+  **F1 is asked separately and first**, so the message names the seed rather than
+  "control flow".
+* R4 and R6 are **skipped entirely** for a state prep (§14.5) — not passed an
+  empty set, *skipped*, with a comment saying why.
+* R7's flat half is unchanged; R7's loop half (b)/(b′) is unchanged and refuses
+  both in-loop spellings (§14.3 L-1/L-2).
+* `Region.setRoutedBase(RotBase)` still records the `Constant`, because the
+  emitter re-validates against it (below) and a `WeakTrackingVH` on a `Constant`
+  is stable (constants are never erased).
+
+**`SwapRouteEmit.cpp` — `emitInPlaceRotationRegion` (`:531-780`).** Three things,
+and only three:
+
+* the identity re-validation `T->getArgOperand(0) != Base` (`:588-592`) is
+  **already correct** for a state prep — both are the same uniqued `Constant` —
+  and must keep its comment updated to say that it is now *also* a seed check by
+  representation, with the real seed check being F1 in the classifier.
+* **M-β is REQUIRED, not an optimization.** `MergePhi->replaceAllUsesWith(
+  Gates.back().first)` (`:774`) RAUWs the merge to the hoisted theta, which
+  `lowerRotations` then RAUWs to the fresh alloc handle. **The Rz stem's M-α
+  (RAUW to `Base`) would RAUW the merge to the CONSTANT SEED** and every consumer
+  of `r` would become a classical `i32 0` — a silently classical program.
+  Since the Ry stem already does M-β for every `InPlaceRotation` arm, **state prep
+  rides it unchanged**; the site comment must say that for this arm class M-β is
+  a correctness requirement and not the loop-bookkeeping convenience it is for
+  Inc 3.
+* nothing else. No new emission, no CFG surgery, no new symbol.
+
+**`RotationLowering.cpp` — the theta loop (`:239-343`).** The `!Chained` +
+`Ctrl` bail at `:296-299` (`cq rotation lowering: unsupported controlled theta
+operand`) becomes the accept path: mint `cqrt_ry_<W>_controlled(f, Handle, θ)`
+where `Handle` is the alloc.
+
+> **⚠ AND THE ORDER IN THAT FUNCTION IS A DEFECT TODAY THAT INC 4 MUST FIX RATHER
+> THAN INHERIT.** The `!Chained` arm at `:260-276` emits `cqrt_alloc_<W>(Op)`,
+> inserts `H` into `taint.Tainted`, consumes a `BirthOrder` slot and writes
+> `HandleWidth[H]` — **and only then** does `:284-299` look up
+> `ControlledRotations` and bail. So the existing "controlled theta operand"
+> decline is a **mid-emission bail**: on `continue` the module keeps a
+> `cqrt_alloc` with zero users, a still-standing `@cq_theta_*`, and three live
+> side-table entries keyed on the orphan. It is survivable only because
+> `DS_Error` exits `opt` non-zero — exactly the shape `SwapRouteEmit.cpp:1072`
+> describes moving *out* of `emitRegion`. Inc 4 removes the bail, so the residue
+> goes away for the accept; the sibling bail two lines below
+> (`controlled theta suffix/width`, `:303-306`) is left in the same position and
+> **must be hoisted above the alloc** in the same edit. Rule 1: never emit half.
+
+> **A second, pre-existing hazard in the same block, recorded because F1 is the
+> natural place to close it.** The alloc symbol's width comes from the CALLEE
+> NAME (`Abi = wd.abiWidthFor(suffixFromName(Theta, "cq_theta_"))`, `:241`) while
+> the argument is `Op`'s actual LLVM type, and the two are never cross-checked
+> (`HandleWidth[H] = abiWidthFromType(Op->getType())` at `:275` is the *other*
+> derivation). A hand-written `cq_theta_f64` with an `fp128` arg-0 mints
+> `@cqrt_alloc_f64(double)` with an `fp128` argument — ill-typed IR. **F1 should
+> carry the third clause: the seed's type must equal `typeForAbiWidth(Abi)`** —
+> one line, hand-IR-only reachability, and it is free while F1 is being written.
+
+### 14.5 R3 / R4 / R6 / R7 on a `Constant` base — vacuous, reachable, and one trap
+
+**R4 and R6 are VACUOUS for a state prep, and the reason is structural rather
+than a proof about the program:** the rotated rail is minted by the hoisted `T`
+itself, so **no pre-region SSA name for it exists**. There is no wire to
+intersect with the condition's (R4) and no record that could be read after the
+region (R6). Every SSA name for the rail after the region is `T`'s result
+(RAUW'd to the alloc handle), which is the POST-gate name by construction. The
+Inc-1 finding-K launder (a classical join φ over the register, RAUW'd to the base
+by `liftOneRegisterMergePhi`) cannot reach a name that does not exist before the
+region.
+
+> **⚠ THE TRAP, AND IT IS MEASURED, NOT HYPOTHETICAL: DO NOT HAND THE `Constant`
+> TO `railWireClosure`.** `railWireClosure` does `Out.insert(W)` **before** its
+> taint gate (`ArmClassify.cpp:457-462`), so
+> `railWireClosure(ConstantInt 0, BothWays, …)` returns `BaseWire =
+> BaseWireOrder = { i32 0 }`. R6 then iterates `ConstantInt::get(i32, 0)->users()`
+> — and **an LLVM `ConstantInt` is uniqued per `LLVMContext`, so its use list
+> spans the whole module.** Measured (`prd/ir/q31`): in
+> `int r=0; if(q==5) r=cq_theta(0,.9); int u=cq_theta(0,.7);` the literal `i32 0`
+> has THREE users inside `@slice` — `T`, the merge φ, **and the second theta,
+> which is after the region**. R6 would fail `provablyBefore` on it and decline
+> `stale rail record read past a controlled Ry` on a program with no record at
+> all. Users in OTHER functions (`ret i32 0` in `@main`) are skipped only because
+> `DT->isReachableFromEntry` returns false for a block not in this function's
+> tree — i.e. by accident of a guard written for a different purpose. R4 has the
+> mirror hazard in the harmless direction: a degenerate `cq_phi(0, θ)` on the
+> condition's provenance can put a `Constant` into `CondRails` (the closure's own
+> comment says so at `:466-471`), so R4 would decline on a literal coincidence.
+> **Skip both clauses; do not "pass an empty closure".** `q31` is the fixture
+> that reddens if anyone re-points them.
+
+**R3 is kept and is NOT the seed fence** — §14.2a item 1.
+
+**R7-loop is unchanged and refuses both in-loop spellings, for two different
+reasons, and they must both be pinned** (§14.3 L-1/L-2): the **loop-carried**
+spelling (`int r = 0;` outside the loop) has the loop's header φ as the merge's
+pred incoming, so it is a genuine data mux and **F1** kills it before R7 is
+consulted (probe `p18a` — worth stating, because "in-loop state prep" sounds like
+one thing and is two); the **iteration-local** spelling (`int r = 0;` inside the
+body) is the real Inc-4 shape and dies at **R7-loop (b)**, because `BaseWire` is
+skipped (above) so no member is a header φ. Even if (b) were satisfied, (b′) —
+`railPhiRootMint`, `LoopLowering.cpp:319-345` — requires the header φ's EXTERNAL
+incoming to peel to a **classical-arg-0 `cq_theta` mint** dominating the header;
+the external incoming here is the `Constant` seed, `peelInPlaceBase` returns it
+unchanged, `dyn_cast<CallInst>` is null, so (b′) returns null too.
+
+> **What would have to be true for a future in-loop lift, as a deferred item and
+> NOT a design.** `railPhiRootMint`'s mint vocabulary is *exactly* "a
+> classical-arg-0 `cq_theta` in `GateCalls` dominating the header" — which is
+> **precisely what a hoisted state-prep `T` is**. The obstruction is positional:
+> the hoisted `T` sits INSIDE the loop body, so `DT.dominates(Mint, L->getHeader())`
+> fails and the rail is re-minted every trip. A rolled in-loop state prep would
+> therefore need the alloc hoisted out of the loop (a real transformation, with
+> its own per-activation reset question: the second trip's `f=0` component would
+> read a rail the first trip may have rotated) — a different capability, not a
+> fence relaxation. File it; do not sketch it further here.
+
+**P1 / `DeferredWireGate` — §13.4b's argument holds VERBATIM for a state prep,
+and it is the one place this increment is strictly safer than Inc 3.** §13.4b
+widened P1 to `(SawValueArm || !(SawPhaseArm || SawRotationArm))` on the ground
+that an in-place rotation arm copies nothing, replays nothing and allocates no
+work rail, so its **entire emitted stream** — `mint(f) ; [x(f)] cRy [x(f)] ;
+strip(f) ; free(f)` — lands before `BI`, and `ProvenPostRegion` (`provablyBefore(
+BI, G)`) therefore carries to every call in it. A state prep is that same stream
+**plus one `cqrt_alloc_<W>(SEED)`**, which is also inserted before `BI` (at the
+hoisted theta, §14.1) and which touches a rail nothing else names. The
+`SawRotationArm` flag is set by the same clause, so P1 needs **no edit**.
+The residual §13.4b records — a DERIVED condition leaves template rails
+entangled with `C`, live past the strip, which a later Ry on `C` dephases — is a
+property of the CONDITION's chain and is unchanged here. And Inc 4 is strictly
+safer on R4's half: §13.4b needed R4 to have proved `R`'s wire disjoint from
+`C`'s; here that disjointness is **structural** (the rail is minted inside the
+region), so the argument does not depend on a fence at all. Measured: `p22`
+(`prep; q = cq_theta(q, .3);`) declines today at P1's string on both binaries and
+must ACCEPT after Inc 4 — it is accept fixture A-23, and its `cq_phi` twin
+(`p22b`, which declines `control flow`) is what unmasks the string.
+
+### 14.6 The set / walker audit — "what OTHER set is computed over the same closure"
+
+The mandatory table. Pipeline positions are `CQLoweringPass::run`'s stage lines.
+**READ** = the body was read for this PRD; **MEASURED** = a probe established it.
+
+| reader (pipeline order) | what it decides | verdict for a controlled STATE PREP | how established |
+|---|---|---|---|
+| `inPlaceRotationArmTheta` (`ArmClassify.cpp:719`), sole caller `:1641` | is the arm one in-place theta? | **THE CHANGE.** Its `!Tainted(arg0)` return becomes the state-prep path; its other three halves unchanged | READ |
+| R3's `Routed` / `Region.setRoutedBase` | the routed handle | now a `Constant`; the `WeakTrackingVH` is stable (constants are never erased) and the emitter's identity re-check still matches | READ |
+| `emitInPlaceRotationRegion`'s `T->getArgOperand(0) != Base` (`:588`) | plan-vs-IR agreement | passes by uniqued-constant pointer identity — **correct, and now documented as also being a seed check** | READ |
+| **`railWireClosure` → R4 / R6** | wire disjointness, stale records | **MUST BE SKIPPED** — see §14.5's trap | READ + **MEASURED** (`q31`) |
+| `condProvenance` / `condWireDisposition` P4/P5 | condition-wire exposure | unchanged. P5's positional scan requires `Taint.Tainted.count(CI->getArgOperand(0))` (`ArmClassify.cpp:1094-1096`), and a state-prep theta's arg-0 is a `Constant` — so a HOISTED state-prep theta between some later region's compare and branch is **invisible** to P5, which is correct (it mints a wire, it stales none) | READ |
+| `WireWalk::findNonDiagonalWireGate` (`:474-478`) / `collectWireValues` (`:106-110`) | is there a non-diagonal gate on this wire? | unchanged: both require `CI->getArgOperand(0) == V`, and a `Constant` arg-0 is on no wire. ⚠ `thetaOnPathToImpl`'s **wire-blind** mode (`Wire == nullptr`, `:147-151`) counts ANY `cq_theta_`, state prep included — it is documented as a cheap necessary condition and "never the answer", so this is a pre-filter widening only | READ |
+| `WireWalk::phiTracksWire` | in-loop refresh | unreachable — the in-loop shape declines (§14.5) | READ |
+| `declineStaleRecordOps` (stage 282) | pure op past a wire gate | unchanged — it runs BEFORE detection and sees the un-hoisted theta with a `Constant` arg-0, on no wire | READ |
+| `ControlledRotations` (write `SwapRouteEmit.cpp:665`; reads `RotationLowering.cpp:285`/`:382`, `ArmClassify.cpp:3195`, `AngleSelectEmit.cpp:183`, `LoopLowering.cpp:454`, `TaintPropagation.cpp:959`) | which gate fires under which flag | one more entry, same shape. `LoopLowering.cpp:454`'s reader additionally requires `cq_phi_` (the M-α Rz path) so it is untouched; `ArmClassify.cpp:3195` / `AngleSelectEmit.cpp:183` are the double-owner guards and are strengthened, not weakened, by the extra entry | READ |
+| `TaintPropagation::resolveWireBase` (`:919`, sole caller `liftOneRegisterMergePhi`) | which RECORD does this name denote? | unchanged, **twice over**: the `ControlledRotations` stop (`:959`) fires, and the pre-existing `if (!taint.Tainted.count(Handle)) break; // classical-operand theta: the mint point IS the base` (`:962-963`) would fire anyway | READ |
+| `liftOneRegisterMergePhi` / `repropagateControlMerges` (stage 356) | classical join φs | unchanged — `T` is a `CallInst`, never a lift candidate; as an INCOMING it resolves to itself | READ |
+| `declineClassicalMuxes` (stage 399) | live φ/select over tainted data | the region's φ is erased by the emitter; no other φ is created | READ |
+| `declineLiftedStaleRecordOps` (stage 409) | post-lift stale records | no lift is produced | READ |
+| Phase-6 `specialize` (stage 418) | clone-on-taint arguments | keys on `taint.Tainted` per argument; the fresh handle is tainted | READ |
+| `lowerRotations` `!Chained` arm (`:260-276`) | the alloc mint, `Tainted`, `BirthOrder`, `HandleWidth` | **all at the HOISTED position now** — after the flag mint, inside a negated arm's `cqrt_x` bracket. `HandleWidth[H] = abiWidthFromType(Op->getType())` reads the SEED's type, which is what a later Q+Q control condition wants | READ |
+| **`UserSourceRotations`** (write `RotationLowering.cpp:334`) | which set the minted gate joins | **THE SET CHANGES.** `(Chained ? UserChainedRotations : UserSourceRotations)` puts the controlled state-prep gate in `UserSourceRotations`, not `UserChainedRotations`. Verdict per reader below | READ |
+| ↳ `isRecordedUserRotation` (`:695`), sole caller `isTeardownUse` (`:755`) | user gate vs spine adjoint | **CORRECT**: the gate IS recorded, so it is not teardown — same answer as for a chained gate. ⚠ And it is **behaviour-neutral today**: `reachesObservingSink` `continue`s on `cqrt_ry_`/`cqrt_rz_` two lines below the `isTeardownUse` call (`:1277` and `:1281`), so recorded and unrecorded reach the same `continue`. Stated so nobody quotes this row as a live protection | READ |
+| ↳ `warnLiveRecordRotations` (`:1465`) | M-A's live-record warning | **DOES NOT RUN on a state-prep gate**, because the guard keys on `UserChainedRotations` only (`:1466`, `:1481`). **SOUND, and for the reason the set's own comment gives** (`TaintPropagation.h:433-435`): *"a source theta mints its wire, so that wire can carry no record yet"* — which is literally true here, the rail is allocated three instructions earlier. This is a real argument, not an accident, and it is why the set choice needs no change | READ |
+| ↳ `warnLiveRecordRotations`'s arg-slot decode (`:1492-1508`) | which arg is the wire | already handles the 3-arity `_controlled` spelling (arg 1). Unreached for this class, but unchanged | READ |
+| `ChainWalk::isInPlaceGateOn` (`:218-220`) / `railCarriesControlledRotation` (`:305`) | THE FREEZE | **fires, structurally**: the alloc handle's first user is the `cqrt_ry_<W>_controlled` naming it at arg 1. Same predicate, same slot, no new site | READ + **MEASURED** in the twin (`prd/ir/t01`: the rotated rail is never freed) |
+| `DagTraversal.cpp:100` / `:229`, `Uncomputation.cpp:1358` / `:1565` | the freeze cuts | unchanged — both ask `railCarriesControlledRotation` | READ |
+| `FreePoint` | where to free | never reached for the frozen rail | READ |
+| `EmitInverse` (`:209-217`) | the controlled adjoint | stays **unreachable** for this class, by the freeze — the Inc-1 finding-F claim, inherited | READ |
+| `lowerIOSinks` lineage walk (stage 365) | tape sinks | keys on call-site name + `taint.Tainted` of the operand; the prepped handle is tainted. **Same disposition as Inc 3's F-L5-2** (a tape write after the region accepts; terminality is the live guard) | READ |
+| `LoopLowering` `railPhiRootMint` / `peelInPlaceBase` / `collectRailGates` (stages 310, 340) | the rail chain, the MINT vocabulary | **a classical-arg-0 `cq_theta` IS their mint vocabulary** (`LoopLowering.cpp:339-341`), so a hoisted state-prep `T` is a mint to them — which is exactly why the in-loop shape must decline at R7 (§14.5), and which set would claim it if R7 were lifted | READ |
+| `free_pairing_check.py` `classify()` | Rule-6 pairing (e2e stage 2b) | **`cqrt_alloc_<W>` is classified by SYMBOL NAME ONLY — the seed argument is never read**, at any site in the file. So a non-zero seed is invisible to 2b, and the frozen rail lands in the "left allocated" census with **no finding**. Both facts must be quoted with the goldens rather than claiming 2b witnesses anything here | READ (subagent audit, `free_pairing_check.py:652-667`, `:686-702`, `:2146-2161`) |
+| `tools/control_flag_order_check.py` | mint < gate < strip < free | **an alloc between the mint and the strip does NOT violate it** — allocs are not classified as mint/strip/free/gate, and every index shifts uniformly | READ (`:120-152`) |
+| `tools/golden_multiset_audit.py` | no shipped golden may move | a new slice reports `NEW-FILE` (passes). ⚠ its work-rail matcher fences on the alloc literal being `0`/`0x0p+0` (`:223-229`), so a **non-zero-seed** rail is not a work rail to it — correct here, worth knowing | READ |
+| `tools/inplace_twin_matrix.py` | Ry-vs-Rz arm twin | **STRUCTURALLY CANNOT SERVE THIS AXIS** — see §14.9 | READ |
+| `tools/loop_twin_matrix.py` | rolled ≡ unrolled | one new DECLINE-BOTH **cell** (not a boundary control — controls must be `ACCEPT-IDENTICAL`, `:556-566`), which moves the asserted `(120, 36, 117)` sub-grid sizes at `:857-858` | READ |
+
+### 14.7 Per-stem: state prep is **Ry-ONLY**, and the stem table gains NO row
+
+There is no Rz state prep, and the reason is Rule 3 rather than scoping:
+`cq_phi` on a classical operand **propagates no taint and is deleted at lowering**
+— it never allocates. Measured (`p10`): `int r = 0; if (q == 5) r = cq_phi(0, .9);`
+declines `control flow`, and its IR really does carry `cq_phi_si32(i32 0, 9.0e-01)`
+in the arm, so the shape reaches the classifier and is refused there. The "phase
+twin" of this increment therefore **does not exist**, which has two consequences
+that must be stated rather than assumed:
+
+1. **The §12.1 stem table and the §13.4 RAUW-target row gain NO new row.** The
+   Ry row already says *link / never adjoint / frozen / relabelling gate /
+   RAUW-to-`T`*, and state prep needs all five verbatim. Nothing about the Rz row
+   changes.
+2. **`tools/inplace_twin_matrix.py`'s SHIPPED method cannot witness this
+   increment**, because that method is to emit the same cell twice with
+   `cq_theta` and `cq_phi` in the arm (`gen(c, arm)`'s
+   `.replace("ARM(", arm + "(")`) and compare — and the `cq_phi` spelling of a
+   state prep is a **deleted gate**, not an oracle. So the witness must be the
+   §14.8 CHAINED twin, on a separate pool with a separate reference build.
+
+   > **CORRECTED 2026-09-04, BEFORE THIS SECTION WAS APPENDED — the instrument
+   > ALREADY EXISTS in the working tree and this paragraph originally said to
+   > build one.** The probe/matrix agent added a **`--stateprep` POOL** to the
+   > same file while §14 was being written (§13.11 worry 5 verbatim, one epic
+   > later: *the matrix moved under me*). Re-measured on the working tree:
+   > `prep_cells()` yields **297 `sp_*` cells** (all-pairs over four axes —
+   > `prep` ∈ {`s0`,`s5`}, `cond`, `cfg` minus `ifelse2`, `cons`, `width`;
+   > `base` is gone by construction, a state prep has no derived base) against
+   > the five-axis pool's 472 `c_*` cells. It takes its **own** `--prep-oracle`
+   > (a PRE-Inc-4 `cq-opt`) rather than overloading `--route-oracle`, carries its
+   > own `reduce_prep` (the §14.8 reduction, written out) and its own
+   > `classify_prep` verdicts (`IDENTICAL` / `MISMATCH` / `DECLINE-BOTH` /
+   > `DECLINE-BOTH-DIFF` / `SUBJECT-ACCEPTS-TWIN-DECLINES` /
+   > `SUBJECT-DECLINES-TWIN-ACCEPTS` / `HARNESS-ERROR`), and the `sp_` name
+   > prefix keeps it a separate pool rather than a sixth axis — which matters,
+   > because `name()` is a hard-coded 5-segment format string and a sixth axis
+   > would have renamed every committed `c_*` cell. **Adding a `prep` token to
+   > `BASES` is still the wrong move and is still not what was done.**
+
+### 14.8 The witness — the CHAINED twin, and its reduction
+
+There is no `_unrolled` twin (this is flat-only) and **no golden can witness
+"the fresh rail holds |SEED⟩ on the `f=0` branch"** — the trace prints symbols and
+handles, and no ABI label answers a state question. So the witness is **BYTE
+IDENTITY** with the manual twin
+
+```c
+int r = cq_theta(SEED, 0.0);   if (COND(q))  r = cq_theta(r, θ);
+```
+
+which the **pre-Inc-4 binary already lowers** — measured, four spellings, each
+compiled, linked, run and strict-2b-clean (`prd/ir/t01`–`t04`, independently
+reproducing the probe agent's `p09a`–`p09d`). `t01`'s raw trace:
+
+```
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_i32(0) -> h1
+cqrt_ry_i32(h1, 0x0p+0)                        <-- (i) DELETE
+cq_template_icmp_eq_i32_hl(h0, 5) -> h2
+cqrt_ry_i32_controlled(h2, h1, 0x1.ccccccccccccdp-1)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
+cqrt_free(h2)
+cqrt_measure_i32(h1) -> 0
+cqrt_measure_i32(h0) -> 0
+```
+strict stage 2b: `4 rail mint(s) of which 4 left allocated, 2 cqrt_free site(s):
+2 verified, 0 violation(s), 0 unproven`.
+
+**THE REDUCTION — two rewrites, each a physical identity, neither of them the
+transformation under test:**
+
+1. **delete** `cqrt_ry_<W>(h, 0x0p+0)` — `Ry(0) = I`;
+2. **move** `cqrt_alloc_<W>(SEED) -> h` to immediately before the first
+   `cqrt_ry_<W>_controlled(f, h, ·)` naming `h` — a fresh-rail alloc acts on a
+   wire nothing else names, so it commutes with every gate that does not name its
+   handle;
+3. renumber handles by first appearance.
+
+**Expected post-Inc-4 trace for the flagship (`p01`) — the implementer's target:**
+
+```
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h1
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32_controlled(h1, h2, 0x1.ccccccccccccdp-1)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+cqrt_free(h1)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h0) -> 0
+```
+
+Seed-7 (`p06b`): identical with `cqrt_alloc_i32(7)`. f64 (`p07a`):
+`cqrt_alloc_f64(0x0p+0) -> h2` / `cqrt_ry_f64_controlled` /
+`cqrt_measure_f64(h2) -> 0x0p+0`. The `!=` polarity (`p02`) puts the alloc
+**between** the two brackets, which is the §14.1 position decision made visible:
+
+```
+cq_template_icmp_eq_i32_hl(h0, 5) -> h1
+cqrt_x(h1)
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32_controlled(h1, h2, …)
+cqrt_x(h1)
+```
+
+> **WHAT THIS WITNESS PROVES AND WHAT IT DOES NOT — the
+> `by-difference-twin-blind-to-arithmetic` lesson applied to itself.** Byte
+> identity with the reduced twin proves the **STRUCTURE**: the flag is minted from
+> the same compare, the control polarity is the same, the strip and free are the
+> same, and the freeze applies to the same rail. It does **not** prove the VALUE
+> claim *"the fresh rail starts at |SEED⟩"*. That rests on two other things, and
+> both must be named beside the golden: (a) `cqrt_alloc_<W>(SEED)` is the **same
+> call the uncontrolled `cq_theta(SEED, θ)` mints today**, pinned by the existing
+> runtime goldens and by `runtime/test_trace.c`; and (b) **F1**, which is what
+> makes `|SEED⟩` the right thing for the `f=0` branch to hold.
+> The witness is honest about not sharing the transformation: the twin performs a
+> REAL `Ry(0)` on a REAL allocated rail and Inc 4 performs neither, so the
+> reduction states exactly the two facts being claimed instead of hiding them.
+> **And stage 2b witnesses neither**: `free_pairing_check.py` never reads the
+> alloc's seed argument (§14.6), so a wrong seed is invisible to it, and the
+> frozen rail lands in its "left allocated" census with no finding. Quoting a
+> green 2b as evidence for this increment would be false.
+
+### 14.9 Fixtures, slices and gates
+
+**lit:** 26 accepts + 37 declines = **63 new fixtures** (§14.3), corpus
+1474 → **1537**. Family names `control_inplace_ry_stateprep_*.ll` /
+`control_inplace_ry_reject_stateprep_*.ll`, plus **one outside the family**
+(`control_angle_select_reject_stateprep.ll`, the S3 row) and **one paired with an
+existing Rz fixture** (§14.2d). Every accept fixture must use the whole-file
+`NOROUTE` prefix rather than trailing `CHECK-NOT`s — the Inc-3 F-L6-1 finding
+(a trailing `CHECK-NOT` scans only from the last positive match to EOF, and a
+`cqrt_cswap` injected earlier left five fixtures green).
+
+**e2e:** three slices, all STRICT stage 2b (no `--allow-unproven`):
+
+| slice | what it pins |
+|---|---|
+| `slice_control_inplace_ry_stateprep.c` | the flagship; golden argued line by line in the notes |
+| `slice_control_inplace_ry_stateprep_negated.c` | `!=` polarity — **and the alloc's position inside the `cqrt_x` bracket** |
+| `slice_control_inplace_ry_stateprep_twin.c` | **the CHAINED twin, committed as a slice in its own right**, so the §14.8 reduction can be re-derived by hand from two committed goldens rather than from a script nobody re-runs |
+
+**+3 ctest entries** (305 → … → 324 → **327**). No `cmp` twin gate: the two
+goldens differ by a *reduction*, not by identity, so a `compare_files` gate would
+be wrong; the reduction belongs in the notes and in a reviewer's hands. (If the
+owner wants it mechanized, `inc4-records/reduce_twin.py` already implements
+the three rewrites and could become a fourth ctest entry — recorded, not
+proposed.)
+
+**`tools/loop_twin_matrix.py`: ALREADY DONE, and committed at the PRE-Inc-4
+disposition, which is what makes its diff the witness** (the Inc-3 precedent
+exactly). Re-measured on the working tree: cell `m_ry_rprep_none_none_none`,
+verdict `DECLINE-BOTH-DIFFERENT` (rolled `cq controlled lowering: control flow
+under quantum control`, flat `… condition predates a non-diagonal gate …`),
+expected table **258 → 259**, the asserted sub-grid sizes now `(120, 36, 118)`,
+quarantine unchanged at 15. It is a **cell**, not a boundary control — controls
+must be `ACCEPT-IDENTICAL`, so a decline control cannot be one. **Read its own
+in-file caveat with it:** the wrapper seeds `r = cq_theta(r, 0.3)` before the
+loop on every `RY_REGION` cell, so this cell's pred incoming is the loop-carried
+QUANTUM `r` and it therefore declines for **TWO** independent reasons (the loop
+AND F1's data mux). A red there means "Inc 4 widened into a loop OR into a
+non-constant pred incoming" and does **not** isolate which; the isolating cells
+are the lit family (§14.3 L-1 vs L-2), not this file.
+
+**`tools/inplace_twin_matrix.py --stateprep --prep-oracle <pre-4 cq-opt>`:**
+297 `sp_*` cells, the chained-twin reference, its own reduction and verdicts —
+see §14.7's correction. **Neither instrument is a ctest entry**, and that is the
+same deliberate cost decision the Inc-1 and Inc-2b instruments were given; the
+`e2e-loop-twin-matrix` entry does cover the one new `loop_twin_matrix` cell.
+
+**Gates that must be re-run and must not move:** `golden_multiset_audit.py --all`
+(no existing golden may move — this increment adds slices, it does not regenerate
+any), `control_flag_order_check.py` (0 violations; §14.6 establishes the alloc
+does not perturb it), `free_pairing_check_test.py`, `cq-opt-equivalence-full`, the
+six 8h7d.5 `cmp` twin gates, the three Inc-2b angle-select gates, the six Inc-3
+in-loop gates, `e2e-loop-twin-matrix` **and** `e2e-loop-twin-quarantine-selftest`.
+Full `ctest -j6` before commit (Rule 19 moments 1 and 5 both apply).
+
+### 14.10 Review lenses — ≥3 rounds, 7 lenses
+
+Each lens compiles, links and RUNS every twin it cites, on **both** binaries, and
+writes nothing into `ir-pass/test/`.
+
+1. **F1 — seed identity and merge faithfulness.** `undef` / `poison` /
+   `ConstantExpr` / global / runtime seed / `-0.0` in both directions / a
+   non-constant incoming / a classical `select` incoming / an incoming of a
+   different TYPE at the same bit width (`i32 0` vs `float 0.0` in hand IR) / the
+   seed's type vs `typeForAbiWidth(Abi)`. Try to construct an accepted region
+   whose `f=0` branch does not hold the source's pre-region value.
+2. **F2 — THE LENS THAT MATTERS.** Try to build ANY `-O1` program that CQ
+   declines at the source level and whose IR is a state-prep accept. Both folds;
+   derived temps (including one that folds to a value that is neither `0` nor
+   `k` — `prd/ir/q24`); SSA aliases; casts; compound conditions (`p08q`);
+   `switch`-lowered singleton ranges; `select` conditions; an equality on a
+   DERIVED condition wire; an `fcmp oeq` condition against a `ConstantFP` seed
+   (F2 as specified reads `ConstantInt` — **is that a hole?**); a `zext`/`trunc`
+   between the compare's operand and the rotated register. And the converse: any
+   ACCEPT whose emitted circuit differs from its source's meaning.
+3. **Freeze + spine on a rail whose ROOT is the controlled gate.** A dead prepped
+   register; every post-region consumer kind; `EmitInverse` reachability (must
+   stay unreachable, *by construction*); a Phase-6 Bennett wrap; a `cq_invert`
+   bracket; strict stage 2b on all three slices. Confirm the O(1) leak is the
+   only leak and that no `cqrt_free` names the prepped rail.
+4. **`RotationLowering`'s state-prep path.** The alloc's position (before/after
+   the flag mint, inside/outside the `cqrt_x` bracket) re-derived from the IR, not
+   from this text; `Tainted` / `BirthOrder` / `HandleWidth` all written at the
+   hoisted position; the `UserSourceRotations` landing and **every reader of both
+   sets** (§14.6); the `controlled theta suffix/width` bail hoisted above the
+   alloc (§14.4); the two width derivations reconciled.
+5. **Polarity, emission order, plan lifetime.** `!=` canonicalization; sequential
+   regions in both orders (prep-then-chained, chained-then-prep, prep-then-prep);
+   a classical branch between two regions (the L4 `RoutedBase` shape, now with a
+   `Constant` base across two regions); the hcrg Kahn sort; the if/else clause
+   under both polarities in hand IR.
+6. **Walker / set audit, re-derived independently.** Every row of §14.6. Mutation
+   tests: point R4/R6 at the `Constant` and confirm `q31`'s fixture reddens;
+   delete F2 and confirm the seven F2 fixtures redden and **nothing else does**;
+   delete F1 and confirm the eleven F1 fixtures redden; swap M-β for M-α on the
+   state-prep path and confirm the accepts go **classical** (this is the one
+   mutation whose failure mode is silent — check the lowered IR, not the exit
+   code).
+7. **Fixture and doc truth.** Every `CHECK` line asserts what its header claims;
+   every decline mutation-verified by relaxing its own clause; every number in
+   §14 re-measured; and — the DER lesson — the `-O1` shape of every e2e slice
+   actually contains the diamond it claims (a vacuous accept looks exactly like a
+   capability). Re-derive the §14.8 reduction by hand from the two committed
+   goldens.
+
+### 14.11 Questions for the owner
+
+**Q1 — the seed == compare-literal over-decline (F2's price).** `int r = 5;
+if (q == 5) r = cq_theta(5, θ);` is a well-formed, unambiguous state prep at the
+source level and it will **decline**, because its `-O1` IR is byte-identical to
+`if (q == 5) r = cq_theta(q, θ)` (an R4-forbidden in-place Ry on the condition
+register) and to `if (q > 4 && q < 6) r = cq_theta(q, θ)`. Three genuine programs
+are affected (`p06a`, `p23a`, `p23b`); the workaround is any seed other than the
+compare literal. **Shipped disposition: DECLINE** (Prime Directive; the
+alternative is silence on two declines). *What would widen it:* a ruling that
+**the post-`-O1` IR IS the program** — i.e. that CQ compiles the module it is
+given and not the C the user wrote — at which point the ambiguous shape could be
+read as state prep unconditionally. That ruling would also retire
+`tryEqFoldArm`'s and `straightThroughConstFoldHandle`'s reason for existing, so
+it is a project-level ruling, not a fence tweak.
+
+**Q2 — the RUNTIME seed (`p16`), a free widening, shipped DECLINED.**
+`int r = seed; if (q == 5) r = cq_theta(seed, θ);` has the merge's pred incoming
+and the theta's arg-0 as **the same SSA value**, and `cqrt_alloc_<W>` takes a
+runtime value, so F1 spelled *"the pred incoming is the SAME VALUE as `T`'s
+arg-0, and that value is untainted"* picks it up with no new machinery and no new
+symbol. It ships declined because the owner's scope says `Constant`. Note the
+`Constant` spelling is **not** redundant even if Q2 is granted: it is what makes
+`-0.0` vs `0.0` a decline, because value identity on a uniqued constant already
+IS bit identity.
+
+**Q3 — the derived-temp fold residual (§14.2c), shipped ACCEPTED and documented.**
+`if (q == 5) r = cq_theta(q - 5, θ)` compiles to a fresh-rail state prep of
+`|0⟩`. The circuit agrees with the source on every component anything reads, and
+the "no other reader" premise is enforced by the fold itself (measured). But the
+accept rests on a distinction about **wires** (`f ≠ identity` ⇒ a different
+physical rail) rather than on what the source meant, and the pre-fold program is
+itself a shape CQ would decline if it could see it. **Is accepting this the
+intent?** The alternative is to widen F2 from "seed == `k`" to "the arm's seed is
+any value the edge PROVES", which would decline `p08b`, `p08t`, `p08v`, `q19`,
+`q20`, `q24` and cost the flagship nothing — a cheap, strictly-safer fence that
+also declines nothing anyone has asked for.
+
+> **CORRECTED 2026-09-04 (orchestrator review, before implementation): the
+> alternative above is NOT IMPLEMENTABLE as stated, and the owner's real lever is
+> narrower and dearer.** The pass cannot see what the edge proved about a value
+> the fold has already erased: `p08b` (`cq_theta(q - 5, θ)` under `q == 5`) and
+> the flagship `p01` (`cq_theta(0, θ)` under `q == 5`) reach the pass as
+> **byte-identical modules** (§14, headline; RESULTS.md §3 row b). There is no
+> `f` to inspect and no "value the edge proves" other than `k` itself. So the
+> residual and the flagship are ONE accept, not two, and the only fence that
+> refuses the residual is **"no state prep under ANY equality compare"** — which
+> refuses `int r = 0; if (q == 5) r = cq_theta(0, θ)`, the owner's own scoping
+> example (Rule 17). **Shipped: ACCEPT, documented (A-24 is the same IR as A-1
+> and says so in its header).** The owner's choice is therefore binary:
+> (a) keep the accept and the §14.2c wire argument, or (b) restrict state prep to
+> ORDERED compares only, at the cost of the flagship spelling. No cheap option
+> exists.
+
+**Q4 — the if/else observation, on the desk rather than in the increment.**
+Owner ruled "two preps = two rails = decline", and Inc 4 ships that clause. The
+measurement is that **M-β would already produce the correct one-rail lowering**:
+R3 passes by pointer identity on the shared seed constant, the two hoisted gates
+chain, and the emitted circuit is `alloc(SEED); cRy(f, A); x; cRy(f, B); x` —
+which IS `if (c) r = Ry(SEED, A); else r = Ry(SEED, B);`. Nothing allocates two
+rails except a reading in which SSA names are wires. **Say if the ruling should
+move**; if it does, it moves to the S3 angle-select site as well (Q5) and both
+need §12.3's arithmetic fences.
+
+**Q5 — the SECOND customer site, `classifyAngleSelect` S3 (`drbq.13`).** From
+plain C the if/else with two preps is not an if/else at all: `-O1` makes it ONE
+theta with an angle `select` (`p14a`), refused at S3 with `rotation angle`. It is
+an Inc-2b-shaped by-difference candidate on a fresh rail
+(`alloc(SEED); ry(h, B); ry_controlled(f, h, A−B)`) and inherits every §12.3
+concern including the constant-arms-only narrowing. **In scope or out?** Shipped
+OUT.
+
+**Q6 — `p11`, an FYI with a sharp edge.** `int r; if (q == 5) r = cq_theta(0, θ);`
+with `r` read afterwards is UB, so `-O1` deletes the branch and emits
+`llvm.assume(i1 %2)`: the Ry becomes **UNCONDITIONAL**. It declines today only
+because `llvm.assume` consumes the tainted compare and trips
+`declineTaintEscapes`. No action requested — but if `llvm.assume` is ever
+whitelisted, that program compiles to an unconditional rotation, silently.
+
+### 14.12 What worries me
+
+1. **The increment was scoped with ONE fence and needs TWO, and the second was
+   found by a probe rather than by reading.** §7's Inc-4 bullet is not wrong about
+   F1; it simply never asked what `clang -O1` does to `cq_theta(q, θ)` on an
+   equality edge. This is worry 1 of §13.11 one increment later — *when an
+   increment's target shape is defined by what the source says, compile the
+   ADVERSARIAL source first and diff the modules.* Two agents independently
+   produced byte-identical modules for a decline and an accept before anyone
+   wrote a line of the fence.
+2. **F2 is a fence on a SYNTACTIC coincidence, and I cannot prove it complete.**
+   Its soundness argument is "on an eq/ne diamond exactly one edge proves the
+   equality, and F1 collapses both readings to seed == k" — which is airtight for
+   the shapes measured. What is not proved is that `-O1` never produces a folded
+   arm seed **without** an equality compare surviving to the pass. Four ordered
+   spellings and one range were measured to canonicalize to `icmp eq` first, and
+   108 probes produced no counterexample; that is evidence, not a proof. The
+   `fcmp oeq` case — the one I expected to be the hole — was **measured closed**
+   (`prd/ir/q32`/`q34`: an `oeq` edge does not substitute, because `oeq` is not a
+   bitwise-equality proof), which removes the candidate I had and leaves me
+   without one. That is a worse position than having a named suspect, not a
+   better one: lens 2's job is to find the suspect I could not.
+3. **The accept is DIAMOND-ONLY by a fence that fires through ABSENCE.** F1 needs
+   a Pred edge; an if/else has none. I added an explicit if/else clause so the
+   decline is findable, but the general shape "this accept class is bounded by a
+   clause that cannot be satisfied rather than by a clause that refuses" is how a
+   later widener removes the bound without noticing there was one.
+4. **The flat twin matrix exists but its oracle is a REDUCTION, not an
+   identity, and that is weaker than what Inc 1 had.** `--stateprep` compares the
+   subject against a *reduced* chained twin (§14.8's two rewrites), so a defect
+   in the reduction itself — or one shared by the subject and the twin — is
+   invisible, and unlike the Rz-arm pool there is no second, independently-lowered
+   spelling of the same unitary to fall back on (§14.7: the Rz spelling of a
+   state prep is a deleted gate). It is also **not a ctest entry**. And I did not
+   run it: it needs a pre-Inc-4 `--prep-oracle` and a lowering that does not
+   exist yet, so every claim in §14.7/§14.9 about it is READ from the source at a
+   moment the source was being written.
+5. **I am relying on `railWireClosure` being SKIPPED, not on it being safe.** The
+   measured trap (§14.5, `q31`) is that pointing it at a module-uniqued
+   `ConstantInt` enumerates unrelated users across the function and — for
+   cross-function users — is saved only by a `DominatorTree` query returning
+   false for a foreign block. I have specified "skip", and `q31` reddens if
+   anyone re-points it. I have **not** audited every other place that might come
+   to hold a `Constant` in a rail-shaped slot now that `Region.RoutedBase` can be
+   one.
+6. **`warnLiveRecordRotations` will not run on these gates**, and the argument
+   that this is right ("a source theta mints its wire, so that wire can carry no
+   record yet") is a sentence in a header comment that predates controlled
+   rotations by an epic. I believe it — the alloc is three instructions earlier —
+   but it was written about an UNCONTROLLED source theta and I am re-using it for
+   a controlled one, which is the "justification gone stale" shape this file keeps
+   finding. Lens 4 must re-derive it rather than quote it.
+7. **The fold is not deterministic across equivalent sources** (`p08h` folds,
+   `p08s` does not, and they differ only in how the compare was written). Every
+   fixture I have specified is written against ONE observed `-O1` output. A clang
+   or `-O1` pipeline change moves the IR under all 62 of them, and the ones that
+   would go silently WRONG rather than red are the F2 declines — because a shape
+   that stops folding stops being ambiguous and starts declining on R4 instead,
+   with a different string.
+8. **Three of my accept rows are consumer-axis rows I did not compile as accepts,
+   because none of them can compile until the fence exists.** `p13a`–`p13g`
+   measured that the DIAMOND survives `-O1` for all seven consumers, which is the
+   part that could be measured; that the region then lowers for all seven is
+   inferred from Inc 1's identical consumer family. The DER lesson says that is
+   exactly where a vacuous accept hides.

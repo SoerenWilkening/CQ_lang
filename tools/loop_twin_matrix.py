@@ -124,8 +124,8 @@ matter to the uncompute spine (direct compare, and the derived `sqrt` one that
 brings four template rails in) crossed with the FULL second-register gate axis;
 the three RECORD shapes on the ROTATED register `r` (the 8h7d.5 F-1 / F-3 / F1
 programs, moved off the condition register onto the rotated one); one triple
-with the record on `a` while the arm rotates `r`; and two singleton DECLINE
-controls. 117 cells.
+with the record on `a` while the arm rotates `r`; two singleton DECLINE
+controls; and the drbq-Inc-4 CONTROLLED STATE-PREP decline control. 118 cells.
 
 AND ONE THING THAT HAD TO BE MEASURED RATHER THAN DESIGNED (Rule 11), because it
 decides whether most of those cells witness anything at all. An Ry arm rotates a
@@ -380,6 +380,33 @@ RY_REGION = {
     "one": "        if (a != off) { r = cq_theta(r, 0.9); }\n",
     "oder": "        if (sqrt(a + 3.) <= (double)off)"
             " { r = cq_theta(r, 0.9); }\n",
+    # ── the CONTROLLED STATE-PREP decline control (bd
+    # test_C_libtooling-drbq Inc 4 / drbq.5). ONE cell, added BEFORE any
+    # Inc-4 lowering exists, for the same reason the whole Ry axis was
+    # (`--regenerate`d at 1bdaa60 before Inc 3): a table written after the
+    # implementation can only say the implementation agrees with itself.
+    #
+    # The arm's `cq_theta` has a CLASSICAL arg-0, so it mints a FRESH rail
+    # rather than relabelling `r` — PRD §4 R1's "classical seed — controlled
+    # state prep, Inc 4" bail (`ArmClassify.cpp:725`). Inc 4 lifts that bail
+    # for the FLAT diamond and this cell is the assertion that it does not
+    # follow `r` into a loop.
+    #
+    # ⚠ WHAT THIS CELL CANNOT TELL YOU, said plainly because it declines for
+    # TWO independent reasons and a control that does should say so. The
+    # wrapper seeds `r = cq_theta(r, 0.3)` before the loop on every
+    # `RY_REGION` cell, so the merge phi's pred-edge incoming here is the
+    # loop-carried QUANTUM `r`, never a constant — which makes the region a
+    # genuine Q data mux (a fresh prepped rail on one edge, a live handle on
+    # the other) INDEPENDENTLY of the loop. MEASURED at ORACLE b506b3b: the
+    # rolled side declines `control flow`, the flat twin declines `condition
+    # predates a non-diagonal gate` — and the flat twin is a two-region
+    # sequence whose SECOND region's pred incoming is the FIRST region's
+    # merge phi, i.e. a mux for the same reason one hop along. So a red here
+    # means "Inc 4 widened into a loop OR into a non-constant pred incoming";
+    # it does not isolate which. The isolating flat cells are the lit family,
+    # not this file.
+    "rprep": "        if (a == 5) { r = cq_theta(0, 0.9); }\n",
 }
 RGATE = {
     "none": {"pre": "", "post": ""},
@@ -419,6 +446,7 @@ RECORD_ALL = dict(RECORD, **RECORD_R)
 #   C   the RECORD axis on the ROTATED register (opaque, so it is live)      24
 #   D   the RECORD axis on the CONDITION register while the arm rotates `r`   3
 #   E   the two decline controls                                              2
+#   E2  the CONTROLLED STATE-PREP decline control (bd drbq Inc 4/drbq.5)      1
 RY_CORE_REGION = ("req", "rder")
 RY_OTHER_REGION = ("rne", "req0", "rrange", "rzry", "ryrz")
 RY_OPAQUE_REGION = ("oeq", "one", "oder")
@@ -786,7 +814,7 @@ def cell_name(cell):
 
       `m_<prefix>_<region>_<suffix>`                    the 120 record-free cells
       `m_<prefix>_<region>_<suffix>_<record>`           the 36 RECORD cells
-      `m_<prefix>_<region>_<suffix>_<record>_<rgate>`   the 117 Ry-ARM cells
+      `m_<prefix>_<region>_<suffix>_<record>_<rgate>`   the 118 Ry-ARM cells
 
     The Ry cells ALWAYS carry all five segments (`..._none_none` included) and
     their region token is always an `RY_REGION` one, so no name can collide with
@@ -835,13 +863,27 @@ def ry_cells():
             for k in RECORD if k != "none"]
     # E — the two decline controls.
     out += [("none", g, "none", "none", "none") for g in RY_DECLINE_REGION]
+    # E2 — the CONTROLLED STATE-PREP decline control (bd drbq Inc 4 / drbq.5).
+    # Spelled with the `ry` PREFIX rather than at the `none` the other two
+    # decline controls use, and that is not a style choice — it was MEASURED,
+    # both ways, on the pre-Inc-4 oracle `b506b3b`. With no a-register gate in
+    # the body `a` is LOOP-INVARIANT, LICM hoists the literal compare out of the
+    # loop, and `("none", "rprep", ...)` declines `condition predates a
+    # non-diagonal gate` on the ROLLED side (the hoist) against `control flow` on
+    # the flat one: a cell whose rolled disposition is decided before the loop
+    # clause is ever reached, which is the docstring's OPAQUE-THRESHOLD
+    # phenomenon one axis over. The `ry` prefix keeps the condition register
+    # loop-VARIANT — the shape a customer writes, and the shape in which the loop
+    # clause is the live question.
+    out += [("ry", "rprep", "none", "none", "none")]
     return out
 
 
 def cells_of_matrix():
     """The full cell list: the 120-cell PREFIX x REGION x SUFFIX product with no
     record, plus the 36-cell record sub-grid (see `RECORD_GRID_*`), plus the
-    117-cell controlled-Ry-arm sub-grids (see `RY_*`). 273 cells.
+    118-cell controlled-Ry-arm sub-grids (see `RY_*`, whose sub-grid E2 is the
+    bd drbq Inc-4 controlled-state-prep decline control). 274 cells.
 
     The sizes are ASSERTED, not commented: this gate costs ~2 minutes of the
     suite's ~130-230s band and an axis edit that silently doubles it should stop
@@ -854,7 +896,7 @@ def cells_of_matrix():
                                 RECORD_GRID_SUFFIX,
                                 [k for k in RECORD if k != "none"])]
     ry = ry_cells()
-    assert (len(base), len(rec), len(ry)) == (120, 36, 117), \
+    assert (len(base), len(rec), len(ry)) == (120, 36, 118), \
         "sub-grid sizes moved: %d/%d/%d" % (len(base), len(rec), len(ry))
     cells = base + rec + ry
     names = [cell_name(c) for c in cells]
@@ -1143,8 +1185,9 @@ EXPECTED_HEADER = """\
 #
 # ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` — plus a fourth `_<record>`
 # segment on the 36 RECORD-axis cells (bd drbq Inc 2a round-1 review), plus a
-# fifth `_<rgate>` segment on the 117 CONTROLLED-Ry-ARM cells (bd drbq Inc 3,
-# whose region token always starts `r`) — then its
+# fifth `_<rgate>` segment on the 118 CONTROLLED-Ry-ARM cells (bd drbq Inc 3,
+# plus the one bd drbq Inc-4 controlled-state-prep decline control
+# `m_ry_rprep_none_none_none`; their region token always starts `r`) — then its
 # verdict. A name longer than the 24-column pad simply runs past it and is still
 # separated from its verdict by exactly one space; the pad was deliberately NOT
 # widened, because widening it would have rewritten all 156 pre-Inc-3 rows for a

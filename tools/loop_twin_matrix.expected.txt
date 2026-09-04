@@ -3,8 +3,9 @@
 #
 # ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` — plus a fourth `_<record>`
 # segment on the 36 RECORD-axis cells (bd drbq Inc 2a round-1 review), plus a
-# fifth `_<rgate>` segment on the 117 CONTROLLED-Ry-ARM cells (bd drbq Inc 3,
-# whose region token always starts `r`) — then its
+# fifth `_<rgate>` segment on the 118 CONTROLLED-Ry-ARM cells (bd drbq Inc 3,
+# plus the one bd drbq Inc-4 controlled-state-prep decline control
+# `m_ry_rprep_none_none_none`; their region token always starts `r`) — then its
 # verdict. A name longer than the 24-column pad simply runs past it and is still
 # separated from its verdict by exactly one space; the pad was deliberately NOT
 # widened, because widening it would have rewritten all 156 pre-Inc-3 rows for a
@@ -378,6 +379,7 @@ m_ry_req_add_none_none   ACCEPT-IDENTICAL
 m_ry_req_none_none_none  ACCEPT-IDENTICAL
 m_ry_req_ry_none_none    ACCEPT-IDENTICAL
 m_ry_rne_none_none_none  ACCEPT-IDENTICAL
+m_ry_rprep_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_ry_rrange_none_none_none ACCEPT-IDENTICAL
 m_ry_ryrz_none_none_none ACCEPT-IDENTICAL
 m_ry_rzry_none_none_none UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control

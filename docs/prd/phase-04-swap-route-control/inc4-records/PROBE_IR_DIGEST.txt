@@ -1,0 +1,816 @@
+################ p01_flagship
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p02_ne_polarity
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q != 5) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p03_ifelse_same_const
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r; if (q == 5) r = cq_theta(0, 0.9); else r = 0; return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p04a_ifelse_diff_const
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r; if (q == 5) r = cq_theta(0, 0.9); else r = 7; return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p04b_seed_mismatch
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 7; if (q == 5) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p05_ifelse_prep_vs_chain
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int p = cq_theta(2, 0.25); int r; if (q == 5) r = cq_theta(0, 0.9); else r = cq_theta(p, 0.4); return (int)cq_measure(r) + (int)cq_measure(q) + (int)cq_measure(p); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: impure phase arm under quantum control
+
+--- IR:
+
+################ p06a_seed_eq_cmpconst
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 5; if (q == 5) r = cq_theta(5, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p06b_seed_ne_cmpconst
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 7; if (q == 5) r = cq_theta(7, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p07a_f64_zero
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); double r = 0.0; if (q == 5) r = cq_theta(0.0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p07b_f64_negzero_seed
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); double r = -0.0; if (q == 5) r = cq_theta(0.0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p07c_f64_negzero_arm
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); double r = 0.0; if (q == 5) r = cq_theta(-0.0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p07d_f32_zero
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); float r = 0.0f; if (q == 5) r = cq_theta(0.0f, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08a_ctl_prep0
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 0) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08a_eqfold_condreg
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 0) r = cq_theta(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08b_eqfold_derived
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(q - 5, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08c_eqfold_range
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 5; if (q > 4 && q < 6) r = cq_theta(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08d_eqfold_alias
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int a = q; int r = 0; if (q == 0) r = cq_theta(a, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08e_eqfold_seed5
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 5; if (q == 5) r = cq_theta(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08f_eqfold_ifelse
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r; if (q == 0) r = cq_theta(q, 0.9); else r = 0; return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08g_eqfold_ult1
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; unsigned u = (unsigned)q; if (u < 1u) r = cq_theta(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08h_eqfold_seed5_pred0
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08i_eqfold_rz
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 0) r = cq_phi(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08j_eqfold_mergeq
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); if (q == 0) q = cq_theta(q, 0.9); return (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08k_eqfold_ne_else
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 5; if (q != 5) { (void)0; } else r = cq_theta(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08l_eqfold_rz_mergeq
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); if (q == 0) q = cq_phi(q, 0.9); return (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 0
+--- diag:
+--- IR:
+--- TRACE:
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl(h0, 0) -> h1
+cqrt_rz_i32_controlled(h1, h0, 0x1.ccccccccccccdp-1)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 0)
+cqrt_free(h1)
+cqrt_measure_i32(h0) -> 0
+
+################ p08m_prep_ne_seedeq
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 5; if (q != 5) r = cq_theta(5, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08n_rz_prep_seedeq
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 0) r = cq_phi(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08o_rz_eqfold_canonical
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int p = cq_theta(2, 0.25); if (q == 0) p = cq_phi(p, 0.9); return (int)cq_measure(q) + (int)cq_measure(p); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 0
+--- diag:
+--- IR:
+--- TRACE:
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_i32(2) -> h1
+cqrt_ry_i32(h1, 0x1p-2)
+cq_template_icmp_eq_i32_hl(h0, 0) -> h2
+cqrt_rz_i32_controlled(h2, h1, 0x1.ccccccccccccdp-1)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 0)
+cqrt_free(h2)
+cqrt_measure_i32(h0) -> 0
+cqrt_measure_i32(h1) -> 0
+
+################ p08p_eqfold_derived_seed10
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(q * 2, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08q_eqfold_compound_second
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int p = cq_theta(2, 0.25); int r = 0; if (q == 5 && p == 3) r = cq_theta(p, 0.9); return (int)cq_measure(r) + (int)cq_measure(q) + (int)cq_measure(p); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08r_nofold_masked
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if ((q & 6) == 2) r = cq_theta(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+
+--- IR:
+
+################ p08r_unmask_rz
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if ((q & 6) == 2) r = cq_phi(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08s_eqfold_addcmp
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q + 1 == 6) r = cq_theta(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+
+--- IR:
+
+################ p08s_unmask_rz
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q + 1 == 6) r = cq_phi(q, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08t_eqfold_derived_seedmatch
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 10; if (q == 5) r = cq_theta(q * 2, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08u_eqfold_inplace_alias
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int a = q; a += 5; int r = 10; if (q == 5) r = cq_theta(a, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p08v_eqfold_armlocal_add
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 10; if (q == 5) { int a = q + 5; r = cq_theta(a, 0.9); } return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p09a_twin_seed0
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = cq_theta(0, 0.0); if (q == 5) r = cq_theta(r, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 0
+--- diag:
+--- IR:
+--- TRACE:
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_i32(0) -> h1
+cqrt_ry_i32(h1, 0x0p+0)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h2
+cqrt_ry_i32_controlled(h2, h1, 0x1.ccccccccccccdp-1)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
+cqrt_free(h2)
+cqrt_measure_i32(h1) -> 0
+cqrt_measure_i32(h0) -> 0
+
+################ p09b_twin_seed5
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = cq_theta(5, 0.0); if (q == 5) r = cq_theta(r, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 0
+--- diag:
+--- IR:
+--- TRACE:
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_i32(5) -> h1
+cqrt_ry_i32(h1, 0x0p+0)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h2
+cqrt_ry_i32_controlled(h2, h1, 0x1.ccccccccccccdp-1)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
+cqrt_free(h2)
+cqrt_measure_i32(h1) -> 0
+cqrt_measure_i32(h0) -> 0
+
+################ p09c_twin_ne
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = cq_theta(0, 0.0); if (q != 5) r = cq_theta(r, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 0
+--- diag:
+--- IR:
+--- TRACE:
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_i32(0) -> h1
+cqrt_ry_i32(h1, 0x0p+0)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h2
+cqrt_x(h2)
+cqrt_ry_i32_controlled(h2, h1, 0x1.ccccccccccccdp-1)
+cqrt_x(h2)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
+cqrt_free(h2)
+cqrt_measure_i32(h1) -> 0
+cqrt_measure_i32(h0) -> 0
+
+################ p09d_twin_f64
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); double r = cq_theta(0.0, 0.0); if (q == 5) r = cq_theta(r, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 0
+--- diag:
+--- IR:
+--- TRACE:
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_f64(0x0p+0) -> h1
+cqrt_ry_f64(h1, 0x0p+0)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h2
+cqrt_ry_f64_controlled(h2, h1, 0x1.ccccccccccccdp-1)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
+cqrt_free(h2)
+cqrt_measure_f64(h1) -> 0x0p+0
+cqrt_measure_i32(h0) -> 0
+
+################ p10_rz_prep
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_phi(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p11_undef_seed
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r; if (q == 5) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq taint escape: tainted value consumed by an unknown callee
+
+--- IR:
+
+################ p12a_two_regs
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int p = cq_theta(2, 0.25); int r = 0, s = 0; if (q == 5) r = cq_theta(0, 0.9); if (p == 4) s = cq_theta(0, 0.35); return (int)cq_measure(r) + (int)cq_measure(s) + (int)cq_measure(q) + (int)cq_measure(p); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p12b_prep_then_chain
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int p = cq_theta(2, 0.25); int r = 0; if (q == 5) r = cq_theta(0, 0.9); if (p == 3) r = cq_theta(r, 0.4); return (int)cq_measure(r) + (int)cq_measure(q) + (int)cq_measure(p); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p12c_prep_then_prep
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int p = cq_theta(2, 0.25); int r = 0; if (q == 5) r = cq_theta(0, 0.9); if (p == 3) r = cq_theta(0, 0.4); return (int)cq_measure(r) + (int)cq_measure(q) + (int)cq_measure(p); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p12d_prep_then_uncond
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); r = cq_theta(r, 0.4); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p13a_meas
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p13b_ret
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); (void)cq_measure(q); return r; }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p13c_add_then_meas
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); int s = r + 1; return (int)cq_measure(s) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p13d_printf_tape
+--- C:
+#include <stdio.h>
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); printf("%d\n", r); return (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p13e_theta_after
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); r = cq_theta(r, 0.13); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p13f_call_helper
+--- C:
+__attribute__((noinline)) static int sinkfn(int x){ return (int)cq_measure(x); }
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); return sinkfn(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function sinkfn i32 (i32): cq specialization: callee measures under quantum lift
+
+--- IR:
+
+################ p13g_no_consumer
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); (void)r; return (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p14a_ifelse_two_preps
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r; if (q == 5) r = cq_theta(0, 0.9); else r = cq_theta(0, 0.4); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: rotation angle under quantum control
+
+--- IR:
+
+################ p14b_ifelse_two_preps_diffseed
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r; if (q == 5) r = cq_theta(0, 0.9); else r = cq_theta(3, 0.4); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: impure phase arm under quantum control
+
+--- IR:
+
+################ p15a_cond_derived
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if ((q & 6) == 2) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p15b_cond_gt
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q > 5) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p15c_cond_qq
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int p = cq_theta(2, 0.25); int r = 0; if (q == p) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q) + (int)cq_measure(p); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p15d_cond_and
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int p = cq_theta(2, 0.25); int r = 0; if (q == 5 && p > 2) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q) + (int)cq_measure(p); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p15e_cond_or
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int p = cq_theta(2, 0.25); int r = 0; if (q == 5 || p == 2) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q) + (int)cq_measure(p); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p16_runtime_seed
+--- C:
+int slice(int seed){ int q = cq_theta(3, 0.3); int r = seed; if (q == 5) r = cq_theta(seed, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(2); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p17a_i8
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); signed char r = 0; if (q == 5) r = cq_theta((signed char)0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p17b_i64
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); long long r = 0; if (q == 5) r = cq_theta((long long)0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p17c_i1
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); _Bool r = 0; if (q == 5) r = cq_theta((_Bool)0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p17d_i16
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); short r = 0; if (q == 5) r = cq_theta((short)0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p18a_inloop_rolled
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; for (int i = 0; i < 2; ++i) { q = cq_theta(q, 0.3); if (q == 5) r = cq_theta(0, 0.9); } return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p18b_inloop_unrolled
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; q = cq_theta(q, 0.3); if (q == 5) r = cq_theta(0, 0.9); q = cq_theta(q, 0.3); if (q == 5) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+
+--- IR:
+
+################ p18c_inloop_iterlocal
+--- C:
+#include <stdio.h>
+int slice(void){ int q = cq_theta(3, 0.3); for (int i = 0; i < 2; ++i) { int r = 0; q = cq_theta(q, 0.3); if (q == 5) r = cq_theta(0, 0.9); printf("%d\n", r); } return (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p19a_nest
+--- C:
+int slice(void){ int a = cq_theta(3, 0.3); int b = cq_theta(2, 0.25); int r = 0; if (a == 5) { if (b == 4) { r = cq_theta(0, 0.9); } } return (int)cq_measure(r) + (int)cq_measure(a) + (int)cq_measure(b); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p19b_switch
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; switch (q) { case 1: r = cq_theta(0, 0.9); break; case 2: r = cq_theta(0, 0.4); break; default: break; } return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p20_prep_feeds_cond
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int s = cq_theta(9, 0.25); int r = 0; if (q == 5) r = cq_theta(0, 0.9); if (r == 1) s = cq_phi(s, 0.2); return (int)cq_measure(r) + (int)cq_measure(q) + (int)cq_measure(s); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p21a_classical_phi_same
+--- C:
+int slice(int cc){ int q = cq_theta(3, 0.3); int r = cc ? 0 : 0; if (q == 5) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(1); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p21b_classical_phi_diff
+--- C:
+int slice(int cc){ int q = cq_theta(3, 0.3); int r = cc ? 0 : 3; if (q == 5) r = cq_theta(0, 0.9); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(1); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
+################ p22_p1_postregion_ry
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); q = cq_theta(q, 0.3); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+
+--- IR:
+
+################ p22b_p1_postregion_rz
+--- C:
+int slice(void){ int q = cq_theta(3, 0.3); int r = 0; if (q == 5) r = cq_theta(0, 0.9); q = cq_phi(q, 0.3); return (int)cq_measure(r) + (int)cq_measure(q); }
+int main(void){ (void)slice(); return 0; }
+--- exit: 1
+--- diag:
+error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control
+
+--- IR:
+
