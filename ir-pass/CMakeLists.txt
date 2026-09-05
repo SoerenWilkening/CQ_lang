@@ -53,6 +53,7 @@ add_library(CQPass MODULE
   src/ChainWalk.cpp
   src/ClassicalCallArmEmit.cpp
   src/CompareLowering.cpp
+  src/CondTreeEmit.cpp
   src/ControlDetect.cpp
   src/ControlledSymbols.cpp
   src/CtlzIdiomPrepass.cpp

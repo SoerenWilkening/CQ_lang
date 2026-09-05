@@ -168,6 +168,14 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
   while (!Stack.empty()) {
     auto [V, ChildrenDone] = Stack.pop_back_val();
     if (ChildrenDone) {
+      // AllowLogicalSelect is OFF for this caller (see SelectClassify.h), so
+      // every node here is a `BinaryOperator` by construction. bd
+      // test_C_libtooling-3qlq Inc 1 part B lifted the SELECT-path network into
+      // `CondTreeEmit`; this forward-ONLY clone variant (flags kept LIVE for the
+      // single Bennett-wrap reverse, its own `cqq.g` ancilla name, its own
+      // NodeMints/NodeRails capture) is deliberately NOT folded into it in this
+      // increment — the shapes differ in what they DO NOT emit, and unifying
+      // them would move the specialization goldens. Filed as a follow-on.
       auto *BO = cast<BinaryOperator>(V);
       Value *L = FlagOf.lookup(BO->getOperand(0));
       Value *Rv = FlagOf.lookup(BO->getOperand(1));
@@ -381,7 +389,7 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
     SI->replaceAllUsesWith(Out);
     scrubCloneTaint(SI, cloneTaint);
     SI->eraseFromParent();
-    for (BinaryOperator *N : llvm::reverse(Tree.Nodes))
+    for (Instruction *N : llvm::reverse(Tree.Nodes))
       if (N->use_empty()) {
         scrubCloneTaint(N, cloneTaint);
         N->eraseFromParent();
