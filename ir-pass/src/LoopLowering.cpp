@@ -2798,6 +2798,131 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 // `Uncomputation` re-confirms every recovered gate sits in a marked block and
 // `FreePoint` re-confirms the insertion point is in-body. Not marking is always
 // safe (the leak); this predicate only ever grants.
+// bd test_C_libtooling-3qlq Inc 1 part A, Rule-13 round-1 findings F-L7-2 /
+// F-L5-1 / F-L2-1b — THE LOOP-INVARIANT-REGISTER ROOT SET.
+//
+// THE SHAPE. Owner decision D4 designates
+//
+//     for (i < K) if ((q >> i) & 1) cq_phi(θ);
+//
+// as THE way to express a register-wide Z under the register-free surface. Its
+// loop body puts NO gate on `q`, so `q` is loop-INVARIANT: the header carries no
+// tainted phi, `collapseRailPhisIn` finds nothing to collapse and returns
+// `NotClaimed`, `markIfRailLocal` is never called, and `Uncomputation.cpp`'s
+// in-loop guard (`canRepeat(&BB) && !IterationLocalBlocks.count(&BB)`) SILENTLY
+// SKIPS the body's interior candidates. MEASURED at K=4 and K=32: `K` derived
+// condition rails (`cq_template_and_i32_hl(h0, 1<<i)`) minted and NEVER
+// `_unc`-reversed, never freed, while the HAND-UNROLLED spelling of the same
+// source discharges all K.
+//
+// WHY THAT IS NOT A "RULE-6 SAFE LEAK". Each leaked rail holds one BIT of `q` —
+// a which-path record — and this idiom exists to be a Grover phase oracle whose
+// next step is a diffusion that interferes different `x`. Rule 8: "a permutation
+// that leaves a rail dirty AND entangled still dephases under later
+// interference." Rolled and unrolled are therefore DIFFERENT UNITARIES, which is
+// the 8h7d.5 F-4 signature, and `free_pairing_check.py` is structurally blind to
+// it (the leaked rail has no `cqrt_alloc`, so it was never counted as minted).
+//
+// WHY THE REGISTER SURFACE NEVER SHOWED IT: `q = cq_phi(q, θ)` in the arm made
+// `q` loop-CARRIED, so the collapse claimed it, `Roots` was non-empty, the body
+// was marked, and the pre-3qlq oracle emitted the discharging stream for the
+// same program. This is a REGRESSION introduced by the surface change, not an
+// inherited hazard.
+//
+// WHAT THIS FUNCTION DOES, AND THE ONE THING THAT MAKES IT SAFE. It supplies
+// `markIfRailLocal` with the `Roots` that a loop-carried rail would have
+// supplied, for a loop whose registers are loop-INVARIANT instead — and it
+// admits ONLY a ROOT MINT (a classical-arg-0 `cq_theta` dominating the loop),
+// never an arbitrary loop-invariant tainted value.
+//
+// THAT RESTRICTION IS THE WHOLE PROOF, and it is aimed squarely at the hazard
+// `markIfRailLocal`'s own comment names ("a recovered gate in the PREHEADER (does
+// not repeat) with `At` in a body marked here (repeats K times) would emit K
+// adjoints against ONE forward gate. … Widening it — even 'just' to admit a
+// hoisted loop-invariant temp — makes it reachable, and no shipped test would go
+// red."). A root mint CANNOT be that gate:
+//   * it lowers to `cqrt_alloc_<W>` + `cqrt_ry_<W>`, and
+//     `ChainWalk::isInteriorTerminalHandle`'s clause (I1) excludes an
+//     alloc-minted rail from the M-B interior partition OUTRIGHT, so the
+//     interior driver can never claim it and can never place an `At` for it;
+//   * a hoisted loop-invariant TEMPLATE rail (`int p = q * 3;` before the loop,
+//     read by the body's condition) is exactly the admitted-temp case the
+//     comment warns about — and this function REFUSES it, so such a loop is
+//     still not marked and its rails still leak. MEASURED as the discriminating
+//     control (`z_preheader_rail8`: 8 trips, the `xor`/`and` rails leak, before
+//     and after this change, byte-identical).
+// Every value the body itself MINTS repeats exactly as its adjoint will, so the
+// multiplicity the comment protects is 1:1 by construction here.
+//
+// Returns true (and fills `RootsOut`) only when EVERY tainted value defined
+// outside `L` and read inside it is such a root mint with no in-place gate
+// inside `L`; false otherwise, in which case nothing is marked and the
+// pre-existing leak stands (not marking is always safe).
+bool invariantRegisterRoots(Loop *L, const TaintSet &taint,
+                            const SmallPtrSetImpl<CallInst *> &GateCalls,
+                            SmallPtrSetImpl<Value *> &RootsOut) {
+  BasicBlock *Header = L->getHeader();
+  // (i) NOTHING LOOP-CARRIED. A surviving tainted header phi means a rail DOES
+  //     cross the back edge and the collapse declined to claim it — that loop is
+  //     the collapse's business, not this one's, and marking it would grant a
+  //     permission on an unproven rail.
+  for (PHINode &P : Header->phis())
+    if (taint.Tainted.count(&P))
+      return false;
+
+  SmallPtrSet<Value *, 4> Cands;
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB)
+      for (Value *Op : I.operands()) {
+        if (!taint.Tainted.count(Op))
+          continue;
+        auto *OpI = dyn_cast<Instruction>(Op);
+        if (!OpI)
+          return false;  // a tainted non-instruction operand — unclassifiable.
+        if (L->contains(OpI->getParent()))
+          continue;  // defined in the loop; `markIfRailLocal` handles it.
+        Cands.insert(Op);
+      }
+  if (Cands.empty())
+    return false;  // no invariant register read — nothing this path is for.
+
+  for (Value *V : Cands) {
+    // (ii) A ROOT MINT ONLY — the same shape `railPhiRootMint` accepts: a
+    //      COLLECTED `cq_theta` whose arg 0 is CLASSICAL. A derived base
+    //      (`p = q * 5`) and every other template rail are refused here.
+    //
+    //      PEELED FIRST, through IN-PLACE gates, with `AsLowered=true` — the
+    //      IDENTICAL call `markIfRailLocal`'s own `onRail` makes (Rule 14: the
+    //      set this fills and the predicate that reads it must agree by
+    //      construction, not by two spellings). Peeling matters for a real
+    //      program: `q = cq_theta(u,.3); q = cq_theta(q,.1); for(…)` reads the
+    //      SECOND theta, whose arg 0 is tainted. Keying on the un-peeled value
+    //      refused it — a safe leak, but a rolled≠unrolled DIVERGENCE of exactly
+    //      the class this whole path exists to close (MEASURED before the peel
+    //      was added). Every member of that chain RAUWs to the ONE
+    //      `cqrt_alloc` handle at rotation lowering, so peeling names the
+    //      physical wire rather than an SSA name of it.
+    Value *Root = peelInPlaceBase(V, GateCalls, taint, /*AsLowered=*/true);
+    auto *Mint = dyn_cast<CallInst>(Root);
+    if (!Mint || !GateCalls.count(Mint) ||
+        taint.Tainted.count(Mint->getArgOperand(0)))
+      return false;
+    // (iii) THE WHOLE CHAIN MUST BE OUTSIDE `L`. A peel that walks INTO the loop
+    //       would mean the body gates the register after all — belt-and-braces,
+    //       since clause (i) already refuses a loop with any tainted header phi
+    //       and an in-body in-place gate on an SSA register always produces one.
+    if (L->contains(Mint->getParent()))
+      return false;
+    for (User *U : V->users())
+      if (auto *UC = dyn_cast<CallInst>(U))
+        if (L->contains(UC->getParent()) &&
+            isInPlaceGateOnArg0(UC, V, GateCalls, taint))
+          return false;
+    RootsOut.insert(Root);
+  }
+  return true;
+}
+
 void markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
                      const SmallPtrSetImpl<CallInst *> &GateCalls,
                      const SmallPtrSetImpl<Value *> &Roots) {
@@ -2929,9 +3054,22 @@ void collapseFlattenedLoopRails(Module &M, TaintSet &taint) {
       // non-zero, and handing the spine an in-body discharge permission for a
       // module that is never emitted is bookkeeping on a corpse (bd 8h7d.5
       // Rule-13 round 1); a NotClaimed loop keeps its pre-existing owner.
-      if (collapseRailPhisIn(L, F, taint, GateCalls, DT, Roots) ==
-          RailRound2::Collapsed)
+      RailRound2 R2 = collapseRailPhisIn(L, F, taint, GateCalls, DT, Roots);
+      if (R2 == RailRound2::Collapsed) {
         markIfRailLocal(L, taint, LI, GateCalls, Roots);
+      } else if (R2 == RailRound2::NotClaimed &&
+                 invariantRegisterRoots(L, taint, GateCalls, Roots)) {
+        // The LOOP-INVARIANT-REGISTER path (bd 3qlq Inc 1 part A, round-1
+        // F-L7-2 / F-L5-1). There was no rail phi to collapse because the body
+        // gates nothing — the register-free `cq_phi` surface's normal case, and
+        // the shape owner decision D4 blesses. `markIfRailLocal` runs UNCHANGED
+        // on the supplied roots; see `invariantRegisterRoots` for why a root
+        // mint (and only a root mint) is a sound thing to put in that set.
+        // `Declined` is deliberately NOT admitted here: `opt` is about to exit
+        // non-zero, and granting an in-body discharge permission for a module
+        // that is never emitted is bookkeeping on a corpse (bd 8h7d.5 round 1).
+        markIfRailLocal(L, taint, LI, GateCalls, Roots);
+      }
     }
   }
 }
