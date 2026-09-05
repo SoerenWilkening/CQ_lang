@@ -42,8 +42,16 @@ CQ_lang and Sturm has tightened considerably:
   to state collapse. CQ_lang no longer has cast-as-measurement; an
   `(int) q` on a tainted `q` is a representation change, never a
   measurement.
-- **Two rotation primitives.** `cq_theta(x, θ)` ↔ `q.θ += δ` (Ry) and
-  `cq_phi(x, φ)` ↔ `q.φ += δ` (Rz).
+- **Two rotation primitives, and they are no longer symmetric.**
+  `cq_theta(x, θ)` ↔ `q.θ += δ` (Ry) still names a register on both sides.
+  `cq_phi` does not: since bd `test_C_libtooling-3qlq` Increment 1 it is
+  `void cq_phi(double φ)` — a **branch** phase with no data operand, lowered
+  by kickback onto the enclosing tainted condition's flag
+  ([`frontend.md`](./frontend.md) §3.3). Sturm's `q.φ += δ` remains a
+  per-register Rz, and *that* is exactly the reading CQ retired: a tensored
+  per-qubit Rz under control marks `(−1)^popcount(target)` and cannot mark
+  `|0…0⟩` at all (`retire-swap-route-PRD.md` §1). The old CQ spelling was
+  `cq_phi(x, φ)`; read it as the pre-3qlq register form wherever it appears.
 - **Classical-function lifting.** Sturm's `oracle(f, q)` ↔ CQ_lang's
   clone-on-taint specialization (visible bodies) + curated symbol
   substitution (libm, intrinsics).
@@ -115,7 +123,7 @@ design subsumed both halves of the hybrid.
 | Front-end | `CQ.h` (`_Generic` dispatch) + stock Clang `-O1 -emit-llvm` | Julia compiler + macros + dispatch |
 | Quantum data | No special type — taint is a property of SSA values, not declarations | `QInt{W}`, `QBool` — static type distinction |
 | Amplitude rotation | `cq_theta(x, θ)` → Ry; sole taint **source** | `q.θ += δ` → Ry |
-| Phase rotation | `cq_phi(x, φ)` → Rz; propagates taint only (no allocation) | `q.φ += δ` → Rz |
+| Phase rotation | `cq_phi(φ)` → **branch phase**; register-free since 3qlq Inc 1, so it propagates nothing and allocates nothing (the pre-3qlq register form was `cq_phi(x, φ)` → tensored Rz) | `q.φ += δ` → per-register Rz |
 | Measurement | `cq_measure(x)` — explicit call; sole taint **sink** | `Bool(q)`, `Int(q)` — explicit cast; sole sink |
 | Casts under quantum data | Representation change → quantum cast templates (`cq_template_sitofp_…`); **never** a measurement | `Bool(q)`/`Int(q)` *is* the measurement; other casts do not exist on `QInt{W}` |
 | Manual inversion | `cq_invert_begin();` / `cq_invert_end();` — pass derives adjoint per-op | implicit (Bennett wraps whole calls) |
@@ -143,7 +151,7 @@ taint-driven redesign:
 |---|---|
 | Measurement is syntactically explicit and the **only** state-collapse path | **Strengthened**: `cq_measure(x)` ↔ `Bool(q)`/`Int(q)`. CQ_lang no longer has cast-as-measurement, eliminating the implicit-collapse failure mode |
 | Two rotation primitives (Ry, Rz) | yes |
-| Rz on classical state is a no-op | **New convergence**: CQ_lang's IR pass deletes `cq_phi` on classical operands; Sturm's `q.φ += δ` on a basis state is observationally a no-op |
+| Rz on classical state is a no-op | **New convergence**: CQ_lang's IR pass deletes an uncontrolled or classically-controlled `cq_phi` outright (a global phase, D2); Sturm's `q.φ += δ` on a basis state is observationally a no-op. *Pre-3qlq the CQ half of this row was "deletes `cq_phi` on a classical operand" — there is no operand to be classical any more.* |
 | Classical functions lifted via dedicated bridge | yes (`oracle(f, q)` ↔ clone-on-taint + curated symbols) |
 | No named gates in user code | yes (CQ_lang exposes only `cq_theta` / `cq_phi` / `cq_measure` / `cq_invert_*` — no `H`, no `CNOT`, no `X` at the user surface) |
 | Symmetric primitive contract (`when(a) do not!(b) end` = CNOT) | yes — CQ_lang derives controlled forms structurally from tainted-branch shadows; same mechanism, no separate keyword |
@@ -306,9 +314,11 @@ The specific surface details have moved.
 What the project actually does now, restated for completeness:
 
 1. **`CQ.h` is the entire user surface.** Four families (`cq_theta`,
-   `cq_phi`, `cq_measure`, `cq_invert_*`) declared per-type via
-   `_Generic`. No keyword, no struct wrapper, no preprocessor pass
-   beyond standard C macros.
+   `cq_phi`, `cq_measure`, `cq_invert_*`). `cq_theta` and `cq_measure`
+   are declared per-type via `_Generic`; `cq_phi` is the single
+   register-free `void cq_phi(double angle)` and has no per-type form.
+   No keyword, no struct wrapper, no preprocessor pass beyond standard
+   C macros.
 2. **Stock Clang `-O1 -emit-llvm`** produces the bitcode the pass
    consumes. No fork, no plugin to the front end. `mem2reg` / `SROA`
    run inside `-O1` and put the IR in the plain-SSA form the pass
