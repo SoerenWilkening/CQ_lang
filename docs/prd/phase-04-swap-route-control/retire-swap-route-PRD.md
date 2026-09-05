@@ -2,7 +2,13 @@
 
 > **Status:** owner-scoped 2026-09-05 (seven decisions, §2, settled in
 > one owner conversation and recorded here verbatim in substance). **Increments 0
-> and 1 SHIPPED 2026-09-05; Increment 2 (§7, value arms) is NOT shipped.** ⚠ READ
+> and 1 are IMPLEMENTED and Rule-13-reviewed on branch `3qlq-inc1` (2026-09-05) but
+> NOT ON MAIN: the clearance review's verdict was BLOCK on finding C-1 (a mixed loop —
+> invariant root register with D4's per-bit condition PLUS a second loop-carried
+> register — leaks its `and` rails per activation where the hand-unrolled twin and the
+> pre-3qlq oracle both discharge them; `inc1-records/session-0a61aa31/clearance.md`).
+> One bounded fix round + re-clearance is owed before landing. Increment 2 (§7) is
+> implemented + round-1 reviewed on branch `3qlq-inc2`, not landed.** ⚠ READ
 > **§0 ERRATA FIRST** — the sections below are left as WRITTEN so design and
 > implementation can be diffed, and where they disagree the errata block wins.
 > Extends Phase 4
@@ -24,7 +30,8 @@
 > (round 2, two lenses + the "what else runs once before round 2" stage table).
 >
 > **Shipping status.** Increment 0 (docs + `cq_ry`) and **Increment 1** (the
-> register-free `cq_phi` by kickback, parts A and B) are **SHIPPED**. **Increment
+> register-free `cq_phi` by kickback, parts A and B) are implemented on branch
+> `3qlq-inc1` — **NOT on main** (clearance BLOCK on C-1, see the Status header). **Increment
 > 2 (value arms by controlled-copy merge, §7) is NOT** — every §7 sentence is a
 > plan, and `cqrt_cswap` is still minted at HEAD by the value-arm path and by the
 > 7.2 `AbortParkEmit`.
