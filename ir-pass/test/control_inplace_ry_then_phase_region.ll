@@ -22,10 +22,26 @@
 ; — asked structurally of the emitted gate, never from a recorded `Value *`), so the
 ; whole-DAG spine adds no reversal of either region on top.
 ;
+;
+; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
+; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)
+; binary.  The pre-Inc-1 pin — a `cqrt_rz_<W>` or `cqrt_rz_<W>_controlled` on
+; the user's REGISTER — asserted the gate PRD §1 shows is the identity on the
+; marked branch (`cqrt_rz_<W>` is TENSORED, so a routed W-bit Rz applies
+; `(-1)^popcount(target)` and can never mark |0..0>).  The stream now pinned is
+; the KICKBACK: the flag is minted into a |0> ancilla, the phase lands on the
+; FLAG with an UNCONTROLLED `cqrt_rz_i1`, the ordinary compare `_unc` returns
+; the flag to |0> on every branch, and the flag is freed.  The fixture's
+; PURPOSE (its header above) is unchanged.
+;
+; 10 line(s) of prose that annotated the OLD CHECK block were removed with
+; it — they described the pre-Inc-1 gate stream line by line.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
-; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
 
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
@@ -52,27 +68,71 @@ merge2:
   ret i32 %m
 }
 
-; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
-; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
-; region 1 — control-in-place: no rail, no route
-; CHECK:      %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
-; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F1]], i32 %[[R]], double 9.000000e-01)
-; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 5)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
-; region 2 — ALSO control-in-place since drbq Inc 2a (it was the 4.1 swap route
-; when this fixture was written), over the register region 1 relabelled. THE TWO
-; STEMS SIT SIDE BY SIDE HERE, WHICH IS NOW THIS FILE'S REAL SUBJECT: the Ry above
-; is a DAG link, frozen, never adjointed (its adjoint would need a flag the region
-; already freed); the Rz below is NOT a link, not frozen, transparent — a diagonal
-; gate relabels nothing on either branch. Same emitter, same flag mint/strip/free
-; spine, two different uncompute treatments (PRD §12.1).
-; CHECK-NEXT: %[[F2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 7)
-; CHECK-NEXT: call void @cqrt_rz_i32_controlled(i32 %[[F2]], i32 %[[R]], double 4.000000e-01)
-; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[Q]], i32 7)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
-; CHECK:      call i32 @cqrt_measure_i32(i32 %[[R]])
-; CHECK-NOT:  phi i32
-; No swap route survives on either region — window `define` -> EOF.
-; NOROUTE:     define
+; ===========================================================================
+; THE EMITTED STREAM, IN ORDER — DERIVED from this fixture's own pass output
+; (prep_a2, bd test_C_libtooling-3qlq Inc 1).  Every `%name` below is bound at
+; its DEFINITION and referenced afterwards, so the chain asserts operand
+; IDENTITY — the strip and the free name the SAME flag the mint produced
+; (bd 8txa: the golden itself must witness the pairing).  Handle names are
+; DERIVED, never typed (bd drbq Inc 4: 9 of 20 accepts named a %h1 the pass
+; never emits).  Trailing `!cq.branchphase` metadata is stripped here because
+; its NUMBER is LLVM's, not ours; its presence and count are MDCNT's job.
+; CHECK: define i32 @example(i32 %u0, i32 %u1) {
+; CHECK-NEXT: entry:
+; CHECK-NEXT: %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
+; CHECK-NEXT: %[[H2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H2]], double 3.000000e-01)
+; CHECK-NEXT: %[[H_CMP1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H]], i32 5)
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[H_CMP1]], i32 %[[H2]], double 9.000000e-01)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[H_CMP1]], i32 %[[H]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP1]])
+; CHECK-NEXT: %[[H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H]], i32 7)
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP]], double 4.000000e-01)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[H_CMP]], i32 %[[H]], i32 7)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP]])
+; CHECK-NEXT: %[[M3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H2]])
+; CHECK-NEXT: ret i32 %[[M3]]
+; CHECK-NEXT: }
+
+; ---------------------------------------------------------------------------
+; WHOLE-FILE, PURE-NEGATIVE.  No positive directive may enter this prefix: a
+; positive WINDOWS every negative after it, which is how an injected gate
+; escaped 20 of 20 blocks in bd drbq Inc 3 (F-L6-1) and again in Inc 4.
 ; NOROUTE-NOT: cqrt_cswap
+;   ^ the swap route is retired — no work rail, so no Fredkin
+; NOROUTE-NOT: cqrt_copy
+;   ^ method-B copy on a phase arm dephases the answer (Rule 7)
+; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
+;   ^ the TENSORED per-register Rz is the defect this increment removes (PRD §1). ONE complement pattern, not an enumeration of six — the shipped ABI has NINE widths and f16/f80 were absent from every pre-Inc-1 NOROUTE block (round-1 findings F-L6-4/F-L8-1/F-L4-2). The trailing `(` is load-bearing: `cqrt_rz_i1` is a textual prefix of `cqrt_rz_i16`.
+; NOROUTE-NOT: call void @cq_phi(
+;   ^ a surviving phase call is lowered or deleted, never left for the linker
+; NOROUTE-NOT: cq_phi_
+;   ^ the register form is a RESERVED NAME and declines (round-1 F-L6-1)
+;
+; MEASURED NOT APPLICABLE to this fixture (the candidate FIRES on the clean
+; output, so asserting it would be false).  Recorded rather than dropped in
+; silence — an absent assertion nobody explained is how a fence rots:
+;   * _controlled   (present in this fixture's own output)
+
+; Original negatives PRESERVED (re-measured on the Inc-1 output):
+; NOROUTE-NOT: phi i32
 ; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)
+
+; ---------------------------------------------------------------------------
+; COUNTS — ONE PATTERN PER PREFIX.  Two counts in one prefix silently become
+; an ORDER assertion, and a `-NOT` after a count in the same prefix is
+; windowed to the text past the count.  `-COUNT-n` then `-NOT` of the SAME
+; pattern is the only spelling that pins `exactly n`.
+; ACNT-COUNT-1: call void @cqrt_rz_i1(
+; ACNT-NOT:     call void @cqrt_rz_i1(
+; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-NOT:     call void @cqrt_free(
+;
+; Every `cqrt_rz_i1` the pass emits must carry `!cq.branchphase`, or the
+; whole-DAG spine reads it as a reclaimable in-place rotation and emits
+; `cqrt_rz_i1(f, -theta)`, cancelling the user's phase EXACTLY (round-1
+; F-L7-1, a CONFIRMED silent miscompile found by three lenses).  The two
+; counts are asserted SEPARATELY and must agree: 1 and 1 here.
+; MDCNT-COUNT-1: !cq.branchphase
+; MDCNT-NOT:     !cq.branchphase
