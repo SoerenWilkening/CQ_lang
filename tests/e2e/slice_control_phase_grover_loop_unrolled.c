@@ -20,14 +20,18 @@
 
 #define CQ_PI 3.14159265358979323846
 
+/* One loop-body activation of slice_control_phase_grover_loop.c, verbatim. */
 #define CQ_PHASE_GROVER_ITER             \
-    q = cq_theta(q, 0.3);                \
     if (q == 5) cq_phi(CQ_PI);           \
     q = cq_theta(q, 0.3);                \
-    if (q == 0) cq_phi(CQ_PI);
+    if (q == 0) cq_phi(CQ_PI);           \
+    q = cq_theta(q, 0.3);
 
 int slice(void) {
     int q = 0;
+
+    q = cq_theta(q, 0.3);                /* S — the SEED (see the twin's header
+                                            finding F-B2-1: outside the loop) */
 
     CQ_PHASE_GROVER_ITER
     CQ_PHASE_GROVER_ITER

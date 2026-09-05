@@ -3,13 +3,27 @@
    as a classically-bounded `for` loop, K = 3.
 
    SOURCE INTENT:
+       q = cq_theta(q, 0.3);            S  — the seed, OUTSIDE the loop
        for (i = 0; i < 3; ++i) {
-           q = cq_theta(q, 0.3);
            if (q == 5) cq_phi(PI);      O  — the oracle
            q = cq_theta(q, 0.3);
            if (q == 0) cq_phi(PI);      R0 — reflect about |0>
+           q = cq_theta(q, 0.3);
        }
        measure q
+
+   ⚠ THE SEED `cq_theta` IS OUTSIDE THE LOOP AND THAT IS LOAD-BEARING, NOT STYLE
+   (3qlq Inc 1 prep-b2, finding F-B2-1, MEASURED on BOTH binaries). Written with
+   `int q = 0;` and the first `cq_theta` INSIDE the body, `clang -O1` builds the
+   header phi `%q = phi i32 [0, entry], [%rot, latch]` — a CLASSICAL constant
+   merged with a tainted value — and `declineClassicalMuxes` refuses the module
+   with `cq taint escape: tainted value muxed by a classical-condition phi`. The
+   two-line probe `int q=0; for(i<3) q=cq_theta(q,.3); return cq_measure(q);`
+   declines with that exact string on the pre-3qlq ORACLE and on the Increment-1
+   SUBJECT alike, and adding one `cq_theta` before the loop makes BOTH accept. So
+   it is a pre-existing, arm-class-independent property of the taint layer, not
+   anything this increment introduced — and the shipped `slice_control_grover_loop.c`
+   has always seeded outside the loop for the same reason.
 
    THE POINT OF THIS SLICE IS THE TWIN. Its golden must be BYTE-IDENTICAL to
    slice_control_phase_grover_loop_unrolled.expected.log, which is the same body
@@ -43,11 +57,13 @@
 int slice(void) {
     int q = 0;
 
+    q = cq_theta(q, 0.3);                /* S — the SEED, outside the loop. */
+
     for (int i = 0; i < CQ_K; ++i) {
+        if (q == 5) cq_phi(CQ_PI);       /* O  — the oracle           */
         q = cq_theta(q, 0.3);
-        if (q == 5) cq_phi(CQ_PI);
+        if (q == 0) cq_phi(CQ_PI);       /* R0 — reflect about |0>    */
         q = cq_theta(q, 0.3);
-        if (q == 0) cq_phi(CQ_PI);
     }
 
     return cq_measure(q);
