@@ -1249,6 +1249,159 @@ CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
   return Swap;
 }
 
+
+// ── bd test_C_libtooling-3qlq Inc 1 — P1, the FLAT KICKBACK EMITTER ─────────
+//
+// The whole emitted stream, for `if (q == 5) cq_phi(PI);` (PRD §1's target):
+//
+//     cq_template_icmp_eq_i32_hl(h0, 5) -> h1        ; flag mint
+//     cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)           ; P(θ) ON THE FLAG
+//     cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)      ; flag strip → |0>
+//     cqrt_free(h1)                                  ; clean free (Rule 6)
+//
+// FOUR LINES, AND `q` IS NOT AN OPERAND OF ANY OF THEM except as the compare's
+// input. That is the entire point of the increment (PRD §1): the shipped
+// `cqrt_rz_<W>_controlled(f, h, θ)` this REPLACES was TENSORED — Rz on each
+// qubit of the register — so the marked branch got `(−1)^popcount(target)` and
+// `|0…0⟩` could not be marked at all, making every Grover golden a
+// self-consistent trace of the IDENTITY on `q`.
+//
+// WHY THERE IS NO ROUTE, NO WORK RAIL AND NO `_controlled` GATE (PRD §3). With
+// `f = c(x)` in a |0⟩ ancilla the state is `Σ a_x |x⟩|c(x)⟩`; a diagonal
+// `P(θ)` on the ANCILLA gives `Σ a_x e^{iθ c(x)} |x⟩|c(x)⟩`; the compare `_unc`
+// is the permutation `|x, c(x)⟩ → |x, 0⟩`, so the ancilla comes back |0⟩ ON
+// EVERY BRANCH and the phase is left on the branch. One single-qubit gate. The
+// `cqrt_cswap` route and the controlled-copy route are both junk-free for a
+// diagonal gate too, at `2W` Fredkin / `2W` Toffoli respectively — the kickback
+// needs neither.
+//
+// WHAT THIS SHARES WITH ITS SIBLINGS, VERBATIM (Rule 14). The mint, the `cqrt_x`
+// negation bracket, the `_unc` strip and the free are the SAME four calls
+// `emitRegion` (§B1) and `emitInPlaceRotationRegion` make, in the same order,
+// through the same `lowerCompareToFlag` / `csyms.xFn()` / `wd.freeFn()`
+// spellings. Only the gate between the brackets differs, and the merge handling:
+//
+//   * there is NO RAUW AT ALL. `emitRegion`'s M-α (`MergePhi → Q`) and
+//     `emitInPlaceRotationRegion`'s M-β (`MergePhi → last hoisted gate`) both
+//     answer "what does the merged name denote"; a kickback merges no name, so
+//     the question does not arise and neither convention is instantiated here.
+//     `R.Merge` is null by construction (`classifyPhaseKickback` sets it so) and
+//     `flattenRegion` therefore never touches a φ — the same shape
+//     `lowerControlledIOSinks` flattens for the void-I/O diamond.
+//   * the gate is NOT recorded in `taint.ControlledRotations`. That map is the
+//     hoist-and-defer channel to `lowerRotations` for a gate that must become
+//     `_controlled`; this gate is UNCONTROLLED and is emitted here, finished.
+//
+// THE ZIOV SHARED-FLAG PATH IS HONOURED (`R.ShareCondFlag`): when the condition
+// compare is ALSO read as data, the flag is minted at the COMPARE so it
+// dominates every data use, and the strip+free are SKIPPED because the data
+// lineage owns the flag — byte-for-byte the rule `emitRegion` follows.
+void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
+                             const ControlledSymbols &csyms, TaintSet &taint) {
+  // ---- 0. RE-VALIDATE THE PLAN BY SSA IDENTITY, BEFORE MUTATING ANYTHING.
+  // Every decline below precedes the FIRST emitted instruction, for the reason
+  // the sibling emitters state: a region that declines MID-STREAM leaves a
+  // minted flag and a half-lowered arm behind (the Inc-2a round-1 F-5 finding).
+  auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
+  auto *BI = R.Pred ? dyn_cast<BranchInst>(R.Pred->getTerminator()) : nullptr;
+  auto *Phase = R.Shadow.size() == 1 ? dyn_cast<CallInst>(R.Shadow.front())
+                                     : nullptr;
+  if (!Cond || !BI || !BI->isConditional() || !R.Arm || !R.MergeBB || !Phase ||
+      Phase->getParent() != R.Arm || Phase->arg_size() != 1 ||
+      BI->getCondition() != Cond) {
+    if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
+      diagnoseUnderControl(A, "control flow");
+    else if (Phase)
+      diagnoseUnderControl(Phase, "control flow");
+    return;
+  }
+  // The ANGLE is defined outside the arm (the classifier's `Arm->size() == 2`
+  // makes that structural), so it dominates `BI` and the hoisted gate can read
+  // it. Asked again here because it is an EMISSION fact, not a shape fact.
+  if (auto *AngI = dyn_cast<Instruction>(Phase->getArgOperand(0)))
+    if (AngI->getParent() == R.Arm) {
+      diagnoseUnderControl(Phase, "control flow");
+      return;
+    }
+  // `cqrt_rz_i1` is the ONLY Rz this pass emits after 3qlq (PRD §5). Resolve it
+  // BEFORE any mutation so a resolution failure is a decline, not a half-stream.
+  FunctionCallee Rz = wd.rzRtFn("i1");
+  if (!Rz) {
+    diagnoseUnderControl(Phase, "control flow");
+    return;
+  }
+
+  // ---- EMISSION STARTS HERE. Nothing below may decline.
+  const DebugLoc DL = Phase->getDebugLoc();
+  IRBuilder<> B(BI);
+  auto stamp = [&](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+    return C;
+  };
+
+  // ---- 1. FLAG MINT — `cq_template_icmp_<pred>_<W>_hl(q, lit)`. Position rule
+  // copied from `emitRegion` step 1: at the COMPARE on the ziov share path (so
+  // the one physical flag dominates every data use), at the branch otherwise.
+  Instruction *FlagAt = R.ShareCondFlag ? Cond->getNextNode() : BI;
+  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
+                                   /*inverse=*/false, /*before=*/FlagAt);
+  if (!Flag)
+    // UNREACHABLE — `classifyPhaseKickback` asked `compareFlagMintable` in
+    // lockstep with this call, and `lowerCompareToFlag`'s own failure path
+    // diagnoses with `DS_Error`, which `LLVMContext::diagnose` turns into
+    // `exit(1)` before this line is reached. Defence in depth against a future
+    // `DS_Warning` re-grading, not a decline: nothing has been emitted yet.
+    return;
+  if (R.ShareCondFlag)
+    taint.SharedCondFlags[Cond] = Flag;
+
+  // ---- 2. THE GATE — `cqrt_rz_i1(f, θ)`, UNCONTROLLED, `cqrt_x`-bracketed for
+  // a ¬flag arm. The bracket is the self-inverse pair every other "fires on ¬f"
+  // emission in this file uses, so the two spellings cannot drift; a ¬flag arm
+  // therefore carries TWO `cqrt_x(f)`, the same arithmetic the flat phase path
+  // has since Inc 2a (the route carries FOUR, bracketing each of its two
+  // cswaps).
+  FunctionCallee X = csyms.xFn();
+  if (R.ArmNegated)
+    stamp(B.CreateCall(X, {Flag}));
+  stamp(B.CreateCall(Rz, {Flag, Phase->getArgOperand(0)}));
+  if (R.ArmNegated)
+    stamp(B.CreateCall(X, {Flag}));
+
+  // ---- 3. STRIP + FREE. The strip recomputes the predicate on the CONDITION's
+  // OWN registers and XORs it back onto the flag, returning it to |0⟩ so the
+  // free is clean (Rule 6). Its validity here is unconditional in a way no other
+  // arm class can claim: this region emits NO gate on any condition register at
+  // all, so the basis the strip reads is identically the basis the mint read.
+  // (`emitRegion` needs §3c for the same conclusion; the Ry path needs S8's
+  // disjoint-wire proof.)
+  //
+  // SKIPPED WHOLE on the ziov share path: the data lineage owns the flag and
+  // discharges it downstream — freeing it here would be a use-after-free.
+  if (!R.ShareCondFlag) {
+    auto *Strip = dyn_cast_or_null<CallInst>(
+        lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                           /*before=*/BI, /*negate=*/false,
+                           /*railToStrip=*/Flag));
+    if (Strip)
+      taint.DischargedFlagGates.insert(Strip);
+    stamp(B.CreateCall(wd.freeFn(), {Flag}));
+  }
+
+  // ---- 4. ERASE THE ARM CALL, THEN FLATTEN. The call is erased rather than
+  // hoisted: its whole content is now the `cqrt_rz_i1` above. Scrub it from
+  // `PhaseCalls` first so `deleteGlobalPhases` (which derives its survivors from
+  // the IR) and any later module walk cannot dereference freed memory.
+  auto &PC = taint.PhaseCalls;
+  PC.erase(std::remove(PC.begin(), PC.end(), Phase), PC.end());
+  Phase->eraseFromParent();
+  // `R.Merge` is null, so `flattenRegion` dissolves no φ — it splices the arm
+  // and merge blocks into `Pred` and rewires the branch, exactly as it does for
+  // the void-I/O diamond.
+  flattenRegion(R, taint);
+}
+
 void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
                          const ControlPlan &plan) {
   if (plan.Regions.empty())
@@ -1356,10 +1509,29 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // it was capped at one, because chained value arms used to decline outright.
   // Qubits are not scarce in this regime (PRD §8.2); if that ever changes, this
   // is the shape to revisit first.
+  //
+  // WIDENED to `PhaseKickback` (bd test_C_libtooling-3qlq Inc 1). The hcrg
+  // argument above transfers WORD FOR WORD to a kickback region: its flatten
+  // erases exactly `{Arm, MergeBB}` (`ArmFalse` is null), its `Pred` survives by
+  // construction, and its emitter inserts positionally into that `Pred` — so
+  // emitting the LATER region first is sound for the identical reason. The
+  // STRUCTURAL LEMMA transfers too, but only because `classifyPhaseKickback`
+  // asks `MergeBB->hasNPredecessors(2)` explicitly: point 2 (an arm has one
+  // pred, a merge two, so they are never the same block) and point 3 (two
+  // distinct regions cannot share a merge) are read off `soleMergePhi`'s
+  // 2-incoming φ for a `BranchRegion`, and a kickback merge has no φ to read.
+  // That is why the check is in the classifier and not left to the flatten.
+  //
+  // MEASURED: without this widening the flagship two-diamond Grover customer
+  // (`if (q==5) cq_phi(π); … if (q==0) cq_phi(π);` — PRD §1's own program)
+  // declines `control flow`, because region 2's `Pred` IS region 1's `MergeBB`.
   auto sequentialChainAlias = [&](size_t ai, size_t bi) {
+    auto reorderable = [](const ControlRegion &R) {
+      return R.Kind == ControlRegion::BranchRegion ||
+             R.Kind == ControlRegion::PhaseKickback;
+    };
     const ControlRegion &A = Regions[ai], &B = Regions[bi];
-    if (A.Kind != ControlRegion::BranchRegion ||
-        B.Kind != ControlRegion::BranchRegion)
+    if (!reorderable(A) || !reorderable(B))
       return false;
     if (A.Depth != 0 || B.Depth != 0 || hasChild(ai) || hasChild(bi))
       return false;
@@ -1592,6 +1764,22 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       // carries no `ParentIdx` nest link, so dispatch + continue BEFORE the
       // Depth / child-lookup branch.
       emitClassicalCallArmRegion(R, wd, csyms, taint);
+      continue;
+    }
+    if (R.Kind == ControlRegion::PhaseKickback) {
+      // 3qlq Inc 1 (P1) — the register-free BRANCH PHASE by kickback: mint the
+      // flag, ONE UNCONTROLLED `cqrt_rz_i1(f, θ)` on it, strip, free, flatten.
+      // Its Pred/Arm/MergeBB are set (a real diamond) so the cross-region
+      // pre-flight above covered the block-lifetime hazard; `Merge` is NULL (a
+      // void arm has no φ), which is exactly why detection had to PRE-PEEL it.
+      // No nest link — dispatch + continue BEFORE the Depth / child-lookup
+      // branch. The in-loop `Pred` is recorded for the same reason `emitRegion`
+      // records it (the round-2 rail collapse's sole trigger); a kickback leaves
+      // nothing FOR that collapse to claim, but the loop may hold other regions
+      // that do.
+      if (R.InLoop)
+        taint.InLoopFlattenedPreds.insert(R.Pred);
+      emitPhaseKickbackRegion(R, wd, csyms, taint);
       continue;
     }
     if (R.Depth > 0)

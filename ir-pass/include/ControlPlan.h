@@ -220,6 +220,17 @@ struct ControlRegion {
   // qram-store branch) and strips+frees the flag (the flag-mint compare is a
   // reversible DAG ancestor, §6.0 compare `_unc`). `Pred`/`Arm`/`MergeBB`/
   // `Condition`/`ArmNegated` carry the shape as a `BranchRegion` diamond does.
+  // PhaseKickback (bd test_C_libtooling-3qlq Inc 1, PRD
+  // `retire-swap-route-PRD.md` §6.2 row P1) — a flat tainted-condition DIAMOND
+  // whose arm is exactly ONE register-free `call void @cq_phi(double θ)` and a
+  // `br`. `Merge` is NULL by construction (a void arm produces no merge φ, which
+  // is precisely why `recoverRegion` cannot see this shape and why it is
+  // pre-peeled); `MergeBB` IS set, so `flattenRegion` and
+  // `flatRegionRollableInLoop` work on it exactly as they do for the phi-less
+  // void-I/O diamond `lowerControlledIOSinks` builds. `Shadow` holds the one
+  // phase call; `Condition`/`Pred`/`Arm`/`ArmNegated` carry the shape as a
+  // `BranchRegion` diamond does. Emitted by
+  // `SwapRouteEmit::emitPhaseKickbackRegion`.
   enum Kind {
     SelectRegion,
     BranchRegion,
@@ -227,7 +238,8 @@ struct ControlRegion {
     SwitchRegion,
     ClassicalCallArm,
     AbortPark,
-    GuardedStoreArm
+    GuardedStoreArm,
+    PhaseKickback
   } Kind = BranchRegion;
 
   // The merge node: a `SelectInst` (select-sourced) or the merge-block

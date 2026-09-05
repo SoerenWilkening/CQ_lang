@@ -62,6 +62,15 @@ public:
   // intrinsic is not declared — that's the cue to skip per-suffix work.
   llvm::Function *thetaFn(llvm::StringRef sfx) const;    // @cq_theta_<sfx>
   llvm::Function *phiFn(llvm::StringRef sfx) const;      // @cq_phi_<sfx>
+
+  // bd test_C_libtooling-3qlq Inc 1 — the REGISTER-FREE branch phase.
+  // `void @cq_phi(double)`, resolved by EXACT name (no suffix), so it can
+  // never collide with the legacy `@cq_phi_<sfx>` family above:
+  // `StringRef("cq_phi").starts_with("cq_phi_")` is FALSE (6 chars vs a
+  // 7-char prefix), which is what makes every `isPhiCall`-style recognizer in
+  // the tree VACUOUS for the new call rather than accidentally matching it
+  // (PRD `retire-swap-route-PRD.md` §6.2 P6 — vacuous, not deleted).
+  llvm::Function *phaseFn() const;                       // @cq_phi
   llvm::Function *measureFn(llvm::StringRef sfx) const;  // @cq_measure_<sfx>
 
   // Runtime / template symbol resolvers. Each call is idempotent and

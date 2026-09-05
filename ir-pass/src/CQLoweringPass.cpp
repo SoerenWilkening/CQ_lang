@@ -63,11 +63,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
 
   // No quantum work anywhere in the module: leave the IR byte-identical
   // and (crucially) emit no runtime/template decls. The
-  // passthrough_no_quantum LIT fixture pins this path. PhiCalls is in the
-  // predicate so a classical-only-phi module still runs (and deletes the
-  // phi) — else an unresolved @cq_phi_* extern is a Stage-3 link error.
+  // passthrough_no_quantum LIT fixture pins this path. `PhaseCalls` is in the
+  // predicate so a module whose ONLY quantum surface is an uncontrolled
+  // `void @cq_phi(double)` still runs (and DELETES it, D2) — else the
+  // unresolved `@cq_phi` extern is a Stage-3 link error. (`PhiCalls` is
+  // permanently empty since 3qlq Inc 1 and is kept in the predicate as the
+  // vacuous term it now is; see TaintPropagation.h.)
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
-      taint.MeasureCalls.empty())
+      taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
   // p119: tainted by-ref MATH (frexp/modf/remquo) recognition is REMOVED — those
@@ -322,6 +325,22 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   ControlPlan plan = detectControlRegions(M, wd, taint);
   lowerControlRegions(M, wd, taint, plan);
 
+  // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
+  // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
+  // classically-controlled branch phase is a GLOBAL phase, unobservable, and
+  // deleting it is a documented semantic rather than a diagnostic.
+  //
+  // POSITION IS THE WHOLE SOUNDNESS ARGUMENT and it is why this call sits HERE
+  // and not one line earlier: `detectControlRegions`/`lowerControlRegions` have
+  // just run, so every tainted `br`/`switch` has been CLAIMED (its emitter
+  // erased the phase call it claimed) or DECLINED loudly — Rule 1's "there is no
+  // third path". A survivor therefore sits under CLASSICAL control only. That is
+  // ASSERTED, not assumed: a survivor reachable through a tainted branch
+  // condition declines `unclaimed branch phase under quantum control` instead of
+  // vanishing (PRD §10.3 lens 4), and a survivor with a TAINTED ANGLE declines
+  // with the retired family's own `quantum-derived rotation angle` string.
+  deleteGlobalPhases(M, wd, taint);
+
   // Bounded loops, ROUND 2 (Phase 7.3 Increment 3, bd test_C_libtooling-8h7d.5).
   // `lowerLoops` above deliberately leaves a loop with IN-BODY tainted control
   // unclaimed (`tryCaseA` gate L2) — pre-flatten it cannot peel the persistent
@@ -525,7 +544,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   WidthDispatch wd(M);
   TaintSet taint = propagate(M, wd);
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
-      taint.MeasureCalls.empty())
+      taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return false;
 
   // Restrict the work lists to the requested function. Callers of
@@ -549,9 +568,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   };
   onlyInF(taint.ThetaCalls);
   onlyInF(taint.PhiCalls);
+  onlyInF(taint.PhaseCalls);
   onlyInF(taint.MeasureCalls);
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
-      taint.MeasureCalls.empty())
+      taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return false;
 
   // p119: by-ref math canonicalization removed (library functions, source-injected
@@ -687,6 +707,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // IMPLEMENTATION §6.5).
   ControlPlan plan = detectControlRegions(M, wd, taint);
   lowerControlRegions(M, wd, taint, plan);
+  // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
+  // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the slot
+  // immediately after `lowerControlRegions` is the only sound one.
+  deleteGlobalPhases(M, wd, taint);
   // Issue dugh (Phase 4×6): the SECOND propagation round mirrored in this entry
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // pre-`lowerIOSinks`/`lowerQramReads`/`declineClassicalMuxes`/`lowerRotations`

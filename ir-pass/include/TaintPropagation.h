@@ -40,13 +40,48 @@ struct SpecPlan;
 struct TaintSet {
   // Front-end intrinsic call sites collected during the propagation walk,
   // in basic-block order. `ThetaCalls` seeds the taint sources and feeds
-  // `RotationLowering`; `PhiCalls` is collected unconditionally (a phi on a
-  // classical operand must still be deleted) but does NOT seed taint;
-  // `MeasureCalls` is the work list for `MeasureLowering`. Collecting them
-  // here avoids re-walking the module from those passes.
+  // `RotationLowering`; `MeasureCalls` is the work list for
+  // `MeasureLowering`. Collecting them here avoids re-walking the module
+  // from those passes.
   llvm::SmallVector<llvm::CallInst *, 8> ThetaCalls;
+
+  // ⚠ `PhiCalls` IS PERMANENTLY EMPTY SINCE bd test_C_libtooling-3qlq Inc 1
+  // (2026-09-05). It used to hold the 15-width `@cq_phi_<sfx>(x, angle)`
+  // family; that family is RETIRED (`CQ.h` no longer declares it, and
+  // `resolveSources` no longer resolves it), so NOTHING pushes into this
+  // vector any more — `grep -rn "PhiCalls.push_back" ir-pass/` finds
+  // nothing. It is KEPT rather than deleted because PRD
+  // `retire-swap-route-PRD.md` §6.2 row P6 rules that the ~30 "Rz is
+  // diagonal and exempt" clauses reading it become VACUOUS, not deleted:
+  // every one of them is a `for`/`insert(begin,end)`/`empty()` over this
+  // vector and is therefore correct — and inert — on an empty one, whereas
+  // deleting the field would mean editing ~30 sites in the Rule-13 lowering
+  // core to no behavioural end.
+  //
+  // The register-free branch phase does NOT reuse this list. It has its own,
+  // `PhaseCalls` below, precisely so that no clause written for a call with
+  // an arg-0 WIRE and an arg-1 ANGLE can ever be handed a `void(double)`
+  // call whose `getArgOperand(0)` is the angle and whose `getArgOperand(1)`
+  // is out of range.
   llvm::SmallVector<llvm::CallInst *, 8> PhiCalls;
+
   llvm::SmallVector<llvm::CallInst *, 8> MeasureCalls;
+
+  // bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §4.1,
+  // owner decision D1) — the REGISTER-FREE `void @cq_phi(double)` BRANCH
+  // PHASE call sites, in basic-block order.
+  //
+  // It is neither a taint SOURCE nor a taint PROPAGATOR: it has no data
+  // operand at all, so there is nothing to propagate through. It is ordered
+  // by the BLOCK it sits in, not by taint. Its single operand is the
+  // classical ANGLE (Rule 3) — a TAINTED angle declines loudly.
+  //
+  // Consumers: the control classifiers (which claim a call sitting in a
+  // tainted arm and lower it by kickback on the condition flag) and
+  // `deleteGlobalPhases` (which deletes every surviving one — an
+  // uncontrolled or classically-controlled branch phase is a GLOBAL phase,
+  // owner decision D2). Emitters that erase one MUST scrub it from here.
+  llvm::SmallVector<llvm::CallInst *, 8> PhaseCalls;
 
   // Front-end intrinsic call sites reached via `invoke` instead of a direct
   // `call` (test_C_libtooling-rzs9). `collectAndSeed` declines each one LOUDLY
@@ -511,6 +546,50 @@ struct TaintSet {
 // propagation. The work-list is seeded with each theta's RESULT (the
 // suffix's natural ABI scalar — plain SSA, no struct wrapper).
 TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
+
+// Is `CI` a REGISTER-FREE branch-phase call (`void @cq_phi(double)`, bd
+// test_C_libtooling-3qlq Inc 1)?
+//
+// EXACT MEMBERSHIP in `taint.PhaseCalls` — deliberately NOT a name test, and
+// this is the project's standing accept-side discipline, not a style choice
+// (`declineTaintEscapes`' "never name-prefix matching on the ACCEPT side (a user
+// function named `cq_theta_evil` must not slip through)"). `PhaseCalls` holds
+// exactly the calls whose callee resolved through `WidthDispatch::phaseFn()`
+// AND passed the `void(double)` prototype validation, so a user's own
+// `void cq_phi(double, double)` or an `i32 cq_phi(double)` is not in it — it was
+// already declined loudly at collection and must not be re-read here as if the
+// operand at index 0 were an angle.
+//
+// ONE SPELLING, shared by every consumer (Rule 14): the P1 kickback classifier,
+// the P2 angle-select classifier and `deleteGlobalPhases`. Linear over a
+// SmallVector that holds one entry per phase call in the module.
+bool isRegisterFreePhaseCall(const llvm::CallInst *CI, const TaintSet &taint);
+
+// bd test_C_libtooling-3qlq Inc 1, PRD §6.2 row P7 (owner decision D2) — DELETE
+// every SURVIVING register-free `cq_phi`, and ASSERT the Rule-1 invariant that
+// makes the deletion sound.
+//
+// An uncontrolled or classically-controlled branch phase multiplies the WHOLE
+// state by `e^{iθ}`: a global phase, unobservable, and therefore deleted. It is
+// a documented semantic, not a diagnostic (D2, owner question Q2 assumed answer:
+// no remark).
+//
+// SOUNDNESS RESTS ENTIRELY ON THE POSITION OF THIS STAGE. It runs immediately
+// after `lowerControlRegions`, by which point `detectControlRegions` has either
+// CLAIMED every tainted `br`/`switch` (and its emitter erased the phase call it
+// claimed) or DECLINED it loudly — Rule 1's "there is no third path". So a
+// SURVIVING phase call sits under CLASSICAL control only. That is asserted, not
+// assumed: a survivor whose block is reachable through a TAINTED branch
+// condition is a violation of the invariant, and it declines LOUDLY
+// (`unclaimed branch phase under quantum control`) instead of being deleted —
+// deleting it would silently drop a quantum-conditional phase (PRD §10.3 lens
+// 4).
+//
+// A survivor whose ANGLE is TAINTED also declines, with the same
+// `quantum-derived rotation angle` string the retired suffixed family used: an
+// accepted angle select (P2) has already been erased by its emitter, so a
+// tainted angle reaching here is one no classifier claimed.
+void deleteGlobalPhases(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
 // Issue dugh (Phase 4×6) — the SECOND propagation round for control-merge
 // out-rails. Wired right AFTER `lowerControlRegions` in BOTH pipeline entry

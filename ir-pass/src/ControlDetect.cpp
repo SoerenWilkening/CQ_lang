@@ -20,6 +20,7 @@
 #include "ControlPlan.h"
 
 #include "AbortParkEmit.h"
+#include "ArmAnalysis.h"   // classifyPhaseKickback (3qlq Inc 1 P1 pre-peel)
 #include "ArmClassify.h"
 #include "ControlShape.h"
 #include "GuardedStoreArmEmit.h"  // classifyGuardedStoreArm (iw81.7)
@@ -499,6 +500,34 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
   case GuardedStoreDisp::Declined:
     return;
   case GuardedStoreDisp::NotApplicable:
+    break;
+  }
+  // bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §6.2 row
+  // P1) — the register-free BRANCH PHASE, tried BEFORE `recoverRegion` for the
+  // THIRD time in this function and for the identical reason: its arm is
+  // `call void @cq_phi(double θ)`, a VOID call, so the merge block carries no φ
+  // for the region and all three of `recoverRegion`'s recognizers — each of
+  // which requires a non-null `soleMergePhi` — fall through to `OffPattern`.
+  // MEASURED on the pre-increment oracle: the flagship Grover customer declined
+  // `control flow` (via `offPatternDisposition`'s catch-all) with no lowering at
+  // all.
+  //
+  // ORDER WITHIN THE PRE-PEELS IS NOT LOAD-BEARING and that is a checked
+  // property, not luck: an abort/exit arm ends in `unreachable` (this
+  // classifier's `uncondSucc(arm) == merge` shape test fails), and a guarded
+  // Shadow store arm holds a `store` beside nothing this classifier recognizes
+  // (its `NumPhase == 0` early-out). The three accept classes are disjoint by
+  // arm CONTENT, so each pre-peel returns `NotApplicable` on the other two.
+  switch (classifyPhaseKickback(BI, Taint, R, DT, LI)) {
+  case PhaseKickbackDisp::Accept:
+    Plan.Regions.push_back(R);
+    return;
+  case PhaseKickbackDisp::Declined:
+    return;
+  case PhaseKickbackDisp::NotApplicable:
+    // `R` was used as scratch by the classifier (as it is by the two above);
+    // reset it so `recoverRegion` starts from a clean region.
+    R = ControlRegion();
     break;
   }
   switch (recoverRegion(BI, Taint, R)) {

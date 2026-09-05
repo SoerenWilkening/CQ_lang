@@ -3341,6 +3341,251 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   return ArmDisposition::Accept;
 }
 
+// ── bd test_C_libtooling-3qlq Inc 1 — P1, the FLAT KICKBACK DIAMOND ──────────
+//
+// `if (COND(q)) cq_phi(θ);` with the REGISTER-FREE `void @cq_phi(double)`
+// (PRD `retire-swap-route-PRD.md` §6.2 row P1, owner decision D1).
+//
+// WHY THIS IS A SEPARATE CLASSIFIER AND NOT A `classifyArms` ARM CLASS. The arm
+// carries no VALUE: `cq_phi` returns nothing, so the merge block has NO φ for
+// this region at all. `recoverRegion`'s three shape recognizers each require a
+// non-null `soleMergePhi`, so the region falls through to `RegionShape::
+// OffPattern` and declines `control flow` (MEASURED on the pre-increment oracle
+// for the flagship Grover customer). This is the same seam
+// `lowerControlledIOSinks` (7.6) and `classifyAbortPark` (7.2 Inc 3) sit in, and
+// it is a PRE-PEEL in `handleBranchRegion` for the same reason they are.
+//
+// THE LOWERING IS KICKBACK, AND IT TOUCHES `q` NOT AT ALL (PRD §3). With
+// `f = COND(x)` minted into a |0⟩ ancilla the state is `Σ a_x |x⟩|c(x)⟩`;
+// `P(θ) = diag(1, e^{iθ})` ON THE FLAG gives `Σ a_x e^{iθ c(x)} |x⟩|c(x)⟩`; the
+// ordinary compare `_unc` strip (a permutation `|x, c(x)⟩ → |x, 0⟩`) returns the
+// ancilla to |0⟩ ON EVERY BRANCH, and the phase is left on the BRANCH. That is
+// why the emitted gate is `cqrt_rz_i1` on the FLAG and never a `_controlled`
+// gate on the register: the register is not an operand of anything this region
+// emits. (Under `Rz(θ) = diag(e^{−iθ/2}, e^{iθ/2})` the difference from `P(θ)`
+// is a global phase — `cqrt_rz_i1` is the gate either way.)
+//
+// WHAT THE FENCES THEREFORE ARE, AND ARE NOT. The condition register is NOT
+// relabelled by a kickback (no gate on `q`, diagonal or otherwise), so the
+// register-side fences of the drbq rotation arm — R4's disjoint-wire proof, R6's
+// stale-record read, the structural freeze — have no subject here and are not
+// asked. The CONDITION-side fences are asked in full and are exactly
+// `classifyArms`' own, in its order and with its strings: `CmpInst` +
+// `comparePredLowerable`, `condDataUseDisposition` (the ziov shared-flag path),
+// `condProvenance` + `condWireDisposition` (a non-diagonal Ry between compare
+// and branch would make the mint read a different basis than the source
+// compare), and `compareFlagMintable` (Q+Q has no mint).
+//
+// Returns `Accept` with `R` populated as a `PhaseKickback` region — `Merge` is
+// deliberately NULL (there is no φ to dissolve) while `MergeBB` is set, exactly
+// as `lowerControlledIOSinks` builds its synthetic flatten region.
+PhaseKickbackDisp classifyPhaseKickback(BranchInst *BI, TaintSet &Taint,
+                                        ControlRegion &Region,
+                                        const DominatorTree *DT,
+                                        const LoopInfo *LI) {
+  if (!BI->isConditional())
+    return PhaseKickbackDisp::NotApplicable;
+  BasicBlock *Pred = BI->getParent();
+  BasicBlock *S0 = BI->getSuccessor(0);
+  BasicBlock *S1 = BI->getSuccessor(1);
+
+  // ---- 1. SHAPE. A single-predecessor arm reconverging directly at the
+  // straight-through successor, in either polarity (Rule 9: `clang -O1`
+  // canonicalizes `if(q!=k)` so the gate arm is the FALSE successor).
+  BasicBlock *Arm = nullptr;
+  BasicBlock *MergeBB = nullptr;
+  bool Negated = false;
+  if (uncondSucc(S0) == S1 && S0->getSinglePredecessor() == Pred) {
+    Arm = S0;
+    MergeBB = S1;
+  } else if (uncondSucc(S1) == S0 && S1->getSinglePredecessor() == Pred) {
+    Arm = S1;
+    MergeBB = S0;
+    Negated = true;
+  } else {
+    // Not a diamond at all. An if/else with a `cq_phi` in BOTH arms is
+    // deliberately NOT recognized here: `clang -O1` never produces it (it sinks
+    // the two calls into ONE call on a `select` over the ANGLE — PRD §6.1 row 2,
+    // MEASURED — which is P2's shape and is claimed by `classifyAngleSelect`),
+    // so the two-arm form is reachable only from hand-written IR and rides the
+    // conservative fall-through decline rather than a second, untested emitter.
+    return PhaseKickbackDisp::NotApplicable;
+  }
+  // The merge must be the clean TWO-predecessor join `{Pred, Arm}`.
+  //
+  // LOAD-BEARING TWICE, not a tidiness check. (i) `flattenRegion` SPLICES the
+  // arm and merge into `Pred` and ERASES the merge; a THIRD predecessor (a back
+  // edge, a `goto` target) would have its edge silently destroyed. (ii) it is
+  // what makes `lowerControlRegions`' STRUCTURAL LEMMA — and therefore the hcrg
+  // sequential-chain reordering this Kind is admitted to — hold here: for a
+  // `BranchRegion` the lemma reads "a merge has exactly two preds" off
+  // `soleMergePhi`'s 2-incoming φ, and a kickback merge has NO φ to read it off,
+  // so the fact must be asked directly. `lowerControlledIOSinks` asks the same
+  // question of its own phi-less void diamond, for the same reason.
+  if (!MergeBB->hasNPredecessors(2))
+    return PhaseKickbackDisp::NotApplicable;
+
+  // ---- 2. ARM CONTENT. Exactly `{ call void @cq_phi(double θ); br merge }` —
+  // block size 2 with the phase call FIRST, the same strict spelling
+  // `lowerControlledIOSinks` uses for its void arm (`IOSinkLowering.cpp:587`).
+  // Strictness is load-bearing twice over: it puts the ANGLE's definition
+  // OUTSIDE the arm (so it dominates the branch the gate is hoisted to), and it
+  // is what makes "this arm is a pure phase" a structural fact rather than a
+  // walk.
+  //
+  // A block that HOLDS a phase call but is not exactly that is partitioned here
+  // rather than left to fall through, because the fall-through message
+  // (`control flow`) would name neither cause:
+  //   * TWO OR MORE phase calls → `multiple branch phases in one arm`. Summing
+  //     the angles is the 2b rounding class again (`fadd` of two constants, a
+  //     value the source never named landing in a gate slot); it is a filed
+  //     follow-on, not this increment (PRD §6.3, §9).
+  //   * a phase call BESIDE anything else (an Ry, a value op) → NotApplicable,
+  //     and the fall-through owns it: with a merge φ present `classifyArms`
+  //     declines `impure phase arm`, and without one `recoverRegion` declines
+  //     `control flow`. Both are loud; neither is this shape.
+  CallInst *Phase = nullptr;
+  unsigned NumPhase = 0;
+  for (Instruction &I : *Arm) {
+    auto *CI = dyn_cast<CallInst>(&I);
+    if (!CI)
+      continue;
+    if (!isRegisterFreePhaseCall(CI, Taint))
+      continue;
+    ++NumPhase;
+    if (!Phase)
+      Phase = CI;
+  }
+  if (NumPhase == 0)
+    return PhaseKickbackDisp::NotApplicable;
+  if (NumPhase > 1) {
+    diagnoseUnderControl(Phase, "multiple branch phases in one arm");
+    return PhaseKickbackDisp::Declined;
+  }
+  if (Arm->size() != 2 || &Arm->front() != Phase)
+    return PhaseKickbackDisp::NotApplicable;  // mixed arm — see above.
+
+  // ---- 3. THE ANGLE IS CLASSICAL (Rule 3). A tainted angle would put quantum
+  // data in a gate's classical slot; it declines in the SAME dialect and with
+  // the SAME string the retired suffixed family used
+  // (`RotationLowering::declineTaintedAngle`), so no fixture learns a new
+  // spelling for an unchanged rule.
+  if (Phase->arg_size() != 1)
+    return PhaseKickbackDisp::NotApplicable;
+  if (Taint.Tainted.count(Phase->getArgOperand(0))) {
+    diagnoseUnderControl(Phase, "rotation angle");
+    return PhaseKickbackDisp::Declined;
+  }
+
+  // ---- 4. POPULATE THE REGION before the condition fences, so every
+  // diagnostic below can anchor on it exactly as `classifyArms`' do.
+  Region.Kind = ControlRegion::PhaseKickback;
+  Region.Condition = BI->getCondition();
+  Region.Pred = Pred;
+  Region.Arm = Arm;
+  Region.MergeBB = MergeBB;
+  Region.Merge = nullptr;  // there is no φ — see the header note.
+  Region.ArmNegated = Negated;
+  Region.Shadow.assign(1, Phase);
+  Region.ClassArm = ArmClass::Phase;
+
+  // ---- 5. THE CONDITION MUST BE A LOWERABLE SINGLE COMPARE.
+  //
+  // A bare tainted `i1` (`_Bool b = cq_theta(b0,θ); if (b) cq_phi(θ);`) is NOT
+  // this shape and gets its own message: the correct lowering there mints
+  // NOTHING — the gate belongs directly on `b`'s own rail — and that is filed as
+  // Inc 1b (PRD §6.3, §9, owner question Q4 assumed answer). A compound
+  // `select i1` condition (`&&`/`||`, the folded nest — PRD §6.1 rows 3/4) is
+  // P3/P4, a SEPARATE increment; it is not a `CmpInst` either, so it takes the
+  // same partitioned message rather than a silent fall-through.
+  auto *Cmp = dyn_cast<CmpInst>(Region.Condition);
+  if (!Cmp) {
+    diagnoseUnderControl(BI, "branch phase on a bare i1 condition");
+    return PhaseKickbackDisp::Declined;
+  }
+  if (!comparePredLowerable(Cmp)) {
+    diagnoseUnderControl(declAnchor(Region), "control condition has no template");
+    return PhaseKickbackDisp::Declined;
+  }
+  // Q+Q: the flag mint passes no Q+Q width (pre-existing, PRD §6.3 / §9). Asked
+  // by the SAME dry-run predicate the mint itself uses (Rule 14), so detection
+  // and emission cannot disagree.
+  if (!compareFlagMintable(Cmp, Taint)) {
+    diagnoseUnderControl(declAnchor(Region), "control flow");
+    return PhaseKickbackDisp::Declined;
+  }
+
+  // ---- 6. THE CONDITION'S DATA USES AND ITS WIRE — `classifyArms`' fences,
+  // verbatim in content, order and string.
+  bool HasDataUse = false;
+  for (const User *U : Region.Condition->users())
+    if (!isa<BranchInst>(U)) {
+      HasDataUse = true;
+      break;
+    }
+  if (HasDataUse) {
+    switch (condDataUseDisposition(Cmp, Region.Pred, Taint)) {
+    case CondDataDisp::ShareOk:
+      Region.ShareCondFlag = true;
+      break;
+    case CondDataDisp::MeasuredEarly:
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition measured before the control route");
+      return PhaseKickbackDisp::Declined;
+    case CondDataDisp::Unowned:
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition data use neither escaped nor measured");
+      return PhaseKickbackDisp::Declined;
+    case CondDataDisp::Unlowerable:
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition data use has no template");
+      return PhaseKickbackDisp::Declined;
+    }
+  }
+
+  SmallPtrSet<Value *, 16> Prov;
+  condProvenance(Region.Condition, Taint, Prov);
+  // The flag is minted at the BRANCH. A tainted-operand `cq_theta` (a
+  // NON-DIAGONAL Ry, which genuinely moves the register) between the compare and
+  // the branch makes that mint read a different basis than the source compare —
+  // the wrong branch is marked and the strip does not return the flag to |0⟩.
+  //
+  // ⚠ P1's `ProvenPostRegion` HALF IS AN ACCEPT HERE, and the reason is exactly
+  // the argument drbq Inc 3 used to widen it from `!SawPhaseArm` to
+  // `!(SawPhaseArm || SawRotationArm)`: `ProvenPostRegion` means the offending
+  // gate is proven to execute AFTER this region, and a kickback — which copies
+  // nothing, replays nothing and allocates no work rail — leaves nothing behind
+  // for that later gate to invalidate. A kickback is strictly LESS invasive than
+  // an in-place rotation arm, which already carries the accept. So the
+  // disposition is: DeclineNow declines, ProvenPostRegion accepts.
+  if (condWireDisposition(Region, Taint, Prov, DT) ==
+      CondWireDisp::DeclineNow) {
+    diagnoseUnderControl(declAnchor(Region),
+                         "condition predates a non-diagonal gate");
+    return PhaseKickbackDisp::Declined;
+  }
+
+  // ---- 7. LOOPS (P6). A region on a CFG cycle is admitted only when
+  // `flatRegionRollableInLoop` proves it sits wholly inside ONE reducible
+  // `LoopInfo` loop at one depth with a single latch and no second cycle through
+  // the entry — the 8h7d.5 predicate, unchanged and asked from here for the same
+  // reason `handleBranchRegion` asks it for a flat region: BEFORE anything
+  // mutates the CFG. Everything else on a cycle (irreducible, multi-latch,
+  // nested) keeps the existing decline and its existing string.
+  //
+  // A kickback needs NOTHING from the round-2 rail collapse: it emits no gate on
+  // the loop-carried register, so `collapseFlattenedLoopRails` finds nothing to
+  // collapse for it and `staleRailRecordRead` has no rail record to invalidate.
+  if (regionEntryInLoop(BI)) {
+    if (!LI || !flatRegionRollableInLoop(Region, *LI)) {
+      diagnoseUnderControl(BI, "control flow inside a loop body");
+      return PhaseKickbackDisp::Declined;
+    }
+    Region.InLoop = true;
+  }
+  return PhaseKickbackDisp::Accept;
+}
+
 // 6.5 — recognize the §2.13 classical-call-under-control shape (DD-7). Pure SSA
 // analysis, before any mutation (Rule 9). See ArmClassify.h for the disposition
 // contract. This runs BEFORE `classifyArms`: a positive match short-circuits the

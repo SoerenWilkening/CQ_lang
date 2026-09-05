@@ -114,6 +114,12 @@ Function *WidthDispatch::phiFn(StringRef sfx) const {
   return M.getFunction(("cq_phi_" + sfx).str());
 }
 
+Function *WidthDispatch::phaseFn() const {
+  // EXACT name, no suffix — see the header. The legacy family lives under
+  // `cq_phi_<sfx>`; this is the register-free `void cq_phi(double)`.
+  return M.getFunction("cq_phi");
+}
+
 Function *WidthDispatch::measureFn(StringRef sfx) const {
   return M.getFunction(("cq_measure_" + sfx).str());
 }
@@ -536,7 +542,7 @@ FunctionCallee WidthDispatch::addTemplate(StringRef abiWidth,
 }
 
 ArrayRef<StringRef> WidthDispatch::frontEndIntrinsicNames() const {
-  // 48 entries: cq_theta_<sfx>, then cq_phi_<sfx>, then cq_measure_<sfx>
+  // 49 entries: cq_theta_<sfx>, then cq_phi_<sfx>, then cq_measure_<sfx>
   // for all 16 suffixes in canonical order (Phase 7.1 Increment D adds the
   // f16 triple; bd 3c6m.4 adds the f80 long-double triple — f128 is deferred,
   // not shipped). Used by CQLoweringPass's end-of-pass dead-decl sweep; decl-only
@@ -561,6 +567,13 @@ ArrayRef<StringRef> WidthDispatch::frontEndIntrinsicNames() const {
       "cq_measure_ul",   "cq_measure_sll",  "cq_measure_ull",
       "cq_measure_f16",  "cq_measure_f32",  "cq_measure_f64",
       "cq_measure_f80",
+      // bd test_C_libtooling-3qlq Inc 1 — the register-free branch phase.
+      // The 16 `cq_phi_<sfx>` rows above are the RETIRED family: `CQ.h` no
+      // longer declares them and the pass no longer recognizes them (a call
+      // to one now declines through the ordinary taint-escape guard), but a
+      // decl-only leftover is still swept here rather than left to fail at
+      // Stage-3 link.
+      "cq_phi",
   };
   return Names;
 }

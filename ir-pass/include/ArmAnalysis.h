@@ -25,6 +25,7 @@
 
 namespace llvm {
 class BasicBlock;
+class BranchInst;
 class CallInst;
 class CmpInst;
 class DominatorTree;
@@ -37,6 +38,7 @@ class Value;
 namespace cq {
 
 class WidthDispatch;
+struct ControlRegion;
 struct CondTree;
 struct ControlPlan;
 struct TaintSet;
@@ -201,6 +203,31 @@ enum class AngleSelectDisp { Accepted, Declined, NotApplicable };
 // bad arm). Pure analysis; the derivation is at the definition in
 // `ArmClassify.cpp`.
 bool angleSelectArmsAdmissible(const llvm::Value *A, const llvm::Value *B);
+
+// bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §6.2 row P1) —
+// the FLAT KICKBACK DIAMOND classifier. Same three-way disposition contract as
+// `classifyAbortPark` / `classifyGuardedStoreArm` / `classifyClassicalCallArm`,
+// and for the same reason: it is a PRE-PEEL in `handleBranchRegion`, tried
+// BEFORE `recoverRegion`, because a void arm produces no merge φ and every one
+// of `recoverRegion`'s recognizers requires a non-null `soleMergePhi`.
+//
+//   Accept        — `Region` is populated as a `PhaseKickback` region (Merge
+//                   NULL, MergeBB set) and the caller pushes it onto the plan.
+//   Declined      — a precise diagnostic has ALREADY been fired; the caller
+//                   returns and lowers nothing.
+//   NotApplicable — `Region` may have been written and MUST be treated as
+//                   scratch by the caller (`handleBranchRegion` reuses one
+//                   `ControlRegion` across its pre-peels, exactly as it does for
+//                   the two existing ones); the shape is someone else's.
+//
+// Pure analysis (Rule 9): recognition is by SSA-value identity and nothing is
+// mutated.
+enum class PhaseKickbackDisp { Accept, Declined, NotApplicable };
+
+PhaseKickbackDisp classifyPhaseKickback(llvm::BranchInst *BI, TaintSet &Taint,
+                                        ControlRegion &Region,
+                                        const llvm::DominatorTree *DT,
+                                        const llvm::LoopInfo *LI);
 
 AngleSelectDisp classifyAngleSelect(llvm::SelectInst *Sel, const CondTree &Tree,
                                     TaintSet &Taint, WidthDispatch &wd,

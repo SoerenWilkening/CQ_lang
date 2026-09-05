@@ -16,6 +16,7 @@
 #define CQ_IRPASS_CONTROL_SHAPE_H_
 
 namespace llvm {
+class LoopInfo;
 class BasicBlock;
 class BranchInst;
 class Instruction;
@@ -32,6 +33,18 @@ enum class RegionShape { Diamond, IfElse, Nested, OffPattern };
 
 // `BB`'s unique successor iff it ends in an UNCONDITIONAL branch; else null.
 llvm::BasicBlock *uncondSucc(llvm::BasicBlock *BB);
+
+// Is the FLAT region `R` (Pred/Arm/MergeBB, optionally ArmFalse) wholly inside
+// ONE reducible `LoopInfo` loop at one depth, with a single latch and no second
+// cycle through its entry — i.e. rollable in place (bd test_C_libtooling-8h7d.5,
+// owner ruling 2026-08-29)? Defined in ControlDetect.cpp beside the shape
+// recognizers; read that definition for the full (A)-(D) argument.
+//
+// DECLARED HERE since bd test_C_libtooling-3qlq Inc 1 so the register-free
+// PHASE-KICKBACK classifier (`ArmClassify::classifyPhaseKickback`) asks the
+// SAME predicate from its own pre-peel rather than growing a second spelling
+// of "is this region rollable" (Rule 14). Pure analysis; mutates nothing.
+bool flatRegionRollableInLoop(const ControlRegion &R, const llvm::LoopInfo &LI);
 
 // Does `BB` end in a tainted-condition conditional branch? (the nested-control
 // signal — an arm that is itself a quantum-controlled region.)
