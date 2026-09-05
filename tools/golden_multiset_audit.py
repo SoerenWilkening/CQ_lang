@@ -198,11 +198,15 @@ immediately.
   * the (d) row is TWO goldens and both are trace-AMBIGUOUS with class (c)+(a).
     The audit resolves the ambiguity against the NEW trace and says which reading
     matched; it cannot say the compiler picked the one the SOURCE meant.
-  * SEVERAL (c) goldens will legitimately come back as FINDINGS, and that is the
-    tool working. `cq_phi` loses its register argument, so a slice whose Rz was
-    the ONLY consumer of a chain loses the whole chain to `clang -O1` DCE at
-    stage 1 — the diff is then far more than a deleted line. Measured candidates:
-    `slice_uncompute_dead_dag`, `slice_uncompute_dead_shapes`. See `_C_CAVEAT`.
+  * FIFTEEN of the 31 (c) goldens will legitimately come back as FINDINGS, and
+    that is the tool working, not a bug in it. Their slices use
+    `(void) cq_phi(x, θ)` as a documented KEEP-ALIVE for a dead tainted chain;
+    `cq_phi` loses its register argument under D1, so `clang -O1` deletes that
+    whole chain at stage 1 and the diff is far more than a line. MEASURED with
+    the PRD §6.1 stand-in — `slice_intrinsic_bswap`'s `llvm.bswap.i32` is gone
+    outright. Those fifteen slices need a NEW keep-alive idiom, which is a design
+    decision for the owner, not something this audit can adjudicate. See
+    `_C_CAVEAT` for the measurement, the list, and why the other sixteen are safe.
 
 ── WHAT `--epic 3qlq` CANNOT WITNESS (on top of every 2a limitation above) ─────
   * IT IS DEFINED FROM A PRD, NOT FROM A COMPILER. Increment 1 is DESIGNED, NOT
@@ -613,14 +617,40 @@ def expected_delta(old_lines, narm, ngate, nneg):
 # they are unmeasured too.
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# _C_CAVEAT — WHERE CLASS (c) IS **NOT** A PURE LINE DELETION. `cq_phi` loses its
-# register argument (PRD §4.1), so a slice that wrote `t = a*b; t = cq_phi(t, θ)`
-# with `t` otherwise unused becomes `t = a*b; cq_phi(θ)` — and `clang -O1` then
-# DCEs the whole `t` chain at STAGE 1, taking its alloc / template / `_unc` /
-# `cqrt_free` lines with it. The diff is then NOT a (c) substitution and this mode
-# reports a FINDING **by design**: those goldens are REWRITTEN by the slice work,
-# not regenerated, and the finding is the flag that says so. Measured candidates:
-# `slice_uncompute_dead_dag`, `slice_uncompute_dead_shapes`.
+# _C_CAVEAT — WHERE CLASS (c) IS **NOT** A PURE LINE DELETION, AND IT IS 15 OF THE
+# 31 (c) GOLDENS, NOT AN EDGE CASE.
+#
+# `cq_phi` loses its register argument (owner decision D1 / PRD §4.1). Fifteen of
+# the slices behind the 63 goldens use `(void) cq_phi(x, θ)` as a DOCUMENTED
+# KEEP-ALIVE — the device that stops `clang -O1` deleting the dead tainted chain
+# the slice exists to exercise. `slice_intrinsic_bswap.c` says so in as many
+# words: "Rz keep-alive; result dropped", and `slice_uncompute_dead_dag.c`'s
+# header calls `cq_phi` "a side-effecting extern that READS its operand". Under
+# D1 it reads nothing, and the device is gone.
+#
+# MEASURED (2026-09-05, the PRD §6.1 `void cq_phase(double)` stand-in method,
+# `clang -O1`): with today's `cq_phi` the chain survives —
+#     %2 = call i32 @cq_theta_si32(i32 %0, double 1.0e-01)
+#     %3 = call i32 @llvm.bswap.i32(i32 %2)
+#     call void @cq_phi_si32_old(i32 %3, double 3.0e-01)
+# and with D1's register-free spelling the `llvm.bswap.i32` IS DELETED OUTRIGHT:
+#     %2 = call i32 @cq_theta_si32(i32 %0, double 1.0e-01)
+#     call void @cq_phase(double 3.0e-01)
+# So `slice_intrinsic_bswap`'s golden does not lose ONE line, it loses the
+# template call, both `cqrt_rz` lines, the `_unc` twin and the `cqrt_free` — the
+# whole subject of the test. This mode reports those goldens as FINDINGS **by
+# design**; the finding is the flag that says the SLICE needs a new keep-alive,
+# which is a design decision and not something an audit can adjudicate.
+#
+# The fifteen (all in the (c)-only row of the table in this file's docstring):
+#   slice_bitint · slice_compare_qq · slice_ctlz_idiom_loop · slice_f16 ·
+#   slice_f80 · slice_fp80_union_unc · slice_funnel_fshl_qq ·
+#   slice_intrinsic_{bswap,ctlz,ctpop,fma,fpmath} · slice_loop_iter_local ·
+#   slice_uncompute_dead_dag · slice_uncompute_dead_shapes
+# The other SIXTEEN (c) goldens are safe: measured, every one writes
+# `v = cq_phi(v, θ)` with `v` live downstream, so deleting the Rz really is a
+# pure line deletion.
+#
 # Note also that the Rz ADJOINT is spelled as a negated-angle FORWARD call
 # (`cqrt_rz_i32(h1, -0x1p-1)` — measured; `grep 'cqrt_rz[a-z0-9_]*_inv'` over every
 # golden returns nothing), so a (c) deletion on an uncomputed register deletes a
