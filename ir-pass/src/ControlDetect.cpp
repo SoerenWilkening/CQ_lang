@@ -723,6 +723,19 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
   // `if (q==5 && r==3) cq_phi(θ)`). Function-local like `Claimed`: it is
   // rebuilt per function because both sets only ever name instructions of the
   // function being scanned.
+  //
+  // ⚠ IT INHERITS `Claimed`'s BLOCK-ORDER ASSUMPTION, and the inheritance is
+  // exact: both sets are filled when a region's OUTER construct is dispatched,
+  // and both are read when a block that construct OWNS is reached — so both rely
+  // on the owner being visited first. That is the same assumption the 4.3 nest
+  // recorded as "`-O1` visits the outer Pred before the inner Mid, so the outer's
+  // claim lands first". WHEN IT FAILS THE OUTCOME IS A LOUD DECLINE, NOT A
+  // MISCOMPILE: the inner `br` recovers `OffPattern` on its own and fires
+  // `control flow`, so `opt` exits non-zero before any output is written —
+  // MEASURED, and clean under Guard Malloc
+  // (control_phase_nest_reject_block_order.ll). Nothing `clang -O1` produces has
+  // that layout; the fix if it ever becomes reachable is to dispatch terminators
+  // in reverse post-order, NOT to widen a classifier.
   SmallPtrSet<Instruction *, 4> ClaimedSelects;
   for (Function &F : M) {
     if (F.isDeclaration())
