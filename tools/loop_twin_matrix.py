@@ -337,7 +337,32 @@ PREFIX = {
     "rz": "        a = cq_phi(a, 0.125);\n",
     "add": "        a = a + off;\n",
     "xor": "        a = a ^ 9;\n",
+    # bd 3qlq Inc 1, the SECOND C-1 review round, finding **F-C1-1**. These TWO
+    # put NOTHING in the loop body — they name a line emitted in the PREHEADER
+    # (`PRELOOP` below). They exist because F-C1-1 is a defect of the peel that
+    # walks the rail's PRE-LOOP chain, and no axis in 284 cells put anything
+    # there: `PREFIX` is body text, so its `add`/`xor` are IN-LOOP ops that M-C's
+    # G5 refuses OUTRIGHT (`OutOfPlace` by construction), which is exactly why
+    # the FACT-time peel was already right about them and wrong about a
+    # preheader one. Used ONLY by sub-grid F — `BASE_PREFIX` below keeps the
+    # 120-cell product on the five original keys, which is what makes every
+    # pre-existing generated source byte-identical.
+    "addpre": "",
+    "xorpre": "",
 }
+# The PRE-LOOP line each PREFIX key contributes (bd 3qlq Inc 1, F-C1-1). Only the
+# two `*pre` keys have one. A CONSTANT immediate, deliberately, and not the
+# volatile `off` the in-body `add` uses: M-C's G4 refuses a formal-argument
+# immediate and stage 2b must be able to prove the slot classical, and the
+# finding's own reproducer is `q = q + 7`.
+PRELOOP = {
+    "addpre": "    a = a + 7;\n",
+    "xorpre": "    a = a ^ 9;\n",
+}
+# The five keys the 120-cell PREFIX x REGION x SUFFIX product iterates. Spelled
+# out rather than taken from `PREFIX.keys()` so that adding a key for a sub-grid
+# cannot silently multiply the long-pole gate by 48 cells (bd 3qlq Inc 1, F-C1-1).
+BASE_PREFIX = ("none", "ry", "rz", "add", "xor")
 REGION = {
     "eq": "        if (a == 5) { a = cq_phi(a, M_PI); }\n",
     "eq0": "        if (a == 0) { a = cq_phi(a, M_PI); }\n",
@@ -827,10 +852,12 @@ def sources(prefix, region, suffix, record="none", rgate="none",
             + G["post"] + SUFFIX[suffix])
     return _wrap(body, second, R, surface,
                  index=region in INDEXED_REGION,
-                 postloop=POSTLOOP_FOR_REGION.get(region, ""))
+                 postloop=POSTLOOP_FOR_REGION.get(region, ""),
+                 preloop=PRELOOP.get(prefix, ""))
 
 
-def _wrap(body, second, R, surface="register", index=False, postloop=""):
+def _wrap(body, second, R, surface="register", index=False, postloop="",
+          preloop=""):
     """The rolled/unrolled pair around ONE body. Shared by `sources` and by the
     quarantine's boundary controls so that a control can never drift into being
     a differently-shaped program than the cells it bounds.
@@ -844,9 +871,13 @@ def _wrap(body, second, R, surface="register", index=False, postloop=""):
     `-O1` constant-propagates it, so the flat program is the hand-written
     `(a>>0)&1 … (a>>1)&1` spelling exactly. `postloop` is a line emitted AFTER the
     loop (and after the flat repetitions), for sub-grid F's post-loop diffusion.
-    BOTH default to the pre-C-1 behaviour and every one of the 274 older cells
-    takes it — PROVEN by hashing all 1104 generated sources before and after this
-    edit, not asserted.
+    `preloop` is its mirror — a line emitted BEFORE the loop and before the flat
+    repetitions, for the SECOND C-1 review round's F-C1-1 cells; it sits OUTSIDE
+    the repetition on both sides, so the two spellings cannot fold it differently
+    (which is what makes its twin faithful where `addpost`'s was not).
+    ALL THREE default to the pre-C-1 behaviour and every one of the 274 (then 284)
+    older cells takes it — PROVEN by hashing all generated sources before and
+    after each edit, not asserted.
 
     `surface` is the bd 3qlq `cq_phi` frontend surface. It is applied to the
     FINISHED text of both spellings, at the very end and in ONE place, so the
@@ -862,6 +893,7 @@ def _wrap(body, second, R, surface="register", index=False, postloop=""):
     rolled = (
         HDR
         + head
+        + preloop
         + "    for (int i = 0; i < %d; ++i) {\n" % TRIPS
         + body
         + "    }\n" + postloop + tail
@@ -877,6 +909,7 @@ def _wrap(body, second, R, surface="register", index=False, postloop=""):
     unrolled = (
         HDR
         + head
+        + preloop
         + ("    int i = 0;\n" if index else "")
         + (flat + "    i = i + 1;\n" if index else flat) * TRIPS
         + postloop
@@ -1395,8 +1428,9 @@ def ry_cells():
 #
 #   F1  polarity x post-loop-diffusion x how `r` is carried                  8
 #   F2  the RECORD axis on each register, at the diffusing region            2
-# 10 cells. Kept small deliberately: this gate is already the suite's long pole
-# at ~400 s, and the population beyond these 14 is measured in
+#   F3  a PREHEADER in-place `add` on `a` x 2 per-bit regions                2
+# 12 cells. Kept small deliberately: this gate is already the suite's long pole
+# at ~400 s, and the population beyond these is measured in
 # `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 rather than paid for on every run.
 #
 # ⚠ THE `register` TABLE IS NOT EXTENDED, and that is a decision rather than an
@@ -1443,10 +1477,59 @@ F_REGION = ("pbit", "pbitd", "pbitne", "pbitned")
 #     table in `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (`d1c`, `d10`, `n1`), where
 #     the multiset equality can be stated instead of hidden behind a digest.
 F_RGATE = ("rypost", "rypre")
+# ── F3 — THE PREHEADER IN-PLACE OP (bd 3qlq Inc 1, the SECOND C-1 review round,
+# finding **F-C1-1**) ───────────────────────────────────────────────────────────
+#
+# WHAT THE 284 CELLS COULD NOT SEE, AND WHY IT IS A PRE-LOOP AXIS. Sub-grid F
+# closed C-1's own shape, and the review that followed it found the shape ONE
+# LINE AWAY: `a = a + 7;` in the loop's PREHEADER put the leak straight back
+# (rolled 3 mints / 0 `_unc` against a hand-unrolled twin at 3/3, on 542d588 AND
+# on the round-1 C-1 fix). No cell in the instrument could express it: `PREFIX` is
+# BODY text, and an in-body `add`/`xor` is refused OUTRIGHT by M-C's G5 — which is
+# exactly why the FACT-time peel was already right about those and wrong about a
+# PREHEADER one. The defect lived in the ONE position the product had no slot for.
+#
+# TWO CELLS: the `add` op x the diffusing and non-diffusing per-bit regions, at
+# the `rypost` carry (a `cq_theta` on `r`, which is what makes the loop MIXED and
+# sends it down the `Collapsed` branch). `pbitd`'s post-loop diffusion is what
+# turns a leaked bit rail from a leak into a different unitary; `pbit` is its
+# control.
+#
+# ⚠ `xorpre` IS EXCLUDED, AND THE EXCLUSION IS MEASURED (Rule 11 — the two
+# stage-1 modules were read, not reasoned about). It is an UNFAITHFUL TWIN for a
+# reason that belongs to `clang -O1` and to the `xor` opcode, not to the lowering:
+# `xor` DISTRIBUTES over a bit test, so on the FLAT side `-O1` rewrites
+# `((a ^ 9) >> i) & 1` to `and %a, 2` / `and %a, 4` for every bit where the mask
+# is 0 — creating uses of the PRE-xor register that the ROLLED side structurally
+# cannot have, because its shift amount is a loop variable. The pre-op value then
+# has a later read on the flat side ONLY, so M-C correctly goes OUT of place there
+# (`cq_template_xor_i32_hl(h0, 9) -> h2`, and the flat side even MEASURES `h2`)
+# while the rolled side emits `cqrt_xorc_i32(h0, 9)`. `add` does not distribute
+# over a bit test, which is exactly why `addpre` IS faithful. MEASURED with
+# `--regenerate`, which REFUSED TO WRITE and reported both `xorpre` cells as
+# TRACE-DIVERGENCE with that as the first differing line; and the same artefact
+# makes the PLAIN-C `q ^= 9` pair unfaithful too — its ROLLED trace still moves
+# 3 mints/0 `_unc` -> 3/3 under this round's fix, but its twin cannot witness it
+# (`RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3.10). The `xorpre` PREFIX/PRELOOP keys are
+# KEPT so the claim can be re-tested by adding one token to the tuple below.
+#
+# ⚠ WHAT THESE CELLS DO **NOT** REACH, said here because F-C1-7 is a DOC finding
+# about exactly this. The instrument is SINGLE-TU, so finding F-C1-2's ONWARD
+# shape — whose invariant register is a 6.5 classical-call-arm `%out` rail — needs
+# a second translation unit and is OUT OF THE MATRIX'S REACH by construction; it
+# is pinned in lit (`control_phase_kickback_mixed_onward{,_r1open}_inloop.ll`) and
+# at e2e (`e2e-phase-onward-perbit-loop-mixed-twin-identical`, over
+# `run_slice_multi.sh`). Nor does the OUT-OF-PLACE half of F-C1-1 appear here: it
+# needs a later read of the PRE-op value, which the `RECORD` axis spells only for
+# values the loop itself produces; it is pinned by
+# `control_phase_kickback_mixed_preheader_add_outofplace_leak_control.ll`.
+F_PRELOOP_PREFIX = ("addpre",)
+F3_REGION = ("pbit", "pbitd")
 
 
 def f_cells():
-    """The mixed-loop sub-grid (bd 3qlq Inc 1, CLEARANCE C-1). See `F_*` above."""
+    """The mixed-loop sub-grid (bd 3qlq Inc 1, CLEARANCE C-1, and its review
+    round's F-C1-1). See `F_*` above."""
     out = [("none", g, "none", "none", rg)
            for g in F_REGION for rg in F_RGATE]
     # F2 — a record of the INVARIANT register and one of the CARRIED register,
@@ -1454,6 +1537,9 @@ def f_cells():
     # loop, which is where a stale record shows.
     out += [("none", "pbitd", "none", k, "rypost")
             for k in ("premark", "rpremark")]
+    # F3 — the PREHEADER in-place op on the invariant register.
+    out += [(p, g, "none", "none", "rypost")
+            for p in F_PRELOOP_PREFIX for g in F3_REGION]
     return out
 
 
@@ -1463,21 +1549,22 @@ def cells_of_matrix():
     118-cell controlled-Ry-arm sub-grids (see `RY_*`, whose sub-grid E2 is the
     bd drbq Inc-4 controlled-state-prep decline control), plus the 10-cell
     MIXED-LOOP sub-grid F (see `F_*` — bd 3qlq Inc 1, the Rule-13 CLEARANCE
-    finding C-1, the axis 274 cells did not have). 284 cells.
+    finding C-1, the axis 274 cells did not have, plus its review round's F3
+    PREHEADER cells for F-C1-1). 286 cells.
 
     The sizes are ASSERTED, not commented: this gate costs ~2 minutes of the
     suite's ~130-230s band and an axis edit that silently doubles it should stop
     the run, not surprise the next person to time it.
     """
     base = [(p, r, s, "none", "none") for p, r, s
-            in itertools.product(PREFIX, REGION, SUFFIX)]
+            in itertools.product(BASE_PREFIX, REGION, SUFFIX)]
     rec = [(p, r, s, k, "none") for p, r, s, k
            in itertools.product(RECORD_GRID_PREFIX, RECORD_GRID_REGION,
                                 RECORD_GRID_SUFFIX,
                                 [k for k in RECORD if k != "none"])]
     ry = ry_cells()
     f = f_cells()
-    assert (len(base), len(rec), len(ry), len(f)) == (120, 36, 118, 10), \
+    assert (len(base), len(rec), len(ry), len(f)) == (120, 36, 118, 12), \
         "sub-grid sizes moved: %d/%d/%d/%d" % (len(base), len(rec), len(ry),
                                                len(f))
     cells = base + rec + ry + f

@@ -234,6 +234,8 @@ m_add_rne_none_none_none ACCEPT-IDENTICAL
 m_add_rrange_none_none_none ACCEPT-IDENTICAL
 m_add_ryrz_none_none_none ACCEPT-IDENTICAL
 m_add_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_addpre_pbit_none_none_rypost ACCEPT-IDENTICAL
+m_addpre_pbitd_none_none_rypost ACCEPT-IDENTICAL
 m_none_der_none          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_der_none_bodyread UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_der_none_postmark UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
