@@ -21,6 +21,10 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; CCNT added by the Inc-2 round-1 review (finding F-V2-6): without it a
+; DUPLICATED merge copy — `out` XORed twice, i.e. the identity on that branch —
+; passed this file.
+; RUN: %filecheck %s --check-prefix=CCNT < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -39,18 +43,28 @@ merge:
   ret i32 %m
 }
 
+; THE WHOLE REGION STREAM, CONTIGUOUS. `CHECK-NEXT` adjacency from the first
+; alloc to the measure is the contract here, not decoration (bd
+; test_C_libtooling-3qlq Inc 2, Rule-13 round-1 review finding F-V2-5): the
+; re-derivation that first shipped this file used bare positional directives
+; throughout, and a stray gate spliced between two pinned lines — a
+; `cqrt_ry_i32` immediately before the first controlled copy — then passed
+; EVERY prefix. Symbol ORDER cannot see an insertion; adjacency can.
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; CHECK-NEXT: %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[P]], double 2.500000e-01)
 ; the hoisted single-link chain on the NON-condition register %p
-; CHECK:     %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v0)
-; CHECK:     %[[V:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[P]], i32 3)
-; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
-; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[V]], i32 %[[OUT]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
-; CHECK:     call void @cqrt_free(i32 %[[F]])
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
+; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[P]], i32 3)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
+; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[V]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
 ; the §3c string must never fire on a non-condition-register write, and no route
 ; survives anywhere.
@@ -63,3 +77,6 @@ merge:
 ; EXACTLY ONE free — the flag. %out and the source %p are never freed.
 ; FCNT-COUNT-1: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
+; EXACTLY TWO controlled copies — the whole merge.
+; CCNT-COUNT-2: call void @cqrt_copy_i32_controlled(
+; CCNT-NOT:     call void @cqrt_copy_i32_controlled(

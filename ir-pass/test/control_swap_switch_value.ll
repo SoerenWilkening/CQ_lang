@@ -58,31 +58,42 @@ merge:
   ret i32 %m
 }
 
+; THE WHOLE REGION STREAM, CONTIGUOUS. `CHECK-NEXT` adjacency from the first
+; alloc to the measure is the contract here, not decoration (bd
+; test_C_libtooling-3qlq Inc 2, Rule-13 round-1 review finding F-V2-5): the
+; re-derivation that first shipped this file used bare positional directives
+; throughout, and a stray gate spliced between two pinned lines — a
+; `cqrt_ry_i32` immediately before the first controlled copy — then passed
+; EVERY prefix. Symbol ORDER cannot see an insertion; adjacency can.
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; CHECK-NEXT: %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %p0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[P]], double 0x3FE6666666666666)
 ; --- PRELOAD: out = |0>, then the ONE uncontrolled basis copy out ^= p ---
-; CHECK:     %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %p0)
-; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32(i32 %[[P]], i32 %[[OUT]])
+; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[P]], i32 %[[OUT]])
 ; --- case 0 (q==0): chain on p, XOR-delta, flag, one controlled copy ---
-; CHECK:     %[[T0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[P]], i32 1)
-; CHECK:     %[[D0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32(i32 %[[P]], i32 %[[T0]])
+; CHECK-NEXT: %[[T0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[P]], i32 1)
+; CHECK-NEXT: %[[D0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32(i32 %[[P]], i32 %[[T0]])
 ; the chain intermediate discharges through the ordinary whole-DAG spine
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[T0]], i32 %[[P]], i32 1)
-; CHECK:     call void @cqrt_free(i32 %[[T0]])
-; CHECK:     %[[F0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F0]], i32 %[[D0]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[T0]], i32 %[[P]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[T0]])
+; CHECK-NEXT: %[[F0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F0]], i32 %[[D0]], i32 %[[OUT]])
 ; --- case 1 (q==1) ---
-; CHECK:     %[[T1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[P]], i32 2)
-; CHECK:     %[[D1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32(i32 %[[P]], i32 %[[T1]])
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[T1]], i32 %[[P]], i32 2)
-; CHECK:     call void @cqrt_free(i32 %[[T1]])
-; CHECK:     %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 1)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[D1]], i32 %[[OUT]])
-; --- strips + flag frees, forward order (each reads PRISTINE q) ---
-; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F0]], i32 %[[Q]], i32 0)
-; CHECK:     call void @cqrt_free(i32 %[[F0]])
-; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 1)
-; CHECK:     call void @cqrt_free(i32 %[[F1]])
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
+; CHECK-NEXT: %[[T1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[P]], i32 2)
+; CHECK-NEXT: %[[D1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32(i32 %[[P]], i32 %[[T1]])
+; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %[[T1]], i32 %[[P]], i32 2)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[T1]])
+; CHECK-NEXT: %[[F1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q]], i32 1)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[D1]], i32 %[[OUT]])
+; --- strips + flag frees, forward order (each reads PRISTINE q); every strip
+;     is adjacent to the free it licenses, so a dropped strip is a red here ---
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F0]], i32 %[[Q]], i32 0)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F0]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F1]], i32 %[[Q]], i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
+; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
 ; Whole-file PURE-NEGATIVE scan. No route survives; the merge is
 ; positive-polarity (mutually exclusive eq-flags) so there is ZERO cqrt_x — a

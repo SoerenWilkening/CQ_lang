@@ -46,27 +46,40 @@ merge:
   ret i32 %m
 }
 
+; THE WHOLE REGION STREAM, CONTIGUOUS. `CHECK-NEXT` adjacency from the first
+; alloc to the measure is the contract here, not decoration (bd
+; test_C_libtooling-3qlq Inc 2, Rule-13 round-1 review finding F-V2-5): the
+; re-derivation that first shipped this file used bare positional directives
+; throughout, and a stray gate spliced between two pinned lines — a
+; `cqrt_ry_i32` immediately before the first controlled copy — then passed
+; EVERY prefix. Symbol ORDER cannot see an insertion; adjacency can.
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; CHECK-NEXT: %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[P]], double 2.500000e-01)
 ; the hoisted arm chain, on the ORIGINAL %p, lowered by lowerOps
-; CHECK:     %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v0)
-; CHECK:     %[[V:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[P]], i32 5)
-; CHECK:     call void @cqrt_addc_i32(i32 %[[V]], i32 15)
+; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[P]], i32 5)
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[V]], i32 15)
 ; 1: mint the flag from the tainted compare
-; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
 ; 2: the |0> merge out-rail (the ONLY alloc(0) — no work rail exists any more)
-; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; 3: out ^= f . armvalue
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[V]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[V]], i32 %[[OUT]])
 ; 4: out ^= (not f) . p — the bracket encloses ONLY the second copy (the §16.3
 ;    hazard: an x before BOTH copies has the same symbol multiset and writes
 ;    both values on one basis branch)
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; 5: strip the boolean + reclaim the flag
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
-; CHECK:     call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; 5: strip the boolean + reclaim the flag. The strip is pinned IMMEDIATELY
+;    before the free: a free without it is a dirty free = a hidden measurement
+;    that collapses q (Rule 6), and under a bare positional directive that
+;    mutation passed (round-1 review F-V2-6, measured on the div-const file).
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; the merge phi RAUWs to %out — the measure reads the merged answer
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
+; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
 ; No route survives anywhere in the module: the swap route is RETIRED for value
 ; arms (bd test_C_libtooling-3qlq Inc 2), there is no work rail, and no
