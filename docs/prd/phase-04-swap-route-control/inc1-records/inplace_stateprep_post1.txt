@@ -1,0 +1,360 @@
+# inplace_stateprep_post1.txt — the POST-Increment-1 verdict table for
+# `tools/inplace_twin_matrix.py --stateprep` under `--phi-surface void`
+# (bd test_C_libtooling-3qlq Increment 1, "retire the swap route").
+#
+# THE PAIR IS THE WITNESS. Read beside `inplace_stateprep_pre1.txt`, INCLUDING
+# its note that both halves were taken after Increment 1 existed.
+#
+# INVOCATION (from the worktree root):
+#   python3 tools/inplace_twin_matrix.py \
+#     --root <subject> --include-dir <subject>/include \
+#     --phi-surface void --stateprep --jobs 6 --out <this file's table half>
+#
+#   BOTH STEMS built with : the Increment-1 SUBJECT — branch `3qlq-inc1-matrix`
+#                           on top of c4bd888 (Inc 1a + the round-1 Rule-13
+#                           fixes + Inc 1b). --include-dir is the SHIPPED header.
+#
+# 297 cells, --jobs 6. Exit 0.
+#
+# TALLY, AND THE PRE TALLY BESIDE IT
+#                                    PRE (oracle)     POST (Increment 1)
+#   IDENTICAL                              84                130
+#   SUBJECT-DECLINES-TWIN-ACCEPTS          73                 85
+#   DECLINE-BOTH                           53                 40
+#   DECLINE-BOTH-DIFF                      32                 31
+#   SUBJECT-ACCEPTS-TWIN-DECLINES          10                 11
+#   PHI-UNLOWERED                          45                  0
+#
+# THE TRANSITIONS pre1 -> post1, MEASURED, all 297 cells (same cell set);
+# 238 cells did not move:
+#   IDENTICAL                     -> IDENTICAL                      84
+#   SUBJECT-DECLINES-TWIN-ACCEPTS -> SUBJECT-DECLINES-TWIN-ACCEPTS  73
+#   DECLINE-BOTH                  -> DECLINE-BOTH                   40
+#   PHI-UNLOWERED                 -> IDENTICAL                      34
+#   DECLINE-BOTH-DIFF             -> DECLINE-BOTH-DIFF              31
+#   DECLINE-BOTH                  -> IDENTICAL                      12
+#   PHI-UNLOWERED                 -> SUBJECT-DECLINES-TWIN-ACCEPTS  10
+#   SUBJECT-ACCEPTS-TWIN-DECLINES -> SUBJECT-ACCEPTS-TWIN-DECLINES  10
+#   PHI-UNLOWERED                 -> SUBJECT-ACCEPTS-TWIN-DECLINES   1
+#   DECLINE-BOTH                  -> SUBJECT-DECLINES-TWIN-ACCEPTS   1
+#   DECLINE-BOTH-DIFF             -> SUBJECT-DECLINES-TWIN-ACCEPTS   1
+#
+# HOW TO READ IT
+#   * `PHI-UNLOWERED` 45 -> 0, and NOT ONE of the 45 became a decline: 34 went
+#     straight to IDENTICAL. That is D2 (an uncontrolled `void cq_phi` is
+#     deleted) on a third pool, after the loop matrix's 4 -> 0 and the all-pairs
+#     pool's 78 -> 0.
+#   * IDENTICAL 84 -> 130 (+46) and DECLINE-BOTH 53 -> 40 (-13): 12 cells that
+#     declined on BOTH stems now reduce to the same stream.
+#   * `SUBJECT-DECLINES-TWIN-ACCEPTS` 73 -> 85. 73 of the 85 held that verdict on
+#     the ORACLE too, so at most 12 cells are attributable to anything Increment
+#     1 did, and 11 of those arrive from PHI-UNLOWERED or DECLINE rows the oracle
+#     could not classify at all. The Ry-side messages, MEASURED, keep their PRE
+#     proportions almost exactly — `control flow` 44 -> 48, `rotation angle`
+#     18 -> 22, `state prep seed is proven equal to the condition register`
+#     8 -> 12, `value-arm swap-route` 3 -> 3 — so the growth is spread across the
+#     same four fences rather than concentrated in one. (An earlier draft of this
+#     header said the seed fence was the largest message; it is the THIRD
+#     largest, in both halves. Corrected against the count.)
+#   * NO CELL MOVED FROM AN ACCEPTING VERDICT TO A DECLINING ONE. Measured over
+#     all 297 rows: every transition out of IDENTICAL is zero.
+#
+# FORMAT: the tool's own table. This file is a RECORD, not a gate.
+
+   sp_s0_aliaseq_clsbefore_meas_i32                           IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_clsbetween_meas_i32                          IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_aliasmeas_i32                        DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_aliaseq_diamond_call_i32                             DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_aliaseq_diamond_deadadd_i32                          SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_aliaseq_diamond_deadmul_i32                          SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_aliaseq_diamond_invert_i32                           IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_launder_i32                          DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_aliaseq_diamond_meas_f64                             IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_meas_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_meas_i64                             IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_meas_i8                              IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_mul3_i32                             SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_aliaseq_diamond_none_i32                             DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_aliaseq_diamond_phi_after_i32                        IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_printf_i32                           IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_region2_i32                          IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_ret_i32                              DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_aliaseq_diamond_route2_i32                           IDENTICAL                                             reduced 1                
+   sp_s0_aliaseq_diamond_spine_i32                            SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_aliaseq_diamond_theta_after_i32                      IDENTICAL                                             reduced 1                
+!! sp_s0_aliaseq_diamond_value2_i32                           SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_aliaseq_ifelse_meas_i32                              SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_aliaseq_negated_meas_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_aliasmeas_i32                           DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_clsbefore_call_i32                                DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_eq_clsbefore_deadadd_i32                             SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_clsbefore_deadmul_i32                             SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_clsbefore_invert_i32                              IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_launder_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_clsbefore_meas_f64                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_meas_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_meas_i64                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_meas_i8                                 IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_mul3_i32                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_clsbefore_none_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_clsbefore_phi_after_i32                           IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_printf_i32                              IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_region2_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_ret_i32                                 DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_clsbefore_route2_i32                              IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbefore_spine_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_clsbefore_theta_after_i32                         IDENTICAL                                             reduced 1                
+!! sp_s0_eq_clsbefore_value2_i32                              SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_clsbetween_aliasmeas_i32                          DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_clsbetween_call_i32                               DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_eq_clsbetween_deadadd_i32                            IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_deadmul_i32                            IDENTICAL                                             reduced 1                cq rotation lowering: non-diagonal gate over a live derived record
+   sp_s0_eq_clsbetween_invert_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_launder_i32                            DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_clsbetween_meas_f64                               IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_meas_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_meas_i64                               IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_meas_i8                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_mul3_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_none_i32                               DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_clsbetween_phi_after_i32                          IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_printf_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_region2_i32                            IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_ret_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_clsbetween_route2_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_spine_i32                              IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_theta_after_i32                        IDENTICAL                                             reduced 1                
+   sp_s0_eq_clsbetween_value2_i32                             DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_aliasmeas_f64                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_diamond_aliasmeas_i64                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_diamond_aliasmeas_i8                              DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_diamond_call_f64                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_eq_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_eq_diamond_call_i64                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_eq_diamond_call_i8                                   DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_eq_diamond_deadadd_f64                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_deadadd_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_deadadd_i64                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_deadadd_i8                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_deadmul_f64                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_deadmul_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_deadmul_i64                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_deadmul_i8                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_invert_f64                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_invert_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_invert_i64                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_invert_i8                                 IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_launder_f64                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_diamond_launder_i64                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_diamond_launder_i8                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_diamond_meas_f64                                  IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_meas_i64                                  IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_meas_i8                                   IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_mul3_f64                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_mul3_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_mul3_i64                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_mul3_i8                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_none_f64                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_none_i64                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_none_i8                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_phi_after_f64                             IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_phi_after_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_phi_after_i64                             IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_phi_after_i8                              IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_printf_f64                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: value-arm swap-route under quantum control
+   sp_s0_eq_diamond_printf_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_printf_i64                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: value-arm swap-route under quantum control
+   sp_s0_eq_diamond_printf_i8                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: value-arm swap-route under quantum control
+   sp_s0_eq_diamond_region2_f64                               IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_region2_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_region2_i64                               IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_region2_i8                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_ret_f64                                   DECLINE-BOTH                                                                   cq taint escape: tainted value returned at non-i32 width
+   sp_s0_eq_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_ret_i64                                   DECLINE-BOTH                                                                   cq taint escape: tainted value returned at non-i32 width
+   sp_s0_eq_diamond_ret_i8                                    DECLINE-BOTH                                                                   cq taint escape: tainted value returned at non-i32 width
+   sp_s0_eq_diamond_route2_f64                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_route2_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_route2_i64                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_route2_i8                                 IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_spine_f64                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_spine_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_spine_i64                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_spine_i8                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_diamond_theta_after_f64                           IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_theta_after_i32                           IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_theta_after_i64                           IDENTICAL                                             reduced 1                
+   sp_s0_eq_diamond_theta_after_i8                            IDENTICAL                                             reduced 1                
+!! sp_s0_eq_diamond_value2_f64                                SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+!! sp_s0_eq_diamond_value2_i32                                SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+!! sp_s0_eq_diamond_value2_i64                                SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+!! sp_s0_eq_diamond_value2_i8                                 SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_ifelse_aliasmeas_i32                              DECLINE-BOTH-DIFF                                                              cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_call_i32                                   DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_eq_ifelse_deadadd_i32                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_deadmul_i32                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_invert_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_launder_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_meas_f64                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_meas_i32                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_meas_i64                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_meas_i8                                    SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_mul3_i32                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_none_i32                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_phi_after_i32                              SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_printf_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_region2_i32                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_ret_i32                                    SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_route2_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_spine_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_theta_after_i32                            SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_ifelse_value2_i32                                 DECLINE-BOTH-DIFF                                                              cq controlled lowering: rotation angle under quantum control
+   sp_s0_eq_negated_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_negated_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_eq_negated_deadadd_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_negated_deadmul_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_negated_invert_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_negated_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_eq_negated_meas_f64                                  IDENTICAL                                             reduced 1                
+   sp_s0_eq_negated_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s0_eq_negated_meas_i64                                  IDENTICAL                                             reduced 1                
+   sp_s0_eq_negated_meas_i8                                   IDENTICAL                                             reduced 1                
+   sp_s0_eq_negated_mul3_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_negated_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_negated_phi_after_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_eq_negated_printf_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_negated_region2_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_eq_negated_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_eq_negated_route2_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_eq_negated_spine_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_eq_negated_theta_after_i32                           IDENTICAL                                             reduced 1                
+!! sp_s0_eq_negated_value2_i32                                SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_fcmp_clsbefore_meas_i32                              IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_clsbetween_meas_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_aliasmeas_i32                           DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_fcmp_diamond_call_i32                                DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_fcmp_diamond_deadadd_i32                             SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_fcmp_diamond_deadmul_i32                             SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_fcmp_diamond_invert_i32                              IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_launder_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_fcmp_diamond_meas_f64                                IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_meas_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_meas_i64                                IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_meas_i8                                 IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_mul3_i32                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_fcmp_diamond_none_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_fcmp_diamond_phi_after_i32                           IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_printf_i32                              IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_region2_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_ret_i32                                 DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_fcmp_diamond_route2_i32                              IDENTICAL                                             reduced 1                
+   sp_s0_fcmp_diamond_spine_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_fcmp_diamond_theta_after_i32                         IDENTICAL                                             reduced 1                
+!! sp_s0_fcmp_diamond_value2_i32                              SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_fcmp_ifelse_meas_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_fcmp_negated_meas_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_ge_clsbefore_meas_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_ge_clsbetween_meas_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_ge_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_ge_diamond_deadadd_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ge_diamond_deadmul_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ge_diamond_invert_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_ge_diamond_meas_f64                                  IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_meas_i64                                  IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_meas_i8                                   IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_mul3_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ge_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_ge_diamond_phi_after_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_printf_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_region2_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_ge_diamond_route2_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_ge_diamond_spine_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ge_diamond_theta_after_i32                           IDENTICAL                                             reduced 1                
+!! sp_s0_ge_diamond_value2_i32                                SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ge_ifelse_meas_i32                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_ge_negated_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s0_gt_clsbefore_meas_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_gt_clsbetween_meas_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_gt_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_gt_diamond_deadadd_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_gt_diamond_deadmul_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_gt_diamond_invert_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_gt_diamond_meas_f64                                  IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_meas_i64                                  IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_meas_i8                                   IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_mul3_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_gt_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_gt_diamond_phi_after_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_printf_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_region2_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_gt_diamond_route2_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_gt_diamond_spine_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_gt_diamond_theta_after_i32                           IDENTICAL                                             reduced 1                
+!! sp_s0_gt_diamond_value2_i32                                SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_gt_ifelse_meas_i32                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_gt_negated_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s0_ne_clsbefore_meas_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_ne_clsbetween_meas_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_ne_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s0_ne_diamond_deadadd_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ne_diamond_deadmul_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ne_diamond_invert_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   sp_s0_ne_diamond_meas_f64                                  IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_meas_i64                                  IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_meas_i8                                   IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_mul3_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ne_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_ne_diamond_phi_after_i32                             IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_printf_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_region2_i32                               IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s0_ne_diamond_route2_i32                                IDENTICAL                                             reduced 1                
+   sp_s0_ne_diamond_spine_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ne_diamond_theta_after_i32                           IDENTICAL                                             reduced 1                
+!! sp_s0_ne_diamond_value2_i32                                SUBJECT-ACCEPTS-TWIN-DECLINES                                                       cq controlled lowering: control flow under quantum control
+   sp_s0_ne_ifelse_meas_i32                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s0_ne_negated_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s5_aliaseq_diamond_meas_i32                             SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_clsbefore_meas_i32                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_clsbetween_meas_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   sp_s5_eq_diamond_deadadd_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s5_eq_diamond_deadmul_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s5_eq_diamond_invert_i32                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_meas_f64                                  IDENTICAL                                             reduced 1                
+   sp_s5_eq_diamond_meas_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_meas_i64                                  IDENTICAL                                             reduced 1                
+   sp_s5_eq_diamond_meas_i8                                   IDENTICAL                                             reduced 1                
+   sp_s5_eq_diamond_mul3_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s5_eq_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   sp_s5_eq_diamond_phi_after_i32                             SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_printf_i32                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_region2_i32                               SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_ret_i32                                   DECLINE-BOTH-DIFF                                                              cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_route2_i32                                SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_spine_i32                                 SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: control flow under quantum control
+   sp_s5_eq_diamond_theta_after_i32                           SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_diamond_value2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_eq_ifelse_meas_i32                                   SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: rotation angle under quantum control
+   sp_s5_eq_negated_meas_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+   sp_s5_fcmp_diamond_meas_i32                                IDENTICAL                                             reduced 1                
+   sp_s5_ge_diamond_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s5_gt_diamond_meas_i32                                  IDENTICAL                                             reduced 1                
+   sp_s5_ne_diamond_meas_i32                                  SUBJECT-DECLINES-TWIN-ACCEPTS                                                       cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
