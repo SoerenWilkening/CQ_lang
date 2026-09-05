@@ -524,9 +524,71 @@ round-1 finding F-L6-1 that name is RESERVED and any module declaring it decline
 one**. Its hop loop is therefore structurally unreachable at HEAD, and so is
 `walkPhaseSpine`'s (same prefix test) and `SwitchArmProve`'s `Hit != P` branch.
 
-That is Part I's finding F1 / OQ-9 confirmed by reading **and** by measurement.
+That is Part I's finding F1 / OQ-9 confirmed by reading **and** by measurement,
+and independently re-confirmed by the Rule-13 flips lens three ways: the retired
+spelling declines *before analysis* and `opt` writes **0 lines of stdout**, so
+nothing that path computes can become an accepted lowering; `grep -rn 'phiFn('`
+finds exactly **one** consumer, that decline; and the corpus has 3 files declaring
+the name, all of them the implementer's own reserved-name fixtures.
 Left in place per PRD P6 ("vacuous, not deleted"); **listed for the owner as
 freeze-time dead code.**
+
+> ⚠ **WORDING CORRECTION, and it is not pedantic** (flips lens). An earlier draft
+> of this section said the vacuity is "in the NARROWING direction". That is true
+> of two of the three and **false of the third**:
+>
+> * `walkPhaseSpine`'s loop → returns `ArmIncoming` unchanged. **Neutral**: every
+>   shape that can still exist classifies identically.
+> * `SwitchArmProve`'s `Hit != P` branch → with zero hops `Hit` can only be `P`,
+>   so only the **permanent, more specific** message is reachable. Both branches
+>   decline, so this is a **message** narrowing, disposition-neutral.
+> * `diagonalAliasHit` and `SelectClassify::operandsAlias` are **DECLINE TESTS**
+>   (`if (Hit) decline`). Losing the hop makes them find **fewer** aliases — that
+>   is the **WIDENING** direction. They are safe **not** because the predicate got
+>   stricter but because **the population they walk cannot exist**: the only alias
+>   either ever found was one created by a `cq_phi_<sfx>` chain, and such a module
+>   is refused before analysis runs.
+>
+> Say it that way. A future reader who trusts "narrowing" will draw the wrong
+> conclusion **the day someone reintroduces a diagonal register form** — at which
+> point these predicates silently start accepting what they were written to refuse.
+
+## 13.3a ⚠ `tryEqFoldArm` (D1–D8) and the §5 const-fold re-anchor — the §13.3 member this report did not list
+
+Found by the Rule-13 flips lens (FINDING F1), not by the suite. `EqFoldArm.cpp`'s
+**D2 requires the phase spine to bottom at a `ConstantInt`**, and the only
+construct that ever produced one was `cq_phi_<sfx>(i32 k, θ)` — `-O1` substituting
+the value the equality edge pins into the gate's **arg-0**. `void cq_phi(double)`
+has no arg-0, so no spine can bottom at a constant and D2 can never fire.
+Measured four ways:
+
+1. the retired spelling declines **before analysis** (§13.3);
+2. the `cq_theta_si32(i32 k, θ)` spelling is intercepted **earlier**, by drbq
+   Inc-4's F1 (`state prep merged with a quantum register`), **on BOTH binaries**
+   — so it never was an eq-fold customer, and `ArmClassify.cpp` says so in-source;
+3. the last conceivable route — a `ConstantInt` **merge incoming** with
+   register-free phases in the arm — declines `control flow` in **both**
+   polarities, because D6's pure-spine walk is itself built on `isPhiCall`;
+4. the wrong unitary D8 fenced **cannot be emitted at all**: `rzRtFn(` has 4 call
+   sites, all `"i1"`; `controlledRotationFn(` has 2, both `RotStem::Ry`.
+
+**Owner dead-code candidates, NOT deleted in this increment:** `tryEqFoldArm`
+D1–D8, `EqFoldArm.cpp`, `straightThroughConstFoldHandle`, and the 4.5 §5
+const-fold re-anchor scrub.
+
+**Consequence discharged here:** `control_swap_eqfold_{diamond,polarity,ifelse,
+classical_between}.ll` were **green while their headers claimed "arg-0
+CONST-FOLDED to 7"** — prep_a2's own false-green class, in a family §12.1 did not
+name. All four headers are rewritten to state that the fold is gone and to record
+what each file now pins (measured): the equality predicate with an N=2 run-time-angle
+arm; the negated-arm single `cqrt_x` bracket pair; the two-arm if/else in both
+predicate polarities; and **two sequential tainted regions separated by a CLASSICAL
+diamond that survives untouched** — the last of which is genuinely worth keeping,
+since detection keys strictly on condition taint and a classical branch between two
+quantum regions must neither be flattened nor break the second region's anchoring.
+The stale in-IR comments went with the headers.
+`control_swap_reject_eqfold_{cross_handle,wrong_literal}.ll` still decline, on a
+different (earlier) ground.
 
 ### 13.4 HOLD/THETA-NO — 7 re-spelled, 3 retired (commit `f4960ad`)
 
@@ -592,38 +654,98 @@ result to its base — the φ survives with one incoming now naming the base.
   semantic conclusion, confirmed: D1 leaves `fshl(%a,%a,5)`, already covered by
   `lowering_intrinsic_fshl_rotation_i32.ll`), plus the two §12.1 lost-subject files.
 
-## 14. FLIPS — 12 fixtures that pinned a DECLINE and now ACCEPT
+## 14. The 12 FLIPS — reviewed by a Rule-13 lens and DISCHARGED
 
-**They keep their `RUN: not` and stay RED, deliberately.** A flip toward accept is
-a potential over-accept and belongs to a reviewer, not to a migration agent.
-The remaining lit reds are **exactly** these 12 (`diff` of the two sets: identical).
+> The 12 fixtures that pinned a DECLINE and accepted on the Inc-1 binary were
+> **held RED on purpose** by this migration and handed to a reviewer: a flip
+> toward accept is a potential over-accept and is not a migration agent's to
+> decide. The narrow Rule-13 lens (`$SP/progress/review_flips.md`) graded all
+> twelve and found **ZERO OVER-ACCEPTS** — every one is STRICT-2b clean with
+> `cqrt_rz_i1` count == `!cq.branchphase` count, zero `cqrt_cswap`, zero
+> `_controlled` rotations, zero non-`i1` `cqrt_rz` and zero surviving `@cq_phi`.
+> Its verdicts are executed below and **lit is now GREEN**.
 
-| fixture | string it pinned |
-|---|---|
-| `control_angle_select_reject_loop_rail_exit_block_rz.ll` | control flow inside a loop body |
-| `control_angle_select_reject_rounding_one_1e300.ll` | rotation angle |
-| `control_swap_reject_diamond_derived_crosshandle.ll` | control flow |
-| `control_swap_reject_eqfold_wrong_edge_eq.ll` | control flow |
-| `control_swap_reject_eqfold_wrong_edge_ne.ll` | control flow |
-| `control_swap_reject_fanout.ll` | impure phase arm |
-| `control_swap_reject_ifelse_derived_mixed.ll` | control flow |
-| `control_swap_reject_nested_multireg.ll` | nested control flow |
-| `control_swap_reject_nested_twophi.ll` | control flow |
-| `control_swap_reject_seq_ifelse_second.ll` | value-arm swap-route |
-| `control_swap_reject_switch_datamux_angle_runtime.ll` | rotation angle |
-| `control_swap_reject_switch_impure_phase.ll` | impure phase arm |
+### 14.1 Seven rewritten as ACCEPTS, and renamed out of the `reject_` namespace
 
-Two obvious groups to look at first: the `rounding`/`runtime` angle pair (2b's
-`fl(A−B)` fence has no object under kickback — the same argument that made
-`runtime_arms_rz` a legitimate accept, so these two may be legitimate too), and
-the `eqfold_wrong_edge_{eq,ne}` pair (the const-fold re-anchor has no arg-0 to
-re-anchor on the phase stem — the same root cause as their `_ifelse` sibling,
-which §12.1 retired). **Neither is asserted here; both are for the reviewers.**
+Each carries a header naming the old fixture, the old asserted string (measured on
+the ORACLE against the pre-migration form), **what the old decline protected**, and
+**why that property no longer exists**. CHECKs derived from the subject's own
+output, with the §12 generator's discipline plus two newly measured negatives
+(`fsub double`, `fadd double`).
+
+| # | was | now | why the property is gone |
+|---|---|---|---|
+| 1 | `control_angle_select_reject_loop_rail_exit_block_rz` | `control_angle_select_rz_loop_rail_exit_block` | S7's RAIL prong has **no rotated register** to walk; the ANCHOR prong still runs. ⚠ The Ry twin still declines on this binary and is the surviving witness — stated in the header. |
+| 2 | `..._reject_rounding_one_1e300` | `control_angle_select_rz_rounding_one_1e300` | Nothing is subtracted, so δ = 0 **by construction** and the `2^-40` fence has no object. ⚠ Does **not** depend on §12 Q3 — both arms are `ConstantFP`. |
+| 6 | `control_swap_reject_fanout` | `control_swap_diamond_n3_runtime_angles` | A `void` call produces no value ⇒ no phase spine ⇒ no fan-out on one. The residual half (a phase call *beside* a non-phase op) is pinned elsewhere. Unique coverage: the only diamond accept with **run-time** angles, and the only N=3 one. |
+| 8 | `..._reject_nested_multireg` | `control_swap_nested_phase_multireg` | 4.3 criterion 5 (mint-from-rail) fenced minting the inner flag from a rail holding `p`. With no route there is nothing to mint *from*; the CHECK shows the inner mint naming the **same `%h`** — operand identity, which is exactly what criterion 5 had to prove. |
+| 9 | `..._reject_nested_twophi` | `control_swap_nested_phase_crossreg_n2` | A register-free nest produces **no φ at all**, so criterion 3 has no object. Unique coverage: cross-register inner condition + non-empty outer arm + N=2 inner gates. |
+| 10 | `..._reject_seq_ifelse_second` | `control_swap_seq_ifelse_second` | It protected **nothing** — its own old header said "this is an over-DECLINE, deliberately left standing". The cause was the merge φ, which no longer exists. A capability gain. |
+| 11 | `..._reject_switch_datamux_angle_runtime` | `control_swap_switch_datamux_angle_runtime` | No `fsub` is synthesized. ⚠⚠ **CONTINGENT ON PRD §12 Q3** — see below. |
+
+> ⚠⚠ **#11 AND `control_angle_select_reject_runtime_arms_rz.ll` ARE THE ONLY TWO
+> CELLS RIDING ON §12 Q3'S ASSUMED ANSWER.** If the owner answers Q3 **"no"**,
+> **both revert to declines.** Each file says so in the imperative in its own
+> header. A reader finding either of them green after a "no" ruling has found a
+> missed revert, not a capability.
+
+### 14.2 Four RETIRED
+
+| # | fixture | reason (lens verdict) |
+|---|---|---|
+| 3 | `control_swap_reject_diamond_derived_crosshandle.ll` | the arm base and the merge straight-through were **two lineage depths of one handle**, and the depths existed only because of the pre-region uncontrolled `cq_phi` D2 deletes. The migrated module is a plain P1 diamond — a duplicate accept. |
+| 4 | `control_swap_reject_eqfold_wrong_edge_eq.ll` | `tryEqFoldArm` D8 (polarity of the const-fold re-anchor); see §13.3a — D2 is structurally unreachable and the wrong unitary D8 fenced cannot be emitted by any surviving minter. |
+| 5 | `control_swap_reject_eqfold_wrong_edge_ne.ll` | same, one polarity over. |
+| 7 | `control_swap_reject_ifelse_derived_mixed.ll` | same root as #3; the migrated module is `control_phase_kickback_ifelse.ll` modulo run-time angles. |
+
+### 14.3 One RE-SPELLED — and it was a Rule-12 coverage gap, not an over-accept
+
+`control_swap_reject_switch_impure_phase.ll` (#12, lens finding **F2**). Two
+things had happened and both are now stated in its header:
+
+* **the migration accidentally removed its stray.** The original was
+  `%stray = add i32 %g0, 7` where `%g0` was the phase call's RESULT; the class-A
+  rewrite RAUW'd `%g0` to its arg-0, the classical literal `i32 0`, leaving
+  `add i32 0, 7` — an **all-constant** instruction that
+  `Fp80Union::foldConstantConeAndBranches` erases from `flattenPredMuxRegions`,
+  which runs **before** `detectControlRegions`. `Fp80Union.cpp` is byte-identical
+  between the ORACLE and the SUBJECT, so the erasure is pre-existing. The arm was
+  then genuinely `{1 × cq_phi, br}` and the module accepted — **a correct lowering
+  of a program that no longer contains a stray**, i.e. a LOST SUBJECT.
+  ⚠ It was then the **only** fixture pinning `SwitchClassify.cpp:262-284`'s
+  arm-content clause; the seven `control_phase_switch_reject_*.ll` cover the
+  non-empty default, grouped fall-through, a merge φ, scrutinee data use, a stale
+  scrutinee, the `-O1` table fold and a tainted angle — **none** puts a non-phase
+  instruction in a case arm. The clause **works** (three lens probes); it was
+  unpinned.
+* **the asserted string MOVED.** `impure phase arm` → `control flow`, for the
+  switch **and** the diamond, because the register-free classifiers return
+  `NotApplicable` and the generic G0–G11 fall-through owns the shape.
+  `impure phase arm` is **not** dead — the NEST still renders it — so what changed
+  is *which shape* renders it.
+
+Re-spelled with `%stray = add i32 %u0, 7` (classical, dead, and **not**
+all-constant, so the prepass cannot fold it), asserting `control flow`.
+**Discriminator measured**: delete the stray line and the module ACCEPTS.
+
+### 14.4 ⚠ An observation the lens work turned up, for the reviewers
+
+One of **my own** rewritten headers quoted a directive token in prose
+(`NOROUTE-NOT: fsub double` inside a sentence). **FileCheck reads a directive
+token ANYWHERE on a line**, so that minted a real — passing, and therefore
+invisible — directive. Found by a corpus-wide scan for armed-prefix tokens outside
+a directive position, and fixed. The same scan reports **26 other files with the
+same pattern**, every one of them PRE-EXISTING and untouched by this migration
+(they quote `CHECK-NOT: …` / `SWEPT-NOT: …` / `FLAT-NOT: …` in explanatory prose
+while arming that prefix). All 26 are green, so each accidental directive
+currently passes; none is fixed here. **Recorded, not fixed** — it is a corpus
+hygiene item for whoever owns fixture discipline, and the scan is three lines of
+Python.
 
 ## 15. Fixture-integrity injection — and it FOUND A BLIND SPOT
 
-`tools/migrate_phi_fixtures_inject.py`, over **all 104** re-derived accepts (the
-brief asked for ≥40).
+`tools/migrate_phi_fixtures_inject.py`, over **all 111** accepts — the 104
+re-derived in §12 plus the 7 flips §14.1 converted (the brief asked for ≥40).
 
 > ⚠ **The first version of the harness was worthless and scored 104/104 on
 > everything.** It appended INSIDE the function body — in the middle of the
@@ -645,12 +767,12 @@ has `_controlled` in between. Fixed by a NARROW twin,
 
 | injection | caught |
 |---|---|
-| CLEAN (no injection) — every prefix must pass | 104 / 104 |
-| (a) `cqrt_cswap` | **104 / 104** |
-| (b) `cqrt_rz_i32_controlled` | **104 / 104** (was 100/104 before the fix) |
-| (c) surviving `call void @cq_phi` | **104 / 104** |
-| (d) a DROPPED flag `cqrt_free` (a deletion, not an insertion) | **101 / 101** (3 n/a — no free emitted) |
-| HARMLESS CONTROL — **must NOT be caught** | **0 / 104** |
+| CLEAN (no injection) — every prefix must pass | 111 / 111 |
+| (a) `cqrt_cswap` | **111 / 111** |
+| (b) `cqrt_rz_i32_controlled` | **111 / 111** (was 100/104 before the fix) |
+| (c) surviving `call void @cq_phi` | **111 / 111** |
+| (d) a DROPPED flag `cqrt_free` (a deletion, not an insertion) | **108 / 108** (3 n/a — no free emitted) |
+| HARMLESS CONTROL — **must NOT be caught** | **0 / 111** |
 
 ## 16. The SUBJECT-vs-ORACLE kickback witness (§10 item 4, discharged)
 
@@ -682,36 +804,70 @@ here rather than blessed**.
 ## 17. Final corpus state
 
 ```
-$ ls ir-pass/test/*.ll | wc -l                                          1655   (was 1661; 6 retired)
-$ <live, non-comment references to @cq_phi_<sfx>>                          3
-     lowering_legacy_phi_decl_prototype_family.ll
-     lowering_reject_legacy_phi_register_form.ll
-     lowering_reject_legacy_phi_register_form_eqfold.ll     <- the implementer's
-     own reserved-name fixtures; these MUST keep the old spelling.
-$ git diff --name-only 85ec83a..HEAD -- ir-pass/test | wc -l             241
+$ cd build && lit ir-pass/test
+Total Discovered Tests: 1651
+  Passed           : 1650 (99.94%)
+  Expectedly Failed:    1 (0.06%)      <- the standing XFAIL (lowering_invert_add_i32.ll)
+  Failed           :    0
 ```
 
-**Part I's invariant "the `declare` count of `@cq_phi_*` must be 0" is reached**:
-zero outside the three files whose whole purpose is to declare it and be refused.
+**GREEN.** Corpus 1661 → **1651** (10 retired). Live, non-comment references to
+`@cq_phi_<sfx>`: **3**, and all three are the implementer's own reserved-name
+fixtures (`lowering_legacy_phi_decl_prototype_family.ll`,
+`lowering_reject_legacy_phi_register_form{,_eqfold}.ll`), which MUST keep the old
+spelling. **Part I's invariant "the `declare` count of `@cq_phi_*` must be 0" is
+reached**: zero outside the three files whose whole purpose is to declare it and
+be refused.
 
-### Retired (6 files, each with its reason above)
+### Retired (10 files, each with its reason above)
 
 ```
-control_inplace_ry_reject_stateprep_rz_prep.ll        §12.1 + no arg-0 to state-prep
-control_swap_reject_eqfold_wrong_edge_ifelse.ll       §12.1 + no arg-0 to re-anchor
-control_swap_reject_select_fp_phase_operand.ll        gate-5 channel A has no spelling
-control_swap_reject_select_phase_operand.ll           gate-5 channel A has no spelling
-control_swap_reject_value_alias_cond.ll               the dead `Hit != P` branch
-lowering_intrinsic_funnel_fshl_sibling_alias_phi.ll   the POST-RAUW alias idiom
+§12.1 / no arg-0 to state-prep     control_inplace_ry_reject_stateprep_rz_prep.ll
+§12.1 / no arg-0 to re-anchor      control_swap_reject_eqfold_wrong_edge_ifelse.ll
+gate-5 channel A has no spelling   control_swap_reject_select_fp_phase_operand.ll
+gate-5 channel A has no spelling   control_swap_reject_select_phase_operand.ll
+the dead `Hit != P` branch         control_swap_reject_value_alias_cond.ll
+the POST-RAUW alias idiom          lowering_intrinsic_funnel_fshl_sibling_alias_phi.ll
+§14.2 two lineage depths of one handle   control_swap_reject_diamond_derived_crosshandle.ll
+§14.2 tryEqFoldArm D8 (unreachable)      control_swap_reject_eqfold_wrong_edge_eq.ll
+§14.2 tryEqFoldArm D8 (unreachable)      control_swap_reject_eqfold_wrong_edge_ne.ll
+§14.2 two lineage depths of one handle   control_swap_reject_ifelse_derived_mixed.ll
 ```
+
+### Renamed out of the `reject_` namespace (7, §14.1)
+
+```
+control_angle_select_reject_loop_rail_exit_block_rz  -> control_angle_select_rz_loop_rail_exit_block
+control_angle_select_reject_rounding_one_1e300       -> control_angle_select_rz_rounding_one_1e300
+control_swap_reject_fanout                           -> control_swap_diamond_n3_runtime_angles
+control_swap_reject_nested_multireg                  -> control_swap_nested_phase_multireg
+control_swap_reject_nested_twophi                    -> control_swap_nested_phase_crossreg_n2
+control_swap_reject_seq_ifelse_second                -> control_swap_seq_ifelse_second
+control_swap_reject_switch_datamux_angle_runtime     -> control_swap_switch_datamux_angle_runtime
+```
+
+⚠ One file KEEPS a `reject_` name while accepting, deliberately:
+`control_angle_select_reject_runtime_arms_rz.ll`. It is the STEM SEPARATOR its Ry
+twin's header sends a reader to, and renaming it would break that pairing; its own
+header says so, and says it reverts with §14.1 #11 if PRD §12 Q3 is answered "no".
 
 ## 18. What is left after Part II
 
-1. **The 12 FLIPS (§14)** — a reviewer decision, not a migration one. Each is still
-   RED and still carries its `RUN: not`.
-2. **The dead alias machinery (§13.3)** — `diagonalAliasHit`'s hop,
-   `walkPhaseSpine`'s loop, `SwitchArmProve`'s `Hit != P` branch: owner
-   dead-code candidates at the freeze.
+1. **PRD §12 Q3 is the one open contingency.** Two cells ride on its assumed
+   answer — `control_swap_switch_datamux_angle_runtime.ll` (§14.1 #11) and
+   `control_angle_select_reject_runtime_arms_rz.ll` (§13.6). A **"no"** ruling
+   reverts BOTH to declines. Nothing else in this branch depends on Q3.
+2. **Owner dead-code candidates at the freeze, NOT deleted here.** `diagonalAliasHit`'s
+   hop, `walkPhaseSpine`'s loop and `SwitchArmProve`'s `Hit != P` branch (§13.3 —
+   read the wording correction: two are neutral/narrowing, `diagonalAliasHit` is a
+   **widening** that is safe only because its population cannot exist); plus
+   `tryEqFoldArm` D1–D8, `EqFoldArm.cpp`, `straightThroughConstFoldHandle` and the
+   4.5 §5 const-fold re-anchor scrub (§13.3a).
 3. **The 4 class-(iii) stream differences (§16)** — extra `_unc`/`free` the oracle
-   leaked. Recorded, not blessed.
-4. **e2e** is prep-b's, not this branch's.
+   leaked. The flips lens argued all four SOUND (each pairs its mint, lands on a
+   provably-`|0⟩` rail, and removes nothing the program reads; the qram row is
+   MEASURED to be the migration's program change and not a compiler difference).
+   Recorded, not blessed by this migration.
+4. **26 pre-existing fixtures quote a FileCheck directive token in prose** (§14.4),
+   minting real-but-passing directives. Corpus hygiene, untouched here.
+5. **e2e is prep-b's**, not this branch's.
