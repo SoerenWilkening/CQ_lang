@@ -13,21 +13,44 @@
 ; flags it. Gate 3 (angle) passes — `%sel` itself feeds only a measure — and
 ; gate 4 passes (i32), so the decline is squarely gate 5.
 ;
+;
+; ===========================================================================
+; 3qlq(prep_a2): HAND DECISION — RE-SPELLED with `cq_theta` as the downstream
+; rotation, and RESTRUCTURED so the condition reads its OWN register.
+;
+; Gate 5 has TWO channels and only ONE of them dies with D1. Channel A ("the
+; operand CARRIES a relative phase") required a value to carry a phase, which the
+; register-free surface abolishes. Channel B — "the operand's WIRE is rotated
+; somewhere else, so the copy-merge would dephase the answer" — is about a
+; ROTATION on the wire and is spelled with `cq_theta` exactly as well as it was
+; with `cq_phi`. This file is channel B.
+;
+; ⚠ WHY THE CONDITION NEEDED A SECOND REGISTER, measured: the naive swap
+; (`cq_phi_<sfx>` -> `cq_theta_<sfx>` in place) makes the compare read a register
+; that a NON-DIAGONAL gate later rewrites, so `condition predates a non-diagonal
+; gate` fires FIRST and gate 5 is never reached. Rz was diagonal and Ry is not —
+; that is the one substantive difference between the two stems, and it shows up
+; here rather than in the property being pinned.
+;
+; ⚠ DISCRIMINATOR, measured both ways ($SP/progress/prep_a2_work/pv/):
+;   * WITH the downstream rotation on the operand's wire: exit 1, the string below.
+;   * WITHOUT it (the identical module with the rotation replaced by a plain
+;     arithmetic op on the same value): exit 0, ACCEPTS.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
-; CHECK-NOT: cqrt_copy
+; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
+
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
-define i32 @example(i32 %u0, i32 %x) {
+define i32 @example(i32 %u0, i32 %v0, i32 %x) {
 entry:
   %q   = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %c   = icmp sgt i32 %q, 5
+  %y   = call i32 @cq_theta_si32(i32 %v0, double 2.500000e-01)
+  %c   = icmp sgt i32 %y, 5
   %sel = select i1 %c, i32 %q, i32 %x        ; operand %q is ALSO rotated below
-  %qd  = call i32 @cq_phi_si32(i32 %q, double 3.000000e-01)  ; downstream rotation ON %q (channel B)
-  %md  = call i32 @cq_measure_si32(i32 %qd)
+  %qd  = call i32 @cq_theta_si32(i32 %q, double 9.000000e-01)  ; channel B
   %ms  = call i32 @cq_measure_si32(i32 %sel)
-  %r   = add i32 %md, %ms
+  %md  = call i32 @cq_measure_si32(i32 %qd)
+  %r   = add i32 %ms, %md
   ret i32 %r
 }
