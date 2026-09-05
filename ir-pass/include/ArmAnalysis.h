@@ -247,10 +247,33 @@ enum class PhaseKickbackDisp { Accept, Declined, NotApplicable };
 // the entry to a widening. `flattenRegion` splices the arm and merge blocks into
 // `Pred` and erases them; a PHINode left standing in that merge becomes a phi
 // with the wrong predecessor count in a block that no longer branches — MEASURED
-// as `PHI nodes not grouped at top of basic block!`, a BROKEN MODULE at `opt`
-// exit 0, on exactly the customer above. So the classifier must decide about
-// EVERY phi in the merge: this one it claims and the emitter erases, and any
-// other one makes the whole region `NotApplicable`.
+// as `PHI nodes not grouped at top of basic block!` — a BROKEN MODULE, on
+// exactly the customer above.
+//
+// ⚠ AND SAY WHAT `opt` DOES WITH IT, because the first spelling of this sentence
+// said "at `opt` exit 0" and that is MEASURED FALSE (Rule-13 round-1 finding
+// F-L3-5, re-measured here). `cq-opt` builds the pipeline
+// `CQLoweringPass -> VerifierPass -> print` (`ir-pass/tools/cq_opt_main.cpp`),
+// and `VerifierPass`'s default `FatalErrors=true` makes a failure a
+// `report_fatal_error`: the process ABORTS with
+// `LLVM ERROR: Broken module found, compilation aborted!`, **exit 134
+// (SIGABRT)**, and NO module is written (measured:
+// `opt -disable-verify -passes=verify` on a dominance-violating module,
+// rc=134). Stock `opt` is the same. So a broken module is loud, not silent, and
+// nothing in this tree relies on the false claim.
+//
+// The claim mattered enough to correct rather than delete: a false "exit 0 on a
+// verifier failure" in the Rule-13 core would tell the next reader that every
+// fixture relying on verify-clean-implies-exit-0 is weaker than documented,
+// which is not true and would license the wrong kind of caution. What IS true and
+// worth carrying: `cq-opt` exits at the FIRST `DS_Error`
+// (`LLVMContext::diagnose`'s default handler `exit(1)`) and never writes `-o`, so
+// two independent declines in one module print ONE line — which is why a decline
+// can never be masked by a later stage's abort.
+//
+// The FENCE itself is unaffected and stays exactly as it was: the classifier must
+// decide about EVERY phi in the merge -- this one it claims and the emitter
+// erases, and any other one makes the whole region `NotApplicable`.
 //
 // ONE SPELLING, asked by BOTH the classifier (to accept) and the emitter (to
 // re-validate before mutating) — never two (Rule 14). On true, `Phi` and

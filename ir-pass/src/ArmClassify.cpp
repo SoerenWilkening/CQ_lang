@@ -3621,16 +3621,51 @@ PhaseKickbackDisp classifyPhaseKickback(BranchInst *BI, TaintSet &Taint,
 
   // ---- 5. THE CONDITION MUST BE A LOWERABLE SINGLE COMPARE.
   //
-  // A bare tainted `i1` (`_Bool b = cq_theta(b0,θ); if (b) cq_phi(θ);`) is NOT
-  // this shape and gets its own message: the correct lowering there mints
-  // NOTHING — the gate belongs directly on `b`'s own rail — and that is filed as
-  // Inc 1b (PRD §6.3, §9, owner question Q4 assumed answer). A compound
-  // `select i1` condition (`&&`/`||`, the folded nest — PRD §6.1 rows 3/4) is
-  // P3/P4, a SEPARATE increment; it is not a `CmpInst` either, so it takes the
-  // same partitioned message rather than a silent fall-through.
+  // TWO MESSAGES, NOT ONE — Rule-13 round-1 findings F-L3-7 / F-L5-5. The first
+  // spelling of this clause gave EVERY non-`CmpInst` condition the message
+  // `branch phase on a bare i1 condition`, deliberately ("it is not a `CmpInst`
+  // either, so it takes the same partitioned message"). That was MEASURED to be
+  // FALSE about the two commonest programs that reach it, and to be a diagnostic
+  // REGRESSION against the pre-3qlq oracle, which said `control flow` and was
+  // right about all of them:
+  //
+  //   `if (c) { if (q==5) cq_phi(θ); }` with `c` a `volatile int`  and
+  //   `for(i<3){ if (i) { if (q==5) cq_phi(θ); } … }`
+  //
+  // both arrive as `%t = select i1 %classical, i1 %tainted_cmp, i1 false` — a
+  // COMPOUND condition tree, one of them mixing a CLASSICAL guard with a tainted
+  // compare, and neither containing a bare `i1` from `cq_theta` anywhere. A user
+  // was being sent to look for a `_Bool` that does not exist, which is the
+  // opposite of what Rule 1 asks a decline to be.
+  //
+  // The split is by SHAPE, and the boundary is exactly the two increments:
+  //   * a condition that is NOT an instruction, or is a tainted `i1` VALUE (a
+  //     `cq_theta` result, a `zext`/`trunc` of one, a load — anything that is not
+  //     a condition TREE) keeps `branch phase on a bare i1 condition`. That is
+  //     Inc 1b's shape, where the correct lowering mints NOTHING because the gate
+  //     belongs directly on `b`'s own rail (PRD §6.3, §9, owner question Q4).
+  //   * a condition TREE — `select i1` / `and` / `or` / `xor` over `i1` — is P3
+  //     (compound) or P4 (the folded nest), a SEPARATE increment (part B), and
+  //     takes the pre-existing `control flow` message the oracle used. Keeping
+  //     the two apart is what lets Inc 1b's fixture stay a discriminator: when
+  //     1b lands and clears the first shape, the string must stop firing, and
+  //     under the old spelling it would have gone on firing for P3/P4 with no
+  //     fixture able to tell.
   auto *Cmp = dyn_cast<CmpInst>(Region.Condition);
   if (!Cmp) {
-    diagnoseUnderControl(BI, "branch phase on a bare i1 condition");
+    const bool IsCondTree = [&] {
+      if (isa<SelectInst>(Region.Condition))
+        return true;
+      if (const auto *BO = dyn_cast<BinaryOperator>(Region.Condition))
+        return BO->getType()->isIntegerTy(1) &&
+               (BO->getOpcode() == Instruction::And ||
+                BO->getOpcode() == Instruction::Or ||
+                BO->getOpcode() == Instruction::Xor);
+      return false;
+    }();
+    diagnoseUnderControl(BI, IsCondTree
+                                 ? "control flow"
+                                 : "branch phase on a bare i1 condition");
     return PhaseKickbackDisp::Declined;
   }
   if (!comparePredLowerable(Cmp)) {

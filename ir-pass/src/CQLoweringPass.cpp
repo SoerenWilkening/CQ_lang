@@ -325,22 +325,6 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   ControlPlan plan = detectControlRegions(M, wd, taint);
   lowerControlRegions(M, wd, taint, plan);
 
-  // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
-  // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
-  // classically-controlled branch phase is a GLOBAL phase, unobservable, and
-  // deleting it is a documented semantic rather than a diagnostic.
-  //
-  // POSITION IS THE WHOLE SOUNDNESS ARGUMENT and it is why this call sits HERE
-  // and not one line earlier: `detectControlRegions`/`lowerControlRegions` have
-  // just run, so every tainted `br`/`switch` has been CLAIMED (its emitter
-  // erased the phase call it claimed) or DECLINED loudly — Rule 1's "there is no
-  // third path". A survivor therefore sits under CLASSICAL control only. That is
-  // ASSERTED, not assumed: a survivor reachable through a tainted branch
-  // condition declines `unclaimed branch phase under quantum control` instead of
-  // vanishing (PRD §10.3 lens 4), and a survivor with a TAINTED ANGLE declines
-  // with the retired family's own `quantum-derived rotation angle` string.
-  deleteGlobalPhases(M, wd, taint);
-
   // Bounded loops, ROUND 2 (Phase 7.3 Increment 3, bd test_C_libtooling-8h7d.5).
   // `lowerLoops` above deliberately leaves a loop with IN-BODY tainted control
   // unclaimed (`tryCaseA` gate L2) — pre-flatten it cannot peel the persistent
@@ -373,6 +357,66 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // tainted-angle guard + the newly-tainted onward `cq_phi`). A no-op when no
   // untainted-merge region was emitted.
   repropagateControlMerges(M, wd, taint, plan6);
+
+  // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
+  // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
+  // classically-controlled branch phase is a GLOBAL phase, unobservable, and
+  // deleting it is a documented semantic rather than a diagnostic.
+  //
+  // POSITION IS THE WHOLE SOUNDNESS ARGUMENT, AND IT IS **AFTER**
+  // `repropagateControlMerges`, NOT immediately after `lowerControlRegions`.
+  // The premise is "every tainted `br`/`switch` has been CLAIMED or DECLINED
+  // loudly — Rule 1's no-third-path — so a survivor sits under CLASSICAL control
+  // only". At the OLD position that premise was FALSE, and the Rule-13 round-1
+  // lens L3 measured the consequence as a CONFIRMED SILENT MISCOMPILE (F-L3-1):
+  //
+  //   `repropagateControlMerges` (the dugh/yn71 round) is not a taint touch-up —
+  //   its `detectAndLowerOnwardControl` is a SECOND, FULL round of
+  //   `detectControlRegions` + `lowerControlRegions`. A `cq_phi` under an ONWARD
+  //   tainted branch — one whose condition reads a 6.5 classical-call-arm or 4.5
+  //   switch-data-mux `%out` rail, and is therefore CLASSICAL at round 1 — was
+  //   deleted as a "global phase" BEFORE its region had ever been looked at.
+  //   `int y=5; if (q>5) y=ext_f(7); if (y>50) cq_phi(0.9); else cq_phi(0.3);`
+  //   then compiled at exit 0 with the phase gone AND — its only consumer having
+  //   been deleted — with the ANGLE `select` re-classified at round 2 as plain
+  //   fp DATA and lowered through the 4.4/kjd1 `cqrt_copy_f64_controlled` merge:
+  //   a rotation angle materialised on a quantum f64 rail, the Rule-3
+  //   wire-crossing `CLAUDE.md` names outright. A second reproducer (a phase
+  //   BESIDE a value op in an onward arm) became an over-accept of a shape the
+  //   pre-3qlq oracle declines `mixed phase/value arm under quantum control`.
+  //
+  // NEITHER of the two fences could see it, and both failures are STRUCTURAL
+  // rather than accidental: (i) at the old position the onward branch's condition
+  // is not yet in `taint.Tainted`, so the Rule-1 assert's
+  // `reachedThroughTaintedBranch` walk had nothing to find; and (ii) the ROUND-1
+  // tainted `br` that the same walk would otherwise have found on the predecessor
+  // path had ALREADY BEEN ERASED by its own region's flatten.
+  //
+  // AT THIS POSITION the premise is true rather than aspirational: round 2 has
+  // run to a fixpoint, so its `detectControlRegions` — including the new
+  // `classifyPhaseKickback` pre-peel — has claimed or declined every onward
+  // tainted `br` too, and `reachedThroughTaintedBranch` is asked with ROUND-2
+  // taint on the ROUND-2 CFG, which is its correct position. A survivor
+  // reachable through a tainted branch condition declines `unclaimed branch
+  // phase under quantum control` instead of vanishing (PRD §10.3 lens 4), and a
+  // survivor with a TAINTED ANGLE declines with the retired family's own
+  // `quantum-derived rotation angle` string.
+  //
+  // WHAT IS DOWNSTREAM OF THE NEW SLOT AND WAS RE-CHECKED (the 8h7d.5 F-1/F-3
+  // discipline — a stage that MOVES must be re-asked against every stage it
+  // crossed):
+  //   * `repropagateControlMerges` itself re-runs `declineTaintEscapes`, which
+  //     already CARVES OUT `taint.PhaseCalls` (`TaintPropagation.cpp`), so a
+  //     surviving `cq_phi` crossing that stage adds no new escape decline —
+  //     MEASURED, no fixture changes disposition.
+  //   * `detectSpecializations` runs at BOTH rounds and reads
+  //     `taint.PhaseCalls` since F-L3-3 below, so a survivor inside a
+  //     specialization candidate declines as a `quantum primitive (cq_*)` at
+  //     round 2 as well as at round 1.
+  //   * `collapseFlattenedLoopRails` (round-2 rail collapse) sees the same
+  //     survivors it saw before; it keys on `taint.InLoopFlattenedPreds` and on
+  //     rotation/`addc` rail gates, and a register-free phase call is neither.
+  deleteGlobalPhases(M, wd, taint);
 
   // Reversible I/O output tape (Phase 7.6): a tainted `printf`/`putchar` lowers
   // to `cqrt_tape_alloc` + `cqrt_tape_write_<W>` append sequences instead of
@@ -559,6 +603,16 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // calls in functions OTHER than F — DIVERGING from the per-F intent. Harmless
   // while unreachable; a future reviver MUST either restrict `plan6` to sites in
   // F or accept (and document) module-wide specialization here.
+  //
+  // ⚠ `deleteGlobalPhases` (bd 3qlq Inc 1, P7) IS A FOURTH MODULE-WIDE STAGE and
+  // belongs in that list — Rule-13 round-1 finding F-L3-6. `onlyInF` scopes the
+  // WORK LISTS, but `deleteGlobalPhases` deliberately derives its survivors from
+  // `wd.phaseFn()->users()` rather than from `taint.PhaseCalls` (so a missed
+  // emitter scrub is a no-op instead of a dangling read), and that use list is
+  // module-wide. So this shim would DELETE `cq_phi` calls in functions other than
+  // `F`, and — since F-L3-4 — would DECLINE on an address-take anywhere in `M`.
+  // Same disposition as the three above: harmless while this entry point has zero
+  // callers, and a reviver must scope it to `F` or accept it as module-wide.
   auto onlyInF = [&F](auto &Calls) {
     Calls.erase(std::remove_if(Calls.begin(), Calls.end(),
                                [&F](CallInst *CI) {
@@ -707,15 +761,18 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // IMPLEMENTATION §6.5).
   ControlPlan plan = detectControlRegions(M, wd, taint);
   lowerControlRegions(M, wd, taint, plan);
-  // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
-  // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the slot
-  // immediately after `lowerControlRegions` is the only sound one.
-  deleteGlobalPhases(M, wd, taint);
   // Issue dugh (Phase 4×6): the SECOND propagation round mirrored in this entry
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // pre-`lowerIOSinks`/`lowerQramReads`/`declineClassicalMuxes`/`lowerRotations`
   // ordering rationale.
   repropagateControlMerges(M, wd, taint, plan6);
+  // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
+  // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
+  // sound slot is AFTER `repropagateControlMerges` and not immediately after
+  // `lowerControlRegions` (Rule-13 round-1 finding F-L3-1: round 2 is a full
+  // second round of control detection, so at the earlier slot P7 deleted branch
+  // phases whose regions had never been looked at).
+  deleteGlobalPhases(M, wd, taint);
   // Reversible I/O output tape (Phase 7.6) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY — a stage wired in run() but not here
   // silently diverges, WI-1.12). See run() for the pre-`lowerRotations`

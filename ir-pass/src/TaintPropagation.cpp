@@ -1591,12 +1591,53 @@ void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
   // such emitter also scrubs the work list, deriving the survivors from the IR
   // itself makes a missed scrub a no-op here instead of a dangling read.
   SmallVector<CallInst *, 8> Survivors;
-  for (User *U : PhaseFn->users())
-    if (auto *CI = dyn_cast<CallInst>(U))
-      if (CI->getCalledFunction() == PhaseFn)
-        Survivors.push_back(CI);
-
   bool Declined = false;
+  for (User *U : PhaseFn->users()) {
+    auto *CI = dyn_cast<CallInst>(U);
+    if (CI && CI->getCalledFunction() == PhaseFn) {
+      Survivors.push_back(CI);
+      continue;
+    }
+    // (0) ANY OTHER USER OF `@cq_phi` IS A LOUD DECLINE — Rule-13 round-1
+    // finding F-L3-4. The earlier spelling of this loop was a `dyn_cast` FILTER,
+    // so a non-call user simply fell out of the walk: the pass lowered nothing
+    // for it, the extern SURVIVED into the lowered module, and `opt` exited 0 on
+    // a module it had not lowered. MEASURED from plain `clang -O1` C —
+    //
+    //     void (*volatile pf)(double) = cq_phi;
+    //     int slice(void){ int q = cq_theta_si32(0,0.3); pf(0.5); return cq_measure_si32(q); }
+    //
+    // — stage 2 exit 0, stage 2b exit 0, and stage 3 fails with
+    // `Undefined symbols … "_cq_phi", referenced from: _pf`. Loud at the LINKER
+    // is not loud at the compiler: Rule 1 says there is no third path, and an
+    // `opt` that exits 0 on an unlowered quantum construct IS one. It also
+    // matters that the survivor set is derived from `PhaseFn->users()` precisely
+    // so a missed scrub is a no-op — that same choice is what makes a NON-call
+    // user visible here, which is the right place to refuse it.
+    //
+    // The two other spellings already decline elsewhere and keep their own
+    // strings: an `invoke` is caught at collection (`front-end intrinsic cq_phi
+    // reached via invoke; only a direct call is supported`) and a
+    // `pf(...)` UNDER a tainted branch declines `control flow under quantum
+    // control` before this stage. This clause is the remaining one.
+    //
+    // A `CallInst` that uses `PhaseFn` as a non-callee OPERAND (an argument, say)
+    // lands here too, and correctly: passing the intrinsic's address to anything
+    // is the same escape.
+    Function *At = nullptr;
+    const Instruction *I = dyn_cast<Instruction>(U);
+    if (I)
+      At = const_cast<Function *>(I->getFunction());
+    if (!At)
+      At = PhaseFn;  // a constant expression / global initializer user.
+    At->getContext().diagnose(DiagnosticInfoUnsupported(
+        *At,
+        "cq taint propagation: front-end intrinsic cq_phi has its address taken; "
+        "only a direct call is supported",
+        I ? I->getDebugLoc() : DebugLoc()));
+    Declined = true;
+  }
+
   for (CallInst *CI : Survivors) {
     // (1) THE RULE-1 ASSERT FIRST, so a broken invariant is never masked by the
     //     angle message below.

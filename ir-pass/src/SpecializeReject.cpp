@@ -52,6 +52,22 @@ IntrinsicSets buildIntrinsicSets(const TaintSet &taint) {
   IntrinsicSets S;
   S.Rotations.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
   S.Rotations.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
+  // bd test_C_libtooling-3qlq Inc 1 part A, Rule-13 round-1 finding F-L3-3.
+  // `taint.PhiCalls` is the RETIRED register-form `@cq_phi_<sfx>` family and is
+  // now PERMANENTLY EMPTY (`resolveSources` drops it, D1/D2), so without this
+  // line no branch phase was recognized as a quantum primitive here at all.
+  //
+  // WHAT THAT ACTUALLY COST, measured rather than assumed: the reject stayed
+  // LOUD, but on the WRONG GROUND. A `cq_phi` inside a specialization candidate
+  // declined `callee contains a non-reversibilizable construct under quantum lift
+  // (nested call)` — the unrelated DECLARATION-ONLY-CALLEE fallback — where the
+  // pre-3qlq oracle said `callee contains a quantum primitive (cq_*); only
+  // classical functions are lifted`. Two consequences, and the second is why this
+  // is not cosmetic: the diagnostic named a cause that is not the cause, and the
+  // fallback became the ONLY thing standing — if `@cq_phi` ever acquires a body
+  // in the module the scan would recurse into it, find nothing, and clone a
+  // Bennett-wrapped body containing an unlowered branch phase.
+  S.Rotations.insert(taint.PhaseCalls.begin(), taint.PhaseCalls.end());
   S.Measures.insert(taint.MeasureCalls.begin(), taint.MeasureCalls.end());
   return S;
 }

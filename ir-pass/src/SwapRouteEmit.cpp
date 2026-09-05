@@ -1387,9 +1387,16 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // The MERGE-TAIL ANGLE PHI, re-asked through the SAME predicate detection used
   // (Rule 14 — never a second spelling). Its ABSENCE is as load-bearing as its
   // presence: a φ left standing in a merge `flattenRegion` splices away is a
-  // BROKEN MODULE at `opt` exit 0 (`PHI nodes not grouped at top of basic
-  // block!`, MEASURED on `slice_control_phase_ifelse_derived`), so if the merge
-  // carries a φ that is not this one, decline rather than flatten over it.
+  // BROKEN MODULE (`PHI nodes not grouped at top of basic block!`, MEASURED on
+  // `slice_control_phase_ifelse_derived`), so if the merge carries a φ that is
+  // not this one, decline rather than flatten over it.
+  //
+  // ⚠ NOT "at `opt` exit 0" — that half of the original sentence is MEASURED
+  // FALSE (Rule-13 round-1 F-L3-5). `cq-opt` runs `VerifierPass` after this pass
+  // with `FatalErrors=true`, so a broken module ABORTS with
+  // `LLVM ERROR: Broken module found, compilation aborted!`, exit **134**, and no
+  // `-o` is written. See `ArmAnalysis.h`'s note on `phaseAngleTail` for the
+  // measurement and for what IS true about `cq-opt`'s exit behaviour.
   PHINode *TailPhi = nullptr;
   CallInst *TailCall = nullptr;
   const bool HasTail = phaseAngleTail(R.MergeBB, taint, TailPhi, TailCall);
