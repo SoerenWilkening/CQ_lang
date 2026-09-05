@@ -662,8 +662,10 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
     // half so a back edge cannot replay the use against the mutated rail.
     // Unproven ⇒ out-of-place (Prime Directive direction).
     //
-    // TWO OUT-OF-FILE CONSUMERS DEPEND ON THIS G6/G7 PAIR. Consumer 1 (bd
-    // 8h7d.5 Rule-13 ROUND 3, bookkeeping item 4). `LoopLowering::collectRailGates` extends a
+    // TWO OUT-OF-FILE CONSUMERS DEPEND ON THIS G6/G7 PAIR.
+    //
+    // CONSUMER 1 (bd 8h7d.5 Rule-13 ROUND 3, bookkeeping item 4).
+    // `LoopLowering::collectRailGates` extends a
     // loop rail FORWARD to decide which gates can stale a rail record, and it
     // deliberately does NOT follow an OFF-CHAIN in-place `add`/`xor` — on the
     // ground that such an op either lands on a fresh rail or, when it does fire in
@@ -689,7 +691,10 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
     // — so the earlier head is refused by G6 and the later by G7. The
     // equivalent property is `SelectClassify`'s gate 6, which the `br`-value
     // path does not run, so the ONLY thing standing behind it here is this
-    // pair. Pinned by `control_swap_value_ifelse_head_out_of_place.ll`; the
+    // pair. Pinned by `control_swap_value_ifelse_head_out_of_place.ll`, which
+    // carries BOTH shapes as two functions on ONE-LINK chains (with a longer
+    // chain the head's result feeds a fresh rail and the collision would not
+    // show): the diamond needs ONE conversion to break, the if/else two. The
     // `At == bo` widening contemplated in `priorUseIsSettled` would move the
     // if/else case, so re-derive that fixture before taking it.
     //
