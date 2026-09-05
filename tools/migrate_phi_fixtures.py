@@ -88,6 +88,10 @@ Documented limits of the textual SSA walker (read before trusting a class):
   L7 an angle operand that is TAINTED is never class (U): a `select`/`phi` on a
      tainted condition is class (S); anything else tainted is HAND-DECISION
      (that is the `tainted angle under quantum control` decline family).
+  L8 a region MERGE PHI is treated as TAINTED whenever any incoming block is under
+     tainted control, because the pass RE-SEEDS it as a fresh quantum register
+     (4.4 select merge / 4.5 switch data mux / 6.5 classical-call arm).  Taint and
+     control dependence are therefore computed as ONE fixpoint, not in sequence.
 """
 
 CALL_RE = re.compile(
@@ -281,12 +285,16 @@ class Module:
 
 
 # --------------------------------------------------------------------------
-def compute_taint(mods_funcs: list[Func], mod: Module) -> tuple[set[str], set[str]]:
+def compute_taint(mods_funcs: list[Func], mod: Module,
+                  extra_seeds: set[str] | None = None) -> tuple[set[str], set[str]]:
     """Return (tainted SSA names qualified `fn::%name`, set of fns w/ mem taint).
 
-    Interprocedural fixpoint over defined callees (limit L3).
+    Interprocedural fixpoint over defined callees (limit L3).  `extra_seeds` are
+    values the PASS makes quantum without any SSA data flow from a `cq_theta` --
+    a region merge phi that the 4.4/4.5/6.5 controlled-copy merges re-seed as a
+    fresh quantum register (limit L8).
     """
-    tainted: set[str] = set()
+    tainted: set[str] = set(extra_seeds or ())
     mem_taint_fns: set[str] = set()
     defined = {f.name: f for f in mods_funcs}
     ret_tainted: set[str] = set()
@@ -381,17 +389,52 @@ def post_dominators(f: Func) -> dict[str, set[str]]:
 
 
 def ipdom_map(f: Func, pd: dict[str, set[str]]) -> dict[str, str | None]:
+    """Immediate post-dominator = the CLOSEST post-dominator.
+
+    The post-dominators of B form a chain B, ipdom(B), ..., EXIT, so ipdom(B) is
+    the unique candidate whose OWN post-dominator set contains every other
+    candidate.  (Testing it the other way round -- "c post-dominates every
+    candidate" -- selects EXIT, the FARTHEST one, which makes every block from a
+    branch down to the exit read as control-dependent on it.)
+    """
     ip: dict[str, str | None] = {}
     for b in f.blocks:
         cands = pd[b] - {b}
         best = None
         for c in cands:
-            # ipdom is the candidate post-dominated by every other candidate
-            if all((c in pd.get(o, set())) or o == c for o in cands):
+            if all(o in pd.get(c, set()) for o in cands):
                 if best is None or len(pd.get(c, set())) > len(pd.get(best, set())):
                     best = c
         ip[b] = best
     return ip
+
+
+def dominators(f: Func) -> dict[str, set[str]]:
+    """Forward dominator sets (used to prove a phi-dissolution target is legal)."""
+    blocks = list(f.blocks)
+    entry = f.entry or (blocks[0] if blocks else None)
+    dom = {b: set(blocks) for b in blocks}
+    if entry is None:
+        return dom
+    dom[entry] = {entry}
+    changed, guard = True, 0
+    while changed and guard < 10000:
+        changed, guard = False, guard + 1
+        for b in blocks:
+            if b == entry:
+                continue
+            preds = [p for p in f.preds[b] if p in dom]
+            new = set(blocks)
+            if preds:
+                for p in preds:
+                    new &= dom[p]
+            else:
+                new = set()
+            new.add(b)
+            if new != dom[b]:
+                dom[b] = new
+                changed = True
+    return dom
 
 
 def branch_cond(f: Func, b: str) -> str | None:
@@ -488,27 +531,48 @@ def analyze(path: str) -> FileAnalysis:
         if re.search(r'\binvoke\b[^;]*@cq_phi', ln.split(';')[0]):
             fa.notes.append(f'invoke-callsite line {i+1}')
             fa.hand_decision = 'cq_phi reached via `invoke`, not a direct call'
-    tainted, mem_fns = compute_taint(mod.funcs, mod)
+    byname = {f.name: f for f in mod.funcs}
+    # TAINT and CONTROL DEPENDENCE are MUTUALLY RECURSIVE here and the fixpoint is
+    # not optional: a region MERGE PHI is re-seeded by the pass as a fresh QUANTUM
+    # register (the 6.5 classical-call arm, the 4.5 switch data mux, the 4.4 select
+    # merge), so a compare on it is a TAINTED compare even though no `cq_theta`
+    # reaches it by SSA data flow -- and a `cq_phi` under THAT branch is controlled.
+    seeds: set[str] = set()
+    tainted: set[str] = set()
+    mem_fns: set[str] = set()
+    under_of: dict[str, set[str]] = {}
+    fn_under: set[str] = set()
+    for _round in range(12):
+        tainted, mem_fns = compute_taint(mod.funcs, mod, seeds)
+        under_of = {f.name: control_deps(f, tainted) for f in mod.funcs}
+        fn_under = set()
+        changed = True
+        while changed:
+            changed = False
+            for f in mod.funcs:
+                for idx in sorted(f.instrs):
+                    ins = f.instrs[idx]
+                    if not ins.callee or ins.callee not in byname:
+                        continue
+                    site_under = (f.block_of[idx] in under_of[f.name]) or (f.name in fn_under)
+                    if site_under and ins.callee not in fn_under:
+                        fn_under.add(ins.callee)
+                        under_of[ins.callee] = set(byname[ins.callee].blocks)
+                        changed = True
+        new_seeds = set(seeds)
+        for f in mod.funcs:
+            for idx, ins in f.instrs.items():
+                if not ins.is_phi or not ins.lhs:
+                    continue
+                blks = [b for (_v, b) in
+                        re.findall(r'\[\s*([^,\]]+)\s*,\s*%([-\w.$]+)\s*\]', ins.text)]
+                if any(b in under_of[f.name] for b in blks):
+                    new_seeds.add(f'{f.name}::{ins.lhs}')
+        if new_seeds == seeds:
+            break
+        seeds = new_seeds
     if mem_fns:
         fa.notes.append('mem-taint:' + ','.join(sorted(mem_fns)))
-    byname = {f.name: f for f in mod.funcs}
-    # -- pass 1: intraprocedural transitive control dependence
-    under_of: dict[str, set[str]] = {f.name: control_deps(f, tainted) for f in mod.funcs}
-    # -- pass 2: a callee whose call site is under tainted control runs under it (L6)
-    fn_under: set[str] = set()
-    changed = True
-    while changed:
-        changed = False
-        for f in mod.funcs:
-            for idx in sorted(f.instrs):
-                ins = f.instrs[idx]
-                if not ins.callee or ins.callee not in byname:
-                    continue
-                site_under = (f.block_of[idx] in under_of[f.name]) or (f.name in fn_under)
-                if site_under and ins.callee not in fn_under:
-                    fn_under.add(ins.callee)
-                    under_of[ins.callee] = set(byname[ins.callee].blocks)
-                    changed = True
     if fn_under:
         fa.notes.append('callsite-ctl:' + ','.join(sorted(fn_under)))
     # -- pass 3: classify each site
@@ -586,6 +650,34 @@ def rewrite(path: str, fa: FileAnalysis, do_checks: bool) -> tuple[list[str], li
     mod = Module(path, lines)
     funcs = {f.name: f for f in mod.funcs}
     added_void_decl = False
+    # `%r = cq_phi(%x, t)` chains: the register-free call returns NOTHING, so every
+    # site's result resolves to the first NON-cq_phi ancestor.
+    root_of: dict[tuple[str, str], str] = {}
+    site_base = {(s.func, s.lhs): s.base for s in fa.sites if s.lhs}
+    for (fn, lhs), b in site_base.items():
+        cur, seen = b, {lhs}
+        while cur is not None and (fn, cur) in site_base and cur not in seen:
+            seen.add(cur)
+            cur = site_base[(fn, cur)]
+        root_of[(fn, lhs)] = cur
+    doms = {f.name: dominators(f) for f in mod.funcs}
+    defblock: dict[tuple[str, str], str] = {}
+    for f in mod.funcs:
+        for idx, ins in f.instrs.items():
+            if ins.lhs:
+                defblock[(f.name, ins.lhs)] = f.block_of[idx]
+
+    def dominates_block(fn: str, val: str, blk: str) -> bool:
+        """Is `val` usable at the top of `blk`?  Params/constants always are."""
+        if not val.startswith('%'):
+            return True
+        f = funcs[fn]
+        if val in f.params:
+            return True
+        db = defblock.get((fn, val))
+        if db is None:
+            return False
+        return db != blk and db in doms[fn].get(blk, set())
     for s in sorted(fa.sites, key=lambda s: -s.idx):
         f = funcs[s.func]
         if s.cls == 'U':
@@ -606,17 +698,25 @@ def rewrite(path: str, fa: FileAnalysis, do_checks: bool) -> tuple[list[str], li
                         continue
                     if not re.search(re.escape(s.lhs) + r'(?![\w.$])', ins.text):
                         continue
+                    phi_blk = f.block_of[idx]
                     incs = re.findall(r'\[\s*([^,\]]+)\s*,\s*%([-\w.$]+)\s*\]', ins.text)
-                    others = [v.strip() for (v, _b) in incs
-                              if v.strip() != s.lhs]
-                    keep = None
-                    if s.base and s.base in others:
-                        keep = s.base
-                    elif len(set(others)) == 1:
-                        keep = others[0]
+                    # resolve every incoming through the cq_phi chain to its root
+                    roots = {root_of.get((f.name, v.strip()), v.strip())
+                             for (v, _b) in incs}
+                    keep = roots.pop() if len(roots) == 1 else None
                     if keep is None:
-                        fa.notes.append(f'phi-not-dissolvable at line {idx+1}')
-                        fa.hand_decision = (fa.hand_decision or 'merge phi not mechanically dissolvable')
+                        fa.notes.append(f'phi-incomings-disagree at line {idx+1}')
+                        fa.hand_decision = (fa.hand_decision or
+                                            'merge phi incomings do not resolve to one base')
+                        continue
+                    if not dominates_block(f.name, keep, phi_blk):
+                        # e.g. an if/else whose arms both rotate an ARM-LOCAL value,
+                        # or a LOOP-HEADER phi.  Erasing the phi would leave a use
+                        # its definition does not dominate -- a broken module.
+                        fa.notes.append(f'phi-target-does-not-dominate at line {idx+1}')
+                        fa.hand_decision = (fa.hand_decision or
+                                            f'phi at line {idx+1} would dissolve to {keep}, '
+                                            'which does not dominate the phi block')
                         continue
                     phi_lhs = ins.lhs
                     drop.add(idx)
