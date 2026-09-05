@@ -274,6 +274,25 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // (clause (ii-b)), and a DERIVED one is a template rail whose in-loop region
 // round 2 would have to claim — see `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §2 for the
 // probe and its measured disposition.
+//
+// TWO ROOT SOURCES PER LOOP, NOT ONE — bd 3qlq Inc 1, the Rule-13 CLEARANCE
+// finding **C-1** (the BLOCK verdict). The dispatch used to be exclusive: a loop
+// that `collapseRailPhisIn` CLAIMED was marked with the carried roots alone, and
+// only a `NotClaimed` loop was offered to `invariantRegisterRoots`. A loop can be
+// both — `for (i<K) { if ((q>>i)&1) cq_phi(θ); r = cq_theta(r,.1); }` carries `r`
+// and reads the INVARIANT `q` — and that loop was served by neither: the carried
+// branch handed `markIfRailLocal` a `Roots` not containing `q`, whose
+// "accumulating loop-invariant tainted input" clause then refused, so the body's
+// per-bit `and` rails leaked (3 mints / 0 `_unc` at 542d588, against 3/3 both
+// hand-unrolled and on the pre-3qlq oracle — a rolled≠unrolled DIFFERENT UNITARY,
+// `opt` exit 0 and STRICT stage-2b clean, exactly the F-L7-2 / F-R1-1 signature).
+// So the `Collapsed` branch now ALSO asks `invariantRegisterRoots`, handing it the
+// carried set as `CarriedRoots` and unioning its result only on success. The
+// proof is UNCHANGED: a root mint (and a clause-(ii-b) control-owned out-rail)
+// lowers to `cqrt_alloc_<W>` and fails `ChainWalk::isInteriorTerminalHandle`
+// clause (I1), so no adjoint `At` can ever be placed for it in the K-times body —
+// a property of the ROOT, not of whether some other register crosses the back
+// edge, which is why the same argument carries here verbatim.
 void collapseFlattenedLoopRails(
     llvm::Module &M, TaintSet &taint,
     const llvm::SmallPtrSetImpl<const llvm::BasicBlock *> *AlreadyProcessed =

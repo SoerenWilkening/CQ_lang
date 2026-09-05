@@ -2870,18 +2870,53 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 // Every value the body itself MINTS repeats exactly as its adjoint will, so the
 // multiplicity the comment protects is 1:1 by construction here.
 //
+// THE MIXED LOOP — bd 3qlq Inc 1, the Rule-13 CLEARANCE finding **C-1** (the
+// BLOCK verdict, 2026-09-05). Everything above describes a loop with NO carried
+// rail at all, because that is the only loop this function could see: its one
+// caller reached it on `RailRound2::NotClaimed`. A loop whose condition register
+// is INVARIANT and which ALSO carries a second tainted register (`for (i<K) {
+// if ((q>>i)&1) cq_phi(θ); r = cq_theta(r, .1); }` — the flagship idiom the
+// moment the body rotates an ancilla) returns `Collapsed` instead, so this
+// function was never asked and `markIfRailLocal` refused on `%q` at its
+// "accumulating loop-invariant tainted input" clause. MEASURED at 542d588:
+// 3 `cq_template_and_i32_hl` mints, ZERO `_unc` discharges, against a
+// hand-unrolled twin that discharges all three and a pre-3qlq ORACLE that
+// discharged them too. Three entangled which-path records of `q`'s bits live
+// through the `cqrt_ry_i32(%h,0.9)` diffusion that follows: rolled and unrolled
+// are DIFFERENT UNITARIES, at `opt` exit 0, verify-clean, STRICT stage-2b clean.
+//
+// `CarriedRoots` is how that loop is served WITHOUT widening the proof by one
+// inch. It is the set `collapseRailPhisIn` just filled (null on the `NotClaimed`
+// path, where the behaviour is byte-identical to before). Two things follow from
+// passing it, and both are deliberate:
+//   * a candidate whose peeled root is ALREADY a carried root is SKIPPED, not
+//     judged — see the (0) clause below;
+//   * clause (i) is asked AFTER the collapse erased its rail phis, so it is not
+//     vacuous there: it still refuses a loop where the collapse claimed ONE rail
+//     and left ANOTHER tainted header phi standing (step (1) `continue`s for a
+//     multi-entry phi, an unclean latch/entry pair, or a derived out-of-place
+//     base). Such a loop is refused here and refused again by `markIfRailLocal`'s
+//     own `TI && isa<PHINode>(I) && BB == Header` clause; it keeps today's leak.
+//
 // Returns true (and fills `RootsOut`) only when EVERY tainted value defined
-// outside `L` and read inside it is such a root mint with no in-place gate
-// inside `L`; false otherwise, in which case nothing is marked and the
-// pre-existing leak stands (not marking is always safe).
+// outside `L` and read inside it — bar the ones the collapse already owns — is
+// such a root mint with no in-place gate inside `L`; false otherwise, in which
+// case nothing NEW is admitted and the pre-existing leak stands (not marking is
+// always safe). `RootsOut` is filled INCREMENTALLY and may hold roots when this
+// returns false, so a caller that unions it into a live set MUST use a temporary
+// (see `collapseFlattenedLoopRails`).
 bool invariantRegisterRoots(Loop *L, const TaintSet &taint,
                             const SmallPtrSetImpl<CallInst *> &GateCalls,
-                            SmallPtrSetImpl<Value *> &RootsOut) {
+                            SmallPtrSetImpl<Value *> &RootsOut,
+                            const SmallPtrSetImpl<Value *> *CarriedRoots) {
   BasicBlock *Header = L->getHeader();
-  // (i) NOTHING LOOP-CARRIED. A surviving tainted header phi means a rail DOES
-  //     cross the back edge and the collapse declined to claim it — that loop is
-  //     the collapse's business, not this one's, and marking it would grant a
-  //     permission on an unproven rail.
+  // (i) NOTHING LOOP-CARRIED **THAT THE COLLAPSE DID NOT CLAIM**. A surviving
+  //     tainted header phi means a rail DOES cross the back edge and nobody
+  //     proved it — marking would grant a permission on an unproven rail. On the
+  //     `Collapsed` path the claimed rails' phis are already ERASED by
+  //     `collapseRailPhisIn` step (4) (it RAUWs each to its root mint and erases
+  //     after all RAUWs), so this loop sees only the UNCLAIMED remainder, which
+  //     is exactly the set that must still refuse.
   for (PHINode &P : Header->phis())
     if (taint.Tainted.count(&P))
       return false;
@@ -2919,6 +2954,22 @@ bool invariantRegisterRoots(Loop *L, const TaintSet &taint,
     //      `cqrt_alloc` handle at rotation lowering, so peeling names the
     //      physical wire rather than an SSA name of it.
     Value *Root = peelInPlaceBase(V, GateCalls, taint, /*AsLowered=*/true);
+    // (0) A CANDIDATE THE COLLAPSE ALREADY OWNS IS SKIPPED, NOT JUDGED — bd
+    //     3qlq Inc 1, the CLEARANCE finding C-1. After `Collapsed` the body no
+    //     longer reads the rail PHI; step (4) RAUW'd it to the root mint, so the
+    //     carried register's own `%r0` is now a tainted value DEFINED OUTSIDE `L`
+    //     AND READ INSIDE IT — i.e. a `Cand` here — whose in-loop user is the
+    //     body's `r = cq_theta(r, .1)`. Clause (iii) below would see that
+    //     `isInPlaceGateOnArg0` user and refuse, taking the whole extension (and
+    //     therefore the INVARIANT register's discharge) down with it. But the
+    //     carried rail is not this function's to judge: `collapseRailPhisIn` has
+    //     already proved it — the closed self-cycle (Risk 2), the Rule-8 fan-out
+    //     guard (2), the record-liveness fence (2b) — and its root is in `Roots`
+    //     already. Asked by the SAME `peelInPlaceBase(…, AsLowered=true)` spelling
+    //     the carried set was keyed on and `markIfRailLocal`'s `onRail` will use,
+    //     so the three cannot disagree about one value (Rule 14).
+    if (CarriedRoots && CarriedRoots->count(Root))
+      continue;
     auto *Mint = dyn_cast<CallInst>(Root);
     if (!Mint)
       return false;
@@ -3163,9 +3214,31 @@ void collapseFlattenedLoopRails(
       // Rule-13 round 1); a NotClaimed loop keeps its pre-existing owner.
       RailRound2 R2 = collapseRailPhisIn(L, F, taint, GateCalls, DT, Roots);
       if (R2 == RailRound2::Collapsed) {
+        // THE MIXED LOOP (bd 3qlq Inc 1, the Rule-13 CLEARANCE finding C-1 — the
+        // BLOCK). A collapse means SOME register crosses the back edge; it says
+        // nothing about whether ANOTHER, loop-INVARIANT one is read in the body.
+        // `for (i<K) { if ((q>>i)&1) cq_phi(θ); r = cq_theta(r,.1); }` is both at
+        // once, and it was served by neither path: this branch handed
+        // `markIfRailLocal` the carried root alone, and its "accumulating
+        // loop-invariant tainted input" clause then refused on `%q`, so the
+        // body's per-bit `and` rails were never discharged (3 mints / 0 `_unc`
+        // at 542d588, against 3/3 hand-unrolled and 3/3 on the pre-3qlq oracle —
+        // entangled which-path records live through the diffusion that follows).
+        //
+        // A SEPARATE SET, UNIONED ONLY ON SUCCESS. `invariantRegisterRoots` fills
+        // its out-set INCREMENTALLY and can return false after inserting some
+        // roots, so handing it `Roots` directly would let a FAILED extension
+        // pollute the carried set `markIfRailLocal` is called with — a permission
+        // granted on a register nothing proved. On failure the call below is
+        // byte-identical to what this branch did before (measured: every
+        // pre-existing accept fixture and e2e golden unmoved).
+        SmallPtrSet<Value *, 4> Invariant;
+        if (invariantRegisterRoots(L, taint, GateCalls, Invariant, &Roots))
+          Roots.insert(Invariant.begin(), Invariant.end());
         markIfRailLocal(L, taint, LI, GateCalls, Roots);
       } else if (R2 == RailRound2::NotClaimed &&
-                 invariantRegisterRoots(L, taint, GateCalls, Roots)) {
+                 invariantRegisterRoots(L, taint, GateCalls, Roots,
+                                        /*CarriedRoots=*/nullptr)) {
         // The LOOP-INVARIANT-REGISTER path (bd 3qlq Inc 1 part A, round-1
         // F-L7-2 / F-L5-1). There was no rail phi to collapse because the body
         // gates nothing — the register-free `cq_phi` surface's normal case, and
