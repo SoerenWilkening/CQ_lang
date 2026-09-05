@@ -173,6 +173,16 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
     // `Values.front()` read and the identical exposure.)
     if (Arm.Values.size() != 1)
       return bailLoud(R);
+    // EQ-FLAG MINTABILITY, asked PRE-MUTATION. The per-case mint below can only
+    // return null on an unsupported case-value width (`emitEqFlag`'s own first
+    // guard, `abiWidthFromType(caseValue->getType())`), and its `bailLoud` sits
+    // INSIDE the emission loop — so on case 2 it would fire with case 1's chain
+    // already hoisted. Asking the same question here makes that bail provably
+    // unreachable and keeps the whole decline partition pre-mutation (Rule 1).
+    // G4's positive integer fence already proved this holds on an accepted
+    // region, so this is the defensive pre-flight, never a silent skip.
+    if (abiWidthFromType(Arm.Values.front()->getType()).empty())
+      return bailLoud(R);
     CaseStream CS;
     CS.Val = Arm.Values.front();
     CS.Chain.assign(VC.Ops.begin(), VC.Ops.end());
