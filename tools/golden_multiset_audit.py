@@ -1056,8 +1056,50 @@ def classify_3qlq(old):
     return " + ".join(parts)
 
 
-def audit_pair_3qlq(old, new):
+def audit_pair_3qlq(old, new, checks_out=None):
     """-> (status, detail, k_regions, k_arms, k_gates) for one golden, epic 3qlq.
+
+    `checks_out`, if given, is a dict this fills with the individual check
+    booleans (`b`, `a`, `ry`, `rz`, `cs`, `tf`, `d`, `scope`). It exists for
+    `tools/golden_multiset_audit_test.py`'s layer 6, which pins each REPORT check
+    to a mutant that makes it FALSE — see the redundancy note below.
+
+    ⚠ WHICH CHECK IS ACTUALLY DOING THE WORK — MEASURED, NOT ASSUMED (kill test,
+    2026-09-05: disable ONE check, re-run `golden_multiset_audit_test.py`, count
+    the failures OUTSIDE its layer 6, which pins the checks deliberately).
+
+        disabled   verdicts changed        disabled   verdicts changed
+        (A)          0                     (A4)         0
+        (A2)         0                     (A5)         0
+        (A3)         0                     (D)          0
+        (B)         11   <-- the only single deletion that changes a verdict
+
+    (B) is line-for-line after handle normalisation, so it IMPLIES every other
+    check on the family as it stands. The others are kept anyway, and it is
+    worth being precise about why rather than calling them independent checks:
+      * they turn "line 7 differs" into "the Ry stem moved" / "the new trace
+        still emits cqrt_rz_i32_controlled" / "the cswap accounting is off",
+        which is the difference between a diff a reviewer can act on and one
+        they have to re-derive;
+      * they are a real safety net if (B) is ever weakened — with (B) disabled
+        they still catch all but SIX of the mutant family.
+    Those six are worth knowing, because they are one class: `rz_i1` on the
+    WRONG FLAG, two `rz_i1` SWAPPED, an `rz_i1` MOVED PAST THE STRIP, a nest's
+    `rz_i1` on `fa` instead of the conjunction `g`, a nest's toffoli given the
+    wrong controls, and a nest's inner mint left reading a rail. Every one is a
+    HANDLE-IDENTITY or ORDER defect — exactly what the handle-INVARIANT (A)
+    multiset is blind to by construction, and exactly the defects that put a
+    phase on the wrong wire. Do not weaken (B).
+
+    ⚠ AND ONE PAIR IS ONLY JOINTLY PINNED, which is the `CLAUDE.md` "a predicate
+    with three arms and one probe" shape and is recorded rather than papered
+    over. Mutant `n28` — a nest with an IF/ELSE inner region whose else arm is
+    silently dropped — is caught by `match_nest`'s `len(arms) != 1` refusal
+    (through (B), because the region is then copied through) OR by (A4)'s cswap
+    accounting (which sees 8 removed where 4 were owed) — and MEASURED, deleting
+    BOTH lets it through as `SUBSTITUTION-ONLY`. So (A4) is not merely a report:
+    it is the second arm of that pair. `match_nest`'s depth-3 refusal
+    (`base in RS`) is the same shape and its probe is `n29`.
 
     Checks, all ENFORCED:
       (S)  SCOPE — an OLD trace with NO `cqrt_rz` line is outside Increment 1 and
@@ -1079,8 +1121,13 @@ def audit_pair_3qlq(old, new):
       (B)  STRUCTURAL — reduced-old must equal new LINE FOR LINE after handle
            normalisation. Strictly stronger than (A) on order.
     """
+    if checks_out is None:
+        checks_out = {}
+    checks_out.update({"b": True, "a": True, "ry": True, "rz": True,
+                       "cs": True, "tf": True, "d": True, "scope": True})
     old_rz = _rz_lines(old)
     if not old_rz:
+        checks_out["scope"] = (old == new)
         if old == new:
             return ("UNCHANGED",
                     "no cqrt_rz line in the OLD trace: outside Increment 1's "
@@ -1089,6 +1136,7 @@ def audit_pair_3qlq(old, new):
                 "this golden MOVED but its OLD trace has NO cqrt_rz line — "
                 "Increment 1 touches only the Rz stem", 0, 0, 0)
     if old == new:
+        checks_out["scope"] = False
         return ("FINDING",
                 "(S) the OLD trace carries %d cqrt_rz line(s) but the golden is "
                 "UNCHANGED — every Rz is either deleted (c) or respelled "
@@ -1133,6 +1181,8 @@ def audit_pair_3qlq(old, new):
     tf_ok = (n_tf_new - n_tf_old == 2 * cnt["b_nest"])
 
     d_ok = all(c["ok"] for c in checks)
+    checks_out.update({"b": ok_b, "a": a_ok, "ry": ry_ok, "rz": rz_ok,
+                       "cs": cs_ok, "tf": tf_ok, "d": d_ok})
 
     detail = ("  (A) observed  -%s\n      observed  +%s\n"
               "      expected  -%s\n      expected  +%s"
