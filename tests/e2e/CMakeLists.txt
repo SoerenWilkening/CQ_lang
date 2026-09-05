@@ -4617,6 +4617,27 @@ add_test(NAME e2e-slice-control-phase-perbit-loop-k32
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_k32.expected.log")
 
+# --- THE MIXED LOOP (bd 3qlq Inc 1, the Rule-13 CLEARANCE finding C-1, the BLOCK).
+# --- D4's per-bit idiom on a loop-INVARIANT register in a loop that ALSO CARRIES
+# --- one. At 542d588 the rolled form leaked all three bit rails (3 mints, 0 `_unc`)
+# --- while this pair's twin discharged them — the two goldens were 31 vs 37 lines.
+# --- The `cmp` gate below is the witness; the rolled slice alone cannot be one.
+add_test(NAME e2e-slice-control-phase-perbit-loop-mixed
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed.expected.log")
+
+add_test(NAME e2e-slice-control-phase-perbit-loop-mixed-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_unrolled.expected.log")
+
 # --- nest vs `&&`: byte-identical BY CONSTRUCTION (`clang -O1` folds both to one
 # --- branch on `select i1 %a, i1 %b, false` — MEASURED 2026-09-05, the two
 # --- `@slice` bodies are character-for-character equal), plus a genuine depth-2
@@ -4677,6 +4698,11 @@ add_test(NAME e2e-phase-perbit-loop-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_unrolled.expected.log")
+
+add_test(NAME e2e-phase-perbit-loop-mixed-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_unrolled.expected.log")
 
 add_test(NAME e2e-phase-nest-andcond-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
