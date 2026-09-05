@@ -65,9 +65,11 @@ from collections import defaultdict
 # --------------------------------------------------------------------------
 LIMITS = """
 Documented limits of the textual SSA walker (read before trusting a class):
-  L1 the parser is line-oriented; one LLVM instruction per line is assumed
-     (true for every file in ir-pass/test at dfb8e83 -- verified by the
-     `--report` self-check `unparsed_multiline`).
+  L1 the parser is line-oriented.  The ONE multi-line construct in this corpus is
+     a `switch` case list (36 of the 540 files, flagged `unparsed_multiline`);
+     CFG edges are collected from the terminator line THROUGH the end of the
+     block so no case successor is lost.  Any OTHER multi-line instruction would
+     also raise that flag, and none exists at dfb8e83.
   L2 memory is NOT modelled: taint through `store`/`load` of a tainted value
      is not tracked.  Every fixture that stores a tainted value is listed as
      `mem-taint` in the report and forced to class (A)/HAND-DECISION.
@@ -270,15 +272,21 @@ class Module:
             # multi-line instruction heuristic: unbalanced parens/brackets
             if code.count('(') != code.count(')') or code.count('[') != code.count(']'):
                 self.multiline_suspect = True
-        # CFG edges
+        # CFG edges.  A `switch` case list is routinely spread over SEVERAL lines in
+        # this corpus (36 of the 540 files), and reading label refs from the
+        # terminator LINE alone silently drops every case but the first -- which
+        # would make a `cq_phi` in a dropped case block look UNCONTROLLED.  Collect
+        # from the terminator line THROUGH the end of the block.
         for b in f.blocks:
             t = f.term.get(b)
             if t is None:
                 continue
-            code = f.instrs[t].text
-            for tgt in LABEL_REF_RE.findall(code):
-                if tgt not in f.succs[b]:
-                    f.succs[b].append(tgt)
+            for idx in f.block_lines[b]:
+                if idx < t:
+                    continue
+                for tgt in LABEL_REF_RE.findall(f.instrs[idx].text):
+                    if tgt not in f.succs[b]:
+                        f.succs[b].append(tgt)
         for b in f.blocks:
             for s in f.succs[b]:
                 f.preds[s].append(b)
@@ -705,6 +713,42 @@ def rewrite(path: str, fa: FileAnalysis, do_checks: bool) -> tuple[list[str], li
                              for (v, _b) in incs}
                     keep = roots.pop() if len(roots) == 1 else None
                     if keep is None:
+                        # THE CONST-FOLD RE-ANCHOR (4.5 §5).  `if (q == 5) q =
+                        # cq_phi(q, t)` reaches the pass as `cq_phi(i32 5, t)`:
+                        # `-O1` substituted the value the EDGE pins, so the arm's
+                        # constant root is a LABEL for the same register as the SSA
+                        # root.  Dissolve to the SSA root -- but ONLY after proving
+                        # the constant really is that edge's pinned value, i.e. the
+                        # function has a TAINTED equality/switch on that register
+                        # against exactly that constant.  Without the proof this is
+                        # a data mux and the dissolution would be wrong.
+                        ssa = {r for r in roots if r.startswith('%')}
+                        consts = {r for r in roots if not r.startswith('%')}
+                        if len(ssa) == 1 and consts:
+                            R = next(iter(ssa))
+                            chain = {R}
+                            for (fn2, l2), rt in root_of.items():
+                                if fn2 == f.name and rt == R:
+                                    chain.add(l2)
+                            proved = True
+                            for K in consts:
+                                pat = (r'icmp\s+(?:eq|ne)\s+\S+\s+(' +
+                                       '|'.join(re.escape(c) for c in chain) +
+                                       r')\s*,\s*' + re.escape(K) + r'\b')
+                                sw = (r'switch\s+\S+\s+(' +
+                                      '|'.join(re.escape(c) for c in chain) +
+                                      r')\s*,')
+                                body = '\n'.join(i.text for i in f.instrs.values())
+                                if not (re.search(pat, body) or
+                                        (re.search(sw, body) and
+                                         re.search(r'\b\S+\s+' + re.escape(K) +
+                                                   r'\s*,\s*label\b', body))):
+                                    proved = False
+                            if proved:
+                                keep = R
+                                actions.append(f'{s.cls} const-fold re-anchor: '
+                                               f'phi roots {sorted(roots)} -> {R}')
+                    if keep is None:
                         fa.notes.append(f'phi-incomings-disagree at line {idx+1}')
                         fa.hand_decision = (fa.hand_decision or
                                             'merge phi incomings do not resolve to one base')
@@ -1002,6 +1046,11 @@ def main(argv=None):
         base = os.path.basename(path)
         if base in hold and not args.write_hold:
             fa.hand_decision = fa.hand_decision or ('HOLD: ' + hold[base])
+        if args.report and fa.sites:
+            # rewrite IN MEMORY so the rewrite-time HAND-DECISIONS (an undissolvable
+            # merge phi, a dominance failure, a surviving symbol reference) appear in
+            # the report rather than only at --apply time.
+            rewrite(path, fa, do_checks=False)
         counts[fa.cls] += 1
         per = {k: sum(1 for s in fa.sites if s.cls == k) for k in 'UASH'}
         rows.append((os.path.basename(path), fa.cls, per['U'], per['A'], per['S'],
