@@ -57,14 +57,46 @@ and hand-unrolled were different unitaries. That was graded a **CONFIRMED miscom
 row is now correct, MEASURED in the committed goldens —
 `slice_control_phase_perbit_loop.expected.log`: 4 `and_i32_hl` / 4 `and_i32_hl_unc` /
 8 `cqrt_free` at K = 4, and the K = 32 golden 32 / 32 / 64 — with
-`e2e-phase-perbit-loop-twin-identical` gating rolled == hand-unrolled. ⚠ Two things
-the fix does NOT cover, both refused on Prime-Directive grounds rather than proof: a
-HOISTED loop-invariant TEMPLATE rail read by the body's condition (`int p = q * 3;`
-before the per-bit loop) is still refused and still leaks (Q-R1-1); and a loop whose
-CONDITION REGISTER is loop-INVARIANT — `for (…) if (q == k) cq_phi(θ);` with `q`
-untouched in the body — **declines** `condition predates a non-diagonal gate`, because
-`-O1` LICM-hoists the compare out of the loop (bd `drbq.12`, arm-class-independent;
-the workaround is a body gate on `q` or an opaque threshold).
+`e2e-phase-perbit-loop-twin-identical` gating rolled == hand-unrolled.
+
+⚠ **AT THE RULE-13 CLEARANCE (2026-09-05) THIS PARAGRAPH SAID "TWO THINGS THE FIX DOES
+NOT COVER". THERE WERE THREE, AND THE THIRD WAS THE BLOCK.** Finding **C-1**: add ONE
+ancilla rotation to the body — `for (i…) { if ((q>>i)&1) cq_phi(θ); r = cq_theta(r,.1); }`
+— and the SAME loop returns `Collapsed` from `collapseRailPhisIn` instead of
+`NotClaimed`, so `invariantRegisterRoots` was never asked and `markIfRailLocal` refused
+on `q` at its "accumulating loop-invariant tainted input" clause. Nothing was marked and
+all K bit rails leaked again: MEASURED at 542d588 **3 mints / 0 `_unc`** against **3/3**
+hand-unrolled and **3/3** on the pre-3qlq oracle's register-surface twin, at `opt` exit
+0, verify-clean and STRICT stage 2b `0 violation(s)`. Same defect as F-L5-1, one
+dispatch precondition over, inside D4's own idiom — a wrong unitary, not a leak, because
+the post-loop diffusion interferes branches carrying distinct which-path labels (Rule 8).
+**FIXED in the C-1 fix round (2026-09-06):** on the `Collapsed` branch
+`collapseFlattenedLoopRails` now ALSO collects the loop-invariant roots — into a
+SEPARATE set, unioned into the carried `Roots` only on success — and
+`invariantRegisterRoots` SKIPS any candidate the collapse already owns (its
+`CarriedRoots` parameter; without that skip the body's own `r = cq_theta(r,.1)` trips
+clause (iii) and takes the whole extension down). **The proof is clause (ii)'s own (I1)
+argument, unwidened**: a root mint lowers to `cqrt_alloc_<W>` and fails
+`ChainWalk::isInteriorTerminalHandle` clause (I1), so no adjoint `At` can ever be placed
+for it in the K-times body — a property of the ROOT, not of whether some other register
+crosses the back edge. WITNESS: the rolled trace is BYTE-IDENTICAL to the hand-unrolled
+twin's (37 = 37, gated by `e2e-phase-perbit-loop-mixed-twin-identical`), pinned in lit by
+`control_phase_kickback_mixed_invariant_carried_inloop.ll`, and the matrix gained its
+first second-CARRIED-register axis (`loop_twin_matrix.py` sub-grid F).
+
+⚠ **The other two are UNCHANGED and both remain Prime-Directive refusals rather than
+proofs.** (i) A hoisted loop-invariant **TEMPLATE** rail read by the body's condition is
+still refused and still leaks — **and the disclosure is now "ANY loop-invariant TEMPLATE
+rail", not only `q * 3`**: the clearance re-measured the class over a `sext` rail
+(`long long p = q;`), a Q+Q rail (`p = q + r`) and an ONWARD hoisted `mul`, and all three
+leak identically (Q-R1-1). Its rolled trace is BYTE-UNCHANGED across the C-1 fix, pinned
+by `control_phase_kickback_mixed_hoisted_template_leak_control.ll`. (ii) A loop whose
+CONDITION REGISTER is loop-INVARIANT **and compared DIRECTLY** — `for (…) if (q == k)
+cq_phi(θ);` with `q` untouched in the body — **declines** `condition predates a
+non-diagonal gate`, because `-O1` LICM-hoists the compare out of the loop (bd `drbq.12`,
+arm-class-independent; the workaround is a body gate on `q` or an opaque threshold).
+Note (ii) is why D4's idiom uses a DERIVED per-bit condition: `(q>>i)&1` is loop-VARIANT
+even when `q` is not.
 
 **E3 — §6.3's "an arm with N>1 `cq_phi` calls" decline is NARROWED: the DIAMOND
 spelling ACCEPTS.** N calls in one arm emit **N `cqrt_rz_i1` gates on the one flag**,

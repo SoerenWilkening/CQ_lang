@@ -39,6 +39,7 @@
 ; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 ; The hoisted template rail is minted ONCE, in the preheader.
@@ -70,6 +71,14 @@
 ; rail are LEFT ALLOCATED, never freed dirty (Rule 6, the safe direction).
 ; FCNT-COUNT-1: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
+
+; The `cqrt_x` census: exactly the kickback's negated-polarity bracket
+; (`clang -O1` canonicalizes `(p>>i)&1` to `icmp eq ..., 0`, so the arm is the
+; FALSE successor -- Rule 9). An UNPAIRED one is a wrong-branch phase, and an
+; injected extra one was caught by NOTHING before this prefix existed (this
+; round's injection matrix: `extra_x` MISSED).
+; XCNT-COUNT-2: call void @cqrt_x(i32
+; XCNT-NOT: call void @cqrt_x(i32
 
 ; WHOLE-FILE PURE-NEGATIVE.
 ; NOROUTE-NOT: @cqrt_cswap

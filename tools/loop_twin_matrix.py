@@ -527,6 +527,56 @@ RY_REGION = {
     # it does not isolate which. The isolating flat cells are the lit family,
     # not this file.
     "rprep": "        if (a == 5) { r = cq_theta(0, 0.9); }\n",
+    # ── SUB-GRID F: THE MIXED LOOP (bd 3qlq Inc 1, the Rule-13 CLEARANCE
+    # finding C-1, the BLOCK). The clearance's §4 (ii) note is the reason these
+    # exist: "the C-1 mixed-loop shape has neither a fixture nor a twin gate nor
+    # a matrix axis", and 274 cells could not see it because NOTHING in this file
+    # put a loop-INVARIANT condition register beside a loop-CARRIED second one.
+    #
+    # Every RY_REGION spelling above builds its condition from `a` and its ARM
+    # from `r`; that makes `a` invariant, but the condition is then a compare on
+    # an invariant register, which LICM either hoists (the literal family, inert)
+    # or is defeated by `off` (the opaque family). D4's per-bit idiom is the third
+    # thing: the condition is DERIVED PER TRIP from an invariant register
+    # (`(a >> i) & 1`), so it is loop-VARIANT while `a` is not — it mints a fresh
+    # `cq_template_and_i32_hl` rail every iteration that must be discharged every
+    # iteration. Add a per-trip gate on `r` and `collapseRailPhisIn` returns
+    # `Collapsed`, which is exactly the dispatch C-1 lived in.
+    #
+    # THE ARM IS WRITTEN AS A PHASE ON `r` so that BOTH surfaces are a sensible
+    # program: under `void` it rewrites to the bare `cq_phi(0.2);` — D4's kickback
+    # with `a` invariant — and on the `register` surface it is
+    # `r = cq_phi(r, 0.2)`, the old-surface twin the pre-3qlq oracle compiled
+    # (`clearance_c1`'s `d1o`). An arm spelled `a = cq_phi(a, ...)` would write
+    # `a` on the register surface and destroy the invariance the sub-grid is about
+    # — the same trap `SURFACE_CONTROL_VERDICTS` records for `q_armoncond`.
+    #
+    # THE `d` VARIANTS ADD A POST-LOOP DIFFUSION on `a` (`POSTLOOP_FOR_REGION`).
+    # It is what turns a leaked per-bit rail from a Rule-6 leak into a WRONG
+    # UNITARY (the leaked rails are which-path records of `a`'s bits and the
+    # diffusion interferes branches carrying distinct labels, Rule 8), so the
+    # axis carries it and its absence as two separate columns.
+    "pbit": "        if ((a >> i) & 1) { r = cq_phi(r, 0.2); }\n",
+    "pbitd": "        if ((a >> i) & 1) { r = cq_phi(r, 0.2); }\n",
+    # POLARITY (Rule 9): `clang -O1` canonicalizes the zero test to `icmp eq`
+    # with the successors swapped, so the arm is the FALSE successor and the
+    # emitter must bracket the flag with `cqrt_x`.
+    "pbitne": "        if (((a >> i) & 1) == 0) { r = cq_phi(r, 0.2); }\n",
+    "pbitned": "        if (((a >> i) & 1) == 0) { r = cq_phi(r, 0.2); }\n",
+}
+
+# The regions whose body reads the LOOP INDEX. The hand-unrolled twin has no
+# `for`, so `_wrap` must bind `i` itself for these and only these — see
+# `_wrap`'s `index` parameter. Keyed by region name so the existing 274 cells
+# take the `False` path and stay byte-identical.
+INDEXED_REGION = ("pbit", "pbitd", "pbitne", "pbitned")
+
+# A line emitted AFTER the loop (and after the flat repetitions), before the
+# `return`. Empty for every pre-C-1 region, which is what keeps their generated
+# sources byte-unchanged.
+POSTLOOP_FOR_REGION = {
+    "pbitd": "    a = cq_theta(a, 0.9);\n",
+    "pbitned": "    a = cq_theta(a, 0.9);\n",
 }
 RGATE = {
     "none": {"pre": "", "post": ""},
@@ -775,13 +825,28 @@ def sources(prefix, region, suffix, record="none", rgate="none",
     region_text = RY_REGION[region] if second else REGION[region]
     body = (PREFIX[prefix] + G["pre"] + R["pre"] + region_text + R["post"]
             + G["post"] + SUFFIX[suffix])
-    return _wrap(body, second, R, surface)
+    return _wrap(body, second, R, surface,
+                 index=region in INDEXED_REGION,
+                 postloop=POSTLOOP_FOR_REGION.get(region, ""))
 
 
-def _wrap(body, second, R, surface="register"):
+def _wrap(body, second, R, surface="register", index=False, postloop=""):
     """The rolled/unrolled pair around ONE body. Shared by `sources` and by the
     quarantine's boundary controls so that a control can never drift into being
     a differently-shaped program than the cells it bounds.
+
+    `index` binds the loop counter `i` on the UNROLLED side (bd 3qlq Inc 1, the
+    CLEARANCE finding C-1's matrix axis). The rolled side already has it from the
+    `for`; the flat side is the SAME body text repeated, so a body that reads `i`
+    — D4's per-bit idiom `(a >> i) & 1`, which is the whole point of sub-grid F —
+    would not compile there. It gets `int i = 0;` before the repetitions and
+    `i = i + 1;` after each one, which is what the `for` does and nothing else;
+    `-O1` constant-propagates it, so the flat program is the hand-written
+    `(a>>0)&1 … (a>>1)&1` spelling exactly. `postloop` is a line emitted AFTER the
+    loop (and after the flat repetitions), for sub-grid F's post-loop diffusion.
+    BOTH default to the pre-C-1 behaviour and every one of the 274 older cells
+    takes it — PROVEN by hashing all 1104 generated sources before and after this
+    edit, not asserted.
 
     `surface` is the bd 3qlq `cq_phi` frontend surface. It is applied to the
     FINISHED text of both spellings, at the very end and in ONE place, so the
@@ -799,7 +864,7 @@ def _wrap(body, second, R, surface="register"):
         + head
         + "    for (int i = 0; i < %d; ++i) {\n" % TRIPS
         + body
-        + "    }\n" + tail
+        + "    }\n" + postloop + tail
         + "int main(void){(void)slice();return 0;}\n"
     )
     # The unrolled twin is the SAME TEXT, dedented one level and repeated — never
@@ -812,7 +877,9 @@ def _wrap(body, second, R, surface="register"):
     unrolled = (
         HDR
         + head
-        + flat * TRIPS
+        + ("    int i = 0;\n" if index else "")
+        + (flat + "    i = i + 1;\n" if index else flat) * TRIPS
+        + postloop
         + tail
         + "int main(void){(void)slice();return 0;}\n"
     )
@@ -1314,11 +1381,70 @@ def ry_cells():
     return out
 
 
+# ── SUB-GRID F — THE MIXED LOOP (bd 3qlq Inc 1, the CLEARANCE finding C-1) ──
+#
+# WHAT 274 CELLS COULD NOT SEE, and why it is a SECOND-CARRIED-REGISTER axis
+# rather than another region spelling. C-1 needs THREE things at once: a
+# condition register that is loop-INVARIANT, a condition DERIVED per trip from
+# it (so a template rail is minted and must be discharged every iteration), and
+# a SECOND register that is loop-CARRIED (so `collapseRailPhisIn` returns
+# `Collapsed` and the invariant-root path was never asked). Sub-grid B moves a
+# second register but its regions are compares on `a`, which are hoist-inert or
+# opaque; no cell anywhere read the loop index. So the shape sat outside the
+# instrument, and the clearance found it by hand.
+#
+#   F1  polarity x post-loop-diffusion x how `r` is carried                  8
+#   F2  the RECORD axis on each register, at the diffusing region            2
+# 10 cells. Kept small deliberately: this gate is already the suite's long pole
+# at ~400 s, and the population beyond these 14 is measured in
+# `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 rather than paid for on every run.
+F_REGION = ("pbit", "pbitd", "pbitne", "pbitned")
+# How the second register is CARRIED. TWO `RGATE` spellings are deliberately
+# ABSENT, and both exclusions are MEASURED rather than assumed:
+#
+#   * `rzpost` — under the shipped `void` surface it rewrites to an UNCONTROLLED
+#     `cq_phi`, which owner decision D2 DELETES as a global phase, so `r` would
+#     not be carried at all and the cell would not be a mixed loop.
+#
+#   * `addpost` — the twin is NOT FAITHFUL for it, which is a property of
+#     `clang -O1` and not of the lowering. MEASURED on the C-1 fix build with
+#     `--regenerate`, which REFUSED TO WRITE and reported all four `addpost`
+#     cells as `TRACE-DIVERGENCE`; the traces are MULTISET-IDENTICAL
+#     (`diff <(sort rolled) <(sort unrolled)` empty, same `_unc`/free/mint counts,
+#     same line count) and differ only in the POSITION of one
+#     `cqrt_addc_i32(h1, 3)`. Reading the two stage-1 modules (Rule 11, not
+#     reasoning): the flat spelling keeps the volatile `load @off` where the
+#     source put it and SINKS the `add nsw %7, %2` PAST THE SECOND REGION, which
+#     a loop body cannot do across the back edge. So the two SOURCES are not the
+#     same program after `-O1` — the clearance's own `d6u` limit, and the same
+#     one measured this round on `d1c` (whose three `r^=9` fold to one) and `n1`.
+#     Quarantining it would pin a `-O1` scheduling artefact as if it were a
+#     filed compiler defect, which is what the quarantine file's own header
+#     forbids. The in-place-`add` carry shape IS covered — by the population
+#     table in `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (`d1c`, `d10`, `n1`), where
+#     the multiset equality can be stated instead of hidden behind a digest.
+F_RGATE = ("rypost", "rypre")
+
+
+def f_cells():
+    """The mixed-loop sub-grid (bd 3qlq Inc 1, CLEARANCE C-1). See `F_*` above."""
+    out = [("none", g, "none", "none", rg)
+           for g in F_REGION for rg in F_RGATE]
+    # F2 — a record of the INVARIANT register and one of the CARRIED register,
+    # at the region that also diffuses. `premark`/`rpremark` are read AFTER the
+    # loop, which is where a stale record shows.
+    out += [("none", "pbitd", "none", k, "rypost")
+            for k in ("premark", "rpremark")]
+    return out
+
+
 def cells_of_matrix():
     """The full cell list: the 120-cell PREFIX x REGION x SUFFIX product with no
     record, plus the 36-cell record sub-grid (see `RECORD_GRID_*`), plus the
     118-cell controlled-Ry-arm sub-grids (see `RY_*`, whose sub-grid E2 is the
-    bd drbq Inc-4 controlled-state-prep decline control). 274 cells.
+    bd drbq Inc-4 controlled-state-prep decline control), plus the 10-cell
+    MIXED-LOOP sub-grid F (see `F_*` — bd 3qlq Inc 1, the Rule-13 CLEARANCE
+    finding C-1, the axis 274 cells did not have). 284 cells.
 
     The sizes are ASSERTED, not commented: this gate costs ~2 minutes of the
     suite's ~130-230s band and an axis edit that silently doubles it should stop
@@ -1331,9 +1457,11 @@ def cells_of_matrix():
                                 RECORD_GRID_SUFFIX,
                                 [k for k in RECORD if k != "none"])]
     ry = ry_cells()
-    assert (len(base), len(rec), len(ry)) == (120, 36, 118), \
-        "sub-grid sizes moved: %d/%d/%d" % (len(base), len(rec), len(ry))
-    cells = base + rec + ry
+    f = f_cells()
+    assert (len(base), len(rec), len(ry), len(f)) == (120, 36, 118, 10), \
+        "sub-grid sizes moved: %d/%d/%d/%d" % (len(base), len(rec), len(ry),
+                                               len(f))
+    cells = base + rec + ry + f
     names = [cell_name(c) for c in cells]
     assert len(set(names)) == len(names), "duplicate cell name"
     return cells

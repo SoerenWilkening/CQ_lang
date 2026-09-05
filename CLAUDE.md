@@ -971,7 +971,22 @@ and `AbortParkEmit`).
   mutation-validated separately. ⚠ **Stage 2b is structurally blind to this whole
   class** — a leaked TEMPLATE-minted rail has no `cqrt_alloc` to count — and it
   reported `0 violation(s)` on every broken circuit; the round-1 implementation
-  hand-back cleared the defect by citing that very checker.
+  hand-back cleared the defect by citing that very checker. **AND THE INDEPENDENT
+  RULE-13 CLEARANCE THEN FOUND A THIRD INSTANCE — finding C-1, its BLOCK verdict:**
+  add ONE ancilla rotation to that same idiom's body (`for (i…) { if ((q>>i)&1)
+  cq_phi(θ); r = cq_theta(r,.1); }`) and the loop returns `Collapsed` instead of
+  `NotClaimed`, so `invariantRegisterRoots` was never asked and `markIfRailLocal`
+  refused on `q` at its "accumulating loop-invariant tainted input" clause — 3 mints
+  / **0** `_unc` against 3/3 hand-unrolled and 3/3 on the pre-3qlq oracle, exit 0 and
+  strict-2b clean; fixed 2026-09-06 by having the `Collapsed` branch ALSO collect the
+  invariant roots (a SEPARATE set unioned only on success, with a `CarriedRoots` skip
+  so the collapse's own rail is not judged by clause (iii)), on clause (ii)'s
+  UNCHANGED (I1) proof, and gated by `e2e-phase-perbit-loop-mixed-twin-identical`
+  plus the matrix's new second-CARRIED-register sub-grid F (274 → 284 cells).
+  ⚠ **THREE INSTANCES OF ONE DEFECT ACROSS THREE SUCCESSIVE ADVERSARIAL ROUNDS, THE
+  THIRD FOUND BY THE CLEARANCE ITSELF** — budget the next round on the assumption
+  that a fourth dispatch precondition is still excluding a customer this proof
+  already covers.
 * **A HOISTED loop-invariant TEMPLATE rail read by the body's condition is STILL
   refused, and still leaks** (Q-R1-1). A deliberate mutation admitting any
   loop-invariant tainted value made those rails discharge and did NOT exhibit the

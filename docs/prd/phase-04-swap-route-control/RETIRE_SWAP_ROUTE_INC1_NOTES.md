@@ -1033,3 +1033,215 @@ exists today. Are they owed the same treatment `collapseFlattenedLoopRails` just
 | the F-R1-1 fix, mutation-validated one half at a time | 3 build+lit cycles, table above |
 | the R1 lens's CLEAR item 10 (rolled vs hand-unrolled per-bit) re-run on this binary | `k2` 21 lines, `k4` 39, `k2r` (two registers, two regions per trip) 78, `kg` (body `cq_theta`) 43 — **all IDENTICAL**; `k32` differs by exactly the frontend canonicalization R1 recorded (`(q>>31)&1` → `icmp sgt q,-1` in the unrolled spelling only). Every ROLLED trace is **byte-identical to main's**, i.e. the clause-(ii-b) widening changed nothing that already worked |
 | **NOT run** | the full `ctest` (Rule 19 — the orchestrator owns that gate); `e2e-loop-twin-matrix` (I changed no matrix file); any e2e slice (63 of 66 `cq_phi` slices do not compile on this branch — F-R2-4) |
+
+---
+
+## §3 — the Rule-13 CLEARANCE (2026-09-05) and the C-1 FIX ROUND (2026-09-06)
+
+### 3.1 The verdict, in one paragraph
+
+The independent clearance review of Inc 0 + Inc 1 returned **BLOCK** on ONE finding.
+Everything else it re-attacked came out clear: 17 new spellings of the round-1 spine-adjoint
+class (0 negative-angle `cqrt_rz_i1` in any subject trace, 7 of the same programs still
+cancelling on the round-1 subject), 12 probes for a THIRD once-only-stage instance (none
+found in the accept direction), 11 retired-family hand-IR spellings, the unowned shapes, D4's
+per-bit + diffusion at K=4/K=31/K=32, and B3's plain-C reachability. Its measured gates:
+`lit -q ir-pass/test` 1656 discovered / exit 0; the orchestrator's e2e 329/329; the golden
+audit 0 unexplained (30 FINDINGs == exactly the 30 rewritten programs); the injection matrix
+68 fixtures × 16 mutations = 1088 cells, 0 MISSED / 0 DIRTY; tree-wide `cqrt_rz` scans 0
+non-`i1`, 0 `_controlled`, 0 negative-angle. The BLOCK was **C-1**.
+
+### 3.2 C-1 — root cause
+
+```c
+int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+  for(int i=0;i<3;i++){ if((q>>i)&1) cq_phi(0.2); r=cq_theta(r,0.1); }
+  q=cq_theta(q,0.9); return cq_measure(q)+cq_measure(r); }
+```
+
+D4's per-bit idiom (condition register `q` loop-INVARIANT, condition DERIVED per trip)
+with ONE ancilla rotation added to the body. That one line makes `r` loop-CARRIED, so
+`collapseRailPhisIn` returns **`Collapsed`** rather than `NotClaimed` — and the two
+paths were EXCLUSIVE:
+
+* `Collapsed` → `markIfRailLocal(Roots = {r's mint})`. Its "accumulating loop-invariant
+  tainted input" clause reads `%q` — tainted, defined outside `L`, not `onRail` — and
+  RETURNS. Nothing is marked; `Uncomputation`'s in-loop guard
+  (`canRepeat(&BB) && !IterationLocalBlocks.count(&BB)`) silently skips every interior
+  candidate in the body.
+* `NotClaimed` → `invariantRegisterRoots`, the round-1 F-L5-1 fix, which WOULD have
+  admitted `%q`. Never reached; and its own clause (i) refuses any tainted header phi
+  anyway.
+
+The mixed loop was served by NEITHER. MEASURED at 542d588: `cq_template_and_i32_hl` **3**,
+`cq_template_and_i32_hl_unc` **0**, `opt` exit 0, verify-clean, STRICT stage 2b
+`0 violation(s)` (structurally blind — a leaked TEMPLATE-minted rail has no `cqrt_alloc`
+to count). Hand-unrolled twin: **3/3**. Pre-3qlq ORACLE on the register-surface twin
+(`d1o`/`d1ou`): rolled == unrolled, **37 = 37**, `and_unc` **3**. A REGRESSION against the
+oracle of exactly the class round 1 (F-L7-2/F-L5-1) and round 2 (F-R1-1) graded CONFIRMED
+MISCOMPILE — three entangled which-path records of `q`'s low bits live through the
+`cqrt_ry_i32(h0, 0.9)` diffusion, whose branches then carry distinct ancilla labels
+(Rule 8). Rolled and unrolled are DIFFERENT UNITARIES.
+
+### 3.3 The fix — option (a), the capability (Rule 17)
+
+`LoopLowering.cpp`, two edits, no new symbol, no new diagnostic:
+
+1. `invariantRegisterRoots` gains `const SmallPtrSetImpl<Value*> *CarriedRoots` and a
+   clause **(0)**: a candidate whose `peelInPlaceBase(V, …, AsLowered=true)` is already a
+   carried root is **SKIPPED, not judged**. Without it the body's own `r = cq_theta(r,.1)`
+   — which after step (4)'s RAUW reads `%r0`, a value defined OUTSIDE `L` — trips clause
+   (iii)'s `isInPlaceGateOnArg0` test and takes the WHOLE extension down with it, so the
+   invariant register would not be admitted either. The skip asks the SAME
+   `peelInPlaceBase(…, AsLowered=true)` spelling the carried set was keyed on and
+   `markIfRailLocal`'s `onRail` will use (Rule 14: three readers, one question).
+2. `collapseFlattenedLoopRails`'s `Collapsed` branch computes the invariant roots into a
+   **SEPARATE `SmallPtrSet Invariant`** and unions it into `Roots` **only on success**.
+   `invariantRegisterRoots` fills its out-set INCREMENTALLY and can return `false` after
+   inserting some roots, so passing `Roots` directly would let a FAILED extension pollute
+   the carried set `markIfRailLocal` is then called with — a permission granted on a
+   register nothing proved. On failure the call is byte-identical to the pre-fix branch.
+
+**The proof is clause (ii)'s OWN, unwidened.** A root mint lowers to `cqrt_alloc_<W>` +
+`cqrt_ry_<W>`, and `ChainWalk::isInteriorTerminalHandle` clause (I1) requires
+`isTemplateProducer` AND a `cq_template_`-prefixed callee — so an admitted Root can never
+be the PREHEADER forward gate whose adjoint `At` lands in the K-times body, the one
+multiplicity hazard `markIfRailLocal`'s own comment names. That is a property of the ROOT,
+not of whether some OTHER register crosses the back edge, which is exactly why the same
+argument carries to the mixed case with nothing added.
+
+**Clause (i) after a collapse is NOT vacuous, and that is stated rather than assumed.**
+`collapseRailPhisIn` step (1) `continue`s (rather than declining) for a multi-entry header
+phi, an unclean latch/entry pair, a latch that does not peel back to the phi with an
+UNTAINTED base, and a derived out-of-place base — so a `Collapsed` return CAN leave a
+tainted header phi standing. Clause (i) refuses that loop, and `markIfRailLocal`'s own
+`TI && isa<PHINode>(I) && BB == Header` refuses it a second time; the disposition is
+today's leak, byte-identical. (Owner question, §3.7.)
+
+### 3.4 Mutation validation — one half at a time (the fix_r2 pattern)
+
+| mutation | lit (the C-1 accept fixture) | `d1i` rolled |
+|---|---|---|
+| M1 — disable the `CarriedRoots` SKIP | **RED** (rc=1) | 31 lines, `and_unc` **0** |
+| M2 — disable the UNION on the `Collapsed` branch | **RED** (rc=1) | 31 lines, `and_unc` **0** |
+| RESTORED | **GREEN** | 37 lines, `and_unc` **3** |
+
+Both halves are load-bearing; neither is decoration.
+
+### 3.5 The C-1 POPULATION — rolled vs unrolled on 3 binaries, all STRICT 2b `0 violation(s)`
+
+`and_i32_hl` / `and_i32_hl_unc`, rolled and hand-unrolled, on 542d588 (`subj`) and on the
+fix. Byte-diff of the two traces in the last two columns.
+
+| program | subj r/u | fix r/u | subj twin | fix twin |
+|---|---|---|---|---|
+| `d1` mixed, no diffusion | 3/0 · 3/3 | 3/3 · 3/3 | DIVERGES(6) | **IDENTICAL** |
+| `d1i` mixed + diffusion (**C-1**) | 3/0 · 3/3 | 3/3 · 3/3 | DIVERGES(6) | **IDENTICAL** |
+| `d1k` kickback on `r` too | 3/0 · 3/3 | 3/3 · 3/3 | DIVERGES(6) | **IDENTICAL** |
+| `d11` P3 tree with the per-bit leaf | 3/0 · 3/3 | 3/3 · 3/3 | DIVERGES(6) | **IDENTICAL** |
+| `d1w` K=32 (rolled only) | 32/0 | 32/**32** | n/a | n/a |
+| `d1d` `q` DEAD | 3/0 | 3/3 | n/a | root + rails LEFT ALLOCATED, nothing freed dirty |
+| `n1` carried `cq_theta` + `^9` chain | 3/0 · 3/3 | 3/3 · 3/3 | DIVERGES(8) | MULTISET IDENTICAL (see §3.6) |
+| `n2` TWO carried + one invariant | 3/0 · 3/3 | 3/3 · 3/3 | DIVERGES(6) | **IDENTICAL** |
+| `n3` invariant register MEASURED in the body | 3/0 · 3/3 | 3/3 · 3/3 | DIVERGES(6) | **IDENTICAL** |
+| `n6` carried gate BEFORE the kickback | 3/0 · 3/3 | 3/3 · 3/3 | DIVERGES(6) | **IDENTICAL** |
+| `n7` second kickback on the carried register | 6/0 · 6/6 | 6/6 · 6/6 | DIVERGES(12) | **IDENTICAL** |
+| `n8` mixed + an ONWARD 6.5 region in the same body | 6/0 | 6/**6** | flat twin DECLINES on BOTH | structurally paired, LIFO, per trip |
+| `n5` K=1 | 1/1 · 1/1 | unchanged | IDENTICAL | IDENTICAL |
+| `d5` per-bit K=32, no second register | 32/31 | unchanged | DIVERGES(21) | DIVERGES(21) UNMOVED (the documented `(q>>31)&1 → icmp sgt` frontend canonicalisation) |
+| `d4` K=4, `d7` two invariant registers, `d9` invariant root chain, `d10` trailing `addc`, `d12` invariant cond measured, `e5` P3 carried leaf, `d6` sequential derived | — | **all UNMOVED** | — | — |
+| `d1m` direct compare on the invariant register | DECLINE `condition predates a non-diagonal gate` | same | — | UNMOVED (bd `drbq.12`) |
+| `b7` onward hoisted temp | DECLINE `control flow` | same | — | UNMOVED |
+| **`d2` hoisted `sext` rail** | 0/0 | 0/0 | DIVERGES(10) | DIVERGES(10), rolled trace **BYTE-UNCHANGED subj==fix** |
+| **`d3` hoisted Q+Q rail** | 3/0 · 3/3 | 3/0 · 3/3 | DIVERGES(8) | DIVERGES(8), rolled trace **BYTE-UNCHANGED subj==fix** |
+| **`n4` per-bit condition on a `sext` of `q`** | 0/0 | 0/0 | DIVERGES(10) | DIVERGES(10), rolled trace **BYTE-UNCHANGED subj==fix** |
+| **`n9` mixed + hoisted `q*3` TEMPLATE rail** | 3/0 · 3/3 | 3/0 · 3/3 | DIVERGES(8) | DIVERGES(8), rolled trace **BYTE-UNCHANGED subj==fix** |
+| `n10` a body temp derived from `q` that ESCAPES | 3/0 | 3/0 | — | rolled trace **BYTE-UNCHANGED subj==fix** (the escape clause refuses) |
+
+The last five rows are the DISCRIMINATING CONTROLS: the widening did **not** reach the
+Q-R1-1 template-rail class (`n9` is its mixed spelling and is pinned as an accept-and-leak
+lit fixture) and did **not** weaken `markIfRailLocal`'s escape clause.
+
+### 3.6 Two residual byte divergences are UNFAITHFUL TWINS, measured, not compiler defects
+
+* **`d1c`** (`r ^= 9` per trip): `clang -O1` FOLDS the unrolled source's three xors into ONE
+  (`9^9^9 == 9`). Rolled emits 3 `cqrt_xorc_i32`, unrolled 1 — the two SOURCES are not the
+  same program. Same class as the clearance's own `d6u`. This is why `n1` was written (a
+  `cq_theta` between the xors defeats the fold; it then comes out multiset-identical).
+* **`n1`** and the matrix's four `addpost` cells: MULTISET IDENTICAL
+  (`diff <(sort r) <(sort u)` EMPTY, same `_unc`/free/mint counts, same line count); the
+  only difference is the POSITION of one `cqrt_addc_i32`/`cqrt_xorc_i32` on the SECOND
+  register relative to gates on the DISJOINT first one. Read from the two stage-1 modules
+  (Rule 11): `-O1` keeps the volatile `load @off` where the source put it and **SINKS the
+  `add`** past the next region in the straight-line spelling, which a loop body cannot do
+  across the back edge. Commuting operations on disjoint wires. Present identically on
+  542d588.
+
+### 3.7 The 8h7d.5 question, answered: what OTHER set is computed over this closure?
+
+The closure widened is *"the Roots `markIfRailLocal` treats as THE REGISTER"*.
+GREP-ESTABLISHED FIRST: `Roots` is a LOCAL of `collapseFlattenedLoopRails`, passed only to
+`collapseRailPhisIn`, `invariantRegisterRoots` and `markIfRailLocal`; its ONE product that
+escapes the stage is `taint.IterationLocalBlocks`, a set of BLOCKS.
+
+| set / predicate | answer | what MEASURES it |
+|---|---|---|
+| `markIfRailLocal`'s `onRail` / `AnyLocal` / escape exemption | Adding root `R` makes `onRail` true for in-loop values that PEEL to `R`. **There are none**: an in-loop `cq_theta`/`cq_phi` on `R`'s chain makes clause (iii) refuse the whole extension, and an in-loop dtzb `add`/`xor` is `OutOfPlace` under `AsLowered` (`railValueConsumerDisposition` → `blockCanRepeat` is true in a loop), so the peel stops at the BO. The only effect is that the operand clause no longer returns early for `R` itself. | `n10` (a body temp that ESCAPES): trace BYTE-UNCHANGED subj==fix, `and_unc` still 0. Mutations M1/M2. |
+| `Uncomputation`'s `IterationLocalBlocks` consumers — the §4/§2.9 MULTIPLICITY pair | An admitted Root is a `cqrt_alloc_<W>` producer, excluded by (I1), so no interior `At` exists for it. **The `Collapsed`-branch half is UNCHANGED by this edit** — that branch already marked; the carried rail's preheader chain is `cq_theta` calls and marked `InPlaceRailOps`, none of them template producers. | `d1w` K=32: **32 mints / 32 uncs** (a K-vs-1 pairing defect shows as 32 adjoints against 1); `d9` (two-hop preheader root chain), `d10`/`n1` (in-place `addc`/`xorc` on the carried rail), `n8` (round-2 delta, 6/6 LIFO per trip). |
+| `FreePoint`'s `TermIterLocal` | An invariant ROOT is defined OUTSIDE `L`, so `TermIterLocal` is false for it and it keeps the ordinary Measured/Escaped path — what the pre-existing header already states. | STRICT 2b `0 violation(s)` on every accepting reproducer (~50); `d1d` leaves root and rails allocated, nothing freed dirty. |
+| `staleRailRecordRead` (step 2b) | Asked ONLY of the COLLAPSED `ChainsByRoot`, never of an invariant root's chain — **true before this edit too** (the `NotClaimed` path has the identical gap since F-L5-1). Sound here for a reason that must be STATED rather than inherited: clauses (i)+(iii) mean nothing in the body relabels an invariant root, so the escape exemption has an **EMPTY extension** for those roots. The post-loop diffusion is a rail gate, but that is the pass-wide `declineStaleRecordOps` guard's business and is untouched. ⚠ **If a future change ever admits an in-loop in-place gate on an invariant root, that emptiness ends AND step (2b)'s proof still would not cover it.** | `n3` (invariant register measured INSIDE the body ×3) rolled == unrolled; `d12` unmoved; `n11`/`n12` — the pre-existing alias question, §3.8. |
+| `ControlOwnedRails` | Read by clause (ii-b), unchanged — the union path reuses (ii-b) verbatim. | `n8`, whose onward 6.5 `%out` rail discharges 6/6. |
+| `railGateBetween` / `collectRailGates` | Neither reads `Roots`; both take CHAIN MEMBERS. GREP-verified. | no coupling to widen. |
+
+### 3.8 What the matrix axis can now see, and the B3 fixture
+
+**Sub-grid F** (`tools/loop_twin_matrix.py`), **10 cells**, 274 → **284**: D4's per-bit
+idiom on a loop-INVARIANT `a` beside a loop-CARRIED `r`, at both polarities, with and
+without a post-loop diffusion, and the record axis on each register. Nothing in the 274
+put a loop-invariant condition register beside a carried one — every `RY_REGION` compares
+`a` directly, which is hoist-inert or opaque — and **no cell anywhere read the loop
+index**, which is why 274 cells could not see C-1. Two new `_wrap` parameters, both
+defaulted (`index` binds `i` on the flat side; `postloop` emits the diffusion), and every
+one of the **1104** pre-existing generated sources is BYTE-UNCHANGED — PROVEN by hashing
+them all before and after the edit, not asserted. `addpost` is deliberately NOT in the
+sub-grid: its twin is unfaithful for the `-O1` reason in §3.6, and quarantining a
+scheduler artefact as a filed compiler defect is what the quarantine file's own header
+forbids.
+
+**B3** (`kMsgBreakPhase`, `cq loop lowering: early break preserves a phase answer`) had a
+plain-C customer and NO fixture; `lowering_reject_break_phase_answer.ll` now pins Q1's
+string after the round-2 carrier fix. `lowering_reject_break_phase_answer_kickback.ll`
+pins B3 from the clearance's committed `f1_break_kick_before.subj.s1.ll` (a kickback on
+`q==5` before the shipped 7.4 break loop), and
+`lowering_break_global_phase_before_accept.ll` is its DISCRIMINATING CONTROL: the same
+program with an UNCONDITIONAL `cq_phi(0.3)` — a global phase, DELETED by D2 — ACCEPTS with
+a trace BYTE-IDENTICAL to the plain break loop's (209 = 209). Without that control B3
+would be a wall rather than a discriminator.
+
+### 3.9 OWNER QUESTIONS from the C-1 fix round
+
+**OQ-C1-1 — a `Collapsed` loop with a SURVIVING tainted header phi.** `collapseRailPhisIn`
+step (1) `continue`s in four places, so `Collapsed` does not imply "no tainted header phi
+remains". The extension refuses such a loop at clause (i) (and `markIfRailLocal` refuses it
+again), so the disposition is today's leak, unchanged. Should the mixed extension serve it
+too — i.e. is a loop with ONE claimed rail and ONE unclaimed one a shape to prove, or a
+shape to keep refusing? No plain-C reproducer was constructed this round; the refusal is
+the Prime-Directive direction either way.
+
+**OQ-C1-2 — an alias measured after a later gate on the same wire, PRE-EXISTING and
+loop-independent.** `int q=cq_theta(u,.5); int mark=q; q=cq_theta(q,.9); return
+cq_measure(mark);` (`p/n12_flat_alias_measure_after_gate.c`, no loop anywhere) ACCEPTS and
+emits `ry(h0,.5); ry(h0,.9); measure(h0)` — the POST-gate register measured where the
+source named the PRE-gate value. MEASURED IDENTICAL on the **pre-3qlq ORACLE (52d7764)**,
+on 542d588 and on the C-1 fix, so it is neither this round's nor this epic's. It is
+recorded here because the mixed-loop probe `n11` is its in-loop spelling and a reader will
+otherwise mistake it for C-1 fallout: `n11`'s only change across the fix is the SAME three
+`_unc`+`free` pairs `d1i` gains, no reordering. Under Rule 8 an `int` copy is an ALIAS of
+the register, not a snapshot — is that the ruled semantics, or is it the 8h7d.5 F1 class
+one level out of the loop?
+
+**OQ-C1-3 — the flat twin of a mixed loop with an ONWARD region declines.** `n8`'s
+hand-unrolled spelling declines `control flow under quantum control` on BOTH binaries, so
+the round-2-delta accept has no twin witness (the clearance already filed this as its §5
+item 5 for `b2u`/`b6u`). Its rolled form is structurally paired 6/6 LIFO per trip and
+STRICT-2b clean, which is the strongest statement available without a twin.

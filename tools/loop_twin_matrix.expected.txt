@@ -306,6 +306,16 @@ m_none_one_add_none_none ACCEPT-IDENTICAL
 m_none_one_none_none_none ACCEPT-IDENTICAL
 m_none_one_none_none_rypost ACCEPT-IDENTICAL
 m_none_one_ry_none_none  ACCEPT-IDENTICAL
+m_none_pbit_none_none_rypost ACCEPT-IDENTICAL
+m_none_pbit_none_none_rypre ACCEPT-IDENTICAL
+m_none_pbitd_none_none_rypost ACCEPT-IDENTICAL
+m_none_pbitd_none_none_rypre ACCEPT-IDENTICAL
+m_none_pbitd_none_premark_rypost ACCEPT-IDENTICAL
+m_none_pbitd_none_rpremark_rypost UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_pbitne_none_none_rypost ACCEPT-IDENTICAL
+m_none_pbitne_none_none_rypre ACCEPT-IDENTICAL
+m_none_pbitned_none_none_rypost ACCEPT-IDENTICAL
+m_none_pbitned_none_none_rypre ACCEPT-IDENTICAL
 m_none_range_none        UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_range_ry          ACCEPT-IDENTICAL
 m_none_range_rz          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control

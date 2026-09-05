@@ -32,6 +32,9 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOPHASE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=CCNT < %t.cqd0.ll
 
 ; The D2 deletion: no Rz of any width is emitted anywhere, and no `@cq_phi` call
 ; survives. THIS is the clause that makes the sibling decline a discriminator.
@@ -45,6 +48,24 @@
 ; CHECK: call void @cqrt_xorc_i32(
 ; CHECK: call void @cqrt_copy_i32_controlled(
 ; CHECK: call i32 @cqrt_measure_i32(
+
+; THE CENSUSES. They exist because this round's injection matrix caught NOTHING
+; with the two original prefixes alone -- an extra `cqrt_free`, an extra
+; `cqrt_x`, an extra `cqrt_cswap` and a DELETED `cqrt_free` were all MISSED.
+; The counts are the
+; shipped 7.4 break lowering's, MEASURED on this module; this file's subject is
+; the D2 deletion, and these keep it from being blind to everything else.
+; FCNT-COUNT-16: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
+
+; ZERO `cqrt_x` -- the break lowering brackets nothing here, so any is injected.
+; XCNT-NOT: call void @cqrt_x(i32
+
+; The capture census: 2 `cqrt_toffoli` fire-flags, and NO `cqrt_cswap` anywhere
+; (the 7.4 capture is copy-NOT-move, PRD-7.4 section 2.2).
+; CCNT-COUNT-2: call void @cqrt_toffoli(
+; CCNT-NOT: call void @cqrt_toffoli(
+; CCNT-NOT: @cqrt_cswap
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
