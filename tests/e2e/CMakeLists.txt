@@ -585,10 +585,25 @@ add_test(NAME e2e-angle-select-ry-ne-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_twin.expected.log")
 
-add_test(NAME e2e-angle-select-rz-twin-identical
-  COMMAND "${CMAKE_COMMAND}" -E compare_files
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz.expected.log"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz_twin.expected.log")
+# REMOVED 2026-09-05 (3qlq Inc 1, prep-b2): `e2e-angle-select-rz-twin-identical`.
+# It asserted `compare_files` between the Rz angle select and its BY-DIFFERENCE
+# manual twin, and under owner decision D2 that assertion is FALSE — not because
+# either side is wrong, but because the twin's leading gate is an UNCONTROLLED
+# `cq_phi(0.3)`, i.e. a GLOBAL PHASE, which the pass DELETES. MEASURED:
+#     subject  cqrt_x(f); rz_i1(f, 0x1.3333333333333p-2);            <- P(0.3) on !f
+#              cqrt_x(f); rz_i1(f, 0x1.ccccccccccccdp-1)             <- P(0.9) on  f
+#     twin                 rz_i1(f, 0x1.3333333333334p-1)            <- P(fl(0.9-0.3)) on f
+# The two are the SAME STATE up to the global factor e^{i0.3} that D2 removes, so
+# a byte gate would be asserting that a deleted global phase is observable. Both
+# slices KEEP their own registration and their own golden; the RELATION between
+# the two goldens is stated in both headers and is checkable by hand (the twin's
+# single angle is `fl(A - B)` of the subject's two). The drbq Inc-4 state-prep
+# group set the precedent for exactly this: "the two goldens differ by a
+# reduction and a `compare_files` gate would assert something FALSE".
+# NOTE also (prep-d, OQ-15): NO byte-identity twin exists for this stem at all —
+# the obvious candidate `if (q==5) cq_phi(A); if (q!=5) cq_phi(B);` is BYTE-
+# IDENTICAL at `-O1` to the if/else itself, so it is the same module and witnesses
+# nothing. The audit's substitution (d) is P2's witness for the Rz stem.
 
 # bd test_C_libtooling-lom0 Increment 4 — TWO COMPLETE GROVER ITERATIONS: four
 # chained `cq_theta`s and four sequential tainted-condition phase regions, i.e.

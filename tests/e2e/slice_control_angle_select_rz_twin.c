@@ -1,3 +1,14 @@
+/* ⚠ NO LONGER A BYTE-IDENTITY TWIN, and the `cmp` gate that claimed it was
+   REMOVED 2026-09-05 (3qlq Inc 1, prep-b2). This program's leading `cq_phi(0.3)`
+   is UNCONTROLLED — a GLOBAL PHASE — and owner decision D2 deletes it, so this
+   golden holds ONE `cqrt_rz_i1(f, fl(0.9 - 0.3))` where
+   `slice_control_angle_select_rz.expected.log` holds the four-line
+   `x(f); rz_i1(f, 0.3); x(f); rz_i1(f, 0.9)`. The two are the same state up to
+   e^{i0.3}. The slice is KEPT because it is a real customer in its own right —
+   a D2 global-phase deletion sitting beside a kickback on the SAME compare (P7 +
+   P1 in one module) — and because the `fl(A - B)` relation between the two
+   committed goldens is hand-checkable. It is NOT evidence of byte identity and
+   must not be quoted as such. */
 /* 3qlq Inc 1: migrated to register-free cq_phi -- the unconditional and the conditional gate lose their register.
    NOTE: the twin RELATION survives the surface change. `cq_phi(0.3)` unconditional is
    now a GLOBAL phase and is DELETED (D2); what remains is `e^{i*0.6}` on the q==5

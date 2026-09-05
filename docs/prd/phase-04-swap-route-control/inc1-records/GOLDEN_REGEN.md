@@ -313,3 +313,37 @@ on the LOWERED IR — `@slice` is **25 lines at K=3 and 25 at K=1000**.
 * **The 232 goldens with no `cqrt_rz`.** They are not in scope for Increment 1 and
   are unchanged; `git status --porcelain tests/e2e` lists exactly the 71 above
   plus the two deletions.
+
+## 9. ONE `cmp` TWIN GATE RETIRED — `e2e-angle-select-rz-twin-identical`
+
+It was the ONLY red in the e2e layer after the regeneration, and it is a gate that
+became FALSE rather than a regression. It asserted `compare_files` between
+`slice_control_angle_select_rz.expected.log` and its BY-DIFFERENCE manual twin.
+Under owner decision D2 the twin's leading `cq_phi(0.3)` is UNCONTROLLED — a
+GLOBAL PHASE — and the pass deletes it. MEASURED, the whole relation:
+
+```
+subject  cqrt_x(f); cqrt_rz_i1(f, 0x1.3333333333333p-2);       P(0.3) on !f
+         cqrt_x(f); cqrt_rz_i1(f, 0x1.ccccccccccccdp-1)        P(0.9) on  f
+twin                cqrt_rz_i1(f, 0x1.3333333333334p-1)        P(fl(0.9-0.3)) on f
+```
+
+The two are the SAME STATE up to the factor `e^{i0.3}` that D2 removes, so the byte
+gate would be asserting that a deleted global phase is observable. Both slices keep
+their registration and their golden; the relation — the twin's single angle is
+`fl(A − B)` of the subject's two — is stated in both headers and is checkable by
+hand from the two committed files. The drbq Inc-4 state-prep group set the
+precedent verbatim: *"the two goldens differ by a reduction and a `compare_files`
+gate would assert something FALSE"*.
+
+⚠ And there is no repair available, which is the part to carry (prep-d, OQ-15):
+**no byte-identity twin exists for the Rz angle select at all.** The obvious
+candidate `if (q==5) cq_phi(A); if (q!=5) cq_phi(B);` is BYTE-IDENTICAL at `-O1`
+to the if/else itself, so it is the same module and witnesses nothing. P2's witness
+for the Rz stem is the audit's substitution (d) — which fired and passed (§3) —
+plus the analytic argument, which belongs to the Rule-13 lenses.
+
+The FIVE other `cmp` twin gates over goldens this increment regenerated are GREEN:
+`e2e-inplace-ry-loop{,-leading-gate,-two-regs,-leak,-grover}-twin-identical`, plus
+the two NEW ones `e2e-phase-grover-loop-twin-identical` and
+`e2e-phase-perbit-loop-twin-identical`, and `e2e-phase-nest-andcond-identical`.
