@@ -1058,6 +1058,22 @@ Instruction *taintedExit(Loop *L, const TaintSet &taint) {
 // no relative phase and STOPS the walk; a `cq_phi` (Rz) in the lineage is the
 // phase carrier. Over-decline-safe (any phi flags it).
 bool breakLineageCarriesPhase(Value *Op, const TaintSet &taint) {
+  // ---- THE REGISTER-FREE BRANCH PHASE (bd 3qlq Inc 1 part A, Rule-13 round-1
+  // finding F-L5-6 — a latent WIDENING). The `cq_phi_` prefix row below went
+  // VACUOUS with the surface change, and the property it protected became
+  // UNREPRESENTABLE in the SSA lineage: a register whose branches carry a
+  // kickback phase has no `cq_phi` in its operand graph at all, because the gate
+  // lands on a flag ancilla the register does not derive from. Without this
+  // clause this fence silently answered "no phase" for a value that carries one.
+  // Asked FIRST and COARSELY (any tainted-control branch phase in the same
+  // function) — see `TaintPropagation.h` for why a precise, per-register answer
+  // is a control-dependence question this backward operand walk cannot ask, and
+  // why over-declining is safe here (every consumer turns `true` into a loud
+  // decline).
+  if (auto *OpI = dyn_cast<Instruction>(Op))
+    if (functionCarriesBranchPhase(OpI->getFunction(), taint))
+      return true;
+
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;
   Work.push_back(Op);

@@ -137,6 +137,16 @@ bool isNoreturnSinkArm(BasicBlock *Arm, const BasicBlock *Pred,
 // are the classical seed + angle, untainted); a `cq_phi` in the lineage is the
 // phase carrier. Over-decline-safe (any phi in the tainted lineage flags it).
 bool lineageCarriesPhase(Value *Op, const TaintSet &Taint) {
+  // ---- THE REGISTER-FREE BRANCH PHASE (bd 3qlq Inc 1 part A, Rule-13 round-1
+  // finding F-L5-6 — a latent WIDENING). Identical clause and identical reason
+  // as in `ControlDetect::retLineageCarriesPhase` and
+  // `LoopLowering::breakLineageCarriesPhase`: the `cq_phi_` prefix row below
+  // went vacuous with the surface change, and the property it protected became
+  // unrepresentable in the SSA lineage. See `TaintPropagation.h`.
+  if (auto *OpI = dyn_cast<Instruction>(Op))
+    if (functionCarriesBranchPhase(OpI->getFunction(), Taint))
+      return true;
+
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;
   Work.push_back(Op);

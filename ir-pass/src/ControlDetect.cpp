@@ -390,6 +390,22 @@ bool isSelfLoopArm(BasicBlock *Arm) {
 // operand (the taint sink — phase already collapsed to a basis outcome) is never
 // walked into (the `cq_measure` result is untainted).
 bool retLineageCarriesPhase(Value *Op, const TaintSet &Taint) {
+  // ---- THE REGISTER-FREE BRANCH PHASE (bd 3qlq Inc 1 part A, Rule-13 round-1
+  // finding F-L5-6 — a latent WIDENING). The `cq_phi_` prefix row below went
+  // VACUOUS with the surface change, and the property it protected became
+  // UNREPRESENTABLE in the SSA lineage: a register whose branches carry a
+  // kickback phase has no `cq_phi` in its operand graph at all, because the gate
+  // lands on a flag ancilla the register does not derive from. Without this
+  // clause this fence silently answered "no phase" for a value that carries one.
+  // Asked FIRST and COARSELY (any tainted-control branch phase in the same
+  // function) — see `TaintPropagation.h` for why a precise, per-register answer
+  // is a control-dependence question this backward operand walk cannot ask, and
+  // why over-declining is safe here (every consumer turns `true` into a loud
+  // decline).
+  if (auto *OpI = dyn_cast<Instruction>(Op))
+    if (functionCarriesBranchPhase(OpI->getFunction(), Taint))
+      return true;
+
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;
   Work.push_back(Op);

@@ -565,6 +565,45 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 // SmallVector that holds one entry per phase call in the module.
 bool isRegisterFreePhaseCall(const llvm::CallInst *CI, const TaintSet &taint);
 
+// THE PHASE-CARRIER QUESTION, RE-ASKED FOR THE REGISTER-FREE SURFACE — bd 3qlq
+// Inc 1 part A, Rule-13 round-1 finding F-L5-6 (a latent WIDENING the
+// increment's own vacuity audit missed).
+//
+// Three fences ask "does this escaping value's lineage carry a RELATIVE PHASE?"
+// and decline if it does: `LoopLowering::breakLineageCarriesPhase` (the §2.6 B3
+// fence — a 7.4 `break` whose escaping answer carries a phase),
+// `ControlDetect::retLineageCarriesPhase` (controlled `return`) and
+// `AbortParkEmit::lineageCarriesPhase` (the 7.2 abort park). All three answered
+// it by looking for a `cq_phi_`-prefixed CALL in the value's own SSA lineage.
+//
+// AFTER D1/D2 THAT PROPERTY IS NOT REPRESENTABLE IN THE LINEAGE AT ALL. A
+// register whose branches carry a KICKBACK phase has NO `cq_phi` anywhere in its
+// operand graph — the phase is attached to a BRANCH on `c(x)`, and the gate
+// lands on a flag ancilla that is not an operand of anything the register
+// derives from. So all three silently began answering "no phase" for a value
+// that genuinely carries one. That is a WIDENING, not a narrowing, and it is the
+// one direction a vacuity audit exists to catch. (Two of the three DID get a
+// "⚠ VACUOUS" note, and its stated reason — "a `void(double)` call has no arg-0
+// WIRE and no arg-1 ANGLE, so every clause below would be reading the wrong
+// operand" — is right for the WIRE-walking predicates and a non-sequitur for a
+// CARRIER predicate, which reads no operand at all.)
+//
+// THIS IS THE REPLACEMENT PROPERTY, and it is deliberately COARSE. It asks: does
+// `F` contain a branch phase that is CONTROL-DEPENDENT on a tainted branch? An
+// UNCONTROLLED `cq_phi` is a global phase and carries nothing (D2 deletes it),
+// so only a branch phase counts; but which REGISTER it attaches to is a
+// control-dependence question the three carriers' backward operand walks cannot
+// answer, and inventing a precise version inside a Rule-13 fence is not a
+// round-1 change. Over-declining is safe here by construction — every one of the
+// three consumers turns `true` into a LOUD DECLINE.
+//
+// ⚠ TIMING IS WHY THE ANSWER CANNOT BE A RECORD WRITTEN BY THE EMITTER. All
+// three carriers run BEFORE `lowerControlRegions` (`lowerLoops` → `tryBreak`,
+// then `detectControlRegions`), so a `taint.BranchPhasedRegisters` filled in
+// `emitPhaseKickbackRegion` would always be empty when they read it. The
+// question has to be asked of the SOURCE construct, which is what this does.
+bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
+
 // bd test_C_libtooling-3qlq Inc 1, PRD §6.2 row P7 (owner decision D2) — DELETE
 // every SURVIVING register-free `cq_phi`, and ASSERT the Rule-1 invariant that
 // makes the deletion sound.

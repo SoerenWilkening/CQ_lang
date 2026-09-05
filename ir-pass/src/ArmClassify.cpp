@@ -4597,8 +4597,36 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   const bool IsPhase = isRegisterFreePhaseCall(T, Taint);
   if (IsPhase && (T->arg_size() != 1 || T->getArgOperand(0) != Sel))
     return AngleSelectDisp::NotApplicable;
-  if (!IsPhase && !angleSelectArmsAdmissible(A, B))
+  if (IsPhase) {
+    // ---- THE ONE CLAUSE OF THE ARM-VALUE FENCE THAT *DOES* HAVE A SUBJECT FOR
+    // THIS STEM — Rule-13 round-1 finding F-L4-1. The paragraph above is right
+    // that the phase stem performs no arithmetic on the angles, and it was WRONG
+    // to conclude from that that the WHOLE fence has no subject: clause (1),
+    // `valueCarriesUndef`, is about a value that is not a NUMBER AT ALL, and
+    // passing it through verbatim is exactly how it reaches a gate slot.
+    // MEASURED (hand IR at this clang): an `undef`/`poison` arm reached
+    // `cqrt_rz_i1(f, double undef)` in the emitted module, where the pre-3qlq
+    // oracle declined. A `double undef` in a gate operand is the bd xy9n
+    // literal-integrity class: the `-O0` stage-3 backend may read one `undef` as
+    // two different values, so an emitted angle stops denoting the source's.
+    //
+    // WHICH CLAUSES GENUINELY HAVE NO SUBJECT HERE, named rather than waved at
+    // (the round-1 review's second half of this finding): (2a) the non-finite
+    // ARM and (2b) the non-finite DIFFERENCE and (3) the rounding bound all
+    // exist because 2b realizes `A − B` as a `double` the source never wrote —
+    // there is no subtraction on this path, so `inf` in equals `inf` out and
+    // `P(inf)` is exactly what the source asked for; and (2c), the
+    // constant-arms-only narrowing (clearance blocker F-11), fences the same
+    // subtraction and is retired for this stem by owner question Q3. Note the
+    // consequence deliberately kept: a non-finite or `ConstantExpr` arm PASSES
+    // THROUGH here, which is the SAME disposition an uncontrolled
+    // `cq_theta(q, inf)` already has on both binaries. That is a decision, not
+    // an oversight, and `control_angle_select_phase_nonfinite_arm.ll` records it.
+    if (valueCarriesUndef(A) || valueCarriesUndef(B))
+      return AngleSelectDisp::NotApplicable;
+  } else if (!angleSelectArmsAdmissible(A, B)) {
     return AngleSelectDisp::NotApplicable;
+  }
 
   // S2 — EXACTLY ONE user, and it is a rotation reading the select ONLY as its
   // angle. `hasOneUse` counts USES, so a select feeding both arg-0 and arg-1 of

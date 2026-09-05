@@ -1636,6 +1636,22 @@ bool reachedThroughTaintedBranch(const BasicBlock *BB, const TaintSet &taint) {
 
 }  // namespace
 
+// See the header for the whole argument (bd 3qlq Inc 1 part A, F-L5-6).
+bool functionCarriesBranchPhase(const Function *F, const TaintSet &taint) {
+  for (CallInst *CI : taint.PhaseCalls) {
+    if (CI->getFunction() != F)
+      continue;
+    // CONTROL-DEPENDENT ON A TAINTED BRANCH — the same crude backward CFG walk
+    // `deleteGlobalPhases`' Rule-1 assert uses, and asked here for the opposite
+    // reason: there a "yes" means the invariant broke, here it means the phase
+    // is a BRANCH phase rather than a global one. Reusing the one walk keeps the
+    // two from drifting about what "under quantum control" means (Rule 14).
+    if (reachedThroughTaintedBranch(CI->getParent(), taint))
+      return true;
+  }
+  return false;
+}
+
 void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
   Function *PhaseFn = wd.phaseFn();
   if (!PhaseFn)
