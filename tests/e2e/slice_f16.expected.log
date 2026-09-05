@@ -9,11 +9,9 @@ cqrt_ry_f16(h3, 0x1.999999999999ap-4)
 cqrt_alloc_f16(0x1.4p+1) -> h4
 cqrt_ry_f16(h4, 0x1.999999999999ap-3)
 cq_template_fadd_f16(h3, h4) -> h5
-cqrt_rz_f16(h5, 0x1.3333333333333p-2)
-cqrt_rz_f16(h5, -0x1.3333333333333p-2)
+cq_template_fcmp_oeq_f16_hl(h5, 0x1p+2) -> h6
+cqrt_rz_i1(h6, 0x1.3333333333333p-2)
+cq_template_fcmp_oeq_f16_hl_unc(h6, h5, 0x1p+2)
 cq_template_fadd_f16_unc(h5, h3, h4)
 cqrt_free(h5)
-cqrt_ry_f16(h4, -0x1.999999999999ap-3)
-cqrt_free(h4)
-cqrt_ry_f16(h3, -0x1.999999999999ap-4)
-cqrt_free(h3)
+cqrt_free(h6)

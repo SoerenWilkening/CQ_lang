@@ -4500,20 +4500,21 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-twin
 # ============================================================================
 # bd test_C_libtooling-3qlq Increment 1 — REGISTER-FREE `cq_phi` (PRD S6.5).
 #
-# THESE FOURTEEN ENTRIES ARE `DISABLED TRUE` AND THAT IS DELIBERATE. The eleven
-# slices are committed at PRE-IMPLEMENTATION dispositions (Rule 16): the lowering
-# does not exist yet, so NO `.expected.log` exists for any of them, and an
-# enabled entry pointing at a missing golden is a RED test that everyone learns
-# to ignore — which is precisely the failure Rule 19 warns about ("a gate
-# expected to be red is a gate people stop reading"). The registrations are here
-# NOW so the shapes are reviewable with the PRD and so enabling them is a
-# ONE-LINE deletion once Increment 1 lands and the goldens are generated:
+# THIRTEEN LIVE ENTRIES (ten slices + three `cmp` twin gates). prep-b registered
+# FOURTEEN as `DISABLED TRUE` because the lowering did not exist yet and no
+# `.expected.log` did either; prep-b2 generated every golden on the Increment-1
+# binary through the full pipeline (stage 1 -> 2 -> STRICT 2b -> 3 -> 4), audited
+# them with `tools/golden_multiset_audit.py --epic 3qlq --rev 52d7764`, and
+# DELETED the `set_tests_properties(... DISABLED TRUE)` call. One of the fourteen,
+# `e2e-slice-control-phase-nest-deep`, was REMOVED instead of enabled: it is a
+# MIXED nest and declines `impure phase arm` on BOTH binaries (OQ-7; the note is
+# at that registration's old site).
 #
-#     delete the single `set_tests_properties(... DISABLED TRUE)` call below.
-#
-# Every one of the eleven DECLINES on the pre-3qlq oracle today; the measured
-# exit code and diagnostic string for each is in
-# docs/prd/phase-04-swap-route-control/inc1-records/PRE_DISPOSITIONS.md.
+# Every one of these programs DECLINED on the pre-3qlq oracle; the measured exit
+# code and diagnostic string for each is in
+# docs/prd/phase-04-swap-route-control/inc1-records/PRE_DISPOSITIONS.md, and the
+# post-increment disposition of all 71 migrated + new slices is in
+# .../inc1-records/GOLDEN_REGEN.md.
 # ============================================================================
 
 # --- the correct Grover oracle (PRD S1: every PRE-3qlq grover golden is the
@@ -4636,22 +4637,13 @@ add_test(NAME e2e-phase-nest-andcond-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_nest.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_andcond.expected.log")
 
-# DELETE THIS ONE CALL when Increment 1 lands and the eleven goldens exist.
-set_tests_properties(
-  e2e-slice-control-phase-grover
-  e2e-slice-control-phase-grover-loop
-  e2e-slice-control-phase-grover-loop-unrolled
-  e2e-slice-control-phase-perbit-loop
-  e2e-slice-control-phase-perbit-loop-unrolled
-  e2e-slice-control-phase-perbit-loop-k32
-  e2e-slice-control-phase-nest
-  e2e-slice-control-phase-andcond
-  e2e-slice-control-phase-angle-select
-  e2e-slice-control-phase-angle-select-runtime-arms
-  e2e-phase-grover-loop-twin-identical
-  e2e-phase-perbit-loop-twin-identical
-  e2e-phase-nest-andcond-identical
-  PROPERTIES DISABLED TRUE)
+# ENABLED 2026-09-05 (3qlq Inc 1, prep-b2): the `set_tests_properties(... DISABLED
+# TRUE)` call that stood here is DELETED. All THIRTEEN goldens now exist and were
+# generated on the Increment-1 binary through the full pipeline (stage 1 -> 2 ->
+# STRICT 2b -> 3 -> 4) and audited with
+# `python3 tools/golden_multiset_audit.py --epic 3qlq --rev 52d7764`.
+# (Fourteen entries were registered by prep-b; `e2e-slice-control-phase-nest-deep`
+# was REMOVED — see the OQ-7 note above — leaving thirteen.)
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
