@@ -103,6 +103,7 @@ CALL_RE = re.compile(
 FN_RE = re.compile(r'@(?P<fn>[\w.$]+)\s*\(')
 DEFINE_RE = re.compile(r'^define\b.*?@(?P<name>[\w.$"]+)\s*\(')
 MIGRATE_TAINTED_ANGLE = False
+KEEP_MERGE_PHI = False
 DECLARE_PHI_RE = re.compile(r'^declare\b[^;]*@cq_phi_[\w.$]+\s*\(')
 LABEL_RE = re.compile(r'^(?P<name>[-\w.$]+):')
 OPERAND_RE = re.compile(r'%[\w.$]+')
@@ -768,6 +769,22 @@ def rewrite(path: str, fa: FileAnalysis, do_checks: bool) -> tuple[list[str], li
                                 keep = R
                                 actions.append(f'{s.cls} const-fold re-anchor: '
                                                f'phi roots {sorted(roots)} -> {R}')
+                    if keep is None and KEEP_MERGE_PHI:
+                        # --keep-merge-phi (prep_a2): the phi's incomings really do
+                        # carry DIFFERENT registers, so there is no single value to
+                        # dissolve to -- and dissolving was never the right move for
+                        # this shape.  These are the MIXED-arm / CROSS-HANDLE /
+                        # DISTINCT-BASE DECLINE fixtures: the phi is a GENUINE data
+                        # mux and it is the thing being declined.  Under the
+                        # register-free surface the phase arm simply stops producing
+                        # a value, so the only edit the site needs is the RAUW of the
+                        # call's result to its base (performed below, unconditionally)
+                        # -- the phi SURVIVES, one of its incomings now naming the
+                        # base directly.  The module stays well-formed and the mux
+                        # the fixture exists to refuse is still there to refuse.
+                        fa.notes.append(f'phi-kept at line {idx+1}')
+                        actions.append(f"{s.cls} phi KEPT (genuine mux) at line {idx+1}")
+                        continue
                     if keep is None:
                         fa.notes.append(f'phi-incomings-disagree at line {idx+1}')
                         fa.hand_decision = (fa.hand_decision or
@@ -1068,9 +1085,15 @@ def main(argv=None):
                          "MEASURED: the uncontrolled tainted-angle decline survives "
                          "the surface change, so deleting the call would discard the "
                          "fixture's whole subject.")
+    ap.add_argument('--keep-merge-phi', action='store_true',
+                    help="when a merge phi's incomings carry DIFFERENT registers, "
+                         "KEEP the phi (it is a genuine data mux and usually the very "
+                         "thing the fixture declines) and only RAUW each cq_phi result "
+                         "to its base.  Without this the file is a hand decision.")
     args = ap.parse_args(argv)
-    global MIGRATE_TAINTED_ANGLE
+    global MIGRATE_TAINTED_ANGLE, KEEP_MERGE_PHI
     MIGRATE_TAINTED_ANGLE = bool(args.migrate_tainted_angle)
+    KEEP_MERGE_PHI = bool(args.keep_merge_phi)
     if args.limits:
         print(LIMITS)
         return 0

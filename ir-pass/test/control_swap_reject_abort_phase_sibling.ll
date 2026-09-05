@@ -19,10 +19,15 @@
 ;
 ; WHAT SURVIVES. Same as its sibling fixture
 ; `control_swap_reject_phase_value_escaping.ll`: the F-L5-6 phase-carrier fence
-; consults registers recorded PHASED AT EMISSION, so a KICKBACK region upstream
-; of the abort park phases `%q`, and the park's sibling then escapes it. The
-; pre-region `%p = cq_phi(%q, θ)` this file used to carry is a GLOBAL PHASE under
-; D2 and would simply be deleted, taking the fixture's subject with it.
+; asks `functionCarriesBranchPhase` — "is there a branch phase CONTROL-DEPENDENT
+; on a tainted branch in this function" — so a KICKBACK region upstream of the
+; abort park phases `%q`, and the park's sibling then escapes it. The pre-region
+; `%p = cq_phi(%q, θ)` this file used to carry is a GLOBAL PHASE under D2 and
+; would simply be deleted, taking the fixture's subject with it.
+;
+; ⚠ Same reachability caveat as its sibling fixture
+; `control_swap_reject_phase_value_escaping.ll`: this PINS the fence in hand IR
+; and says nothing about fix_r1's separate "no plain-C program reaches it".
 ;
 ; ⚠ DISCRIMINATOR, measured both ways ($SP/progress/prep_a2_work/pv/):
 ;   * with the kickback (`abort.ll`, this module): `phase-class value escaping`

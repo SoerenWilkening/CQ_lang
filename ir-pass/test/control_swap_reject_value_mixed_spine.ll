@@ -10,10 +10,18 @@
 ; lineage). One mixed-arm string covers both stacking orders — the structural
 ; guarantee that no lowered chain ever carries both a phase and a basis change.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.
+; The construct this fixture pins is unchanged; the CLAUSE that refuses it
+; MOVED — this is a real disposition change, not a widening, and the new
+; string does not contain the old one.
+; OLD: mixed phase/value arm under quantum control
+; NEW: cq controlled lowering: impure value arm under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}mixed phase/value arm under quantum control
+; CHECK: error{{.*}}cq controlled lowering: impure value arm under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %v0, double %a) {
 entry:
@@ -23,10 +31,10 @@ entry:
   br i1 %c, label %arm, label %merge
 arm:
   %p1 = add i32 %p, 3                              ; in-arm value link...
-  %pr = call i32 @cq_phi_si32(i32 %p1, double %a)  ; ...under an Rz: MIXED
+  call void @cq_phi(double %a)  ; ...under an Rz: MIXED
   br label %merge
 merge:
-  %pm = phi i32 [ %pr, %arm ], [ %p, %entry ]
+  %pm = phi i32 [ %p1, %arm ], [ %p, %entry ]
   %m  = call i32 @cq_measure_si32(i32 %pm)
   ret i32 %m
 }

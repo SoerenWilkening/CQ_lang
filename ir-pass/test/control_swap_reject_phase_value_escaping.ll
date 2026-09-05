@@ -22,13 +22,19 @@
 ; re-spelled onto whatever of the property survives, or retired.
 ;
 ; WHAT SURVIVES, AND IT IS MORE THAN PREP_A EXPECTED. The phase-carrier fence is
-; NOT vacuous: round-1 finding F-L5-6 widened it to consult registers recorded as
-; PHASED AT EMISSION rather than by scanning for a `cq_phi` in the lineage, and
-; fix_r1 shipped that as "LATENT — unreachable at HEAD, pinned by: none
-; reachable". MEASURED here on `build/ir-pass/cq-opt`: it IS reachable, from the
-; register-free surface, by the shape below — a KICKBACK arm that also `ret`s the
-; register it phased. So the fence keeps a fixture, and fix_r1's "none reachable"
-; is corrected by this file rather than by prose.
+; NOT vacuous: round-1 finding F-L5-6 widened it to
+; `functionCarriesBranchPhase(F, taint)` — "is there a branch phase in F that is
+; CONTROL-DEPENDENT on a tainted branch" — rather than scanning for a `cq_phi` in
+; the value's own lineage, which the register-free surface had made unanswerable
+; (the gate lands on a flag ancilla the register does not derive from).
+;
+; ⚠ SAY THE REACHABILITY CLAIM EXACTLY. fix_r1's table recorded this fence as
+; "pinned by: none reachable" and its notes as "LATENT at this HEAD — no plain-C
+; program reaches any of the three (each is held shut by an earlier shape
+; fence)". This file corrects the FIRST of those and NOT the second: the fence is
+; now PINNED, by the hand-written IR below, measured on `build/ir-pass/cq-opt`.
+; It says NOTHING about plain-C reachability, which was not re-measured here and
+; must not be inferred from a lit fixture.
 ;
 ; ⚠ DISCRIMINATOR, measured both ways ($SP/progress/prep_a2_work/pv/):
 ;   * with the kickback (`pret.ll`, this module):  `phase-class value escaping`
