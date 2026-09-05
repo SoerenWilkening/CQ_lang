@@ -1,3 +1,27 @@
+/* ⚠ UNREGISTERED SINCE 2026-09-05 (3qlq Inc 1, OQ-4 / OQ-11, prep-b2). This file
+   is NOT an e2e test any more: `tests/e2e/CMakeLists.txt` no longer registers
+   `e2e-slice-control-switch-phase`, and `slice_control_switch_phase.expected.log`
+   was DELETED. It is kept in the tree only as the record of a shape that has no
+   plain-C form.
+
+   MEASURED (Increment-1 SUBJECT and pre-3qlq ORACLE, identical): exit 1,
+     cq QRAM access: const-global table read under tainted control: index not
+     provably in-bounds (no known-bits proof; table size not a power of two)
+   Under owner decision D1 a phase arm's ENTIRE content is `call void
+   @cq_phi(double)`, so all N arms are identical modulo one operand and
+   SimplifyCFG's common-code sinking always applies: `clang -O1` turns the three
+   arms into a `[3 x double] @switch.table` of ANGLES plus a range check plus ONE
+   `cq_phi(load)`. There is no `switch` left for the pass to lower, and the
+   tainted-index table read is a loud QRAM decline.
+
+   THE CAPABILITY IS NOT LOST — only its e2e customer is. PRD §6.2 P5 lowers on the
+   IR `switch` (Increment 1b: 3 accept + 7 decline lit fixtures, stage 2b STRICT
+   PASS), and BOTH `-O1` outcomes (dense table fold, sparse `phi double` cascade)
+   are pinned as loud declines, `control_phase_switch_reject_table_fold.ll` carrying
+   the verbatim `-O1` module. Giving P5 a real e2e customer requires a TABLE-FOLD
+   RECOGNIZER (the table is `private unnamed_addr constant` with `ConstantFP`
+   entries, so the N angles are statically known) — an owner decision, OQ-11.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md §4.1, D1/D2.) */
 /* 3qlq Inc 1: migrated to register-free cq_phi -- the three switch PHASE arms lose their register argument.
    NOTE: the S5 const-fold re-anchor scrub this slice's prose describes is RETIRED
    by PRD S6.2 P5 -- a register-free cq_phi has no arg-0 to fold.

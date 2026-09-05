@@ -1992,13 +1992,21 @@ add_test(NAME e2e-slice-classical-switch-gate
 # free -> icmp_eq_inv strip + flag free; the N>=3 byte-diff exercises the N-way
 # folded-gate scrub + N-way flatten (the §5 const-fold re-anchor BLOCKER's only
 # downstream backstop). control_swap_switch_phase.ll is the pinned IR contract.
-add_test(NAME e2e-slice-control-switch-phase
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_phase.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_phase.expected.log")
+# REMOVED 2026-09-05 (3qlq Inc 1, OQ-4/OQ-11 / prep-b2): `e2e-slice-control-switch-phase`
+# and `slice_control_switch_phase.expected.log`. PRD §6.2 P5 (the homogeneous-phase
+# switch) LOWERS — Increment 1b implements it on the IR `switch` and ships 3 accept +
+# 7 decline fixtures — but it has NO plain-C customer at the `-O1` ship floor. A phase
+# arm's whole content is `call void @cq_phi(double)`, so every arm's suffix is identical
+# modulo one operand and SimplifyCFG's common-code sinking ALWAYS applies: dense case
+# values become a `[N x double] @switch.table` of ANGLES with ONE shared call, sparse
+# ones a cascade joined by `phi double` (Inc 1b measured SEVEN spellings, N-gate arms
+# included). The tainted-index table read is then a loud QRAM decline —
+# `cq QRAM access: const-global table read under tainted control: index not provably
+# in-bounds ...` — on the SUBJECT and on the pre-3qlq ORACLE alike. Both `-O1` outcomes
+# are pinned in lit, `control_phase_switch_reject_table_fold.ll` carrying the verbatim
+# `-O1` module. `slice_control_switch_phase.c` is KEPT in the tree, unregistered, with
+# that record in its header; giving P5 a real e2e customer needs the table-fold
+# recognizer, which is an owner decision (OQ-11), not something this increment may take.
 
 # Phase 4.5 (WI-6): VALUE switch (N-way method-B on a shared routed base p != q):
 # per-case route-in -> verbatim add chain -> route back, then ONE cqrt_copy_i32
@@ -3109,24 +3117,15 @@ add_test(NAME e2e-slice-loop-break-qq
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq.expected.log"
     "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
 
-# Phase 7.4 coverage lock (test_C_libtooling-mvrb): a Q==Q value-arm break whose
-# loop-invariant comparand `p` carries a RELATIVE PHASE (an Rz / cq_phi in p's
-# lineage). The accept is CLEARED by a 5-lens adversarial Rule-13 sign-off
-# (2026-06-30, 0 concrete holes): the break construct emits ONLY basis-permutation
-# gates (no Ry/Rz/H inside — the only cqrt_rz is PRE-LOOP, preparing p), so it is a
-# fixed permutation and p's phase rides inert; p is consumed only as a QQ-compare
-# control (+matched _unc), never copied into out / measured / freed, and is restored
-# exactly + left allocated (Rule-6 safe leak). The golden shows the pre-loop
-# cqrt_rz_i32(h0, 0.3) and NO cqrt_free(h0). Distinct from the B3 phase fence (which
-# declines a phase ESCAPING ANSWER, where copy-out would dephase, Rule 7). No new ABI.
-add_test(NAME e2e-slice-loop-break-qq-phase
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_phase.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_phase.expected.log"
-    "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
+# REMOVED 2026-09-05 (3qlq Inc 1, OQ-5 / prep-b2): `e2e-slice-loop-break-qq-phase`
+# and `slice_loop_break_qq_phase.{c,expected.log}`. The slice existed to exercise a
+# loop-invariant comparand `p` carrying a RELATIVE PHASE (`p = cq_phi(p0, 0.3)`).
+# Under owner decision D1 `cq_phi` takes no register, so `p` IS `p0` and the source
+# becomes the same program as `slice_loop_break_qq.c` — MEASURED: the two stage-1
+# modules differ ONLY by the uncontrolled `call void @cq_phi(double 0.3)` and its
+# `declare`, which D2 deletes, so the LOWERED IR is identical. Keeping it would be
+# a second copy of `e2e-slice-loop-break-qq` wearing a claim it no longer tests.
+# The B3 phase fence it sat beside is unchanged and is pinned in lit.
 
 # Phase 7.4 coverage lock (test_C_libtooling-1784): a Q==Q value-arm break whose
 # comparand is a DERIVED (non-mint) loop-invariant tainted value — `p = p0 + 5`
@@ -4591,13 +4590,14 @@ add_test(NAME e2e-slice-control-phase-andcond
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_andcond.expected.log")
 
-add_test(NAME e2e-slice-control-phase-nest-deep
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_nest_deep.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_nest_deep.expected.log")
+# REMOVED 2026-09-05 (3qlq Inc 1, OQ-7 / prep-b2): `e2e-slice-control-phase-nest-deep`
+# and `slice_control_phase_nest_deep.c`. Its inner block carries a `cq_theta` on a
+# third register, which makes it a MIXED nest (an Ry in the outer arm, a phase in
+# the inner) — PRD §6.3's mixed-arm DECLINE row, not P4. MEASURED on the Increment-1
+# SUBJECT and on the pre-3qlq ORACLE alike: exit 1,
+# `cq controlled lowering: impure phase arm under quantum control`. A declining
+# program has no e2e form; the decline is pinned in lit. The HOMOGENEOUS genuine
+# depth-2 nest (P4) keeps its e2e customer in `slice_control_nested_phase.c`.
 
 # --- the angle select. CONSTANT arms and RUN-TIME arms: the Rz kickback computes
 # --- NOTHING from the angles (no `fl(A-B)`), so run-time arms are admissible for
@@ -4646,7 +4646,6 @@ set_tests_properties(
   e2e-slice-control-phase-perbit-loop-k32
   e2e-slice-control-phase-nest
   e2e-slice-control-phase-andcond
-  e2e-slice-control-phase-nest-deep
   e2e-slice-control-phase-angle-select
   e2e-slice-control-phase-angle-select-runtime-arms
   e2e-phase-grover-loop-twin-identical
