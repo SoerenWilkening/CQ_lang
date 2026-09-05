@@ -358,7 +358,24 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §1.
 >
 > **Increment 1 SHIPPED** (branch `3qlq-inc1`, merge `be4e2ea`; ⚠ re-point this
-> line at the commit that lands it on `main`). `cq_phi` is **register-free** —
+> line at the commit that lands it on `main`). ⚠ **"SHIPPED" HERE MEANS
+> IMPLEMENTED + REVIEWED ON A BRANCH, NOT LANDED.** Increments 0 and 1 are **NOT on
+> `main`**: the independent Rule-13 clearance of 2026-09-05 returned **BLOCK** on
+> finding **C-1** — a mixed loop (D4's per-bit condition on a loop-INVARIANT
+> register PLUS a second loop-CARRIED register) leaked its `and` rails per
+> activation, 3 mints / **0** `_unc` against 3/3 hand-unrolled and 3/3 on the
+> pre-3qlq oracle, at `opt` exit 0, verify-clean and STRICT stage 2b `0
+> violation(s)`; the branch's own record is
+> `inc1-records/session-0a61aa31/clearance.md`. **2026-09-06: C-1 is FIXED on branch
+> `3qlq-inc1-fix-c1`** — `LoopLowering`'s `Collapsed` branch now ALSO collects the
+> loop-invariant root mints beside the carried roots (a separate set unioned only on
+> success, with a `CarriedRoots` skip so the collapse's own rail is not judged), on
+> clause (ii)'s UNCHANGED (I1) proof; witnessed by
+> `e2e-phase-perbit-loop-mixed-twin-identical` (rolled == hand-unrolled, 37 = 37) and
+> pinned in lit by `control_phase_kickback_mixed_invariant_carried_inloop.ll`. **One
+> independent lens and a re-clearance are pending; landing on `main` follows the
+> re-clearance verdict — do not read this block as landed.** `cq_phi` is
+> **register-free** —
 > `void cq_phi(double θ)` = "multiply the CURRENT BRANCH's amplitude by `e^{iθ}`"
 > — and under a tainted condition it lowers by **KICKBACK**: the ordinary compare
 > mint, `cqrt_rz_i1(f, θ)` **UNCONTROLLED** on the flag, the ordinary `_unc` strip
@@ -391,7 +408,14 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > lowered as quantum fp DATA; and a stale-header retired `@cq_phi_<sfx>` call that
 > was neither lowered nor declined (Rule 1's "no third path"). `CLAUDE.md`'s
 > CORRECTNESS-RISK section carries the record and the two standing lessons;
-> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §1/§2 carry the reproducers.
+> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §1/§2 carry the reproducers. ⚠ **That count is
+> the ROUND-1 three and is not the total**: round 2 added a fourth of the same
+> family (the once-running rail-collapse stage whose premise the second round
+> falsifies, PRD errata E9), and the CLEARANCE then added a fifth, **C-1** above —
+> so **five confirmed silent miscompiles across three adversarial passes over ONE
+> increment**, every one `opt` exit 0, verify-clean and STRICT-stage-2b clean, and
+> **zero** of them found by the fixture suite. Budget a further round on any
+> successor increment; that is the number to quote when scoping one.
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
 + [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
@@ -786,7 +810,16 @@ after a statevector-checked design dialogue; see
   class C is `m_xor_range_{none,rz}`, where `-O1` drops the mask's low bit on the
   FLAT side only, so the two spellings are different PROGRAMS: a generator
   question, not a compiler defect, filed under `test_C_libtooling-3qlq` and not
-  blessed). 245 + 29 = the 274 cells the gate runs. The old register-surface
+  blessed). 245 + 29 = the 274 cells the gate runs. **Re-measured 2026-09-06 after
+  the C-1 fix round (branch `3qlq-inc1-fix-c1`): 255 expected rows + 29 quarantined
+  = 284 cells** — the quarantine is untouched at 29 in the same three classes, and
+  the +10 is **sub-grid F, the second-CARRIED-register axis**: the first cells in
+  the instrument to put a loop-INVARIANT condition register and a loop-CARRIED
+  register in one body, which is the only shape that can see the clearance's C-1.
+  Every one of the 245 earlier rows is byte-unchanged (`comm -23` over the `^m_`
+  rows, empty) and all 1104 pre-existing generated sources hash identically; 9 of
+  the 10 new cells would have been hard failures on 542d588 (4 sampled by hand) and
+  are `ACCEPT-IDENTICAL` on the fix. The old register-surface
   tables are kept byte-unchanged as `*.register.txt` — frozen history, not a live
   mode, since the register surface is unreachable from the shipped `CQ.h`. The
   second boundary control (arm ON the condition register ⇒ identical) is now

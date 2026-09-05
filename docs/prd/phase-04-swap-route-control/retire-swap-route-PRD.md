@@ -8,7 +8,16 @@
 > register — leaks its `and` rails per activation where the hand-unrolled twin and the
 > pre-3qlq oracle both discharge them; `inc1-records/session-0a61aa31/clearance.md`).
 > One bounded fix round + re-clearance is owed before landing. Increment 2 (§7) is
-> implemented + round-1 reviewed on branch `3qlq-inc2`, not landed.** ⚠ READ
+> implemented + round-1 reviewed on branch `3qlq-inc2`, not landed.**
+> **2026-09-06: C-1 is FIXED on branch `3qlq-inc1-fix-c1`** — `LoopLowering`'s
+> `Collapsed` branch now ALSO collects the loop-invariant root mints beside the
+> carried roots (a separate set unioned into `Roots` only on success, with a
+> `CarriedRoots` skip so the collapse's own rail is not judged by clause (iii)), on
+> clause (ii)'s UNCHANGED (I1) proof; witnessed by
+> `e2e-phase-perbit-loop-mixed-twin-identical` (rolled == hand-unrolled, 37 = 37) and
+> pinned by `control_phase_kickback_mixed_invariant_carried_inloop.ll`. **One
+> independent lens and a RE-CLEARANCE are pending; landing on `main` follows the
+> re-clearance verdict. Nothing here says Inc 0/1 have landed.** ⚠ READ
 > **§0 ERRATA FIRST** — the sections below are left as WRITTEN so design and
 > implementation can be diffed, and where they disagree the errata block wins.
 > Extends Phase 4
@@ -31,7 +40,9 @@
 >
 > **Shipping status.** Increment 0 (docs + `cq_ry`) and **Increment 1** (the
 > register-free `cq_phi` by kickback, parts A and B) are implemented on branch
-> `3qlq-inc1` — **NOT on main** (clearance BLOCK on C-1, see the Status header). **Increment
+> `3qlq-inc1` — **NOT on main** (clearance BLOCK on C-1, see the Status header;
+> **2026-09-06 C-1 is FIXED on `3qlq-inc1-fix-c1`, one lens + a re-clearance pending,
+> and landing follows that verdict**). **Increment
 > 2 (value arms by controlled-copy merge, §7) is NOT** — every §7 sentence is a
 > plan, and `cqrt_cswap` is still minted at HEAD by the value-arm path and by the
 > 7.2 `AbortParkEmit`.
@@ -165,6 +176,14 @@ classified the 72 changed goldens as **29 substitution-only · 1 ambiguous-d · 
 ambiguous-ca · 11 new-file · 30 FINDING**, and the 30 FINDINGs are exactly the 30
 rewritten programs (`comm` empty both ways; `--selftest` PASS, 0 survivors). *(The audit
 figures are prep-b2's final run; the ctest and golden counts are re-measured here.)*
+*(The C-1 fix round of 2026-09-06 then took the corpus **1656 → 1660**, the ctest layer
+**339 → 342** and `^e2e-` **329 → 332** — `^e2e-slice-` 302 → 304, the twin matrix 274 →
+284 cells, the goldens 304 → 306 — all MEASURED in `3qlq-inc1-fix-c1` with `ls
+ir-pass/test/*.ll | wc -l` and `ctest --test-dir build -N`, name-diffed against the
+542d588 build's list. Everything in the paragraph above is the INC-1 measurement and
+stands as written; note only that re-running its `git diff --name-status 52d7764 HEAD`
+census at the fix-round HEAD reads **95 A / 17 D / 473 M**, the 4 new fixtures being the
+difference. See E2 and notes §3.)*
 
 **E8 — the §12 owner questions were proceeded on as ASSUMED, and two of the assumptions
 were exercised.** Q3 (run-time angle arms admitted for the Rz stem) is load-bearing for
@@ -186,6 +205,19 @@ was neither lowered nor declined (fixed by a reserved-name decline on any USE pl
 end-of-pass survivor postcondition). Round 2 added a fourth of the same family — a
 once-running rail-collapse stage whose premise the second round falsifies. **Budget a
 third round on any successor increment**, and read the §2 stage table as a method.
+⚠ **THE HEADING'S "THREE" IS THE ROUND-1 COUNT AND IS NO LONGER THE TOTAL: it is FIVE,
+and the fifth was found by the CLEARANCE, after two adversarial rounds had already run
+over this exact code and handed it on.** The fifth is **C-1** (E2 above, notes §3.2): the in-loop
+entangled-rail leak's THIRD instance, one dispatch precondition over from round 1's
+F-L5-1 and round 2's F-R1-1, inside D4's own designated idiom, reached from four lines of
+plain C, at `opt` exit 0, verify-clean and STRICT stage 2b `0 violation(s)`. **Still none
+by the fixture suite** — 1656 fixtures were green at the clearance's own measured gate.
+Note what this does NOT say: the clearance ran 12 probes for a third ONCE-ONLY-STAGE
+instance and found none in the accept direction, so that family stands at two and C-1
+belongs to the other one. Two families, two counters. **The number to quote when scoping
+a successor is five confirmed silent miscompiles over three adversarial passes on ONE
+increment, one of them after the increment was already reviewed twice** — budget a round
+AFTER the round you think is last.
 
 ## 1. Motivation — the shipped Grover goldens are the identity
 
