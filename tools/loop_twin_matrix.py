@@ -171,6 +171,89 @@ AXIS MAY. When one appears, the honest response is to make the immediate opaque
 (`volatile`, as `off` already is) so the two sides are shapes of the same
 computation again. NEVER bless a divergence in the expected table: this gate has
 exactly one job, and a table entry that says "this pair may differ" retires it.
+
+THE SIXTH AXIS — THE `cq_phi` SURFACE (`--phi-surface`, bd
+test_C_libtooling-3qlq Increment 1, "retire the swap route"). NOT a cell axis:
+a whole-matrix MODE, because it changes the FRONTEND, not the program shape.
+
+    register (DEFAULT)  `a = cq_phi(a, T)`   the shipped 15-width per-register Rz
+    void                `cq_phi(T);`         the Increment-1 branch phase
+
+DEFAULT `register` IS LOAD-BEARING. `e2e-loop-twin-matrix` passes no
+`--phi-surface`, so the ctest gate, `tools/loop_twin_matrix.expected.txt` and
+`tools/loop_twin_matrix.quarantine.txt` are byte-for-byte the artefacts they
+were, and the generated source of all 274 cells is byte-identical to the
+pre-3qlq script's (proven by diffing the generator output, not asserted).
+
+UNDER `void` THE C SOURCE NEEDS A DIFFERENT HEADER — `include/CQ.h` still
+declares the 15-width family — so `--include-dir` must point at a header whose
+`cq_phi` is the ONE extern `void cq_phi(double)`. The mode REFUSES TO RUN if it
+does not find that declaration, because a `register`-surface header would
+silently generate `cq_phi(T)` as a one-argument call to a two-argument macro and
+the failure would read like a compiler decline.
+
+WHAT EACH AXIS MEANS UNDER `void`, WRITTEN OUT BECAUSE THREE OF THEM CHANGE
+MEANING AND ONE GOES VACUOUS:
+
+  * THE REGION CELLS BECOME KICKBACK CELLS. `if (a == 5) { cq_phi(M_PI); }` puts
+    the phase on the BRANCH, not on the register: PRD §3 mints the flag, fires
+    ONE UNCONTROLLED `cqrt_rz_i1(f, T)` on it, strips with the ordinary compare
+    `_unc` and frees. NO GATE LANDS ON `a` AT ALL. The rolled-vs-unrolled twin
+    question is unchanged and still the whole point — both spellings are still
+    the same program — but what it is comparing is now a flag stream, not a
+    register relabelling.
+
+  * THE `RECORD` AXIS IS VACUOUS FOR AN Rz REGION, AND SAYING SO IS THE POINT.
+    `premark` / `postmark` / `bodyread` exist to pin the 8h7d.5 F-1 / F-3
+    staleness class: `int mark = a;` read at a position where the register no
+    longer holds it. Under `register` an Rz arm at least DEFINED a new SSA name
+    for `a` (diagonal, so `staleRailRecordRead` exempted it, but the def existed
+    and the chain ran through it). Under `void` there is no def and no chain hop:
+    across an Rz REGION a record cannot be stale, by construction. Those cells
+    still witness the PREFIX/SUFFIX gates (`ry`, `add`, `xor`) that CAN relabel
+    `a` — that is why they are kept, not deleted — but a `void` run must NOT be
+    quoted as covering "a record read across a phase arm". There is no longer
+    such a thing to read across.
+
+  * THE `rz` PREFIX / `rz` SUFFIX / `rzpost` RGATE VALUES COLLAPSE ONTO `none`.
+    An UNCONTROLLED `cq_phi(T)` is a global phase and Increment 1 DELETES it
+    (PRD D2), so after Inc 1 those three axis values emit nothing and the cells
+    are duplicates of their `none` siblings modulo a deleted line. They are kept
+    for exactly one reason: a `void` run in which an `rz`-prefixed cell differs
+    from its `none` sibling means the deletion did not happen or did not happen
+    everywhere, which is the only cheap witness for D2 this file can carry.
+
+  * THE Ry-ARM CELLS (`RY_REGION`, `RGATE`, `RECORD_R`) ARE UNCHANGED. `cq_theta`
+    keeps `a = cq_theta(a, T)` (PRD D5); nothing on that axis touches `cq_phi`
+    except the `rzpost` RGATE and the `rzry`/`ryrz` sequential pairs, whose Rz
+    half becomes a kickback exactly as above.
+
+  * `ifelse` UNDER `void` IS THE Rz ANGLE SELECT. `-O1` folds it to ONE call on
+    `select i1 %c, double A, double B` (MEASURED), which PRD §3 lowers to the
+    EXACT two-gate form `x(f); rz_i1(f,B); x(f); rz_i1(f,A)` — no subtraction, no
+    2^-40 rounding fence, run-time arms admitted. The Ry stem keeps the 2b
+    by-difference form. So the two stems' angle selects are DIFFERENT lowerings
+    after Inc 1, by design; this file only ever compares a cell against ITSELF
+    rolled/unrolled, so that split costs it nothing — but do not carry the
+    `ifelse` row across to a cross-stem instrument and expect one gate line.
+
+A `void` RUN DOES NOT CONSULT THE COMMITTED TABLES, AND `--regenerate` /
+`--refresh-quarantine` ARE REFUSED IN IT. Both artefacts were measured on the
+`register` surface and neither claim survives the surface change; overwriting
+either from a `void` run would put a table on disk under a name that says it
+measures something else. Use `--out FILE`. The two BOUNDARY CONTROLS still run
+and their verdicts are printed, but they are NOT hard failures under `void` for
+the same reason: the quarantine whose class story they bound is not applied.
+
+ONE NEW SIDE STATE EXISTS ONLY UNDER `void`, AND IT IS A DISPOSITION RATHER THAN
+A HARNESS BREAK. A binary that predates Increment 1 has no concept of
+`void @cq_phi(double)`: it neither lowers nor deletes the call, which therefore
+SURVIVES into the lowered IR and cannot link (there is no such runtime symbol,
+and this epic adds none — PRD D3). MEASURED on the pre-3qlq oracle 52d7764:
+`cq_phi(0.125);` uncontrolled leaves `tail call void @cq_phi(double 1.25e-01)`
+in the output at exit 0. The side is recorded `PHI-UNLOWERED` and stages 2b/3/4
+are skipped for it; calling that a link failure would file the pre-increment
+disposition as a harness error. After Increment 1 the verdict must not appear.
 """
 
 import argparse
@@ -179,6 +262,7 @@ import difflib
 import hashlib
 import itertools
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -465,13 +549,76 @@ RY_C_SUFFIX = ("none", "add")
 
 HDR = "#include <math.h>\nvolatile int off = 3;\n"
 
+# ── THE `cq_phi` SURFACE REWRITER (bd test_C_libtooling-3qlq Inc 1) ──────────
+# ONE SPELLING, SHARED (Rule 14). `tools/inplace_twin_matrix.py` imports this
+# function from here rather than re-implementing it, and
+# `tools/angle_select_twin_matrix.py` reaches it through that import. It lives in
+# THIS file because this is the dependency-free one: importing the other
+# direction would give the ctest gate a `golden_multiset_audit` dependency it
+# does not need.
+#
+# The rewrite turns the shipped REGISTER spelling into the Increment-1 VOID one,
+# textually, on generated source only:
+#
+#     <TYPE> <n> = cq_phi(<x>, <T>);   ->   <TYPE> <n> = <x>; cq_phi(<T>);
+#     <n>        = cq_phi(<x>, <T>);   ->   <n> = <x>; cq_phi(<T>);
+#     <n>        = cq_phi(<n>, <T>);   ->   cq_phi(<T>);          (lhs == arg0)
+#
+# The declaration/assignment half is NOT decoration: `int cqa = cq_phi(cq0,.07)`
+# and `T r = cq_phi(p, .05)` are ALIAS spellings in the sibling instruments, and
+# dropping the alias would silently change which register a later line names. The
+# third form is the common one here (every `cq_phi` in this file is an in-place
+# `a = cq_phi(a, T)`), and `r = r;` is elided rather than emitted so the void
+# source reads like source.
+#
+# ⚠ IT IS TEXTUAL, ON TEXT THESE GENERATORS WROTE, and it is not a C parser: a
+# nested call or a comma inside the arg-0 expression would defeat it. Every
+# generated `cq_phi` site in all three instruments is a bare identifier arg-0, so
+# the restriction is real and currently vacuous. It ASSERTS rather than silently
+# passing text through: an unrewritten `cq_phi(` with two arguments left in the
+# output would compile against the void header as a wrong-arity call and read
+# like a frontend bug.
+PHI_SURFACES = ("register", "void")
+
+_PHI_CALL = re.compile(
+    r"(?P<indent>[ \t]*)"
+    r"(?:(?P<decl>(?:[A-Za-z_][A-Za-z0-9_]*[ \t]+)+)(?P<name1>[A-Za-z_][A-Za-z0-9_]*)"
+    r"|(?P<name2>[A-Za-z_][A-Za-z0-9_]*))"
+    r"[ \t]*=[ \t]*cq_phi\([ \t]*(?P<arg0>[A-Za-z_][A-Za-z0-9_]*)[ \t]*,"
+    r"[ \t]*(?P<angle>[^,()]*?)[ \t]*\)[ \t]*;")
+
+
+def phi_void_source(text):
+    """Rewrite generated C from the `register` cq_phi surface to the `void` one.
+
+    Returns the rewritten text. Raises AssertionError if a two-argument
+    `cq_phi(` survives — see the block comment above for why that is an assert
+    and not a pass-through.
+    """
+    def one(m):
+        ind, angle, arg0 = m.group("indent"), m.group("angle"), m.group("arg0")
+        decl, name = m.group("decl"), m.group("name1") or m.group("name2")
+        call = "%scq_phi(%s);" % (ind, angle)
+        if decl:
+            return "%s%s%s = %s; cq_phi(%s);" % (ind, decl, name, arg0, angle)
+        if name == arg0:
+            return call
+        return "%s%s = %s; cq_phi(%s);" % (ind, name, arg0, angle)
+
+    out = _PHI_CALL.sub(one, text)
+    for m in re.finditer(r"cq_phi\(([^;]*)\)", out):
+        assert "," not in m.group(1), (
+            "phi_void_source left a two-argument cq_phi behind: %r" % m.group(0))
+    return out
+
 # TWO TRIPS, and two is not arbitrary: it is the smallest count at which the back
 # edge is taken, so the "next activation" the window lemma reasons about actually
 # exists in the trace, and it is small enough that a divergence is readable.
 TRIPS = 2
 
 
-def sources(prefix, region, suffix, record="none", rgate="none"):
+def sources(prefix, region, suffix, record="none", rgate="none",
+            surface="register"):
     """(rolled, unrolled) C for one cell.
 
     THE SECOND REGISTER `r` APPEARS IF AND ONLY IF the region is an `RY_REGION`
@@ -485,13 +632,19 @@ def sources(prefix, region, suffix, record="none", rgate="none"):
     region_text = RY_REGION[region] if second else REGION[region]
     body = (PREFIX[prefix] + G["pre"] + R["pre"] + region_text + R["post"]
             + G["post"] + SUFFIX[suffix])
-    return _wrap(body, second, R)
+    return _wrap(body, second, R, surface)
 
 
-def _wrap(body, second, R):
+def _wrap(body, second, R, surface="register"):
     """The rolled/unrolled pair around ONE body. Shared by `sources` and by the
     quarantine's boundary controls so that a control can never drift into being
-    a differently-shaped program than the cells it bounds."""
+    a differently-shaped program than the cells it bounds.
+
+    `surface` is the bd 3qlq `cq_phi` frontend surface. It is applied to the
+    FINISHED text of both spellings, at the very end and in ONE place, so the
+    rolled and unrolled sides can never be rewritten differently — which would
+    turn a surface artefact into a `TRACE-DIVERGENCE` and blame the loop
+    lowering for it. `register` returns the text untouched, byte for byte."""
     head = ("int slice(void){\n    int a = 0;\n"
             + ("    int r = 0;\n" if second else "") + R["decl"]
             + "    a = cq_theta(a, 0.5);\n"
@@ -520,6 +673,8 @@ def _wrap(body, second, R):
         + tail
         + "int main(void){(void)slice();return 0;}\n"
     )
+    if surface == "void":
+        return phi_void_source(rolled), phi_void_source(unrolled)
     return rolled, unrolled
 
 
@@ -551,15 +706,20 @@ QUARANTINE_CONTROLS = {
 }
 
 
-def control_sources(name):
+def control_sources(name, surface="register"):
     """(rolled, unrolled) C for one boundary control. No second register, no
     record — deliberately the plainest shape the wrapper can make."""
-    return _wrap(QUARANTINE_CONTROLS[name], False, RECORD["none"])
+    return _wrap(QUARANTINE_CONTROLS[name], False, RECORD["none"], surface)
 
 
 def run_boundary_controls(cfg):
-    """Build and compare both QUARANTINE_CONTROLS; return a list of failure
-    reports (empty == both `ACCEPT-IDENTICAL`, i.e. the class story still holds).
+    """Build and compare both QUARANTINE_CONTROLS; return
+    `(failure_reports, [(name, verdict), ...])`.
+
+    An empty failure list means both came out `ACCEPT-IDENTICAL`, i.e. the class
+    story still holds. The second element is ALWAYS the measured verdict pair, so
+    a caller can print it whether or not it is a gate — which is what
+    `--phi-surface void` needs (see the note at the classification site).
 
     CALLED ON EVERY INVOCATION, including `--regenerate` and
     `--refresh-quarantine`. That is the whole point and it is a round-2 review
@@ -568,9 +728,9 @@ def run_boundary_controls(cfg):
     operation that never consulted the measurements its class story rests on,
     and `--regenerate` reported success with a control diverging.
     """
-    fails = []
+    fails, got = [], []
     for cname in sorted(QUARANTINE_CONTROLS):
-        r_src, u_src = control_sources(cname)
+        r_src, u_src = control_sources(cname, cfg.phi_surface)
         work = tempfile.mkdtemp(prefix="cqtwinctl_")
         try:
             cr = build_side(cfg, work, cname, r_src)
@@ -578,6 +738,15 @@ def run_boundary_controls(cfg):
         finally:
             shutil.rmtree(work, ignore_errors=True)
         v, report = verdict(cname, cr, cu)
+        # UNDER `--phi-surface void` THE CONTROLS ARE INFORMATIONAL, NOT A GATE.
+        # They exist to keep the QUARANTINE's class story a measurement, and the
+        # quarantine is not applied under `void` (it was pinned on the `register`
+        # surface). Reporting them as failures there would make every `void` run
+        # red for a claim it is not making. Their verdicts are still PRINTED by
+        # `main`, which is the whole of their value in that mode.
+        got.append((cname, v.split("\t")[0]))
+        if cfg.phi_surface == "void":
+            continue
         # `ACCEPT-IDENTICAL-WARN` counts as identical: both sides warned with the
         # SAME message, which is not a divergence. A one-sided warning is already
         # `WARN-ASYMMETRY` and fails here like any other non-identity.
@@ -590,7 +759,7 @@ def run_boundary_controls(cfg):
                 "moved — the quarantine's class story is\n    no longer the "
                 "measured one.%s"
                 % (cname, v.split("\t")[0], "\n" + report if report else ""))
-    return fails
+    return fails, got
 
 
 def _pair_check(path):
@@ -620,6 +789,13 @@ class Side:
         self.warns = 0        # stderr warning count
         self.trace = ""       # runtime trace, or ""
         self.error = None     # harness failure (clang/link/run), never a verdict
+        # bd 3qlq Inc 1, `--phi-surface void` ONLY: the count of `void @cq_phi`
+        # calls left in the LOWERED IR. A binary that predates Increment 1 has no
+        # concept of that surface — it neither lowers nor deletes the call — so
+        # the module cannot link (no such runtime symbol, and this epic adds none,
+        # PRD D3). That is the PRE-increment DISPOSITION, not a harness break, so
+        # stages 2b/3/4 are skipped and the side is reported as itself.
+        self.phi_unlowered = 0
 
 
 def _first_diag(text):
@@ -653,6 +829,13 @@ def build_side(cfg, work, name, csrc):
     s.warns = r.stderr.count("warning")
     if r.returncode != 0:
         return s
+    if cfg.phi_surface == "void":
+        # Read the LOWERED IR, not the trace: an unlowered `cq_phi` never
+        # reaches a trace, because the module does not link.
+        with open(s2) as f:
+            s.phi_unlowered = f.read().count("call void @cq_phi(")
+        if s.phi_unlowered:
+            return s
     # Stage 2b — STRICT. A cell that needs `--allow-unproven` is not a cell this
     # gate can speak for, and saying so loudly is the point.
     #
@@ -907,7 +1090,8 @@ def cells_of_matrix():
 def run_cell(cfg, cell):
     prefix, region, suffix, record, rgate = cell
     name = cell_name(cell)
-    rolled_src, unrolled_src = sources(prefix, region, suffix, record, rgate)
+    rolled_src, unrolled_src = sources(prefix, region, suffix, record, rgate,
+                                       cfg.phi_surface)
     work = tempfile.mkdtemp(prefix="cqtwin_")
     try:
         rolled = build_side(cfg, work, name, rolled_src)
@@ -927,6 +1111,17 @@ def verdict(name, rolled, unrolled):
     The verdict is what the committed table stores; the report is a hard failure
     that no table entry can bless (a harness break, or a divergence).
     """
+    # bd 3qlq Inc 1 — `--phi-surface void` ONLY, and asked FIRST because a side
+    # in this state has no trace to compare and no diagnostic to report: the
+    # module lowered cleanly and simply still names a symbol nothing defines.
+    # Both halves are named, because "which side failed to lower it" is the
+    # information — under `void` a rolled/unrolled asymmetry here would mean the
+    # deletion or the kickback reached one spelling and not the other.
+    if rolled.phi_unlowered or unrolled.phi_unlowered:
+        which = ("BOTH" if rolled.phi_unlowered and unrolled.phi_unlowered
+                 else "ROLLED" if rolled.phi_unlowered else "UNROLLED")
+        return ("PHI-UNLOWERED-%s\t%d/%d residual void @cq_phi call(s)"
+                % (which, rolled.phi_unlowered, unrolled.phi_unlowered)), None
     if rolled.error:
         return "HARNESS-ERROR", "%s: rolled side: %s" % (name, rolled.error)
     if unrolled.error:
@@ -977,7 +1172,10 @@ def main():
     ap.add_argument("--clang", required=True)
     ap.add_argument("--opt", required=True)
     ap.add_argument("--plugin", required=True)
-    ap.add_argument("--include", required=True)
+    # `--include-dir` is an ALIAS, not a second option: the committed ctest
+    # invocation spells it `--include` and must stay byte-identical, while the
+    # bd 3qlq briefs spell it `--include-dir`. One dest, two spellings.
+    ap.add_argument("--include", "--include-dir", required=True, dest="include")
     ap.add_argument("--runtime", required=True)
     ap.add_argument("--templates", required=True)
     ap.add_argument("--expected",
@@ -991,6 +1189,20 @@ def main():
                          "A quarantine is NOT a blessing — read that file's "
                          "header before touching it.")
     ap.add_argument("--jobs", type=int, default=6)
+    ap.add_argument("--phi-surface", choices=PHI_SURFACES, default="register",
+                    help="the `cq_phi` FRONTEND surface the cells are generated "
+                         "against (bd test_C_libtooling-3qlq Increment 1). "
+                         "`register` (DEFAULT) is the shipped 15-width "
+                         "`a = cq_phi(a, T)`; `void` is the register-free branch "
+                         "phase `cq_phi(T)`, which needs an --include-dir whose "
+                         "header declares `void cq_phi(double)`. A `void` run "
+                         "does NOT consult --expected or --quarantine and "
+                         "REFUSES --regenerate / --refresh-quarantine; use --out.")
+    ap.add_argument("--out", default="",
+                    help="also write the verdict table to FILE (name + verdict, "
+                         "one row per cell, the same two columns --regenerate "
+                         "writes). This is how a `void` run records a table, "
+                         "since it may not overwrite the committed ones.")
     ap.add_argument("--regenerate", action="store_true",
                     help="rewrite the expected table from this run. DELIBERATE "
                          "ONLY — say which cells moved and why (Rule 12).")
@@ -1004,6 +1216,37 @@ def main():
                          "message what moved and why (Rule 12).")
     cfg = ap.parse_args()
 
+    # ── bd 3qlq Increment 1 — the `void` cq_phi surface. Three refusals, and
+    #    each of them exists because the alternative is a file on disk whose
+    #    name says it measures something it does not.
+    if cfg.phi_surface == "void":
+        hdr = os.path.join(cfg.include, "CQ.h")
+        try:
+            text = open(hdr).read()
+        except OSError as e:
+            print("--phi-surface void: cannot read %s (%s)" % (hdr, e))
+            return 2
+        # A `register` header would take `cq_phi(T)` as a ONE-argument call to a
+        # TWO-argument _Generic macro; clang would reject every cell at stage 1
+        # and the run would read like a wall of compiler declines.
+        if "void cq_phi(double" not in text:
+            print("--phi-surface void: %s does not declare `void cq_phi(double "
+                  "...)`.\n  That header is a `register`-surface one, so every "
+                  "generated cell would fail at\n  stage 1 and the failure would "
+                  "read like a lowering decline. Point --include-dir\n  at a "
+                  "header whose cq_phi is the ONE register-free extern (PRD "
+                  "§4.1)." % hdr)
+            return 2
+        if cfg.regenerate or cfg.refresh_quarantine:
+            print("REFUSED: --regenerate / --refresh-quarantine are `register`-"
+                  "surface operations.\n  tools/loop_twin_matrix.expected.txt and "
+                  "tools/loop_twin_matrix.quarantine.txt\n  were both MEASURED on "
+                  "the register surface and neither claim survives the\n  surface "
+                  "change; writing either from a void run would put a table on "
+                  "disk\n  under a name that says it measures something else. "
+                  "Use --out FILE.")
+            return 2
+
     cells = cells_of_matrix()
     results = {}
     # A PROCESS pool, not a thread pool — stage 2b runs in-process (see
@@ -1013,7 +1256,12 @@ def main():
                                              [(cfg, c) for c in cells]):
             results[name] = (rolled, unrolled)
 
-    quar = load_quarantine(cfg.quarantine)
+    # UNDER `void` THE QUARANTINE IS NOT LOADED AT ALL. Its 15 pinned signatures
+    # are SHA-256 digests of `register`-surface traces; against a `void` run they
+    # can only be stale, and "quarantine stale — remove it" is exactly the wrong
+    # thing for a gate to say about a table that is perfectly correct for the
+    # surface it was measured on.
+    quar = {} if cfg.phi_surface == "void" else load_quarantine(cfg.quarantine)
 
     got, hard, sig = {}, {}, {}
     for name in sorted(results):
@@ -1067,7 +1315,48 @@ def main():
     # EVERY invocation — plain, `--regenerate` and `--refresh-quarantine` alike
     # (round-2 review F-R2-2; they used to be unreachable in the latter two,
     # which is exactly backwards).
-    ctlfails = run_boundary_controls(cfg)
+    ctlfails, ctlgot = run_boundary_controls(cfg)
+
+    def write_out(rows):
+        """`--out`: the same two columns --regenerate writes, no header. The
+        record file that quotes it supplies the provenance (the Inc-4 precedent,
+        docs/prd/phase-04-swap-route-control/inc4-records/)."""
+        if not cfg.out:
+            return
+        with open(cfg.out, "w") as f:
+            for n in sorted(rows):
+                f.write("%-24s %s\n" % (n, rows[n]))
+
+    # ── the `void` run: measure, report, write; consult nothing. ─────────────
+    if cfg.phi_surface == "void":
+        for n in sorted(got):
+            print("%-24s %s" % (n, got[n]))
+        tal = {}
+        for v in got.values():
+            tal[v.split("\t")[0]] = tal.get(v.split("\t")[0], 0) + 1
+        print("\n=== TALLY (--phi-surface void, %d cells) ===" % len(got))
+        for k in sorted(tal):
+            print("  %-30s %d" % (k, tal[k]))
+        print("\nboundary controls (INFORMATIONAL under void — the quarantine "
+              "they bound is not applied):")
+        for cn, cv in ctlgot:
+            print("  %-16s %s" % (cn, cv))
+        print("\nthe committed expected table and quarantine were NOT consulted: "
+              "both were\nmeasured on the `register` surface (see the "
+              "--phi-surface help and the\nmodule docstring's SIXTH AXIS "
+              "section).")
+        write_out(got)
+        if cfg.out:
+            print("wrote %s" % cfg.out)
+        # A TRACE DIVERGENCE, a WARN ASYMMETRY and a HARNESS ERROR are still hard
+        # failures here. The surface changed; the F-4 class did not.
+        if hard:
+            print("\nFAILED (%d):" % len(hard))
+            for n in sorted(hard):
+                print(hard[n])
+                print()
+            return 1
+        return 0
 
     if cfg.refresh_quarantine:
         if not quar:
@@ -1160,6 +1449,7 @@ def main():
     # return; here they simply join the report.
     fails += ctlfails
 
+    write_out(got)
     accepts = sum(1 for v in got.values() if v.startswith("ACCEPT-IDENTICAL"))
     declines = sum(1 for v in got.values() if v.startswith("DECLINE"))
     print("loop_twin_matrix: %d cells — %d ACCEPT-IDENTICAL, %d DECLINE, %d other; "
