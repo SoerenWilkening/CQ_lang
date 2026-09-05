@@ -39,22 +39,32 @@ merge:
   ret i32 %m
 }
 
+; THE WHOLE REGION STREAM, CONTIGUOUS. `CHECK-NEXT` adjacency from the first
+; alloc to the measure is the contract here, not decoration (bd
+; test_C_libtooling-3qlq Inc 2, Rule-13 round-1 review finding F-V2-5): the
+; re-derivation that first shipped this file used bare positional directives
+; throughout, and a stray gate spliced between two pinned lines — a
+; `cqrt_ry_i32` immediately before the first controlled copy — then passed
+; EVERY prefix. Symbol ORDER cannot see an insertion; adjacency can.
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; CHECK-NEXT: %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[P]], double 2.500000e-01)
 ; pre-region Rz on the merged register's wire, strictly BEFORE the chain
-; CHECK:     %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v0)
-; CHECK:     call void @cqrt_ry_i32(i32 %[[P]], double 2.500000e-01)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[P]], double 9.000000e-01)
+; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[P]], double 9.000000e-01)
 ; the hoisted arm chain, on the DERIVED register (same handle)
-; CHECK:     %[[V:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[P]], i32 5)
-; CHECK:     call void @cqrt_addc_i32(i32 %[[V]], i32 15)
-; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
-; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[V]], i32 %[[OUT]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
-; CHECK:     call void @cqrt_x(i32 %[[F]])
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
-; CHECK:     call void @cqrt_free(i32 %[[F]])
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
+; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[P]], i32 5)
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[V]], i32 15)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
+; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[V]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; the strip pinned immediately before the free (no dirty free of the flag)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
 ; No route survives anywhere in the module: the swap route is RETIRED for value
 ; arms (bd test_C_libtooling-3qlq Inc 2), there is no work rail, and no
