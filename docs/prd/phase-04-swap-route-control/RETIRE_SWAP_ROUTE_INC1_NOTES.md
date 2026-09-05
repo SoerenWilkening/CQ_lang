@@ -838,10 +838,18 @@ class, and this one sat in the paragraph that RECORDS F-L6-2.
 
 ### F-R2-1 — SYSTEMIC (the round's headline on the fixture layer). Round 1's assertion repairs were applied to the corpus in front of it and to nothing else in the merged tree.
 
-MEASURED by R2's injection harness at `c4bd888`, and re-measured by me: `cqrt_rz_f80` /
-`cqrt_rz_f16` NOT CAUGHT in **18** accepts, an UNPAIRED `cqrt_x` (a WRONG-BRANCH PHASE — the
-L1-lens miscompile class) NOT CAUGHT in **21**, an EXTRA `cqrt_free` (a HIDDEN MEASUREMENT,
-Rule 6) NOT CAUGHT in **20**. Fifteen of the 18 carry, VERBATIM, the same header sentence the
+MEASURED BY R2's injection harness at `c4bd888` — **and say whose measurement each number
+is, because that is the discipline this section is about.** R2 measured the CATCH:
+`cqrt_rz_f80` / `cqrt_rz_f16` NOT CAUGHT in **18** accepts, an UNPAIRED `cqrt_x` (a
+WRONG-BRANCH PHASE — the L1-lens miscompile class) NOT CAUGHT in **21**, an EXTRA
+`cqrt_free` (a HIDDEN MEASUREMENT, Rule 6) NOT CAUGHT in **20**. I did NOT re-run that
+harness against `c4bd888`; what I re-measured independently is the ASSERTION-PRESENCE census
+that explains it (`$SP/progress/fix_r2_work/audit.py`, which runs each fixture through the
+pass and reads its own directives): **18** accepts with no complement Rz negative, **21**
+with no `cqrt_x` assertion of any kind, **21** with no `cqrt_free` assertion — the same three
+families, with the free column one larger because an injected free is sometimes caught
+incidentally by an adjacent `CHECK-NEXT` window. What I DID run the harness for is the AFTER
+state, below. Fifteen of the 18 carry, VERBATIM, the same header sentence the
 round-1 repair was made to make true. The provenance partitions exactly: the 18 with the
 complement regex are part A's 11 plus the 7 written after that repair; the 15 enumerating six
 of eight widths are EXACTLY part B's (a parallel branch that never saw it); the 3 one-width
@@ -854,13 +862,42 @@ eleven inherited files and never revisited.
 nest and switch shapes whose fixtures are blind — runs on **not one program Inc 1 lowers**.
 `ir-pass-lit` is this branch's only gate.
 
-**Repaired mechanically, over EVERY accept in the branch** (`$SP/progress/fix_r2_work/repair.py`,
-which derives every count from the fixture's OWN pass output rather than from a table): the
-Rz negative is the complement regex everywhere (the trailing `(` is load-bearing —
-`cqrt_rz_i1` is a textual prefix of `cqrt_rz_i16`); every accept has a `cqrt_x` assertion (a
-blanket negative where the correct stream has none, an `XCNT-COUNT-n` + `XCNT-NOT` pair where
-it legitimately emits them); every accept has a `cqrt_free` assertion on the same rule; and
-the one accept with no `cqrt_cswap` negative has one.
+**Repaired mechanically, over EVERY accept in the branch** (`repair.py` / `repair2.py`, which
+derive every count from the fixture's OWN pass output rather than from a table): the Rz
+negative is the complement regex everywhere (the trailing `(` is load-bearing — `cqrt_rz_i1`
+is a textual prefix of `cqrt_rz_i16`); every accept has a `cqrt_x` assertion (a blanket
+negative where the correct stream has none, an `XCNT-COUNT-n` + `XCNT-NOT` pair where it
+legitimately emits them); every accept has a `cqrt_free` assertion on the same rule; the one
+accept with no `cqrt_cswap` negative has one; **20 gate-bearing accepts gained
+`MDCNT`/`MDTAG`**, the pair that catches a dropped `!cq.branchphase` — the record that stops
+round-1's CONFIRMED F-L7-1, which was caught by only 15 of 35 gate-bearing accepts; the three
+files that legitimately emit `cqrt_copy_*_controlled` (and therefore cannot carry a blanket
+`_controlled` negative) gained `@cqrt_rz_{{[a-z0-9]+}}_controlled(`; the hoisted-temp control
+gained an `ACNT` count (an extra `cqrt_rz_i1` after its last free was MISSED, because its
+only positives are an ordered chain and its whole point is a negative); and the decl-only
+family fixture gained `SWEPT-NOT: call void @cq_phi(` (its blanket negative caught the
+RETIRED family and not the void one).
+
+**VALIDATED IN BOTH DIRECTIONS BY THE SAME HARNESS**, repointed at this worktree
+(`$SP/progress/fix_r2_work/inj.py`, R2's own script plus six injections of mine), **40 accepts
+× 16 mutations**:
+
+| control / injection | MISSED before (R2 @ `c4bd888`) | MISSED after |
+|---|---|---|
+| `clean` — Control A, the fixture must PASS unmutated | 0 dirty | **0 dirty, 40/40** |
+| `knownbad` — Control B, delete the forward kickback gate | caught on all applicable | **0** |
+| `cqrt_rz_f80` / `cqrt_rz_f16` | 18 / 18 | **0 / 0** |
+| `cqrt_rz_i16` | 3 | **0** |
+| an extra `cqrt_free` | 20 | **0** |
+| an unpaired `cqrt_x` | 21 | **0** |
+| an extra `cqrt_cswap` | 2 | **0** |
+| DROP one `!cq.branchphase` | 22 of 35 | **0** |
+| a `cqrt_rz_<W>_controlled` after the region | 3 | **0** |
+| an extra `cqrt_rz_i1` after the last free | 1 | **0** |
+| a surviving `call void @cq_phi(` | 1 | **0** |
+| `cqrt_cswap` / `cqrt_rz_i1(−θ)` / drop-the-strip (R2's own three) | as R2 measured | **0** |
+
+**TOTAL MISSED + DIRTY over the whole matrix: 0.**
 
 ### F-R2-3 / F-R2-4 / F-R2-6 / F-R2-7 / F-R2-8 — the rest of the fixture-truth batch.
 
@@ -983,3 +1020,16 @@ whose exit condition becomes tainted at round 2). Both fall through to the re-ru
 classical-mux nets and decline LOUDLY, so the Prime Directive is satisfied and no customer
 exists today. Are they owed the same treatment `collapseFlattenedLoopRails` just got, or is
 "round 2 emits only rails and flattened diamonds, so these shapes are exotic" the ruling?
+
+## VERIFICATION AFTER ROUND 2 — only what was run
+
+| gate | result |
+|---|---|
+| `lit ir-pass/test` on this binary | **1666 discovered · 396 FAILED** (`$SP/progress/fix_r2_lit_FINAL.log`) |
+| the red partition | the SAME 396 files as before this round's fixture batch, and **every one inside the 493-file retired-`@cq_phi_<sfx>` migration set** (`comm -23` against `grep -lE '@cq_phi_[a-z0-9]+'` is EMPTY). **0 new reds, 0 newly green.** |
+| `ctest -R 'frontend-lit\|runtime\|cq-opt-equivalence' -j6` | **9/9 passed**, 23.4 s |
+| the injection matrix | **40 accepts × 16 mutations, 0 MISSED, 0 DIRTY** (table above) |
+| STRICT stage 2b (`free_pairing_check.py`, no `--allow-unproven`) | **53 accepting subject outputs, 0 violation(s)** |
+| the F-R1-1 fix, mutation-validated one half at a time | 3 build+lit cycles, table above |
+| the R1 lens's CLEAR item 10 (rolled vs hand-unrolled per-bit) re-run on this binary | `k2` 21 lines, `k4` 39, `k2r` (two registers, two regions per trip) 78, `kg` (body `cq_theta`) 43 — **all IDENTICAL**; `k32` differs by exactly the frontend canonicalization R1 recorded (`(q>>31)&1` → `icmp sgt q,-1` in the unrolled spelling only). Every ROLLED trace is **byte-identical to main's**, i.e. the clause-(ii-b) widening changed nothing that already worked |
+| **NOT run** | the full `ctest` (Rule 19 — the orchestrator owns that gate); `e2e-loop-twin-matrix` (I changed no matrix file); any e2e slice (63 of 66 `cq_phi` slices do not compile on this branch — F-R2-4) |
