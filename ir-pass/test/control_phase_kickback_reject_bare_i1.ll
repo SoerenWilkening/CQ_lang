@@ -36,6 +36,23 @@
 ; `unclaimed branch phase` assert, so the ordering is pinned from both sides.
 ; (Prose above deliberately does not spell the lit directive token verbatim — lit
 ; scans EVERY line for it, so quoting it in a comment mints a bogus run line.)
+;
+; ⚠ THE `unclaimed branch phase` BRANCH IS UNREACHED BY THE WHOLE CORPUS, AND
+; SAYING SO IS THE POINT (Rule-13 round-1 finding F-L8-3). That string has NO
+; fixture — three files, this one among them, mention it in PROSE and none
+; exercises it. It is Rule 1's assert inside `deleteGlobalPhases`: a surviving
+; `cq_phi` whose block is reachable through a TAINTED branch condition. Lens L3
+; probed 90+ shapes and could not reach it, for a structural reason worth
+; carrying: every region kind that CLAIMS a tainted `br` also REMOVES it (the
+; flatten, the abort park's `br label`, the loop lowering's bound), and every
+; kind that declines exits `opt` at its first `DS_Error` — so on every reachable
+; program state there is no tainted `br` left to find. Constructing a module that
+; reaches it would itself be a third-path finding, not a fixture.
+; The assert is nonetheless KEPT and is now correctly POSITIONED (F-L3-1 moved
+; `deleteGlobalPhases` after the round-2 control fixpoint, which is where its
+; premise is true), because the hazard it was written for is real: at the old
+; position it could not see an ONWARD region's tainted branch at all, and that
+; was the round's second CONFIRMED miscompile.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare void @cq_phi(double)

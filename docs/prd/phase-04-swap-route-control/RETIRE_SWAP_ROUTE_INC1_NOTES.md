@@ -502,6 +502,40 @@ survivors from `wd.phaseFn()->users()`, which is module-wide — so the (dead) s
 `cq_phi` calls in functions other than `F`, and since F-L3-4 would decline on an address-take
 anywhere in `M`. Named in the note beside the three stages already listed.
 
+### F-L8-3 / F-L8-4 / F-L6-2 — three claims in the increment's own write-up that do not reproduce.
+
+* **F-L8-3.** The Rule-1 assert string `cq controlled lowering: unclaimed branch phase
+  under quantum control` has **NO fixture** — three files mention it in PROSE and none
+  exercises it. Lens L3 probed 90+ shapes and could not reach it, for a structural reason
+  worth carrying: every region kind that CLAIMS a tainted `br` also REMOVES it (the flatten,
+  the 7.2 abort park's `br label`, the loop lowering's bound), and every kind that declines
+  exits `opt` at its first `DS_Error`. Constructing a module that reaches it would itself be
+  a third-path finding, not a fixture. The three headers now SAY that, rather than implying
+  coverage. The assert is kept and is now correctly POSITIONED (F-L3-1), because the hazard
+  it was written for is real — at the old slot it could not see an ONWARD region's tainted
+  branch at all, which was this round's second CONFIRMED miscompile.
+* **F-L8-4.** The implementation hand-back's "Exact new diagnostic strings" list names
+  `cq controlled lowering: multiple branch phases in one arm under quantum control`. That
+  string exists **nowhere in `ir-pass/src`** (verified by grep) — it was SUPERSEDED by the
+  mid-increment decision to ACCEPT N `cq_phi` per arm and was never removed from the list.
+  **NOT SHIPPED.**
+* **F-L6-2.** The same hand-back's census — "155 fixtures reference the retired family and
+  are GREEN (104 declines, 51 accepts)" — does not reproduce. Measured at `fa96336`:
+  `grep -lE '@cq_phi_[a-z0-9]+' ir-pass/test/*.ll` = **491**, red = **362**, so **129 green
+  (103 declines / 26 accepts; 35 with a live CALL, of which 4 accept)**. The FOUR accepts
+  that CALL it are exactly the four named, so only the totals are wrong. No variant of the
+  grep produces 155. Everything else in that file's fixture arithmetic DOES reproduce.
+
+### F-L8-5 — a hand-off to the migration agent, not a fix.
+
+`ir-pass/test/control_angle_select_reject_runtime_arms_rz.ll` is RED (it is in the retired
+family set) and asserts that the **Rz stem REFUSES run-time arms**. Under owner question Q3
+— assumed YES, and implemented — the register-free phase stem ADMITS them. That fixture must
+be **REWRITTEN AS AN ACCEPT** by prep-a, not merely re-spelled onto the new surface;
+re-pointing its string would pin the opposite of the shipped semantics. The Ry stem's
+`control_angle_select_ry_reject_runtime_arms.ll` is unchanged and must stay a decline
+(clearance blocker F-11).
+
 ---
 
 ## OWNER QUESTIONS FROM ROUND 1
