@@ -1810,28 +1810,50 @@ void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
   Inner.Condition = R.InnerCondition;
   Inner.Arm = R.ArmFalse;
   Inner.Pred = R.Arm;
-  flattenRegionTree(Outer, Inner, /*armPhis=*/{}, taint);
   // The tree INTERIORS are not the flatten's to erase (it owns only the two
-  // roots), and leaving them is not harmless: with their roots gone every node
-  // and leaf is dead, and a dead TAINTED compare is exactly what `lowerOps`
-  // would turn into a spurious template plus a leaked flag rail. Cascade
-  // ROOT-FIRST per tree, comparing against the captured roots by POINTER only
-  // (they may already be freed memory; nothing is dereferenced through them, and
-  // no instruction is created between the flatten and here).
+  // ROOTS), and leaving one behind is not harmless: with its root gone every
+  // node and leaf is dead, and a dead TAINTED compare is exactly what `lowerOps`
+  // would turn into a spurious template plus a leaked flag rail a few steps
+  // later.
+  //
+  // ⚠ ONLY `Pred`-RESIDENT TREE INSTRUCTIONS SURVIVE THE FLATTEN, AND THE LIST
+  // MUST BE SNAPSHOTTED BEFORE IT RUNS. `flattenRegionTree` erases `Mid` and
+  // `InnerArm` WHOLESALE, and the inner condition tree normally lives in `Mid`
+  // — so a post-flatten walk over `InnerTree` would call `use_empty()` on
+  // instructions the block destructor already freed. MEASURED: SIGSEGV inside
+  // `ValueSymbolTable::reinsertValue` on the very first compound-inner nest
+  // (`if (q>5) { cq_phi; if (q<9 && r==3) cq_phi; }`); the single-compare nests
+  // were silently fine only because their inner tree is JUST the root, which is
+  // skipped. Capture the survivors first, then erase after.
+  //
+  // That the destroyed instructions are safe to destroy is the classifier's data-use
+  // fence, not luck: every tree instruction's users must lie inside its own tree or be
+  // its level's branch, and the flatten erases both branches and both roots before
+  // either block goes — so nothing in `Mid`/`InnerArm` still has a use when its
+  // block is deleted. Relax that fence and this becomes a dangling-use UB, not a
+  // decline.
   Value *const OuterRoot = R.Condition;
   Value *const InnerRoot = R.InnerCondition;
+  BasicBlock *const Survivor = R.Pred;
+  SmallVector<Instruction *, 8> Cascade;
   for (const CondTree *T : {&InnerTree, &OuterTree}) {
     for (Instruction *N : llvm::reverse(T->Nodes))
-      if (N != OuterRoot && N != InnerRoot && N->use_empty()) {
-        scrubTaint(N, taint);
-        N->eraseFromParent();
-      }
+      if (N != OuterRoot && N != InnerRoot && N->getParent() == Survivor)
+        Cascade.push_back(N);
     for (CmpInst *Leaf : llvm::reverse(T->Leaves))
-      if (Leaf != OuterRoot && Leaf != InnerRoot && Leaf->use_empty()) {
-        scrubTaint(Leaf, taint);
-        Leaf->eraseFromParent();
-      }
+      if (Leaf != OuterRoot && Leaf != InnerRoot && Leaf->getParent() == Survivor)
+        Cascade.push_back(Leaf);
   }
+  flattenRegionTree(Outer, Inner, /*armPhis=*/{}, taint);
+  // ROOT-FIRST within each tree (the snapshot above is already in that order), so
+  // a child's use count has dropped before it is tested. The roots are compared
+  // by POINTER only — they may already be freed memory; nothing is dereferenced
+  // through them, and no instruction is created between the flatten and here.
+  for (Instruction *I : Cascade)
+    if (I->use_empty()) {
+      scrubTaint(I, taint);
+      I->eraseFromParent();
+    }
 }
 
 void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,

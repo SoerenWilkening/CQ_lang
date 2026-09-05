@@ -15,9 +15,15 @@
 ; nothing for `lowerCompareToFlag` to mint from, so an accept here would either
 ; fabricate a flag or fire the gate on the wrong rail.
 ;
-; The same clause also owns the COMPOUND `select i1` condition (`&&`/`||`, and the
-; nest `clang -O1` folds into one — PRD §6.1 rows 3/4), which is P3/P4 and a
-; SEPARATE increment; it is not a `CmpInst` either.
+; ⚠ THAT SENTENCE USED TO CONTINUE "…and the same clause owns the COMPOUND
+; `select i1` condition, which is P3/P4 and a SEPARATE increment". IT NO LONGER
+; DOES, and correcting it here rather than deleting it is the point: part B
+; SHIPPED P3, so `if (q == 5 && r == 3) cq_phi(θ)` — a `select i1 %a, i1 %b,
+; i1 false` branch condition — now ACCEPTS and lowers through the shared
+; condition NETWORK (`control_phase_kickback_and2.ll`). What still reaches this
+; message is a root that is neither a compare nor a decomposable node: a bare
+; tainted `i1` as here, a `trunc`/`freeze`/phi, or one of the two NOT-carrying
+; logical-select complements (`control_phase_kickback_reject_tree_notform.ll`).
 ;
 ; ⚠ THIS FIXTURE IS ALSO PRD §10.3 LENS 4 — P7's BOUNDARY — and that is a second,
 ; independent assertion, not a restatement. P7 DELETES every surviving
