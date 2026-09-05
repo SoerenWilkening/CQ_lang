@@ -451,13 +451,19 @@ measurement reproduces on the pre-3qlq oracle byte for byte.
 
 ## 11. The e2e layer after this work
 
-`ctest --test-dir build -j6 -R '^e2e-' --output-on-failure` — **99% passed, 3 failed
-of 328**, 1187.58 s. After `cmake -S . -B build` the layer is **327 entries** (the
-retired twin gate of §9). The three reds, each with its owner:
+`ctest --test-dir build -j6 -R '^e2e-' --output-on-failure`, run TWICE.
+
+* first run, before the §9 gate was retired: **99% passed, 3 failed of 328**, 1187.58 s.
+* **FINAL run, after `cmake -S . -B build`: 99% passed, 2 failed of 327**, 738.33 s
+  (`$SP/progress/prep_b2_e2e3.log`). **NEITHER red is this increment's e2e work**, and
+  neither is a lowering change — both are named below with their owner and the
+  measurement that identifies them.
+
+The reds, each with its owner:
 
 | red | owner | reason (MEASURED) |
 |---|---|---|
-| `e2e-angle-select-rz-twin-identical` | **this agent — FIXED** | §9. The gate became FALSE under D2, and was retired; both its slices pass individually (re-measured 2/2 after the reconfigure). |
+| `e2e-angle-select-rz-twin-identical` | **this agent — FIXED, and GONE from the final run** | §9. The gate became FALSE under D2 and was retired; both its slices pass individually (re-measured 2/2 after the reconfigure) and pass in the final 327. |
 | `e2e-fixture-guard-liveness` | **prep-a / the fixture re-derive** | 7 SKIPs, every one verified to carry **2** `@cq_phi_<sfx>` references (`grep -c '@cq_phi_[a-z0-9]'`): `lowering_io_tape_rz_preserving`, `lowering_live_record_mb_{router_phi,sibling_alias}_accept`, `lowering_uncompute_interior_leak_{region_wire_measured,route_in_interval}`, `lowering_uncompute_interior_region_{chain,routed_base}`. Each is in the retired family, the pass declines it (rc=1), so its anchored `NOFREE` guard cannot be checked. **0 DEAD guards.** `impl_inc1b` reported this identical failure for this identical reason. |
 | `e2e-loop-twin-matrix` | **prep-d2** (round-1 F-L5-7, OQ-18) | `274 cells — 50 ACCEPT-IDENTICAL, 33 DECLINE, 191 other; 15 quarantined`. Its GENERATOR emits programs on the RETIRED two-argument surface, so they fail at stage 1 (`clang` error). It needs `--phi-surface void` and regenerated tables. |
 
