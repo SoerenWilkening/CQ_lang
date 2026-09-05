@@ -17,8 +17,9 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0, double %a, double %b) {
@@ -28,15 +29,14 @@ entry:
   %c1 = fcmp ogt double %d, 5.000000e+00
   br i1 %c1, label %mid, label %merge
 mid:
-  %g  = call double @cq_phi_f64(double %q, double %b)
-  %c2 = fcmp olt double %g, 9.000000e+00
+  call void @cq_phi(double %b)
+  %c2 = fcmp olt double %q, 9.000000e+00
   br i1 %c2, label %arm, label %merge
 arm:
-  %h  = call double @cq_phi_f64(double %g, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi double [ %q, %entry ], [ %g, %mid ], [ %h, %arm ]
-  %m  = call double @cq_measure_f64(double %qm)
+  %m  = call double @cq_measure_f64(double %q)
   ret double %m
 }
 ; Structural markers (WI-3): the f64 routed stream — the outer flag minted off the

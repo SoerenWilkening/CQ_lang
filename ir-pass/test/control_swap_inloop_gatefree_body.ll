@@ -32,9 +32,10 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %n) {
@@ -43,19 +44,18 @@ entry:
   br label %loop
 loop:
   %i = phi i32 [ 0, %entry ], [ %inext, %merge ]
-  %q = phi i32 [ %q0, %entry ], [ %qm, %merge ]
+  %q = phi i32 [ %q0, %entry ], [ %q, %merge ]
   %c1 = icmp eq i32 %q, 5
   br i1 %c1, label %mid, label %merge
 mid:
-  %g = call i32 @cq_phi_si32(i32 5, double 0x400921FB54442D18)   ; -O1 const-folds arg-0
+  call void @cq_phi(double 0x400921FB54442D18)  ; -O1 const-folds arg-0
   br label %merge
 merge:
-  %qm = phi i32 [ %g, %mid ], [ %q, %loop ]
   %inext = add i32 %i, 1
   %done = icmp eq i32 %i, %n
   br i1 %done, label %exit, label %loop
 exit:
-  %m = call i32 @cq_measure_si32(i32 %qm)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

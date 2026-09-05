@@ -62,9 +62,10 @@
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEREC < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @shadow_fp_measure(double %u0) {
@@ -72,12 +73,12 @@ entry:
   %arr = alloca [8 x double], align 16
   call void @llvm.memset.p0.i64(ptr align 16 %arr, i8 0, i64 64, i1 false)
   %c  = call double @cq_theta_f64(double %u0, double 5.000000e-01)
-  %cp = call double @cq_phi_f64(double %c, double 3.000000e-01)
+  call void @cq_phi(double 3.000000e-01)
   %q  = call double @cq_theta_f64(double 0.0, double 1.000000e-01)
   %qi = fptosi double %q to i32
   %iq = sext i32 %qi to i64
   %gq = getelementptr inbounds [8 x double], ptr %arr, i64 0, i64 %iq
-  store double %cp, ptr %gq, align 8
+  store double %c, ptr %gq, align 8
   %p  = call double @cq_theta_f64(double 0.0, double 2.000000e-01)
   %pi = fptosi double %p to i32
   %ip = sext i32 %pi to i64

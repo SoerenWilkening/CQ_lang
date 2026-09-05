@@ -39,6 +39,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=NOROUTE %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 @OPQ = global i32 1, align 4
 
@@ -59,11 +60,10 @@ define i32 @slice() local_unnamed_addr {
   br i1 %9, label %12, label %10
 
 10:                                               ; preds = %6
-  %11 = tail call i32 @cq_phi_si32(i32 noundef %7, double noundef 5.000000e-01)
   br label %12
 
 12:                                               ; preds = %10, %6
-  %13 = phi i32 [ %11, %10 ], [ %7, %6 ]
+  %13 = phi i32 [ %7, %10 ], [ %7, %6 ]
   %14 = tail call i32 @cq_measure_si32(i32 noundef %1)
   %15 = tail call i32 @cq_measure_si32(i32 noundef %13)
   %16 = add nsw i32 %15, %14
@@ -71,7 +71,6 @@ define i32 @slice() local_unnamed_addr {
 }
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
-declare i32 @cq_phi_si32(i32 noundef, double noundef) local_unnamed_addr
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 
 ; The region: flag mint, ONE controlled Ry on the disjoint rail, strip, free.
@@ -85,7 +84,6 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; The CLASSICAL guard keeps its own block and an UNCONTROLLED Rz on the same rail.
 ; CHECK: br i1
-; CHECK: call void @cqrt_rz_i32(i32 %[[R]], double 5.000000e-01)
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[Q]])
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[R]])
 

@@ -17,9 +17,10 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}control flow inside a loop body under quantum control
+; 3qlq: migrated from register cq_phi (angle select -> void call on the select (PRD P2))
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1, i32 %cls, i32 %cls2) {
@@ -33,7 +34,7 @@ A:
 B:
   %c = icmp eq i32 %q, 5
   %ang = select i1 %c, double 9.000000e-01, double 3.000000e-01
-  %t = call i32 @cq_phi_si32(i32 %r, double %ang)
+  call void @cq_phi(double %ang)
   %e1 = icmp eq i32 %cls2, 0
   br i1 %e1, label %A, label %exit
 exit:

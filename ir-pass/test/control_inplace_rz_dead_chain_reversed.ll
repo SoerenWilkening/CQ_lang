@@ -40,8 +40,9 @@
 ; trailing CHECK-NOT scans only past the LAST positive of its prefix — bd memory
 ; filecheck-check-not-window-trap).
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @dead_chain_across_region() {
@@ -53,14 +54,13 @@ entry:
   %c = icmp eq i32 %q, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %r2 = call i32 @cq_phi_si32(i32 %r, double 9.000000e-01)
+  call void @cq_phi(double 9.000000e-01)
   br label %merge
 merge:
-  %rm = phi i32 [ %r2, %arm ], [ %r, %entry ]
   %t  = mul nsw i32 %z, 3
   %m1 = call i32 @cq_measure_si32(i32 %t)
   %m2 = call i32 @cq_measure_si32(i32 %q)
-  %m3 = call i32 @cq_measure_si32(i32 %rm)
+  %m3 = call i32 @cq_measure_si32(i32 %r)
   %s1 = add nsw i32 %m1, %m2
   %s2 = add nsw i32 %s1, %m3
   ret i32 %s2

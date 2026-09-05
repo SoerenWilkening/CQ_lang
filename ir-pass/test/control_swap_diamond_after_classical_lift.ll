@@ -51,12 +51,13 @@
 ; function (a trailing CHECK-NOT scans only past the LAST positive of its prefix,
 ; and every route line would land BEFORE that — it could never fire).
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @main(i32 %u0, i1 %c, double %a, double %b) {
@@ -64,19 +65,17 @@ entry:
   %q = call i32 @cq_theta_si32(i32 7, double 5.000000e-01)
   br i1 %c, label %arm1, label %merge1           ; CLASSICAL condition (region 1)
 arm1:
-  %q2 = call i32 @cq_phi_si32(i32 %q, double 2.500000e-01)
   br label %merge1
 merge1:
-  %p = phi i32 [ %q2, %arm1 ], [ %q, %entry ]    ; one register, two SSA names
+  %p = phi i32 [ %q, %arm1 ], [ %q, %entry ]    ; one register, two SSA names
   %tc = icmp sgt i32 %p, 5                        ; TAINTED condition (region 2)
   br i1 %tc, label %arm2, label %merge2
 arm2:
-  %q3 = call i32 @cq_phi_si32(i32 %p,  double %a)
-  %q4 = call i32 @cq_phi_si32(i32 %q3, double %b)
+  call void @cq_phi(double %a)
+  call void @cq_phi(double %b)
   br label %merge2
 merge2:
-  %qm = phi i32 [ %q4, %arm2 ], [ %p, %merge1 ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %p)
   ret i32 %m
 }
 

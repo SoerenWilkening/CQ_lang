@@ -12,8 +12,9 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}mixed phase/value arm under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %v0, double %a) {
 entry:
@@ -22,8 +23,8 @@ entry:
   %c = icmp sgt i32 %q, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %pr = call i32 @cq_phi_si32(i32 %p, double %a)   ; in-arm Rz...
-  %p1 = add i32 %pr, 3                             ; ...under a value link: MIXED
+  call void @cq_phi(double %a)  ; in-arm Rz...
+  %p1 = add i32 %p, 3                             ; ...under a value link: MIXED
   br label %merge
 merge:
   %pm = phi i32 [ %p1, %arm ], [ %p, %entry ]

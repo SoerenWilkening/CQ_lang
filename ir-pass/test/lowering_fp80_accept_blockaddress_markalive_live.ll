@@ -19,6 +19,7 @@
 ; A NOT-only prefix so it scans the WHOLE input for the corrupted form:
 ; RUN: %filecheck %s --check-prefix=NOCORRUPT < %t.cqd0.ll
 ; NOCORRUPT-NOT: inttoptr (i32 1 to ptr)
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"
@@ -26,8 +27,8 @@ target triple = "x86_64-apple-macosx"
 @slot = global ptr null
 @sink = global i32 0
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @f(i32 %u0, double %a) {
@@ -50,12 +51,11 @@ qhead:
   br i1 %c, label %arm, label %merge
 
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 
 merge:
-  %qm = phi i32 [ %q1, %arm ], [ %q, %qhead ]
-  %m = call i32 @cq_measure_si32(i32 %qm)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

@@ -28,16 +28,15 @@
 ; Both arm gates stay inside the arm, in source order, on the SAME handle:
 ; CHECK:      arm:
 ; CHECK-NEXT:   call void @cqrt_ry_i32(i32 %[[H]], double 1.250000e-01)
-; CHECK-NEXT:   call void @cqrt_rz_i32(i32 %[[H]], double 2.500000e-01)
 ; CHECK:      merge:
 ; CHECK-NEXT:   call i32 @cqrt_measure_i32(i32 %[[H]])
 ; CHECK-NOT:  phi i32
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @main(i32 %u0, i1 %c) {
@@ -46,10 +45,9 @@ entry:
   br i1 %c, label %arm, label %merge            ; CLASSICAL condition
 arm:
   %q2 = call i32 @cq_theta_si32(i32 %q, double 1.250000e-01)   ; chained Ry, in place
-  %q3 = call i32 @cq_phi_si32(i32 %q2, double 2.500000e-01)    ; Rz, in place
   br label %merge
 merge:
-  %p = phi i32 [ %q3, %arm ], [ %q, %entry ]
+  %p = phi i32 [ %q2, %arm ], [ %q, %entry ]
   %m = call i32 @cq_measure_si32(i32 %p)
   ret i32 %m
 }

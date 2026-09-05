@@ -34,8 +34,9 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare double @llvm.sqrt.f64(double)
 
@@ -49,12 +50,11 @@ entry:
   br i1 %c, label %arm, label %merge
 
 arm:
-  %g = call i32 @cq_phi_si32(i32 %q, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %merge
 
 merge:
-  %p = phi i32 [ %g, %arm ], [ %q, %entry ]
-  %w = call i32 @cq_theta_si32(i32 %p, double 2.500000e-01)
+  %w = call i32 @cq_theta_si32(i32 %q, double 2.500000e-01)
   %m = call i32 @cq_measure_si32(i32 %w)
   ret i32 %m
 }

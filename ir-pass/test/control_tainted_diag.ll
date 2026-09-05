@@ -13,8 +13,9 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %y0) {
 entry:
@@ -22,10 +23,9 @@ entry:
   %c = icmp sgt i32 %q, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %y1 = call i32 @cq_phi_si32(i32 %y0, double 2.500000e-01)
+  call void @cq_phi(double 2.500000e-01)
   br label %merge
 merge:
-  %y = phi i32 [ %y1, %arm ], [ %y0, %entry ]
-  %m = call i32 @cq_measure_si32(i32 %y)
+  %m = call i32 @cq_measure_si32(i32 %y0)
   ret i32 %m
 }

@@ -18,21 +18,20 @@
 ; CHECK: error{{.*}}control condition has no template under quantum control
 ; CHECK-NOT: cqrt_cswap
 ; CHECK-NOT: cq_template_fcmp_false
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0, double %a) {
 entry:
   %q  = call double @cq_theta_f64(double %u0, double 5.000000e-01)
-  %qd = call double @cq_phi_f64(double %q, double 9.000000e-01)
-  %c  = fcmp false double %qd, 5.0       ; OUT-OF-SCOPE control predicate (`false`)
+  %c  = fcmp false double %q, 5.0       ; OUT-OF-SCOPE control predicate (`false`)
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call double @cq_phi_f64(double %qd, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi double [ %q1, %arm ], [ %qd, %entry ]
-  %m  = call double @cq_measure_f64(double %qm)
+  %m  = call double @cq_measure_f64(double %q)
   ret double %m
 }

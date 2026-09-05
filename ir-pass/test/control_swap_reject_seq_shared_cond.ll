@@ -22,8 +22,9 @@
 ; relationship to the wire region 1 left behind.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b) {
@@ -32,17 +33,15 @@ entry:
   %c1 = icmp sgt i32 %q, 5
   br i1 %c1, label %arm1, label %m1
 arm1:
-  %g1 = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %m1
 m1:
-  %p1 = phi i32 [ %g1, %arm1 ], [ %q, %entry ]
   br i1 %c1, label %arm2, label %m2    ; the SAME %c1, defined in %entry
 arm2:
-  %g2 = call i32 @cq_phi_si32(i32 %p1, double %b)
+  call void @cq_phi(double %b)
   br label %m2
 m2:
-  %p2 = phi i32 [ %g2, %arm2 ], [ %p1, %m1 ]
-  %m = call i32 @cq_measure_si32(i32 %p2)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

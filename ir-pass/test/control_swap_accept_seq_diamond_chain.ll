@@ -22,8 +22,9 @@
 ; RUN: %filecheck %s --check-prefix=CNT  < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT2 < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b, double %c) {
@@ -32,25 +33,22 @@ entry:
   %c1 = icmp sgt i32 %q, 5
   br i1 %c1, label %arm1, label %m1
 arm1:
-  %g1 = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %m1
 m1:
-  %p1 = phi i32 [ %g1, %arm1 ], [ %q, %entry ]
-  %c2 = icmp sgt i32 %p1, 3
+  %c2 = icmp sgt i32 %q, 3
   br i1 %c2, label %arm2, label %m2
 arm2:
-  %g2 = call i32 @cq_phi_si32(i32 %p1, double %b)
+  call void @cq_phi(double %b)
   br label %m2
 m2:
-  %p2 = phi i32 [ %g2, %arm2 ], [ %p1, %m1 ]
-  %c3 = icmp sgt i32 %p2, 1
+  %c3 = icmp sgt i32 %q, 1
   br i1 %c3, label %arm3, label %m3
 arm3:
-  %g3 = call i32 @cq_phi_si32(i32 %p2, double %c)
+  call void @cq_phi(double %c)
   br label %m3
 m3:
-  %p3 = phi i32 [ %g3, %arm3 ], [ %p2, %m2 ]
-  %m = call i32 @cq_measure_si32(i32 %p3)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

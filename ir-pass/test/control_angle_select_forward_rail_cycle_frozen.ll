@@ -54,9 +54,10 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT     < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1, i32 %n) {
@@ -65,13 +66,12 @@ entry:
   %r = call i32 @cq_theta_si32(i32 %u1, double 2.500000e-01)
   %c = icmp eq i32 %q, 5
   %ang = select i1 %c, double 9.000000e-01, double 3.000000e-01
-  %t = call i32 @cq_phi_si32(i32 %r, double %ang)
+  call void @cq_phi(double %ang)
   br label %L
 
 L:
   %i = phi i32 [ 0, %entry ], [ %inext, %L ]
   ; the FORWARD gate on the SAME rail, inside the cycle — asked by NEITHER prong
-  %g = call i32 @cq_phi_si32(i32 %t, double 1.000000e-01)
   %inext = add i32 %i, 1
   %done = icmp sgt i32 %inext, %n
   br i1 %done, label %exit, label %L

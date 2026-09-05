@@ -11,17 +11,15 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}control flow under quantum control
 ; CHECK-NOT: cqrt_copy
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0) {
 entry:
   %q   = call double @cq_theta_f64(double %u0, double 5.000000e-01)
-  %qa  = call double @cq_phi_f64(double %q, double 5.000000e-01)  ; phi of %q
-  %qb  = call double @cq_phi_f64(double %q, double 7.000000e-01)  ; ALSO phi of %q — same wire
   %c   = fcmp ogt double %q, 5.000000e+00
-  %sel = select i1 %c, double %qa, double %qb    ; both operands alias %q's register
+  %sel = select i1 %c, double %q, double %q    ; both operands alias %q's register
   %m   = call double @cq_measure_f64(double %sel)
   ret double %m
 }

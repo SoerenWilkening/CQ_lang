@@ -28,8 +28,9 @@
 ; CHECK: error{{.*}}condition data use has no template under quantum control
 ; The OLD (mutate-then-decline) message must NOT appear — detection declines first:
 ; CHECK-NOT: no template for opcode 'sext i256'
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a) {
@@ -40,11 +41,10 @@ entry:
   %e = trunc i256 %d to i32          ; narrow back so the lineage escapes at i32
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi i32 [ %q1, %arm ], [ %q, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   %r  = add i32 %m, %e               ; keep %e live — escapes via ret
   ret i32 %r
 }

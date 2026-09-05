@@ -19,8 +19,9 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}condition predates a non-diagonal gate under quantum control
 ; CHECK-NOT: cqrt_cswap
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define void @example(double %u0, i1 %cc) {
@@ -37,11 +38,10 @@ pre:
   %c = fcmp ogt double %q, 5.000000e-01                             ; reads the PRE-Ry alias
   br i1 %c, label %arm, label %merge
 arm:
-  %qd = call double @cq_phi_f64(double %q, double 3.000000e-01)     ; phase arm on q
+  call void @cq_phi(double 3.000000e-01)  ; phase arm on q
   br label %merge
 merge:
-  %ph = phi double [ %qd, %arm ], [ %q, %pre ]
-  %m1 = call double @cq_measure_f64(double %ph)
+  %m1 = call double @cq_measure_f64(double %q)
   %m2 = call double @cq_measure_f64(double %g)
   ret void
 }

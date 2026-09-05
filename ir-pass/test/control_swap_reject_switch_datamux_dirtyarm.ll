@@ -6,8 +6,9 @@
 ; would be silently dropped/hoisted on flatten. The arm-purity scan now declines.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}control flow under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %r0) {
 entry:
@@ -16,7 +17,7 @@ entry:
   switch i32 %q, label %merge [ i32 0, label %a0
                                 i32 1, label %a1 ]
 a0:
-  %g0 = call i32 @cq_phi_si32(i32 %r, double 1.000000e-01)
+  call void @cq_phi(double 1.000000e-01)
   br label %merge
 a1:
   br label %merge

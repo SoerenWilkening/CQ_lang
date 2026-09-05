@@ -47,8 +47,8 @@
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEREC < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i1 %c) {
@@ -58,11 +58,10 @@ entry:
   br i1 %c, label %arm, label %merge                           ; CLASSICAL condition
 
 arm:
-  %dz = call i32 @cq_phi_si32(i32 %d, double 2.500000e-01)     ; diagonal, in place
   br label %merge
 
 merge:
-  %p  = phi i32 [ %dz, %arm ], [ %d, %entry ]                  ; the one-register router
+  %p  = phi i32 [ %d, %arm ], [ %d, %entry ]                  ; the one-register router
   %q2 = call i32 @cq_theta_si32(i32 %p, double 1.250000e-01)   ; T — chained Ry THROUGH the phi
   %m2 = call i32 @cq_measure_si32(i32 %q2)
   ret i32 %m2

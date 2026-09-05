@@ -57,6 +57,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=NOROUTE %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
 
 @OPQ = global i32 1, align 4
 
@@ -65,25 +66,24 @@ define i32 @slice() local_unnamed_addr {
   %2 = tail call i32 @cq_theta_si32(i32 noundef 7, double noundef 2.500000e-01)
   %3 = icmp eq i32 %1, 5
   %4 = select i1 %3, double 9.000000e-01, double 3.000000e-01
-  %5 = tail call i32 @cq_phi_si32(i32 noundef %2, double noundef %4)
+  call void @cq_phi(double %4)
   %6 = load volatile i32, ptr @OPQ, align 4
   %7 = icmp eq i32 %6, 0
   br i1 %7, label %10, label %8
 
 8:                                                ; preds = %0
-  %9 = tail call i32 @cq_phi_si32(i32 noundef %5, double noundef 5.000000e-01)
   br label %10
 
 10:                                               ; preds = %8, %0
-  %11 = phi i32 [ %9, %8 ], [ %5, %0 ]
+  %11 = phi i32 [ %2, %8 ], [ %2, %0 ]
   %12 = tail call i32 @cq_measure_si32(i32 noundef %1)
   %13 = tail call i32 @cq_measure_si32(i32 noundef %11)
   %14 = add nsw i32 %13, %12
   ret i32 %14
 }
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
-declare i32 @cq_phi_si32(i32 noundef, double noundef) local_unnamed_addr
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 
 ; The 2b by-difference stream on the PHASE stem: unconditional Rz(h,B=.3), flag

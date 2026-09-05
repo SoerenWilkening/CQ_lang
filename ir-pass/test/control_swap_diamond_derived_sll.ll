@@ -21,22 +21,21 @@
 ; function (a trailing CHECK-NOT scans only past the LAST positive of its prefix,
 ; and every route line would land BEFORE that — it could never fire).
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
+declare void @cq_phi(double)
 declare i64 @cq_theta_sll(i64, double)
-declare i64 @cq_phi_sll(i64, double)
 declare i64 @cq_measure_sll(i64)
 
 define i64 @example(i64 %u0, double %a) {
 entry:
   %q = call i64 @cq_theta_sll(i64 %u0, double 5.000000e-01)
-  %qd = call i64 @cq_phi_sll(i64 %q, double 9.000000e-01)
-  %c = icmp sgt i64 %qd, 5
+  %c = icmp sgt i64 %q, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call i64 @cq_phi_sll(i64 %qd, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi i64 [ %q1, %arm ], [ %qd, %entry ]
-  %m  = call i64 @cq_measure_sll(i64 %qm)
+  %m  = call i64 @cq_measure_sll(i64 %q)
   ret i64 %m
 }
 

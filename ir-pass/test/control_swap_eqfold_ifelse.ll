@@ -21,8 +21,9 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @ifelse_eq(i32 %u0, double %a, double %b) {
@@ -31,14 +32,13 @@ entry:
   %c = icmp eq i32 %q, 7
   br i1 %c, label %then, label %else
 then:
-  %qt = call i32 @cq_phi_si32(i32 7, double %a)    ; folded base (q==7 here)
+  call void @cq_phi(double %a)  ; folded base (q==7 here)
   br label %merge
 else:
-  %qe = call i32 @cq_phi_si32(i32 %q, double %b)   ; kept base
+  call void @cq_phi(double %b)  ; kept base
   br label %merge
 merge:
-  %qm = phi i32 [ %qt, %then ], [ %qe, %else ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 
@@ -62,14 +62,13 @@ entry:
   %c = icmp ne i32 %q, 7
   br i1 %c, label %kept, label %folded
 kept:
-  %qk = call i32 @cq_phi_si32(i32 %q, double %a)   ; kept base (S0/R.Arm)
+  call void @cq_phi(double %a)  ; kept base (S0/R.Arm)
   br label %merge
 folded:
-  %qf = call i32 @cq_phi_si32(i32 7, double %b)    ; folded base (S1, q==7 here)
+  call void @cq_phi(double %b)  ; folded base (S1, q==7 here)
   br label %merge
 merge:
-  %qm = phi i32 [ %qk, %kept ], [ %qf, %folded ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

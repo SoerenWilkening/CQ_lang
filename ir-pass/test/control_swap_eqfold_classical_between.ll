@@ -35,9 +35,10 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare void @g()
 
@@ -49,24 +50,22 @@ entry:
 arm1:
   ; `clang -O1` const-folds the arm's `q` to the literal 5 — the eq-fold shape
   ; whose whole point is that the emitter must re-anchor on `RoutedBase`.
-  %g1 = call i32 @cq_phi_si32(i32 5, double 2.000000e-01)
+  call void @cq_phi(double 2.000000e-01)
   br label %merge1
 merge1:
-  %m1 = phi i32 [ %g1, %arm1 ], [ %q, %entry ]
   %cz = icmp eq i32 %cc, 0
   br i1 %cz, label %cjoin, label %cbody
 cbody:
   call void @g()
   br label %cjoin
 cjoin:
-  %t2 = icmp eq i32 %m1, 6
+  %t2 = icmp eq i32 %q, 6
   br i1 %t2, label %arm2, label %merge2
 arm2:
-  %g2 = call i32 @cq_phi_si32(i32 6, double 3.000000e-01)
+  call void @cq_phi(double 3.000000e-01)
   br label %merge2
 merge2:
-  %m2 = phi i32 [ %g2, %arm2 ], [ %m1, %cjoin ]
-  %r = call i32 @cq_measure_si32(i32 %m2)
+  %r = call i32 @cq_measure_si32(i32 %q)
   ret i32 %r
 }
 

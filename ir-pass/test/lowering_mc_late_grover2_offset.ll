@@ -53,8 +53,9 @@
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOMINT < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @mc_grover2_offset(ptr noundef %0) {
@@ -66,40 +67,36 @@ define i32 @mc_grover2_offset(ptr noundef %0) {
   %7 = icmp eq i32 %6, 5
   br i1 %7, label %8, label %10
 8:
-  %9 = call i32 @cq_phi_si32(i32 noundef %4, double noundef 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %10
 10:
-  %11 = phi i32 [ %9, %8 ], [ %4, %1 ]
-  %12 = sub nsw i32 %11, %2
+  %12 = sub nsw i32 %4, %2
   %13 = call i32 @cq_theta_si32(i32 noundef %12, double noundef -5.000000e-01)
   %14 = icmp eq i32 %13, 0
   br i1 %14, label %15, label %17
 15:
-  %16 = call i32 @cq_phi_si32(i32 noundef 0, double noundef 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %17
 17:
-  %18 = phi i32 [ %16, %15 ], [ %13, %10 ]
-  %19 = call i32 @cq_theta_si32(i32 noundef %18, double noundef 5.000000e-01)
+  %19 = call i32 @cq_theta_si32(i32 noundef %13, double noundef 5.000000e-01)
   %20 = add nsw i32 %19, %2
   %21 = ashr i32 %20, 2
   %22 = add nsw i32 %21, %20
   %23 = icmp eq i32 %22, 5
   br i1 %23, label %24, label %26
 24:
-  %25 = call i32 @cq_phi_si32(i32 noundef %20, double noundef 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %26
 26:
-  %27 = phi i32 [ %25, %24 ], [ %20, %17 ]
-  %28 = sub nsw i32 %27, %2
+  %28 = sub nsw i32 %20, %2
   %29 = call i32 @cq_theta_si32(i32 noundef %28, double noundef -5.000000e-01)
   %30 = icmp eq i32 %29, 0
   br i1 %30, label %31, label %33
 31:
-  %32 = call i32 @cq_phi_si32(i32 noundef 0, double noundef 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %33
 33:
-  %34 = phi i32 [ %32, %31 ], [ %29, %26 ]
-  %35 = call i32 @cq_theta_si32(i32 noundef %34, double noundef 5.000000e-01)
+  %35 = call i32 @cq_theta_si32(i32 noundef %29, double noundef 5.000000e-01)
   %36 = call i32 @cq_measure_si32(i32 noundef %35)
   ret i32 %36
 }

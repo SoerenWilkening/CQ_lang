@@ -32,32 +32,30 @@
 ; RUN: %filecheck %s --check-prefix=CNT  < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT2 < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b, double %c2a) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %qd = call i32 @cq_phi_si32(i32 %q, double 9.000000e-01)
-  %c = icmp sgt i32 %qd, 5
+  %c = icmp sgt i32 %q, 5
   br i1 %c, label %then, label %else
 then:
-  %qt = call i32 @cq_phi_si32(i32 %qd, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 else:
-  %qe = call i32 @cq_phi_si32(i32 %qd, double %b)
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i32 [ %qt, %then ], [ %qe, %else ]
-  %c2 = icmp sgt i32 %qm, 3                       ; region 2's tainted branch
+  %c2 = icmp sgt i32 %q, 3                       ; region 2's tainted branch
   br i1 %c2, label %arm2, label %merge2           ;   lives in region 1's MERGE
 arm2:
-  %q2 = call i32 @cq_phi_si32(i32 %qm, double %c2a)
+  call void @cq_phi(double %c2a)
   br label %merge2
 merge2:
-  %qm2 = phi i32 [ %q2, %arm2 ], [ %qm, %merge ]
-  %m  = call i32 @cq_measure_si32(i32 %qm2)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

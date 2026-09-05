@@ -32,9 +32,9 @@
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT    < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT    < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example() {
@@ -49,7 +49,6 @@ merge:
   %r  = phi i32 [ %t, %arm ], [ 0, %entry ]
   %c  = add nsw i32 %r, 3
   %r2 = call i32 @cq_theta_si32(i32 %r, double 7.000000e-01)
-  %cz = call i32 @cq_phi_si32(i32 %c, double 1.000000e+00)
   %m  = call i32 @cq_measure_si32(i32 %r2)
   ret i32 %m
 }
@@ -60,7 +59,6 @@ merge:
 ; the record off the prepped rail, then the CHAINED gate on the rail itself
 ; CHECK:      %[[C:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[R]], i32 3)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 0x3FE6666666666666)
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[C]], double 1.000000e+00)
 
 ; WARN: warning{{.*}}cq rotation lowering: non-diagonal gate over a live derived record
 

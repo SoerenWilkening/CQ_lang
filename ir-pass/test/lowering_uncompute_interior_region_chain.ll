@@ -46,8 +46,9 @@
 ; The route's ABSENCE, anchored at the function header so the window is the whole
 ; function (a trailing CHECK-NOT scans only past the LAST positive of its prefix).
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare double @llvm.sqrt.f64(double)
 
@@ -61,12 +62,11 @@ entry:
   br i1 %gt, label %merge, label %arm
 
 arm:
-  %qz = call i32 @cq_phi_si32(i32 %q, double 3.000000e+00)
+  call void @cq_phi(double 3.000000e+00)
   br label %merge
 
 merge:
-  %p = phi i32 [ %qz, %arm ], [ %q, %entry ]
-  %m = call i32 @cq_measure_si32(i32 %p)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

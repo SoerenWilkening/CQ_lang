@@ -37,8 +37,9 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @wire_measured_in_interval(i32 %u0) {
@@ -50,12 +51,11 @@ entry:
   br i1 %c, label %arm, label %merge
 
 arm:
-  %g = call i32 @cq_phi_si32(i32 %q, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %merge
 
 merge:
-  %p  = phi i32 [ %g, %arm ], [ %q, %entry ]
-  %m1 = call i32 @cq_measure_si32(i32 %p)
+  %m1 = call i32 @cq_measure_si32(i32 %q)
   %t  = and i32 %d, 7
   %m2 = call i32 @cq_measure_si32(i32 %t)
   %s  = add i32 %m1, %m2

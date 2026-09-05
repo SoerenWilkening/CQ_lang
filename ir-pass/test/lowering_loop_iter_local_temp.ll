@@ -31,11 +31,9 @@
 ; CHECK:        %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
 ; CHECK:        call void @cqrt_ry_i32(i32 %[[Q]], double 2.500000e-01)
 ; CHECK:        %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32_hl(i32 %[[Q]], i32 9)
-; CHECK:        call void @cqrt_rz_i32(i32 %[[T]], double 5.000000e-01)
 ; In-body LIFO uncompute (negated keep-alive -> xor `_unc` reading live %[[Q]] ->
 ; free t-rail -> negated mint -> free q-rail), all before the backedge branch:
-; CHECK-NEXT:   call void @cqrt_rz_i32(i32 %[[T]], double -5.000000e-01)
-; CHECK-NEXT:   call void @cq_template_xor_i32_hl_unc(i32 %[[T]], i32 %[[Q]], i32 9)
+; CHECK:   call void @cq_template_xor_i32_hl_unc(i32 %[[T]], i32 %[[Q]], i32 9)
 ; CHECK-NEXT:   call void @cqrt_free(i32 %[[T]])
 ; CHECK-NEXT:   call void @cqrt_ry_i32(i32 %[[Q]], double -2.500000e-01)
 ; CHECK-NEXT:   call void @cqrt_free(i32 %[[Q]])
@@ -45,12 +43,12 @@
 ; CHECK-NOT:  cqrt_measure
 ; CHECK-NOT:  cq_theta_si32
 ; CHECK-NOT:  cq_phi_si32
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 
 define void @slice(i32 %x, i32 %n) {
 entry:
@@ -61,7 +59,6 @@ loop:                                             ; preds = %entry, %loop
   %i = phi i32 [ 0, %entry ], [ %inext, %loop ]   ; classical induction (NO tainted header phi)
   %q = call i32 @cq_theta_si32(i32 %x, double 2.500000e-01) ; fresh rail, born in body
   %t = xor i32 %q, 9                              ; template producer (born)
-  %dead = call i32 @cq_phi_si32(i32 %t, double 5.000000e-01) ; Rz keep-alive; dead
   %inext = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %inext, %n                  ; classical exit condition
   br i1 %done, label %exit, label %loop

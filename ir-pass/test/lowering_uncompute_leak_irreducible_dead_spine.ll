@@ -38,8 +38,8 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq uncompute: tainted handle live range crosses a loop backedge
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare void @cqrt_addc_i32(i32, i32)
 
 define void @dead_spine_irreducible(i32 %u0, i1 %c0, i1 %c1) {
@@ -53,6 +53,5 @@ A:                                        ; preds = %entry, %B — irreducible
 B:                                        ; preds = %entry, %A
   br label %A
 exit:
-  %k = call i32 @cq_phi_si32(i32 %r, double 1.000000e+00)
   ret void
 }

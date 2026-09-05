@@ -39,9 +39,10 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %x, double %b, i32 %n) {
@@ -54,11 +55,10 @@ loop:
   %c = icmp sgt i32 %q, 5                             ; TAINTED (quantum) condition
   br i1 %c, label %arm, label %cont
 arm:
-  %g = call i32 @cq_phi_si32(i32 %q, double %b)
+  call void @cq_phi(double %b)
   br label %cont
 cont:
-  %qm = phi i32 [ %g, %arm ], [ %q, %loop ]           ; iteration-local merge
-  %m = call i32 @cq_measure_si32(i32 %qm)             ; measured in-body
+  %m = call i32 @cq_measure_si32(i32 %q)             ; measured in-body
   %accn = add i32 %acc, %m
   %inext = add i32 %i, 1
   %done = icmp slt i32 %inext, %n                      ; classical loop bound

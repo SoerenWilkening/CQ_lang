@@ -13,24 +13,23 @@
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT2 < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %b) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %qd = call i32 @cq_phi_si32(i32 %q, double 9.000000e-01)
-  %c = icmp sgt i32 %qd, 5
+  %c = icmp sgt i32 %q, 5
   br i1 %c, label %then, label %else
 then:
   br label %merge
 else:
-  %qe = call i32 @cq_phi_si32(i32 %qd, double %b)
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i32 [ %qd, %then ], [ %qe, %else ]   ; gate-free arm: %qd unchanged
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

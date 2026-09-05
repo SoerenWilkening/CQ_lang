@@ -89,9 +89,10 @@
 ; to the region before the first CHECK-LABEL.
 ; NOINPLACE-NOT: cqrt_addc_
 ; NOINPLACE-NOT: cqrt_xorc_
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 ; ── Phase-1 entry point ──────────────────────────────────────────────────────
@@ -115,14 +116,13 @@ A:
   br label %B
 B:
   %s = sub nsw i32 %q, %off
-  %r = call i32 @cq_phi_si32(i32 %s, double 2.000000e+00)
   %n = load volatile i32, ptr %pc, align 4
   %n1 = add i32 %n, 1
   store volatile i32 %n1, ptr %pc, align 4
   %cb = icmp slt i32 %n1, 2
   br i1 %cb, label %A, label %exit
 exit:
-  %m = call i32 @cq_measure_si32(i32 %r)
+  %m = call i32 @cq_measure_si32(i32 %s)
   ret i32 %m
 }
 
@@ -152,23 +152,21 @@ define i32 @late_round_site(i32 noundef %0, ptr noundef %1, i1 %c0, ptr %pc) {
   %7 = icmp eq i32 %6, 5
   br i1 %7, label %8, label %10
 8:
-  %9 = call i32 @cq_phi_si32(i32 noundef %4, double noundef 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %10
 10:
-  %11 = phi i32 [ %9, %8 ], [ %4, %2 ]
   br i1 %c0, label %A, label %B
 A:
   br label %B
 B:
-  %12 = sub nsw i32 %11, %3
-  %13 = call i32 @cq_phi_si32(i32 noundef %12, double noundef 2.000000e+00)
+  %12 = sub nsw i32 %4, %3
   %n = load volatile i32, ptr %pc, align 4
   %n1 = add i32 %n, 1
   store volatile i32 %n1, ptr %pc, align 4
   %cb = icmp slt i32 %n1, 2
   br i1 %cb, label %A, label %exit
 exit:
-  %14 = call i32 @cq_measure_si32(i32 noundef %13)
+  %14 = call i32 @cq_measure_si32(i32 noundef %12)
   ret i32 %14
 }
 ; SILENT pins 'no diagnostic of any kind' on the pass's stderr: since owner

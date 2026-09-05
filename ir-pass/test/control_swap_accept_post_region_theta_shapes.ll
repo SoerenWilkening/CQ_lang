@@ -45,8 +45,9 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @ifelse(i32 %u0, double %a, double %b) {
@@ -56,16 +57,15 @@ entry:
   br i1 %c, label %t, label %f
 
 t:
-  %g1 = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 
 f:
-  %g2 = call i32 @cq_phi_si32(i32 %q, double %b)
+  call void @cq_phi(double %b)
   br label %merge
 
 merge:
-  %p = phi i32 [ %g1, %t ], [ %g2, %f ]
-  %w = call i32 @cq_theta_si32(i32 %p, double 2.500000e-01)
+  %w = call i32 @cq_theta_si32(i32 %q, double 2.500000e-01)
   %m = call i32 @cq_measure_si32(i32 %w)
   ret i32 %m
 }
@@ -73,17 +73,15 @@ merge:
 define i32 @derived_base(i32 %u0, double %a) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %qd = call i32 @cq_phi_si32(i32 %q, double 1.250000e-01)   ; pre-region Rz
-  %c = icmp sgt i32 %qd, 5
+  %c = icmp sgt i32 %q, 5
   br i1 %c, label %arm, label %merge
 
 arm:
-  %g = call i32 @cq_phi_si32(i32 %qd, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 
 merge:
-  %p = phi i32 [ %g, %arm ], [ %qd, %entry ]
-  %w = call i32 @cq_theta_si32(i32 %p, double 2.500000e-01)
+  %w = call i32 @cq_theta_si32(i32 %q, double 2.500000e-01)
   %m = call i32 @cq_measure_si32(i32 %w)
   ret i32 %m
 }

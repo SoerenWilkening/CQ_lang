@@ -27,9 +27,10 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control
+; 3qlq: migrated from register cq_phi (angle select -> void call on the select (PRD P2))
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1) {
@@ -39,9 +40,9 @@ entry:
   %c = icmp eq i32 %q, 5
   ; 0x3FF0000000000000 = 1.0 ; 0x7E37E43C8800759C = 1e300
   %ang = select i1 %c, double 0x3FF0000000000000, double 0x7E37E43C8800759C
-  %t = call i32 @cq_phi_si32(i32 %r, double %ang)
+  call void @cq_phi(double %ang)
   %mq = call i32 @cq_measure_si32(i32 %q)
-  %mr = call i32 @cq_measure_si32(i32 %t)
+  %mr = call i32 @cq_measure_si32(i32 %r)
   %s = add i32 %mq, %mr
   ret i32 %s
 }

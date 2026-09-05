@@ -9,8 +9,9 @@
 ; nesting in ONE arm; both-arm waits on two sibling subtrees.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, double %a) {
 entry:
@@ -24,11 +25,10 @@ else:
   %ce = icmp sgt i32 %q, 2
   br i1 %ce, label %gate, label %merge
 gate:
-  %g  = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi i32 [ %q, %then ], [ %q, %else ], [ %g, %gate ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 ; CHECK: error{{.*}}nested control flow under quantum control

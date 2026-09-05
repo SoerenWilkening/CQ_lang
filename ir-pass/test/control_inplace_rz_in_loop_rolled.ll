@@ -41,9 +41,10 @@
 ; The pass must not have DECLINED — no diagnostic on stderr.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 >/dev/null \
 ; RUN:   | %filecheck %s --check-prefix=SILENT --allow-empty
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @rolled(i32 %u0, double %b, i32 %n) {
@@ -51,20 +52,19 @@ entry:
   %q0 = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   br label %loop
 loop:
-  %q = phi i32 [ %q0, %entry ], [ %qm, %merge ]       ; loop-carried routed base
+  %q = phi i32 [ %q0, %entry ], [ %q, %merge ]       ; loop-carried routed base
   %i = phi i32 [ 0, %entry ], [ %inext, %merge ]      ; classical induction
   %c1 = icmp sgt i32 %q, 5                             ; TAINTED condition
   br i1 %c1, label %mid, label %merge
 mid:
-  %g = call i32 @cq_phi_si32(i32 %q, double %b)        ; phase arm (Rz)
+  call void @cq_phi(double %b)  ; phase arm (Rz)
   br label %merge
 merge:
-  %qm = phi i32 [ %g, %mid ], [ %q, %loop ]
   %inext = add i32 %i, 1
   %done = icmp sgt i32 %inext, %n                      ; classical loop bound
   br i1 %done, label %exit, label %loop
 exit:
-  %m = call i32 @cq_measure_si32(i32 %qm)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

@@ -59,10 +59,11 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 @cq_off = global i32 3, align 4
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @main() {
@@ -73,24 +74,22 @@ define i32 @main() {
   br i1 %4, label %5, label %7
 
 5:
-  %6 = call i32 @cq_phi_si32(i32 5, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %7
 
 7:
-  %8 = phi i32 [ %6, %5 ], [ %3, %0 ]
   %9 = load volatile i32, ptr @cq_off, align 4
-  %10 = sub nsw i32 %8, %9
+  %10 = sub nsw i32 %3, %9
   %11 = call i32 @cq_theta_si32(i32 %10, double -5.000000e-01)
   %12 = icmp eq i32 %11, 0
   br i1 %12, label %13, label %15
 
 13:
-  %14 = call i32 @cq_phi_si32(i32 0, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %15
 
 15:
-  %16 = phi i32 [ %14, %13 ], [ %11, %7 ]
-  %17 = call i32 @cq_theta_si32(i32 %16, double 5.000000e-01)
+  %17 = call i32 @cq_theta_si32(i32 %11, double 5.000000e-01)
   %18 = load volatile i32, ptr @cq_off, align 4
   %19 = add nsw i32 %18, %17
   %20 = call i32 @cq_measure_si32(i32 %19)

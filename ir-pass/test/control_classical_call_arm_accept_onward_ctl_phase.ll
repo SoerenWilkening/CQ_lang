@@ -25,8 +25,9 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 ; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its
 ; quantum guard, so it now needs a TOTALITY proof as well as a purity one, and a
@@ -53,11 +54,10 @@ merge:
   %c2 = icmp sgt i32 %y, 7                            ; tainted only AFTER the re-seed
   br i1 %c2, label %ph, label %m2                     ; NEW tainted control on %out
 ph:
-  %p = call i32 @cq_phi_si32(i32 %y, double 0.25)     ; ONWARD controlled phase on %out
+  call void @cq_phi(double 0.25)  ; ONWARD controlled phase on %out
   br label %m2
 m2:
-  %pp = phi i32 [ %p, %ph ], [ %y, %merge ]
-  %m = call i32 @cq_measure_si32(i32 %pp)
+  %m = call i32 @cq_measure_si32(i32 %y)
   ret i32 %m
 }
 attributes #0 = { nounwind willreturn memory(none) }

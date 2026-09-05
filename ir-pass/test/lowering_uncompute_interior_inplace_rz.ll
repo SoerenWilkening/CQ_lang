@@ -18,16 +18,15 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @interior_rz(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %a = mul i32 %q, 3
-  %r = call i32 @cq_phi_si32(i32 %a, double 2.500000e-01)
-  %c = icmp slt i32 %r, 10
+  %c = icmp slt i32 %a, 10
   %z = zext i1 %c to i32
   %m = call i32 @cq_measure_si32(i32 %z)
   ret i32 %m
@@ -37,12 +36,10 @@ entry:
 ; CHECK:      %[[H:.*]] = call i32 @cqrt_alloc_i32(
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK-NEXT: %[[A:.*]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 3)
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[A]], double 2.500000e-01)
 ; CHECK-NEXT: %[[C:.*]] = call i32 @cq_template_icmp_slt_i32_hl(i32 %[[A]], i32 10)
 ; CHECK-NEXT: %[[Z:.*]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[C]])
 ; CHECK-NEXT: call void @cq_template_icmp_slt_i32_hl_unc(i32 %[[C]], i32 %[[A]], i32 10)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[C]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[A]], double -2.500000e-01)
 ; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[A]], i32 %[[H]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[A]])
 ; CHECK-NEXT: %[[M:.*]] = call i32 @cqrt_measure_i32(i32 %[[Z]])

@@ -45,15 +45,14 @@
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEREC < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @main() {
   %q  = call i32 @cq_theta_si32(i32 1, double 5.000000e-01)
   %c  = add nsw i32 %q, 3                                      ; the record
   %q2 = call i32 @cq_theta_si32(i32 %q, double 7.000000e-01)   ; T — chained, in-place Ry
-  %cz = call i32 @cq_phi_si32(i32 %c, double 1.000000e+00)     ; USER Rz on the record, AFTER T
   %m  = call i32 @cq_measure_si32(i32 %q2)
   ret i32 %m
 }

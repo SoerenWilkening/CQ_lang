@@ -25,23 +25,21 @@
 ; function (a trailing CHECK-NOT scans only past the LAST positive of its prefix,
 ; and every route line would land BEFORE that — it could never fire).
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a) {
 entry:
   %q   = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %qd1 = call i32 @cq_phi_si32(i32 %q,   double 1.250000e-01)  ; pre-rotation 1
-  %qd2 = call i32 @cq_phi_si32(i32 %qd1, double 3.750000e-01)  ; pre-rotation 2 — the LIVE base
-  %c = icmp sgt i32 %qd2, 5
+  %c = icmp sgt i32 %q, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 %qd2, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi i32 [ %q1, %arm ], [ %qd2, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

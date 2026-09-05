@@ -822,6 +822,7 @@ def rewrite(path: str, fa: FileAnalysis, do_checks: bool) -> tuple[list[str], li
         actions.append('declare void @cq_phi(double) added')
     # --- 3. CHECK lines (only where the rewrite is CERTAIN)
     if do_checks:
+        rz_checks: list[int] = []
         for i, ln in enumerate(lines):
             if i in drop:
                 continue
@@ -829,8 +830,42 @@ def rewrite(path: str, fa: FileAnalysis, do_checks: bool) -> tuple[list[str], li
                 fa.needs_rederive = True
                 continue
             if RZ_POSITIVE_RE.match(ln):
-                drop.add(i)
-                actions.append(f'CHECK deleted (uncontrolled Rz gone): {ln.strip()}')
+                rz_checks.append(i)
+        # (a) A deleted CHECK line that BINDS a FileCheck variable still used by a
+        # surviving line would leave `undefined variable: X`.  Refuse the whole file:
+        # a fixture whose Rz line is the BINDER is a fixture whose SUBJECT is the Rz.
+        for i in rz_checks:
+            for v in re.findall(r'\[\[([A-Za-z_][\w]*)\s*:', lines[i]):
+                used = any(re.search(r'\[\[' + re.escape(v) + r'\]\]', l)
+                           for j, l in enumerate(lines)
+                           if j != i and j not in drop and j not in rz_checks)
+                if used:
+                    fa.hand_decision = (fa.hand_decision or
+                                        f'the deleted `cqrt_rz` CHECK at line {i+1} BINDS '
+                                        f'FileCheck variable [[{v}]], which surviving CHECK '
+                                        f'lines still use: the Rz IS this fixture\'s subject')
+                    return lines, actions
+        for i in rz_checks:
+            drop.add(i)
+            actions.append(f'CHECK deleted (uncontrolled Rz gone): {lines[i].strip()}')
+        # (b) A `CHECK-NEXT` whose ANCHOR was a deleted plain `CHECK` must be promoted
+        # back to a plain `CHECK`: the deleted CHECK was a re-anchor point, so the
+        # surviving `-NEXT` would now demand adjacency to a line it never followed.
+        for i in sorted(rz_checks):
+            if re.match(r'^\s*;\s*CHECK[-\w]*-NEXT\s*:', lines[i]):
+                continue                       # the run started ON a -NEXT: adjacency holds
+            j = i + 1
+            while j < len(lines) and (j in drop or not CHECK_RE.match(lines[j])):
+                if CHECK_RE.match(lines[j]) and j not in drop:
+                    break
+                j += 1
+            if j < len(lines):
+                m = re.match(r'^(\s*;\s*)(CHECK[-\w]*?)-NEXT(\s*:)', lines[j])
+                if m:
+                    lines[j] = (m.group(1) + m.group(2) + m.group(3)
+                                + lines[j][m.end():])
+                    actions.append(f'CHECK-NEXT promoted to CHECK (anchor deleted): '
+                                   f'{lines[j].strip()}')
     # --- 4. header note
     out = [l for i, l in enumerate(lines) if i not in drop]
     case = {'U': 'uncontrolled -> deleted (D2)',
@@ -1048,9 +1083,11 @@ def main(argv=None):
             fa.hand_decision = fa.hand_decision or ('HOLD: ' + hold[base])
         if args.report and fa.sites:
             # rewrite IN MEMORY so the rewrite-time HAND-DECISIONS (an undissolvable
-            # merge phi, a dominance failure, a surviving symbol reference) appear in
-            # the report rather than only at --apply time.
-            rewrite(path, fa, do_checks=False)
+            # merge phi, a dominance failure, a surviving symbol reference, a deleted
+            # CHECK that BINDS a FileCheck variable) appear in the report rather than
+            # only at --apply time.  `do_checks` must match what --apply would pass,
+            # or the CHECK-side hand decisions stay invisible here.
+            rewrite(path, fa, do_checks=(fa.cls in ('U', 'D')) and not args.no_checks)
         counts[fa.cls] += 1
         per = {k: sum(1 for s in fa.sites if s.cls == k) for k in 'UASH'}
         rows.append((os.path.basename(path), fa.cls, per['U'], per['A'], per['S'],

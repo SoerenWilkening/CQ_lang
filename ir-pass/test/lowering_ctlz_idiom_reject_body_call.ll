@@ -16,13 +16,14 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq controlled lowering: loop under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
-declare i32 @cq_phi_si32(i32, double)
 
 define i32 @reject_body_call(i32 %u) {
 entry:
@@ -34,7 +35,7 @@ loop:                                             ; preds = %entry, %loop
   %x = phi i32 [ %q, %entry ], [ %sh, %loop ]
   %dec = add nsw i32 %ix, -1
   %sh = shl nuw i32 %x, 1
-  %kick = call i32 @cq_phi_si32(i32 %sh, double 1.250000e-01)
+  call void @cq_phi(double 1.250000e-01)
   %pos = icmp sgt i32 %sh, 0
   br i1 %pos, label %loop, label %exit
 

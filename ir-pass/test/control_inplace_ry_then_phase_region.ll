@@ -25,9 +25,10 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1) {
@@ -44,11 +45,10 @@ merge:
   %c2 = icmp sgt i32 %q, 7
   br i1 %c2, label %arm2, label %merge2
 arm2:
-  %rt2 = call i32 @cq_phi_si32(i32 %rm, double 4.000000e-01)
+  call void @cq_phi(double 4.000000e-01)
   br label %merge2
 merge2:
-  %rm2 = phi i32 [ %rt2, %arm2 ], [ %rm, %merge ]
-  %m   = call i32 @cq_measure_si32(i32 %rm2)
+  %m   = call i32 @cq_measure_si32(i32 %rm)
   ret i32 %m
 }
 

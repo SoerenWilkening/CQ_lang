@@ -85,8 +85,9 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEOP < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @interior_route_in_interval(i32 %u0) {
@@ -96,13 +97,12 @@ entry:
   %gt = icmp sgt i32 %q, 2
   br i1 %gt, label %arm, label %merge
 arm:
-  %qz = call i32 @cq_phi_si32(i32 %q, double 2.500000e-01)
+  call void @cq_phi(double 2.500000e-01)
   br label %merge
 merge:
-  %p = phi i32 [ %qz, %arm ], [ %q, %entry ]
   %y = mul i32 %x, 3
   %m = call i32 @cq_measure_si32(i32 %y)
-  %m2 = call i32 @cq_measure_si32(i32 %p)
+  %m2 = call i32 @cq_measure_si32(i32 %q)
   %s = add i32 %m, %m2
   ret i32 %s
 }

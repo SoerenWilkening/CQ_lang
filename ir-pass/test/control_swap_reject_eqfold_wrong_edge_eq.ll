@@ -42,8 +42,9 @@
 ; pre-2a swap route.
 ; CHECK-NOT: cqrt_rz_i32_controlled
 ; CHECK-NOT: cqrt_cswap
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a) {
@@ -52,10 +53,9 @@ entry:
   %c = icmp eq i32 %q, 7
   br i1 %c, label %merge, label %arm     ; arm = FALSE successor: `q != 7` holds there
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 7, double %a)  ; NOT a fold of q — q != 7 here
+  call void @cq_phi(double %a)  ; NOT a fold of q — q != 7 here
   br label %merge
 merge:
-  %qm = phi i32 [ %q, %entry ], [ %q1, %arm ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }

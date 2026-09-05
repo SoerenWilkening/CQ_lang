@@ -41,10 +41,11 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32 noundef, double noundef)
 declare double @llvm.sqrt.f64(double)
-declare i32 @cq_phi_si32(i32 noundef, double noundef)
 declare i32 @cq_measure_si32(i32 noundef)
 
 define i32 @slice(i32 noundef %0, double noundef %1) {
@@ -62,11 +63,10 @@ define i32 @slice(i32 noundef %0, double noundef %1) {
   %12 = fcmp ugt double %11, 3.500000e+00
   br i1 %12, label %15, label %13
 13:                                               ; preds = %6
-  %14 = tail call i32 @cq_phi_si32(i32 noundef %8, double noundef %1)
+  call void @cq_phi(double %1)
   br label %15
 15:                                               ; preds = %13, %6
-  %16 = phi i32 [ %14, %13 ], [ %8, %6 ]
-  %17 = tail call i32 @cq_theta_si32(i32 noundef %16, double noundef -5.000000e-01)
+  %17 = tail call i32 @cq_theta_si32(i32 noundef %8, double noundef -5.000000e-01)
   %18 = add nuw nsw i32 %7, 1
   %19 = icmp eq i32 %18, 3
   br i1 %19, label %4, label %6

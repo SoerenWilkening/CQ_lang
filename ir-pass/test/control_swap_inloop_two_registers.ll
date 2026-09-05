@@ -42,9 +42,10 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32 noundef, double noundef)
-declare i32 @cq_phi_si32(i32 noundef, double noundef)
 declare i32 @cq_measure_si32(i32 noundef)
 
 define i32 @slice() {
@@ -66,22 +67,20 @@ define i32 @slice() {
   br i1 %11, label %12, label %14
 
 12:                                               ; preds = %7
-  %13 = tail call i32 @cq_phi_si32(i32 noundef 5, double noundef 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %14
 
 14:                                               ; preds = %12, %7
-  %15 = phi i32 [ %13, %12 ], [ %10, %7 ]
   %16 = icmp eq i32 %9, 3
   br i1 %16, label %17, label %19
 
 17:                                               ; preds = %14
-  %18 = tail call i32 @cq_phi_si32(i32 noundef 3, double noundef 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %19
 
 19:                                               ; preds = %17, %14
-  %20 = phi i32 [ %18, %17 ], [ %9, %14 ]
-  %21 = tail call i32 @cq_theta_si32(i32 noundef %15, double noundef -5.000000e-01)
-  %22 = tail call i32 @cq_theta_si32(i32 noundef %20, double noundef -2.500000e-01)
+  %21 = tail call i32 @cq_theta_si32(i32 noundef %10, double noundef -5.000000e-01)
+  %22 = tail call i32 @cq_theta_si32(i32 noundef %9, double noundef -2.500000e-01)
   %23 = tail call i32 @cq_theta_si32(i32 noundef %21, double noundef 5.000000e-01)
   %24 = tail call i32 @cq_theta_si32(i32 noundef %22, double noundef 2.500000e-01)
   %25 = add nuw nsw i32 %8, 1

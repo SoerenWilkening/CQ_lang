@@ -8,8 +8,9 @@
 ; merge is ever examined (§12.7 depth cap is incidental here).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, double %a, double %b) {
 entry:
@@ -20,17 +21,16 @@ then:
   %ct = icmp slt i32 %q, 20
   br i1 %ct, label %tarm, label %merge
 tarm:
-  %tg = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 else:
   %ce = icmp sgt i32 %q, 2
   br i1 %ce, label %earm, label %merge
 earm:
-  %eg = call i32 @cq_phi_si32(i32 %q, double %b)
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i32 [ %q, %then ], [ %tg, %tarm ], [ %q, %else ], [ %eg, %earm ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 ; CHECK: error{{.*}}nested control flow under quantum control

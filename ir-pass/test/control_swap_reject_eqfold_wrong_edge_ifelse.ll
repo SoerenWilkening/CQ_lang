@@ -46,8 +46,9 @@
 ; would be the same silent miscompile with one gate fewer.
 ; CHECK-NOT: cqrt_rz_i32_controlled
 ; CHECK-NOT: cqrt_cswap
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b) {
@@ -56,13 +57,12 @@ entry:
   %c = icmp eq i32 %q, 7
   br i1 %c, label %then, label %else
 then:
-  %qt = call i32 @cq_phi_si32(i32 7, double %a)  ; VALID fold — q == 7 holds here
+  call void @cq_phi(double %a)  ; VALID fold — q == 7 holds here
   br label %merge
 else:
-  %qe = call i32 @cq_phi_si32(i32 7, double %b)  ; INVALID — q != 7 holds here
+  call void @cq_phi(double %b)  ; INVALID — q != 7 holds here
   br label %merge
 merge:
-  %qm = phi i32 [ %qt, %then ], [ %qe, %else ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 7)
   ret i32 %m
 }

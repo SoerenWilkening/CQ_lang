@@ -11,8 +11,8 @@
 ; miscompile.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @printf(ptr, ...)
 @.d = private constant [3 x i8] c"%d\00"
 
@@ -21,7 +21,6 @@ entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %mid = add i32 %q, 5
   %top = mul i32 %mid, 2
-  %tr = call i32 @cq_phi_si32(i32 %top, double 3.000000e-01)
   %r = call i32 (ptr, ...) @printf(ptr @.d, i32 %mid)
   ret void
 }

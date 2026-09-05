@@ -17,8 +17,9 @@
 ; what will notice when it does (the message would change, never go away).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b, double %c) {
@@ -27,22 +28,20 @@ entry:
   %c1 = icmp sgt i32 %q, 9
   br i1 %c1, label %arm1, label %m1
 arm1:
-  %g1 = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %m1
 m1:                                    ; region 1's merge …
-  %p1 = phi i32 [ %g1, %arm1 ], [ %q, %entry ]
-  %c2 = icmp sgt i32 %p1, 5
+  %c2 = icmp sgt i32 %q, 5
   br i1 %c2, label %mid, label %mn     ; … hosting a depth-2 NEST's outer branch
 mid:
-  %g2 = call i32 @cq_phi_si32(i32 %p1, double %b)
-  %c3 = icmp sgt i32 %g2, 3
+  call void @cq_phi(double %b)
+  %c3 = icmp sgt i32 %q, 3
   br i1 %c3, label %inner, label %mn
 inner:
-  %g3 = call i32 @cq_phi_si32(i32 %g2, double %c)
+  call void @cq_phi(double %c)
   br label %mn
 mn:
-  %pn = phi i32 [ %p1, %m1 ], [ %g2, %mid ], [ %g3, %inner ]
-  %m = call i32 @cq_measure_si32(i32 %pn)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

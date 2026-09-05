@@ -26,8 +26,9 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @ifelse_chain(i32 %u0) {
@@ -39,17 +40,16 @@ entry:
   br i1 %c, label %armt, label %armf
 
 armt:
-  %g1 = call i32 @cq_phi_si32(i32 %q, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %merge
 
 armf:
-  %g2 = call i32 @cq_phi_si32(i32 %q, double 2.500000e-01)
-  %g3 = call i32 @cq_phi_si32(i32 %g2, double 7.500000e-01)
+  call void @cq_phi(double 2.500000e-01)
+  call void @cq_phi(double 7.500000e-01)
   br label %merge
 
 merge:
-  %p = phi i32 [ %g1, %armt ], [ %g3, %armf ]
-  %m = call i32 @cq_measure_si32(i32 %p)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

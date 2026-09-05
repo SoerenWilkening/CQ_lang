@@ -45,6 +45,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=NOROUTE %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 @OPQ = global i32 1, align 4
 
@@ -59,11 +60,10 @@ define i32 @slice() local_unnamed_addr {
   br i1 %7, label %10, label %8
 
 8:                                                ; preds = %0
-  %9 = tail call i32 @cq_phi_si32(i32 noundef %5, double noundef 5.000000e-01)
   br label %10
 
 10:                                               ; preds = %8, %0
-  %11 = phi i32 [ %9, %8 ], [ %5, %0 ]
+  %11 = phi i32 [ %5, %8 ], [ %5, %0 ]
   %12 = tail call i32 @cq_measure_si32(i32 noundef %1)
   %13 = tail call i32 @cq_measure_si32(i32 noundef %11)
   %14 = add nsw i32 %13, %12
@@ -71,7 +71,6 @@ define i32 @slice() local_unnamed_addr {
 }
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
-declare i32 @cq_phi_si32(i32 noundef, double noundef) local_unnamed_addr
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 
 ; The 2b by-difference stream: unconditional R(h,B=.3), flag mint, ONE controlled
@@ -86,7 +85,6 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; CHECK: br i1
-; CHECK: call void @cqrt_rz_i32(i32 %[[R]], double 5.000000e-01)
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[Q]])
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[R]])
 

@@ -41,8 +41,9 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: rail record read past an in-place gate on the same rail
 ; CHECK-NOT: cqrt_measure_i32
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example() {
@@ -65,12 +66,11 @@ loop:                                             ; preds = %entry, %latch
   br i1 %c1, label %arm, label %latch
 
 arm:                                              ; preds = %loop
-  %g = call i32 @cq_phi_si32(i32 5, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %latch
 
 latch:                                            ; preds = %arm, %loop
-  %qm = phi i32 [ %g, %arm ], [ %q, %loop ]
-  %qh = call i32 @cq_theta_si32(i32 %qm, double -5.000000e-01)
+  %qh = call i32 @cq_theta_si32(i32 %q, double -5.000000e-01)
   %qn = call i32 @cq_theta_si32(i32 %qh, double 5.000000e-01)
   %inext = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %i, 0

@@ -12,25 +12,24 @@
 ; (test_C_libtooling-9hh). Never the §3c/value-arm strings, never an accept.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %qd = call i32 @cq_phi_si32(i32 %q, double 9.000000e-01)
-  %c = icmp sgt i32 %qd, 5
+  %c = icmp sgt i32 %q, 5
   br i1 %c, label %then, label %else
 then:
-  %qt = call i32 @cq_phi_si32(i32 %qd, double %a)   ; bottoms at the DERIVED %qd
+  call void @cq_phi(double %a)  ; bottoms at the DERIVED %q
   br label %merge
 else:
-  %qe = call i32 @cq_phi_si32(i32 %q, double %b)    ; bottoms at the THETA %q
+  call void @cq_phi(double %b)  ; bottoms at the THETA %q
   br label %merge
 merge:
-  %qm = phi i32 [ %qt, %then ], [ %qe, %else ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

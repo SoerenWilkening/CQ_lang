@@ -59,8 +59,9 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @slice() {
@@ -79,12 +80,11 @@ define i32 @slice() {
   br i1 %8, label %9, label %11
 
 9:                                                ; preds = %4
-  %10 = call i32 @cq_phi_si32(i32 %6, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %11
 
 11:                                               ; preds = %9, %4
-  %12 = phi i32 [ %10, %9 ], [ %6, %4 ]
-  %13 = call i32 @cq_theta_si32(i32 %12, double -5.000000e-01)
+  %13 = call i32 @cq_theta_si32(i32 %6, double -5.000000e-01)
   %14 = add nuw nsw i32 %5, 1
   %15 = icmp eq i32 %5, 0
   br i1 %15, label %4, label %2

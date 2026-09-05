@@ -62,10 +62,11 @@
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEREC < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 @off = global i32 3, align 4
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @slice() {
@@ -77,12 +78,11 @@ entry:
   br i1 %c, label %arm, label %merge
 
 arm:
-  %rz = call i32 @cq_phi_si32(i32 5, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %merge
 
 merge:
-  %p = phi i32 [ %rz, %arm ], [ %r, %entry ]
-  %w = call i32 @cq_theta_si32(i32 %p, double 2.500000e-01)
+  %w = call i32 @cq_theta_si32(i32 %r, double 2.500000e-01)
   %m = call i32 @cq_measure_si32(i32 %w)
   ret i32 %m
 }

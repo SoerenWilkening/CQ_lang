@@ -28,8 +28,9 @@
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; Exact free count: TWO (one flag per region), no third.
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %v0, double %a, double %b) {
 entry:
@@ -38,18 +39,16 @@ entry:
   %c1 = icmp sgt i32 %q, 5
   br i1 %c1, label %arm1, label %m1
 arm1:
-  %r1 = call i32 @cq_phi_si32(i32 %r, double %a)
+  call void @cq_phi(double %a)
   br label %m1
 m1:
-  %rm1 = phi i32 [ %r1, %arm1 ], [ %r, %entry ]
   %c2 = icmp sgt i32 %q, 9
   br i1 %c2, label %arm2, label %m2
 arm2:
-  %r2 = call i32 @cq_phi_si32(i32 %rm1, double %b)
+  call void @cq_phi(double %b)
   br label %m2
 m2:
-  %rm2 = phi i32 [ %r2, %arm2 ], [ %rm1, %m1 ]
-  %ma = call i32 @cq_measure_si32(i32 %rm2)
+  %ma = call i32 @cq_measure_si32(i32 %r)
   %mb = call i32 @cq_measure_si32(i32 %q)
   %o = add i32 %ma, %mb
   ret i32 %o

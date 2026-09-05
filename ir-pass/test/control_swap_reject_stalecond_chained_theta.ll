@@ -28,8 +28,9 @@
 ; investigation_mint_at_compare.py).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %t2, double %a) {
@@ -39,11 +40,10 @@ entry:
   %q2 = call i32 @cq_theta_si32(i32 %q, double %t2)   ; chained Ry AFTER the compare
   br i1 %c, label %arm, label %merge
 arm:
-  %q3 = call i32 @cq_phi_si32(i32 %q2, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi i32 [ %q3, %arm ], [ %q2, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q2)
   ret i32 %m
 }
 

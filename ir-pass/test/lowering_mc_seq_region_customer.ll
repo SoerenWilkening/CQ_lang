@@ -97,14 +97,15 @@
 ; positive anchor, so its window is the whole module — not a dead trailing span
 ; (bd memory [filecheck-check-not-window-trap]):
 ; NOROUTE-NOT: call void @cqrt_cswap
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 @off = global i32 3
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @slice() {
@@ -115,25 +116,23 @@ define i32 @slice() {
   br i1 %4, label %5, label %7
 
 5:                                                ; the oracle arm
-  %6  = call i32 @cq_phi_si32(i32 5, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %7
 
 7:
-  %8  = phi i32 [ %6, %5 ], [ %3, %0 ]
   %9  = load volatile i32, ptr @off, align 4
-  %10 = sub nsw i32 %8, %9                                       ; site 2: q -= off
+  %10 = sub nsw i32 %3, %9                                       ; site 2: q -= off
   %11 = call i32 @cq_theta_si32(i32 %10, double -5.000000e-01)   ; S-dagger
   %12 = icmp eq i32 %11, 0
   br i1 %12, label %13, label %15
 
 13:                                               ; the reflection arm
-  %14 = call i32 @cq_phi_si32(i32 0, double 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %15
 
 15:
-  %16 = phi i32 [ %14, %13 ], [ %11, %7 ]
   %17 = load volatile i32, ptr @off, align 4
-  %18 = add nsw i32 %17, %16                                     ; site 3: q += off
+  %18 = add nsw i32 %17, %11                                     ; site 3: q += off
   %19 = call i32 @cq_measure_si32(i32 %18)
   ret i32 %19
 }

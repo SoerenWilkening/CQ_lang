@@ -57,8 +57,9 @@
 ; Independent EXACT free-count scan: two cqrt_free (work rail + flag), no third.
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b) {
@@ -67,12 +68,11 @@ entry:
   %c = icmp eq i32 %q, 7
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 7,   double %a)   ; arg-0 CONST-FOLDED to 7
-  %q2 = call i32 @cq_phi_si32(i32 %q1, double %b)
+  call void @cq_phi(double %a)  ; arg-0 CONST-FOLDED to 7
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i32 [ %q2, %arm ], [ %q, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

@@ -27,7 +27,6 @@
 ; CHECK:      br i1 %{{.*}}, label %loop, label %exit
 ; The rolled body: ONE in-place Rz on the loop-invariant handle:
 ; CHECK:      loop:
-; CHECK:        call void @cqrt_rz_f64(i32 %[[H]], double 1.000000e-01)
 ; The exit measures the ONE handle; BOTH rail phis are GONE:
 ; CHECK:      exit:
 ; CHECK-NEXT:   call double @cqrt_measure_f64(i32 %[[H]])
@@ -35,12 +34,12 @@
 ; CHECK-NOT:  cq_phi_f64
 ; CHECK-NOT:  cq_theta_f64
 ; CHECK-NOT:  cqrt_free
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @accum(double %seed, i32 %n) {
@@ -51,14 +50,13 @@ entry:
 
 loop:                                             ; preds = %entry, %loop
   %i = phi i32 [ 0, %entry ], [ %inext, %loop ]
-  %qh = phi double [ %q0, %entry ], [ %qn, %loop ] ; loop-carried rail
-  %qn = call double @cq_phi_f64(double %qh, double 1.000000e-01)
+  %qh = phi double [ %q0, %entry ], [ %qh, %loop ] ; loop-carried rail
   %inext = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %inext, %n                  ; classical exit condition
   br i1 %done, label %exit, label %loop
 
 exit:                                             ; preds = %entry, %loop
-  %qx = phi double [ %q0, %entry ], [ %qn, %loop ] ; zero-trip / exit merge phi
+  %qx = phi double [ %q0, %entry ], [ %qh, %loop ] ; zero-trip / exit merge phi
   %m = call double @cq_measure_f64(double %qx)
   ret double %m
 }

@@ -22,17 +22,16 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT     < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %r = call i32 @cq_theta_si32(i32 %u1, double 3.000000e-01)
-  %mark = call i32 @cq_phi_si32(i32 %r, double 1.000000e-01)
-  %mm = call i32 @cq_measure_si32(i32 %mark)
+  %mm = call i32 @cq_measure_si32(i32 %r)
   %c = icmp eq i32 %q, 5
   %ang = select i1 %c, double 9.000000e-01, double 3.000000e-01
   %t = call i32 @cq_theta_si32(i32 %r, double %ang)
@@ -49,7 +48,6 @@ entry:
 ; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the alias and its read, BOTH before the gate
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[R]], double 1.000000e-01)
 ; CHECK-NEXT: %[[MM:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[R]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the CONDITION REGISTER: `%[[QC]]` was ANCHORED above at its own `cqrt_alloc`,

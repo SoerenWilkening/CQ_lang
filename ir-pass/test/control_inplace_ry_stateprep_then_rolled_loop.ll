@@ -37,9 +37,10 @@
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT    < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT    < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0) {
@@ -56,20 +57,19 @@ merge:
 header:
   %i  = phi i32 [ 0, %merge ], [ %inext, %latch ]
   %rp = phi i32 [ %rm, %merge ], [ %rn, %latch ]
-  %qp = phi i32 [ %q, %merge ], [ %qn, %latch ]
+  %qp = phi i32 [ %q, %merge ], [ %qp, %latch ]
   %bc = icmp sgt i32 %qp, 5
   br i1 %bc, label %barm, label %latch
 barm:
-  %qz = call i32 @cq_phi_si32(i32 %qp, double 2.000000e-01)
+  call void @cq_phi(double 2.000000e-01)
   br label %latch
 latch:
-  %qn = phi i32 [ %qz, %barm ], [ %qp, %header ]
   %rn = call i32 @cq_theta_si32(i32 %rp, double 1.000000e-01)
   %inext = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %inext, 3
   br i1 %done, label %exit, label %header
 exit:
-  %mq = call i32 @cq_measure_si32(i32 %qn)
+  %mq = call i32 @cq_measure_si32(i32 %qp)
   %mr = call i32 @cq_measure_si32(i32 %rn)
   %s  = add i32 %mq, %mr
   ret i32 %s

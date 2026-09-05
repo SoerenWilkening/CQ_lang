@@ -36,9 +36,9 @@
 ; RUN:   | %filecheck %s
 ; CHECK: error{{.*}}stale rail record read past a controlled Ry under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 declare void @__cq_invert_begin()
@@ -51,10 +51,9 @@ entry:
   %cc = icmp eq i32 %c, 0
   br i1 %cc, label %join, label %alias
 alias:
-  %m0 = call i32 @cq_phi_si32(i32 %r, double 1.000000e-01)
   br label %join
 join:
-  %m = phi i32 [ %m0, %alias ], [ %r, %entry ]
+  %m = phi i32 [ %r, %alias ], [ %r, %entry ]
   %t = icmp eq i32 %q, 5
   br i1 %t, label %arm, label %merge
 arm:
@@ -63,9 +62,8 @@ arm:
 merge:
   %rm = phi i32 [ %rt, %arm ], [ %r, %join ]
   call void @__cq_invert_begin()
-  %mi = call i32 @cq_phi_si32(i32 %m, double 7.000000e-01)
   call void @__cq_invert_end()
-  %a = call i32 @cq_measure_si32(i32 %mi)
+  %a = call i32 @cq_measure_si32(i32 %m)
   %b = call i32 @cq_measure_si32(i32 %rm)
   %s = add i32 %a, %b
   ret i32 %s

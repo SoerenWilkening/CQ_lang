@@ -25,6 +25,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=NOROUTE %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
 
 @OPQ = global i32 1, align 4
 
@@ -35,29 +36,27 @@ define i32 @slice() local_unnamed_addr {
   br i1 %3, label %4, label %6
 
 4:                                                ; preds = %0
-  %5 = tail call i32 @cq_phi_si32(i32 noundef %2, double noundef 9.000000e-01)
+  call void @cq_phi(double 9.000000e-01)
   br label %6
 
 6:                                                ; preds = %4, %0
-  %7 = phi i32 [ %5, %4 ], [ %2, %0 ]
   %8 = load volatile i32, ptr @OPQ, align 4
   %9 = icmp eq i32 %8, 0
   br i1 %9, label %12, label %10
 
 10:                                               ; preds = %6
-  %11 = tail call i32 @cq_phi_si32(i32 noundef %7, double noundef 5.000000e-01)
   br label %12
 
 12:                                               ; preds = %10, %6
-  %13 = phi i32 [ %11, %10 ], [ %7, %6 ]
+  %13 = phi i32 [ %2, %10 ], [ %2, %6 ]
   %14 = tail call i32 @cq_measure_si32(i32 noundef %1)
   %15 = tail call i32 @cq_measure_si32(i32 noundef %13)
   %16 = add nsw i32 %15, %14
   ret i32 %16
 }
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
-declare i32 @cq_phi_si32(i32 noundef, double noundef) local_unnamed_addr
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 
 ; The Inc-2a peephole: ONE controlled Rz in place, no route, no work rail.

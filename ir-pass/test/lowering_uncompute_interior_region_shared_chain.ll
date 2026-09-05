@@ -35,8 +35,9 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @shared_chain_two_regions(i32 noundef %0) {
@@ -47,22 +48,20 @@ define i32 @shared_chain_two_regions(i32 noundef %0) {
   br i1 %5, label %6, label %8
 
 6:                                                ; preds = %1
-  %7 = call i32 @cq_phi_si32(i32 noundef %2, double noundef 0x400921FB54442D18)
+  call void @cq_phi(double 0x400921FB54442D18)
   br label %8
 
 8:                                                ; preds = %6, %1
-  %9 = phi i32 [ %7, %6 ], [ %2, %1 ]
   %10 = and i32 %3, -8
   %11 = icmp eq i32 %10, 16
   br i1 %11, label %12, label %14
 
 12:                                               ; preds = %8
-  %13 = call i32 @cq_phi_si32(i32 noundef %9, double noundef 2.500000e-01)
+  call void @cq_phi(double 2.500000e-01)
   br label %14
 
 14:                                               ; preds = %12, %8
-  %15 = phi i32 [ %13, %12 ], [ %9, %8 ]
-  %16 = call i32 @cq_theta_si32(i32 noundef %15, double noundef -5.000000e-01)
+  %16 = call i32 @cq_theta_si32(i32 noundef %2, double noundef -5.000000e-01)
   %17 = call i32 @cq_measure_si32(i32 noundef %16)
   ret i32 %17
 }

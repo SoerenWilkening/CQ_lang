@@ -23,8 +23,9 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}condition used outside the branch under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b) {
@@ -33,16 +34,15 @@ entry:
   %c1 = icmp sgt i32 %q, 5
   br i1 %c1, label %mid, label %merge
 mid:
-  %g  = call i32 @cq_phi_si32(i32 %q, double %b)
-  %c2 = icmp slt i32 %g, 9
+  call void @cq_phi(double %b)
+  %c2 = icmp slt i32 %q, 9
   %d  = zext i1 %c2 to i32          ; DATA use of the INNER condition (in mid)
   br i1 %c2, label %arm, label %merge
 arm:
-  %h  = call i32 @cq_phi_si32(i32 %g, double %a)
+  call void @cq_phi(double %a)
   %dm = call i32 @cq_measure_si32(i32 %d)   ; the data lineage is MEASURED (owned)
   br label %merge
 merge:
-  %qm = phi i32 [ %h, %arm ], [ %g, %mid ], [ %q, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }

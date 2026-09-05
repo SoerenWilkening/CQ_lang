@@ -26,8 +26,9 @@
 ; filecheck-check-not-window-trap). The window reaches the declares too, hence the
 ; `call void @` anchors.
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %v0, double %a) {
 entry:
@@ -37,11 +38,10 @@ entry:
   %d = zext i1 %c to i32
   br i1 %c, label %arm, label %merge
 arm:
-  %r1 = call i32 @cq_phi_si32(i32 %r, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %rm = phi i32 [ %r1, %arm ], [ %r, %entry ]
-  %sum = add i32 %rm, %d
+  %sum = add i32 %r, %d
   %m  = call i32 @cq_measure_si32(i32 %sum)
   ret i32 %m
 }

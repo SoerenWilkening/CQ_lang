@@ -38,9 +38,10 @@
 ; CHECK-NOT: Broken module
 ; CHECK-NOT: PHI node entries do not match predecessors
 ; CHECK-NOT: cqrt_cswap
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %x, double %a, double %b, i32 %n, i32 %e) {
@@ -57,15 +58,14 @@ pred:                                          ; preds = %head   (outer diamond)
   %c1 = icmp sgt i32 %q, 5                      ; outer TAINTED condition
   br i1 %c1, label %mid, label %merge
 mid:                                           ; preds = %pred   (inner diamond)
-  %g = call i32 @cq_phi_si32(i32 %q, double %b)
-  %c2 = icmp slt i32 %g, 9                      ; inner TAINTED condition
+  call void @cq_phi(double %b)
+  %c2 = icmp slt i32 %q, 9                      ; inner TAINTED condition
   br i1 %c2, label %inner, label %merge
 inner:                                         ; preds = %mid
-  %h = call i32 @cq_phi_si32(i32 %g, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:                                         ; preds = %inner, %mid, %pred
-  %qm = phi i32 [ %h, %inner ], [ %g, %mid ], [ %q, %pred ]
-  %m = call i32 @cq_measure_si32(i32 %qm)
+  %m = call i32 @cq_measure_si32(i32 %q)
   %sum = add nsw i32 %m, %acc
   br label %latch
 latch:                                         ; preds = %entry, %merge

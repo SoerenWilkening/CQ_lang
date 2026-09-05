@@ -15,9 +15,9 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i64 @cq_theta_sll(i64, double)
 declare i64 @cq_measure_sll(i64)
-declare i64 @cq_phi_sll(i64, double)
 
 define void @ex(i64 %u0) {
   ; (A) measured 128-bit mulhi
@@ -32,7 +32,6 @@ define void @ex(i64 %u0) {
   %w2 = zext i64 %q2 to i128
   %d  = mul i128 %w2, 7
   %dt = trunc i128 %d to i64
-  %p  = call i64 @cq_phi_sll(i64 %dt, double 0.30)
   ret void
 }
 
