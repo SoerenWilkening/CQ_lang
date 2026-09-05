@@ -90,6 +90,20 @@ angles). The Ry stem is untouched (constant arms only, 2b clearance F-11).
 `out ^= f ? t : 0`; `out ^= ¬f ? p : 0`; `t` uncomputed by `_unc` (a function of
 the unchanged `p`); strip `f`. `out = f ? R(p) : p`; `t`, `f` freed clean; `p`
 stays allocated and entangled with `out` — exactly as the swap route leaves it.
+
+> ⚠ **ERRATA (Inc-2 Rule-13 round 1, findings F-V1-4 / F-V2-3 — measured, not a
+> design change).** The two sentences above are true of `f` and of `p` and FALSE
+> of `t`. As shipped, the chain's INTERMEDIATES are `_unc`'d and freed by the
+> whole-DAG spine, but the chain's FINAL rail `t = R(p)` — whose live consumer is
+> the controlled copy — is left **allocated and DIRTY**, never `_unc`'d and never
+> freed (an if/else leaks two; the §7.2 V3 switch also leaks each delta `d_i`).
+> Rule-6 sound while `p` is retained, and `free_pairing_check.py` STRICT is clean
+> — it is a leak, never a dirty free — but the LEAK CLASS is not the route's: the
+> route returned every rail it minted to |0⟩. Consequence for §9 follow-on
+> **3qlq.5 (free the value-arm SOURCE): it is UNSOUND BY DEFAULT under this
+> stream** and must discharge the finals/deltas first, because they still record
+> `p`. Full account and the measured allocated/dirty counts:
+> `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §1.
 Speculating `R` is sound because every arm op is a pure TOTAL template and the
 §3c clobber decline already refuses an arm that rewrites a register the
 condition reads; the 6.5 classical-call arm hoisted on the same argument.
@@ -216,6 +230,18 @@ cswap(f,p,h9); alloc out; copy(p,out); cswap; 6 _unc; cswap; free w; strip; free
 After: `6 ops on p → h9; alloc out; copy_controlled(f, h9, out); x(f);
 copy_controlled(f, p, out); x(f); 6 _unc; strip; free f` — **2 `copy_controlled_W`
 (2W Toffoli), no work rail**. The arm's ops run twice in both.
+
+> ⚠ **ERRATA (same finding as §3's).** "`6 _unc`" is the design intent and not
+> what ships: it is **5** here — the interior links — with `h9` itself left
+> allocated and dirty. Two further deltas from this sentence, both measured and
+> both `lowerOps` consequences of hoisting the links as ordinary instructions
+> rather than emitting a gate stream: (i) the hoisted chain is NOT all
+> out-of-place, because M-C converts `add`/`xor` links IN PLACE on the FRESH
+> intermediate rails (never on `p`, which always has a later reader — that
+> disposition is now pinned by `control_swap_value_ifelse_head_out_of_place.ll`);
+> and (ii) the emitted stream is byte-identical to the manually pre-hoisted
+> `select` twin BECAUSE of (i), so forcing the chain out of place would break the
+> increment's own witness.
 
 The tree already does this INCONSISTENTLY: `-O1` speculates a short pure arm into
 a `select` itself, so a one-op arm takes `SelectMergeEmit` and a six-op arm takes
