@@ -602,6 +602,37 @@ bool isRegisterFreePhaseCall(const llvm::CallInst *CI, const TaintSet &taint);
 // then `detectControlRegions`), so a `taint.BranchPhasedRegisters` filled in
 // `emitPhaseKickbackRegion` would always be empty when they read it. The
 // question has to be asked of the SOURCE construct, which is what this does.
+//
+// ⚠⚠ AND THAT TIMING IS ALSO WHY THE FIRST SPELLING OF IT WAS WRONG — Rule-13
+// ROUND-2 finding F-R1-2, a MEASURED plain-C OVER-DECLINE. The clause above
+// says "CONTROL-DEPENDENT ON a tainted branch" and the first implementation
+// asked `reachedThroughTaintedBranch`, which is `deleteGlobalPhases`' assert and
+// answers something strictly weaker: "is a tainted branch anywhere on any path
+// reaching this block". That crudeness is SOUND at P7's slot — every tainted
+// `br` has by then been claimed-and-erased or declined, so the honest answer is
+// always "no" and a "yes" means the Rule-1 invariant broke — and it is UNSOUND
+// here, where every tainted `br` is still standing. Measured:
+//
+//     void abort(void);
+//     int slice(int u){ int q = cq_theta(u,0.5);
+//       if (q == 5) abort();          /* the 7.2 park                        */
+//       cq_phi(0.75);                 /* UNCONDITIONAL — a GLOBAL phase (D2) */
+//       return cq_measure(q); }
+//
+// declined `phase-class value escaping under quantum control` while the SAME
+// statement one line earlier compiled, and the round-1 binary compiled both to
+// the identical 8-line trace — i.e. a statement the compiler is REQUIRED to
+// delete made a compiling program stop compiling. It is now the real predicate:
+// `BB` post-dominates some CONTINUING successor of the tainted branch and does
+// not post-dominate the branch itself, with post-dominance read over
+// RETURNING paths so a `noreturn` arm (the park's own) decides nothing —
+// which matches the physics: the park is coherent routing, the remainder runs
+// on every branch, and a phase after it really is global. See
+// `controlDependentOnTaintedBranch` in `TaintPropagation.cpp`.
+//
+// The fence stays a DISCRIMINATOR, not a blanket: `if (q>7) cq_phi(0.75); if
+// (q==5) abort();` — a genuine BRANCH phase reaching the same park — still
+// declines, from plain `clang -O1` C (`control_phase_kickback_abort_*.ll`).
 bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 
 // bd test_C_libtooling-3qlq Inc 1, PRD §6.2 row P7 (owner decision D2) — DELETE
@@ -613,8 +644,12 @@ bool functionCarriesBranchPhase(const llvm::Function *F, const TaintSet &taint);
 // a documented semantic, not a diagnostic (D2, owner question Q2 assumed answer:
 // no remark).
 //
-// SOUNDNESS RESTS ENTIRELY ON THE POSITION OF THIS STAGE. It runs immediately
-// after `lowerControlRegions`, by which point `detectControlRegions` has either
+// SOUNDNESS RESTS ENTIRELY ON THE POSITION OF THIS STAGE. It runs after
+// `repropagateControlMerges` — NOT "immediately after `lowerControlRegions`",
+// which is what this sentence said until Rule-13 round-1 finding F-L3-1 measured
+// that slot as a CONFIRMED silent miscompile and moved the call in both entry
+// points; see the 50-line argument at the call site in `CQLoweringPass.cpp`. By
+// then `detectControlRegions` has, at BOTH rounds, either
 // CLAIMED every tainted `br`/`switch` (and its emitter erased the phase call it
 // claimed) or DECLINED it loudly — Rule 1's "there is no third path". So a
 // SURVIVING phase call sits under CLASSICAL control only. That is asserted, not

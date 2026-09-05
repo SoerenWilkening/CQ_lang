@@ -16,6 +16,7 @@
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
 #include "Specialization.h"
+#include "LoopPlan.h"          // collapseFlattenedLoopRails (F-R1-1 onward pass)
 #include "SwapRouteEmit.h"     // lowerControlRegions (yn71 onward-control re-emit)
 #include "WidthDispatch.h"
 
@@ -27,6 +28,7 @@
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
@@ -1492,6 +1494,17 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   if (taint.UntaintedMergeRails.empty())
     return;  // no 6.5 classical-call arm / 4.5 switch data-mux region emitted.
 
+  // bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-1 — the SNAPSHOT the onward
+  // loop-rail pass at the end of this function needs. Taken HERE, before
+  // `detectAndLowerOnwardControl` grows the set, so the difference is exactly
+  // "the loops round 2 opened". A `BasicBlock *` in it may be dangling by the
+  // time it is read (a round-2 flatten erases blocks); it is only ever compared
+  // by identity against a LIVE block of a LIVE loop, and the worst a recycled
+  // address can do is make the onward pass SKIP a loop — the leak, i.e. the safe
+  // direction.
+  SmallPtrSet<const BasicBlock *, 4> Round1FlattenedPreds(
+      taint.InLoopFlattenedPreds.begin(), taint.InLoopFlattenedPreds.end());
+
   // Rebuild the theta/phi/measure FnSets from the collected intrinsic call sites
   // (needed by the shared work-list loop's angle / measure-sink rules). NOT a
   // re-`resolveSources`: that would re-run the malformed-decl prototype guard —
@@ -1590,6 +1603,42 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   detectSpecializations(M, taint, wd, plan6, &reseed);
   declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);
+
+  // 5. THE ONWARD LOOP-RAIL PASS — bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-1
+  //    (a CONFIRMED rolled≠unrolled divergence, plain C through the shipped 2-TU
+  //    onward harness). `collapseFlattenedLoopRails` is the round-2 loop-rail
+  //    analysis, and until this call it ran EXACTLY ONCE, at
+  //    `CQLoweringPass.cpp`'s slot BEFORE this function. Its premise —
+  //    "`markIfRailLocal` runs after every in-loop region flatten" — is FALSE
+  //    here: `detectAndLowerOnwardControl` above is a full second round of
+  //    `detectControlRegions`/`lowerControlRegions`, so an in-loop region whose
+  //    condition reads an `%out` rail is claimed and flattened AFTER the only
+  //    caller of that marking has already run. MEASURED at HEAD before this
+  //    call: `for (i<3) if ((y>>i)&1) cq_phi(θ)` over a 6.5 classical-call-arm
+  //    `%out` emitted 3 `cq_template_and_i32_hl` mints and **0** `_unc`
+  //    discharges — three entangled which-path records leaked per activation,
+  //    while the hand-unrolled spelling of the same source discharged all three.
+  //    `opt` exit 0, verify-clean, STRICT stage 2b `0 violation(s)` on both.
+  //
+  //    IT IS THE SAME STAGE, NOT A SECOND SPELLING (Rule 14): the identical
+  //    function, given the snapshot of `taint.InLoopFlattenedPreds` taken at
+  //    entry so it processes ONLY the loops the round-2 flatten opened. Every
+  //    module with no round-2 in-loop region is therefore byte-identical.
+  //
+  //    POSITION. After the whole round-2 fixpoint (the CFG must be settled — a
+  //    `LoopInfo` built mid-fixpoint would describe a loop the next iteration
+  //    reshapes) and after the re-run escape/stale nets (both are pure analysis
+  //    and either has already exited non-zero if it declined). It is BEFORE
+  //    `deleteGlobalPhases` in both entry points for the same reason the round-1
+  //    call is: P7 is the last stage that reads the pre-lowering `cq_phi` calls,
+  //    and this marking is computed over the same work lists.
+  //
+  //    It lives HERE and not at the two `CQLoweringPass` call sites so that the
+  //    `runOnFunction` shim gets it too. ⚠ That shim does NOT call the ROUND-1
+  //    `collapseFlattenedLoopRails` at all — a PRE-EXISTING twin-pipeline
+  //    divergence inherited from bd 8h7d.5, recorded in the AXIS-F note there
+  //    and not repaired by this increment (the shim has zero callers).
+  collapseFlattenedLoopRails(M, taint, &Round1FlattenedPreds);
 }
 
 // ── bd test_C_libtooling-3qlq Inc 1 — the register-free branch phase ─────────
@@ -1634,19 +1683,128 @@ bool reachedThroughTaintedBranch(const BasicBlock *BB, const TaintSet &taint) {
   return false;
 }
 
+// ── CONTROL DEPENDENCE, for the phase carriers only ─────────────────────────
+//
+// bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-2. `reachedThroughTaintedBranch`
+// above answers "is there a tainted branch ANYWHERE on ANY path to `BB`", which
+// is the right question at `deleteGlobalPhases`' slot (a "yes" there means the
+// Rule-1 no-third-path invariant broke) and the WRONG one for the three phase
+// carriers, which run BEFORE `lowerControlRegions` while every tainted `br` is
+// still standing. Asked there it answers "reached from" where
+// `TaintPropagation.h` promises "CONTROL-DEPENDENT ON", and the difference is a
+// MEASURED plain-C over-decline: `if (q==5) abort(); cq_phi(0.75); return
+// cq_measure(q);` declined `phase-class value escaping under quantum control`
+// although its `cq_phi` is UNCONDITIONAL — a GLOBAL phase owner decision D2
+// requires the compiler to DELETE. The same program with the phase one line
+// EARLIER compiled, and the round-1 binary compiled both to the identical
+// 8-line trace.
+//
+// TWO SPELLINGS, ON PURPOSE, BECAUSE THEY ARE TWO QUESTIONS (Rule 14 is about
+// one spelling per QUESTION, not one predicate per file). The assert wants the
+// crude reachability; the carriers want control dependence. Naming them apart is
+// what stops the next reader "unifying" them.
+
+// Can `From` reach a block that RETURNS from the function? An `unreachable`
+// terminator (a `noreturn` sink — the 7.2 abort park's own arm) has no
+// successors and is a dead end, which is exactly the property the two walks
+// below need: the classical CFG says the abort arm does not continue, while the
+// EMITTED circuit runs the remainder coherently on every branch, so a phase
+// after a park is global.
+bool canReachReturn(const BasicBlock *From) {
+  SmallPtrSet<const BasicBlock *, 16> Seen;
+  SmallVector<const BasicBlock *, 16> Work{From};
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (!Seen.insert(B).second)
+      continue;
+    if (isa<ReturnInst>(B->getTerminator()))
+      return true;
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
+}
+
+// Does EVERY path from `From` that reaches a `ret` pass through `Through`?
+// (i.e. `Through` post-dominates `From` in the RETURNING-paths sense.) `From ==
+// Through` is trivially true; a `From` that reaches no `ret` at all is
+// vacuously true and the callers below never rely on that case (each guards it
+// with `canReachReturn`).
+bool everyReturningPathThrough(const BasicBlock *From,
+                               const BasicBlock *Through) {
+  SmallPtrSet<const BasicBlock *, 16> Seen;
+  SmallVector<const BasicBlock *, 16> Work{From};
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (B == Through)
+      continue;  // the cut — every path through here is accounted for.
+    if (!Seen.insert(B).second)
+      continue;
+    if (isa<ReturnInst>(B->getTerminator()))
+      return false;  // a returning path that avoids `Through`.
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return true;
+}
+
+// Is `BB` CONTROL-DEPENDENT on some TAINTED branch of its function? The textbook
+// definition, with post-dominance read in the returning-paths sense above:
+//   `BB` is control-dependent on `P` iff (i) some successor `S` of `P` that can
+//   still reach a `ret` is post-dominated by `BB`, and (ii) `P` itself is not.
+// Clause (i)'s `canReachReturn` filter is the load-bearing half for the abort
+// park: without it the `unreachable` arm is VACUOUSLY post-dominated by every
+// block and (i) is true for anything.
+//
+// Conservative fallback: a function with no `ReturnInst` at all has no
+// returning-path structure to reason over, so this answers TRUE (the pre-fix
+// disposition, which is the loud-decline direction).
+bool controlDependentOnTaintedBranch(const BasicBlock *BB,
+                                     const TaintSet &taint) {
+  const Function *F = BB->getParent();
+  bool AnyReturn = false;
+  for (const BasicBlock &B : *F)
+    if (isa<ReturnInst>(B.getTerminator())) {
+      AnyReturn = true;
+      break;
+    }
+  if (!AnyReturn)
+    return true;
+
+  for (const BasicBlock &P : *F) {
+    const Instruction *T = P.getTerminator();
+    const Value *C = nullptr;
+    if (const auto *BI = dyn_cast<BranchInst>(T))
+      C = BI->isConditional() ? BI->getCondition() : nullptr;
+    else if (const auto *SI = dyn_cast<SwitchInst>(T))
+      C = SI->getCondition();
+    if (!C || !taint.Tainted.count(const_cast<Value *>(C)))
+      continue;
+    if (everyReturningPathThrough(&P, BB))
+      continue;  // (ii) fails — `BB` post-dominates `P`: a GLOBAL phase.
+    for (const BasicBlock *S : successors(&P)) {
+      if (!canReachReturn(S))
+        continue;  // a `noreturn` arm — it decides nothing about `BB`.
+      if (everyReturningPathThrough(S, BB))
+        return true;  // (i) holds: `BB` runs on this arm and not on all of them.
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
-// See the header for the whole argument (bd 3qlq Inc 1 part A, F-L5-6).
+// See the header for the whole argument (bd 3qlq Inc 1 part A, F-L5-6; narrowed
+// to genuine control dependence by Rule-13 round-2 finding F-R1-2).
 bool functionCarriesBranchPhase(const Function *F, const TaintSet &taint) {
   for (CallInst *CI : taint.PhaseCalls) {
     if (CI->getFunction() != F)
       continue;
-    // CONTROL-DEPENDENT ON A TAINTED BRANCH — the same crude backward CFG walk
-    // `deleteGlobalPhases`' Rule-1 assert uses, and asked here for the opposite
-    // reason: there a "yes" means the invariant broke, here it means the phase
-    // is a BRANCH phase rather than a global one. Reusing the one walk keeps the
-    // two from drifting about what "under quantum control" means (Rule 14).
-    if (reachedThroughTaintedBranch(CI->getParent(), taint))
+    // The crude reachability walk stays as the CHEAP PRE-FILTER (it is implied
+    // by control dependence — `BB` post-dominating a successor of `P` requires
+    // `BB` reachable from `P` — so it can only skip work, never change an
+    // answer), and the control-dependence test decides.
+    if (!reachedThroughTaintedBranch(CI->getParent(), taint))
+      continue;
+    if (controlDependentOnTaintedBranch(CI->getParent(), taint))
       return true;
   }
   return false;

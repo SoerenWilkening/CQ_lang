@@ -229,7 +229,46 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // rail is `kMsgRailRecordStale`. A phi this round cannot classify either way is
 // LEFT STANDING, and `declineClassicalMuxes` — which runs after it — declines it
 // loudly. Nothing is silently accepted.
-void collapseFlattenedLoopRails(llvm::Module &M, TaintSet &taint);
+// CALLED TWICE, AND THE SECOND CALL IS NOT A BELT-AND-BRACES RE-RUN — bd 3qlq
+// Inc 1, Rule-13 ROUND-2 finding F-R1-1 (a CONFIRMED rolled≠unrolled divergence).
+// The stage above is the SECOND round of loop-rail analysis relative to
+// `lowerLoops`, and for four increments it was also the LAST — it ran once, at
+// `CQLoweringPass.cpp`'s slot right after `lowerControlRegions`. But
+// `repropagateControlMerges` runs AFTER it and contains
+// `detectAndLowerOnwardControl`, a full SECOND round of
+// `detectControlRegions` + `lowerControlRegions` (issue yn71). A region whose
+// condition reads a 6.5 classical-call-arm / 4.5 switch-data-mux `%out` rail is
+// CLASSICAL at round 1 and tainted only at round 2, so an in-loop one is claimed
+// and flattened by a stage that runs after the only caller of
+// `invariantRegisterRoots`/`markIfRailLocal`. MEASURED: `for (i<3) if ((y>>i)&1)
+// cq_phi(θ)` over an onward `%out` compiled at `opt` exit 0 with THREE
+// `cq_template_and_i32_hl` mints and ZERO `_unc` discharges while the
+// hand-unrolled twin discharged all three — one entangled which-path record
+// leaked per activation, STRICT stage 2b `0 violation(s)` on both (the checker is
+// structurally blind to a leaked TEMPLATE-minted rail, as its own header says).
+// This is F-L3-1's shape one level up: a stage standing where a one-round
+// pipeline put it, whose premise ("the marking stage will run after this
+// flatten") is FALSE at round 2.
+//
+// `AlreadyProcessed` is the caller's snapshot of `taint.InLoopFlattenedPreds`
+// taken BEFORE the round-2 fixpoint. Pass it (and only it) on the onward call:
+// a loop opened by round 1 was already offered to this stage and is skipped, so
+// the onward pass is exactly the DELTA and every pre-round-2 module is
+// byte-identical. Pass nullptr (the default) on the round-1 call.
+//
+// ⚠ WHAT THE DELTA DOES NOT DO, stated because it is the honest limit. A loop
+// that round 1 processed is NOT re-examined under round-2 taint, so a marking
+// GRANTED at round 1 stands even if a value that becomes tainted at round 2
+// would have made `markIfRailLocal` refuse. Marking is additive and this stage
+// never unmarks. That residual is bounded by construction — round 2 taints only
+// `%out` rails and their derivations, an `%out` rail is itself an admitted Root
+// (clause (ii-b)), and a DERIVED one is a template rail whose in-loop region
+// round 2 would have to claim — see `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §2 for the
+// probe and its measured disposition.
+void collapseFlattenedLoopRails(
+    llvm::Module &M, TaintSet &taint,
+    const llvm::SmallPtrSetImpl<const llvm::BasicBlock *> *AlreadyProcessed =
+        nullptr);
 
 // Issue dtzb — is `BO` a recognized IN-PLACE value rail self-update (`q = q OP
 // c`, OP in {add, xor}, EXACTLY ONE tainted operand, integer width <= 64, the

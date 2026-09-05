@@ -592,6 +592,29 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P) {
   //     label, so the `_unc`'s recomputation of f(P) is unaffected and the phase
   //     commutes past the XOR it applies. (This is the same reason the flag-strip
   //     is `Rz`-transparent — bd memory [rz-diag-flag-strip-invariant].)
+  //
+  //     ⚠ THIS ROW DELIBERATELY ADMITS A RECORDED BRANCH-PHASE (KICKBACK) GATE,
+  //     AND IT MUST NOT BE NARROWED "FOR SYMMETRY" WITH THE THREE PREDICATES
+  //     THAT REFUSE ONE — bd test_C_libtooling-3qlq Inc 1, Rule-13 round-2
+  //     finding F-R1-4. A kickback gate is EXACTLY `cqrt_rz_i1(Flag, θ)`: prefix
+  //     `cqrt_rz_`, not `_controlled`, arity 2, handle at arg 0 — so this NAME
+  //     test says `true` for the same instruction `ChainWalk::isInPlaceGateOn`,
+  //     `preservesBasisUnderRecord` and `EmitInverse::isInverseEmittable` were
+  //     taught to refuse BY MEMBERSHIP (`!cq.branchphase`) in that same
+  //     increment. Two predicates, one gate, opposite answers — and BOTH are
+  //     right, because they ask different questions. Those three ask "may the
+  //     spine ADJOINT this gate?", and the answer is no: its meaning is the
+  //     program's answer kicked back onto an ancilla, and the adjoint cancels it
+  //     exactly (F-L7-1, a CONFIRMED miscompile). This one asks "does this gate
+  //     DISTURB the borrowed parent's basis label?", and the answer is no for
+  //     the reason above — the gate is diagonal, whoever emitted it. It is
+  //     REACHED, not hypothetical: `int f=(q>5); if (q>5){cq_phi(.25);
+  //     cq_phi(.75);} else {cq_phi(.125);} return cq_measure(q+f);` discharges
+  //     the `zext` rail with the FLAG as borrowed parent while that flag carries
+  //     three `cqrt_rz_i1` gates and a `cqrt_x` bracket. Narrowing this row to
+  //     "match" the other three would silently take that discharge away — and
+  //     for the controlled twin, clause (1b) below records that the identical
+  //     narrowing cost NINE modules their whole interior discharge.
   if (N.starts_with("cqrt_rz_") && !N.ends_with("_controlled") &&
       M->arg_size() == 2 && M->getArgOperand(0) == P)
     return true;

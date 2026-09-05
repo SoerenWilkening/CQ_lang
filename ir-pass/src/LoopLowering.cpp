@@ -2920,8 +2920,63 @@ bool invariantRegisterRoots(Loop *L, const TaintSet &taint,
     //      physical wire rather than an SSA name of it.
     Value *Root = peelInPlaceBase(V, GateCalls, taint, /*AsLowered=*/true);
     auto *Mint = dyn_cast<CallInst>(Root);
-    if (!Mint || !GateCalls.count(Mint) ||
-        taint.Tainted.count(Mint->getArgOperand(0)))
+    if (!Mint)
+      return false;
+    // (ii-b) OR A CONTROL-OWNED MERGE OUT-RAIL — bd 3qlq Inc 1, Rule-13 ROUND-2
+    //        finding F-R1-1. The clause above admits ONE spelling of "a rail the
+    //        M-B interior partition can never claim", and it is not the only one
+    //        a `-O1` program produces. The Phase-4 merge emitters mint their
+    //        result rail as `%out = cqrt_alloc_<W>(…)` and RAUW the merge phi to
+    //        it, so a loop whose invariant register is a merged one reads a
+    //        `cqrt_alloc` CallInst — not a `cq_theta` — and clause (ii) refused
+    //        it. MEASURED at HEAD, three emitters, `and_i32_hl` minted K times
+    //        and `_unc` ZERO times against a hand-unrolled twin that discharges
+    //        every one (`p/s1_selectmerge_inloop.c` 4.4 select merge,
+    //        `p/s2_switchmux_inloop.c` 4.5 switch data-mux,
+    //        `p/o_onward_inloop.c` 6.5 classical-call arm) — the SAME
+    //        rolled≠unrolled leak of an entangled which-path record round 1
+    //        graded CONFIRMED as F-L7-2.
+    //
+    //        THE PROOF IS THE SAME PROOF, NOT A NEW ONE, which is the only
+    //        reason this widening is admissible inside a Rule-13 fence. Clause
+    //        (ii)'s argument is that a root mint can never be the PREHEADER
+    //        forward gate whose `At` lands in the K-times body, because
+    //        `ChainWalk::isInteriorTerminalHandle` clause (I1) requires
+    //        `isTemplateProducer` AND a `cq_template_`-prefixed callee, and a
+    //        root mint lowers to `cqrt_alloc_<W>` + `cqrt_ry_<W>`. A merge
+    //        out-rail is ALREADY a `cqrt_alloc_<W>` call at this point in the
+    //        pipeline (its emitter ran during `lowerControlRegions`), so it
+    //        fails the identical (I1) test for the identical reason, and the
+    //        whole-DAG partition excludes it twice over (`ControlOwnedRails` is
+    //        checked by name at `Uncomputation.cpp:1356` and `:1558`). The
+    //        multiplicity hazard `markIfRailLocal`'s comment names is therefore
+    //        unbuildable with either spelling as a Root.
+    //
+    //        BOTH HALVES ARE REQUIRED, deliberately: the `ControlOwnedRails`
+    //        MEMBERSHIP (this is a rail Phase-4 minted and owns — it is never
+    //        walked, never freed by the spine, and the emitters' own comments
+    //        say so) AND the STRUCTURAL `cqrt_alloc_` producer test (so the (I1)
+    //        argument above can be read at this site without trusting the set's
+    //        insertion discipline). A Phase-4 WORK rail is in the same set and is
+    //        NOT excluded by name here — it does not need to be: a work rail is
+    //        allocated and freed inside its own region, so it is either defined
+    //        INSIDE `L` (never a `Cand` — the `L->contains` skip above) or freed
+    //        before `L` and unreadable in it; and if one ever did reach here it
+    //        would be admissible on the identical (I1) argument.
+    //
+    //        The hoisted loop-invariant TEMPLATE rail (`int p = q * 3;` — owner
+    //        question Q-R1-1) is UNAFFECTED and still refused: a
+    //        `cq_template_mul_i32_hl` rail is exactly what (I1) admits, so it is
+    //        exactly what this clause must not. Pinned by the discriminating
+    //        control `p/q1_hoisted_temp.c`, still leaking, before and after.
+    const bool MergeOutRail = [&] {
+      if (!taint.ControlOwnedRails.count(Root))
+        return false;
+      const Function *Callee = Mint->getCalledFunction();
+      return Callee && Callee->getName().starts_with("cqrt_alloc_");
+    }();
+    if (!MergeOutRail && (!GateCalls.count(Mint) ||
+                          taint.Tainted.count(Mint->getArgOperand(0))))
       return false;
     // (iii) THE WHOLE CHAIN MUST BE OUTSIDE `L`. A peel that walks INTO the loop
     //       would mean the body gates the register after all — belt-and-braces,
@@ -2934,6 +2989,26 @@ bool invariantRegisterRoots(Loop *L, const TaintSet &taint,
         if (L->contains(UC->getParent()) &&
             isInPlaceGateOnArg0(UC, V, GateCalls, taint))
           return false;
+    // (iii-b) A MERGE OUT-RAIL MAY ONLY BE READ INSIDE `L`, never written. The
+    //         clause above asks `isInPlaceGateOnArg0`, whose vocabulary is the
+    //         collected `cq_theta`/`cq_phi` calls — the right question for an SSA
+    //         register (an in-place gate on one always mints a header phi, which
+    //         clause (i) already refuses) and the WRONG one for a rail the
+    //         emitters mutate through VOID calls that are in no work list
+    //         (`cqrt_copy_<W>_controlled`, `cqrt_x`, `cqrt_cnot`, a
+    //         `cq_template_*_unc` strip). None of those is producible inside `L`
+    //         for a rail allocated outside it — each Phase-4 emitter mints its
+    //         own `%out` and writes it in the same pred block it allocated it in
+    //         — so this refuses a shape no emitter builds rather than one that
+    //         leaks today. It is here because that is an argument about EMITTERS
+    //         and this is a fence, and because a K-times write against a
+    //         once-executed alloc is precisely the multiplicity the (I1)
+    //         argument above rules out for the RECOVERY direction only.
+    if (MergeOutRail)
+      for (User *U : V->users())
+        if (auto *UC = dyn_cast<CallInst>(U))
+          if (L->contains(UC->getParent()) && UC->getType()->isVoidTy())
+            return false;
     RootsOut.insert(Root);
   }
   return true;
@@ -3038,7 +3113,9 @@ void markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
 
 }  // namespace
 
-void collapseFlattenedLoopRails(Module &M, TaintSet &taint) {
+void collapseFlattenedLoopRails(
+    Module &M, TaintSet &taint,
+    const SmallPtrSetImpl<const BasicBlock *> *AlreadyProcessed) {
   // Round-2 TRIGGER: only a module in which an in-loop tainted-control region
   // was actually emitted + flattened. Everything else is byte-identical, which
   // is what keeps the 250-odd shipped e2e goldens untouched by this increment.
@@ -3060,11 +3137,25 @@ void collapseFlattenedLoopRails(Module &M, TaintSet &taint) {
       continue;
     for (Loop *L : LI.getLoopsInPreorder()) {
       bool Touched = false;
+      bool NewlyTouched = false;
       for (BasicBlock *BB : L->blocks())
-        if (taint.InLoopFlattenedPreds.count(BB))
+        if (taint.InLoopFlattenedPreds.count(BB)) {
           Touched = true;
+          // bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-1 — THE ONWARD PASS.
+          // `AlreadyProcessed` is the caller's SNAPSHOT of
+          // `taint.InLoopFlattenedPreds` taken before the round-2 control
+          // fixpoint; a pred that is IN it was already offered to this stage by
+          // the round-1 call, and re-offering it is at best a no-op and at worst
+          // a second mutation of a rail the first call already claimed. So the
+          // onward pass processes ONLY loops that the ROUND-2 flatten opened.
+          if (AlreadyProcessed && AlreadyProcessed->count(BB))
+            continue;
+          NewlyTouched = true;
+        }
       if (!Touched)
         continue;  // a loop this increment did not open — leave it untouched.
+      if (AlreadyProcessed && !NewlyTouched)
+        continue;  // round 1 already saw this loop; nothing new opened in it.
       SmallPtrSet<Value *, 4> Roots;
       // Mark ONLY after a real collapse. A DECLINE means `opt` will exit
       // non-zero, and handing the spine an in-body discharge permission for a

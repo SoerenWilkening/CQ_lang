@@ -104,25 +104,59 @@ bool isInPlaceGateOn(const llvm::CallInst *G, const llvm::Value *H);
 // the question either way:
 //   (1) `isInPlaceGateOn`, `preservesBasisUnderRecord` and
 //       `EmitInverse::isInverseEmittable` are PURE per-gate predicates with no
-//       `TaintSet` parameter, asked from 19 sites across six files, three of
-//       which (`railOf`, `railCarriesControlledRotation`,
-//       `ArithLowering::priorUseIsSettled`) have no `TaintSet` in scope at all.
-//       Threading one through all of them is a cross-cutting signature change to
-//       the Rule-13 core made in service of a fix to the Rule-13 core.
+//       `TaintSet` parameter, asked from **22 sites across seven files**
+//       (`grep -rn 'isInPlaceGateOn(\|preservesBasisUnderRecord(\|isInverseEmittable(' ir-pass/src`,
+//       minus the three definitions: `ArithLowering` 1, `BennettWrap` 1,
+//       `BreakReversePlay` 2, `ChainWalk` 7, `DagTraversal` 3, `EmitInverse` 1,
+//       `Uncomputation` 7) — three of which (`railOf`,
+//       `railCarriesControlledRotation`, `ArithLowering::priorUseIsSettled`)
+//       have no `TaintSet` in scope at all. Threading one through all of them is
+//       a cross-cutting signature change to the Rule-13 core made in service of
+//       a fix to the Rule-13 core. (Round-1 wrote "19 sites across six files";
+//       Rule-13 round-2 lens R2 measured 21/7 and I measure 22/7 — the residue
+//       is whether `ChainWalk.cpp`'s adjacent `isInPlaceGateOn` /
+//       `preservesBasisUnderRecord` pair counts once or twice. The ARGUMENT is
+//       unaffected in every reading; the number is corrected because a census in
+//       a write-up that does not reproduce is the F-L6-2 class.)
 //   (2) A `Value *` set keyed at emission time and read many stages later is the
 //       bd `drbq` Inc-1 round-1 defect VERBATIM: the set dangled because a later
 //       stage RAUW'd and erased the keyed instruction, and the freeze silently
 //       stopped applying. Metadata cannot dangle — it dies with its instruction.
-//   (3) Metadata survives `CloneFunctionInto` (Phase-6 specialization), where a
-//       pointer set silently would not: the clone's gate would fall OUT of the
-//       set and become adjointable again.
+//   (3) Metadata SURVIVES `CloneFunctionInto` (Phase-6 specialization) where a
+//       pointer set would not — stated as a PROPERTY OF THE RECORD, which is all
+//       it is. Rule-13 round-2 finding F-R1-5: it is not a live hazard at this
+//       HEAD, because F-L3-3's own fix (feeding `taint.PhaseCalls` to
+//       `SpecializeReject`/`SpecializeDetect`) makes a callee containing ANY
+//       `cq_phi` a loud reject — `cq specialization: callee contains a quantum
+//       primitive (cq_*); only classical functions are lifted` — so no clone can
+//       contain a kickback gate to lose. Reasons (1) and (2) are measured and
+//       carry the choice on their own; keep (3) as a property, and do not quote
+//       it as an argument.
 // The record is also VISIBLE in the lowered `.ll` (`!cq.branchphase`), which is
 // the artifact `free_pairing_check.py` and every fixture read.
 //
-// STAMP IT AT EVERY EMISSION SITE. There are three today —
-// `SwapRouteEmit::emitPhaseKickbackRegion`'s arm loop and its merge-tail loop,
-// and `AngleSelectEmit`'s Rz stem. A fourth emitter that mints a kickback gate
-// and forgets this call re-opens F-L7-1 with no diagnostic anywhere.
+// STAMP IT AT EVERY EMISSION SITE — AND THE ENUMERATION IS THE FENCE, SO IT IS
+// KEPT EXACT (Rule-13 round-2 findings F-R1-3 / F-R2-2: this sentence said
+// "three" while the tree it shipped in had six, in the one comment whose whole
+// job is to let a reader audit exactly that). There are **SIX**
+// `markBranchPhaseGate` calls, wrapping SIX `CreateCall(Rz, …)` expressions, in
+// FOUR files, belonging to FIVE emitters:
+//   1. `SwapRouteEmit.cpp:1538`  — P1 flat, the arm loop           (pinned by
+//      `control_phase_kickback_and2.ll`'s MDTAG, and by the CHECK in
+//      `..._share_flag*.ll` / the three `..._inloop*.ll`);
+//   2. `SwapRouteEmit.cpp:1568`  — P1 flat, the merge-tail loop    (pinned by
+//      `..._ifelse.ll`, `..._ifelse_tail_armfalse.ll`, `..._negated_tail_phi.ll`);
+//   3. `SwapRouteEmit.cpp:1773`  — P4, `emitPhaseKickbackNestRegion` (pinned by
+//      `control_phase_nest_kickback.ll`'s `MDTAG-COUNT-2`);
+//   4. `SwitchRouteEmit.cpp:179` — P5, `emitSwitchPhaseRegion`      (pinned by
+//      `control_phase_switch_kickback.ll`'s `MDTAG-COUNT-3`);
+//   5/6. `AngleSelectEmit.cpp:179` and `:181` — P2, the Rz stem's two gates
+//      (pinned by `control_angle_select_phase_{constants,runtime,nonfinite_arm}.ll`).
+// Sites 3 and 4 were added by the Inc-1b merge, which is the concrete form of
+// the warning that follows: a SEVENTH emitter that mints a kickback gate and
+// forgets this call re-opens F-L7-1 with no diagnostic anywhere. Re-measure with
+// `grep -c 'markBranchPhaseGate(' ir-pass/src/*.cpp` rather than trusting the
+// list.
 void markBranchPhaseGate(llvm::CallInst *G);
 
 // Is `G` a recorded branch-phase (kickback) gate? Asked by the three spine

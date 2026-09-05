@@ -61,23 +61,45 @@ LEFT ALLOCATED — Rule-6 safe (a leak, never a dirty free), and byte-for-byte t
 own disposition on the same source. It is the same move Inc 2a made one stem over for
 `cqrt_rz_<W>_controlled`.
 
-**Recorded at all THREE emission sites** (`SwapRouteEmit::emitPhaseKickbackRegion`'s arm
-loop and its merge-tail loop, and `AngleSelectEmit`'s Rz stem). A fourth emitter that mints
-a kickback gate and forgets the call re-opens this with no diagnostic anywhere.
+**Recorded at all SIX emission sites** — ⚠ this sentence said "THREE" when it shipped, in a
+tree that already had six, and it is the ONE sentence whose whole job is to let a reader
+audit "is every emitter marked?" (Rule-13 round-2 findings F-R1-3 / F-R2-2; round 1's own
+hand-back records finding the two extra minters during the Inc-1b merge, and the notes were
+never updated). MEASURED with `grep -rn 'markBranchPhaseGate' ir-pass/src`: SIX
+`markBranchPhaseGate` calls wrapping SIX `CreateCall(Rz, …)` expressions, in FOUR files,
+belonging to FIVE emitters — `SwapRouteEmit.cpp:1538` (P1 flat, arm loop), `:1568` (P1 flat,
+merge tail), `:1773` (P4 `emitPhaseKickbackNestRegion`), `SwitchRouteEmit.cpp:179` (P5
+`emitSwitchPhaseRegion`), and `AngleSelectEmit.cpp:179`/`:181` (P2, the Rz stem's two
+gates). Every one is pinned by at least one fixture (the per-site map is in
+`ChainWalk.h`'s comment). A SEVENTH emitter that mints a kickback gate and forgets the call
+re-opens this with no diagnostic anywhere — which is not hypothetical: sites 3 and 4 are
+exactly that, caught by the merge rather than by a test.
 
 > **DEVIATION FROM THE REVIEW'S PROPOSED FIX, recorded so the owner can overrule it.** The
 > L7 plan (endorsed by the orchestrator) said `taint.BranchPhaseGates`, a `TaintSet`
 > pointer set. The QUESTION ASKED IS THE SAME — membership of the emitted instruction,
 > never a name — but the storage is instruction METADATA (`!cq.branchphase`), for three
 > reasons measurable in this tree. (1) The three predicates are PURE per-gate functions
-> with no `TaintSet` parameter, asked from **19 call sites in 6 files**, three of which
+> with no `TaintSet` parameter, asked from **22 call sites in 7 files** (⚠ the shipped text
+> said "19 in 6"; round-2 lens R2 measured 21/7 and I measure 22/7 — the residue is whether
+> `ChainWalk.cpp`'s adjacent `isInPlaceGateOn`/`preservesBasisUnderRecord` pair counts once
+> or twice. The argument is unaffected in every reading; the figure is corrected because a
+> census in a write-up that does not reproduce is the F-L6-2 class, and this one sits in the
+> paragraph that RECORDS F-L6-2. Re-measure, do not trust:
+> `grep -rn 'isInPlaceGateOn(\|preservesBasisUnderRecord(\|isInverseEmittable(' ir-pass/src`
+> minus the three definitions), three of which
 > (`railOf`, `railCarriesControlledRotation`, `ArithLowering::priorUseIsSettled`) have no
 > `TaintSet` in scope at all; threading one through is a cross-cutting signature change to
 > the Rule-13 core made in service of a fix to the Rule-13 core. (2) A `Value *` set keyed
 > at emission and read many stages later is the bd `drbq` Inc-1 round-1 defect VERBATIM —
 > that set dangled when a later stage RAUW'd and erased the key, and the freeze silently
 > stopped applying; metadata dies with its instruction. (3) Metadata survives
-> `CloneFunctionInto` (Phase-6 specialization), where a pointer set silently would not.
+> `CloneFunctionInto` (Phase-6 specialization), where a pointer set silently would not —
+> ⚠ stated as a PROPERTY OF THE RECORD and NOT as a live argument (Rule-13 round-2 finding
+> F-R1-5): it is unreachable at this HEAD by the round's OWN other fix, since F-L3-3 makes a
+> callee containing any `cq_phi` a loud reject (`cq specialization: callee contains a quantum
+> primitive (cq_*); only classical functions are lifted`), so no clone can contain a kickback
+> gate to lose. Reasons (1) and (2) are measured and carry the choice alone.
 > There is exactly ONE spelling of the question either way (Rule 14), and the record is
 > visible in the lowered `.ll`, which is the artifact every fixture and
 > `free_pairing_check.py` read.
@@ -96,6 +118,7 @@ same closure") cuts both ways. One decision per consumer:
 | `DagTraversal` step-3 closure | sets `D.NotClosed` | **Intended.** An unrecognized consumer marks the DAG not-closed, which is what leaves the rail allocated. |
 | `Uncomputation`'s moved-anchor scan | never sees the gate | It keys on `isInPlaceGateOn`; a refused gate is not an in-place basis-relabelling gate to it. Correct — a diagonal gate relabels nothing, so there is no anchor question to answer. |
 | `Uncomputation` clause (d) | unchanged | Reached only for recovered gates. |
+| `Uncomputation::preservesBorrowedParent` clause **(1)** | **`true` — it ADMITS the kickback gate, by NAME** | ⚠ **THE ROW ROUND 1 OMITTED, and the omission mattered because this table claims to be COMPLETE** (Rule-13 round-2 finding F-R1-4). `Uncomputation.cpp:591` tests `starts_with("cqrt_rz_") && !ends_with("_controlled") && arity 2 && arg0 == P`, which a kickback gate matches EXACTLY — so this predicate answers `true` for the same instruction the three predicates above were taught to refuse. **The verdict is SOUND and must NOT be narrowed "for symmetry":** the three ask *"may the spine ADJOINT this gate?"* (no — that cancels the answer), this one asks *"does this gate DISTURB the borrowed parent's basis label?"* (no — it is diagonal, whoever emitted it). It is REACHED, not hypothetical: `u8_share_tail` discharges the `zext` rail with the FLAG as borrowed parent while that flag carries three `cqrt_rz_i1` gates. Narrowing it would silently delete that discharge, and clause (1b) below records that the identical narrowing of the CONTROLLED twin cost nine modules theirs. A note to that effect now ships at the site. |
 | `Uncomputation::preservesBorrowedParent` clause (1b) | unchanged | It is about `cqrt_{ry,rz}_<W>_controlled` at arg 1 — a different spelling, a different family, and the kickback gate is UNCONTROLLED with the flag at arg 0. Deliberately NOT touched: deleting or widening it reintroduces the measured nine-module regression Inc 2a's notes record. |
 | the 7.4 `lowerBreakReversePlay` capture | cannot capture it | Its rail-gate pre-scan is `isInverseEmittable`, which now refuses. Correct: reverse-playing a branch phase would cancel it exactly as the spine did. |
 | `tools/free_pairing_check.py`'s `classify()` | `cqrt_rz` stays TRANSPARENT | **Say it explicitly rather than leave it silent: this is correct and must NOT change.** The gate is DIAGONAL — it moves no basis label and is not a rail event — so it is not a `cqrt_free` pairing question at any width. The checker was, and remains, structurally blind to this whole finding; it reported `0 violations` on every reproducer, and on the broken circuit it was arguably *happier* than on the correct one, because the spine's reversal is what made the free provable. That is the honest statement of what stage 2b does and does not witness. |
