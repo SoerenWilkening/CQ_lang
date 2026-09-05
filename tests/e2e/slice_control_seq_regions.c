@@ -1,11 +1,13 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- both regions' `q = cq_phi(q, th)` -> `cq_phi(th)`.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_seq_regions.c — bd hcrg e2e smoke: TWO SEQUENTIAL
    tainted-condition phase regions in one function, the only test layer that
    LINKS (Rule 2, Rule 16).
 
    SOURCE INTENT:
        q : tainted quantum handle (cq_theta == Ry, the sole taint source)
-       if (q > 5) { q = cq_phi(q, 0.25); }      // region 1
-       if (q > 3) { q = cq_phi(q, 0.75); }      // region 2
+       if (q > 5) { cq_phi(0.25); }      // region 1
+       if (q > 3) { cq_phi(0.75); }      // region 2
        measure q
 
    After clang -O1 region 2's conditional branch lives INSIDE region 1's merge
@@ -36,10 +38,10 @@ int slice(void) {
     int q = 7;
     q = cq_theta(q, 0.5);          /* alloc i32(7) + ry_i32                  */
     if (q > 5) {                   /* region 1 — swap-routed phase arm       */
-        q = cq_phi(q, 0.25);
+        cq_phi(0.25);
     }
     if (q > 3) {                   /* region 2 — its Pred is region 1's merge */
-        q = cq_phi(q, 0.75);
+        cq_phi(0.75);
     }
     return cq_measure(q);
 }

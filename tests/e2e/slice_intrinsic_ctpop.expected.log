@@ -5,9 +5,9 @@ cqrt_measure_i32(h1) -> 0
 cqrt_alloc_i32(252645135) -> h2
 cqrt_ry_i32(h2, 0x1.999999999999ap-4)
 cq_template_ctpop_i32(h2) -> h3
-cqrt_rz_i32(h3, 0x1.3333333333333p-2)
-cqrt_rz_i32(h3, -0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl(h3, 16) -> h4
+cqrt_rz_i1(h4, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl_unc(h4, h3, 16)
 cq_template_ctpop_i32_unc(h3, h2)
 cqrt_free(h3)
-cqrt_ry_i32(h2, -0x1.999999999999ap-4)
-cqrt_free(h2)
+cqrt_free(h4)

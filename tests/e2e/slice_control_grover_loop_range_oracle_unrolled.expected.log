@@ -2,7 +2,7 @@ cqrt_alloc_i32(0) -> h0
 cqrt_ry_i32(h0, 0x1p-1)
 cq_template_add_i32_hl(h0, -6) -> h1
 cq_template_icmp_ult_i32_hl(h1, 14) -> h2
-cqrt_rz_i32_controlled(h2, h0, 0x1.921fb54442d18p+1)
+cqrt_rz_i1(h2, 0x1.921fb54442d18p+1)
 cq_template_icmp_ult_i32_hl_unc(h2, h1, 14)
 cq_template_add_i32_hl_unc(h1, h0, -6)
 cqrt_free(h1)
@@ -10,7 +10,7 @@ cqrt_free(h2)
 cqrt_ry_i32(h0, -0x1p-1)
 cq_template_add_i32_hl(h0, -6) -> h3
 cq_template_icmp_ult_i32_hl(h3, 14) -> h4
-cqrt_rz_i32_controlled(h4, h0, 0x1.921fb54442d18p+1)
+cqrt_rz_i1(h4, 0x1.921fb54442d18p+1)
 cq_template_icmp_ult_i32_hl_unc(h4, h3, 14)
 cq_template_add_i32_hl_unc(h3, h0, -6)
 cqrt_free(h3)

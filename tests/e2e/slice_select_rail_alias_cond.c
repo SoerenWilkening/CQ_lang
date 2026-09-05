@@ -1,3 +1,53 @@
+/* ⚠ REWRITTEN PROGRAM (3qlq Inc 1, OQ-5 / prep-b2): THREE of the five lineages
+   RETIRED, two kept. The golden below is a NEW PROGRAM's trace, not an audit
+   substitution, and it is recorded as such in
+   docs/prd/phase-04-swap-route-control/inc1-records/GOLDEN_REGEN.md.
+
+   RETIRED — (A) `int r = cq_phi(q,.25); (q < r) ? 11 : 22`,
+             (B) the same at f64 with `<`,
+             (D) `int re = cq_phi(qe,.35); (qe == re) ? 11 : 22`.
+   All three existed to exercise a compare whose two operands are SSA-DISTINCT
+   but ONE RAIL, and the ONLY way to build that pair in CQ was the RENAMING
+   in-place gate `%r = cq_phi(%q, θ)`. Under owner decision D1 `cq_phi` renames
+   nothing, so `r` IS `q`, the compares become `x < x` / `x == x` on one SSA
+   value, and `clang -O1` folds them to constants at STAGE 1 (prep-b PROBE 3,
+   MEASURED: the three lineages collapse to `cq_measure_si32(i32 22)`,
+   `cq_measure_f64(double 2.0)` and `cq_measure_si32(i32 11)`, and the module
+   then declines `cq_measure_<sfx> operand not recognized; expected a tainted i32
+   handle`). The property cannot be spelled in the language any more; it is
+   retired here rather than left as three folded constants pretending to test it.
+
+   KEPT — (C) the arithmetic Case A `p * p`, which is a GENUINE aliased-operand
+   site and lowers to `cq_template_mul_i32(h0, h0)` in the golden below; and (E)
+   the f64 `(qg >= qg) ? 1.0 : 2.0`, which survives stage 1 at all only because
+   `x >= x` is FALSE for NaN and so cannot fold to a constant.
+
+   ⚠ SAY WHAT (E) IS NOW, because the obvious reading is wrong and I measured it:
+   `clang -O1` does NOT leave `fcmp oge x, x`; it rewrites it to `fcmp ord x, x`
+   and then to `fcmp ord x, 0.0`, so the emitted line is
+   `cq_template_fcmp_ord_f64_hl(h2, 0x0p+0)` — a Q+C compare with NO aliased
+   operand. (E) is therefore kept as a live customer of the kjd1 fp-DATA select
+   copy family (`cqrt_copy_f64_controlled` ×2, the `cqrt_x` bracket, the void
+   out-first `_unc` strip and the Rule-6 free), NOT as an alias witness.
+
+   NET COVERAGE LOSS, recorded rather than papered over: the ALIASED-OPERAND
+   COMPARE has no spelling left in CQ at any width — `cq_template_icmp_slt_i32(h,h)`,
+   `cq_template_icmp_eq_i32(h,h)`, `cq_template_fcmp_olt_f64(h,h)`,
+   `cq_template_fcmp_oge_f64(h,h)` and their four `_unc` twins leave this golden.
+   Only the ARITHMETIC alias (C) survives. The reason is structural, not a fence:
+   every aliased compare `x REL x` is a compile-time constant or an ordered-ness
+   test, so `clang -O1` rewrites it before the pass ever sees it, and the one CQ
+   construct that used to build two SSA-distinct names for one rail — the
+   RENAMING `%r = cq_phi(%q, θ)` — is exactly what owner decision D1 removes.
+   Recorded in GOLDEN_REGEN.md. */
+/* 3qlq Inc 1: migrated to register-free cq_phi -- four `T r = cq_phi(q, th)` -> `T r = q; cq_phi(th);` (RENAME SITES).
+   FLAG (the whole mechanism): this slice's header states that `%q` and
+   `%r = cq_phi(%q,.)` are SSA-DISTINCT yet ONE RAIL, and that this is why
+   `q < r` is NOT foldable by InstCombine. After the migration r IS q, so all four
+   compares are `x < x` / `x == x` / `x >= x` on ONE SSA value and InstCombine folds
+   them at STAGE 1. The alias the slice was written to exercise cannot be spelled
+   with a register-free cq_phi at all. Purpose does NOT survive.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_select_rail_alias_cond.c — bd big5 (2026-07-31) e2e link proof for the
    ALIASED-RAIL condition compare, the shape bd 7q3s fenced for one day on a
    premise the owner then refuted.
@@ -75,34 +125,18 @@
 
 __attribute__((noinline))
 void slice(int x, double d) {
-    /* (A) integer: %q and %r are SSA-DISTINCT, ONE RAIL after lowering. */
-    int q = cq_theta(x, 0.50);
-    int r = cq_phi(q, 0.25);
-    int s = (q < r) ? 11 : 22;           /* icmp slt h0, h0 — CASE A */
-    (void) cq_measure(s);
-
-    /* (B) f64: the same alias through the kjd1 fp select copy family. */
-    double qf = cq_theta(d, 0.75);
-    double rf = cq_phi(qf, 0.125);
-    double sf = (qf < rf) ? 1.0 : 2.0;   /* fcmp olt h?, h? — CASE A */
-    (void) cq_measure(sf);
-
-    /* (C) arithmetic Case A on one rail — the consistency witness. */
+    /* (C) an ARITHMETIC Case A — `p * p` on ONE rail. SURVIVES the migration:
+       nothing about it depended on a renaming diagonal gate.               */
     int p = cq_theta(x, 0.10);
-    (void) cq_measure(p * p);            /* cq_template_mul_i32(h?, h?) */
+    (void) cq_measure(p * p);            /* cq_template_mul_i32(h, h)        */
 
-    /* (D) CONSTANT-TRUE integer predicate — the flag rail is |1> at the mint,
-       so the strip must return it to |0> before the free (Rule 6). */
-    int qe = cq_theta(x, 0.05);
-    int re = cq_phi(qe, 0.35);
-    int se = (qe == re) ? 11 : 22;       /* icmp eq(a,a) == constant TRUE */
-    (void) cq_measure(se);
-
-    /* (E) f64 ENTANGLED flag, NOT a constant: `fcmp oge(a,a)` == ord(a) ==
-       !isnan(a). No ORDERED fcmp is constant on aliased operands. */
+    /* (E) an f64 aliased-rail condition feeding a kjd1 fp-DATA select.
+       SURVIVES because `x >= x` is NOT foldable to a constant: it is FALSE
+       when x is NaN, so `clang -O1` rewrites it to `fcmp ord x, x` — still an
+       ALIASED-OPERAND compare, which is the mechanism this slice links.     */
     double qg = cq_theta(d, 0.20);
-    double rg = cq_phi(qg, 0.40);
-    double sg = (qg >= rg) ? 1.0 : 2.0;  /* fcmp oge(a,a) == !isnan(a) */
+    double sg = (qg >= qg) ? 1.0 : 2.0;
     (void) cq_measure(sg);
 }
+
 int main(void) { slice(3, 0.5); return 0; }

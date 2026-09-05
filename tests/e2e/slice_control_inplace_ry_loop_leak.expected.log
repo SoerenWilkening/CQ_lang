@@ -9,13 +9,13 @@ cq_template_icmp_eq_i32_hl(h1, 5) -> h5
 cqrt_ry_i32_controlled(h5, h2, 0x1.ccccccccccccdp-1)
 cq_template_icmp_eq_i32_hl_unc(h5, h1, 5)
 cqrt_free(h5)
-cqrt_rz_i32(h1, 0x1.999999999999ap-4)
+cqrt_ry_i32(h1, 0x1.999999999999ap-5)
 cq_template_mul_i32_hl(h2, 7) -> h6
 cqrt_tape_write_i32(t0, h6) -> h7
 cq_template_icmp_eq_i32_hl(h1, 5) -> h8
 cqrt_ry_i32_controlled(h8, h2, 0x1.ccccccccccccdp-1)
 cq_template_icmp_eq_i32_hl_unc(h8, h1, 5)
 cqrt_free(h8)
-cqrt_rz_i32(h1, 0x1.999999999999ap-4)
+cqrt_ry_i32(h1, 0x1.999999999999ap-5)
 cqrt_measure_i32(h1) -> 0
 cqrt_measure_i32(h2) -> 0

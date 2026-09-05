@@ -1,3 +1,10 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `q = cq_phi(q, th)` -> `cq_phi(th)` at every site (branch phase by kickback).
+   FLAG (PRD S6.3): the tainted arm now holds 2 cq_phi calls, which the Inc-1
+   decline partition refuses ("an arm with N>1 cq_phi calls"). Expected
+   post-increment class is a DECLINE, not an accept -- an owner call, not this
+   migration's: the kickback needs no angle sum (two rz_i1 on the SAME flag are
+   exact), so the N>1 refusal is a scoping choice, not a physics one.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_cond_datause.c — ziov WI-1 e2e smoke: a tainted control compare
    reused as DATA (the shared-condition-flag path). The only test layer that
    LINKS, so it proves the shared flag's data consumers (cq_template_zext +
@@ -7,7 +14,7 @@
    SOURCE INTENT (cond-datause — owner 2026-06-15):
        q : tainted quantum handle
        int f = (q > 5);                          // DATA use of the condition
-       if (q > 5) { q = cq_phi(q,.25); q = cq_phi(q,.75); }   // CONTROL use
+       if (q > 5) { cq_phi(.25); cq_phi(.75); }   // CONTROL use
        measure(q + f)
 
    clang -O1 CSEs `f = (q>5)` and `if (q>5)` to ONE `icmp sgt q, 5` with two uses
@@ -31,8 +38,8 @@ int slice(void) {
     q = cq_theta(q, 0.5);          /* taint q -> handle (alloc i32(3), ry_i32)   */
     int f = (q > 5);               /* DATA use of the condition compare          */
     if (q > 5) {                   /* CONTROL use — clang CSEs to ONE icmp        */
-        q = cq_phi(q, 0.25);       /* arm gate 1 (Rz) — VERBATIM on the rail     */
-        q = cq_phi(q, 0.75);       /* arm gate 2 (Rz) — VERBATIM on the rail     */
+        cq_phi(0.25);       /* arm gate 1 (Rz) — VERBATIM on the rail     */
+        cq_phi(0.75);       /* arm gate 2 (Rz) — VERBATIM on the rail     */
     }
     return cq_measure(q + f);      /* f feeds the measured value (owns the flag) */
 }
