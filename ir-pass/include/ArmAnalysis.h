@@ -258,10 +258,19 @@ enum class PhaseKickbackDisp { Accept, Declined, NotApplicable };
 bool phaseAngleTail(llvm::BasicBlock *MergeBB, const TaintSet &Taint,
                     llvm::PHINode *&Phi, llvm::CallInst *&Consumer);
 
-PhaseKickbackDisp classifyPhaseKickback(llvm::BranchInst *BI, TaintSet &Taint,
-                                        ControlRegion &Region,
-                                        const llvm::DominatorTree *DT,
-                                        const llvm::LoopInfo *LI);
+// `ClaimedSelects` (bd test_C_libtooling-3qlq Inc 1 part B, P3) collects the
+// LOGICAL `select i1` nodes of an ACCEPTED compound condition tree. Those
+// selects are part of THIS region's condition — not data muxes — so the caller's
+// tainted-`select` scan must skip them, exactly as `Claimed` makes it skip an
+// accepted nest's inner `br`. WITHOUT IT the same `select i1 %a, i1 %b, i1 false`
+// is handed to `classifySelectRegion` as an i1 DATA select, accepted, and
+// `emitSelectRegion` then dereferences a select this emitter has already erased
+// — a SIGSEGV on the flagship `if (q==5 && r==3) cq_phi(θ)` customer, MEASURED
+// before the set existed. May be null (a caller with no select scan).
+PhaseKickbackDisp classifyPhaseKickback(
+    llvm::BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
+    const llvm::DominatorTree *DT, const llvm::LoopInfo *LI,
+    llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects = nullptr);
 
 AngleSelectDisp classifyAngleSelect(llvm::SelectInst *Sel, const CondTree &Tree,
                                     TaintSet &Taint, WidthDispatch &wd,

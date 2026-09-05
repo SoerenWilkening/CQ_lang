@@ -165,15 +165,21 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // order, the `!dbg` stamping and the ancilla NAME (`g`) are unchanged. The 4.4
   // fixtures and goldens are the witness that the lift is a refactor.
   CondNetwork Net;
-  if (!emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/Sel, DL,
-                       /*AllowQQLeaves=*/true, Net)) {
-    // REACHABLE, and say so plainly rather than calling it unreachable — an
-    // overstated justification is how a real bail later gets deleted as dead. It
-    // fires when a leaf mint failed (`lowerCompareToFlag` has ALREADY diagnosed
-    // loudly) or when the i1 ancilla allocator did not resolve — the two
-    // conditions the pre-lift code bailed on in exactly these places. Detection
-    // proved every leaf mintable, so anything else here is detection/emission
-    // drift; decline rather than continue with a half-built network (Rule 1).
+  switch (emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/Sel,
+                          DL, /*AllowQQLeaves=*/true, Net)) {
+  case CondNetDisp::Ok:
+    break;
+  case CondNetDisp::MintDiagnosed:
+    // A leaf mint failed and `lowerCompareToFlag` was ALREADY loud — return
+    // SILENTLY, exactly as the pre-lift `if (!F) return;` did. Adding a second
+    // `control flow under quantum control` here would change what every existing
+    // select decline fixture reads on stderr.
+    return;
+  case CondNetDisp::Malformed:
+    // No i1 ancilla allocator, or a node the grammar admitted that the emitter
+    // cannot decompose. The pre-lift code declined loudly for the first of those
+    // in exactly this place; the second is detection/emission drift and gets the
+    // same treatment (Rule 1 — never silently skip an accepted region).
     diagnoseUnderControl(Sel, "control flow");
     return;
   }

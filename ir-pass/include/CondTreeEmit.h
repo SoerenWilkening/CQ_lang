@@ -44,8 +44,13 @@
 // must be proven BEFORE the first emission — with one flag per leaf the mint is
 // no longer atomic, so a mid-stream bail would leave earlier flags and ancillas
 // dangling (the ziov.4 mutate-then-decline class). `emitCondNetwork` returns
-// false ONLY on a resource failure it cannot foresee (no i1 allocator, a mint
-// that diagnosed) and the caller must then decline loudly.
+// `emitCondNetwork` therefore returns a THREE-WAY disposition rather than a
+// bool, and the distinction is not cosmetic: `MintDiagnosed` means
+// `lowerCompareToFlag` ALREADY fired a loud `no template …` diagnostic, so the
+// caller must return SILENTLY (a second `… under quantum control` on top would
+// change what every existing decline fixture reads on stderr), while
+// `Malformed` is a shape/resource failure nobody has diagnosed yet and the
+// caller owes a loud decline of its own.
 
 #ifndef CQ_IRPASS_COND_TREE_EMIT_H_
 #define CQ_IRPASS_COND_TREE_EMIT_H_
@@ -57,6 +62,7 @@
 #include <utility>
 
 namespace llvm {
+class CallInst;
 class CmpInst;
 class DebugLoc;
 class Instruction;
@@ -69,6 +75,17 @@ class ControlledSymbols;
 class WidthDispatch;
 struct CondTree;
 struct TaintSet;
+
+// The disposition of a network mint. `Ok` — `Out` is complete and `Out.Root` is
+// the predicate rail. `MintDiagnosed` — a leaf's `lowerCompareToFlag` returned
+// null having ALREADY diagnosed loudly (unsupported width / out-of-scope
+// predicate / an un-mintable Q+Q under `AllowQQLeaves = false`); the caller
+// returns without adding a second message. `Malformed` — no i1 ancilla
+// allocator, or a node the grammar admitted that this emitter cannot decompose
+// (detection/emission drift); the caller declines loudly. In BOTH failure cases
+// the network is abandoned mid-build, so the caller must not have emitted
+// anything of its own yet (the ziov.4 detect-before-mutate discipline).
+enum class CondNetDisp { Ok, MintDiagnosed, Malformed };
 
 // One emitted network. `Leaves` is in MINT order and `Nodes` in POST-ORDER (=
 // emission order); `stripCondNetwork` walks both in reverse. `Root` is the rail
@@ -90,30 +107,37 @@ struct CondNetwork {
 // Emit ONE interior node's gates onto `N.G`, forward (`Inverse=false`) or as its
 // exact adjoint (`Inverse=true` — the same gates in reverse order; every gate is
 // self-inverse). `Neg*` bracket the corresponding control with `cqrt_x`.
-void emitCondNode(const CondNetwork::Node &N, ControlledSymbols &csyms,
+void emitCondNode(const CondNetwork::Node &N, const ControlledSymbols &csyms,
                   llvm::IRBuilder<> &B, const llvm::DebugLoc &DL, bool Inverse);
 
 // Emit the forward network for the already-collected `Tree` (whose root is
 // `Root`) immediately before `Before`, recording it in `Out`. `AllowQQLeaves`
 // selects the leaf-mint width policy: TRUE passes `qqSelectLeafWidth` (the 4.4
 // select's shipped behaviour, bd adia), FALSE passes an empty width so a Q+Q
-// leaf has no mint — the caller must then have declined it already. Returns
-// false (having emitted nothing, or having stopped at a leaf whose mint already
-// diagnosed loudly) if the network cannot be built.
-bool emitCondNetwork(llvm::Value *Root, const CondTree &Tree, WidthDispatch &wd,
-                     ControlledSymbols &csyms, TaintSet &taint,
-                     llvm::Instruction *Before, const llvm::DebugLoc &DL,
-                     bool AllowQQLeaves, CondNetwork &Out);
+// leaf has no mint — the caller must then have declined it already.
+CondNetDisp emitCondNetwork(llvm::Value *Root, const CondTree &Tree,
+                            WidthDispatch &wd,
+                            const ControlledSymbols &csyms,
+                            TaintSet &taint, llvm::Instruction *Before,
+                            const llvm::DebugLoc &DL, bool AllowQQLeaves,
+                            CondNetwork &Out);
 
 // The exact LIFO strip of a network emitted above, before `Before`: every node
 // in reverse post-order (inverse network, then `cqrt_free` of its ancilla), then
 // every leaf in reverse mint order (`_unc` strip against its own rail, then
 // `cqrt_free`). Leaves the tree's IR untouched — erasing it is the caller's
 // (the strip READS each leaf's original operands, so it must precede any erase).
+// `StripsOut`, when non-null, collects each emitted LEAF `_unc` strip call so a
+// caller can record it in `taint.DischargedFlagGates` — the channel that lets
+// the whole-DAG uncompute spine discharge a DERIVED condition's chain past the
+// strip (`ChainWalk::isInteriorConsumer`). The 4.4 select passes null (its
+// condition lineage is discharged by the ordinary spine and the pre-lift code
+// recorded nothing), the register-free branch phase passes a vector.
 void stripCondNetwork(const CondNetwork &Net, WidthDispatch &wd,
-                      ControlledSymbols &csyms, TaintSet &taint,
+                      const ControlledSymbols &csyms, TaintSet &taint,
                       llvm::Instruction *Before, const llvm::DebugLoc &DL,
-                      bool AllowQQLeaves);
+                      bool AllowQQLeaves,
+                      llvm::SmallVectorImpl<llvm::CallInst *> *StripsOut = nullptr);
 
 }  // namespace cq
 

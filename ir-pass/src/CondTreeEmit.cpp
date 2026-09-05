@@ -49,7 +49,7 @@ namespace {
 // control reads as its complement. `cqrt_x` is self-inverse and the flag is left
 // exactly as it was found, which is what makes the bracket composable with the
 // LIFO strip (the strip re-emits the same bracket).
-void bracket(const CondNetwork::Node &N, ControlledSymbols &csyms,
+void bracket(const CondNetwork::Node &N, const ControlledSymbols &csyms,
              IRBuilder<> &B, const DebugLoc &DL) {
   auto stamp = [&DL](CallInst *C) {
     if (DL)
@@ -63,7 +63,7 @@ void bracket(const CondNetwork::Node &N, ControlledSymbols &csyms,
 
 }  // namespace
 
-void emitCondNode(const CondNetwork::Node &N, ControlledSymbols &csyms,
+void emitCondNode(const CondNetwork::Node &N, const ControlledSymbols &csyms,
                   IRBuilder<> &B, const DebugLoc &DL, bool Inverse) {
   auto stamp = [&DL](CallInst *C) {
     if (DL)
@@ -96,12 +96,14 @@ void emitCondNode(const CondNetwork::Node &N, ControlledSymbols &csyms,
   bracket(N, csyms, B, DL);
 }
 
-bool emitCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
-                     ControlledSymbols &csyms, TaintSet &taint,
-                     Instruction *Before, const DebugLoc &DL,
-                     bool AllowQQLeaves, CondNetwork &Out) {
+CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
+                            WidthDispatch &wd,
+                            const ControlledSymbols &csyms,
+                            TaintSet &taint, Instruction *Before,
+                            const DebugLoc &DL, bool AllowQQLeaves,
+                            CondNetwork &Out) {
   if (!Root || !Before)
-    return false;
+    return CondNetDisp::Malformed;
   IRBuilder<> B(Before);
   auto stamp = [&DL](CallInst *C) {
     if (DL)
@@ -114,7 +116,7 @@ bool emitCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
   if (!Tree.Nodes.empty()) {
     AllocI1 = wd.allocFn("i1");
     if (!AllocI1)
-      return false;
+      return CondNetDisp::Malformed;
   }
   Type *I1Ty = Type::getInt1Ty(Before->getContext());
 
@@ -140,13 +142,13 @@ bool emitCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
       // unconditionally at this point: whatever the CALLER's grammar admitted is
       // already in `Tree`, and a node that is not decomposable cannot be in it.
       if (!decomposeCondNode(V, Opc, L, R, /*AllowLogicalSelect=*/true))
-        return false;  // detection/emission drift — the caller declines loudly.
+        return CondNetDisp::Malformed;  // detection/emission drift.
       CondNetwork::Node N;
       N.Opc = Opc;
       N.L = FlagOf.lookup(L);
       N.R = FlagOf.lookup(R);
       if (!N.L || !N.R)
-        return false;  // a child with no rail — off-grammar past detection.
+        return CondNetDisp::Malformed;  // a child with no rail.
       N.G = stamp(B.CreateCall(AllocI1, {Constant::getNullValue(I1Ty)}, "g"));
       emitCondNode(N, csyms, B, DL, /*Inverse=*/false);
       FlagOf[V] = N.G;
@@ -162,25 +164,26 @@ bool emitCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
                                     : StringRef(),
           /*inverse=*/false, /*before=*/Before);
       if (!F)
-        return false;  // already diagnosed (unsupported width / predicate).
+        return CondNetDisp::MintDiagnosed;  // lowerCompareToFlag was LOUD.
       FlagOf[V] = F;
       Out.Leaves.push_back({Leaf, F});
       continue;
     }
     if (!decomposeCondNode(V, Opc, L, R, /*AllowLogicalSelect=*/true))
-      return false;
+      return CondNetDisp::Malformed;
     Stack.push_back({V, true});
     Stack.push_back({R, false});
     Stack.push_back({L, false});  // left child visits first.
   }
   Out.Root = FlagOf.lookup(Root);
-  return Out.Root != nullptr;
+  return Out.Root ? CondNetDisp::Ok : CondNetDisp::Malformed;
 }
 
 void stripCondNetwork(const CondNetwork &Net, WidthDispatch &wd,
-                      ControlledSymbols &csyms, TaintSet &taint,
+                      const ControlledSymbols &csyms, TaintSet &taint,
                       Instruction *Before, const DebugLoc &DL,
-                      bool AllowQQLeaves) {
+                      bool AllowQQLeaves,
+                      SmallVectorImpl<CallInst *> *StripsOut) {
   IRBuilder<> B(Before);
   auto stamp = [&DL](CallInst *C) {
     if (DL)
@@ -206,12 +209,14 @@ void stripCondNetwork(const CondNetwork &Net, WidthDispatch &wd,
   // own rail (so it MUST run before the caller erases the tree), then the rail
   // is freed at a proven |0>.
   for (const auto &LF : llvm::reverse(Net.Leaves)) {
-    lowerCompareToFlag(LF.first, wd, taint,
-                       /*qqWidth=*/AllowQQLeaves
-                           ? qqSelectLeafWidth(LF.first, taint)
-                           : StringRef(),
-                       /*inverse=*/true, /*before=*/Before, /*negate=*/false,
-                       /*railToStrip=*/LF.second);
+    auto *Strip = dyn_cast_or_null<CallInst>(lowerCompareToFlag(
+        LF.first, wd, taint,
+        /*qqWidth=*/AllowQQLeaves ? qqSelectLeafWidth(LF.first, taint)
+                                  : StringRef(),
+        /*inverse=*/true, /*before=*/Before, /*negate=*/false,
+        /*railToStrip=*/LF.second));
+    if (StripsOut && Strip)
+      StripsOut->push_back(Strip);
     stamp(B.CreateCall(wd.freeFn(), {LF.second}));
   }
 }

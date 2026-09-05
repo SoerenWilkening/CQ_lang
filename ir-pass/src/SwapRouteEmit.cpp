@@ -21,6 +21,8 @@
 
 #include "AbortParkEmit.h"       // emitAbortParkRegion (the 7.2 Inc 3 park cascade)
 #include "ArmAnalysis.h"         // phaseAngleTail (3qlq Inc 1 merge-tail angle phi)
+#include "CondTreeEmit.h"        // emitCondNetwork / stripCondNetwork (3qlq P3)
+#include "SelectClassify.h"      // CondTree / collectCondTree (the shared grammar)
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "AngleSelectEmit.h"     // emitAngleSelectRegion (drbq Inc 2b)
 #include "CompareLowering.h"     // lowerCompareToFlag
@@ -1322,19 +1324,26 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // Every decline below precedes the FIRST emitted instruction, for the reason
   // the sibling emitters state: a region that declines MID-STREAM leaves a
   // minted flag and a half-lowered arm behind (the Inc-2a round-1 F-5 finding).
-  auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
   auto *BI = R.Pred ? dyn_cast<BranchInst>(R.Pred->getTerminator()) : nullptr;
   auto anchor = [&]() -> Instruction * {
     if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
       return A;
     return BI;
   };
-  if (!Cond || !BI || !BI->isConditional() || !R.Arm || !R.MergeBB ||
-      BI->getCondition() != Cond) {
+  // The condition is re-derived through the SAME `collectCondTree` grammar the
+  // classifier accepted with (Rule 14 — the walk cannot drift). A bare compare
+  // is the degenerate single-leaf tree and takes the pre-part-B code below,
+  // byte-for-byte; a COMPOUND tree (P3) takes the shared `CondTreeEmit` network.
+  CondTree Tree;
+  if (!BI || !BI->isConditional() || !R.Arm || !R.MergeBB || !R.Condition ||
+      BI->getCondition() != R.Condition ||
+      !collectCondTree(R.Condition, Tree, /*AllowLogicalSelect=*/true)) {
     if (Instruction *A = anchor())
       diagnoseUnderControl(A, "control flow");
     return;
   }
+  const bool IsTree = !Tree.Nodes.empty();
+  auto *Cond = IsTree ? nullptr : Tree.Leaves.front();
   // Each recorded gate must still be a one-operand phase call in the arm the
   // plan says it is in, with an angle defined OUTSIDE that arm (the classifier's
   // `Arm->size() == N + 1` makes the latter structural, but it is an EMISSION
@@ -1400,9 +1409,35 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // ---- 1. FLAG MINT — `cq_template_icmp_<pred>_<W>_hl(q, lit)`. Position rule
   // copied from `emitRegion` step 1: at the COMPARE on the ziov share path (so
   // the one physical flag dominates every data use), at the branch otherwise.
+  //
+  // COMPOUND TREE (P3): the network is the 4.4 select's, shared through
+  // `CondTreeEmit` — one flag per leaf, one `|0>` ancilla per and/or/xor node,
+  // the ROOT ancilla carrying the whole predicate. `ShareCondFlag` is FALSE for
+  // a tree by construction (the classifier declines every out-of-tree use), so
+  // the position rule degenerates to "at the branch".
+  CondNetwork Net;
+  SmallVector<CallInst *, 4> LeafStrips;
+  if (IsTree) {
+    switch (emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/BI,
+                            DL, /*AllowQQLeaves=*/false, Net)) {
+    case CondNetDisp::Ok:
+      break;
+    case CondNetDisp::MintDiagnosed:
+      // `lowerCompareToFlag` was already LOUD; a second message here would only
+      // change what a decline fixture reads. The classifier proved every leaf
+      // mintable, so this is drift — but it is still a decline, not a skip.
+      return;
+    case CondNetDisp::Malformed:
+      if (Instruction *A = anchor())
+        diagnoseUnderControl(A, "control flow");
+      return;
+    }
+  }
   Instruction *FlagAt = R.ShareCondFlag ? Cond->getNextNode() : BI;
-  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/FlagAt);
+  Value *Flag = IsTree ? Net.Root
+                       : lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
+                                            /*inverse=*/false,
+                                            /*before=*/FlagAt);
   if (!Flag)
     // REACHABLE, and say so plainly rather than calling it unreachable — an
     // overstated justification is how a real bail later gets deleted as dead.
@@ -1489,7 +1524,20 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   //
   // SKIPPED WHOLE on the ziov share path: the data lineage owns the flag and
   // discharges it downstream — freeing it here would be a use-after-free.
-  if (!R.ShareCondFlag) {
+  if (IsTree) {
+    // The exact LIFO mirror of the network: every node's self-inverse undo (then
+    // its ancilla's proven-|0> free) in reverse post-order, then every leaf's
+    // `_unc` strip against its OWN rail (then that rail's free) in reverse mint
+    // order. `ShareCondFlag` cannot be set for a tree, so there is no skip case.
+    // Each leaf strip is recorded in `DischargedFlagGates` for the same reason
+    // the single-compare one is: it is the point past which a DERIVED
+    // condition's chain may be discharged by the whole-DAG spine
+    // (`ChainWalk::isInteriorConsumer`).
+    stripCondNetwork(Net, wd, csyms, taint, /*Before=*/BI, DL,
+                     /*AllowQQLeaves=*/false, &LeafStrips);
+    for (CallInst *S : LeafStrips)
+      taint.DischargedFlagGates.insert(S);
+  } else if (!R.ShareCondFlag) {
     auto *Strip = dyn_cast_or_null<CallInst>(
         lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
                            /*before=*/BI, /*negate=*/false,
@@ -1521,8 +1569,32 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   }
   // `R.Merge` is null, so `flattenRegion` dissolves no φ — it splices the arm(s)
   // and merge blocks into `Pred` and rewires the branch, exactly as it does for
-  // the void-I/O diamond.
+  // the void-I/O diamond. It also erases `R.Condition` — the tree ROOT — once
+  // the branch is gone and the root is use-empty.
+  Value *const Root = R.Condition;
   flattenRegion(R, taint);
+  // A COMPOUND tree's INTERIOR is not `flattenRegion`'s to erase, and leaving it
+  // is not harmless: the mint and strip built FRESH templates from the leaves'
+  // operands, so with the root gone every node and leaf is dead — and a dead
+  // TAINTED compare is exactly what `lowerOps` would lower into a spurious
+  // template plus a leaked flag rail a few steps later. Cascade ROOT-FIRST
+  // (nodes in reverse post-order, then leaves in reverse) so each child's use
+  // count has already dropped when it is tested — the discipline
+  // `SelectMergeEmit` step 6 follows. `Root` is compared by POINTER only (it may
+  // already be freed memory); nothing is dereferenced through it, and no
+  // instruction is created between the flatten and here, so no address can have
+  // been recycled. A leaf or node with a SURVIVING user is left alone (the
+  // classifier declines every out-of-tree use, so that is defence in depth).
+  for (Instruction *N : llvm::reverse(Tree.Nodes))
+    if (N != Root && N->use_empty()) {
+      scrubTaint(N, taint);
+      N->eraseFromParent();
+    }
+  for (CmpInst *Leaf : llvm::reverse(Tree.Leaves))
+    if (Leaf != Root && Leaf->use_empty()) {
+      scrubTaint(Leaf, taint);
+      Leaf->eraseFromParent();
+    }
 }
 
 void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
