@@ -1398,6 +1398,25 @@ def ry_cells():
 # 10 cells. Kept small deliberately: this gate is already the suite's long pole
 # at ~400 s, and the population beyond these 14 is measured in
 # `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 rather than paid for on every run.
+#
+# ⚠ THE `register` TABLE IS NOT EXTENDED, and that is a decision rather than an
+# omission. `loop_twin_matrix.expected.register.txt` is FROZEN HISTORY (see
+# `SURFACE_TABLES`), and `--phi-surface register` cannot run at all against the
+# shipped `include/CQ.h`: the header guard in `main` returns 2 BEFORE
+# `cells_of_matrix()` is called, because the retired 15-width `cq_phi_<sfx>`
+# family no longer exists in the tree. So these 10 cells are unreachable in that
+# mode by construction. Anyone who reconstructs a register-surface header to
+# re-run it will get 10 `NEW CELL, not in the expected table` failures — which is
+# the honest report ("this table predates these cells"), not a silent pass.
+#
+# MEASURED DISPOSITION OF THE 10, on the C-1 fix build (`--regenerate`) and on
+# the PRE-FIX SUBJECT 542d588 (by hand, four sampled cells + the record pair):
+# NINE are `ACCEPT-IDENTICAL` here and were `TRACE-DIVERGENCE` on 542d588 — i.e.
+# nine of the ten new cells would have been HARD FAILURES before the C-1 fix,
+# which is what the axis is for. The tenth, `m_none_pbitd_none_rpremark_rypost`,
+# is `UNROLLED-ONLY cq loop lowering: rail record read past an in-place gate on
+# the same rail` on BOTH binaries — a LOUD decline of the rolled side, joining
+# the 23 cells that already carry that verdict, and unmoved by this fix.
 F_REGION = ("pbit", "pbitd", "pbitne", "pbitned")
 # How the second register is CARRIED. TWO `RGATE` spellings are deliberately
 # ABSENT, and both exclusions are MEASURED rather than assumed:
