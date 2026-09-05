@@ -284,7 +284,8 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from inplace_twin_matrix import (Side, build, normalise,   # noqa: E402
-                                 PHI_SURFACES, phi_void_source)  # (Rule 14)
+                                 PHI_SURFACES, phi_surface_of_header,
+                                 phi_void_source)  # (Rule 14)
 
 
 # ─────────────────────────────── THE AXES ────────────────────────────────────
@@ -748,13 +749,29 @@ def main():
         # A `register` header would take `cq_phi(T)` as a ONE-argument call to a
         # TWO-argument _Generic macro; clang would reject every cell at stage 1
         # and the run would read like a wall of compiler declines.
-        if "void cq_phi(double" not in text:
+        #
+        # ASKED BY `phi_surface_of_header`, THE ONE SPELLING IN THE TREE (Rule
+        # 14, and the same import that already brings `phi_void_source` here).
+        # It was a LITERAL substring test `"void cq_phi(double" not in text`,
+        # duplicated in all three instruments, and the SHIPPED include/CQ.h
+        # spells the declaration column-aligned — `void                cq_phi
+        # (double angle);` — so all three REFUSED the very header they require
+        # and said it was a `register`-surface one (bd 3qlq Inc 1, round-1 review
+        # finding F-L5-7(b); MEASURED here on 2026-09-05, where it stopped the
+        # POST run of this instrument dead). The classifier strips C comments
+        # first, so the shipped header's own prose about the retired
+        # `cq_phi_<sfx>(x, angle)` family cannot flip the answer, and
+        # `loop_twin_matrix_quarantine_test.py` exercises it against the REAL
+        # include/CQ.h.
+        hdr_surface = phi_surface_of_header(text)
+        if hdr_surface != "void":
             sys.stderr.write(
-                "--phi-surface void: %s does not declare `void cq_phi(double "
-                "...)`.\n  That is a `register`-surface header, so every cell "
-                "would fail at stage 1 and\n  the failure would read like a "
-                "lowering decline. Point --include-dir at a\n  header whose "
-                "cq_phi is the ONE register-free extern (PRD §4.1).\n" % hdr)
+                "--phi-surface void: %s declares the `%s` cq_phi surface, not "
+                "`void`.\n  Every cell would fail at STAGE 1 and the wall of "
+                "clang errors would read like\n  a wall of lowering declines. "
+                "Point --include-dir at a header whose cq_phi is\n  the ONE "
+                "register-free extern `void cq_phi(double)` (PRD §4.1) — the "
+                "shipped\n  include/CQ.h is one.\n" % (hdr, hdr_surface))
             return 2
     if cfg.oracle and not os.access(cfg.oracle, os.X_OK):
         sys.stderr.write("oracle not executable: %s\n" % cfg.oracle)
