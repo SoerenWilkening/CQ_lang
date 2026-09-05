@@ -25,9 +25,10 @@
 #include "CondTreeEmit.h"        // emitCondNetwork / stripCondNetwork (3qlq P3)
 #include "SelectClassify.h"      // CondTree / collectCondTree (the shared grammar)
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
+#include "ArmAnalysis.h"         // comparePredLowerable (the value-arm pre-mint fence)
 #include "AngleSelectEmit.h"     // emitAngleSelectRegion (drbq Inc 2b)
 #include "ChainWalk.h"           // markBranchPhaseGate (3qlq Inc 1 F-L7-1)
-#include "CompareLowering.h"     // lowerCompareToFlag
+#include "CompareLowering.h"     // lowerCompareToFlag + compareFlagMintable
 #include "ClassicalCallArmEmit.h" // emitClassicalCallArmRegion (the 6.5 merge)
 #include "GuardedStoreArmEmit.h"  // emitGuardedStoreArmRegion (iw81.7)
 #include "ControlPlan.h"         // ControlRegion / ControlPlan
@@ -260,6 +261,29 @@ struct ValueArmStream {
 // spelling, decides select-vs-diamond, so a multi-op `?:` arrives as a diamond
 // too.)
 //
+// THE HOIST ONLY EVER MOVES A LINK LATER WITHIN `Pred` — `moveBefore(BI)`
+// lands it immediately before the terminator — so it can never be scheduled
+// ABOVE a gate a preceding region already emitted into `Pred`. That is what
+// keeps source order across SEQUENTIAL regions (bd hcrg) and across a
+// value/phase interleave; it is a property of the insertion point, not of the
+// plan, so do not change the insertion point without re-deriving it.
+//
+// ONE ACCEPT-CLASS WIDENING RIDES ON THE MECHANISM CHANGE, deliberately and
+// pinned (Inc-2 round-1 review finding F-V1-1; owner disposition: keep).
+// `emitSelectRegion` records `taint.HandleWidth[out]` (bd p119.6) — the side
+// table a DOWNSTREAM cast (`OpcodeLowering`) and a DOWNSTREAM Q+Q data compare
+// (`CompareLowering::rewriteCompare`) read to recover the logical width of a
+// laundered i32 handle. The retired route wrote no such entry, so both
+// declined `no template for opcode …` off a value-arm merge. Routing the
+// diamond through the select emitter inherits the entry, so `int w = (int)p;`
+// and `int e = (p == r);` after a value arm now LOWER, at every width incl. the
+// flagship i32. That is a capability gain and the p119.6 fix applying to one
+// more path — suppressing it would mean deliberately re-introducing a known
+// defect — but it is an accept-class change, so it is pinned rather than
+// inherited silently: `control_swap_value_accept_i8_merge_cast.ll`,
+// `…_i64_merge_cast.ll`, `…_qq_compare_on_merge{,_i8,_i16}.ll` and the e2e
+// slice `slice_control_value_merge_qq_compare`.
+//
 // ORDER IS LOAD-BEARING: `flattenRegion` runs BEFORE `emitSelectRegion`.
 // `flattenRegion` reads `R.Condition` and erases it when use-empty;
 // `emitSelectRegion` erases the compare itself in its step 6. Emitting first
@@ -332,6 +356,25 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   // uncontrolled `cqrt_copy_<W>`; `emitSelectRegion` mints it itself from the
   // select's own type, so this check is a PRE-FLIGHT — it must agree with what
   // the select emitter will resolve, and it declines before any mutation.
+  //
+  // ITS FP ARM IS AN UNREACHED BACKSTOP, and say so rather than implying it
+  // fires (Inc-2 round-1 review, finding F-V1-3). `copyControlledFn` returns a
+  // null callee for any non-integer width (`ControlledSymbols.cpp`), so an fp
+  // value arm arriving here would decline `control flow` — but none can arrive,
+  // behind TWO fences ahead of this one: (1) `flattenPredMuxRegions` runs
+  // BEFORE `detectControlRegions` and CLAIMS the flat scalar-fp-phi diamond by
+  // design (PredMuxFlatten's W5 witness, bd vyqi — "which ArmClassify's fp
+  // fence categorically declines"), so a `clang -O1` fp diamond never reaches
+  // detection at all (measured: a hand-IR `phi double` diamond lowers to
+  // `cqrt_copy_f64_controlled` on BOTH binaries); and (2) for a shape PredMux
+  // will not claim, `classifyArms`' `isFPOrFPVectorTy` angle fence declines
+  // first (measured on an `fp128` arm: `value-arm swap-route`, identical on
+  // both binaries — it does not even reach the fp merge fence). Note the
+  // DIRECTION if the lift ever narrows: this pre-flight is STRICTER than the
+  // emitter it guards (`emitSelectRegion` would resolve `copyControlledFpFn`),
+  // so the pre-3qlq `wd.copyFn(Abi)` spelling, which DOES resolve at
+  // f16/f32/f64/f80, would have routed where this declines. Over-declining is
+  // safe; nothing measures it, which is why it is written down here.
   StringRef Abi = abiWidthFromType(Arms.front().Chain.front()->getType());
   if (Abi.empty() || !wd.llvmWidthType(Abi) || !wd.allocFn(Abi) ||
       !csyms.copyControlledFn(Abi)) {
@@ -368,11 +411,24 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   // call and erases the original.
   //
   // NOTE FOR THE RECORD: this hazard is NOT created by the hoist. The pre-3qlq
-  // route also ran the chain unconditionally (on a `|0>` work rail, i.e.
-  // `0 sdiv n`), so a possibly-zero classical divisor was equally unguarded
-  // there. This fence therefore NARROWS the accept class relative to HEAD; that
-  // direction is always safe (Prime Directive) and is the disposition the PRD
-  // asks for. `p / 3` (a non-zero constant divisor) still accepts.
+  // route also ran the chain unconditionally — and say WHY precisely, because
+  // the convenient shorthand is wrong (Inc-2 round-1 review, finding F-V1-6):
+  // `cqrt_cswap(f, p, rail)` leaves the rail in a SUPERPOSITION of `p0` and `0`
+  // correlated with the flag, so the routed chain gate had to be defined over
+  // `p0`'s whole range too. It is NOT "the inactive branch computed `0 sdiv n`
+  // on a |0> rail" — that is the classical-trace reading, and quoting it would
+  // later be used to argue this fence is over-strict. The corrected reading
+  // STRENGTHENS the conclusion: the obligation was identical under the route, so
+  // this fence NARROWS the accept class relative to HEAD; that direction is
+  // always safe (Prime Directive) and is the disposition the PRD asks for.
+  // `p / 3` (a non-zero constant divisor) still accepts —
+  // `control_swap_value_accept_div_const.ll` is the discriminator.
+  //
+  // ONE ARM OF THIS FENCE IS EXERCISED BY NOTHING, recorded so nobody assumes
+  // it is covered: `isSafeToSpeculativelyExecute`'s `INT_MIN / -1` rule. No C
+  // program reaches it — `clang -O1` folds `p / -1` to `sub i32 0, %p` before
+  // the pass sees it (measured, round-1 probe `m2_div_neg1.c`), so only the
+  // possibly-zero-divisor arm has a reproducer.
   for (const ValueArmStream &A : Arms)
     for (Instruction *Op : A.Chain)
       if (!isSafeToSpeculativelyExecute(Op)) {
@@ -390,6 +446,36 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   // is filed as follow-on work, not smuggled in here.
   if (taint.Tainted.count(Cond->getOperand(0)) &&
       taint.Tainted.count(Cond->getOperand(1))) {
+    diagnoseUnderControl(Cond, "control flow");
+    return;
+  }
+
+  // FLAG MINTABILITY, asked PRE-MUTATION (Inc-2 round-1 review, finding F-V1-2).
+  // `emitSelectRegion` mints its flag as its own step 1, i.e. AFTER this
+  // function has hoisted the chain, built the select, RAUW'd the merge φ and
+  // FLATTENED the diamond — so a mint that returns null there is a
+  // MUTATE-THEN-DECLINE: loud, but on a module already rewritten. The pre-3qlq
+  // route minted the flag as its FIRST emission step, so its bail left the
+  // region intact; that property has to be restored explicitly, and it is
+  // restored the way this file's two siblings restore it — `AngleSelectEmit`
+  // step 0b and `ArmClassify.cpp`'s 6.5 classical-call gate both re-ask
+  // `comparePredLowerable` and `compareFlagMintable` in LOCKSTEP for exactly
+  // this reason (Rule 14: the same two predicates, never a third spelling).
+  // The predicate half is already asked at detection (`ArmClassify.cpp`
+  // `classifyArms`); asking it again is free and keeps the pair together so a
+  // later change to either cannot silently unpair them.
+  //
+  // NO FIXTURE PINS THIS, and that is measured rather than assumed: the only
+  // shape with `comparePredLowerable` true and `compareFlagMintable` false is
+  // an out-of-surface (i128) condition width, and a tainted `icmp i128` branch
+  // condition never reaches the control layer at all on EITHER binary — it is
+  // neither claimed nor declined by it (round-1 finding F-V1-9, PRE-EXISTING at
+  // 52d7764; reproducers in `docs/prd/phase-04-swap-route-control/inc2-records/`,
+  // bd test_C_libtooling-3qlq.8). If that gap is ever closed, this fence becomes
+  // live in the same change — write the fixture then. Until then it is the
+  // Rule-1 defensive bail, in the same class as the `StaleDeclined` pre-fence
+  // one screen above, and it can only DECLINE, never widen.
+  if (!comparePredLowerable(Cond) || !compareFlagMintable(Cond, taint)) {
     diagnoseUnderControl(Cond, "control flow");
     return;
   }
@@ -456,9 +542,27 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   //    tree), allocates the `|0>` out-rail, emits the two X-bracketed
   //    `cqrt_copy_<W>_controlled`, strips the flag with the compare `_unc`,
   //    frees it, RAUWs the select to the out-rail and erases the select and the
-  //    now-dead compare. `p` and the chain's final rail are left ALLOCATED and
-  //    entangled with `out` — keep-source-live, exactly as the route left them
-  //    (freeing `p` is PRD §9 follow-on work, not this increment).
+  //    now-dead compare.
+  //
+  //    WHAT IS LEFT ALLOCATED — and the two halves are NOT the same debt
+  //    (Inc-2 round-1 review, findings F-V1-4 / F-V2-3; the PRD's §3/§7.1 target
+  //    stream said BOTH were uncomputed and is corrected in
+  //    `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §1):
+  //      * `p` is left allocated exactly as the route left it — keep-source-live
+  //        (freeing `p` is PRD §9 follow-on 3qlq.5, not this increment).
+  //      * the chain's FINAL rail (`R(p)`; TWO of them for an if/else) is left
+  //        allocated AND DIRTY — it is NOT `_unc`'d and NOT freed, which the
+  //        route DID do for every rail it minted. The chain's INTERMEDIATES are
+  //        still `_unc`'d and freed by the whole-DAG spine; only the final,
+  //        whose live consumer is the controlled copy, survives.
+  //    Rule-6 sound: `R(p)` is a deterministic function of the RETAINED `p`, so
+  //    writing it into a fresh |0> ancilla is a unitary on (p, ancilla) and
+  //    tracing the ancilla out leaves the reduced state on (q, p, out)
+  //    unchanged. It is a leak, never a dirty FREE (`free_pairing_check.py`
+  //    STRICT is clean). ⚠ CONSEQUENCE FOR 3qlq.5: because these finals record
+  //    `p`, an increment that frees `p` while they are live performs a hidden
+  //    measurement of a register they still record — 3qlq.5 is UNSOUND BY
+  //    DEFAULT under this stream and must discharge the finals first.
   ControlRegion S;
   S.Kind = ControlRegion::SelectRegion;
   S.Merge = Sel;

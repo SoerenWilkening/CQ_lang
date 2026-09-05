@@ -51,8 +51,16 @@ void emitSwitchPhaseRegion(const ControlRegion &R, WidthDispatch &wd,
                            ControlledSymbols &csyms, TaintSet &taint);
 
 // Lower an accepted homogeneous VALUE switch region (`SwitchCls == Value`) — the
-// N-way method-B (route + verbatim chain replay + one copy-out + LIFO reverse-play
-// over the shared routed base `p` = the merge default-edge incoming, `p != q`).
+// N-way PRELOAD + XOR-DELTA controlled-copy merge over the shared base `p` = the
+// merge default-edge incoming (`p != q`): `alloc out(0); cqrt_copy_<W>(p, out)`,
+// then per content case the chain HOISTED onto the original `p`, the Q+Q delta
+// `d_i = R_i(p) ^ p`, the eq-flag `f_i = (q == c_i)` and ONE
+// `cqrt_copy_<W>_controlled(f_i, d_i, out)`; strip + free the flags. NO route, NO
+// work rail, NO `cqrt_x` bracket and NO reverse-play in the emitter — the
+// eq-flags are mutually exclusive and the hoisted chain is reversed by the
+// whole-DAG spine (the swap route was RETIRED here by bd
+// test_C_libtooling-3qlq Inc 2; see `SwitchValueEmit.cpp`'s file header for the
+// retired stream and for what is deliberately left allocated).
 // Mutates the module IR and `taint`. The shape is detection-guaranteed; any residual
 // mismatch bails LOUDLY (never a silent skip of quantum-controlled flow — Prime
 // Directive). Declared here (one header, three `.cpp` — IMPLEMENTATION-4.5 §1);
