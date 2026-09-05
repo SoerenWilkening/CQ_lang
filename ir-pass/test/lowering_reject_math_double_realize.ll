@@ -23,8 +23,9 @@
 ; here declines identically (D1's ordering proof).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0) {
@@ -32,8 +33,8 @@ entry:
   %q   = call double @cq_theta_f64(double %u0, double 5.000000e-01)
   %r   = fmul double %q, %q                       ; TAINTED fp-DATA, realized two ways
   %d   = fadd double %r, %r                        ; (1) genuine DATA use
-  %qd  = call double @cq_phi_f64(double %q, double %r)   ; (2) ALSO the arg-1 ANGLE
-  %m1  = call double @cq_measure_f64(double %qd)
+  call void @cq_phi(double %r)  ; (2) ALSO the arg-1 ANGLE
+  %m1  = call double @cq_measure_f64(double %q)
   %m2  = call double @cq_measure_f64(double %d)
   %s   = fadd double %m1, %m2
   ret double %s

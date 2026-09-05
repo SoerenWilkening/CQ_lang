@@ -21,9 +21,10 @@
 ; The construct declines BEFORE lowerOps — no fcmp template, no rz, ever minted:
 ; CHECK-NOT: cq_template_fcmp
 ; CHECK-NOT: cqrt_rz
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0) {
@@ -31,7 +32,7 @@ entry:
   %q   = call double @cq_theta_f64(double %u0, double 5.000000e-01)
   %c   = fcmp ult double %q, 1.0                    ; i1 FLAG — `ult` is in scope after 8rvn
   %ang = uitofp i1 %c to double                     ; laundered toward the angle slot
-  %qd  = call double @cq_phi_f64(double %q, double %ang)   ; %ang in the arg-1 ANGLE slot
-  %m   = call double @cq_measure_f64(double %qd)
+  call void @cq_phi(double %ang)  ; %ang in the arg-1 ANGLE slot
+  %m   = call double @cq_measure_f64(double %q)
   ret double %m
 }

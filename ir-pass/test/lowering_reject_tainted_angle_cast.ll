@@ -18,16 +18,17 @@
 ; emission) is the straight-line root fix: decline loudly, lower nothing.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %ang = sitofp i32 %q to double                  ; TAINTED angle producer
-  %qd = call i32 @cq_phi_si32(i32 %q, double %ang)
-  %m = call i32 @cq_measure_si32(i32 %qd)
+  call void @cq_phi(double %ang)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

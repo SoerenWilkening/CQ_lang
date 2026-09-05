@@ -17,8 +17,9 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK-NOT: under quantum control
 ; CHECK: error{{.*}}cq rotation lowering: unsupported quantum-derived rotation angle
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0, double %u1, double %x) {
@@ -28,7 +29,7 @@ entry:
   %c   = fcmp ogt double %q, 5.000000e-01
   %sel = select i1 %c, double %q, double %x               ; ACCEPTED fp-data select
   %ang = fadd double %sel, 1.000000e-01                   ; value-CHANGING re-realization
-  %q2  = call double @cq_phi_f64(double %p, double %ang)  ; tainted ANGLE -> leg-3 backstop
-  %m   = call double @cq_measure_f64(double %q2)
+  call void @cq_phi(double %ang)  ; tainted ANGLE -> leg-3 backstop
+  %m   = call double @cq_measure_f64(double %p)
   ret double %m
 }

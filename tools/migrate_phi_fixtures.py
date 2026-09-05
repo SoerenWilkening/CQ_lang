@@ -102,6 +102,7 @@ CALL_RE = re.compile(
 )
 FN_RE = re.compile(r'@(?P<fn>[\w.$]+)\s*\(')
 DEFINE_RE = re.compile(r'^define\b.*?@(?P<name>[\w.$"]+)\s*\(')
+MIGRATE_TAINTED_ANGLE = False
 DECLARE_PHI_RE = re.compile(r'^declare\b[^;]*@cq_phi_[\w.$]+\s*\(')
 LABEL_RE = re.compile(r'^(?P<name>[-\w.$]+):')
 OPERAND_RE = re.compile(r'%[\w.$]+')
@@ -625,6 +626,25 @@ def analyze(path: str) -> FileAnalysis:
             per_block[(s.func, s.block)] += 1
     if any(v > 1 for v in per_block.values()):
         fa.notes.append('arm-N>1')
+    # --migrate-tainted-angle (prep_a2): an H site is, BY CONSTRUCTION of the branch
+    # above, an UNCONTROLLED site (`blk not in under`) whose ANGLE is tainted.  The
+    # naive D2 reading would DELETE it as a global phase and take the fixture's whole
+    # subject with it.  MEASURED on the Inc-1 binary (probe hs_flat.ll): an
+    # uncontrolled `call void @cq_phi(double %tainted)` declines
+    # `cq rotation lowering: unsupported quantum-derived rotation angle` — the pass
+    # refuses the call before it ever decides whether it is a global phase, so the
+    # tainted-angle rule survives the surface change verbatim.  Rewriting the site as
+    # the void call (the class-A rewrite: dissolve any merge phi, RAUW lhs->base,
+    # replace the call) therefore PRESERVES the property; deleting it would not.
+    if MIGRATE_TAINTED_ANGLE:
+        for s_ in fa.sites:
+            if s_.cls == 'H':
+                s_.cls = 'A'
+                s_.why = ('tainted angle, kept as a void call (prep_a2: the '
+                          'uncontrolled tainted-angle decline survives D2)')
+        if fa.hand_decision and fa.hand_decision.startswith('tainted angle operand'):
+            fa.hand_decision = None
+            fa.notes.append('h-as-void')
     if not fa.sites:
         fa.cls = 'D' if fa.decl_lines else 'M'
     else:
@@ -1042,7 +1062,15 @@ def main(argv=None):
                     help='--verify-oracle: write the files whose ORACLE disposition '
                          'CHANGED to this path (they become HAND-DECISION)')
     ap.add_argument('--limits', action='store_true', help='print the walker limits and exit')
+    ap.add_argument('--migrate-tainted-angle', action='store_true',
+                    help="treat a class-H site (UNCONTROLLED, tainted angle) as a "
+                         "class-A rewrite -- the void call, NOT the D2 deletion. "
+                         "MEASURED: the uncontrolled tainted-angle decline survives "
+                         "the surface change, so deleting the call would discard the "
+                         "fixture's whole subject.")
     args = ap.parse_args(argv)
+    global MIGRATE_TAINTED_ANGLE
+    MIGRATE_TAINTED_ANGLE = bool(args.migrate_tainted_angle)
     if args.limits:
         print(LIMITS)
         return 0

@@ -10,16 +10,17 @@
 ; rejection).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @helper(double %x) {
 entry:
   ; %x (the tainted fp param) used as the arg-1 ANGLE of a rotation — a quantum
   ; primitive in the body, so the whole clone declines QuantumPrimitive.
-  %p = call double @cq_phi_f64(double 1.000000e+00, double %x)
-  ret double %p
+  call void @cq_phi(double %x)
+  ret double 1.000000e+00
 }
 
 define double @example(double %u0) {
