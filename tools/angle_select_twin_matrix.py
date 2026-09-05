@@ -534,6 +534,15 @@ def run_cell(cfg, c):
                            c["use"], c["angle"], no_twin)
 
 
+def _resid(side):
+    """How to read one side's residual-`cq_phi` state, in words. A side that
+    DECLINED was never asked — reporting `0` there would say "this side lowered
+    the void surface cleanly", which is the opposite of what happened."""
+    if not getattr(side, "phi_asked", False):
+        return "not asked (%s)" % ("declined" if side.exit else "harness error")
+    return "%d residual" % side.phi_unlowered
+
+
 def _diag(s):
     return (s.diag or "").replace("cq controlled lowering: ", "") \
                          .replace(" under quantum control", "")
@@ -554,14 +563,16 @@ def classify(sel, twn, sel_old, twn_old, degenerate, c_use="", c_angle="",
     # and simply still names a symbol nothing defines, so there is no trace to
     # compare and no diagnostic to report. A pre-Increment-1 binary neither
     # lowers nor deletes `void @cq_phi`. A disposition, not a harness error.
-    resid = [(t, s.phi_unlowered) for t, s in
-             (("select@new", sel), ("twin@new", twn),
-              ("select@old", sel_old), ("twin@old", twn_old))
-             if s is not None and s.phi_unlowered]
-    if resid:
+    sides = (("select@new", sel), ("twin@new", twn),
+             ("select@old", sel_old), ("twin@old", twn_old))
+    if any(s is not None and s.phi_unlowered for _, s in sides):
         R["verdict"] = "PHI-UNLOWERED"
+        # Every side is reported, not only the ones with a residual: a side that
+        # DECLINED was never asked, and printing only the non-zero counts would
+        # let a reader take the silence for a clean lowering.
         R["note"] = ("residual `call void @cq_phi` in the LOWERED IR: "
-                     + ", ".join("%s=%d" % (t, n) for t, n in resid))
+                     + ", ".join("%s %s" % (t, _resid(s))
+                                 for t, s in sides if s is not None))
         return R
 
     # STRICT stage 2b on every side that lowered. `twn` is None for a cell whose

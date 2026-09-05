@@ -1054,10 +1054,10 @@ def classify_prep(nm, subj, twin, seed_is):
     if subj.phi_unlowered or twin.phi_unlowered:
         R["verdict"] = "PHI-UNLOWERED"
         R["notes"].append("residual `call void @cq_phi` in the LOWERED IR: "
-                          "subject=%d twin=%d — a PRE-Increment-1 binary neither "
+                          "subject %s, twin %s — a PRE-Increment-1 binary neither "
                           "lowers nor deletes the void surface, so the module "
                           "cannot link. A disposition, not a harness error."
-                          % (subj.phi_unlowered, twin.phi_unlowered))
+                          % (_resid(subj), _resid(twin)))
         return R
     if subj.error or twin.error:
         R["verdict"] = "HARNESS-ERROR"
@@ -1161,7 +1161,21 @@ class Side:
         # calls left in the LOWERED IR. A pre-Increment-1 binary neither lowers
         # nor deletes that call, so the module names a symbol nothing defines and
         # cannot link. That is the PRE-increment DISPOSITION, not a harness break.
+        #
+        # `phi_asked` is NOT redundant with `phi_unlowered == 0`: a side that
+        # DECLINED never reaches the check, so a bare `0` would read as "this
+        # side lowered the void surface cleanly" when it was never asked.
         self.phi_unlowered = 0
+        self.phi_asked = False
+
+
+def _resid(side):
+    """How to read one side's residual-`cq_phi` state, in words. A side that
+    DECLINED was never asked — reporting `0` there would say "this side lowered
+    the void surface cleanly", which is the opposite of what happened."""
+    if not getattr(side, "phi_asked", False):
+        return "not asked (%s)" % ("declined" if side.exit else "harness error")
+    return "%d residual" % side.phi_unlowered
 
 
 def _first(text, tok):
@@ -1198,6 +1212,7 @@ def build(cfg, work, nm, src, cqopt=None):
         # Read the LOWERED IR, never the trace: an unlowered `cq_phi` never
         # reaches a trace, because the module does not link.
         s.phi_unlowered = s.ll.count("call void @cq_phi(")
+        s.phi_asked = True
         if s.phi_unlowered:
             return s
     r = subprocess.run([sys.executable, cfg.pairchk, s2],
@@ -1311,10 +1326,10 @@ def classify(nm, ry, rz, rzo=None, void=False):
     if ry.phi_unlowered or oracle.phi_unlowered:
         R["verdict"] = "PHI-UNLOWERED"
         R["notes"].append("residual `call void @cq_phi` in the LOWERED IR: "
-                          "ry=%d rz=%d — a PRE-Increment-1 binary neither lowers "
+                          "ry %s, rz %s — a PRE-Increment-1 binary neither lowers "
                           "nor deletes the void surface, so the module cannot "
                           "link. A disposition, not a harness error."
-                          % (ry.phi_unlowered, oracle.phi_unlowered))
+                          % (_resid(ry), _resid(oracle)))
         return R
     if ry.error or oracle.error:
         R["verdict"] = "HARNESS-ERROR"

@@ -830,7 +830,25 @@ class Side:
         # the module cannot link (no such runtime symbol, and this epic adds none,
         # PRD D3). That is the PRE-increment DISPOSITION, not a harness break, so
         # stages 2b/3/4 are skipped and the side is reported as itself.
+        #
+        # `phi_asked` is NOT redundant with `phi_unlowered == 0`. A side that
+        # DECLINED never reaches the check, so a bare `0` would read as "this
+        # side lowered the void surface cleanly" when in fact it was never asked.
+        # That distinction is the whole content of a mixed cell.
         self.phi_unlowered = 0
+        self.phi_asked = False
+
+
+def _resid(side):
+    """How to read one side's residual-`cq_phi` state, in words.
+
+    A side that DECLINED was never asked — reporting its count as `0` would say
+    "this side lowered the void surface cleanly", which is the opposite of what
+    happened. `phi_asked` is what tells the two apart.
+    """
+    if not side.phi_asked:
+        return "not asked (%s)" % ("declined" if side.exit else "harness error")
+    return "%d residual" % side.phi_unlowered
 
 
 def _first_diag(text):
@@ -869,6 +887,7 @@ def build_side(cfg, work, name, csrc):
         # reaches a trace, because the module does not link.
         with open(s2) as f:
             s.phi_unlowered = f.read().count("call void @cq_phi(")
+        s.phi_asked = True
         if s.phi_unlowered:
             return s
     # Stage 2b — STRICT. A cell that needs `--allow-unproven` is not a cell this
@@ -1155,8 +1174,8 @@ def verdict(name, rolled, unrolled):
     if rolled.phi_unlowered or unrolled.phi_unlowered:
         which = ("BOTH" if rolled.phi_unlowered and unrolled.phi_unlowered
                  else "ROLLED" if rolled.phi_unlowered else "UNROLLED")
-        return ("PHI-UNLOWERED-%s\t%d/%d residual void @cq_phi call(s)"
-                % (which, rolled.phi_unlowered, unrolled.phi_unlowered)), None
+        return ("PHI-UNLOWERED-%s\trolled %s, unrolled %s"
+                % (which, _resid(rolled), _resid(unrolled))), None
     if rolled.error:
         return "HARNESS-ERROR", "%s: rolled side: %s" % (name, rolled.error)
     if unrolled.error:
