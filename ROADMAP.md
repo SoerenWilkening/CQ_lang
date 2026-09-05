@@ -342,7 +342,56 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is RETIRED FOR PHASE ARMS**, 2026-09-05]
+
+> ⚠ **STATUS, 2026-09-05 — READ THIS BEFORE THE INCREMENT LIST BELOW (bd
+> `test_C_libtooling-3qlq`, "retire the swap route").** Everything in this Phase-4
+> block about how a **phase arm** is lowered describes a generation that has been
+> **retired**, and it is kept as history because its arguments are still quoted.
+>
+> **What changed and why.** `cqrt_rz_<W>` is **TENSORED** — an Rz on each of the W
+> qubits — so a routed or controlled W-bit Rz puts phase `(−1)^popcount(target)` on
+> the marked branch and, being diagonal per qubit, **can never mark `|0…0⟩` at
+> all**. Every shipped Grover golden was therefore the identity on `q`. Nothing
+> caught it and nothing could: a golden byte-diff proves every symbol resolves, not
+> that the unitary is right (Rule 2), and there is no simulator. See
+> `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §1.
+>
+> **Increment 1 SHIPPED** (branch `3qlq-inc1`, merge `be4e2ea`; ⚠ re-point this
+> line at the commit that lands it on `main`). `cq_phi` is **register-free** —
+> `void cq_phi(double θ)` = "multiply the CURRENT BRANCH's amplitude by `e^{iθ}`"
+> — and under a tainted condition it lowers by **KICKBACK**: the ordinary compare
+> mint, `cqrt_rz_i1(f, θ)` **UNCONTROLLED** on the flag, the ordinary `_unc` strip
+> (which returns `f` to `|0⟩` on every branch), `cqrt_free(f)`; a `¬flag` arm keeps
+> its `cqrt_x` bracket. **Uncontrolled or classically-controlled `cq_phi` is a
+> GLOBAL phase and is DELETED** — a documented semantic, not a diagnostic (owner
+> decision D2). This is the lowering at EVERY phase site: the flat diamond and
+> `if/else`, the folded angle select, the compound condition tree, the depth-2
+> NEST and the `switch`. `ir-pass/src/NestedRouteEmit.cpp` and
+> `RotationLowering::emitRz` are **DELETED**.
+>
+> **VALUE arms still route, and are Increment 2 — NOT in this branch.** So
+> `cqrt_cswap` still has minters at HEAD: the value-arm path in `SwapRouteEmit`
+> and the 7.2 `AbortParkEmit`. Increment 2 replaces the value arm's
+> compute→route→merge with a controlled-copy merge (PRD §7); until it lands, every
+> value-arm sentence below is current.
+>
+> **Do not quote these as phase-arm invariants any more:** "zero controlled
+> gates", "`Rz|0⟩ = |0⟩`, so the inactive work rail is clean and freed as a no-op
+> reset", and "the nest and the switch keep the route". The first two are TRUE
+> statements that are also *exactly* why a per-qubit Rz is not an oracle; the
+> third is now false. The standing lesson is a RETIREMENT: a W-bit "rotation" ABI
+> needs its multi-qubit semantics pinned BEFORE a control emitter is built on it.
+>
+> **Two adversarial rounds found three CONFIRMED silent miscompiles in Increment 1
+> itself**, all `opt` exit 0, verify-clean and STRICT-stage-2b clean: the uncompute
+> spine adjointing the kickback gate and cancelling the user's phase exactly; the
+> D2 deletion running BEFORE the second round of control detection, so a branch
+> phase under an onward tainted branch was deleted and its orphaned angle then
+> lowered as quantum fp DATA; and a stale-header retired `@cq_phi_<sfx>` call that
+> was neither lowered nor declined (Rule 1's "no third path"). `CLAUDE.md`'s
+> CORRECTNESS-RISK section carries the record and the two standing lessons;
+> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §1/§2 carry the reproducers.
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
 + [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
@@ -729,7 +778,20 @@ after a statevector-checked design dialogue; see
   equally if a cell STOPS diverging — bd `test_C_libtooling-1m5p` (class A,
   `Uncomputation`/`FreePoint`, ROLLED deficient) and `test_C_libtooling-a3z7`
   (class B, `ArithLowering` M-C, FLAT deficient), both awaiting an owner
-  disposition. The same review added 14 fixtures and one e2e pair (the O(K)
+  disposition. ⚠ **"15 cells" and "273 cells" are 2026-09-04 figures — re-measure.**
+  bd `test_C_libtooling-3qlq` Inc 1 made the register-free `cq_phi` the matrix's
+  SHIPPED surface (`--phi-surface void`), which changes what the generator emits,
+  so both tables were re-measured end to end: the expected table holds **245 rows**
+  and the quarantine **29 cells in THREE classes — 6 A, 21 B, and 2 C** (the new
+  class C is `m_xor_range_{none,rz}`, where `-O1` drops the mask's low bit on the
+  FLAT side only, so the two spellings are different PROGRAMS: a generator
+  question, not a compiler defect, filed under `test_C_libtooling-3qlq` and not
+  blessed). 245 + 29 = the 274 cells the gate runs. The old register-surface
+  tables are kept byte-unchanged as `*.register.txt` — frozen history, not a live
+  mode, since the register surface is unreachable from the shipped `CQ.h`. The
+  second boundary control (arm ON the condition register ⇒ identical) is now
+  itself an INSTANCE of class A and bounds nothing, because a branch phase writes
+  nothing; `q_noregion` alone bounds the class story. The same review added 14 fixtures and one e2e pair (the O(K)
   freeze-leak reproducer, which turns PRD §13.5's "K rails at run time" from
   analytic into measured), corrected five doc-false statements, and found **no
   confirmed miscompile and no confirmed over-accept**. Notes:
@@ -1414,10 +1476,42 @@ rotation family (`cqrt_ry_<W>_controlled` ×9, epic `drbq` —
 that add new frozen symbols (the 7.2/7.4 control work reuses existing `cqrt_*` /
 `cq_template_*`).
 
+> ⚠ **THE FREEZE LIST NOW HAS A SUBTRACTION SIDE (bd `test_C_libtooling-3qlq`
+> Inc 1, 2026-09-05).** The register-free `cq_phi` adds **no** symbol — owner
+> decision D3 is explicitly "no new runtime ABI; the emitted set SHRINKS" — and
+> `tools/opcode_table.yaml` and `runtime/` were not touched. What it changes is
+> which declared symbols are still MINTED, and that is a freeze-gate decision the
+> owner owes, not a fait accompli:
+> * **`cqrt_rz_<W>` for W > 1** — DECLARED, **UNEMITTED**. The only Rz this pass
+>   emits is the kickback `cqrt_rz_i1(f, θ)` (measured over 1661 fixture outputs:
+>   35 emit an Rz, **0** at any other width; and `0` non-`i1` `cqrt_rz` across all
+>   304 committed goldens).
+> * **`cqrt_rz_<W>_controlled` and `cqrt_rz_<W>_controlled_inv`** — DECLARED,
+>   **UNEMITTED, and with no minter left in the pass** (`RotationLowering::emitRz`
+>   is deleted). They were a frozen-designate family for the drbq Inc-2a
+>   control-in-place peephole; that peephole's Rz half is retired. `0` occurrences
+>   in the goldens.
+> * **`cqrt_cswap`** — still MINTED, by the VALUE-arm path in `SwapRouteEmit` and
+>   by the 7.2 `AbortParkEmit`. Increment 2 (value arms by controlled-copy merge,
+>   PRD §7) is the increment that would take the first of those away; until it
+>   lands, `cqrt_cswap` is live.
+> * **`cqrt_ry_<W>_controlled` ×9** — UNAFFECTED and still minted. The Ry stem is
+>   untouched by this epic, and the swap route cannot carry an `Ry` at all.
+>
+> Freeze-gate question for the owner: **delete the unemitted Rz symbols from the
+> ABI, or freeze them declared-but-unemitted?** (PRD §12 Q1 assumes "at the
+> freeze, not now", which is why they are still declared today.) Deleting them is
+> the honest surface; keeping them is a reserve for a future controlled-Rz
+> customer that would have to pin the multi-qubit semantics FIRST — the retirement
+> lesson of this whole epic.
+
 **Deliverables.**
 - **CQ.h freeze.** Semver pinned; future additions versioned per the
-  freeze policy. The 14 × 3 = 42 specializations plus the 3 `_Generic`
-  macros plus the `cq_invert_*` pair are the v1.0 frontend surface.
+  freeze policy. ⚠ The surface is **no longer 14 × 3**: since 3qlq Inc 1 it is
+  14 × **2** register-carrying specializations (`cq_theta`, `cq_measure`) behind
+  **2** `_Generic` macros, **plus the single register-free `void cq_phi(double)`**
+  (no per-type family, no `_Generic`), plus the `cq_ry` statement macro and the
+  `cq_invert_*` pair — `docs/frontend.md` §3.1 carries the counted list.
 - **`libcq_runtime` + `libcq_templates` ABI freeze.** Symbol versioning
   per [`docs/backend.md`](docs/backend.md) §11.6; `cqrt_abi_version()`
   query function; documented deprecation policy. The core `cqrt_*`

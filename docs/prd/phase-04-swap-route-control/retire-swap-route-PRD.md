@@ -1,14 +1,152 @@
 # PRD — Retire the swap route: register-free `cq_phi` (branch phase by kickback) + value arms by controlled-copy merge
 
-> **Status:** proposed and owner-scoped 2026-09-05 (seven decisions, §2, settled in
-> one owner conversation and recorded here verbatim in substance). Extends Phase 4
-> (`ArmClassify` / `SwapRouteEmit` / `NestedRouteEmit` / `SwitchRouteEmit` /
+> **Status:** owner-scoped 2026-09-05 (seven decisions, §2, settled in
+> one owner conversation and recorded here verbatim in substance). **Increments 0
+> and 1 SHIPPED 2026-09-05; Increment 2 (§7, value arms) is NOT shipped.** ⚠ READ
+> **§0 ERRATA FIRST** — the sections below are left as WRITTEN so design and
+> implementation can be diffed, and where they disagree the errata block wins.
+> Extends Phase 4
+> (`ArmClassify` / `SwapRouteEmit` / `NestedRouteEmit` — since DELETED by Inc 1 —
+> / `SwitchRouteEmit` /
 > `SwitchValueEmit` / `AngleSelectEmit`), the 8h7d.5 rolled in-loop path and the
 > drbq control-in-place epic. **A Rule-13 core change** in every increment.
 > **Adds NO runtime symbol** (§5) — the emitted set SHRINKS. **Changes the
 > frontend surface** (`CQ.h`: `cq_phi` loses its register argument and its 15-width
 > family, §4). Implementing epic: bd `test_C_libtooling-3qlq` (children `.1`–`.3`
 > = Inc 0–2, plus filed follow-ons).
+
+## 0. ERRATA — what implementation and review measured differently (2026-09-05)
+
+> **This block is dated and additive. The sections below are left as WRITTEN, so
+> that what was designed and what was built can be diffed; where they disagree,
+> THIS BLOCK WINS.** Reproducers and full arguments:
+> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §1 (adversarial round 1, eight lenses) and §2
+> (round 2, two lenses + the "what else runs once before round 2" stage table).
+>
+> **Shipping status.** Increment 0 (docs + `cq_ry`) and **Increment 1** (the
+> register-free `cq_phi` by kickback, parts A and B) are **SHIPPED**. **Increment
+> 2 (value arms by controlled-copy merge, §7) is NOT** — every §7 sentence is a
+> plan, and `cqrt_cswap` is still minted at HEAD by the value-arm path and by the
+> 7.2 `AbortParkEmit`.
+
+**E1 — §3's and §7.1's "`t`, `f` freed clean" is FALSE for `t`** (Inc-2 lens
+F-V1-4). In the value-arm controlled-copy merge the chain-final rail `t = R(p)` is
+**not** `_unc`-reversed and **not** freed: it is left ALLOCATED and ENTANGLED with
+`out`. That is physically sound while `p` is retained — nothing is freed dirty, so
+Rule 6 holds — but it is not what the sentence says, and the difference matters to
+anyone reasoning about ancilla cost or about a later `cq_invert`. Read §3's value-arm
+paragraph and §7.1 as "`f` freed clean; `t` left allocated". A consequence worth
+carrying: bd `3qlq.5` (freeing the value-arm SOURCE) is **unsound by default** under
+this leak class.
+
+**E2 — §9's per-bit idiom row was measured FALSE, then FIXED, and is TRUE again.**
+The row pins D4's register-wide Z as `and(h,1<<i) → icmp eq 0 → x → rz_i1 → x →
+2 _unc → 2 free`. At the Increment-1a hand-back that held at **K = 1 only**: from
+K = 2 upward the `and` rail was never uncomputed and never freed (measured: 32 mints,
+**0** `_unc`, at K = 32), so each activation stranded one BIT of `q` — a which-path
+record — and the diffusion that makes a phase useful ran over K live records. Rolled
+and hand-unrolled were different unitaries. That was graded a **CONFIRMED miscompile**
+(F-L7-2 / F-L5-1 / F-L2-1b) and fixed by `LoopLowering::invariantRegisterRoots`; the
+row is now correct, MEASURED in the committed goldens —
+`slice_control_phase_perbit_loop.expected.log`: 4 `and_i32_hl` / 4 `and_i32_hl_unc` /
+8 `cqrt_free` at K = 4, and the K = 32 golden 32 / 32 / 64 — with
+`e2e-phase-perbit-loop-twin-identical` gating rolled == hand-unrolled. ⚠ Two things
+the fix does NOT cover, both refused on Prime-Directive grounds rather than proof: a
+HOISTED loop-invariant TEMPLATE rail read by the body's condition (`int p = q * 3;`
+before the per-bit loop) is still refused and still leaks (Q-R1-1); and a loop whose
+CONDITION REGISTER is loop-INVARIANT — `for (…) if (q == k) cq_phi(θ);` with `q`
+untouched in the body — **declines** `condition predates a non-diagonal gate`, because
+`-O1` LICM-hoists the compare out of the loop (bd `drbq.12`, arm-class-independent;
+the workaround is a body gate on `q` or an opaque threshold).
+
+**E3 — §6.3's "an arm with N>1 `cq_phi` calls" decline is NARROWED: the DIAMOND
+spelling ACCEPTS.** N calls in one arm emit **N `cqrt_rz_i1` gates on the one flag**,
+in source order, with one mint / strip / free and one `cqrt_x` bracket pair. Nothing
+is summed at compile time — each angle passes through verbatim and
+`P(φ₁)·P(φ₂) = P(φ₁+φ₂)` happens in the hardware — so §6.3's stated rationale ("summing
+angles is the 2b rounding class again") **has no subject on the Rz stem**; it is a
+Ry-stem reason, and declining would also have regressed four shipped accepts. Pinned by
+`control_phase_kickback_two_calls.ll` (2 `cqrt_rz_i1`, 0 `cqrt_x`, 1 `cqrt_free`).
+⚠ **Both `if/else` spellings still DECLINE** with ≥2 calls per arm (`-O1` emits either
+two angle selects on one compare, or a diamond with two merge-tail phis). So N-per-arm
+is a property of the DIAMOND spelling, not of the construct — loud and safe; widening
+means accepting multiple selects / tail phis on one flag, which is the same mechanism.
+
+**E4 — §6.2 row P5 (homogeneous phase `switch`) has NO plain-C `-O1` customer, and it
+ships hand-IR only.** Measured over seven spellings: a phase arm's entire body is one
+`call void @cq_phi(double)`, so every arm's suffix is identical modulo one operand and
+SimplifyCFG's common-code sinking ALWAYS applies — dense case values become a
+`@switch.table` of angles with ONE shared call, sparse ones a cascade joined by a
+`phi double`. N-gate arms sink too (measured at 1/2/3 and 4/3/2 gates). The table's
+tainted-index load makes the angle tainted, so both `-O1` outcomes are pinned as loud
+declines (including `control_phase_switch_reject_table_fold.ll`, which carries the
+verbatim `-O1` module). P5 therefore lowers on the IR `switch` only (3 accept + 7
+decline fixtures), `tests/e2e/slice_control_switch_phase.c` is kept in the tree
+**UNREGISTERED** with the measurement in its header, and its ctest entry was removed.
+Owner choice: accept P5 as hand-IR-only (the footing the `if/else` kickback arm has had
+since part A), or commission a TABLE-FOLD RECOGNIZER as its own increment — the table
+is `private unnamed_addr constant` with `ConstantFP` entries, so the N angles are
+statically known and the lowering is P5 with the case values read from the table. That
+recognizer is what would give P5 a real customer.
+
+**E5 — §6.2 row P6 does not reach P2: an ANGLE SELECT inside a rolled loop DECLINES**
+(`condition predates a non-diagonal gate`), although P6 lists P1–P3 as in-loop accepts.
+Pinned by `control_angle_select_phase_reject_in_loop.ll` and filed rather than fixed
+(Q-R1-2 / OQ-19). P1 and P3 in-loop are unaffected and are gated by
+`e2e-phase-grover-loop-twin-identical` and `e2e-phase-perbit-loop-twin-identical`.
+
+**E6 — three §6.3 rows moved, and one moved LAYER.** The **bare tainted `i1` condition**
+(Q4, filed as "Inc 1b") stayed a decline in Increment 1. The **Q+Q compare condition**
+was declining in the OPCODE layer (`no template for opcode 'icmp i1' in tainted context`)
+rather than the control layer — a Rule-1 "wrong layer" finding, since a fence that holds
+because a template is absent downstream is the weakest kind; it now declines in the
+CONTROL layer, per leaf, for P1 and P4 (P5 is structurally exempt). The **compound
+condition** row gained a recorded asymmetry: `collectCondTree`'s `AllowLogicalSelect` is
+ON for the branch phase and OFF for the 4.4 data select, so `if (q==5 && r==3) cq_phi(θ)`
+lowers while `int x = (q==5 && r==3) ? a : b;` declines — one grammar, two verdicts,
+decided by a flag. Safe direction, recorded rather than left implicit; the emitter
+already handles the widened case.
+
+**E7 — §6.4's migration estimate, re-measured against the tree.** The design figure was
+"540 of 1582 lit fixtures reference `cq_phi`". What actually happened, MEASURED with
+`git diff --name-status 52d7764 HEAD -- ir-pass/test`: **473 MODIFIED, 91 ADDED, 17
+REMOVED** (corpus 1582 → 1656), of which 104 were re-derived from the pass output, 143
+re-spelled, 16 swapped to `cq_theta` and 6 retired. **12 fixtures flipped DECLINE →
+ACCEPT** and were sent to their own adversarial lens (0 over-accepts: 8 legitimate, 4
+retired). ⚠ THREE fixtures LOST THEIR SUBJECT — they were built on
+`cq_phi(i32 CLASSICAL, θ)`, which is an ill-formed CQ program but a well-formed LLVM
+module, so no oracle comparison could see it; a mechanical re-spell would have left them
+green while pinning nothing. On the slice side: 66 `.c` files touched, every changed slice run
+through the full pipeline with **STRICT** stage 2b, and **30 `.c` REWRITTEN under an
+explicit disposition** (each with a `⚠ REWRITTEN PROGRAM` header naming the measurement).
+The ctest layer moved **+15 / −3** — MEASURED by `comm` over the two `ctest -N` name
+lists, this tree against the pre-3qlq oracle build — so 327 → 339 entries, `^e2e-` 317 →
+329, `^e2e-slice-` 293 → 302, over 304 committed goldens. The `--epic 3qlq` golden audit
+classified the 72 changed goldens as **29 substitution-only · 1 ambiguous-d · 1
+ambiguous-ca · 11 new-file · 30 FINDING**, and the 30 FINDINGs are exactly the 30
+rewritten programs (`comm` empty both ways; `--selftest` PASS, 0 survivors). *(The audit
+figures are prep-b2's final run; the ctest and golden counts are re-measured here.)*
+
+**E8 — the §12 owner questions were proceeded on as ASSUMED, and two of the assumptions
+were exercised.** Q3 (run-time angle arms admitted for the Rz stem) is load-bearing for
+one shipped accept fixture and is sound for the reason §3 gives — the Rz stem performs no
+subtraction, so the Ry stem's IEEE-rounding fence has no subject. Q1 (delete the unemitted
+`cqrt_rz_<W>` / `_controlled` declarations at the freeze, not now) is why those symbols are
+still declared; the freeze-gate decision is in `ROADMAP.md` Phase 11. Q4 (bare `i1`
+condition is Inc 1b) held. Q2 (no remark on deleting an uncontrolled `cq_phi`) held.
+
+**E9 — three CONFIRMED silent miscompiles were found IN Increment 1 by adversarial review
+and none by the 1656-fixture suite**, all `opt` exit 0, verify-clean and STRICT-stage-2b
+clean: the uncompute spine adjointing the kickback gate on a shared flag and cancelling
+the user's phase exactly (fixed by the `!cq.branchphase` membership record, refused by
+three spine predicates, recorded at all six emission sites); P7's D2 deletion running
+BEFORE the second round of control detection, so a branch phase under an onward tainted
+branch was deleted and its orphaned angle then lowered as quantum fp DATA (fixed by moving
+the stage after the round-2 fixpoint); and a stale-header retired `@cq_phi_<sfx>` call that
+was neither lowered nor declined (fixed by a reserved-name decline on any USE plus a loud
+end-of-pass survivor postcondition). Round 2 added a fourth of the same family — a
+once-running rail-collapse stage whose premise the second round falsifies. **Budget a
+third round on any successor increment**, and read the §2 stage table as a method.
 
 ## 1. Motivation — the shipped Grover goldens are the identity
 

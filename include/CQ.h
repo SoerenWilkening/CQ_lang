@@ -1,11 +1,22 @@
 /* CQ.h — user-facing intrinsic surface (taint-driven design).
  *
- * Three primitive families (cq_theta, cq_phi, cq_measure) and one
- * inversion bracket (cq_invert_begin/_end). Parsed by stock Clang;
- * lowered by the cq-lowering IR pass. See docs/frontend.md §3.
+ * TWO per-type primitive families — cq_theta (Ry, the sole taint source)
+ * and cq_measure (the sole sink) — each declared at 14 standard C scalar
+ * types plus the conditional _Float16/long-double rows, dispatched by two
+ * C11 _Generic macros; PLUS the single register-free `void cq_phi(double)`
+ * (the BRANCH PHASE: no per-type family, no _Generic arm, no data
+ * operand), the `cq_ry` statement macro, and one inversion bracket
+ * (cq_invert_begin/_end). Parsed by stock Clang; lowered by the
+ * cq-lowering IR pass. See docs/frontend.md §3.
  *
- * This slice (M03) lands the cq_theta family; cq_phi (M05),
- * cq_measure (M07), and the inversion markers (M10) follow.
+ * !! The header comment used to say "THREE primitive families
+ * (cq_theta, cq_phi, cq_measure)". That was true until bd
+ * test_C_libtooling-3qlq Increment 1 (2026-09-05) deleted the 15-width
+ * cq_phi_<sfx>(x, angle) family outright — see the block at cq_phi below
+ * for why, and docs/frontend.md §3.1 for the counted surface. The old
+ * two-argument spelling is now a hard COMPILE ERROR here (no shim), which
+ * is deliberate: a program written against it must be rewritten, never
+ * silently re-read.
  */
 #ifndef CQ_H_
 #define CQ_H_

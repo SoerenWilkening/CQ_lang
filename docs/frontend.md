@@ -296,16 +296,16 @@ form above (measured; PRD §4.2).
 
 ### 3.3 `cq_phi` — the branch phase (register-free)
 
-> **Status.** The semantics below are the plan of record (owner decisions
+> **Status.** The semantics below are what the compiler does (owner decisions
 > D1–D4, 2026-09-05,
 > `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §2). Both
-> halves — the `CQ.h` surface and the kickback lowering — **ship in
-> Increment 1 (bd `test_C_libtooling-3qlq.2`, this branch set)**. They are
-> **not on `main`**: at `main` the header still declares the retired
-> per-register form `cq_phi(x, φ)` and the pass still lowers it to the
-> tensored `cqrt_rz_<W>(handle, φ)`, which is the defect this section
-> exists to remove (§3.2, PRD §1). Read this section as the Increment-1
-> surface, not as a description of any commit before that merge.
+> halves — the `CQ.h` surface and the kickback lowering — **SHIPPED in
+> Increment 1 (bd `test_C_libtooling-3qlq.2`, 2026-09-05)**. ⚠ Before that
+> merge the header declared a retired per-register form `cq_phi(x, φ)` and the
+> pass lowered it to the tensored `cqrt_rz_<W>(handle, φ)`, which is the defect
+> this section exists to remove (§3.2, PRD §1); that spelling is now a hard
+> COMPILE error at the header and a loud decline in the pass, so a program
+> written against the old surface cannot silently mean something else.
 
 ```c
 void cq_phi(double angle);
@@ -408,18 +408,29 @@ control` inside a tainted region. Only a *classical* mis-typed angle is
 silent.
 
 **`cq_phi` is a reserved name and must not be defined by user code.** The
-pass claims the symbol by **exact** name with the prototype `void(double)`
-(a declaration with any other prototype is a loud decline,
-`cq rotation lowering: unsupported declared prototype for cq_phi`). A
-*definition* is a different matter: measured 2026-09-05 on the Increment-1
-branch tip, a module that defines `void @cq_phi(double)` with an observable
-body has both its call sites **and the definition itself** removed, exit 0,
-with no diagnostic — the pass reads the calls as branch phases and D2 deletes
-the uncontrolled ones. `cq_phi` / `void(double)` is a short, collidable C
-signature, so this is a real hazard for a TU that happens to spell it.
-Whether a defined `@cq_phi` should instead be a loud decline is an open
-question from the Increment-1 round-1 review (finding F-L6-6) and is not
-decided here.
+pass claims the symbol by **exact** name with the prototype `void(double)`;
+a declaration with any other prototype is a loud decline,
+`cq rotation lowering: unsupported declared prototype for cq_phi`, and that
+fires **whether or not the declaration is called** (measured 2026-09-05 on the
+merged Increment-1 tree, both spellings). The **retired** 15-width
+`cq_phi_<sfx>(x, φ)` family is likewise reserved: any USE of one declines with
+`cq rotation lowering: retired register-form cq_phi_<sfx>; use the
+register-free void cq_phi(double)` — measured on the tainted, the
+`clang -O1` const-folded and the wrong-prototype spellings alike — while a
+declaration with **no call site** is silently swept (a deliberate narrowing,
+`docs/backend.md` §6.1a).
+
+A *definition* is the one case still left open. Measured 2026-09-05 on the
+merged Increment-1 tree, a module that defines `void @cq_phi(double)` with an
+observable body compiles at **exit 0 with no diagnostic**, and the body never
+runs: the definition itself is discarded, and each call is read as a branch
+phase — lowered to a kickback gate under a tainted condition, deleted outright
+under classical control (D2). `cq_phi` / `void(double)` is a short, collidable
+C signature, so this is a real hazard for a TU that happens to spell it.
+Whether a defined `@cq_phi` should instead be a loud decline, on the same
+reserved-name rule the other 33 front-end names follow, is an **open owner
+question** from the Increment-1 round-1 review (finding F-L6-6, carried as
+Q-R1-3) and is not decided here.
 
 ### 3.4 `cq_measure` — explicit collapse
 
@@ -706,9 +717,11 @@ because the three classes are not interchangeable (`CLAUDE.md` Rule 7):
   on the flag `f`, **uncontrolled** (`cqrt_rz_i1(f, θ)`), and the strip
   carries the phase back onto the branch (§3.3). Nothing is applied to the
   data register at all, and there is no work rail. *This is the Increment-1
-  lowering (bd `test_C_libtooling-3qlq.2`, this branch set — see §3.3's
-  Status note); at `main` the phase arm is instead a controlled per-qubit Rz
-  on the register, which is the defect §3.3 documents.*
+  lowering (bd `test_C_libtooling-3qlq.2`, SHIPPED 2026-09-05 — see §3.3's
+  Status note). It replaced a controlled per-qubit Rz on the register, which
+  is the defect §3.3 documents, and it is the lowering at every phase site:
+  the flat diamond and `if/else`, the folded angle select, the compound
+  condition tree, the depth-2 nest and the `switch`.*
 - **A rotation arm** — the arm is `cq_theta` on a register the condition
   does not read — is applied **in place**, as one controlled gate
   (`cqrt_ry_<W>_controlled(f, h, θ)`). A swap route cannot carry an Ry:
