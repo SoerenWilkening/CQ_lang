@@ -61,7 +61,16 @@ public:
   // Front-end intrinsic lookups (no insertion). Return nullptr if the
   // intrinsic is not declared — that's the cue to skip per-suffix work.
   llvm::Function *thetaFn(llvm::StringRef sfx) const;    // @cq_theta_<sfx>
-  llvm::Function *phiFn(llvm::StringRef sfx) const;      // @cq_phi_<sfx>
+  // @cq_phi_<sfx> — THE RETIRED REGISTER FORM. Its ONE caller since bd 3qlq Inc 1
+  // part A is `resolveSources`' reserved-name decline (Rule-13 round-1 finding
+  // F-L6-1): the lookup exists so a USE of a retired spelling can be REFUSED,
+  // never so one can be lowered. It was DEAD CODE at the increment's HEAD and is
+  // annotated here rather than deleted for the same reason
+  // `RotationLowering::emitRz` is (finding F-L6-7) — a reader who finds a live
+  // lookup with no consumer reasonably assumes the consumer is missing and adds
+  // one back. DO NOT USE IT TO LOWER ANYTHING: `cqrt_rz_<W>` is TENSORED, which
+  // is the defect this whole epic removes (PRD §1).
+  llvm::Function *phiFn(llvm::StringRef sfx) const;
 
   // bd test_C_libtooling-3qlq Inc 1 — the REGISTER-FREE branch phase.
   // `void @cq_phi(double)`, resolved by EXACT name (no suffix), so it can

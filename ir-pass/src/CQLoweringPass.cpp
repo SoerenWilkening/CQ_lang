@@ -29,6 +29,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -53,6 +54,55 @@ void eraseDeadDecls(Module &M, WidthDispatch &wd) {
         FE->eraseFromParent();
     }
   }
+}
+
+// THE POSTCONDITION, ASSERTED — bd 3qlq Inc 1 part A, Rule-13 round-1 finding
+// F-L6-1 (a CONFIRMED Rule-1 "no third path" violation).
+//
+// `eraseDeadDecls` above states the architecture's promise — "no
+// `@cq_theta_<sfx>` / `@cq_phi_<sfx>` / `@cq_measure_<sfx>` remains in the IR
+// after this pass" — and then only ERASES the declarations that happen to be
+// unused. It cannot see a SURVIVING CALL, and a surviving call is exactly what
+// F-L6-1 found: on a stale header the flagship `if (q == 5) q = cq_phi(q, PI)`
+// had its arg 0 const-folded to a classical `i32 5`, so the taint-escape guard
+// could not fire; `ArmClassify` still CLAIMED the call by the `cq_phi_` prefix
+// and the deleted `PhiCalls` lowering loop never consumed it. `opt` exited 0,
+// verify-clean, STRICT stage 2b clean, with the phase gate dropped and
+// `@cq_phi_si32` standing in the emitted module. The only thing that noticed was
+// `ld`.
+//
+// The `resolveSources` clause (`TaintPropagation.cpp`) closes that specific
+// door. THIS is the backstop that makes the postcondition a CHECKED property
+// rather than a comment: whatever else changes upstream, a front-end intrinsic
+// CALL that reaches the end of the pipeline is a decline, not an exit-0 module.
+// It fires after every lowering stage and before `eraseDeadDecls`, so a stage
+// that forgets to consume its own construct is caught by the pass rather than by
+// the linker.
+//
+// LOUD, NOT AN `assert` (Rule 1): a Release build has assertions off, which is
+// the build every gate in this tree runs.
+bool declineSurvivingIntrinsicCalls(Module &M, WidthDispatch &wd) {
+  bool Declined = false;
+  for (StringRef Name : wd.frontEndIntrinsicNames()) {
+    Function *FE = M.getFunction(Name);
+    if (!FE)
+      continue;
+    for (User *U : FE->users()) {
+      auto *CB = dyn_cast<CallBase>(U);
+      if (!CB || CB->getCalledFunction() != FE)
+        continue;
+      Function *At = CB->getFunction();
+      At->getContext().diagnose(DiagnosticInfoUnsupported(
+          *At,
+          ("cq lowering: front-end intrinsic " + Name +
+           " survived lowering; the pass lowered nothing for it")
+              .str(),
+          CB->getDebugLoc()));
+      Declined = true;
+      break;  // one message per symbol is enough to fail the pass.
+    }
+  }
+  return Declined;
 }
 
 }  // namespace
@@ -573,6 +623,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // Every WRONG-VALUE and DIRTY-FREE owner above stays loud; the ruling reverses
   // this guard's decline half and nothing else.
   warnLiveRecordRotations(M, taint);
+  // THE POSTCONDITION BACKSTOP (bd 3qlq Inc 1 part A, round-1 F-L6-1) — see the
+  // function's own header. Runs BEFORE `eraseDeadDecls`, which only erases the
+  // declarations that are already unused and is therefore blind to a surviving
+  // CALL.
+  if (declineSurvivingIntrinsicCalls(M, wd))
+    return PreservedAnalyses::none();
   eraseDeadDecls(M, wd);
 
   return PreservedAnalyses::none();
@@ -816,6 +872,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // report. See run() for the late-slot + emitter-keyed rationale and for why
   // the bool is not branched on (owner ruling 2026-08-29, bd lyyf).
   warnLiveRecordRotations(M, taint);
+  // The postcondition backstop, mirrored in this entry point too (twin-pipeline
+  // parity is MANDATORY, WI-1.12) — see run() for the F-L6-1 rationale.
+  if (declineSurvivingIntrinsicCalls(M, wd))
+    return true;
   eraseDeadDecls(M, wd);
   return true;
 }

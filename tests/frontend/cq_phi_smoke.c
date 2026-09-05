@@ -1,4 +1,6 @@
-// RUN: %clang %cq_include -O1 -emit-llvm -include CQ.h -S %s -o - | %filecheck %s
+// RUN: %clang %cq_include -O1 -emit-llvm -include CQ.h -S %s -o - > %t.ll
+// RUN: %filecheck %s < %t.ll
+// RUN: %filecheck %s --check-prefix=NOFAM < %t.ll
 
 // Smoke fixture for the cq_phi intrinsic surface.
 //
@@ -30,4 +32,16 @@ void use(void) {
 // CHECK: declare void @cq_phi(double
 
 // No per-type family survives anywhere in the module.
-// CHECK-NOT: @cq_phi_
+//
+// ITS OWN WHOLE-FILE PURE-NEGATIVE PREFIX, and that is the finding, not a style
+// choice (Rule-13 round-1 F-L6-3 — the Inc-3 F-L6-1 windowing lesson recurring
+// in the file this increment rewrote). Spelled as a TRAILING negative directive
+// after the positive one for the declaration above, it windowed from that match
+// to EOF — and in every clang-emitted module the declare block sits AFTER the
+// function bodies, so the window excluded exactly the place an old-family CALL
+// appears. MEASURED with four injections into this fixture's own -O1 output: an
+// injected `declare i32 @cq_phi_si32(...)` was caught, a whole-surface rename was
+// caught, a deleted `cq_phi` call was caught by the positive directive — and an
+// injected `%zz = call i32 @cq_phi_si32(...)` INSIDE @use() was NOT. In its own
+// prefix, with no positive directive to window it, it catches all four.
+// NOFAM-NOT: @cq_phi_

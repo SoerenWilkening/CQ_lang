@@ -283,6 +283,61 @@ void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
   }
 
   for (StringRef Sfx : wd.allSuffixes()) {
+    // ---- THE RETIRED REGISTER FORM `@cq_phi_<sfx>` IS A RESERVED NAME AND ANY
+    // USE OF IT DECLINES — bd 3qlq Inc 1 part A, Rule-13 round-1 finding F-L6-1
+    // (a CONFIRMED Rule-1 "third path" violation).
+    //
+    // The comment above says the family "declines LOUDLY through
+    // `declineTaintEscapes`". MEASURED, that is true of THREE spellings and
+    // FALSE of the fourth — and the fourth is the FLAGSHIP CUSTOMER. On a stale
+    // header, `if (q == 5) q = cq_phi(q, PI)` has its arg 0 CONST-FOLDED by
+    // `clang -O1` to `i32 5` on the equality edge (the drbq Inc-4 F2 fold
+    // class), so the operand is CLASSICAL and the escape guard structurally
+    // cannot fire. Meanwhile `ArmClassify::isPhiCall` still recognises the call
+    // by the `cq_phi_` PREFIX and CLAIMS it as an arm gate,
+    // `emitInPlaceRotationRegion` hoists it and records
+    // `taint.ControlledRotations`, and the `PhiCalls` loop in `RotationLowering`
+    // that used to lower it is DELETED. Result at HEAD: `opt` exit 0,
+    // verify-clean, STRICT stage 2b PASS, the flag minted and stripped and
+    // freed, THE PHASE GATE DROPPED (the identity on `q` — PRD §1's own defect
+    // class, through a different door), and `@cq_phi_si32` left UNLOWERED in the
+    // emitted module. Caught only by `ld`. It is one linkable body away from
+    // being silent.
+    //
+    // MONOTONE — this clause can only ADD declines. It is gated on `!use_empty`
+    // rather than on the declaration alone, and that is a DELIBERATE narrowing
+    // of the reserved-name rule the other 33 names follow (`resolveSources`'
+    // header: "even for a decl with NO call sites"): a declare-only retired
+    // symbol is provably inert (measured — with quantum in the module the dead
+    // decl is swept; with none the pass is byte-identical passthrough), while
+    // the ~490 fixtures still carrying the old family are mid-migration and a
+    // decl-only decline would redden every one of them for no correctness gain.
+    // A USE is exactly the set that can reach a wrong unitary.
+    //
+    // NOT a prototype complaint, so it does not reuse `diagnoseMalformedDecl`'s
+    // string: the declaration here is perfectly well-formed and the objection is
+    // that the SPELLING is retired. It has its own message, mirrored
+    // character-for-character by
+    // `lowering_reject_legacy_phi_register_form_eqfold.ll`.
+    if (Function *F = wd.phiFn(Sfx)) {
+      if (!F->use_empty()) {
+        std::string Msg =
+            ("cq rotation lowering: retired register-form " + F->getName() +
+             "; use the register-free void cq_phi(double)")
+                .str();
+        Function *At = F;
+        DebugLoc DL;
+        for (User *U : F->users())
+          if (auto *CB = dyn_cast<CallBase>(U))
+            if (CB->getCalledFunction() == F) {
+              At = CB->getFunction();
+              DL = CB->getDebugLoc();
+              break;
+            }
+        At->getContext().diagnose(
+            DiagnosticInfoUnsupported(*At, Msg, DL));
+      }
+    }
     if (Function *F = wd.thetaFn(Sfx)) {
       if (declMatchesPrototype(F, wd.llvmTypeFor(Sfx, F->getContext()),
                                /*HasAngle=*/true))

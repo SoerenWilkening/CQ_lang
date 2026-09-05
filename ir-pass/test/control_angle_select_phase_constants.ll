@@ -71,12 +71,18 @@ entry:
 ; NOROUTE-NOT: cqrt_cswap
 ; NOROUTE-NOT: cqrt_copy
 ; NOROUTE-NOT: _controlled
-; NOROUTE-NOT: cqrt_rz_i8
-; NOROUTE-NOT: cqrt_rz_i16
-; NOROUTE-NOT: cqrt_rz_i32
-; NOROUTE-NOT: cqrt_rz_i64
-; NOROUTE-NOT: cqrt_rz_f32
-; NOROUTE-NOT: cqrt_rz_f64
+; ⚠ ONE COMPLEMENT PATTERN, NOT SIX ENUMERATED WIDTHS — Rule-13 round-1 findings
+; F-L6-4 / F-L8-1 / F-L4-2. The shipped ABI has NINE Rz widths
+; (`runtime/cq_runtime.h`: i1, i8, i16, i32, i64, f16, f32, f64, f80) and the
+; enumeration listed SIX: `f16` and `f80` were absent from ALL of these fixtures,
+; so the block's own claim ("no TENSORED Rz at any width") was 6/8 true.
+; MEASURED by injection into this file's own pass output: `cqrt_rz_i32` was
+; caught, `cqrt_rz_i1` was caught by the count prefix, and `cqrt_rz_f80` /
+; `cqrt_rz_f16` were NOT. The regex below is validated in BOTH directions —
+; it fires on an injected `cqrt_rz_i16` and does NOT fire on the clean output's
+; `cqrt_rz_i1`, which is the one case a bare prefix test gets wrong (`cqrt_rz_i1`
+; is a textual prefix of `cqrt_rz_i16`), so the trailing `(` is load-bearing.
+; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
 ; NOROUTE-NOT: call void @cq_phi(
 ; NOROUTE-NOT: cq_phi_
 ; NOROUTE-NOT: fsub
